@@ -136,3 +136,42 @@ def test_http_error_never_raises(monkeypatch, tmp_path):
 
 def test_module_imports_clean():
     importlib.reload(errorlog)  # no import-time side effects
+
+
+def test_htmldate_cache_clear_noise_is_filtered_out(monkeypatch, tmp_path):
+    """S5 item 1 (field-feedback 2026-07-23): htmldate.meta.reset_caches() (reached
+    via trafilatura's own reset_caches() at every pass boundary) logs an ERROR every
+    time it hits an AttributeError on charset_normalizer's functions in the installed
+    version pin — measured 85 of 93 "problems" on one field session. That ONE known
+    message class from that ONE logger must be filtered out of the counters, without
+    blanket-suppressing the logger (a genuinely different message from the same
+    logger, e.g. an import failure, must still count)."""
+    _fresh(monkeypatch, tmp_path)
+    errorlog.install()
+    noisy = logging.getLogger("htmldate.meta")
+    for _ in range(85):
+        noisy.error("impossible to clear cache for function: %s", "AttributeError('x')")
+    # A genuinely different message from the SAME logger must still be captured —
+    # this is a targeted filter, not a blanket suppression of htmldate.meta.
+    noisy.error("impossible to import charset function name")
+
+    recs = errorlog.recent_errors()
+    problem_msgs = [r["message"] for r in recs if r.get("level") in errorlog._PROBLEM_LEVELS]
+    assert not any("impossible to clear cache for function" in m for m in problem_msgs)
+    assert any("impossible to import charset function name" in m for m in problem_msgs)
+
+    s = errorlog.summary()
+    assert s["problems_this_session"] == 1  # only the import-failure message counts
+
+
+def test_htmldate_noise_filter_leaves_other_loggers_untouched(monkeypatch, tmp_path):
+    """The filter matches on LOGGER NAME too — an unrelated logger emitting a
+    similar-looking message must still be counted (never a bare message-substring
+    match that could mask a real fault in our own code)."""
+    _fresh(monkeypatch, tmp_path)
+    errorlog.install()
+    logging.getLogger("src.some.other.module").error(
+        "impossible to clear cache for function: our own bug"
+    )
+    s = errorlog.summary()
+    assert s["problems_this_session"] == 1

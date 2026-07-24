@@ -4072,3 +4072,25 @@ share literal text. General form: a regression guard proving something was
 REMOVED is only as strong as the scope it searches -- a substring that reads as
 distinctive in isolation may recur, coincidentally or not, somewhere the guard
 never meant to bless.
+
+**LESSON: an honest "resolver error -> not-measurable-here" degrade path can
+silently mask a genuine bug IN the resolver itself.** The K2 KPI resolver
+(`_k2_latency`) read `latency.summary()["snappy_bar"]` as a plain float
+(`float(summ.get("snappy_bar") or 500.0)`), but `latency.summary()`'s actual,
+current return shape nests it as a dict (`{"bar_ms": ..., "interactive_routes":
+..., ...}`) — a drift between the two modules that made `float(dict)` raise
+`TypeError` on EVERY real call. `kpi_snapshot()`'s own try/except is exactly
+the "never a fabricated pass" honesty mechanism (a resolver fault degrades to
+`"not-measurable-here"` rather than crashing the whole snapshot) — but that
+same honesty mechanism meant the crash was NEVER visible: every call silently
+read as "no data yet" instead of "this metric is broken," and no existing test
+caught it because the test suite only checked the SHAPE of a not-measurable
+entry (value=None, an honest reason string), never distinguished "genuinely no
+data" from "the resolver itself is broken." General form: a resolver/adapter
+that reads another module's payload by KEY must be tested against that
+module's REAL, CURRENT shape (a live call, or a hand-built fixture that
+matches the actual nesting) — not an assumed/historical shape — and a
+graceful-degrade fallback needs its own regression test proving the HAPPY PATH
+still produces a real value, not just that the SAD path degrades honestly;
+otherwise the fallback becomes a permanent hiding place for the very bug it
+was built to survive.

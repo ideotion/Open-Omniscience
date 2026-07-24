@@ -116,7 +116,14 @@ def _k2_latency(spec: dict) -> dict:
     from src.monitoring import latency
 
     summ = latency.summary()
-    bar = float(summ.get("snappy_bar") or 500.0)
+    # S5 item 2 (field-feedback 2026-07-23): summ["snappy_bar"] is a DICT
+    # ({"bar_ms": ..., "interactive_routes": ..., ...}, see latency.summary()),
+    # not a plain float — the old `float(summ.get("snappy_bar") or 500.0)` raised
+    # TypeError on every real call (float() of a dict), silently degrading K2 to
+    # "not-measurable" behind the honest resolver-error fallback. Read the nested
+    # bar_ms field.
+    snappy_bar = summ.get("snappy_bar") or {}
+    bar = float(snappy_bar.get("bar_ms") or 500.0)
     # Only routes with a real pass/fail verdict are interactive reads (exempt/low-n excluded).
     interactive = [r for r in (summ.get("routes") or []) if r.get("snappy") in ("pass", "fail")]
     if not interactive:

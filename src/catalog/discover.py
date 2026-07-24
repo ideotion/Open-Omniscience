@@ -41,7 +41,21 @@ def _guarded_run_query(cfg: dict) -> Callable[[str, list[str]], dict]:
         resp = guarded_session(user_agent=DEFAULT_USER_AGENT, isolation_token=cc).get(
             url, timeout=_TIMEOUT_S
         )
-        return resp.json()
+        try:
+            return resp.json()
+        except ValueError as exc:
+            # S5 item 4 (field-feedback 2026-07-23): a non-JSON response body (a
+            # rate-limit page, an error page, a truncated response) used to
+            # surface as a bare parse exception ("Expecting value: line 1 column
+            # 1 (char 0)") recorded by generate_catalog with no way to tell a 429
+            # rate-limit from a genuinely broken query. Carry the REAL HTTP
+            # status + a short first-bytes snippet so a diagnostics reader can
+            # classify it at a glance — observability only, no retry-policy
+            # change (still recorded + skipped by the caller, same as before).
+            snippet = (resp.text or "")[:120].replace("\n", " ")
+            raise RuntimeError(
+                f"non-JSON response (HTTP {resp.status_code}): {snippet!r}"
+            ) from exc
 
     return run_query
 

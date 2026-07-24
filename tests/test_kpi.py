@@ -47,6 +47,38 @@ def test_not_measurable_metrics_carry_no_fabricated_value():
             assert m["method"]  # an honest reason, never silent
 
 
+def test_k2_resolver_reads_the_nested_snappy_bar_shape(monkeypatch):
+    """S5 item 2 (field-feedback 2026-07-23): latency.summary()["snappy_bar"] is a
+    DICT ({"bar_ms": ..., "interactive_routes": ..., ...}), not a plain float — a
+    real resolver bug (float(dict) -> TypeError) was silently degrading K2 to
+    "not-measurable-here" behind the honest resolver-error fallback on every real
+    call. Pin the fix by feeding the resolver the EXACT real shape and asserting a
+    genuine numeric value + verdict come back, not a swallowed exception."""
+    import src.monitoring.latency as latency
+
+    def _fake_summary():
+        return {
+            "snappy_bar": {"bar_ms": 500.0, "interactive_routes": 1, "passing": 1, "failing": 0},
+            "routes": [
+                {"route": "/api/articles", "p95_ms": 123.4, "window_n": 25, "snappy": "pass"},
+            ],
+        }
+
+    monkeypatch.setattr(latency, "summary", _fake_summary)
+    k2 = next(m for m in kpi_snapshot()["metrics"] if m["id"] == "K2")
+    assert k2["verdict"] == "green"
+    assert k2["value"] == 123.4
+    assert "not-measurable" not in k2["method"] and "resolver error" not in k2["method"]
+
+
+def test_k2_resolver_never_raises_on_the_live_shape():
+    """Negative-space companion: the REAL (unmocked) latency.summary() call must
+    round-trip through the resolver without ever hitting the try/except fallback —
+    proving the fix works against the actual module, not just a hand-shaped fixture."""
+    k2 = next(m for m in kpi_snapshot()["metrics"] if m["id"] == "K2")
+    assert "resolver error" not in k2["method"]
+
+
 def test_i18n_metric_is_measurable_in_process():
     # K11 reads the locale files cheaply in-process — it is the one metric that is a real
     # verdict on a dev checkout (the repo ships --min 100).

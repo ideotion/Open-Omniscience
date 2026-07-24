@@ -67,6 +67,28 @@ _frontend_last: dict[tuple[str, str, str], float] = {}
 # Levels that count as a real (BACKEND) problem (BOOT/INFO/HTTP/FRONTEND markers do not).
 _PROBLEM_LEVELS = {"WARNING", "ERROR", "CRITICAL"}
 
+# S5 item 1 (field-feedback 2026-07-23): htmldate.meta.reset_caches() (reached
+# via trafilatura's own reset_caches(), which src/scheduler/hygiene.py calls at
+# EVERY pass boundary) hits an AttributeError on charset_normalizer's functions
+# in the installed version pin and logs it as an ERROR every single time —
+# measured 85 of 93 "problems" on one field session, drowning out real signal.
+# TARGETED, never a blanket suppression of the whole logger: only this one
+# known-benign message class from this one logger is dropped from the COUNTERS;
+# any other record from htmldate.meta (e.g. a genuine import failure) still
+# counts as a problem.
+_HTMLDATE_NOISE_LOGGER = "htmldate.meta"
+_HTMLDATE_NOISE_MESSAGE = "impossible to clear cache for function"
+
+
+class _HtmldateCacheNoiseFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:  # noqa: D102
+        if record.name != _HTMLDATE_NOISE_LOGGER:
+            return True
+        try:
+            return _HTMLDATE_NOISE_MESSAGE not in record.getMessage()
+        except Exception:  # noqa: BLE001 - never let the filter itself break logging
+            return True
+
 
 def _log_path() -> Path:
     return data_dir() / "app_errors.jsonl"
@@ -215,7 +237,9 @@ def install() -> None:
     if any(isinstance(h, _JsonlErrorHandler) for h in root.handlers):
         _installed = True
         return
-    root.addHandler(_JsonlErrorHandler(level=logging.WARNING))
+    handler = _JsonlErrorHandler(level=logging.WARNING)
+    handler.addFilter(_HtmldateCacheNoiseFilter())
+    root.addHandler(handler)
     _installed = True
     note_boot()
 
