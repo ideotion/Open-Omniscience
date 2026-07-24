@@ -31,10 +31,17 @@ import json
 import logging
 import os
 import threading
-from dataclasses import asdict, dataclass
+from collections.abc import Sequence
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from src.geo.osm_regions import estimate_bytes, get_region, is_valid_code
+from src.ingest.segmented_download import (
+    choose_mirror,
+    default_fetch_segment,
+    default_mirror_probe,
+    segmented_fetch,
+)
 
 _LOG = logging.getLogger(__name__)
 
@@ -86,6 +93,13 @@ class OsmDownloadEntry:
     downloaded_bytes: int = 0
     status: str = "queued"  # queued | downloading | paused | done | error
     error: str | None = None
+    # C11 (2026-07-24 throughput brief, S-C): operator/config-supplied acceleration
+    # inputs — EMPTY for every real catalog entry today (no verified Geofabrik
+    # mirror list or per-file checksum could be confirmed from this sandbox; see
+    # src.ingest.segmented_download's module docstring). Dormant by construction:
+    # blank fields fall straight through to the proven single-stream path below.
+    mirrors: list[str] = field(default_factory=list)
+    expected_sha256: str = ""
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -109,6 +123,9 @@ class OsmDownloadManager:
         http_get=None,
         http_head=None,
         max_concurrent: int | None = None,
+        mirror_probe=None,
+        fetch_segment=None,
+        segment_min_bytes: int | None = None,
     ):
         from src.paths import data_dir
 
@@ -117,6 +134,14 @@ class OsmDownloadManager:
         self.state_path = self.base_dir / "downloads.json"
         self._http_get = http_get
         self._http_head = http_head
+        # C11: injectable for tests; the real defaults route through the guarded
+        # factory with per-segment/per-mirror isolation tokens (never used unless
+        # an entry actually carries mirrors/expected_sha256 — see OsmDownloadEntry).
+        self._mirror_probe = mirror_probe or default_mirror_probe
+        self._fetch_segment = fetch_segment or default_fetch_segment
+        self._segment_min_bytes = (
+            segment_min_bytes if segment_min_bytes and segment_min_bytes > 0 else 1024 * 1024
+        )
         self._entries: dict[str, OsmDownloadEntry] = {}
         self._threads: dict[str, threading.Thread] = {}
         self._stops: dict[str, threading.Event] = {}
@@ -252,9 +277,12 @@ class OsmDownloadManager:
         """Server-reported size in bytes (HEAD), or None. A NETWORK call through
         the guarded factory (kill switch / proxy honoured); the catalog estimate
         is the zero-network default shown without this."""
+        return self._probe_url_size(osm_download_url(code))
+
+    def _probe_url_size(self, url: str) -> int | None:
         head = self._http_head or _default_head
         try:
-            resp = head(osm_download_url(code))
+            resp = head(url)
             cl = resp.headers.get("Content-Length")
             return int(cl) if cl else None
         except Exception:  # noqa: BLE001 - size is best-effort
@@ -262,7 +290,14 @@ class OsmDownloadManager:
 
     # -- download ---------------------------------------------------------- #
 
-    def _entry_for(self, code: str, name: str | None = None) -> OsmDownloadEntry:
+    def _entry_for(
+        self,
+        code: str,
+        name: str | None = None,
+        *,
+        mirrors: Sequence[str] | None = None,
+        expected_sha256: str = "",
+    ) -> OsmDownloadEntry:
         key = (code or "").strip().lower()
         e = self._entries.get(key)
         if e is None:
@@ -274,10 +309,41 @@ class OsmDownloadManager:
                 name=name or (region.name if region else key),
                 url=osm_download_url(key),  # raises on a path-unsafe code
                 dest=str(dest),
+                mirrors=list(mirrors or []),
+                expected_sha256=expected_sha256,
             )
             self._entries[key] = e
             self._save()
         return e
+
+    def _download_segmented(self, entry: OsmDownloadEntry, fetch_url: str, dest: Path) -> bool:
+        """C11: attempt a segmented multi-circuit fetch. Returns True when it
+        engaged and the file is written + entry updated; False when it declines
+        (no size known, too large, or too small to split — the caller falls back
+        to the proven sequential path). RAISES when it engaged but
+        ``reassemble``'s integrity check failed — a corrupt/short segment must
+        surface as a genuine download error, never a silently-downgraded
+        fallback that could mask a tampered fetch."""
+        total = self._probe_url_size(fetch_url) or entry.total_bytes
+        if not total:
+            return False
+        data = segmented_fetch(
+            fetch_url,
+            total_bytes=total,
+            expected_sha256=entry.expected_sha256,
+            fetch_segment=self._fetch_segment,
+            min_seg=self._segment_min_bytes,
+        )
+        if data is None:
+            return False
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(data)
+        entry.total_bytes = len(data)
+        entry.downloaded_bytes = len(data)
+        entry.status = "done"
+        entry.error = None
+        self._save()
+        return True
 
     def _download(
         self, entry: OsmDownloadEntry, stop_event: threading.Event | None = None
@@ -287,9 +353,31 @@ class OsmDownloadManager:
         dest = Path(entry.dest)
         dest.parent.mkdir(parents=True, exist_ok=True)
         resume = dest.stat().st_size if dest.exists() else 0
-        headers = {"Range": f"bytes={resume}-"} if resume else {}
+
+        # C11 (2026-07-24 throughput brief, S-C): pick the fastest REACHABLE
+        # mirror for THIS attempt — a no-op (fetch_url stays entry.url) when
+        # entry.mirrors is empty, which is every real catalog entry today (see
+        # src.ingest.segmented_download's module docstring).
+        fetch_url = entry.url
+        if entry.mirrors:
+            try:
+                fetch_url = choose_mirror(entry.url, entry.mirrors, probe=self._mirror_probe)
+            except Exception:  # noqa: BLE001 - mirror selection is best-effort
+                fetch_url = entry.url
+
         try:
-            resp = http_get(entry.url, headers)
+            # A segmented multi-circuit fetch ONLY on a fresh start (no partial
+            # file — segmented+resume semantics are out of scope) with a
+            # verified whole-file checksum configured (dormant by default).
+            if (
+                resume == 0
+                and entry.expected_sha256
+                and self._download_segmented(entry, fetch_url, dest)
+            ):
+                return entry
+
+            headers = {"Range": f"bytes={resume}-"} if resume else {}
+            resp = http_get(fetch_url, headers)
             resp.raise_for_status()
             status_code = getattr(resp, "status_code", 200)
             cl = int(resp.headers.get("Content-Length", 0) or 0)
@@ -326,13 +414,22 @@ class OsmDownloadManager:
             _LOG.warning("OSM region download failed for %s", entry.key, exc_info=True)
         return entry
 
-    def start(self, code: str, name: str | None = None) -> dict:
+    def start(
+        self,
+        code: str,
+        name: str | None = None,
+        *,
+        mirrors: Sequence[str] | None = None,
+        expected_sha256: str = "",
+    ) -> dict:
         """Begin or resume a region download in a background thread.
 
         Raises ``ValueError`` for a path-unsafe code (via the URL builder). When
         capacity is full the entry QUEUES (reorderable) instead of over-launching.
+        ``mirrors``/``expected_sha256`` (C11, keyword-only, both default empty —
+        byte-identical to today) are ONLY applied when a NEW entry is created.
         """
-        entry = self._entry_for(code, name)  # raises on a path-unsafe code
+        entry = self._entry_for(code, name, mirrors=mirrors, expected_sha256=expected_sha256)
         if self._threads.get(entry.key) and self._threads[entry.key].is_alive():
             return entry.to_dict()
         from src.ingest import kill_switch_active

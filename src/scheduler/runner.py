@@ -27,6 +27,7 @@ import time
 from datetime import UTC, datetime, timedelta
 
 from src.database.query import capped
+from src.ingest.tor_throughput import KindLadder
 from src.scheduler.settings import SchedulerSettings, load_settings
 
 _LOG = logging.getLogger(__name__)
@@ -346,6 +347,34 @@ def select_sources(session, settings: SchedulerSettings):
     if settings.select_tags:
         q = q.filter(or_(*[Source.tags.ilike(f"%{t}%") for t in settings.select_tags]))
     return q.order_by(Source.priority.asc(), Source.id.asc())
+
+
+# Small, tight bound for the crawl-SUPPLEMENT'S per-source config -- deliberately much
+# smaller than the explicit whole-source mode="crawl" caps (up to 500 pages/depth 6):
+# this is a bounded, polite discovery nibble that runs EVERY due pass, not a full crawl.
+_CRAWL_SUPPLEMENT_MAX_PAGES = 20
+_CRAWL_SUPPLEMENT_MAX_DEPTH = 2
+
+
+def _select_crawl_candidates(session, settings: SchedulerSettings, limit: int) -> list:
+    """Qualified sources due for the §8 crawl-supplement rung this pass, ordered
+    FEEDLESS-first (RSS-invisible sources benefit most -- they have no other
+    URL-discovery channel yet) then LEAST-RECENTLY-CRAWLED (NULL = never
+    crawled by the supplement, sorts first). Reuses select_sources' own
+    enabled+qualified+facet filters (cleared of its priority/id order via
+    ``order_by(None)`` so this rotation is not swamped by it) -- a rotation
+    that covers every qualified source over time, ordering never exclusion."""
+    from src.database.models import Source
+
+    if limit <= 0:
+        return []
+    q = select_sources(session, settings).order_by(None)
+    q = q.order_by(
+        Source.rss_url.isnot(None),  # feedless (NULL, False=0) sorts first
+        Source.last_crawled_at.is_(None).desc(),  # never-crawled (True=1) first
+        Source.last_crawled_at.asc(),  # then oldest-crawled first
+    )
+    return q.limit(limit).all()
 
 
 def _item_mode_count(session, settings: SchedulerSettings) -> int:
@@ -886,6 +915,322 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
     return out
 
 
+# --------------------------------------------------------------------------- #
+# S-B / C1+C2 (2026-07-24 throughput brief): the HOUSEKEEPING LANE.
+#
+# _default_run_once's post-pass tail used to run ~7 network ride-alongs
+# SEQUENTIALLY on the pass thread (calendar/markets/law/world-discovery/
+# qualification/country-data/hazards), each a real Tor fetch -- measured as a
+# large share of the 3-8 min inter-pass gap on BOTH a 2-core and an 8-core
+# field machine (duty cycle 48-65%, two 2026-07-23 diagnostics exports).
+# _refresh_briefing_async (S4.1) proved the fix for one such ride-along (a
+# background thread with its OWN session, non-overlapping via a lock, task-
+# manager-visible); this generalizes that pattern to the rest of the serial
+# network ride-alongs, so the pass tail becomes "kick the lane, return" and
+# pass N+1's collection can start immediately.
+#
+# The lane opens its OWN session + fetcher (never the pass's -- "never two
+# writers on one cursor" for world-discovery/qualification still holds, since
+# writes still serialise through the single process-wide writer gate
+# regardless of which session/thread initiates them). Deliberately NOT moved
+# here: preflight/feed_preflight (first-run only), field-test instrumentation
+# (opt-in, off by default), offline discovery (DB-only, no network), the
+# ai_layer/langdetect/source-enrichment ride-alongs (LOCAL loopback inference
+# or zero-network, not the S-B "network ride-along" target) -- all stay on the
+# pass thread, unchanged.
+# --------------------------------------------------------------------------- #
+
+# Every kind the lane may run this pass. "crawl" (§8, C3) is the bounded
+# crawl-supplement rung -- see _lane_step_crawl / _select_crawl_candidates.
+# "backfill" (C15) is a newly-qualified source's sitemap-enumerated HISTORY --
+# see _lane_step_backfill / src.ingest.archive_backfill.
+_LANE_KINDS = (
+    "markets", "hazards", "calendar", "law",
+    "world_discovery", "qualification", "country_data", "crawl", "backfill",
+)
+
+# The bandwidth PRIORITY LADDER (ruled 2026-06-13): "(1) commodities/markets/
+# weather FIRST -- small payloads, cheap, high value; ... (4) recursive
+# crawling ONLY with bandwidth headroom (heaviest)". Weights set a priority
+# ORDER (ordering != exclusion -- every due kind still runs every invocation;
+# see _lane_kind_order's safety net); floors guarantee the discovery/
+# qualification/country-data ride-alongs, the crawl rung and the backfill rung
+# are never starved. "crawl" and "backfill" both sit at rate=0 (no priority
+# order beyond their floor); "backfill" carries the SMALLEST floor of all --
+# the ladder's LOWEST rung (C15's "live collection stays first" requirement) --
+# so it only ever consumes headroom after every other kind's own turn,
+# including "crawl".
+_LANE_RATES: dict[str, float] = {
+    "markets": 5.0, "hazards": 4.0,
+    "calendar": 2.0, "law": 2.0,
+    "world_discovery": 1.0, "qualification": 1.0, "country_data": 1.0,
+    "crawl": 0.0, "backfill": 0.0,
+}
+_LANE_FLOORS: dict[str, float] = {
+    "markets": 0.0, "hazards": 0.0, "calendar": 0.0, "law": 0.0,
+    "world_discovery": 0.2, "qualification": 0.2, "country_data": 0.2,
+    "crawl": 0.05, "backfill": 0.02,
+}
+
+# Persistent across lane invocations (module-level; the lane's own lock
+# guarantees only one invocation is ever live at a time, so no cross-thread
+# race on this state) -- the ladder's virtual-time bookkeeping is what gives
+# the stride scheduler its starvation-free guarantee ACROSS repeated
+# invocations, like the pass-recycling deferred-ids state above.
+_LANE_LADDER = KindLadder(rates=_LANE_RATES, floors=_LANE_FLOORS)
+
+
+def _lane_pending_kinds(settings: SchedulerSettings) -> set[str]:
+    """Which housekeeping kinds are DUE this lane invocation, per each
+    ride-along's OWN settings toggle/budget -- "budget 0 / toggle off" is a
+    kind's off-switch (unchanged from today), never the ladder's job."""
+    pending: set[str] = set()
+    if settings.mode != "markets":  # markets MODE already ran its own import
+        pending.add("markets")
+    if getattr(settings, "auto_import_calendars", True):
+        pending.add("calendar")
+    if getattr(settings, "auto_track_law", True):
+        pending.add("law")
+    if getattr(settings, "auto_track_signals", True):
+        pending.add("hazards")
+    if getattr(settings, "world_discovery_per_pass", 0) > 0:
+        pending.add("world_discovery")
+    if getattr(settings, "qualification_per_pass", 0) > 0:
+        pending.add("qualification")
+    if getattr(settings, "country_data_per_pass", 0) > 0:
+        pending.add("country_data")
+    if getattr(settings, "crawl_supplement", True) and getattr(settings, "crawl_per_pass", 0) > 0:
+        pending.add("crawl")
+    if getattr(settings, "archive_backfill_per_pass", 0) > 0:
+        pending.add("backfill")
+    return pending
+
+
+def _lane_kind_order(pending: set[str], *, ladder: KindLadder | None = None) -> list[str]:
+    """Order ``pending`` by the ladder's priority (highest-weight first, floors
+    breaking ties among the rest). SAFETY NET (deliberate, not an oversight):
+    every member of ``pending`` is a kind whose OWN settings toggle/budget just
+    said "run me this pass" -- ordering must never become exclusion, so a kind
+    the ladder cannot schedule (an unrecognised name, or a genuine 0-weight
+    entry) is still appended at the end rather than silently dropped. A kind's
+    OFF switch is its settings toggle/budget (checked before it ever reaches
+    ``pending`` -- see ``_lane_pending_kinds``), never the ladder."""
+    lad = ladder or _LANE_LADDER
+    remaining = set(pending)
+    order: list[str] = []
+    # Bounded: len(remaining) draws must exhaust it; a ladder bug must never spin.
+    for _ in range(len(remaining) + 1):
+        if not remaining:
+            break
+        k = lad.next_kind(remaining)
+        if k is None:
+            break
+        order.append(k)
+        remaining.discard(k)
+    order.extend(sorted(remaining))  # the safety net documented above
+    return order
+
+
+def _lane_step_markets(session, fetcher, settings: SchedulerSettings) -> dict:
+    from src.markets.pipeline import import_due_feeds
+
+    feeds = import_due_feeds(session, fetcher=fetcher)
+    return {"feed_points": feeds.get("imported", 0)}
+
+
+def _lane_step_calendar(session, fetcher, settings: SchedulerSettings) -> dict:
+    from src.events.feeds import auto_import_due_feeds
+
+    return auto_import_due_feeds(fetcher)
+
+
+def _lane_step_law(session, fetcher, settings: SchedulerSettings) -> dict:
+    """Law auto-track + its AI CHANGE SUMMARIES follow-up (2026-07-24 field-
+    feedback Session A §3, ruled). Summarization shares tracking's OWN
+    auto_track_law opt-out -- both are now gated ONCE, at
+    ``_lane_pending_kinds``, since they were always tied to the same flag
+    (collapsing the two separate checks the pre-lane code used into one is
+    behavior-identical, not a regression)."""
+    from src.law.track import auto_track_due
+
+    out = dict(auto_track_due(session, fetcher))
+    try:
+        from src.law.summarize import advance_law_summaries
+
+        sum_res = advance_law_summaries(session)
+        if sum_res.get("ran"):
+            out["law_summarized"] = sum_res.get("stored", 0)
+    except Exception:  # noqa: BLE001 - AI summarization must never break law tracking
+        _LOG.warning("law auto-summary failed", exc_info=True)
+    return out
+
+
+def _lane_step_hazards(session, fetcher, settings: SchedulerSettings) -> dict:
+    from src.hazards.track import auto_snapshot_due
+
+    out: dict = {}
+    haz = auto_snapshot_due(fetcher, session=session)
+    if haz.get("snapshotted"):
+        out["hazards_snapshotted"] = haz["snapshotted"]
+    try:
+        from src.analytics.weather_signals import auto_refresh_weather_due
+
+        wsig = auto_refresh_weather_due(session)
+        if wsig.get("refreshed"):
+            out["weather_signals"] = wsig["refreshed"]
+    except Exception:  # noqa: BLE001 - never fail the lane on signal refresh
+        _LOG.warning("weather signals refresh failed", exc_info=True)
+    return out
+
+
+def _lane_step_world_discovery(session, fetcher, settings: SchedulerSettings) -> dict:
+    from src.catalog.discover_job import advance_world_discovery
+
+    return advance_world_discovery(per_pass=settings.world_discovery_per_pass)
+
+
+def _lane_step_qualification(session, fetcher, settings: SchedulerSettings) -> dict:
+    from src.catalog.qualification import advance_qualification
+    from src.monitoring import tasks as _bgtasks
+
+    tok = _bgtasks.register(
+        "qualification", "qualifying candidate sources",
+        detail=f"up to {settings.qualification_per_pass} candidate(s)",
+    )
+    try:
+        return advance_qualification(
+            session, fetcher, per_pass=settings.qualification_per_pass
+        )
+    finally:
+        _bgtasks.finish(tok)
+
+
+def _lane_step_country_data(session, fetcher, settings: SchedulerSettings) -> dict:
+    from src.api.governments import advance_country_data
+
+    return advance_country_data(session, per_pass=settings.country_data_per_pass)
+
+
+def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
+    """§8 crawl-by-default (2026-07-24 throughput brief, C3): a bounded crawl
+    sub-pass over qualified sources -- feedless-first, least-recently-crawled
+    (_select_crawl_candidates). Adds NO new fetch path: every consumer below
+    routes through the ONE ``EthicalFetcher`` (robots fail-closed, per-host
+    politeness, same-domain-only, dedup). One bad source never aborts the
+    rest (mirrors ``_process_source``'s isolation); ``last_crawled_at`` is
+    stamped only for sources actually attempted, so a crash mid-batch leaves
+    the untouched remainder correctly first-in-line next time.
+
+    C7's consumer (a) -- "new-URL discovery for a qualified source": a
+    sitemap is a source's OWN declared page list, more COMPLETE than blind
+    on-page link-following (a source's home page never lists everything it
+    publishes). When ``src.ingest.sitemap.discover_sitemap_urls`` finds one,
+    its declared article URLs are ingested DIRECTLY
+    (:func:`~src.ingest.pipeline.ingest_url`, bounded to the same
+    ``max_pages`` this rung already uses) instead of falling back to the
+    BFS ``crawl_source``; a confirmed sitemap is persisted (consumer c). A
+    source with no discoverable sitemap keeps the ORIGINAL BFS crawl
+    unchanged -- this rung never regresses a source it previously covered."""
+    from src.ingest.crawl import CrawlConfig, crawl_source
+    from src.ingest.pipeline import ingest_url
+    from src.ingest.sitemap import discover_sitemap_urls, update_source_sitemap_url
+
+    max_pages = min(settings.crawl_max_pages, _CRAWL_SUPPLEMENT_MAX_PAGES)
+    cfg = CrawlConfig(
+        max_depth=min(settings.crawl_max_depth, _CRAWL_SUPPLEMENT_MAX_DEPTH),
+        max_pages=max_pages,
+    )
+    candidates = _select_crawl_candidates(session, settings, settings.crawl_per_pass)
+    sources_crawled = 0
+    pages_fetched = 0
+    sitemap_urls_ingested = 0
+    for source in candidates:
+        try:
+            sm_report = discover_sitemap_urls(fetcher, source.domain, max_urls=max_pages)
+            update_source_sitemap_url(session, source, sm_report)
+            if sm_report.urls:
+                attempted = 0
+                for url in sm_report.urls[:max_pages]:
+                    ingest_url(session, source, url, fetcher=fetcher)
+                    attempted += 1
+                sitemap_urls_ingested += attempted
+            else:
+                report = crawl_source(session, source, fetcher=fetcher, config=cfg)
+                pages_fetched += report.pages_fetched
+            source.last_crawled_at = datetime.now(UTC)
+            sources_crawled += 1
+        except Exception:  # noqa: BLE001 - one source's failure must not skip the rest
+            _LOG.warning("crawl supplement: source %r failed", source.domain, exc_info=True)
+    return {
+        "sources_crawled": sources_crawled,
+        "pages_fetched": pages_fetched,
+        "sitemap_urls_ingested": sitemap_urls_ingested,
+    }
+
+
+def _lane_step_backfill(session, fetcher, settings: SchedulerSettings) -> dict:
+    """C15 (2026-07-24 throughput brief, S-E slice 2): advance one bounded
+    slice of the persisted archive-backfill queue -- a newly-qualified
+    source's sitemap-enumerated HISTORY. Sources are enqueued automatically on
+    qualification success (src.catalog.qualification.evaluate_and_stamp's
+    caller); this ride-along only DRAINS the queue, it never enqueues.
+    Task-manager visible (mirrors the qualification ride-along's own token)."""
+    from src.ingest.archive_backfill import advance_backfill
+    from src.monitoring import tasks as _bgtasks
+
+    tok = _bgtasks.register(
+        "backfill", "backfilling a newly-qualified source's archive",
+        detail=f"up to {settings.archive_backfill_per_pass} page(s)",
+    )
+    try:
+        return advance_backfill(
+            session, fetcher, per_pass=settings.archive_backfill_per_pass
+        )
+    finally:
+        _bgtasks.finish(tok)
+
+
+# Registry (kept separate from _LANE_KINDS so a "reserved, not yet runnable"
+# kind can exist in the ladder table with no step to call -- none reserved
+# today; every kind in _LANE_KINDS now has a step).
+_LANE_STEPS = {
+    "markets": _lane_step_markets,
+    "calendar": _lane_step_calendar,
+    "law": _lane_step_law,
+    "hazards": _lane_step_hazards,
+    "world_discovery": _lane_step_world_discovery,
+    "qualification": _lane_step_qualification,
+    "country_data": _lane_step_country_data,
+    "crawl": _lane_step_crawl,
+    "backfill": _lane_step_backfill,
+}
+
+
+def run_housekeeping_lane(session, fetcher, settings: SchedulerSettings) -> dict:
+    """One lane invocation: run every DUE housekeeping kind, ladder-ordered,
+    each isolated so one kind's failure never skips the rest (mirrors
+    ``_process_source``'s per-source isolation). Stops taking on NEW kinds
+    (never interrupts one mid-flight) once the memory guard engages -- the
+    same wind-down discipline the pass itself uses (``_PassWindDown``)."""
+    from src.scheduler import memguard
+
+    out: dict[str, dict] = {}
+    order = _lane_kind_order(_lane_pending_kinds(settings))
+    for i, kind in enumerate(order):
+        if memguard.memory_guard.engaged:
+            out["_paused"] = {"reason": "memory pressure", "remaining": order[i:]}
+            break
+        step = _LANE_STEPS.get(kind)
+        if step is None:
+            continue  # a reserved-but-not-yet-runnable kind (e.g. "crawl" pre-C3)
+        try:
+            out[kind] = step(session, fetcher, settings)
+        except Exception:  # noqa: BLE001 - one kind's failure must not skip the rest
+            _LOG.warning("housekeeping lane: %s failed", kind, exc_info=True)
+            out[kind] = {"error": True}
+    return out
+
+
 class BackgroundScheduler:
     """Daemon-thread scheduler with explicit start/stop and non-overlapping run-now.
 
@@ -929,6 +1274,12 @@ class BackgroundScheduler:
         # for it deterministically.
         self._briefing_bg_lock = threading.Lock()
         self._briefing_thread: threading.Thread | None = None
+        # S-B/C1 (2026-07-24 throughput brief): the housekeeping lane's own
+        # non-overlapping lock + thread ref, same non-overlapping-never-queued
+        # shape as the briefing lock above.
+        self._lane_lock = threading.Lock()
+        self._lane_thread: threading.Thread | None = None
+        self._last_lane_result: dict | None = None
         # Session A §4 concurrency-skeptic finding (2026-07-24, HIGH): an exclusive
         # operation (a restore) pausing the CONTINUOUS loop via .stop() left run_now()
         # completely unaware -- run_now() spawns its own _do_run() thread gated ONLY on
@@ -1242,6 +1593,54 @@ class BackgroundScheduler:
         )
         self._briefing_thread.start()
 
+    def _kick_housekeeping_lane(self) -> None:
+        """S-B (2026-07-24 throughput brief, C1): move the serial network
+        ride-alongs (markets/calendar/law/hazards/world-discovery/
+        qualification/country-data -- see ``run_housekeeping_lane``) off the
+        pass thread, generalizing ``_refresh_briefing_async``'s shape: its OWN
+        session + fetcher (never the pass's -- "never two writers on one
+        cursor" for world-discovery/qualification still holds, since writes
+        still serialise through the single process-wide writer gate
+        regardless of which session initiates them), non-overlapping (a lane
+        already running means THIS pass's kick is skipped, never queued -- the
+        same "occasionally skipped, never stacked" posture the briefing
+        refresh already uses -- the corpus/candidates grow incrementally
+        between passes, so missing one kick is harmless), task-manager-visible,
+        and airplane-aware (refuses up front rather than attempting a lane
+        full of individually-refused fetches).
+        """
+        if not self._lane_lock.acquire(blocking=False):
+            _LOG.info("housekeeping lane still running; skipping this cycle's kick")
+            return
+
+        def _run() -> None:
+            from src.database.session import session_scope
+            from src.ingest import kill_switch_active
+            from src.monitoring import tasks as _bgtasks
+            from src.safety.fetcher import make_fetcher
+
+            tok = _bgtasks.register(
+                "housekeeping", "background housekeeping (markets/calendar/law/discovery)"
+            )
+            try:
+                if kill_switch_active():
+                    self._last_lane_result = {"skipped": "airplane mode engaged"}
+                    return
+                settings = self._settings_provider()
+                fetcher = make_fetcher()
+                with session_scope() as session:
+                    self._last_lane_result = run_housekeeping_lane(session, fetcher, settings)
+            except Exception:  # noqa: BLE001 - a background lane must never crash the thread
+                _LOG.warning("housekeeping lane failed", exc_info=True)
+            finally:
+                _bgtasks.finish(tok)
+                self._lane_lock.release()
+
+        self._lane_thread = threading.Thread(
+            target=_run, daemon=True, name="oo-housekeeping-lane"
+        )
+        self._lane_thread.start()
+
     def _default_run_once(self) -> dict:
 
         from src.database.session import session_scope
@@ -1307,71 +1706,20 @@ class BackgroundScheduler:
                     _LOG.info("first-run feed preflight: %s", result_fpf)
             except Exception:  # noqa: BLE001
                 _LOG.warning("feed preflight failed", exc_info=True)
-            # Calendar auto-import (ruled 2026-06-15 "auto-import everything"): a
-            # BOUNDED, polite batch of bundled calendar feeds per pass, round-robin
-            # by least-recently-imported so over time every feed is covered without
-            # hammering. Best-effort; gated to online (this pass already is) + the
-            # kill switch via the shared fetcher; opt-out via auto_import_calendars.
-            try:
-                if getattr(settings, "auto_import_calendars", True):
-                    from src.events.feeds import auto_import_due_feeds
-
-                    result_ai = auto_import_due_feeds(fetcher)
-                    if result_ai["picked"]:
-                        _LOG.info("calendar auto-import: %s", result_ai)
-            except Exception:  # noqa: BLE001 - never fail the scrape on auto-import
-                _LOG.warning("calendar auto-import failed", exc_info=True)
-            # Market data auto-load (maintainer 2026-06-17 "markets load automatically
-            # in the background"): the curated commodity/index CSV feeds. Previously
-            # this only ran in markets MODE, but the default continuous mode is rss,
-            # so a normal user never collected any price points (field log 2026-06-18:
-            # price_points = 0). It is freshness-gated (daily/monthly cadence) so it is
-            # usually a no-op, and small + cheap (the bandwidth-ladder's first tier).
-            # Skip when already in markets mode (run_scrape_once did it there).
-            try:
-                if settings.mode != "markets":
-                    from src.markets.pipeline import import_due_feeds
-
-                    feeds = import_due_feeds(session, fetcher=fetcher)
-                    if feeds.get("imported"):
-                        result["feed_points"] = feeds.get("imported", 0)
-                        _LOG.info("market auto-load: %s price points", feeds.get("imported"))
-            except Exception:  # noqa: BLE001 - never fail the scrape on market auto-load
-                _LOG.warning("market auto-load failed", exc_info=True)
-            # Law auto-track (field test 2026-06-22, #18: the World-law tab was empty
-            # because legal documents are only tracked in mode=="law", never in the
-            # default rss pass). A BOUNDED, freshness-gated, round-robin batch per pass
-            # (like the calendar/markets auto-load) so watched legal documents build
-            # baselines + surface changes over time WITHOUT hammering legal sites
-            # (politeness/robots/kill-switch ride the shared fetcher). Best-effort;
-            # opt-out via auto_track_law.
-            try:
-                if getattr(settings, "auto_track_law", True):
-                    from src.law.track import auto_track_due
-
-                    law_res = auto_track_due(session, fetcher)
-                    if law_res.get("documents"):
-                        result["law_tracked"] = law_res.get("documents", 0)
-                        _LOG.info("law auto-track: %s", law_res)
-            except Exception:  # noqa: BLE001 - never fail the scrape on law auto-track
-                _LOG.warning("law auto-track failed", exc_info=True)
-            # AI CHANGE SUMMARIES (2026-07-24 field-feedback Session A §3, ruled): when
-            # a new LawRevision lands for a UI-language-floor jurisdiction, auto-generate
-            # a plain-language summary via the active LOCAL model (loopback, airplane-safe
-            # since the §7 gate split — an Ollama-down machine is a single honest no-op,
-            # never a wall of failures). Shares auto_track_law's opt-out (summaries only
-            # ever apply to documents that opt-out already stops tracking); an on-demand
-            # button covers every other jurisdiction. Never blocks tracking.
-            try:
-                if getattr(settings, "auto_track_law", True):
-                    from src.law.summarize import advance_law_summaries
-
-                    sum_res = advance_law_summaries(session)
-                    if sum_res.get("ran"):
-                        result["law_summarized"] = sum_res.get("stored", 0)
-                        _LOG.info("law auto-summary: %s", sum_res)
-            except Exception:  # noqa: BLE001 - never fail the scrape on AI summarization
-                _LOG.warning("law auto-summary failed", exc_info=True)
+            # S-B (2026-07-24 throughput brief, C1): calendar auto-import, market
+            # auto-load, and law auto-track (+ its AI change-summary follow-up) —
+            # each a real Tor fetch — used to run HERE, serially, on the pass
+            # thread (measured as a large share of the 3-8 min inter-pass gap on
+            # both a 2-core and an 8-core field machine). They now ride the
+            # HOUSEKEEPING LANE (see run_housekeeping_lane above): a non-
+            # overlapping background thread with its own session/fetcher, so
+            # this pass's tail no longer waits on them. Kicked ONCE, here, so it
+            # starts as early as possible in the tail (still after the real
+            # scrape and the first-run preflights above, so it never delays the
+            # first article). Their opt-outs (auto_import_calendars/
+            # auto_track_law) are honoured inside the lane's own pending-kinds
+            # check (_lane_pending_kinds), not here.
+            self._kick_housekeeping_lane()
             # Field-test instrumentation (live-test cycles): exercise every fetch
             # surface once and log verbatim outcomes for the maintainer's debug
             # bundle. OPT-IN since 0.1 (OO_FIELD_TEST=1 enables — a public tag
@@ -1395,62 +1743,18 @@ class BackgroundScheduler:
                 )
             except Exception:  # noqa: BLE001 - never fail the scrape on discovery
                 _LOG.warning("offline source discovery failed", exc_info=True)
-            # WORLD source-discovery ride-along (maintainer ruled 2026-07-15: source
-            # discovery should be "background and automated"): advance the persisted
-            # world-discovery cursor a few countries per online pass, through the
-            # same guarded transport as the pass. Every find stays a DISABLED source
-            # for review — automation covers DISCOVERY, never enabling. It opens its
-            # OWN per-country sessions (never this pass's), skips honestly when the
-            # budget is 0 / the manual job runs / the world is complete, and is
-            # best-effort: a failure never breaks a scrape.
-            try:
-                from src.catalog.discover_job import advance_world_discovery
-
-                _wd = advance_world_discovery(per_pass=settings.world_discovery_per_pass)
-                if _wd.get("enabled"):
-                    result["world_discovery"] = _wd
-            except Exception:  # noqa: BLE001 - never fail the scrape on discovery
-                _LOG.warning("world source-discovery ride-along failed", exc_info=True)
-            # QUALIFICATION ride-along (0.3 CLOSE GATE ruling, clause (c): "background,
-            # task-manager-visible... like the world-discovery ride-along"): a bounded
-            # pass of candidate-source trial-fetch + judge, through this SAME session +
-            # fetcher (never a new fetch surface). Task-manager-visible via
-            # src.monitoring.tasks so the activity chip can honestly show it running.
-            # Best-effort: a failure here never breaks the scrape.
-            # COUNTRY-DATA ride-along (2026-07-24 field-feedback Session A §2, ruled:
-            # the Governments tab must not depend on the user first clicking "Load
-            # standard country data"): bootstrap a few never-yet-fetched curated
-            # World-Bank indicators per online pass through this SAME session/fetcher.
-            # ONGOING refresh of an already-loaded indicator is the separate
-            # stats.subscriptions.refresh_due call elsewhere in this same pass, so the
-            # two never duplicate work. Best-effort: a failure here never breaks the
-            # scrape.
-            try:
-                from src.api.governments import advance_country_data
-
-                _cd = advance_country_data(session, per_pass=settings.country_data_per_pass)
-                if _cd.get("enabled"):
-                    result["country_data"] = _cd
-            except Exception:  # noqa: BLE001 - never fail the scrape on the stats ride-along
-                _LOG.warning("country-data auto-start ride-along failed", exc_info=True)
-            try:
-                from src.catalog.qualification import advance_qualification
-                from src.monitoring import tasks as _bgtasks
-
-                _qtok = _bgtasks.register(
-                    "qualification", "qualifying candidate sources",
-                    detail=f"up to {settings.qualification_per_pass} candidate(s)",
-                )
-                try:
-                    _ql = advance_qualification(
-                        session, fetcher, per_pass=settings.qualification_per_pass
-                    )
-                finally:
-                    _bgtasks.finish(_qtok)
-                if _ql.get("enabled"):
-                    result["qualification"] = _ql
-            except Exception:  # noqa: BLE001 - never fail the scrape on qualification
-                _LOG.warning("qualification ride-along failed", exc_info=True)
+            # S-B (2026-07-24 throughput brief, C1): world-discovery, qualification,
+            # and country-data (each a bounded, budget-gated network ride-along —
+            # WORLD source-discovery per maintainer ruling 2026-07-15, qualification
+            # per the 0.3 CLOSE GATE ruling clause (c), country-data per the
+            # 2026-07-24 field-feedback Session A §2 ruling) now ride the
+            # HOUSEKEEPING LANE with hazards/calendar/law/markets (see
+            # run_housekeeping_lane above + the C1 kick just before the field-test
+            # block) instead of running serially here. Every find still stays a
+            # DISABLED source for review (automation covers DISCOVERY, never
+            # enabling); ongoing refresh of an already-loaded indicator is still the
+            # separate stats.subscriptions.refresh_due call in markets mode above,
+            # so the two never duplicate work.
             # AUTO-ON-INGEST (opt-in): run every enabled, run_on_ingest custom AI
             # extractor over the most recent articles. Best-effort + bounded; with no
             # auto prompts (the default) it is one empty query, so zero cost. NEVER
@@ -1497,35 +1801,12 @@ class BackgroundScheduler:
                         _LOG.info("source auto-enrichment: %s", _enr)
             except Exception:  # noqa: BLE001 - never fail the scrape on enrichment
                 _LOG.warning("source auto-enrichment failed", exc_info=True)
-            # Hazard + weather SIGNAL refresh (Wave 4 J): the severity-tiered alert layer
-            # (src/analytics/alerts.py) reads a LOCAL hazard snapshot, and the weather SIGNAL
-            # store feeds /api/signals/weather-signals -- both were only ever populated by an
-            # explicit manual POST, so in a normal continuous run they stayed empty. This
-            # freshness-gated, best-effort pass keeps them current, like the markets/law
-            # auto-track: the consented hazard snapshot fetches the open USGS/GDACS feeds
-            # through the shared guarded fetcher (kill-switch/robots/proxy; refused under
-            # airplane mode -> no socket), and the weather signals are derived LOCALLY from
-            # the corpus (no network). Opt-out via auto_track_signals.
-            try:
-                if getattr(settings, "auto_track_signals", True):
-                    from src.hazards.track import auto_snapshot_due
-
-                    # session=session (A6, ruled): every freshly-saved snapshot is also
-                    # ingested as corpus Articles, through this SAME session -- zero
-                    # extra network (the records are already local).
-                    haz = auto_snapshot_due(fetcher, session=session)
-                    if haz.get("snapshotted"):
-                        result["hazards_snapshotted"] = haz["snapshotted"]
-                        _LOG.info("hazard snapshot: %s", haz)
-
-                    from src.analytics.weather_signals import auto_refresh_weather_due
-
-                    wsig = auto_refresh_weather_due(session)
-                    if wsig.get("refreshed"):
-                        result["weather_signals"] = wsig["refreshed"]
-                        _LOG.info("weather signals refresh: %s", wsig)
-            except Exception:  # noqa: BLE001 - never fail the scrape on signal refresh
-                _LOG.warning("hazard/weather signal refresh failed", exc_info=True)
+            # S-B (2026-07-24 throughput brief, C1): the hazard snapshot + weather
+            # SIGNAL refresh (Wave 4 J; session=session so a freshly-saved snapshot
+            # is also ingested as corpus Articles -- zero extra network) now rides
+            # the HOUSEKEEPING LANE (see run_housekeeping_lane above) instead of
+            # running serially here. Opt-out (auto_track_signals) is honoured inside
+            # the lane's own pending-kinds check.
             # Precompute + cache the Home briefing so it loads instantly. S4.1
             # (duty-cycle fix, see _refresh_briefing_async's docstring): this used
             # to run synchronously here, blocking the next pass's collection from

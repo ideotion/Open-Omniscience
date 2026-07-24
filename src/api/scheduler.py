@@ -68,6 +68,11 @@ class SchedulerConfigUpdate(BaseModel):
     # COUNTRY-DATA ride-along (2026-07-24 Session A §2): curated World-Bank indicators
     # bootstrapped per online pass (never-yet-fetched ones only); 0 disables.
     country_data_per_pass: int | None = None
+    # §8 crawl-by-default (2026-07-24 PR766 throughput brief C3): a bounded crawl
+    # sub-pass over qualified sources, the lane's lowest rung; default ON.
+    # crawl_per_pass=0 disables the supplement (mode="crawl" stays orthogonal).
+    crawl_supplement: bool | None = None
+    crawl_per_pass: int | None = None
 
 
 def _status_payload() -> dict:
