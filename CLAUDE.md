@@ -7946,6 +7946,43 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   • **A16 (sequencing):** Session A first (it carries the airplane-gate fix that unblocks the
     triage/tag runs on Ollama immediately), then Session B.
 
+- **SCRAPING/DOWNLOAD 10× SCALING — FIVE TACTICAL STRATEGIES (maintainer-asked 2026-07-24,
+  planning-only; plan of record =
+  [`docs/design/SCRAPING_10X_SCALING_STRATEGIES_2026-07-24.md`](docs/design/SCRAPING_10X_SCALING_STRATEGIES_2026-07-24.md);
+  builds PENDING):** a code-verified engine recon (4-agent fan-out, load-bearing claims
+  hand-re-verified) + the ≥10× decomposition `stored/day ≈ OFFER × DRAIN × DUTY` grounded in the
+  two 2026-07-23 field exports. THE FIVE: **S-A** supply-side scaling through the qualification
+  membrane (digest the 42.6–66.7k candidate backlog at hardware-aware budgets + operator catalog
+  runs + newsletter links; offer ×5–10 est. = the dominant term) · **S-B** continuous pipelined
+  collection (a dedicated housekeeping LANE for the ~7 serial network ride-alongs, scheduled by
+  the shipped-but-unwired `KindLadder` = finally implements the 2026-06-13 bandwidth-priority-
+  ladder ruling; then pass overlap → a due-queue; duty 48→90%+ ≈ ×1.5–2 measured basis) · **S-C**
+  transport parallelism at unchanged per-host courtesy (skip the per-fetch LOCAL `getaddrinfo`
+  when proxied — also closes a DNS-metadata exposure; hardware-aware w_max; an opt-in operator-run
+  SOCKS/Tor endpoint POOL sharded per host; wire `rank_mirrors` + `plan_segments`/`reassemble`
+  for segmented multi-circuit bulk downloads) · **S-D** extraction-out-of-the-gate (verified:
+  `_flush_batched` holds the ONE gate window ACROSS per-article `index_article` CPU extraction —
+  the fast box's writer-bound mechanism; stage-then-gate + the proven `reindex_parallel`
+  process-pool precompute shape; EVIDENCE-GATED on writer-bound verdicts at the new offer, full
+  skeptic matrix) · **S-E** bulk/structured acquisition (SITEMAP support — currently ZERO, the
+  `Source.sitemap_url` column is dormant and the crawler skips `.xml`; new-URL discovery + the
+  qualification trial channel for the FEEDLESS candidate majority — `trial_fetch` is RSS-only so
+  most of the backlog is unqualifiable without it — + bounded archive BACKFILL for newly
+  qualified sources as a managed ladder-rung job; full-content-feed use; bulk/API-first per
+  vertical). FOUR NEW RECON FINDINGS recorded in the doc §1: collector write-batching is ALREADY
+  LIVE (`ArticleBatch`, commit batch 8 — the ledger's "S4.2 outstanding" framing was partially
+  stale; the real remaining lever is extraction-in-gate) · the per-fetch local DNS resolve when
+  proxied (`_guard_target`, `src/ingest/__init__.py:579` + redirect hops) · the RSS-only
+  qualification-trial structural limit · the unwired KindLadder. §5 pins the NON-OPTIONS
+  (politeness/robots/UA untouchable; no evasion; no third-party proxy meshes/scraping APIs; no
+  headless fleet; no fabricated multipliers — every projection is an estimate until the
+  8-core/20 GB before/after bench measures it). §6 = 5 open maintainer rulings (backfill default
+  posture · proxy-pool surface now vs Stem later · full-content-feed storage · sitemap trial
+  evidence counts · budgets ride power profiles). Sequencing (§4): S-B lane first (unblocks
+  S-A's trial throughput), S-A digestion + operator runs, S-E sitemap core, S-C small slices,
+  S-D last evidence-gated. Composes with the 2026-07-23 workflow brief (S4 series) + the
+  2026-07-24 Session A/B briefs; NOTHING built this session.
+
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
