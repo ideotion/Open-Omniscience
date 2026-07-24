@@ -125,7 +125,7 @@
     </div>
     <div class="status-cluster" id="tm-status">
       <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
-      <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
+      <span id="llm" class="pill" title="AI status">AI</span>
       <span class="muted" id="tm-conn" data-i18n>Live</span>
     </div>
     <button class="icon-btn" id="net-toggle" type="button" data-i18n-dyn
@@ -662,8 +662,9 @@
       catch (e) { toast(e.message, "err"); }
     });
   })();
-  // The health + LLM pills mirror the app's (the LLM pill reads "<N> LLM"; both route
-  // into the app on click — health/LLM management live there).
+  // The health + AI pills mirror the app's (the AI pill reads just "AI", no model
+  // count, per B4 2026-07-24; both route into the app on click — the full
+  // start-or-install logic lives there, this standalone page just links back).
   async function loadHealth() {
     var el = $("health"); if (!el) return;
     try { var h = await api("/api/health"); var ok = h && (h.status === "ok" || h.ok === true || h.healthy === true);
@@ -674,9 +675,9 @@
     var el = $("llm"); if (!el) return;
     el.style.cursor = "pointer"; el.onclick = function () { location.href = "/"; };
     try { var h = await api("/api/llm/health");
-      if (h && h.available) { el.className = "pill ok"; el.textContent = (h.installed_models ? h.installed_models.length : 0) + " LLM"; }
-      else { el.className = "pill warn"; el.textContent = t("LLM offline"); }
-    } catch (e) { el.className = "pill"; el.textContent = "LLM —"; }
+      el.className = (h && h.available) ? "pill ok" : "pill warn";
+      el.textContent = "AI";
+    } catch (e) { el.className = "pill"; el.textContent = "AI"; }
   }
 
   applyLang();

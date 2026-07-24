@@ -14,7 +14,7 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from src.api.llm import get_llm_client
+from src.api.llm import get_llm_client, get_ollama_client
 from src.api.main import app
 from src.database.models import Article, Source
 from src.database.session import init_db, session_scope
@@ -57,6 +57,7 @@ def _override(fake):
 
 def teardown_function(_fn):
     app.dependency_overrides.pop(get_llm_client, None)
+    app.dependency_overrides.pop(get_ollama_client, None)
 
 
 def _seed_article(lang: str = "en") -> int:
@@ -227,7 +228,10 @@ def test_synthesize_requires_a_selection():
 
 
 def test_models_endpoint_carries_as_of_and_hardware_fit():
-    _override(_FakeOllama(available=True))
+    # /api/llm/models is the OLLAMA model-management panel (pull/remove/catalog) --
+    # it resolves through get_ollama_client specifically, not the active-backend
+    # dependency (which may be vLLM on a GPU machine; B1's client split).
+    app.dependency_overrides[get_ollama_client] = lambda: _FakeOllama(available=True)
     with TestClient(app) as client:
         r = client.get("/api/llm/models")
         assert r.status_code == 200

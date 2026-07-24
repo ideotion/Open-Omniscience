@@ -68,6 +68,17 @@ class AppSettings:
     # The built-in AI-keyword EXTRACTION prompt (Part B) — tunable like the three above;
     # the default (_EXTRACT_SYSTEM) lives in src.ai_layer.extract. "" = use the built-in.
     llm_prompt_ai_keywords: str = ""
+    # DUAL BACKEND (B1, 2026-07-24 field-feedback Session B, RULED A12): which
+    # backend to use. "auto" (default) = src.llm.backend.resolve_backend()'s own
+    # GPU+installed+running detection; "ollama"/"vllm" is an explicit operator
+    # override that always wins (disclosed in the Settings -> AI tab).
+    llm_backend: str = "auto"
+    # The active model tag for vLLM (a Hugging Face repo id, e.g.
+    # "org/Model-Name-AWQ" — a DIFFERENT grammar than an Ollama tag in spirit,
+    # though the same permissive charset covers both). None = whatever model the
+    # running vLLM server was last started with (vLLM serves exactly ONE model at
+    # a time, unlike Ollama's multi-model catalog).
+    llm_model_vllm: str | None = None
     # AUTO-START language detection (2026-07-24 field-feedback Session A §1, ruled
     # default-ON): a scheduler ride-along (re)starts the opt-in AI language-detection
     # job whenever the local model is available and unknown-language candidates exist.
@@ -189,6 +200,16 @@ def load_settings() -> AppSettings:
     if not isinstance(ai_langdetect_auto, bool):
         ai_langdetect_auto = defaults.ai_langdetect_auto
 
+    llm_backend = raw.get("llm_backend", defaults.llm_backend)
+    if llm_backend not in ("auto", "ollama", "vllm"):
+        _LOG.warning("ignoring invalid stored llm_backend %r", llm_backend)
+        llm_backend = defaults.llm_backend
+
+    llm_model_vllm = raw.get("llm_model_vllm")
+    if llm_model_vllm is not None and not _MODEL_RE.match(str(llm_model_vllm)):
+        _LOG.warning("ignoring invalid stored llm_model_vllm %r", llm_model_vllm)
+        llm_model_vllm = None
+
     return AppSettings(
         theme=theme,
         default_result_limit=limit,
@@ -200,6 +221,8 @@ def load_settings() -> AppSettings:
         llm_prompt_synthesis=_prompt("llm_prompt_synthesis"),
         llm_prompt_ai_keywords=_prompt("llm_prompt_ai_keywords"),
         ai_langdetect_auto=ai_langdetect_auto,
+        llm_backend=llm_backend,
+        llm_model_vllm=str(llm_model_vllm) if llm_model_vllm else None,
     )
 
 
@@ -260,6 +283,19 @@ def save_settings(updates: dict) -> AppSettings:
         if not isinstance(val, bool):
             raise AppSettingsError("ai_langdetect_auto must be a boolean")
         current.ai_langdetect_auto = val
+    if "llm_backend" in updates and updates["llm_backend"] is not None:
+        val = updates["llm_backend"]
+        if val not in ("auto", "ollama", "vllm"):
+            raise AppSettingsError("llm_backend must be one of: auto, ollama, vllm")
+        current.llm_backend = val
+    if "llm_model_vllm" in updates:
+        val = updates["llm_model_vllm"]
+        if val in (None, ""):
+            current.llm_model_vllm = None
+        elif isinstance(val, str) and _MODEL_RE.match(val):
+            current.llm_model_vllm = val
+        else:
+            raise AppSettingsError(f"invalid llm_model_vllm {val!r} (must be a model id)")
 
     _write_raw({"version": SETTINGS_VERSION, **current.to_dict()})
     return current

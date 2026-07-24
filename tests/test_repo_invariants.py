@@ -882,22 +882,28 @@ def test_seamless_install_and_language_first_first_launch():
     )
 
 
-def test_llm_pill_shows_count_and_opens_ai_settings():
-    """Maintainer field test 2026-06-20: the top-bar LLM pill reads "<N> LLM" (the
-    count in front, no "models" word, no checkmark), and clicking it opens
-    Settings -> AI (the "models" subtab) instead of only re-checking health."""
+def test_ai_pill_is_backend_agnostic_no_count_and_offers_start_or_install():
+    """2026-07-24 field-feedback Session B (B4, RULED A15): the top-bar pill reads
+    just "AI" (green/red by whether the ACTIVE backend -- Ollama or vLLM, dual
+    backend B1 -- is reachable), no model count anymore. Clicking GREEN opens
+    Settings -> AI; clicking RED tries to start the preferred installed backend
+    (vLLM first) before falling back to the install/Settings path -- never a
+    silent re-check only."""
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    assert "`${h.installed_models.length} LLM`" in app, (
-        "the LLM pill must read '<N> LLM' (count in front, no 'models')"
+    assert 'el.textContent = "AI"' in app, (
+        "the AI pill must read just 'AI' (no model count, maintainer 2026-07-24)"
     )
-    assert "LLM ✓ (" not in app and "} models)`" not in app, (
-        "the old 'LLM ✓ (N models)' pill format must be gone"
+    assert "`${h.installed_models.length} LLM`" not in app and "LLM offline" not in app, (
+        "the old '<N> LLM' / 'LLM offline' pill text must be gone"
     )
-    assert "el.onclick = openAiSettings" in app and "function openAiSettings()" in app, (
-        "clicking the LLM pill must open AI settings (openAiSettings)"
+    assert "el.onclick = aiPillClick" in app and "async function aiPillClick()" in app, (
+        "clicking the AI pill must route through aiPillClick (start-or-open, not just re-check)"
     )
-    assert 'select("models")' in app, (
-        "openAiSettings must navigate to Settings -> the AI/models subtab"
+    assert "async function aiPillStartOrInstall()" in app and "/api/llm/vllm/start" in app, (
+        "a red (offline) click must try to start the preferred installed backend (vLLM first)"
+    )
+    assert "function openAiSettings()" in app and 'select("models")' in app, (
+        "openAiSettings must still navigate to Settings -> the AI/models subtab"
     )
 
 

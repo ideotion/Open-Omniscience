@@ -1739,7 +1739,7 @@
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); loadQualifyBulk(); }  // moved Sources onShow (facets feed the multi-select filters #23)
-      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull
+      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4)
       if (cat === "keywords") { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration(); }  // Item AC: explore/hide/tag; family + super-group curation relocated here (invariant #8)
       if (cat === "leads") loadLeadsView();           // S12 Leads 2.0 preview: evidence chips + disclosed order (browser-unverified)
       if (cat === "shortcuts") loadShortcuts();       // list + rebind the global keyboard shortcuts (UI-shell §4)
@@ -17777,37 +17777,194 @@
       } catch (e) { toast("Methods export failed: " + e.message, "err"); }
     }
 
-    // The LLM pill. The local model is refused under airplane mode (we boot offline),
-    // so a once-at-boot check goes stale "offline". This re-checks on: boot, going
-    // online (_paintNetwork), opening Settings → Models, after any LLM action, when the
-    // tab regains focus, and on click — so it tracks a model that started/stopped later.
-    // The LLM pill opens Settings → AI (the "models" subtab); selecting it also
-    // re-checks health (showSetCat("models") -> loadLlmHealth). Maintainer 2026-06-20:
-    // the pill click should take the user to the AI tab, not just silently re-check.
+    // The "AI" pill (B4, 2026-07-24 field-feedback Session B — was the "LLM" pill,
+    // renamed + simplified: green/red by whether the ACTIVE backend [Ollama or vLLM,
+    // dual-backend B1] is reachable, NO model count anymore). The local model is
+    // refused under airplane mode (we boot offline), so a once-at-boot check goes
+    // stale "offline". This re-checks on: boot, going online (_paintNetwork), opening
+    // Settings → AI, after any LLM action, when the tab regains focus, and on click —
+    // so it tracks a backend that started/stopped later.
+    // Clicking GREEN opens Settings → AI (which also re-checks health); clicking RED
+    // tries to START the preferred installed backend (vLLM first, since it is the one
+    // this app can actually start/stop) and falls back to Settings → AI (the install
+    // flow) when nothing can be started automatically.
     function openAiSettings() {
       showTab("settings");
       try { (_setSubtabs || { select: showSetCat }).select("models"); }
       catch (e) { showSetCat("models"); }
+    }
+    async function aiPillStartOrInstall() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const vs = await api("/api/llm/vllm/status");
+        if (vs.installed && !vs.running && vs.gpu && vs.gpu.available) {
+          const settings = await api("/api/settings");
+          if (settings.llm_model_vllm) {
+            toast(t("Starting the local AI backend…"));
+            await api("/api/llm/vllm/start", {
+              method: "POST",
+              body: JSON.stringify({model: settings.llm_model_vllm}),
+            });
+            setTimeout(loadLlmHealth, 3000);
+            return;
+          }
+        }
+      } catch (e) { /* fall through to the install/settings path below */ }
+      openAiSettings();
+    }
+    async function aiPillClick() {
+      try {
+        const h = await api("/api/llm/health");
+        if (h.available) { openAiSettings(); return; }
+      } catch (e) { /* treat as offline — fall through */ }
+      await aiPillStartOrInstall();
     }
     async function loadLlmHealth() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("llm");
       if (!el) return;
       el.style.cursor = "pointer";
-      el.onclick = openAiSettings;   // click -> Settings → AI (which also re-checks health)
+      el.onclick = aiPillClick;
       try {
         const h = await api("/api/llm/health");
         if (h.available) {
           el.className = "pill ok";
-          // "<N> LLM" — the count in front, no "models" word (maintainer 2026-06-20).
-          el.textContent = `${h.installed_models.length} LLM`;
-          el.title = t("Local LLM — click to open AI settings");
+          el.textContent = "AI";   // no model count anymore (maintainer 2026-07-24)
+          el.title = t("AI — click to open AI settings");
         } else {
           el.className = "pill warn";
-          el.textContent = t("LLM offline");
-          el.title = (h.detail ? h.detail + " — " : "") + t("Local LLM — click to open AI settings");
+          el.textContent = "AI";
+          el.title = (h.detail ? h.detail + " — " : "")
+            + t("AI is offline — click to start it, or open AI settings to install one");
         }
-      } catch (e) { el.textContent = "LLM —"; el.title = t("Local LLM — click to open AI settings"); }
+      } catch (e) {
+        el.textContent = "AI";
+        el.title = t("AI — click to open AI settings");
+      }
+    }
+
+    // --------------------------------------------------------------------- //
+    //  Dual-backend + vLLM lifecycle panel (Settings -> AI, B1/B2/B4, 2026-07-24
+    //  field-feedback Session B). Disclosed decision (never a silent switch),
+    //  the install/start/stop controls, and honest "starting…" states (model
+    //  load takes tens of seconds — never a fake instant green).
+    // --------------------------------------------------------------------- //
+    async function loadAiBackendPanel() {
+      const box = $("ai-backend-box");
+      const sel = $("ai-backend-select");
+      if (!box) return;
+      try {
+        const b = await api("/api/llm/backend");
+        const gpu = b.gpu || {};
+        const vllm = b.vllm || {};
+        box.innerHTML =
+          `<p><b>Active backend:</b> ${esc(b.backend)} <span class="muted">— ${esc(b.reason)}</span></p>` +
+          `<p class="hint">GPU: ${gpu.available ? esc(gpu.name || "detected") : "not detected"}` +
+          ` &middot; vLLM: ${vllm.installed ? "installed" : "not installed"}` +
+          `${vllm.installed ? (vllm.running ? ", running" : ", not running") : ""}` +
+          ` &middot; Ollama: ${b.ollama_available ? "reachable" : "not reachable"}</p>`;
+        if (sel) sel.value = b.stored_override || "auto";
+      } catch (e) {
+        box.innerHTML = `<p class="muted">Could not read the backend status.</p>`;
+      }
+    }
+
+    async function setAiBackend(value) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        await api("/api/settings", {method: "PUT", body: JSON.stringify({llm_backend: value})});
+        toast(t("AI backend preference saved."));
+      } catch (e) { toast("Backend: " + e.message, "err"); }
+      loadAiBackendPanel();
+      loadLlmHealth();
+    }
+
+    async function loadVllmStatusPanel() {
+      const box = $("vllm-status-box");
+      const installBox = $("vllm-install-box");
+      if (!box) return;
+      try {
+        const s = await api("/api/llm/vllm/status");
+        const parts = [];
+        parts.push(s.installed ? "installed" : "not installed");
+        if (s.installed) parts.push(s.running ? "running" : "not running");
+        parts.push(s.gpu && s.gpu.available ? "GPU detected" : "no GPU detected");
+        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>`;
+        if (!s.installed) {
+          if (!installBox) return;
+          if (!s.gpu || !s.gpu.available) {
+            installBox.style.display = "";
+            installBox.innerHTML =
+              `<p class="muted">No GPU detected on this machine — vLLM is GPU-first and would install ` +
+              `into a backend that can never usefully run here. Ollama (above) is the CPU path.</p>`;
+          } else {
+            installBox.style.display = "";
+            installBox.innerHTML =
+              `<p class="muted">vLLM is not installed. This downloads ${esc(s.estimated_size_note || "several GB")} ` +
+              `(vLLM + torch + the CUDA runtime) into a dedicated venv — never the app's own environment.</p>` +
+              `<button onclick="installVllm(this)">Install vLLM (${esc(s.verified_version || "")})</button>` +
+              `<div id="vllm-install-progress" class="hint" style="margin-top:6px"></div>`;
+          }
+        } else {
+          installBox.style.display = "none";
+        }
+        const btn = $("vllm-start-btn");
+        if (btn) btn.disabled = !(s.installed && s.gpu && s.gpu.available);
+      } catch (e) {
+        box.innerHTML = `<p class="muted">Could not read vLLM status.</p>`;
+      }
+    }
+
+    async function installVllm(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (btn) { btn.disabled = true; btn.textContent = "Starting the install…"; }
+      const prog = $("vllm-install-progress");
+      try {
+        await ensureOnline(t("install vLLM (downloads several GB)"));
+        await api("/api/llm/vllm/install", {method: "POST", body: JSON.stringify({})});
+        if (prog) prog.textContent = "Installing — this can take several minutes…";
+        const poll = setInterval(async () => {
+          try {
+            const st = await api("/api/llm/vllm/install/status");
+            if (prog) prog.textContent = st.detail || st.state || "";
+            if (st.state && st.state !== "running") {
+              clearInterval(poll);
+              loadVllmStatusPanel();
+              if (btn) { btn.disabled = false; btn.textContent = t("Install vLLM"); }
+            }
+          } catch (e) { clearInterval(poll); }
+        }, 3000);
+      } catch (e) {
+        if (prog) prog.textContent = "Install: " + e.message;
+        if (btn) { btn.disabled = false; btn.textContent = t("Install vLLM"); }
+      }
+    }
+
+    async function startVllm(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const model = ($("vllm-model-input") || {}).value || "";
+      const status = $("vllm-action-status");
+      if (!model.trim()) { toast(t("Enter a model id first."), "err"); return; }
+      if (btn) btn.disabled = true;
+      if (status) status.textContent = t("Starting the local AI backend…");
+      try {
+        await api("/api/llm/vllm/start", {method: "POST", body: JSON.stringify({model: model.trim()})});
+        setTimeout(() => { loadVllmStatusPanel(); loadLlmHealth(); }, 3000);
+      } catch (e) {
+        if (status) status.textContent = "Start: " + e.message;
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function stopVllm(btn) {
+      if (btn) btn.disabled = true;
+      try {
+        await api("/api/llm/vllm/stop", {method: "POST", body: JSON.stringify({})});
+        loadVllmStatusPanel();
+        loadLlmHealth();
+      } catch (e) { toast("Stop: " + e.message, "err"); }
+      finally { if (btn) btn.disabled = false; }
     }
 
     async function summarize(id, btn) {

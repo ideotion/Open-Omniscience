@@ -104,7 +104,7 @@
         <div class="status-cluster" id="statusCluster">
           <span id="activity" class="activity" hidden role="status" aria-live="polite" title="Activity &amp; vitals — click to open the task manager" tabindex="0" style="cursor:pointer" onclick="openTaskManager()" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();openTaskManager();}"><span class="spin" aria-hidden="true"></span><span id="activity-label">Working…</span><span id="activity-host" class="act-host"></span></span>
           <span id="health" title="Backend status"><span class="dot"></span> checking…</span>
-          <span id="llm" class="pill" title="Local LLM (Ollama) status">LLM —</span>
+          <span id="llm" class="pill" title="AI status">AI</span>
         </div>
         <button class="icon-btn" id="tm-open" onclick="openTaskManager()" title="Tasks &amp; system" aria-label="Open the task manager (new tab)">
           <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12h4l2-6 4 13 2-7h6"/></svg></button>
@@ -1287,6 +1287,31 @@
     </div>
 
     <div class="set-view" id="set-models" style="display:none">
+    <section class="panel">
+      <h2>AI backend</h2>
+      <p class="muted" style="margin-top:0">Open Omniscience runs local inference through Ollama or vLLM — vLLM is preferred automatically on a GPU-equipped machine (concurrent requests; a heavier install), Ollama is kept for CPU-only machines and is never dropped. The active backend and the reason are shown below, never a silent switch.</p>
+      <div id="ai-backend-box"><p class="muted">Checking the active backend…</p></div>
+      <div class="row" style="align-items:end;gap:10px;margin-top:8px">
+        <div><label for="ai-backend-select">Backend</label>
+          <select id="ai-backend-select" onchange="setAiBackend(this.value)">
+            <option value="auto">Automatic (recommended)</option>
+            <option value="ollama">Ollama only</option>
+            <option value="vllm">vLLM only</option>
+          </select></div>
+      </div>
+      <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
+        <h3 style="margin:0 0 6px">vLLM (GPU, concurrent requests)</h3>
+        <div id="vllm-status-box"><p class="muted">Checking vLLM…</p></div>
+        <div id="vllm-install-box" style="display:none;margin-top:8px"></div>
+        <div class="row" style="align-items:end;gap:10px;margin-top:8px">
+          <div style="flex:2"><label for="vllm-model-input">Model (a Hugging Face repo id)</label>
+            <input id="vllm-model-input" placeholder="e.g. an AWQ/GPTQ-quantized Mistral-7B-Instruct repo id"></div>
+          <div style="flex:0 0 auto"><button id="vllm-start-btn" onclick="startVllm(this)">Start</button></div>
+          <div style="flex:0 0 auto"><button class="ghost" id="vllm-stop-btn" onclick="stopVllm(this)">Stop</button></div>
+        </div>
+        <div id="vllm-action-status" class="hint" style="margin-top:8px"></div>
+      </div>
+    </section>
     <section class="panel">
       <h2>Local models (Ollama)</h2>
       <p class="muted" style="margin-top:0">The local language models power Summarize, Translate and Synthesize. This shows what you actually have installed (live from Ollama) and a small suggested list annotated for your hardware. Pick the active model, pull new ones, or remove them — all from here. Newer and better models appear constantly — pull any tag below, or browse <a href="https://ollama.com/library" target="_blank" rel="noopener">ollama.com/library</a>.</p>
