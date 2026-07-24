@@ -2263,6 +2263,33 @@
         _renderHomeAlerts(d);
       } catch (e) { if (panel) panel.hidden = true; box.innerHTML = ""; }
     }
+    // Item 3 (field-feedback A6, ruled): a distinct glyph per hazard TYPE (never a
+    // score/severity encoding -- purely a scannability aid), "⚠" for an unlisted type.
+    const HAZARD_GLYPH = {
+      earthquake: "◉", cyclone: "🌀", flood: "≈", volcano: "🌋",
+      drought: "☀", wildfire: "🔥", tsunami: "〰",
+    };
+    // The compact hazard strip item: type glyph, real magnitude (never fabricated),
+    // place, RELATIVE date (the stored "time" field, finally rendered -- it used to
+    // be fetched and dropped), and TWO deep links: the World map (centred on the
+    // event) and the internal article (once ingested; absent until then, never a
+    // broken link). The tier dot is the existing per-tier pill above the list.
+    function _hazardStripItem(h) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const glyph = HAZARD_GLYPH[h.type] || "⚠";
+      const mag = (h.magnitude != null) ? `M${esc(fmtNum(h.magnitude, 1))} · ` : "";
+      const place = esc(h.place || h.title || h.type || "");
+      const when = h.time ? esc(fmtAgo(h.time)) : "";
+      const prov = h.source ? ` <span class="muted">${esc(t("via {p}").replace("{p}", h.source))}</span>` : "";
+      const mapBtn = (typeof h.lat === "number" && typeof h.lon === "number")
+        ? ` <button class="ghost tiny" onclick="openWorldMapAt(${h.lat}, ${h.lon}, ${esc(JSON.stringify(h.time || null))}, ${h.article_id != null ? h.article_id : "null"})" title="${esc(t("Open on the World map"))}">🗺</button>`
+        : "";
+      const artLink = (h.article_id != null)
+        ? ` <a href="/api/articles/${h.article_id}/view" target="_blank" rel="noopener" class="ghost tiny" title="${esc(t("Open the local article"))}">📄</a>`
+        : "";
+      const srcLink = (h.url && /^https?:\/\//i.test(h.url)) ? " " + extLink(h.url, t("source ↗")) : "";
+      return `<li class="alert-hazard-item">${glyph} ${mag}${place}${when ? ` <span class="muted">· ${when}</span>` : ""}${prov}${mapBtn}${artLink}${srcLink}</li>`;
+    }
     function _renderHomeAlerts(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("home-alerts"); if (!box) return;
@@ -2272,12 +2299,7 @@
         const T = (d.tiers || {})[tier];
         if (!T || !T.count) return "";
         const items = [];
-        (T.hazards || []).forEach(h => {
-          const bits = [h.title || h.type || "", h.place || ""].filter(Boolean).map(esc).join(" · ");
-          const prov = h.source ? ` <span class="muted">${esc(t("via {p}").replace("{p}", h.source))}</span>` : "";
-          const link = (h.url && /^https?:\/\//i.test(h.url)) ? " " + extLink(h.url, t("source ↗")) : "";
-          items.push(`<li>${bits}${prov}${link}</li>`);
-        });
+        (T.hazards || []).forEach(h => items.push(_hazardStripItem(h)));
         (T.watches || []).forEach(w => {
           const nm = esc(w.name || w.query || "");
           const n = (w.n_articles != null) ? ` <span class="muted">${esc(String(w.n_articles))} ${esc(t("articles"))}</span>` : "";
@@ -4046,7 +4068,7 @@
       if (!codes.length) {
         sel.innerHTML = "";
         $("gov-country-data").innerHTML =
-          `<div class="muted">${esc(t("No country data yet — use “Load standard country data” (online) to fetch it from the World Bank."))}</div>`;
+          `<div class="muted">${esc(t("Country data loads automatically in the background when online — or use “Load standard country data” to fetch it now."))}</div>`;
         return;
       }
       sel.innerHTML = codes.map(c => `<option value="${esc(c)}">${esc(ooRegionName(c, c))}</option>`).join("");
@@ -4115,7 +4137,7 @@
         catch (e) { data = null; }
       }
       if (!data || !(data.by_country || []).length) {
-        host.innerHTML = `<div class="muted">${esc(t("No country data yet — use the Countries tab to load it (online)."))}</div>`;
+        host.innerHTML = `<div class="muted">${esc(t("Country data loads automatically in the background when online — the map fills in once it lands."))}</div>`;
         $("gov-map-caveat").textContent = "";
         return;
       }
@@ -4259,8 +4281,34 @@
               <a href="/api/law/documents/${ch.document_id}/view" target="_blank" rel="noopener" title="offline stored copy + history">open reader</a> ·
               ${extLink(ch.official_url, "official source ↗", "muted")}</div>
             ${renderDiff(ch.diff)}
+            <div class="law-ai-summary" data-rev="${ch.id}">${lawAiSummaryHtml(ch.id, ch.ai_summary)}</div>
           </div>`).join("");
       } catch (e) { box.innerHTML = '<div class="muted">Could not load changes.</div>'; }
+    }
+    // AI change summaries (S3, ruled): auto-populated for UI-language-floor
+    // jurisdictions; every other change offers an on-demand button. Loopback local
+    // inference (airplane-safe since the §7 gate split) -- no ensureOnline gate,
+    // matching the single-article summarize() precedent.
+    function lawAiSummaryHtml(revId, s) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (s && s.summary) {
+        return `“${esc(s.summary)}” <span class="muted">— ${esc(s.model)}</span>`
+          + `<div class="hint muted">${esc(t("Generated by a local model — verify against the diff above."))}</div>`;
+      }
+      return `<button class="secondary tiny" onclick="lawSummarize(${revId}, this)">${esc(t("Summarize this change"))}</button>`;
+    }
+    async function lawSummarize(revId, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const host = btn.closest(".law-ai-summary");
+      btn.disabled = true; btn.textContent = t("Summarizing locally…");
+      try {
+        const r = await api(`/api/law/revisions/${revId}/summarize`, { method: "POST" });
+        if (r.ai_summary) { if (host) host.innerHTML = lawAiSummaryHtml(revId, r.ai_summary); return; }
+        toast(t("Failed:") + " " + esc(r.status || "unavailable"), "err");
+      } catch (e) {
+        toast(t("Failed:") + " " + esc(e.message || e), "err");
+      }
+      btn.disabled = false; btn.textContent = t("Summarize this change");
     }
     // Field report 2026-07-17 (S2b): the per-doc last_status was written to the
     // table but never surfaced loudly -- classify it (verdict, from the API) into
@@ -4832,29 +4880,24 @@
     // --- B15: OPT-IN local-LLM language detection for articles STILL unknown after the
     // offline detector. Writes a THIRD "AI-derived · unreliable" language class (ai_keyword
     // kind="language") — NEVER Article.language / detected_language. A cancellable background
-    // job (also visible in the task manager); this button starts it + shows live progress. -- //
-    async function loadLangDetectCount() {
-      const el = $("langdetect-status");
-      if (!el) return;
+    // job (also visible in the task manager) that (per the 2026-07-24 field-feedback ruling)
+    // AUTO-STARTS itself in the background whenever there is work to do, so this panel's ONE
+    // button just toggles "start" <-> "stop" and reflects whatever is already happening. ---- //
+    let _langDetectPolling = false;
+    function _paintLangDetectButton(running) {
+      const btn = $("langdetect-btn");
+      if (!btn) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      try {
-        const d = await api("/api/ai/detect-language/candidates");
-        const n = d.candidates || 0;
-        el.textContent = n
-          ? `${n} ${t("article(s) still unknown after the offline detector.")}`
-          : t("No articles are missing a language — nothing to detect.");
-      } catch (e) { /* the count is a hint; leave it blank on error */ }
+      btn.textContent = running ? t("Language detection ongoing — click to stop") : t("Detect languages");
+      btn.dataset.running = running ? "1" : "";
     }
-    async function runLangDetect(btn) {
+    async function pollLangDetect() {
+      if (_langDetectPolling) return;
+      _langDetectPolling = true;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("langdetect-status");
-      const contEl = $("langdetect-continuous");
-      const continuous = !!(contEl && contEl.checked);
-      if (btn) btn.disabled = true;
-      if (el) el.textContent = t("Starting…");
       let fails = 0;
       try {
-        await api("/api/ai/detect-language", { method: "POST", body: JSON.stringify({ continuous }) });
         for (;;) {
           let s;
           // JOB-STATE-AS-TRUTH: a dropped status poll never reads as failure while the job runs.
@@ -4866,19 +4909,67 @@
           }
           const st = s.state, p = s.progress || {}, res = s.result || {};
           if (st === "running") {
+            _paintLangDetectButton(true);
             if (el) el.textContent = `${p.done || 0}/${p.total || 0}` + (s.detail ? ` · ${esc(s.detail)}` : "");
             await new Promise((r) => setTimeout(r, 2000)); continue;
           }
+          _paintLangDetectButton(false);
           if (st === "done") {
             if (res.ran === false) el.textContent = t("The local model is unavailable (Ollama down or airplane mode).");
             else el.textContent = `${t("Done.")} ${res.stored || 0} ${t("labelled")} · ${res.none || 0} ${t("unclear")} · ${res.total || 0} ${t("scanned")}`;
           } else if (st === "cancelled") el.textContent = t("Cancelled.");
           else if (st === "error") el.textContent = t("Failed:") + " " + esc(s.error || "");
-          else el.textContent = "";
+          else if (s.last_run) {
+            // Idle in THIS process, but a previous process's run left an honest trace
+            // (§1 item 3 — the status line must stay honest about what happened after a
+            // restart, not read as blank/never-run).
+            const lr = s.last_run;
+            if (lr.state === "error") el.textContent = t("Last run failed:") + " " + esc(lr.error || "");
+            else el.textContent = `${t("Last run:")} ${lr.stored || 0} ${t("labelled")} · ${lr.none || 0} ${t("unclear")} · ${lr.total || 0} ${t("scanned")}`;
+          } else el.textContent = "";
           break;
         }
+      } finally { _langDetectPolling = false; }
+    }
+    async function loadLangDetectCount() {
+      const el = $("langdetect-status");
+      if (el) {
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        try {
+          const d = await api("/api/ai/detect-language/candidates");
+          const n = d.candidates || 0;
+          el.textContent = n
+            ? `${n} ${t("article(s) still unknown after the offline detector.")}`
+            : t("No articles are missing a language — nothing to detect.");
+        } catch (e) { /* the count is a hint; leave it blank on error */ }
+      }
+      // Reflect reality: a job may already be running (auto-started in the background,
+      // or by another tab) even though this panel was just opened.
+      let s;
+      try { s = await api("/api/ai/detect-language/status"); } catch (e) { return; }
+      _paintLangDetectButton(s.state === "running");
+      if (s.state === "running") pollLangDetect();
+    }
+    async function runLangDetect(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("langdetect-status");
+      if (btn && btn.dataset.running === "1") {
+        // Currently running -> this click means STOP.
+        try { await api("/api/ai/detect-language/cancel", { method: "POST" }); }
+        catch (e) { if (el) el.textContent = t("Failed:") + " " + esc(e.message || e); }
+        pollLangDetect(); // in case no poll loop is live yet (e.g. a fresh tab), pick up the cancel
+        return;
+      }
+      if (btn) btn.disabled = true;
+      if (el) el.textContent = t("Starting…");
+      try {
+        // Always continuous now — the checkbox is gone (the job auto-retries transient
+        // model outages and keeps going until the backlog is drained or cancelled).
+        await api("/api/ai/detect-language", { method: "POST", body: JSON.stringify({ continuous: true }) });
+        _paintLangDetectButton(true);
       } catch (e) { if (el) el.textContent = t("Failed:") + " " + esc(e.message || e); }
       if (btn) btn.disabled = false;
+      pollLangDetect();
     }
 
     // --- Custom extractors (Settings → Models) — a managed list of user-defined AI
@@ -5527,7 +5618,20 @@
       const back = { starting: t("Preparing…"), building: t("Building encrypted volumes…"),
         volumes: t("Writing encrypted volumes…"), parity: t("Writing parity…"), done: t("Done.") };
       const rest = { verifying: t("Verifying volumes…"), reassembling: t("Reassembling the archive…"),
-        merging: t("Merging (additive)…"), reindexing: t("Re-indexing merged articles…"), done: t("Done.") };
+        merging: t("Merging (additive)…"), reindexing: t("Re-indexing merged articles…"), done: t("Done."),
+        // "Progress everywhere" (§4 item 2): named labels for the run_restore
+        // stages that are slow/significant enough to be worth naming distinctly
+        // (a real corpus-file copy, the post-merge verification scan, the
+        // atomic commit itself) -- every OTHER stage (the cheap post-commit
+        // housekeeping: corpus_delta_*/corpus_epoch_bump/event_mirror_refresh/
+        // quarantine_scan/work_induced_tally/prune_snapshots/prepare_staged)
+        // honestly falls through to the generic "Restoring…" default below,
+        // since they are typically sub-second and a distinct label per one
+        // would be noise, not signal.
+        verify: t("Verifying the merge…"),
+        snapshot_working_copy: t("Snapshotting your corpus…"),
+        pre_restore_snapshot: t("Snapshotting your corpus…"),
+        swap: t("Committing…") };
       // verify + restore share the phase names (verifying/reassembling); only a backup
       // uses the write-side names. Default is mode-aware so a verify never falls back to
       // "Backing up…" or shows a raw untranslated phase.
@@ -6051,7 +6155,44 @@
         delta: r.corpus_delta || null,       // {before, after} cheap-counter snapshot
         reindexed: r.reindexed || null,      // {reindexed, failed} post-merge re-index
         events_added: (cal && cal.added) || 0,
+        timings: r.timings || null,          // {stages, wall_s} -- Session A §4, "instrument first"
       };
+    }
+
+    // "How long did this take?" (§4 item 5, "render its existing timings in
+    // the completion UI"): a real, measured number per stage, collapsed by
+    // default (a full restore has 15+ named stages plus 14 merge-step and
+    // several stage-A sub-entries — too many to show at a glance) with the
+    // biggest few surfaced first, since THOSE are the evidence base for any
+    // future "optimise the measured biggest stage" work. Never a projected/
+    // estimated number anywhere here -- every value came straight off the
+    // backend's own StageTimings report.
+    function _uxStageLabel(name, t) {
+      if (name.indexOf("merge_step:") === 0) return `${t("merge step")}: ${name.slice(11)}`;
+      if (name.indexOf("stage_a:") === 0) return `${t("stage A")}: ${name.slice(8).replace(/_/g, " ")}`;
+      return name.replace(/_/g, " ");
+    }
+    function _uxFmtS(s) {
+      const n = Number(s) || 0;
+      return n < 1 ? `${Math.round(n * 1000)} ms` : `${n.toFixed(1)} s`;
+    }
+    function _uxTimingsView(timings, t, tf) {
+      if (!timings || !timings.stages) return "";
+      const entries = Object.entries(timings.stages);
+      if (!entries.length) return "";
+      const sorted = entries.slice().sort((a, b) => b[1] - a[1]);
+      const top = sorted.slice(0, 6);
+      const rows = top.map(([name, secs]) =>
+        `<tr><td style="padding:1px 8px 1px 0">${esc(_uxStageLabel(name, t))}</td>`
+        + `<td style="text-align:right;padding:1px 0" class="muted">${esc(_uxFmtS(secs))}</td></tr>`
+      ).join("");
+      const restCount = entries.length - top.length;
+      const restNote = restCount > 0
+        ? `<div class="muted" style="font-size:11px;margin-top:2px">${esc(tf("+ {n} more stages", { n: restCount }))}</div>`
+        : "";
+      return `<details style="margin-top:6px"><summary class="muted">`
+        + `${esc(tf("How long did this take? ({wall})", { wall: _uxFmtS(timings.wall_s) }))}</summary>`
+        + `<table style="width:100%;font-size:12px;margin-top:4px">${rows}</table>${restNote}</details>`;
     }
 
     // "How your corpus grew": a plain BEFORE -> AFTER table over the backend's cheap
@@ -6163,7 +6304,7 @@
           // "awaiting qualification" state here would be fabricated.
           newSources += (p.sources && p.sources.new) || 0;
           discoveryAdded += (p.source_candidates && p.source_candidates.new) || 0;
-          detail.push({ title: sm.title, body: _v2PlanTable(p) });
+          detail.push({ title: sm.title, body: _v2PlanTable(p) + _uxTimingsView(sm.timings, t, tf) });
 
           if (sm.events_added) eventsAdded += sm.events_added;
           // Real re-index failures only — reindex_imported_articles ran (or was
@@ -6314,6 +6455,11 @@
     let _volPollTimer = null;
     async function _volRefresh(progId, btn, cancelId) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, vars) => {
+        let out = s;
+        if (vars) out = out.replace(/\{(\w+)\}/g, (m, k) => (vars[k] === undefined || vars[k] === null) ? m : String(vars[k]));
+        return out;
+      });
       const prog = $(progId);
       try {
         const s = await api("/api/backup/v2/volumes/status");
@@ -6333,7 +6479,16 @@
             if (prog) prog.textContent = t("Restore complete.");
           } else if (s.state === "done") {
             const par = sum.parity_available === false ? (" " + t("(volumes only — parity needs the analysis features)")) : "";
-            if (prog) prog.textContent = t("Backup complete:") + " " + (sum.volumes || "?") + " " + t("volumes") + par;
+            // "How long did this take?" — the export side's own real, measured
+            // wall/gate-held numbers (stream_backup.py), same "instrument first"
+            // ask as the restore side; gate_held_s is the corpus writes-paused
+            // window, always <= wall_s.
+            const timing = (typeof sum.wall_s === "number")
+              ? " (" + tf("took {wall}, {gate} with writes paused", {
+                  wall: _uxFmtS(sum.wall_s), gate: _uxFmtS(sum.gate_held_s || 0),
+                }) + ")"
+              : "";
+            if (prog) prog.textContent = t("Backup complete:") + " " + (sum.volumes || "?") + " " + t("volumes") + par + timing;
           } else if (s.state === "cancelled") {
             if (prog) prog.textContent = t("Cancelled.");
           } else if (s.state === "error") {
@@ -7009,29 +7164,55 @@
       law_documents: "Law documents tracked",
       law_revisions: "Law revisions tracked",
     };
+    // 2026-07-24 Session A §5: per-tile WINDOW SWITCHER (ruled) — every Library
+    // graph tile, including the new qualification one, starts on the SAME
+    // default window and can be independently switched without reloading the
+    // whole panel. "All" maps to the backend's own generous (not literally
+    // unbounded) history cap.
+    const LIB_WINDOWS = [[7, "7d"], [30, "30d"], [90, "90d"], [3650, "All"]];
+    const LIB_DEFAULT_DAYS = 30;
+    let _libTileDays = {};    // metric (or "__qual") -> the window currently shown
     let _libGraphData = {};   // metric -> last-fetched /api/library/history payload
+    function _libAllZero(nums) {
+      // "zero/no-data" (ruled): every point is 0, or there simply are no points —
+      // hide-flat collapses this to a one-line note instead of a silently blank
+      // or misleadingly-flat chart (the never-blank-and-silent rule).
+      return !nums.length || nums.every(n => !n);
+    }
+    function _libWindowChips(key, current) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return `<div style="display:flex;gap:3px;margin-top:4px" class="lib-win-row">` +
+        LIB_WINDOWS.map(([d, lbl]) =>
+          `<button type="button" class="chip tiny${d === current ? " on" : ""}" onclick="_libSetWindow('${key}', ${d})">${esc(t(lbl))}</button>`
+        ).join("") + `</div>`;
+    }
     async function _libGraphTile(metric, days) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const cur = days || _libTileDays[metric] || LIB_DEFAULT_DAYS;
+      _libTileDays[metric] = cur;
       const label = t(LIB_METRIC_LABEL_KEYS[metric] || metric);
       let d;
       try {
-        d = await api(`/api/library/history?metric=${encodeURIComponent(metric)}&days=${days}`);
+        d = await api(`/api/library/history?metric=${encodeURIComponent(metric)}&days=${cur}`);
       } catch (e) {
-        return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
+        return `<div id="lib-tile-${esc(metric)}" style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
           <b style="font-size:12.5px">${esc(label)}</b>
           <div class="note err" style="font-size:11px">${esc(e.message || e)}</div></div>`;
       }
       _libGraphData[metric] = d;
       const series = Array.isArray(d.series) ? d.series : [];
-      const spark = dashChartSvg(series.map(p => ({observed_on: p.t, price: p.n})), "");
+      const flat = _libAllZero(series.map(p => p.n));
+      const body = flat
+        ? `<div class="muted" style="padding:14px 0;font-size:12px">${esc(t("No data yet."))}</div>`
+        : dashChartSvg(series.map(p => ({observed_on: p.t, price: p.n})), "");
       const began = d.recording_began_at
         ? `<div class="hint muted" style="font-size:11px">${esc(t("Recording began at {x}.").replace("{x}", d.recording_began_at))}</div>`
         : "";
-      return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
+      return `<div id="lib-tile-${esc(metric)}" style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
         <div style="display:flex;align-items:baseline;gap:6px;justify-content:space-between">
           <b style="font-size:12.5px">${esc(label)}</b>
           <button class="ghost tiny" onclick="enlargeLibMetric('${metric}')" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
-        </div>${spark}${began}</div>`;
+        </div>${body}${began}${_libWindowChips(metric, cur)}</div>`;
     }
     async function _renderLibGraphHost(hostId, metrics) {
       const host = $(hostId);
@@ -7045,20 +7226,123 @@
         host.innerHTML = `<div class="note err">${esc(e.message || e)}</div>`;
       }
     }
+
+    // -- The 4-line source-QUALIFICATION tile (2026-07-24 Session A §5) --------
+    // qualified / disqualified / never-judged / candidates on ONE shared axis
+    // (all four are source COUNTS — same unit, so multi-axis is never the
+    // honest answer here per the dual-axis rejection); auto-switches to log10
+    // when the cross-series spread is large, always labelled "log scale",
+    // never silently. Counts only — never a quality score.
+    const LIB_QUAL_METRICS = [
+      "sources_qualified", "sources_disqualified", "sources_never_judged", "sources_candidates",
+    ];
+    const LIB_QUAL_LABELS = {
+      sources_qualified: "Qualified", sources_disqualified: "Disqualified",
+      sources_never_judged: "Never judged", sources_candidates: "Candidates",
+    };
+    let _libQualSeries = [];   // stashed live series (enlarge + in-place re-render)
+    function _libQualSpread(series) {
+      const vals = series.flatMap(s => s.points.map(p => p.v)).filter(v => v > 0);
+      return vals.length ? Math.max(...vals) / Math.min(...vals) : 1;
+    }
+    async function _libQualificationTile(days) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const cur = days || _libTileDays.__qual || LIB_DEFAULT_DAYS;
+      _libTileDays.__qual = cur;
+      const label = t("Source qualification");
+      let payloads;
+      try {
+        payloads = await Promise.all(LIB_QUAL_METRICS.map(m =>
+          api(`/api/library/history?metric=${encodeURIComponent(m)}&days=${cur}`)));
+      } catch (e) {
+        return `<div id="lib-tile-__qual" style="flex:2;min-width:280px;padding:6px;border:1px solid var(--border);border-radius:8px">
+          <b style="font-size:12.5px">${esc(label)}</b>
+          <div class="note err" style="font-size:11px">${esc(e.message || e)}</div></div>`;
+      }
+      _libQualSeries = LIB_QUAL_METRICS.map((m, i) => ({
+        label: t(LIB_QUAL_LABELS[m] || m), unit: t(LIB_QUAL_LABELS[m] || m),
+        points: (payloads[i].series || []).map(p => ({t: p.t, v: p.n})),
+      }));
+      const flat = _libAllZero(_libQualSeries.flatMap(s => s.points.map(p => p.v)));
+      const logY = _libQualSpread(_libQualSeries) > 50;
+      const began = payloads.map(p => p.recording_began_at).filter(Boolean).sort()[0];
+      const beganNote = began
+        ? `<div class="hint muted" style="font-size:11px">${esc(t("Recording began at {x}.").replace("{x}", began))}</div>`
+        : "";
+      const body = flat
+        ? `<div class="muted" style="padding:14px 0;font-size:12px">${esc(t("No data yet."))}</div>`
+        : `<div class="lib-qual-chart"></div>` + (logY
+            ? `<div class="hint muted" style="font-size:10.5px">${esc(t("log scale"))}</div>` : "");
+      return `<div id="lib-tile-__qual" style="flex:2;min-width:280px;padding:6px;border:1px solid var(--border);border-radius:8px">
+        <div style="display:flex;align-items:baseline;gap:6px;justify-content:space-between">
+          <b style="font-size:12.5px">${esc(label)}</b>
+          <button class="ghost tiny" onclick="enlargeLibQualification()" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
+        </div>${body}${beganNote}${_libWindowChips("__qual", cur)}</div>`;
+    }
+    function _libRenderQualChart(root) {
+      const scope = root || document;
+      const host = scope.querySelector ? scope.querySelector(".lib-qual-chart") : null;
+      const live = _libQualSeries.filter(s => s.points.length);
+      if (!host || !live.length) return;   // defensive: a flat/errored tile has no chart host
+      ooChart(host, live, {height: 150, indexed: false, logY: _libQualSpread(_libQualSeries) > 50});
+    }
+    function enlargeLibQualification() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const live = _libQualSeries.filter(s => s.points.length);
+      if (!live.length) return;   // defensive: nothing to enlarge
+      chartEnlarge(t("Source qualification"), live,
+        t("Counts only, never a quality score. Qualified = actively collecting; disqualified/never-judged are enabled but not (yet) admitted; candidates are disabled, awaiting review."),
+        {scales: true});
+    }
+
+    // Re-render exactly ONE tile in place when its window chip is clicked —
+    // never the whole panel (a switch on one metric must not disturb the
+    // others' state or cause a visible flash across the row).
+    async function _libSetWindow(key, days) {
+      const el = $(key === "__qual" ? "lib-tile-__qual" : "lib-tile-" + key);
+      if (!el) return;
+      const html = key === "__qual"
+        ? await _libQualificationTile(days) : await _libGraphTile(key, days);
+      const tmp = document.createElement("div");
+      tmp.innerHTML = html;
+      const fresh = tmp.firstElementChild;
+      if (!fresh) return;
+      el.replaceWith(fresh);
+      if (key === "__qual") _libRenderQualChart(fresh);
+    }
+
     // The live current-rate readout stays in renderLibraryOverview's own
     // "Articles / hour (last 24h)" tile above (unchanged) — this graph adds the
-    // past-7-days EVOLUTION the maintainer asked for, alongside the counters
-    // that had no history at all until this feature shipped.
-    function renderLibraryActivityGraphs() {
-      return _renderLibGraphHost("lib-activity-graphs", [
-        ["articles_per_hour", 7], ["sources", 30], ["keywords", 30],
-      ]);
+    // EVOLUTION over time the maintainer asked for, alongside the counters that
+    // had no history at all until this feature shipped, plus the qualification
+    // funnel's own 4-line breakdown (§5).
+    async function renderLibraryActivityGraphs() {
+      const host = $("lib-activity-graphs");
+      if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const tiles = await Promise.all([
+          _libGraphTile("articles_per_hour", LIB_DEFAULT_DAYS),
+          _libGraphTile("sources", LIB_DEFAULT_DAYS),
+          _libGraphTile("keywords", LIB_DEFAULT_DAYS),
+          _libQualificationTile(LIB_DEFAULT_DAYS),
+        ]);
+        host.innerHTML = `<div class="row" style="flex-wrap:wrap;gap:10px">${tiles.join("")}</div>`;
+        _libRenderQualChart(host);
+      } catch (e) {
+        host.innerHTML = `<div class="note err">${esc(e.message || e)}</div>`;
+      }
     }
     function renderLibraryWikiGraphs() {
-      return _renderLibGraphHost("lib-wiki-graphs", [["wiki_pages", 30], ["wiki_revisions", 30]]);
+      return _renderLibGraphHost("lib-wiki-graphs", [
+        ["wiki_pages", LIB_DEFAULT_DAYS], ["wiki_revisions", LIB_DEFAULT_DAYS],
+      ]);
     }
     function renderLibraryLawGraphs() {
-      return _renderLibGraphHost("lib-law-graphs", [["law_documents", 30], ["law_revisions", 30]]);
+      return _renderLibGraphHost("lib-law-graphs", [
+        ["law_documents", LIB_DEFAULT_DAYS], ["law_revisions", LIB_DEFAULT_DAYS],
+      ]);
     }
     function enlargeLibMetric(metric) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -13346,7 +13630,15 @@
           const x = +lon2x(s.lon).toFixed(1), y = +lat2y(s.lat).toFixed(1);
           const dist = focus == null ? 0 : Math.abs(s.t - focus);
           const op = Math.max(0.2, 1 - (win ? dist / win : 0) * 0.8);
-          const r = s.confirmed ? 3 : 2.4;
+          // Item 2 (field-feedback A6, ruled): a hazard's radius scales with its
+          // REAL magnitude (sqrt scale -- area, not radius, grows linearly with
+          // magnitude, so a M9 doesn't visually swallow a M5) when one is known;
+          // a GDACS non-quake alert (no magnitude) falls through to the SAME
+          // honest default every other kind already uses -- never a fabricated
+          // size for a fact the provider didn't state.
+          const r = (s.kind === "hazard" && typeof s.magnitude === "number")
+            ? Math.min(9, 2.4 + Math.sqrt(Math.max(0, s.magnitude)) * 1.2)
+            : (s.confirmed ? 3 : 2.4);
           const col = kindColor(s.kind);
           // SHAPE encodes the event's CERTAINTY CLASS (field test 2026-06-19,
           // THEME-2: "deduced events as shapes"), COLOUR encodes the kind — so the
@@ -13668,7 +13960,7 @@
       if (key !== "stories") _ooMapStoryKind = null;   // don't leak a kind filter across lenses
       try {
         if (key === "stories" && _ooMapSignals == null) {
-          const d = await api("/api/timemap?limit=4000");
+          const d = await api("/api/timemap?limit=4000&hazards=true");
           _ooMapSignals = (d.signals || []).filter(s => typeof s.t === "number" && s.lat != null && s.lon != null);
         } else if (key === "places" && !_ooMapWhere) {
           _ooMapWhere = await api("/api/insights/where?limit=400");
@@ -13876,7 +14168,7 @@
           _ooMapSignalsOn = !_ooMapSignalsOn;
           if (_ooMapSignalsOn && _ooMapSignals == null) {
             try {
-              const d = await api("/api/timemap?limit=4000");
+              const d = await api("/api/timemap?limit=4000&hazards=true");
               _ooMapSignals = (d.signals || []).filter(s => typeof s.t === "number" && s.lat != null && s.lon != null);
             } catch { _ooMapSignals = []; }
           }
@@ -13968,13 +14260,26 @@
     }
     function _ooMapSignalDetail(s, visible, win) {
       const host = $("oo-coverage-detail"); if (!host || !s) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       _ooMapSigSet = visible || []; _ooMapSigWin = win || 25;
       const url = s.url ? safeUrl(s.url) : null;
-      const cov = (s.place || s.title || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
+      // Item 2 (field-feedback A6, ruled): for a hazard, the composed search
+      // combines TYPE + PLACE (two real, provider-asserted facts) rather than the
+      // generic title/place text every other signal kind uses -- a more specific
+      // corpus search than "Find coverage" alone would give.
+      const cov = (s.kind === "hazard")
+        ? [s.hazard_type, s.place].filter(Boolean).join(" ").trim()
+        : (s.place || s.title || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
       const geo = s.geocode === "country" ? `<span class="pill warn" title="country-level stand-in point, not the exact spot">≈ country</span>`
                 : s.geocode === "city" ? `<span class="pill" title="placed at a known city">city</span>` : "";
       const conf = s.source === "corpus-mention" ? `<span class="pill warn" title="a date extracted from article text">mentioned · extracted</span>`
                  : s.confirmed ? `<span class="pill ok">confirmed</span>` : `<span class="pill warn">unconfirmed / scheduled</span>`;
+      // Item 2: the INTERNAL article/reader link, once the hazard has been
+      // ingested as a corpus Article (article_id is null until then -- never
+      // fabricated).
+      const localLink = (s.kind === "hazard" && s.article_id != null)
+        ? `<a href="/api/articles/${s.article_id}/view" target="_blank" rel="noopener" class="tiny secondary" style="display:inline-block;padding:4px 9px;border-radius:6px" title="${esc(t("The local, offline copy of this hazard event."))}">${esc(t("Open the local article"))}</a>`
+        : "";
       host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="width:11px;height:11px;border-radius:50%;background:${kindColor(s.kind)};display:inline-block"></span>
@@ -13984,10 +14289,12 @@
         <div class="muted" style="margin-top:5px;font-size:13px">
           ${esc(fmtDate(s))}${s.place ? ` · ${esc(s.place)}` : ""}${s.country ? ` (${esc(String(s.country).toUpperCase())})` : ""}
           · ${(+s.lat).toFixed(2)}, ${(+s.lon).toFixed(2)} · <span title="data source">${esc(s.source)}</span>
+          ${s.magnitude != null ? ` · M${esc(fmtNum(s.magnitude, 1))}` : ""}
         </div>
         ${s.note ? `<div class="hint" style="margin-top:5px">${esc(s.note)}</div>` : ""}
         <div class="row" style="margin-top:7px;gap:8px">
           ${url ? extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center") : ""}
+          ${localLink}
           ${cov ? `<button class="tiny secondary" onclick="tmapFindCoverage(${esc(JSON.stringify(cov))})">Find coverage in your corpus</button>` : ""}
         </div>
         ${(() => {
@@ -14004,6 +14311,32 @@
         })()}
       </div>`;
       host.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    // Item 3 (field-feedback A6, ruled): deep-link from the Home Alerts strip to
+    // the World map, "centred on the event" -- switches to the map, selects the
+    // Stories lens (the SAME lens the in-map strip already drives -- no second
+    // map/engine), waits for the signal set to load, then opens the matching
+    // hazard's OWN detail panel directly (a more robust "centring" than blindly
+    // computing a slider position from outside the render function would be).
+    async function openWorldMapAt(lat, lon, isoTime, articleId) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      showTab("timemap");
+      await new Promise(r => setTimeout(r, 60));
+      if (_ooMapLensTabs) _ooMapLensTabs.select("stories");
+      else await selectOoMapLens("stories");
+      for (let i = 0; i < 20 && _ooMapSignals == null; i++) await new Promise(r => setTimeout(r, 100));
+      const sig = Array.isArray(_ooMapSignals) ? _ooMapSignals : [];
+      let match = (articleId != null)
+        ? sig.find(s => s.kind === "hazard" && s.article_id === articleId)
+        : null;
+      if (!match && lat != null && lon != null) {
+        const near = sig.filter(s => s.kind === "hazard")
+          .map(s => ({ s, d: Math.hypot((s.lat || 0) - lat, (s.lon || 0) - lon) }))
+          .sort((a, b) => a.d - b.d)[0];
+        if (near && near.d < 0.5) match = near.s;
+      }
+      if (match) _ooMapSignalDetail(match, sig, 25);
+      else toast(t("This event is outside the map's current signal set."), "err");
     }
     // Toggle the in-browser OSM offline-region overlay (THEME-2). On first enable
     // it finds a DOWNLOADED region, fetches a bounded byte PREFIX of its local
@@ -14115,7 +14448,7 @@
       space:{c:"#bf7af0", l:"Space"}, science:{c:"#1fb8c4", l:"Science"},
       climate:{c:"#2da44e", l:"Climate"}, sport:{c:"#e3b341", l:"Sport"},
       economic:{c:"#c9a227", l:"Economic"}, political:{c:"#8b949e", l:"Political"},
-      technology:{c:"#58a6ff", l:"Technology"}, hazard:{c:"#f85149", l:"Hazard (live)"},
+      technology:{c:"#58a6ff", l:"Technology"}, hazard:{c:"#f85149", l:"Hazard"},
       article:{c:"#a371f7", l:"Article"},
     };
     const kindColor = k => (TMAP_KINDS[k] || {c:"var(--muted)"}).c;

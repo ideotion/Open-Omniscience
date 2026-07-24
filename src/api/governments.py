@@ -134,6 +134,35 @@ class LoadStandardBody(BaseModel):
     indicators: list[str] | None = None  # subset of the catalog; None/empty = all curated
 
 
+def _fetch_and_store_indicator(db: Session, code: str) -> dict:
+    """One indicator's fetch + vintaged store + subscription record, for ALL countries.
+
+    Shared by the manual ``/load-standard`` worker and the automatic scheduler
+    ride-along (2026-07-24 §2) so both paths behave identically. Raises ``RuntimeError``
+    UNCHANGED on a kill-switch refusal (the caller decides whether that means "stop the
+    whole batch"); any OTHER failure is caught here and returned as an honest
+    ``{"status": "error", ...}`` record — degrade loudly, never raise, never fabricate a
+    figure. Does not commit — the caller controls transaction boundaries."""
+    from src.stats import fetch as statfetch
+    from src.stats.store import store_figures
+
+    try:
+        figures = statfetch.fetch_worldbank(code, "all")
+    except RuntimeError:
+        raise  # the kill-switch up-front refusal — let the caller stop the whole batch
+    except Exception as exc:  # noqa: BLE001 - transport/decode: degrade loudly, continue
+        logger.warning("indicator fetch failed for %s", code, exc_info=True)
+        return {"indicator": code, "status": "error", "detail": str(exc)[:200]}
+    tally = store_figures(db, figures)
+    try:
+        from src.stats.subscriptions import record_subscription
+
+        record_subscription(db, source="worldbank", indicator=code, country="all")
+    except Exception:  # noqa: BLE001 - tracking is additive, never blocks the fetch
+        pass
+    return {"indicator": code, "status": "ok", "fetched": len(figures), **tally}
+
+
 def _load_standard_worker(ctx, *, wanted: list[str]) -> dict:
     """The governments load, off the request thread (field test 2026-07-08, Item 8 P1).
 
@@ -142,9 +171,6 @@ def _load_standard_worker(ctx, *, wanted: list[str]) -> dict:
     fix over the old one-transaction handler — and so the Governments tab sees data appear
     progressively. Cancellable between indicators; each indicator's failure degrades loudly
     (recorded), never aborts the set or fabricates a figure."""
-    from src.stats import fetch as statfetch
-    from src.stats.store import store_figures
-
     per_indicator: list[dict] = []
     total_fetched = total_stored = 0
     complete = True  # False if we stop early (cancel / airplane refusal) — an HONEST partial
@@ -156,26 +182,15 @@ def _load_standard_worker(ctx, *, wanted: list[str]) -> dict:
                 break
             ctx.set_progress(detail=f"fetching {code}")
             try:
-                figures = statfetch.fetch_worldbank(code, "all")
+                rec = _fetch_and_store_indicator(db, code)
             except RuntimeError as exc:  # the kill-switch up-front refusal
                 per_indicator.append({"indicator": code, "status": "refused", "detail": str(exc)})
                 complete = False
                 break  # airplane mode: stop — every subsequent fetch would refuse too
-            except Exception as exc:  # noqa: BLE001 - transport/decode: degrade loudly, continue
-                logger.warning("governments load-standard: %s failed", code, exc_info=True)
-                per_indicator.append({"indicator": code, "status": "error", "detail": str(exc)[:200]})
-                ctx.set_progress(done=i + 1)
-                continue
-            tally = store_figures(db, figures)
-            total_fetched += len(figures)
-            total_stored += tally.get("stored", 0)
-            per_indicator.append({"indicator": code, "status": "ok", "fetched": len(figures), **tally})
-            try:
-                from src.stats.subscriptions import record_subscription
-
-                record_subscription(db, source="worldbank", indicator=code, country="all")
-            except Exception:  # noqa: BLE001 - tracking is additive, never blocks the fetch
-                pass
+            per_indicator.append(rec)
+            if rec["status"] == "ok":
+                total_fetched += rec.get("fetched", 0)
+                total_stored += rec.get("stored", 0)
             db.commit()  # release the writer gate between indicators (arbitrate w/ collect)
             ctx.set_progress(done=i + 1)
     return {
@@ -228,3 +243,65 @@ def load_standard(body: LoadStandardBody | None = None) -> dict:
 def load_standard_status() -> dict:
     """Live status of the background government-statistics load (state/progress/error)."""
     return _GOV_JOB.status()
+
+
+def advance_country_data(session: Session, *, per_pass: int = 2) -> dict:
+    """Scheduler ride-along (2026-07-24 field-feedback Session A §2, ruled): bootstrap
+    the curated country-indicator catalog AUTOMATICALLY in the background, a few
+    indicators per online collection pass, instead of requiring the user to click
+    "Load standard country data" once before any Governments-tab figures exist.
+
+    Reuses ``_fetch_and_store_indicator`` (the SAME fetch + vintaged-store + subscription
+    path ``/load-standard`` uses) so both the manual button and this ride-along behave
+    identically. Ongoing REFRESH of an already-loaded indicator's vintage is already
+    handled elsewhere in this same pass by ``stats.subscriptions.refresh_due`` (which
+    replays every DUE ``StatSubscription``) — this function only covers the FIRST load of
+    an indicator that has never been fetched at all (no subscription for it yet), so the
+    two never duplicate work. Honest named skips: a manual load already running, airplane
+    mode, or (once every curated indicator has a subscription) nothing left to bootstrap.
+    Best-effort — a single indicator's failure is recorded and never breaks the pass."""
+    if per_pass <= 0:
+        return {"enabled": False}
+    if _GOV_JOB.status().get("state") == "running":
+        return {"enabled": True, "skipped": "a manual load is already running"}
+    from src.ingest import kill_switch_active
+
+    if kill_switch_active():
+        return {"enabled": True, "skipped": "airplane mode"}
+
+    from sqlalchemy import select
+
+    from src.database.models import StatSubscription
+
+    already = {
+        row[0]
+        for row in session.execute(
+            select(StatSubscription.indicator).where(
+                StatSubscription.source == "worldbank", StatSubscription.country == "all"
+            )
+        ).all()
+    }
+    pending = [c for c in ind.indicator_ids() if c not in already][: max(0, int(per_pass))]
+    if not pending:
+        return {"enabled": True, "skipped": "the whole catalog is already bootstrapped"}
+
+    per_indicator: list[dict] = []
+    fetched_total = stored_total = 0
+    for code in pending:
+        try:
+            rec = _fetch_and_store_indicator(session, code)
+        except RuntimeError as exc:  # airplane mode toggled mid-loop — a concurrent race
+            per_indicator.append({"indicator": code, "status": "refused", "detail": str(exc)})
+            break  # every subsequent fetch would refuse too
+        per_indicator.append(rec)
+        if rec["status"] == "ok":
+            fetched_total += rec.get("fetched", 0)
+            stored_total += rec.get("stored", 0)
+        session.commit()  # release the writer gate between indicators, like the manual load
+    return {
+        "enabled": True,
+        "started": bool(per_indicator),
+        "fetched": fetched_total,
+        "stored": stored_total,
+        "per_indicator": per_indicator,
+    }

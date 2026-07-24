@@ -929,6 +929,16 @@ class BackgroundScheduler:
         # for it deterministically.
         self._briefing_bg_lock = threading.Lock()
         self._briefing_thread: threading.Thread | None = None
+        # Session A §4 concurrency-skeptic finding (2026-07-24, HIGH): an exclusive
+        # operation (a restore) pausing the CONTINUOUS loop via .stop() left run_now()
+        # completely unaware -- run_now() spawns its own _do_run() thread gated ONLY on
+        # self._active, never on is_running()/self._thread, so a single manual "Run now"
+        # click (or its API) during a restore silently defeated the whole "own the
+        # machine" isolation the restore's enlarged cache/worker-count claims to have.
+        # This flag is INDEPENDENT of the loop thread's own running state (it must hold
+        # even when the loop was already stopped before the restore began, e.g. under
+        # airplane mode) -- see hold_exclusive/release_exclusive below.
+        self._exclusive_hold = False
 
     # -- lifecycle --------------------------------------------------------- #
 
@@ -959,8 +969,13 @@ class BackgroundScheduler:
     def run_now(self) -> bool:
         """Trigger an immediate one-off run in a worker thread.
 
-        Returns False if a run (scheduled or manual) is already in progress, so
-        runs never overlap and stampede a source.
+        Returns False if a run (scheduled or manual) is already in progress, OR
+        an exclusive operation currently holds the machine (see
+        :meth:`hold_exclusive` -- a Session A §4 concurrency-skeptic fix,
+        2026-07-24: this used to check ONLY ``self._active``, so a manual "Run
+        now" during a paused-for-restore window silently spawned a full
+        collection pass concurrently with it, defeating the whole point of the
+        pause), so runs never overlap and stampede a source.
         """
         # Audit finding 2026-07-17 (L4): read under _state_lock, matching every OTHER
         # instance field it protects -- the real overlap guarantee is _run_lock (a
@@ -969,10 +984,27 @@ class BackgroundScheduler:
         # stale read here at worst spawns a thread that immediately no-ops on the
         # lock), but consistent locking removes the reliance on that implicit fact.
         with self._state_lock:
-            if self._active:
+            if self._active or self._exclusive_hold:
                 return False
         threading.Thread(target=self._do_run, name="oo-scrape-now", daemon=True).start()
         return True
+
+    def hold_exclusive(self) -> None:
+        """Claim the machine for an exclusive operation (a restore): blocks every
+        future :meth:`run_now` call until :meth:`release_exclusive`. Independent
+        of the continuous loop's own running state -- must hold even when the
+        loop was already stopped (e.g. under airplane mode) before the exclusive
+        operation began, since a manual "Run now" would otherwise still compete
+        for CPU/the single-writer gate with it regardless of the loop's state."""
+        with self._state_lock:
+            self._exclusive_hold = True
+
+    def release_exclusive(self) -> None:
+        """The other half of :meth:`hold_exclusive` -- always call this in a
+        ``finally``, unconditionally, once the exclusive operation is done
+        (regardless of whether the continuous loop itself resumed)."""
+        with self._state_lock:
+            self._exclusive_hold = False
 
     # -- internals --------------------------------------------------------- #
 
@@ -1323,6 +1355,23 @@ class BackgroundScheduler:
                         _LOG.info("law auto-track: %s", law_res)
             except Exception:  # noqa: BLE001 - never fail the scrape on law auto-track
                 _LOG.warning("law auto-track failed", exc_info=True)
+            # AI CHANGE SUMMARIES (2026-07-24 field-feedback Session A §3, ruled): when
+            # a new LawRevision lands for a UI-language-floor jurisdiction, auto-generate
+            # a plain-language summary via the active LOCAL model (loopback, airplane-safe
+            # since the §7 gate split — an Ollama-down machine is a single honest no-op,
+            # never a wall of failures). Shares auto_track_law's opt-out (summaries only
+            # ever apply to documents that opt-out already stops tracking); an on-demand
+            # button covers every other jurisdiction. Never blocks tracking.
+            try:
+                if getattr(settings, "auto_track_law", True):
+                    from src.law.summarize import advance_law_summaries
+
+                    sum_res = advance_law_summaries(session)
+                    if sum_res.get("ran"):
+                        result["law_summarized"] = sum_res.get("stored", 0)
+                        _LOG.info("law auto-summary: %s", sum_res)
+            except Exception:  # noqa: BLE001 - never fail the scrape on AI summarization
+                _LOG.warning("law auto-summary failed", exc_info=True)
             # Field-test instrumentation (live-test cycles): exercise every fetch
             # surface once and log verbatim outcomes for the maintainer's debug
             # bundle. OPT-IN since 0.1 (OO_FIELD_TEST=1 enables — a public tag
@@ -1368,6 +1417,22 @@ class BackgroundScheduler:
             # fetcher (never a new fetch surface). Task-manager-visible via
             # src.monitoring.tasks so the activity chip can honestly show it running.
             # Best-effort: a failure here never breaks the scrape.
+            # COUNTRY-DATA ride-along (2026-07-24 field-feedback Session A §2, ruled:
+            # the Governments tab must not depend on the user first clicking "Load
+            # standard country data"): bootstrap a few never-yet-fetched curated
+            # World-Bank indicators per online pass through this SAME session/fetcher.
+            # ONGOING refresh of an already-loaded indicator is the separate
+            # stats.subscriptions.refresh_due call elsewhere in this same pass, so the
+            # two never duplicate work. Best-effort: a failure here never breaks the
+            # scrape.
+            try:
+                from src.api.governments import advance_country_data
+
+                _cd = advance_country_data(session, per_pass=settings.country_data_per_pass)
+                if _cd.get("enabled"):
+                    result["country_data"] = _cd
+            except Exception:  # noqa: BLE001 - never fail the scrape on the stats ride-along
+                _LOG.warning("country-data auto-start ride-along failed", exc_info=True)
             try:
                 from src.catalog.qualification import advance_qualification
                 from src.monitoring import tasks as _bgtasks
@@ -1401,6 +1466,21 @@ class BackgroundScheduler:
                     result["ai_auto"] = _auto
             except Exception:  # noqa: BLE001 - never let AI extraction break a scrape
                 _LOG.warning("auto-on-ingest extraction failed", exc_info=True)
+            # AUTO-START language detection (2026-07-24 field-feedback Session A §1, ruled
+            # default-ON): a cheap watchdog that (re)starts the CONTINUOUS AI language-
+            # detection job whenever it is idle, the local model is available, and unknown-
+            # language candidates exist -- opt-out via AppSettings.ai_langdetect_auto. The
+            # job itself is loopback Ollama inference (airplane-safe, §7) running on its own
+            # thread, resilient to transient outages (retries with backoff) -- this need not
+            # fire more than once to drain a whole backlog over many future passes.
+            try:
+                from src.api.ai import advance_langdetect_auto_start
+
+                _ld = advance_langdetect_auto_start(session)
+                if _ld.get("enabled"):
+                    result["langdetect_auto"] = _ld
+            except Exception:  # noqa: BLE001 - never fail the scrape on the AI-layer watchdog
+                _LOG.warning("language-detection auto-start ride-along failed", exc_info=True)
             # Auto source-metadata enrichment (local, zero-network): deduce each
             # source's topic tags from the keywords it actually publishes and union
             # them into Source.tags. Freshness-gated (~daily) so it is usually a
@@ -1430,7 +1510,10 @@ class BackgroundScheduler:
                 if getattr(settings, "auto_track_signals", True):
                     from src.hazards.track import auto_snapshot_due
 
-                    haz = auto_snapshot_due(fetcher)
+                    # session=session (A6, ruled): every freshly-saved snapshot is also
+                    # ingested as corpus Articles, through this SAME session -- zero
+                    # extra network (the records are already local).
+                    haz = auto_snapshot_due(fetcher, session=session)
                     if haz.get("snapshotted"):
                         result["hazards_snapshotted"] = haz["snapshotted"]
                         _LOG.info("hazard snapshot: %s", haz)
@@ -1518,3 +1601,101 @@ def get_scheduler() -> BackgroundScheduler:
     if _scheduler is None:
         _scheduler = BackgroundScheduler()
     return _scheduler
+
+
+def pause_for_exclusive_operation(timeout: float = 10.0) -> bool:
+    """Pause background collection for the duration of an exclusive,
+    machine-owning operation (field-feedback Session A §4, "import owns the
+    machine": a large restore competes for CPU and the write path with any
+    in-flight collection pass).
+
+    Returns True iff the CONTINUOUS LOOP was actually running and got
+    signalled to stop -- the caller MUST call
+    :func:`resume_after_exclusive_operation` with that value afterward (in a
+    ``finally``), so a scheduler the user had already left stopped is never
+    force-started.
+
+    ALWAYS (regardless of the loop's own state, hence unconditional and
+    called first) claims :meth:`BackgroundScheduler.hold_exclusive`, which
+    blocks any MANUAL "Run now" for the duration too -- a concurrency-skeptic
+    HIGH finding (2026-07-24): ``run_now()`` used to check only whether a run
+    was already active, with zero awareness of this pause, so a single manual
+    trigger during a restore silently ran a full collection pass concurrently
+    with it, defeating the whole point of the pause.
+
+    This is mostly a THROUGHPUT courtesy, never a data-safety requirement for
+    the corpus itself (every ORM write through the pooled session is still
+    serialised by the single-writer gate regardless of whether collection is
+    paused) -- but note that gate does NOT cover the restore's own raw,
+    file-level atomic swap (``os.replace`` in ``src/backup/merge.py``), which
+    has never been gate-protected (unaffected by this diff, confirmed by the
+    crash-mid-stage/data-loss skeptic passes); this pause narrows, but does
+    not eliminate, that pre-existing swap-concurrency window --
+    :meth:`BackgroundScheduler.stop`'s bounded join means a pass already deep
+    in a fetch may still be finishing when this returns.
+    """
+    get_scheduler().hold_exclusive()
+    return get_scheduler().stop(timeout=timeout)
+
+
+def resume_after_exclusive_operation(
+    was_paused: bool, *, retries: int = 19, retry_delay: float = 30.0
+) -> None:
+    """The other half of :func:`pause_for_exclusive_operation`.
+
+    ALWAYS releases :meth:`BackgroundScheduler.release_exclusive` (in a
+    ``finally``, unconditionally) -- a manual "Run now" must work again the
+    instant the exclusive operation itself is done, even if the continuous
+    loop hasn't actually resumed yet (below).
+
+    ``stop()``'s join is BOUNDED (10 s default) and ``_do_run`` has no
+    internal stop-check mid-pass (only between passes, in ``_loop``) — so a
+    pass that was already deep in a fetch when ``pause_for_exclusive_
+    operation`` was called can still be alive (``is_running()`` True) well
+    after ``stop()`` returned. ``start()`` correctly refuses to spawn a
+    SECOND thread while the old one is still running — but called only ONCE,
+    that leaves a real liveness gap: once the lingering old pass eventually
+    finishes on its own, NOTHING would ever call ``start()`` again, silently
+    stranding background collection paused indefinitely (a concurrency
+    finding from the mandatory skeptic pass, Session A §4).
+
+    So this retries ``start()`` with a bounded backoff — default ~10 minutes
+    total (19 retries × 30 s), chosen to comfortably exceed this project's own
+    measured worst case for a single blocked write (438 s, see the
+    Session-rituals "AUTOFLUSH CAN HAND THE WRITE GATE TO A READ" lesson in
+    CLAUDE.md) rather than the too-optimistic 20 s an earlier cut used (a
+    concurrency-skeptic LOW finding, 2026-07-24: a short budget made "give up,
+    restart manually" the COMMON outcome on Tor-heavy deployments, not a rare
+    edge case). This is called from a background job thread, so a few extra
+    minutes here costs nothing real. If it genuinely never succeeds (retries
+    exhausted), it logs LOUDLY once rather than staying silent, and still
+    returns — a caller's own ``finally`` block must never block forever on
+    this courtesy call. NOTHING here retries again afterward, so the warning
+    never claims a self-heal that does not exist.
+
+    Checked on EVERY attempt: the user's own airplane-mode kill switch always
+    wins. If the operator engaged airplane mode of their own accord while
+    this operation (or its retry loop) was running, that explicit action must
+    never be silently overridden by this best-effort courtesy — bail out
+    without starting anything; :func:`~src.api.system.set_network_mode`
+    starts the scheduler again the next time THEY choose to go online.
+    """
+    try:
+        if not was_paused:
+            return
+        from src.ingest import kill_switch_active
+
+        for attempt in range(retries + 1):
+            if kill_switch_active():
+                return
+            if get_scheduler().start():
+                return
+            if attempt < retries:
+                time.sleep(retry_delay)
+        _LOG.warning(
+            "could not resume background collection after an exclusive operation "
+            "-- the previous pass appears to still be running; restart collection "
+            "manually from Settings if it does not resume on its own"
+        )
+    finally:
+        get_scheduler().release_exclusive()

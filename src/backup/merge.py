@@ -39,6 +39,7 @@ import logging
 import os
 import re
 import sqlite3
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -247,7 +248,8 @@ def _build_map(con: sqlite3.Connection, name: str, select_old_new: str) -> None:
 #  The corpus merge (single transaction on the working copy)
 # --------------------------------------------------------------------------- #
 def merge_corpus(
-    staged_corpus: Path, working_copy: Path, batch_meta: dict, progress_cb=None
+    staged_corpus: Path, working_copy: Path, batch_meta: dict, progress_cb=None,
+    cache_mb: int | None = None,
 ) -> tuple[dict, int]:
     """Merge the staged corpus into the working copy. Returns (per-domain counts,
     batch_id). The working copy is disposable; the live DB is never touched.
@@ -256,12 +258,27 @@ def merge_corpus(
     step so a caller can show a determinate progress bar + ETA for the "merging" phase
     (field ask 2026-07-02). It is REPORT-ONLY — wrapped so a reporting error can never
     affect the merge — and its granularity is per table-step (steps are uneven, so the
-    derived ETA is an estimate, stated as such in the UI)."""
+    derived ETA is an estimate, stated as such in the UI).
+
+    ``cache_mb`` (2026-07-24 field-feedback Session A §4, "import owns the machine"):
+    this connection is opened via the raw :func:`~src.database.connect.connect`
+    factory, NEVER the pooled app engine — so the app's own ``OO_SQLITE_CACHE_MB``
+    tuning (``src/database/session.py``) never reaches it, and the whole 14-step
+    merge otherwise runs at SQLite's tiny compiled-in default page cache. When
+    given, an enlarged ``PRAGMA cache_size`` is applied to THIS connection only —
+    a pure resource-usage tuning knob (never a behaviour/correctness change), so
+    it is safe unconditionally and best-effort (a tuning-PRAGMA failure must
+    never break a merge)."""
     from src.database.connect import attach
     from src.database.connect import connect as db_connect
 
     con = db_connect(working_copy, check_same_thread=False)
     con.isolation_level = None  # explicit BEGIN/COMMIT (auto-BEGIN would collide)
+    if cache_mb:
+        try:
+            con.execute(f"PRAGMA cache_size=-{int(cache_mb) * 1024}")  # negative = KiB
+        except Exception:  # noqa: BLE001 - a tuning PRAGMA must never break a merge
+            pass
     try:
         con.execute("PRAGMA foreign_keys=OFF")  # order is FK-safe; checked at the end
         attach(con, staged_corpus, "inc")  # staged members are plaintext by design
@@ -1625,6 +1642,23 @@ def reindex_imported_articles(
         )
 
 
+def import_cache_mb() -> int:
+    """Enlarged SQLite page-cache MiB for the import merge connection
+    specifically (field-feedback Session A §4, "import owns the machine") --
+    SEPARATE from the app's general ``OO_SQLITE_CACHE_MB``
+    (``src/config/power_profiles.py``), which never reaches this connection
+    (opened via the raw ``connect()`` factory, not the pooled app engine).
+    ``OO_IMPORT_CACHE_MB`` overrides; default 512 MiB (8x the app's own 64 MiB
+    default) -- a resource-usage tuning knob only, never a behaviour change."""
+    raw = os.getenv("OO_IMPORT_CACHE_MB", "").strip()
+    if raw:
+        try:
+            return max(2, int(raw))
+        except ValueError:
+            pass
+    return 512
+
+
 def run_restore(
     staged: StagedArtifact,
     *,
@@ -1635,6 +1669,8 @@ def run_restore(
     reindex_commit_batch: int | None = None,
     reindex_workers: int | None = None,
     reindex_progress_cb: Callable[[int, int], None] | None = None,
+    merge_cache_mb: int | None = None,
+    stage_progress_cb: Callable[[str], None] | None = None,
 ) -> dict:
     """Preview (commit=False) or perform (commit=True) a merge-restore.
 
@@ -1652,13 +1688,41 @@ def run_restore(
     of work (articles, not table-merge steps), so a caller distinguishes the two
     phases explicitly instead of guessing from a shared callback's arity.
 
+    ``merge_cache_mb`` (2026-07-24, "import owns the machine"): forwarded to
+    :func:`merge_corpus`'s ``cache_mb`` — a resource-usage tuning knob only.
+
     Preview and commit run THE SAME merge code against a disposable working
     copy, so the preview's numbers are exactly what a commit would do to the
-    then-current corpus."""
+    then-current corpus.
+
+    PER-STAGE TIMING (2026-07-24 field-feedback Session A §4, "instrument
+    first"): every distinct stage's wall-clock time is recorded into
+    ``report["timings"]`` (via :class:`~src.backup.timing.StageTimings`) —
+    MEASUREMENT ONLY, the timer's own exception-safety property guarantees it
+    never changes control flow or swallows a failure (see
+    ``tests/test_backup_timing.py``). Attached before every return so even a
+    refused/preview-only report carries the stages that actually ran.
+
+    ``stage_progress_cb`` ("progress everywhere", §4 item 2): fired with just
+    the stage NAME the instant each stage BEGINS — a coarse "now doing: swap"
+    ping for the stages (B/D/E/G) that have no callback of their own (unlike
+    the fine-grained 14-step ``progress_cb`` or the per-article
+    ``reindex_progress_cb``). Report-only, never load-bearing."""
     from src.backup.sqlite_backup import live_db_path
+    from src.backup.timing import StageTimings
     from src.database.session import dispose_engine, init_db
 
-    original_rev = prepare_staged_corpus(staged, allow_unverified=allow_unverified)
+    timings = StageTimings(on_start=stage_progress_cb)
+    # Fold in stage-A (decrypt/reassemble) timing, already measured by whichever
+    # producer (read_artifact / read_stream_backup / read_volume_backup) built
+    # this StagedArtifact — run_restore itself never touches stage A (it only
+    # ever receives an already-staged artifact), so this is the one place all
+    # 7 lettered stages (A-G) converge into ONE report.
+    for _name, _seconds in (staged.stage_a_timings or {}).items():
+        timings.record(f"stage_a:{_name}", _seconds)
+
+    with timings.stage("prepare_staged"):
+        original_rev = prepare_staged_corpus(staged, allow_unverified=allow_unverified)
 
     working = staged.staging_dir / "working.db"
     if working.exists():
@@ -1667,7 +1731,8 @@ def run_restore(
     # encrypted corpus must never yield a plaintext live file at the swap.
     from src.database.connect import snapshot_preserving
 
-    snapshot_preserving(live_db_path(), working)
+    with timings.stage("snapshot_working_copy"):
+        snapshot_preserving(live_db_path(), working)
 
     meta = {
         "artifact_kind": staged.kind,
@@ -1676,8 +1741,29 @@ def run_restore(
         "alembic_rev": original_rev,
         "manifest": staged.manifest,
     }
-    counts, batch_id = merge_corpus(staged.corpus_path, working, meta, progress_cb=progress_cb)
-    verification = verify_copy(working, staged.corpus_path, batch_id)
+    # Wrap the caller's own progress_cb so EACH of the 14 merge steps also gets
+    # its own per-step timing (into "merge_step:<name>"), with NO change to
+    # merge_corpus's internals — it already wraps every progress_cb call in its
+    # own try/except ("progress reporting must never break a merge"), so this
+    # wrapper inherits that same safety for free; it never raises itself.
+    _step_clock: dict[str, float | None] = {"t": None}
+
+    def _timed_progress_cb(done: int, total: int, name: str) -> None:
+        now = time.monotonic()
+        if _step_clock["t"] is not None:
+            timings.record(f"merge_step:{name}", now - _step_clock["t"])
+        _step_clock["t"] = now
+        if progress_cb is not None:
+            progress_cb(done, total, name)
+
+    with timings.stage("merge"):
+        _step_clock["t"] = time.monotonic()
+        counts, batch_id = merge_corpus(
+            staged.corpus_path, working, meta,
+            progress_cb=_timed_progress_cb, cache_mb=merge_cache_mb,
+        )
+    with timings.stage("verify"):
+        verification = verify_copy(working, staged.corpus_path, batch_id)
 
     report: dict = {
         "artifact_kind": staged.kind,
@@ -1695,8 +1781,10 @@ def run_restore(
 
     if not verification["ok"]:
         report["refused"] = "post-merge verification failed; live database untouched"
+        report["timings"] = timings.report()
         return report
     if not commit:
+        report["timings"] = timings.report()
         return report
 
     # ---- commit path ------------------------------------------------------ #
@@ -1704,44 +1792,58 @@ def run_restore(
     # (the merge above only touched the disposable working copy) -- so this is the
     # true pre-import state. Best-effort: a snapshot hiccup must never abort an
     # otherwise-good restore; absence just means the UI shows no delta view.
-    try:
-        from src.database.session import session_scope
+    with timings.stage("corpus_delta_before"):
+        try:
+            from src.database.session import session_scope
 
-        with session_scope() as _before_sess:
-            report["corpus_delta"] = {"before": _corpus_snapshot(_before_sess)}
-    except Exception:  # noqa: BLE001 - a snapshot failure must never block a commit
-        _LOG.warning("pre-restore corpus snapshot failed", exc_info=True)
+            with session_scope() as _before_sess:
+                report["corpus_delta"] = {"before": _corpus_snapshot(_before_sess)}
+        except Exception:  # noqa: BLE001 - a snapshot failure must never block a commit
+            _LOG.warning("pre-restore corpus snapshot failed", exc_info=True)
 
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     snapshot = data_dir() / f"pre-restore-{ts}.db"
-    snapshot_preserving(live_db_path(), snapshot)
+    with timings.stage("pre_restore_snapshot"):
+        snapshot_preserving(live_db_path(), snapshot)
     report["pre_restore_snapshot"] = str(snapshot)
 
-    report["side_files"] = merge_side_files(staged)
-    if staged.custody_path is not None:
-        report["custody"] = merge_custody(staged.custody_path, staged.origin_fingerprint)
+    with timings.stage("side_files_and_custody"):
+        report["side_files"] = merge_side_files(staged)
+        if staged.custody_path is not None:
+            report["custody"] = merge_custody(staged.custody_path, staged.origin_fingerprint)
 
     # Persist the final report inside the copy BEFORE it becomes the live DB.
+    # (The timings captured up to this instant are what gets written; every
+    # LATER stage below is necessarily missing from THIS particular copy —
+    # honest by construction, since the swap/reindex/post-steps haven't
+    # happened yet at the moment this row is written.)
     from src.database.connect import connect as db_connect
 
-    con = db_connect(working, check_same_thread=False)
-    try:
-        con.execute(
-            "UPDATE merge_batches SET report_json = ? WHERE id = ?",
-            (json.dumps({k: v for k, v in report.items() if k != "plan"}), batch_id),
-        )
-        con.commit()
-    finally:
-        con.close()
+    with timings.stage("report_json_write"):
+        report["timings"] = timings.report()
+        con = db_connect(working, check_same_thread=False)
+        try:
+            con.execute(
+                "UPDATE merge_batches SET report_json = ? WHERE id = ?",
+                (json.dumps({k: v for k, v in report.items() if k != "plan"}), batch_id),
+            )
+            con.commit()
+        finally:
+            con.close()
 
-    target = live_db_path()
-    dispose_engine()
-    for suffix in ("-wal", "-shm"):
-        stale = target.with_name(target.name + suffix)
-        if stale.exists():
-            stale.unlink()
-    os.replace(working, target)  # atomic on the same filesystem
-    init_db()
+    # The atomic swap itself: kept as close to bare as possible (the highest
+    # crash-sensitivity moment in the whole engine) -- the timer adds only two
+    # cheap time.monotonic() calls around the UNCHANGED block, never a new
+    # exception path (a raise here still propagates exactly as before).
+    with timings.stage("swap"):
+        target = live_db_path()
+        dispose_engine()
+        for suffix in ("-wal", "-shm"):
+            stale = target.with_name(target.name + suffix)
+            if stale.exists():
+                stale.unlink()
+        os.replace(working, target)  # atomic on the same filesystem
+        init_db()
 
     report["committed"] = True
     report["batch_id"] = batch_id
@@ -1749,15 +1851,16 @@ def run_restore(
     # Corpus-delta "after": same cheap aggregates, now against the just-swapped-in
     # merged corpus. Only set alongside "before" (both best-effort; a partial pair
     # is dropped rather than shown as a false delta).
-    if "corpus_delta" in report:
-        try:
-            from src.database.session import session_scope as _session_scope_after
+    with timings.stage("corpus_delta_after"):
+        if "corpus_delta" in report:
+            try:
+                from src.database.session import session_scope as _session_scope_after
 
-            with _session_scope_after() as _after_sess:
-                report["corpus_delta"]["after"] = _corpus_snapshot(_after_sess)
-        except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-            _LOG.warning("post-restore corpus snapshot failed", exc_info=True)
-            report.pop("corpus_delta", None)
+                with _session_scope_after() as _after_sess:
+                    report["corpus_delta"]["after"] = _corpus_snapshot(_after_sess)
+            except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+                _LOG.warning("post-restore corpus snapshot failed", exc_info=True)
+                report.pop("corpus_delta", None)
 
     # DB-7 (corpus-epoch → restore-merge): a committed merge is a bulk mutation of the live
     # corpus, and the restore is "the one residual mutator" not yet wired to the corpus
@@ -1768,21 +1871,22 @@ def run_restore(
     # merge-engine + torture path), an empty import set, and a re-index that hiccups after
     # the additive merge already committed. Over-bumping is harmless (it only forces a
     # correct rebuild); best-effort so a coordination write never undoes a committed restore.
-    try:
-        from src.analytics.corpus_epoch import bump_corpus_epoch
-        from src.database.session import session_scope
+    with timings.stage("corpus_epoch_bump"):
+        try:
+            from src.analytics.corpus_epoch import bump_corpus_epoch
+            from src.database.session import session_scope
 
-        with session_scope() as _epoch_sess:
-            report["corpus_epoch"] = bump_corpus_epoch(_epoch_sess, reason="restore_merge")
-            # S6: the additive merge inserted articles onto existing sources (mapped by
-            # domain) WITHOUT touching Source.article_count, so it is now stale-low and, being
-            # non-NULL, the read fallback would never fire -> a wrong count shown as exact
-            # (skeptic finding). Reconcile it authoritatively (cheap; sources are few).
-            from src.analytics.store import reconcile_source_counters
+            with session_scope() as _epoch_sess:
+                report["corpus_epoch"] = bump_corpus_epoch(_epoch_sess, reason="restore_merge")
+                # S6: the additive merge inserted articles onto existing sources (mapped by
+                # domain) WITHOUT touching Source.article_count, so it is now stale-low and, being
+                # non-NULL, the read fallback would never fire -> a wrong count shown as exact
+                # (skeptic finding). Reconcile it authoritatively (cheap; sources are few).
+                from src.analytics.store import reconcile_source_counters
 
-            reconcile_source_counters(_epoch_sess)
-    except Exception:  # noqa: BLE001 - a coordination bump must never undo a committed restore
-        _LOG.warning("corpus-epoch bump after restore-merge failed", exc_info=True)
+                reconcile_source_counters(_epoch_sess)
+        except Exception:  # noqa: BLE001 - a coordination bump must never undo a committed restore
+            _LOG.warning("corpus-epoch bump after restore-merge failed", exc_info=True)
 
     # DB-reliability D1 follow-up (Wave 5 L): refresh the durable ``event_imports`` mirror
     # from the merged side-file now that the live DB IS the restored corpus. merge_side_files
@@ -1790,31 +1894,33 @@ def run_restore(
     # the durable table would otherwise stay stale until the next calendar write. Best-effort
     # + guarded (see _refresh_event_mirror): a full replace from the authoritative JSON, never
     # a double-count, never undoes a committed restore.
-    ev_mirror = _refresh_event_mirror(report.get("side_files") or {})
-    if ev_mirror is not None:
-        report["event_mirror"] = ev_mirror
+    with timings.stage("event_mirror_refresh"):
+        ev_mirror = _refresh_event_mirror(report.get("side_files") or {})
+        if ev_mirror is not None:
+            report["event_mirror"] = ev_mirror
     # P0-4 (maintainer ruling 2026-06-19): recompute the CORE-ENGINE derived metadata
     # for the newly-imported articles so an OLD backup aligns with the CURRENT engine
     # (keywords, date/place/entity extraction, sentiment); AI artifacts are left
     # verbatim. Best-effort: the restore is already committed AND additive, so a
     # re-index hiccup must never undo it.
     if reindex_imported:
-        try:
-            report["reindexed"] = reindex_imported_articles(
-                batch_id,
-                commit_batch=reindex_commit_batch,
-                workers=reindex_workers,
-                progress_cb=reindex_progress_cb,
-            )
-        except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-            _LOG.warning("post-restore re-index of imported articles failed", exc_info=True)
-            # The whole batch failed before touching a single article, so NONE of the
-            # imported articles got re-indexed -- "failed" must be the true imported
-            # count (from the already-known plan), not 0. Reporting 0 here would read
-            # as "nothing needed re-indexing", which is the fabricated-signal the rest
-            # of this feature is built to avoid (see reindex_imported_articles above).
-            _imported = int((counts.get("articles") or {}).get("new") or 0)
-            report["reindexed"] = {"reindexed": 0, "failed": _imported, "skipped": "see server log"}
+        with timings.stage("reindex"):
+            try:
+                report["reindexed"] = reindex_imported_articles(
+                    batch_id,
+                    commit_batch=reindex_commit_batch,
+                    workers=reindex_workers,
+                    progress_cb=reindex_progress_cb,
+                )
+            except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+                _LOG.warning("post-restore re-index of imported articles failed", exc_info=True)
+                # The whole batch failed before touching a single article, so NONE of the
+                # imported articles got re-indexed -- "failed" must be the true imported
+                # count (from the already-known plan), not 0. Reporting 0 here would read
+                # as "nothing needed re-indexing", which is the fabricated-signal the rest
+                # of this feature is built to avoid (see reindex_imported_articles above).
+                _imported = int((counts.get("articles") or {}).get("new") or 0)
+                report["reindexed"] = {"reindexed": 0, "failed": _imported, "skipped": "see server log"}
 
     # S3.3 (2026-07-23 field-feedback workflow, import-time screening): scan the
     # NEWLY-MERGED articles (the exact batch_id's rows in merged_rows -- the same set
@@ -1822,61 +1928,83 @@ def run_restore(
     # #659 URL-shape rules + the NAV-SOUP prose gate), stamping any detected candidate
     # via the REVERSIBLE S3.2 quarantine flag -- never a delete. Best-effort: a
     # quarantine-scan hiccup must never undo a committed, additive restore.
-    try:
-        from sqlalchemy import text as _text
+    with timings.stage("quarantine_scan"):
+        try:
+            from sqlalchemy import text as _text
 
-        from src.analytics.quarantine_job import default_quarantine_candidates_batch
-        from src.database.session import session_scope as _quarantine_session_scope
+            from src.analytics.quarantine_job import default_quarantine_candidates_batch
+            from src.database.session import session_scope as _quarantine_session_scope
 
-        with _quarantine_session_scope() as _q_sess:
-            new_article_ids = [
-                int(r[0])
-                for r in _q_sess.execute(
-                    _text(
-                        "SELECT row_id FROM merged_rows "
-                        "WHERE batch_id = :b AND table_name = 'articles'"
-                    ),
-                    {"b": batch_id},
-                ).fetchall()
-            ]
-            if new_article_ids:
-                report["quarantine_summary"] = default_quarantine_candidates_batch(
-                    _q_sess, article_ids=new_article_ids, write=True
-                )
-    except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-        _LOG.warning("post-restore quarantine scan failed", exc_info=True)
+            with _quarantine_session_scope() as _q_sess:
+                new_article_ids = [
+                    int(r[0])
+                    for r in _q_sess.execute(
+                        _text(
+                            "SELECT row_id FROM merged_rows "
+                            "WHERE batch_id = :b AND table_name = 'articles'"
+                        ),
+                        {"b": batch_id},
+                    ).fetchall()
+                ]
+                if new_article_ids:
+                    report["quarantine_summary"] = default_quarantine_candidates_batch(
+                        _q_sess, article_ids=new_article_ids, write=True
+                    )
+        except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+            _LOG.warning("post-restore quarantine scan failed", exc_info=True)
 
     # S3.5 (field-feedback A1): the "work induced" queue -- corpus-wide totals (not
     # scoped to just this import; no cheap before/after delta exists for these
     # counters yet, stated explicitly in the persisted report's own rendering).
     # Best-effort; never blocks a committed restore.
-    try:
-        from sqlalchemy import func as _func
+    with timings.stage("work_induced_tally"):
+        try:
+            from sqlalchemy import func as _func
 
-        from src.catalog.qualification import STATUS_QUALIFIED
-        from src.database.models import Source
-        from src.database.session import session_scope as _work_session_scope
+            from src.catalog.qualification import STATUS_QUALIFIED
+            from src.database.models import Source
+            from src.database.session import session_scope as _work_session_scope
 
-        with _work_session_scope() as _w_sess:
-            report["work_induced"] = {
-                "sources_pending": int(
-                    _w_sess.query(_func.count(Source.id))
-                    .filter(Source.enabled.is_(True), Source.status != STATUS_QUALIFIED)
-                    .scalar()
-                    or 0
-                ),
-                "sources_candidates": int(
-                    _w_sess.query(_func.count(Source.id)).filter(Source.enabled.is_(False)).scalar()
-                    or 0
-                ),
-            }
-    except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-        _LOG.warning("post-restore work-induced tally failed", exc_info=True)
+            with _work_session_scope() as _w_sess:
+                report["work_induced"] = {
+                    "sources_pending": int(
+                        _w_sess.query(_func.count(Source.id))
+                        .filter(Source.enabled.is_(True), Source.status != STATUS_QUALIFIED)
+                        .scalar()
+                        or 0
+                    ),
+                    "sources_candidates": int(
+                        _w_sess.query(_func.count(Source.id)).filter(Source.enabled.is_(False)).scalar()
+                        or 0
+                    ),
+                }
+        except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+            _LOG.warning("post-restore work-induced tally failed", exc_info=True)
 
     # S3.5 (field-feedback A1): persist a standalone, downloadable JSON report (the
     # restore-merge report ALSO already lives inside merge_batches.report_json, but
     # that column is not directly downloadable/human-readable, and does not ride an
     # export unless separately wired -- see src/backup/import_reports.py). Best-effort.
+    #
+    # The FINAL, COMPLETE timings (every stage through work_induced_tally) are
+    # attached HERE -- distinct from the earlier, necessarily-partial snapshot
+    # written into merge_batches.report_json mid-function (before the swap
+    # even happened). This is the honest evidence base A4's own step 4
+    # (optimise the measured biggest stage) needs.
+    # Best-effort, same convention as every other post-commit step above (never undo
+    # or abort a committed, additive restore) -- a skeptic-pass finding (2026-07-24):
+    # this call is UNGUARDED history predating this stage-timing rework, and this
+    # rework moved it BEFORE persist_import_report() below (it used to run last).
+    # Without a try/except here, a prune failure would propagate past this point and
+    # skip persist_import_report() entirely, silently regressing the S3.5 downloadable
+    # report feature in exactly the case it is meant to survive.
+    with timings.stage("prune_snapshots"):
+        try:
+            report["pruned_snapshots"] = _prune_snapshots()
+        except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+            _LOG.warning("post-restore snapshot pruning failed", exc_info=True)
+    report["timings"] = timings.report()  # include prune_snapshots' own duration too
+
     try:
         from src.backup.import_reports import persist_import_report
 
@@ -1886,6 +2014,5 @@ def run_restore(
     except Exception:  # noqa: BLE001 - never undo a committed, additive restore
         _LOG.warning("persisting the standalone import report failed", exc_info=True)
 
-    report["pruned_snapshots"] = _prune_snapshots()
     _LOG.info("merge-restore committed: batch=%s plan=%s", batch_id, counts)
     return report

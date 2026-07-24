@@ -12,6 +12,7 @@ import pytest
 from fastapi import HTTPException
 
 from src.api import diagnostics as d
+from src.llm.ollama import LLMUnavailable
 
 
 def _reset(job):
@@ -31,13 +32,52 @@ def _clean_jobs():
     _reset(d._SOURCE_TAGS_JOB)
 
 
-def test_keyword_triage_run_refuses_under_airplane_mode(monkeypatch):
+def test_keyword_triage_run_starts_under_airplane_mode_with_loopback_ollama(monkeypatch):
+    """2026-07-24 gate-split fix (Session A §7): loopback Ollama inference is
+    airplane-safe, so the endpoint's OWN blanket kill-switch refusal is gone --
+    the run reaches .start() while airplane mode is engaged, gated only by the
+    client's own loopback-vs-clearnet check (never touched here, and never
+    exercised -- the stub client makes no socket call at all, loopback or not)."""
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: True)
+    monkeypatch.setattr(
+        "src.llm.ollama.OllamaClient",
+        lambda *a, **kw: type("C", (), {"list_installed": lambda self: ["granite4:micro"]})(),
+    )
+    started_kwargs: dict = {}
+    monkeypatch.setattr(
+        d._KEYWORD_TRIAGE_JOB,
+        "start",
+        lambda **kw: (started_kwargs.update(kw), {"state": "running", "kind": "keyword-triage"})[
+            1
+        ],
+    )
+    body = d.KeywordTriageRunBody(model="granite4:micro")
+    resp = d.keyword_triage_run(body)
+    payload = json.loads(bytes(resp.body))
+    assert payload["started"] is True
+    assert started_kwargs["model"] == "granite4:micro"
+
+
+def test_keyword_triage_run_still_refuses_when_ollama_is_genuinely_unavailable(monkeypatch):
+    """The gate split removed the endpoint's OWN blanket refusal, not the client's
+    loopback-vs-clearnet distinction: a non-loopback backend (or Ollama simply not
+    running) still 409s under airplane mode -- defense in depth is untouched."""
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: True)
+
+    def _raise_unavailable(self):
+        raise LLMUnavailable(
+            "Network is OFF (airplane mode): refusing the Ollama request. "
+            "Turn airplane mode off to use the local LLM."
+        )
+
+    monkeypatch.setattr(
+        "src.llm.ollama.OllamaClient",
+        lambda *a, **kw: type("C", (), {"list_installed": _raise_unavailable})(),
+    )
     body = d.KeywordTriageRunBody(model="stub:test")
     with pytest.raises(HTTPException) as ei:
         d.keyword_triage_run(body)
     assert ei.value.status_code == 409
-    assert "airplane" in ei.value.detail
 
 
 def test_keyword_triage_run_refuses_an_uninstalled_model(monkeypatch):
@@ -72,8 +112,40 @@ def test_keyword_triage_last_is_an_honest_stub_when_nothing_has_run(monkeypatch,
     assert body["available"] is False
 
 
-def test_source_tags_run_refuses_under_airplane_mode(monkeypatch):
+def test_source_tags_run_starts_under_airplane_mode_with_loopback_ollama(monkeypatch):
+    """Mirrors the keyword-triage gate-split proof: loopback Ollama is airplane-safe,
+    so the endpoint's own blanket refusal is gone."""
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: True)
+    monkeypatch.setattr(
+        "src.llm.ollama.OllamaClient",
+        lambda *a, **kw: type("C", (), {"list_installed": lambda self: ["granite4:micro"]})(),
+    )
+    started_kwargs: dict = {}
+    monkeypatch.setattr(
+        d._SOURCE_TAGS_JOB,
+        "start",
+        lambda **kw: (started_kwargs.update(kw), {"state": "running", "kind": "source-tags"})[1],
+    )
+    body = d.SourceTagsRunBody(model="granite4:micro")
+    resp = d.source_tags_run(body)
+    payload = json.loads(bytes(resp.body))
+    assert payload["started"] is True
+    assert started_kwargs["model"] == "granite4:micro"
+
+
+def test_source_tags_run_still_refuses_when_ollama_is_genuinely_unavailable(monkeypatch):
+    """A non-loopback backend (or Ollama simply not running) still 409s under
+    airplane mode -- the gate split only removed the endpoint's redundant blanket
+    check, never the client's own loopback-vs-clearnet gate."""
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: True)
+
+    def _raise_unavailable(self):
+        raise LLMUnavailable("Network is OFF (airplane mode): refusing the Ollama request.")
+
+    monkeypatch.setattr(
+        "src.llm.ollama.OllamaClient",
+        lambda *a, **kw: type("C", (), {"list_installed": _raise_unavailable})(),
+    )
     body = d.SourceTagsRunBody(model="stub:test")
     with pytest.raises(HTTPException) as ei:
         d.source_tags_run(body)

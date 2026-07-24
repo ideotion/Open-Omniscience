@@ -144,6 +144,12 @@ class StagedArtifact:
     # had to be decrypted to read it. Surfaced in the restore preview so the operator
     # can SEE a backup is genuinely encrypted (field test 2026-06-19 P0-2 doubt).
     encrypted: bool = False
+    # Stage-A (decrypt/reassemble) wall-seconds, keyed by sub-step name (field-
+    # feedback Session A §4, "instrument first"). Empty dict = never measured
+    # (a plain default, backward-compatible with every pre-existing call site
+    # that builds a StagedArtifact by hand). run_restore folds these into its
+    # own report["timings"]["stages"] under a "stage_a:" prefix.
+    stage_a_timings: dict[str, float] = field(default_factory=dict)
 
     def member_paths(self, role: str) -> list[tuple[str, Path]]:
         out = []
@@ -523,21 +529,30 @@ def read_volume_backup(
             include_merge_budget=include_merge_budget,
         )
 
+    import time
+
     staging = (staging_root or data_dir()) / f".restore-{secrets.token_hex(8)}"
     staging.mkdir(parents=True, exist_ok=False)
     temp_zip = staging / "_reassembled.zip"
+    stage_a_timings: dict[str, float] = {}
     try:
+        t0 = time.monotonic()
         read_volume_set(src_dir, passphrase, temp_zip)  # verify + parity recover + checksum
+        stage_a_timings["verify_recover_reassemble"] = round(time.monotonic() - t0, 3)
         with open(temp_zip, "rb") as fh:
             if fh.read(4) != _ZIP_MAGIC:
                 raise ArtifactError("reassembled archive is not an oo-backup-2 zip")
+        t1 = time.monotonic()
         with zipfile.ZipFile(temp_zip) as zf:
             names = set(zf.namelist())
             if "manifest.json" not in names or "corpus.db" not in names:
                 raise ArtifactError("zip is not an oo-backup-2 artifact (missing manifest/corpus)")
             _safe_extract(zf, staging)
         temp_zip.unlink(missing_ok=True)
-        return _finalize_staged(staging, was_encrypted=True)
+        staged = _finalize_staged(staging, was_encrypted=True)
+        stage_a_timings["extract_and_verify"] = round(time.monotonic() - t1, 3)
+        staged.stage_a_timings = stage_a_timings
+        return staged
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -570,10 +585,18 @@ def read_artifact(
     that cannot be staged safely. Nothing outside the staging dir is touched.
     """
     import shutil
+    import time
 
     if not blob:
         raise ArtifactError("empty upload")
 
+    # Stage-A timing (field-feedback Session A §4, "instrument first"): two
+    # sub-steps with meaningfully different cost profiles -- "decrypt" (the
+    # OOENC1 unwrap, ~0 when the upload wasn't encrypted -- recorded either
+    # way, honestly near-zero rather than omitted) and "extract_and_verify"
+    # (disk preflight + zip extraction + manifest signature/hash checks).
+    stage_a_timings: dict[str, float] = {}
+    t0 = time.monotonic()
     was_encrypted = blob[:8] == b"OOENC1\x00\x00"
     if was_encrypted:
         if passphrase is None:
@@ -581,6 +604,7 @@ def read_artifact(
         from src.safety.crypto import decrypt_bytes
 
         blob = decrypt_bytes(blob, passphrase)  # loud on wrong passphrase/tamper
+    stage_a_timings["decrypt"] = round(time.monotonic() - t0, 3)
 
     # H3 disk-space preflight: the members are extracted to the staging filesystem; the
     # corpus DB (the bulk) is stored uncompressed in the zip, so the extracted size is at
@@ -596,10 +620,12 @@ def read_artifact(
     # -- potentially plaintext -- corpus copy behind on disk indefinitely. Sibling
     # restore paths (read_volume_backup, read_stream_backup) already clean up on
     # failure; this path did not (audit finding 2026-07-17).
+    t1 = time.monotonic()
     try:
         if blob[:16] == _SQLITE_MAGIC:
             corpus = staging / "corpus.db"
             corpus.write_bytes(blob)
+            stage_a_timings["extract_and_verify"] = round(time.monotonic() - t1, 3)
             return StagedArtifact(
                 kind="legacy-ooenc" if was_encrypted else "legacy-db",
                 staging_dir=staging,
@@ -610,6 +636,7 @@ def read_artifact(
                 origin_fingerprint="unsigned",
                 members=[{"name": "corpus.db", "role": "corpus"}],
                 encrypted=was_encrypted,
+                stage_a_timings=stage_a_timings,
             )
 
         if blob[:4] != _ZIP_MAGIC:
@@ -620,7 +647,10 @@ def read_artifact(
             if "manifest.json" not in names or "corpus.db" not in names:
                 raise ArtifactError("zip is not an oo-backup-2 artifact (missing manifest/corpus)")
             _safe_extract(zf, staging)
-        return _finalize_staged(staging, was_encrypted)
+        staged = _finalize_staged(staging, was_encrypted)
+        stage_a_timings["extract_and_verify"] = round(time.monotonic() - t1, 3)
+        staged.stage_a_timings = stage_a_timings
+        return staged
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise

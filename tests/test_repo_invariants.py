@@ -5696,7 +5696,15 @@ def test_llm_langdetect_is_optin_labelled_and_never_touches_trusted_channels():
     # the rest of the backlog by re-occupying every batch's query window.
     assert "continuous: bool = False" in api and "exclude_ids=attempted" in api
     assert "exclude_ids" in mod and "Article.id.in_(exclude_ids)" in mod
-    assert 'id="langdetect-continuous"' in ui and "continuous" in ui
+    # 2026-07-24 field-feedback Session A §1: the checkbox is GONE — ONE button now toggles
+    # start <-> stop (never a separate continuous/non-continuous choice in the UI), and a
+    # transient LLMUnavailable mid-run retries with backoff instead of hard-aborting the run
+    # into a benign-looking "done" (the maintainer's exact field report).
+    assert 'id="langdetect-continuous"' not in ui, "the continuous checkbox must be removed"
+    assert "Language detection ongoing" in ui, "the button must toggle to a stop label while running"
+    assert "_LANGDETECT_MAX_CONSECUTIVE_FAILURES" in api, "transient failures must retry, not hard-abort"
+    assert "advance_langdetect_auto_start" in api, "an auto-start ride-along must exist (default ON)"
+    assert "ai_langdetect_auto" in api, "the auto-start must be gated by an operator setting"
 
 
 def test_newsletter_eml_upload_runs_off_the_event_loop():
@@ -7018,6 +7026,58 @@ def test_library_graphs_wired_and_downloaded_section_compressed():
     assert "chartEnlarge(label" in app, "click-to-enlarge must reuse the existing chartEnlarge modal"
     assert "/api/library/history?metric=" in app
 
+
+def test_library_qualification_tile_window_switcher_hide_flat_auto_log():
+    """2026-07-24 field-feedback Session A §5: a 4-line source-qualification tile
+    (counts only, never a score), a per-tile window switcher (ALL tiles share the
+    same default window), hide-flat collapsing an all-zero/no-data series to a
+    one-line note, and auto-log10 on a large cross-series spread — never
+    multi-axis for same-unit series (the honest-viz dual-axis rejection)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    snap = (_SRC / "database" / "snapshots.py").read_text(encoding="utf-8")
+
+    # backend: the 4 filtered metrics exist, aligned with database.py's own
+    # qualification predicates (never two divergent definitions).
+    for m in ("sources_qualified", "sources_disqualified", "sources_never_judged", "sources_candidates"):
+        assert f'"{m}"' in snap, f"missing filtered snapshot metric {m}"
+    assert "STATUS_QUALIFIED" in snap and "STATUS_DISQUALIFIED" in snap and "STATUS_UNQUALIFIED" in snap
+
+    # frontend: the qualification tile, its 4 metrics, the window switcher, the
+    # hide-flat check, and the auto-log gate all exist and are wired in.
+    assert "function _libQualificationTile" in app
+    assert "function enlargeLibQualification" in app
+    for m in ("sources_qualified", "sources_disqualified", "sources_never_judged", "sources_candidates"):
+        assert f'"{m}"' in app
+    assert "_libQualificationTile(LIB_DEFAULT_DAYS)" in app, "the Activity section must render the qualification tile"
+    # never a quality score — the enlarge caveat states counts-only explicitly.
+    assert "never a quality score" in app
+
+    # window switcher: one shared default, per-tile in-place re-render on click.
+    assert "const LIB_WINDOWS = [[7," in app
+    assert '"7d"' in app and '"30d"' in app and '"90d"' in app
+    assert "function _libSetWindow" in app
+    assert "onclick=\"_libSetWindow(" in app
+    assert "const LIB_DEFAULT_DAYS = 30" in app
+    # every render call site starts on the SAME default window (never a per-tile
+    # divergent starting point) — articles_per_hour used to hardcode 7d.
+    assert '"articles_per_hour", LIB_DEFAULT_DAYS' in app
+    assert '"sources", LIB_DEFAULT_DAYS' in app
+    assert '"wiki_pages", LIB_DEFAULT_DAYS' in app
+    assert '"law_documents", LIB_DEFAULT_DAYS' in app
+
+    # hide-flat: an all-zero/empty series collapses to a one-line note, both for
+    # the single-metric tiles and the qualification tile.
+    assert "function _libAllZero" in app
+    assert "_libAllZero(series.map(p => p.n))" in app
+    assert "_libAllZero(_libQualSeries.flatMap(" in app
+
+    # auto-log (ruled): a shared axis; log10 only past a spread threshold, ALWAYS
+    # labelled — never a silent switch, never a second (multi-)axis.
+    assert "function _libQualSpread" in app
+    assert "_libQualSpread(_libQualSeries) > 50" in app
+    assert '"log scale"' in app
+    assert "logY: _libQualSpread" in app  # the real ooChart opts.logY toggle, not a fake label
+
     # The 'slice-1c 404 lesson' (CLAUDE.md): the wiring test must COMPOSE the real
     # route (router prefix + decorator), never assert two literal strings side by
     # side. Mirrors tests/test_library_history.py::test_wiring_composes_the_real_route.
@@ -7026,6 +7086,70 @@ def test_library_graphs_wired_and_downloaded_section_compressed():
     path_m = re.search(r'@router\.get\("(/history[^"]*)"', lib_api)
     assert prefix_m and path_m
     assert prefix_m.group(1) + path_m.group(1) == "/api/library/history"
+
+
+def test_law_ai_change_summaries_are_a_labelled_linked_layer():
+    """2026-07-24 field-feedback Session A §3 (ruled): an AI change summary is a
+    LINKED layer over LawRevision (mirroring ArticleAnalysis's provenance shape —
+    model + prompt_version + prompt_text), auto-generated for UI-language-floor
+    jurisdictions and on-demand for the rest; NEVER the trusted diff/revision
+    record, NEVER fed to keyword indexing. Guards the model, the API surface
+    (id + ai_summary on both list/detail, the on-demand POST endpoint), and the
+    frontend's 'AI-derived · unreliable' rendering + on-demand button."""
+    models = (_SRC / "database" / "models.py").read_text(encoding="utf-8")
+    assert "class LawRevisionSummary(Base):" in models
+    lrs_body = models.split("class LawRevisionSummary(Base):", 1)[1].split("class ", 1)[0]
+    for col in ("revision_id", "summary", "model", "prompt_version", "prompt_text"):
+        assert col in lrs_body, f"LawRevisionSummary missing {col}"
+
+    summarize_src = (_SRC / "law" / "summarize.py").read_text(encoding="utf-8")
+    assert "def summarize_revision(" in summarize_src
+    assert "def pending_ai_summaries(" in summarize_src
+    assert "def advance_law_summaries(" in summarize_src
+    assert "UI_LOCALE_CODES" in summarize_src  # gated on the 12 UI languages, not a hardcoded copy
+    assert 'if not (revision.diff or "").strip():' in summarize_src  # never summarize a baseline
+
+    # the corpus keyword pass must never read this table (the trusted-index guard).
+    extract_src = (_SRC / "analytics" / "extract.py").read_text(encoding="utf-8")
+    store_src = (_SRC / "analytics" / "store.py").read_text(encoding="utf-8")
+    assert "LawRevisionSummary" not in extract_src and "LawRevisionSummary" not in store_src
+
+    api = (_SRC / "api" / "law.py").read_text(encoding="utf-8")
+    assert '"id": rev.id' in api  # law_changes exposes the revision id
+    assert '"id": r.id' in api  # law_document's per-revision id, too
+    assert '"ai_summary": _summary_dict(' in api
+    prefix_m = re.search(r'APIRouter\(prefix="([^"]+)"', api)
+    path_m = re.search(r'@router\.post\("(/revisions/\{revision_id\}/summarize)"\)', api)
+    assert prefix_m and path_m
+    assert prefix_m.group(1) + path_m.group(1) == "/api/law/revisions/{revision_id}/summarize"
+
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function lawAiSummaryHtml(" in app
+    assert "function lawSummarize(" in app
+    assert "/api/law/revisions/${revId}/summarize" in app
+    assert 'data-rev="${ch.id}"' in app
+    # scheduler ride-along, gated + never blocking the scrape.
+    runner = (_SRC / "scheduler" / "runner.py").read_text(encoding="utf-8")
+    assert "from src.law.summarize import advance_law_summaries" in runner
+    assert "sum_res = advance_law_summaries(session)" in runner
+
+
+def test_law_tracking_budget_is_adaptive_not_a_fixed_five():
+    """2026-07-24 field-feedback Session A §3 item 3 (ruled): auto_track_due's
+    hardcoded batch=5/pass cannot baseline hundreds of documents once enumeration
+    adapters land -- the per-pass budget now scales with the watched-document
+    count, bounded both ways (unchanged on today's small corpus, capped so a
+    large one never floods a single pass)."""
+    track_src = (_SRC / "law" / "track.py").read_text(encoding="utf-8")
+    assert "def adaptive_track_budget(" in track_src
+    assert "batch: int | None = None" in track_src  # the OLD hardcoded default=5 is gone
+    assert "batch = adaptive_track_budget(watched_count)" in track_src
+
+    from src.law.track import adaptive_track_budget
+
+    assert adaptive_track_budget(0) == 5
+    assert adaptive_track_budget(23) == 5  # today's real corpus: byte-identical to the old default
+    assert adaptive_track_budget(10_000) <= 25  # bounded -- never floods a single pass
 
 
 def test_briefing_refresh_runs_in_a_background_thread_not_inline():
@@ -7082,3 +7206,99 @@ def test_memory_headroom_honesty_never_projects_a_worker_count():
     assert '"mem_low_ticks": self._mem_low_ticks' in perf
     assert '"mem_low_min_permits": self._mem_low_min_permits' in perf
     assert '"memory_headroom_note": memory_headroom_note' in perf
+
+
+def test_hazards_are_ingested_as_articles_with_a_home_strip_and_map_rings():
+    """2026-07-24 field-feedback Session A §6 (ruled, option b): a hazard record
+    (USGS earthquake, GDACS disaster alert) is now ingested as ONE corpus Article
+    per provider event id -- the same 'a versioned/relayed source is an Article +
+    a linked layer' pattern already used for law/Wikipedia. Guards: the linked
+    HazardEventDetail model (provider-ASSERTED facts, never deduced -- the
+    OPPOSITE two-class direction from ArticleMentionedPlace/ArticleEntity), the
+    ingest module's honesty rails (never fabricates a magnitude/coordinate/date;
+    dedup on the (provider, event_id) composite key), the zero-network map/alert
+    consumers, the two save_snapshot call sites' opt-in ingest side effect, and
+    the Home Alerts strip's deep links (map + internal article)."""
+    models = (_SRC / "database" / "models.py").read_text(encoding="utf-8")
+    assert "class HazardEventDetail(Base):" in models
+    hed_body = models.split("class HazardEventDetail(Base):", 1)[1].split("class ", 1)[0]
+    for col in ("article_id", "provider", "event_id", "event_type", "severity",
+                "magnitude", "lat", "lon", "place", "event_time", "source_url"):
+        assert col in hed_body, f"HazardEventDetail missing {col}"
+    assert "unique=True" in hed_body.split("article_id", 1)[1][:160]  # one detail row per article
+    assert 'Index("ix_hazard_detail_provider_event", "provider", "event_id", unique=True)' in hed_body
+
+    ingest_src = (_SRC / "hazards" / "ingest.py").read_text(encoding="utf-8")
+    assert "def hazard_canonical_url(" in ingest_src
+    assert "def ensure_hazard_source(" in ingest_src
+    assert "def ingest_hazard_record(" in ingest_src
+    assert "def ingest_hazard_records(" in ingest_src
+    # never a fabricated magnitude/coordinate — absence stays None on a bad/missing value.
+    assert "mag = None" in ingest_src and "lat = lon = None" in ingest_src
+    # never guessed as "now" — an unparseable/absent time stays None.
+    assert "def _parse_time(value) -> datetime | None:" in ingest_src
+    assert 'if not value:\n        return None' in ingest_src
+    # the same is_integrity_error cross-driver dedup discipline src/law/corpus.py uses.
+    assert "is_integrity_error(exc)" in ingest_src
+
+    # the two-class direction is REVERSED here: HazardEventDetail is provider-
+    # ASSERTED, so the DEDUCED extraction pipeline must never import it (and never
+    # feed the trusted keyword index from it, mirroring the law-summary guard).
+    extract_src = (_SRC / "analytics" / "extract.py").read_text(encoding="utf-8")
+    store_src = (_SRC / "analytics" / "store.py").read_text(encoding="utf-8")
+    assert "HazardEventDetail" not in extract_src and "HazardEventDetail" not in store_src
+
+    prov = (_SRC / "catalog" / "provenance.py").read_text(encoding="utf-8")
+    assert 'HAZARD = "hazard"' in prov
+    assert "PROVENANCE_CLASSES" in prov and "HAZARD)" in prov  # joins the closed class set
+
+    # zero-network map layer: reads the LOCAL snapshot only, resolving article_id
+    # via a batched query (never N+1, never a live fetch on render).
+    timemap_api = (_SRC / "api" / "timemap.py").read_text(encoding="utf-8")
+    assert "def _hazard_signals(db: Session | None = None)" in timemap_api
+    assert "article_by_url: dict[str, int] = {}" in timemap_api
+    assert '"article_id": article_by_url.get(event_url) if event_url else None' in timemap_api
+    assert '"hazard_type": h.get("type")' in timemap_api
+
+    # compute_alerts: magnitude/lat/lon restored (were being silently dropped),
+    # and each hazard row carries article_id + flows into the tier's article_ids.
+    alerts_src = (_SRC / "analytics" / "alerts.py").read_text(encoding="utf-8")
+    assert '"magnitude": rec.get("magnitude")' in alerts_src
+    assert '"lat": rec.get("lat")' in alerts_src and '"lon": rec.get("lon")' in alerts_src
+    assert '"article_id": article_id' in alerts_src
+    assert "if article_id is not None:" in alerts_src
+    assert 'tiers[tier]["article_ids"].add(article_id)' in alerts_src
+
+    # both save_snapshot call sites gained the OPT-IN ingest side effect —
+    # best-effort, never breaking the snapshot save/scrape pass itself.
+    signals_api = (_SRC / "api" / "signals.py").read_text(encoding="utf-8")
+    assert "ingested = ingest_hazard_records(db, saved" in signals_api
+    assert '"ingested": ingested' in signals_api
+    track_src = (_SRC / "hazards" / "track.py").read_text(encoding="utf-8")
+    assert "session=None" in track_src  # byte-identical default for existing callers
+    assert 'out["ingested"] = ingest_hazard_records(session, saved["records"])' in track_src
+    runner = (_SRC / "scheduler" / "runner.py").read_text(encoding="utf-8")
+    assert "auto_snapshot_due(fetcher, session=session)" in runner
+
+    # frontend: the Home Alerts strip renders a real relative date + magnitude
+    # (were being fetched and DROPPED before), a per-item map deep link, and an
+    # internal-article link that only appears once article_id is real (never a
+    # broken/fabricated link).
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function _hazardStripItem(h)" in app
+    assert "const HAZARD_GLYPH = {" in app
+    assert "h.article_id != null" in app
+    assert "function openWorldMapAt(lat, lon, isoTime, articleId)" in app
+    assert '_ooMapLensTabs.select("stories")' in app
+    # the two live map fetch call sites both request the hazard layer.
+    assert app.count('await api("/api/timemap?limit=4000&hazards=true")') == 2
+    # the click-detail panel's internal-article link + type+place composed search.
+    assert "const localLink = (s.kind === \"hazard\" && s.article_id != null)" in app
+    assert '[s.hazard_type, s.place].filter(Boolean).join(" ").trim()' in app
+
+    # magnitude-scaled marker radius (item 2, sqrt scale) -- a real magnitude
+    # grows the map dot; a magnitude-less hazard (GDACS non-quakes) falls
+    # through to the SAME default every other signal kind already uses, never
+    # a fabricated size for a fact the provider didn't state.
+    assert 's.kind === "hazard" && typeof s.magnitude === "number"' in app
+    assert "Math.sqrt(Math.max(0, s.magnitude))" in app

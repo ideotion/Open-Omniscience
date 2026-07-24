@@ -28,14 +28,16 @@ HONESTY BY CONSTRUCTION
     ``batch_record`` is counts-only, by design, to keep its 18-check selftest stable)
     carries the actual echo-validated verdicts, so a later Claude verification session
     can re-judge a stratified sample against what the model actually said.
-  * Degrades LOUDLY: Ollama going unavailable mid-run (airplane mode engaged, model
-    unloaded, the process killed) stops the job and marks the summary ``error`` --
-    never a fabricated completion.
+  * Degrades LOUDLY: Ollama going unavailable mid-run (model unloaded, the process
+    killed, or -- for a misconfigured non-loopback ``OO_OLLAMA_URL`` -- airplane
+    mode engaged) stops the job and marks the summary ``error`` -- never a
+    fabricated completion.
 
-Airplane-mode note (merge-order, not a build item here): loopback Ollama is still
-gated by the BLANKET kill switch (``src/llm/ollama.py:_check_kill_switch``) until the
-gate split (L3, PR #730) lands -- this job runs ONLINE for now, same as every other
-LLM feature; the up-front and mid-run checks below just surface that honestly.
+Airplane-mode note: this job runs against LOOPBACK Ollama, which the client's own
+``_check_kill_switch`` (``src/llm/ollama.py``) treats as airplane-safe -- the run
+starts and generates fine while airplane mode is engaged, same as every other
+loopback LLM feature in the app. Only a genuinely non-loopback backend URL still
+refuses under airplane mode (defense in depth against a misconfigured client).
 """
 
 from __future__ import annotations

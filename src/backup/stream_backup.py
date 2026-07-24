@@ -1306,6 +1306,15 @@ def read_stream_backup(
             "been altered or corrupted; refusing to restore from it"
         )
 
+    # Stage-A timing (field-feedback Session A §4, "instrument first"): the
+    # four sub-steps of a volume-set restore have genuinely different cost
+    # profiles on a large set -- verify/parity-recover can read the WHOLE set,
+    # reassembly is per-volume decrypt+copy, prepare_corpus_files is where the
+    # SQLCipher sqlcipher_export() plaintext conversion lives (likely the
+    # single most expensive step on a big encrypted corpus), and finalize is
+    # the manifest signature + per-member hash re-check.
+    stage_a_timings: dict[str, float] = {}
+    t0 = time.monotonic()
     status = verify_volume_set(src)
     if status["bad"]:
         from src.backup.parity import recover_volumes
@@ -1318,6 +1327,7 @@ def read_stream_backup(
                 "corrupt or missing volumes that could not be recovered: "
                 + ", ".join(sorted(unrepaired))
             )
+    stage_a_timings["verify_and_parity_recover"] = round(time.monotonic() - t0, 3)
 
     root = staging_root or data_dir()
     _preflight_staging(root, m, include_merge_budget=include_merge_budget)
@@ -1325,6 +1335,7 @@ def read_stream_backup(
     staging.mkdir(parents=True, exist_ok=False)
     with active_staging(staging):
         try:
+            t1 = time.monotonic()
             vol_by_name = {v["name"]: v for v in m.get("volumes") or []}
             for mm in m.get("members") or []:
                 out_path = staging / mm["name"]
@@ -1346,15 +1357,22 @@ def read_stream_backup(
                     raise VolumeError(
                         f"member {mm['name']} failed its plaintext checksum after reassembly"
                     )
+            stage_a_timings["reassemble"] = round(time.monotonic() - t1, 3)
 
+            t2 = time.monotonic()
             verified_absent = _prepare_staged_corpus_files(
                 staging, m, passphrase, corpus_passphrase
             )
+            stage_a_timings["prepare_corpus_files"] = round(time.monotonic() - t2, 3)
             from src.backup.artifact import _finalize_staged
 
-            return _finalize_staged(
+            t3 = time.monotonic()
+            staged = _finalize_staged(
                 staging, was_encrypted=True, verified_absent=verified_absent
             )
+            stage_a_timings["finalize"] = round(time.monotonic() - t3, 3)
+            staged.stage_a_timings = stage_a_timings
+            return staged
         except Exception:
             shutil.rmtree(staging, ignore_errors=True)
             raise

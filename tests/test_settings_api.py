@@ -41,6 +41,23 @@ def test_get_and_update_settings(tmp_path, monkeypatch):
         assert bad2.status_code == 400
 
 
+def test_ai_langdetect_auto_setting_defaults_on_and_round_trips(tmp_path, monkeypatch):
+    """2026-07-24 Session A §1: default-ON auto-start toggle, opt-out validated as a bool."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    with TestClient(app) as client:
+        body = client.get("/api/settings").json()
+        assert body["ai_langdetect_auto"] is True
+
+        r = client.put("/api/settings", json={"ai_langdetect_auto": False})
+        assert r.status_code == 200
+        assert r.json()["ai_langdetect_auto"] is False
+        # persists across a fresh read
+        assert client.get("/api/settings").json()["ai_langdetect_auto"] is False
+
+        bad = client.put("/api/settings", json={"ai_langdetect_auto": "banana"})
+        assert bad.status_code == 422  # pydantic rejects a non-bool before it reaches save_settings
+
+
 def test_backup_download_returns_valid_sqlite(tmp_path):
     init_db()
     with TestClient(app) as client:
