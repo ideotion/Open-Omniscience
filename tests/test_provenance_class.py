@@ -69,10 +69,14 @@ def test_case_and_trailing_dot_normalised():
 def test_classes_are_a_closed_descriptive_set():
     # Every output is a member of the advertised set (a channel label, never a score).
     # LAW joined 2026-07-17 (maintainer: a proper dedicated class for law articles).
-    from src.catalog.provenance import LAW
+    # HAZARD joined 2026-07-24 (field-feedback Session A §6: hazards ingest as Articles).
+    from src.catalog.provenance import HAZARD, LAW
 
-    assert set(PROVENANCE_CLASSES) == {WEB, WIKIPEDIA, NEWSLETTER, STATISTICS, CITED, LAW}
-    for dom in ("en.wikipedia.org", "newsletters.import.local", "x.com", "law.fr.local", None):
+    assert set(PROVENANCE_CLASSES) == {WEB, WIKIPEDIA, NEWSLETTER, STATISTICS, CITED, LAW, HAZARD}
+    for dom in (
+        "en.wikipedia.org", "newsletters.import.local", "x.com", "law.fr.local",
+        "hazard.usgs.local", None,
+    ):
         assert provenance_of(dom) in PROVENANCE_CLASSES
 
 
@@ -90,6 +94,19 @@ def test_law_by_source_type_and_synthetic_domain():
     assert provenance_of("example.local") == WEB
 
 
+def test_hazard_by_source_type_and_synthetic_domain():
+    """2026-07-24: hazard is a first-class provenance class — the synthetic
+    hazard.<provider>.local corpus sources classify as HAZARD, never WEB."""
+    from src.catalog.provenance import HAZARD, PROVENANCE_CLASSES
+
+    assert HAZARD in PROVENANCE_CLASSES
+    assert provenance_of("hazard.usgs.local") == HAZARD          # synthetic, even without type
+    assert provenance_of("hazard.gdacs.local", "hazard") == HAZARD
+    assert provenance_of("earthquake.usgs.gov", "hazard") == HAZARD
+    assert provenance_of("hazardous-materials-news.example") == WEB  # no substring spoofing
+    assert provenance_of("earthquake.usgs.gov") == WEB            # no type -> just a web domain
+
+
 def test_implied_tags_merge_never_replace():
     from src.catalog.provenance import implied_tags
 
@@ -101,6 +118,7 @@ def test_implied_tags_merge_never_replace():
     assert implied_tags("en.wikipedia.org", None, "") == ["wikipedia", "encyclopedia"]
     assert implied_tags("uspto.gov", "ip", "law") == ["law", "ip"]  # already-present kept once
     assert implied_tags("example.com", "news", "politics") == ["politics"]  # web implies nothing
+    assert implied_tags("hazard.usgs.local", "hazard", None) == ["hazard"]
 
 
 def test_ensure_channel_tags_heals_idempotently():
@@ -122,16 +140,18 @@ def test_ensure_channel_tags_heals_idempotently():
                tags="legislation,official"),
         Source(name="USPTO", domain="uspto.gov", source_type="ip"),
         Source(name="Plain news", domain="news.example", source_type="news", tags="politics"),
+        Source(name="Hazard (USGS)", domain="hazard.usgs.local", source_type="hazard"),
     ])
     s.commit()
     healed = ensure_channel_tags(s)
-    assert healed == 4  # every channel source healed; the plain news row untouched
+    assert healed == 5  # every channel source healed; the plain news row untouched
     tags = {src.domain: src.tags for src in s.query(Source).all()}
     assert tags["fr.wikipedia.org"] == "wikipedia,encyclopedia"
     assert tags["law.kh.local"] == "law"
     assert tags["legifrance.gouv.fr"] == "legislation,official,law"  # appended, order kept
     assert tags["uspto.gov"] == "law,ip"
     assert tags["news.example"] == "politics"
+    assert tags["hazard.usgs.local"] == "hazard"
     assert ensure_channel_tags(s) == 0  # idempotent
 
 

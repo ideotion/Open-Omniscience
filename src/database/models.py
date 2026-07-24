@@ -53,7 +53,7 @@ from sqlalchemy import (
     UniqueConstraint,
     event,
 )
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, backref, mapped_column, relationship
 
 # Engine, session lifecycle, and the FastAPI dependency live in session.py and
 # have NO import-time side effects (no create_all, no monitoring thread). They are
@@ -1678,6 +1678,51 @@ class ArticleEntity(Base):
     )
 
 
+class HazardEventDetail(Base):
+    """Provider-ASSERTED event metadata for a hazard ingested as an Article
+    (2026-07-24 field-feedback Session A §6, ruled: hazards ingest AS Articles).
+
+    The TWO-CLASS discipline, the other way round from :class:`ArticleMentionedPlace`/
+    :class:`ArticleEntity` (which are DEDUCED from text): magnitude/coordinates/
+    severity here are exactly what the provider (USGS/GDACS) published for this
+    event -- an ASSERTED fact, never inferred, never a score. One row per Article
+    (the linked-layer pattern, mirroring LawRevisionSummary/ArticleAnalysis);
+    ``event_id`` + ``provider`` are the provider's own dedup key (kept alongside
+    the Article's canonical_url, which already encodes both, for a cheap lookup
+    without parsing the URL).
+    """
+
+    __tablename__ = "hazard_event_details"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    article_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("articles.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    provider: Mapped[str] = mapped_column(String(20), nullable=False)  # "usgs" | "gdacs"
+    event_id: Mapped[str] = mapped_column(String(120), nullable=False)
+    event_type: Mapped[str | None] = mapped_column(String(40))  # earthquake | cyclone | flood | ...
+    severity: Mapped[str | None] = mapped_column(String(20))  # the PROVIDER's own tier
+    magnitude: Mapped[float | None] = mapped_column(Float)  # None when the provider states none
+    lat: Mapped[float | None] = mapped_column(Float)
+    lon: Mapped[float | None] = mapped_column(Float)
+    place: Mapped[str | None] = mapped_column(String(300))
+    event_time: Mapped[datetime | None] = mapped_column(DateTime)  # the provider's own timestamp
+    source_url: Mapped[str | None] = mapped_column(String(1000))
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+    updated_at: Mapped[datetime | None] = mapped_column(
+        DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC)
+    )
+
+    article = relationship("Article", backref=backref("hazard_detail", uselist=False))
+
+    __table_args__ = (
+        Index("ix_hazard_detail_provider_event", "provider", "event_id", unique=True),
+    )
+
+    def __repr__(self) -> str:
+        return f"<HazardEventDetail(article_id={self.article_id}, provider='{self.provider}')>"
+
+
 class KeywordMention(Base):
     """One article's mention of a keyword/entity, with context + denormalised facets.
 
@@ -2051,6 +2096,37 @@ class LawRevision(Base):
 
     def __repr__(self) -> str:
         return f"<LawRevision(doc={self.document_id} d={self.delta_bytes})>"
+
+
+class LawRevisionSummary(Base):
+    """An AI-generated plain-language summary of ONE law change (2026-07-24
+    field-feedback Session A §3: "AI change summaries" -- ruled).
+
+    A LINKED layer over :class:`LawRevision`, mirroring :class:`ArticleAnalysis`'s
+    provenance shape exactly (model + prompt_version + the verbatim prompt_text
+    used) so no AI text is ever shown without its origin. NEVER the trusted
+    diff/revision record itself -- the ONE ``index_article`` corpus-keyword pass
+    never reads this table. Rendered "AI-derived - unreliable" (the established
+    third class); a revision may be re-summarized (a later, better prompt), so
+    this is append-only like ArticleAnalysis, never an in-place overwrite.
+    """
+
+    __tablename__ = "law_revision_summaries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    revision_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("law_revisions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    prompt_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    revision = relationship("LawRevision", backref="ai_summaries")
+
+    def __repr__(self) -> str:
+        return f"<LawRevisionSummary(revision_id={self.revision_id}, model='{self.model}')>"
 
 
 class MergeBatch(Base):

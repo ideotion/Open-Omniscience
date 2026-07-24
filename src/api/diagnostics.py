@@ -3842,9 +3842,9 @@ def pagesize_bench_download() -> Response:
 #  the REAL wiring -- a visible, abortable BackgroundJob over the live corpus,
 #  driving the SAME core. Mirrors the p0-validation / pagesize-bench job surface
 #  exactly. NEVER writes the trusted keyword index -- EXPORT-ONLY JSONL, per the
-#  ruling. Merge-order note: Ollama is still gated by the BLANKET airplane-mode
-#  kill switch until the gate-split (L3, PR #730) lands; this job runs ONLINE for
-#  now, same as every other LLM feature in the app.
+#  ruling. The airplane/Ollama gate split (2026-07-24 field-feedback Session A,
+#  §7) landed: this runs offline too, gated only by the client's own loopback-
+#  vs-clearnet check -- no blanket airplane-mode refusal here anymore.
 # ---------------------------------------------------------------------------
 
 
@@ -3881,21 +3881,18 @@ def keyword_triage_run(body: KeywordTriageRunBody) -> JSONResponse:
     batch it through the local Ollama model (canaries on every batch, echo-back +
     constrained-verdict validation, per ``ai_layer.triage``), append EXPORT-ONLY
     JSONL to ``data_dir()/triage/oo-keyword-triage-<date>.jsonl``. NEVER writes the
-    trusted keyword index. Refuses up front (409) under airplane mode, and (400) if
-    ``model`` is not an INSTALLED Ollama tag (``verify_roster`` -- never substitutes
-    a 'close' tag). Poll ``/keyword-triage/status``; download the dated log via
-    ``/keyword-triage/download``. 409-free for an already-running job: returns its
-    current status with ``started:false``."""
+    trusted keyword index. Loopback Ollama inference is airplane-safe (the socket
+    never leaves 127.0.0.1) -- so this endpoint runs fine under airplane mode,
+    gated ONLY by the client's own loopback-vs-clearnet check (``OllamaClient.
+    _check_kill_switch``): a genuinely non-loopback ``OO_OLLAMA_URL`` still refuses
+    (409) while airplane mode is engaged, same as Ollama simply being unreachable.
+    Also (400) if ``model`` is not an INSTALLED Ollama tag (``verify_roster`` --
+    never substitutes a 'close' tag). Poll ``/keyword-triage/status``; download the
+    dated log via ``/keyword-triage/download``. 409-free for an already-running
+    job: returns its current status with ``started:false``."""
     from src.ai_layer.triage import verify_roster
-    from src.ingest import kill_switch_active
     from src.llm.ollama import LLMUnavailable, OllamaClient
 
-    if kill_switch_active():
-        raise HTTPException(
-            status_code=409,
-            detail="network refused: airplane mode is engaged (loopback Ollama is blocked "
-            "by the blanket kill switch until the airplane/Ollama gate split lands)",
-        )
     try:
         installed = OllamaClient().list_installed()
     except LLMUnavailable as exc:
@@ -4018,19 +4015,17 @@ def source_tags_run(body: SourceTagsRunBody) -> JSONResponse:
     is SKIPPED, never guessed), batch through the local Ollama model (canaries +
     echo-back + closed-vocabulary rejection, per ``ai_layer.source_tags``), append
     EXPORT-ONLY JSONL to ``data_dir()/triage/oo-source-tags-<date>.jsonl``. NEVER
-    writes ``Source.tags``. Refuses up front (409) under airplane mode, and (400)
-    if ``model`` is not an installed Ollama tag. Poll ``/source-tags/status``;
-    download via ``/source-tags/download``. 409-free for an already-running job."""
+    writes ``Source.tags``. Loopback Ollama inference is airplane-safe (the socket
+    never leaves 127.0.0.1) -- so this endpoint runs fine under airplane mode,
+    gated ONLY by the client's own loopback-vs-clearnet check (``OllamaClient.
+    _check_kill_switch``): a genuinely non-loopback ``OO_OLLAMA_URL`` still refuses
+    (409) while airplane mode is engaged, same as Ollama simply being unreachable.
+    Also (400) if ``model`` is not an installed Ollama tag. Poll
+    ``/source-tags/status``; download via ``/source-tags/download``. 409-free for
+    an already-running job."""
     from src.ai_layer.triage import verify_roster
-    from src.ingest import kill_switch_active
     from src.llm.ollama import LLMUnavailable, OllamaClient
 
-    if kill_switch_active():
-        raise HTTPException(
-            status_code=409,
-            detail="network refused: airplane mode is engaged (loopback Ollama is blocked "
-            "by the blanket kill switch until the airplane/Ollama gate split lands)",
-        )
     try:
         installed = OllamaClient().list_installed()
     except LLMUnavailable as exc:

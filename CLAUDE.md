@@ -1108,6 +1108,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     fallback needs its OWN regression test proving the HAPPY PATH still produces a real value, not
     just that the sad path degrades honestly; otherwise the fallback becomes a permanent hiding
     place for the very bug it was built to survive.
+  - **AN "EXCLUSIVE OPERATION" PAUSE MUST GATE EVERY ENTRY POINT THAT CAN START EQUIVALENT WORK,
+    NOT JUST THE PRIMARY LOOP (2026-07-24, Session A §4 "import owns the machine" restore
+    instrumentation — a mandatory-skeptic-matrix HIGH finding):** a large restore paused
+    background collection for its duration via `BackgroundScheduler.stop()`/`.start()` around the
+    CONTINUOUS loop, and on that premise claimed "the machine" (an enlarged SQLite cache, all CPU
+    cores for the post-merge re-index) — but `run_now()` (wired to a manual "Run now"
+    button/endpoint) spawns its own worker thread gated ONLY on `self._active`, with ZERO
+    awareness of the pause; a single manual click during the restore silently ran a full
+    concurrent collection pass, defeating the isolation the pause existed to provide (not a
+    data-loss bug — the single-writer gate still serialised any real write — but a real,
+    trivially-triggerable hole in the exact guarantee the surrounding comments claimed). FIX: a
+    DEDICATED hold flag (`hold_exclusive()`/`release_exclusive()`) set UNCONDITIONALLY
+    (independent of whether the primary loop was even running) and checked by EVERY entry point
+    that starts equivalent work, released in a `finally` so a manual trigger works again the
+    instant the exclusive operation ends. GENERAL FORM: before trusting "I paused the background
+    work" for an exclusivity claim, enumerate every OTHER way that same category of work can be
+    triggered (a manual button, a second endpoint, a scheduled-vs-immediate variant) and gate ALL
+    of them on the SAME hold — a pause that only stops the primary loop is honest-sounding but
+    incomplete, and code built ON TOP of it inherits that incompleteness silently. Found by a
+    DEDICATED adversarial concurrency-lens skeptic pass (not by an earlier data-loss/crash-safety
+    pass, exactly why the brief mandated a separate lens) — the same pass also caught a related
+    MEDIUM (the "own the machine" resource-tuning knobs applied UNCONDITIONALLY regardless of
+    whether the pause actually confirmed exclusivity; fixed by gating them on the pause's own
+    success) and a data-loss-lens pass caught a third MEDIUM (the all-cores worker count had NO
+    upper bound, unlike the everyday default's cap; fixed with a separate, higher-but-still-finite
+    ceiling for the exclusive path).
 
 ## Open queue (when maintainer says proceed)
 - **FIELD DIAGNOSTICS FINDINGS (2026-07-21, from a real operator export against the live

@@ -102,10 +102,47 @@ def compute_alerts(
         except Exception:  # noqa: BLE001 - a snapshot problem must never break the alert
             _LOG.warning("hazards snapshot load failed", exc_info=True)
             snapshot = {"records": [], "saved_at": None, "age_hours": None, "stale": True, "available": False}
-    for rec in snapshot.get("records", []) or []:
+    # Batch-resolve the internal Article id per hazard event (one query, never
+    # N+1) — 2026-07-24 field-feedback A6: hazards ingested as corpus Articles
+    # can now deep-link to the local reader, like watches/convergences already do.
+    hazard_article_by_url: dict[str, int] = {}
+    records = snapshot.get("records", []) or []
+    try:
+        from src.database.models import Article
+        from src.hazards.ingest import hazard_canonical_url
+
+        urls = [
+            hazard_canonical_url(str(r.get("source")), str(r.get("id")))
+            for r in records
+            if isinstance(r, dict) and r.get("source") and r.get("id")
+        ]
+        if urls:
+            rows = (
+                session.query(Article.canonical_url, Article.id)
+                .filter(Article.canonical_url.in_(urls))
+                .all()
+            )
+            hazard_article_by_url = {u: aid for u, aid in rows}
+    except Exception:  # noqa: BLE001 - the article link is a bonus, never load-bearing
+        hazard_article_by_url = {}
+
+    for rec in records:
         if not isinstance(rec, dict):
             continue
         tier = _hazard_tier(rec.get("severity"))
+        article_id = None
+        if rec.get("source") and rec.get("id"):
+            from src.hazards.ingest import hazard_canonical_url
+
+            # str() defensively -- the snapshot body is an unvalidated posted dict
+            # (HazardSnapshotBody.records: list[dict]), so a non-string source/id
+            # must never crash this whole loop/producer (a skeptic-caught defect:
+            # this call used to pass the raw values straight through, and this
+            # function is NOT wrapped in a surrounding try/except unlike the
+            # batch id-resolution block above it).
+            article_id = hazard_article_by_url.get(
+                hazard_canonical_url(str(rec["source"]), str(rec["id"]))
+            )
         tiers[tier]["hazards"].append(
             {
                 "title": rec.get("title"),
@@ -115,8 +152,17 @@ def compute_alerts(
                 "source": rec.get("source"),
                 "time": rec.get("time"),
                 "url": rec.get("url"),
+                # Item 4 (field-feedback A6, ruled): magnitude/lat/lon were being
+                # dropped here even though the snapshot carries them -- restored,
+                # never fabricated (absent stays None, e.g. GDACS non-quakes).
+                "magnitude": rec.get("magnitude"),
+                "lat": rec.get("lat"),
+                "lon": rec.get("lon"),
+                "article_id": article_id,
             }
         )
+        if article_id is not None:
+            tiers[tier]["article_ids"].add(article_id)
 
     # 2) Fired watches — a "watch" tier (your own saved threshold crossed).
     fired: list[dict] = []

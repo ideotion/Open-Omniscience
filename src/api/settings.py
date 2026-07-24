@@ -38,6 +38,9 @@ class SettingsUpdate(BaseModel):
     llm_prompt_translate: str | None = None
     llm_prompt_synthesis: str | None = None
     llm_prompt_ai_keywords: str | None = None  # the built-in keyword-extraction prompt (Part B)
+    # Auto-start language detection (2026-07-24 Session A §1): opt out of the
+    # scheduler ride-along that (re)starts the AI language-detection job.
+    ai_langdetect_auto: bool | None = None
 
 
 def _payload() -> dict:

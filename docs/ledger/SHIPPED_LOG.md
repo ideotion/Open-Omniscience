@@ -4094,3 +4094,44 @@ graceful-degrade fallback needs its own regression test proving the HAPPY PATH
 still produces a real value, not just that the SAD path degrades honestly;
 otherwise the fallback becomes a permanent hiding place for the very bug it
 was built to survive.
+
+**LESSON (2026-07-24, Session A §4 "import owns the machine" restore
+instrumentation, a mandatory-skeptic-matrix HIGH finding): an "exclusive
+operation" pause must gate EVERY entry point that can start equivalent work,
+not just the primary loop it was built against.** A large restore paused
+background collection for its duration via `BackgroundScheduler.stop()`/
+`.start()` around the CONTINUOUS loop, and on that premise claimed "the
+machine" — an enlarged SQLite cache, all CPU cores for the post-merge
+re-index. But the same class has a SEPARATE, independent entry point for
+starting a collection pass — `run_now()`, wired to a manual "Run now" button
+and its own API endpoint — that spawns its own worker thread gated ONLY on
+`self._active` (whether a pass happens to be running right now), with ZERO
+awareness of whether the loop had been paused for an exclusive operation. A
+single manual click during the restore silently ran a full concurrent
+collection pass, completely defeating the isolation the pause existed to
+provide — not a data-loss bug (the single-writer gate still serialised any
+real DB write regardless), but a real, trivially-triggerable hole in the
+exact guarantee the surrounding code's own comments claimed. FIX: a
+DEDICATED hold flag (`hold_exclusive()`/`release_exclusive()`) set
+UNCONDITIONALLY — independent of whether the primary loop was even running,
+since a manual trigger competes for the same resources regardless of the
+loop's own state — and checked by `run_now()` alongside its existing
+`self._active` check, released in a `finally` so a "Run now" click works
+again the instant the exclusive operation itself ends (never left blocked
+just because the OLD loop pass hadn't died yet). GENERAL FORM: before
+trusting "I paused the background work" for an exclusivity claim, enumerate
+EVERY OTHER way that same category of work can be triggered — a manual
+button, a second API endpoint, a scheduled-vs-immediate variant — and gate
+ALL of them on the SAME hold; a pause that only stops the primary loop is an
+honest-sounding but incomplete guarantee, and code built ON TOP of it (a
+bigger cache, more workers) inherits that incompleteness silently. Found by
+a mandatory adversarial concurrency-lens skeptic pass (not by the author,
+not by an earlier data-loss/crash-safety pass, which is exactly why the
+brief mandated a DEDICATED concurrency lens rather than folding it into a
+general review) — the same pass also caught a related MEDIUM (the
+"own the machine" resource-tuning knobs were applied UNCONDITIONALLY,
+regardless of whether the pause actually confirmed exclusivity; fixed by
+gating them on the pause's own success) and, from a separate data-loss-lens
+pass, a third MEDIUM (the all-cores worker count had NO upper bound at all,
+unlike the everyday default's `_MAX_WORKERS_CAP`; fixed with a SEPARATE,
+higher-but-still-finite ceiling for the exclusive path).

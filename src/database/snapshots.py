@@ -28,6 +28,7 @@ hour").
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, inspect, select
@@ -52,7 +53,63 @@ _SNAPSHOT_TABLES: dict[str, str] = {
     "law_revisions": "law_revisions",
 }
 
-ALL_METRICS = tuple(_SNAPSHOT_TABLES) + ("articles_per_hour",)
+
+def _count_sources_qualified(session: Session) -> int:
+    from src.catalog.qualification import STATUS_QUALIFIED
+    from src.database.models import Source
+
+    return int(
+        session.query(func.count(Source.id))
+        .filter(Source.enabled.is_(True), Source.status == STATUS_QUALIFIED)
+        .scalar()
+        or 0
+    )
+
+
+def _count_sources_disqualified(session: Session) -> int:
+    from src.catalog.qualification import STATUS_DISQUALIFIED
+    from src.database.models import Source
+
+    return int(
+        session.query(func.count(Source.id))
+        .filter(Source.enabled.is_(True), Source.status == STATUS_DISQUALIFIED)
+        .scalar()
+        or 0
+    )
+
+
+def _count_sources_never_judged(session: Session) -> int:
+    from src.catalog.qualification import STATUS_UNQUALIFIED
+    from src.database.models import Source
+
+    return int(
+        session.query(func.count(Source.id))
+        .filter(Source.enabled.is_(True), Source.status == STATUS_UNQUALIFIED)
+        .scalar()
+        or 0
+    )
+
+
+def _count_sources_candidates(session: Session) -> int:
+    from src.database.models import Source
+
+    return int(session.query(func.count(Source.id)).filter(Source.enabled.is_(False)).scalar() or 0)
+
+
+# The qualification lifecycle's own 4-way Source status/enabled split (2026-07-24
+# field-feedback Session A §5), aligned with ``src/api/database.py``'s live
+# database_stats() predicates -- ONE source of truth for what each bucket means
+# (never two divergent definitions of "qualified"/"candidates"). Query-based
+# (not a plain table COUNT(*)), so kept in a SEPARATE dict from _SNAPSHOT_TABLES;
+# both feed the SAME StatSnapshotRow store keyed by metric name.
+_FILTERED_METRICS: dict[str, Callable[[Session], int]] = {
+    "sources_qualified": _count_sources_qualified,
+    "sources_disqualified": _count_sources_disqualified,
+    "sources_never_judged": _count_sources_never_judged,
+    "sources_candidates": _count_sources_candidates,
+}
+
+ALL_METRICS = tuple(_SNAPSHOT_TABLES) + tuple(_FILTERED_METRICS) + ("articles_per_hour",)
 
 
 def _hour_bucket(now: datetime) -> datetime:
@@ -118,6 +175,24 @@ def maybe_snapshot_library_stats(session: Session, *, now: datetime | None = Non
             # recorded either way; never a duplicate, never a crash.
             continue
         recorded[metric] = value
+
+    # Filtered (query-based) metrics — same savepoint-per-insert discipline. Only
+    # attempted when their backing table exists, so a stripped/core build degrades
+    # honestly rather than crashing.
+    if "sources" in present:
+        for metric, fn in _FILTERED_METRICS.items():
+            try:
+                value = fn(session)
+            except Exception:  # noqa: BLE001 - one bad count must not lose the rest
+                _LOG.warning("snapshot count failed for %s", metric, exc_info=True)
+                continue
+            try:
+                with session.begin_nested():
+                    session.add(StatSnapshotRow(metric=metric, taken_at=bucket, value=value))
+            except IntegrityError:
+                continue
+            recorded[metric] = value
+
     if not recorded:
         return {"skipped": "no-metrics"}
     return {"hour": bucket.isoformat(), "recorded": recorded}
@@ -159,7 +234,7 @@ def metric_history(session: Session, *, metric: str, days: int) -> dict:
     (the timestamp of the metric's very first snapshot ever, regardless of the
     window) so the UI can state honestly "recording began at X" instead of
     implying a gap is a real absence of activity."""
-    if metric not in _SNAPSHOT_TABLES:
+    if metric not in _SNAPSHOT_TABLES and metric not in _FILTERED_METRICS:
         return {"metric": metric, "series": [], "recording_began_at": None, "error": "unknown metric"}
     now = datetime.now(UTC)
     since = _hour_bucket(now) - timedelta(days=days)

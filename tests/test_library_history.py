@@ -219,6 +219,79 @@ def test_endpoint_clamps_an_absurd_days_value(client):
     assert r.status_code == 200
 
 
+def test_filtered_source_status_metrics_partition_the_flat_total(db):
+    """2026-07-24 Session A §5: the 4 filtered metrics (sources_qualified /
+    sources_disqualified / sources_never_judged / sources_candidates) must sum
+    back EXACTLY to the flat "sources" count, and must stay aligned with
+    src/api/database.py's own database_stats() predicates -- ONE source of truth
+    for what each bucket means, never two divergent definitions."""
+    from src.catalog.qualification import STATUS_DISQUALIFIED, STATUS_QUALIFIED, STATUS_UNQUALIFIED
+
+    s1 = _seed_source(db)
+    s1.status = STATUS_QUALIFIED
+    s2 = _seed_source(db)
+    s2.status = STATUS_DISQUALIFIED
+    s3 = _seed_source(db)
+    s3.status = STATUS_UNQUALIFIED  # never judged (the model default)
+    s4 = _seed_source(db)
+    s4.enabled = False  # a discovery candidate, awaiting review
+    db.commit()
+
+    # A date strictly LATER than every other hardcoded date in this shared-DB
+    # test file (the latest in use elsewhere is 2027-03-09), so this test's own
+    # row is unambiguously the freshest when read back below -- this file's own
+    # established convention (tests accumulate real history in the same store;
+    # correctness is checked at a SPECIFIC hour, never by blindly trusting order).
+    now = datetime(2027, 3, 15, 6, 0, tzinfo=UTC)
+    out = maybe_snapshot_library_stats(db, now=now)
+    db.commit()
+
+    for m in (
+        "sources_qualified", "sources_disqualified", "sources_never_judged", "sources_candidates",
+    ):
+        assert m in ALL_METRICS
+        assert m in out["recorded"], f"{m} must be recorded in the same pass as the plain counts"
+
+    assert out["recorded"]["sources_qualified"] >= 1
+    assert out["recorded"]["sources_disqualified"] >= 1
+    assert out["recorded"]["sources_never_judged"] >= 1
+    assert out["recorded"]["sources_candidates"] >= 1
+    total = (
+        out["recorded"]["sources_qualified"] + out["recorded"]["sources_disqualified"]
+        + out["recorded"]["sources_never_judged"] + out["recorded"]["sources_candidates"]
+    )
+    assert total == out["recorded"]["sources"], "the 4 buckets must partition the flat total exactly"
+
+    # Cross-check against the live database_stats() predicates directly -- the
+    # module this feature must never drift from. database_stats()'s own
+    # "sources_pending" bucket is (enabled AND status != qualified), i.e. exactly
+    # disqualified + never_judged combined -- the finer split this feature adds.
+    from src.api.database import database_stats
+
+    stats = database_stats(db)
+    assert stats["counts"]["sources_qualified"] == out["recorded"]["sources_qualified"]
+    assert (
+        stats["counts"]["sources_pending"]
+        == out["recorded"]["sources_disqualified"] + out["recorded"]["sources_never_judged"]
+    )
+    assert stats["counts"]["sources_candidates"] == out["recorded"]["sources_candidates"]
+
+    hist = metric_history(db, metric="sources_qualified", days=7)
+    at_hour = [p for p in hist["series"] if p["t"] == "2027-03-15T06:00:00"]
+    assert len(at_hour) == 1 and at_hour[0]["n"] == out["recorded"]["sources_qualified"]
+    assert hist["recording_began_at"] is not None
+
+
+def test_filtered_metric_history_read_degrades_honestly_for_a_recognised_metric(db):
+    """A recognised filtered-metric name must read as a plain list (never an
+    exception, never the 'unknown metric' error the truly-bogus-name path
+    returns) -- the honest-degrade contract for a metric that simply has no
+    history yet, distinct from one that was never registered at all."""
+    out = metric_history(db, metric="sources_never_judged", days=7)
+    assert isinstance(out["series"], list)
+    assert out.get("error") != "unknown metric"
+
+
 def test_wiring_composes_the_real_route():
     """The 'slice-1c 404 lesson' (CLAUDE.md): a wiring test must COMPOSE the
     actual route (router prefix + decorator path), never assert two literal

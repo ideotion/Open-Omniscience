@@ -19,6 +19,7 @@ aborted run.
 from __future__ import annotations
 
 import json
+import os
 import re
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -428,6 +429,21 @@ from src.jobs.background import BackgroundJob, register_job  # noqa: E402
 
 _LANGDETECT_LIMIT = 500  # per-BATCH bound (an internal chunk size, not a run cap — see below)
 
+# 2026-07-24 field-feedback Session A §1: a run used to hard-abort into a benign-looking
+# "done" the moment ANY LLMUnavailable fired mid-run -- and OllamaClient.generate() maps
+# every httpx.HTTPError (including its own 120s per-call read timeout) to LLMUnavailable,
+# so a single slow response silently ended a "continuous until none are left" run. These
+# three knobs (env-tunable per the ruling) turn that into TRANSIENT retry-with-backoff
+# instead: the run stays alive across up to _LANGDETECT_MAX_CONSECUTIVE_FAILURES abort
+# episodes in a row, sleeping an exponential backoff between them, and only gives up
+# (raising, so the job's outer state genuinely reads "error" -- never "done") once the
+# backend has been down for that many consecutive attempts. A per-article LLMError
+# (garbage output the model actually answered with) is unaffected -- that already stays a
+# skip-and-tally inside detect_for_articles, never counted as a backend outage.
+_LANGDETECT_MAX_CONSECUTIVE_FAILURES = int(os.getenv("OO_LANGDETECT_MAX_CONSECUTIVE_FAILURES", "10"))
+_LANGDETECT_BACKOFF_BASE_S = float(os.getenv("OO_LANGDETECT_BACKOFF_BASE_S", "5"))
+_LANGDETECT_BACKOFF_CAP_S = float(os.getenv("OO_LANGDETECT_BACKOFF_CAP_S", "60"))
+
 
 def _langdetect_candidate_count(session) -> int:
     """Same predicate as unknown_language_work (without a limit): how many articles are
@@ -444,6 +460,55 @@ def _langdetect_candidate_count(session) -> int:
         )
     ).scalar() or 0
     return int(n)
+
+
+def _langdetect_state_path():
+    from src.paths import data_dir
+
+    return data_dir() / "langdetect_state.json"
+
+
+def _save_langdetect_state(tally: dict) -> None:
+    """Persist a small snapshot of the just-finished run (last-run tally, consecutive-
+    failure count, terminal reason) so the status line stays honest about what happened
+    even after an app restart -- the in-process BackgroundJob singleton resets to 'idle'
+    with no history on every boot, but stored ai_keyword labels + this file survive it.
+    Best-effort: a write failure must never take down the worker."""
+    import json
+    import time
+
+    try:
+        path = _langdetect_state_path()
+        payload = {**tally, "saved_at": time.time()}
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload), encoding="utf-8")
+        tmp.replace(path)
+    except Exception:  # noqa: BLE001 - a state-file write must never crash the job
+        pass
+
+
+def _load_langdetect_state() -> dict | None:
+    import json
+
+    path = _langdetect_state_path()
+    if not path.exists():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - a corrupt state file degrades to "no history"
+        return None
+
+
+def _langdetect_sleep_interruptible(seconds: float, ctx, *, step: float = 0.5) -> None:
+    """Sleep up to ``seconds``, checking ``ctx.stopping`` every ``step`` so a cancel
+    fired during a backoff wait is honoured promptly instead of blocking the full delay."""
+    import time
+
+    end = time.monotonic() + max(0.0, seconds)
+    while time.monotonic() < end:
+        if ctx.stopping:
+            return
+        time.sleep(min(step, end - time.monotonic()))
 
 
 def _langdetect_worker(
@@ -468,15 +533,26 @@ def _langdetect_worker(
     newest-first unclassifiable articles would re-occupy every batch's query window forever
     and the rest of the backlog would never be reached. Once the query returns empty, every
     currently-unknown article has been attempted this run: whatever remains unlabelled in the
-    DB at that point IS exactly the residue whose language could not be deduced."""
+    DB at that point IS exactly the residue whose language could not be deduced.
+
+    TRANSIENT-FAILURE RESILIENCE (2026-07-24, §1): a batch that aborts because the LOCAL
+    model went unavailable mid-run (a timeout, a reload, a momentary hiccup) — as opposed to
+    a genuine user cancel — is retried with an exponential backoff (never re-processing
+    already-attempted articles, since ``attempted`` only grows on real per-article events)
+    instead of ending the run. Only after ``_LANGDETECT_MAX_CONSECUTIVE_FAILURES`` such
+    episodes IN A ROW does the worker give up — by RAISING, so the job's outer
+    ``BackgroundJob`` state genuinely becomes ``error`` (never a benign-looking ``done``,
+    visible to the generic task-manager list with no per-job special-casing needed)."""
     tally: dict = {"total": 0, "stored": 0, "skipped": 0, "failed": 0, "none": 0, "ran": False}
     client = OllamaClient()
     try:
         if not client.is_available():
             tally["reason"] = "the local model is unavailable (Ollama down or airplane mode)"
+            _save_langdetect_state(tally)
             return tally
     except Exception:  # noqa: BLE001
         tally["reason"] = "the local model is unavailable"
+        _save_langdetect_state(tally)
         return tally
     mdl = model or active_model()
     bound = max(1, min(int(limit or _LANGDETECT_LIMIT), 5000))
@@ -484,6 +560,7 @@ def _langdetect_worker(
 
     attempted: set[int] = set()
     done = 0
+    consecutive_failures = 0
     with session_scope() as session:
         estimate_total = _langdetect_candidate_count(session)
     ctx.set_progress(done=0, total=estimate_total, detail=f"model {mdl}")
@@ -497,6 +574,7 @@ def _langdetect_worker(
         if not work:
             break  # nothing left to attempt this run (stored, or the undeducible residue)
         tally["total"] += len(work)
+        transient_reason: str | None = None
         for event in detect_for_articles(work, client, model=mdl, should_stop=lambda: ctx.stopping):
             ev = event.get("event")
             if ev == "item":
@@ -509,10 +587,44 @@ def _langdetect_worker(
                     done=done, total=max(estimate_total, done), detail=f"{tally['stored']} labelled"
                 )
             elif ev == "done" and event.get("aborted"):
-                tally["aborted"] = True
-        if not continuous or tally.get("aborted"):
+                if ctx.stopping:
+                    tally["aborted"] = True
+                else:
+                    transient_reason = event.get("reason") or "the local model is unavailable"
+
+        if tally.get("aborted"):  # a real cancel -- stop immediately, no retry
+            break
+
+        if transient_reason is not None:
+            consecutive_failures += 1
+            if consecutive_failures >= _LANGDETECT_MAX_CONSECUTIVE_FAILURES:
+                tally["remaining_unclassified"] = tally["none"]
+                tally["consecutive_failures"] = consecutive_failures
+                tally["error"] = (
+                    f"stopped after {consecutive_failures} consecutive local-model failures "
+                    f"({tally['stored']} stored, {tally['skipped']} skipped, "
+                    f"{tally['none']} unclear so far): {transient_reason}"
+                )
+                _save_langdetect_state({**tally, "state": "error"})
+                raise RuntimeError(tally["error"])
+            backoff = min(
+                _LANGDETECT_BACKOFF_BASE_S * (2 ** (consecutive_failures - 1)),
+                _LANGDETECT_BACKOFF_CAP_S,
+            )
+            ctx.set_progress(
+                detail=(
+                    f"local model hiccup ({consecutive_failures}/"
+                    f"{_LANGDETECT_MAX_CONSECUTIVE_FAILURES}) — retrying in {backoff:.0f}s"
+                )
+            )
+            _langdetect_sleep_interruptible(backoff, ctx)
+            continue  # retry: re-fetch the worklist (attempted[] already reflects progress)
+
+        consecutive_failures = 0  # this batch made it through cleanly
+        if not continuous:
             break
     tally["remaining_unclassified"] = tally["none"]
+    _save_langdetect_state({**tally, "state": "cancelled" if tally.get("aborted") else "done"})
     return tally
 
 
@@ -522,6 +634,35 @@ _LANGDETECT_JOB = register_job(
         is_writer=True, cancellable=True,
     )
 )
+
+
+def advance_langdetect_auto_start(session) -> dict:
+    """Scheduler ride-along (2026-07-24 §1, ruled default-ON): (re)start the CONTINUOUS
+    language-detection job whenever it is idle, the operator setting
+    ``ai_langdetect_auto`` is on, the local model is available, and there is at least one
+    candidate. A cheap per-pass watchdog check — the job itself is a long-running,
+    now-resilient BackgroundJob on its own thread (retries transient outages with
+    backoff), so this need not fire more than once to drain a whole backlog over many
+    future passes. Best-effort: never raises, mirrors the world-discovery/qualification
+    ride-alongs (honest named skips, never a silent no-op)."""
+    from src.config.app_settings import load_settings as load_app_settings
+
+    if not load_app_settings().ai_langdetect_auto:
+        return {"enabled": False}
+    if _LANGDETECT_JOB.status().get("state") == "running":
+        return {"enabled": True, "skipped": "already running"}
+    try:
+        if not OllamaClient().is_available():
+            return {"enabled": True, "skipped": "the local model is unavailable"}
+    except Exception:  # noqa: BLE001 - never fail the scrape on an AI-layer check
+        return {"enabled": True, "skipped": "the local model is unavailable"}
+    if _langdetect_candidate_count(session) <= 0:
+        return {"enabled": True, "skipped": "no unknown-language candidates"}
+    try:
+        _LANGDETECT_JOB.start(continuous=True)
+    except RuntimeError:
+        return {"enabled": True, "skipped": "already running"}
+    return {"enabled": True, "started": True}
 
 
 class LangDetectBody(BaseModel):
@@ -553,8 +694,18 @@ def ai_detect_language_start(body: LangDetectBody | None = None) -> dict:
 
 @router.get("/detect-language/status")
 def ai_detect_language_status() -> dict:
-    """Live status of the language-detection job (state, progress, and the final tally)."""
-    return _LANGDETECT_JOB.status()
+    """Live status of the language-detection job (state, progress, and the final tally).
+
+    When this process has never run the job (fresh boot — the in-process BackgroundJob
+    singleton always starts 'idle' with no result) but a PREVIOUS process did, the
+    persisted ``last_run`` snapshot (§1 item 3) is merged in additively so the status
+    line stays honest about what happened instead of reading as blank/never-run."""
+    st = _LANGDETECT_JOB.status()
+    if st.get("state") == "idle" and not st.get("result"):
+        persisted = _load_langdetect_state()
+        if persisted:
+            st = {**st, "last_run": persisted}
+    return st
 
 
 @router.post("/detect-language/cancel")

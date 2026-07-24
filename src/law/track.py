@@ -326,8 +326,25 @@ def track_watched(session, fetcher, *, limit_documents: int = 50, extractor=None
     return tally
 
 
+def adaptive_track_budget(
+    watched_count: int, *, min_batch: int = 5, max_batch: int = 25, divisor: int = 20
+) -> int:
+    """The per-pass tracking budget, SCALED to the size of the watched-document set
+    (2026-07-24 field-feedback Session A, item 3: "auto_track_due's batch=5/24h
+    cannot baseline hundreds of docs -- make the per-pass budget adaptive").
+
+    Bounded both ways: today's small watched set (~23 documents) still resolves to
+    ``min_batch`` — the ORIGINAL hardcoded default, so nothing changes on a typical
+    install — while a large one (once enumeration adapters register hundreds of
+    documents per jurisdiction) climbs toward ``max_batch`` instead of crawling at
+    5/pass forever, but a single pass never floods legal sites beyond that cap."""
+    if watched_count <= 0:
+        return min_batch
+    return max(min_batch, min(max_batch, watched_count // max(1, divisor)))
+
+
 def auto_track_due(
-    session, fetcher, *, batch: int = 5, min_interval_hours: float = 24.0, extractor=None
+    session, fetcher, *, batch: int | None = None, min_interval_hours: float = 24.0, extractor=None
 ) -> dict:
     """Track a BOUNDED, freshness-gated batch of watched legal documents per collect pass
     (field test 2026-06-22, #18: the World-law tab was empty because law is only tracked
@@ -339,10 +356,17 @@ def auto_track_due(
     successive passes (per-host politeness + robots fail-closed + the kill switch all ride
     the shared fetcher; this only schedules the existing tracker). Best-effort + idempotent
     (track_document dedups by content hash); never raises for one bad document. Returns the
-    same tally shape as track_watched plus ``due`` (how many were eligible)."""
+    same tally shape as track_watched plus ``due`` (how many were eligible).
+
+    ``batch=None`` (the default) computes an ADAPTIVE budget from the total watched
+    count via :func:`adaptive_track_budget` — pass an explicit int to keep the old
+    fixed-batch behaviour (tests do, deliberately, for determinism)."""
     from datetime import timedelta
 
     extractor = _batch_extractor(extractor)
+    if batch is None:
+        watched_count = session.query(LawDocument).filter_by(watched=True).count()
+        batch = adaptive_track_budget(watched_count)
     cutoff = datetime.now(UTC) - timedelta(hours=min_interval_hours)
     q = session.query(LawDocument).filter_by(watched=True).filter(
         # never-checked (NULL) OR stale beyond the interval

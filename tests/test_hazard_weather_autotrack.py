@@ -113,6 +113,59 @@ def test_stale_snapshot_is_refreshed(tmp_path, monkeypatch):
     assert store.load_snapshot()["records"][0]["id"] == "us-test-1"  # replaced the stale one
 
 
+def test_auto_snapshot_with_session_also_ingests_as_corpus_articles(tmp_path, monkeypatch):
+    """2026-07-24 field-feedback A6: when a Session is given, a freshly-saved snapshot is
+    ALSO ingested as corpus Articles (src.hazards.ingest) -- session=None (every other
+    caller/test above) stays byte-identical, snapshot-only."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Article, Base
+    from src.hazards import store, track
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    snap_path = tmp_path / "haz.json"
+    monkeypatch.setattr(store, "_snapshot_path", lambda: snap_path)
+
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, future=True)()
+
+    fake = FakeFetcher({"earthquake.usgs.gov": _USGS_ONE, "gdacs.org": '{"features":[]}'})
+    res = track.auto_snapshot_due(fake, session=session)
+
+    assert res["snapshotted"] == 1
+    assert res["ingested"] == {"total": 1, "created": 1, "updated": 0, "unchanged": 0, "skipped": 0}
+    assert session.query(Article).count() == 1
+
+
+def test_auto_snapshot_ingest_failure_never_breaks_the_pass(tmp_path, monkeypatch):
+    """An ingest hiccup (a broken session, e.g.) degrades honestly -- the snapshot save
+    itself must never fail because of it (the scrape pass this rides must not break)."""
+    from src.hazards import store, track
+    from src.ingest import clear_kill_switch
+
+    clear_kill_switch()
+    snap_path = tmp_path / "haz.json"
+    monkeypatch.setattr(store, "_snapshot_path", lambda: snap_path)
+
+    class _BrokenSession:
+        """Not a real Session -- any attribute access raises, simulating an ingest crash."""
+
+        def __getattr__(self, item):
+            raise RuntimeError("boom")
+
+    fake = FakeFetcher({"earthquake.usgs.gov": _USGS_ONE, "gdacs.org": '{"features":[]}'})
+    res = track.auto_snapshot_due(fake, session=_BrokenSession())
+
+    assert res["snapshotted"] == 1  # the snapshot itself still saved
+    assert "ingested" not in res  # the ingest attempt failed and was swallowed, not raised
+    assert store.load_snapshot()["available"] is True
+
+
 def test_empty_relay_keeps_the_previous_snapshot(tmp_path, monkeypatch):
     from src.hazards import store, track
     from src.ingest import clear_kill_switch

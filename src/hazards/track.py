@@ -36,6 +36,7 @@ def auto_snapshot_due(
     refresh_interval_hours: float = DEFAULT_REFRESH_INTERVAL_HOURS,
     now: datetime | None = None,
     fetch_fn=None,
+    session=None,
 ) -> dict:
     """Refresh the LOCAL hazard snapshot if it is stale — the scheduler background pass.
 
@@ -47,6 +48,12 @@ def auto_snapshot_due(
     / robots / proxy honoured) and saves. A refresh that returns nothing (all feeds failed)
     never overwrites a good snapshot with an empty one. Best-effort; counts only; never
     raises. ``fetch_fn`` is a test seam: a zero-arg callable returning ``(records, failures)``.
+
+    ``session`` (2026-07-24 field-feedback A6, ruled): when given, every freshly-saved
+    snapshot is ALSO ingested as corpus Articles (``src.hazards.ingest``) — zero network
+    (the records are already local), best-effort (an ingest hiccup never breaks the
+    scrape pass this rides). ``session=None`` (the default) keeps this function's
+    original snapshot-only behaviour, unchanged, for callers/tests that don't need it.
     """
     from src.hazards.store import load_snapshot, save_snapshot
     from src.ingest import kill_switch_active
@@ -78,4 +85,12 @@ def auto_snapshot_due(
             "note": "no records (offline or all feeds failed) -- previous snapshot kept",
         }
     saved = save_snapshot(records, now=now)
-    return {"snapshotted": len(saved["records"]), "failures": failures}
+    out = {"snapshotted": len(saved["records"]), "failures": failures}
+    if session is not None:
+        try:
+            from src.hazards.ingest import ingest_hazard_records
+
+            out["ingested"] = ingest_hazard_records(session, saved["records"])
+        except Exception:  # noqa: BLE001 - ingest must never break the collect pass
+            _LOG.warning("hazard corpus ingest failed", exc_info=True)
+    return out
