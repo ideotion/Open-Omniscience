@@ -7890,6 +7890,61 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   never a silent replacement; vLLM install = its own venv/external process (torch is BANNED from
   core) + HF-weights download, both consented task-manager jobs. NOTHING BUILT this session —
   intake, investigation, ledger recording and the question list only.
+  **ANSWERS RECEIVED + RULED same day (maintainer answered all 16 questions; briefs of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-24_A_FIELD_FIXES.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-24_A_FIELD_FIXES.md)
+  + [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-24_B_AI_STACK.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-24_B_AI_STACK.md);
+  sequencing RULED A then B, both autonomous Sonnet-5 CLI sessions, draft-PR-only):**
+  • **A1 (lang detect):** auto-start DEFAULT-ON (a ride-along that keeps detection running
+    whenever the AI backend is up and unknown-language articles exist) + the resilient
+    retry-with-backoff job (never abort-to-done) + the single toggle button (checkbox dropped).
+  • **A2 (governments):** the auto-load ride-along is confirmed AND the World-Bank indicator
+    catalog must be EXTENDED "with as many items as possible" — every id a real WB series id,
+    live-verified where egress allows, else flagged believed-correct + fail-loudly (never
+    fabricated; the FRED-id precedent).
+  • **A3 (law granularity RULED):** act/code-level LawDocuments by default; per-legal-article
+    rows ONLY for structured bulk sources that pre-split (the LEGI class).
+  • **A4 (law priority):** adapter-first (option a — legislation.gov.uk · gesetze-im-internet ·
+    EUR-Lex, complete-enumeration per jurisdiction); breadth-first (b) MARKED for later
+    implementation (ROADMAP row, not dropped).
+  • **A5 (AI law-change summaries):** AUTO at track time for UI-language-floor jurisdictions,
+    on-demand elsewhere, always labeled "AI-derived · unreliable".
+  • **A6 (imports):** the instrument-first plan is approved AND an import OWNS THE MACHINE
+    while it runs (all cores, enlarged cache, collection paused — disclosed).
+  • **A7 (qualification graph):** FOUR lines (qualified · disqualified · never-yet-judged ·
+    disabled candidates). Scale disparity: the maintainer floated multi-axis OR auto-log;
+    RESOLVED toward AUTO-LOG (labeled) on ONE shared axis — all four lines share one unit
+    (source counts), and the honest-viz research's dual-axis REJECTION stands for same-unit
+    series (ooChart `opts.logY` already exists); log engages automatically on large spread,
+    always labeled.
+  • **A8 (library windows):** per-tile small window switcher (7d/30d/90d/all); all tiles START
+    on the identical default window; full hourly resolution kept (invariant #16).
+  • **A9 (hazards RULED = option b):** hazards are INGESTED AS ARTICLES — rich provider-asserted
+    metadata (magnitude/coords/time/severity), keyword processing via `index_article`, a
+    distinct HAZARD provenance class, per-provider synthetic sources, dedup by provider event
+    id; the map rings + composed-search follow.
+  • **A10 (Home Alerts):** a COMPACT STRIP deep-linking to the World map — "think of the UI,
+    make it beautiful" (maintainer click-through owed per fork-3).
+  • **A11 (DB-IP):** KEEP the bundled DB-IP Lite + its CC BY 4.0 attribution line.
+  • **A12 (hardware truth answered):** the app ALREADY runs on a GPU-enabled VM — 8 GB VRAM +
+    up to 40 GB RAM; `mistral:7b` measured 5.1 GB VRAM with ~2 GB spare. RULED: DUAL BACKEND,
+    selected by HARDWARE DETECTION — vLLM on GPU machines, Ollama KEPT for CPU-only.
+  • **A13:** Mistral-7B default where it fits + the disclosed hardware-aware fallback — OK.
+  • **A14:** vLLM in its OWN venv/external process (torch stays banned from core) + HF-weights
+    default-model download, both consented task-manager jobs — OK.
+  • **A15:** ALL confirmed (pill "AI" green/red no count · click-red starts the preferred
+    installed backend, vLLM first · triage/tag runs become on/off toggles running progressively
+    across ALL keywords/sources with persisted cursors · the airplane-gate split fix · the LLM
+    propose-only source-qualification assist) **+ ONE NEW ASK: AI-augmented article METADATA
+    extraction — dates/events/locations and when/where/who.** This ACTIVATES the standing
+    LLM-PERCEPTION track and its eval-first ruling APPLIES UNCHANGED: the S6.5 perception eval
+    harness is already shipped, so the executing session runs the active default model through
+    it FIRST and reports per-language/per-stratum precision/recall/HALLUCINATION (no composite);
+    extraction ships as AI-layer candidates only (typed `ai_keyword` rows, model+prompt
+    provenance, "AI-derived · unreliable", confirm-within-lens), NEVER the trusted index; a
+    stratum the model fails stays disabled with the honest report — never a fabricated
+    capability.
+  • **A16 (sequencing):** Session A first (it carries the airplane-gate fix that unblocks the
+    triage/tag runs on Ollama immediately), then Session B.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
