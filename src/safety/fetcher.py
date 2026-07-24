@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import re
+from typing import Any
 
 import requests
 
@@ -107,7 +108,7 @@ def make_fetcher(**overrides) -> EthicalFetcher:
     s = load_settings()
     user_agent = GENERIC_USER_AGENT if s.is_protected else DEFAULT_USER_AGENT
     proxy = s.http_proxy or None if s.is_protected else None
-    params = {
+    params: dict[str, Any] = {
         "user_agent": user_agent,
         "min_interval_s": float(os.getenv("OO_FETCH_MIN_INTERVAL", "1.0")),
         "timeout": float(os.getenv("OO_FETCH_TIMEOUT", "30")),

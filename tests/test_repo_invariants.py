@@ -7408,6 +7408,36 @@ def test_crawl_by_default_rides_the_housekeeping_lanes_lowest_rung():
     assert "_CRAWL_SUPPLEMENT_MAX_PAGES" in runner and "_CRAWL_SUPPLEMENT_MAX_DEPTH" in runner
 
 
+def test_robots_cache_persists_across_pass_and_restart_boundaries():
+    """A5 (2026-07-24 throughput brief, C4): a fresh EthicalFetcher must reuse
+    an in-TTL robots.txt verdict from a prior instance instead of re-fetching
+    -- the SHARPER finding this slice surfaced is that make_fetcher() builds a
+    brand-new EthicalFetcher once per collection PASS, so without this the
+    whole robots cache was already being discarded every pass, not merely
+    across a real app restart. Guard that persistence is wired, wall-clock
+    (never the in-process monotonic clock, whose epoch is meaningless across
+    a restart), and TTL-respecting -- see tests/test_robots_cache_persistence.py
+    for the full behavioural coverage (reuse, fail-closed reuse, the
+    expired-entry negative-space case, corruption resilience, the opt-out)."""
+    ingest_src = (_SRC / "ingest" / "__init__.py").read_text(encoding="utf-8")
+    assert "def _load_persisted_robots(" in ingest_src
+    assert "def _persist_robots_entry(" in ingest_src
+    assert "robots_cache_path: Path | None = None" in ingest_src
+    # Wall-clock persisted, monotonic never persisted directly (the correctness-
+    # critical part -- a raw monotonic value is meaningless across a restart).
+    load_body = ingest_src.split("def _load_persisted_robots(", 1)[1].split(
+        "\ndef _persist_robots_entry", 1
+    )[0]
+    assert "wall_now - fetched_at" in load_body  # wall-clock delta drives the remaining TTL
+    assert "now_monotonic() + remaining" in load_body  # re-expressed in the CURRENT frame
+    persist_body = ingest_src.split("def _persist_robots_entry(", 1)[1]
+    assert '"fetched_at": time.time()' in persist_body  # wall-clock write, not monotonic
+
+    # Wired into both the read (construction) and write (a fresh decision) sites.
+    assert "_load_persisted_robots(self._robots_cache_path, now_monotonic=self._now)" in ingest_src
+    assert "_persist_robots_entry(\n                self._robots_cache_path" in ingest_src
+
+
 def test_memory_headroom_honesty_never_projects_a_worker_count():
     """S4.3 (field-feedback 2026-07-23, 'memory-headroom honesty for small
     boxes'): a mem-low-capped pass must surface a REAL, MEASURED note (never a

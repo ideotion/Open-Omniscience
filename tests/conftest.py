@@ -167,3 +167,23 @@ def _memory_guard_not_leaked():
     from src.scheduler.memguard import memory_guard
 
     memory_guard.reset(reason="test isolation")
+
+
+@pytest.fixture(autouse=True)
+def _isolated_robots_cache_path(tmp_path, monkeypatch):
+    """A5 (2026-07-24 throughput brief, C4): EthicalFetcher now persists an
+    in-TTL robots.txt verdict to a shared data_dir() sidecar BY DEFAULT (the
+    point: make_fetcher() builds a brand-new instance every pass, so this is
+    what stops every pass re-fetching robots.txt for every host). Left
+    pointed at the real (session-isolated but still SHARED-across-tests)
+    data_dir, two unrelated tests fetching the same domain (e.g.
+    "example.com") would leak a robots decision from one into the other —
+    the same order-dependent-pollution class the write-gate/memory-guard
+    fixtures above guard against. Point the DEFAULT path at a fresh per-test
+    tmp file so a test that never asks for this feature is unaffected; a
+    test that explicitly passes its own ``robots_cache_path=`` (the
+    persistence tests themselves, tests/test_robots_cache_persistence.py) is
+    unaffected either way."""
+    import src.ingest as _ingest_mod
+
+    monkeypatch.setattr(_ingest_mod, "_robots_cache_path", lambda: tmp_path / "robots_cache.json")
