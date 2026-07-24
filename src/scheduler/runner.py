@@ -1478,7 +1478,10 @@ class BackgroundScheduler:
                 if getattr(settings, "auto_track_signals", True):
                     from src.hazards.track import auto_snapshot_due
 
-                    haz = auto_snapshot_due(fetcher)
+                    # session=session (A6, ruled): every freshly-saved snapshot is also
+                    # ingested as corpus Articles, through this SAME session -- zero
+                    # extra network (the records are already local).
+                    haz = auto_snapshot_due(fetcher, session=session)
                     if haz.get("snapshotted"):
                         result["hazards_snapshotted"] = haz["snapshotted"]
                         _LOG.info("hazard snapshot: %s", haz)

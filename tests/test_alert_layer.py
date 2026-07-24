@@ -170,6 +170,44 @@ def test_compute_alerts_tiers_hazards_by_provider_severity(session):
     assert "no score" in out["caveat"].lower() or "score" not in json.dumps(tiers).lower()
 
 
+def test_compute_alerts_restores_magnitude_coords_and_resolves_article_id(session):
+    """2026-07-24 field-feedback A6, item 4: magnitude/lat/lon were being silently
+    dropped even though the snapshot carries them -- restored, and each hazard record
+    is now enriched with the internal Article id when the event has been ingested as a
+    corpus Article (src.hazards.ingest), so the local reader link is available."""
+    from src.hazards.ingest import ensure_hazard_source, hazard_canonical_url
+
+    src = ensure_hazard_source(session, "usgs")
+    url = hazard_canonical_url("usgs", "us7000abcd")
+    art = Article(
+        url=url, canonical_url=url, source_id=src.id, title="M 7.1 - 120km SSW of Town",
+        content="M 7.1 - 120km SSW of Town", hash="hh1",
+    )
+    session.add(art)
+    session.commit()
+
+    snap = _snapshot([
+        {"source": "usgs", "id": "us7000abcd", "severity": "major", "type": "earthquake",
+         "title": "M 7.1 - 120km SSW of Town", "url": "u1", "magnitude": 7.1, "lat": 38.1, "lon": 142.5},
+        # never ingested (e.g. no title/place at all -> ingest_hazard_ingest would skip
+        # it) -- must degrade to article_id=None, never a fabricated/guessed id.
+        {"source": "gdacs", "id": "999", "severity": "watch", "type": "flood",
+         "title": "Orange flood", "url": "u2", "magnitude": None, "lat": 1.0, "lon": 2.0},
+    ])
+    out = compute_alerts(session, snapshot=snap)
+    by_url = {h["url"]: h for t in out["tiers"].values() for h in t["hazards"]}
+
+    usgs = by_url["u1"]
+    assert usgs["magnitude"] == 7.1 and usgs["lat"] == 38.1 and usgs["lon"] == 142.5
+    assert usgs["article_id"] == art.id
+    assert art.id in out["tiers"]["info"]["article_ids"]  # major -> info tier
+
+    gdacs = by_url["u2"]
+    assert gdacs["magnitude"] is None  # absence stays absence, never coerced to 0
+    assert gdacs["lat"] == 1.0 and gdacs["lon"] == 2.0
+    assert gdacs["article_id"] is None  # never ingested -> never fabricated
+
+
 def test_compute_alerts_folds_watches_and_convergences(session):
     ids = _seed_convergence(session)
     _seed_fired_watch(session, [901, 902])

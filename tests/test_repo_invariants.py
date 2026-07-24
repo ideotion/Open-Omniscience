@@ -7206,3 +7206,99 @@ def test_memory_headroom_honesty_never_projects_a_worker_count():
     assert '"mem_low_ticks": self._mem_low_ticks' in perf
     assert '"mem_low_min_permits": self._mem_low_min_permits' in perf
     assert '"memory_headroom_note": memory_headroom_note' in perf
+
+
+def test_hazards_are_ingested_as_articles_with_a_home_strip_and_map_rings():
+    """2026-07-24 field-feedback Session A §6 (ruled, option b): a hazard record
+    (USGS earthquake, GDACS disaster alert) is now ingested as ONE corpus Article
+    per provider event id -- the same 'a versioned/relayed source is an Article +
+    a linked layer' pattern already used for law/Wikipedia. Guards: the linked
+    HazardEventDetail model (provider-ASSERTED facts, never deduced -- the
+    OPPOSITE two-class direction from ArticleMentionedPlace/ArticleEntity), the
+    ingest module's honesty rails (never fabricates a magnitude/coordinate/date;
+    dedup on the (provider, event_id) composite key), the zero-network map/alert
+    consumers, the two save_snapshot call sites' opt-in ingest side effect, and
+    the Home Alerts strip's deep links (map + internal article)."""
+    models = (_SRC / "database" / "models.py").read_text(encoding="utf-8")
+    assert "class HazardEventDetail(Base):" in models
+    hed_body = models.split("class HazardEventDetail(Base):", 1)[1].split("class ", 1)[0]
+    for col in ("article_id", "provider", "event_id", "event_type", "severity",
+                "magnitude", "lat", "lon", "place", "event_time", "source_url"):
+        assert col in hed_body, f"HazardEventDetail missing {col}"
+    assert "unique=True" in hed_body.split("article_id", 1)[1][:160]  # one detail row per article
+    assert 'Index("ix_hazard_detail_provider_event", "provider", "event_id", unique=True)' in hed_body
+
+    ingest_src = (_SRC / "hazards" / "ingest.py").read_text(encoding="utf-8")
+    assert "def hazard_canonical_url(" in ingest_src
+    assert "def ensure_hazard_source(" in ingest_src
+    assert "def ingest_hazard_record(" in ingest_src
+    assert "def ingest_hazard_records(" in ingest_src
+    # never a fabricated magnitude/coordinate — absence stays None on a bad/missing value.
+    assert "mag = None" in ingest_src and "lat = lon = None" in ingest_src
+    # never guessed as "now" — an unparseable/absent time stays None.
+    assert "def _parse_time(value) -> datetime | None:" in ingest_src
+    assert 'if not value:\n        return None' in ingest_src
+    # the same is_integrity_error cross-driver dedup discipline src/law/corpus.py uses.
+    assert "is_integrity_error(exc)" in ingest_src
+
+    # the two-class direction is REVERSED here: HazardEventDetail is provider-
+    # ASSERTED, so the DEDUCED extraction pipeline must never import it (and never
+    # feed the trusted keyword index from it, mirroring the law-summary guard).
+    extract_src = (_SRC / "analytics" / "extract.py").read_text(encoding="utf-8")
+    store_src = (_SRC / "analytics" / "store.py").read_text(encoding="utf-8")
+    assert "HazardEventDetail" not in extract_src and "HazardEventDetail" not in store_src
+
+    prov = (_SRC / "catalog" / "provenance.py").read_text(encoding="utf-8")
+    assert 'HAZARD = "hazard"' in prov
+    assert "PROVENANCE_CLASSES" in prov and "HAZARD)" in prov  # joins the closed class set
+
+    # zero-network map layer: reads the LOCAL snapshot only, resolving article_id
+    # via a batched query (never N+1, never a live fetch on render).
+    timemap_api = (_SRC / "api" / "timemap.py").read_text(encoding="utf-8")
+    assert "def _hazard_signals(db: Session | None = None)" in timemap_api
+    assert "article_by_url: dict[str, int] = {}" in timemap_api
+    assert '"article_id": article_by_url.get(event_url) if event_url else None' in timemap_api
+    assert '"hazard_type": h.get("type")' in timemap_api
+
+    # compute_alerts: magnitude/lat/lon restored (were being silently dropped),
+    # and each hazard row carries article_id + flows into the tier's article_ids.
+    alerts_src = (_SRC / "analytics" / "alerts.py").read_text(encoding="utf-8")
+    assert '"magnitude": rec.get("magnitude")' in alerts_src
+    assert '"lat": rec.get("lat")' in alerts_src and '"lon": rec.get("lon")' in alerts_src
+    assert '"article_id": article_id' in alerts_src
+    assert "if article_id is not None:" in alerts_src
+    assert 'tiers[tier]["article_ids"].add(article_id)' in alerts_src
+
+    # both save_snapshot call sites gained the OPT-IN ingest side effect —
+    # best-effort, never breaking the snapshot save/scrape pass itself.
+    signals_api = (_SRC / "api" / "signals.py").read_text(encoding="utf-8")
+    assert "ingested = ingest_hazard_records(db, saved" in signals_api
+    assert '"ingested": ingested' in signals_api
+    track_src = (_SRC / "hazards" / "track.py").read_text(encoding="utf-8")
+    assert "session=None" in track_src  # byte-identical default for existing callers
+    assert 'out["ingested"] = ingest_hazard_records(session, saved["records"])' in track_src
+    runner = (_SRC / "scheduler" / "runner.py").read_text(encoding="utf-8")
+    assert "auto_snapshot_due(fetcher, session=session)" in runner
+
+    # frontend: the Home Alerts strip renders a real relative date + magnitude
+    # (were being fetched and DROPPED before), a per-item map deep link, and an
+    # internal-article link that only appears once article_id is real (never a
+    # broken/fabricated link).
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function _hazardStripItem(h)" in app
+    assert "const HAZARD_GLYPH = {" in app
+    assert "h.article_id != null" in app
+    assert "function openWorldMapAt(lat, lon, isoTime, articleId)" in app
+    assert '_ooMapLensTabs.select("stories")' in app
+    # the two live map fetch call sites both request the hazard layer.
+    assert app.count('await api("/api/timemap?limit=4000&hazards=true")') == 2
+    # the click-detail panel's internal-article link + type+place composed search.
+    assert "const localLink = (s.kind === \"hazard\" && s.article_id != null)" in app
+    assert '[s.hazard_type, s.place].filter(Boolean).join(" ").trim()' in app
+
+    # magnitude-scaled marker radius (item 2, sqrt scale) -- a real magnitude
+    # grows the map dot; a magnitude-less hazard (GDACS non-quakes) falls
+    # through to the SAME default every other signal kind already uses, never
+    # a fabricated size for a fact the provider didn't state.
+    assert 's.kind === "hazard" && typeof s.magnitude === "number"' in app
+    assert "Math.sqrt(Math.max(0, s.magnitude))" in app

@@ -838,6 +838,9 @@
     .home-alerts .alert-tier { margin:6px 0; }
     .home-alerts .alert-tier ul { margin:4px 0 0; padding-inline-start:18px; }
     .home-alerts .alert-tier li { margin:2px 0; font-size:12.5px; }
+    /* The compact hazard strip item (field-feedback A6, ruled): the type glyph is
+       its own marker, so drop the bullet; keep everything on one flexible line. */
+    .home-alerts .alert-tier li.alert-hazard-item { list-style:none; display:flex; align-items:center; gap:3px; flex-wrap:wrap; }
     /* Corpus maturity tier — a descriptive STAGE chip beside the glance numbers.
        Subtle per-stage accent only; never a score bar, never fake precision. */
     .corpus-tier { display:inline-flex; align-items:baseline; gap:7px; white-space:nowrap; }

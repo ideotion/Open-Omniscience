@@ -2263,6 +2263,33 @@
         _renderHomeAlerts(d);
       } catch (e) { if (panel) panel.hidden = true; box.innerHTML = ""; }
     }
+    // Item 3 (field-feedback A6, ruled): a distinct glyph per hazard TYPE (never a
+    // score/severity encoding -- purely a scannability aid), "⚠" for an unlisted type.
+    const HAZARD_GLYPH = {
+      earthquake: "◉", cyclone: "🌀", flood: "≈", volcano: "🌋",
+      drought: "☀", wildfire: "🔥", tsunami: "〰",
+    };
+    // The compact hazard strip item: type glyph, real magnitude (never fabricated),
+    // place, RELATIVE date (the stored "time" field, finally rendered -- it used to
+    // be fetched and dropped), and TWO deep links: the World map (centred on the
+    // event) and the internal article (once ingested; absent until then, never a
+    // broken link). The tier dot is the existing per-tier pill above the list.
+    function _hazardStripItem(h) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const glyph = HAZARD_GLYPH[h.type] || "⚠";
+      const mag = (h.magnitude != null) ? `M${esc(fmtNum(h.magnitude, 1))} · ` : "";
+      const place = esc(h.place || h.title || h.type || "");
+      const when = h.time ? esc(fmtAgo(h.time)) : "";
+      const prov = h.source ? ` <span class="muted">${esc(t("via {p}").replace("{p}", h.source))}</span>` : "";
+      const mapBtn = (typeof h.lat === "number" && typeof h.lon === "number")
+        ? ` <button class="ghost tiny" onclick="openWorldMapAt(${h.lat}, ${h.lon}, ${esc(JSON.stringify(h.time || null))}, ${h.article_id != null ? h.article_id : "null"})" title="${esc(t("Open on the World map"))}">🗺</button>`
+        : "";
+      const artLink = (h.article_id != null)
+        ? ` <a href="/api/articles/${h.article_id}/view" target="_blank" rel="noopener" class="ghost tiny" title="${esc(t("Open the local article"))}">📄</a>`
+        : "";
+      const srcLink = (h.url && /^https?:\/\//i.test(h.url)) ? " " + extLink(h.url, t("source ↗")) : "";
+      return `<li class="alert-hazard-item">${glyph} ${mag}${place}${when ? ` <span class="muted">· ${when}</span>` : ""}${prov}${mapBtn}${artLink}${srcLink}</li>`;
+    }
     function _renderHomeAlerts(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("home-alerts"); if (!box) return;
@@ -2272,12 +2299,7 @@
         const T = (d.tiers || {})[tier];
         if (!T || !T.count) return "";
         const items = [];
-        (T.hazards || []).forEach(h => {
-          const bits = [h.title || h.type || "", h.place || ""].filter(Boolean).map(esc).join(" · ");
-          const prov = h.source ? ` <span class="muted">${esc(t("via {p}").replace("{p}", h.source))}</span>` : "";
-          const link = (h.url && /^https?:\/\//i.test(h.url)) ? " " + extLink(h.url, t("source ↗")) : "";
-          items.push(`<li>${bits}${prov}${link}</li>`);
-        });
+        (T.hazards || []).forEach(h => items.push(_hazardStripItem(h)));
         (T.watches || []).forEach(w => {
           const nm = esc(w.name || w.query || "");
           const n = (w.n_articles != null) ? ` <span class="muted">${esc(String(w.n_articles))} ${esc(t("articles"))}</span>` : "";
@@ -13544,7 +13566,15 @@
           const x = +lon2x(s.lon).toFixed(1), y = +lat2y(s.lat).toFixed(1);
           const dist = focus == null ? 0 : Math.abs(s.t - focus);
           const op = Math.max(0.2, 1 - (win ? dist / win : 0) * 0.8);
-          const r = s.confirmed ? 3 : 2.4;
+          // Item 2 (field-feedback A6, ruled): a hazard's radius scales with its
+          // REAL magnitude (sqrt scale -- area, not radius, grows linearly with
+          // magnitude, so a M9 doesn't visually swallow a M5) when one is known;
+          // a GDACS non-quake alert (no magnitude) falls through to the SAME
+          // honest default every other kind already uses -- never a fabricated
+          // size for a fact the provider didn't state.
+          const r = (s.kind === "hazard" && typeof s.magnitude === "number")
+            ? Math.min(9, 2.4 + Math.sqrt(Math.max(0, s.magnitude)) * 1.2)
+            : (s.confirmed ? 3 : 2.4);
           const col = kindColor(s.kind);
           // SHAPE encodes the event's CERTAINTY CLASS (field test 2026-06-19,
           // THEME-2: "deduced events as shapes"), COLOUR encodes the kind — so the
@@ -13866,7 +13896,7 @@
       if (key !== "stories") _ooMapStoryKind = null;   // don't leak a kind filter across lenses
       try {
         if (key === "stories" && _ooMapSignals == null) {
-          const d = await api("/api/timemap?limit=4000");
+          const d = await api("/api/timemap?limit=4000&hazards=true");
           _ooMapSignals = (d.signals || []).filter(s => typeof s.t === "number" && s.lat != null && s.lon != null);
         } else if (key === "places" && !_ooMapWhere) {
           _ooMapWhere = await api("/api/insights/where?limit=400");
@@ -14074,7 +14104,7 @@
           _ooMapSignalsOn = !_ooMapSignalsOn;
           if (_ooMapSignalsOn && _ooMapSignals == null) {
             try {
-              const d = await api("/api/timemap?limit=4000");
+              const d = await api("/api/timemap?limit=4000&hazards=true");
               _ooMapSignals = (d.signals || []).filter(s => typeof s.t === "number" && s.lat != null && s.lon != null);
             } catch { _ooMapSignals = []; }
           }
@@ -14166,13 +14196,26 @@
     }
     function _ooMapSignalDetail(s, visible, win) {
       const host = $("oo-coverage-detail"); if (!host || !s) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       _ooMapSigSet = visible || []; _ooMapSigWin = win || 25;
       const url = s.url ? safeUrl(s.url) : null;
-      const cov = (s.place || s.title || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
+      // Item 2 (field-feedback A6, ruled): for a hazard, the composed search
+      // combines TYPE + PLACE (two real, provider-asserted facts) rather than the
+      // generic title/place text every other signal kind uses -- a more specific
+      // corpus search than "Find coverage" alone would give.
+      const cov = (s.kind === "hazard")
+        ? [s.hazard_type, s.place].filter(Boolean).join(" ").trim()
+        : (s.place || s.title || "").replace(/\s*\([^)]*\)\s*$/, "").trim();
       const geo = s.geocode === "country" ? `<span class="pill warn" title="country-level stand-in point, not the exact spot">≈ country</span>`
                 : s.geocode === "city" ? `<span class="pill" title="placed at a known city">city</span>` : "";
       const conf = s.source === "corpus-mention" ? `<span class="pill warn" title="a date extracted from article text">mentioned · extracted</span>`
                  : s.confirmed ? `<span class="pill ok">confirmed</span>` : `<span class="pill warn">unconfirmed / scheduled</span>`;
+      // Item 2: the INTERNAL article/reader link, once the hazard has been
+      // ingested as a corpus Article (article_id is null until then -- never
+      // fabricated).
+      const localLink = (s.kind === "hazard" && s.article_id != null)
+        ? `<a href="/api/articles/${s.article_id}/view" target="_blank" rel="noopener" class="tiny secondary" style="display:inline-block;padding:4px 9px;border-radius:6px" title="${esc(t("The local, offline copy of this hazard event."))}">${esc(t("Open the local article"))}</a>`
+        : "";
       host.innerHTML = `<div class="panel" style="padding:10px 12px;background:var(--panel2)">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="width:11px;height:11px;border-radius:50%;background:${kindColor(s.kind)};display:inline-block"></span>
@@ -14182,10 +14225,12 @@
         <div class="muted" style="margin-top:5px;font-size:13px">
           ${esc(fmtDate(s))}${s.place ? ` · ${esc(s.place)}` : ""}${s.country ? ` (${esc(String(s.country).toUpperCase())})` : ""}
           · ${(+s.lat).toFixed(2)}, ${(+s.lon).toFixed(2)} · <span title="data source">${esc(s.source)}</span>
+          ${s.magnitude != null ? ` · M${esc(fmtNum(s.magnitude, 1))}` : ""}
         </div>
         ${s.note ? `<div class="hint" style="margin-top:5px">${esc(s.note)}</div>` : ""}
         <div class="row" style="margin-top:7px;gap:8px">
           ${url ? extLink(url, "Official / reference source ↗", "tiny secondary", "align-self:center") : ""}
+          ${localLink}
           ${cov ? `<button class="tiny secondary" onclick="tmapFindCoverage(${esc(JSON.stringify(cov))})">Find coverage in your corpus</button>` : ""}
         </div>
         ${(() => {
@@ -14202,6 +14247,32 @@
         })()}
       </div>`;
       host.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+    // Item 3 (field-feedback A6, ruled): deep-link from the Home Alerts strip to
+    // the World map, "centred on the event" -- switches to the map, selects the
+    // Stories lens (the SAME lens the in-map strip already drives -- no second
+    // map/engine), waits for the signal set to load, then opens the matching
+    // hazard's OWN detail panel directly (a more robust "centring" than blindly
+    // computing a slider position from outside the render function would be).
+    async function openWorldMapAt(lat, lon, isoTime, articleId) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
+      showTab("timemap");
+      await new Promise(r => setTimeout(r, 60));
+      if (_ooMapLensTabs) _ooMapLensTabs.select("stories");
+      else await selectOoMapLens("stories");
+      for (let i = 0; i < 20 && _ooMapSignals == null; i++) await new Promise(r => setTimeout(r, 100));
+      const sig = Array.isArray(_ooMapSignals) ? _ooMapSignals : [];
+      let match = (articleId != null)
+        ? sig.find(s => s.kind === "hazard" && s.article_id === articleId)
+        : null;
+      if (!match && lat != null && lon != null) {
+        const near = sig.filter(s => s.kind === "hazard")
+          .map(s => ({ s, d: Math.hypot((s.lat || 0) - lat, (s.lon || 0) - lon) }))
+          .sort((a, b) => a.d - b.d)[0];
+        if (near && near.d < 0.5) match = near.s;
+      }
+      if (match) _ooMapSignalDetail(match, sig, 25);
+      else toast(t("This event is outside the map's current signal set."), "err");
     }
     // Toggle the in-browser OSM offline-region overlay (THEME-2). On first enable
     // it finds a DOWNLOADED region, fetches a bounded byte PREFIX of its local
@@ -14313,7 +14384,7 @@
       space:{c:"#bf7af0", l:"Space"}, science:{c:"#1fb8c4", l:"Science"},
       climate:{c:"#2da44e", l:"Climate"}, sport:{c:"#e3b341", l:"Sport"},
       economic:{c:"#c9a227", l:"Economic"}, political:{c:"#8b949e", l:"Political"},
-      technology:{c:"#58a6ff", l:"Technology"}, hazard:{c:"#f85149", l:"Hazard (live)"},
+      technology:{c:"#58a6ff", l:"Technology"}, hazard:{c:"#f85149", l:"Hazard"},
       article:{c:"#a371f7", l:"Article"},
     };
     const kindColor = k => (TMAP_KINDS[k] || {c:"var(--muted)"}).c;

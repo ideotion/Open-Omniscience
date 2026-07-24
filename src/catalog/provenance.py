@@ -36,9 +36,15 @@ CITED = "cited"
 # ``law.<jurisdiction>.local`` sources (source_type "legal"), and the seeded official
 # portals/gazettes carry source_type "legal"/"ip". A channel fact, never a judgement.
 LAW = "law"
+# Open geophysical-hazard alerts (USGS/GDACS), ingested as corpus Articles under
+# synthetic hazard.<provider>.local sources (2026-07-24 field-feedback Session A §6,
+# ruled: "hazards ingested as Articles"). A channel fact, never a judgement --
+# provider-declared severity/magnitude ride a LINKED, source-asserted detail record
+# (HazardEventDetail), never a score.
+HAZARD = "hazard"
 WEB = "web"
 
-PROVENANCE_CLASSES: tuple[str, ...] = (WEB, WIKIPEDIA, NEWSLETTER, STATISTICS, CITED, LAW)
+PROVENANCE_CLASSES: tuple[str, ...] = (WEB, WIKIPEDIA, NEWSLETTER, STATISTICS, CITED, LAW, HAZARD)
 
 # Tags IMPLIED by a source's channel class (maintainer-asked 2026-07-17: "tags should
 # also be deduced from source type, and source tags"). These are appended to a source's
@@ -51,6 +57,7 @@ CLASS_IMPLIED_TAGS: dict[str, tuple[str, ...]] = {
     STATISTICS: ("statistics",),
     CITED: ("cited",),
     LAW: ("law",),
+    HAZARD: ("hazard",),
     WEB: (),
 }
 
@@ -93,8 +100,9 @@ def ensure_channel_tags(session) -> int:
                 Source.domain.like("%.wikipedia.org"),
                 Source.domain == "wikipedia.org",
                 Source.domain.like("law.%.local"),
+                Source.domain.like("hazard.%.local"),
                 Source.domain.in_(sorted(NEWSLETTER_DOMAINS)),
-                Source.source_type.in_(["legal", "ip", "statistics", "cited"]),
+                Source.source_type.in_(["legal", "ip", "statistics", "cited", "hazard"]),
             )
         )
         .all()
@@ -134,6 +142,8 @@ def provenance_of(domain: str | None, source_type: str | None = None) -> str:
         return NEWSLETTER
     if d.startswith("law.") and d.endswith(".local"):
         return LAW
+    if d.startswith("hazard.") and d.endswith(".local"):
+        return HAZARD
     st = (source_type or "").strip().lower()
     if st == STATISTICS:
         return STATISTICS
@@ -141,4 +151,6 @@ def provenance_of(domain: str | None, source_type: str | None = None) -> str:
         return CITED
     if st in ("legal", "ip"):
         return LAW
+    if st == HAZARD:
+        return HAZARD
     return WEB

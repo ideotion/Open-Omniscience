@@ -182,6 +182,7 @@ def signals_hazards_snapshot(
         "(kill-switch/robots/proxy honoured; refused while airplane mode is engaged) and "
         "merge the result before saving.",
     ),
+    db: Session = Depends(get_db),
 ) -> dict:
     """Update the LOCAL hazard snapshot the alert layer reads (NO producer ever fetches).
 
@@ -190,7 +191,12 @@ def signals_hazards_snapshot(
     to pull the open feeds through the SAME guarded fetcher the hazards relay uses (the
     kill switch refuses it while airplane mode is engaged). A refresh that returns nothing
     (offline / all feeds failed) never overwrites a good snapshot with an empty one —
-    failures are reported instead."""
+    failures are reported instead.
+
+    2026-07-24 field-feedback A6 (ruled): every saved snapshot is ALSO ingested as corpus
+    Articles (one per provider event id — see ``src.hazards.ingest``), zero-network (the
+    records are already local), best-effort (an ingest hiccup never fails the snapshot
+    save itself)."""
     from src.hazards.store import save_snapshot
 
     records = list((body.records if body else None) or [])
@@ -207,8 +213,15 @@ def signals_hazards_snapshot(
         return {"saved": False, "count": 0, "failures": failures,
                 "note": "no records to save (offline or empty) — the previous snapshot is kept"}
     saved = save_snapshot(records)
+    ingested: dict = {}
+    try:
+        from src.hazards.ingest import ingest_hazard_records
+
+        ingested = ingest_hazard_records(db, saved["records"])
+    except Exception as exc:  # noqa: BLE001 - the snapshot save must never fail on an ingest hiccup
+        failures.append(f"corpus ingest: {type(exc).__name__}: {exc}")
     return {"saved": True, "count": len(saved["records"]), "saved_at": saved["saved_at"],
-            "failures": failures}
+            "failures": failures, "ingested": ingested}
 
 
 class DismissReasonBody(BaseModel):
