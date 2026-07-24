@@ -343,6 +343,7 @@ class EthicalFetcher:
         max_bytes: int = 10 * 1024 * 1024,
         respect_robots: bool = True,
         proxy: str | None = None,
+        proxy_pool: list[str] | None = None,
         session: requests.Session | None = None,
         max_retries: int = 2,
         retry_backoff_s: float = 0.5,
@@ -357,6 +358,19 @@ class EthicalFetcher:
         self.max_retries = max(0, int(max_retries))
         self.retry_backoff_s = max(0.0, float(retry_backoff_s))
         self.proxy = proxy or None
+        # C10 (2026-07-24 throughput brief, §6b): an operator-run SOCKS pool.
+        # TAKES PRECEDENCE over ``proxy`` when non-empty (see _isolated_proxies,
+        # which does the actual per-host sharding). Re-validated here (not just
+        # at the settings-save layer) -- ALL-TOR OR REFUSED: fails loud on
+        # construction rather than silently using a pool with a non-SOCKS
+        # member, in case the caller bypassed save_settings's own check (e.g. an
+        # older/hand-edited persisted file, or a direct construction in tests).
+        self._proxy_pool: list[str] | None = None
+        if proxy_pool:
+            from src.safety.fetcher import validate_socks_pool
+
+            validate_socks_pool(list(proxy_pool))
+            self._proxy_pool = list(proxy_pool)
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": user_agent})
         # Size the connection pool for parallel collection: with up to ~50
@@ -383,7 +397,14 @@ class EthicalFetcher:
         # socks5://127.0.0.1:9050). We *use* the proxy and verify it is set; we do NOT
         # guarantee anonymity — the user must run and trust the proxy. SOCKS proxies need
         # the optional [safety] extra (PySocks); HTTP/HTTPS proxies work out of the box.
-        if self.proxy:
+        # A POOL's actual per-host endpoint is chosen at FETCH TIME (_isolated_proxies,
+        # every real request path routes through it) -- this session-level default is
+        # only ever a defensive fallback (the first member) for anything that might
+        # read .session.proxies directly without going through that method.
+        if self._proxy_pool:
+            first = self._proxy_pool[0]
+            self.session.proxies = {"http": first, "https": first}
+        elif self.proxy:
             self.session.proxies = {"http": self.proxy, "https": self.proxy}
         # Per-HOST Tor stream isolation (on by default; OO_TOR_STREAM_ISOLATION=0
         # disables). Over a SOCKS proxy, each host's requests ride their OWN Tor
@@ -794,7 +815,7 @@ class EthicalFetcher:
             return  # a public IP literal
         except ValueError:
             pass  # not an IP literal -> a hostname
-        if _is_remote_resolving_proxy(self.proxy):
+        if _is_remote_resolving_proxy(self._effective_base_proxy(host)):
             return  # the exit resolves; nothing for us to check
         infos = self._resolve_cached(host)
         for info in infos:
@@ -823,9 +844,34 @@ class EthicalFetcher:
         self._dns_cache[host] = (infos, now + _DNS_CACHE_TTL_S)
         return infos
 
+    def _effective_base_proxy(self, host_or_netloc: str | None) -> str | None:
+        """The proxy THIS host actually uses, before any per-host stream-
+        isolation auth is layered on: the pool's sharded member when a POOL is
+        configured (C10), else the single ``self.proxy``, else ``None``.
+
+        ``host_or_netloc`` accepts EITHER a bare hostname (``_guard_target``'s
+        ``parsed.hostname``) or a full ``netloc`` (``_isolated_proxies``'s
+        ``parsed.netloc``, which may carry a port / IPv6 brackets) --
+        normalised to the bare hostname here so BOTH call sites shard the SAME
+        host onto the SAME pool member (a port-bearing vs bare form of the
+        identical host must never disagree on which endpoint/circuit it gets)."""
+        if self._proxy_pool and host_or_netloc:
+            from src.safety.fetcher import shard_host_to_proxy
+
+            hostname = urlparse(f"//{host_or_netloc}").hostname or host_or_netloc
+            return shard_host_to_proxy(hostname, self._proxy_pool)
+        return self.proxy
+
     def _isolated_proxies(self, netloc: str | None) -> dict[str, str] | None:
-        """Per-HOST Tor stream-isolation proxies for ``netloc`` (or ``None`` to
-        use the session's base proxy).
+        """Per-HOST proxy selection + Tor stream-isolation for ``netloc`` (or
+        ``None`` to use the session's base proxy).
+
+        C10: when an operator-run SOCKS POOL is configured, ``netloc`` first
+        SHARDS onto one pool member (a stable, host->endpoint mapping -- see
+        ``src.safety.fetcher.shard_host_to_proxy``) -- per-host CIRCUIT
+        isolation (below) is still layered on TOP of that endpoint, so a host
+        gets both a dedicated endpoint AND a dedicated circuit on it. Without a
+        pool this is exactly the prior single-proxy behaviour.
 
         Returns a ``{"http":…, "https":…}`` dict whose SOCKS URL carries a
         per-host username so Tor's ``IsolateSOCKSAuth`` builds a dedicated circuit
@@ -834,14 +880,25 @@ class EthicalFetcher:
         robots.txt both route through this, so a host's traffic shares one circuit
         and is unlinkable to other hosts' circuits.
         """
-        if not self._stream_isolation or not self.proxy or not netloc:
+        if not netloc:
+            return None
+        base = self._effective_base_proxy(netloc)
+        if not base:
+            return None
+        if self._proxy_pool and not self._stream_isolation:
+            # A pool member is still an explicit per-call override even with
+            # isolation off (unlike the single-proxy path, which can fall back
+            # to the session-level default) -- every host must land on ITS
+            # sharded endpoint, never the session's arbitrary first-member default.
+            return {"http": base, "https": base}
+        if not self._stream_isolation:
             return None
         # Lazy import: src.safety.fetcher imports from src.ingest, so a top-level
         # import here would be circular. The helper is pure string work.
         from src.safety.fetcher import _with_stream_isolation
 
-        isolated = _with_stream_isolation(self.proxy, netloc)
-        if isolated == self.proxy:
+        isolated = _with_stream_isolation(base, netloc)
+        if isolated == base and not self._proxy_pool:
             return None  # non-SOCKS proxy (or creds already set): nothing to isolate
         return {"http": isolated, "https": isolated}
 
