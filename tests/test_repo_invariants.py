@@ -7341,6 +7341,54 @@ def test_briefing_refresh_runs_in_a_background_thread_not_inline():
     assert '_phase_set("briefing")' not in pass_body
 
 
+def test_housekeeping_lane_runs_in_a_background_thread_not_inline():
+    """S-B (2026-07-24 throughput brief, C1): the serial network ride-alongs —
+    markets/calendar/law (+ its AI change-summary follow-up)/hazards (+ weather
+    signals)/world-discovery/qualification/country-data — must NOT run inline
+    at the tail of a collect pass; two 2026-07-23 field diagnostics exports
+    (a 2-core AND an 8-core machine) both measured a 3-8 min inter-pass gap
+    largely spent on exactly this serial tail. Guard that the scheduler kicks
+    them off via a dedicated async LANE method with its own lock (non-
+    overlapping, never queued) through its OWN session+fetcher (never the
+    pass's — 'never two writers on one cursor' for world-discovery/
+    qualification still holds because writes serialise through the single
+    process-wide writer gate regardless of which session initiates them), and
+    that _default_run_once's own body no longer calls any of the moved
+    ride-alongs directly — see tests/test_scheduler_housekeeping_lane.py and
+    tests/test_kind_ladder_wiring.py for the full behavioural coverage."""
+    runner = (_SRC / "scheduler" / "runner.py").read_text(encoding="utf-8")
+    assert "def _kick_housekeeping_lane(self)" in runner
+    assert "self._lane_lock" in runner and "self._lane_thread" in runner
+    assert "def run_housekeeping_lane(session, fetcher, settings" in runner
+    lane_body = runner.split("def _kick_housekeeping_lane(self)", 1)[1].split(
+        "\n    def _default_run_once", 1
+    )[0]
+    assert "acquire(blocking=False)" in lane_body
+    assert "_bgtasks.register(" in lane_body and '"housekeeping"' in lane_body
+    assert "threading.Thread(" in lane_body and ".start()" in lane_body
+    assert "run_housekeeping_lane(session, fetcher, settings)" in lane_body
+    assert "kill_switch_active()" in lane_body  # airplane-aware: refuses up front
+
+    # _default_run_once's OWN body: it calls the async kickoff, and never calls
+    # any of the moved ride-alongs directly (the old serial inline call sites
+    # are gone -- they now live ONLY inside the _lane_step_* functions, which
+    # are defined BEFORE _default_run_once in this module, so this slice
+    # excludes them by construction, not by accident).
+    pass_body = runner.split("def _default_run_once", 1)[1]
+    assert "self._kick_housekeeping_lane()" in pass_body
+    for gone in (
+        "auto_import_due_feeds(fetcher)",
+        "import_due_feeds(session, fetcher=fetcher)",
+        "auto_track_due(session, fetcher)",
+        "advance_world_discovery(",
+        "advance_qualification(",
+        "advance_country_data(",
+        "auto_snapshot_due(",
+        "auto_refresh_weather_due(",
+    ):
+        assert gone not in pass_body, f"{gone!r} must be moved into a _lane_step_* function"
+
+
 def test_memory_headroom_honesty_never_projects_a_worker_count():
     """S4.3 (field-feedback 2026-07-23, 'memory-headroom honesty for small
     boxes'): a mem-low-capped pass must surface a REAL, MEASURED note (never a
