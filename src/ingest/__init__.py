@@ -401,6 +401,39 @@ class EthicalFetcher:
             "host_locks": len(self._host_locks),
         }
 
+    def declared_sitemaps(self, url: str) -> list[str]:
+        """Sitemap URLs the host's own robots.txt DECLARES (``Sitemap:`` directives,
+        parsed by the stdlib ``RobotFileParser`` -- the same cached decision
+        ``_enforce_robots`` uses, so this costs a real robots fetch only on a cache
+        miss). C7 (2026-07-24 throughput brief): the preferred discovery source,
+        since it is the site's OWN authoritative pointer -- a conventional
+        ``/sitemap.xml`` guess is only the fallback (see ``src.ingest.sitemap``).
+
+        Same guards as :meth:`fetch` (this can trigger a REAL robots.txt fetch on a
+        cache miss, so it must never bypass them): the kill switch is honoured
+        (airplane mode refuses -- raises ``FetchFailed``, exactly like ``fetch``),
+        the SSRF guard runs on the target host, and the per-host lock serialises
+        against a concurrent fetch to the same host.
+
+        Returns ``[]`` (never a guess) when robots.txt disallows/is unavailable for
+        this host, or when it declares no sitemaps at all.
+        """
+        if _KILL.is_set():
+            raise FetchFailed("network kill switch is active -- collection stopped by operator")
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return []
+        self._guard_target(parsed.hostname)  # SSRF: never reach internal addresses
+        host_key = f"{parsed.scheme}://{parsed.netloc}"
+        with self._host_lock(parsed.netloc):
+            parser = self._get_robots(host_key, parsed)
+        if parser is None:
+            return []
+        try:
+            return list(parser.site_maps() or [])
+        except Exception:  # noqa: BLE001 - a parser quirk must never break discovery
+            return []
+
     def _declares_crawl_delay(self, key_or_netloc: str) -> bool:
         """True when the cached robots decision for this host declares a
         Crawl-delay (checked under both scheme keys for a bare netloc)."""
