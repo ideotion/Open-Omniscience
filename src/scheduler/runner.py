@@ -1323,6 +1323,23 @@ class BackgroundScheduler:
                         _LOG.info("law auto-track: %s", law_res)
             except Exception:  # noqa: BLE001 - never fail the scrape on law auto-track
                 _LOG.warning("law auto-track failed", exc_info=True)
+            # AI CHANGE SUMMARIES (2026-07-24 field-feedback Session A §3, ruled): when
+            # a new LawRevision lands for a UI-language-floor jurisdiction, auto-generate
+            # a plain-language summary via the active LOCAL model (loopback, airplane-safe
+            # since the §7 gate split — an Ollama-down machine is a single honest no-op,
+            # never a wall of failures). Shares auto_track_law's opt-out (summaries only
+            # ever apply to documents that opt-out already stops tracking); an on-demand
+            # button covers every other jurisdiction. Never blocks tracking.
+            try:
+                if getattr(settings, "auto_track_law", True):
+                    from src.law.summarize import advance_law_summaries
+
+                    sum_res = advance_law_summaries(session)
+                    if sum_res.get("ran"):
+                        result["law_summarized"] = sum_res.get("stored", 0)
+                        _LOG.info("law auto-summary: %s", sum_res)
+            except Exception:  # noqa: BLE001 - never fail the scrape on AI summarization
+                _LOG.warning("law auto-summary failed", exc_info=True)
             # Field-test instrumentation (live-test cycles): exercise every fetch
             # surface once and log verbatim outcomes for the maintainer's debug
             # bundle. OPT-IN since 0.1 (OO_FIELD_TEST=1 enables — a public tag

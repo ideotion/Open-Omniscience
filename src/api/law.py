@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from src.database.models import LawDocument, LawRevision
+from src.database.models import LawDocument, LawRevision, LawRevisionSummary
 from src.database.session import get_db
 
 router = APIRouter(prefix="/api/law", tags=["law"])
@@ -52,6 +52,40 @@ def _verdict_of(last_status: str | None) -> str:
     if s == "unchanged":
         return "unchanged"
     return "other"
+
+
+def _latest_summaries_by_revision(
+    db: Session, revision_ids: list[int]
+) -> dict[int, LawRevisionSummary]:
+    """The MOST RECENT AI change-summary per revision id, batched (never N+1 across
+    a list of revisions). A revision may be re-summarized (a later, better prompt)
+    -- the highest id per revision is the latest; history isn't lost, just not the
+    default view (mirrors ArticleAnalysis's "latest wins" convention)."""
+    if not revision_ids:
+        return {}
+    rows = (
+        db.query(LawRevisionSummary)
+        .filter(LawRevisionSummary.revision_id.in_(revision_ids))
+        .order_by(LawRevisionSummary.revision_id, LawRevisionSummary.id.desc())
+        .all()
+    )
+    out: dict[int, LawRevisionSummary] = {}
+    for row in rows:
+        out.setdefault(row.revision_id, row)  # first hit per id, at desc order = latest
+    return out
+
+
+def _summary_dict(row: LawRevisionSummary | None) -> dict | None:
+    """None when no summary exists yet -- never a fabricated placeholder. Rendered
+    "AI-derived · unreliable" by the caller (the established third class)."""
+    if row is None:
+        return None
+    return {
+        "summary": row.summary,
+        "model": row.model,
+        "prompt_version": row.prompt_version,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
 
 
 def _doc_dict(doc: LawDocument, *, revisions: int = 0, flagged: int = 0) -> dict:
@@ -157,10 +191,12 @@ def law_changes(
     if flagged_only:
         q = q.filter(LawRevision.flagged.is_(True))
     rows = q.order_by(LawRevision.observed_at.desc(), LawRevision.id.desc()).limit(limit).all()
+    by_rev = _latest_summaries_by_revision(db, [rev.id for rev, _doc in rows])
     return {
         "caveat": _CAVEAT,
         "changes": [
             {
+                "id": rev.id,
                 "document_id": doc.id,
                 "jurisdiction": doc.jurisdiction,
                 "title": doc.title,
@@ -171,6 +207,9 @@ def law_changes(
                 "flagged": bool(rev.flagged),
                 "flag_reasons": (rev.flag_reasons or "").split(",") if rev.flag_reasons else [],
                 "diff": rev.diff or "",
+                # AI-derived, unreliable (S3, ruled): auto-populated for UI-language
+                # jurisdictions, else null until the on-demand button is clicked.
+                "ai_summary": _summary_dict(by_rev.get(rev.id)),
             }
             for rev, doc in rows
         ],
@@ -291,20 +330,52 @@ def law_document(document_id: int, db: Session = Depends(get_db)) -> dict:
         .order_by(LawRevision.observed_at.desc())
         .all()
     )
+    by_rev = _latest_summaries_by_revision(db, [r.id for r in revs])
     return {
         **_doc_dict(doc, revisions=len(revs)),
         "caveat": _CAVEAT,
         "revisions": [
             {
+                "id": r.id,
                 "observed_at": r.observed_at.isoformat() if r.observed_at else None,
                 "delta_bytes": r.delta_bytes,
                 "flagged": bool(r.flagged),
                 "flag_reasons": (r.flag_reasons or "").split(",") if r.flag_reasons else [],
                 "diff": r.diff or "",
+                "ai_summary": _summary_dict(by_rev.get(r.id)),
             }
             for r in revs
         ],
     }
+
+
+@router.post("/revisions/{revision_id}/summarize")
+def summarize_law_revision(revision_id: int, db: Session = Depends(get_db)) -> dict:
+    """On-demand AI change summary (S3, ruled). The AUTO ride-along only fires for
+    documents whose asserted language is a UI language; this endpoint covers every
+    OTHER jurisdiction (or lets a user re-request one sooner). Loopback local
+    inference through the active Ollama backend — airplane-safe since the §7 gate
+    split, so no network-consent gate here; a down/unavailable model degrades
+    honestly (``status="unavailable"``), never a fabricated summary. A revision
+    with no recorded diff (a baseline, not a change) is a 422 — there is nothing
+    to summarize."""
+    rev = db.query(LawRevision).filter_by(id=revision_id).first()
+    if rev is None:
+        raise HTTPException(status_code=404, detail="Revision not found.")
+    doc = db.query(LawDocument).filter_by(id=rev.document_id).first()
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found.")
+
+    from src.law.summarize import summarize_revision
+
+    result = summarize_revision(db, doc, rev)
+    if result.get("status") == "no_diff":
+        raise HTTPException(status_code=422, detail=result.get("detail"))
+    ai_summary = None
+    if result.get("status") == "ok":
+        row = db.query(LawRevisionSummary).filter_by(id=result["summary_id"]).first()
+        ai_summary = _summary_dict(row)
+    return {"status": result.get("status"), "detail": result.get("detail"), "ai_summary": ai_summary}
 
 
 def _diff_to_html(diff: str, _esc) -> str:

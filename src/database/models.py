@@ -2053,6 +2053,37 @@ class LawRevision(Base):
         return f"<LawRevision(doc={self.document_id} d={self.delta_bytes})>"
 
 
+class LawRevisionSummary(Base):
+    """An AI-generated plain-language summary of ONE law change (2026-07-24
+    field-feedback Session A §3: "AI change summaries" -- ruled).
+
+    A LINKED layer over :class:`LawRevision`, mirroring :class:`ArticleAnalysis`'s
+    provenance shape exactly (model + prompt_version + the verbatim prompt_text
+    used) so no AI text is ever shown without its origin. NEVER the trusted
+    diff/revision record itself -- the ONE ``index_article`` corpus-keyword pass
+    never reads this table. Rendered "AI-derived - unreliable" (the established
+    third class); a revision may be re-summarized (a later, better prompt), so
+    this is append-only like ArticleAnalysis, never an in-place overwrite.
+    """
+
+    __tablename__ = "law_revision_summaries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    revision_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("law_revisions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    model: Mapped[str] = mapped_column(String(100), nullable=False)
+    prompt_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    prompt_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(DateTime, default=lambda: datetime.now(UTC))
+
+    revision = relationship("LawRevision", backref="ai_summaries")
+
+    def __repr__(self) -> str:
+        return f"<LawRevisionSummary(revision_id={self.revision_id}, model='{self.model}')>"
+
+
 class MergeBatch(Base):
     """One import/merge of an external backup artifact into this corpus.
 

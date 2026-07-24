@@ -7088,6 +7088,70 @@ def test_library_qualification_tile_window_switcher_hide_flat_auto_log():
     assert prefix_m.group(1) + path_m.group(1) == "/api/library/history"
 
 
+def test_law_ai_change_summaries_are_a_labelled_linked_layer():
+    """2026-07-24 field-feedback Session A §3 (ruled): an AI change summary is a
+    LINKED layer over LawRevision (mirroring ArticleAnalysis's provenance shape —
+    model + prompt_version + prompt_text), auto-generated for UI-language-floor
+    jurisdictions and on-demand for the rest; NEVER the trusted diff/revision
+    record, NEVER fed to keyword indexing. Guards the model, the API surface
+    (id + ai_summary on both list/detail, the on-demand POST endpoint), and the
+    frontend's 'AI-derived · unreliable' rendering + on-demand button."""
+    models = (_SRC / "database" / "models.py").read_text(encoding="utf-8")
+    assert "class LawRevisionSummary(Base):" in models
+    lrs_body = models.split("class LawRevisionSummary(Base):", 1)[1].split("class ", 1)[0]
+    for col in ("revision_id", "summary", "model", "prompt_version", "prompt_text"):
+        assert col in lrs_body, f"LawRevisionSummary missing {col}"
+
+    summarize_src = (_SRC / "law" / "summarize.py").read_text(encoding="utf-8")
+    assert "def summarize_revision(" in summarize_src
+    assert "def pending_ai_summaries(" in summarize_src
+    assert "def advance_law_summaries(" in summarize_src
+    assert "UI_LOCALE_CODES" in summarize_src  # gated on the 12 UI languages, not a hardcoded copy
+    assert 'if not (revision.diff or "").strip():' in summarize_src  # never summarize a baseline
+
+    # the corpus keyword pass must never read this table (the trusted-index guard).
+    extract_src = (_SRC / "analytics" / "extract.py").read_text(encoding="utf-8")
+    store_src = (_SRC / "analytics" / "store.py").read_text(encoding="utf-8")
+    assert "LawRevisionSummary" not in extract_src and "LawRevisionSummary" not in store_src
+
+    api = (_SRC / "api" / "law.py").read_text(encoding="utf-8")
+    assert '"id": rev.id' in api  # law_changes exposes the revision id
+    assert '"id": r.id' in api  # law_document's per-revision id, too
+    assert '"ai_summary": _summary_dict(' in api
+    prefix_m = re.search(r'APIRouter\(prefix="([^"]+)"', api)
+    path_m = re.search(r'@router\.post\("(/revisions/\{revision_id\}/summarize)"\)', api)
+    assert prefix_m and path_m
+    assert prefix_m.group(1) + path_m.group(1) == "/api/law/revisions/{revision_id}/summarize"
+
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "function lawAiSummaryHtml(" in app
+    assert "function lawSummarize(" in app
+    assert "/api/law/revisions/${revId}/summarize" in app
+    assert 'data-rev="${ch.id}"' in app
+    # scheduler ride-along, gated + never blocking the scrape.
+    runner = (_SRC / "scheduler" / "runner.py").read_text(encoding="utf-8")
+    assert "from src.law.summarize import advance_law_summaries" in runner
+    assert "sum_res = advance_law_summaries(session)" in runner
+
+
+def test_law_tracking_budget_is_adaptive_not_a_fixed_five():
+    """2026-07-24 field-feedback Session A §3 item 3 (ruled): auto_track_due's
+    hardcoded batch=5/pass cannot baseline hundreds of documents once enumeration
+    adapters land -- the per-pass budget now scales with the watched-document
+    count, bounded both ways (unchanged on today's small corpus, capped so a
+    large one never floods a single pass)."""
+    track_src = (_SRC / "law" / "track.py").read_text(encoding="utf-8")
+    assert "def adaptive_track_budget(" in track_src
+    assert "batch: int | None = None" in track_src  # the OLD hardcoded default=5 is gone
+    assert "batch = adaptive_track_budget(watched_count)" in track_src
+
+    from src.law.track import adaptive_track_budget
+
+    assert adaptive_track_budget(0) == 5
+    assert adaptive_track_budget(23) == 5  # today's real corpus: byte-identical to the old default
+    assert adaptive_track_budget(10_000) <= 25  # bounded -- never floods a single pass
+
+
 def test_briefing_refresh_runs_in_a_background_thread_not_inline():
     """S4.1 duty-cycle fix (field-feedback 2026-07-23): refresh_briefing must NOT
     run synchronously inline at the tail of a collect pass — that blocked the very
