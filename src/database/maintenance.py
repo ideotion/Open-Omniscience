@@ -847,8 +847,9 @@ SELF_HEALED_COLUMNS: dict[str, frozenset[str]] = {
     "external_sources": frozenset(_EXTERNAL_SOURCE_DISCOVERY_COLUMNS),
     "law_documents": frozenset(_LAW_DOCUMENT_TEXT_COLUMNS) | frozenset(_LAW_DOCUMENT_LANGUAGE_COLUMNS),
     "law_revisions": frozenset(_LAW_REVISION_TEXT_COLUMNS),
-    # ensure_source_qualification_columns (the admission-gate STAMP columns).
-    "sources": frozenset(_SOURCE_QUALIFICATION_COLUMNS),
+    # ensure_source_qualification_columns (the admission-gate STAMP columns) +
+    # ensure_source_last_crawled_column (§8 crawl-by-default rotation marker).
+    "sources": frozenset(_SOURCE_QUALIFICATION_COLUMNS) | frozenset(_SOURCE_LAST_CRAWLED_COLUMN),
 }
 
 
