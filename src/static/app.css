@@ -542,6 +542,12 @@
     .mkt-viewrow .chip:hover { border-color:var(--accent); }
     .mkt-viewrow .chip.on { color:var(--fg); font-weight:600;
       border-color:var(--accent); background:color-mix(in srgb, var(--accent) 18%, transparent); }
+    /* 2026-07-24 Session A §5 — the Library-tab per-tile window switcher (7d/30d/90d/All). */
+    .lib-win-row .chip { font-size:10.5px; padding:1px 8px; border:1px solid var(--border); border-radius:999px;
+      background:var(--panel); color:var(--muted); cursor:pointer; }
+    .lib-win-row .chip:hover { border-color:var(--accent); }
+    .lib-win-row .chip.on { color:var(--fg); font-weight:600;
+      border-color:var(--accent); background:color-mix(in srgb, var(--accent) 18%, transparent); }
     .fam-block { grid-column:1/-1; margin-bottom:6px; }
     .fam-chart { width:100%; }
     /* Families-first board (P2-10): the section header carries an Enlarge ⛶, and a

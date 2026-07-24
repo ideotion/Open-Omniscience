@@ -7026,6 +7026,58 @@ def test_library_graphs_wired_and_downloaded_section_compressed():
     assert "chartEnlarge(label" in app, "click-to-enlarge must reuse the existing chartEnlarge modal"
     assert "/api/library/history?metric=" in app
 
+
+def test_library_qualification_tile_window_switcher_hide_flat_auto_log():
+    """2026-07-24 field-feedback Session A §5: a 4-line source-qualification tile
+    (counts only, never a score), a per-tile window switcher (ALL tiles share the
+    same default window), hide-flat collapsing an all-zero/no-data series to a
+    one-line note, and auto-log10 on a large cross-series spread — never
+    multi-axis for same-unit series (the honest-viz dual-axis rejection)."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    snap = (_SRC / "database" / "snapshots.py").read_text(encoding="utf-8")
+
+    # backend: the 4 filtered metrics exist, aligned with database.py's own
+    # qualification predicates (never two divergent definitions).
+    for m in ("sources_qualified", "sources_disqualified", "sources_never_judged", "sources_candidates"):
+        assert f'"{m}"' in snap, f"missing filtered snapshot metric {m}"
+    assert "STATUS_QUALIFIED" in snap and "STATUS_DISQUALIFIED" in snap and "STATUS_UNQUALIFIED" in snap
+
+    # frontend: the qualification tile, its 4 metrics, the window switcher, the
+    # hide-flat check, and the auto-log gate all exist and are wired in.
+    assert "function _libQualificationTile" in app
+    assert "function enlargeLibQualification" in app
+    for m in ("sources_qualified", "sources_disqualified", "sources_never_judged", "sources_candidates"):
+        assert f'"{m}"' in app
+    assert "_libQualificationTile(LIB_DEFAULT_DAYS)" in app, "the Activity section must render the qualification tile"
+    # never a quality score — the enlarge caveat states counts-only explicitly.
+    assert "never a quality score" in app
+
+    # window switcher: one shared default, per-tile in-place re-render on click.
+    assert "const LIB_WINDOWS = [[7," in app
+    assert '"7d"' in app and '"30d"' in app and '"90d"' in app
+    assert "function _libSetWindow" in app
+    assert "onclick=\"_libSetWindow(" in app
+    assert "const LIB_DEFAULT_DAYS = 30" in app
+    # every render call site starts on the SAME default window (never a per-tile
+    # divergent starting point) — articles_per_hour used to hardcode 7d.
+    assert '"articles_per_hour", LIB_DEFAULT_DAYS' in app
+    assert '"sources", LIB_DEFAULT_DAYS' in app
+    assert '"wiki_pages", LIB_DEFAULT_DAYS' in app
+    assert '"law_documents", LIB_DEFAULT_DAYS' in app
+
+    # hide-flat: an all-zero/empty series collapses to a one-line note, both for
+    # the single-metric tiles and the qualification tile.
+    assert "function _libAllZero" in app
+    assert "_libAllZero(series.map(p => p.n))" in app
+    assert "_libAllZero(_libQualSeries.flatMap(" in app
+
+    # auto-log (ruled): a shared axis; log10 only past a spread threshold, ALWAYS
+    # labelled — never a silent switch, never a second (multi-)axis.
+    assert "function _libQualSpread" in app
+    assert "_libQualSpread(_libQualSeries) > 50" in app
+    assert '"log scale"' in app
+    assert "logY: _libQualSpread" in app  # the real ooChart opts.logY toggle, not a fake label
+
     # The 'slice-1c 404 lesson' (CLAUDE.md): the wiring test must COMPOSE the real
     # route (router prefix + decorator), never assert two literal strings side by
     # side. Mirrors tests/test_library_history.py::test_wiring_composes_the_real_route.

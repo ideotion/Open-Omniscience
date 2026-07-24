@@ -7052,29 +7052,55 @@
       law_documents: "Law documents tracked",
       law_revisions: "Law revisions tracked",
     };
+    // 2026-07-24 Session A §5: per-tile WINDOW SWITCHER (ruled) — every Library
+    // graph tile, including the new qualification one, starts on the SAME
+    // default window and can be independently switched without reloading the
+    // whole panel. "All" maps to the backend's own generous (not literally
+    // unbounded) history cap.
+    const LIB_WINDOWS = [[7, "7d"], [30, "30d"], [90, "90d"], [3650, "All"]];
+    const LIB_DEFAULT_DAYS = 30;
+    let _libTileDays = {};    // metric (or "__qual") -> the window currently shown
     let _libGraphData = {};   // metric -> last-fetched /api/library/history payload
+    function _libAllZero(nums) {
+      // "zero/no-data" (ruled): every point is 0, or there simply are no points —
+      // hide-flat collapses this to a one-line note instead of a silently blank
+      // or misleadingly-flat chart (the never-blank-and-silent rule).
+      return !nums.length || nums.every(n => !n);
+    }
+    function _libWindowChips(key, current) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return `<div style="display:flex;gap:3px;margin-top:4px" class="lib-win-row">` +
+        LIB_WINDOWS.map(([d, lbl]) =>
+          `<button type="button" class="chip tiny${d === current ? " on" : ""}" onclick="_libSetWindow('${key}', ${d})">${esc(t(lbl))}</button>`
+        ).join("") + `</div>`;
+    }
     async function _libGraphTile(metric, days) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const cur = days || _libTileDays[metric] || LIB_DEFAULT_DAYS;
+      _libTileDays[metric] = cur;
       const label = t(LIB_METRIC_LABEL_KEYS[metric] || metric);
       let d;
       try {
-        d = await api(`/api/library/history?metric=${encodeURIComponent(metric)}&days=${days}`);
+        d = await api(`/api/library/history?metric=${encodeURIComponent(metric)}&days=${cur}`);
       } catch (e) {
-        return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
+        return `<div id="lib-tile-${esc(metric)}" style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
           <b style="font-size:12.5px">${esc(label)}</b>
           <div class="note err" style="font-size:11px">${esc(e.message || e)}</div></div>`;
       }
       _libGraphData[metric] = d;
       const series = Array.isArray(d.series) ? d.series : [];
-      const spark = dashChartSvg(series.map(p => ({observed_on: p.t, price: p.n})), "");
+      const flat = _libAllZero(series.map(p => p.n));
+      const body = flat
+        ? `<div class="muted" style="padding:14px 0;font-size:12px">${esc(t("No data yet."))}</div>`
+        : dashChartSvg(series.map(p => ({observed_on: p.t, price: p.n})), "");
       const began = d.recording_began_at
         ? `<div class="hint muted" style="font-size:11px">${esc(t("Recording began at {x}.").replace("{x}", d.recording_began_at))}</div>`
         : "";
-      return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
+      return `<div id="lib-tile-${esc(metric)}" style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
         <div style="display:flex;align-items:baseline;gap:6px;justify-content:space-between">
           <b style="font-size:12.5px">${esc(label)}</b>
           <button class="ghost tiny" onclick="enlargeLibMetric('${metric}')" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
-        </div>${spark}${began}</div>`;
+        </div>${body}${began}${_libWindowChips(metric, cur)}</div>`;
     }
     async function _renderLibGraphHost(hostId, metrics) {
       const host = $(hostId);
@@ -7088,20 +7114,123 @@
         host.innerHTML = `<div class="note err">${esc(e.message || e)}</div>`;
       }
     }
+
+    // -- The 4-line source-QUALIFICATION tile (2026-07-24 Session A §5) --------
+    // qualified / disqualified / never-judged / candidates on ONE shared axis
+    // (all four are source COUNTS — same unit, so multi-axis is never the
+    // honest answer here per the dual-axis rejection); auto-switches to log10
+    // when the cross-series spread is large, always labelled "log scale",
+    // never silently. Counts only — never a quality score.
+    const LIB_QUAL_METRICS = [
+      "sources_qualified", "sources_disqualified", "sources_never_judged", "sources_candidates",
+    ];
+    const LIB_QUAL_LABELS = {
+      sources_qualified: "Qualified", sources_disqualified: "Disqualified",
+      sources_never_judged: "Never judged", sources_candidates: "Candidates",
+    };
+    let _libQualSeries = [];   // stashed live series (enlarge + in-place re-render)
+    function _libQualSpread(series) {
+      const vals = series.flatMap(s => s.points.map(p => p.v)).filter(v => v > 0);
+      return vals.length ? Math.max(...vals) / Math.min(...vals) : 1;
+    }
+    async function _libQualificationTile(days) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const cur = days || _libTileDays.__qual || LIB_DEFAULT_DAYS;
+      _libTileDays.__qual = cur;
+      const label = t("Source qualification");
+      let payloads;
+      try {
+        payloads = await Promise.all(LIB_QUAL_METRICS.map(m =>
+          api(`/api/library/history?metric=${encodeURIComponent(m)}&days=${cur}`)));
+      } catch (e) {
+        return `<div id="lib-tile-__qual" style="flex:2;min-width:280px;padding:6px;border:1px solid var(--border);border-radius:8px">
+          <b style="font-size:12.5px">${esc(label)}</b>
+          <div class="note err" style="font-size:11px">${esc(e.message || e)}</div></div>`;
+      }
+      _libQualSeries = LIB_QUAL_METRICS.map((m, i) => ({
+        label: t(LIB_QUAL_LABELS[m] || m), unit: t(LIB_QUAL_LABELS[m] || m),
+        points: (payloads[i].series || []).map(p => ({t: p.t, v: p.n})),
+      }));
+      const flat = _libAllZero(_libQualSeries.flatMap(s => s.points.map(p => p.v)));
+      const logY = _libQualSpread(_libQualSeries) > 50;
+      const began = payloads.map(p => p.recording_began_at).filter(Boolean).sort()[0];
+      const beganNote = began
+        ? `<div class="hint muted" style="font-size:11px">${esc(t("Recording began at {x}.").replace("{x}", began))}</div>`
+        : "";
+      const body = flat
+        ? `<div class="muted" style="padding:14px 0;font-size:12px">${esc(t("No data yet."))}</div>`
+        : `<div class="lib-qual-chart"></div>` + (logY
+            ? `<div class="hint muted" style="font-size:10.5px">${esc(t("log scale"))}</div>` : "");
+      return `<div id="lib-tile-__qual" style="flex:2;min-width:280px;padding:6px;border:1px solid var(--border);border-radius:8px">
+        <div style="display:flex;align-items:baseline;gap:6px;justify-content:space-between">
+          <b style="font-size:12.5px">${esc(label)}</b>
+          <button class="ghost tiny" onclick="enlargeLibQualification()" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
+        </div>${body}${beganNote}${_libWindowChips("__qual", cur)}</div>`;
+    }
+    function _libRenderQualChart(root) {
+      const scope = root || document;
+      const host = scope.querySelector ? scope.querySelector(".lib-qual-chart") : null;
+      const live = _libQualSeries.filter(s => s.points.length);
+      if (!host || !live.length) return;   // defensive: a flat/errored tile has no chart host
+      ooChart(host, live, {height: 150, indexed: false, logY: _libQualSpread(_libQualSeries) > 50});
+    }
+    function enlargeLibQualification() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const live = _libQualSeries.filter(s => s.points.length);
+      if (!live.length) return;   // defensive: nothing to enlarge
+      chartEnlarge(t("Source qualification"), live,
+        t("Counts only, never a quality score. Qualified = actively collecting; disqualified/never-judged are enabled but not (yet) admitted; candidates are disabled, awaiting review."),
+        {scales: true});
+    }
+
+    // Re-render exactly ONE tile in place when its window chip is clicked —
+    // never the whole panel (a switch on one metric must not disturb the
+    // others' state or cause a visible flash across the row).
+    async function _libSetWindow(key, days) {
+      const el = $(key === "__qual" ? "lib-tile-__qual" : "lib-tile-" + key);
+      if (!el) return;
+      const html = key === "__qual"
+        ? await _libQualificationTile(days) : await _libGraphTile(key, days);
+      const tmp = document.createElement("div");
+      tmp.innerHTML = html;
+      const fresh = tmp.firstElementChild;
+      if (!fresh) return;
+      el.replaceWith(fresh);
+      if (key === "__qual") _libRenderQualChart(fresh);
+    }
+
     // The live current-rate readout stays in renderLibraryOverview's own
     // "Articles / hour (last 24h)" tile above (unchanged) — this graph adds the
-    // past-7-days EVOLUTION the maintainer asked for, alongside the counters
-    // that had no history at all until this feature shipped.
-    function renderLibraryActivityGraphs() {
-      return _renderLibGraphHost("lib-activity-graphs", [
-        ["articles_per_hour", 7], ["sources", 30], ["keywords", 30],
-      ]);
+    // EVOLUTION over time the maintainer asked for, alongside the counters that
+    // had no history at all until this feature shipped, plus the qualification
+    // funnel's own 4-line breakdown (§5).
+    async function renderLibraryActivityGraphs() {
+      const host = $("lib-activity-graphs");
+      if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      host.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const tiles = await Promise.all([
+          _libGraphTile("articles_per_hour", LIB_DEFAULT_DAYS),
+          _libGraphTile("sources", LIB_DEFAULT_DAYS),
+          _libGraphTile("keywords", LIB_DEFAULT_DAYS),
+          _libQualificationTile(LIB_DEFAULT_DAYS),
+        ]);
+        host.innerHTML = `<div class="row" style="flex-wrap:wrap;gap:10px">${tiles.join("")}</div>`;
+        _libRenderQualChart(host);
+      } catch (e) {
+        host.innerHTML = `<div class="note err">${esc(e.message || e)}</div>`;
+      }
     }
     function renderLibraryWikiGraphs() {
-      return _renderLibGraphHost("lib-wiki-graphs", [["wiki_pages", 30], ["wiki_revisions", 30]]);
+      return _renderLibGraphHost("lib-wiki-graphs", [
+        ["wiki_pages", LIB_DEFAULT_DAYS], ["wiki_revisions", LIB_DEFAULT_DAYS],
+      ]);
     }
     function renderLibraryLawGraphs() {
-      return _renderLibGraphHost("lib-law-graphs", [["law_documents", 30], ["law_revisions", 30]]);
+      return _renderLibGraphHost("lib-law-graphs", [
+        ["law_documents", LIB_DEFAULT_DAYS], ["law_revisions", LIB_DEFAULT_DAYS],
+      ]);
     }
     function enlargeLibMetric(metric) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
