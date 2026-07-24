@@ -14,7 +14,7 @@ import uuid
 
 from fastapi.testclient import TestClient
 
-from src.api.llm import get_llm_client, get_ollama_client
+from src.api.llm import get_llm_client, get_llm_client_with_name, get_ollama_client
 from src.api.main import app
 from src.database.models import Article, Source
 from src.database.session import init_db, session_scope
@@ -51,12 +51,17 @@ class _FakeOllama:
         return GenerationResult(model=model, text=f"FAKE[{prompt[:24]}]")
 
 
-def _override(fake):
+def _override(fake, backend_name: str = "ollama"):
     app.dependency_overrides[get_llm_client] = lambda: fake
+    # bulk_llm (B3) resolves through get_llm_client_with_name (client + the
+    # backend NAME, so it can pick the right concurrency ceiling) -- override
+    # both so every existing _override(fake) caller keeps working unchanged.
+    app.dependency_overrides[get_llm_client_with_name] = lambda: (backend_name, fake)
 
 
 def teardown_function(_fn):
     app.dependency_overrides.pop(get_llm_client, None)
+    app.dependency_overrides.pop(get_llm_client_with_name, None)
     app.dependency_overrides.pop(get_ollama_client, None)
 
 
@@ -490,6 +495,114 @@ def test_bulk_aborts_loudly_when_ollama_down():
         assert r.status_code == 200
         done = _ndjson(r.text)[-1]
         assert done["event"] == "done" and done["aborted"] is True and done["reason"]
+
+
+# --- B3: bounded concurrency on the backend seam (2026-07-24 Session B) -------- #
+
+
+class _TrackingFake:
+    """Records concurrent overlap + per-call ordering so the HTTP endpoint's use
+    of run_concurrent can be proven end-to-end, not just at the primitive level."""
+
+    def __init__(self, delay: float = 0.03):
+        import threading
+
+        self._delay = delay
+        self._lock = threading.Lock()
+        self._active = 0
+        self.max_active = 0
+        self.calls: list[str] = []  # prompts, in COMPLETION order
+
+    def is_available(self) -> bool:
+        return True
+
+    def generate(self, prompt, *, model="m", system=None, options=None, keep_alive=None):
+        import time
+
+        with self._lock:
+            self._active += 1
+            self.max_active = max(self.max_active, self._active)
+        try:
+            time.sleep(self._delay)
+        finally:
+            with self._lock:
+                self._active -= 1
+        self.calls.append(prompt)
+        return GenerationResult(model=model, text=f"FAKE[{prompt[:8]}]")
+
+
+def test_bulk_summarize_runs_concurrently_on_vllm_but_stores_in_input_order(tmp_path, monkeypatch):
+    import src.config.app_settings as aps
+
+    monkeypatch.setattr(aps, "_settings_path", lambda: tmp_path / "s.json")
+    monkeypatch.setenv("OO_VLLM_CONCURRENCY", "6")
+    fake = _TrackingFake(delay=0.03)
+    _override(fake, backend_name="vllm")
+    ids = [_seed_article() for _ in range(6)]
+    with TestClient(app) as client:
+        r = client.post("/api/llm/bulk", json={"op": "summarize", "article_ids": ids})
+        assert r.status_code == 200
+        events = _ndjson(r.text)
+        items = [e for e in events if e["event"] == "item"]
+        assert [i["article_id"] for i in items] == ids  # storage order == input order
+        assert all(i["status"] == "stored" for i in items)
+        assert events[-1]["stored"] == 6
+    # proves REAL overlap through the HTTP layer, not a disguised serial loop
+    assert fake.max_active > 1
+
+
+def test_bulk_summarize_stays_serial_on_ollama_by_default(tmp_path, monkeypatch):
+    import src.config.app_settings as aps
+
+    monkeypatch.setattr(aps, "_settings_path", lambda: tmp_path / "s.json")
+    monkeypatch.delenv("OO_OLLAMA_CONCURRENCY", raising=False)
+    fake = _TrackingFake(delay=0.01)
+    _override(fake, backend_name="ollama")
+    ids = [_seed_article() for _ in range(4)]
+    with TestClient(app) as client:
+        r = client.post("/api/llm/bulk", json={"op": "summarize", "article_ids": ids})
+        assert r.status_code == 200
+        items = [e for e in _ndjson(r.text) if e["event"] == "item"]
+        assert [i["article_id"] for i in items] == ids
+    # never more than one generation in flight at once (the CPU-fleet-safe default)
+    assert fake.max_active == 1
+
+
+def test_bulk_one_failed_generation_never_kills_the_batch_under_concurrency(tmp_path, monkeypatch):
+    """A single article whose generate() call raises must not abort siblings
+    dispatched in the same concurrent chunk (the A1 resilience discipline)."""
+    import src.config.app_settings as aps
+    from src.llm.ollama import LLMError
+
+    monkeypatch.setattr(aps, "_settings_path", lambda: tmp_path / "s.json")
+    monkeypatch.setenv("OO_VLLM_CONCURRENCY", "4")
+
+    class _FlakyOnce:
+        def __init__(self):
+            self.calls = 0
+
+        def is_available(self):
+            return True
+
+        def generate(self, prompt, *, model="m", system=None, options=None, keep_alive=None):
+            self.calls += 1
+            if self.calls == 2:
+                raise LLMError("transient failure")
+            return GenerationResult(model=model, text=f"FAKE[{prompt[:8]}]")
+
+    fake = _FlakyOnce()
+    _override(fake, backend_name="vllm")
+    ids = [_seed_article() for _ in range(4)]
+    with TestClient(app) as client:
+        r = client.post("/api/llm/bulk", json={"op": "summarize", "article_ids": ids})
+        assert r.status_code == 200
+        events = _ndjson(r.text)
+        items = [e for e in events if e["event"] == "item"]
+        assert {i["status"] for i in items} == {"stored", "failed"}
+        assert sum(1 for i in items if i["status"] == "failed") == 1
+        done = events[-1]
+        assert done["event"] == "done" and not done["aborted"]
+        assert done["stored"] == 3 and done["failed"] == 1
 
 
 # --- v2 prompt optimization + language pin (maintainer 2026-06-17) ------------- #

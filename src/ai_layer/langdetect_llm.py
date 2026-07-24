@@ -41,7 +41,7 @@ from src.ai_layer.jobs import ArticleWork
 from src.ai_layer.translate import KNOWN_LANG_CODES, lang_name
 from src.database.models import AiKeyword, Article
 from src.database.session import session_scope
-from src.llm.ollama import LLMError, LLMUnavailable
+from src.llm.ollama import LLMUnavailable
 
 # Bump when the prompt changes (provenance flag travels with each AI-derived result).
 LANGDETECT_PROMPT_VERSION = "ai-langdetect-v1"
@@ -147,6 +147,7 @@ def detect_for_articles(
     keep_alive: str | None = None,
     skip_existing: bool = True,
     should_stop=None,
+    max_workers: int = 1,
 ) -> Iterator[dict]:
     """Detect + persist a language label for each article, yielding progress events.
 
@@ -154,7 +155,16 @@ def detect_for_articles(
     and a final ``done`` — or an aborted ``done`` if the local model goes away mid-run. All
     writes go to ``ai_keyword`` (kind="language") via the main session; ``Article.language``
     and ``Article.detected_language`` are NEVER written. A recognised code is stored; a
-    garbage/unknown answer stores nothing (status "none")."""
+    garbage/unknown answer stores nothing (status "none").
+
+    B3 (2026-07-24 Session B): ``max_workers`` bounds how many ``detect_language_llm``
+    calls run concurrently (vLLM's actual advantage; Ollama stays serial at the
+    default 1 — see ``src.llm.concurrency``). Results are still processed and
+    stored STRICTLY IN INPUT ORDER within each concurrent chunk, so a label is
+    never attributed to the wrong article and ``max_workers=1`` is byte-identical
+    to the pre-B3 serial loop."""
+    from src.llm.concurrency import run_concurrent
+
     total = len(work)
     yield {"event": "start", "total": total, "model": model, "kind": LANG_KIND}
     stored = skipped = failed = none = 0
@@ -171,42 +181,61 @@ def detect_for_articles(
                     )
                 ).all()
             }
-        for i, w in enumerate(work, 1):
+
+        workers = max(1, max_workers)
+        idx = 0
+        n = len(work)
+        while idx < n:
             if should_stop is not None and should_stop():
                 yield {"event": "done", "total": total, "stored": stored, "skipped": skipped,
                        "failed": failed, "none": none, "aborted": True, "reason": "cancelled"}
                 return
-            if skip_existing and w.article_id in already:
-                skipped += 1
-                yield {"event": "item", "i": i, "total": total,
-                       "article_id": w.article_id, "status": "skipped"}
+            batch: list[tuple[int, ArticleWork]] = []
+            while idx < n and len(batch) < workers:
+                w = work[idx]
+                idx += 1
+                pos = idx
+                if skip_existing and w.article_id in already:
+                    skipped += 1
+                    yield {"event": "item", "i": pos, "total": total,
+                           "article_id": w.article_id, "status": "skipped"}
+                    continue
+                batch.append((pos, w))
+            if not batch:
                 continue
-            try:
-                code = detect_language_llm(
-                    client, w.title, w.content, model=model, keep_alive=keep_alive
-                )
-            except LLMUnavailable as exc:
-                yield {"event": "done", "total": total, "stored": stored, "skipped": skipped,
-                       "failed": failed, "none": none, "aborted": True, "reason": str(exc)[:200]}
-                return
-            except LLMError as exc:
-                failed += 1
-                yield {"event": "item", "i": i, "total": total, "article_id": w.article_id,
-                       "status": "failed", "error": str(exc)[:200]}
-                continue
-            if not code:
-                none += 1  # garbage/unknown answer — store NOTHING (miss over invent)
-                yield {"event": "item", "i": i, "total": total,
-                       "article_id": w.article_id, "status": "none"}
-                continue
-            ai_store.record_keywords(
-                session, w.article_id, [code], model=model, kind=LANG_KIND,
-                language=code, prompt_version=LANGDETECT_PROMPT_VERSION,
+
+            results = run_concurrent(
+                batch,
+                lambda item: detect_language_llm(
+                    client, item[1].title, item[1].content, model=model, keep_alive=keep_alive
+                ),
+                max_workers=workers,
             )
-            session.commit()  # persist progress; release the gate between articles
-            stored += 1
-            yield {"event": "item", "i": i, "total": total,
-                   "article_id": w.article_id, "status": "stored", "language": code}
+            for (pos, w), res in zip(batch, results, strict=True):
+                if not res.ok:
+                    if isinstance(res.error, LLMUnavailable):
+                        yield {"event": "done", "total": total, "stored": stored,
+                               "skipped": skipped, "failed": failed, "none": none,
+                               "aborted": True, "reason": str(res.error)[:200]}
+                        return
+                    failed += 1
+                    yield {"event": "item", "i": pos, "total": total, "article_id": w.article_id,
+                           "status": "failed", "error": str(res.error)[:200]}
+                    continue
+                code = res.value
+                if not code:
+                    none += 1  # garbage/unknown answer — store NOTHING (miss over invent)
+                    yield {"event": "item", "i": pos, "total": total,
+                           "article_id": w.article_id, "status": "none"}
+                    continue
+                ai_store.record_keywords(
+                    session, w.article_id, [code], model=model, kind=LANG_KIND,
+                    language=code, prompt_version=LANGDETECT_PROMPT_VERSION,
+                )
+                session.commit()  # persist progress; release the gate between articles
+                stored += 1
+                yield {"event": "item", "i": pos, "total": total,
+                       "article_id": w.article_id, "status": "stored", "language": code}
 
     yield {"event": "done", "total": total, "stored": stored, "skipped": skipped,
            "failed": failed, "none": none, "aborted": False}

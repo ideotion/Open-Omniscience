@@ -544,7 +544,14 @@ def _langdetect_worker(
     ``BackgroundJob`` state genuinely becomes ``error`` (never a benign-looking ``done``,
     visible to the generic task-manager list with no per-job special-casing needed)."""
     tally: dict = {"total": 0, "stored": 0, "skipped": 0, "failed": 0, "none": 0, "ran": False}
-    client = OllamaClient()
+    # B3 (2026-07-24 Session B): resolves through the dual-backend seam (vLLM on a
+    # GPU machine, Ollama otherwise -- RULED A12) instead of hardcoding Ollama, so
+    # the concurrency win applies here too, not just to the HTTP bulk endpoint.
+    from src.llm.backend import get_client_with_name
+    from src.llm.concurrency import concurrency_for
+
+    backend_name, client = get_client_with_name()
+    workers = concurrency_for(backend_name)
     try:
         if not client.is_available():
             tally["reason"] = "the local model is unavailable (Ollama down or airplane mode)"
@@ -575,7 +582,9 @@ def _langdetect_worker(
             break  # nothing left to attempt this run (stored, or the undeducible residue)
         tally["total"] += len(work)
         transient_reason: str | None = None
-        for event in detect_for_articles(work, client, model=mdl, should_stop=lambda: ctx.stopping):
+        for event in detect_for_articles(
+            work, client, model=mdl, should_stop=lambda: ctx.stopping, max_workers=workers
+        ):
             ev = event.get("event")
             if ev == "item":
                 done += 1
@@ -652,7 +661,13 @@ def advance_langdetect_auto_start(session) -> dict:
     if _LANGDETECT_JOB.status().get("state") == "running":
         return {"enabled": True, "skipped": "already running"}
     try:
-        if not OllamaClient().is_available():
+        # B3: gate on whichever backend is ACTUALLY resolved (vLLM on a GPU
+        # machine, Ollama otherwise) -- not hardcoded Ollama, which would
+        # wrongly skip auto-start on a GPU machine with vLLM up but no Ollama.
+        from src.llm.backend import get_client_with_name
+
+        _, _client = get_client_with_name()
+        if not _client.is_available():
             return {"enabled": True, "skipped": "the local model is unavailable"}
     except Exception:  # noqa: BLE001 - never fail the scrape on an AI-layer check
         return {"enabled": True, "skipped": "the local model is unavailable"}

@@ -189,9 +189,11 @@ def resolve_backend(*, override: str | None = None) -> dict:
 _clients: dict[str, object] = {}
 
 
-def get_client(*, backend: str | None = None) -> LlmBackend:
-    """Resolve + return the shared client for the active backend (lazily
-    constructed, one instance per kind for the process lifetime)."""
+def get_client_with_name(*, backend: str | None = None) -> tuple[str, LlmBackend]:
+    """Resolve + return ``(backend_name, client)`` in ONE detection pass -- so a
+    caller that also needs the backend NAME (B3's concurrency ceiling picks a
+    different worker count for vLLM vs. Ollama) never re-runs GPU/vLLM/Ollama
+    detection a second time just to learn what ``get_client()`` already knew."""
     from src.llm.ollama import OllamaClient
     from src.llm.vllm_client import VllmClient
 
@@ -199,7 +201,14 @@ def get_client(*, backend: str | None = None) -> LlmBackend:
     kind = resolved["backend"]
     if kind not in _clients:
         _clients[kind] = VllmClient() if kind == "vllm" else OllamaClient()
-    return _clients[kind]  # type: ignore[return-value]
+    return kind, _clients[kind]  # type: ignore[return-value]
+
+
+def get_client(*, backend: str | None = None) -> LlmBackend:
+    """Resolve + return the shared client for the active backend (lazily
+    constructed, one instance per kind for the process lifetime)."""
+    _, client = get_client_with_name(backend=backend)
+    return client
 
 
 def _reset_clients_for_tests() -> None:

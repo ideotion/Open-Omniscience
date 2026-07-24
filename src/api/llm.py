@@ -86,6 +86,16 @@ def get_ollama_client() -> OllamaClient:
     return _ollama_client
 
 
+def _stored_backend_override() -> str | None:
+    try:
+        from src.config.app_settings import load_settings
+
+        s = load_settings()
+        return s.llm_backend if s.llm_backend != "auto" else None
+    except Exception:  # noqa: BLE001 - a settings hiccup must not break inference
+        return None
+
+
 def get_llm_client():
     """Dependency returning the shared client for the ACTIVE backend (overridable
     in tests via ``app.dependency_overrides``).
@@ -98,14 +108,17 @@ def get_llm_client():
     translate/synthesize/bulk) works against either backend unchanged."""
     from src.llm.backend import get_client
 
-    try:
-        from src.config.app_settings import load_settings
+    return get_client(backend=_stored_backend_override())
 
-        s = load_settings()
-        override = s.llm_backend if s.llm_backend != "auto" else None
-    except Exception:  # noqa: BLE001 - a settings hiccup must not break inference
-        override = None
-    return get_client(backend=override)
+
+def get_llm_client_with_name() -> tuple[str, "LlmBackend"]:
+    """Like ``get_llm_client`` but also returns the resolved backend NAME (B3):
+    a batch consumer (bulk summarize/translate) uses it to pick the right
+    concurrency ceiling — ``concurrency_for("vllm")`` vs. ``concurrency_for
+    ("ollama")`` — without re-running GPU/vLLM/Ollama detection a second time."""
+    from src.llm.backend import get_client_with_name
+
+    return get_client_with_name(backend=_stored_backend_override())
 
 
 def active_model() -> str:
@@ -1104,7 +1117,7 @@ class BulkLLMRequest(BaseModel):
 def bulk_llm(
     req: BulkLLMRequest,
     db: Session = Depends(get_db),
-    client: LlmBackend = Depends(get_llm_client),
+    client_info: tuple[str, LlmBackend] = Depends(get_llm_client_with_name),
 ):
     """Summarize OR translate every article in a matched set with the local model.
 
@@ -1113,7 +1126,16 @@ def bulk_llm(
     response streams NDJSON: one ``start`` object, one ``item`` per article
     (status = stored | skipped | failed), and a final ``done`` (or an aborted ``done``
     if the local model becomes unavailable mid-run — it won't recover, so we stop).
+
+    B3 (2026-07-24 Session B): generation calls run through the bounded
+    concurrency helper (``src.llm.concurrency``) — vLLM gets several requests
+    in flight at once (the point of vLLM), Ollama stays serial by default. The
+    STORE/STREAM order is always the input order regardless of which item's
+    generation finished first (results are processed strictly in sequence per
+    chunk), so a stored ``ArticleAnalysis`` never gets attributed to the wrong
+    article and re-running with concurrency=1 is byte-identical to before.
     """
+    client_backend_name, client = client_info
     op = (req.op or "").strip().lower()
     if op not in {"summarize", "translate"}:
         raise HTTPException(status_code=400, detail="op must be 'summarize' or 'translate'.")
@@ -1217,6 +1239,8 @@ def bulk_llm(
     def _stream():
         import json as _json
 
+        from src.llm.concurrency import concurrency_for, run_concurrent
+
         def emit(obj: dict) -> str:
             return _json.dumps(obj, separators=(",", ":")) + "\n"
 
@@ -1229,51 +1253,79 @@ def bulk_llm(
         stored = skipped = failed = 0
         from src.database.session import SessionLocal
 
+        # B3: vLLM gets several generations in flight at once; Ollama stays
+        # serial (max_workers<=1 is a plain for-loop, byte-identical to before).
+        concurrency = concurrency_for(client_backend_name)
+
         try:
           with SessionLocal() as s:
-            for i, (aid, title, content, _lang) in enumerate(work, 1):
-                _bgtasks.update(_tok, done=i)
-                if aid in same_lang:
-                    skipped += 1
-                    yield emit({"event": "item", "i": i, "total": total,
-                                "article_id": aid, "title": title, "status": "skipped",
-                                "reason": "already in target language"})
+            i = 0
+            n = len(work)
+            while i < n:
+                # Gather up to `concurrency` items that actually need a generation
+                # call, skipping (inline, no model call) anything already done.
+                batch: list[tuple[int, int, str, str]] = []  # (pos, article_id, title, prompt)
+                while i < n and len(batch) < concurrency:
+                    aid, title, content, _lang = work[i]
+                    i += 1
+                    pos = i
+                    _bgtasks.update(_tok, done=pos)
+                    if aid in same_lang:
+                        skipped += 1
+                        yield emit({"event": "item", "i": pos, "total": total,
+                                    "article_id": aid, "title": title, "status": "skipped",
+                                    "reason": "already in target language"})
+                        continue
+                    if req.skip_existing and aid in already:
+                        skipped += 1
+                        yield emit({"event": "item", "i": pos, "total": total,
+                                    "article_id": aid, "title": title, "status": "skipped"})
+                        continue
+                    if op == "summarize":
+                        prompt = f"Article title: {title}\n\n{content[:_MAX_CHARS]}"
+                    else:
+                        prompt = f"Title: {title}\n\n{content[:_MAX_CHARS]}"
+                    batch.append((pos, aid, title, prompt))
+                if not batch:
                     continue
-                if req.skip_existing and aid in already:
-                    skipped += 1
-                    yield emit({"event": "item", "i": i, "total": total,
-                                "article_id": aid, "title": title, "status": "skipped"})
-                    continue
-                if op == "summarize":
-                    prompt = f"Article title: {title}\n\n{content[:_MAX_CHARS]}"
-                else:
-                    prompt = f"Title: {title}\n\n{content[:_MAX_CHARS]}"
-                try:
-                    result = client.generate(
-                        prompt, model=model, system=system, keep_alive=keep_alive
-                    )
-                except LLMUnavailable as exc:
-                    # Ollama down / model missing / airplane mode — won't recover mid-run.
-                    yield emit({"event": "done", "total": total, "stored": stored,
-                                "skipped": skipped, "failed": failed,
-                                "aborted": True, "reason": str(exc)[:200]})
-                    return
-                except LLMError as exc:
-                    failed += 1
-                    yield emit({"event": "item", "i": i, "total": total,
-                                "article_id": aid, "title": title, "status": "failed",
-                                "error": str(exc)[:200]})
-                    continue
-                s.add(ArticleAnalysis(
-                    article_id=aid, kind=kind, result=result.text, model=result.model,
-                    prompt_version=prompt_version, prompt_text=prompt_text,
-                    created_at=datetime.now(UTC),
-                ))
-                s.commit()
-                stored += 1
-                yield emit({"event": "item", "i": i, "total": total,
-                            "article_id": aid, "title": title, "status": "stored",
-                            "chars": len(result.text)})
+
+                results = run_concurrent(
+                    batch,
+                    lambda item: client.generate(
+                        item[3], model=model, system=system, keep_alive=keep_alive
+                    ),
+                    max_workers=concurrency,
+                )
+                # Process/store STRICTLY IN ORDER, regardless of which generation
+                # actually finished first — a stored ArticleAnalysis always lines
+                # up with the right article, and the first LLMUnavailable found
+                # walking in order still aborts the run exactly like the serial
+                # path did (results computed after it in wall-clock time but
+                # earlier in sequence are simply discarded, never stored).
+                for (pos, aid, title, _prompt), res in zip(batch, results, strict=True):
+                    if not res.ok:
+                        if isinstance(res.error, LLMUnavailable):
+                            # Ollama down / model missing / airplane mode — won't recover.
+                            yield emit({"event": "done", "total": total, "stored": stored,
+                                        "skipped": skipped, "failed": failed,
+                                        "aborted": True, "reason": str(res.error)[:200]})
+                            return
+                        failed += 1
+                        yield emit({"event": "item", "i": pos, "total": total,
+                                    "article_id": aid, "title": title, "status": "failed",
+                                    "error": str(res.error)[:200]})
+                        continue
+                    result = res.value
+                    s.add(ArticleAnalysis(
+                        article_id=aid, kind=kind, result=result.text, model=result.model,
+                        prompt_version=prompt_version, prompt_text=prompt_text,
+                        created_at=datetime.now(UTC),
+                    ))
+                    s.commit()
+                    stored += 1
+                    yield emit({"event": "item", "i": pos, "total": total,
+                                "article_id": aid, "title": title, "status": "stored",
+                                "chars": len(result.text)})
           yield emit({"event": "done", "total": total, "stored": stored,
                       "skipped": skipped, "failed": failed, "aborted": False})
         finally:

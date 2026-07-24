@@ -907,6 +907,41 @@ def test_ai_pill_is_backend_agnostic_no_count_and_offers_start_or_install():
     )
 
 
+def test_bounded_concurrency_helper_is_the_one_seam_for_batch_generation():
+    """2026-07-24 field-feedback Session B (B3, "the point of vLLM"): a bounded
+    concurrent-generation helper lives ON the backend seam (src/llm/concurrency.py)
+    -- vLLM gets several requests in flight (a hardware-derived, disclosed
+    default), Ollama stays serial (1) unless the operator explicitly raises it.
+    Pin that the module exists with the right shape, and that the three named
+    batch consumers (bulk summarize/translate, the continuous langdetect job, the
+    law-change ride-along) actually import it / resolve the active backend
+    instead of each hardcoding Ollama."""
+    conc = (_SRC / "llm" / "concurrency.py").read_text(encoding="utf-8")
+    assert "def concurrency_for(" in conc and "def run_concurrent(" in conc
+    assert 'OO_VLLM_CONCURRENCY' in conc and 'OO_OLLAMA_CONCURRENCY' in conc, (
+        "both concurrency ceilings must be operator-overridable via env"
+    )
+
+    bulk = (_SRC / "api" / "llm.py").read_text(encoding="utf-8")
+    assert "get_llm_client_with_name" in bulk and "from src.llm.concurrency import" in bulk, (
+        "bulk_llm must resolve (backend_name, client) and use the concurrency helper"
+    )
+
+    langdetect = (_SRC / "ai_layer" / "langdetect_llm.py").read_text(encoding="utf-8")
+    assert "max_workers" in langdetect and "run_concurrent" in langdetect, (
+        "detect_for_articles must accept max_workers and use run_concurrent"
+    )
+    ai_api = (_SRC / "api" / "ai.py").read_text(encoding="utf-8")
+    assert "get_client_with_name" in ai_api and "concurrency_for" in ai_api, (
+        "the continuous langdetect worker must resolve the active backend + its concurrency"
+    )
+
+    law = (_SRC / "law" / "summarize.py").read_text(encoding="utf-8")
+    assert "get_client_with_name" in law, (
+        "advance_law_summaries must resolve the active backend when no client is given"
+    )
+
+
 def test_advanced_search_language_is_a_flag_dropdown():
     """Maintainer field test 2026-06-20: the Advanced-search language field is a <select>
     of full language names with flags (built from LANGS_12 in JS), not a free-text input."""
