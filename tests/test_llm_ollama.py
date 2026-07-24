@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.api.llm import get_llm_client
+from src.api.llm import get_llm_client, get_ollama_client
 from src.api.main import app
 from src.database.models import Article, Base, Source
 from src.database.session import get_db
@@ -276,7 +276,10 @@ def test_pull_endpoint_streams_ndjson(client):
         assert request.url.path == "/api/pull"
         return httpx.Response(200, content=b'{"status":"pulling"}\n{"status":"success"}\n')
 
-    app.dependency_overrides[get_llm_client] = lambda: mk(ok)
+    # /api/llm/pull is an OLLAMA-only management action (B1's client split) --
+    # it resolves through get_ollama_client, regardless of which backend is
+    # ACTIVE for inference.
+    app.dependency_overrides[get_ollama_client] = lambda: mk(ok)
     r = c.post("/api/llm/pull", json={"model": "gemma2:2b"})
     assert r.status_code == 200
     assert "ndjson" in r.headers.get("content-type", "")
@@ -290,7 +293,7 @@ def test_remove_endpoint_ok(client):
     def ok(request):
         return httpx.Response(200, json={})
 
-    app.dependency_overrides[get_llm_client] = lambda: mk(ok)
+    app.dependency_overrides[get_ollama_client] = lambda: mk(ok)
     r = c.post("/api/llm/remove", json={"model": "gemma2:2b"})
     assert r.status_code == 200 and r.json()["ok"] is True
 
@@ -301,7 +304,7 @@ def test_pull_remove_reject_bad_model_name(client):
     def boom(request):  # must never be reached — validation rejects first
         raise AssertionError("no Ollama call for an invalid model name")
 
-    app.dependency_overrides[get_llm_client] = lambda: mk(boom)
+    app.dependency_overrides[get_ollama_client] = lambda: mk(boom)
     for path in ("/api/llm/pull", "/api/llm/remove"):
         assert c.post(path, json={"model": "../etc/passwd"}).status_code == 400
         assert c.post(path, json={"model": ""}).status_code == 400

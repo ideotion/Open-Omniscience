@@ -1,13 +1,22 @@
 """
-Local LLM API (Ollama, HTTP only).
+Local LLM API -- DUAL BACKEND (Ollama + vLLM, HTTP only).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 Endpoints are synchronous (`def`) so blocking httpx calls run in the threadpool.
-If Ollama is unreachable or the model isn't installed, these return HTTP 503 with
-a clear message -- never a fabricated result. LLM outputs are persisted with
-provenance (model + prompt version + timestamp) as ArticleAnalysis rows.
+If the active backend is unreachable or the model isn't loaded, these return
+HTTP 503 with a clear message -- never a fabricated result. LLM outputs are
+persisted with provenance (model + prompt version + timestamp) as
+ArticleAnalysis rows.
+
+DUAL BACKEND (B1, 2026-07-24 field-feedback Session B, RULED A12): inference
+calls (generate/summarize/translate/synthesize/bulk) resolve through
+``get_llm_client()`` to whichever backend is ACTIVE -- vLLM on a GPU machine
+with an installed, running server (concurrency, B3), Ollama otherwise (KEPT
+for the CPU-only fleet, never dropped). Ollama-ONLY management operations
+(pull/remove/the installed-models catalog/the binary installer) always use
+``get_ollama_client()`` regardless of which backend is active for inference.
 """
 
 from __future__ import annotations
@@ -23,6 +32,7 @@ from sqlalchemy.orm import Session
 from src.database.fts import SearchQueryError, search_ids
 from src.database.models import Article, ArticleAnalysis
 from src.database.session import get_db
+from src.llm.backend import LlmBackend
 from src.llm.ollama import (
     CATALOG_AS_OF,
     DEFAULT_MODEL,
@@ -59,25 +69,86 @@ _TRANSLATE_SYSTEM = (
 # Keep prompts within a small CPU model's context.
 _MAX_CHARS = 6000
 
-_client: OllamaClient | None = None
+_ollama_client: OllamaClient | None = None
 
 
-def get_llm_client() -> OllamaClient:
-    """Dependency returning a shared OllamaClient (overridable in tests)."""
-    global _client
-    if _client is None:
-        _client = OllamaClient()
-    return _client
+def get_ollama_client() -> OllamaClient:
+    """Dependency returning a shared OllamaClient SPECIFICALLY — for Ollama-only
+    management operations (pull/remove/the installed-models catalog) that have
+    no vLLM analog, regardless of which backend is currently ACTIVE for
+    inference (``get_llm_client``, which may resolve to vLLM on a GPU machine).
+    A pull/remove is always an Ollama-process action; routing it through the
+    active-backend dependency would try to ``.pull()`` a ``VllmClient``, which
+    has no such method — this dependency exists precisely to avoid that."""
+    global _ollama_client
+    if _ollama_client is None:
+        _ollama_client = OllamaClient()
+    return _ollama_client
 
 
-def active_model() -> str:
-    """The operator's chosen default model — the STORED UI setting (maintainer Q10)
-    if set, else ``DEFAULT_MODEL`` (env ``OO_LLM_MODEL`` / built-in). A per-request
-    ``model`` still overrides it. Never fatal: any settings error falls back."""
+def _stored_backend_override() -> str | None:
     try:
         from src.config.app_settings import load_settings
 
-        return load_settings().llm_model or DEFAULT_MODEL
+        s = load_settings()
+        return s.llm_backend if s.llm_backend != "auto" else None
+    except Exception:  # noqa: BLE001 - a settings hiccup must not break inference
+        return None
+
+
+def get_llm_client():
+    """Dependency returning the shared client for the ACTIVE backend (overridable
+    in tests via ``app.dependency_overrides``).
+
+    DUAL BACKEND (B1, 2026-07-24 field-feedback Session B, RULED A12): resolves
+    through ``src.llm.backend.get_client()`` — vLLM when a GPU + an installed,
+    running vLLM server are present, Ollama otherwise (never dropped, never a
+    silent replacement). ``VllmClient``/``OllamaClient`` are structurally
+    interchangeable (``LlmBackend``), so every call site below (summarize/
+    translate/synthesize/bulk) works against either backend unchanged."""
+    from src.llm.backend import get_client
+
+    return get_client(backend=_stored_backend_override())
+
+
+def get_llm_client_with_name() -> tuple[str, "LlmBackend"]:
+    """Like ``get_llm_client`` but also returns the resolved backend NAME (B3):
+    a batch consumer (bulk summarize/translate) uses it to pick the right
+    concurrency ceiling — ``concurrency_for("vllm")`` vs. ``concurrency_for
+    ("ollama")`` — without re-running GPU/vLLM/Ollama detection a second time."""
+    from src.llm.backend import get_client_with_name
+
+    return get_client_with_name(backend=_stored_backend_override())
+
+
+def active_model() -> str:
+    """The operator's chosen default model for the ACTIVE backend — the STORED
+    UI setting (Ollama: maintainer Q10; vLLM: B1.4) if set, else a backend-aware
+    fallback. A per-request ``model`` still overrides it. Never fatal: any
+    settings/resolution hiccup falls back to the Ollama DEFAULT_MODEL."""
+    try:
+        from src.llm.backend import resolve_backend
+        from src.config.app_settings import load_settings
+
+        s = load_settings()
+        override = s.llm_backend if s.llm_backend != "auto" else None
+        backend = resolve_backend(override=override)["backend"]
+        if backend == "vllm":
+            if s.llm_model_vllm:
+                return s.llm_model_vllm
+            # vLLM serves exactly ONE model at a time (unlike Ollama's catalog) —
+            # ask the running server what it was started with, rather than
+            # guessing a name it may not recognise.
+            try:
+                from src.llm.vllm_client import VllmClient
+
+                served = VllmClient(timeout=3.0).list_installed()
+                if served:
+                    return served[0]
+            except Exception:  # noqa: BLE001 - a probe hiccup falls through honestly
+                pass
+            return DEFAULT_MODEL
+        return s.llm_model or DEFAULT_MODEL
     except Exception:  # noqa: BLE001 - a settings hiccup must not break inference
         return DEFAULT_MODEL
 
@@ -214,23 +285,60 @@ class TranslateRequest(BaseModel):
 
 
 @router.get("/health")
-def llm_health(client: OllamaClient = Depends(get_llm_client)) -> dict:
-    """Report whether Ollama is reachable and which models are installed."""
+def llm_health(client=Depends(get_llm_client)) -> dict:
+    """Report whether the ACTIVE backend (Ollama or vLLM, B1) is reachable and
+    which model(s) it has. Drives the top-bar "AI" pill (B4) -- green/red by
+    ``available``, no model count."""
+    from src.llm.backend import resolve_backend
+
+    try:
+        backend = resolve_backend()["backend"]
+    except Exception:  # noqa: BLE001 - a resolution hiccup must not break the health check
+        backend = "ollama"
     try:
         installed = client.list_installed()
-        return {"available": True, "base_url": client.base_url, "installed_models": installed}
+        return {
+            "available": True,
+            "backend": backend,
+            "base_url": client.base_url,
+            "installed_models": installed,
+        }
     except LLMUnavailable as exc:
         return {
             "available": False,
+            "backend": backend,
             "base_url": client.base_url,
             "installed_models": [],
             "detail": str(exc),
         }
 
 
+@router.get("/backend")
+def llm_backend_status() -> dict:
+    """The full backend-resolution DECISION + the facts behind it (B1.3) --
+    which backend is active, why, and the detection facts (GPU / vLLM installed
+    + running / Ollama available). Drives the Settings -> AI tab's disclosure
+    (the maintainer must never see a silent switch)."""
+    from src.llm.backend import resolve_backend
+    from src.config.app_settings import load_settings
+
+    try:
+        s = load_settings()
+        override = s.llm_backend if s.llm_backend != "auto" else None
+        stored_override = s.llm_backend
+    except Exception:  # noqa: BLE001 - a settings hiccup must not break the status view
+        override, stored_override = None, "auto"
+    resolved = resolve_backend(override=override)
+    resolved["stored_override"] = stored_override
+    return resolved
+
+
 @router.get("/models")
-def llm_models(client: OllamaClient = Depends(get_llm_client)) -> dict:
-    """What the operator actually has (live, local) + a suggested catalog.
+def llm_models(client: OllamaClient = Depends(get_ollama_client)) -> dict:
+    """What the operator actually has installed in OLLAMA (live, local) + a
+    suggested catalog -- the Ollama model-management panel (pull/remove),
+    regardless of which backend is currently ACTIVE for inference (see
+    ``/api/llm/backend`` for that).
 
     The picker should lead with `installed` (truth from Ollama). `catalog` is a
     hardware-annotated suggestion list with an honest `catalog_as_of` date --
@@ -305,7 +413,7 @@ def llm_prompts() -> dict:
 
 
 @router.post("/generate")
-def llm_generate(req: GenerateRequest, client: OllamaClient = Depends(get_llm_client)) -> dict:
+def llm_generate(req: GenerateRequest, client: LlmBackend = Depends(get_llm_client)) -> dict:
     """Single-shot generation. 503 if Ollama/model unavailable."""
     model = req.model or active_model()
     try:
@@ -327,7 +435,7 @@ class ModelRequest(BaseModel):
 
 
 @router.post("/pull")
-def llm_pull(req: ModelRequest, client: OllamaClient = Depends(get_llm_client)):
+def llm_pull(req: ModelRequest, client: OllamaClient = Depends(get_ollama_client)):
     """Pull (download + install) a model via the LOCAL Ollama process — STREAMS
     Ollama's real progress as NDJSON (invariant #20: never a fabricated bar).
 
@@ -452,7 +560,7 @@ def llm_install_run(req: InstallRunRequest):
 
 
 @router.post("/remove")
-def llm_remove(req: ModelRequest, client: OllamaClient = Depends(get_llm_client)) -> dict:
+def llm_remove(req: ModelRequest, client: OllamaClient = Depends(get_ollama_client)) -> dict:
     """Remove an installed model via the LOCAL Ollama process."""
     if not _MODEL_RE.match(req.model or ""):
         raise HTTPException(status_code=400, detail="invalid model name")
@@ -465,12 +573,163 @@ def llm_remove(req: ModelRequest, client: OllamaClient = Depends(get_llm_client)
     return {"removed": req.model, "ok": True}
 
 
+# --------------------------------------------------------------------------- #
+#  vLLM lifecycle (B2, 2026-07-24 field-feedback Session B): detect / install /
+#  start / stop, mirroring the Ollama binary-installer section above. vLLM is
+#  GPU-first (RULED, out of scope for CPU mode) -- every mutating endpoint here
+#  refuses honestly on a machine with no detected GPU, pointing at Ollama.
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/vllm/status")
+def vllm_status() -> dict:
+    """Detect/installed/running facts for the Settings -> AI tab's vLLM panel
+    (B2). Never a fabricated readiness -- a live health probe, not just the
+    tracked-process flag."""
+    from src.llm.vllm_lifecycle import status
+
+    return status()
+
+
+class VllmInstallRequest(BaseModel):
+    version: str | None = None
+
+
+_VLLM_INSTALL_JOB = None
+
+
+def _get_vllm_install_job():
+    """Lazily register the BackgroundJob (mirrors the keyword-triage/source-tags
+    job registration pattern) -- avoids importing src.jobs.background at module
+    load for a job that most installs never touch."""
+    global _VLLM_INSTALL_JOB
+    if _VLLM_INSTALL_JOB is None:
+        from src.jobs.background import BackgroundJob, register_job
+
+        def _worker(ctx, **kwargs):
+            from src.llm.vllm_lifecycle import run_install_job
+
+            return run_install_job(ctx, **kwargs)
+
+        _VLLM_INSTALL_JOB = register_job(
+            BackgroundJob("vllm-install", "Installing vLLM", _worker, cancellable=True)
+        )
+    return _VLLM_INSTALL_JOB
+
+
+@router.post("/vllm/install")
+def vllm_install(req: VllmInstallRequest | None = None) -> dict:
+    """Start the CONSENTED, task-manager-visible vLLM install (B2.3): a dedicated
+    venv + ``pip install vllm==<verified version>`` (drags torch/CUDA, several
+    GB -- disclosed via ``/api/llm/vllm/status``'s ``estimated_size_note``
+    before the frontend even offers this button). Refuses (409) on a CPU-only
+    machine or under airplane mode; 409-free for an already-running install
+    (returns its current status).
+
+    The CPU/airplane checks run HERE, synchronously, before the background job
+    even starts -- ``run_install_job`` re-checks both itself (defense in depth
+    for any direct caller), but a check made only inside the worker THREAD
+    would surface as an async job failure, not this endpoint's 409 (the
+    BackgroundJob chassis returns immediately once ``.start()`` spawns the
+    thread; an exception raised inside the worker never propagates back here).
+    An already-in-flight install is reported 409-free regardless of the current
+    GPU/airplane state (those conditions gate STARTING a new install, not an
+    already-running one)."""
+    from src.ingest import kill_switch_active
+    from src.llm.backend import detect_gpu
+    from src.llm.vllm_lifecycle import VLLM_VERIFIED_VERSION
+
+    body = req or VllmInstallRequest()
+    job = _get_vllm_install_job()
+    if job.status().get("running"):
+        st = job.status()
+        st["started"] = False
+        return st
+    if kill_switch_active():
+        raise HTTPException(
+            status_code=409,
+            detail="Network is OFF (airplane mode): refusing to install vLLM. "
+            "Turn airplane mode off to install.",
+        )
+    if not detect_gpu().get("available"):
+        raise HTTPException(
+            status_code=409,
+            detail="No GPU detected on this machine -- vLLM is GPU-first and would "
+            "install into a backend that can never usefully run. Use Ollama instead.",
+        )
+    try:
+        st = job.start(version=body.version or VLLM_VERIFIED_VERSION)
+        st["started"] = True
+    except RuntimeError:
+        st = job.status()
+        st["started"] = False
+    return st
+
+
+@router.get("/vllm/install/status")
+def vllm_install_status() -> dict:
+    return _get_vllm_install_job().status()
+
+
+@router.post("/vllm/install/cancel")
+def vllm_install_cancel() -> dict:
+    _get_vllm_install_job().cancel()
+    return _get_vllm_install_job().status()
+
+
+class VllmStartRequest(BaseModel):
+    model: str
+    max_model_len: int | None = None
+    gpu_memory_utilization: float | None = None
+
+
+@router.post("/vllm/start")
+def vllm_start(req: VllmStartRequest) -> dict:
+    """Start the vLLM server bound to loopback (B2.2). Honest "starting…" state
+    (model load takes tens of seconds -- never a fake instant green); poll
+    ``/vllm/status`` for readiness. Refuses (409) when no GPU is detected or
+    vLLM is not installed (RULED -- vLLM's CPU mode is never presented as
+    viable; Ollama is the CPU path)."""
+    if not _MODEL_RE.match(req.model or ""):
+        raise HTTPException(status_code=400, detail="invalid model name")
+    from src.llm.vllm_lifecycle import VllmLifecycleError, VllmUnsupportedError, start
+
+    try:
+        result = start(
+            req.model,
+            max_model_len=req.max_model_len,
+            gpu_memory_utilization=req.gpu_memory_utilization,
+        )
+    except VllmUnsupportedError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except VllmLifecycleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    # A model just started under vLLM becomes the stored active choice for it,
+    # so active_model()/the pill/the next generate() call agree with what is
+    # actually being served (never a stale/mismatched setting).
+    if result.get("started"):
+        try:
+            from src.config.app_settings import save_settings
+
+            save_settings({"llm_model_vllm": req.model})
+        except Exception:  # noqa: BLE001 - a settings-persist hiccup must not fail the start
+            pass
+    return result
+
+
+@router.post("/vllm/stop")
+def vllm_stop() -> dict:
+    from src.llm.vllm_lifecycle import stop
+
+    return stop()
+
+
 @router.post("/articles/{article_id}/summarize")
 def summarize_article(
     article_id: int,
     req: SummarizeRequest,
     db: Session = Depends(get_db),
-    client: OllamaClient = Depends(get_llm_client),
+    client: LlmBackend = Depends(get_llm_client),
 ) -> dict:
     """Summarize a stored article with a local model and persist it with provenance."""
     article = db.query(Article).filter_by(id=article_id).first()
@@ -525,7 +784,7 @@ def translate_article(
     article_id: int,
     req: TranslateRequest,
     db: Session = Depends(get_db),
-    client: OllamaClient = Depends(get_llm_client),
+    client: LlmBackend = Depends(get_llm_client),
 ) -> dict:
     """Translate a stored article into a target language with a local model.
 
@@ -674,7 +933,7 @@ class SynthesizeRequest(BaseModel):
 def synthesize_articles(
     req: SynthesizeRequest,
     db: Session = Depends(get_db),
-    client: OllamaClient = Depends(get_llm_client),
+    client: LlmBackend = Depends(get_llm_client),
 ) -> dict:
     """Synthesize a bounded SET of stored articles with a local model.
 
@@ -858,7 +1117,7 @@ class BulkLLMRequest(BaseModel):
 def bulk_llm(
     req: BulkLLMRequest,
     db: Session = Depends(get_db),
-    client: OllamaClient = Depends(get_llm_client),
+    client_info: tuple[str, LlmBackend] = Depends(get_llm_client_with_name),
 ):
     """Summarize OR translate every article in a matched set with the local model.
 
@@ -867,7 +1126,16 @@ def bulk_llm(
     response streams NDJSON: one ``start`` object, one ``item`` per article
     (status = stored | skipped | failed), and a final ``done`` (or an aborted ``done``
     if the local model becomes unavailable mid-run — it won't recover, so we stop).
+
+    B3 (2026-07-24 Session B): generation calls run through the bounded
+    concurrency helper (``src.llm.concurrency``) — vLLM gets several requests
+    in flight at once (the point of vLLM), Ollama stays serial by default. The
+    STORE/STREAM order is always the input order regardless of which item's
+    generation finished first (results are processed strictly in sequence per
+    chunk), so a stored ``ArticleAnalysis`` never gets attributed to the wrong
+    article and re-running with concurrency=1 is byte-identical to before.
     """
+    client_backend_name, client = client_info
     op = (req.op or "").strip().lower()
     if op not in {"summarize", "translate"}:
         raise HTTPException(status_code=400, detail="op must be 'summarize' or 'translate'.")
@@ -971,6 +1239,8 @@ def bulk_llm(
     def _stream():
         import json as _json
 
+        from src.llm.concurrency import concurrency_for, run_concurrent
+
         def emit(obj: dict) -> str:
             return _json.dumps(obj, separators=(",", ":")) + "\n"
 
@@ -983,51 +1253,79 @@ def bulk_llm(
         stored = skipped = failed = 0
         from src.database.session import SessionLocal
 
+        # B3: vLLM gets several generations in flight at once; Ollama stays
+        # serial (max_workers<=1 is a plain for-loop, byte-identical to before).
+        concurrency = concurrency_for(client_backend_name)
+
         try:
           with SessionLocal() as s:
-            for i, (aid, title, content, _lang) in enumerate(work, 1):
-                _bgtasks.update(_tok, done=i)
-                if aid in same_lang:
-                    skipped += 1
-                    yield emit({"event": "item", "i": i, "total": total,
-                                "article_id": aid, "title": title, "status": "skipped",
-                                "reason": "already in target language"})
+            i = 0
+            n = len(work)
+            while i < n:
+                # Gather up to `concurrency` items that actually need a generation
+                # call, skipping (inline, no model call) anything already done.
+                batch: list[tuple[int, int, str, str]] = []  # (pos, article_id, title, prompt)
+                while i < n and len(batch) < concurrency:
+                    aid, title, content, _lang = work[i]
+                    i += 1
+                    pos = i
+                    _bgtasks.update(_tok, done=pos)
+                    if aid in same_lang:
+                        skipped += 1
+                        yield emit({"event": "item", "i": pos, "total": total,
+                                    "article_id": aid, "title": title, "status": "skipped",
+                                    "reason": "already in target language"})
+                        continue
+                    if req.skip_existing and aid in already:
+                        skipped += 1
+                        yield emit({"event": "item", "i": pos, "total": total,
+                                    "article_id": aid, "title": title, "status": "skipped"})
+                        continue
+                    if op == "summarize":
+                        prompt = f"Article title: {title}\n\n{content[:_MAX_CHARS]}"
+                    else:
+                        prompt = f"Title: {title}\n\n{content[:_MAX_CHARS]}"
+                    batch.append((pos, aid, title, prompt))
+                if not batch:
                     continue
-                if req.skip_existing and aid in already:
-                    skipped += 1
-                    yield emit({"event": "item", "i": i, "total": total,
-                                "article_id": aid, "title": title, "status": "skipped"})
-                    continue
-                if op == "summarize":
-                    prompt = f"Article title: {title}\n\n{content[:_MAX_CHARS]}"
-                else:
-                    prompt = f"Title: {title}\n\n{content[:_MAX_CHARS]}"
-                try:
-                    result = client.generate(
-                        prompt, model=model, system=system, keep_alive=keep_alive
-                    )
-                except LLMUnavailable as exc:
-                    # Ollama down / model missing / airplane mode — won't recover mid-run.
-                    yield emit({"event": "done", "total": total, "stored": stored,
-                                "skipped": skipped, "failed": failed,
-                                "aborted": True, "reason": str(exc)[:200]})
-                    return
-                except LLMError as exc:
-                    failed += 1
-                    yield emit({"event": "item", "i": i, "total": total,
-                                "article_id": aid, "title": title, "status": "failed",
-                                "error": str(exc)[:200]})
-                    continue
-                s.add(ArticleAnalysis(
-                    article_id=aid, kind=kind, result=result.text, model=result.model,
-                    prompt_version=prompt_version, prompt_text=prompt_text,
-                    created_at=datetime.now(UTC),
-                ))
-                s.commit()
-                stored += 1
-                yield emit({"event": "item", "i": i, "total": total,
-                            "article_id": aid, "title": title, "status": "stored",
-                            "chars": len(result.text)})
+
+                results = run_concurrent(
+                    batch,
+                    lambda item: client.generate(
+                        item[3], model=model, system=system, keep_alive=keep_alive
+                    ),
+                    max_workers=concurrency,
+                )
+                # Process/store STRICTLY IN ORDER, regardless of which generation
+                # actually finished first — a stored ArticleAnalysis always lines
+                # up with the right article, and the first LLMUnavailable found
+                # walking in order still aborts the run exactly like the serial
+                # path did (results computed after it in wall-clock time but
+                # earlier in sequence are simply discarded, never stored).
+                for (pos, aid, title, _prompt), res in zip(batch, results, strict=True):
+                    if not res.ok:
+                        if isinstance(res.error, LLMUnavailable):
+                            # Ollama down / model missing / airplane mode — won't recover.
+                            yield emit({"event": "done", "total": total, "stored": stored,
+                                        "skipped": skipped, "failed": failed,
+                                        "aborted": True, "reason": str(res.error)[:200]})
+                            return
+                        failed += 1
+                        yield emit({"event": "item", "i": pos, "total": total,
+                                    "article_id": aid, "title": title, "status": "failed",
+                                    "error": str(res.error)[:200]})
+                        continue
+                    result = res.value
+                    s.add(ArticleAnalysis(
+                        article_id=aid, kind=kind, result=result.text, model=result.model,
+                        prompt_version=prompt_version, prompt_text=prompt_text,
+                        created_at=datetime.now(UTC),
+                    ))
+                    s.commit()
+                    stored += 1
+                    yield emit({"event": "item", "i": pos, "total": total,
+                                "article_id": aid, "title": title, "status": "stored",
+                                "chars": len(result.text)})
           yield emit({"event": "done", "total": total, "stored": stored,
                       "skipped": skipped, "failed": failed, "aborted": False})
         finally:

@@ -41,6 +41,10 @@ class SettingsUpdate(BaseModel):
     # Auto-start language detection (2026-07-24 Session A §1): opt out of the
     # scheduler ride-along that (re)starts the AI language-detection job.
     ai_langdetect_auto: bool | None = None
+    # DUAL BACKEND (2026-07-24 Session B, B1, RULED A12): "auto" | "ollama" | "vllm".
+    llm_backend: str | None = None
+    # The active model id for the vLLM backend (a HF repo id). "" / null clears it.
+    llm_model_vllm: str | None = None
 
 
 def _payload() -> dict:

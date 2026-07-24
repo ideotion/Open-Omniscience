@@ -100,6 +100,7 @@ def test_scheduler_stop_reports_offline_immediately(client):
 _ALLOWED_HTTP_IMPORTERS = {
     "src/ingest/__init__.py",  # THE fetch path (EthicalFetcher + kill switch)
     "src/llm/ollama.py",  # loopback-only by construction (localhost Ollama)
+    "src/llm/vllm_client.py",  # loopback-only by construction (localhost vLLM server)
     "src/safety/fetcher.py",  # the ONE guarded session factory (kill switch + proxy + UA)
     # NOTE: wiki/dumps, wiki/client, wiki/ores and services/duckduckgo were
     # removed from this allowlist when they were routed through guarded_session

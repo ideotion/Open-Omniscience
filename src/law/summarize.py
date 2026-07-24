@@ -21,6 +21,7 @@ single honest no-op when the local model is down (never a wall of failed events)
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -28,6 +29,9 @@ from sqlalchemy.orm import Session
 from src.database.models import LawDocument, LawRevision, LawRevisionSummary
 from src.llm.ollama import DEFAULT_MODEL, LLMError, LLMUnavailable, OllamaClient
 from src.wiki.languages import UI_LOCALE_CODES
+
+if TYPE_CHECKING:
+    from src.llm.backend import LlmBackend
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +84,7 @@ def summarize_revision(
     session: Session,
     doc: LawDocument,
     revision: LawRevision,
-    client: OllamaClient | None = None,
+    client: OllamaClient | LlmBackend | None = None,
     *,
     model: str | None = None,
 ) -> dict:
@@ -145,17 +149,31 @@ def pending_ai_summaries(
 
 
 def advance_law_summaries(
-    session: Session, client: OllamaClient | None = None, *, limit: int = AUTO_LIMIT
+    session: Session, client: OllamaClient | LlmBackend | None = None, *, limit: int = AUTO_LIMIT
 ) -> dict:
     """Scheduler ride-along (2026-07-24 field-feedback A3, ruled): auto-summarize a
     bounded batch of new law changes whose jurisdiction's official language is a UI
     language. Best-effort + bounded, mirroring run_auto_on_ingest -- a local model
     that is down is a single honest no-op, never a wall of failures; one bad
-    revision never breaks the batch."""
+    revision never breaks the batch.
+
+    B3 (2026-07-24 Session B): when no explicit ``client`` is supplied, resolves
+    through the dual-backend seam (vLLM on a GPU machine, Ollama otherwise --
+    RULED A12) instead of hardcoding Ollama, so this ride-along benefits from
+    vLLM too. Concurrent FAN-OUT is deliberately NOT adopted here: the per-pass
+    batch is bounded to ``AUTO_LIMIT`` (5) revisions, and ``summarize_revision``
+    couples its generate() call to an immediate session commit -- decoupling
+    them to run generate() concurrently would duplicate that function's status
+    handling for a batch this small, for a marginal wall-clock win. The bulk
+    HTTP endpoint and the continuous langdetect job (both routinely far larger
+    batches) are where the concurrency helper is actually adopted."""
     out: dict = {"ran": False, "stored": 0, "skipped": 0, "failed": 0}
     if limit <= 0:
         return out
-    client = client or OllamaClient()
+    if client is None:
+        from src.llm.backend import get_client_with_name
+
+        _, client = get_client_with_name()
     try:
         if not client.is_available():
             return out  # local model down -> no-op (never spam failed events)

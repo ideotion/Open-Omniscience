@@ -28,6 +28,7 @@ from sqlalchemy.pool import StaticPool
 
 from src.ai_layer import langdetect_llm as ld
 from src.api import ai as ai_api
+from src.llm import backend as llm_backend
 from src.database.models import AiKeyword, Article, Base, Source
 from src.llm.ollama import GenerationResult, LLMUnavailable
 
@@ -125,7 +126,9 @@ def test_a_transient_outage_retries_and_the_run_stays_alive(db, monkeypatch, tmp
     monkeypatch.setattr(ai_api, "session_scope", _scope)
     monkeypatch.setattr(ld, "session_scope", _scope)
     flaky = _FlakyOllama(_reply, fail_times=1)
-    monkeypatch.setattr(ai_api, "OllamaClient", lambda: flaky)
+    monkeypatch.setattr(
+        llm_backend, "get_client_with_name", lambda *a, **kw: ("ollama", flaky)
+    )
     monkeypatch.setattr(ai_api, "_langdetect_state_path", lambda: tmp_path / "state.json")
     _fast_backoff(monkeypatch)
 
@@ -154,7 +157,9 @@ def test_n_consecutive_failures_gives_up_loudly_never_as_done(db, monkeypatch, t
 
     monkeypatch.setattr(ai_api, "session_scope", _scope)
     monkeypatch.setattr(ld, "session_scope", _scope)
-    monkeypatch.setattr(ai_api, "OllamaClient", lambda: _FlakyOllama("fr", fail_times=10_000))
+    monkeypatch.setattr(
+        llm_backend, "get_client_with_name", lambda *a, **kw: ("ollama", _FlakyOllama("fr", fail_times=10_000))
+    )
     monkeypatch.setattr(ai_api, "_langdetect_state_path", lambda: tmp_path / "state.json")
     monkeypatch.setattr(ai_api, "_LANGDETECT_MAX_CONSECUTIVE_FAILURES", 3)
     _fast_backoff(monkeypatch)
@@ -182,7 +187,9 @@ def test_a_genuine_cancel_still_stops_immediately_no_retry(db, monkeypatch, tmp_
 
     monkeypatch.setattr(ai_api, "session_scope", _scope)
     monkeypatch.setattr(ld, "session_scope", _scope)
-    monkeypatch.setattr(ai_api, "OllamaClient", lambda: _FlakyOllama("fr", fail_times=10_000))
+    monkeypatch.setattr(
+        llm_backend, "get_client_with_name", lambda *a, **kw: ("ollama", _FlakyOllama("fr", fail_times=10_000))
+    )
     monkeypatch.setattr(ai_api, "_langdetect_state_path", lambda: tmp_path / "state.json")
     _fast_backoff(monkeypatch)
 
@@ -234,7 +241,9 @@ def test_langdetect_job_reaches_error_state_after_repeated_transient_failures(
     # patching the origin module after the fact does not reach either copied binding.
     monkeypatch.setattr(ai_api, "session_scope", fake_scope)
     monkeypatch.setattr(ld, "session_scope", fake_scope)
-    monkeypatch.setattr(ai_api, "OllamaClient", lambda: _FlakyOllama("fr", fail_times=10_000))
+    monkeypatch.setattr(
+        llm_backend, "get_client_with_name", lambda *a, **kw: ("ollama", _FlakyOllama("fr", fail_times=10_000))
+    )
     monkeypatch.setattr(ai_api, "_langdetect_state_path", lambda: tmp_path / "state.json")
     monkeypatch.setattr(ai_api, "_LANGDETECT_MAX_CONSECUTIVE_FAILURES", 2)
     _fast_backoff(monkeypatch)
@@ -293,7 +302,9 @@ def test_advance_langdetect_auto_start_skips_when_model_unavailable(db, monkeypa
         def is_available(self):
             return False
 
-    monkeypatch.setattr(ai_api, "OllamaClient", lambda: _Down())
+    monkeypatch.setattr(
+        llm_backend, "get_client_with_name", lambda *a, **kw: ("ollama", _Down())
+    )
     out = ai_api.advance_langdetect_auto_start(db)
     assert out == {"enabled": True, "skipped": "the local model is unavailable"}
 
@@ -311,7 +322,9 @@ def test_advance_langdetect_auto_start_skips_when_no_candidates(db, monkeypatch,
         def is_available(self):
             return True
 
-    monkeypatch.setattr(ai_api, "OllamaClient", lambda: _Up())
+    monkeypatch.setattr(
+        llm_backend, "get_client_with_name", lambda *a, **kw: ("ollama", _Up())
+    )
     # db is empty -- zero unknown-language candidates
     out = ai_api.advance_langdetect_auto_start(db)
     assert out == {"enabled": True, "skipped": "no unknown-language candidates"}
@@ -332,7 +345,9 @@ def test_advance_langdetect_auto_start_starts_the_job_when_due(db, monkeypatch, 
         def is_available(self):
             return True
 
-    monkeypatch.setattr(ai_api, "OllamaClient", lambda: _Up())
+    monkeypatch.setattr(
+        llm_backend, "get_client_with_name", lambda *a, **kw: ("ollama", _Up())
+    )
     started = {}
     monkeypatch.setattr(
         ai_api._LANGDETECT_JOB, "start",

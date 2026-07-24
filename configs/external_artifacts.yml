@@ -253,6 +253,27 @@ artifacts:
       - "the sha256 pins are NEVER computed/promoted in CI — only the operator's audited build fills them"
     last_verified: "2026-07-12"
 
+  - id: vllm-package-version
+    title: vLLM package version (GPU inference backend)
+    kind: runtime-coupling
+    description: >
+      vLLM is a MANAGED EXTERNAL PROCESS (its own venv under data_dir, never a
+      core dependency -- torch/CUDA stay banned from pyproject.toml). The
+      version installed by the in-app install job is pinned here; verified
+      against the PyPI JSON API (huggingface.co/docs.vllm.ai were egress-blocked
+      in the authoring sandbox). Bump this when the install job's default
+      target version changes.
+    upstream: https://pypi.org/project/vllm/ (https://github.com/vllm-project/vllm)
+    check_upstream: "pypi.org/pypi/vllm/json — compare info.version"
+    license: Apache-2.0
+    pin: {file: src/llm/vllm_lifecycle.py, const: VLLM_VERIFIED_AS_OF}
+    refresh: "verify the new version via pypi.org/pypi/vllm/json; bump VLLM_VERIFIED_VERSION + VLLM_VERIFIED_AS_OF"
+    freshness: {max_age_months: 6}
+    couplings:
+      - "VLLM_VERIFIED_VERSION is the install job's default `version=` argument"
+      - "GPU-mode start()/install() are unverified in any sandbox without a GPU (A12) -- the maintainer's GPU VM is the live-validation gate"
+    last_verified: "2026-07-24"
+
   # --- CI / supply-chain pins (Dependabot territory; recorded so they are not forgotten) --
   - id: ci-action-and-tool-pins
     title: CI action SHAs + pinned QA tools

@@ -29,6 +29,7 @@ from sqlalchemy.orm import sessionmaker
 from src.ai_layer import langdetect_llm as ld
 from src.ai_layer.langdetect_llm import unknown_language_work
 from src.api import ai as ai_api
+from src.llm import backend as llm_backend
 from src.database.models import AiKeyword, Article, Base, Source
 from src.llm.ollama import GenerationResult
 
@@ -132,7 +133,9 @@ def test_continuous_mode_chains_batches_and_terminates_on_the_residue(db, monkey
     # resolves session_scope from ITS OWN module namespace for the per-article write.
     monkeypatch.setattr(ai_api, "session_scope", _scope)
     monkeypatch.setattr(ld, "session_scope", _scope)
-    monkeypatch.setattr(ai_api, "OllamaClient", lambda: _FakeOllama(_reply))
+    monkeypatch.setattr(
+        llm_backend, "get_client_with_name", lambda *a, **kw: ("ollama", _FakeOllama(_reply))
+    )
 
     ctx = _FakeCtx(stop_after_iterations=200)  # generous; correct code never gets close
     tally = ai_api._langdetect_worker(ctx, model="m", limit=2, continuous=True)
@@ -177,7 +180,9 @@ def test_non_continuous_mode_runs_exactly_one_batch_unchanged(db, monkeypatch):
     monkeypatch.setattr(ld, "session_scope", _scope)
     # Every article would classify if reached -- the point is that only `limit` of them are
     # ever ATTEMPTED in one non-continuous call.
-    monkeypatch.setattr(ai_api, "OllamaClient", lambda: _FakeOllama(lambda _p: "fr"))
+    monkeypatch.setattr(
+        llm_backend, "get_client_with_name", lambda *a, **kw: ("ollama", _FakeOllama(lambda _p: "fr"))
+    )
 
     ctx = _FakeCtx(stop_after_iterations=200)
     tally = ai_api._langdetect_worker(ctx, model="m", limit=2, continuous=False)
@@ -205,7 +210,9 @@ def test_continuous_mode_stops_cleanly_on_cancel(db, monkeypatch):
     # resolves session_scope from ITS OWN module namespace for the per-article write.
     monkeypatch.setattr(ai_api, "session_scope", _scope)
     monkeypatch.setattr(ld, "session_scope", _scope)
-    monkeypatch.setattr(ai_api, "OllamaClient", lambda: _FakeOllama(lambda _p: "fr"))
+    monkeypatch.setattr(
+        llm_backend, "get_client_with_name", lambda *a, **kw: ("ollama", _FakeOllama(lambda _p: "fr"))
+    )
 
     # stopping becomes True immediately after the first internal batch completes (1 pre-batch
     # check + limit item-level checks inside detect_for_articles's own should_stop calls).

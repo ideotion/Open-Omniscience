@@ -322,13 +322,29 @@ def select_source_tag_candidates(
     min_articles: int = 5,
     min_mentions: int = 0,
     limit_sources: int | None = None,
-) -> tuple[list[SourceTagItem], list[SkippedSource]]:
+    after_domain: str | None = None,
+) -> tuple[list[SourceTagItem], list[SkippedSource], str | None]:
     """Per-source top-N post-stoplist TERMS via the denormalised
     ``KeywordMention.source_id`` (a covering scan -- no join through Article, so no
     codec decrypt). A source below ``min_articles``/``min_mentions`` is SKIPPED with
     an honest reason and NEVER queried for terms or sent to the model (the evidence
     floor). A source whose top terms are entirely stoplisted is also skipped (empty
-    evidence is not sent as if it were content). Read-only throughout."""
+    evidence is not sent as if it were content). Read-only throughout.
+
+    The third return value is the domain of the LAST source VISITED this call
+    (item or skip alike, so a cursor never gets stuck re-visiting an all-skipped
+    page) -- ``None`` when nothing was visited (the scope is exhausted). This is
+    the B5 progressive-sweep cursor: pass it back as ``after_domain`` to continue.
+
+    ``after_domain`` (B5, 2026-07-24 Session B): resumes a progressive sweep from
+    just past the given domain in the SAME article-count-descending order, now made
+    a STABLE total order via a ``Source.id`` tiebreaker -- the cursor for a sweep
+    across ALL sources (``limit_sources`` becomes a PAGE size once ``after_domain``
+    is given, identical to today's "top N" meaning when it is ``None``). If the
+    given domain can no longer be found (data changed between calls -- a source
+    removed, e.g.), the sweep restarts from the top: a redundant re-send to the
+    model at worst, per this project's own dedup-is-the-correctness-net,
+    cursor-is-only-an-efficiency-net convention (mirrors src.catalog.discover_job)."""
     from sqlalchemy import func
 
     from src.database.models import Keyword, KeywordMention, Source
@@ -351,8 +367,16 @@ def select_source_tag_candidates(
     # EVERY source is considered (never silently dropped) -- one with zero
     # keyword_mentions rows at all simply reads (0, 0) from the counters map, so it
     # is an honest 'insufficient evidence' SKIP below rather than a silent omission.
+    # STABLE total order: -article_count ascending (= article_count DESC) then
+    # source id ascending (the tiebreaker that makes after_domain-based resumption
+    # deterministic across calls).
     sources = session.query(Source.id, Source.domain, Source.language).all()
-    ranked = sorted(sources, key=lambda r: counters.get(int(r[0]), (0, 0))[0], reverse=True)
+    ranked = sorted(
+        sources, key=lambda r: (-counters.get(int(r[0]), (0, 0))[0], int(r[0]))
+    )
+    if after_domain is not None:
+        pos = next((i for i, r in enumerate(ranked) if r[1] == after_domain), None)
+        ranked = ranked[pos + 1 :] if pos is not None else ranked
     if limit_sources:
         ranked = ranked[:limit_sources]
 
@@ -407,7 +431,8 @@ def select_source_tag_candidates(
                 top_terms=tuple(terms),
             )
         )
-    return items, skipped
+    last_domain = ranked[-1][1] if ranked else None
+    return items, skipped, last_domain
 
 
 # --------------------------------------------------------------------------- #

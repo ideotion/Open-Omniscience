@@ -1126,6 +1126,40 @@ def perception_eval_selftest(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
+class PerceptionEvalLiveBody(BaseModel):
+    model: str | None = Field(
+        default=None,
+        description="an installed model tag; defaults to the active backend's default model",
+    )
+
+
+@router.post("/perception-eval-live")
+def perception_eval_live(body: PerceptionEvalLiveBody) -> JSONResponse:
+    """B6 (2026-07-24 Session B): run the S6.5 perception harness against the
+    ACTIVE model (whichever backend is resolved -- vLLM on a GPU machine,
+    Ollama otherwise) over REAL generate() calls -- the gate that must pass
+    BEFORE any who/where/when extraction feature ships. Bounded (one call per
+    gold-set case, small by design) and synchronous, mirroring ``/ir-eval``'s
+    own "bounded read-only eval, not a job" posture. Persists a dated JSON
+    artifact (served via ``/perception-eval-live/last``) so the maintainer can
+    download the gate evidence. Loopback inference is airplane-safe, same as
+    every other local-model diagnostic here."""
+    from src.ai_layer.perception_job import run_and_persist_perception_eval
+
+    out = run_and_persist_perception_eval(model=body.model)
+    return JSONResponse(out)
+
+
+@router.get("/perception-eval-live/last")
+def perception_eval_live_last() -> JSONResponse:
+    """A JSON SUMMARY of the newest saved live perception-eval run (read-only;
+    never runs an eval). Returns ``{available:false}`` honestly when none has
+    been run."""
+    from src.ai_layer.perception_job import last_perception_eval_live_report
+
+    return JSONResponse(last_perception_eval_live_report())
+
+
 @router.get("/keyword-triage-selftest")
 def keyword_triage_selftest(download: bool = Query(False)) -> JSONResponse:
     """§8: run the LLM keyword-triage self-test — the measure-before-trust GATE before any real
@@ -2778,6 +2812,19 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # The sibling LLM source-tag-assignment run: selftest + last saved summary.
         ("source-tags-selftest.json", lambda: source_tags_selftest(download=False)),
         ("source-tags-run.json", lambda: source_tags_last()),
+        # B6 (2026-07-24 Session B): the last saved LIVE perception-eval-against-model
+        # run (read-only; never RUNS an eval -- that is a POST, /perception-eval-live).
+        ("perception-eval-live.json", lambda: perception_eval_live_last()),
+        # B6.2/B6.3: the last saved who/where/when EXTRACTION sweep summary (read-only;
+        # never RUNS a sweep -- that is its own background job, /perception-extract/run).
+        ("perception-extract-run.json", lambda: perception_extract_last()),
+        # B7.1: the whole dual-backend AI stack snapshot -- backend/hardware facts,
+        # active model, context settings, and every AI job's last saved summary.
+        ("ai.json", lambda: ai_diagnostics()),
+        # B7.2: the qualification-assist self-test + the newest saved proposals run
+        # (across every source ever checked -- read-only, never runs a new check).
+        ("qualification-assist-selftest.json", lambda: qualification_assist_selftest(download=False)),
+        ("qualification-assist-run.json", lambda: qualification_assist_last(source_id=None)),
         ("search-timing-selftest.json", lambda: search_timing_selftest(download=False)),
         ("power-profile-selftest.json", lambda: power_profile_selftest(download=False)),
         ("source-audit-selftest.json", lambda: source_audit_selftest(download=False)),
@@ -2910,6 +2957,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/keyword-selftest": "keyword-selftest.json",
     "/ir-eval-selftest": "ir-eval-selftest.json",
     "/perception-eval-selftest": "perception-eval-selftest.json",
+    "/perception-eval-live/last": "perception-eval-live.json",
     "/keyword-triage-selftest": "keyword-triage-selftest.json",
     "/recursive-loop": "recursive-loop.json",
     "/kpi": "kpi.json",
@@ -2949,6 +2997,10 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/keyword-triage/last": "keyword-triage-run.json",
     "/source-tags-selftest": "source-tags-selftest.json",
     "/source-tags/last": "source-tags-run.json",
+    "/perception-extract/last": "perception-extract-run.json",
+    "/ai": "ai.json",
+    "/qualification-assist-selftest": "qualification-assist-selftest.json",
+    "/qualification-assist/last": "qualification-assist-run.json",
 }
 _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/source-quality": "whole-corpus decrypt ZIP export — own button (manifest 'excluded')",
@@ -2964,6 +3016,8 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/enrich-source-types/status": "job control",
     "/keyword-triage/status": "job control", "/keyword-triage/download": "job control",
     "/source-tags/status": "job control", "/source-tags/download": "job control",
+    "/perception-extract/status": "job control", "/perception-extract/download": "job control",
+    "/perception-extract/gate": "job control — a live, cheap gate preview, not a static report",
 }
 
 
@@ -3852,19 +3906,20 @@ class KeywordTriageRunBody(BaseModel):
     model: str = Field(
         ..., description="an INSTALLED Ollama tag (refused if not in `ollama list`)"
     )
-    limit: int = Field(
-        default=500, ge=1, le=20000, description="how many head-scope keywords to triage"
+    restart: bool = Field(
+        default=False,
+        description=(
+            "discard any saved sweep cursor and start a brand-new sweep (a new "
+            "dated log file); otherwise an unfinished sweep RESUMES where it left "
+            "off (default)."
+        ),
     )
-    min_articles: int = Field(
-        default=1, ge=0, description="the same counter-only floor select_triage_head uses"
-    )
-    batch_size: int = Field(default=25, ge=1, le=200)
 
 
 def _keyword_triage_worker(ctx, **kwargs) -> dict:
-    from src.ai_layer.triage_job import run_keyword_triage_job
+    from src.ai_layer.triage_job import run_progressive_triage_job
 
-    return run_keyword_triage_job(ctx, **kwargs)
+    return run_progressive_triage_job(ctx, **kwargs)
 
 
 _KEYWORD_TRIAGE_JOB = register_job(
@@ -3877,38 +3932,39 @@ _KEYWORD_TRIAGE_JOB = register_job(
 
 @router.post("/keyword-triage/run")
 def keyword_triage_run(body: KeywordTriageRunBody) -> JSONResponse:
-    """Start the REAL keyword-triage run as a BACKGROUND job: select the head scope,
-    batch it through the local Ollama model (canaries on every batch, echo-back +
-    constrained-verdict validation, per ``ai_layer.triage``), append EXPORT-ONLY
+    """Start (or resume) the REAL keyword-triage PROGRESSIVE SWEEP as a BACKGROUND
+    job (B5, 2026-07-24 Session B, ruled -- the numeric limit/batch-size inputs are
+    GONE; this is now an ON/OFF toggle): sweep the ENTIRE head scope, in bounded
+    batches, through the local model (canaries on every batch, echo-back +
+    constrained-verdict validation, per ``ai_layer.triage``), appending EXPORT-ONLY
     JSONL to ``data_dir()/triage/oo-keyword-triage-<date>.jsonl``. NEVER writes the
     trusted keyword index. Loopback Ollama inference is airplane-safe (the socket
     never leaves 127.0.0.1) -- so this endpoint runs fine under airplane mode,
-    gated ONLY by the client's own loopback-vs-clearnet check (``OllamaClient.
-    _check_kill_switch``): a genuinely non-loopback ``OO_OLLAMA_URL`` still refuses
-    (409) while airplane mode is engaged, same as Ollama simply being unreachable.
-    Also (400) if ``model`` is not an INSTALLED Ollama tag (``verify_roster`` --
-    never substitutes a 'close' tag). Poll ``/keyword-triage/status``; download the
+    gated ONLY by the client's own loopback-vs-clearnet check. Also (400) if
+    ``model`` is not an INSTALLED Ollama tag (``verify_roster`` -- never
+    substitutes a 'close' tag). A PERSISTED CURSOR survives a cancel, a crash, or
+    an app restart, so re-calling this (without ``restart``) continues the SAME
+    sweep instead of starting over. Poll ``/keyword-triage/status``; download the
     dated log via ``/keyword-triage/download``. 409-free for an already-running
     job: returns its current status with ``started:false``."""
     from src.ai_layer.triage import verify_roster
-    from src.llm.ollama import LLMUnavailable, OllamaClient
+    from src.llm.backend import get_client_with_name
+    from src.llm.ollama import LLMUnavailable
 
     try:
-        installed = OllamaClient().list_installed()
+        _, active_client = get_client_with_name()
+        installed = active_client.list_installed()
     except LLMUnavailable as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     roster = verify_roster([body.model], installed)
     if not roster["ok"]:
         raise HTTPException(
             status_code=400,
-            detail=f"model {body.model!r} is not installed (ollama list has {installed}); "
-            "run: ollama pull " + body.model,
+            detail=f"model {body.model!r} is not installed ({installed}); "
+            "pull/serve it first, or check the active backend in Settings -> AI.",
         )
     try:
-        st = _KEYWORD_TRIAGE_JOB.start(
-            model=body.model, limit=body.limit, min_articles=body.min_articles,
-            batch_size=body.batch_size,
-        )
+        st = _KEYWORD_TRIAGE_JOB.start(model=body.model, restart=body.restart)
         st["started"] = True
     except RuntimeError:
         st = _KEYWORD_TRIAGE_JOB.status()
@@ -3980,23 +4036,20 @@ class SourceTagsRunBody(BaseModel):
     model: str = Field(
         ..., description="an INSTALLED Ollama tag (refused if not in `ollama list`)"
     )
-    top_n: int = Field(
-        default=200, ge=1, le=2000, description="top-N post-stoplist terms per source"
+    restart: bool = Field(
+        default=False,
+        description=(
+            "discard any saved sweep cursor and start a brand-new sweep (a new "
+            "dated log file); otherwise an unfinished sweep RESUMES where it left "
+            "off (default)."
+        ),
     )
-    min_articles: int = Field(
-        default=5, ge=0, description="the evidence floor -- below this, an honest SKIP"
-    )
-    min_mentions: int = Field(default=0, ge=0)
-    limit_sources: int = Field(
-        default=200, ge=1, le=20000, description="how many sources to consider, ranked by evidence"
-    )
-    batch_size: int = Field(default=20, ge=1, le=200)
 
 
 def _source_tags_worker(ctx, **kwargs) -> dict:
-    from src.ai_layer.source_tags_job import run_source_tags_job
+    from src.ai_layer.source_tags_job import run_progressive_source_tags_job
 
-    return run_source_tags_job(ctx, **kwargs)
+    return run_progressive_source_tags_job(ctx, **kwargs)
 
 
 _SOURCE_TAGS_JOB = register_job(
@@ -4009,40 +4062,39 @@ _SOURCE_TAGS_JOB = register_job(
 
 @router.post("/source-tags/run")
 def source_tags_run(body: SourceTagsRunBody) -> JSONResponse:
-    """Start the REAL source-tag assignment run as a BACKGROUND job: resolve the
-    live CLOSED tag vocabulary from every ``Source.tags`` value in the corpus,
-    select per-source top-N post-stoplist terms (a source below the evidence floor
-    is SKIPPED, never guessed), batch through the local Ollama model (canaries +
-    echo-back + closed-vocabulary rejection, per ``ai_layer.source_tags``), append
+    """Start (or resume) the REAL source-tag-assignment PROGRESSIVE SWEEP as a
+    BACKGROUND job (B5, 2026-07-24 Session B, ruled -- the numeric top-N/limit
+    inputs are GONE; this is now an ON/OFF toggle): resolve the live CLOSED tag
+    vocabulary from every ``Source.tags`` value in the corpus, sweep EVERY source
+    with sufficient evidence in bounded pages (a source below the evidence floor
+    is SKIPPED, never guessed), through the local model (canaries + echo-back +
+    closed-vocabulary rejection, per ``ai_layer.source_tags``), appending
     EXPORT-ONLY JSONL to ``data_dir()/triage/oo-source-tags-<date>.jsonl``. NEVER
-    writes ``Source.tags``. Loopback Ollama inference is airplane-safe (the socket
-    never leaves 127.0.0.1) -- so this endpoint runs fine under airplane mode,
-    gated ONLY by the client's own loopback-vs-clearnet check (``OllamaClient.
-    _check_kill_switch``): a genuinely non-loopback ``OO_OLLAMA_URL`` still refuses
-    (409) while airplane mode is engaged, same as Ollama simply being unreachable.
-    Also (400) if ``model`` is not an installed Ollama tag. Poll
+    writes ``Source.tags``. Loopback Ollama inference is airplane-safe -- this
+    endpoint runs fine under airplane mode, gated ONLY by the client's own
+    loopback-vs-clearnet check. Also (400) if ``model`` is not an installed
+    model tag. A PERSISTED CURSOR survives a cancel, a crash, or an app restart,
+    so re-calling this (without ``restart``) continues the SAME sweep. Poll
     ``/source-tags/status``; download via ``/source-tags/download``. 409-free for
     an already-running job."""
     from src.ai_layer.triage import verify_roster
-    from src.llm.ollama import LLMUnavailable, OllamaClient
+    from src.llm.backend import get_client_with_name
+    from src.llm.ollama import LLMUnavailable
 
     try:
-        installed = OllamaClient().list_installed()
+        _, active_client = get_client_with_name()
+        installed = active_client.list_installed()
     except LLMUnavailable as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     roster = verify_roster([body.model], installed)
     if not roster["ok"]:
         raise HTTPException(
             status_code=400,
-            detail=f"model {body.model!r} is not installed (ollama list has {installed}); "
-            "run: ollama pull " + body.model,
+            detail=f"model {body.model!r} is not installed ({installed}); "
+            "pull/serve it first, or check the active backend in Settings -> AI.",
         )
     try:
-        st = _SOURCE_TAGS_JOB.start(
-            model=body.model, top_n=body.top_n, min_articles=body.min_articles,
-            min_mentions=body.min_mentions, limit_sources=body.limit_sources,
-            batch_size=body.batch_size,
-        )
+        st = _SOURCE_TAGS_JOB.start(model=body.model, restart=body.restart)
         st["started"] = True
     except RuntimeError:
         st = _SOURCE_TAGS_JOB.status()
@@ -4111,5 +4163,213 @@ def source_tags_selftest(download: bool = Query(False)) -> JSONResponse:
     headers = {}
     if download:
         fname = f"oo-source-tags-selftest-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(log, headers=headers)
+
+
+# ---------------------------------------------------------------------------
+#  Who/where/when PERCEPTION EXTRACTION -- eval-gated AI-layer candidates (B6,
+#  2026-07-24 Session B, the NEW ask). §6.1 (the harness-against-the-active-model
+#  run) is /perception-eval-live above; this is §6.2/§6.3 -- the REAL per-article
+#  extraction sweep, same progressive-toggle chassis as keyword-triage/source-tags.
+#  NEVER writes the trusted rule-based tables (article_mentioned_dates/_places/
+#  article_entities); a language the harness failed ships DISABLED, shown via
+#  /perception-extract/gate before the toggle is ever started.
+# ---------------------------------------------------------------------------
+
+
+class PerceptionExtractRunBody(BaseModel):
+    model: str = Field(
+        ..., description="an INSTALLED model tag on the active backend (refused if not installed)"
+    )
+    restart: bool = Field(
+        default=False,
+        description=(
+            "discard any saved sweep cursor and start a brand-new sweep (a new "
+            "dated log file); otherwise an unfinished sweep RESUMES where it left "
+            "off (default)."
+        ),
+    )
+
+
+def _perception_extract_worker(ctx, **kwargs) -> dict:
+    from src.ai_layer.perception_extract_job import run_progressive_perception_extract_job
+
+    return run_progressive_perception_extract_job(ctx, **kwargs)
+
+
+_PERCEPTION_EXTRACT_JOB = register_job(
+    BackgroundJob(
+        "perception-extract", "Who/where/when extraction (AI-derived candidates)",
+        _perception_extract_worker, is_writer=True, cancellable=True,
+    )
+)
+
+
+@router.get("/perception-extract/gate")
+def perception_extract_gate() -> JSONResponse:
+    """Which languages the LAST live perception-eval run cleared for extraction, and
+    why not for the rest (read-only, cheap -- computed from the saved report; never
+    starts an eval or a sweep). The standing "gate bites" ruling: the toggle UI shows
+    which strata are active and why, even before the toggle is ever clicked."""
+    from src.ai_layer.perception_extract_job import current_language_gate
+
+    return JSONResponse(current_language_gate())
+
+
+@router.post("/perception-extract/run")
+def perception_extract_run(body: PerceptionExtractRunBody) -> JSONResponse:
+    """Start (or resume) the who/where/when EXTRACTION progressive sweep as a
+    BACKGROUND job: every non-quarantined article, id-ascending, in bounded batches,
+    through the active backend -- a language that failed the last live perception-eval
+    run (``/perception-extract/gate``) is honestly SKIPPED, never attempted. Writes
+    ONLY ``ai_keyword`` candidates (kinds ``ai-who``/``ai-place``/``ai-date``, labelled
+    "AI-derived - unreliable"); NEVER the trusted ``article_mentioned_*``/
+    ``article_entities`` tables. A PERSISTED CURSOR survives a cancel, a crash, or an
+    app restart. Loopback inference is airplane-safe. Also (400) if ``model`` is not
+    an installed tag on the active backend. Poll ``/perception-extract/status``;
+    download the dated log via ``/perception-extract/download``. 409-free for an
+    already-running job: returns its current status with ``started:false``."""
+    from src.llm.backend import get_client_with_name
+    from src.llm.ollama import LLMUnavailable
+
+    try:
+        _, active_client = get_client_with_name()
+        installed = active_client.list_installed()
+    except LLMUnavailable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if body.model not in installed:
+        raise HTTPException(
+            status_code=400,
+            detail=f"model {body.model!r} is not installed ({installed}); "
+            "pull/serve it first, or check the active backend in Settings -> AI.",
+        )
+    try:
+        st = _PERCEPTION_EXTRACT_JOB.start(model=body.model, restart=body.restart)
+        st["started"] = True
+    except RuntimeError:
+        st = _PERCEPTION_EXTRACT_JOB.status()
+        st["started"] = False
+    return JSONResponse(st)
+
+
+@router.get("/perception-extract/status")
+def perception_extract_status() -> JSONResponse:
+    """Live status of the perception-extract job (state, per-batch progress; when
+    done, the ready download filename + the run summary in ``result``). No score."""
+    st = _PERCEPTION_EXTRACT_JOB.status()
+    res = st.get("result") or {}
+    st["ready"] = bool(res.get("path"))
+    st["download_filename"] = res.get("filename")
+    return JSONResponse(st)
+
+
+@router.post("/perception-extract/cancel")
+def perception_extract_cancel() -> JSONResponse:
+    """Ask the running perception-extract job to stop at its next safe point (between
+    batches; a batch already in flight always finishes). Idempotent."""
+    _PERCEPTION_EXTRACT_JOB.cancel()
+    return JSONResponse(_PERCEPTION_EXTRACT_JOB.status())
+
+
+@router.get("/perception-extract/last")
+def perception_extract_last() -> JSONResponse:
+    """A JSON SUMMARY of the newest saved perception-extract run (read-only; never
+    runs a sweep). Returns ``{available:false}`` honestly when none has been run."""
+    from src.ai_layer.perception_extract_job import last_perception_extract_report
+
+    return JSONResponse(last_perception_extract_report())
+
+
+@router.get("/perception-extract/download")
+def perception_extract_download() -> Response:
+    """Serve the newest perception-extract JSONL log. 404 until a run has produced
+    one."""
+    st = _PERCEPTION_EXTRACT_JOB.status()
+    res = st.get("result") or {}
+    path = res.get("path")
+    if not path or not os.path.exists(path):
+        raise HTTPException(
+            status_code=404,
+            detail="no perception-extract log is ready -- start one with "
+            "POST /api/diagnostics/perception-extract/run",
+        )
+    return FileResponse(
+        path, media_type="application/x-jsonlines",
+        filename=res.get("filename") or "oo-perception-extract.jsonl",
+    )
+
+
+@router.get("/ai")
+def ai_diagnostics() -> JSONResponse:
+    """B7.1 (2026-07-24 Session B): a secret-safe, read-only snapshot of the whole
+    dual-backend AI stack -- which backend is active and why (hardware detection
+    facts), the active model, context/concurrency settings, and the last saved
+    summary of every AI-layer background job. Never runs anything; rides the
+    all-diagnostics bundle by default."""
+    from src.monitoring.ai_diagnostics import ai_diagnostics_report
+
+    return JSONResponse(ai_diagnostics_report())
+
+
+# ---------------------------------------------------------------------------
+#  Qualification ASSIST -- propose-only LLM nav-soup/extraction-junk flagging
+#  (B7.2, 2026-07-24 Session B, ruled "propose-only"). A bounded, SYNCHRONOUS
+#  per-source run (mirrors /ir-eval's "bounded read-only eval" posture, not a
+#  background job -- scoped to one source's small trial-fetch article set).
+#  NEVER touches Source.status/Source.tags; composes with the qualification
+#  lifecycle + the prose gate as an additional, human-reviewed signal.
+# ---------------------------------------------------------------------------
+
+
+class QualificationAssistBody(BaseModel):
+    source_id: int = Field(..., description="the Source row to check")
+    model: str | None = Field(default=None, description="defaults to the active model")
+    max_articles: int = Field(default=20, ge=1, le=200)
+
+
+@router.post("/qualification-assist/run")
+def qualification_assist_run(body: QualificationAssistBody, db: Session = Depends(get_db)) -> JSONResponse:
+    """Classify up to ``max_articles`` of ``source_id``'s STORED articles as
+    genuine-article/nav-soup via the active model, and persist the dated
+    PROPOSALS artifact -- a signal for the maintainer/Claude-verification loop
+    to review BESIDE the auditor's own evidence, never applied automatically
+    (``Source.status``/``Source.tags`` are never touched). 404 if the source
+    does not exist."""
+    from src.database.models import Source
+
+    if db.get(Source, body.source_id) is None:
+        raise HTTPException(status_code=404, detail=f"no source with id {body.source_id}")
+    from src.ai_layer.qualification_assist import run_and_persist_qualification_assist
+
+    out = run_and_persist_qualification_assist(
+        db, body.source_id, model=body.model, max_articles=body.max_articles
+    )
+    return JSONResponse(out)
+
+
+@router.get("/qualification-assist/last")
+def qualification_assist_last(source_id: int | None = Query(None)) -> JSONResponse:
+    """The newest saved qualification-assist proposals artifact -- optionally
+    filtered to ONE ``source_id``. Read-only; never runs anything. Honest
+    ``{available: false}`` when none exists (for that source, or at all)."""
+    from src.ai_layer.qualification_assist import last_qualification_assist_report
+
+    return JSONResponse(last_qualification_assist_report(source_id=source_id))
+
+
+@router.get("/qualification-assist-selftest")
+def qualification_assist_selftest(download: bool = Query(False)) -> JSONResponse:
+    """Run the qualification-assist self-test -- the measure-before-trust GATE
+    before any real run, mirroring ``/keyword-triage-selftest``/``/source-tags-
+    selftest`` exactly. Proves the constrained one-word parser, canaries, and
+    the classify-and-tally mechanism on a deterministic STUB -- no model, no
+    network, no score. ``download=1`` returns a dated attachment."""
+    from src.ai_layer.qualification_assist import run_qualification_assist_selftest
+
+    log = run_qualification_assist_selftest()
+    headers = {}
+    if download:
+        fname = f"oo-qualification-assist-selftest-{datetime.now().strftime('%Y%m%d')}.json"
         headers["Content-Disposition"] = f'attachment; filename="{fname}"'
     return JSONResponse(log, headers=headers)

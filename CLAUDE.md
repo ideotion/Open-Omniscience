@@ -7972,6 +7972,59 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   • **A16 (sequencing):** Session A first (it carries the airplane-gate fix that unblocks the
     triage/tag runs on Ollama immediately), then Session B.
 
+  **SESSION B EXECUTED 2026-07-24 (branch `claude/session-b-implementation-rqcdr8`, one draft PR
+  onto `main`, B1–B7 all shipped; per-slice detail = the shipped.csv rows):** B1 the structural
+  `LlmBackend` protocol + `VllmClient` (OpenAI-compatible) + `resolve_backend()` (GPU+installed+
+  running vLLM → vLLM, else Ollama, disclosed reason, never silent) · B2 the vLLM lifecycle
+  (managed venv, detect/start/stop, the consented install job, `compute_server_args` context
+  auto-tune from detected VRAM) · B3 the bounded `run_concurrent`/`concurrency_for` seam (vLLM
+  N-way, Ollama serial-by-default), adopted by bulk summarize/translate + the continuous
+  langdetect job + (backend-resolution only) law-change summaries · B4 the "AI" pill (green/red,
+  no count) + the backend/vLLM management endpoints + Settings → AI backend panel · B5 the
+  keyword-triage/source-tags runs become ON/OFF progressive-sweep toggles (keyset-paginated
+  cursors, a persisted JSON cursor surviving cancel/crash/restart, honest outage-pauses) · **B6
+  (the NEW ask) — AI-augmented who/where/when EXTRACTION, eval-gated:** the harness (S6.5,
+  already shipped) now runs against the REAL active model via a new constrained adapter
+  (`src/ai_layer/perception.py`) + is persisted as a dated gate-evidence artifact
+  (`perception_job.py`, `POST/GET /api/diagnostics/perception-eval-live{,/last}`); the actual
+  per-article extraction (`perception_extract.py`/`perception_extract_job.py`) is a NEW B5-chassis
+  progressive toggle (`/api/diagnostics/perception-extract/{run,status,cancel,last,download,gate}`)
+  writing ONLY `ai_keyword` candidates under kinds `ai-who`/`ai-place`/`ai-date` — a DELIBERATE,
+  DOCUMENTED deviation from the brief's illustrative kind list (`ai-person`/`ai-org`/`ai-event`):
+  WHO stays ONE combined persons-AND-orgs kind (matching the harness's own `_FIELDS` shape and the
+  standing ruling's own "WHO — persons AND orgs, the DOJ is a who" framing — splitting it would
+  fabricate a distinction the extraction never determined), and `ai-event` is NOT built (the
+  standing ruling excludes "what"/events from LLM-perception scope, restated in the very same
+  brief section that lists it as an "e.g."). A language/field that fails the harness's
+  hallucination-rate floor (`MAX_HALLUCINATION_RATE=0.5`, named+documented) — OR is simply ABSENT
+  from the last report ("never evaluated") — is honestly GATED, never attempted; a fix mid-build
+  ensured an outage PARTWAY through a batch never advances the cursor past unattempted articles
+  (the abort-cursor fix — a genuine defect caught before it shipped, pinned by a dedicated
+  regression test). Never touches `article_mentioned_dates`/`_places`/`article_entities` (a repo
+  invariant + dedicated negative-space tests pin this). **B7** — the `ai` diagnostics member
+  (`src/monitoring/ai_diagnostics.py`, `GET /api/diagnostics/ai`, rides the all-diagnostics bundle):
+  backend/GPU facts, active model, context settings for BOTH backends (vLLM's `compute_server_args`
+  when installed; Ollama's is a bare STATIC setting — **B2's own scoped RAM-derived `num_ctx`
+  auto-tune for Ollama was NEVER BUILT, a genuine gap found during B7's own investigation and
+  stated HONESTLY in the payload itself, never silently omitted**), and every AI job's last saved
+  summary — secret-safe (each section degrades independently, never crashes the bundle). Plus the
+  propose-only qualification-ASSIST (`src/ai_layer/qualification_assist.py`,
+  `POST /api/diagnostics/qualification-assist/run` + `/last` + a selftest): a constrained
+  one-word article/junk classifier with fixed canaries over a source's STORED (trial-fetch)
+  articles, NEVER touching `Source.status`/`Source.tags` — a proposal beside the auditor's own
+  evidence, composing with (never replacing) the qualification lifecycle; the same
+  ai-proposed·claude-verified·maintainer-merged provenance chain the §8 triage/source-tags runs
+  established. CARRY-OVERS (stated honestly, not silently dropped): (a) B2/B3's GPU-path live
+  validation — this sandbox has no GPU, so vLLM start/generate/concurrency are fixture/stub-tested
+  only, never claimed live-verified; the maintainer's GPU-equipped VM is the real validation gate.
+  (b) every frontend slice (the AI pill, the B5/B6 toggle buttons, the language-gate preview) is
+  node-checked + invariant-guarded but BROWSER-UNVERIFIED — a click-through is owed (fork-3/Q6a).
+  (c) qualification-assist has NO dedicated frontend trigger yet (reachable via the API/diagnostics
+  bundle only) — its natural home is a per-source button inside the source-management UI, a
+  follow-up. (d) the Ollama `num_ctx` RAM-auto-tune gap (above) is a small, well-scoped follow-up
+  mirroring `compute_server_args`. Full test suite green (py3.13 venv), ruff F/B clean, mypy
+  ratchet unchanged (127≤127), bandit clean, i18n 100% (2130/2130 ×12, no new frontend keys — the
+  new panels follow the established un-keyed-diagnostics-panel convention).
 - **SCRAPING/DOWNLOAD 10× SCALING — FIVE TACTICAL STRATEGIES (maintainer-asked 2026-07-24,
   planning-only; plan of record =
   [`docs/design/SCRAPING_10X_SCALING_STRATEGIES_2026-07-24.md`](docs/design/SCRAPING_10X_SCALING_STRATEGIES_2026-07-24.md);

@@ -1739,7 +1739,7 @@
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); loadQualifyBulk(); }  // moved Sources onShow (facets feed the multi-select filters #23)
-      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull
+      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
       if (cat === "keywords") { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration(); }  // Item AC: explore/hide/tag; family + super-group curation relocated here (invariant #8)
       if (cat === "leads") loadLeadsView();           // S12 Leads 2.0 preview: evidence chips + disclosed order (browser-unverified)
       if (cat === "shortcuts") loadShortcuts();       // list + rebind the global keyboard shortcuts (UI-shell §4)
@@ -11698,26 +11698,38 @@
     // Keyword-triage real run (Section 8, ruled 2026-07-20): start the background job, poll
     // status, render the run summary + a download link for the dated JSONL log. Mirrors
     // runPagesizeBench/runP0Validation exactly.
-    async function runKeywordTriage(btn) {
+    // B5 (2026-07-24 Session B, ruled): the numeric limit/batch-size inputs are GONE --
+    // one ON/OFF TOGGLE button now drives a PROGRESSIVE sweep across ALL head-scope
+    // keywords, resumable across a cancel or an app restart via a persisted cursor
+    // (src/ai_layer/triage_job.py:run_progressive_triage_job). The toggle always
+    // re-checks the REAL job state before deciding start-vs-stop, so it can never drift
+    // out of sync with a sweep left running from a previous page load.
+    async function toggleKeywordTriage(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("kt-status"); const out = $("kt-result");
       const set = (m) => { if (el) el.textContent = m; };
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const model = (($("kt-model") && $("kt-model").value) || "").trim();
-      const limit = parseInt(($("kt-limit") && $("kt-limit").value) || "500", 10) || 500;
-      if (!model) { if (typeof toast === "function") toast(t("Enter an installed Ollama model tag first.")); return; }
       if (btn) btn.disabled = true;
-      if (out) out.innerHTML = "";
-      set(t("Starting…"));
       try {
+        let s0;
+        try { s0 = await api("/api/diagnostics/keyword-triage/status"); } catch (e) { s0 = {}; }
+        if (s0 && s0.state === "running") {
+          try { await api("/api/diagnostics/keyword-triage/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
+          set(t("Pausing — progress is saved…"));
+          if (btn) btn.textContent = t("Start sweep");
+          return;
+        }
+        const model = (($("kt-model") && $("kt-model").value) || "").trim();
+        if (!model) { if (typeof toast === "function") toast(t("Enter an installed model tag first.")); return; }
+        if (out) out.innerHTML = "";
+        set(t("Starting…"));
         try {
-          await api("/api/diagnostics/keyword-triage/run", {
-            method: "POST", body: JSON.stringify({ model, limit }),
-          });
+          await api("/api/diagnostics/keyword-triage/run", { method: "POST", body: JSON.stringify({ model }) });
         } catch (e) {
           set(t("Could not start:") + " " + ((e && e.message) || t("check the model is installed.")));
           return;
         }
+        if (btn) btn.textContent = t("Stop sweep");
         let miss = 0;
         for (let i = 0; i < 5400; i++) {
           let s;
@@ -11729,18 +11741,15 @@
             if (miss > 30) { set(t("Still running — check the task manager.")); break; }
             continue;
           }
-          const state = s && s.state;
-          // BackgroundJob reaches 'done' even when the WORK inside it ended in an
-          // honest error (an Ollama outage mid-run does not raise -- the job catches it
-          // and returns a result with state:'error', per src/ai_layer/triage_job.py) --
-          // check the run's own reported state first so this line is never "Done."
-          // while the panel below shows a failure.
-          const runState = (s.result && s.result.state) || state;
-          if (runState === "error") { set(t("Triage failed:") + " " + ((s.result && s.result.error) || s.error || t("unknown error"))); renderKeywordTriageResult(out, s); break; }
-          if (state === "done" && s.ready) { set(t("Done.")); renderKeywordTriageResult(out, s); break; }
-          if (state === "cancelled" || runState === "cancelled") { set(t("Triage cancelled.")); renderKeywordTriageResult(out, s); break; }
+          if (s && s.state === "done") {
+            const res = s.result || {};
+            set(res.complete ? t("Done — sweep complete.") : (res.paused_reason || t("Paused.")));
+            renderKeywordTriageResult(out, s);
+            if (btn) btn.textContent = t("Start sweep");
+            break;
+          }
           const detail = s.detail ? " · " + s.detail : "";
-          set(t("Running in the background…") + detail);
+          set(t("Sweeping…") + detail);
           await sleep(2000);
         }
       } finally {
@@ -11752,41 +11761,54 @@
       if (!out) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const res = (status && status.result) || {};
-      out.innerHTML = esc(res.state || "") + " — " + esc(res.batches_completed || 0) + "/"
-        + esc(res.batches_total || 0) + " batches, " + esc((res.totals && res.totals.verdicts_out) || 0)
+      const label = res.complete ? t("sweep complete") : (res.paused_reason ? t("paused") : "");
+      out.innerHTML = esc(label) + " — " + esc(res.batches_completed || 0) + " batches, "
+        + esc((res.totals && res.totals.verdicts_out) || 0)
         + " verdicts, canaries " + (res.canary_ok_overall === false ? "FAILED" : "ok")
         + '<div style="margin-top:4px"><a href="/api/diagnostics/keyword-triage/download" target="_blank">'
         + t("Download report (.json)").replace(".json", ".jsonl") + "</a></div>";
     }
 
-    async function cancelKeywordTriage() {
+    // Re-syncs the toggle button's label with the REAL job state (called when the AI
+    // Settings subtab opens, so a sweep left running/paused from a previous page load
+    // shows correctly instead of the static HTML default).
+    async function syncKeywordTriageToggle() {
+      const btn = $("kt-toggle-btn"); if (!btn) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      try { await api("/api/diagnostics/keyword-triage/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
-      const el = $("kt-status"); if (el) el.textContent = t("Cancelling…");
+      try {
+        const s = await api("/api/diagnostics/keyword-triage/status");
+        btn.textContent = s && s.state === "running" ? t("Stop sweep") : t("Start sweep");
+      } catch (e) { /* leave the default label */ }
     }
 
-    // Source-tag assignment real run (design entry + GO ruling, maintainer 2026-07-20): same
-    // chassis as runKeywordTriage above.
-    async function runSourceTags(btn) {
+    // Source-tag assignment progressive sweep (design entry + GO ruling, maintainer
+    // 2026-07-20; B5 2026-07-24 Session B): the same toggle chassis as keyword triage above.
+    async function toggleSourceTags(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("st-status"); const out = $("st-result");
       const set = (m) => { if (el) el.textContent = m; };
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const model = (($("st-model") && $("st-model").value) || "").trim();
-      const topN = parseInt(($("st-topn") && $("st-topn").value) || "200", 10) || 200;
-      if (!model) { if (typeof toast === "function") toast(t("Enter an installed Ollama model tag first.")); return; }
       if (btn) btn.disabled = true;
-      if (out) out.innerHTML = "";
-      set(t("Starting…"));
       try {
+        let s0;
+        try { s0 = await api("/api/diagnostics/source-tags/status"); } catch (e) { s0 = {}; }
+        if (s0 && s0.state === "running") {
+          try { await api("/api/diagnostics/source-tags/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
+          set(t("Pausing — progress is saved…"));
+          if (btn) btn.textContent = t("Start sweep");
+          return;
+        }
+        const model = (($("st-model") && $("st-model").value) || "").trim();
+        if (!model) { if (typeof toast === "function") toast(t("Enter an installed model tag first.")); return; }
+        if (out) out.innerHTML = "";
+        set(t("Starting…"));
         try {
-          await api("/api/diagnostics/source-tags/run", {
-            method: "POST", body: JSON.stringify({ model, top_n: topN }),
-          });
+          await api("/api/diagnostics/source-tags/run", { method: "POST", body: JSON.stringify({ model }) });
         } catch (e) {
           set(t("Could not start:") + " " + ((e && e.message) || t("check the model is installed.")));
           return;
         }
+        if (btn) btn.textContent = t("Stop sweep");
         let miss = 0;
         for (let i = 0; i < 5400; i++) {
           let s;
@@ -11798,15 +11820,15 @@
             if (miss > 30) { set(t("Still running — check the task manager.")); break; }
             continue;
           }
-          const state = s && s.state;
-          // Same wrinkle as runKeywordTriage: an Ollama outage mid-run does not raise --
-          // the job catches it and completes with state:'done' but result.state:'error'.
-          const runState = (s.result && s.result.state) || state;
-          if (runState === "error") { set(t("Source-tag run failed:") + " " + ((s.result && s.result.error) || s.error || t("unknown error"))); renderSourceTagsResult(out, s); break; }
-          if (state === "done" && s.ready) { set(t("Done.")); renderSourceTagsResult(out, s); break; }
-          if (state === "cancelled" || runState === "cancelled") { set(t("Source-tag run cancelled.")); renderSourceTagsResult(out, s); break; }
+          if (s && s.state === "done") {
+            const res = s.result || {};
+            set(res.complete ? t("Done — sweep complete.") : (res.paused_reason || t("Paused.")));
+            renderSourceTagsResult(out, s);
+            if (btn) btn.textContent = t("Start sweep");
+            break;
+          }
           const detail = s.detail ? " · " + s.detail : "";
-          set(t("Running in the background…") + detail);
+          set(t("Sweeping…") + detail);
           await sleep(2000);
         }
       } finally {
@@ -11819,8 +11841,9 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const res = (status && status.result) || {};
       const totals = res.totals || {};
-      out.innerHTML = esc(res.state || "") + " — " + esc(res.batches_completed || 0) + "/"
-        + esc(res.batches_total || 0) + " batches, " + esc(totals.assigned_count || 0) + " tagged, "
+      const label = res.complete ? t("sweep complete") : (res.paused_reason ? t("paused") : "");
+      out.innerHTML = esc(label) + " — " + esc(res.batches_completed || 0) + " batches, "
+        + esc(totals.assigned_count || 0) + " tagged, "
         + esc(totals.none_count || 0) + " none, " + esc(res.skipped_evidence_floor || 0)
         + " skipped (evidence floor), canaries " + (res.canary_ok_overall === false ? "FAILED" : "ok")
         + '<div style="margin-top:4px"><a href="/api/diagnostics/source-tags/download" target="_blank">'
@@ -11828,10 +11851,145 @@
         + esc(t("proposed tags are logged only, never applied to Source.tags")) + "</div>";
     }
 
-    async function cancelSourceTags() {
+    async function syncSourceTagsToggle() {
+      const btn = $("st-toggle-btn"); if (!btn) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      try { await api("/api/diagnostics/source-tags/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
-      const el = $("st-status"); if (el) el.textContent = t("Cancelling…");
+      try {
+        const s = await api("/api/diagnostics/source-tags/status");
+        btn.textContent = s && s.state === "running" ? t("Stop sweep") : t("Start sweep");
+      } catch (e) { /* leave the default label */ }
+    }
+
+    // Who/where/when PERCEPTION EXTRACTION (B6, 2026-07-24 Session B). Two parts:
+    // (1) a bounded, synchronous run of the S6.5 perception-eval harness against the
+    // ACTIVE model -- the gate evidence the extraction sweep below reads (mirrors
+    // runIrEval's "bounded read-only eval" posture, not a background job); (2) the
+    // progressive extraction sweep itself -- same toggle chassis as
+    // toggleKeywordTriage/toggleSourceTags above.
+    async function runPerceptionEvalLive(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("pel-status"); const out = $("pel-result");
+      if (btn) btn.disabled = true;
+      if (el) el.textContent = t("Running…");
+      try {
+        const res = await api("/api/diagnostics/perception-eval-live", { method: "POST", body: JSON.stringify({}) });
+        if (el) el.textContent = "";
+        renderPerceptionEvalResult(out, res);
+        loadPerceptionGate();
+      } catch (e) {
+        if (el) el.textContent = t("Could not run:") + " " + ((e && e.message) || "");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function renderPerceptionEvalResult(out, res) {
+      if (!out) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!res || res.status !== "ok") {
+        out.textContent = t("unavailable") + (res && res.detail ? " — " + res.detail : "");
+        return;
+      }
+      const r = res.report || {};
+      out.textContent = t("model") + " " + (res.model || "?") + " " + t("on") + " " + (res.backend || "?")
+        + " — " + (r.n_cases || 0) + " " + t("gold cases scored.");
+    }
+
+    // The language gate (B6): which languages cleared the last live perception-eval
+    // run, and why not for the rest. Read-only, cheap (pure over the last saved
+    // report) -- the standing "gate bites" ruling: the toggle UI shows which strata
+    // are active and why, even before the toggle is ever clicked.
+    async function loadPerceptionGate() {
+      const out = $("pe-gate-result"); if (!out) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const g = await api("/api/diagnostics/perception-extract/gate");
+        const active = Object.keys(g).filter((l) => g[l] && g[l].active).sort();
+        const disabled = Object.keys(g).filter((l) => g[l] && !g[l].active).sort();
+        let html = "<b>" + t("Active languages:") + "</b> "
+          + (active.length ? esc(active.join(", ")) : t("none yet — run the harness above"));
+        if (disabled.length) {
+          html += "<br><b>" + t("Disabled:") + "</b> "
+            + disabled.map((l) => esc(l) + " (" + esc(g[l].reason || "") + ")").join("; ");
+        }
+        out.innerHTML = html;
+      } catch (e) { out.textContent = ""; }
+    }
+
+    async function togglePerceptionExtract(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("pe-status"); const out = $("pe-result");
+      const set = (m) => { if (el) el.textContent = m; };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      if (btn) btn.disabled = true;
+      try {
+        let s0;
+        try { s0 = await api("/api/diagnostics/perception-extract/status"); } catch (e) { s0 = {}; }
+        if (s0 && s0.state === "running") {
+          try { await api("/api/diagnostics/perception-extract/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
+          set(t("Pausing — progress is saved…"));
+          if (btn) btn.textContent = t("Start sweep");
+          return;
+        }
+        const model = (($("pe-model") && $("pe-model").value) || "").trim();
+        if (!model) { if (typeof toast === "function") toast(t("Enter an installed model tag first.")); return; }
+        if (out) out.innerHTML = "";
+        set(t("Starting…"));
+        try {
+          await api("/api/diagnostics/perception-extract/run", { method: "POST", body: JSON.stringify({ model }) });
+        } catch (e) {
+          set(t("Could not start:") + " " + ((e && e.message) || t("check the model is installed.")));
+          return;
+        }
+        if (btn) btn.textContent = t("Stop sweep");
+        let miss = 0;
+        for (let i = 0; i < 5400; i++) {
+          let s;
+          try { s = await api("/api/diagnostics/perception-extract/status"); miss = 0; }
+          catch (e) {
+            miss++;
+            set(t("Connection hiccup — retrying…"));
+            await sleep(Math.min(2000 * miss, 10000));
+            if (miss > 30) { set(t("Still running — check the task manager.")); break; }
+            continue;
+          }
+          if (s && s.state === "done") {
+            const res = s.result || {};
+            set(res.complete ? t("Done — sweep complete.") : (res.paused_reason || t("Paused.")));
+            renderPerceptionExtractResult(out, s);
+            if (btn) btn.textContent = t("Start sweep");
+            break;
+          }
+          const detail = s.detail ? " · " + s.detail : "";
+          set(t("Sweeping…") + detail);
+          await sleep(2000);
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function renderPerceptionExtractResult(out, status) {
+      if (!out) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const res = (status && status.result) || {};
+      const totals = res.totals || {};
+      const label = res.complete ? t("sweep complete") : (res.paused_reason ? t("paused") : "");
+      out.innerHTML = esc(label) + " — " + esc(res.batches_completed || 0) + " batches, "
+        + esc(totals.stored || 0) + " articles extracted (" + esc(totals.who || 0) + " who, "
+        + esc(totals.where || 0) + " where, " + esc(totals.when || 0) + " when), "
+        + esc(totals.gated || 0) + " gated, " + esc(totals.skipped_existing || 0) + " already done"
+        + '<div style="margin-top:4px"><a href="/api/diagnostics/perception-extract/download" target="_blank">'
+        + t("Download report (.json)").replace(".json", ".jsonl") + "</a></div>";
+    }
+
+    async function syncPerceptionExtractToggle() {
+      const btn = $("pe-toggle-btn"); if (!btn) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const s = await api("/api/diagnostics/perception-extract/status");
+        btn.textContent = s && s.state === "running" ? t("Stop sweep") : t("Start sweep");
+      } catch (e) { /* leave the default label */ }
     }
 
     // IR retrieval-eval over a human-judged gold set (keyword-engine P3): open the
@@ -17777,37 +17935,194 @@
       } catch (e) { toast("Methods export failed: " + e.message, "err"); }
     }
 
-    // The LLM pill. The local model is refused under airplane mode (we boot offline),
-    // so a once-at-boot check goes stale "offline". This re-checks on: boot, going
-    // online (_paintNetwork), opening Settings → Models, after any LLM action, when the
-    // tab regains focus, and on click — so it tracks a model that started/stopped later.
-    // The LLM pill opens Settings → AI (the "models" subtab); selecting it also
-    // re-checks health (showSetCat("models") -> loadLlmHealth). Maintainer 2026-06-20:
-    // the pill click should take the user to the AI tab, not just silently re-check.
+    // The "AI" pill (B4, 2026-07-24 field-feedback Session B — was the "LLM" pill,
+    // renamed + simplified: green/red by whether the ACTIVE backend [Ollama or vLLM,
+    // dual-backend B1] is reachable, NO model count anymore). The local model is
+    // refused under airplane mode (we boot offline), so a once-at-boot check goes
+    // stale "offline". This re-checks on: boot, going online (_paintNetwork), opening
+    // Settings → AI, after any LLM action, when the tab regains focus, and on click —
+    // so it tracks a backend that started/stopped later.
+    // Clicking GREEN opens Settings → AI (which also re-checks health); clicking RED
+    // tries to START the preferred installed backend (vLLM first, since it is the one
+    // this app can actually start/stop) and falls back to Settings → AI (the install
+    // flow) when nothing can be started automatically.
     function openAiSettings() {
       showTab("settings");
       try { (_setSubtabs || { select: showSetCat }).select("models"); }
       catch (e) { showSetCat("models"); }
+    }
+    async function aiPillStartOrInstall() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const vs = await api("/api/llm/vllm/status");
+        if (vs.installed && !vs.running && vs.gpu && vs.gpu.available) {
+          const settings = await api("/api/settings");
+          if (settings.llm_model_vllm) {
+            toast(t("Starting the local AI backend…"));
+            await api("/api/llm/vllm/start", {
+              method: "POST",
+              body: JSON.stringify({model: settings.llm_model_vllm}),
+            });
+            setTimeout(loadLlmHealth, 3000);
+            return;
+          }
+        }
+      } catch (e) { /* fall through to the install/settings path below */ }
+      openAiSettings();
+    }
+    async function aiPillClick() {
+      try {
+        const h = await api("/api/llm/health");
+        if (h.available) { openAiSettings(); return; }
+      } catch (e) { /* treat as offline — fall through */ }
+      await aiPillStartOrInstall();
     }
     async function loadLlmHealth() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("llm");
       if (!el) return;
       el.style.cursor = "pointer";
-      el.onclick = openAiSettings;   // click -> Settings → AI (which also re-checks health)
+      el.onclick = aiPillClick;
       try {
         const h = await api("/api/llm/health");
         if (h.available) {
           el.className = "pill ok";
-          // "<N> LLM" — the count in front, no "models" word (maintainer 2026-06-20).
-          el.textContent = `${h.installed_models.length} LLM`;
-          el.title = t("Local LLM — click to open AI settings");
+          el.textContent = "AI";   // no model count anymore (maintainer 2026-07-24)
+          el.title = t("AI — click to open AI settings");
         } else {
           el.className = "pill warn";
-          el.textContent = t("LLM offline");
-          el.title = (h.detail ? h.detail + " — " : "") + t("Local LLM — click to open AI settings");
+          el.textContent = "AI";
+          el.title = (h.detail ? h.detail + " — " : "")
+            + t("AI is offline — click to start it, or open AI settings to install one");
         }
-      } catch (e) { el.textContent = "LLM —"; el.title = t("Local LLM — click to open AI settings"); }
+      } catch (e) {
+        el.textContent = "AI";
+        el.title = t("AI — click to open AI settings");
+      }
+    }
+
+    // --------------------------------------------------------------------- //
+    //  Dual-backend + vLLM lifecycle panel (Settings -> AI, B1/B2/B4, 2026-07-24
+    //  field-feedback Session B). Disclosed decision (never a silent switch),
+    //  the install/start/stop controls, and honest "starting…" states (model
+    //  load takes tens of seconds — never a fake instant green).
+    // --------------------------------------------------------------------- //
+    async function loadAiBackendPanel() {
+      const box = $("ai-backend-box");
+      const sel = $("ai-backend-select");
+      if (!box) return;
+      try {
+        const b = await api("/api/llm/backend");
+        const gpu = b.gpu || {};
+        const vllm = b.vllm || {};
+        box.innerHTML =
+          `<p><b>Active backend:</b> ${esc(b.backend)} <span class="muted">— ${esc(b.reason)}</span></p>` +
+          `<p class="hint">GPU: ${gpu.available ? esc(gpu.name || "detected") : "not detected"}` +
+          ` &middot; vLLM: ${vllm.installed ? "installed" : "not installed"}` +
+          `${vllm.installed ? (vllm.running ? ", running" : ", not running") : ""}` +
+          ` &middot; Ollama: ${b.ollama_available ? "reachable" : "not reachable"}</p>`;
+        if (sel) sel.value = b.stored_override || "auto";
+      } catch (e) {
+        box.innerHTML = `<p class="muted">Could not read the backend status.</p>`;
+      }
+    }
+
+    async function setAiBackend(value) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        await api("/api/settings", {method: "PUT", body: JSON.stringify({llm_backend: value})});
+        toast(t("AI backend preference saved."));
+      } catch (e) { toast("Backend: " + e.message, "err"); }
+      loadAiBackendPanel();
+      loadLlmHealth();
+    }
+
+    async function loadVllmStatusPanel() {
+      const box = $("vllm-status-box");
+      const installBox = $("vllm-install-box");
+      if (!box) return;
+      try {
+        const s = await api("/api/llm/vllm/status");
+        const parts = [];
+        parts.push(s.installed ? "installed" : "not installed");
+        if (s.installed) parts.push(s.running ? "running" : "not running");
+        parts.push(s.gpu && s.gpu.available ? "GPU detected" : "no GPU detected");
+        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>`;
+        if (!s.installed) {
+          if (!installBox) return;
+          if (!s.gpu || !s.gpu.available) {
+            installBox.style.display = "";
+            installBox.innerHTML =
+              `<p class="muted">No GPU detected on this machine — vLLM is GPU-first and would install ` +
+              `into a backend that can never usefully run here. Ollama (above) is the CPU path.</p>`;
+          } else {
+            installBox.style.display = "";
+            installBox.innerHTML =
+              `<p class="muted">vLLM is not installed. This downloads ${esc(s.estimated_size_note || "several GB")} ` +
+              `(vLLM + torch + the CUDA runtime) into a dedicated venv — never the app's own environment.</p>` +
+              `<button onclick="installVllm(this)">Install vLLM (${esc(s.verified_version || "")})</button>` +
+              `<div id="vllm-install-progress" class="hint" style="margin-top:6px"></div>`;
+          }
+        } else {
+          installBox.style.display = "none";
+        }
+        const btn = $("vllm-start-btn");
+        if (btn) btn.disabled = !(s.installed && s.gpu && s.gpu.available);
+      } catch (e) {
+        box.innerHTML = `<p class="muted">Could not read vLLM status.</p>`;
+      }
+    }
+
+    async function installVllm(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (btn) { btn.disabled = true; btn.textContent = "Starting the install…"; }
+      const prog = $("vllm-install-progress");
+      try {
+        await ensureOnline(t("install vLLM (downloads several GB)"));
+        await api("/api/llm/vllm/install", {method: "POST", body: JSON.stringify({})});
+        if (prog) prog.textContent = "Installing — this can take several minutes…";
+        const poll = setInterval(async () => {
+          try {
+            const st = await api("/api/llm/vllm/install/status");
+            if (prog) prog.textContent = st.detail || st.state || "";
+            if (st.state && st.state !== "running") {
+              clearInterval(poll);
+              loadVllmStatusPanel();
+              if (btn) { btn.disabled = false; btn.textContent = t("Install vLLM"); }
+            }
+          } catch (e) { clearInterval(poll); }
+        }, 3000);
+      } catch (e) {
+        if (prog) prog.textContent = "Install: " + e.message;
+        if (btn) { btn.disabled = false; btn.textContent = t("Install vLLM"); }
+      }
+    }
+
+    async function startVllm(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const model = ($("vllm-model-input") || {}).value || "";
+      const status = $("vllm-action-status");
+      if (!model.trim()) { toast(t("Enter a model id first."), "err"); return; }
+      if (btn) btn.disabled = true;
+      if (status) status.textContent = t("Starting the local AI backend…");
+      try {
+        await api("/api/llm/vllm/start", {method: "POST", body: JSON.stringify({model: model.trim()})});
+        setTimeout(() => { loadVllmStatusPanel(); loadLlmHealth(); }, 3000);
+      } catch (e) {
+        if (status) status.textContent = "Start: " + e.message;
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function stopVllm(btn) {
+      if (btn) btn.disabled = true;
+      try {
+        await api("/api/llm/vllm/stop", {method: "POST", body: JSON.stringify({})});
+        loadVllmStatusPanel();
+        loadLlmHealth();
+      } catch (e) { toast("Stop: " + e.message, "err"); }
+      finally { if (btn) btn.disabled = false; }
     }
 
     async function summarize(id, btn) {

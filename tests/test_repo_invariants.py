@@ -882,23 +882,181 @@ def test_seamless_install_and_language_first_first_launch():
     )
 
 
-def test_llm_pill_shows_count_and_opens_ai_settings():
-    """Maintainer field test 2026-06-20: the top-bar LLM pill reads "<N> LLM" (the
-    count in front, no "models" word, no checkmark), and clicking it opens
-    Settings -> AI (the "models" subtab) instead of only re-checking health."""
+def test_ai_pill_is_backend_agnostic_no_count_and_offers_start_or_install():
+    """2026-07-24 field-feedback Session B (B4, RULED A15): the top-bar pill reads
+    just "AI" (green/red by whether the ACTIVE backend -- Ollama or vLLM, dual
+    backend B1 -- is reachable), no model count anymore. Clicking GREEN opens
+    Settings -> AI; clicking RED tries to start the preferred installed backend
+    (vLLM first) before falling back to the install/Settings path -- never a
+    silent re-check only."""
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    assert "`${h.installed_models.length} LLM`" in app, (
-        "the LLM pill must read '<N> LLM' (count in front, no 'models')"
+    assert 'el.textContent = "AI"' in app, (
+        "the AI pill must read just 'AI' (no model count, maintainer 2026-07-24)"
     )
-    assert "LLM ✓ (" not in app and "} models)`" not in app, (
-        "the old 'LLM ✓ (N models)' pill format must be gone"
+    assert "`${h.installed_models.length} LLM`" not in app and "LLM offline" not in app, (
+        "the old '<N> LLM' / 'LLM offline' pill text must be gone"
     )
-    assert "el.onclick = openAiSettings" in app and "function openAiSettings()" in app, (
-        "clicking the LLM pill must open AI settings (openAiSettings)"
+    assert "el.onclick = aiPillClick" in app and "async function aiPillClick()" in app, (
+        "clicking the AI pill must route through aiPillClick (start-or-open, not just re-check)"
     )
-    assert 'select("models")' in app, (
-        "openAiSettings must navigate to Settings -> the AI/models subtab"
+    assert "async function aiPillStartOrInstall()" in app and "/api/llm/vllm/start" in app, (
+        "a red (offline) click must try to start the preferred installed backend (vLLM first)"
     )
+    assert "function openAiSettings()" in app and 'select("models")' in app, (
+        "openAiSettings must still navigate to Settings -> the AI/models subtab"
+    )
+
+
+def test_bounded_concurrency_helper_is_the_one_seam_for_batch_generation():
+    """2026-07-24 field-feedback Session B (B3, "the point of vLLM"): a bounded
+    concurrent-generation helper lives ON the backend seam (src/llm/concurrency.py)
+    -- vLLM gets several requests in flight (a hardware-derived, disclosed
+    default), Ollama stays serial (1) unless the operator explicitly raises it.
+    Pin that the module exists with the right shape, and that the three named
+    batch consumers (bulk summarize/translate, the continuous langdetect job, the
+    law-change ride-along) actually import it / resolve the active backend
+    instead of each hardcoding Ollama."""
+    conc = (_SRC / "llm" / "concurrency.py").read_text(encoding="utf-8")
+    assert "def concurrency_for(" in conc and "def run_concurrent(" in conc
+    assert 'OO_VLLM_CONCURRENCY' in conc and 'OO_OLLAMA_CONCURRENCY' in conc, (
+        "both concurrency ceilings must be operator-overridable via env"
+    )
+
+    bulk = (_SRC / "api" / "llm.py").read_text(encoding="utf-8")
+    assert "get_llm_client_with_name" in bulk and "from src.llm.concurrency import" in bulk, (
+        "bulk_llm must resolve (backend_name, client) and use the concurrency helper"
+    )
+
+    langdetect = (_SRC / "ai_layer" / "langdetect_llm.py").read_text(encoding="utf-8")
+    assert "max_workers" in langdetect and "run_concurrent" in langdetect, (
+        "detect_for_articles must accept max_workers and use run_concurrent"
+    )
+    ai_api = (_SRC / "api" / "ai.py").read_text(encoding="utf-8")
+    assert "get_client_with_name" in ai_api and "concurrency_for" in ai_api, (
+        "the continuous langdetect worker must resolve the active backend + its concurrency"
+    )
+
+    law = (_SRC / "law" / "summarize.py").read_text(encoding="utf-8")
+    assert "get_client_with_name" in law, (
+        "advance_law_summaries must resolve the active backend when no client is given"
+    )
+
+
+def test_triage_and_source_tags_are_progressive_toggles_not_numeric_one_shots():
+    """2026-07-24 field-feedback Session B (B5, ruled): the numeric limit/top-N
+    inputs (#kt-limit, #st-topn) are GONE from the Settings -> AI diagnostics
+    panel -- each run is now an ON/OFF TOGGLE driving a progressive sweep across
+    ALL head-scope keywords / ALL sources with sufficient evidence, resumable
+    across a cancel or an app restart via a persisted keyset/domain cursor
+    (never the trusted index -- EXPORT-ONLY JSONL, unchanged from Section 8)."""
+    html = _ui_source()
+    assert 'id="kt-limit"' not in html and 'id="st-topn"' not in html, (
+        "the removed numeric inputs must be gone from the diagnostics panel"
+    )
+    assert 'id="kt-toggle-btn"' in html and 'id="st-toggle-btn"' in html, (
+        "one ON/OFF toggle button must replace the old separate run/cancel buttons"
+    )
+    assert 'onclick="runKeywordTriage(this)"' not in html
+    assert 'onclick="runSourceTags(this)"' not in html
+
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "async function toggleKeywordTriage(" in app and "async function toggleSourceTags(" in app
+    assert "syncKeywordTriageToggle" in app and "syncSourceTagsToggle" in app, (
+        "the toggle label must re-sync with the real job state when the AI subtab opens"
+    )
+
+    triage_job = (_SRC / "ai_layer" / "triage_job.py").read_text(encoding="utf-8")
+    assert "def run_progressive_triage_job(" in triage_job and "def load_progress_state(" in triage_job
+    assert "select_triage_batch_after" in triage_job, (
+        "the progressive sweep must use the keyset-paginated selector, not a bounded one-shot limit"
+    )
+
+    source_tags_job = (_SRC / "ai_layer" / "source_tags_job.py").read_text(encoding="utf-8")
+    assert (
+        "def run_progressive_source_tags_job(" in source_tags_job
+        and "def load_progress_state(" in source_tags_job
+    )
+
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert "run_progressive_triage_job" in diag and "run_progressive_source_tags_job" in diag
+    assert "restart: bool = Field" in diag, (
+        "the run bodies must expose a restart flag (discard the cursor), not limit/batch_size knobs"
+    )
+    assert "limit: int = Field" not in diag.split("class KeywordTriageRunBody")[1].split("class ")[0]
+    assert "top_n: int = Field" not in diag.split("class SourceTagsRunBody")[1].split("class ")[0]
+
+
+def test_perception_extraction_is_eval_gated_and_never_touches_the_trusted_tables():
+    """2026-07-24 field-feedback Session B (B6, the NEW ask -- "AI-augmented article
+    metadata extraction"). The standing LLM-PERCEPTION ruling applies unchanged: a
+    live harness run gates which languages may extract, and every write lands ONLY
+    in ai_keyword (kinds ai-who/ai-place/ai-date) -- never the trusted rule-based
+    article_mentioned_dates/_places/article_entities tables, and never an ai-event
+    kind (the standing ruling excludes "what"/events from LLM-perception scope)."""
+    core = (_SRC / "ai_layer" / "perception_extract.py").read_text(encoding="utf-8")
+    assert "def gate_languages_from_report(" in core and "def language_gate(" in core
+    assert "MAX_HALLUCINATION_RATE" in core
+    assert '"ai-who"' in core and '"ai-place"' in core and '"ai-date"' in core
+    assert '"ai-event"' not in core and '"ai-person"' not in core and '"ai-org"' not in core, (
+        "WHO stays ONE combined kind (persons AND orgs) -- splitting it would fabricate "
+        "a distinction the extraction never determined; ai-event is out of scope"
+    )
+    # the trusted rule-based tables are never referenced by the extraction core/job.
+    job = (_SRC / "ai_layer" / "perception_extract_job.py").read_text(encoding="utf-8")
+    for forbidden in ("ArticleMentionedDate", "ArticleMentionedPlace", "ArticleEntity"):
+        assert forbidden not in core, f"{forbidden} must never appear in perception_extract.py"
+        assert forbidden not in job, f"{forbidden} must never appear in perception_extract_job.py"
+
+    assert "def run_progressive_perception_extract_job(" in job and "def load_progress_state(" in job
+    assert "def current_language_gate(" in job, (
+        "the toggle UI must be able to preview which strata are active and why "
+        "without starting a sweep (the standing 'gate bites' ruling)"
+    )
+
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert "class PerceptionExtractRunBody" in diag
+    assert '@router.post("/perception-extract/run")' in diag
+    assert '@router.get("/perception-extract/gate")' in diag
+    assert "run_progressive_perception_extract_job" in diag
+
+    html = _ui_source()
+    assert 'id="pe-toggle-btn"' in html, "the extraction sweep must be a toggle, matching B5's convention"
+
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "async function togglePerceptionExtract(" in app
+    assert "syncPerceptionExtractToggle" in app and "loadPerceptionGate" in app, (
+        "the toggle + the language-gate preview must both refresh when the AI subtab opens"
+    )
+    assert "async function runPerceptionEvalLive(" in app, (
+        "the harness-against-the-active-model run must be triggerable in-app, not curl-only"
+    )
+
+
+def test_ai_diagnostics_member_and_qualification_assist_are_wired():
+    """2026-07-24 field-feedback Session B (B7). (1) an `ai` diagnostics member
+    rides the all-diagnostics bundle: backend/hardware facts, active model,
+    context settings, and every AI job's last saved summary -- secret-safe,
+    read-only. (2) qualification-assist is a PROPOSE-ONLY LLM pass over a
+    source's stored (trial-fetch) articles -- never touches Source.status/tags,
+    composes with the qualification lifecycle + the prose gate as an
+    additional signal, never a replacement for the deterministic auditor."""
+    ai_diag = (_SRC / "monitoring" / "ai_diagnostics.py").read_text(encoding="utf-8")
+    assert "def ai_diagnostics_report(" in ai_diag
+
+    qa = (_SRC / "ai_layer" / "qualification_assist.py").read_text(encoding="utf-8")
+    assert "def propose_qualification_flags(" in qa and "def check_canaries(" in qa
+    # a MUTATION check, not a bare substring (the module's own docstring names
+    # Source.status/Source.tags in prose describing what it must never touch).
+    assert ".status = " not in qa and ".tags = " not in qa, (
+        "qualification-assist must never ASSIGN Source.status/Source.tags"
+    )
+    assert "def run_and_persist_qualification_assist(" in qa
+
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert '@router.get("/ai")' in diag
+    assert '@router.post("/qualification-assist/run")' in diag
+    assert '@router.get("/qualification-assist/last")' in diag
+    assert "class QualificationAssistBody" in diag
 
 
 def test_advanced_search_language_is_a_flag_dropdown():

@@ -302,6 +302,33 @@ def test_advance_law_summaries_stops_when_the_model_goes_down_mid_batch(db):
     assert db.query(LawRevisionSummary).count() == 1
 
 
+def test_advance_law_summaries_resolves_the_active_backend_when_no_client_given(db, monkeypatch):
+    """B3 (2026-07-24 Session B): omitting ``client`` must resolve through the
+    dual-backend seam (vLLM on a GPU machine, Ollama otherwise) instead of
+    hardcoding Ollama -- so this ride-along benefits from vLLM too."""
+    from src.llm import backend as llm_backend
+
+    doc = _doc(language="fr")
+    db.add(doc)
+    db.commit()
+    db.add(_changed_revision(doc, content_hash="hseam"))
+    db.commit()
+
+    fake = _FakeOllama()
+    seen: list[str] = []
+
+    def _fake_get_client_with_name(*, backend=None):
+        seen.append("resolved")
+        return "ollama", fake
+
+    monkeypatch.setattr(llm_backend, "get_client_with_name", _fake_get_client_with_name)
+
+    out = advance_law_summaries(db)  # NO client argument
+    assert seen == ["resolved"], "must resolve through the backend seam, not OllamaClient()"
+    assert out["stored"] == 1
+    assert db.query(LawRevisionSummary).count() == 1
+
+
 # --------------------------------------------------------------------------- #
 # adaptive_track_budget + auto_track_due's new adaptive default.
 # --------------------------------------------------------------------------- #
