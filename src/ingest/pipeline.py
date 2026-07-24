@@ -22,6 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, FeedFetchState, Source
+from src.ingest.dedup_front import mark_stored, seen_canonical_url, seen_content_hash
 
 # --------------------------------------------------------------------------- #
 # Per-feed de-churn backoff (field log finding F, 2026-06-13)
@@ -229,6 +230,10 @@ def store_fetched(session: Session, source: Source, fetched, *, batch=None) -> I
             IngestResult.DUPLICATE,
             detail="content hash already stored (race)",
         )
+    # C12: populate the dedup front now that the store is CONFIRMED -- a
+    # near-future re-check of the same URL/hash (the field-measured
+    # re-served-feed-item case) becomes an instant front hit.
+    mark_stored(canonical_url=canonical_final, content_hash=content_hash)
     _maybe_record_custody(article)
     _maybe_index_keywords(session, article, source)
     _maybe_index_links(session, article, fetched.content, fetched.final_url)
@@ -618,4 +623,28 @@ def feed_is_due(state: FeedFetchState | None, *, now: datetime | None = None) ->
 
 
 def _exists(session: Session, **filters) -> bool:
-    return session.query(Article.id).filter_by(**filters).first() is not None
+    """Existence check for a dedup filter (``canonical_url=`` or ``hash=``).
+
+    C12 (2026-07-24 throughput brief, A2): consults the in-memory dedup front
+    FIRST when the filter is EXACTLY one of the two known dedup keyspaces. A
+    front HIT is unconditionally trustworthy (an exact set -- see
+    ``src.ingest.dedup_front``'s module docstring) and skips the
+    codec-decrypting DB read entirely -- the field-measured ~90% duplicate
+    case. A MISS is NEVER trusted alone (bounded LRU eviction is this
+    structure's only imprecision, and it is false-negative-ONLY) -- it always
+    falls through to the real query below, and a genuine hit there re-warms
+    the front for next time. Any other filter shape (an unrecognised kwarg, or
+    more than one) bypasses the front entirely and runs the authoritative
+    query unchanged.
+    """
+    if len(filters) == 1:
+        canonical_url = filters.get("canonical_url")
+        if canonical_url and canonical_url in seen_canonical_url():
+            return True
+        content_hash = filters.get("hash")
+        if content_hash and content_hash in seen_content_hash():
+            return True
+    found = session.query(Article.id).filter_by(**filters).first() is not None
+    if found and len(filters) == 1:
+        mark_stored(canonical_url=filters.get("canonical_url"), content_hash=filters.get("hash"))
+    return found

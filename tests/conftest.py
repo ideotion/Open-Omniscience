@@ -187,3 +187,19 @@ def _isolated_robots_cache_path(tmp_path, monkeypatch):
     import src.ingest as _ingest_mod
 
     monkeypatch.setattr(_ingest_mod, "_robots_cache_path", lambda: tmp_path / "robots_cache.json")
+
+
+@pytest.fixture(autouse=True)
+def _dedup_front_isolated():
+    """C12 (2026-07-24 throughput brief, A2): the in-memory dedup front
+    (``src.ingest.dedup_front``) is a process-global cache by design (dedup
+    warmth must persist across sessions/fetchers within one running app) --
+    the same order-dependent-pollution class as the write-gate/memory-guard
+    fixtures above. Left shared, one test storing "https://example.com/1"
+    could make a LATER, unrelated test's dedup check for the same URL/hash a
+    false-front-hit even though that test's own isolated DB has no such row."""
+    from src.ingest import dedup_front
+
+    dedup_front._reset_for_tests()
+    yield
+    dedup_front._reset_for_tests()

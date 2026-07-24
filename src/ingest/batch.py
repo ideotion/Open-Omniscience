@@ -222,6 +222,7 @@ class ArticleBatch:
 
     def _flush_batched(self, entries: list[_StagedArticle]) -> None:
         from src.database.models import Article
+        from src.ingest.dedup_front import mark_stored
         from src.ingest.pipeline import _exists, _maybe_record_custody
 
         to_store: list[tuple[_StagedArticle, Article]] = []
@@ -252,8 +253,12 @@ class ArticleBatch:
         # recounted by the redo — 3 dispositions for 2 staged articles.
         self.tally["duplicate"] += dups
         self.tally["stored"] += len(to_store)
-        for _, a in to_store:
+        for e, a in to_store:
             _maybe_record_custody(a)
+            # C12: the store is now CONFIRMED committed -- populate the dedup
+            # front so a near-future re-check of the same content (the
+            # field-measured re-served-feed-item case) skips the DB entirely.
+            mark_stored(canonical_url=e.canonical_url, content_hash=e.content_hash)
 
     def _article_row(self, e: _StagedArticle):
         from src.database.models import Article
@@ -325,6 +330,7 @@ class ArticleBatch:
         an exhausted lock is logged + counted, never raised — no batch-mate is
         ever dropped because a sibling collided)."""
         from src.database.write import run_write_with_retry
+        from src.ingest.dedup_front import mark_stored
         from src.ingest.pipeline import (
             _exists,
             _maybe_index_keywords,
@@ -360,6 +366,8 @@ class ArticleBatch:
         article = holder["article"]
         self.tally["stored"] += 1
         _maybe_record_custody(article)
+        # C12: populate the dedup front now the redo commit is CONFIRMED.
+        mark_stored(canonical_url=e.canonical_url, content_hash=e.content_hash)
         _maybe_index_keywords(self._session, article, self._source)
         self._store_links_committed(article.id, e.links)
 
