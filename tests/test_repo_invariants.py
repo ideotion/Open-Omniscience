@@ -7389,6 +7389,25 @@ def test_housekeeping_lane_runs_in_a_background_thread_not_inline():
         assert gone not in pass_body, f"{gone!r} must be moved into a _lane_step_* function"
 
 
+def test_crawl_by_default_rides_the_housekeeping_lanes_lowest_rung():
+    """§8 crawl-by-default (2026-07-24 throughput brief, C3): the ruling is a
+    HYBRID BUDGETED RUNG, never a mode flip -- ``mode="crawl"`` (the explicit
+    whole-source selector, ``VALID_MODES``/``_process_source``) stays
+    orthogonal and unchanged. Guard that the supplement's own settings exist
+    with the ruled default (ON) and that its lane step exists and is
+    registered -- see tests/test_crawl_supplement.py for the full behavioural
+    coverage (rotation, stamping, isolation, no new fetch path)."""
+    settings_src = (_SRC / "scheduler" / "settings.py").read_text(encoding="utf-8")
+    assert 'mode: str = "rss"' in settings_src  # the explicit selector default is UNCHANGED
+    assert "crawl_supplement: bool = True" in settings_src
+    assert "crawl_per_pass: int = 3" in settings_src
+
+    runner = (_SRC / "scheduler" / "runner.py").read_text(encoding="utf-8")
+    assert 'pending.add("crawl")' in runner
+    assert '"crawl": _lane_step_crawl' in runner
+    assert "_CRAWL_SUPPLEMENT_MAX_PAGES" in runner and "_CRAWL_SUPPLEMENT_MAX_DEPTH" in runner
+
+
 def test_memory_headroom_honesty_never_projects_a_worker_count():
     """S4.3 (field-feedback 2026-07-23, 'memory-headroom honesty for small
     boxes'): a mem-low-capped pass must surface a REAL, MEASURED note (never a

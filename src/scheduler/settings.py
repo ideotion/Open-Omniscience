@@ -131,6 +131,18 @@ class SchedulerSettings:
     # refresh_due). 0 disables the ride-along (the manual button remains either way).
     country_data_per_pass: int = 2
 
+    # §8 CRAWL-BY-DEFAULT (maintainer-ruled 2026-07-24, PR766 throughput brief C3): a
+    # HYBRID BUDGETED RUNG, never a mode flip -- ``mode="crawl"`` (the explicit whole-
+    # source crawl selector) stays orthogonal and unchanged. When True (the ruled
+    # default), a bounded crawl sub-pass runs over ``crawl_per_pass`` qualified sources
+    # per online collection pass (least-recently-crawled + feedless-first rotation, the
+    # lane's LOWEST bandwidth-ladder rung), reusing crawl_source through the ONE
+    # EthicalFetcher -- no new fetch path, same politeness/robots. ``crawl_per_pass=0``
+    # disables the supplement entirely (never a selection of which sources to crawl --
+    # the rotation covers every qualified source over time, ordering never exclusion).
+    crawl_supplement: bool = True
+    crawl_per_pass: int = 3
+
     def to_dict(self) -> dict:
         return asdict(self)
 
@@ -295,6 +307,8 @@ def load_settings() -> SchedulerSettings:
         country_data_per_pass=_coerce_int(
             raw.get("country_data_per_pass"), d.country_data_per_pass, 0, 100
         ),
+        crawl_supplement=_coerce_bool(raw.get("crawl_supplement"), d.crawl_supplement),
+        crawl_per_pass=_coerce_int(raw.get("crawl_per_pass"), d.crawl_per_pass, 0, 100),
     )
 
 
@@ -316,6 +330,10 @@ def save_settings(updates: dict) -> SchedulerSettings:
     if "auto_track_signals" in updates and updates["auto_track_signals"] is not None:
         current.auto_track_signals = _coerce_bool(
             updates["auto_track_signals"], current.auto_track_signals
+        )
+    if "crawl_supplement" in updates and updates["crawl_supplement"] is not None:
+        current.crawl_supplement = _coerce_bool(
+            updates["crawl_supplement"], current.crawl_supplement
         )
     if "collect_rate_mode" in updates and updates["collect_rate_mode"] is not None:
         rm = str(updates["collect_rate_mode"])
@@ -342,6 +360,7 @@ def save_settings(updates: dict) -> SchedulerSettings:
     _ranged("world_discovery_per_pass", 0, 12, "world_discovery_per_pass")
     _ranged("qualification_per_pass", 0, 100, "qualification_per_pass")
     _ranged("country_data_per_pass", 0, 100, "country_data_per_pass")
+    _ranged("crawl_per_pass", 0, 100, "crawl_per_pass")
     _ranged("collect_parallelism", 1, _MAX_PARALLELISM, "collect_parallelism")
     _ranged("collect_target_kbps", _MIN_TARGET_KBPS, _MAX_TARGET_KBPS, "collect_target_kbps")
     _ranged("interval_minutes", _MIN_INTERVAL, _MAX_INTERVAL, "interval_minutes")

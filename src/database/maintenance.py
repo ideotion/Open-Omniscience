@@ -563,6 +563,35 @@ def ensure_source_qualification_columns(engine: Engine) -> list[str]:
     return added
 
 
+# Crawl-supplement rotation marker (§8 crawl-by-default, 2026-07-24 throughput
+# brief C3). Additive, NULLABLE, no backfill: an existing source simply reads
+# as "never crawled by the supplement" (NULL sorts first in the rotation --
+# the standing self-heal pattern, e.g. ensure_article_ip_columns).
+_SOURCE_LAST_CRAWLED_COLUMN: dict[str, str] = {
+    "last_crawled_at": "ALTER TABLE sources ADD COLUMN last_crawled_at DATETIME",
+}
+
+
+def ensure_source_last_crawled_column(engine: Engine) -> list[str]:
+    """Self-heal ``sources.last_crawled_at`` on a store created before it existed."""
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        if not conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='sources'")
+        ).fetchone():
+            return []
+        cols = {r[1] for r in conn.execute(text("PRAGMA table_info(sources)")).fetchall()}
+        for name, ddl in _SOURCE_LAST_CRAWLED_COLUMN.items():
+            if name not in cols:
+                conn.execute(text(ddl))
+                added.append(f"sources.{name}")
+    if added:
+        _LOG.info(f"added source last-crawled column(s): {', '.join(added)}")
+    return added
+
+
 def ensure_source_counter_columns(engine: Engine) -> list[str]:
     """Self-heal ``sources.article_count`` + ``sources.counter_reconciled_at`` (S6) on a store
     created before they existed, then BACKFILL from the live articles so there is no NULL window

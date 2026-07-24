@@ -31,11 +31,13 @@ def _fresh_ladder() -> KindLadder:
 # --------------------------------------------------------------------------- #
 
 
-def test_default_settings_makes_every_non_crawl_kind_pending():
+def test_default_settings_makes_every_kind_pending():
+    # §8 (C3): the crawl supplement is now ALSO on by default, so a fresh
+    # SchedulerSettings has every kind pending.
     pending = _lane_pending_kinds(SchedulerSettings())
     assert pending == {
         "markets", "calendar", "law", "hazards",
-        "world_discovery", "qualification", "country_data",
+        "world_discovery", "qualification", "country_data", "crawl",
     }
 
 
@@ -48,13 +50,14 @@ def test_markets_mode_excludes_the_markets_kind():
 def test_toggles_and_zero_budgets_exclude_their_kind():
     # auto_track_law/auto_import_calendars have no real SchedulerSettings field
     # today (a pre-existing dead toggle, unchanged by this slice -- both
-    # ride-alongs always read True via getattr's fallback); auto_track_signals
-    # and the three per-pass budgets ARE real fields.
+    # ride-alongs always read True via getattr's fallback); auto_track_signals,
+    # crawl_supplement, and the four per-pass budgets ARE real fields.
     s = SchedulerSettings(
         auto_track_signals=False,
         world_discovery_per_pass=0,
         qualification_per_pass=0,
         country_data_per_pass=0,
+        crawl_per_pass=0,
     )
     pending = _lane_pending_kinds(s)
     assert pending == {"markets", "calendar", "law"}
@@ -80,14 +83,16 @@ def test_lane_kind_order_never_drops_a_pending_kind():
 def test_higher_priority_kind_is_served_before_a_floor_only_kind():
     """The 2026-06-13 bandwidth ladder ruling: commodities/markets first,
     the discovery/qualification/country-data ride-alongs (floor-only,
-    weight 0.2) later. A FRESH ladder ties on passv=0, broken by descending
+    weight 0.2) later, and the §8 crawl-supplement rung (C3, floor 0.05)
+    LAST of all. A FRESH ladder ties on passv=0, broken by descending
     weight -- markets (rate 5.0, the highest) must come before qualification
-    (floor 0.2, the lowest non-crawl weight)."""
+    (floor 0.2), and qualification before crawl (the lowest floor)."""
     ladder = _fresh_ladder()
-    full = set(_LANE_RATES) - {"crawl"}
+    full = set(_LANE_RATES)
     order = _lane_kind_order(full, ladder=ladder)
     assert order.index("markets") < order.index("qualification"), order
     assert order.index("hazards") < order.index("world_discovery"), order
+    assert order.index("qualification") < order.index("crawl"), order
 
 
 def test_no_kind_starves_across_many_invocations():
@@ -95,13 +100,16 @@ def test_no_kind_starves_across_many_invocations():
     markets' 5.0) must still appear in EVERY invocation's order, never
     starved out just because it is served last -- proven over many repeated
     full-pending draws against the SAME persistent ladder (the production
-    shape: one ladder instance across many real pass invocations)."""
+    shape: one ladder instance across many real pass invocations). Includes
+    the §8 crawl rung (the lowest floor of all), the case the "lowest rung"
+    ruling most needs proven -- lowest priority is never the same as never."""
     ladder = _fresh_ladder()
-    full = set(_LANE_RATES) - {"crawl"}
+    full = set(_LANE_RATES)
     for _ in range(20):
         order = _lane_kind_order(full, ladder=ladder)
         assert "qualification" in order, order
         assert "markets" in order, order
+        assert "crawl" in order, order
         assert set(order) == full
 
 
@@ -119,10 +127,10 @@ def test_zero_weight_kind_is_a_no_op_at_the_ladder_level():
 
 
 def test_crawl_rung_is_reserved_at_the_lowest_priority():
-    """C3 will register a step for "crawl"; the ladder table already reserves
-    it at the lowest floor (0.05) so wiring the step later needs no ladder
-    change -- pin the table shape here so a future edit cannot silently drop
-    the "lowest rung" property the crawl-by-default ruling requires."""
+    """§8 crawl-by-default (C3): the crawl-supplement's ladder entry sits at
+    the lowest floor of every registered kind -- pin the table shape here so
+    a future edit cannot silently drop the "lowest rung" property the
+    crawl-by-default ruling requires."""
     assert _LANE_RATES["crawl"] == 0.0
     assert 0 < _LANE_FLOORS["crawl"] < min(
         v for k, v in _LANE_FLOORS.items() if k != "crawl" and v > 0

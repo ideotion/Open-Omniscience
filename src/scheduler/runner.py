@@ -349,6 +349,34 @@ def select_sources(session, settings: SchedulerSettings):
     return q.order_by(Source.priority.asc(), Source.id.asc())
 
 
+# Small, tight bound for the crawl-SUPPLEMENT'S per-source config -- deliberately much
+# smaller than the explicit whole-source mode="crawl" caps (up to 500 pages/depth 6):
+# this is a bounded, polite discovery nibble that runs EVERY due pass, not a full crawl.
+_CRAWL_SUPPLEMENT_MAX_PAGES = 20
+_CRAWL_SUPPLEMENT_MAX_DEPTH = 2
+
+
+def _select_crawl_candidates(session, settings: SchedulerSettings, limit: int) -> list:
+    """Qualified sources due for the §8 crawl-supplement rung this pass, ordered
+    FEEDLESS-first (RSS-invisible sources benefit most -- they have no other
+    URL-discovery channel yet) then LEAST-RECENTLY-CRAWLED (NULL = never
+    crawled by the supplement, sorts first). Reuses select_sources' own
+    enabled+qualified+facet filters (cleared of its priority/id order via
+    ``order_by(None)`` so this rotation is not swamped by it) -- a rotation
+    that covers every qualified source over time, ordering never exclusion."""
+    from src.database.models import Source
+
+    if limit <= 0:
+        return []
+    q = select_sources(session, settings).order_by(None)
+    q = q.order_by(
+        Source.rss_url.isnot(None),  # feedless (NULL, False=0) sorts first
+        Source.last_crawled_at.is_(None).desc(),  # never-crawled (True=1) first
+        Source.last_crawled_at.asc(),  # then oldest-crawled first
+    )
+    return q.limit(limit).all()
+
+
 def _item_mode_count(session, settings: SchedulerSettings) -> int:
     """How many watched items a wiki/law/markets pass will cover (for the preview
     estimate). With no per-run cap this is the true count; a soft cap clamps it."""
@@ -912,9 +940,8 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
 # pass thread, unchanged.
 # --------------------------------------------------------------------------- #
 
-# Every kind the lane may run this pass. "crawl" is reserved for the C3
-# crawl-supplement rung so the ladder table below need not change when it
-# lands (it has no step registered yet -- see run_housekeeping_lane).
+# Every kind the lane may run this pass. "crawl" (§8, C3) is the bounded
+# crawl-supplement rung -- see _lane_step_crawl / _select_crawl_candidates.
 _LANE_KINDS = (
     "markets", "hazards", "calendar", "law",
     "world_discovery", "qualification", "country_data", "crawl",
@@ -925,8 +952,10 @@ _LANE_KINDS = (
 # crawling ONLY with bandwidth headroom (heaviest)". Weights set a priority
 # ORDER (ordering != exclusion -- every due kind still runs every invocation;
 # see _lane_kind_order's safety net); floors guarantee the discovery/
-# qualification/country-data ride-alongs and the future crawl rung are never
-# starved once a real per-lane budget exists (C3/C15 headroom constraints).
+# qualification/country-data ride-alongs and the crawl rung are never starved
+# once a real per-lane budget exists (C15 backfill's own future headroom).
+# "crawl" sits at rate=0 + the LOWEST floor, so it only ever consumes headroom
+# after every other kind's own turn (§8's "lowest rung" requirement).
 _LANE_RATES: dict[str, float] = {
     "markets": 5.0, "hazards": 4.0,
     "calendar": 2.0, "law": 2.0,
@@ -966,6 +995,8 @@ def _lane_pending_kinds(settings: SchedulerSettings) -> set[str]:
         pending.add("qualification")
     if getattr(settings, "country_data_per_pass", 0) > 0:
         pending.add("country_data")
+    if getattr(settings, "crawl_supplement", True) and getattr(settings, "crawl_per_pass", 0) > 0:
+        pending.add("crawl")
     return pending
 
 
@@ -1074,8 +1105,39 @@ def _lane_step_country_data(session, fetcher, settings: SchedulerSettings) -> di
     return advance_country_data(session, per_pass=settings.country_data_per_pass)
 
 
+def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
+    """§8 crawl-by-default (2026-07-24 throughput brief, C3): a bounded crawl
+    sub-pass over qualified sources -- feedless-first, least-recently-crawled
+    (_select_crawl_candidates) -- reusing ``crawl_source`` with a TIGHT
+    ``CrawlConfig``. Adds NO new fetch path: ``crawl_source`` already routes
+    through the ONE ``EthicalFetcher`` (robots fail-closed, per-host
+    politeness, same-domain-only, dedup). One bad source never aborts the
+    rest (mirrors ``_process_source``'s isolation); ``last_crawled_at`` is
+    stamped only for sources actually attempted, so a crash mid-batch leaves
+    the untouched remainder correctly first-in-line next time."""
+    from src.ingest.crawl import CrawlConfig, crawl_source
+
+    cfg = CrawlConfig(
+        max_depth=min(settings.crawl_max_depth, _CRAWL_SUPPLEMENT_MAX_DEPTH),
+        max_pages=min(settings.crawl_max_pages, _CRAWL_SUPPLEMENT_MAX_PAGES),
+    )
+    candidates = _select_crawl_candidates(session, settings, settings.crawl_per_pass)
+    sources_crawled = 0
+    pages_fetched = 0
+    for source in candidates:
+        try:
+            report = crawl_source(session, source, fetcher=fetcher, config=cfg)
+            pages_fetched += report.pages_fetched
+            source.last_crawled_at = datetime.now(UTC)
+            sources_crawled += 1
+        except Exception:  # noqa: BLE001 - one source's failure must not skip the rest
+            _LOG.warning("crawl supplement: source %r failed", source.domain, exc_info=True)
+    return {"sources_crawled": sources_crawled, "pages_fetched": pages_fetched}
+
+
 # Registry (kept separate from _LANE_KINDS so a "reserved, not yet runnable"
-# kind -- "crawl" until C3 -- can exist in the ladder table with no step to call).
+# kind can exist in the ladder table with no step to call -- none reserved
+# today; every kind in _LANE_KINDS now has a step).
 _LANE_STEPS = {
     "markets": _lane_step_markets,
     "calendar": _lane_step_calendar,
@@ -1084,6 +1146,7 @@ _LANE_STEPS = {
     "world_discovery": _lane_step_world_discovery,
     "qualification": _lane_step_qualification,
     "country_data": _lane_step_country_data,
+    "crawl": _lane_step_crawl,
 }
 
 
