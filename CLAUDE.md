@@ -7811,6 +7811,85 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   before/after diff that the one errorlog.py mypy hit is a PRE-EXISTING baseline error merely
   line-shifted by the new code, not a new one); bandit `-r -ll -q` clean; no schema/frontend
   change.
+- **FIELD FEEDBACK 2026-07-24 — eight impressions (language detection · Governments/law ·
+  imports · Library graphs · Home Alerts · DB-IP attribution · the vLLM/AI-stack rework;
+  maintainer; INTAKE + INVESTIGATION this session, code-verified against main@25dcb19 via a
+  6-agent read-only fan-out; numbered questions put to the maintainer, ANSWERS PENDING — record
+  them here when they arrive; the future build is planned for an autonomous Sonnet-5 session):**
+  (1) **LANGUAGE DETECTION STOPS — ROOT-CAUSED:** the continuous run is a non-persisted
+  `BackgroundJob` (`src/api/ai.py:449-516`) whose loop BREAKS on the first `LLMUnavailable` —
+  and `OllamaClient.generate` maps ANY `httpx.HTTPError` INCLUDING the 120 s per-call timeout to
+  `LLMUnavailable` (`src/llm/ollama.py:307-308`), which `detect_for_articles` treats as a hard
+  abort (`langdetect_llm.py:184-191`) → over a 50k backlog the first transient
+  timeout/model-reload ends the whole run in a benign-looking "done" (no error state, no
+  resume). Fix shape: retry-with-backoff on transient LLM errors (never abort-to-done), a
+  persisted cursor, task-manager visibility kept. UI RULED: drop the "Keep going until none are
+  left" checkbox (`index.html:1345`) — ONE button toggling start ↔ "detection ongoing, click to
+  stop". (2) **GOVERNMENTS COUNTRY DATA IS STILL MANUAL — CONFIRMED:** the 2026-07-08 Item-4
+  auto-load remains ⏭ deferred; ALL country data hangs on the user clicking `load-standard`
+  (`src/api/governments.py:202`; the scheduler never calls it; `stats/subscriptions.refresh_due`
+  only replays PREVIOUSLY-fetched series). RULED: automatic background acquisition like article
+  scraping — build = seed the standard World-Bank indicator load as a freshness-gated scheduler
+  ride-along inside the online-consent envelope (the stats-vintage precedent). The map-over-time
+  substrate already exists (`/api/governments/map` carries a `years` list; 12-indicator catalog
+  incl. Gini/GDP, vintaged). (3) **LAW COVERAGE — CONFIRMED tiny:** ~23 trackable docs across ~8
+  jurisdictions (17 curated + 6 verified generated); the 225 generated legal sources register
+  Source rows only (no rss_url, no LawDocument); enumeration ADAPTERS (law brief S6) are NOT
+  built — they are the lever; add-by-URL + the coverage diagnostic DID ship. Maintainer wants:
+  at least every country whose government uses a UI language, aggregate figures/indices/law/
+  revisions per country, AI summaries of tracked law changes per country, and the
+  gini/GDP-through-time map. OPEN: the standing act-vs-per-article GRANULARITY ruling (asked
+  again), adapter-first vs breadth-first priority, auto-vs-on-demand AI change summaries.
+  (4) **IMPORTS SLOW + PROGRESS WRONG — CONFIRMED, measured shape:** 7 stages; ONLY the 14-step
+  merge + the re-index report progress (decrypt/snapshot/verify/swap/post-steps are silent; the
+  sync REST restore path wires NO callbacks at all — `src/api/backup_v2.py:164,215,290`); ZERO
+  per-stage timing exists on the import side (export has wall_s/gate_held_s); only the re-index
+  CPU half is parallel (`reindex_parallel.py`), the merge + DB-apply are single-threaded
+  single-connection SQLCipher. Plan: instrument per-stage timings FIRST (fold into the persisted
+  S3.3 import report), fix the progress bar across all stages + the sync path, THEN optimize the
+  measured biggest stage (candidates: parallel volume decrypt; write-batched re-index apply).
+  (5) **LIBRARY GRAPHS:** RULED — denser/richer series, HIDE flat-zero tiles (with a one-line
+  "no data yet", never blank-and-silent), + a Source-qualification 3-line graph. Verified: no
+  hide-when-flat logic exists (`dashChartSvg` renders all-zero series); qualification counts are
+  NOT snapshot metrics (`snapshots.py:45-53` is plain COUNT(*) tables — filtered metrics need a
+  new code path + ALL_METRICS/metric_history/library.py registration); the small tile renderer
+  is SINGLE-series (multi-line needs an ooChart-based tile; the enlarge modal already does
+  multi-series). OPEN: the 3-line mapping (statuses are qualified/disqualified/never-judged +
+  42k DISABLED candidates — which three lines?). (6) **HOME ALERTS:** dates ARE stored but never
+  rendered (`app.js:2275-2280`); magnitude/lat/lon are captured (USGS/GDACS,
+  `src/hazards/parse.py`) but DROPPED by `compute_alerts` (`alerts.py:110-119`); hazards are an
+  ephemeral snapshot, NOT Articles (no internal reader view exists). Map rings = HIGHLY feasible:
+  the ooMap signals layer already age-fades (`app.js:13348`) + has click-detail +
+  "find coverage"; `timemap.py`'s hazard signals already carry magnitude; gaps = the stories
+  lens doesn't request hazards + that path live-fetches (should feed from the LOCAL snapshot).
+  OPEN: hazard detail = local view vs ingest-as-Articles; Home section becomes map-linked strip
+  vs improved list. (7) **DB-IP ATTRIBUTION — ANSWERED, not a commercial:** the line is the
+  CC BY 4.0 license condition of the bundled offline DB-IP Lite dataset; IPs have NO inherent
+  geography (registry-allocation mappings must be maintained by someone); alternative = deriving
+  country-level tables from RIR delegation files (no attribution, city-level lost) — keep-vs-
+  switch asked. (8) **vLLM / AI-STACK RULINGS RECEIVED (recorded; build pending answers):**
+  switch/extend the LLM backend toward vLLM for CONCURRENT requests; DEFAULT MODEL = Mistral 7B
+  (maintainer-decided); top-bar pill renamed to just "AI" green/red (NO model count); click-when-
+  red offers install/start, default-model download rides the task manager; context-size
+  management auto-tuned to hardware+model; MORE AI-augmented diagnostics (stoplist-candidate
+  detection, source-qualification assist); the triage + source-tag "real runs" lose their
+  numeric inputs → an on/off TOGGLE running progressively across ALL keywords/sources in the
+  background, logs downloadable for the Claude-verification chain. INVESTIGATION FACTS: the
+  "airplane mode is engaged" failure the maintainer hit is NOT the client — loopback generate is
+  already allowed under airplane (`ollama.py:202-224`); it is TWO endpoint-level blanket
+  `kill_switch_active()` refusals (`diagnostics.py:3893/:4028`, the documented pending L3 gate
+  split) — a small fix INDEPENDENT of any backend swap. The entire inference surface sits behind
+  ONE seam (`OllamaClient`: generate/list/is_available + LLMError/LLMUnavailable) → an
+  OpenAI-compatible dual-backend abstraction is clean; Ollama-only features (pull/remove/binary
+  installer/model-store backup) don't map to vLLM. FLAGGED CONCERN (honesty, pending the
+  maintainer's answer): vLLM is GPU-first — on the CPU-only fleet (2-core/3.2 GB, 4-core Qubes
+  VMs) it is effectively not viable, and Mistral-7B under vLLM wants a real GPU (~8 GB VRAM
+  AWQ / ~15 GB fp16), while even Ollama's mistral:7b Q4 (~4.4 GB) exceeds the 3.2 GB box —
+  recommendation put to the maintainer = DUAL backend over the OpenAI-compatible /v1 surface
+  (vLLM when present → concurrency on; Ollama otherwise; hardware-aware default-model fallback),
+  never a silent replacement; vLLM install = its own venv/external process (torch is BANNED from
+  core) + HF-weights download, both consented task-manager jobs. NOTHING BUILT this session —
+  intake, investigation, ledger recording and the question list only.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
