@@ -20,6 +20,7 @@ from src.config.power_profiles import (
     PUBLISHED_KNOBS,
     fts_analysis_limit,
     power_profile_report,
+    qualification_batch_size,
     resolve_effective,
     run_power_profile_selftest,
 )
@@ -80,6 +81,32 @@ def test_fts_wiring_reads_the_knob_not_a_literal():
     src = Path("src/database/fts.py").read_text(encoding="utf-8")
     assert "fts_analysis_limit()" in src
     assert "PRAGMA analysis_limit=1000" not in src  # the literal is gone
+
+
+def test_qualification_batch_size_defaults_and_clamps(monkeypatch):
+    """2026-07-24 throughput brief C5: the manual bulk-qualification job digests a
+    hardware-aware batch, byte-identical to the prior fixed 20 on Optimized."""
+    monkeypatch.delenv("OO_QUALIFICATION_BATCH_SIZE", raising=False)
+    assert qualification_batch_size() == 20  # the published Optimized default
+    monkeypatch.setenv("OO_QUALIFICATION_BATCH_SIZE", "80")
+    assert qualification_batch_size() == 80
+    monkeypatch.setenv("OO_QUALIFICATION_BATCH_SIZE", "not-an-int")
+    assert qualification_batch_size() == 20  # bad value falls back, never crashes
+    monkeypatch.setenv("OO_POWER_PROFILE", "max")
+    monkeypatch.delenv("OO_QUALIFICATION_BATCH_SIZE", raising=False)
+    assert qualification_batch_size() == 100  # a capable box digests far more per batch
+
+
+def test_qualification_per_pass_is_a_published_settings_backed_knob():
+    """The ride-along's own per-pass budget is published for transparency (like
+    collect_parallelism/llm_keep_alive) but stays applied via the settings-write
+    path, never a live per-call override — the ride-along must still share the
+    pass with markets/hazards/calendar/law (the KindLadder)."""
+    by_name = {k.name: k for k in PUBLISHED_KNOBS}
+    knob = by_name["qualification_per_pass"]
+    assert knob.setting == "qualification_per_pass"
+    assert knob.env_var == ""
+    assert knob.optimized == 5  # SchedulerSettings.qualification_per_pass's real default
 
 
 def test_every_profile_resolves_every_knob():
