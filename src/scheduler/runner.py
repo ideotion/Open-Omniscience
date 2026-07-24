@@ -1108,31 +1108,58 @@ def _lane_step_country_data(session, fetcher, settings: SchedulerSettings) -> di
 def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
     """§8 crawl-by-default (2026-07-24 throughput brief, C3): a bounded crawl
     sub-pass over qualified sources -- feedless-first, least-recently-crawled
-    (_select_crawl_candidates) -- reusing ``crawl_source`` with a TIGHT
-    ``CrawlConfig``. Adds NO new fetch path: ``crawl_source`` already routes
-    through the ONE ``EthicalFetcher`` (robots fail-closed, per-host
+    (_select_crawl_candidates). Adds NO new fetch path: every consumer below
+    routes through the ONE ``EthicalFetcher`` (robots fail-closed, per-host
     politeness, same-domain-only, dedup). One bad source never aborts the
     rest (mirrors ``_process_source``'s isolation); ``last_crawled_at`` is
     stamped only for sources actually attempted, so a crash mid-batch leaves
-    the untouched remainder correctly first-in-line next time."""
-    from src.ingest.crawl import CrawlConfig, crawl_source
+    the untouched remainder correctly first-in-line next time.
 
+    C7's consumer (a) -- "new-URL discovery for a qualified source": a
+    sitemap is a source's OWN declared page list, more COMPLETE than blind
+    on-page link-following (a source's home page never lists everything it
+    publishes). When ``src.ingest.sitemap.discover_sitemap_urls`` finds one,
+    its declared article URLs are ingested DIRECTLY
+    (:func:`~src.ingest.pipeline.ingest_url`, bounded to the same
+    ``max_pages`` this rung already uses) instead of falling back to the
+    BFS ``crawl_source``; a confirmed sitemap is persisted (consumer c). A
+    source with no discoverable sitemap keeps the ORIGINAL BFS crawl
+    unchanged -- this rung never regresses a source it previously covered."""
+    from src.ingest.crawl import CrawlConfig, crawl_source
+    from src.ingest.pipeline import ingest_url
+    from src.ingest.sitemap import discover_sitemap_urls, update_source_sitemap_url
+
+    max_pages = min(settings.crawl_max_pages, _CRAWL_SUPPLEMENT_MAX_PAGES)
     cfg = CrawlConfig(
         max_depth=min(settings.crawl_max_depth, _CRAWL_SUPPLEMENT_MAX_DEPTH),
-        max_pages=min(settings.crawl_max_pages, _CRAWL_SUPPLEMENT_MAX_PAGES),
+        max_pages=max_pages,
     )
     candidates = _select_crawl_candidates(session, settings, settings.crawl_per_pass)
     sources_crawled = 0
     pages_fetched = 0
+    sitemap_urls_ingested = 0
     for source in candidates:
         try:
-            report = crawl_source(session, source, fetcher=fetcher, config=cfg)
-            pages_fetched += report.pages_fetched
+            sm_report = discover_sitemap_urls(fetcher, source.domain, max_urls=max_pages)
+            update_source_sitemap_url(session, source, sm_report)
+            if sm_report.urls:
+                attempted = 0
+                for url in sm_report.urls[:max_pages]:
+                    ingest_url(session, source, url, fetcher=fetcher)
+                    attempted += 1
+                sitemap_urls_ingested += attempted
+            else:
+                report = crawl_source(session, source, fetcher=fetcher, config=cfg)
+                pages_fetched += report.pages_fetched
             source.last_crawled_at = datetime.now(UTC)
             sources_crawled += 1
         except Exception:  # noqa: BLE001 - one source's failure must not skip the rest
             _LOG.warning("crawl supplement: source %r failed", source.domain, exc_info=True)
-    return {"sources_crawled": sources_crawled, "pages_fetched": pages_fetched}
+    return {
+        "sources_crawled": sources_crawled,
+        "pages_fetched": pages_fetched,
+        "sitemap_urls_ingested": sitemap_urls_ingested,
+    }
 
 
 # Registry (kept separate from _LANE_KINDS so a "reserved, not yet runnable"

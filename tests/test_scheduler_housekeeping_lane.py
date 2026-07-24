@@ -212,6 +212,13 @@ def test_memory_guard_stops_taking_new_kinds_never_interrupts_one_mid_flight(mon
     class _FakeGuard:
         engaged = False
 
+        def reset(self, *, reason: str = "") -> None:
+            """No-op -- satisfies the autouse conftest teardown fixture
+            (_memory_guard_not_leaked), which unconditionally calls
+            memory_guard.reset(...) after every test regardless of whether
+            THIS test replaced the singleton with a fake."""
+            self.engaged = False
+
     guard = _FakeGuard()
     monkeypatch.setattr("src.scheduler.memguard.memory_guard", guard)
 

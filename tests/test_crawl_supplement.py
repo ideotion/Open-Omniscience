@@ -4,9 +4,16 @@ selector) stays orthogonal; the supplement is a small, bounded crawl sub-pass
 over qualified sources every online pass, feedless-first + least-recently-
 crawled, riding the housekeeping lane's LOWEST bandwidth-ladder rung.
 
-In-memory SQLite, no network -- crawl_source is monkeypatched to a stub that
-proves the wiring (candidate selection, ordering, last_crawled_at stamping,
-isolation) without ever touching a real fetcher.
+C7 (same brief) wired consumer (a) into this same rung: when a candidate's
+sitemap resolves, its declared article URLs are ingested DIRECTLY instead of
+the BFS ``crawl_source`` fallback (see ``test_prefers_sitemap_derived_urls_
+over_blind_link_following`` below). Every other test here uses a fake
+EthicalFetcher backed by a fully-faked session that declares/serves NO
+sitemap (a plain 404 for everything unrouted), so ``discover_sitemap_urls``
+honestly finds nothing and the rung falls through to the (still monkeypatched)
+``crawl_source`` -- proving the ORIGINAL wiring (candidate selection,
+ordering, last_crawled_at stamping, isolation) is unchanged for a source with
+no sitemap, without ever touching a real network.
 """
 
 from __future__ import annotations
@@ -19,6 +26,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.catalog.qualification import STATUS_QUALIFIED
 from src.database.models import Base, Source
+from src.ingest import EthicalFetcher
 from src.scheduler.runner import (
     _lane_pending_kinds,
     _lane_step_crawl,
@@ -27,6 +35,43 @@ from src.scheduler.runner import (
 from src.scheduler.settings import SchedulerSettings
 
 _ROOT = Path(__file__).resolve().parents[1]
+
+
+class _Resp:
+    def __init__(self, status_code=200, text="", content_type="text/html", url=None):
+        self.status_code = status_code
+        self.text = text
+        self.content = text.encode("utf-8")
+        self.headers = {"Content-Type": content_type}
+        self.url = url
+
+    def close(self):
+        pass
+
+
+class _Session:
+    """A fake requests-like session that 404s everything unrouted -- so
+    discover_sitemap_urls always finds nothing declared, letting these tests
+    exercise the ORIGINAL crawl_source fallback path unchanged."""
+
+    def __init__(self):
+        self.headers = {}
+        self._routes: dict[str, _Resp] = {}
+
+    def route(self, url, **kwargs):
+        self._routes[url] = _Resp(url=url, **kwargs)
+
+    def get(self, url, timeout=None, allow_redirects=True, **kwargs):
+        if url in self._routes:
+            return self._routes[url]
+        return _Resp(status_code=404, text="not found", url=url)
+
+
+def _no_sitemap_fetcher():
+    """A real EthicalFetcher over a fully-faked, no-sitemap session -- the
+    replacement for the bare ``object()`` placeholder these tests used before
+    C7 added a real (fetcher-consulting) pre-step to _lane_step_crawl."""
+    return EthicalFetcher(min_interval_s=0.0, session=_Session())
 
 
 def _engine_session():
@@ -153,6 +198,63 @@ def test_only_qualified_enabled_sources_are_candidates():
 
 
 # --------------------------------------------------------------------------- #
+# C7 consumer (a): a source WITH a discoverable sitemap is ingested via its
+# declared URLs directly -- crawl_source is never even reached.
+# --------------------------------------------------------------------------- #
+
+_URLSET_XML = """<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://sitemap.example/a</loc></url>
+  <url><loc>https://sitemap.example/b</loc></url>
+</urlset>"""
+
+
+def _article_html(title, body_sentence):
+    body = (body_sentence + " ") * 30
+    return (
+        f"<html><head><title>{title}</title></head>"
+        f"<body><article><h1>{title}</h1><p>{body}</p></article></body></html>"
+    )
+
+
+def test_prefers_sitemap_derived_urls_over_blind_link_following(monkeypatch):
+    session = _engine_session()
+    settings = SchedulerSettings(crawl_per_pass=1)
+    src = _qualified_source(session, domain="sitemap.example")
+
+    fake_session = _Session()
+    fake_session.route("https://sitemap.example/robots.txt", status_code=404, text="")
+    fake_session.route("https://sitemap.example/sitemap.xml", text=_URLSET_XML, content_type="text/xml")
+    fake_session.route(
+        "https://sitemap.example/a",
+        text=_article_html("Article A", "real news content here"),
+    )
+    fake_session.route(
+        "https://sitemap.example/b",
+        text=_article_html("Article B", "more real news content"),
+    )
+    fetcher = EthicalFetcher(min_interval_s=0.0, session=fake_session)
+
+    crawl_source_called = []
+    monkeypatch.setattr(
+        "src.ingest.crawl.crawl_source",
+        lambda *a, **kw: crawl_source_called.append(True),
+    )
+
+    result = _lane_step_crawl(session, fetcher, settings)
+    assert crawl_source_called == []  # the BFS fallback was never reached
+    assert result["sitemap_urls_ingested"] == 2
+    assert result["pages_fetched"] == 0  # this counter is crawl_source's own, untouched here
+
+    from src.database.models import Article, SourceMetadata
+
+    assert session.query(Article).filter_by(source_id=src.id).count() == 2
+    meta = session.query(SourceMetadata).filter_by(source_id=src.id).first()
+    assert meta is not None and meta.sitemap_url == "https://sitemap.example/sitemap.xml"
+    assert src.last_crawled_at is not None
+
+
+# --------------------------------------------------------------------------- #
 # The step: stamps last_crawled_at, isolates one failure, adds no fetch path.
 # --------------------------------------------------------------------------- #
 
@@ -174,11 +276,11 @@ def test_step_stamps_last_crawled_at_for_attempted_sources(monkeypatch):
     monkeypatch.setattr("src.ingest.crawl.crawl_source", _fake_crawl_source)
 
     before = src.last_crawled_at
-    result = _lane_step_crawl(session, object(), settings)
+    result = _lane_step_crawl(session, _no_sitemap_fetcher(), settings)
     assert before is None
     assert src.last_crawled_at is not None
     assert calls == ["a.example"]
-    assert result == {"sources_crawled": 1, "pages_fetched": 3}
+    assert result == {"sources_crawled": 1, "pages_fetched": 3, "sitemap_urls_ingested": 0}
 
 
 def test_one_source_failing_does_not_abort_the_rest(monkeypatch):
@@ -197,7 +299,7 @@ def test_one_source_failing_does_not_abort_the_rest(monkeypatch):
 
     monkeypatch.setattr("src.ingest.crawl.crawl_source", _flaky)
 
-    result = _lane_step_crawl(session, object(), settings)
+    result = _lane_step_crawl(session, _no_sitemap_fetcher(), settings)
     assert result["sources_crawled"] == 1  # only b succeeded
     assert a.last_crawled_at is None  # the failed one is NOT stamped -- retried next pass
     assert b.last_crawled_at is not None
@@ -221,19 +323,22 @@ def test_the_supplement_uses_a_tight_crawl_config(monkeypatch):
         return _FakeReport()
 
     monkeypatch.setattr("src.ingest.crawl.crawl_source", _capture)
-    _lane_step_crawl(session, object(), settings)
+    _lane_step_crawl(session, _no_sitemap_fetcher(), settings)
     assert seen_cfg["max_pages"] < 500
     assert seen_cfg["max_depth"] < 6
 
 
-def test_step_calls_only_crawl_source_no_other_fetch_path():
+def test_step_calls_only_the_ONE_fetch_paths_no_raw_http():
     """Source-level guard: _lane_step_crawl's body must reference no fetch
-    primitive other than crawl_source -- the supplement adds NO new fetch
-    path (crawl_source itself already routes through the ONE EthicalFetcher)."""
+    primitive OTHER than crawl_source (the BFS fallback) / ingest_url /
+    discover_sitemap_urls (C7's sitemap-preferred path) -- ALL THREE already
+    route through the ONE EthicalFetcher; no raw requests/httpx bypass."""
     runner_src = (_ROOT / "src" / "scheduler" / "runner.py").read_text("utf-8")
     step_body = runner_src.split("def _lane_step_crawl(", 1)[1].split("\ndef ", 1)[0]
     assert "crawl_source(" in step_body
-    assert "fetcher.fetch(" not in step_body
+    assert "ingest_url(" in step_body
+    assert "discover_sitemap_urls(" in step_body
+    assert "fetcher.fetch(" not in step_body  # no LITERAL bypass in this function's own body
     assert "requests." not in step_body and "httpx." not in step_body
 
 
