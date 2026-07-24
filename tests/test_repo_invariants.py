@@ -942,6 +942,50 @@ def test_bounded_concurrency_helper_is_the_one_seam_for_batch_generation():
     )
 
 
+def test_triage_and_source_tags_are_progressive_toggles_not_numeric_one_shots():
+    """2026-07-24 field-feedback Session B (B5, ruled): the numeric limit/top-N
+    inputs (#kt-limit, #st-topn) are GONE from the Settings -> AI diagnostics
+    panel -- each run is now an ON/OFF TOGGLE driving a progressive sweep across
+    ALL head-scope keywords / ALL sources with sufficient evidence, resumable
+    across a cancel or an app restart via a persisted keyset/domain cursor
+    (never the trusted index -- EXPORT-ONLY JSONL, unchanged from Section 8)."""
+    html = _ui_source()
+    assert 'id="kt-limit"' not in html and 'id="st-topn"' not in html, (
+        "the removed numeric inputs must be gone from the diagnostics panel"
+    )
+    assert 'id="kt-toggle-btn"' in html and 'id="st-toggle-btn"' in html, (
+        "one ON/OFF toggle button must replace the old separate run/cancel buttons"
+    )
+    assert 'onclick="runKeywordTriage(this)"' not in html
+    assert 'onclick="runSourceTags(this)"' not in html
+
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "async function toggleKeywordTriage(" in app and "async function toggleSourceTags(" in app
+    assert "syncKeywordTriageToggle" in app and "syncSourceTagsToggle" in app, (
+        "the toggle label must re-sync with the real job state when the AI subtab opens"
+    )
+
+    triage_job = (_SRC / "ai_layer" / "triage_job.py").read_text(encoding="utf-8")
+    assert "def run_progressive_triage_job(" in triage_job and "def load_progress_state(" in triage_job
+    assert "select_triage_batch_after" in triage_job, (
+        "the progressive sweep must use the keyset-paginated selector, not a bounded one-shot limit"
+    )
+
+    source_tags_job = (_SRC / "ai_layer" / "source_tags_job.py").read_text(encoding="utf-8")
+    assert (
+        "def run_progressive_source_tags_job(" in source_tags_job
+        and "def load_progress_state(" in source_tags_job
+    )
+
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert "run_progressive_triage_job" in diag and "run_progressive_source_tags_job" in diag
+    assert "restart: bool = Field" in diag, (
+        "the run bodies must expose a restart flag (discard the cursor), not limit/batch_size knobs"
+    )
+    assert "limit: int = Field" not in diag.split("class KeywordTriageRunBody")[1].split("class ")[0]
+    assert "top_n: int = Field" not in diag.split("class SourceTagsRunBody")[1].split("class ")[0]
+
+
 def test_advanced_search_language_is_a_flag_dropdown():
     """Maintainer field test 2026-06-20: the Advanced-search language field is a <select>
     of full language names with flags (built from LANGS_12 in JS), not a free-text input."""

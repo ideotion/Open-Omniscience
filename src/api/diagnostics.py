@@ -3852,19 +3852,20 @@ class KeywordTriageRunBody(BaseModel):
     model: str = Field(
         ..., description="an INSTALLED Ollama tag (refused if not in `ollama list`)"
     )
-    limit: int = Field(
-        default=500, ge=1, le=20000, description="how many head-scope keywords to triage"
+    restart: bool = Field(
+        default=False,
+        description=(
+            "discard any saved sweep cursor and start a brand-new sweep (a new "
+            "dated log file); otherwise an unfinished sweep RESUMES where it left "
+            "off (default)."
+        ),
     )
-    min_articles: int = Field(
-        default=1, ge=0, description="the same counter-only floor select_triage_head uses"
-    )
-    batch_size: int = Field(default=25, ge=1, le=200)
 
 
 def _keyword_triage_worker(ctx, **kwargs) -> dict:
-    from src.ai_layer.triage_job import run_keyword_triage_job
+    from src.ai_layer.triage_job import run_progressive_triage_job
 
-    return run_keyword_triage_job(ctx, **kwargs)
+    return run_progressive_triage_job(ctx, **kwargs)
 
 
 _KEYWORD_TRIAGE_JOB = register_job(
@@ -3877,38 +3878,39 @@ _KEYWORD_TRIAGE_JOB = register_job(
 
 @router.post("/keyword-triage/run")
 def keyword_triage_run(body: KeywordTriageRunBody) -> JSONResponse:
-    """Start the REAL keyword-triage run as a BACKGROUND job: select the head scope,
-    batch it through the local Ollama model (canaries on every batch, echo-back +
-    constrained-verdict validation, per ``ai_layer.triage``), append EXPORT-ONLY
+    """Start (or resume) the REAL keyword-triage PROGRESSIVE SWEEP as a BACKGROUND
+    job (B5, 2026-07-24 Session B, ruled -- the numeric limit/batch-size inputs are
+    GONE; this is now an ON/OFF toggle): sweep the ENTIRE head scope, in bounded
+    batches, through the local model (canaries on every batch, echo-back +
+    constrained-verdict validation, per ``ai_layer.triage``), appending EXPORT-ONLY
     JSONL to ``data_dir()/triage/oo-keyword-triage-<date>.jsonl``. NEVER writes the
     trusted keyword index. Loopback Ollama inference is airplane-safe (the socket
     never leaves 127.0.0.1) -- so this endpoint runs fine under airplane mode,
-    gated ONLY by the client's own loopback-vs-clearnet check (``OllamaClient.
-    _check_kill_switch``): a genuinely non-loopback ``OO_OLLAMA_URL`` still refuses
-    (409) while airplane mode is engaged, same as Ollama simply being unreachable.
-    Also (400) if ``model`` is not an INSTALLED Ollama tag (``verify_roster`` --
-    never substitutes a 'close' tag). Poll ``/keyword-triage/status``; download the
+    gated ONLY by the client's own loopback-vs-clearnet check. Also (400) if
+    ``model`` is not an INSTALLED Ollama tag (``verify_roster`` -- never
+    substitutes a 'close' tag). A PERSISTED CURSOR survives a cancel, a crash, or
+    an app restart, so re-calling this (without ``restart``) continues the SAME
+    sweep instead of starting over. Poll ``/keyword-triage/status``; download the
     dated log via ``/keyword-triage/download``. 409-free for an already-running
     job: returns its current status with ``started:false``."""
     from src.ai_layer.triage import verify_roster
-    from src.llm.ollama import LLMUnavailable, OllamaClient
+    from src.llm.backend import get_client_with_name
+    from src.llm.ollama import LLMUnavailable
 
     try:
-        installed = OllamaClient().list_installed()
+        _, active_client = get_client_with_name()
+        installed = active_client.list_installed()
     except LLMUnavailable as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     roster = verify_roster([body.model], installed)
     if not roster["ok"]:
         raise HTTPException(
             status_code=400,
-            detail=f"model {body.model!r} is not installed (ollama list has {installed}); "
-            "run: ollama pull " + body.model,
+            detail=f"model {body.model!r} is not installed ({installed}); "
+            "pull/serve it first, or check the active backend in Settings -> AI.",
         )
     try:
-        st = _KEYWORD_TRIAGE_JOB.start(
-            model=body.model, limit=body.limit, min_articles=body.min_articles,
-            batch_size=body.batch_size,
-        )
+        st = _KEYWORD_TRIAGE_JOB.start(model=body.model, restart=body.restart)
         st["started"] = True
     except RuntimeError:
         st = _KEYWORD_TRIAGE_JOB.status()
@@ -3980,23 +3982,20 @@ class SourceTagsRunBody(BaseModel):
     model: str = Field(
         ..., description="an INSTALLED Ollama tag (refused if not in `ollama list`)"
     )
-    top_n: int = Field(
-        default=200, ge=1, le=2000, description="top-N post-stoplist terms per source"
+    restart: bool = Field(
+        default=False,
+        description=(
+            "discard any saved sweep cursor and start a brand-new sweep (a new "
+            "dated log file); otherwise an unfinished sweep RESUMES where it left "
+            "off (default)."
+        ),
     )
-    min_articles: int = Field(
-        default=5, ge=0, description="the evidence floor -- below this, an honest SKIP"
-    )
-    min_mentions: int = Field(default=0, ge=0)
-    limit_sources: int = Field(
-        default=200, ge=1, le=20000, description="how many sources to consider, ranked by evidence"
-    )
-    batch_size: int = Field(default=20, ge=1, le=200)
 
 
 def _source_tags_worker(ctx, **kwargs) -> dict:
-    from src.ai_layer.source_tags_job import run_source_tags_job
+    from src.ai_layer.source_tags_job import run_progressive_source_tags_job
 
-    return run_source_tags_job(ctx, **kwargs)
+    return run_progressive_source_tags_job(ctx, **kwargs)
 
 
 _SOURCE_TAGS_JOB = register_job(
@@ -4009,40 +4008,39 @@ _SOURCE_TAGS_JOB = register_job(
 
 @router.post("/source-tags/run")
 def source_tags_run(body: SourceTagsRunBody) -> JSONResponse:
-    """Start the REAL source-tag assignment run as a BACKGROUND job: resolve the
-    live CLOSED tag vocabulary from every ``Source.tags`` value in the corpus,
-    select per-source top-N post-stoplist terms (a source below the evidence floor
-    is SKIPPED, never guessed), batch through the local Ollama model (canaries +
-    echo-back + closed-vocabulary rejection, per ``ai_layer.source_tags``), append
+    """Start (or resume) the REAL source-tag-assignment PROGRESSIVE SWEEP as a
+    BACKGROUND job (B5, 2026-07-24 Session B, ruled -- the numeric top-N/limit
+    inputs are GONE; this is now an ON/OFF toggle): resolve the live CLOSED tag
+    vocabulary from every ``Source.tags`` value in the corpus, sweep EVERY source
+    with sufficient evidence in bounded pages (a source below the evidence floor
+    is SKIPPED, never guessed), through the local model (canaries + echo-back +
+    closed-vocabulary rejection, per ``ai_layer.source_tags``), appending
     EXPORT-ONLY JSONL to ``data_dir()/triage/oo-source-tags-<date>.jsonl``. NEVER
-    writes ``Source.tags``. Loopback Ollama inference is airplane-safe (the socket
-    never leaves 127.0.0.1) -- so this endpoint runs fine under airplane mode,
-    gated ONLY by the client's own loopback-vs-clearnet check (``OllamaClient.
-    _check_kill_switch``): a genuinely non-loopback ``OO_OLLAMA_URL`` still refuses
-    (409) while airplane mode is engaged, same as Ollama simply being unreachable.
-    Also (400) if ``model`` is not an installed Ollama tag. Poll
+    writes ``Source.tags``. Loopback Ollama inference is airplane-safe -- this
+    endpoint runs fine under airplane mode, gated ONLY by the client's own
+    loopback-vs-clearnet check. Also (400) if ``model`` is not an installed
+    model tag. A PERSISTED CURSOR survives a cancel, a crash, or an app restart,
+    so re-calling this (without ``restart``) continues the SAME sweep. Poll
     ``/source-tags/status``; download via ``/source-tags/download``. 409-free for
     an already-running job."""
     from src.ai_layer.triage import verify_roster
-    from src.llm.ollama import LLMUnavailable, OllamaClient
+    from src.llm.backend import get_client_with_name
+    from src.llm.ollama import LLMUnavailable
 
     try:
-        installed = OllamaClient().list_installed()
+        _, active_client = get_client_with_name()
+        installed = active_client.list_installed()
     except LLMUnavailable as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     roster = verify_roster([body.model], installed)
     if not roster["ok"]:
         raise HTTPException(
             status_code=400,
-            detail=f"model {body.model!r} is not installed (ollama list has {installed}); "
-            "run: ollama pull " + body.model,
+            detail=f"model {body.model!r} is not installed ({installed}); "
+            "pull/serve it first, or check the active backend in Settings -> AI.",
         )
     try:
-        st = _SOURCE_TAGS_JOB.start(
-            model=body.model, top_n=body.top_n, min_articles=body.min_articles,
-            min_mentions=body.min_mentions, limit_sources=body.limit_sources,
-            batch_size=body.batch_size,
-        )
+        st = _SOURCE_TAGS_JOB.start(model=body.model, restart=body.restart)
         st["started"] = True
     except RuntimeError:
         st = _SOURCE_TAGS_JOB.status()

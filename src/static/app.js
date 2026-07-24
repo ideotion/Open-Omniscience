@@ -1739,7 +1739,7 @@
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); loadQualifyBulk(); }  // moved Sources onShow (facets feed the multi-select filters #23)
-      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4)
+      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); syncKeywordTriageToggle(); syncSourceTagsToggle(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles
       if (cat === "keywords") { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration(); }  // Item AC: explore/hide/tag; family + super-group curation relocated here (invariant #8)
       if (cat === "leads") loadLeadsView();           // S12 Leads 2.0 preview: evidence chips + disclosed order (browser-unverified)
       if (cat === "shortcuts") loadShortcuts();       // list + rebind the global keyboard shortcuts (UI-shell §4)
@@ -11698,26 +11698,38 @@
     // Keyword-triage real run (Section 8, ruled 2026-07-20): start the background job, poll
     // status, render the run summary + a download link for the dated JSONL log. Mirrors
     // runPagesizeBench/runP0Validation exactly.
-    async function runKeywordTriage(btn) {
+    // B5 (2026-07-24 Session B, ruled): the numeric limit/batch-size inputs are GONE --
+    // one ON/OFF TOGGLE button now drives a PROGRESSIVE sweep across ALL head-scope
+    // keywords, resumable across a cancel or an app restart via a persisted cursor
+    // (src/ai_layer/triage_job.py:run_progressive_triage_job). The toggle always
+    // re-checks the REAL job state before deciding start-vs-stop, so it can never drift
+    // out of sync with a sweep left running from a previous page load.
+    async function toggleKeywordTriage(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("kt-status"); const out = $("kt-result");
       const set = (m) => { if (el) el.textContent = m; };
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const model = (($("kt-model") && $("kt-model").value) || "").trim();
-      const limit = parseInt(($("kt-limit") && $("kt-limit").value) || "500", 10) || 500;
-      if (!model) { if (typeof toast === "function") toast(t("Enter an installed Ollama model tag first.")); return; }
       if (btn) btn.disabled = true;
-      if (out) out.innerHTML = "";
-      set(t("Starting…"));
       try {
+        let s0;
+        try { s0 = await api("/api/diagnostics/keyword-triage/status"); } catch (e) { s0 = {}; }
+        if (s0 && s0.state === "running") {
+          try { await api("/api/diagnostics/keyword-triage/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
+          set(t("Pausing — progress is saved…"));
+          if (btn) btn.textContent = t("Start sweep");
+          return;
+        }
+        const model = (($("kt-model") && $("kt-model").value) || "").trim();
+        if (!model) { if (typeof toast === "function") toast(t("Enter an installed model tag first.")); return; }
+        if (out) out.innerHTML = "";
+        set(t("Starting…"));
         try {
-          await api("/api/diagnostics/keyword-triage/run", {
-            method: "POST", body: JSON.stringify({ model, limit }),
-          });
+          await api("/api/diagnostics/keyword-triage/run", { method: "POST", body: JSON.stringify({ model }) });
         } catch (e) {
           set(t("Could not start:") + " " + ((e && e.message) || t("check the model is installed.")));
           return;
         }
+        if (btn) btn.textContent = t("Stop sweep");
         let miss = 0;
         for (let i = 0; i < 5400; i++) {
           let s;
@@ -11729,18 +11741,15 @@
             if (miss > 30) { set(t("Still running — check the task manager.")); break; }
             continue;
           }
-          const state = s && s.state;
-          // BackgroundJob reaches 'done' even when the WORK inside it ended in an
-          // honest error (an Ollama outage mid-run does not raise -- the job catches it
-          // and returns a result with state:'error', per src/ai_layer/triage_job.py) --
-          // check the run's own reported state first so this line is never "Done."
-          // while the panel below shows a failure.
-          const runState = (s.result && s.result.state) || state;
-          if (runState === "error") { set(t("Triage failed:") + " " + ((s.result && s.result.error) || s.error || t("unknown error"))); renderKeywordTriageResult(out, s); break; }
-          if (state === "done" && s.ready) { set(t("Done.")); renderKeywordTriageResult(out, s); break; }
-          if (state === "cancelled" || runState === "cancelled") { set(t("Triage cancelled.")); renderKeywordTriageResult(out, s); break; }
+          if (s && s.state === "done") {
+            const res = s.result || {};
+            set(res.complete ? t("Done — sweep complete.") : (res.paused_reason || t("Paused.")));
+            renderKeywordTriageResult(out, s);
+            if (btn) btn.textContent = t("Start sweep");
+            break;
+          }
           const detail = s.detail ? " · " + s.detail : "";
-          set(t("Running in the background…") + detail);
+          set(t("Sweeping…") + detail);
           await sleep(2000);
         }
       } finally {
@@ -11752,41 +11761,54 @@
       if (!out) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const res = (status && status.result) || {};
-      out.innerHTML = esc(res.state || "") + " — " + esc(res.batches_completed || 0) + "/"
-        + esc(res.batches_total || 0) + " batches, " + esc((res.totals && res.totals.verdicts_out) || 0)
+      const label = res.complete ? t("sweep complete") : (res.paused_reason ? t("paused") : "");
+      out.innerHTML = esc(label) + " — " + esc(res.batches_completed || 0) + " batches, "
+        + esc((res.totals && res.totals.verdicts_out) || 0)
         + " verdicts, canaries " + (res.canary_ok_overall === false ? "FAILED" : "ok")
         + '<div style="margin-top:4px"><a href="/api/diagnostics/keyword-triage/download" target="_blank">'
         + t("Download report (.json)").replace(".json", ".jsonl") + "</a></div>";
     }
 
-    async function cancelKeywordTriage() {
+    // Re-syncs the toggle button's label with the REAL job state (called when the AI
+    // Settings subtab opens, so a sweep left running/paused from a previous page load
+    // shows correctly instead of the static HTML default).
+    async function syncKeywordTriageToggle() {
+      const btn = $("kt-toggle-btn"); if (!btn) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      try { await api("/api/diagnostics/keyword-triage/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
-      const el = $("kt-status"); if (el) el.textContent = t("Cancelling…");
+      try {
+        const s = await api("/api/diagnostics/keyword-triage/status");
+        btn.textContent = s && s.state === "running" ? t("Stop sweep") : t("Start sweep");
+      } catch (e) { /* leave the default label */ }
     }
 
-    // Source-tag assignment real run (design entry + GO ruling, maintainer 2026-07-20): same
-    // chassis as runKeywordTriage above.
-    async function runSourceTags(btn) {
+    // Source-tag assignment progressive sweep (design entry + GO ruling, maintainer
+    // 2026-07-20; B5 2026-07-24 Session B): the same toggle chassis as keyword triage above.
+    async function toggleSourceTags(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("st-status"); const out = $("st-result");
       const set = (m) => { if (el) el.textContent = m; };
       const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const model = (($("st-model") && $("st-model").value) || "").trim();
-      const topN = parseInt(($("st-topn") && $("st-topn").value) || "200", 10) || 200;
-      if (!model) { if (typeof toast === "function") toast(t("Enter an installed Ollama model tag first.")); return; }
       if (btn) btn.disabled = true;
-      if (out) out.innerHTML = "";
-      set(t("Starting…"));
       try {
+        let s0;
+        try { s0 = await api("/api/diagnostics/source-tags/status"); } catch (e) { s0 = {}; }
+        if (s0 && s0.state === "running") {
+          try { await api("/api/diagnostics/source-tags/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
+          set(t("Pausing — progress is saved…"));
+          if (btn) btn.textContent = t("Start sweep");
+          return;
+        }
+        const model = (($("st-model") && $("st-model").value) || "").trim();
+        if (!model) { if (typeof toast === "function") toast(t("Enter an installed model tag first.")); return; }
+        if (out) out.innerHTML = "";
+        set(t("Starting…"));
         try {
-          await api("/api/diagnostics/source-tags/run", {
-            method: "POST", body: JSON.stringify({ model, top_n: topN }),
-          });
+          await api("/api/diagnostics/source-tags/run", { method: "POST", body: JSON.stringify({ model }) });
         } catch (e) {
           set(t("Could not start:") + " " + ((e && e.message) || t("check the model is installed.")));
           return;
         }
+        if (btn) btn.textContent = t("Stop sweep");
         let miss = 0;
         for (let i = 0; i < 5400; i++) {
           let s;
@@ -11798,15 +11820,15 @@
             if (miss > 30) { set(t("Still running — check the task manager.")); break; }
             continue;
           }
-          const state = s && s.state;
-          // Same wrinkle as runKeywordTriage: an Ollama outage mid-run does not raise --
-          // the job catches it and completes with state:'done' but result.state:'error'.
-          const runState = (s.result && s.result.state) || state;
-          if (runState === "error") { set(t("Source-tag run failed:") + " " + ((s.result && s.result.error) || s.error || t("unknown error"))); renderSourceTagsResult(out, s); break; }
-          if (state === "done" && s.ready) { set(t("Done.")); renderSourceTagsResult(out, s); break; }
-          if (state === "cancelled" || runState === "cancelled") { set(t("Source-tag run cancelled.")); renderSourceTagsResult(out, s); break; }
+          if (s && s.state === "done") {
+            const res = s.result || {};
+            set(res.complete ? t("Done — sweep complete.") : (res.paused_reason || t("Paused.")));
+            renderSourceTagsResult(out, s);
+            if (btn) btn.textContent = t("Start sweep");
+            break;
+          }
           const detail = s.detail ? " · " + s.detail : "";
-          set(t("Running in the background…") + detail);
+          set(t("Sweeping…") + detail);
           await sleep(2000);
         }
       } finally {
@@ -11819,8 +11841,9 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const res = (status && status.result) || {};
       const totals = res.totals || {};
-      out.innerHTML = esc(res.state || "") + " — " + esc(res.batches_completed || 0) + "/"
-        + esc(res.batches_total || 0) + " batches, " + esc(totals.assigned_count || 0) + " tagged, "
+      const label = res.complete ? t("sweep complete") : (res.paused_reason ? t("paused") : "");
+      out.innerHTML = esc(label) + " — " + esc(res.batches_completed || 0) + " batches, "
+        + esc(totals.assigned_count || 0) + " tagged, "
         + esc(totals.none_count || 0) + " none, " + esc(res.skipped_evidence_floor || 0)
         + " skipped (evidence floor), canaries " + (res.canary_ok_overall === false ? "FAILED" : "ok")
         + '<div style="margin-top:4px"><a href="/api/diagnostics/source-tags/download" target="_blank">'
@@ -11828,10 +11851,13 @@
         + esc(t("proposed tags are logged only, never applied to Source.tags")) + "</div>";
     }
 
-    async function cancelSourceTags() {
+    async function syncSourceTagsToggle() {
+      const btn = $("st-toggle-btn"); if (!btn) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      try { await api("/api/diagnostics/source-tags/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
-      const el = $("st-status"); if (el) el.textContent = t("Cancelling…");
+      try {
+        const s = await api("/api/diagnostics/source-tags/status");
+        btn.textContent = s && s.state === "running" ? t("Stop sweep") : t("Start sweep");
+      } catch (e) { /* leave the default label */ }
     }
 
     // IR retrieval-eval over a human-judged gold set (keyword-engine P3): open the

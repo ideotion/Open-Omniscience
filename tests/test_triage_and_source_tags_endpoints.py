@@ -12,7 +12,16 @@ import pytest
 from fastapi import HTTPException
 
 from src.api import diagnostics as d
+from src.llm import backend as llm_backend
 from src.llm.ollama import LLMUnavailable
+
+
+def _fake_client(list_installed):
+    """A tiny stand-in with just the `list_installed` method the run endpoints
+    call through the backend seam -- returned wrapped as ("ollama", client) so
+    monkeypatching llm_backend.get_client_with_name works regardless of which
+    backend name the test cares about (these tests never touch generate())."""
+    return type("C", (), {"list_installed": list_installed})()
 
 
 def _reset(job):
@@ -40,8 +49,9 @@ def test_keyword_triage_run_starts_under_airplane_mode_with_loopback_ollama(monk
     exercised -- the stub client makes no socket call at all, loopback or not)."""
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: True)
     monkeypatch.setattr(
-        "src.llm.ollama.OllamaClient",
-        lambda *a, **kw: type("C", (), {"list_installed": lambda self: ["granite4:micro"]})(),
+        llm_backend,
+        "get_client_with_name",
+        lambda *a, **kw: ("ollama", _fake_client(lambda self: ["granite4:micro"])),
     )
     started_kwargs: dict = {}
     monkeypatch.setattr(
@@ -71,8 +81,9 @@ def test_keyword_triage_run_still_refuses_when_ollama_is_genuinely_unavailable(m
         )
 
     monkeypatch.setattr(
-        "src.llm.ollama.OllamaClient",
-        lambda *a, **kw: type("C", (), {"list_installed": _raise_unavailable})(),
+        llm_backend,
+        "get_client_with_name",
+        lambda *a, **kw: ("ollama", _fake_client(_raise_unavailable)),
     )
     body = d.KeywordTriageRunBody(model="stub:test")
     with pytest.raises(HTTPException) as ei:
@@ -83,8 +94,9 @@ def test_keyword_triage_run_still_refuses_when_ollama_is_genuinely_unavailable(m
 def test_keyword_triage_run_refuses_an_uninstalled_model(monkeypatch):
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
     monkeypatch.setattr(
-        "src.llm.ollama.OllamaClient",
-        lambda *a, **kw: type("C", (), {"list_installed": lambda self: ["granite4:micro"]})(),
+        llm_backend,
+        "get_client_with_name",
+        lambda *a, **kw: ("ollama", _fake_client(lambda self: ["granite4:micro"])),
     )
     body = d.KeywordTriageRunBody(model="not-installed:tag")
     with pytest.raises(HTTPException) as ei:
@@ -117,8 +129,9 @@ def test_source_tags_run_starts_under_airplane_mode_with_loopback_ollama(monkeyp
     so the endpoint's own blanket refusal is gone."""
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: True)
     monkeypatch.setattr(
-        "src.llm.ollama.OllamaClient",
-        lambda *a, **kw: type("C", (), {"list_installed": lambda self: ["granite4:micro"]})(),
+        llm_backend,
+        "get_client_with_name",
+        lambda *a, **kw: ("ollama", _fake_client(lambda self: ["granite4:micro"])),
     )
     started_kwargs: dict = {}
     monkeypatch.setattr(
@@ -143,8 +156,9 @@ def test_source_tags_run_still_refuses_when_ollama_is_genuinely_unavailable(monk
         raise LLMUnavailable("Network is OFF (airplane mode): refusing the Ollama request.")
 
     monkeypatch.setattr(
-        "src.llm.ollama.OllamaClient",
-        lambda *a, **kw: type("C", (), {"list_installed": _raise_unavailable})(),
+        llm_backend,
+        "get_client_with_name",
+        lambda *a, **kw: ("ollama", _fake_client(_raise_unavailable)),
     )
     body = d.SourceTagsRunBody(model="stub:test")
     with pytest.raises(HTTPException) as ei:
@@ -155,8 +169,9 @@ def test_source_tags_run_still_refuses_when_ollama_is_genuinely_unavailable(monk
 def test_source_tags_run_refuses_an_uninstalled_model(monkeypatch):
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
     monkeypatch.setattr(
-        "src.llm.ollama.OllamaClient",
-        lambda *a, **kw: type("C", (), {"list_installed": lambda self: ["granite4:micro"]})(),
+        llm_backend,
+        "get_client_with_name",
+        lambda *a, **kw: ("ollama", _fake_client(lambda self: ["granite4:micro"])),
     )
     body = d.SourceTagsRunBody(model="not-installed:tag")
     with pytest.raises(HTTPException) as ei:
@@ -189,15 +204,20 @@ def test_source_tags_selftest_endpoint_passes():
     assert body["passed"] is True
 
 
-def test_keyword_triage_job_status_stays_done_while_result_state_is_error(monkeypatch, tmp_path):
-    """KNOWN WRINKLE (documented, not fixed at the BackgroundJob layer): a worker
-    that catches an exception and returns normally -- as ``run_keyword_triage_job``
-    does for an Ollama outage mid-run, per its own honesty contract -- leaves
-    ``BackgroundJob._state`` at 'done'; only the run's own ``result.state`` says
-    'error'. The panel JS checks ``result.state`` first (see runKeywordTriage in
-    app.js) specifically because of this. This test exercises the REAL
-    ``BackgroundJob.start()`` (a thread, joined) to prove the wiring an operator
-    actually hits, not just the worker function in isolation."""
+def test_keyword_triage_job_status_reports_a_paused_progressive_sweep_on_an_outage(
+    monkeypatch, tmp_path
+):
+    """B5 (2026-07-24 Session B): the progressive sweep's honest OUTAGE outcome is
+    ``complete: False`` + a ``paused_reason`` naming it -- never a fabricated
+    completion, and (unlike the old one-shot job) never an 'error' state either,
+    since the whole point of a progressive sweep is that a local-model hiccup
+    PAUSES it (resumable) rather than terminating the run. The BackgroundJob LAYER
+    itself still reaches 'done' (the worker caught the exception and returned
+    normally). This test exercises the REAL ``BackgroundJob.start()`` (a thread,
+    joined) to prove the wiring an operator actually hits, not just the worker
+    function in isolation; the outage client is passed directly via the ``client``
+    kwarg (the same seam ``run_progressive_triage_job`` exposes for tests) rather
+    than monkeypatching ``OllamaClient`` globally."""
     from contextlib import contextmanager
 
     from sqlalchemy import create_engine
@@ -237,13 +257,14 @@ def test_keyword_triage_job_status_stays_done_while_result_state_is_error(monkey
 
     monkeypatch.setattr("src.database.session.session_scope", fake_scope)
     monkeypatch.setattr("src.ai_layer.triage_job._triage_dir", lambda: tmp_path)
-    monkeypatch.setattr("src.llm.ollama.OllamaClient", lambda *a, **kw: RaisingClient())
 
-    d._KEYWORD_TRIAGE_JOB.start(model="stub:test", limit=10, min_articles=0, batch_size=5)
+    d._KEYWORD_TRIAGE_JOB.start(
+        model="stub:test", min_articles=0, batch_size=5, client=RaisingClient()
+    )
     d._KEYWORD_TRIAGE_JOB._thread.join(5)
 
     st = d.keyword_triage_status()
     body = json.loads(bytes(st.body))
     assert body["state"] == "done"  # the BackgroundJob layer: no exception escaped
-    assert body["result"]["state"] == "error"  # the ACTUAL run outcome
-    assert "simulated outage" in body["result"]["error"]
+    assert body["result"]["complete"] is False  # the ACTUAL run outcome: paused, resumable
+    assert "simulated outage" in body["result"]["paused_reason"]

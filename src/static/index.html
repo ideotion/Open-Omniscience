@@ -1783,35 +1783,34 @@
         </div>
         <div id="psb-result" class="small" style="margin-top:6px"></div>
       </div>
-      <!-- KEYWORD-TRIAGE real run (Section 8, ruled 2026-07-20): the batch runner + parser +
-           canaries + EXPORT-ONLY JSONL already existed; this wires the REAL run over your
-           live corpus as a background job. NEVER writes the trusted keyword index -- a
-           Claude session verifies the dated log before anything is applied. Un-keyed English
-           (matches this diagnostics panel). Browser-unverified per fork-3. -->
+      <!-- KEYWORD-TRIAGE progressive sweep (Section 8, ruled 2026-07-20; B5 2026-07-24
+           Session B: the numeric limit/batch-size inputs are GONE -- an ON/OFF TOGGLE now
+           drives a progressive sweep across ALL head-scope keywords, resumable across a
+           cancel or an app restart via a persisted cursor). NEVER writes the trusted
+           keyword index -- a Claude session verifies the dated log before anything is
+           applied. Un-keyed English (matches this diagnostics panel). Browser-unverified
+           per fork-3. -->
       <div id="keyword-triage-box" style="margin-top:10px">
-        <div class="small" style="font-weight:600">Keyword triage -- real run (Section 8)</div>
-        <div class="hint">Sends your corpus's top keywords, in bounded batches, to a local Ollama model for a junk/content verdict + kind (person/org/place/other) -- canaries + echo-back validation on every batch. EXPORT-ONLY: writes a dated JSONL log, never the trusted keyword index. A Claude session verifies a sample before any stoplist/kind-override PR. Requires Ollama running with the model already pulled (airplane mode off).</div>
+        <div class="small" style="font-weight:600">Keyword triage -- progressive sweep (Section 8)</div>
+        <div class="hint">Sweeps EVERY head-scope keyword, in bounded batches, through the active local model for a junk/content verdict + kind (person/org/place/other) -- canaries + echo-back validation on every batch. EXPORT-ONLY: appends a dated JSONL log, never the trusted keyword index. A Claude session verifies a sample before any stoplist/kind-override PR. Toggle ON to start (or resume) the sweep; toggle OFF pauses it -- progress is saved either way, so turning it back on continues instead of starting over.</div>
         <div class="row" style="margin-top:6px">
-          <input id="kt-model" type="text" style="width:200px" placeholder="ollama model tag (e.g. granite4:micro)">
-          <input id="kt-limit" type="number" style="width:100px" value="500" min="1" title="how many head-scope keywords to triage">
-          <button id="kt-run-btn" onclick="runKeywordTriage(this)" title="Start the real keyword-triage run as a background job: batches the head-scope keywords through your local Ollama model, canaries + echo-back validation on every batch, appends an export-only JSONL log. Never writes the trusted keyword index.">Run keyword triage</button>
-          <button class="secondary" onclick="cancelKeywordTriage()" title="Stop at the next safe point (between batches); the partial log is honestly marked cancelled.">Cancel</button>
+          <input id="kt-model" type="text" style="width:200px" placeholder="model tag (e.g. granite4:micro)">
+          <button id="kt-toggle-btn" onclick="toggleKeywordTriage(this)" title="Toggle the progressive keyword-triage sweep on/off. ON starts (or resumes from the saved cursor) a run across ALL head-scope keywords; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues.">Start sweep</button>
           <span id="kt-status" class="small" style="margin-left:6px"></span>
         </div>
         <div id="kt-result" class="small" style="margin-top:6px"></div>
       </div>
-      <!-- SOURCE-TAG assignment real run (design entry + GO ruling, maintainer 2026-07-20 --
-           same chassis as the keyword-triage run above): per-source top keywords -> closed-
-           vocabulary tag classification. EXPORT-ONLY -- never writes Source.tags. Un-keyed
-           English (matches this diagnostics panel). Browser-unverified per fork-3. -->
+      <!-- SOURCE-TAG progressive sweep (design entry + GO ruling, maintainer 2026-07-20;
+           B5 2026-07-24 Session B: same toggle treatment as keyword triage above) --
+           per-source top keywords -> closed-vocabulary tag classification. EXPORT-ONLY --
+           never writes Source.tags. Un-keyed English (matches this diagnostics panel).
+           Browser-unverified per fork-3. -->
       <div id="source-tags-box" style="margin-top:10px">
-        <div class="small" style="font-weight:600">Source-tag assignment -- real run</div>
-        <div class="hint">For each source with enough evidence, sends its top keywords to the local Ollama model, which picks ONLY from your corpus's existing tag vocabulary (or 'none') -- canaries + echo-back + closed-vocabulary rejection on every batch. A source below the evidence floor is skipped, never guessed. EXPORT-ONLY: writes a dated JSONL log; Source.tags is never touched by this run. A Claude session verifies a sample before any reviewed apply batch.</div>
+        <div class="small" style="font-weight:600">Source-tag assignment -- progressive sweep</div>
+        <div class="hint">Sweeps EVERY source with sufficient evidence, sending its top keywords to the active local model, which picks ONLY from your corpus's existing tag vocabulary (or 'none') -- canaries + echo-back + closed-vocabulary rejection on every batch. A source below the evidence floor is skipped, never guessed. EXPORT-ONLY: appends a dated JSONL log; Source.tags is never touched. Toggle ON to start (or resume) the sweep; toggle OFF pauses it -- progress is saved either way.</div>
         <div class="row" style="margin-top:6px">
-          <input id="st-model" type="text" style="width:200px" placeholder="ollama model tag (e.g. granite4:micro)">
-          <input id="st-topn" type="number" style="width:100px" value="200" min="1" title="top-N post-stoplist terms per source">
-          <button id="st-run-btn" onclick="runSourceTags(this)" title="Start the real source-tag-assignment run as a background job: per-source top terms through your local Ollama model, closed-vocabulary + evidence-floor + canaries, appends an export-only JSONL log. Never writes Source.tags.">Run source-tag assignment</button>
-          <button class="secondary" onclick="cancelSourceTags()" title="Stop at the next safe point (between batches); the partial log is honestly marked cancelled.">Cancel</button>
+          <input id="st-model" type="text" style="width:200px" placeholder="model tag (e.g. granite4:micro)">
+          <button id="st-toggle-btn" onclick="toggleSourceTags(this)" title="Toggle the progressive source-tag sweep on/off. ON starts (or resumes from the saved cursor) a run across every source with sufficient evidence; OFF pauses it at the next safe point between pages -- the partial log and cursor are kept, so toggling ON again continues.">Start sweep</button>
           <span id="st-status" class="small" style="margin-left:6px"></span>
         </div>
         <div id="st-result" class="small" style="margin-top:6px"></div>

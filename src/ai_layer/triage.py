@@ -90,6 +90,11 @@ class TriageItem:
     article_count: int | None = None
     is_entity: bool | None = None
     snippets: tuple[str, ...] = ()
+    # The Keyword row's own id -- populated ONLY by select_triage_batch_after (B5's
+    # progressive sweep, 2026-07-24 Session B), which needs it as the resumable
+    # keyset-pagination cursor. None from select_triage_head (the one-shot path never
+    # needed it, so it stays an optional, backward-compatible field).
+    keyword_id: int | None = None
 
 
 _TRIAGE_SYSTEM = (
@@ -382,6 +387,72 @@ def select_triage_head(session, limit: int, *, min_articles: int = 1) -> list[Tr
         )
         for r in rows
         if r[0]
+    ]
+
+
+def select_triage_batch_after(
+    session,
+    batch_size: int,
+    *,
+    min_articles: int = 1,
+    after: tuple[int, int, int] | None = None,
+) -> list[TriageItem]:
+    """Keyset-paginated page of the SAME head-scope order ``select_triage_head`` uses
+    (article_count DESC, mention_count DESC), made a STABLE TOTAL ORDER via a
+    ``Keyword.id`` tiebreaker so a page never repeats or skips a row across calls.
+
+    ``after`` is the ``(article_count, mention_count, keyword_id)`` triple of the
+    LAST item the previous call returned; passing it resumes EXACTLY where that call
+    left off. This is the B5 (2026-07-24 Session B) progressive-sweep primitive: its
+    state is the three-tuple cursor, O(1) regardless of how large the sweep grows —
+    unlike an ever-growing exclude-id set, it can never hit SQLite's bound-variable
+    ceiling. An empty return means the head scope (down to ``min_articles``) is
+    exhausted. Read-only, counter-only (no keyword_mentions→articles join)."""
+    from sqlalchemy import and_, or_
+
+    from src.database.models import Keyword
+
+    q = session.query(
+        Keyword.id,
+        Keyword.term,
+        Keyword.language,
+        Keyword.mention_count,
+        Keyword.article_count,
+        Keyword.is_entity,
+    ).filter(Keyword.article_count >= min_articles)
+
+    if after is not None:
+        a_ac, a_mc, a_id = after
+        q = q.filter(
+            or_(
+                Keyword.article_count < a_ac,
+                and_(Keyword.article_count == a_ac, Keyword.mention_count < a_mc),
+                and_(
+                    Keyword.article_count == a_ac,
+                    Keyword.mention_count == a_mc,
+                    Keyword.id < a_id,
+                ),
+            )
+        )
+
+    rows = (
+        q.order_by(
+            Keyword.article_count.desc(), Keyword.mention_count.desc(), Keyword.id.desc()
+        )
+        .limit(max(1, batch_size))
+        .all()
+    )
+    return [
+        TriageItem(
+            term=r[1],
+            language=r[2],
+            mention_count=int(r[3] or 0),
+            article_count=int(r[4] or 0),
+            is_entity=bool(r[5]) if r[5] is not None else None,
+            keyword_id=int(r[0]),
+        )
+        for r in rows
+        if r[1]
     ]
 
 

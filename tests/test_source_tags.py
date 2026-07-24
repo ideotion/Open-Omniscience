@@ -161,7 +161,7 @@ def test_resolve_vocabulary_is_the_live_distinct_tag_set(db):
 
 def test_evidence_floor_skips_a_source_below_min_articles_never_a_guess(db):
     _seed_source_with_articles(db, domain="thin.test", tags=None, n_articles=1)
-    items, skipped = ST.select_source_tag_candidates(db, min_articles=3)
+    items, skipped, _last_domain = ST.select_source_tag_candidates(db, min_articles=3)
     assert items == []
     assert skipped[0].domain == "thin.test"
     assert skipped[0].reason == "insufficient evidence"
@@ -173,7 +173,7 @@ def test_a_source_with_zero_keyword_mentions_is_an_honest_skip_not_a_silent_drop
     src = Source(name="empty.test", domain="empty.test", tags="news")
     db.add(src)
     db.commit()
-    items, skipped = ST.select_source_tag_candidates(db, min_articles=1)
+    items, skipped, _last_domain = ST.select_source_tag_candidates(db, min_articles=1)
     domains_seen = {i.domain for i in items} | {s.domain for s in skipped}
     assert "empty.test" in domains_seen
     assert any(s.domain == "empty.test" and s.reason == "insufficient evidence" for s in skipped)
@@ -181,7 +181,7 @@ def test_a_source_with_zero_keyword_mentions_is_an_honest_skip_not_a_silent_drop
 
 def test_source_with_only_stoplisted_terms_is_skipped_not_sent_as_content(db):
     _seed_source_with_articles(db, domain="junk.test", tags=None, n_articles=5, stopword=True)
-    items, skipped = ST.select_source_tag_candidates(db, min_articles=1)
+    items, skipped, _last_domain = ST.select_source_tag_candidates(db, min_articles=1)
     assert items == []
     assert any(
         s.domain == "junk.test" and s.reason == "no content terms after stoplist" for s in skipped
@@ -192,7 +192,7 @@ def test_a_source_with_real_evidence_is_a_candidate_with_its_top_terms(db):
     _seed_source_with_articles(
         db, domain="ok.test", tags=None, n_articles=5, term="quarterly earnings"
     )
-    items, skipped = ST.select_source_tag_candidates(db, min_articles=3)
+    items, skipped, _last_domain = ST.select_source_tag_candidates(db, min_articles=3)
     assert len(items) == 1
     assert items[0].domain == "ok.test"
     assert "quarterly earnings" in items[0].top_terms
