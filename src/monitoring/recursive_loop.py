@@ -51,6 +51,11 @@ LOOP_SELFTESTS: tuple[tuple[str, str, str], ...] = (
     ("tor-throughput-selftest", "src.ingest.tor_throughput", "run_tor_throughput_selftest"),
     ("kpi-selftest", "src.monitoring.kpi", "run_kpi_selftest"),
     ("prose-gate-selftest", "src.services.prose_gate", "run_prose_gate_selftest"),
+    (
+        "qualification-assist-selftest",
+        "src.ai_layer.qualification_assist",
+        "run_qualification_assist_selftest",
+    ),
 )
 
 

@@ -1739,7 +1739,7 @@
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
       if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
       if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); loadQualifyBulk(); }  // moved Sources onShow (facets feed the multi-select filters #23)
-      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); syncKeywordTriageToggle(); syncSourceTagsToggle(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles
+      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
       if (cat === "keywords") { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration(); }  // Item AC: explore/hide/tag; family + super-group curation relocated here (invariant #8)
       if (cat === "leads") loadLeadsView();           // S12 Leads 2.0 preview: evidence chips + disclosed order (browser-unverified)
       if (cat === "shortcuts") loadShortcuts();       // list + rebind the global keyboard shortcuts (UI-shell §4)
@@ -11856,6 +11856,138 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const s = await api("/api/diagnostics/source-tags/status");
+        btn.textContent = s && s.state === "running" ? t("Stop sweep") : t("Start sweep");
+      } catch (e) { /* leave the default label */ }
+    }
+
+    // Who/where/when PERCEPTION EXTRACTION (B6, 2026-07-24 Session B). Two parts:
+    // (1) a bounded, synchronous run of the S6.5 perception-eval harness against the
+    // ACTIVE model -- the gate evidence the extraction sweep below reads (mirrors
+    // runIrEval's "bounded read-only eval" posture, not a background job); (2) the
+    // progressive extraction sweep itself -- same toggle chassis as
+    // toggleKeywordTriage/toggleSourceTags above.
+    async function runPerceptionEvalLive(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("pel-status"); const out = $("pel-result");
+      if (btn) btn.disabled = true;
+      if (el) el.textContent = t("Running…");
+      try {
+        const res = await api("/api/diagnostics/perception-eval-live", { method: "POST", body: JSON.stringify({}) });
+        if (el) el.textContent = "";
+        renderPerceptionEvalResult(out, res);
+        loadPerceptionGate();
+      } catch (e) {
+        if (el) el.textContent = t("Could not run:") + " " + ((e && e.message) || "");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function renderPerceptionEvalResult(out, res) {
+      if (!out) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!res || res.status !== "ok") {
+        out.textContent = t("unavailable") + (res && res.detail ? " — " + res.detail : "");
+        return;
+      }
+      const r = res.report || {};
+      out.textContent = t("model") + " " + (res.model || "?") + " " + t("on") + " " + (res.backend || "?")
+        + " — " + (r.n_cases || 0) + " " + t("gold cases scored.");
+    }
+
+    // The language gate (B6): which languages cleared the last live perception-eval
+    // run, and why not for the rest. Read-only, cheap (pure over the last saved
+    // report) -- the standing "gate bites" ruling: the toggle UI shows which strata
+    // are active and why, even before the toggle is ever clicked.
+    async function loadPerceptionGate() {
+      const out = $("pe-gate-result"); if (!out) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const g = await api("/api/diagnostics/perception-extract/gate");
+        const active = Object.keys(g).filter((l) => g[l] && g[l].active).sort();
+        const disabled = Object.keys(g).filter((l) => g[l] && !g[l].active).sort();
+        let html = "<b>" + t("Active languages:") + "</b> "
+          + (active.length ? esc(active.join(", ")) : t("none yet — run the harness above"));
+        if (disabled.length) {
+          html += "<br><b>" + t("Disabled:") + "</b> "
+            + disabled.map((l) => esc(l) + " (" + esc(g[l].reason || "") + ")").join("; ");
+        }
+        out.innerHTML = html;
+      } catch (e) { out.textContent = ""; }
+    }
+
+    async function togglePerceptionExtract(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("pe-status"); const out = $("pe-result");
+      const set = (m) => { if (el) el.textContent = m; };
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      if (btn) btn.disabled = true;
+      try {
+        let s0;
+        try { s0 = await api("/api/diagnostics/perception-extract/status"); } catch (e) { s0 = {}; }
+        if (s0 && s0.state === "running") {
+          try { await api("/api/diagnostics/perception-extract/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
+          set(t("Pausing — progress is saved…"));
+          if (btn) btn.textContent = t("Start sweep");
+          return;
+        }
+        const model = (($("pe-model") && $("pe-model").value) || "").trim();
+        if (!model) { if (typeof toast === "function") toast(t("Enter an installed model tag first.")); return; }
+        if (out) out.innerHTML = "";
+        set(t("Starting…"));
+        try {
+          await api("/api/diagnostics/perception-extract/run", { method: "POST", body: JSON.stringify({ model }) });
+        } catch (e) {
+          set(t("Could not start:") + " " + ((e && e.message) || t("check the model is installed.")));
+          return;
+        }
+        if (btn) btn.textContent = t("Stop sweep");
+        let miss = 0;
+        for (let i = 0; i < 5400; i++) {
+          let s;
+          try { s = await api("/api/diagnostics/perception-extract/status"); miss = 0; }
+          catch (e) {
+            miss++;
+            set(t("Connection hiccup — retrying…"));
+            await sleep(Math.min(2000 * miss, 10000));
+            if (miss > 30) { set(t("Still running — check the task manager.")); break; }
+            continue;
+          }
+          if (s && s.state === "done") {
+            const res = s.result || {};
+            set(res.complete ? t("Done — sweep complete.") : (res.paused_reason || t("Paused.")));
+            renderPerceptionExtractResult(out, s);
+            if (btn) btn.textContent = t("Start sweep");
+            break;
+          }
+          const detail = s.detail ? " · " + s.detail : "";
+          set(t("Sweeping…") + detail);
+          await sleep(2000);
+        }
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    function renderPerceptionExtractResult(out, status) {
+      if (!out) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const res = (status && status.result) || {};
+      const totals = res.totals || {};
+      const label = res.complete ? t("sweep complete") : (res.paused_reason ? t("paused") : "");
+      out.innerHTML = esc(label) + " — " + esc(res.batches_completed || 0) + " batches, "
+        + esc(totals.stored || 0) + " articles extracted (" + esc(totals.who || 0) + " who, "
+        + esc(totals.where || 0) + " where, " + esc(totals.when || 0) + " when), "
+        + esc(totals.gated || 0) + " gated, " + esc(totals.skipped_existing || 0) + " already done"
+        + '<div style="margin-top:4px"><a href="/api/diagnostics/perception-extract/download" target="_blank">'
+        + t("Download report (.json)").replace(".json", ".jsonl") + "</a></div>";
+    }
+
+    async function syncPerceptionExtractToggle() {
+      const btn = $("pe-toggle-btn"); if (!btn) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const s = await api("/api/diagnostics/perception-extract/status");
         btn.textContent = s && s.state === "running" ? t("Stop sweep") : t("Start sweep");
       } catch (e) { /* leave the default label */ }
     }

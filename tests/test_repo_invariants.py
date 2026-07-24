@@ -986,6 +986,79 @@ def test_triage_and_source_tags_are_progressive_toggles_not_numeric_one_shots():
     assert "top_n: int = Field" not in diag.split("class SourceTagsRunBody")[1].split("class ")[0]
 
 
+def test_perception_extraction_is_eval_gated_and_never_touches_the_trusted_tables():
+    """2026-07-24 field-feedback Session B (B6, the NEW ask -- "AI-augmented article
+    metadata extraction"). The standing LLM-PERCEPTION ruling applies unchanged: a
+    live harness run gates which languages may extract, and every write lands ONLY
+    in ai_keyword (kinds ai-who/ai-place/ai-date) -- never the trusted rule-based
+    article_mentioned_dates/_places/article_entities tables, and never an ai-event
+    kind (the standing ruling excludes "what"/events from LLM-perception scope)."""
+    core = (_SRC / "ai_layer" / "perception_extract.py").read_text(encoding="utf-8")
+    assert "def gate_languages_from_report(" in core and "def language_gate(" in core
+    assert "MAX_HALLUCINATION_RATE" in core
+    assert '"ai-who"' in core and '"ai-place"' in core and '"ai-date"' in core
+    assert '"ai-event"' not in core and '"ai-person"' not in core and '"ai-org"' not in core, (
+        "WHO stays ONE combined kind (persons AND orgs) -- splitting it would fabricate "
+        "a distinction the extraction never determined; ai-event is out of scope"
+    )
+    # the trusted rule-based tables are never referenced by the extraction core/job.
+    job = (_SRC / "ai_layer" / "perception_extract_job.py").read_text(encoding="utf-8")
+    for forbidden in ("ArticleMentionedDate", "ArticleMentionedPlace", "ArticleEntity"):
+        assert forbidden not in core, f"{forbidden} must never appear in perception_extract.py"
+        assert forbidden not in job, f"{forbidden} must never appear in perception_extract_job.py"
+
+    assert "def run_progressive_perception_extract_job(" in job and "def load_progress_state(" in job
+    assert "def current_language_gate(" in job, (
+        "the toggle UI must be able to preview which strata are active and why "
+        "without starting a sweep (the standing 'gate bites' ruling)"
+    )
+
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert "class PerceptionExtractRunBody" in diag
+    assert '@router.post("/perception-extract/run")' in diag
+    assert '@router.get("/perception-extract/gate")' in diag
+    assert "run_progressive_perception_extract_job" in diag
+
+    html = _ui_source()
+    assert 'id="pe-toggle-btn"' in html, "the extraction sweep must be a toggle, matching B5's convention"
+
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "async function togglePerceptionExtract(" in app
+    assert "syncPerceptionExtractToggle" in app and "loadPerceptionGate" in app, (
+        "the toggle + the language-gate preview must both refresh when the AI subtab opens"
+    )
+    assert "async function runPerceptionEvalLive(" in app, (
+        "the harness-against-the-active-model run must be triggerable in-app, not curl-only"
+    )
+
+
+def test_ai_diagnostics_member_and_qualification_assist_are_wired():
+    """2026-07-24 field-feedback Session B (B7). (1) an `ai` diagnostics member
+    rides the all-diagnostics bundle: backend/hardware facts, active model,
+    context settings, and every AI job's last saved summary -- secret-safe,
+    read-only. (2) qualification-assist is a PROPOSE-ONLY LLM pass over a
+    source's stored (trial-fetch) articles -- never touches Source.status/tags,
+    composes with the qualification lifecycle + the prose gate as an
+    additional signal, never a replacement for the deterministic auditor."""
+    ai_diag = (_SRC / "monitoring" / "ai_diagnostics.py").read_text(encoding="utf-8")
+    assert "def ai_diagnostics_report(" in ai_diag
+
+    qa = (_SRC / "ai_layer" / "qualification_assist.py").read_text(encoding="utf-8")
+    assert "def propose_qualification_flags(" in qa and "def check_canaries(" in qa
+    # a MUTATION check, not a bare substring (the module's own docstring names
+    # Source.status/Source.tags in prose describing what it must never touch).
+    assert ".status = " not in qa and ".tags = " not in qa, (
+        "qualification-assist must never ASSIGN Source.status/Source.tags"
+    )
+    assert "def run_and_persist_qualification_assist(" in qa
+
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert '@router.get("/ai")' in diag
+    assert '@router.post("/qualification-assist/run")' in diag
+    assert '@router.get("/qualification-assist/last")' in diag
+    assert "class QualificationAssistBody" in diag
+
+
 def test_advanced_search_language_is_a_flag_dropdown():
     """Maintainer field test 2026-06-20: the Advanced-search language field is a <select>
     of full language names with flags (built from LANGS_12 in JS), not a free-text input."""

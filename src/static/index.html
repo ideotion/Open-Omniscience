@@ -1815,6 +1815,32 @@
         </div>
         <div id="st-result" class="small" style="margin-top:6px"></div>
       </div>
+      <!-- PERCEPTION EXTRACTION -- who/where/when as AI-derived candidates (B6,
+           2026-07-24 Session B, ruled -- "AI-augmented article metadata extraction").
+           EVAL-GATED: a live run of the S6.5 perception-eval harness against the
+           active model is the required gate evidence BEFORE extraction runs for a
+           language; a language that fails it (hallucination above the stated floor,
+           or never tested at all) ships DISABLED, surfaced below with why. NEVER
+           writes the trusted article_mentioned_dates/_places/article_entities tables
+           -- EXPORT-ONLY ai_keyword candidates (kinds ai-who/ai-place/ai-date),
+           "AI-derived - unreliable". Un-keyed English (matches this diagnostics
+           panel). Browser-unverified per fork-3. -->
+      <div id="perception-extract-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">Who / where / when extraction (AI-derived candidates)</div>
+        <div class="hint">Extracts who (persons/organisations), where, and when from each article's text via the active local model -- stored ONLY as labelled "AI-derived · unreliable" candidates, never the trusted rule-based extractors. GATED by a live run of the perception-eval harness against the active model: a language that fails it (too much hallucination, or never tested) is skipped, shown below with why. Toggle ON to start (or resume) the sweep; toggle OFF pauses it -- progress is saved either way.</div>
+        <div class="row" style="margin-top:6px">
+          <button onclick="runPerceptionEvalLive(this)" title="Run the S6.5 perception-eval harness against the currently active model -- the gate evidence this extraction sweep uses to decide which languages are safe to extract. Bounded (a small synthetic gold set); read-only, no writes.">Run perception-eval harness</button>
+          <span id="pel-status" class="small" style="margin-left:6px"></span>
+        </div>
+        <div id="pel-result" class="small" style="margin-top:6px"></div>
+        <div id="pe-gate-result" class="small" style="margin-top:6px"></div>
+        <div class="row" style="margin-top:6px">
+          <input id="pe-model" type="text" style="width:200px" placeholder="model tag (e.g. granite4:micro)">
+          <button id="pe-toggle-btn" onclick="togglePerceptionExtract(this)" title="Toggle the progressive who/where/when extraction sweep on/off. ON starts (or resumes from the saved cursor) a run across every article whose language cleared the perception-eval harness; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues.">Start sweep</button>
+          <span id="pe-status" class="small" style="margin-left:6px"></span>
+        </div>
+        <div id="pe-result" class="small" style="margin-top:6px"></div>
+      </div>
       <div class="row" style="margin-top:6px">
         <button id="all-diag-btn" onclick="runAllDiagnostics(this)" title="Every diagnostics log in one archive — one click instead of nine. Runs as a BACKGROUND job (so it never freezes the app on a large corpus, unlike the old synchronous build), shows live progress, and downloads when ready. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).">All diagnostics (.zip)</button>
         <span id="all-diag-status" class="small" style="margin-left:6px"></span>
