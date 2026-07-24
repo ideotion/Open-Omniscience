@@ -19,7 +19,9 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from datetime import UTC, datetime
 
+from sqlalchemy import insert
 from sqlalchemy.orm import Session
 
 from src.analytics.baseline import baseline_tags
@@ -306,9 +308,17 @@ def index_article(
     # retroactively because index_article replaces an article's mentions).
     self_forms = _self_name_forms(getattr(article, "source", None))
 
+    # C13 (2026-07-24 throughput brief, A3): resolve every kept term's keyword
+    # id first (get-or-create, UNCHANGED — same lookups, same KeywordTag/
+    # entity-upgrade semantics as before), then write every mention row in ONE
+    # bulk Core INSERT below instead of N individually ORM-tracked adds. The
+    # counter accounting (new_contrib) is byte-identical to the pre-C13 loop;
+    # only HOW the rows reach the DB changes.
     written = 0
     self_suppressed = 0
     new_contrib: dict[int, int] = {}
+    mention_rows: list[dict] = []
+    mentions_created_at = datetime.now(UTC)
     for t in terms:
         # Case-insensitive: _self_name_forms is casefolded, but the entity
         # detector keeps acronyms UPPERCASE (2026-06-16 ruling), so a source
@@ -321,24 +331,32 @@ def index_article(
         kw = _get_or_create_keyword(
             session, t, language=known_lang, extractor=extractor.name
         )
-        session.add(
-            KeywordMention(
-                keyword_id=kw.id,
-                article_id=article.id,
-                count=t.count,
-                first_offset=t.first_offset,
-                observed_on=observed_on,
-                country=cc,
-                city=city,
-                source_id=article.source_id,  # denormalised (like observed_on/country)
-                extractor=extractor.name,
-            )
+        mention_rows.append(
+            {
+                "keyword_id": kw.id,
+                "article_id": article.id,
+                "count": t.count,
+                "first_offset": t.first_offset,
+                "observed_on": observed_on,
+                "country": cc,
+                "city": city,
+                "source_id": article.source_id,  # denormalised (like observed_on/country)
+                "extractor": extractor.name,
+                "created_at": mentions_created_at,
+            }
         )
         # One mention row per (keyword, article): accumulate the new occurrence
         # count so article_count moves by exactly +/-1 per keyword (see
         # _apply_keyword_counter_deltas).
         new_contrib[kw.id] = new_contrib.get(kw.id, 0) + int(t.count)
         written += 1
+
+    if mention_rows:
+        # An ORM-enabled bulk INSERT (SQLAlchemy 2.0) -- the write-gate's
+        # do_orm_execute listener already covers this exact pattern (it fires
+        # for session.execute(insert()/update()/delete()), the same hook that
+        # already protects index_article's KeywordMention bulk .delete() above).
+        session.execute(insert(KeywordMention), mention_rows)
 
     # Keep the denormalised counters exact for THIS article's net change.
     _apply_keyword_counter_deltas(session, old_contrib, new_contrib)
