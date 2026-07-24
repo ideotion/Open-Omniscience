@@ -20,7 +20,8 @@ The SERVER-SIDE knobs are now wired to the active profile (``OO_POWER_PROFILE``,
 ``optimized`` → byte-identical to today): each consumer reads a resolver — ``sqlite_cache_mb()``
 (per connection), ``pass_budget_minutes()`` (per pass, LIVE), ``rollup_serve_ttl_s()`` (per serve,
 LIVE), ``dump_concurrency()`` (per manager), ``fts_analysis_limit()`` (per optimize, LIVE),
-``qualification_batch_size()`` (per bulk-job call, LIVE; 2026-07-24 throughput brief C5) — that
+``qualification_batch_size()`` (per bulk-job call, LIVE; 2026-07-24 throughput brief C5),
+``http_pool_size()`` (per fetcher construction; C9) — that
 returns its ``OO_*`` override if set, else the active profile's value. The three SETTING-backed
 knobs (``collect_parallelism``, ``llm_keep_alive``, ``qualification_per_pass``) are applied via
 the settings-write path, not the read site (the stored value is the user's explicit choice);
@@ -65,7 +66,9 @@ class Knob:
 
 # The registry. Each row's ``optimized`` is the CURRENT default verified against the tree:
 #   sqlite_cache_mb   -> OO_SQLITE_CACHE_MB default 64  (session.py / scale_bench.py)
-#   collect_parallelism -> AppSettings.collect_parallelism default 1 (runner.py:714)
+#   collect_parallelism -> SchedulerSettings.collect_parallelism default 50 (scheduler/settings.py:65
+#     -- RAISED from 1 by the 2026-07-23 maintainer ruling, superseding this row's earlier stale
+#     optimized=1; see C9's cross-check test that this stays truthful against the live default)
 #   pass_budget_minutes -> OO_PASS_BUDGET_MINUTES default 60 (runner.py:79)
 #   rollup_serve_ttl_s  -> OO_COLUMNAR_SERVE_TTL_S default 900 (rollup_serve.py:77)
 #   dump_concurrency    -> OO_DUMP_CONCURRENCY default 3 (wiki/dumps.py:37)
@@ -84,9 +87,14 @@ PUBLISHED_KNOBS: tuple[Knob, ...] = (
          note="SQLite page cache; mmap is unavailable under the SQLCipher codec, so this is the "
               "in-memory read lever."),
     Knob("collect_parallelism", "", "collect_parallelism", "workers", "network",
-         low=1, optimized=1, max=8,
-         note="Bounded fetch worker pool; more workers = more concurrent Tor circuits. Per-host "
-              "politeness is unaffected (it lives in the host lock)."),
+         low=10, optimized=50, max=50,
+         note="Bounded fetch worker pool -- the hard CEILING on concurrent fetches (the "
+              "BandwidthGovernor's own runtime CPU/memory/writer-contention backoff, kept "
+              "EXACTLY as-is on small boxes, still applies underneath this static ceiling). "
+              "More workers = more concurrent Tor circuits; per-host politeness is unaffected "
+              "(it lives in the host lock). Max stays AT the maintainer-set hard ceiling "
+              "(SchedulerSettings._MAX_PARALLELISM=50, ruled 2026-07-23) rather than an "
+              "independently invented higher number -- raising it is a separate ruling."),
     Knob("pass_budget_minutes", "OO_PASS_BUDGET_MINUTES", "", "minutes", "cpu",
          low=30, optimized=60, max=180,
          note="Wall-clock budget for one collection pass before it yields."),
@@ -98,6 +106,12 @@ PUBLISHED_KNOBS: tuple[Knob, ...] = (
          low=1, optimized=3, max=6,
          note="Concurrent wiki/OSM dump downloads (files, no DB-writer contention); each is its "
               "own circuit."),
+    Knob("http_pool_size", "OO_HTTP_POOL", "", "connections", "network",
+         low=16, optimized=64, max=128,
+         note="Per-fetcher urllib3 connection-pool size (pool_connections=pool_maxsize) -- sized "
+              "generously so ~50 concurrent DISTINCT-host workers (collect_parallelism) don't "
+              "churn host-pools. Read once per EthicalFetcher CONSTRUCTION (next-pass, since a "
+              "fresh fetcher is built every pass)."),
     Knob("llm_keep_alive", "", "llm_keep_alive", "duration", "memory",
          low="0", optimized="30m", max="-1",
          note="Ollama model residency: '0' unloads immediately (frees RAM), '-1' never unloads "
@@ -248,6 +262,14 @@ def dump_concurrency() -> int:
     download manager is CONSTRUCTED, so a profile switch applies to a new manager (the boot
     singleton is next-restart). Per-host politeness is unaffected (it lives in the host lock)."""
     return _resolve_env_int("dump_concurrency", lo=1, hi=64)
+
+
+def http_pool_size() -> int:
+    """urllib3 connection-pool size per fetcher (``OO_HTTP_POOL`` or the active profile). Read
+    when an ``EthicalFetcher`` is CONSTRUCTED (a fresh one every pass — see the C4 module-level
+    note in ``src.ingest``), so a profile switch applies to the NEXT pass. Optimized=64 is
+    byte-identical to the literal it replaces."""
+    return _resolve_env_int("http_pool_size", lo=1, hi=10_000)
 
 
 def qualification_batch_size() -> int:

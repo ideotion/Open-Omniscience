@@ -368,7 +368,12 @@ class EthicalFetcher:
             try:
                 from requests.adapters import HTTPAdapter
 
-                pool_n = max(1, int(os.getenv("OO_HTTP_POOL", "64")))
+                from src.config.power_profiles import http_pool_size
+
+                # C9 (2026-07-24 throughput brief): hardware-aware, via the
+                # OO_HTTP_POOL override or the active power profile (Optimized=64,
+                # byte-identical to the literal this replaces).
+                pool_n = max(1, http_pool_size())
                 adapter = HTTPAdapter(pool_connections=pool_n, pool_maxsize=pool_n)
                 self.session.mount("http://", adapter)
                 self.session.mount("https://", adapter)
