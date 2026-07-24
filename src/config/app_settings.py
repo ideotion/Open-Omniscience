@@ -68,6 +68,12 @@ class AppSettings:
     # The built-in AI-keyword EXTRACTION prompt (Part B) — tunable like the three above;
     # the default (_EXTRACT_SYSTEM) lives in src.ai_layer.extract. "" = use the built-in.
     llm_prompt_ai_keywords: str = ""
+    # AUTO-START language detection (2026-07-24 field-feedback Session A §1, ruled
+    # default-ON): a scheduler ride-along (re)starts the opt-in AI language-detection
+    # job whenever the local model is available and unknown-language candidates exist.
+    # Set False in Settings -> AI to opt out; the manual "Detect languages" button
+    # still works either way.
+    ai_langdetect_auto: bool = True
 
     def __post_init__(self) -> None:
         if self.recipes_disabled is None:
@@ -179,6 +185,10 @@ def load_settings() -> AppSettings:
         v = raw.get(key, "")
         return str(v)[:_MAX_PROMPT_CHARS] if isinstance(v, str) else ""
 
+    ai_langdetect_auto = raw.get("ai_langdetect_auto", defaults.ai_langdetect_auto)
+    if not isinstance(ai_langdetect_auto, bool):
+        ai_langdetect_auto = defaults.ai_langdetect_auto
+
     return AppSettings(
         theme=theme,
         default_result_limit=limit,
@@ -189,6 +199,7 @@ def load_settings() -> AppSettings:
         llm_prompt_translate=_prompt("llm_prompt_translate"),
         llm_prompt_synthesis=_prompt("llm_prompt_synthesis"),
         llm_prompt_ai_keywords=_prompt("llm_prompt_ai_keywords"),
+        ai_langdetect_auto=ai_langdetect_auto,
     )
 
 
@@ -244,6 +255,11 @@ def save_settings(updates: dict) -> AppSettings:
             if len(val) > _MAX_PROMPT_CHARS:
                 raise AppSettingsError(f"{_field} is too long (max {_MAX_PROMPT_CHARS} characters)")
             setattr(current, _field, val.strip())
+    if "ai_langdetect_auto" in updates and updates["ai_langdetect_auto"] is not None:
+        val = updates["ai_langdetect_auto"]
+        if not isinstance(val, bool):
+            raise AppSettingsError("ai_langdetect_auto must be a boolean")
+        current.ai_langdetect_auto = val
 
     _write_raw({"version": SETTINGS_VERSION, **current.to_dict()})
     return current

@@ -5696,7 +5696,15 @@ def test_llm_langdetect_is_optin_labelled_and_never_touches_trusted_channels():
     # the rest of the backlog by re-occupying every batch's query window.
     assert "continuous: bool = False" in api and "exclude_ids=attempted" in api
     assert "exclude_ids" in mod and "Article.id.in_(exclude_ids)" in mod
-    assert 'id="langdetect-continuous"' in ui and "continuous" in ui
+    # 2026-07-24 field-feedback Session A §1: the checkbox is GONE — ONE button now toggles
+    # start <-> stop (never a separate continuous/non-continuous choice in the UI), and a
+    # transient LLMUnavailable mid-run retries with backoff instead of hard-aborting the run
+    # into a benign-looking "done" (the maintainer's exact field report).
+    assert 'id="langdetect-continuous"' not in ui, "the continuous checkbox must be removed"
+    assert "Language detection ongoing" in ui, "the button must toggle to a stop label while running"
+    assert "_LANGDETECT_MAX_CONSECUTIVE_FAILURES" in api, "transient failures must retry, not hard-abort"
+    assert "advance_langdetect_auto_start" in api, "an auto-start ride-along must exist (default ON)"
+    assert "ai_langdetect_auto" in api, "the auto-start must be gated by an operator setting"
 
 
 def test_newsletter_eml_upload_runs_off_the_event_loop():

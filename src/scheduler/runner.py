@@ -1401,6 +1401,21 @@ class BackgroundScheduler:
                     result["ai_auto"] = _auto
             except Exception:  # noqa: BLE001 - never let AI extraction break a scrape
                 _LOG.warning("auto-on-ingest extraction failed", exc_info=True)
+            # AUTO-START language detection (2026-07-24 field-feedback Session A §1, ruled
+            # default-ON): a cheap watchdog that (re)starts the CONTINUOUS AI language-
+            # detection job whenever it is idle, the local model is available, and unknown-
+            # language candidates exist -- opt-out via AppSettings.ai_langdetect_auto. The
+            # job itself is loopback Ollama inference (airplane-safe, §7) running on its own
+            # thread, resilient to transient outages (retries with backoff) -- this need not
+            # fire more than once to drain a whole backlog over many future passes.
+            try:
+                from src.api.ai import advance_langdetect_auto_start
+
+                _ld = advance_langdetect_auto_start(session)
+                if _ld.get("enabled"):
+                    result["langdetect_auto"] = _ld
+            except Exception:  # noqa: BLE001 - never fail the scrape on the AI-layer watchdog
+                _LOG.warning("language-detection auto-start ride-along failed", exc_info=True)
             # Auto source-metadata enrichment (local, zero-network): deduce each
             # source's topic tags from the keywords it actually publishes and union
             # them into Source.tags. Freshness-gated (~daily) so it is usually a

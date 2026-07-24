@@ -4832,29 +4832,24 @@
     // --- B15: OPT-IN local-LLM language detection for articles STILL unknown after the
     // offline detector. Writes a THIRD "AI-derived · unreliable" language class (ai_keyword
     // kind="language") — NEVER Article.language / detected_language. A cancellable background
-    // job (also visible in the task manager); this button starts it + shows live progress. -- //
-    async function loadLangDetectCount() {
-      const el = $("langdetect-status");
-      if (!el) return;
+    // job (also visible in the task manager) that (per the 2026-07-24 field-feedback ruling)
+    // AUTO-STARTS itself in the background whenever there is work to do, so this panel's ONE
+    // button just toggles "start" <-> "stop" and reflects whatever is already happening. ---- //
+    let _langDetectPolling = false;
+    function _paintLangDetectButton(running) {
+      const btn = $("langdetect-btn");
+      if (!btn) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      try {
-        const d = await api("/api/ai/detect-language/candidates");
-        const n = d.candidates || 0;
-        el.textContent = n
-          ? `${n} ${t("article(s) still unknown after the offline detector.")}`
-          : t("No articles are missing a language — nothing to detect.");
-      } catch (e) { /* the count is a hint; leave it blank on error */ }
+      btn.textContent = running ? t("Language detection ongoing — click to stop") : t("Detect languages");
+      btn.dataset.running = running ? "1" : "";
     }
-    async function runLangDetect(btn) {
+    async function pollLangDetect() {
+      if (_langDetectPolling) return;
+      _langDetectPolling = true;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("langdetect-status");
-      const contEl = $("langdetect-continuous");
-      const continuous = !!(contEl && contEl.checked);
-      if (btn) btn.disabled = true;
-      if (el) el.textContent = t("Starting…");
       let fails = 0;
       try {
-        await api("/api/ai/detect-language", { method: "POST", body: JSON.stringify({ continuous }) });
         for (;;) {
           let s;
           // JOB-STATE-AS-TRUTH: a dropped status poll never reads as failure while the job runs.
@@ -4866,19 +4861,67 @@
           }
           const st = s.state, p = s.progress || {}, res = s.result || {};
           if (st === "running") {
+            _paintLangDetectButton(true);
             if (el) el.textContent = `${p.done || 0}/${p.total || 0}` + (s.detail ? ` · ${esc(s.detail)}` : "");
             await new Promise((r) => setTimeout(r, 2000)); continue;
           }
+          _paintLangDetectButton(false);
           if (st === "done") {
             if (res.ran === false) el.textContent = t("The local model is unavailable (Ollama down or airplane mode).");
             else el.textContent = `${t("Done.")} ${res.stored || 0} ${t("labelled")} · ${res.none || 0} ${t("unclear")} · ${res.total || 0} ${t("scanned")}`;
           } else if (st === "cancelled") el.textContent = t("Cancelled.");
           else if (st === "error") el.textContent = t("Failed:") + " " + esc(s.error || "");
-          else el.textContent = "";
+          else if (s.last_run) {
+            // Idle in THIS process, but a previous process's run left an honest trace
+            // (§1 item 3 — the status line must stay honest about what happened after a
+            // restart, not read as blank/never-run).
+            const lr = s.last_run;
+            if (lr.state === "error") el.textContent = t("Last run failed:") + " " + esc(lr.error || "");
+            else el.textContent = `${t("Last run:")} ${lr.stored || 0} ${t("labelled")} · ${lr.none || 0} ${t("unclear")} · ${lr.total || 0} ${t("scanned")}`;
+          } else el.textContent = "";
           break;
         }
+      } finally { _langDetectPolling = false; }
+    }
+    async function loadLangDetectCount() {
+      const el = $("langdetect-status");
+      if (el) {
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        try {
+          const d = await api("/api/ai/detect-language/candidates");
+          const n = d.candidates || 0;
+          el.textContent = n
+            ? `${n} ${t("article(s) still unknown after the offline detector.")}`
+            : t("No articles are missing a language — nothing to detect.");
+        } catch (e) { /* the count is a hint; leave it blank on error */ }
+      }
+      // Reflect reality: a job may already be running (auto-started in the background,
+      // or by another tab) even though this panel was just opened.
+      let s;
+      try { s = await api("/api/ai/detect-language/status"); } catch (e) { return; }
+      _paintLangDetectButton(s.state === "running");
+      if (s.state === "running") pollLangDetect();
+    }
+    async function runLangDetect(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("langdetect-status");
+      if (btn && btn.dataset.running === "1") {
+        // Currently running -> this click means STOP.
+        try { await api("/api/ai/detect-language/cancel", { method: "POST" }); }
+        catch (e) { if (el) el.textContent = t("Failed:") + " " + esc(e.message || e); }
+        pollLangDetect(); // in case no poll loop is live yet (e.g. a fresh tab), pick up the cancel
+        return;
+      }
+      if (btn) btn.disabled = true;
+      if (el) el.textContent = t("Starting…");
+      try {
+        // Always continuous now — the checkbox is gone (the job auto-retries transient
+        // model outages and keeps going until the backlog is drained or cancelled).
+        await api("/api/ai/detect-language", { method: "POST", body: JSON.stringify({ continuous: true }) });
+        _paintLangDetectButton(true);
       } catch (e) { if (el) el.textContent = t("Failed:") + " " + esc(e.message || e); }
       if (btn) btn.disabled = false;
+      pollLangDetect();
     }
 
     // --- Custom extractors (Settings → Models) — a managed list of user-defined AI
