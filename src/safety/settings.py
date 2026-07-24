@@ -8,10 +8,14 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
   * ``transparent`` (default) — identifying User-Agent, no proxy: honest, ethical broad
     collection (announces the bot, as a good crawler should).
-  * ``protected`` — route through ``http_proxy`` (e.g. Tor at ``socks5://127.0.0.1:9050``)
+  * ``protected`` — route through ``http_proxy`` (e.g. Tor at ``socks5h://127.0.0.1:9050``)
     and send a generic User-Agent, so investigating a powerful target need not announce the
     journalist from their real IP. Source protection is itself a journalistic duty; it is
-    opt-in and never the silent default.
+    opt-in and never the silent default. The recommended scheme is ``socks5h`` (not
+    ``socks5``) — the trailing "h" means the PROXY resolves the hostname (the curl/PySocks
+    convention), so DNS queries never reach the local/ISP resolver either; a plain
+    ``socks5``/``socks4`` proxy still works but resolves locally (see
+    ``src.ingest._is_remote_resolving_proxy``, 2026-07-24 throughput brief C8).
 
 Environment overrides (for ephemeral/headless use): ``OO_FETCH_MODE``, ``OO_HTTP_PROXY``.
 """
@@ -37,7 +41,7 @@ class SafetySettingsError(ValueError):
 @dataclass
 class SafetySettings:
     fetch_mode: str = "transparent"
-    http_proxy: str = ""  # e.g. socks5://127.0.0.1:9050 or http://127.0.0.1:8118
+    http_proxy: str = ""  # e.g. socks5h://127.0.0.1:9050 (recommended) or http://127.0.0.1:8118
     # The ONE external-service call in the app (audit finding ETH-02 / RM-03):
     # topic discovery sends the user's query to DuckDuckGo. OFF by default --
     # an at-risk operator must opt in knowingly; the UI states plainly that the
@@ -140,7 +144,7 @@ def save_settings(updates: dict) -> SafetySettings:
         current.discovery_external_enabled = bool(updates["discovery_external_enabled"])
     if current.is_protected and not current.http_proxy:
         raise SafetySettingsError(
-            "protected mode requires an http_proxy (e.g. socks5://127.0.0.1:9050)"
+            "protected mode requires an http_proxy (e.g. socks5h://127.0.0.1:9050)"
         )
     payload = {"version": SETTINGS_VERSION, **current.to_dict()}
     if not _use_kv():

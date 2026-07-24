@@ -241,6 +241,56 @@ _MAX_REDIRECTS = 5
 # client errors are deterministic and never retried (finding BUG-02).
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
 
+# --------------------------------------------------------------------------- #
+# C8 (2026-07-24 throughput brief): skip local DNS resolution when the exit
+# resolves + a short-TTL cache for the path that still resolves locally (A6).
+# --------------------------------------------------------------------------- #
+#
+# _guard_target() calls socket.getaddrinfo(host) on EVERY fetch + EVERY redirect
+# hop -- even when proxied, where the resolved IP is never actually used to
+# connect (the proxy/exit does that). Two distinct fixes:
+#
+# (1) When the configured proxy scheme is REMOTE-RESOLVING (socks5h/socks4a --
+#     the trailing "h"/"a" is the curl/PySocks convention meaning "the PROXY
+#     resolves", as opposed to plain socks5/socks4 where WE resolve locally and
+#     hand the proxy an IP), the local getaddrinfo call is skipped entirely:
+#     we never learn an IP to check, so there is nothing for _guard_target to
+#     validate -- egress goes straight to the proxy with the hostname, saving
+#     one DNS round-trip AND closing a DNS-metadata leak to the local/ISP
+#     resolver (the exit performs the lookup instead). VERIFIED AT BUILD: the
+#     app's own documented example (src/safety/settings.py) was
+#     "socks5://127.0.0.1:9050" -- the LOCAL-resolving scheme -- so this
+#     optimisation is INERT unless the operator (or our own default/guidance)
+#     actually uses the "h" variant; the settings docstring/messages are
+#     updated to recommend socks5h as the more private default. A plain
+#     socks5/socks4 proxy is UNCHANGED (still resolved + guarded locally,
+#     byte-identical) -- skipping the guard there would be a real SSRF hole,
+#     since PySocks would still hand the proxy a LOCALLY-resolved IP with no
+#     guard between resolution and connection.
+# (2) For every path that STILL resolves locally (no proxy, or a non-remote-
+#     resolving one), a short-TTL cache avoids re-resolving the SAME host on
+#     every fetch/redirect hop within one pass. The TTL is intentionally SHORT
+#     (default 60s) -- long enough to save real repeat-lookup latency across a
+#     burst of fetches to one host, short enough that a DNS-rebinding attack
+#     gains nothing durable (the guard re-validates well within any plausible
+#     attack window). Per-instance (like every other host cache here), so it
+#     resets every pass along with everything else -- never persisted, no new
+#     staleness surface.
+_DNS_CACHE_TTL_S = float(os.getenv("OO_DNS_CACHE_TTL", "60") or "60")
+_DNS_CACHE_MAX = _env_cap("OO_DNS_CACHE_MAX", 2048, floor=64)
+# The curl/PySocks "remote resolve" scheme suffix: socks5h / socks4a.
+_REMOTE_RESOLVE_SOCKS_SCHEMES = frozenset({"socks5h", "socks4a"})
+
+
+def _is_remote_resolving_proxy(proxy_url: str | None) -> bool:
+    """True when ``proxy_url``'s scheme resolves DNS AT THE PROXY/EXIT
+    (``socks5h``/``socks4a``) rather than locally (``socks5``/``socks4``, any
+    plain http(s) proxy, or no proxy at all). PURE string check, no I/O."""
+    if not proxy_url or "://" not in proxy_url:
+        return False
+    scheme = proxy_url.split("://", 1)[0].lower()
+    return scheme in _REMOTE_RESOLVE_SOCKS_SCHEMES
+
 # --- Global network kill switch (a §0.5 invariant; maintainer: "Stop must be a
 # kill switch"). Once set, EVERY new fetch attempt -- scheduler, manual ingest,
 # crawler, markets, law, discovery -- refuses immediately. The single request
@@ -341,6 +391,10 @@ class EthicalFetcher:
         # host -> (decision_parser_or_None, expiry). None == "do not fetch this host".
         self._robots: dict[str, tuple[RobotFileParser | None, float]] = {}
         self._last_request: dict[str, float] = {}
+        # C8: short-TTL DNS cache for the path that still resolves locally (a
+        # remote-resolving SOCKS proxy skips this entirely -- see
+        # _is_remote_resolving_proxy). host -> (getaddrinfo results, expiry).
+        self._dns_cache: dict[str, tuple[list, float]] = {}
         # Per-host locks: one source/host is fetched by at most ONE thread at a
         # time, so parallel collection (a bounded worker pool) is polite by
         # construction — concurrency is ACROSS hosts, never within one host's
@@ -399,6 +453,7 @@ class EthicalFetcher:
             "robots": len(self._robots),
             "last_request": len(self._last_request),
             "host_locks": len(self._host_locks),
+            "dns": len(self._dns_cache),
         }
 
     def declared_sitemaps(self, url: str) -> list[str]:
@@ -712,6 +767,16 @@ class EthicalFetcher:
         loopback stand-in hosts). For a real fetch, literal IPs are checked and hostnames
         are resolved + checked (rejecting a name that resolves to a private/loopback/
         link-local address — defeating DNS-rebinding-to-internal).
+
+        C8: when the configured proxy is REMOTE-RESOLVING (socks5h/socks4a), the
+        hostname branch is skipped entirely — we never learn an IP to validate,
+        egress goes straight to the proxy, and the exit resolves it (see the
+        module-level note by ``_is_remote_resolving_proxy``). A literal IP is
+        STILL checked either way (cheap, no resolution needed). Every other
+        configuration (no proxy, a plain http(s) proxy, or a LOCAL-resolving
+        socks5/socks4 proxy) keeps the FULL guard, byte-identical to before —
+        this is the one branch that changes behaviour, and only under a
+        verified remote-resolving scheme.
         """
         if not self._real_session:
             return
@@ -724,14 +789,34 @@ class EthicalFetcher:
             return  # a public IP literal
         except ValueError:
             pass  # not an IP literal -> a hostname
-        try:
-            infos = socket.getaddrinfo(host, None)
-        except OSError as exc:
-            raise FetchFailed(f"cannot resolve host {host!r}: {exc}") from exc
+        if _is_remote_resolving_proxy(self.proxy):
+            return  # the exit resolves; nothing for us to check
+        infos = self._resolve_cached(host)
         for info in infos:
             ip = ipaddress.ip_address(info[4][0])
             if _is_blocked_ip(ip):
                 raise BlockedTarget(f"{host} resolves to a non-public address ({ip})")
+
+    def _resolve_cached(self, host: str) -> list:
+        """``socket.getaddrinfo(host, None)`` with a short-TTL cache (C8/A6) — a
+        real fetch/redirect chain can hit the SAME host several times in one pass;
+        this avoids re-resolving it every time. Bounded (``_DNS_CACHE_MAX``): on
+        overflow the WHOLE cache is cleared rather than a sorted eviction (the TTL
+        is already short, so this self-heals within ``_DNS_CACHE_TTL_S`` regardless
+        — simpler than the size-sorted eviction the robots/last-request caches use,
+        and correctness never depends on which entries survive)."""
+        now = self._now()
+        cached = self._dns_cache.get(host)
+        if cached is not None and now < cached[1]:
+            return cached[0]
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except OSError as exc:
+            raise FetchFailed(f"cannot resolve host {host!r}: {exc}") from exc
+        if len(self._dns_cache) >= _DNS_CACHE_MAX:
+            self._dns_cache.clear()
+        self._dns_cache[host] = (infos, now + _DNS_CACHE_TTL_S)
+        return infos
 
     def _isolated_proxies(self, netloc: str | None) -> dict[str, str] | None:
         """Per-HOST Tor stream-isolation proxies for ``netloc`` (or ``None`` to
