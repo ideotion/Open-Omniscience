@@ -8025,6 +8025,76 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   mirroring `compute_server_args`. Full test suite green (py3.13 venv), ruff F/B clean, mypy
   ratchet unchanged (127≤127), bandit clean, i18n 100% (2130/2130 ×12, no new frontend keys — the
   new panels follow the established un-keyed-diagnostics-panel convention).
+- **SCRAPING/DOWNLOAD 10× SCALING — FIVE TACTICAL STRATEGIES (maintainer-asked 2026-07-24,
+  planning-only; plan of record =
+  [`docs/design/SCRAPING_10X_SCALING_STRATEGIES_2026-07-24.md`](docs/design/SCRAPING_10X_SCALING_STRATEGIES_2026-07-24.md);
+  builds PENDING):** a code-verified engine recon (4-agent fan-out, load-bearing claims
+  hand-re-verified) + the ≥10× decomposition `stored/day ≈ OFFER × DRAIN × DUTY` grounded in the
+  two 2026-07-23 field exports. THE FIVE: **S-A** supply-side scaling through the qualification
+  membrane (digest the 42.6–66.7k candidate backlog at hardware-aware budgets + operator catalog
+  runs + newsletter links; offer ×5–10 est. = the dominant term) · **S-B** continuous pipelined
+  collection (a dedicated housekeeping LANE for the ~7 serial network ride-alongs, scheduled by
+  the shipped-but-unwired `KindLadder` = finally implements the 2026-06-13 bandwidth-priority-
+  ladder ruling; then pass overlap → a due-queue; duty 48→90%+ ≈ ×1.5–2 measured basis) · **S-C**
+  transport parallelism at unchanged per-host courtesy (skip the per-fetch LOCAL `getaddrinfo`
+  when proxied — also closes a DNS-metadata exposure; hardware-aware w_max; an opt-in operator-run
+  SOCKS/Tor endpoint POOL sharded per host; wire `rank_mirrors` + `plan_segments`/`reassemble`
+  for segmented multi-circuit bulk downloads) · **S-D** extraction-out-of-the-gate (verified:
+  `_flush_batched` holds the ONE gate window ACROSS per-article `index_article` CPU extraction —
+  the fast box's writer-bound mechanism; stage-then-gate + the proven `reindex_parallel`
+  process-pool precompute shape; EVIDENCE-GATED on writer-bound verdicts at the new offer, full
+  skeptic matrix) · **S-E** bulk/structured acquisition (SITEMAP support — currently ZERO, the
+  `Source.sitemap_url` column is dormant and the crawler skips `.xml`; new-URL discovery + the
+  qualification trial channel for the FEEDLESS candidate majority — `trial_fetch` is RSS-only so
+  most of the backlog is unqualifiable without it — + bounded archive BACKFILL for newly
+  qualified sources as a managed ladder-rung job; full-content-feed use; bulk/API-first per
+  vertical). FOUR NEW RECON FINDINGS recorded in the doc §1: collector write-batching is ALREADY
+  LIVE (`ArticleBatch`, commit batch 8 — the ledger's "S4.2 outstanding" framing was partially
+  stale; the real remaining lever is extraction-in-gate) · the per-fetch local DNS resolve when
+  proxied (`_guard_target`, `src/ingest/__init__.py:579` + redirect hops) · the RSS-only
+  qualification-trial structural limit · the unwired KindLadder. §5 pins the NON-OPTIONS
+  (politeness/robots/UA untouchable; no evasion; no third-party proxy meshes/scraping APIs; no
+  headless fleet; no fabricated multipliers — every projection is an estimate until the
+  8-core/20 GB before/after bench measures it). §6 = 5 open maintainer rulings (backfill default
+  posture · proxy-pool surface now vs Stem later · full-content-feed storage · sitemap trial
+  evidence counts · budgets ride power profiles). Sequencing (§4): S-B lane first (unblocks
+  S-A's trial throughput), S-A digestion + operator runs, S-E sitemap core, S-C small slices,
+  S-D last evidence-gated. Composes with the 2026-07-23 workflow brief (S4 series) + the
+  2026-07-24 Session A/B briefs; NOTHING built this session.
+  **EXTENDED same day (maintainer: "add all of them to the PR in a coherent fashion so the coding
+  tasks can well be delegated to a smaller Sonnet 5 model without hiccups. Crawling should be
+  activated by default"):** the strategy doc gained (a) **§7 SECOND-TIER ACCELERATORS** — beyond the
+  five: A1 decouple ingestion from enrichment (store fast + a separate enrichment lane; largest, last)
+  · A2 in-memory dedup front [NOW, ~90% dup rate → skip codec reads; negative-space "never a false
+  negative"] · A3 bulk mention insert [NOW, `store.py:321-336` per-term ORM → Core insert; counter
+  math byte-identical] · A4 shrink per-worker memory footprint [NOW, small-box mem-low floor] · A5
+  persist robots/DNS caches across restarts · A6 clearnet DNS cache · the verified DB baseline (WAL +
+  synchronous=NORMAL already fast — no PRAGMA free lunch) · already-ruled page_size/cache_size restated
+  · honest NON-levers (HTTP/2 buys nothing under the per-host cap; more workers past the supply
+  ceiling; synchronous<NORMAL); (b) **§8 CRAWL-BY-DEFAULT (maintainer-ruled)** — ON by default as a
+  HYBRID BUDGETED RUNG, explicitly NOT a mode flip (flipping `mode="rss"→"crawl"` would abandon
+  conditional-GET feed economics + blow up pass time, violating bounded-pass + cover-everything; the
+  rejected alternative is recorded): additive `crawl_supplement: bool = True` + `crawl_per_pass` budget
+  mirroring the `world_discovery_per_pass` ride-along pattern (`settings.py:90-103`), a bounded crawl
+  sub-pass after RSS over least-recently-crawled + feedless-first sources (a new `Source.last_crawled_at`
+  marker), the lowest KindLadder rung so it never starves RSS, `crawl_source` through the ONE fetcher
+  (robots/politeness unchanged by construction), complements S-E (sitemap preferred, crawl the fallback);
+  (c) **§6 rulings ADOPTED as revertible spec defaults** (unblock the executing session; code lands as
+  draft PRs the maintainer reviews): a=bounded auto-backfill ~100–500 pages + consent for full history,
+  b=operator-run SOCKS list now / Stem later, c=full-content feeds used-with-disclosure, d=sitemap trial
+  evidence counts toward qualification, e=budgets ride the power-profile knob table; (d) **§9 EXECUTION**
+  pointing at the companion brief. THE COMPANION BRIEF =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-24_C_THROUGHPUT_SCALING.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-24_C_THROUGHPUT_SCALING.md)
+  — the Sonnet-executable HOW: 17 ordered slices (C1–C17) across 4 phases, each with exact files/anchors/
+  setting names/test names/invariant guards + the verified CI gate commands (ruff F/B, mypy 127 ratchet,
+  bandit 1.9.4, i18n --min 100, alembic random-revision-id/heads), the skeptic-before-push + mandatory
+  negative-space lens on every ⚠ slice (crawl rung, sitemap parser, DNS-guard change, dedup front, bulk
+  insert, S-D, A1), the staleness guard, draft-PR-only, the ethics non-options as hard fences, and the
+  operator-gated items (C6 catalog runs). Phase order: 1 duty-cycle+crawl-default+cache-persistence ·
+  2 supply (qualification budgets + sitemap core) · 3 transport (DNS-when-proxied + ceilings + proxy
+  pool + segmented downloads) · 4 processing ceilings (dedup front, bulk insert, memory footprint,
+  backfill, then S-D evidence-gated + A1 last). Sonnet sessions branch `claude/oos-c-*`. Still
+  planning-only in THIS PR (#766) — no engine code; the C-slices are the executing sessions' work.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
