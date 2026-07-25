@@ -5,10 +5,18 @@ switch is engaged, NO non-loopback socket call is even reached — the guard rai
 before delegating to the real ``connect``/``create_connection``/``getaddrinfo``.
 Loopback and ``localhost`` always pass through, and the guard is transparent while
 online. This is the regression the brief asks for: boot + decline = zero sockets.
+
+Also proves the PROXIED-traffic closure (transversal audit 09, 2026-07-25): a
+SOCKS proxy (PySocks) or a plain HTTP CONNECT-tunnel proxy (stdlib ``http.client``)
+negotiates the REAL destination at an application-protocol layer the four direct
+socket functions above never see — live-reproduced as a real bypass before this
+fix. ``test_socks_proxy_destination_is_guarded_before_negotiation`` and
+``test_http_connect_tunnel_destination_is_guarded`` pin the closure.
 """
 
 from __future__ import annotations
 
+import http.client
 import socket
 from pathlib import Path
 
@@ -32,7 +40,14 @@ class _Reached(Exception):
 def guard():
     """Install the guard with spies standing in for the real socket calls, so a
     test can assert exactly whether the real call was reached. Restores everything."""
-    saved = (ap._orig_getaddrinfo, ap._orig_create_connection, ap._orig_connect, ap._orig_connect_ex)
+    saved = (
+        ap._orig_getaddrinfo,
+        ap._orig_create_connection,
+        ap._orig_connect,
+        ap._orig_connect_ex,
+        ap._orig_tunnel,
+        ap._orig_socks_connect,
+    )
     reached: list[str] = []
 
     def spy(name):
@@ -46,6 +61,9 @@ def guard():
     ap._orig_create_connection = spy("create_connection")  # type: ignore[assignment]
     ap._orig_connect = lambda self, address: reached.append("connect")  # type: ignore[assignment]
     ap._orig_connect_ex = lambda self, address: reached.append("connect_ex")  # type: ignore[assignment]
+    ap._orig_tunnel = spy("tunnel")  # type: ignore[assignment]
+    if ap._orig_socks_connect is not None:
+        ap._orig_socks_connect = spy("socks_connect")  # type: ignore[assignment]
     install_airplane_socket_guard()
     clear_kill_switch()
     try:
@@ -53,8 +71,15 @@ def guard():
     finally:
         clear_kill_switch()
         # Restore the captured originals FIRST, so uninstall copies the TRUE stdlib
-        # calls back into socket.* (not the spies).
-        (ap._orig_getaddrinfo, ap._orig_create_connection, ap._orig_connect, ap._orig_connect_ex) = saved
+        # (and PySocks/http.client) calls back (not the spies).
+        (
+            ap._orig_getaddrinfo,
+            ap._orig_create_connection,
+            ap._orig_connect,
+            ap._orig_connect_ex,
+            ap._orig_tunnel,
+            ap._orig_socks_connect,
+        ) = saved
         uninstall_airplane_socket_guard()
 
 
@@ -131,9 +156,86 @@ def test_uninstall_restores_real_socket_calls():
     """After uninstall the stdlib functions are exactly the originals (no residue)."""
     real_gai, real_cc = socket.getaddrinfo, socket.create_connection
     real_conn = socket.socket.connect
+    real_tunnel = http.client.HTTPConnection._tunnel
     install_airplane_socket_guard()
     assert socket.getaddrinfo is not real_gai  # patched
     uninstall_airplane_socket_guard()
     assert socket.getaddrinfo is real_gai
     assert socket.create_connection is real_cc
     assert socket.socket.connect is real_conn
+    assert http.client.HTTPConnection._tunnel is real_tunnel
+
+
+def test_http_connect_tunnel_destination_is_guarded(guard):
+    """A plain ``http://`` proxy (Privoxy/other) relays to the REAL destination via
+    an HTTP CONNECT handshake sent over an already-established (loopback, guarded)
+    proxy socket — the stdlib's own ``_tunnel()`` is the only place that ever sees
+    the real target. Regression for the transversal-audit-09 bypass: this must
+    raise before the real ``_tunnel()`` (here, the spy) is ever reached, and
+    without needing a live socket at all (``self.sock`` is never touched)."""
+    activate_kill_switch()
+    conn = http.client.HTTPConnection("127.0.0.1", 9999)  # never actually connected
+    conn.set_tunnel("example.com", 443)
+    with pytest.raises(AirplaneModeError):
+        conn._tunnel()
+    assert guard == [], "the real _tunnel() (spy) was reached in airplane mode"
+
+
+def test_http_connect_tunnel_loopback_target_passes_through(guard):
+    """Tunnelling to a loopback target (the app's own server via a local relay)
+    is still allowed offline, mirroring the direct-connect loopback exemption."""
+    activate_kill_switch()
+    conn = http.client.HTTPConnection("127.0.0.1", 9999)
+    conn.set_tunnel("127.0.0.1", 8000)
+    with pytest.raises(_Reached):
+        conn._tunnel()
+    assert "tunnel" in guard
+
+
+def test_http_connect_tunnel_transparent_when_online(guard):
+    """With the kill switch cleared, a CONNECT tunnel to a remote target delegates
+    straight through — the guard costs nothing during normal (proxied) collection."""
+    clear_kill_switch()
+    conn = http.client.HTTPConnection("127.0.0.1", 9999)
+    conn.set_tunnel("example.com", 443)
+    with pytest.raises(_Reached):
+        conn._tunnel()
+    assert "tunnel" in guard
+
+
+def test_socks_proxy_destination_is_guarded_before_negotiation(guard):
+    """The transversal-audit-09 live-reproduced bypass: PySocks' ``socksocket.
+    connect()`` negotiates the real destination via ``sendall()`` at the SOCKS
+    application layer, invisible to the four direct socket patches. This must
+    raise before that negotiation — and before the real proxy TCP connect (here,
+    the spy) — is ever reached, so no connection to the proxy is even attempted."""
+    pysocks = pytest.importorskip("socks")
+    activate_kill_switch()
+    s = pysocks.socksocket()
+    s.set_proxy(pysocks.SOCKS5, "127.0.0.1", 9050)  # never actually reached
+    with pytest.raises(AirplaneModeError):
+        s.connect(("example.com", 80))
+    assert guard == [], "PySocks' real connect() (spy) was reached in airplane mode"
+
+
+def test_socks_proxy_loopback_target_passes_through(guard):
+    """A SOCKS-proxied connection to a loopback target is still allowed offline."""
+    pysocks = pytest.importorskip("socks")
+    activate_kill_switch()
+    s = pysocks.socksocket()
+    s.set_proxy(pysocks.SOCKS5, "127.0.0.1", 9050)
+    with pytest.raises(_Reached):
+        s.connect(("127.0.0.1", 8000))
+    assert "socks_connect" in guard
+
+
+def test_socks_proxy_transparent_when_online(guard):
+    """With the kill switch cleared, a SOCKS-proxied connection to a remote target
+    delegates straight through to PySocks' real connect — zero overhead online."""
+    pysocks = pytest.importorskip("socks")
+    clear_kill_switch()
+    s = pysocks.socksocket()
+    s.set_proxy(pysocks.SOCKS5, "127.0.0.1", 9050)
+    with pytest.raises(_Reached):
+        s.connect(("example.com", 80))
+    assert "socks_connect" in guard

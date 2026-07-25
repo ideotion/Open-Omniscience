@@ -179,6 +179,31 @@ def test_restore_only_selected_categories(tmp_path):
     assert res["restored"] == 2 and not live_osm.exists()  # osm not selected
 
 
+def test_restore_refuses_a_symlink_never_follows_it_into_the_live_dir(tmp_path):
+    """Regression for the 2026-07-25 (transversal audit 09) live-reproduced
+    path-traversal-via-symlink bug: a hostile/edited backup source (the module's
+    own docstring: "a folder backup on an external drive can be edited") plants a
+    symlink inside a category directory pointing at an arbitrary out-of-tree file.
+    write_folder_backup/_atomic_copy NEVER create symlinks, so restore must refuse
+    ANY symlink outright rather than follow it (open() follows symlinks)."""
+    backup = tmp_path / "drive"
+    (backup / "wiki_dumps" / "enwiki").mkdir(parents=True)
+    secret = tmp_path / "outside_secret.txt"
+    secret.write_bytes(b"TOP SECRET, NOT PART OF ANY BACKUP")
+    evil_link = backup / "wiki_dumps" / "enwiki" / "innocuous_dump.xml"
+    evil_link.symlink_to(secret)
+
+    live_wiki = tmp_path / "live" / "wiki"
+    res = restore_folder_backup(
+        backup, categories=["wiki_dumps"], targets={"wiki_dumps": live_wiki, "osm_regions": tmp_path / "lo"}
+    )
+
+    assert res["restored"] == 0
+    assert res["refused_symlinks"] == 1
+    dest = live_wiki / "enwiki" / "innocuous_dump.xml"
+    assert not dest.exists(), "the symlink's target content was copied into the live data directory"
+
+
 # --------------------------------------------------------------------------- #
 # preflight
 # --------------------------------------------------------------------------- #

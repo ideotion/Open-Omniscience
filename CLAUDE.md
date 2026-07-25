@@ -1206,6 +1206,38 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   direct adversarial code review (stdlib sockets/asyncio/TLS/mailbox protocols); all 5 spot-checked
   non-negotiables hold; bandit/secrets/SQL-injection otherwise clean. The doc's own Action Plan D
   (§12) ranks all ten follow-up items; items 1-2 (the two P0s) are the priority.
+  **ALL TEN ACTION-PLAN-D ITEMS SHIPPED 2026-07-25 (fix-forward session, same-day; shipped.csv row
+  "security — transversal audit 09 fix-forward"):** (1) the SOCKS/Tor-proxy blind spot — closed by
+  ALSO patching `http.client.HTTPConnection._tunnel` (the CONNECT-tunnel destination) and PySocks'
+  own `socksocket.connect` (the real destination BEFORE SOCKS negotiation), both invisible to the
+  original 4 patched functions; live re-run of the audit's own stub-SOCKS5-server exploit now
+  confirmed blocked, + 6 new regression tests. (2) the B6 gate — `gate_languages_from_report()` now
+  reads `report["report"]["by_language"]` matching the REAL harness-produced shape; a new test drives
+  the real harness end-to-end (not a hand-typed mock). (3) the folder-backup symlink traversal —
+  `restore_folder_backup` now checks `Path.is_symlink()` (lstat, never follows) before `is_file()`/
+  `open()`, refusing every symlink outright + a new honest `refused_symlinks` tally; live-reproduced
+  before/after. (4) Pillow bumped `>=12.3.0` in `pyproject.toml` + `requirements.lock` regenerated
+  (pip-compile, diff scoped to exactly the pillow block; `pip install --dry-run --require-hashes`
+  confirms it resolves clean). (5) `session.rollback()` added to BOTH `archive_backfill.py`'s per-url
+  loop and `run_housekeeping_lane`'s per-kind loop — empirically confirmed via a real SQLAlchemy
+  IntegrityError→PendingRollbackError repro (both directions) that a dirty session previously
+  cascaded EVERY remaining item in the tick to a false "error", not just the one that actually failed.
+  (6) `docs/USER_MANUAL.md` gained the qualification-lifecycle + discovery-trail/citations-tally
+  subsections (§3.3) and the import-reports + non-article-screening subsections (§3.9), hand-verified
+  against the real code. (7) the completeness ratchet now scans a new `_DIAG_SIBLING_FILES` list
+  (currently `src/api/integrity.py`) in addition to `diagnostics.py` itself; `/fixity` is folded into
+  the bundle as a bounded (`limit=500`) member reusing the endpoint's own `guarded_read`; the 3
+  genuinely-functional integrity endpoints are honestly exempted, not silently swallowed;
+  stash-verified the ratchet correctly reddens on exactly the 4 previously-invisible routes. (8) THIS
+  ledger's own "0.3 CLOSE GATE" row 1 text amended so its broad "implemented" language no longer
+  silently covers the Tor-exit-resolve design — explicitly carved out as maintainer-ruling-gated
+  (zero code built), per the audit's own instruction to reconcile the text rather than rush the
+  feature. (9) the 6 modules' `_walk_no_score()` self-tests now `raise AssertionError(...)` explicitly
+  instead of a bare `assert` (verified the fix actually raises under `python -O`, the exact failure
+  mode being closed). (10) `get_client_with_name()`'s TOCTOU — `dict.setdefault` replaces the
+  check-then-write. Every fix carries a targeted regression test, several stash-verified live against
+  the pre-fix code. Full detail + the sandbox's own environmental-limitation disclosures in the
+  shipped.csv row's summary.
 - **FIELD DIAGNOSTICS FINDINGS (2026-07-21, from a real operator export against the live
   474,556-article corpus, NOT the 0.3 gate's ≥5M run):** brief of record =
   [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-21_FIELD_DIAGNOSTICS_FINDINGS.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-21_FIELD_DIAGNOSTICS_FINDINGS.md),
@@ -6951,13 +6983,21 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   required before the tag: (1) **the entire 2026-07-20
   source-management program implemented AND DOUBLE-CHECKED** — the qualification lifecycle
   (admission gate · stamp · background job · re-qualification ladder) · newsletter
-  links→sources · the airplane/Ollama gate split · source-IP surfacing incl. the
-  Tor-exit-resolve path · discovery trail + citations tally/drills + corpus filters · the
-  nav-soup prose gate · the post-import delta screen · the LLM triage/tag runs with the
-  Claude-verification chain — each build verified per the house gates AND field-confirmed,
-  not merely merged (merged ≠ green ≠ verified); "double-checked" INCLUDES docs↔app
-  reciprocity — USER_MANUAL chapters for qualification / source management / the
-  post-import screen (the standing reciprocity rule applied to everything this row builds).
+  links→sources · the airplane/Ollama gate split · source-IP surfacing · discovery trail
+  + citations tally/drills + corpus filters · the nav-soup prose gate · the post-import
+  delta screen · the LLM triage/tag runs with the Claude-verification chain — each build
+  verified per the house gates AND field-confirmed, not merely merged (merged ≠ green ≠
+  verified); "double-checked" INCLUDES docs↔app reciprocity — USER_MANUAL chapters for
+  qualification / source management / the post-import screen (**SHIPPED 2026-07-25,
+  transversal audit 09 fix-forward** — see §3.3/§3.9 of `docs/USER_MANUAL.md`; the standing
+  reciprocity rule applies to everything else this row builds too). **RECONCILED
+  2026-07-25 (transversal audit 09, §8/Action-Plan-D-7 — the audit found this row's own
+  "implemented" language silently swallowing an item its OWN sibling ledger entry (below,
+  "SOURCE IPs") already called design-only): the Tor-exit-resolve (SOCKS RESOLVE / 0xF0)
+  path is EXPLICITLY OUT of this row's "implemented" bar — it is
+  MAINTAINER-RULING-GATED, ASSESSED but zero code built, awaiting the "go" the SOURCE IPs
+  entry's own text names ("design of record pending the go"). Row 1 does NOT require it;
+  closing row 1 does not wait on it.**
   (2) **a fully TRANSVERSAL AUDIT of the entire repo** (the `07_TRANSVERSAL_AUDIT_V01` precedent — a new tool-by-tool edition for
   0.3). (3) **full diagnostics taken from a MEDIUM corpus — at least 5 MILLION articles**
   (the all-diagnostics bundle run at that scale; NOTE recorded honestly: the live corpus is

@@ -30,14 +30,20 @@ from src.database.models import (
 
 
 def test_gate_marks_a_clean_language_active():
+    # The REAL persisted/live-eval shape: run metadata wrapping the harness's OWN
+    # report dict under a "report" key (report["report"]["by_language"], not
+    # report["by_language"] -- the exact nesting the 2026-07-25 fix restored).
     report = {
-        "by_language": {
-            "en": {
-                "who": {"hallucination_rate": 0.0},
-                "where": {"hallucination_rate": 0.1},
-                "when": {"hallucination_rate": None},
+        "status": "ok",
+        "report": {
+            "by_language": {
+                "en": {
+                    "who": {"hallucination_rate": 0.0},
+                    "where": {"hallucination_rate": 0.1},
+                    "when": {"hallucination_rate": None},
+                }
             }
-        }
+        },
     }
     gate = PE.gate_languages_from_report(report)
     assert gate["en"]["active"] is True
@@ -45,13 +51,16 @@ def test_gate_marks_a_clean_language_active():
 
 def test_gate_disables_a_language_that_hallucinates_above_the_floor():
     report = {
-        "by_language": {
-            "ar": {
-                "who": {"hallucination_rate": 0.9},
-                "where": {"hallucination_rate": 0.0},
-                "when": {"hallucination_rate": 0.0},
+        "status": "ok",
+        "report": {
+            "by_language": {
+                "ar": {
+                    "who": {"hallucination_rate": 0.9},
+                    "where": {"hallucination_rate": 0.0},
+                    "when": {"hallucination_rate": 0.0},
+                }
             }
-        }
+        },
     }
     gate = PE.gate_languages_from_report(report)
     assert gate["ar"]["active"] is False
@@ -61,18 +70,60 @@ def test_gate_disables_a_language_that_hallucinates_above_the_floor():
 def test_gate_none_hallucination_rate_never_disqualifies():
     """A field with no predictions at all (tp+fp==0) reports hallucination_rate=None
     -- that must never be treated as a failure (nothing to gate on)."""
-    report = {"by_language": {"fr": {"who": {"hallucination_rate": None},
-                                      "where": {"hallucination_rate": None},
-                                      "when": {"hallucination_rate": None}}}}
+    report = {
+        "report": {
+            "by_language": {
+                "fr": {
+                    "who": {"hallucination_rate": None},
+                    "where": {"hallucination_rate": None},
+                    "when": {"hallucination_rate": None},
+                }
+            }
+        }
+    }
     gate = PE.gate_languages_from_report(report)
     assert gate["fr"]["active"] is True
 
 
 def test_language_gate_absent_language_is_never_evaluated():
-    gate = PE.gate_languages_from_report({"by_language": {"en": {}}})
+    gate = PE.gate_languages_from_report({"report": {"by_language": {"en": {}}}})
     active, reason = PE.language_gate("de", gate)
     assert active is False
     assert reason == "never evaluated"
+
+
+def test_gate_from_a_real_harness_run_populates_the_gate():
+    """Regression for the 2026-07-25 nesting bug (transversal audit 09): exercises
+    the REAL production chain end-to-end -- evaluate_perception() (the actual S6.5
+    harness) wrapped EXACTLY as run_perception_eval_against_model() builds the
+    persisted artifact -- rather than a hand-typed mock report. The old buggy
+    gate_languages_from_report() would return {} here even though a real eval just
+    ran and scored real languages; every prior test mocked the wrong (bug-matching)
+    shape, which is why the bug shipped green. This proves the fix against the
+    REAL envelope, not an assumption about its shape."""
+    from src.analytics.perception_eval import PERCEPTION_GOLD, evaluate_perception
+
+    def extract_fn(text, language):
+        return {"who": [], "where": [], "when": []}  # no predictions -> hallucination_rate=None everywhere
+
+    harness_report = evaluate_perception(extract_fn, PERCEPTION_GOLD)
+    assert harness_report["by_language"], "the harness itself produced no per-language stats -- test setup broken"
+
+    # The EXACT envelope run_perception_eval_against_model() builds.
+    artifact = {
+        "status": "ok",
+        "model": "stub:test",
+        "backend": "ollama",
+        "prompt_version": "test-1",
+        "report": harness_report,
+    }
+    gate = PE.gate_languages_from_report(artifact)
+    assert gate, "gate must be non-empty after a real harness run -- the nesting bug made this always {}"
+    assert set(gate.keys()) == set(harness_report["by_language"].keys())
+    for lang in gate:
+        # A no-predictions client can never hallucinate (fp=0 always) -- every
+        # evaluated language should clear.
+        assert gate[lang]["active"] is True, gate[lang]
 
 
 def test_language_gate_none_language_is_gated_honestly():

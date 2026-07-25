@@ -199,9 +199,13 @@ def get_client_with_name(*, backend: str | None = None) -> tuple[str, LlmBackend
 
     resolved = resolve_backend(override=backend)
     kind = resolved["backend"]
-    if kind not in _clients:
-        _clients[kind] = VllmClient() if kind == "vllm" else OllamaClient()
-    return kind, _clients[kind]  # type: ignore[return-value]
+    # dict.setdefault is ONE atomic dict operation -- no check-then-act window
+    # between reading membership and writing the cache entry (the 2026-07-25,
+    # transversal audit 09, benign TOCTOU finding). A losing instance under a
+    # genuine race is still constructed (as before) but never even bound to a
+    # local before being superseded -- reclaimed near-instantly by refcounting.
+    client = _clients.setdefault(kind, VllmClient() if kind == "vllm" else OllamaClient())
+    return kind, client  # type: ignore[return-value]
 
 
 def get_client(*, backend: str | None = None) -> LlmBackend:

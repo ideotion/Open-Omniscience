@@ -49,13 +49,28 @@ PERCEPTION_KINDS = tuple(_KIND_OF_FIELD.values())
 def gate_languages_from_report(report: dict | None) -> dict[str, dict]:
     """Which languages the LAST live perception-eval report clears for extraction.
 
-    Reads ``report["by_language"]`` (the S6.5 harness's per-stratum shape -- see
-    :func:`src.analytics.perception_eval.evaluate_perception`). A language ABSENT from
-    the report is never assumed safe -- it simply never appears in the returned gate;
-    :func:`language_gate` reports that omission as "never evaluated". Returns
-    ``{language: {"active": bool, "reason": str}}``.
+    ``report`` is the FULL persisted/live-eval ARTIFACT (``last_perception_eval_
+    live_report()``'s return value): run metadata (``status``/``model``/``backend``/
+    ``prompt_version``/``schema``/``run_at``/``available``) wrapping the S6.5 harness's
+    OWN report dict under a ``"report"`` key -- see
+    :func:`src.ai_layer.perception.run_perception_eval_against_model` (which builds
+    exactly this envelope) and :func:`src.analytics.perception_eval.evaluate_perception`
+    (whose OWN top level carries ``by_language``, one level INSIDE that ``"report"``
+    key). This unwraps ``report["report"]["by_language"]`` -- fixed 2026-07-25
+    (transversal audit 09) after the previous version read ``by_language`` at the
+    wrong, outer level, so every language gated "never evaluated" forever regardless
+    of how cleanly the harness actually scored, and every existing test mocked the
+    same wrong (bug-matching) shape, which is why it shipped green
+    (``test_gate_from_a_real_harness_run_populates_the_gate`` now exercises the REAL
+    ``evaluate_perception``/``run_perception_eval_against_model`` envelope end-to-end,
+    not a hand-typed mock, to guard against this exact class of drift recurring).
+
+    A language ABSENT from the harness report is never assumed safe -- it simply
+    never appears in the returned gate; :func:`language_gate` reports that omission
+    as "never evaluated". Returns ``{language: {"active": bool, "reason": str}}``.
     """
-    by_lang = (report or {}).get("by_language") or {}
+    harness_report = (report or {}).get("report") or {}
+    by_lang = harness_report.get("by_language") or {}
     out: dict[str, dict] = {}
     for lang, fields in by_lang.items():
         failing: list[str] = []

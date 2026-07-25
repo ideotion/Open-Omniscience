@@ -26,10 +26,23 @@ def sched():
     return BackgroundScheduler(settings_provider=lambda: SchedulerSettings())
 
 
+class _FakeSession:
+    """A stand-in for the real ``Session`` these tests hand to a stubbed
+    step -- none of the stubs below touch it for anything but pass-through,
+    EXCEPT run_housekeeping_lane's own ``except`` clause, which calls
+    ``session.rollback()`` on ANY step failure (the 2026-07-25, transversal
+    audit 09, missing-rollback fix). A bare ``object()`` has no such method
+    and would make every "a step raises" test below fail on an unrelated
+    AttributeError -- this gives it a harmless no-op instead."""
+
+    def rollback(self) -> None:
+        pass
+
+
 def _fake_scope_factory(monkeypatch):
     @contextlib.contextmanager
     def _fake_scope():
-        yield object()
+        yield _FakeSession()
 
     monkeypatch.setattr("src.database.session.session_scope", _fake_scope)
     monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: object())
@@ -150,6 +163,79 @@ def test_one_kind_failing_does_not_skip_the_rest(monkeypatch, sched):
     assert result["calendar"] == {"error": True}
     for kind in ("markets", "hazards", "law", "world_discovery", "qualification", "country_data"):
         assert result[kind] == {"ran": True}
+
+
+def test_a_dirty_session_from_one_failing_step_does_not_cascade_to_the_next(monkeypatch):
+    """Regression for the 2026-07-25 (transversal audit 09) missing-rollback
+    bug: every step in ONE lane invocation shares the same session, so a step
+    that leaves it mid-transaction (a real failed FLUSH, not just any raised
+    Python exception -- a step's own DB write can fail with e.g. an
+    OperationalError it never catches itself) must not poison every step that
+    runs AFTER it in the same call. Calls run_housekeeping_lane directly (a
+    real in-memory session, no threading) -- test_a_dirty_session_from_one_
+    failed_url_does_not_cascade_to_the_next in test_archive_backfill.py
+    empirically confirmed the underlying SQLAlchemy behaviour: a query issued
+    on a session with a pending-rollback transaction raises
+    PendingRollbackError until session.rollback() is called."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from src.database.models import Article, Base, Source
+
+    monkeypatch.setattr(
+        runner, "_LANE_LADDER", runner.KindLadder(rates=runner._LANE_RATES, floors=runner._LANE_FLOORS)
+    )
+
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    session = sessionmaker(bind=engine, future=True)()
+    src = Source(name="Src", domain="src.test", enabled=True)
+    session.add(src)
+    session.flush()  # assigns src.id
+    # One article COMMITTED before the lane runs, so it survives the
+    # dirtying step's own rollback below (a rollback discards everything in
+    # the CURRENT uncommitted transaction, never anything already committed)
+    # -- this is what lets the later assertion tell "the session recovered"
+    # apart from "rollback also wiped this row".
+    session.add(Article(
+        url="u0", canonical_url="u0", source_id=src.id, title="t", content="c", hash="pre-existing",
+    ))
+    session.commit()
+
+    def _dirty_then_raise(session, fetcher, settings):
+        session.add(Article(
+            url="u1-dup", canonical_url="u1-dup", source_id=src.id, title="t",
+            content="c", hash="pre-existing",  # same hash as the committed row -> IntegrityError
+        ))
+        session.flush()  # raises -- propagates straight out, uncaught here
+        raise AssertionError("unreachable")  # pragma: no cover
+
+    ran_after: list[str] = []
+
+    def _must_still_work(session, fetcher, settings):
+        # If the fix's session.rollback() did NOT run after "markets"'s
+        # failure, this raises PendingRollbackError instead of succeeding.
+        n = session.query(Article).count()
+        ran_after.append("ok")
+        return {"ran": True, "count": n}
+
+    for kind in runner._LANE_STEPS:
+        monkeypatch.setitem(runner._LANE_STEPS, kind, _must_still_work)
+    # A fresh ladder runs "markets" first (highest weight, ties broken by
+    # weight descending) -- see the memory-guard test above for the same
+    # documented guarantee.
+    monkeypatch.setitem(runner._LANE_STEPS, "markets", _dirty_then_raise)
+
+    out = runner.run_housekeeping_lane(session, object(), SchedulerSettings())
+
+    assert out["markets"] == {"error": True}
+    assert ran_after, "no later step ran at all -- the test itself is broken"
+    for kind, result in out.items():
+        if kind in ("markets", "_paused"):
+            continue
+        assert result == {"ran": True, "count": 1}, (kind, result)  # the pre-existing row, and ONLY it
 
 
 def test_lane_is_visible_in_the_task_manager_while_running(monkeypatch, sched):

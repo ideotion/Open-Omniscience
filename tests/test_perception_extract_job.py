@@ -132,17 +132,28 @@ def _read_jsonl(path):
 
 
 # A gate report that clears "en" (and only "en") -- injected directly so tests never
-# depend on a real live-eval run.
+# depend on a real live-eval run. Shape matches the REAL persisted artifact
+# (run_perception_eval_against_model's own return value, as persisted verbatim by
+# run_and_persist_perception_eval): run metadata at the top level, wrapping the
+# harness's own report dict (which carries by_language) under a "report" key --
+# fixed 2026-07-25 (transversal audit 09) alongside the gate_languages_from_report
+# nesting fix; this fixture previously used the WRONG flat shape that matched the
+# bug, not the real artifact, so it silently regressed the moment the bug was fixed.
 _CLEAR_EN_REPORT = {
-    "by_language": {
-        "en": {
-            "who": {"hallucination_rate": 0.0},
-            "where": {"hallucination_rate": 0.0},
-            "when": {"hallucination_rate": 0.0},
-        }
-    },
+    "status": "ok",
     "model": "stub:test",
+    "backend": "ollama",
+    "prompt_version": "test-1",
     "run_at": "2026-07-24T00:00:00",
+    "report": {
+        "by_language": {
+            "en": {
+                "who": {"hallucination_rate": 0.0},
+                "where": {"hallucination_rate": 0.0},
+                "when": {"hallucination_rate": 0.0},
+            }
+        },
+    },
 }
 
 

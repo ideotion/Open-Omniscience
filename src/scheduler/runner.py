@@ -1228,6 +1228,14 @@ def run_housekeeping_lane(session, fetcher, settings: SchedulerSettings) -> dict
         except Exception:  # noqa: BLE001 - one kind's failure must not skip the rest
             _LOG.warning("housekeeping lane: %s failed", kind, exc_info=True)
             out[kind] = {"error": True}
+            # Every step shares this ONE session -- a failure that left it
+            # mid-transaction (an uncaught OperationalError, not just an
+            # IntegrityError a step already handles itself) would otherwise
+            # cascade into every REMAINING kind in this lane also failing,
+            # not just the one that actually broke (transversal audit 09,
+            # 2026-07-25; the same class this file's own docstring already
+            # names for the collector's write path).
+            session.rollback()
     return out
 
 

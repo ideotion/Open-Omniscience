@@ -246,6 +246,51 @@ def test_a_url_raising_is_tallied_as_error_and_the_tick_continues(db, source, tm
     assert out["attempted"] == 3
 
 
+def test_a_dirty_session_from_one_failed_url_does_not_cascade_to_the_next(db, source, tmp_path):
+    """Regression for the 2026-07-25 (transversal audit 09) missing-rollback
+    bug: a failure that leaves the session mid-transaction (a real failed
+    flush -- not just any Python exception; store_fetched only catches
+    IntegrityError itself, so e.g. an OperationalError from a concurrent
+    writer propagates straight through) must not poison every REMAINING url
+    in the same tick. Empirically confirmed the raw SQLAlchemy behaviour
+    first: a query issued on a session with a pending-rollback transaction
+    raises PendingRollbackError until session.rollback() is called."""
+    from src.database.models import Article
+
+    sp = tmp_path / "s.json"
+    enqueue_source(source.id, state_path=sp)
+    urls = _urls(2)
+    discover = _discover(urls)
+    calls: list[str] = []
+
+    def _ingest(session, src_, url, *, fetcher):
+        calls.append(url)
+        if len(calls) == 1:
+            session.add(Article(
+                url=url, canonical_url=url, source_id=src_.id, title="t",
+                content="c", hash="dup-hash",
+            ))
+            session.flush()
+            session.add(Article(
+                url=url + "-dup", canonical_url=url + "-dup", source_id=src_.id,
+                title="t", content="c", hash="dup-hash",  # same hash -> IntegrityError
+            ))
+            session.flush()  # raises -- propagates straight out, uncaught here
+            raise AssertionError("unreachable")  # pragma: no cover
+        # If the fix's session.rollback() did NOT run after the first url's
+        # failure, this raises PendingRollbackError instead of succeeding.
+        n = session.query(Article).count()
+        return IngestOutcome(url, IngestResult.STORED, article_id=n)
+
+    advance_backfill(db, fetcher=object(), per_pass=2, state_path=sp,
+                      ingest_fn=_ingest, discover_fn=discover)  # enumerate
+    out = advance_backfill(db, fetcher=object(), per_pass=2, state_path=sp,
+                            ingest_fn=_ingest, discover_fn=discover)
+    assert out["tally"].get("error") == 1
+    assert out["tally"].get(IngestResult.STORED.value) == 1
+    assert out["attempted"] == 2
+
+
 # --------------------------------------------------------------------------- #
 # A source with no sitemap URLs is marked done immediately (never spins on an
 # empty history); a vanished source is skipped, never crashing the ride-along.
