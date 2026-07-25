@@ -89,6 +89,7 @@ def test_vllm_install_starts_a_background_job(monkeypatch):
     from src.llm import backend as B
     from src.llm import vllm_lifecycle as V
 
+    monkeypatch.setattr("platform.system", lambda: "Linux")
     monkeypatch.setattr(B, "detect_gpu", lambda: {"available": True, "vram_mb": 8192})
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
 

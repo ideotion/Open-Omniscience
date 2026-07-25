@@ -255,6 +255,7 @@ def test_install_job_refuses_on_a_cpu_only_machine(monkeypatch):
 
 
 def test_install_job_writes_the_marker_only_on_a_successful_exit(monkeypatch):
+    monkeypatch.setattr("platform.system", lambda: "Linux")
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
     monkeypatch.setattr(
         "src.llm.backend.detect_gpu", lambda: {"available": True, "vram_mb": 8192}
@@ -275,6 +276,10 @@ def test_install_job_writes_the_marker_only_on_a_successful_exit(monkeypatch):
 
 
 def test_install_job_never_writes_a_marker_on_a_failed_exit(monkeypatch):
+    # Isolated from the host OS (platform_support() is tested on its own,
+    # above) -- this test's own subject is the pip-exit-code -> no-marker
+    # behaviour, which must be exercised regardless of the CI runner's OS.
+    monkeypatch.setattr("platform.system", lambda: "Linux")
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
     monkeypatch.setattr(
         "src.llm.backend.detect_gpu", lambda: {"available": True, "vram_mb": 8192}
@@ -292,6 +297,7 @@ def test_install_job_never_writes_a_marker_on_a_failed_exit(monkeypatch):
 
 
 def test_install_job_creates_the_venv_first_when_absent(monkeypatch):
+    monkeypatch.setattr("platform.system", lambda: "Linux")
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
     monkeypatch.setattr(
         "src.llm.backend.detect_gpu", lambda: {"available": True, "vram_mb": 8192}
@@ -317,6 +323,7 @@ def test_install_job_creates_the_venv_first_when_absent(monkeypatch):
 
 
 def test_install_job_honours_a_cancel_between_venv_and_pip(monkeypatch):
+    monkeypatch.setattr("platform.system", lambda: "Linux")
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
     monkeypatch.setattr(
         "src.llm.backend.detect_gpu", lambda: {"available": True, "vram_mb": 8192}
