@@ -321,7 +321,21 @@ def restore_folder_backup(
     skip-if-present: a destination file that already EXISTS is never overwritten (so a
     differing local dump/blob is preserved). ``targets`` maps a category to its live
     directory (defaults: data_dir/wiki_dumps, data_dir/osm_regions, the Ollama store).
-    Only ``categories`` (default: all present) are restored. Atomic per-file."""
+    Only ``categories`` (default: all present) are restored. Atomic per-file.
+
+    SYMLINKS ARE ALWAYS REFUSED, NEVER FOLLOWED (fixed 2026-07-25, transversal audit
+    09): the backup source is untrusted input — the module's own top docstring states
+    "a folder backup on an external drive... can be edited" — and ``write_folder_
+    backup``/``_atomic_copy`` above NEVER create a symlink (every entry is a plain
+    file written via a temp-file-then-rename). So a symlink discovered here is never
+    something WE wrote; it can only be a hostile plant (or filesystem oddity), and
+    ``Path.is_file()``/``open()`` both silently FOLLOW a symlink to whatever it points
+    at — previously letting an attacker-controlled symlink inside e.g. ``wiki_dumps/``
+    have an arbitrary locally-readable file's CONTENT copied into the live data
+    directory under an innocuous filename (live-reproduced). ``Path.is_symlink()``
+    uses ``lstat`` (never follows), so checking it first costs nothing and touches
+    the symlink target not at all — mirroring the sibling ``verify_folder_backup``'s
+    own ``_safe_member_path`` guard for the identical untrusted-input threat model."""
     src = Path(src_root)
     cats = set(categories) if categories is not None else set(_CATEGORIES)
     tgt = dict(targets or {})
@@ -335,7 +349,7 @@ def restore_folder_backup(
 
         tgt.setdefault("models", default_store())
 
-    restored = skipped = 0
+    restored = skipped = refused_symlinks = 0
     stopped = False
     for cat in _CATEGORIES:
         if cat not in cats:
@@ -345,7 +359,12 @@ def restore_folder_backup(
         if not cat_root.is_dir() or dest_dir is None:
             continue
         for p in sorted(cat_root.rglob("*")):
-            if not p.is_file() or p.name.endswith(_PART_SUFFIX):
+            if p.name.endswith(_PART_SUFFIX):
+                continue
+            if p.is_symlink():
+                refused_symlinks += 1  # never follow -- see the docstring above
+                continue
+            if not p.is_file():
                 continue
             dst = dest_dir / p.relative_to(cat_root)
             if dst.exists():
@@ -359,7 +378,13 @@ def restore_folder_backup(
                 progress_cb({"restored": restored, "skipped": skipped})
         if stopped:
             break
-    return {"src": str(src), "restored": restored, "skipped": skipped, "stopped": stopped}
+    return {
+        "src": str(src),
+        "restored": restored,
+        "skipped": skipped,
+        "refused_symlinks": refused_symlinks,
+        "stopped": stopped,
+    }
 
 
 # --------------------------------------------------------------------------- #

@@ -110,13 +110,15 @@ def test_perception_extract_last_is_an_honest_stub_when_nothing_has_run(monkeypa
 
 
 def test_perception_extract_gate_reads_the_saved_live_eval_report(monkeypatch):
+    # The REAL persisted-artifact shape: the harness's own report nested one level
+    # under "report" (report["report"]["by_language"], not report["by_language"]).
     monkeypatch.setattr(
         "src.ai_layer.perception_job.last_perception_eval_live_report",
-        lambda: {"by_language": {"en": {
+        lambda: {"report": {"by_language": {"en": {
             "who": {"hallucination_rate": 0.0},
             "where": {"hallucination_rate": 0.0},
             "when": {"hallucination_rate": 0.0},
-        }}},
+        }}}},
     )
     resp = d.perception_extract_gate()
     body = json.loads(bytes(resp.body))
@@ -169,11 +171,11 @@ def test_perception_extract_job_status_reports_a_paused_progressive_sweep_on_an_
     monkeypatch.setattr("src.database.session.session_scope", fake_scope)
     monkeypatch.setattr("src.ai_layer.perception_extract_job._dir", lambda: tmp_path)
 
-    gate_report = {"by_language": {"en": {
+    gate_report = {"report": {"by_language": {"en": {
         "who": {"hallucination_rate": 0.0},
         "where": {"hallucination_rate": 0.0},
         "when": {"hallucination_rate": 0.0},
-    }}}
+    }}}}
     d._PERCEPTION_EXTRACT_JOB.start(
         model="stub:test", batch_size=5, client=RaisingClient(), gate_report=gate_report,
     )

@@ -2739,6 +2739,21 @@ def _member_bytes(value) -> bytes:
     return bytes(getattr(value, "body", b""))  # JSONResponse / Response
 
 
+def _fixity_bundle_member(db: Session) -> dict:
+    """The BOUNDED fixity-audit bundle member (transversal audit 09, C2). Calls the
+    real ``GET /api/integrity/fixity`` endpoint function directly (its own
+    ``guarded_read`` heavy-cap/single-flight wrapping applies unchanged), capped at
+    ``limit=500`` so a re-hash of every stored article never dominates the whole
+    bundle's wall time. Degrades honestly (never raises into the bundle build) if the
+    sibling router can't be imported for any reason."""
+    try:
+        from src.api.integrity import get_fixity
+
+        return get_fixity(limit=500, db=db)
+    except Exception as exc:  # noqa: BLE001 - one member's failure must not sink the bundle
+        return {"available": False, "reason": _all_diag_err_str(exc)}
+
+
 def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
     """The ordered (filename, generator) list for the all-diagnostics archive — the SINGLE
     source of truth shared by the synchronous ``/all`` endpoint and the background job, so the
@@ -2767,6 +2782,17 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("slow-queries.json", lambda: slow_queries(explain=1, db=db)),
         ("schema-drift.json", lambda: schema_drift_report(db=db)),
         ("corpus-integrity.json", lambda: corpus_integrity_report(sample=500, full=0, db=db)),
+        # transversal audit 09 (2026-07-25), C2: fold the local fixity audit in, as
+        # 08's own Action Plan C2 originally asked ("fold a fixity pass into the
+        # gate-row-3 diagnostics bundle rather than treating it as a separate ask").
+        # A re-hash of every stored article is one of the heaviest reads (its own
+        # docstring says so), so this member is BOUNDED (limit=500, matching
+        # corpus-integrity's own sample bound above) -- the standalone
+        # GET /api/integrity/fixity endpoint still defaults to a full-corpus audit
+        # for a direct, deliberate operator run. Reuses the endpoint's OWN
+        # guarded_read wrapping (single-flight/heavy-cap), the same code path a
+        # direct HTTP GET would take.
+        ("fixity.json", lambda: _fixity_bundle_member(db=db)),
         ("frontend-errors.json", lambda: frontend_errors(limit=500)),
         ("session-forensics.json", lambda: session_forensics_report()),
         # A12b: itemized footprint across ALL stores incl. the external Ollama model store.
@@ -3001,6 +3027,12 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/ai": "ai.json",
     "/qualification-assist-selftest": "qualification-assist-selftest.json",
     "/qualification-assist/last": "qualification-assist-run.json",
+    # transversal audit 09 (2026-07-25), C2: /fixity is a genuine diagnostic-shaped
+    # report (a local re-hash audit) that happened to live in the SIBLING
+    # src/api/integrity.py router -- see _DIAG_SIBLING_FILES below, which is what
+    # makes this path (and integrity.py's three functional exemptions right below)
+    # visible to the scan at all.
+    "/fixity": "fixity.json",
 }
 _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/source-quality": "whole-corpus decrypt ZIP export — own button (manifest 'excluded')",
@@ -3018,21 +3050,43 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/source-tags/status": "job control", "/source-tags/download": "job control",
     "/perception-extract/status": "job control", "/perception-extract/download": "job control",
     "/perception-extract/gate": "job control — a live, cheap gate preview, not a static report",
+    # src/api/integrity.py (transversal audit 09, C2): functional source-integrity
+    # API endpoints a UI feature calls directly (coordination/prominence views) —
+    # not diagnostic reports, unlike their sibling /fixity above.
+    "/profile": "functional source-integrity API (src/api/integrity.py), not a diagnostic report",
+    "/actors": "functional source-integrity API (src/api/integrity.py), not a diagnostic report",
+    "/prominence": "functional source-integrity API (src/api/integrity.py), not a diagnostic report",
 }
+# transversal audit 09 (2026-07-25), C2: the completeness ratchet below was found
+# structurally blind to any diagnostic-shaped GET route living in a SIBLING router
+# file (integrity.py's own /fixity local audit was invisible to it) -- both the
+# runtime coverage report AND the CI ratchet test now scan every file named here, in
+# ADDITION to this module's own source, so a future diagnostic hiding in another
+# router closes the SAME class of gap in one line rather than being independently
+# rediscovered. Filenames are relative to this module's own directory (src/api/).
+_DIAG_SIBLING_FILES: tuple[str, ...] = ("integrity.py",)
 
 
 def _diagnostics_coverage_report() -> dict:
     """Recompute the route-vs-member-vs-exemption completeness comparison AT RUN TIME
     (maintainer ruling: "ensured in the log, not just in CI") -- reads THIS module's own
-    source (no regex-scan of anything external), the same technique the CI ratchet uses,
-    against the shared ``_DIAG_COVERAGE_MAP``/``_DIAG_COVERAGE_EXEMPT`` above so the two
-    checks cannot silently diverge. Degrades to ``{"available": False}`` rather than ever
-    failing the whole bundle build over an introspection quirk."""
+    source PLUS every ``_DIAG_SIBLING_FILES`` router (never anything unlisted), the same
+    technique the CI ratchet uses, against the shared ``_DIAG_COVERAGE_MAP``/
+    ``_DIAG_COVERAGE_EXEMPT`` above so the two checks cannot silently diverge. Degrades to
+    ``{"available": False}`` rather than ever failing the whole bundle build over an
+    introspection quirk."""
     import re as _re
 
     try:
         src = pathlib.Path(__file__).read_text(encoding="utf-8")
         gets = set(_re.findall(r'@router\.get\("([^"]+)"', src))
+        for _fname in _DIAG_SIBLING_FILES:
+            gets |= set(
+                _re.findall(
+                    r'@router\.get\("([^"]+)"',
+                    (pathlib.Path(__file__).parent / _fname).read_text(encoding="utf-8"),
+                )
+            )
         covered = set(_DIAG_COVERAGE_MAP)
         exempt = set(_DIAG_COVERAGE_EXEMPT)
         unclassified = sorted(gets - covered - exempt)

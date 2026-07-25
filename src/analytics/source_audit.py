@@ -383,10 +383,15 @@ def audit_sources(
 
 
 def _walk_no_score(obj: Any) -> None:
+    """Raises explicitly (never a bare ``assert``, which ``python -O``/
+    ``PYTHONOPTIMIZE`` strips silently and would let this self-test's own
+    no-fabricated-score check false-pass under that flag — transversal
+    audit 09, 2026-07-25, §10.4)."""
     banned = ("score", "ranking", "rating", "grade")
     if isinstance(obj, dict):
         for k, v in obj.items():
-            assert not any(b in str(k).lower() for b in banned), f"score-like key: {k}"
+            if any(b in str(k).lower() for b in banned):
+                raise AssertionError(f"score-like key: {k}")
             _walk_no_score(v)
     elif isinstance(obj, list):
         for v in obj:

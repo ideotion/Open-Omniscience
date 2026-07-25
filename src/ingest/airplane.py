@@ -25,17 +25,36 @@ This is honesty by construction: with airplane mode engaged, no packet can reach
 the network from this process, whatever the code path. The per-call refusals stay
 as the friendly, explanatory layer; this is the net beneath them.
 
+PROXIED connections (transversal audit 09, 2026-07-25) are a distinct case worth
+naming: a SOCKS proxy (Tor's recommended ``socks5h://`` scheme, PySocks/
+``requests[socks]``) or a plain HTTP CONNECT-tunnel proxy (``src/safety/
+settings.py``'s ``http_proxy``, e.g. ``http://127.0.0.1:8118``) both connect to
+the *proxy* over an already-guarded loopback socket, then negotiate the *real*
+destination at an application-protocol layer the four functions above never see
+(PySocks' own ``sendall``, or the stdlib's CONNECT verb) — live-reproduced as a
+real bypass of this guard. Two more patches close it: PySocks' ``socksocket.
+connect`` (best-effort — PySocks is an operator-installed extra, absent means
+nothing to patch since no SOCKS proxying is even possible) and the stdlib's own
+``http.client.HTTPConnection._tunnel`` (always available) are ALSO guarded on
+their own real-destination argument, before either negotiates anything.
+
 Disable with ``OO_AIRPLANE_SOCKET_GUARD=0`` (e.g. an exotic deployment that proxies
 loopback). The guard never blocks while the kill switch is OFF.
 """
 
 from __future__ import annotations
 
+import http.client
 import ipaddress
 import os
 import socket
 
 from src.ingest import kill_switch_active
+
+try:
+    import socks as _pysocks  # type: ignore[import-untyped]
+except ImportError:  # pragma: no cover - PySocks is an operator-installed extra
+    _pysocks = None  # type: ignore[assignment]
 
 
 class AirplaneModeError(OSError):
@@ -95,6 +114,8 @@ _orig_getaddrinfo = socket.getaddrinfo
 _orig_create_connection = socket.create_connection
 _orig_connect = socket.socket.connect
 _orig_connect_ex = socket.socket.connect_ex
+_orig_tunnel = http.client.HTTPConnection._tunnel
+_orig_socks_connect = _pysocks.socksocket.connect if _pysocks is not None else None
 
 _installed = False
 
@@ -129,6 +150,27 @@ def _guarded_connect_ex(self, address):  # type: ignore[no-untyped-def]
     return _orig_connect_ex(self, address)
 
 
+def _guarded_tunnel(self):  # type: ignore[no-untyped-def]
+    """Guard the stdlib's HTTP CONNECT-tunnel handshake (a plain ``http://``
+    proxy scheme, e.g. Privoxy chained to Tor). The proxy TCP connect already
+    went through ``_guarded_connect`` above (loopback — allowed); ``_tunnel()``
+    is what actually asks the proxy to relay to the REAL destination, known
+    here as ``self._tunnel_host`` before any CONNECT bytes are sent.
+    """
+    _guard(self._tunnel_host)
+    return _orig_tunnel(self)
+
+
+def _guarded_socks_connect(self, dest_pair, *args, **kwargs):  # type: ignore[no-untyped-def]
+    """Guard PySocks' own ``connect()``. ``dest_pair`` is its first argument and
+    IS the real destination (host, port), known synchronously before any I/O —
+    guard it here so a SOCKS-proxied connection is refused exactly like a direct
+    one, before the proxy TCP connect (already guarded) even happens.
+    """
+    _guard(_addr_host(dest_pair))
+    return _orig_socks_connect(self, dest_pair, *args, **kwargs)
+
+
 def install_airplane_socket_guard() -> bool:
     """Install the process-wide backstop. Idempotent; honoured by all later sockets.
 
@@ -144,6 +186,9 @@ def install_airplane_socket_guard() -> bool:
     socket.create_connection = _guarded_create_connection  # type: ignore[assignment]
     socket.socket.connect = _guarded_connect  # type: ignore[assignment]
     socket.socket.connect_ex = _guarded_connect_ex  # type: ignore[assignment]
+    http.client.HTTPConnection._tunnel = _guarded_tunnel  # type: ignore[assignment]
+    if _orig_socks_connect is not None:
+        _pysocks.socksocket.connect = _guarded_socks_connect  # type: ignore[union-attr]
     _installed = True
     return True
 
@@ -157,6 +202,9 @@ def uninstall_airplane_socket_guard() -> None:
     socket.create_connection = _orig_create_connection  # type: ignore[assignment]
     socket.socket.connect = _orig_connect  # type: ignore[assignment]
     socket.socket.connect_ex = _orig_connect_ex  # type: ignore[assignment]
+    http.client.HTTPConnection._tunnel = _orig_tunnel  # type: ignore[assignment]
+    if _orig_socks_connect is not None:
+        _pysocks.socksocket.connect = _orig_socks_connect  # type: ignore[union-attr]
     _installed = False
 
 

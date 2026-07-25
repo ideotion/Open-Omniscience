@@ -208,6 +208,14 @@ def advance_backfill(
         except Exception:  # noqa: BLE001 - one URL's failure must not abort the tick
             key = "error"
             _LOG.warning("archive backfill: fetching %r failed", url, exc_info=True)
+            # A failure that reached here can include an uncommitted/failed
+            # transaction (store_fetched only catches IntegrityError itself --
+            # e.g. an OperationalError from a concurrent writer propagates
+            # straight through). Roll back so the session is usable again on
+            # the NEXT url in this tick -- without this, one dirty session
+            # silently cascades every remaining url in the batch to "error"
+            # too (transversal audit 09, 2026-07-25).
+            session.rollback()
         tally[key] = tally.get(key, 0) + 1
         attempted += 1
     cursor += attempted

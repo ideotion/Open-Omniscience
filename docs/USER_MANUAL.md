@@ -495,6 +495,60 @@ robots, etc. Fetching is always ethical (robots fail-closed, rate-limited).
   `reliability_score` (1–10). Import **upserts by domain** — new rows created,
   existing updated — and **bad rows are reported, not silently dropped**.
 
+#### Source qualification — the admission gate
+
+**Enabling a source is not enough on its own** — a source is only ever *scraped* once
+it has been **qualified**. Every source carries one of three categorical stamps, never
+a quality score:
+
+- **unqualified** — not yet judged (the default for a brand-new source);
+- **qualified** — passed a small trial fetch that checked *extraction validity* (real
+  prose vs a broken/junk scrape, e.g. a nav-menu page or a paywall wall) — it now
+  joins regular collection;
+- **disqualified** — the trial's extracted pages looked structurally broken, not
+  merely "boring" or terse (style is never judged, only whether real article text
+  came back at all).
+
+A **background job runs a few of these trial checks automatically on every online
+collection pass** (a bounded, consented, networked "few-article" fetch — refused
+under airplane mode, exactly like any other network action). On a fresh install with
+many newly-seeded/discovered sources, that trickle can leave a real backlog: **Settings
+→ Sources → "Source qualification"** shows the panel and a **"Qualify the backlog"**
+button that runs the *same* judging in bulk, as a cancellable task-manager job, to
+catch up faster.
+
+A **disqualified source gets a second chance** — it is never deleted, and the clock
+(never a re-import or a fresh citation) is the only thing that re-triggers a re-check:
+1 month after the first disqualification, doubling toward a 6-month cap (1 → 2 → 4 →
+6), resetting the moment a re-check passes. **This is why a newly-added or
+recently-disqualified source can sit enabled-but-unscraped for anywhere up to six
+months** without collecting anything — check its row's qualification pill (below) if a
+source you added seems to never contribute articles.
+
+**Where the qualification count went:** the Library tile that used to read a single
+"Sources" figure is now **three honest, non-overlapping figures** — *Sources
+(collecting)* (enabled **and** qualified), *Sources awaiting qualification (enabled)*,
+and *Discovered candidates* (still disabled — see below) — because blending them into
+one number made a machine-grown discovery backlog of tens of thousands of candidates
+read as if the app were already gathering from all of them.
+
+#### Discovery trail & qualified-citations tally
+
+Click a source's row to **expand its discovery trail**: **where it was found**
+(the citation channel, the catalog, Wikipedia references, …) and, for a
+citation-discovered source, the **first article that cited it** (with a link to both
+the article and the citing source). Beside it, a **qualified-citations tally** counts
+the domains *this* source itself cites, split into **qualified / disqualified /
+pending / not registered** — each number is clickable and expands to the exact list.
+
+This is a **descriptive fact, never a verdict on either source** — citing a
+disqualified domain is not guilt (a healthy outlet routinely links companies,
+platforms, or broken pages it is merely *reporting on*), and citing many qualified
+domains is not an endorsement either (a wire service gets cited by everyone; a
+laundering hub can cite reputable sources on purpose). Read it as a lead to
+investigate, the same way every other measured signal in this app is a lead, not a
+score.
+
 #### Languages we can't yet analyse — disabled by default (kept)
 
 The keyword/analytics engine can only **manage** languages for which a *stoplist*
@@ -948,6 +1002,24 @@ and **Wikipedia** are documented above
   **complements** your corpus and **never replaces** it: nothing you already have is
   overwritten, duplicates are detected bit-for-bit, and a conflicting value **keeps your
   local one and reports both**, never averaged.
+  - **Import reports.** Both a restore-merge and a folder newsletter import
+    automatically write a **persisted report** to disk afterwards (in the ARTICLES
+    unit — never a cross-table row-sum that reads like millions of articles when it
+    is really rows across many tables) — how many articles came in, how many were
+    screened out as non-articles (see **Non-article screening**, below), and the
+    "work induced" it leaves behind (e.g. how many newly-imported sources are still
+    awaiting qualification, see [§3.3](#33-sources-in-settings--sources)). The report
+    itself rides your **next** encrypted backup, so it travels with the corpus. It is
+    downloadable via `GET /api/backup/import-reports` (list) and
+    `GET /api/backup/import-reports/{filename}` (as JSON, or `?format=md` for a
+    readable Markdown rendering) — there is not yet a dedicated in-app screen for it,
+    so use those endpoints (or the browser) to read one.
+  - **Non-article screening.** Every restore-merge and folder newsletter import
+    automatically screens the articles it just brought in and **quarantines** — kept,
+    never deleted, and reversible — any that match the same extraction-validity
+    criteria the source qualification trial uses (a nav-menu page, a link list, a
+    broken scrape). A quarantined article is excluded from search and analytics but
+    stays in the database and rides your backups; the tally is in the import report.
   > **Legacy / migration paths (kept for older backups).** A separate panel restores an
   > **older single-file `oo-backup-2`** archive with the same additive-merge **preview**
   > (new / duplicate / conflict) before **Apply** (on a verified staged copy, atomic swap,

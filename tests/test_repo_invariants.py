@@ -6146,13 +6146,27 @@ def test_all_diagnostics_bundle_covers_every_get_diagnostic():
     from src.api.diagnostics, not hand-duplicated here — the manifest's own runtime
     coverage block (_diagnostics_coverage_report) recomputes this SAME comparison inside
     every all-diagnostics run, and importing rather than copying means the CI-time ratchet
-    and the runtime block can never silently diverge from each other."""
+    and the runtime block can never silently diverge from each other.
+
+    transversal audit 09 (2026-07-25), C2: the scan was structurally blind to any
+    diagnostic-shaped GET route living in a SIBLING router file (src/api/integrity.py's
+    own /fixity local audit was invisible to it) — now scans every file named in
+    src.api.diagnostics._DIAG_SIBLING_FILES too, mirroring the runtime coverage report
+    exactly (same list, same regex), so the two can never diverge on WHICH files are
+    in scope either."""
     import re
 
     from src.api import diagnostics as _diag
 
     src = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
     gets = set(re.findall(r'@router\.get\("([^"]+)"', src))
+    for _fname in _diag._DIAG_SIBLING_FILES:
+        gets |= set(
+            re.findall(
+                r'@router\.get\("([^"]+)"',
+                (_SRC / "api" / _fname).read_text(encoding="utf-8"),
+            )
+        )
 
     # endpoint path -> the bundle member filename that carries its payload. Imported from
     # src.api.diagnostics (see the module docstring above) rather than duplicated here.
