@@ -1161,6 +1161,51 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     FIRST — a project this write-safety-conscious usually already anticipated the bulk-DML case.
 
 ## Open queue (when maintainer says proceed)
+- **TRANSVERSAL AUDIT 09 — SECURITY + FUNCTIONAL DELTA (2026-07-25, maintainer-commissioned generic
+  "full transversal / bug-bounty / docs-vs-code" audit; full record =
+  [`docs/audit/09_TRANSVERSAL_AUDIT_0.3_DELTA.md`](docs/audit/09_TRANSVERSAL_AUDIT_0.3_DELTA.md), a
+  23-agent orchestrated workflow with every finding independently adversarial-skeptic-verified,
+  PENDING a future fix session — report-first per the established audit convention, nothing built
+  this session):** TWO P0s, both real, neither actively exploited in shipped code today. (1) **the
+  airplane-mode socket-level backstop is BLIND to the real destination host when a SOCKS/Tor proxy is
+  configured** — live-reproduced (a real PySocks connection through a stub SOCKS5 server, kill switch
+  engaged, zero `AirplaneModeError`) AND hand-verified by the auditing session directly against the
+  installed PySocks source: `socksocket.connect()` calls the patched `socket.socket.connect()` only
+  with the PROXY address (loopback, correctly allowed), then negotiates the REAL destination via
+  `sendall()` at the SOCKS application layer, invisible to the four functions
+  `install_airplane_socket_guard()` patches. Every KNOWN entry point (`EthicalFetcher.fetch`,
+  `GuardedSession.request`, the mailbox helpers) checks the kill switch before touching a proxy
+  session, so this is not leaking today — but it falsifies the guard's own "whatever the code path"
+  claim for exactly the transport at-risk journalists are told to use, and provides zero
+  defense-in-depth against a future missed per-call check. Recommended fix: gate proxy-session
+  CONSTRUCTION itself on `kill_switch_active()`, not just per-fetch call sites. (2) **the brand-new
+  (2026-07-24) B6 eval-gated who/where/when LLM-extraction feature is completely non-functional** —
+  `gate_languages_from_report()` (`src/ai_layer/perception_extract.py`) reads `report["by_language"]`
+  but the real persisted artifact nests it one level deeper at `report["report"]["by_language"]`, so
+  every language is PERMANENTLY gated "never evaluated" regardless of how clean the harness scores it
+  — live-reproduced end-to-end with the real production functions, zero mocks. Every unit test mocks
+  the wrong (bug-matching) shape, which is why it shipped fully green. Fails SAFE (extracts nothing
+  rather than fabricating), but silently defeats the entire shipped feature — a one-line unwrap fixes
+  it. FOUR P1s: a live-reproduced symlink-follow path-traversal in the folder-backup RESTORE path
+  (`restore_folder_backup`, `src/backup/folder_backup.py` — the sibling `verify_folder_backup` has the
+  traversal guard, restore doesn't; recurrence of a defect CLASS this project already fixed once in
+  the same subsystem); Pillow 12.2.0 pinned in `requirements.lock` with real CVEs reachable via
+  `POST /api/verify/image-metadata` (downgraded on reachability analysis to only 2 of 13 CVEs actually
+  reachable through this app's narrow `Image.open()+.load()`-only usage, both DoS not memory-
+  corruption — bump to `>=12.3.0` + regenerate the lockfile); a missing `session.rollback()` in the
+  new throughput-brief archive-backfill/housekeeping-lane loops that lets one dirty-session exception
+  silently cascade into marking unrelated URLs/ride-alongs as permanently failed (this project's own
+  documented mid-batch-handler-discards-siblings bug class, recurring); and `docs/USER_MANUAL.md` has
+  ZERO documentation of the qualification lifecycle despite the 0.3 close-gate's own row 1 explicitly
+  requiring that docs↔app reciprocity. Also: the all-diagnostics completeness ratchet
+  (`test_all_diagnostics_bundle_covers_every_get_diagnostic`) only scans `src/api/diagnostics.py`
+  itself and is structurally blind to sibling diagnostic-shaped routers (concretely,
+  `src/api/integrity.py`'s `/fixity` endpoint) — downgraded P1→P2, a completeness-mechanism gap not a
+  functional break. POSITIVE findings: all 5 P0s from the 2026-07-22 GUI test report are now confirmed
+  FIXED (4 distinct commits); the non-proxied half of the airplane guarantee holds perfectly under
+  direct adversarial code review (stdlib sockets/asyncio/TLS/mailbox protocols); all 5 spot-checked
+  non-negotiables hold; bandit/secrets/SQL-injection otherwise clean. The doc's own Action Plan D
+  (§12) ranks all ten follow-up items; items 1-2 (the two P0s) are the priority.
 - **FIELD DIAGNOSTICS FINDINGS (2026-07-21, from a real operator export against the live
   474,556-article corpus, NOT the 0.3 gate's ≥5M run):** brief of record =
   [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-21_FIELD_DIAGNOSTICS_FINDINGS.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-21_FIELD_DIAGNOSTICS_FINDINGS.md),
