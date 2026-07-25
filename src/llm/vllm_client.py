@@ -11,10 +11,12 @@ Ollama KEPT for the CPU-only fleet, never dropped, never a silent replacement.
 vLLM is an EXTERNAL process (like Ollama): the app never imports it in-process
 (torch stays banned from `pyproject.toml`'s core dependencies). This client only
 speaks HTTP to a running server. VERIFIED FACTS this module relies on (checked
-2026-07-24 -- PyPI is reachable in this sandbox, docs.vllm.ai/huggingface.co are
+2026-07-25 -- PyPI is reachable in this sandbox, docs.vllm.ai/huggingface.co are
 not, so verification stopped at what was reachable):
-  * PyPI ``vllm`` package exists, latest version 0.25.1, ``requires-python
-    <3.15,>=3.10`` (``https://pypi.org/pypi/vllm/json``).
+  * PyPI ``vllm`` package exists, latest version 0.26.0, ``requires-python
+    <3.15,>=3.10`` (``https://pypi.org/pypi/vllm/json``). Every recent release
+    ships ONLY `manylinux` wheels for x86_64/aarch64 -- no macOS or Windows
+    wheel at any version (``src.llm.vllm_lifecycle.platform_support()``).
   * The package's OWN description states "OpenAI-compatible API server" --
     ``/v1/chat/completions`` + ``/v1/models`` are the long-stable, documented
     surface (unchanged since early vLLM releases; this is well-established,

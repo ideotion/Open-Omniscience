@@ -63,6 +63,21 @@ def test_vllm_install_refuses_on_cpu_only(monkeypatch):
     assert ei.value.status_code == 409
 
 
+def test_vllm_install_refuses_on_a_non_linux_host_even_with_a_gpu(monkeypatch):
+    """A Windows/macOS machine (even one reporting a GPU) must be refused for
+    the platform reason, before it ever reaches a doomed pip install against
+    wheels that don't exist for its OS."""
+    from src.llm import backend as B
+
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    monkeypatch.setattr(B, "detect_gpu", lambda: {"available": True, "vram_mb": 8192})
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    with pytest.raises(HTTPException) as ei:
+        L.vllm_install()
+    assert ei.value.status_code == 409
+    assert "Linux wheels" in ei.value.detail
+
+
 def test_vllm_install_refuses_under_airplane_mode(monkeypatch):
     monkeypatch.setattr("src.ingest.kill_switch_active", lambda: True)
     with pytest.raises(HTTPException) as ei:

@@ -60,6 +60,55 @@ def test_is_installed_requires_both_marker_and_python():
 
 
 # --------------------------------------------------------------------------- #
+# platform_support() -- vLLM ships Linux-only wheels; a non-Linux host must be
+# refused honestly rather than left to a doomed pip install (the "vllm install
+# fails" symptom, root-caused: no OS check existed anywhere in this module).
+# --------------------------------------------------------------------------- #
+def test_platform_support_is_true_on_linux(monkeypatch):
+    monkeypatch.setattr("platform.system", lambda: "Linux")
+    monkeypatch.setattr("platform.machine", lambda: "x86_64")
+    support = V.platform_support()
+    assert support == {"os": "linux", "arch": "x86_64", "supported": True}
+
+
+def test_platform_support_is_false_on_windows(monkeypatch):
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    monkeypatch.setattr("platform.machine", lambda: "AMD64")
+    support = V.platform_support()
+    assert support["supported"] is False
+    assert support["os"] == "windows"
+    assert "Linux wheels" in support["reason"]
+    assert "Ollama" in support["reason"]
+
+
+def test_platform_support_is_false_on_macos(monkeypatch):
+    monkeypatch.setattr("platform.system", lambda: "Darwin")
+    monkeypatch.setattr("platform.machine", lambda: "arm64")
+    support = V.platform_support()
+    assert support["supported"] is False
+    assert support["os"] == "darwin"
+
+
+def test_install_job_refuses_on_a_non_linux_host_before_any_gpu_check(monkeypatch):
+    """The exact real-world failure mode: a Windows machine WITH an NVIDIA GPU
+    (nvidia-smi exists on Windows too) must be refused for the PLATFORM reason,
+    not sail through the GPU gate into a doomed pip install."""
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    monkeypatch.setattr(
+        "src.llm.backend.detect_gpu", lambda: {"available": True, "vram_mb": 8192}
+    )
+    with pytest.raises(V.VllmUnsupportedError, match="Linux wheels"):
+        V.run_install_job(FakeCtx())
+
+
+def test_status_discloses_platform_support(monkeypatch):
+    monkeypatch.setattr("platform.system", lambda: "Windows")
+    st = V.status()
+    assert st["platform"]["supported"] is False
+
+
+# --------------------------------------------------------------------------- #
 # compute_server_args -- the context auto-tune math (pure, disclosed method)
 # --------------------------------------------------------------------------- #
 def test_compute_server_args_no_vram_reading_is_a_conservative_default():

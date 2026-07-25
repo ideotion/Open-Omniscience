@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import subprocess  # noqa: S404 - fixed argv, no shell; every call site documents why
 import sys
 import time
@@ -42,12 +43,19 @@ from pathlib import Path
 
 from src.paths import data_dir
 
-# The exact version verified against PyPI's JSON API 2026-07-24 (this sandbox can
+# The exact version verified against PyPI's JSON API 2026-07-25 (this sandbox can
 # reach pypi.org; huggingface.co/docs.vllm.ai were blocked, so verification stopped
 # at what was reachable). Bump only after re-verifying against
 # https://pypi.org/pypi/vllm/json -- never guessed (the fabricated-endpoint burn).
-VLLM_VERIFIED_VERSION = "0.25.1"
-VLLM_VERIFIED_AS_OF = "2026-07-24"
+# 2026-07-25: confirmed 0.26.0 is the current release on PyPI (non-yanked,
+# uploaded the same day) -- one release ahead of the previously-pinned 0.25.1,
+# which was correct as of ITS OWN verification date and simply went stale by a
+# day (vLLM ships fast). Re-verified the wheel SHAPE is unchanged: both 0.25.1
+# and 0.26.0 publish only `cp38-abi3-manylinux_2_28_{x86_64,aarch64}` wheels +
+# a source sdist -- LINUX ONLY, no macOS/Windows wheel at all (see
+# platform_support() below, added the same day this was caught).
+VLLM_VERIFIED_VERSION = "0.26.0"
+VLLM_VERIFIED_AS_OF = "2026-07-25"
 
 DEFAULT_PORT = 8000
 DEFAULT_HOST = "127.0.0.1"
@@ -315,7 +323,10 @@ def stop(*, timeout: float = 10.0) -> dict:
 
 def status() -> dict:
     """A full status snapshot for the Settings -> AI tab and the diagnostics
-    member (B7) -- installed/running/GPU facts, never a fabricated readiness."""
+    member (B7) -- installed/running/GPU/platform facts, never a fabricated
+    readiness. ``platform`` is disclosed here (not just at install-attempt
+    time) so a non-Linux machine sees "not supported here" BEFORE ever
+    reaching for the install button."""
     from src.llm.backend import detect_gpu
 
     return {
@@ -324,6 +335,7 @@ def status() -> dict:
         "running": is_running(),
         "process_tracked": process_alive(),
         "gpu": detect_gpu(),
+        "platform": platform_support(),
         "base_url": base_url(),
         "venv_dir": str(venv_dir()),
         "verified_version": VLLM_VERIFIED_VERSION,
@@ -353,6 +365,45 @@ def _check_online() -> None:
         )
 
 
+def platform_support() -> dict:
+    """Describe the host OS and whether vLLM can be installed here at all.
+
+    PyPI verified fact (2026-07-25, ``VLLM_VERIFIED_AS_OF``): every recent
+    ``vllm`` release ships ONLY ``manylinux`` wheels for x86_64/aarch64 -- no
+    macOS wheel, no native Windows wheel, at any version. The sdist fallback
+    pip would otherwise attempt needs a full CUDA build toolchain and is not a
+    realistic path either. Mirrors ``src.llm.installer.platform_support()``'s
+    shape (``{os, arch, supported, reason}``) for the same class of question
+    about the Ollama binary installer, but there is no graphical-installer
+    alternative to point at here -- the honest answer on a non-Linux host is
+    simply "use Ollama instead" (RULED A12: Ollama is never dropped).
+
+    Checked BEFORE any subprocess/venv work in ``run_install_job`` (and by the
+    ``/api/llm/vllm/install`` endpoint's own synchronous pre-check, mirroring
+    how the airplane-mode and no-GPU checks are both duplicated there) --
+    without this, a Windows machine with an NVIDIA GPU (``detect_gpu()`` only
+    probes ``nvidia-smi``, which exists on Windows too) would sail past the
+    GPU gate straight into a doomed ``pip install`` against wheels that don't
+    exist for its platform, surfacing as a confusing raw pip/subprocess error
+    instead of an honest, actionable refusal -- the exact "install fails"
+    symptom this function exists to turn into a clear message.
+    """
+    system = platform.system().lower()
+    arch = platform.machine().lower()
+    if system == "linux":
+        return {"os": "linux", "arch": arch, "supported": True}
+    return {
+        "os": system or "unknown",
+        "arch": arch,
+        "supported": False,
+        "reason": (
+            f"vLLM only ships Linux wheels (manylinux x86_64/aarch64) -- there is no "
+            f"macOS or Windows build to install on this platform ({system or 'unknown'}). "
+            "Ollama is the supported backend here."
+        ),
+    }
+
+
 def run_install_job(
     ctx,
     *,
@@ -362,11 +413,16 @@ def run_install_job(
     """``BackgroundJob`` worker: create the managed venv (if absent) + ``pip
     install vllm==<version>``, streaming honest PHASE text (pip gives no
     reliable percentage, so this never fakes one — B2.3). Refuses up front on a
-    CPU-only machine or under airplane mode. Writes the install marker ONLY on a
-    verified-successful pip exit code — a failed install leaves NO marker, so
-    ``is_installed()`` never claims a half-configured backend works."""
+    non-Linux host (no vLLM wheel exists there at all -- ``platform_support()``),
+    a CPU-only machine, or under airplane mode. Writes the install marker ONLY
+    on a verified-successful pip exit code — a failed install leaves NO
+    marker, so ``is_installed()`` never claims a half-configured backend
+    works."""
     from src.llm.backend import detect_gpu
 
+    support = platform_support()
+    if not support["supported"]:
+        raise VllmUnsupportedError(support["reason"])
     _check_online()
     gpu = detect_gpu()
     if not gpu.get("available"):
