@@ -286,8 +286,13 @@ from src.jobs.background import BackgroundJob, register_job
 
 def _bulk_qualification_worker(ctx, *, batch_size=None):
     from src.catalog.qualify_job import run_bulk_qualification
+    from src.config.power_profiles import qualification_batch_size
 
-    return run_bulk_qualification(ctx, batch_size=batch_size or 20)
+    # 2026-07-24 throughput brief C5: an explicit batch_size (from the caller/endpoint)
+    # always wins; omitting it resolves to the active power profile (Optimized == the
+    # prior hard-coded 20, byte-identical) so a capable box can digest more per batch.
+    resolved = batch_size if batch_size is not None else qualification_batch_size()
+    return run_bulk_qualification(ctx, batch_size=resolved)
 
 
 _BULK_QUALIFICATION_JOB = register_job(
@@ -305,7 +310,11 @@ _BULK_QUALIFICATION_JOB = register_job(
 @limiter.limit("20/hour")
 async def qualify_sources_bulk(
     request: Request,
-    batch_size: int = Query(20, ge=1, le=200, description="candidates judged per internal batch"),
+    batch_size: int | None = Query(
+        None, ge=1, le=200,
+        description="candidates judged per internal batch (default: hardware-aware, "
+        "per the active power profile)",
+    ),
 ):
     """Drain the source-qualification backlog as a BACKGROUND JOB — the manual
     catch-up for the steady-state ride-along (5 candidates per online collection
@@ -317,13 +326,20 @@ async def qualify_sources_bulk(
     task manager; pauses honestly (never silently) under airplane mode or the
     memory guard, and stops honestly after a run of batches that judge nothing.
     No score anywhere — every candidate ends up qualified, disqualified, or
-    left unqualified for a later retry."""
+    left unqualified for a later retry.
+
+    ``batch_size`` omitted resolves to the active power profile (2026-07-24
+    throughput brief C5) — a capable box digests more candidates per batch;
+    Optimized stays byte-identical to the prior fixed default of 20. An
+    explicit value always wins over the profile."""
+    from src.config.power_profiles import qualification_batch_size
     from src.ingest import kill_switch_active
 
     if kill_switch_active():
         raise HTTPException(status_code=409, detail="network refused: airplane mode is engaged")
+    resolved = batch_size if batch_size is not None else qualification_batch_size()
     try:
-        return {"started": True, "job": _BULK_QUALIFICATION_JOB.start(batch_size=batch_size)}
+        return {"started": True, "job": _BULK_QUALIFICATION_JOB.start(batch_size=resolved)}
     except RuntimeError:
         return {"started": False, "job": _BULK_QUALIFICATION_JOB.status()}
 

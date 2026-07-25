@@ -19,13 +19,15 @@ properties, both test-pinned:
 The SERVER-SIDE knobs are now wired to the active profile (``OO_POWER_PROFILE``, default
 ``optimized`` → byte-identical to today): each consumer reads a resolver — ``sqlite_cache_mb()``
 (per connection), ``pass_budget_minutes()`` (per pass, LIVE), ``rollup_serve_ttl_s()`` (per serve,
-LIVE), ``dump_concurrency()`` (per manager), ``fts_analysis_limit()`` (per optimize, LIVE) — that
-returns its ``OO_*`` override if set, else the active profile's value. The two SETTING-backed knobs
-(``collect_parallelism``, ``llm_keep_alive``) are applied via the settings-write path, not the read
-site (the stored value is the user's explicit choice); ``poll_cadence_s`` is frontend-only
-(browser-gated). The active-profile CHIP + the suggest-a-lower-level proposal are BROWSER-GATED
-(fork-3); re-applying a changed cache_size to the RUNNING engine's open connections is
-OPERATOR-GATED (a restart picks it up).
+LIVE), ``dump_concurrency()`` (per manager), ``fts_analysis_limit()`` (per optimize, LIVE),
+``qualification_batch_size()`` (per bulk-job call, LIVE; 2026-07-24 throughput brief C5),
+``http_pool_size()`` (per fetcher construction; C9) — that
+returns its ``OO_*`` override if set, else the active profile's value. The three SETTING-backed
+knobs (``collect_parallelism``, ``llm_keep_alive``, ``qualification_per_pass``) are applied via
+the settings-write path, not the read site (the stored value is the user's explicit choice);
+``poll_cadence_s`` is frontend-only (browser-gated). The active-profile CHIP + the
+suggest-a-lower-level proposal are BROWSER-GATED (fork-3); re-applying a changed cache_size to the
+RUNNING engine's open connections is OPERATOR-GATED (a restart picks it up).
 
 Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
@@ -64,22 +66,35 @@ class Knob:
 
 # The registry. Each row's ``optimized`` is the CURRENT default verified against the tree:
 #   sqlite_cache_mb   -> OO_SQLITE_CACHE_MB default 64  (session.py / scale_bench.py)
-#   collect_parallelism -> AppSettings.collect_parallelism default 1 (runner.py:714)
+#   collect_parallelism -> SchedulerSettings.collect_parallelism default 50 (scheduler/settings.py:65
+#     -- RAISED from 1 by the 2026-07-23 maintainer ruling, superseding this row's earlier stale
+#     optimized=1; see C9's cross-check test that this stays truthful against the live default)
 #   pass_budget_minutes -> OO_PASS_BUDGET_MINUTES default 60 (runner.py:79)
 #   rollup_serve_ttl_s  -> OO_COLUMNAR_SERVE_TTL_S default 900 (rollup_serve.py:77)
 #   dump_concurrency    -> OO_DUMP_CONCURRENCY default 3 (wiki/dumps.py:37)
 #   llm_keep_alive      -> AppSettings.llm_keep_alive default "30m" (app_settings.py:35)
 #   fts_analysis_limit  -> NEW OO_FTS_ANALYSIS_LIMIT default 1000 (was the fts.py:384 literal)
 #   poll_cadence_s      -> OO_POLL_IDLE_S default 6 (frontend vitals cadence; JS wiring browser-gated)
+#   qualification_per_pass   -> SchedulerSettings.qualification_per_pass default 5 (settings.py:103)
+#     -- a SETTING-backed knob like collect_parallelism/llm_keep_alive: applied via the
+#     settings-write path (the ride-along's own persisted user choice), not a live read-site
+#     resolver -- published here for transparency only (2026-07-24 throughput brief C5).
+#   qualification_batch_size -> NEW OO_QUALIFICATION_BATCH_SIZE default 20 (was qualify_job.py's
+#     ``batch_size: int = 20`` literal + the /qualify-bulk endpoint's Query default; C5)
 PUBLISHED_KNOBS: tuple[Knob, ...] = (
     Knob("sqlite_cache_mb", "OO_SQLITE_CACHE_MB", "", "MiB", "memory",
          low=16, optimized=64, max=256,
          note="SQLite page cache; mmap is unavailable under the SQLCipher codec, so this is the "
               "in-memory read lever."),
     Knob("collect_parallelism", "", "collect_parallelism", "workers", "network",
-         low=1, optimized=1, max=8,
-         note="Bounded fetch worker pool; more workers = more concurrent Tor circuits. Per-host "
-              "politeness is unaffected (it lives in the host lock)."),
+         low=10, optimized=50, max=50,
+         note="Bounded fetch worker pool -- the hard CEILING on concurrent fetches (the "
+              "BandwidthGovernor's own runtime CPU/memory/writer-contention backoff, kept "
+              "EXACTLY as-is on small boxes, still applies underneath this static ceiling). "
+              "More workers = more concurrent Tor circuits; per-host politeness is unaffected "
+              "(it lives in the host lock). Max stays AT the maintainer-set hard ceiling "
+              "(SchedulerSettings._MAX_PARALLELISM=50, ruled 2026-07-23) rather than an "
+              "independently invented higher number -- raising it is a separate ruling."),
     Knob("pass_budget_minutes", "OO_PASS_BUDGET_MINUTES", "", "minutes", "cpu",
          low=30, optimized=60, max=180,
          note="Wall-clock budget for one collection pass before it yields."),
@@ -91,6 +106,12 @@ PUBLISHED_KNOBS: tuple[Knob, ...] = (
          low=1, optimized=3, max=6,
          note="Concurrent wiki/OSM dump downloads (files, no DB-writer contention); each is its "
               "own circuit."),
+    Knob("http_pool_size", "OO_HTTP_POOL", "", "connections", "network",
+         low=16, optimized=64, max=128,
+         note="Per-fetcher urllib3 connection-pool size (pool_connections=pool_maxsize) -- sized "
+              "generously so ~50 concurrent DISTINCT-host workers (collect_parallelism) don't "
+              "churn host-pools. Read once per EthicalFetcher CONSTRUCTION (next-pass, since a "
+              "fresh fetcher is built every pass)."),
     Knob("llm_keep_alive", "", "llm_keep_alive", "duration", "memory",
          low="0", optimized="30m", max="-1",
          note="Ollama model residency: '0' unloads immediately (frees RAM), '-1' never unloads "
@@ -104,6 +125,20 @@ PUBLISHED_KNOBS: tuple[Knob, ...] = (
          note="Frontend idle background-poll cadence; longer = less load. The JS wiring is "
               "browser-gated (fork-3) — the knob is published, not yet consulted by the UI.",
          frontend_wired=False),
+    Knob("qualification_per_pass", "", "qualification_per_pass", "candidates", "network",
+         low=2, optimized=5, max=20,
+         note="Source-qualification candidates judged per online collection pass (the "
+              "steady-state ride-along). Settings-backed like collect_parallelism: a profile "
+              "would rewrite the persisted value via the settings-write path, never a live "
+              "per-pass override — the ride-along must still share the pass with markets/"
+              "hazards/calendar/law (see the KindLadder), so it stays modest even on capable "
+              "boxes; the deep backlog drain is qualification_batch_size's job."),
+    Knob("qualification_batch_size", "OO_QUALIFICATION_BATCH_SIZE", "", "candidates", "network",
+         low=10, optimized=20, max=100,
+         note="Candidates judged per internal batch of the MANUAL bulk qualification job "
+              "(POST /api/sources/qualify-bulk) — the catch-up for a large discovery backlog "
+              "(measured 42.6k-66.7k candidates at the ride-along's 5/pass = 90+ days). A "
+              "capable box can digest far more per batch; a small box stays conservative."),
 )
 
 PROFILES: tuple[str, ...] = PROFILE_NAMES
@@ -227,6 +262,24 @@ def dump_concurrency() -> int:
     download manager is CONSTRUCTED, so a profile switch applies to a new manager (the boot
     singleton is next-restart). Per-host politeness is unaffected (it lives in the host lock)."""
     return _resolve_env_int("dump_concurrency", lo=1, hi=64)
+
+
+def http_pool_size() -> int:
+    """urllib3 connection-pool size per fetcher (``OO_HTTP_POOL`` or the active profile). Read
+    when an ``EthicalFetcher`` is CONSTRUCTED (a fresh one every pass — see the C4 module-level
+    note in ``src.ingest``), so a profile switch applies to the NEXT pass. Optimized=64 is
+    byte-identical to the literal it replaces."""
+    return _resolve_env_int("http_pool_size", lo=1, hi=10_000)
+
+
+def qualification_batch_size() -> int:
+    """Candidates per internal batch of the MANUAL bulk qualification job
+    (``OO_QUALIFICATION_BATCH_SIZE`` or the active profile). Read per REQUEST/worker-call
+    (a caller that omits an explicit ``batch_size`` gets this; an explicit value from the
+    caller always wins, per the standing override-always-wins rule), so a profile switch
+    applies to the NEXT run. Does not touch the admission logic in
+    ``src.catalog.qualification`` — only how many candidates one batch judges."""
+    return _resolve_env_int("qualification_batch_size", lo=1, hi=100_000)
 
 
 def fts_analysis_limit() -> int:

@@ -19,7 +19,9 @@ from src.config.power_profiles import (
     PROFILE_NAMES,
     PUBLISHED_KNOBS,
     fts_analysis_limit,
+    http_pool_size,
     power_profile_report,
+    qualification_batch_size,
     resolve_effective,
     run_power_profile_selftest,
 )
@@ -80,6 +82,73 @@ def test_fts_wiring_reads_the_knob_not_a_literal():
     src = Path("src/database/fts.py").read_text(encoding="utf-8")
     assert "fts_analysis_limit()" in src
     assert "PRAGMA analysis_limit=1000" not in src  # the literal is gone
+
+
+def test_qualification_batch_size_defaults_and_clamps(monkeypatch):
+    """2026-07-24 throughput brief C5: the manual bulk-qualification job digests a
+    hardware-aware batch, byte-identical to the prior fixed 20 on Optimized."""
+    monkeypatch.delenv("OO_QUALIFICATION_BATCH_SIZE", raising=False)
+    assert qualification_batch_size() == 20  # the published Optimized default
+    monkeypatch.setenv("OO_QUALIFICATION_BATCH_SIZE", "80")
+    assert qualification_batch_size() == 80
+    monkeypatch.setenv("OO_QUALIFICATION_BATCH_SIZE", "not-an-int")
+    assert qualification_batch_size() == 20  # bad value falls back, never crashes
+    monkeypatch.setenv("OO_POWER_PROFILE", "max")
+    monkeypatch.delenv("OO_QUALIFICATION_BATCH_SIZE", raising=False)
+    assert qualification_batch_size() == 100  # a capable box digests far more per batch
+
+
+def test_qualification_per_pass_is_a_published_settings_backed_knob():
+    """The ride-along's own per-pass budget is published for transparency (like
+    collect_parallelism/llm_keep_alive) but stays applied via the settings-write
+    path, never a live per-call override — the ride-along must still share the
+    pass with markets/hazards/calendar/law (the KindLadder)."""
+    by_name = {k.name: k for k in PUBLISHED_KNOBS}
+    knob = by_name["qualification_per_pass"]
+    assert knob.setting == "qualification_per_pass"
+    assert knob.env_var == ""
+    assert knob.optimized == 5  # SchedulerSettings.qualification_per_pass's real default
+
+
+def test_http_pool_size_defaults_and_clamps(monkeypatch):
+    """C9: the urllib3 connection-pool size is hardware-aware, byte-identical
+    to the prior fixed 64 on Optimized."""
+    monkeypatch.delenv("OO_HTTP_POOL", raising=False)
+    monkeypatch.delenv("OO_POWER_PROFILE", raising=False)
+    assert http_pool_size() == 64  # the published Optimized default
+    monkeypatch.setenv("OO_HTTP_POOL", "200")
+    assert http_pool_size() == 200
+    monkeypatch.setenv("OO_HTTP_POOL", "not-an-int")
+    assert http_pool_size() == 64  # bad value falls back, never crashes
+    monkeypatch.delenv("OO_HTTP_POOL", raising=False)
+    monkeypatch.setenv("OO_POWER_PROFILE", "max")
+    assert http_pool_size() == 128  # a capable box gets a bigger connection pool
+
+
+def test_ingest_wiring_reads_the_http_pool_knob_not_a_literal():
+    # C9: the fetcher's connection-pool sizing must consult the knob, not a
+    # hard-coded '64' literal (the fts_analysis_limit precedent, test_fts_wiring_*).
+    from pathlib import Path
+
+    src = Path("src/ingest/__init__.py").read_text(encoding="utf-8")
+    assert "http_pool_size()" in src
+    assert 'os.getenv("OO_HTTP_POOL", "64")' not in src  # the literal is gone
+
+
+def test_collect_parallelism_optimized_matches_the_real_scheduler_default():
+    """C9 (2026-07-24 throughput brief): this row went STALE once before (it
+    published optimized=1 for months after the 2026-07-23 ruling raised the
+    REAL SchedulerSettings.collect_parallelism default to 50 -- the
+    'Optimized == today' invariant is only ever CHECKED against the table's
+    own optimized field, never cross-checked against the live app default, so
+    the drift went unnoticed). Import the real dataclass fresh and compare, so
+    a future re-drift fails LOUD here instead of silently lying in the table."""
+    from src.scheduler.settings import SchedulerSettings
+
+    by_name = {k.name: k for k in PUBLISHED_KNOBS}
+    knob = by_name["collect_parallelism"]
+    assert knob.optimized == SchedulerSettings().collect_parallelism
+    assert knob.max == SchedulerSettings().collect_parallelism  # today IS the hard ceiling
 
 
 def test_every_profile_resolves_every_knob():

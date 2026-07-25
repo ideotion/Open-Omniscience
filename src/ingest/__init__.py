@@ -22,6 +22,8 @@ There is exactly one network path and no raw-requests bypass.
 from __future__ import annotations
 
 import ipaddress
+import json
+import logging
 import os
 import socket
 import threading
@@ -30,6 +32,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
+from pathlib import Path
 from typing import Any
 from urllib.parse import urljoin, urlparse
 from urllib.robotparser import RobotFileParser
@@ -37,6 +40,8 @@ from urllib.robotparser import RobotFileParser
 import requests
 
 from src.monitoring.activity import activity_monitor
+
+_LOG = logging.getLogger(__name__)
 
 try:  # Single source of truth is pyproject; never hardcode a version literal.
     _OO_VERSION = _pkg_version("open-omniscience")
@@ -109,6 +114,103 @@ class BlockedTarget(FetchFailed):
 # How long a robots.txt decision is cached, in seconds.
 _ROBOTS_TTL = 3600.0
 
+# --------------------------------------------------------------------------- #
+# A5 (2026-07-24 throughput brief, C4): persist the robots.txt verdict cache to
+# a small local JSON sidecar so a cold start reuses in-TTL decisions instead of
+# re-fetching robots.txt for every host. This is a SHARPER win than "across
+# restarts" alone: make_fetcher() builds a brand-new EthicalFetcher (empty
+# in-memory cache) once per COLLECTION PASS (see _default_run_once), so
+# WITHOUT this the whole robots cache was already being thrown away every
+# pass, not merely across a real app restart.
+#
+# Persisted as WALL-CLOCK time (time.time()), never the in-process MONOTONIC
+# clock _get_robots stores internally (self._now = time.monotonic, whose
+# epoch/reference point is arbitrary per process and platform) -- a raw
+# monotonic value written by one process is meaningless read back by
+# another. On load, the remaining TTL is recomputed from the wall-clock delta
+# and re-expressed in the CURRENT instance's own monotonic frame.
+# --------------------------------------------------------------------------- #
+_ROBOTS_PERSIST_LOCK = threading.Lock()
+
+
+def _robots_cache_path() -> Path:
+    from src.paths import data_dir
+
+    return data_dir() / "robots_cache.json"
+
+
+def _robots_persist_enabled() -> bool:
+    return os.environ.get("OO_ROBOTS_CACHE_PERSIST", "1") != "0"
+
+
+def _load_persisted_robots(
+    path: Path, *, now_monotonic, now_wall: float | None = None
+) -> dict[str, tuple[RobotFileParser | None, float]]:
+    """Reconstruct ``{host_key: (RobotFileParser|None, monotonic_expiry)}`` from
+    the persisted sidecar, DROPPING any entry whose wall-clock TTL has already
+    lapsed -- an expired verdict must be re-fetched, never trusted stale (the
+    fail-closed semantics are unchanged: a dropped/missing entry just means
+    the next fetch recomputes it, exactly like a fresh process today)."""
+    if not path.exists():
+        return {}
+    wall_now = now_wall if now_wall is not None else time.time()
+    try:
+        raw = json.loads(path.read_text("utf-8"))
+    except Exception:  # noqa: BLE001 - a corrupt sidecar must never break startup
+        return {}
+    out: dict[str, tuple[RobotFileParser | None, float]] = {}
+    for host_key, entry in (raw or {}).items():
+        try:
+            fetched_at = float(entry["fetched_at"])
+            kind = entry["kind"]
+            remaining = _ROBOTS_TTL - (wall_now - fetched_at)
+            if remaining <= 0:
+                continue  # expired -- re-fetch, never trust stale (NEGATIVE-SPACE)
+            decision: RobotFileParser | None
+            if kind == "parsed":
+                rp = RobotFileParser()
+                rp.parse(str(entry.get("body") or "").splitlines())
+                decision = rp
+            elif kind == "allow_all":
+                rp = RobotFileParser()
+                rp.parse([])
+                decision = rp
+            elif kind == "disallow_all":
+                decision = None
+            else:
+                continue  # unknown shape -- skip rather than guess
+            out[host_key] = (decision, now_monotonic() + remaining)
+        except Exception:  # noqa: BLE001 - one bad entry must never break the whole load
+            continue
+    return out
+
+
+def _persist_robots_entry(path: Path, host_key: str, *, kind: str, body: str | None) -> None:
+    """Best-effort: record ONE host's freshly-computed verdict in the persisted
+    sidecar (read-modify-write, atomic temp+replace, lock-guarded against
+    concurrent writers for different hosts). Never raises into the fetch path
+    -- a write failure only means the next process/pass re-fetches this host,
+    the SAME fail-closed fallback that already exists today."""
+    try:
+        with _ROBOTS_PERSIST_LOCK:
+            raw: dict = {}
+            if path.exists():
+                try:
+                    raw = json.loads(path.read_text("utf-8")) or {}
+                except Exception:  # noqa: BLE001 - a corrupt sidecar starts fresh
+                    raw = {}
+            raw[host_key] = {"kind": kind, "body": body, "fetched_at": time.time()}
+            # Bound the persisted file the SAME way the in-memory cache is bounded
+            # (_ROBOTS_CACHE_MAX) -- oldest-fetched entries evicted first.
+            if len(raw) > _ROBOTS_CACHE_MAX:
+                ordered = sorted(raw.items(), key=lambda kv: kv[1].get("fetched_at", 0))
+                raw = dict(ordered[-_ROBOTS_CACHE_MAX:])
+            tmp = path.with_suffix(".json.tmp")
+            tmp.write_text(json.dumps(raw), "utf-8")
+            tmp.replace(path)
+    except Exception:  # noqa: BLE001 - persistence is an optimisation, never required
+        _LOG.debug("robots cache persistence failed for %s", host_key, exc_info=True)
+
 
 def _env_cap(name: str, default: int, *, floor: int) -> int:
     """Parse a positive integer cap from the environment, defensively."""
@@ -138,6 +240,56 @@ _MAX_REDIRECTS = 5
 # HTTP statuses worth retrying (transient server-side / rate-limit signals). 4xx
 # client errors are deterministic and never retried (finding BUG-02).
 _RETRYABLE_STATUS = frozenset({429, 500, 502, 503, 504})
+
+# --------------------------------------------------------------------------- #
+# C8 (2026-07-24 throughput brief): skip local DNS resolution when the exit
+# resolves + a short-TTL cache for the path that still resolves locally (A6).
+# --------------------------------------------------------------------------- #
+#
+# _guard_target() calls socket.getaddrinfo(host) on EVERY fetch + EVERY redirect
+# hop -- even when proxied, where the resolved IP is never actually used to
+# connect (the proxy/exit does that). Two distinct fixes:
+#
+# (1) When the configured proxy scheme is REMOTE-RESOLVING (socks5h/socks4a --
+#     the trailing "h"/"a" is the curl/PySocks convention meaning "the PROXY
+#     resolves", as opposed to plain socks5/socks4 where WE resolve locally and
+#     hand the proxy an IP), the local getaddrinfo call is skipped entirely:
+#     we never learn an IP to check, so there is nothing for _guard_target to
+#     validate -- egress goes straight to the proxy with the hostname, saving
+#     one DNS round-trip AND closing a DNS-metadata leak to the local/ISP
+#     resolver (the exit performs the lookup instead). VERIFIED AT BUILD: the
+#     app's own documented example (src/safety/settings.py) was
+#     "socks5://127.0.0.1:9050" -- the LOCAL-resolving scheme -- so this
+#     optimisation is INERT unless the operator (or our own default/guidance)
+#     actually uses the "h" variant; the settings docstring/messages are
+#     updated to recommend socks5h as the more private default. A plain
+#     socks5/socks4 proxy is UNCHANGED (still resolved + guarded locally,
+#     byte-identical) -- skipping the guard there would be a real SSRF hole,
+#     since PySocks would still hand the proxy a LOCALLY-resolved IP with no
+#     guard between resolution and connection.
+# (2) For every path that STILL resolves locally (no proxy, or a non-remote-
+#     resolving one), a short-TTL cache avoids re-resolving the SAME host on
+#     every fetch/redirect hop within one pass. The TTL is intentionally SHORT
+#     (default 60s) -- long enough to save real repeat-lookup latency across a
+#     burst of fetches to one host, short enough that a DNS-rebinding attack
+#     gains nothing durable (the guard re-validates well within any plausible
+#     attack window). Per-instance (like every other host cache here), so it
+#     resets every pass along with everything else -- never persisted, no new
+#     staleness surface.
+_DNS_CACHE_TTL_S = float(os.getenv("OO_DNS_CACHE_TTL", "60") or "60")
+_DNS_CACHE_MAX = _env_cap("OO_DNS_CACHE_MAX", 2048, floor=64)
+# The curl/PySocks "remote resolve" scheme suffix: socks5h / socks4a.
+_REMOTE_RESOLVE_SOCKS_SCHEMES = frozenset({"socks5h", "socks4a"})
+
+
+def _is_remote_resolving_proxy(proxy_url: str | None) -> bool:
+    """True when ``proxy_url``'s scheme resolves DNS AT THE PROXY/EXIT
+    (``socks5h``/``socks4a``) rather than locally (``socks5``/``socks4``, any
+    plain http(s) proxy, or no proxy at all). PURE string check, no I/O."""
+    if not proxy_url or "://" not in proxy_url:
+        return False
+    scheme = proxy_url.split("://", 1)[0].lower()
+    return scheme in _REMOTE_RESOLVE_SOCKS_SCHEMES
 
 # --- Global network kill switch (a §0.5 invariant; maintainer: "Stop must be a
 # kill switch"). Once set, EVERY new fetch attempt -- scheduler, manual ingest,
@@ -191,9 +343,11 @@ class EthicalFetcher:
         max_bytes: int = 10 * 1024 * 1024,
         respect_robots: bool = True,
         proxy: str | None = None,
+        proxy_pool: list[str] | None = None,
         session: requests.Session | None = None,
         max_retries: int = 2,
         retry_backoff_s: float = 0.5,
+        robots_cache_path: Path | None = None,
     ):
         self.user_agent = user_agent
         self.min_interval_s = min_interval_s
@@ -204,6 +358,19 @@ class EthicalFetcher:
         self.max_retries = max(0, int(max_retries))
         self.retry_backoff_s = max(0.0, float(retry_backoff_s))
         self.proxy = proxy or None
+        # C10 (2026-07-24 throughput brief, §6b): an operator-run SOCKS pool.
+        # TAKES PRECEDENCE over ``proxy`` when non-empty (see _isolated_proxies,
+        # which does the actual per-host sharding). Re-validated here (not just
+        # at the settings-save layer) -- ALL-TOR OR REFUSED: fails loud on
+        # construction rather than silently using a pool with a non-SOCKS
+        # member, in case the caller bypassed save_settings's own check (e.g. an
+        # older/hand-edited persisted file, or a direct construction in tests).
+        self._proxy_pool: list[str] | None = None
+        if proxy_pool:
+            from src.safety.fetcher import validate_socks_pool
+
+            validate_socks_pool(list(proxy_pool))
+            self._proxy_pool = list(proxy_pool)
         self.session = session or requests.Session()
         self.session.headers.update({"User-Agent": user_agent})
         # Size the connection pool for parallel collection: with up to ~50
@@ -215,7 +382,12 @@ class EthicalFetcher:
             try:
                 from requests.adapters import HTTPAdapter
 
-                pool_n = max(1, int(os.getenv("OO_HTTP_POOL", "64")))
+                from src.config.power_profiles import http_pool_size
+
+                # C9 (2026-07-24 throughput brief): hardware-aware, via the
+                # OO_HTTP_POOL override or the active power profile (Optimized=64,
+                # byte-identical to the literal this replaces).
+                pool_n = max(1, http_pool_size())
                 adapter = HTTPAdapter(pool_connections=pool_n, pool_maxsize=pool_n)
                 self.session.mount("http://", adapter)
                 self.session.mount("https://", adapter)
@@ -225,7 +397,14 @@ class EthicalFetcher:
         # socks5://127.0.0.1:9050). We *use* the proxy and verify it is set; we do NOT
         # guarantee anonymity — the user must run and trust the proxy. SOCKS proxies need
         # the optional [safety] extra (PySocks); HTTP/HTTPS proxies work out of the box.
-        if self.proxy:
+        # A POOL's actual per-host endpoint is chosen at FETCH TIME (_isolated_proxies,
+        # every real request path routes through it) -- this session-level default is
+        # only ever a defensive fallback (the first member) for anything that might
+        # read .session.proxies directly without going through that method.
+        if self._proxy_pool:
+            first = self._proxy_pool[0]
+            self.session.proxies = {"http": first, "https": first}
+        elif self.proxy:
             self.session.proxies = {"http": self.proxy, "https": self.proxy}
         # Per-HOST Tor stream isolation (on by default; OO_TOR_STREAM_ISOLATION=0
         # disables). Over a SOCKS proxy, each host's requests ride their OWN Tor
@@ -238,6 +417,10 @@ class EthicalFetcher:
         # host -> (decision_parser_or_None, expiry). None == "do not fetch this host".
         self._robots: dict[str, tuple[RobotFileParser | None, float]] = {}
         self._last_request: dict[str, float] = {}
+        # C8: short-TTL DNS cache for the path that still resolves locally (a
+        # remote-resolving SOCKS proxy skips this entirely -- see
+        # _is_remote_resolving_proxy). host -> (getaddrinfo results, expiry).
+        self._dns_cache: dict[str, tuple[list, float]] = {}
         # Per-host locks: one source/host is fetched by at most ONE thread at a
         # time, so parallel collection (a bounded worker pool) is polite by
         # construction — concurrency is ACROSS hosts, never within one host's
@@ -254,6 +437,19 @@ class EthicalFetcher:
         # sleep is indirected so tests can run without real delays.
         self._sleep = time.sleep
         self._now = time.monotonic
+
+        # A5 (2026-07-24 throughput brief, C4): reuse in-TTL robots.txt verdicts
+        # from a prior pass/process instead of starting cold every time
+        # make_fetcher() builds a fresh instance (see the module-level note by
+        # _ROBOTS_TTL). Injectable so tests never touch the real data_dir().
+        self._robots_cache_path = robots_cache_path or _robots_cache_path()
+        if _robots_persist_enabled():
+            try:
+                self._robots.update(
+                    _load_persisted_robots(self._robots_cache_path, now_monotonic=self._now)
+                )
+            except Exception:  # noqa: BLE001 - a bad cache load must never break construction
+                pass
 
     def _host_lock(self, netloc: str) -> threading.Lock:
         """Return (creating if needed) the lock that serialises fetches to ``netloc``.
@@ -283,7 +479,41 @@ class EthicalFetcher:
             "robots": len(self._robots),
             "last_request": len(self._last_request),
             "host_locks": len(self._host_locks),
+            "dns": len(self._dns_cache),
         }
+
+    def declared_sitemaps(self, url: str) -> list[str]:
+        """Sitemap URLs the host's own robots.txt DECLARES (``Sitemap:`` directives,
+        parsed by the stdlib ``RobotFileParser`` -- the same cached decision
+        ``_enforce_robots`` uses, so this costs a real robots fetch only on a cache
+        miss). C7 (2026-07-24 throughput brief): the preferred discovery source,
+        since it is the site's OWN authoritative pointer -- a conventional
+        ``/sitemap.xml`` guess is only the fallback (see ``src.ingest.sitemap``).
+
+        Same guards as :meth:`fetch` (this can trigger a REAL robots.txt fetch on a
+        cache miss, so it must never bypass them): the kill switch is honoured
+        (airplane mode refuses -- raises ``FetchFailed``, exactly like ``fetch``),
+        the SSRF guard runs on the target host, and the per-host lock serialises
+        against a concurrent fetch to the same host.
+
+        Returns ``[]`` (never a guess) when robots.txt disallows/is unavailable for
+        this host, or when it declares no sitemaps at all.
+        """
+        if _KILL.is_set():
+            raise FetchFailed("network kill switch is active -- collection stopped by operator")
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            return []
+        self._guard_target(parsed.hostname)  # SSRF: never reach internal addresses
+        host_key = f"{parsed.scheme}://{parsed.netloc}"
+        with self._host_lock(parsed.netloc):
+            parser = self._get_robots(host_key, parsed)
+        if parser is None:
+            return []
+        try:
+            return list(parser.site_maps() or [])
+        except Exception:  # noqa: BLE001 - a parser quirk must never break discovery
+            return []
 
     def _declares_crawl_delay(self, key_or_netloc: str) -> bool:
         """True when the cached robots decision for this host declares a
@@ -563,6 +793,16 @@ class EthicalFetcher:
         loopback stand-in hosts). For a real fetch, literal IPs are checked and hostnames
         are resolved + checked (rejecting a name that resolves to a private/loopback/
         link-local address — defeating DNS-rebinding-to-internal).
+
+        C8: when the configured proxy is REMOTE-RESOLVING (socks5h/socks4a), the
+        hostname branch is skipped entirely — we never learn an IP to validate,
+        egress goes straight to the proxy, and the exit resolves it (see the
+        module-level note by ``_is_remote_resolving_proxy``). A literal IP is
+        STILL checked either way (cheap, no resolution needed). Every other
+        configuration (no proxy, a plain http(s) proxy, or a LOCAL-resolving
+        socks5/socks4 proxy) keeps the FULL guard, byte-identical to before —
+        this is the one branch that changes behaviour, and only under a
+        verified remote-resolving scheme.
         """
         if not self._real_session:
             return
@@ -575,18 +815,63 @@ class EthicalFetcher:
             return  # a public IP literal
         except ValueError:
             pass  # not an IP literal -> a hostname
-        try:
-            infos = socket.getaddrinfo(host, None)
-        except OSError as exc:
-            raise FetchFailed(f"cannot resolve host {host!r}: {exc}") from exc
+        if _is_remote_resolving_proxy(self._effective_base_proxy(host)):
+            return  # the exit resolves; nothing for us to check
+        infos = self._resolve_cached(host)
         for info in infos:
             ip = ipaddress.ip_address(info[4][0])
             if _is_blocked_ip(ip):
                 raise BlockedTarget(f"{host} resolves to a non-public address ({ip})")
 
+    def _resolve_cached(self, host: str) -> list:
+        """``socket.getaddrinfo(host, None)`` with a short-TTL cache (C8/A6) — a
+        real fetch/redirect chain can hit the SAME host several times in one pass;
+        this avoids re-resolving it every time. Bounded (``_DNS_CACHE_MAX``): on
+        overflow the WHOLE cache is cleared rather than a sorted eviction (the TTL
+        is already short, so this self-heals within ``_DNS_CACHE_TTL_S`` regardless
+        — simpler than the size-sorted eviction the robots/last-request caches use,
+        and correctness never depends on which entries survive)."""
+        now = self._now()
+        cached = self._dns_cache.get(host)
+        if cached is not None and now < cached[1]:
+            return cached[0]
+        try:
+            infos = socket.getaddrinfo(host, None)
+        except OSError as exc:
+            raise FetchFailed(f"cannot resolve host {host!r}: {exc}") from exc
+        if len(self._dns_cache) >= _DNS_CACHE_MAX:
+            self._dns_cache.clear()
+        self._dns_cache[host] = (infos, now + _DNS_CACHE_TTL_S)
+        return infos
+
+    def _effective_base_proxy(self, host_or_netloc: str | None) -> str | None:
+        """The proxy THIS host actually uses, before any per-host stream-
+        isolation auth is layered on: the pool's sharded member when a POOL is
+        configured (C10), else the single ``self.proxy``, else ``None``.
+
+        ``host_or_netloc`` accepts EITHER a bare hostname (``_guard_target``'s
+        ``parsed.hostname``) or a full ``netloc`` (``_isolated_proxies``'s
+        ``parsed.netloc``, which may carry a port / IPv6 brackets) --
+        normalised to the bare hostname here so BOTH call sites shard the SAME
+        host onto the SAME pool member (a port-bearing vs bare form of the
+        identical host must never disagree on which endpoint/circuit it gets)."""
+        if self._proxy_pool and host_or_netloc:
+            from src.safety.fetcher import shard_host_to_proxy
+
+            hostname = urlparse(f"//{host_or_netloc}").hostname or host_or_netloc
+            return shard_host_to_proxy(hostname, self._proxy_pool)
+        return self.proxy
+
     def _isolated_proxies(self, netloc: str | None) -> dict[str, str] | None:
-        """Per-HOST Tor stream-isolation proxies for ``netloc`` (or ``None`` to
-        use the session's base proxy).
+        """Per-HOST proxy selection + Tor stream-isolation for ``netloc`` (or
+        ``None`` to use the session's base proxy).
+
+        C10: when an operator-run SOCKS POOL is configured, ``netloc`` first
+        SHARDS onto one pool member (a stable, host->endpoint mapping -- see
+        ``src.safety.fetcher.shard_host_to_proxy``) -- per-host CIRCUIT
+        isolation (below) is still layered on TOP of that endpoint, so a host
+        gets both a dedicated endpoint AND a dedicated circuit on it. Without a
+        pool this is exactly the prior single-proxy behaviour.
 
         Returns a ``{"http":…, "https":…}`` dict whose SOCKS URL carries a
         per-host username so Tor's ``IsolateSOCKSAuth`` builds a dedicated circuit
@@ -595,14 +880,25 @@ class EthicalFetcher:
         robots.txt both route through this, so a host's traffic shares one circuit
         and is unlinkable to other hosts' circuits.
         """
-        if not self._stream_isolation or not self.proxy or not netloc:
+        if not netloc:
+            return None
+        base = self._effective_base_proxy(netloc)
+        if not base:
+            return None
+        if self._proxy_pool and not self._stream_isolation:
+            # A pool member is still an explicit per-call override even with
+            # isolation off (unlike the single-proxy path, which can fall back
+            # to the session-level default) -- every host must land on ITS
+            # sharded endpoint, never the session's arbitrary first-member default.
+            return {"http": base, "https": base}
+        if not self._stream_isolation:
             return None
         # Lazy import: src.safety.fetcher imports from src.ingest, so a top-level
         # import here would be circular. The helper is pure string work.
         from src.safety.fetcher import _with_stream_isolation
 
-        isolated = _with_stream_isolation(self.proxy, netloc)
-        if isolated == self.proxy:
+        isolated = _with_stream_isolation(base, netloc)
+        if isolated == base and not self._proxy_pool:
             return None  # non-SOCKS proxy (or creds already set): nothing to isolate
         return {"http": isolated, "https": isolated}
 
@@ -746,6 +1042,11 @@ class EthicalFetcher:
         # not leaked onto the shared base circuit (complete per-host isolation).
         iso = self._isolated_proxies(getattr(parsed, "netloc", None))
         decision: RobotFileParser | None
+        # Persisted alongside `decision` (A5, C4) so a reload can reconstruct the
+        # SAME parser: "parsed" carries the raw body, "allow_all"/"disallow_all"
+        # need none (defaults below cover every early-return/exception path).
+        persist_kind = "disallow_all"
+        persist_body: str | None = None
         try:
             # Follow redirects MANUALLY through the shared guarded loop so a
             # robots.txt that 30x-redirects to an internal address is refused
@@ -758,11 +1059,13 @@ class EthicalFetcher:
                 rp = RobotFileParser()
                 rp.parse(resp.text.splitlines())
                 decision = rp
+                persist_kind, persist_body = "parsed", resp.text
             elif status in (404, 410):
                 # No robots.txt -> everything allowed (standard behaviour).
                 rp = RobotFileParser()
                 rp.parse([])
                 decision = rp
+                persist_kind = "allow_all"
             elif status in (401, 403):
                 # Access to robots is restricted -> treat the whole site as off-limits.
                 decision = None
@@ -776,6 +1079,10 @@ class EthicalFetcher:
             decision = None
 
         self._robots[host_key] = (decision, self._now() + _ROBOTS_TTL)
+        if _robots_persist_enabled():
+            _persist_robots_entry(
+                self._robots_cache_path, host_key, kind=persist_kind, body=persist_body
+            )
         return decision
 
     # -- rate limiting ----------------------------------------------------- #

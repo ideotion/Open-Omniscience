@@ -480,6 +480,10 @@ def test_scheduler_ride_along_wiring():
     assert "AI CHANGE SUMMARIES" in runner_src
     assert "from src.law.summarize import advance_law_summaries" in runner_src
     assert "sum_res = advance_law_summaries(session)" in runner_src
-    # gated the SAME opt-out as tracking itself (appears twice: once for
-    # auto_track_due, once for the new summarize ride-along).
-    assert runner_src.count('getattr(settings, "auto_track_law", True)') >= 2
+    # S-B (2026-07-24 throughput brief, C1): law tracking + its AI-summary
+    # follow-up now ride the housekeeping lane's "law" kind as ONE step
+    # (_lane_step_law), gated ONCE at _lane_pending_kinds -- both were always
+    # tied to the SAME auto_track_law flag, so collapsing the previous two
+    # separate checks (one for auto_track_due, one for the summarize
+    # ride-along) into a single gate is behavior-identical, not a regression.
+    assert runner_src.count('getattr(settings, "auto_track_law", True)') >= 1

@@ -154,15 +154,25 @@ def trial_fetch(session: Session, source: Source, fetcher: EthicalFetcher,
                  *, max_items: int = TRIAL_MAX_ITEMS) -> dict:
     """The consented few-article trial scrape, reusing the SAME ingest path the regular
     collection pass uses -- "no wasted fetch": whatever is fetched is kept as normal
-    STORED articles, never a throwaway probe. RSS-feed sources only in this build (the
-    overwhelming common case for scheduled collection); a source with no ``rss_url`` is
-    judged on whatever it has already collected by other means, if anything (a known,
-    documented scope limit -- see run_qualification_pass)."""
+    STORED articles, never a throwaway probe.
+
+    RSS-feed sources use the feed. A source with NO ``rss_url`` -- the FEEDLESS
+    MAJORITY of the discovery backlog (2026-07-24 throughput brief C7: every
+    Wikidata-catalog-generated source, confirmed by grep, never sets ``rss_url`` at
+    all) -- now falls back to the sitemap trial channel
+    (:func:`src.ingest.sitemap.sitemap_trial_ingest`): discover the source's own
+    article URLs via its sitemap and ingest a bounded few, exactly like the RSS
+    path. Only a source with NEITHER an rss_url NOR a discoverable sitemap is
+    judged on whatever it has already collected by other means, if anything (the
+    residual, narrower documented scope limit -- see run_qualification_pass)."""
     from src.ingest.pipeline import ingest_source
 
-    if not getattr(source, "rss_url", None):
-        return {}
-    return ingest_source(session, source, fetcher=fetcher, max_items=max_items)
+    if getattr(source, "rss_url", None):
+        return ingest_source(session, source, fetcher=fetcher, max_items=max_items)
+
+    from src.ingest.sitemap import sitemap_trial_ingest
+
+    return sitemap_trial_ingest(session, source, fetcher, max_items=max_items)
 
 
 def select_unqualified(session: Session, *, limit: int) -> list[Source]:
@@ -271,6 +281,7 @@ def evaluate_and_stamp(
     from src.database.models import SourceQualificationAttempt
 
     qualified = disqualified = 0
+    qualified_ids: list[int] = []
     for source in sources:
         fails = fails_by_source.get(source.id, [])
         verdict = decide_verdict(fails)
@@ -283,11 +294,17 @@ def evaluate_and_stamp(
             source.qualified_at = now
             source.qualification_criteria_version = criteria_version
             qualified += 1
+            qualified_ids.append(source.id)
         else:
             source.qualified_at = None
             source.qualification_criteria_version = None
             disqualified += 1
-    return {"qualified": qualified, "disqualified": disqualified}
+    # C15 (2026-07-24 throughput brief, S-E slice 2): qualified_ids is returned
+    # (never enqueued HERE, before the caller's own commit) so the caller can
+    # enqueue archive backfill only AFTER the "qualified" stamp is actually
+    # committed -- a rollback between this call and the commit must never
+    # queue a backfill for a source that was never really admitted.
+    return {"qualified": qualified, "disqualified": disqualified, "qualified_ids": qualified_ids}
 
 
 def log_no_evidence_attempts(
@@ -327,10 +344,12 @@ def run_qualification_pass(
     NO-EVIDENCE CANDIDATES ARE NEVER STAMPED (2026-07-23 field-diagnostics fix -- verified
     LIVE against the field log's "qualification trial fetch failed for 'latimes.com'"):
     ``source_audit.per_source_metrics``/``flag_criteria`` OMIT a source ENTIRELY (not just
-    from its BAD-tail flags) when it has zero stored articles -- this covers BOTH a
-    totally-failed trial fetch (no rss_url reachable) AND a candidate with no rss_url at
-    all (a documented scope limit: "judged on whatever it has already collected by other
-    means, if anything"). Reading that absence as "no failing criteria" and defaulting to
+    from its BAD-tail flags) when it has zero stored articles -- this covers a totally-
+    failed trial fetch (no rss_url reachable) AND, since C7 (2026-07-24 throughput brief)
+    narrowed but did not close this gap, a candidate with NEITHER an rss_url NOR a
+    discoverable sitemap (a documented, narrower scope limit: "judged on whatever it has
+    already collected by other means, if anything"). Reading that absence as "no failing
+    criteria" and defaulting to
     STATUS_QUALIFIED would silently ADMIT a candidate we never actually verified -- exactly
     the free pass the whole admission gate exists to prevent. So a candidate that produced
     NO evidence this round is left ``unqualified`` (its current status -- untouched, no
@@ -391,6 +410,21 @@ def run_qualification_pass(
     tally = evaluate_and_stamp(session, judged, fails_by_source, now=now)
     log_no_evidence_attempts(session, no_evidence, now=now)
     session.commit()
+
+    # C15 (2026-07-24 throughput brief, S-E slice 2): auto-enqueue a BOUNDED
+    # archive backfill for every source that just got its "qualified" stamp
+    # COMMITTED -- never before the commit (a rollback must never leave a
+    # backfill queued for a source that was never really admitted). Always
+    # full_history=False here: the automatic path never requests full
+    # history, which is an explicit, separately-invoked per-source action.
+    # Best-effort -- a queueing hiccup must never fail a qualification pass.
+    for sid in tally.get("qualified_ids", []):
+        try:
+            from src.ingest.archive_backfill import enqueue_source
+
+            enqueue_source(sid, full_history=False)
+        except Exception:  # noqa: BLE001 - never fail qualification over a queueing hiccup
+            _LOG.warning("archive backfill enqueue failed for source %s", sid, exc_info=True)
 
     return {
         "enabled": True, "evaluated": len(candidates), "trial_fetch_errors": trial_errors,

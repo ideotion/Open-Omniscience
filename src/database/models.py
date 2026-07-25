@@ -460,6 +460,14 @@ class Source(Base):
     qualified_at: Mapped[datetime | None] = mapped_column(DateTime)
     qualification_criteria_version: Mapped[str | None] = mapped_column(String(40))
 
+    # Crawl-supplement rotation marker (§8 crawl-by-default ruling, 2026-07-24
+    # throughput brief, C3): when this source was last visited by the bounded
+    # crawl sub-pass (NEVER by the explicit whole-source mode="crawl" run, which
+    # is orthogonal). NULL = never crawled by the supplement, so it sorts FIRST
+    # in the least-recently-crawled rotation -- ordering, never exclusion, the
+    # same cover-everything guarantee every other rotation in this file gives.
+    last_crawled_at: Mapped[datetime | None] = mapped_column(DateTime)
+
     # Relationship to articles
     articles = relationship("Article", back_populates="source", cascade="all, delete-orphan")
 
@@ -484,6 +492,7 @@ class Source(Base):
         Index("idx_source_country", "country"),
         Index("idx_source_type", "source_type"),
         Index("idx_source_status", "status"),
+        Index("idx_source_last_crawled", "last_crawled_at"),
     )
 
     def __repr__(self):

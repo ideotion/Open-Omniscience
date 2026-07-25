@@ -326,6 +326,54 @@ def test_empty_backlog_is_a_clean_immediate_complete(db, scope, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# C5 (2026-07-24 throughput brief): the worker resolves a HARDWARE-AWARE default
+# batch size when the caller omits one, but an explicit value always wins over
+# the power profile — the admission logic itself (qualification_pass) is
+# untouched by any of this (proven by every test above staying green unchanged).
+# --------------------------------------------------------------------------- #
+
+
+def test_worker_resolves_a_hardware_aware_default_when_batch_size_is_omitted(monkeypatch):
+    from src.api.source_management import _bulk_qualification_worker
+
+    captured: dict = {}
+
+    def _fake_run_bulk_qualification(ctx, *, batch_size):
+        captured["batch_size"] = batch_size
+        return {"complete": True}
+
+    monkeypatch.setattr(
+        "src.catalog.qualify_job.run_bulk_qualification", _fake_run_bulk_qualification
+    )
+    monkeypatch.delenv("OO_QUALIFICATION_BATCH_SIZE", raising=False)
+    monkeypatch.delenv("OO_POWER_PROFILE", raising=False)
+
+    _bulk_qualification_worker(object(), batch_size=None)
+    assert captured["batch_size"] == 20  # Optimized == the prior hard-coded default
+
+    monkeypatch.setenv("OO_POWER_PROFILE", "max")
+    _bulk_qualification_worker(object(), batch_size=None)
+    assert captured["batch_size"] == 100  # a capable box digests far more per batch
+
+
+def test_an_explicit_batch_size_always_wins_over_the_power_profile(monkeypatch):
+    from src.api.source_management import _bulk_qualification_worker
+
+    captured: dict = {}
+
+    def _fake_run_bulk_qualification(ctx, *, batch_size):
+        captured["batch_size"] = batch_size
+        return {"complete": True}
+
+    monkeypatch.setattr(
+        "src.catalog.qualify_job.run_bulk_qualification", _fake_run_bulk_qualification
+    )
+    monkeypatch.setenv("OO_POWER_PROFILE", "max")  # would resolve to 100 if consulted
+    _bulk_qualification_worker(object(), batch_size=7)
+    assert captured["batch_size"] == 7
+
+
+# --------------------------------------------------------------------------- #
 # Wiring guard (the slice-1c 404 lesson): COMPOSE the backend routes from the
 # router prefix + decorators and require the frontend to call exactly those.
 # --------------------------------------------------------------------------- #

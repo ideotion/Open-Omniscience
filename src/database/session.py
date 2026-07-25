@@ -209,6 +209,7 @@ def init_db() -> None:
         ensure_law_document_language_columns,
         ensure_law_text_columns,
         ensure_source_counter_columns,
+        ensure_source_last_crawled_column,
         ensure_source_qualification_columns,
         ensure_supergroup_ring_column,
         ensure_wiki_text_columns,
@@ -274,6 +275,10 @@ def init_db() -> None:
     # one-time "already scraped -> already qualified" backfill (never starves an
     # install that was already collecting before this column existed).
     ensure_source_qualification_columns(engine)
+
+    # C3: crawl-supplement rotation marker (self-heal, no backfill; populates
+    # forward as the §8 crawl-by-default rung visits sources).
+    ensure_source_last_crawled_column(engine)
 
     # DB-8: the self-heals above bring an OLD store's schema to head WITHOUT touching the
     # alembic stamp, leaving a "lying stamp" (behind head while the schema is ahead) that

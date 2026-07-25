@@ -68,6 +68,12 @@ def order(monkeypatch):
     # join it so the ordering/phase assertions below stay deterministic.
     if sched._briefing_thread is not None:
         sched._briefing_thread.join(timeout=5)
+    # S-B (2026-07-24 throughput brief, C1): calendar/markets/law/hazards/
+    # world-discovery/qualification/country-data now ride the housekeeping
+    # lane's OWN background thread (see run_housekeeping_lane) instead of
+    # running inline — join it too, for the same determinism reason.
+    if sched._lane_thread is not None:
+        sched._lane_thread.join(timeout=5)
     return calls, phases_at
 
 
@@ -112,7 +118,16 @@ def test_market_feeds_autoload_in_default_rss_pass_after_scrape(order):
     """Field log 2026-06-18: price_points = 0 because the curated commodity/index
     feeds only imported in markets MODE, while the default continuous mode is rss.
     They must now ride the default pass's housekeeping (freshness-gated), AFTER the
-    articles (time-to-first-article) and BEFORE the briefing."""
+    articles (time-to-first-article).
+
+    S-B (2026-07-24 throughput brief, C1) amendment: markets now runs inside the
+    housekeeping LANE's own background thread rather than inline on the pass
+    thread, and the briefing refresh (S4.1) already runs in a SEPARATE background
+    thread — the two are independent, concurrent background tasks with NO
+    guaranteed relative order (that is the whole point of C1: the serial tail no
+    longer serializes them against each other). So "markets before briefing" is no
+    longer asserted; only "after the real scrape" still holds, since both
+    background kicks happen strictly after the synchronous scrape returns."""
     calls, _ = order
-    assert "markets" in calls, calls
-    assert calls.index("scrape") < calls.index("markets") < calls.index("briefing"), calls
+    assert "markets" in calls and "briefing" in calls, calls
+    assert calls.index("scrape") < calls.index("markets"), calls

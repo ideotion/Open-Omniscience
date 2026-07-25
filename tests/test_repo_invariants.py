@@ -7341,6 +7341,103 @@ def test_briefing_refresh_runs_in_a_background_thread_not_inline():
     assert '_phase_set("briefing")' not in pass_body
 
 
+def test_housekeeping_lane_runs_in_a_background_thread_not_inline():
+    """S-B (2026-07-24 throughput brief, C1): the serial network ride-alongs —
+    markets/calendar/law (+ its AI change-summary follow-up)/hazards (+ weather
+    signals)/world-discovery/qualification/country-data — must NOT run inline
+    at the tail of a collect pass; two 2026-07-23 field diagnostics exports
+    (a 2-core AND an 8-core machine) both measured a 3-8 min inter-pass gap
+    largely spent on exactly this serial tail. Guard that the scheduler kicks
+    them off via a dedicated async LANE method with its own lock (non-
+    overlapping, never queued) through its OWN session+fetcher (never the
+    pass's — 'never two writers on one cursor' for world-discovery/
+    qualification still holds because writes serialise through the single
+    process-wide writer gate regardless of which session initiates them), and
+    that _default_run_once's own body no longer calls any of the moved
+    ride-alongs directly — see tests/test_scheduler_housekeeping_lane.py and
+    tests/test_kind_ladder_wiring.py for the full behavioural coverage."""
+    runner = (_SRC / "scheduler" / "runner.py").read_text(encoding="utf-8")
+    assert "def _kick_housekeeping_lane(self)" in runner
+    assert "self._lane_lock" in runner and "self._lane_thread" in runner
+    assert "def run_housekeeping_lane(session, fetcher, settings" in runner
+    lane_body = runner.split("def _kick_housekeeping_lane(self)", 1)[1].split(
+        "\n    def _default_run_once", 1
+    )[0]
+    assert "acquire(blocking=False)" in lane_body
+    assert "_bgtasks.register(" in lane_body and '"housekeeping"' in lane_body
+    assert "threading.Thread(" in lane_body and ".start()" in lane_body
+    assert "run_housekeeping_lane(session, fetcher, settings)" in lane_body
+    assert "kill_switch_active()" in lane_body  # airplane-aware: refuses up front
+
+    # _default_run_once's OWN body: it calls the async kickoff, and never calls
+    # any of the moved ride-alongs directly (the old serial inline call sites
+    # are gone -- they now live ONLY inside the _lane_step_* functions, which
+    # are defined BEFORE _default_run_once in this module, so this slice
+    # excludes them by construction, not by accident).
+    pass_body = runner.split("def _default_run_once", 1)[1]
+    assert "self._kick_housekeeping_lane()" in pass_body
+    for gone in (
+        "auto_import_due_feeds(fetcher)",
+        "import_due_feeds(session, fetcher=fetcher)",
+        "auto_track_due(session, fetcher)",
+        "advance_world_discovery(",
+        "advance_qualification(",
+        "advance_country_data(",
+        "auto_snapshot_due(",
+        "auto_refresh_weather_due(",
+    ):
+        assert gone not in pass_body, f"{gone!r} must be moved into a _lane_step_* function"
+
+
+def test_crawl_by_default_rides_the_housekeeping_lanes_lowest_rung():
+    """§8 crawl-by-default (2026-07-24 throughput brief, C3): the ruling is a
+    HYBRID BUDGETED RUNG, never a mode flip -- ``mode="crawl"`` (the explicit
+    whole-source selector, ``VALID_MODES``/``_process_source``) stays
+    orthogonal and unchanged. Guard that the supplement's own settings exist
+    with the ruled default (ON) and that its lane step exists and is
+    registered -- see tests/test_crawl_supplement.py for the full behavioural
+    coverage (rotation, stamping, isolation, no new fetch path)."""
+    settings_src = (_SRC / "scheduler" / "settings.py").read_text(encoding="utf-8")
+    assert 'mode: str = "rss"' in settings_src  # the explicit selector default is UNCHANGED
+    assert "crawl_supplement: bool = True" in settings_src
+    assert "crawl_per_pass: int = 3" in settings_src
+
+    runner = (_SRC / "scheduler" / "runner.py").read_text(encoding="utf-8")
+    assert 'pending.add("crawl")' in runner
+    assert '"crawl": _lane_step_crawl' in runner
+    assert "_CRAWL_SUPPLEMENT_MAX_PAGES" in runner and "_CRAWL_SUPPLEMENT_MAX_DEPTH" in runner
+
+
+def test_robots_cache_persists_across_pass_and_restart_boundaries():
+    """A5 (2026-07-24 throughput brief, C4): a fresh EthicalFetcher must reuse
+    an in-TTL robots.txt verdict from a prior instance instead of re-fetching
+    -- the SHARPER finding this slice surfaced is that make_fetcher() builds a
+    brand-new EthicalFetcher once per collection PASS, so without this the
+    whole robots cache was already being discarded every pass, not merely
+    across a real app restart. Guard that persistence is wired, wall-clock
+    (never the in-process monotonic clock, whose epoch is meaningless across
+    a restart), and TTL-respecting -- see tests/test_robots_cache_persistence.py
+    for the full behavioural coverage (reuse, fail-closed reuse, the
+    expired-entry negative-space case, corruption resilience, the opt-out)."""
+    ingest_src = (_SRC / "ingest" / "__init__.py").read_text(encoding="utf-8")
+    assert "def _load_persisted_robots(" in ingest_src
+    assert "def _persist_robots_entry(" in ingest_src
+    assert "robots_cache_path: Path | None = None" in ingest_src
+    # Wall-clock persisted, monotonic never persisted directly (the correctness-
+    # critical part -- a raw monotonic value is meaningless across a restart).
+    load_body = ingest_src.split("def _load_persisted_robots(", 1)[1].split(
+        "\ndef _persist_robots_entry", 1
+    )[0]
+    assert "wall_now - fetched_at" in load_body  # wall-clock delta drives the remaining TTL
+    assert "now_monotonic() + remaining" in load_body  # re-expressed in the CURRENT frame
+    persist_body = ingest_src.split("def _persist_robots_entry(", 1)[1]
+    assert '"fetched_at": time.time()' in persist_body  # wall-clock write, not monotonic
+
+    # Wired into both the read (construction) and write (a fresh decision) sites.
+    assert "_load_persisted_robots(self._robots_cache_path, now_monotonic=self._now)" in ingest_src
+    assert "_persist_robots_entry(\n                self._robots_cache_path" in ingest_src
+
+
 def test_memory_headroom_honesty_never_projects_a_worker_count():
     """S4.3 (field-feedback 2026-07-23, 'memory-headroom honesty for small
     boxes'): a mem-low-capped pass must surface a REAL, MEASURED note (never a

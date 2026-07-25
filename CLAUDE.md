@@ -1134,6 +1134,31 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     success) and a data-loss-lens pass caught a third MEDIUM (the all-cores worker count had NO
     upper bound, unlike the everyday default's cap; fixed with a separate, higher-but-still-finite
     ceiling for the exclusive path).
+  - **A CLASS METHOD NAMED `list` SHADOWS THE BUILTIN `list` FOR EVERY LATER-DECLARED ANNOTATION
+    IN THE SAME CLASS BODY (2026-07-24, C11 throughput-brief slice, wiring segmented downloads
+    into the wiki-dump/OSM managers):** `DumpDownloadManager`/`OsmDownloadManager` each already
+    define a method named `list(self) -> list[dict]:`; adding a NEW keyword param typed
+    `mirrors: list[str] | None = None` to a method declared FURTHER DOWN the same class raised a
+    genuinely confusing mypy error ("Function ... .list is not valid as a type") — confirmed via
+    a minimal repro (`class Foo: def list(self)->list[dict]: ...; def bar(self, x:
+    list[str]|None=None): ...`). Python class-body scoping means the method's own NAME becomes
+    the nearest binding for that identifier for every annotation textually AFTER it in the class,
+    shadowing the builtin. FIX = use `collections.abc.Sequence[str]` for the new parameter instead
+    of `list[str]` — the general lesson: when a class defines a method whose name collides with a
+    builtin type name (`list`/`dict`/`set`/`type`/…), NEVER trust `list[...]`/`dict[...]`
+    annotations declared later in that same class; reach for the `collections.abc` equivalent, or
+    rename one of the two.
+  - **THE SINGLE-WRITER GATE ALREADY COVERS BULK `session.execute(insert()/update()/delete())` —
+    NOT JUST ORM `session.add()` (2026-07-24, C13 throughput-brief slice, batching keyword-mention
+    inserts):** before restructuring `index_article`'s per-term loop from N `session.add(KeywordMention(...))`
+    calls into ONE `session.execute(insert(KeywordMention), rows)` SQLAlchemy 2.0 "ORM Bulk INSERT"
+    call, the write gate's own coverage needed re-confirming — a bulk `insert()`/`update()`/`delete()`
+    statement does NOT flow through the ORM unit-of-work's `before_flush` hook the gate's
+    `_on_before_flush` listener attaches to. `src/database/writer.py`'s OWN docstring already
+    documents the answer: it ALSO attaches a `do_orm_execute` listener specifically to catch this
+    class of bulk DML, so no additional gate-wiring was needed. General form: before assuming a new
+    write pattern needs its own gate wiring, read the gate module's own docstring/listener list
+    FIRST — a project this write-safety-conscious usually already anticipated the bulk-DML case.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD DIAGNOSTICS FINDINGS (2026-07-21, from a real operator export against the live
