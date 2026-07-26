@@ -1294,6 +1294,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   diagnostic-bundle members (`keyword-log-digest`/`source-audit`) that categorically cannot finish
   inside their 300s deadline at ~6.9M keywords / 76,679 sources. Full per-instance detail + the
   8-item prioritized action list in the brief. Nothing built; PENDING a future fix session.
+  **ENRICHED same day (maintainer: "please identify them precisely and enrich... to allow the
+  autonomous session to be as fruitful as possible"): every buildable finding above now carries a
+  full, code-cited, directly-implementable fix specification in the brief** (exact functions to
+  add/edit with file:line anchors, exact proposed code, exact tests to add) — produced by four
+  dedicated deep-dive investigations against live `main`, not inferred from this ledger's own
+  prose. **CORRECTION to (c) above: the `htmldate.meta` filter was only HALF-fixed on 2026-07-23**
+  — `errorlog.py`'s `install()` attached the noise filter to the app's OWN `_JsonlErrorHandler`
+  only, never to the `htmldate.meta` logger itself, so the noise was dropped from the JSONL
+  counters but still reached every OTHER handler (console included) — **live-confirmed the same
+  day** by a fresh-install terminal-log paste showing 25 repeated `ERROR [htmldate.meta]
+  impossible to clear cache...` lines printed to the console. The brief's fix moves the filter to
+  the LOGGER level (checked before ANY handler, per Python's `logging` semantics) and extends it
+  to cover `trafilatura.metadata` with the same mechanism, closing both (c)'s findings and the
+  live console-noise report in one change. **NEW EVIDENCE — an 8-machine parallel-instance
+  confirming experiment** (maintainer, same day): ran the current build on 8 separate machines
+  simultaneously to test whether aggregate article throughput scales with instance count — "in
+  order to confirm my intuition that having multiple instances of OOS downloads more articles than
+  having only one, thus explaining that the current limitation is neither TOR related bandwidth
+  limitation nor hard disk / ram / computation limitations, and that it's only related to the
+  software." If confirmed, this directly implicates single-instance software ceilings — exactly
+  the WAL-starvation (§1) and `/api/database/countries` (§2) mechanisms above — as the fix
+  priority; the brief records the experiment's design + hypothesis and flags that its actual
+  aggregate-vs-single throughput numbers were not yet shared, so none are fabricated here.
 - **TRANSVERSAL AUDIT 09 — SECURITY + FUNCTIONAL DELTA (2026-07-25, maintainer-commissioned generic
   "full transversal / bug-bounty / docs-vs-code" audit; full record =
   [`docs/audit/09_TRANSVERSAL_AUDIT_0.3_DELTA.md`](docs/audit/09_TRANSVERSAL_AUDIT_0.3_DELTA.md), a

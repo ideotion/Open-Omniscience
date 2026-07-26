@@ -11,10 +11,16 @@ articles / 6,914,218 keywords / 315,699 commodity_prices / 4,163,474 article_lin
 mentioned_dates / 2,209 collecting sources / 1,391 sources awaiting qualification / 73,079
 discovered candidates.
 
-**Companion work still pending:** the maintainer is separately sending diagnostic-log exports
-from multiple parallel instances on different hardware, for a cross-instance comparison in the
-style of the 2026-07-23 AMD-3020e-vs-i7-13620H field diagnostics. That comparison is NOT in this
-brief — it will land as either an appendix to this doc or a companion doc once the logs arrive.
+**Companion work delivered:** the maintainer separately sent diagnostic-log exports from 7
+parallel instances on different hardware; the cross-instance comparison, now including precise,
+code-cited fix specifications for every buildable finding, lives in
+[`AUTONOMOUS_SESSION_BRIEF_2026-07-26_HARDWARE_DIAGNOSTICS_COMPARISON.md`](AUTONOMOUS_SESSION_BRIEF_2026-07-26_HARDWARE_DIAGNOSTICS_COMPARISON.md).
+That doc's §11 also documents an 8-machine parallel-instance confirming experiment the maintainer
+ran the same day, directly relevant to this brief's item 9 (qualification wastefully judging
+disabled candidates is one concrete software-side mechanism that experiment's hypothesis — a
+software, not Tor-bandwidth or single-machine-hardware, ceiling on per-instance throughput — would
+implicate). Read that doc's §1 (WAL/checkpoint starvation) and §2 (`/api/database/countries`)
+before starting item 9's throughput-adjacent work below.
 
 ---
 
@@ -136,6 +142,40 @@ model tag first" dead-end toast.
    least have an independent, never-disabled Cancel button. Since item 8 below keeps both tools,
    it may be worth applying the same UI fix there too while the pattern is fresh — optional, not
    requested.
+
+### Backend test to add (the `model: str | None = None` fallback)
+
+New tests in `tests/test_triage_and_source_tags_endpoints.py` (alongside the existing
+`test_keyword_triage_run_refuses_an_uninstalled_model`/`test_source_tags_run_refuses_an_uninstalled_model`
+at lines 94/169) and the perception-extract equivalent in `tests/test_perception_extract_endpoints.py`:
+
+```python
+def test_keyword_triage_run_falls_back_to_the_active_model_when_none_is_given(monkeypatch):
+    """model omitted entirely (or null) must resolve via active_model() -- the SAME
+    fallback perception_job.py:49 already uses -- never a required-field 422."""
+    monkeypatch.setattr("src.api.llm.active_model", lambda: "installed-default:tag")
+    # ... POST /api/diagnostics/keyword-triage/run with NO "model" key in the body
+    # assert 200/202, and assert the run actually used "installed-default:tag"
+    # (e.g. via an injected fake client asserting the model kwarg it received).
+```
+
+Mirror the identical shape for `SourceTagsRunBody` and `PerceptionExtractRunBody`. This closes the
+loop the moment `model: str | None = None` + `body.model or active_model()` lands — a request with
+no `model` key at all must succeed, not 422 on a missing required field.
+
+### Frontend verification note
+
+The three toggle-handler rewrites (backed by one shared helper, per the fix shape above) are
+browser-verify-gated per this repo's own Q6a convention (`CLAUDE.md`'s "ENVIRONMENT" ruling —
+frontend ships conservative + `node --check`-clean + guarded by an extended
+`tests/test_repo_invariants.py::test_ui_invariants` assertion, but a human click-through is still
+owed). A concrete, cheap invariant to add there: assert the shared helper function exists (by
+name) and that none of the three `onclick`/button-init call sites in `app.js` still set
+`btn.disabled = true` around the polling loop — the same "must be gone" source-scoped assertion
+style already used elsewhere in that test file (scope the assertion to each handler's own function
+body via a `def ` split, per this project's own documented "false-pass on a whole-file substring
+search" lesson — never a bare whole-file grep for `disabled`, since other, legitimate uses of
+`btn.disabled` exist elsewhere in the same file).
 
 ---
 
@@ -327,6 +367,10 @@ report of tagging succeeding "after a while" on later, further-down-the-ranking 
 1. Surface `pb.missing`/`pb.parse_failures` in both the live progress detail string and the final
    result render — e.g. `"batch N · X tagged · Y skipped (evidence floor) · Z rejected
    (validation)"` — so a validation-storm is diagnosable in real time, not silently absorbed.
+   `renderSourceTagsResult` (`app.js:11839-11852`) needs the two new fields threaded through; the
+   backend already logs them per-batch (`source_tags_job.py:634-641` computes the detail string —
+   extend it there, not just at render time, so the JSONL log and the live UI show the same
+   numbers).
 2. Catch `LLMError` alongside `LLMUnavailable` in the per-batch try/except — either treat it as
    pause-with-reason like `LLMUnavailable`, or (better, and see item 7's shared fix) add
    bounded retry-with-backoff before pausing.
@@ -335,6 +379,78 @@ report of tagging succeeding "after a while" on later, further-down-the-ranking 
    storm? Consider whether the prompt should cap/dedupe/normalize it.
 4. Ties directly into item 1's UI fix — once the job can genuinely fail, the toggle UI needs to
    visibly distinguish "error" from "running"/"paused"/"idle."
+
+### Precise test additions (reuse the exact `_FlakyOllama` pattern already proven for langdetect)
+
+The 2026-07-24 Session A fix for the language-detection job (`src/ai_layer/langdetect_llm.py`,
+tested in `tests/test_ai_langdetect_resilience.py`) is the exact, already-proven reference
+implementation for both halves of this fix (retry-with-backoff AND the terminal-vs-transient
+distinction). Its test file's `_FlakyOllama` fake client is directly reusable:
+
+```python
+# tests/test_ai_langdetect_resilience.py:55-73 (the reference to copy/reuse)
+class _FlakyOllama:
+    """Raises LLMUnavailable on the first ``fail_times`` generate() calls, then answers
+    normally (or forever, if ``fail_times`` exceeds the number of calls the test makes)."""
+    def __init__(self, reply, *, fail_times: int):
+        self.base_url = "http://127.0.0.1:11434"
+        self._reply = reply
+        self._fail_times = fail_times
+        self.calls = 0
+    def is_available(self) -> bool:
+        return True
+    def generate(self, prompt, *, model="m", system=None, options=None, keep_alive=None):
+        self.calls += 1
+        if self.calls <= self._fail_times:
+            raise LLMUnavailable("simulated transient outage")
+        text = self._reply(prompt) if callable(self._reply) else self._reply
+        return GenerationResult(model=model, text=text)
+```
+
+Add to `tests/test_source_tags_job.py` (which already has
+`test_ollama_outage_mid_run_is_an_honest_error` at line 148 — that test proves the CURRENT,
+broken, zero-retry behavior and should be **kept as a regression guard on the terminal-failure
+case**, not deleted, once the new tests below prove the transient case is now handled first):
+
+```python
+def test_a_transient_outage_retries_and_the_batch_still_completes(db, monkeypatch, tmp_path):
+    """One simulated LLMUnavailable on a batch must NOT abort the sweep -- mirrors
+    tests/test_ai_langdetect_resilience.py::test_a_transient_outage_retries_and_the_run_stays_alive
+    exactly, applied to run_progressive_source_tags_job / _FlakyOllama with fail_times=1."""
+    ...
+    flaky = _FlakyOllama(_reply, fail_times=1)
+    # wire flaky in place of the real client (same monkeypatch shape as the langdetect test)
+    result = run_progressive_source_tags_job(...)
+    assert flaky.calls == 2, "exactly one retry after the one simulated failure"
+    assert result["assigned_count"] >= 1
+    assert "error" not in result
+
+def test_llm_error_alongside_llm_unavailable_is_also_retried_not_a_hard_crash(db, monkeypatch, tmp_path):
+    """The field bug's actual trigger: OllamaClient.generate raises LLMError (not
+    LLMUnavailable) on a non-404 HTTP error status from a server that is UP but
+    erroring -- e.g. a 500, plausibly from a context-length overflow triggered by the
+    large verbatim vocabulary. Today this is UNCAUGHT and propagates to
+    BackgroundJob._run()'s catch-all, flipping state to a hard "error". Must instead
+    be caught by the same retry/backoff path as LLMUnavailable."""
+    # a fake client whose generate() raises LLMError (not LLMUnavailable) on the
+    # first N calls, then succeeds -- same shape as _FlakyOllama but for the sibling
+    # exception class; assert the run does NOT reach BackgroundJob state=="error"
+    # and instead completes/pauses honestly like the LLMUnavailable case.
+
+def test_after_the_configured_consecutive_failure_budget_the_job_gives_up_loudly(db, monkeypatch, tmp_path):
+    """Mirrors test_ai_langdetect_resilience.py::test_n_consecutive_failures_gives_up_loudly_never_as_done
+    exactly: a backend that never recovers must not spin forever, but the terminal
+    state must be genuinely 'error' (or the job's existing honest 'paused' state),
+    never a silent, benign-looking 'done'."""
+    ...
+
+def test_13_consecutive_zero_zero_batches_are_now_diagnosable_via_missing_and_parse_failures(db, monkeypatch, tmp_path):
+    """Direct regression test for the reported symptom: seed a vocabulary + model
+    responses that fail validation (not HTTP failure) on every source in several
+    consecutive batches -- assert the live progress detail string / final result now
+    surfaces non-zero pb.missing / pb.parse_failures (the fix for item 6's Fix-shape #1),
+    instead of a silent 0-tagged/0-skipped batch that looks like nothing happened."""
+```
 
 ---
 
@@ -412,7 +528,12 @@ not a crash mid-batch or a cursor bug.
    once in this codebase for the language-detection job (Session A, 2026-07-24 — "the resilient
    retry-with-backoff job, never abort-to-done") — use it as the template rather than inventing a
    new one, and apply it uniformly to keyword-triage, source-tags, and (worth checking)
-   perception-extract, since all three share the same progressive-sweep chassis shape.
+   perception-extract, since all three share the same progressive-sweep chassis shape. The exact
+   reference implementation is `src/ai_layer/langdetect_llm.py`'s worker loop, backed by
+   `ai_api._LANGDETECT_BACKOFF_BASE_S`/`_LANGDETECT_BACKOFF_CAP_S`/`_LANGDETECT_MAX_CONSECUTIVE_
+   FAILURES` (`src/api/ai.py`) — port the same three constants + the same retry-then-give-up-loudly
+   shape into `src/ai_layer/triage_job.py:run_progressive_triage_job` (around the single
+   `except LLMUnavailable as exc: ... break` at lines 362-390).
 2. Stop conflating "paused, resumable" with "done" at the `BackgroundJob.state` layer — either a
    distinct state value, or ensure `paused_reason` is surfaced consistently in `/status`, `/last`,
    AND `/api/jobs` (today only `/status` shows it).
@@ -422,6 +543,44 @@ not a crash mid-batch or a cursor bug.
 5. Small cleanup, low priority: mark/remove the dead `run_keyword_triage_job` one-shot function and
    its misleading test, or explicitly flag in its docstring that it isn't what the live endpoint
    calls.
+
+### Precise test additions
+
+Mirroring the `_FlakyOllama` pattern documented under item 6 above (reused verbatim from
+`tests/test_ai_langdetect_resilience.py`), add to `tests/test_triage_job.py` (which already has
+`test_ollama_outage_mid_run_is_an_honest_error_never_a_fabricated_completion` at line 182 — keep
+it as the terminal-failure regression guard):
+
+```python
+def test_a_transient_outage_retries_and_the_sweep_continues_past_batch_56(db, monkeypatch, tmp_path):
+    """Direct regression test for the reported symptom: seed enough keywords for well
+    over 56 batches, inject exactly ONE LLMUnavailable failure partway through (e.g.
+    at batch 56, matching the field report's own arithmetic -- 984 verdicts / 56
+    batches), and assert the sweep RETRIES and continues past batch 56 rather than
+    stopping there. Mirrors
+    tests/test_ai_langdetect_resilience.py::test_a_transient_outage_retries_and_the_run_stays_alive."""
+    flaky = _FlakyOllama(_reply, fail_times=1)  # fails once, at some batch boundary
+    ...
+    result = run_progressive_triage_job(...)
+    assert result["batches_logged"] > 56
+    assert "error" not in result
+
+def test_status_and_last_agree_on_a_paused_run(db, monkeypatch, tmp_path):
+    """Direct regression test for the confirmed /status-vs-/last disagreement: after
+    a run pauses (state=="done" at the BackgroundJob layer per the existing,
+    intentionally-pinned test at tests/test_triage_and_source_tags_endpoints.py:207-270),
+    BOTH GET .../status AND GET .../last must report the SAME completion state --
+    today .../last reads "in_progress" (triage_job.py:435-449 never writes the
+    completion footer on a pause) while .../status reads "done". Pick one honest,
+    consistent representation and assert both endpoints agree on it."""
+
+def test_a_paused_run_is_visible_in_the_task_manager(monkeypatch):
+    """Direct regression test: /api/jobs (src/api/jobs.py:441-443) filters out any
+    job whose BackgroundJob.state is not "running"/"error" -- so a paused-but-
+    resumable sweep is invisible in the task manager today. After the fix (either a
+    distinct paused state, or /api/jobs's filter widened to include a paused
+    progressive sweep), assert the job DOES appear in GET /api/jobs while paused."""
+```
 
 ---
 
@@ -605,16 +764,28 @@ from the 2026-07-23 field diagnostics), not something to default silently.
   three times.** The already-shipped language-detection job (`pollLangDetect`/
   `_paintLangDetectButton`, and its Session-A 2026-07-24 retry-with-backoff fix) is the correct
   reference implementation for both halves of the fix.
-- **Item 9's finding (qualification silently judging disabled candidates) may itself be
-  contributing bandwidth pressure** that's worth cross-referencing against whatever the pending
-  hardware-diagnostic-log comparison turns up for throughput bottlenecks — flag this connection
-  when that analysis lands.
+- **Item 9's finding (qualification silently judging disabled candidates) is one concrete
+  software-side mechanism directly relevant to the maintainer's 2026-07-26 8-machine confirming
+  experiment** (a parallel-instance test of whether per-instance throughput is Tor-bandwidth-bound,
+  single-machine-hardware-bound, or software-bound — see the companion doc's §11). It's also
+  cross-referenced against the companion hardware-diagnostics doc's §1 (WAL/checkpoint starvation
+  — the single highest-value structural fix, universal across all 7 instances) and §2
+  (`/api/database/countries` scaling ceiling) — both now have precise, code-cited fix
+  specifications and are the recommended FIRST builds if the goal is raising per-instance
+  throughput, ahead of resolving item 9's (a)/(b) qualification-gate question.
 - None of items 1–7 require a maintainer ruling to build — they're bug fixes with clear, cited
   root causes. Item 8 requires no build at all (explicit keep + one small ledger fix). **Item 9 is
-  the only item that needs a decision before code gets written.**
+  the only item in THIS doc that needs a decision before code gets written** (the companion
+  hardware-diagnostics doc's §1/§2/§6/§7/§8/§9.1 fixes are all buildable without a ruling too).
 
 ## Recommended sequencing
 
+0. **(New, highest-leverage for throughput) The companion hardware-diagnostics doc's §1
+   (WAL/checkpoint starvation) and §2 (`/api/database/countries`)** — universal across all 7
+   diagnosed instances, both now have complete fix specifications with exact code/tests, and both
+   are plausible concrete mechanisms behind whatever software-side ceiling the maintainer's
+   8-machine confirming experiment is probing. Consider building these ahead of, or alongside,
+   items 1/6/7 below if throughput is the priority.
 1. Items 6+7 (data-safety/visibility adjacent — jobs silently failing or looking done when they
    aren't) and item 1 (the UI that makes both bugs invisible to the user in the first place) — do
    these together as one PR, since the retry/backoff fix and the UI rework touch the same three
