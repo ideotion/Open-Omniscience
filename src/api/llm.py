@@ -622,22 +622,23 @@ def vllm_install(req: VllmInstallRequest | None = None) -> dict:
     """Start the CONSENTED, task-manager-visible vLLM install (B2.3): a dedicated
     venv + ``pip install vllm==<verified version>`` (drags torch/CUDA, several
     GB -- disclosed via ``/api/llm/vllm/status``'s ``estimated_size_note``
-    before the frontend even offers this button). Refuses (409) on a CPU-only
-    machine or under airplane mode; 409-free for an already-running install
-    (returns its current status).
+    before the frontend even offers this button). Refuses (409) on a non-Linux
+    host (no vLLM wheel exists there at all), a CPU-only machine, or under
+    airplane mode; 409-free for an already-running install (returns its
+    current status).
 
-    The CPU/airplane checks run HERE, synchronously, before the background job
-    even starts -- ``run_install_job`` re-checks both itself (defense in depth
-    for any direct caller), but a check made only inside the worker THREAD
-    would surface as an async job failure, not this endpoint's 409 (the
-    BackgroundJob chassis returns immediately once ``.start()`` spawns the
-    thread; an exception raised inside the worker never propagates back here).
-    An already-in-flight install is reported 409-free regardless of the current
-    GPU/airplane state (those conditions gate STARTING a new install, not an
-    already-running one)."""
+    The platform/CPU/airplane checks run HERE, synchronously, before the
+    background job even starts -- ``run_install_job`` re-checks all three
+    itself (defense in depth for any direct caller), but a check made only
+    inside the worker THREAD would surface as an async job failure, not this
+    endpoint's 409 (the BackgroundJob chassis returns immediately once
+    ``.start()`` spawns the thread; an exception raised inside the worker
+    never propagates back here). An already-in-flight install is reported
+    409-free regardless of the current platform/GPU/airplane state (those
+    conditions gate STARTING a new install, not an already-running one)."""
     from src.ingest import kill_switch_active
     from src.llm.backend import detect_gpu
-    from src.llm.vllm_lifecycle import VLLM_VERIFIED_VERSION
+    from src.llm.vllm_lifecycle import VLLM_VERIFIED_VERSION, platform_support
 
     body = req or VllmInstallRequest()
     job = _get_vllm_install_job()
@@ -645,6 +646,9 @@ def vllm_install(req: VllmInstallRequest | None = None) -> dict:
         st = job.status()
         st["started"] = False
         return st
+    support = platform_support()
+    if not support["supported"]:
+        raise HTTPException(status_code=409, detail=support["reason"])
     if kill_switch_active():
         raise HTTPException(
             status_code=409,
