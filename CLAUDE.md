@@ -1233,9 +1233,67 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the Phase-2 auto-promotion mechanism — reads as more consistent with the 2026-07-20
   "qualification IS the admission gate... every not-previously-qualified source gets the
   qualification pass BEFORE joining regular collection" ruling, but is a real Tor-bandwidth-scale
-  decision on 73k rows). **COMPANION WORK STILL PENDING**: the maintainer is separately sending
-  diagnostic-log exports from multiple parallel hardware instances for a cross-instance comparison
-  (2026-07-23 AMD-3020e-vs-i7-13620H style) — not yet received/analyzed at the time of this entry.
+  decision on 73k rows). **COMPANION WORK RECEIVED + ANALYZED same day**: the diagnostic-log
+  exports from 7 parallel hardware instances arrived and were cross-compared — see the dedicated
+  entry immediately below this one.
+- **HARDWARE DIAGNOSTICS COMPARISON 2026-07-26 — 7-instance cross-machine analysis (maintainer sent
+  8 `all-diagnostics` zips from parallel VMs; 1 excluded as a stale pre-format 2026-07-10 export;
+  INVESTIGATION-ONLY, code-verified from the real exports via a 7-agent read-only fan-out; brief of
+  record = [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_HARDWARE_DIAGNOSTICS_COMPARISON.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_HARDWARE_DIAGNOSTICS_COMPARISON.md);
+  nothing built this session):** 7 hardware tiers (a 6c/15.3GB i7-13620H down to a 2c/3.46GB AMD
+  3020e), spanning 16k–700k articles, confirmed **TWO UNIVERSAL findings present on every single
+  instance with no exception**: (1) **WAL/checkpoint starvation** — every instance's WAL exceeds the
+  64 MiB `journal_size_limit` (4×–29×, and on the weakest/lowest-RAM machine the WAL literally grew
+  LARGER than the machine's total RAM, 4.43 GB WAL vs 3.92 GB RAM), the app's own diagnostic self-flags
+  it identically everywhere ("a checkpoint may be starved — a long-lived reader blocks it"), and it
+  plausibly explains the second universal finding: single-row primary-key `INSERT`/`UPDATE`s
+  (confirmed `COVERING INDEX`, never a bare scan, on every sampled EXPLAIN plan) averaging 2–11s and
+  peaking at 15–341s. (2) **`GET /api/database/countries`** (polled together with 4-5 sibling
+  Library/Governments-tab endpoints) is the dominant cost center on EVERY instance — 12–41% of total
+  uptime individually, up to 81% combined with its polling siblings on the weakest machine — and is
+  the sole cause of the KPI board's "K2 interactive p95" red verdict on all 7. `EXPLAIN` is healthy
+  everywhere; this is a scaling-ceiling problem needing the SAME maintained-counter treatment already
+  proven on `top_terms_grouped`/`supergroups`/`who_aggregate` (confirmed fast via counters in these
+  same exports). BOTTLENECK CLASS TRACKS HARDWARE TIER cleanly: 5/7 (all but the weakest) classify
+  `writer-bound`; only the AMD 3020e (2c/3.46GB, the weakest machine) classifies `memory-bound`
+  (`mem_low_ticks` 53/44 across its 2 passes, governor honestly parked at 1 permit). **A PRIOR FIX
+  VALIDATED WITH REAL BEFORE/AFTER FIELD DATA**: the AMD-3020e instance is the exact machine type the
+  2026-07-23 field diagnostics analyzed (documented 3-8 min inter-pass gaps); THIS export of the same
+  machine type shows a **45.9s average inter-pass gap** (down 4-10×) — the S4.1 duty-cycle fix is
+  confirmed working in the field, not just in theory; the ~90% duplicate rate is unchanged (supply-
+  side, expected) and the mem-low floor now oscillates 1↔50 permits (consistent with the ruled
+  `rate_mode="maximum"` default flip, confirmed live on multiple instances) rather than sitting
+  parked low. NEW for this machine type: a WAL-bloat→giant-checkpoint(21.8 min)→MEMORY-GUARD-ENGAGED
+  cycle fired 8 TIMES in ~7 hours — a harder failure mode than the previously-documented soft
+  mem-low back-off. **BUG A/B CROSS-CHECK (the two already-root-caused job bugs from the same-day
+  field-remarks brief): INCONCLUSIVE on this batch** — 6 of 7 instances have NEVER run either job
+  (no reachable local LLM backend at export time); only the 700k-article main-DB instance
+  (`1fba378c`) has live data, and it shows a THIRD failure mode neither prior bug named: both jobs
+  are simply running very slowly (keyword-triage ~0.03% keyword coverage after ~7h; source-tags
+  1012 records against a 200-source scope after ~7h), neither crashed nor paused — consistent with,
+  but not direct confirmation of, either prior root cause. **A genuinely new finding surfaced
+  instead**: that SAME instance's live `perception-eval-live.json` shows Mistral-7B (the
+  maintainer-ruled default model) scoring **94.7% hallucination rate on "who" extraction** — the
+  eval-gate correctly refused to store any of the 700,242 gated articles' candidates (fail-safe
+  working as designed), but this is real evidence the ruled default model may not clear the
+  perception-extraction quality bar at all. FOUR MORE NEW findings, each reproduced on 2+ independent
+  instances: (a) schema/alembic-stamp drift on 3 of the 4 newer-schema instances, all missing the
+  same `sources.last_crawled_at` index the actively-enabled crawl-by-default feature needs; (b) a
+  power-profile diagnostic reporting `collect_parallelism=1` while the live scheduler setting is
+  actually 50 (same instance, a real reported-vs-actual discrepancy); (c) a SECOND unfiltered
+  third-party logger (`trafilatura.metadata`, 58%+ of sampled error-log entries on 2 instances) —
+  the same noise class as the already-fixed `htmldate.meta`, just a different logger, plus a third
+  low-grade noise source (`GET /v1/models` 404s from the vLLM-probe on GPU-less hardware, 500+ calls
+  per instance); (d) on the main 700k-article instance specifically: **~97.8 GB of accumulated stale
+  pre-restore snapshots** (3 full DB backups created within 36 hours, none flagged for cleanup, over
+  half the instance's total 151 GB footprint — the single most urgent disk-safety finding in the
+  batch), cold-boot unlock time GROWING with corpus scale (17.7s→29.7s across two boots, both far
+  above the P0 2000ms bar and directly relevant to the still-open K1 gate), a ~6.35M-keyword
+  counter-drift gap (93.6% of all keywords show a zero `mention_count` counter against only 121k
+  genuine orphans) that the app's own drift-checker can't even complete at this scale, and 2
+  diagnostic-bundle members (`keyword-log-digest`/`source-audit`) that categorically cannot finish
+  inside their 300s deadline at ~6.9M keywords / 76,679 sources. Full per-instance detail + the
+  8-item prioritized action list in the brief. Nothing built; PENDING a future fix session.
 - **TRANSVERSAL AUDIT 09 — SECURITY + FUNCTIONAL DELTA (2026-07-25, maintainer-commissioned generic
   "full transversal / bug-bounty / docs-vs-code" audit; full record =
   [`docs/audit/09_TRANSVERSAL_AUDIT_0.3_DELTA.md`](docs/audit/09_TRANSVERSAL_AUDIT_0.3_DELTA.md), a
