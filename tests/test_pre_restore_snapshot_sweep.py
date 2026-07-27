@@ -101,6 +101,75 @@ def test_a_malformed_env_value_degrades_to_the_default_rather_than_raising(monke
     assert removed == []
 
 
+def test_a_non_finite_or_absurdly_large_hours_value_degrades_to_the_default_rather_than_crashing():
+    """Skeptic-found (config-abuse / negative-space lens, 2026-07-26): float()
+    happily parses "inf"/"nan"/"1e300" without raising, so they sail PAST
+    _snapshot_max_age_hours()'s bare `except ValueError` -- the crash (if
+    any) happens one level down, constructing/subtracting the timedelta. A
+    misconfigured env var (or a bad explicit caller) must never permanently
+    and silently disable this safety net by crashing it on every call.
+    (``-inf`` is covered separately below -- it is caught by the max(0.0, ..)
+    clamp BEFORE it ever reaches this except branch, since -inf < 0.)"""
+    old = _make_snapshot(age_hours=200)  # past the 168h default
+    fresh = _make_snapshot(age_hours=1)  # well within the 168h default
+
+    for bad in (float("inf"), float("nan"), 1e300, 1e10):
+        removed = prune_pre_restore_snapshots_by_age(max_age_hours=bad)  # must not raise
+        # falls back to the 168h default cutoff, exactly as an unset/malformed
+        # env var would -- the old one is swept, the fresh one is untouched.
+        assert old.name in removed
+        assert fresh.exists()
+        old = _make_snapshot(age_hours=200)  # recreate for the next iteration
+
+
+def test_negative_or_negative_infinite_hours_clamps_to_zero_rather_than_sweeping_the_future():
+    """Skeptic-found (config-abuse lens, 2026-07-26): an UNCLAMPED negative
+    ``hours`` produces a cutoff in the FUTURE (``now() - timedelta(hours=-5)
+    == now() + 5h``), which is MORE aggressive than max_age_hours=0 -- it
+    would sweep even a snapshot created moments ago (before the active-staging
+    guard has a chance to matter, in principle). Clamped to 0.0, a negative or
+    -inf value degrades to exactly max_age_hours=0's already-safe behaviour:
+    everything NOT currently active gets swept (nothing is spared by age),
+    but nothing from the FUTURE is ever implied."""
+    for bad in (-5.0, -0.001, float("-inf")):
+        old = _make_snapshot(age_hours=200)
+        fresh = _make_snapshot(age_hours=0.5)  # 30 minutes old -- a real backstop would spare it
+
+        removed = prune_pre_restore_snapshots_by_age(max_age_hours=bad)  # must not raise
+
+        assert old.name in removed
+        assert fresh.name in removed  # clamped to 0, not "spared" like a real backstop
+
+
+def test_a_zero_hours_value_is_unchanged_and_still_governed_by_active_staging():
+    """max_age_hours=0 was already a defined, tested value (cutoff=now(),
+    sweep everything not currently active) -- this pins that the new
+    max(0.0, hours) clamp is a genuine no-op for 0 itself (0.0 == max(0.0,
+    0.0)), and that the active-staging guard is still what protects an
+    in-flight restore's own snapshot even at this most-aggressive setting."""
+    from src.backup.stream_backup import active_staging
+
+    stale_but_active = _make_snapshot(age_hours=24 * 10)
+    with active_staging(stale_but_active):
+        removed = prune_pre_restore_snapshots_by_age(max_age_hours=0)
+        assert stale_but_active.name not in removed
+        assert stale_but_active.exists()
+
+
+def test_a_non_finite_env_var_string_degrades_to_the_default_rather_than_crashing(monkeypatch):
+    """The SAME failure mode, reached through the env-var path rather than an
+    explicit caller -- OO_PRE_RESTORE_SNAPSHOT_MAX_AGE_HOURS="inf"/"nan" are
+    valid float() strings, so _snapshot_max_age_hours() returns them as-is."""
+    old = _make_snapshot(age_hours=200)
+    fresh = _make_snapshot(age_hours=1)
+    monkeypatch.setenv("OO_PRE_RESTORE_SNAPSHOT_MAX_AGE_HOURS", "nan")
+
+    removed = prune_pre_restore_snapshots_by_age()  # must not raise
+
+    assert old.name in removed
+    assert fresh.exists()
+
+
 def test_run_idle_maintenance_wires_the_pre_restore_snapshot_sweep(monkeypatch):
     """Closes the 'shipped the function but forgot to wire it' gap this
     project has hit before -- a wiring test, not just a unit test of the

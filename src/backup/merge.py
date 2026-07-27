@@ -36,6 +36,7 @@ from __future__ import annotations
 import functools
 import json
 import logging
+import math
 import os
 import re
 import sqlite3
@@ -1539,9 +1540,24 @@ def merge_custody(staged_custody: Path, origin_fingerprint: str) -> dict:
 #  Orchestration
 # --------------------------------------------------------------------------- #
 def _prune_snapshots(keep: int = _SNAPSHOT_KEEP) -> list[str]:
+    from src.backup.stream_backup import is_active_staging
+
     snaps = sorted(data_dir().glob("pre-restore-*.db"), key=lambda p: p.name, reverse=True)
     removed = []
     for p in snaps[keep:]:
+        if is_active_staging(p):
+            # Skeptic fix (2026-07-27, race-concurrency lens): NEVER delete
+            # another IN-FLIGHT restore's own snapshot. LIVE-REPRODUCED: this
+            # function runs unconditionally on EVERY commit (not just the
+            # committer's own), so a THIRD (or fourth...) concurrently
+            # committing restore's own call could previously delete an
+            # EARLIER restore's still-active snapshot the moment enough newer
+            # snapshots pushed it past ``keep`` -- there is no lock preventing
+            # two REST restore-commit requests from running truly
+            # concurrently. It simply survives an extra round past ``keep``
+            # here; it becomes fair game again the instant its own restore
+            # releases the guard.
+            continue
         try:
             p.unlink()
             removed.append(p.name)
@@ -1587,7 +1603,38 @@ def prune_pre_restore_snapshots_by_age(max_age_hours: float | None = None) -> li
     from src.backup.stream_backup import is_active_staging
 
     hours = max_age_hours if max_age_hours is not None else _snapshot_max_age_hours()
-    cutoff = datetime.now(UTC) - timedelta(hours=hours)
+    try:
+        if math.isnan(hours):
+            # NaN must be routed to the SAME "fall back to the documented
+            # default" path as inf/1e300 below -- NOT silently absorbed by
+            # the negative-value clamp. max(0.0, nan) evaluates to 0.0 (a
+            # genuinely surprising CPython quirk: max() keeps its FIRST
+            # argument as the running "best" and only replaces it when the
+            # NEXT one compares strictly greater, and nan > 0.0 is False) --
+            # so without this explicit check, a nan input would silently
+            # sweep EVERYTHING (as if max_age_hours=0) instead of degrading
+            # to the safe 168h default like every other non-finite value.
+            raise ValueError("hours is NaN")
+        # Skeptic fix (2026-07-27, config-abuse lens): a NEGATIVE ``hours``
+        # (e.g. an explicit caller, or a future Settings knob with no lower
+        # bound -- the env-var path's own float() parse never rejects "-5")
+        # would otherwise produce a cutoff in the FUTURE, over-sweeping
+        # EVERYTHING regardless of age. Clamp to "sweep everything created
+        # before this instant" at worst -- never "sweep something created
+        # after this instant."
+        cutoff = datetime.now(UTC) - timedelta(hours=max(0.0, hours))
+    except (OverflowError, ValueError):
+        # A non-finite (inf/-inf/nan) or absurdly large ``hours`` value --
+        # whether passed explicitly or read from a malformed/fat-fingered env
+        # var -- can slip PAST _snapshot_max_age_hours()'s float() parse
+        # (float("inf")/float("nan")/float("1e300") all parse cleanly, so its
+        # bare ``except ValueError`` never fires for these) and then raise
+        # HERE instead, one level down, while constructing/subtracting the
+        # timedelta. Falling back to the documented default rather than
+        # letting this raise keeps the sweep from crashing on EVERY future
+        # call -- a misconfigured env var must never permanently and
+        # silently disable the very safety net it exists to provide.
+        cutoff = datetime.now(UTC) - timedelta(hours=_SNAPSHOT_MAX_AGE_HOURS_DEFAULT)
     removed: list[str] = []
     for p in data_dir().glob("pre-restore-*.db"):
         m = _SNAPSHOT_TS_RE.match(p.name)
@@ -1871,224 +1918,237 @@ def run_restore(
 
     ts = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     snapshot = data_dir() / f"pre-restore-{ts}.db"
-    with timings.stage("pre_restore_snapshot"):
-        snapshot_preserving(live_db_path(), snapshot)
-    report["pre_restore_snapshot"] = str(snapshot)
-    # W5 (2026-07-26 hardware diagnostics): register this snapshot as an ACTIVE
-    # staging path for the rest of THIS commit's tail -- the off-peak age sweep
-    # (prune_pre_restore_snapshots_by_age, which the ordinary REST commit path
-    # does NOT pause the scheduler for, unlike the separate volume-restore job
-    # path) must never be able to see this restore's own fresh snapshot as
-    # sweepable, no matter how aggressive its threshold, while this commit is
-    # still finishing. Closed unconditionally at the prune_snapshots stage below.
+    # W5 (2026-07-26 hardware diagnostics) + skeptic fix (2026-07-27): register
+    # this snapshot as an ACTIVE staging path BEFORE writing it starts, not
+    # after -- a data-loss-lens LIVE repro (real snapshot_preserving() against
+    # a real multi-hundred-MB corpus) proved the destination file is
+    # glob-visible-but-incomplete for the ENTIRE write duration, and the
+    # ~110us gap between the old (post-write) registration and the write
+    # returning was enough for a concurrent off-peak sweep
+    # (prune_pre_restore_snapshots_by_age -- the ordinary REST commit path
+    # does NOT pause the scheduler for it, unlike the separate volume-restore
+    # job path) to see the file as unregistered-and-old-enough and unlink()
+    # it mid-write or the instant the write finished. The WHOLE commit tail
+    # below is now wrapped in try/finally so the guard releases on EVERY exit
+    # path -- a race-lens LIVE repro proved several of these stages
+    # (side_files_and_custody / report_json_write / swap) have no try/except
+    # of their own by design, and an uncaught exception there used to leak the
+    # registration for the rest of the process's life (the guard was
+    # previously closed only inside prune_snapshots' own finally, unreachable
+    # from an earlier raise).
     from contextlib import ExitStack
 
     from src.backup.stream_backup import active_staging
 
     _snapshot_guard = ExitStack()
     _snapshot_guard.enter_context(active_staging(snapshot))
+    try:
+        with timings.stage("pre_restore_snapshot"):
+            snapshot_preserving(live_db_path(), snapshot)
+        report["pre_restore_snapshot"] = str(snapshot)
 
-    with timings.stage("side_files_and_custody"):
-        report["side_files"] = merge_side_files(staged)
-        if staged.custody_path is not None:
-            report["custody"] = merge_custody(staged.custody_path, staged.origin_fingerprint)
+        with timings.stage("side_files_and_custody"):
+            report["side_files"] = merge_side_files(staged)
+            if staged.custody_path is not None:
+                report["custody"] = merge_custody(staged.custody_path, staged.origin_fingerprint)
 
-    # Persist the final report inside the copy BEFORE it becomes the live DB.
-    # (The timings captured up to this instant are what gets written; every
-    # LATER stage below is necessarily missing from THIS particular copy —
-    # honest by construction, since the swap/reindex/post-steps haven't
-    # happened yet at the moment this row is written.)
-    from src.database.connect import connect as db_connect
+        # Persist the final report inside the copy BEFORE it becomes the live DB.
+        # (The timings captured up to this instant are what gets written; every
+        # LATER stage below is necessarily missing from THIS particular copy —
+        # honest by construction, since the swap/reindex/post-steps haven't
+        # happened yet at the moment this row is written.)
+        from src.database.connect import connect as db_connect
 
-    with timings.stage("report_json_write"):
-        report["timings"] = timings.report()
-        con = db_connect(working, check_same_thread=False)
-        try:
-            con.execute(
-                "UPDATE merge_batches SET report_json = ? WHERE id = ?",
-                (json.dumps({k: v for k, v in report.items() if k != "plan"}), batch_id),
-            )
-            con.commit()
-        finally:
-            con.close()
-
-    # The atomic swap itself: kept as close to bare as possible (the highest
-    # crash-sensitivity moment in the whole engine) -- the timer adds only two
-    # cheap time.monotonic() calls around the UNCHANGED block, never a new
-    # exception path (a raise here still propagates exactly as before).
-    with timings.stage("swap"):
-        target = live_db_path()
-        dispose_engine()
-        for suffix in ("-wal", "-shm"):
-            stale = target.with_name(target.name + suffix)
-            if stale.exists():
-                stale.unlink()
-        os.replace(working, target)  # atomic on the same filesystem
-        init_db()
-
-    report["committed"] = True
-    report["batch_id"] = batch_id
-
-    # Corpus-delta "after": same cheap aggregates, now against the just-swapped-in
-    # merged corpus. Only set alongside "before" (both best-effort; a partial pair
-    # is dropped rather than shown as a false delta).
-    with timings.stage("corpus_delta_after"):
-        if "corpus_delta" in report:
+        with timings.stage("report_json_write"):
+            report["timings"] = timings.report()
+            con = db_connect(working, check_same_thread=False)
             try:
-                from src.database.session import session_scope as _session_scope_after
-
-                with _session_scope_after() as _after_sess:
-                    report["corpus_delta"]["after"] = _corpus_snapshot(_after_sess)
-            except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-                _LOG.warning("post-restore corpus snapshot failed", exc_info=True)
-                report.pop("corpus_delta", None)
-
-    # DB-7 (corpus-epoch → restore-merge): a committed merge is a bulk mutation of the live
-    # corpus, and the restore is "the one residual mutator" not yet wired to the corpus
-    # epoch. Bump it once, unconditionally, so the disposable derived rollups (the
-    # keyword_daily / source_coverage serves) FULL-rebuild after the restore instead of
-    # trusting an incremental id-watermark merge across it. The post-swap re-index below
-    # ALSO bumps when it runs, but this explicit bump covers reindex_imported=False (the
-    # merge-engine + torture path), an empty import set, and a re-index that hiccups after
-    # the additive merge already committed. Over-bumping is harmless (it only forces a
-    # correct rebuild); best-effort so a coordination write never undoes a committed restore.
-    with timings.stage("corpus_epoch_bump"):
-        try:
-            from src.analytics.corpus_epoch import bump_corpus_epoch
-            from src.database.session import session_scope
-
-            with session_scope() as _epoch_sess:
-                report["corpus_epoch"] = bump_corpus_epoch(_epoch_sess, reason="restore_merge")
-                # S6: the additive merge inserted articles onto existing sources (mapped by
-                # domain) WITHOUT touching Source.article_count, so it is now stale-low and, being
-                # non-NULL, the read fallback would never fire -> a wrong count shown as exact
-                # (skeptic finding). Reconcile it authoritatively (cheap; sources are few).
-                from src.analytics.store import reconcile_source_counters
-
-                reconcile_source_counters(_epoch_sess)
-        except Exception:  # noqa: BLE001 - a coordination bump must never undo a committed restore
-            _LOG.warning("corpus-epoch bump after restore-merge failed", exc_info=True)
-
-    # DB-reliability D1 follow-up (Wave 5 L): refresh the durable ``event_imports`` mirror
-    # from the merged side-file now that the live DB IS the restored corpus. merge_side_files
-    # unioned the JSON with mirror=False PRE-swap (the OLD live DB had to stay untouched), so
-    # the durable table would otherwise stay stale until the next calendar write. Best-effort
-    # + guarded (see _refresh_event_mirror): a full replace from the authoritative JSON, never
-    # a double-count, never undoes a committed restore.
-    with timings.stage("event_mirror_refresh"):
-        ev_mirror = _refresh_event_mirror(report.get("side_files") or {})
-        if ev_mirror is not None:
-            report["event_mirror"] = ev_mirror
-    # P0-4 (maintainer ruling 2026-06-19): recompute the CORE-ENGINE derived metadata
-    # for the newly-imported articles so an OLD backup aligns with the CURRENT engine
-    # (keywords, date/place/entity extraction, sentiment); AI artifacts are left
-    # verbatim. Best-effort: the restore is already committed AND additive, so a
-    # re-index hiccup must never undo it.
-    if reindex_imported:
-        with timings.stage("reindex"):
-            try:
-                report["reindexed"] = reindex_imported_articles(
-                    batch_id,
-                    commit_batch=reindex_commit_batch,
-                    workers=reindex_workers,
-                    progress_cb=reindex_progress_cb,
+                con.execute(
+                    "UPDATE merge_batches SET report_json = ? WHERE id = ?",
+                    (json.dumps({k: v for k, v in report.items() if k != "plan"}), batch_id),
                 )
-            except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-                _LOG.warning("post-restore re-index of imported articles failed", exc_info=True)
-                # The whole batch failed before touching a single article, so NONE of the
-                # imported articles got re-indexed -- "failed" must be the true imported
-                # count (from the already-known plan), not 0. Reporting 0 here would read
-                # as "nothing needed re-indexing", which is the fabricated-signal the rest
-                # of this feature is built to avoid (see reindex_imported_articles above).
-                _imported = int((counts.get("articles") or {}).get("new") or 0)
-                report["reindexed"] = {"reindexed": 0, "failed": _imported, "skipped": "see server log"}
+                con.commit()
+            finally:
+                con.close()
 
-    # S3.3 (2026-07-23 field-feedback workflow, import-time screening): scan the
-    # NEWLY-MERGED articles (the exact batch_id's rows in merged_rows -- the same set
-    # reindex_imported_articles above uses) for already-known non-article junk (the
-    # #659 URL-shape rules + the NAV-SOUP prose gate), stamping any detected candidate
-    # via the REVERSIBLE S3.2 quarantine flag -- never a delete. Best-effort: a
-    # quarantine-scan hiccup must never undo a committed, additive restore.
-    with timings.stage("quarantine_scan"):
-        try:
-            from sqlalchemy import text as _text
+        # The atomic swap itself: kept as close to bare as possible (the highest
+        # crash-sensitivity moment in the whole engine) -- the timer adds only two
+        # cheap time.monotonic() calls around the UNCHANGED block, never a new
+        # exception path (a raise here still propagates exactly as before).
+        with timings.stage("swap"):
+            target = live_db_path()
+            dispose_engine()
+            for suffix in ("-wal", "-shm"):
+                stale = target.with_name(target.name + suffix)
+                if stale.exists():
+                    stale.unlink()
+            os.replace(working, target)  # atomic on the same filesystem
+            init_db()
 
-            from src.analytics.quarantine_job import default_quarantine_candidates_batch
-            from src.database.session import session_scope as _quarantine_session_scope
+        report["committed"] = True
+        report["batch_id"] = batch_id
 
-            with _quarantine_session_scope() as _q_sess:
-                new_article_ids = [
-                    int(r[0])
-                    for r in _q_sess.execute(
-                        _text(
-                            "SELECT row_id FROM merged_rows "
-                            "WHERE batch_id = :b AND table_name = 'articles'"
-                        ),
-                        {"b": batch_id},
-                    ).fetchall()
-                ]
-                if new_article_ids:
-                    report["quarantine_summary"] = default_quarantine_candidates_batch(
-                        _q_sess, article_ids=new_article_ids, write=True
+        # Corpus-delta "after": same cheap aggregates, now against the just-swapped-in
+        # merged corpus. Only set alongside "before" (both best-effort; a partial pair
+        # is dropped rather than shown as a false delta).
+        with timings.stage("corpus_delta_after"):
+            if "corpus_delta" in report:
+                try:
+                    from src.database.session import session_scope as _session_scope_after
+
+                    with _session_scope_after() as _after_sess:
+                        report["corpus_delta"]["after"] = _corpus_snapshot(_after_sess)
+                except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+                    _LOG.warning("post-restore corpus snapshot failed", exc_info=True)
+                    report.pop("corpus_delta", None)
+
+        # DB-7 (corpus-epoch → restore-merge): a committed merge is a bulk mutation of the live
+        # corpus, and the restore is "the one residual mutator" not yet wired to the corpus
+        # epoch. Bump it once, unconditionally, so the disposable derived rollups (the
+        # keyword_daily / source_coverage serves) FULL-rebuild after the restore instead of
+        # trusting an incremental id-watermark merge across it. The post-swap re-index below
+        # ALSO bumps when it runs, but this explicit bump covers reindex_imported=False (the
+        # merge-engine + torture path), an empty import set, and a re-index that hiccups after
+        # the additive merge already committed. Over-bumping is harmless (it only forces a
+        # correct rebuild); best-effort so a coordination write never undoes a committed restore.
+        with timings.stage("corpus_epoch_bump"):
+            try:
+                from src.analytics.corpus_epoch import bump_corpus_epoch
+                from src.database.session import session_scope
+
+                with session_scope() as _epoch_sess:
+                    report["corpus_epoch"] = bump_corpus_epoch(_epoch_sess, reason="restore_merge")
+                    # S6: the additive merge inserted articles onto existing sources (mapped by
+                    # domain) WITHOUT touching Source.article_count, so it is now stale-low and, being
+                    # non-NULL, the read fallback would never fire -> a wrong count shown as exact
+                    # (skeptic finding). Reconcile it authoritatively (cheap; sources are few).
+                    from src.analytics.store import reconcile_source_counters
+
+                    reconcile_source_counters(_epoch_sess)
+            except Exception:  # noqa: BLE001 - a coordination bump must never undo a committed restore
+                _LOG.warning("corpus-epoch bump after restore-merge failed", exc_info=True)
+
+        # DB-reliability D1 follow-up (Wave 5 L): refresh the durable ``event_imports`` mirror
+        # from the merged side-file now that the live DB IS the restored corpus. merge_side_files
+        # unioned the JSON with mirror=False PRE-swap (the OLD live DB had to stay untouched), so
+        # the durable table would otherwise stay stale until the next calendar write. Best-effort
+        # + guarded (see _refresh_event_mirror): a full replace from the authoritative JSON, never
+        # a double-count, never undoes a committed restore.
+        with timings.stage("event_mirror_refresh"):
+            ev_mirror = _refresh_event_mirror(report.get("side_files") or {})
+            if ev_mirror is not None:
+                report["event_mirror"] = ev_mirror
+        # P0-4 (maintainer ruling 2026-06-19): recompute the CORE-ENGINE derived metadata
+        # for the newly-imported articles so an OLD backup aligns with the CURRENT engine
+        # (keywords, date/place/entity extraction, sentiment); AI artifacts are left
+        # verbatim. Best-effort: the restore is already committed AND additive, so a
+        # re-index hiccup must never undo it.
+        if reindex_imported:
+            with timings.stage("reindex"):
+                try:
+                    report["reindexed"] = reindex_imported_articles(
+                        batch_id,
+                        commit_batch=reindex_commit_batch,
+                        workers=reindex_workers,
+                        progress_cb=reindex_progress_cb,
                     )
-        except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-            _LOG.warning("post-restore quarantine scan failed", exc_info=True)
+                except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+                    _LOG.warning("post-restore re-index of imported articles failed", exc_info=True)
+                    # The whole batch failed before touching a single article, so NONE of the
+                    # imported articles got re-indexed -- "failed" must be the true imported
+                    # count (from the already-known plan), not 0. Reporting 0 here would read
+                    # as "nothing needed re-indexing", which is the fabricated-signal the rest
+                    # of this feature is built to avoid (see reindex_imported_articles above).
+                    _imported = int((counts.get("articles") or {}).get("new") or 0)
+                    report["reindexed"] = {"reindexed": 0, "failed": _imported, "skipped": "see server log"}
 
-    # S3.5 (field-feedback A1): the "work induced" queue -- corpus-wide totals (not
-    # scoped to just this import; no cheap before/after delta exists for these
-    # counters yet, stated explicitly in the persisted report's own rendering).
-    # Best-effort; never blocks a committed restore.
-    with timings.stage("work_induced_tally"):
-        try:
-            from sqlalchemy import func as _func
+        # S3.3 (2026-07-23 field-feedback workflow, import-time screening): scan the
+        # NEWLY-MERGED articles (the exact batch_id's rows in merged_rows -- the same set
+        # reindex_imported_articles above uses) for already-known non-article junk (the
+        # #659 URL-shape rules + the NAV-SOUP prose gate), stamping any detected candidate
+        # via the REVERSIBLE S3.2 quarantine flag -- never a delete. Best-effort: a
+        # quarantine-scan hiccup must never undo a committed, additive restore.
+        with timings.stage("quarantine_scan"):
+            try:
+                from sqlalchemy import text as _text
 
-            from src.catalog.qualification import STATUS_QUALIFIED
-            from src.database.models import Source
-            from src.database.session import session_scope as _work_session_scope
+                from src.analytics.quarantine_job import default_quarantine_candidates_batch
+                from src.database.session import session_scope as _quarantine_session_scope
 
-            with _work_session_scope() as _w_sess:
-                report["work_induced"] = {
-                    "sources_pending": int(
-                        _w_sess.query(_func.count(Source.id))
-                        .filter(Source.enabled.is_(True), Source.status != STATUS_QUALIFIED)
-                        .scalar()
-                        or 0
-                    ),
-                    "sources_candidates": int(
-                        _w_sess.query(_func.count(Source.id)).filter(Source.enabled.is_(False)).scalar()
-                        or 0
-                    ),
-                }
-        except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-            _LOG.warning("post-restore work-induced tally failed", exc_info=True)
+                with _quarantine_session_scope() as _q_sess:
+                    new_article_ids = [
+                        int(r[0])
+                        for r in _q_sess.execute(
+                            _text(
+                                "SELECT row_id FROM merged_rows "
+                                "WHERE batch_id = :b AND table_name = 'articles'"
+                            ),
+                            {"b": batch_id},
+                        ).fetchall()
+                    ]
+                    if new_article_ids:
+                        report["quarantine_summary"] = default_quarantine_candidates_batch(
+                            _q_sess, article_ids=new_article_ids, write=True
+                        )
+            except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+                _LOG.warning("post-restore quarantine scan failed", exc_info=True)
 
-    # S3.5 (field-feedback A1): persist a standalone, downloadable JSON report (the
-    # restore-merge report ALSO already lives inside merge_batches.report_json, but
-    # that column is not directly downloadable/human-readable, and does not ride an
-    # export unless separately wired -- see src/backup/import_reports.py). Best-effort.
-    #
-    # The FINAL, COMPLETE timings (every stage through work_induced_tally) are
-    # attached HERE -- distinct from the earlier, necessarily-partial snapshot
-    # written into merge_batches.report_json mid-function (before the swap
-    # even happened). This is the honest evidence base A4's own step 4
-    # (optimise the measured biggest stage) needs.
-    # Best-effort, same convention as every other post-commit step above (never undo
-    # or abort a committed, additive restore) -- a skeptic-pass finding (2026-07-24):
-    # this call is UNGUARDED history predating this stage-timing rework, and this
-    # rework moved it BEFORE persist_import_report() below (it used to run last).
-    # Without a try/except here, a prune failure would propagate past this point and
-    # skip persist_import_report() entirely, silently regressing the S3.5 downloadable
-    # report feature in exactly the case it is meant to survive.
-    with timings.stage("prune_snapshots"):
-        try:
-            report["pruned_snapshots"] = _prune_snapshots()
-        except Exception:  # noqa: BLE001 - never undo a committed, additive restore
-            _LOG.warning("post-restore snapshot pruning failed", exc_info=True)
-        finally:
-            # W5: release the active-staging guard either way -- from this point
-            # on, THIS commit's own snapshot is fair game for the age sweep like
-            # any other, on its own future merits (age + not-currently-active).
-            _snapshot_guard.close()
+        # S3.5 (field-feedback A1): the "work induced" queue -- corpus-wide totals (not
+        # scoped to just this import; no cheap before/after delta exists for these
+        # counters yet, stated explicitly in the persisted report's own rendering).
+        # Best-effort; never blocks a committed restore.
+        with timings.stage("work_induced_tally"):
+            try:
+                from sqlalchemy import func as _func
+
+                from src.catalog.qualification import STATUS_QUALIFIED
+                from src.database.models import Source
+                from src.database.session import session_scope as _work_session_scope
+
+                with _work_session_scope() as _w_sess:
+                    report["work_induced"] = {
+                        "sources_pending": int(
+                            _w_sess.query(_func.count(Source.id))
+                            .filter(Source.enabled.is_(True), Source.status != STATUS_QUALIFIED)
+                            .scalar()
+                            or 0
+                        ),
+                        "sources_candidates": int(
+                            _w_sess.query(_func.count(Source.id)).filter(Source.enabled.is_(False)).scalar()
+                            or 0
+                        ),
+                    }
+            except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+                _LOG.warning("post-restore work-induced tally failed", exc_info=True)
+
+        # S3.5 (field-feedback A1): persist a standalone, downloadable JSON report (the
+        # restore-merge report ALSO already lives inside merge_batches.report_json, but
+        # that column is not directly downloadable/human-readable, and does not ride an
+        # export unless separately wired -- see src/backup/import_reports.py). Best-effort.
+        #
+        # The FINAL, COMPLETE timings (every stage through work_induced_tally) are
+        # attached HERE -- distinct from the earlier, necessarily-partial snapshot
+        # written into merge_batches.report_json mid-function (before the swap
+        # even happened). This is the honest evidence base A4's own step 4
+        # (optimise the measured biggest stage) needs.
+        # Best-effort, same convention as every other post-commit step above (never undo
+        # or abort a committed, additive restore) -- a skeptic-pass finding (2026-07-24):
+        # this call is UNGUARDED history predating this stage-timing rework, and this
+        # rework moved it BEFORE persist_import_report() below (it used to run last).
+        # Without a try/except here, a prune failure would propagate past this point and
+        # skip persist_import_report() entirely, silently regressing the S3.5 downloadable
+        # report feature in exactly the case it is meant to survive.
+        with timings.stage("prune_snapshots"):
+            try:
+                report["pruned_snapshots"] = _prune_snapshots()
+            except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+                _LOG.warning("post-restore snapshot pruning failed", exc_info=True)
+    finally:
+        # W5 + skeptic fix: release the active-staging guard on EVERY exit
+        # path (success or exception) -- from this point on, THIS commit's
+        # own snapshot is fair game for the age sweep like any other, on its
+        # own future merits (age + not-currently-active).
+        _snapshot_guard.close()
     report["timings"] = timings.report()  # include prune_snapshots' own duration too
 
     try:
