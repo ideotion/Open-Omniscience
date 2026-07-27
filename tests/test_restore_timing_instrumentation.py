@@ -386,3 +386,73 @@ def test_merge_cache_mb_is_threaded_through_run_restore(client, monkeypatch):
     finally:
         cleanup_staging(staged)
     assert seen["cache_mb"] == 777
+
+
+# --------------------------------------------------------------------------- #
+# W5 (2026-07-26 hardware diagnostics): the pre-restore snapshot age sweep.
+# The count-based half (_prune_snapshots, already shipped) is exercised
+# end-to-end through the real commit endpoint here; the time-driven half
+# (prune_pre_restore_snapshots_by_age) is pure-filesystem-unit-tested in
+# tests/test_pre_restore_snapshot_sweep.py.
+# --------------------------------------------------------------------------- #
+
+
+def test_repeated_commits_prune_down_to_the_newest_keep_n(client, monkeypatch):
+    """Codifies existing, previously-untested behaviour at n > _SNAPSHOT_KEEP:
+    _prune_snapshots() only ever fires as a side effect of a LATER restore, so
+    committing more than _SNAPSHOT_KEEP times must converge to exactly
+    _SNAPSHOT_KEEP retained snapshots, never fewer (a real bug would either
+    leave them all or over-prune).
+
+    The snapshot filename's timestamp has SECOND granularity
+    (pre-restore-<ts>.db); two commits landing in the same wall-clock second
+    would collide on ONE filename (snapshot_preserving overwriting the
+    earlier one) and understate the count -- a test-timing artifact only
+    (production restores within the same second of each other are not a
+    real-world concern), so freeze+advance the clock by a whole second per
+    commit for a deterministic, collision-free filename sequence."""
+    from datetime import timedelta
+
+    import src.backup.merge as merge_mod
+    from src.paths import data_dir
+
+    class _AdvancingDatetime(datetime):
+        _base = datetime.now(UTC)
+        _step = 0
+
+        @classmethod
+        def now(cls, tz=None):
+            cls._step += 1
+            return cls._base + timedelta(seconds=cls._step)
+
+    monkeypatch.setattr(merge_mod, "datetime", _AdvancingDatetime)
+
+    blob = _build_backup()
+    for _ in range(merge_mod._SNAPSHOT_KEEP + 1):
+        resp = _commit(client, blob)
+        assert resp.status_code == 200
+    snaps = sorted(data_dir().glob("pre-restore-*.db"))
+    assert len(snaps) == merge_mod._SNAPSHOT_KEEP
+
+
+def test_a_committed_restore_never_deletes_its_own_fresh_snapshot(client):
+    """A single commit's own just-created snapshot must always survive that
+    SAME commit's prune stage -- it is always the newest, so _prune_snapshots()
+    (keep-newest-N) can never remove it. Starts from a clean slate (this
+    session's data_dir() is shared across this whole test file, and an
+    earlier test above deliberately monkeypatches an ADVANCED clock to avoid
+    its OWN filename collisions -- those synthetic future timestamps could
+    otherwise sort ahead of this test's real-clock one and make it look
+    'not the newest'; clearing first makes this test's own property
+    independent of any other test's clock/leftover state)."""
+    from src.paths import data_dir
+
+    for stale in data_dir().glob("pre-restore-*.db"):
+        stale.unlink()
+
+    resp = _commit(client, _build_backup())
+    assert resp.status_code == 200
+    report = resp.json()
+    assert Path(report["pre_restore_snapshot"]).exists()
+    fresh_name = Path(report["pre_restore_snapshot"]).name
+    assert fresh_name not in report["pruned_snapshots"]

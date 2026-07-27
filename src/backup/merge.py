@@ -42,7 +42,7 @@ import sqlite3
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from src.backup.artifact import StagedArtifact
@@ -56,6 +56,15 @@ FLOOR_NOTE = "0.0.8 baseline (6ae5766d3136)"
 
 _SAMPLE_LIMIT = 5
 _SNAPSHOT_KEEP = 3
+# 2026-07-26 hardware diagnostics W5: _prune_snapshots() (below) only fires as a
+# side effect of a LATER restore -- a "keep 3" policy correctly retains all 3
+# forever once no further restore ever happens, which is exactly the diagnosed
+# 97.8 GB (three restores, then none for 36 hours, on one field instance). This
+# is the time-driven backstop: 7 days is a judgment call (a safety-net snapshot's
+# value decays with OPERATOR REVIEW TIME, not process lifetime -- unlike the
+# .bak-build-*/.restore-* crash residue sweep_stale_backup_temps() ages out at
+# 24h), operator-tunable via OO_PRE_RESTORE_SNAPSHOT_MAX_AGE_HOURS.
+_SNAPSHOT_MAX_AGE_HOURS_DEFAULT = 168.0
 
 
 class MergeError(RuntimeError):
@@ -1541,6 +1550,65 @@ def _prune_snapshots(keep: int = _SNAPSHOT_KEEP) -> list[str]:
     return removed
 
 
+def _snapshot_max_age_hours() -> float:
+    """``OO_PRE_RESTORE_SNAPSHOT_MAX_AGE_HOURS`` -- the same env-var idiom as
+    ``_incremental_vacuum_hours()``/``_maint_interval_s()`` elsewhere in this
+    codebase: ``float(os.getenv(NAME, default))``, degrading to the default on
+    an unparseable value rather than raising into a background safety net."""
+    try:
+        return float(
+            os.getenv(
+                "OO_PRE_RESTORE_SNAPSHOT_MAX_AGE_HOURS", str(_SNAPSHOT_MAX_AGE_HOURS_DEFAULT)
+            )
+        )
+    except ValueError:
+        return _SNAPSHOT_MAX_AGE_HOURS_DEFAULT
+
+
+_SNAPSHOT_TS_RE = re.compile(r"^pre-restore-(\d{8}T\d{6}Z)\.db$")
+
+
+def prune_pre_restore_snapshots_by_age(max_age_hours: float | None = None) -> list[str]:
+    """Remove ``pre-restore-<ts>.db`` safety-net snapshots older than
+    ``max_age_hours``.
+
+    Complements :func:`_prune_snapshots`'s count-based policy, which only fires
+    as a side effect of a LATER restore -- this is the time-driven backstop for
+    the case where no further restore ever happens (the diagnosed 97.8 GB: three
+    restores in a burst, then none, so ``keep 3`` correctly retained all three
+    forever). Age is read from the file's OWN embedded timestamp, never
+    filesystem mtime (mtime can be touched by an unrelated copy/backup tool). A
+    snapshot currently registered via :func:`src.backup.stream_backup.
+    is_active_staging` -- an in-flight restore's own, still-running commit tail
+    -- is NEVER touched regardless of its age; the count-based policy above is
+    unconditional and untouched by this function. Only files matching the exact
+    self-generated ``pre-restore-<ISO8601Z>.db`` shape are ever considered --
+    an unrecognized name is never guessed at, never touched."""
+    from src.backup.stream_backup import is_active_staging
+
+    hours = max_age_hours if max_age_hours is not None else _snapshot_max_age_hours()
+    cutoff = datetime.now(UTC) - timedelta(hours=hours)
+    removed: list[str] = []
+    for p in data_dir().glob("pre-restore-*.db"):
+        m = _SNAPSHOT_TS_RE.match(p.name)
+        if not m:
+            continue  # unrecognized shape -- never guess, never touch
+        try:
+            created = datetime.strptime(m.group(1), "%Y%m%dT%H%M%SZ").replace(tzinfo=UTC)
+        except ValueError:
+            continue
+        if created >= cutoff:
+            continue
+        if is_active_staging(p):
+            continue  # an in-flight restore's own snapshot -- never touched
+        try:
+            p.unlink()
+            removed.append(p.name)
+        except OSError:  # pragma: no cover
+            pass
+    return removed
+
+
 def _default_reindex_commit_batch() -> int:
     """``OO_REINDEX_COMMIT_BATCH`` -- the SAME env var the standalone "re-index the
     whole corpus" job already reads (src/analytics/reindex_job.py), so one knob tunes
@@ -1806,6 +1874,19 @@ def run_restore(
     with timings.stage("pre_restore_snapshot"):
         snapshot_preserving(live_db_path(), snapshot)
     report["pre_restore_snapshot"] = str(snapshot)
+    # W5 (2026-07-26 hardware diagnostics): register this snapshot as an ACTIVE
+    # staging path for the rest of THIS commit's tail -- the off-peak age sweep
+    # (prune_pre_restore_snapshots_by_age, which the ordinary REST commit path
+    # does NOT pause the scheduler for, unlike the separate volume-restore job
+    # path) must never be able to see this restore's own fresh snapshot as
+    # sweepable, no matter how aggressive its threshold, while this commit is
+    # still finishing. Closed unconditionally at the prune_snapshots stage below.
+    from contextlib import ExitStack
+
+    from src.backup.stream_backup import active_staging
+
+    _snapshot_guard = ExitStack()
+    _snapshot_guard.enter_context(active_staging(snapshot))
 
     with timings.stage("side_files_and_custody"):
         report["side_files"] = merge_side_files(staged)
@@ -2003,6 +2084,11 @@ def run_restore(
             report["pruned_snapshots"] = _prune_snapshots()
         except Exception:  # noqa: BLE001 - never undo a committed, additive restore
             _LOG.warning("post-restore snapshot pruning failed", exc_info=True)
+        finally:
+            # W5: release the active-staging guard either way -- from this point
+            # on, THIS commit's own snapshot is fair game for the age sweep like
+            # any other, on its own future merits (age + not-currently-active).
+            _snapshot_guard.close()
     report["timings"] = timings.report()  # include prune_snapshots' own duration too
 
     try:

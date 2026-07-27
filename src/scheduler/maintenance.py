@@ -51,6 +51,22 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
     out: dict = {}
     if stop():
         return {"skipped": "stopping"}
+    # W5 (2026-07-26 hardware diagnostics): the time-driven backstop for
+    # pre-restore-*.db safety-net snapshots, which the count-based
+    # _prune_snapshots() only ever prunes as a side effect of a LATER restore
+    # (a long-lived instance that stops restoring keeps them forever
+    # otherwise -- the diagnosed 97.8 GB). A pure filesystem sweep -- no DB
+    # session needed -- so it runs before the session_scope() block below.
+    try:
+        from src.backup.merge import prune_pre_restore_snapshots_by_age
+
+        out["pre_restore_snapshot_sweep"] = {"removed": prune_pre_restore_snapshots_by_age()}
+    except Exception:  # noqa: BLE001 - a background safety net must never break
+        _LOG.warning("off-peak pre-restore snapshot sweep failed", exc_info=True)
+        out["pre_restore_snapshot_sweep"] = {"skipped": "error"}
+    if stop():
+        out["reconcile"] = {"skipped": "stopping"}
+        return out
     from src.database.session import session_scope
 
     try:
