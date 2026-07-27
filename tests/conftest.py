@@ -203,3 +203,21 @@ def _dedup_front_isolated():
     dedup_front._reset_for_tests()
     yield
     dedup_front._reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _source_country_rollup_isolated():
+    """W2 (2026-07-26 hardware diagnostics): the ``/api/database/countries``
+    in-memory rollup (``src.analytics.source_country_rollup``) is a
+    process-global, bind-aware singleton by design -- the SAME order-dependent-
+    pollution class as the fixtures above. Left shared, any test that calls
+    ``refresh()`` against the real app engine (e.g. an off-peak-maintenance
+    wiring test) leaves a WARM rollup a LATER, unrelated test sees via the same
+    bind -- serving stale data instead of the fresh live compute that test
+    expects (caught live: test_database_api.py's countries-breakdown test failed
+    only when preceded by test_offpeak_maintenance.py, never alone)."""
+    from src.analytics import source_country_rollup
+
+    source_country_rollup._reset_for_tests()
+    yield
+    source_country_rollup._reset_for_tests()

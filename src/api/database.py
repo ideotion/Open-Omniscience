@@ -314,53 +314,22 @@ def sources_by_country(db: Session = Depends(get_db)) -> dict:
     show, at a glance, which subjects a country's sources cover (and by absence,
     which topics may be missing). Countries with no source are returned in
     ``missing`` so covered vs not-covered is explicit.
-    """
-    from collections import Counter
 
-    from src.catalog.countries import (
-        ISO_3166_1_ALPHA2,
-        continent_of,
-        country_display_name,
-    )
-    from src.database.models import Source
+    2026-07-26 hardware diagnostics: this was a bare ``SCAN sources`` on every
+    request (``tags`` isn't index-covered), the dominant server-cost item on all 7
+    field instances (12-81% of uptime). Now served from an off-peak-refreshed
+    in-memory rollup (:mod:`src.analytics.source_country_rollup`, mirrors
+    ``reconcile_source_counters``) when warm; falls back to the identical live scan
+    otherwise (cold start, a differently-bound session, or any rollup error) — the
+    response is never wrong, only sometimes not-yet-warm.
+    """
+    from src.analytics import source_country_rollup
 
     def _compute() -> dict:
-        rows = db.query(Source.country, Source.enabled, Source.tags).all()
-        per: dict[str, dict] = {}
-        for country, enabled, tags in rows:
-            cc = (country or "").strip().lower() or "(none)"
-            slot = per.setdefault(cc, {"sources": 0, "enabled": 0, "tags": Counter()})
-            slot["sources"] += 1
-            if enabled:
-                slot["enabled"] += 1
-            for t in (tags or "").split(","):
-                t = t.strip()
-                if t:
-                    slot["tags"][t] += 1
-
-        countries = [
-            {
-                "code": cc,
-                "name": None if cc == "(none)" else country_display_name(cc),
-                "region": None if cc == "(none)" else continent_of(cc),
-                "sources": d["sources"],
-                "enabled": d["enabled"],
-                "top_tags": d["tags"].most_common(8),
-            }
-            for cc, d in per.items()
-        ]
-        countries.sort(key=lambda c: (-c["sources"], c["code"]))
-
-        present = {cc for cc in per if cc != "(none)"}
-        missing = sorted(c for c in ISO_3166_1_ALPHA2 if c not in present)
-        return {
-            "countries": countries,
-            "covered": len(present),
-            "total_countries": len(ISO_3166_1_ALPHA2),
-            "missing": missing,
-            "missing_names": {c: country_display_name(c) for c in missing},
-            "missing_count": len(missing),
-        }
+        served = source_country_rollup.served(db)
+        if served is not None:
+            return served
+        return source_country_rollup._live_sources_by_country(db)
 
     return _cached("countries", _compute, db)
 
