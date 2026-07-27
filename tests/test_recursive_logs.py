@@ -84,6 +84,47 @@ def test_schema_drift_detects_a_missing_column(session):
     assert "mention_count" in kw["missing_columns"]
 
 
+def test_source_last_crawled_self_heal_creates_column_and_index():
+    """2026-07-26 field diagnostics (3 of 7 instances): the self-heal added the
+    ``sources.last_crawled_at`` COLUMN but never the covering INDEX the model
+    declares, leaving the §8 crawl-by-default rung's least-recently-crawled ORDER BY
+    an unindexed scan over the whole sources table. Case A = a store that never had
+    the column (a genuinely old install); Case B = the exact field-diagnosed state
+    (column present, index missing only) -- both must end up fully healed, and
+    schema_drift() (the diagnostic that surfaced the bug) must report zero drift for
+    sources.last_crawled_at afterward."""
+    from sqlalchemy import create_engine, inspect, text
+    from sqlalchemy.orm import Session as _Session
+
+    from src.database.maintenance import ensure_source_last_crawled_column
+
+    # Case A: never had the column.
+    eng = create_engine("sqlite://", future=True)
+    Base.metadata.create_all(eng)
+    with eng.begin() as conn:
+        conn.execute(text("DROP INDEX idx_source_last_crawled"))
+        conn.execute(text("ALTER TABLE sources DROP COLUMN last_crawled_at"))
+    ensure_source_last_crawled_column(eng)
+    idx_names = {ix["name"] for ix in inspect(eng).get_indexes("sources")}
+    assert "idx_source_last_crawled" in idx_names
+    with _Session(eng) as s:
+        from src.monitoring.schema_drift import schema_drift
+
+        r = schema_drift(s)
+    src_tbl = next((t for t in r["tables"] if t["table"] == "sources"), None)
+    assert src_tbl is None or "last_crawled_at" not in src_tbl.get("missing_indexes", [])
+
+    # Case B: the exact field-diagnosed state -- column present, index missing only.
+    eng2 = create_engine("sqlite://", future=True)
+    Base.metadata.create_all(eng2)
+    with eng2.begin() as conn:
+        conn.execute(text("DROP INDEX idx_source_last_crawled"))
+    ensure_source_last_crawled_column(eng2)
+    idx_names2 = {ix["name"] for ix in inspect(eng2).get_indexes("sources")}
+    assert "idx_source_last_crawled" in idx_names2
+    ensure_source_last_crawled_column(eng2)  # idempotent: never raises, never double-adds
+
+
 # -- #5 corpus integrity --------------------------------------------------------- #
 
 

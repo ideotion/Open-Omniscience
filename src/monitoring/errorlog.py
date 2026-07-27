@@ -67,25 +67,40 @@ _frontend_last: dict[tuple[str, str, str], float] = {}
 # Levels that count as a real (BACKEND) problem (BOOT/INFO/HTTP/FRONTEND markers do not).
 _PROBLEM_LEVELS = {"WARNING", "ERROR", "CRITICAL"}
 
-# S5 item 1 (field-feedback 2026-07-23): htmldate.meta.reset_caches() (reached
-# via trafilatura's own reset_caches(), which src/scheduler/hygiene.py calls at
-# EVERY pass boundary) hits an AttributeError on charset_normalizer's functions
-# in the installed version pin and logs it as an ERROR every single time —
-# measured 85 of 93 "problems" on one field session, drowning out real signal.
-# TARGETED, never a blanket suppression of the whole logger: only this one
-# known-benign message class from this one logger is dropped from the COUNTERS;
-# any other record from htmldate.meta (e.g. a genuine import failure) still
-# counts as a problem.
+# S5 item 1 (field-feedback 2026-07-23) + the 2026-07-26 hardware-diagnostics batch:
+# htmldate.meta.reset_caches() (reached via trafilatura's own reset_caches(), which
+# src/scheduler/hygiene.py calls at EVERY pass boundary) hits an AttributeError on
+# charset_normalizer's functions in the installed version pin and logs it as an ERROR
+# every single time -- measured 85 of 93 "problems" on one field session, and,
+# independently, live-confirmed printing to the CONSOLE on a fresh install (25 repeated
+# lines) despite the 2026-07-23 fix, because that fix only filtered this app's OWN
+# JSONL handler, never the source logger -- so the noise still reached every OTHER
+# handler on the chain (console, uvicorn's, Python's own last-resort stderr fallback).
+# A second, structurally identical noise source was independently found the same day:
+# trafilatura.metadata's "error in JSON metadata extraction" (58% of one field
+# instance's 300-record error-log sample). Both are fixed with ONE mechanism, applied
+# at the LOGGER level (not the handler level) so the record is dropped before it can
+# reach ANY handler in the process -- never a blanket suppression of either logger:
+# only this ONE known-benign message class per logger is dropped; any other message
+# from either logger (e.g. a genuine import failure) still counts as a problem and
+# still reaches the console.
 _HTMLDATE_NOISE_LOGGER = "htmldate.meta"
 _HTMLDATE_NOISE_MESSAGE = "impossible to clear cache for function"
+_TRAFILATURA_NOISE_LOGGER = "trafilatura.metadata"
+_TRAFILATURA_NOISE_MESSAGE = "error in JSON metadata extraction"
+_THIRD_PARTY_NOISE_RULES: dict[str, str] = {
+    _HTMLDATE_NOISE_LOGGER: _HTMLDATE_NOISE_MESSAGE,
+    _TRAFILATURA_NOISE_LOGGER: _TRAFILATURA_NOISE_MESSAGE,
+}
 
 
-class _HtmldateCacheNoiseFilter(logging.Filter):
+class _ThirdPartyCacheNoiseFilter(logging.Filter):
     def filter(self, record: logging.LogRecord) -> bool:  # noqa: D102
-        if record.name != _HTMLDATE_NOISE_LOGGER:
+        needle = _THIRD_PARTY_NOISE_RULES.get(record.name)
+        if needle is None:
             return True
         try:
-            return _HTMLDATE_NOISE_MESSAGE not in record.getMessage()
+            return needle not in record.getMessage()
         except Exception:  # noqa: BLE001 - never let the filter itself break logging
             return True
 
@@ -231,17 +246,29 @@ def note_frontend_error(
 def install() -> None:
     """Attach the handler to the root logger (idempotent AND self-healing:
     if something cleared the root handlers — test frameworks do — re-attach).
-    Records a session-start marker so bundles carry honest session boundaries."""
+    Records a session-start marker so bundles carry honest session boundaries.
+
+    Also attaches the third-party noise filter DIRECTLY to the noisy loggers
+    themselves — not just to this app's own JSONL handler — so the known-benign
+    message classes never reach ANY handler (console included), while a genuinely
+    different message from the same logger still does. A handler-level filter only
+    suppresses a record for THAT ONE handler; a logger-level filter is checked
+    before the record reaches any handler in the process at all (2026-07-26:
+    live-confirmed on a fresh install that the prior handler-only filter still let
+    htmldate.meta's noise print to the console)."""
     global _installed
     root = logging.getLogger()
-    if any(isinstance(h, _JsonlErrorHandler) for h in root.handlers):
-        _installed = True
-        return
-    handler = _JsonlErrorHandler(level=logging.WARNING)
-    handler.addFilter(_HtmldateCacheNoiseFilter())
-    root.addHandler(handler)
+    handler_present = any(isinstance(h, _JsonlErrorHandler) for h in root.handlers)
+    if not handler_present:
+        handler = _JsonlErrorHandler(level=logging.WARNING)
+        root.addHandler(handler)
+    for _name in _THIRD_PARTY_NOISE_RULES:
+        _lg = logging.getLogger(_name)
+        if not any(isinstance(f, _ThirdPartyCacheNoiseFilter) for f in _lg.filters):
+            _lg.addFilter(_ThirdPartyCacheNoiseFilter())
     _installed = True
-    note_boot()
+    if not handler_present:
+        note_boot()
 
 
 def recent_errors(limit: int = 300) -> list[dict]:

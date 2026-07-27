@@ -289,6 +289,35 @@ def fts_analysis_limit() -> int:
     return _resolve_env_int("fts_analysis_limit", lo=0, hi=1_000_000)
 
 
+def live_setting_overrides() -> dict[str, Any]:
+    """The LIVE, PERSISTED value of every SETTING-backed knob (``collect_parallelism``,
+    ``qualification_per_pass``, ``llm_keep_alive``). These knobs are applied via the
+    settings-write path, not a profile-table read (see the module docstring) — no code today
+    rewrites the persisted setting when a profile is selected, so the persisted value is ALWAYS
+    what is genuinely in effect, regardless of the active profile. Callers that want an honest
+    "what's actually configured" report (e.g. the ``/power-profile`` diagnostic) should pass this
+    as ``resolve_effective``'s ``overrides``. Read-only, best-effort: any settings-store error (a
+    fresh/locked store, an absent data dir) degrades to omitting that knob rather than raising, so
+    a diagnostic never breaks because a setting can't be read — the caller then falls back to the
+    profile-table value for that knob, same as before this existed."""
+    out: dict[str, Any] = {}
+    try:
+        from src.scheduler.settings import load_settings as _load_scheduler_settings
+
+        sched = _load_scheduler_settings()
+        out["collect_parallelism"] = sched.collect_parallelism
+        out["qualification_per_pass"] = sched.qualification_per_pass
+    except Exception:  # noqa: BLE001 - a diagnostic must never break on a settings-read fault
+        pass
+    try:
+        from src.config.app_settings import load_settings as _load_app_settings
+
+        out["llm_keep_alive"] = _load_app_settings().llm_keep_alive
+    except Exception:  # noqa: BLE001 - same degrade-loudly-never-crash contract
+        pass
+    return out
+
+
 def power_profile_report(
     active_profile: str = "optimized", overrides: dict[str, Any] | None = None
 ) -> dict:
