@@ -1161,6 +1161,176 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     FIRST — a project this write-safety-conscious usually already anticipated the bulk-DML case.
 
 ## Open queue (when maintainer says proceed)
+- **FIELD REMARKS 2026-07-26 — AI-job toggle UX, translation-gap detector ask, two progressive-sweep
+  job bugs, P0/pagesize-bench removal question, qualification-backlog wiring gap (maintainer;
+  INVESTIGATION-ONLY this session, code-verified against `main` via a 6-agent read-only fan-out;
+  brief of record = [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_FIELD_REMARKS.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_FIELD_REMARKS.md);
+  nothing built this session):** nine remarks, each root-caused with file:line citations in the
+  brief. (1–3) the keyword-triage/source-tags/perception-extract Settings→AI toggle buttons
+  (`toggleKeywordTriage`/`toggleSourceTags`/`togglePerceptionExtract`, `src/static/app.js:11707-
+  11970`) set `btn.disabled=true` at click-time and only clear it in a `finally` that doesn't fire
+  until an up-to-3-hour blocking poll loop exits — CSS fades the disabled button for the whole run
+  and a disabled button can't be re-clicked; no separate Stop control exists. The correct reference
+  pattern already ships in the same file: `pollLangDetect`/`_paintLangDetectButton`
+  (`app.js:4886-4973`, the langdetect job) — never disables, polls via an independent flag. Also:
+  all three run endpoints (`KeywordTriageRunBody`/`SourceTagsRunBody`/`PerceptionExtractRunBody`,
+  `src/api/diagnostics.py`) require a `model` field with no fallback, forcing free-text model
+  inputs, even though `active_model()` (`src/api/llm.py:124-153`) is the house-wide single source
+  of truth every OTHER AI call site already falls back to (and the sibling module
+  `perception_job.py:49` already does `model = model or active_model()`); descriptions aren't
+  wrapped in the house `<details class="adv-collect">` collapse convention. (4–5) `--audit-chrome`/
+  `--min` (`scripts/i18n_report.py`) is a STATIC scan of `index.html` ONLY — it never opens `app.js`
+  (18,599 lines, the actual UI engine), so real gaps are invisible to it (confirmed: hardcoded
+  never-`t()`-wrapped table headers/empty-states at `app.js:4341/7632/9315/15866/17256/1785`, plus
+  a live inconsistency where "Loading…" is correctly wrapped at `:2055` but bare at `:1806`/`:3304`).
+  The maintainer's ask for a screenshot/DOM-walk detector is buildable and additive to
+  `src/monitoring/ui_walk.py` (currently a skeleton — `UnconnectedDriver` only, no real
+  `UiWalkDriver` implementation exists anywhere in the repo; a one-off Playwright pass happened
+  once, 2026-07-22, never committed) — DOM-text-node + attribute extraction (mirroring `i18n.js`'s
+  own `tr()`/`doAttrs()`) beats screenshot+OCR and is fully specced in the brief. (6) the
+  source-tags job's "13 batches of 0/0 then failure" is TWO real bugs: validation-rejection
+  counters (`pb.missing`/`pb.parse_failures`, `src/ai_layer/source_tags.py`) are computed but NEVER
+  rendered in the UI (so real work was silently happening), and the progressive job
+  (`src/ai_layer/source_tags_job.py`) only catches `LLMUnavailable`, not its sibling `LLMError`
+  (raised on any non-404 HTTP error from a reachable-but-erroring model — plausible given the
+  uncapped, verbatim, corpus-wide tag vocabulary embedded in every prompt) — an uncaught `LLMError`
+  hard-crashes the job to `state="error"` instead of pausing gracefully. Restart correctly resumes
+  from the persisted cursor. (7) keyword-triage's "stopped after 56 batches" is the SAME
+  `LLMUnavailable`-zero-retry family (`src/ai_layer/triage_job.py:362-390`), but WORSE: the pause
+  is test-pinned to collapse into the identical `BackgroundJob.state=="done"` as a genuine finish
+  (`tests/test_triage_and_source_tags_endpoints.py:207-270`), `/status` and `/last` DISAGREE on a
+  paused run (`"done"` vs `"in_progress"`), and `/api/jobs` filters non-running/non-error jobs out
+  of the task manager entirely (`src/api/jobs.py:441-443`) — so a paused sweep is invisible
+  everywhere except one field, and nothing auto-resumes it. Fix = bounded retry-with-backoff
+  (precedented already — Session A 2026-07-24 shipped exactly this for the langdetect job; reuse
+  that template) applied uniformly across all three progressive-sweep jobs, never conflate
+  paused/done. (8) **KEEP both `p0_validation.py` and `pagesize_bench.py` — do NOT remove.** P0:
+  `RELEASE_0.3_GATE.md` rows 4+7 and this ledger's own "0.3 CLOSE GATE" row 7 are CURRENTLY OPEN
+  and explicitly require re-running it (cold-boot unlock at full scale + a multi-day collector
+  soak); it's also a named live KPI source (K3, `V1_PATHWAY_2026-07-14.md`). Pagesize-bench: its
+  `rebuild_at_pragmas()` is now PRODUCTION-CODE-COUPLED — `src/database/connect.py:84-98,329-333`
+  cross-references it BY NAME as the proven source of the live pragma-ordering fact production now
+  depends on — and it's the explicit reference implementation the still-open
+  `AUTONOMOUS_SESSION_BRIEF_2026-07-22_PR740_PR744_REMEDIATION.md` brief instructs future sessions
+  to read before building the not-yet-existing corpus-migration op the "BACKUP/RESTORE BAR" ruling
+  calls for. **LEDGER-STALENESS FOUND ALONG THE WAY**: this ledger's own "0.3 CLOSE GATE" row 6
+  still reads "currently waiting on the large-corpus run" but `shipped.csv` (2026-07-23) + the
+  actual `connect.py` commits show §1b already shipped to production — a small standalone
+  housekeeping fix, separate from (and much smaller than) this remark's actual question. (9) the
+  73,079 "Discovered candidates" vs 1,391 "awaiting qualification" split is `Source.enabled`
+  partitioning the table exactly as designed (every discovery/promotion channel hardcodes
+  `enabled=False` — `src/catalog/discover.py:100-103`, `src/api/source_management.py:107-114`,
+  `src/discovery/cited_sources.py:148` — per the standing 2026-07-15/2026-07-20 review-before-enable
+  rulings) — BUT underneath that, `select_unqualified()` (`src/catalog/qualification.py:178-224`)
+  has NO `enabled` filter, so the qualification job silently trial-fetches, stores real articles
+  from, and judges disabled candidates too, while `evaluate_and_stamp()` never writes `enabled` —
+  so a successful verdict on a discovered candidate is thrown away: it stays invisible to
+  collection AND stays counted as "candidate" forever, and real trial-fetch bandwidth is being
+  spent on 73,079 sources whose qualification currently means nothing. **NEEDS ONE MAINTAINER
+  RULING before buildable**: (a) tighten `select_unqualified` to also require `enabled=True`
+  (candidates need a separate future enable step first, no wasted trial-fetch) vs (b) have
+  `evaluate_and_stamp()` flip `enabled=True` on a `qualified` verdict (qualification itself becomes
+  the Phase-2 auto-promotion mechanism — reads as more consistent with the 2026-07-20
+  "qualification IS the admission gate... every not-previously-qualified source gets the
+  qualification pass BEFORE joining regular collection" ruling, but is a real Tor-bandwidth-scale
+  decision on 73k rows). **COMPANION WORK RECEIVED + ANALYZED same day**: the diagnostic-log
+  exports from 7 parallel hardware instances arrived and were cross-compared — see the dedicated
+  entry immediately below this one.
+- **HARDWARE DIAGNOSTICS COMPARISON 2026-07-26 — 7-instance cross-machine analysis (maintainer sent
+  8 `all-diagnostics` zips from parallel VMs; 1 excluded as a stale pre-format 2026-07-10 export;
+  INVESTIGATION-ONLY, code-verified from the real exports via a 7-agent read-only fan-out; brief of
+  record = [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_HARDWARE_DIAGNOSTICS_COMPARISON.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_HARDWARE_DIAGNOSTICS_COMPARISON.md);
+  nothing built this session):** 7 hardware tiers (a 6c/15.3GB i7-13620H down to a 2c/3.46GB AMD
+  3020e), spanning 16k–700k articles, confirmed **TWO UNIVERSAL findings present on every single
+  instance with no exception**: (1) **WAL/checkpoint starvation** — every instance's WAL exceeds the
+  64 MiB `journal_size_limit` (4×–29×, and on the weakest/lowest-RAM machine the WAL literally grew
+  LARGER than the machine's total RAM, 4.43 GB WAL vs 3.92 GB RAM), the app's own diagnostic self-flags
+  it identically everywhere ("a checkpoint may be starved — a long-lived reader blocks it"), and it
+  plausibly explains the second universal finding: single-row primary-key `INSERT`/`UPDATE`s
+  (confirmed `COVERING INDEX`, never a bare scan, on every sampled EXPLAIN plan) averaging 2–11s and
+  peaking at 15–341s. (2) **`GET /api/database/countries`** (polled together with 4-5 sibling
+  Library/Governments-tab endpoints) is the dominant cost center on EVERY instance — 12–41% of total
+  uptime individually, up to 81% combined with its polling siblings on the weakest machine — and is
+  the sole cause of the KPI board's "K2 interactive p95" red verdict on all 7. `EXPLAIN` is healthy
+  everywhere; this is a scaling-ceiling problem needing the SAME maintained-counter treatment already
+  proven on `top_terms_grouped`/`supergroups`/`who_aggregate` (confirmed fast via counters in these
+  same exports). BOTTLENECK CLASS TRACKS HARDWARE TIER cleanly: 5/7 (all but the weakest) classify
+  `writer-bound`; only the AMD 3020e (2c/3.46GB, the weakest machine) classifies `memory-bound`
+  (`mem_low_ticks` 53/44 across its 2 passes, governor honestly parked at 1 permit). **A PRIOR FIX
+  VALIDATED WITH REAL BEFORE/AFTER FIELD DATA**: the AMD-3020e instance is the exact machine type the
+  2026-07-23 field diagnostics analyzed (documented 3-8 min inter-pass gaps); THIS export of the same
+  machine type shows a **45.9s average inter-pass gap** (down 4-10×) — the S4.1 duty-cycle fix is
+  confirmed working in the field, not just in theory; the ~90% duplicate rate is unchanged (supply-
+  side, expected) and the mem-low floor now oscillates 1↔50 permits (consistent with the ruled
+  `rate_mode="maximum"` default flip, confirmed live on multiple instances) rather than sitting
+  parked low. NEW for this machine type: a WAL-bloat→giant-checkpoint(21.8 min)→MEMORY-GUARD-ENGAGED
+  cycle fired 8 TIMES in ~7 hours — a harder failure mode than the previously-documented soft
+  mem-low back-off. **BUG A/B CROSS-CHECK (the two already-root-caused job bugs from the same-day
+  field-remarks brief): INCONCLUSIVE on this batch** — 6 of 7 instances have NEVER run either job
+  (no reachable local LLM backend at export time); only the 700k-article main-DB instance
+  (`1fba378c`) has live data, and it shows a THIRD failure mode neither prior bug named: both jobs
+  are simply running very slowly (keyword-triage ~0.03% keyword coverage after ~7h; source-tags
+  1012 records against a 200-source scope after ~7h), neither crashed nor paused — consistent with,
+  but not direct confirmation of, either prior root cause. **A genuinely new finding surfaced
+  instead**: that SAME instance's live `perception-eval-live.json` shows Mistral-7B (the
+  maintainer-ruled default model) scoring **94.7% hallucination rate on "who" extraction** — the
+  eval-gate correctly refused to store any of the 700,242 gated articles' candidates (fail-safe
+  working as designed), but this is real evidence the ruled default model may not clear the
+  perception-extraction quality bar at all. FOUR MORE NEW findings, each reproduced on 2+ independent
+  instances: (a) schema/alembic-stamp drift on 3 of the 4 newer-schema instances, all missing the
+  same `sources.last_crawled_at` index the actively-enabled crawl-by-default feature needs; (b) a
+  power-profile diagnostic reporting `collect_parallelism=1` while the live scheduler setting is
+  actually 50 (same instance, a real reported-vs-actual discrepancy); (c) a SECOND unfiltered
+  third-party logger (`trafilatura.metadata`, 58%+ of sampled error-log entries on 2 instances) —
+  the same noise class as the already-fixed `htmldate.meta`, just a different logger, plus a third
+  low-grade noise source (`GET /v1/models` 404s from the vLLM-probe on GPU-less hardware, 500+ calls
+  per instance); (d) on the main 700k-article instance specifically: **~97.8 GB of accumulated stale
+  pre-restore snapshots** (3 full DB backups created within 36 hours, none flagged for cleanup, over
+  half the instance's total 151 GB footprint — the single most urgent disk-safety finding in the
+  batch), cold-boot unlock time GROWING with corpus scale (17.7s→29.7s across two boots, both far
+  above the P0 2000ms bar and directly relevant to the still-open K1 gate), a ~6.35M-keyword
+  counter-drift gap (93.6% of all keywords show a zero `mention_count` counter against only 121k
+  genuine orphans) that the app's own drift-checker can't even complete at this scale, and 2
+  diagnostic-bundle members (`keyword-log-digest`/`source-audit`) that categorically cannot finish
+  inside their 300s deadline at ~6.9M keywords / 76,679 sources. Full per-instance detail + the
+  8-item prioritized action list in the brief. Nothing built; PENDING a future fix session.
+  **ENRICHED same day (maintainer: "please identify them precisely and enrich... to allow the
+  autonomous session to be as fruitful as possible"): every buildable finding above now carries a
+  full, code-cited, directly-implementable fix specification in the brief** (exact functions to
+  add/edit with file:line anchors, exact proposed code, exact tests to add) — produced by four
+  dedicated deep-dive investigations against live `main`, not inferred from this ledger's own
+  prose. **CORRECTION to (c) above: the `htmldate.meta` filter was only HALF-fixed on 2026-07-23**
+  — `errorlog.py`'s `install()` attached the noise filter to the app's OWN `_JsonlErrorHandler`
+  only, never to the `htmldate.meta` logger itself, so the noise was dropped from the JSONL
+  counters but still reached every OTHER handler (console included) — **live-confirmed the same
+  day** by a fresh-install terminal-log paste showing 25 repeated `ERROR [htmldate.meta]
+  impossible to clear cache...` lines printed to the console. The brief's fix moves the filter to
+  the LOGGER level (checked before ANY handler, per Python's `logging` semantics) and extends it
+  to cover `trafilatura.metadata` with the same mechanism, closing both (c)'s findings and the
+  live console-noise report in one change. **NEW EVIDENCE — an 8-machine parallel-instance
+  confirming experiment** (maintainer, same day): ran the current build on 8 separate machines
+  simultaneously to test whether aggregate article throughput scales with instance count — "in
+  order to confirm my intuition that having multiple instances of OOS downloads more articles than
+  having only one, thus explaining that the current limitation is neither TOR related bandwidth
+  limitation nor hard disk / ram / computation limitations, and that it's only related to the
+  software." If confirmed, this directly implicates single-instance software ceilings — exactly
+  the WAL-starvation (§1) and `/api/database/countries` (§2) mechanisms above — as the fix
+  priority; the brief records the experiment's design + hypothesis and flags that its actual
+  aggregate-vs-single throughput numbers were not yet shared, so none are fabricated here.
+  **EXECUTION PLAN AUTHORED same day (maintainer: "optimize it for an autonomous session driven
+  by Sonnet 5 with ultracode activated"):**
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_EXECUTION_PLAN.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_EXECUTION_PLAN.md)
+  is the operating manual routing into the two investigation docs' specs — 8 slices in 5
+  PR-groups (PR-A low-risk trio W3/W4/W6 · PR-B countries-rollup W2 · PR-C snapshot-sweep W5 ·
+  PR-D WAL-restructure W1 · PR-E AI-jobs F2+F1), with the file-collision map
+  (`scheduler/maintenance.py` W2∩W5 · `api/diagnostics.py` W6∩F1 — never concurrent worktrees),
+  per-slice mandatory skeptic lenses (W5 full data-safety matrix — it DELETES files; W1
+  transactional-semantics/autoflush/parity/S4.1-preservation — `evaluate_watches` WRITES inside
+  the run_all loop, so commit-between-producers changes atomicity), the W1 probe-first rule
+  (empirically test cursor-survives-commit before choosing periodic-commit vs keyset), the
+  verbatim ci.yml gate commands, the scope fence (item 9 ruling-gated · items 4–5 own build ·
+  Mistral-7B maintainer decision · no alembic migration anywhere in this plan), and the
+  staleness-guard Phase-0 recon fan-out. Execution PENDING (the Sonnet-5 session).
 - **TRANSVERSAL AUDIT 09 — SECURITY + FUNCTIONAL DELTA (2026-07-25, maintainer-commissioned generic
   "full transversal / bug-bounty / docs-vs-code" audit; full record =
   [`docs/audit/09_TRANSVERSAL_AUDIT_0.3_DELTA.md`](docs/audit/09_TRANSVERSAL_AUDIT_0.3_DELTA.md), a
