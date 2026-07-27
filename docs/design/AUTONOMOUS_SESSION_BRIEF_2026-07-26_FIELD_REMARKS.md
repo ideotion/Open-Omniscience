@@ -1,5 +1,11 @@
 # Field Remarks 2026-07-26 — Investigation Brief
 
+**Executing session: start with the operating manual, not this doc** —
+[`AUTONOMOUS_SESSION_BRIEF_2026-07-26_EXECUTION_PLAN.md`](AUTONOMOUS_SESSION_BRIEF_2026-07-26_EXECUTION_PLAN.md)
+carries the slice table, sequencing, risk classes, skeptic mandates, and verification gates;
+this doc is the fix-specification REFERENCE it routes into (items 1–3 and 6–7 are in scope
+this cycle; items 4–5 and 9 are fenced out pending their own build/ruling).
+
 **Status:** investigation complete, nothing built. Every claim below was verified against `main`
 by a dedicated read-only agent (six independent investigation threads, one per remark cluster);
 file:line citations are real, not inferred from the ledger's own prose. This brief is the input

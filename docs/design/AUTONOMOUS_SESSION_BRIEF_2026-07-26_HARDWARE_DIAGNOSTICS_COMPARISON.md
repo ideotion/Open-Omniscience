@@ -1,5 +1,11 @@
 # Hardware Diagnostics Comparison — 2026-07-26
 
+**Executing session: start with the operating manual, not this doc** —
+[`AUTONOMOUS_SESSION_BRIEF_2026-07-26_EXECUTION_PLAN.md`](AUTONOMOUS_SESSION_BRIEF_2026-07-26_EXECUTION_PLAN.md)
+carries the slice table, sequencing, file-collision map, risk classes, skeptic mandates, and
+verification gates; this doc is the fix-specification REFERENCE it routes into (§1.1, §2.1,
+§6.1, §7.1, §8.1, §9.1).
+
 **Status:** investigation complete, precise fix specifications complete, nothing built. Seven
 `all-diagnostics` exports, one per hardware instance, captured within a ~3-hour window on
 2026-07-26 (one instance re-exported ~8 hours later at a much larger corpus size — see instance

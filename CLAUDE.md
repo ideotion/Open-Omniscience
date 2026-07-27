@@ -1317,6 +1317,20 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the WAL-starvation (§1) and `/api/database/countries` (§2) mechanisms above — as the fix
   priority; the brief records the experiment's design + hypothesis and flags that its actual
   aggregate-vs-single throughput numbers were not yet shared, so none are fabricated here.
+  **EXECUTION PLAN AUTHORED same day (maintainer: "optimize it for an autonomous session driven
+  by Sonnet 5 with ultracode activated"):**
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_EXECUTION_PLAN.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_EXECUTION_PLAN.md)
+  is the operating manual routing into the two investigation docs' specs — 8 slices in 5
+  PR-groups (PR-A low-risk trio W3/W4/W6 · PR-B countries-rollup W2 · PR-C snapshot-sweep W5 ·
+  PR-D WAL-restructure W1 · PR-E AI-jobs F2+F1), with the file-collision map
+  (`scheduler/maintenance.py` W2∩W5 · `api/diagnostics.py` W6∩F1 — never concurrent worktrees),
+  per-slice mandatory skeptic lenses (W5 full data-safety matrix — it DELETES files; W1
+  transactional-semantics/autoflush/parity/S4.1-preservation — `evaluate_watches` WRITES inside
+  the run_all loop, so commit-between-producers changes atomicity), the W1 probe-first rule
+  (empirically test cursor-survives-commit before choosing periodic-commit vs keyset), the
+  verbatim ci.yml gate commands, the scope fence (item 9 ruling-gated · items 4–5 own build ·
+  Mistral-7B maintainer decision · no alembic migration anywhere in this plan), and the
+  staleness-guard Phase-0 recon fan-out. Execution PENDING (the Sonnet-5 session).
 - **TRANSVERSAL AUDIT 09 — SECURITY + FUNCTIONAL DELTA (2026-07-25, maintainer-commissioned generic
   "full transversal / bug-bounty / docs-vs-code" audit; full record =
   [`docs/audit/09_TRANSVERSAL_AUDIT_0.3_DELTA.md`](docs/audit/09_TRANSVERSAL_AUDIT_0.3_DELTA.md), a
