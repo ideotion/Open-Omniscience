@@ -1,326 +1,371 @@
-file,line,shape,reachability,family,string
-app.js,1777,title_attr,dom,,sample size (n)
-app.js,1778,title_attr,dom,,"distinct independent sources — three articles from one outlet is one voice, not three"
-app.js,1779,title_attr,dom,,age of the freshest dated evidence
-app.js,2372,toast,dom,,Could not refresh briefing:
-app.js,2707,button,dom,,Expand (revert)
-app.js,2708,button,dom,,Collapse to one actor
-app.js,2708,title_attr,dom,,"Count this coordinated network as one voice (reversible, stays flagged)"
-app.js,2724,title_attr,dom,,Opens a dedicated investigation view in a new tab
-app.js,2878,toast,dom,,Could not dismiss:
-app.js,3006,toast,dom,,Could not add to draft:
-app.js,3035,placeholder,dom,,Your note (ships in the export)…
-app.js,3048,toast,dom,,Could not save note:
-app.js,3055,confirm,native-dialog,,Clear all pinned Leads from the draft?
-app.js,3065,toast,dom,,Could not copy:
-app.js,3077,toast,dom,,Could not update collapse:
-app.js,3093,button,dom,,Expand (revert)
-app.js,3094,button,dom,,Apply collapse
-app.js,3439,title_attr,dom,,Several providers publish this calendar — compare them below
-app.js,3541,title_attr,dom,,exact date moves each year
-app.js,3570,title_attr,dom,,fixed annual date
-app.js,3571,title_attr,dom,,follow the official source for the exact date
-app.js,4281,title_attr,dom,,offline stored copy + history
-app.js,4341,th,dom,,Changes
-app.js,4346,title_attr,dom,,offline stored copy + history
-app.js,4418,toast,dom,verb-failed-template,Tracking failed:
-app.js,5077,toast,dom,,Could not load settings:
-app.js,5090,textContent,dom,,Backup status unavailable:
-app.js,5190,toast,dom,verb-failed-template,Save failed:
-app.js,5211,toast,dom,verb-failed-template,Save failed:
-app.js,5473,textContent,dom,,Enter at least a host and user.
-app.js,5483,textContent,dom,,Pulling…
-app.js,6709,toast,dom,verb-failed-template,Save failed:
-app.js,6723,toast,dom,verb-failed-template,Save failed:
-app.js,6804,toast,dom,,Local data crypto-erased. Restart the app.
-app.js,6805,toast,dom,verb-failed-template,Panic wipe failed:
-app.js,6814,toast,dom,,Running full overwrite… this can take a while.
-app.js,6821,toast,dom,,Full overwrite complete. Restart the app.
-app.js,6822,toast,dom,verb-failed-template,Full overwrite failed:
-app.js,6868,toast,dom,,Backup cancelled — nothing removed.
-app.js,6881,toast,dom,,"Backup downloaded — save it somewhere safe, then click Uninstall again."
-app.js,6890,confirm,native-dialog,,This mode WIPES your data and keys — IRREVERSIBLE.\n\n
-app.js,6918,toast,dom,verb-failed-template,Uninstall failed:
-app.js,6966,textContent,dom,verb-failed-template,First run failed:
-app.js,7660,toast,dom,,Could not load sources:
-app.js,7697,toast,dom,verb-failed-template,Seed failed:
-app.js,7713,toast,dom,verb-failed-template,Add failed:
-app.js,7804,toast,dom,,Could not load sources:
-app.js,7809,title_attr,dom,,filter by this tag
-app.js,7815,title_attr,dom,,has RSS feed
-app.js,7911,title_attr,dom,,Open the articles that cite this domain
-app.js,7950,toast,dom,verb-failed-template,Update failed:
-app.js,7957,toast,dom,verb-failed-template,Delete failed:
-app.js,7990,textContent,dom,,Feed result —
-app.js,7992,toast,dom,verb-failed-template,Ingest failed:
-app.js,8007,toast,dom,verb-failed-template,Ingest failed:
-app.js,8077,th,dom,,Result
-app.js,8083,toast,dom,verb-failed-template,Batch ingest failed:
-app.js,8239,toast,dom,,Could not change the collection speed:
-app.js,8244,textContent,dom,,Scheduler status unavailable:
-app.js,8281,textContent,dom,,Could not preview targets:
-app.js,8288,toast,dom,verb-failed-template,Start failed:
-app.js,8292,toast,dom,verb-failed-template,Stop failed:
-app.js,8309,toast,dom,verb-failed-template,Run now failed:
-app.js,8332,toast,dom,verb-failed-template,Save failed:
-app.js,8723,toast,dom,verb-failed-template,Load failed:
-app.js,8788,textContent,dom,,Could not load series:
-app.js,9290,toast,dom,verb-failed-template,Load failed:
-app.js,9315,th,dom,,Last status
-app.js,9321,title_attr,dom,,Fetch once and apply the rule
-app.js,9322,button,dom,,Chart
-app.js,9334,th,dom,,Series
-app.js,9334,th,dom,,Stored
-app.js,9342,button,dom,,Chart
-app.js,9400,toast,dom,verb-failed-template,Add failed:
-app.js,9414,toast,dom,verb-failed-template,Run failed:
-app.js,9418,confirm,native-dialog,,Delete this rule? Stored price history is kept.
-app.js,9420,toast,dom,verb-failed-template,Delete failed:
-app.js,10117,button,dom,,group
-app.js,10154,title_attr,dom,,This grouping merges a form via lemmatization (e.g. study/studied). Split any member out above if a merge looks wrong.
-app.js,10160,button,dom,,group
-app.js,10177,button,dom,,reset
-app.js,10183,toast,dom,,Nothing to split — this family has only one member.
-app.js,10190,toast,dom,verb-failed-template,Split failed:
-app.js,10212,toast,dom,verb-failed-template,Reset failed:
-app.js,10568,toast,dom,verb-failed-template,Create failed:
-app.js,10605,title_attr,dom,,Open on the cross-country concept map
-app.js,10614,button,dom,,delete
-app.js,10618,placeholder,dom,,add a family…
-app.js,10620,button,dom,,Add family
-app.js,10622,placeholder,dom,,"add a group (one concept, many languages)…"
-app.js,10624,button,dom,,Add group
-app.js,10636,toast,dom,verb-failed-template,Add failed:
-app.js,10644,toast,dom,,Group added.
-app.js,10646,toast,dom,verb-failed-template,Add group failed:
-app.js,10663,toast,dom,verb-failed-template,Delete failed:
-app.js,10720,textContent,dom,,hidden
-app.js,10721,toast,dom,verb-failed-template,Hide failed:
-app.js,10780,textContent,dom,,Scanning citations…
-app.js,10798,textContent,dom,,Could not register:
-app.js,10985,button,dom,,Edit
-app.js,11001,textContent,dom,,Enter a condition (search query) first.
-app.js,11005,textContent,dom,,"Watch added. It runs after every collection pass, or use “Check now”."
-app.js,11011,toast,dom,,Could not update watch:
-app.js,11024,toast,dom,,Could not edit watch:
-app.js,11027,confirm,native-dialog,,Delete this watch and its history?
-app.js,11029,toast,dom,,Could not delete watch:
-app.js,11063,textContent,dom,,Status unavailable:
-app.js,11245,textContent,dom,,Enriching…
-app.js,11388,textContent,dom,,Discovering…
-app.js,11393,textContent,dom,,Discovery failed — see console
-app.js,11985,th,dom,,Lemma
-app.js,11985,th,dom,,Merges
-app.js,12006,textContent,dom,,Build an IR gold set (grade queries 0/1/2)
-app.js,12049,toast,dom,,Enter a save path first.
-app.js,12050,toast,dom,,Load + grade queries first.
-app.js,12059,toast,dom,verb-failed-template,Save failed:
-app.js,12793,toast,dom,verb-failed-template,Explore failed:
-app.js,12889,placeholder,dom,,"keyword, keyword, keyword…"
-app.js,12891,title_attr,dom,,articles mentioning ALL terms
-app.js,12892,title_attr,dom,,articles mentioning ANY term
-app.js,12893,title_attr,dom,,the first term and none of the rest
-app.js,12902,title_attr,dom,,exact corpus-wide article count for this term
-app.js,12904,title_attr,dom,,the set scan reached its cap
-app.js,13021,toast,dom,verb-failed-template,Translate failed:
-app.js,13026,title_attr,dom,,exclude this keyword
-app.js,13044,title_attr,dom,,exclude this keyword
-app.js,13058,toast,dom,verb-failed-template,Exclude failed:
-app.js,13103,toast,dom,verb-failed-template,Trends failed:
-app.js,14368,title_attr,dom,,"country-level stand-in point, not the exact spot"
-app.js,14369,title_attr,dom,,placed at a known city
-app.js,14370,title_attr,dom,,a date extracted from article text
-app.js,14386,title_attr,dom,,data source
-app.js,14404,title_attr,dom,,These signals are merely close in place and time within your current window.
-app.js,14525,th,dom,,Top keywords
-app.js,14534,toast,dom,verb-failed-template,Map failed:
-app.js,14711,title_attr,dom,,show/hide
-app.js,14951,title_attr,dom,,"country-level stand-in point, not the exact spot"
-app.js,14952,title_attr,dom,,placed at a known city
-app.js,14953,title_attr,dom,,a date extracted from article text
-app.js,14963,title_attr,dom,,data source
-app.js,14979,title_attr,dom,,These signals are merely close in place and time within your current window.
-app.js,15058,textContent,dom,,Status unavailable:
-app.js,15126,toast,dom,verb-failed-template,Start failed:
-app.js,15130,toast,dom,verb-failed-template,Pause failed:
-app.js,15133,confirm,native-dialog,,Delete this download and its file?
-app.js,15135,toast,dom,verb-failed-template,Delete failed:
-app.js,15249,toast,dom,verb-failed-template,Start failed:
-app.js,15296,toast,dom,verb-failed-template,Pause failed:
-app.js,15302,toast,dom,verb-failed-template,Delete failed:
-app.js,15378,textContent,dom,,Enter an indicator or dataset id first.
-app.js,15414,th,dom,,Agency
-app.js,15414,th,dom,,Series
-app.js,15414,th,dom,,Area
-app.js,15415,th,dom,,SA/NSA
-app.js,15415,th,dom,,Base yr
-app.js,15436,th,dom,,Area
-app.js,15436,th,dom,,Producers (side by side)
-app.js,15436,th,dom,,Comparability
-app.js,15465,th,dom,,Agency
-app.js,15465,th,dom,,Series
-app.js,15465,th,dom,,Area
-app.js,15466,th,dom,,From → to
-app.js,15467,th,dom,,Robust z
-app.js,15467,th,dom,,Priors
-app.js,15467,th,dom,,Revised at
-app.js,15539,th,dom,,Area
-app.js,15584,th,dom,,Series
-app.js,15584,th,dom,,Interval
-app.js,15584,th,dom,,Last refresh
-app.js,15590,toast,dom,,Could not update:
-app.js,15593,confirm,native-dialog,,Stop tracking this figure for auto-refresh? (Stored vintages are kept.)
-app.js,15595,toast,dom,,Could not remove:
-app.js,15604,toast,dom,verb-failed-template,Refresh failed:
-app.js,15803,th,dom,,Checked
-app.js,15803,th,dom,,Edits
-app.js,15803,th,dom,,Flagged
-app.js,15815,button,dom,,Track
-app.js,15819,toast,dom,,Wiki pages:
-app.js,15829,toast,dom,verb-failed-template,Add failed:
-app.js,15835,toast,dom,verb-failed-template,Delete failed:
-app.js,15846,toast,dom,verb-failed-template,Track failed:
-app.js,15855,toast,dom,verb-failed-template,Track now failed:
-app.js,15864,th,dom,,When
-app.js,15864,th,dom,,Edition · Page
-app.js,15864,th,dom,,Editor
-app.js,15864,th,dom,,Reasons
-app.js,15864,th,dom,,ORES
-app.js,15873,button,dom,,Diff
-app.js,15876,toast,dom,,Wiki changes:
-app.js,15891,toast,dom,,Diff:
-app.js,16093,title_attr,dom,,Close this analysis tab
-app.js,17193,th,dom,,Lang
-app.js,17208,toast,dom,verb-failed-template,Search failed:
-app.js,17761,th,dom,,Channel
-app.js,17761,th,dom,,Evidence
-app.js,17761,th,dom,,First seen
-app.js,17872,toast,dom,verb-failed-template,Methods export failed:
-app.js,17972,toast,dom,,Backend:
-app.js,18015,textContent,dom,,Starting the install…
-app.js,18020,textContent,dom,,Installing — this can take several minutes…
-app.js,18033,textContent,dom,,Install:
-app.js,18049,textContent,dom,,Start:
-app.js,18061,toast,dom,,Stop:
-app.js,18079,toast,dom,,Summarize:
-app.js,18094,toast,dom,,Translate:
-app.js,18116,th,dom,,Outlet
-app.js,18116,th,dom,,Tone (VADER)
-app.js,18116,th,dom,,Emphasised terms
-app.js,18134,toast,dom,,Evidence export:
-app.js,18154,title_attr,dom,,Set OO_KEY_PASSPHRASE to encrypt keys at rest
-app.js,18172,textContent,dom,,Custody settings unavailable:
-app.js,18190,toast,dom,verb-failed-template,Save failed:
-app.js,18204,th,dom,,Actor
-app.js,18204,th,dom,,Time
-app.js,18204,th,dom,,Sig
-app.js,18210,toast,dom,,View chain:
-app.js,18220,toast,dom,,Verify:
-app.js,18232,toast,dom,,Export:
-app.js,18243,toast,dom,,Anchor:
-index.html,105,title_attr,dom,,Activity &amp; vitals — click to open the task manager
-index.html,109,title_attr,dom,,Tasks &amp; system
-index.html,117,title_attr,dom,,Collection speed
-index.html,117,aria_label,dom,,Collection speed (target / maximum)
-index.html,134,title_attr,dom,,Help &amp; documentation
-index.html,266,aria_label,dom,,Channel
-index.html,310,placeholder,dom,,Open Omniscience briefing
-index.html,328,placeholder,dom,,exact name (optional)
-index.html,329,placeholder,dom,,en (optional)
-index.html,543,placeholder,dom,,e.g. j.doe@newsroom
-index.html,551,placeholder,dom,,e.g. article:42
-index.html,652,placeholder,dom,,Human Rights Act 1998
-index.html,660,button,dom,,Add &amp; track now
-index.html,764,title_attr,dom,,previous
-index.html,766,title_attr,dom,,next
-index.html,845,placeholder,dom,,Nd / AAPL / XAU
-index.html,846,placeholder,dom,,Neodymium spot
-index.html,855,placeholder,dom,,data-value
-index.html,859,placeholder,dom,,"at\\s+([\\d.,]+)\\s*USD"
-index.html,862,placeholder,dom,,china_spot
-index.html,873,placeholder,dom,,WTI
-index.html,878,placeholder,dom,,world-bank
-index.html,879,placeholder,dom,,auto (col 1)
-index.html,880,placeholder,dom,,auto (col 2)
-index.html,914,placeholder,dom,,"e.g. inflation, Emmanuel Macron, Rio Tinto"
-index.html,969,aria_label,dom,,Trend chart lens
-index.html,970,button,dom,,Windows
-index.html,971,button,dom,,Rate slope
-index.html,972,button,dom,,Small multiples
-index.html,983,placeholder,dom,,fr (optional)
-index.html,1006,button,dom,,Register cited domains as sources ↗
-index.html,1061,button,dom,,reset
-index.html,1089,placeholder,dom,,flood OR inondation
-index.html,1157,button,dom,,Leads
-index.html,1165,button,dom,,Data &amp; backup
-index.html,1283,placeholder,dom,,search the stoplist…
-index.html,1308,placeholder,dom,,e.g. an AWQ/GPTQ-quantized Mistral-7B-Instruct repo id
-index.html,1324,placeholder,dom,,e.g. llama3.2:3b — any tag from ollama.com/library
-index.html,1360,button,dom,,Save prompts &amp; behaviour
-index.html,1381,placeholder,dom,,e.g. Monetary figures
-index.html,1383,placeholder,dom,,e.g. figure
-index.html,1534,placeholder,dom,,NY.GDP.MKTP.CD
-index.html,1535,placeholder,dom,,FR or all
-index.html,1540,placeholder,dom,,NY.GDP.MKTP.CD
-index.html,1548,placeholder,dom,,worldbank
-index.html,1550,button,dom,,Map by country
-index.html,1657,button,dom,,Continue in background
-index.html,1762,placeholder,dom,,backup destination dir (a separate empty folder / drive)
-index.html,1763,placeholder,dom,,backup passphrase (never stored)
-index.html,1764,button,dom,,Run P0 validation
-index.html,1765,title_attr,dom,,Stop the running validation at its next safe point; the throwaway restore staging and any partial backup are cleaned up.
-index.html,1780,button,dom,,Run page-size bench
-index.html,1803,button,dom,,Start sweep
-index.html,1822,button,dom,,Start sweep
-index.html,1846,button,dom,,Run perception-eval harness
-index.html,1852,button,dom,,Start sweep
-index.html,1864,button,dom,,Source &amp; article quality (.zip) · TEMP
-index.html,1865,button,dom,,Rollup benchmark (.json)
-index.html,1866,button,dom,,Enrich source tags from corpus
-index.html,1867,button,dom,,Enrich source types (Wikidata) ↗
-index.html,1868,placeholder,dom,,"countries e.g. ke,ng,br"
-index.html,1869,button,dom,,Discover new sources (Wikidata) ↗
-index.html,1870,button,dom,,Discover sources worldwide (Wikidata) ↗
-index.html,1878,button,dom,,Build an IR gold set (grade queries 0/1/2)
-index.html,1879,placeholder,dom,,save path e.g. /home/you/oo_gold_set.json
-index.html,1880,button,dom,,Save gold set
-index.html,1895,placeholder,dom,,gold-set file path (see configs/ir_eval/gold_set.example.json)
-index.html,1896,placeholder,dom,,"weights A e.g. 4,1"
-index.html,1897,placeholder,dom,,"weights B e.g. 1,1"
-index.html,1898,button,dom,,Run IR eval over a gold set
-index.html,1906,button,dom,,FDR self-test (.json)
-index.html,1907,button,dom,,Flood signal (.json)
-index.html,1908,button,dom,,Bury signal (.json)
-index.html,1909,button,dom,,Lunar-correlation screen (.json)
-index.html,2003,placeholder,dom,,e.g. Russia–Ukraine war
-index.html,2030,button,dom,,Preview
-index.html,2042,title_attr,dom,,Turn continuous background collection on or off
-index.html,2091,placeholder,dom,,"news, financial …"
-index.html,2092,placeholder,dom,,"politics, markets, climate"
-index.html,2143,placeholder,dom,,news
-index.html,2176,button,dom,,Qualify the backlog
-index.html,2182,placeholder,dom,,Example News
-index.html,2183,placeholder,dom,,example.com
-index.html,2185,placeholder,dom,,"politics,world"
-index.html,2284,aria_label,dom,,Choose PDF files to import
-index.html,2285,button,dom,,Import PDFs
-index.html,2307,placeholder,dom,,imap.example.com
-index.html,2309,placeholder,dom,,you@example.com
-index.html,2351,button,dom,,Open evidence &amp; custody →
-index.html,2378,button,dom,,Encrypt corpus &amp; custody log
-index.html,2430,placeholder,dom,,socks5://127.0.0.1:9050 (e.g. Tor)
-index.html,2489,button,dom,,Uninstall &amp; stop the app
-index.html,2742,aria_label,dom,,Emphasize languages
-index.html,2766,button,dom,,Go online &amp; start collecting
-investigate.html,117,th,dom,,Snippet (provenance)
-investigate.html,167,th,dom,,When
-investigate.html,167,th,dom,,Editor
-investigate.html,167,th,dom,,Comment
-investigate.html,167,th,dom,,Flags
-reader.js,40,title_attr,dom,,Analyse “' + esc(term) + '” across your corpus ↗
-reader.js,343,aria_label,dom,,Keyword mindmap for this article
-reader.js,392,button,dom,,Translate now
-reader.js,394,button,dom,,Summarize now
-reader.js,430,textContent,dom,,Working locally…
-taskmanager.html,132,title_attr,dom,,Airplane mode — filled means offline: every new network request is refused instantly.
-taskmanager.html,140,title_attr,dom,,Help &amp; documentation
+file,chars,string
+?,18,— explore & curate
+?,21,— evidence & ordering
+?,27,#last-price / .quote .value
+?,27,/mnt/backup or D:\oo-backup
+?,38,Source & article quality (.zip) · TEMP
+?,47,e.g. (climate OR energy) AND policy NOT opinion
+?,48,Analyse “' + esc(term) + '” across your corpus ↗
+?,67,feature that sends a free-text search query to an external service:
+?,69,"Everything you need to operate the tool — rendered here, offline. The"
+?,92,is the detailed notice; the other guides go deeper on specific subjects. Developers: the raw
+?,97,"Pages and revisions tracked over time (an hourly count, recorded from when this feature shipped)."
+?,101,"). Import upserts by domain (new ones created, existing updated); bad rows are reported, not dropped."
+?,107,"Legal documents and revisions tracked over time (an hourly count, recorded from when this feature shipped)."
+?,111,"— statutes, gazettes, IP records — from official sources worldwide and track how it changes over time (the data"
+?,112,": every record links back to its official gazette. Fetched only through the ethical, robots-respecting path. See"
+?,112,"Default mapping is column 1 = date, column 2 = value (the FRED convention). Works with any CSV; missing values ("
+?,127,in the table to fetch the page once and see the exact value found — or the exact reason it didn't match — before relying on it.
+?,139,"Small evolution graphs instead of bare live figures (2026-07-23 field feedback) — hourly snapshots, real history, click a chart to enlarge."
+?,149,"source — registered, not scraped (enable any to start collecting; idempotent, safe to repeat). This is a local database change, not a network action."
+?,204,"Point at a folder and we'll find what's importable inside it — a backup to restore, large data (models / maps / dumps), or newsletters. Restore is always additive: nothing you already have is overwritten."
+?,305,"The same leads Home surfaces, each shown with its REAL evidence as chips (n · distinct independent sources · freshest-evidence age) and a DISCLOSED order — never a composite score. This is a preview; Home keeps its current order until you graduate a mode here (browser-unverified — needs a click-through)."
+?,330,"One place to back up everything, at any database size. Pick a destination folder or drive, choose what to include, and it streams into that folder — the encrypted corpus as volumes + parity, the large public blobs (models / maps / dumps) copied as-is. No size limit. (The older single-file backup below is being replaced by this.)"
+?,331,"The COMPLETE on-disk footprint across every store — the encrypted database, its WAL, Wikipedia dumps, offline map regions, backup staging, and the local AI-model store (which lives outside the data folder). Only the encrypted corpus is irreplaceable; the rest is re-downloadable. A recursive size measurement, so it runs on demand."
+?,378,"Gather several families — or cross-language groups (one concept across many languages, e.g. election / élection / wahl) — under one theme (e.g. Russia–Ukraine war, over Russia, Ukraine, Putin, sanctions…). A group member makes the super-group span languages. Pure curation — nothing in the keyword store changes; see the super-group's real statistics in Insights → Super-groups."
+?,402,"Surface variants are grouped automatically (a shared lemma/plural, or a cross-language group — USA / США / EUA). Only rows where there is actually something to decide are shown below: a multi-member family, a group merge, or a family you already overrode. Tick two or more rows and Merge them, or click a member's ✕ to split it out. Your decisions win over the automatic rules and are fully reversible."
+app.js,3,30m
+app.js,3,WTI
+app.js,3,adv
+app.js,3,law
+app.js,4,IMAP
+app.js,4,Live
+app.js,4,POP3
+app.js,5,(opt)
+app.js,5,Diff:
+app.js,5,Leads
+app.js,5,Stop:
+app.js,6,Start:
+app.js,7,Anchor:
+app.js,7,Backend
+app.js,7,Export:
+app.js,7,Preview
+app.js,7,Verify:
+app.js,7,Windows
+app.js,7,“cited”
+app.js,8,500 kbps
+app.js,8,Activity
+app.js,8,Backend:
+app.js,8,Install:
+app.js,8,Pulling…
+app.js,8,previous
+app.js,9,show/hide
+app.js,9,worldbank
+app.js,10,(optional)
+app.js,10,AI backend
+app.js,10,DuckDuckGo
+app.js,10,Enriching…
+app.js,10,Rate slope
+app.js,10,Summarize:
+app.js,10,Translate:
+app.js,11,OCR-derived
+app.js,11,Start sweep
+app.js,11,View chain:
+app.js,11,Wiki pages:
+app.js,11,data source
+app.js,12,Discovering…
+app.js,12,Group added.
+app.js,12,has RSS feed
+app.js,13,Aggregate the
+app.js,13,Feed result —
+app.js,13,Wiki changes:
+app.js,13,add a family…
+app.js,14,Map by country
+app.js,14,NY.GDP.MKTP.CD
+app.js,15,Could not copy:
+app.js,15,Small multiples
+app.js,15,e.g. article:42
+app.js,15,on this machine
+app.js,15,sample size (n)
+app.js,16,Collection speed
+app.js,16,Evidence export:
+app.js,17,Could not remove:
+app.js,17,Could not update:
+app.js,17,Storage footprint
+app.js,17,Wikipedia tracked
+app.js,17,fixed annual date
+app.js,18,Could not dismiss:
+app.js,18,filter by this tag
+app.js,19,Could not register:
+app.js,19,Scanning citations…
+app.js,19,Status unavailable:
+app.js,20,Could not save note:
+app.js,20,Source qualification
+app.js,20,exclude this keyword
+app.js,21,Could not edit watch:
+app.js,21,Starting the install…
+app.js,22,Could not load series:
+app.js,22,placed at a known city
+app.js,23,Close this analysis tab
+app.js,23,Could not add to draft:
+app.js,23,Could not delete watch:
+app.js,23,Could not load sources:
+app.js,23,Could not update watch:
+app.js,24,Could not load settings:
+app.js,24,Enter a save path first.
+app.js,26,Backup status unavailable:
+app.js,26,Could not preview targets:
+app.js,26,Could not update collapse:
+app.js,26,exact date moves each year
+app.js,26,"keyword, keyword, keyword…"
+app.js,27,Could not refresh briefing:
+app.js,27,Load + grade queries first.
+app.js,28,articles mentioning ANY term
+app.js,28,the set scan reached its cap
+app.js,29,Custody settings unavailable:
+app.js,29,Fetch once and apply the rule
+app.js,29,Scheduler status unavailable:
+app.js,29,articles mentioning ALL terms
+app.js,29,offline stored copy + history
+app.js,30,Discovery failed — see console
+app.js,31,Enter at least a host and user.
+app.js,32,Your note (ships in the export)…
+app.js,34,a date extracted from article text
+app.js,34,age of the freshest dated evidence
+app.js,35,Backup cancelled — nothing removed.
+app.js,35,the first term and none of the rest
+app.js,37,Open on the cross-country concept map
+app.js,38,Could not change the collection speed:
+app.js,39,Enter a condition (search query) first.
+app.js,39,Enter an indicator or dataset id first.
+app.js,39,Open the articles that cite this domain
+app.js,41,Full overwrite complete. Restart the app.
+app.js,42,Build an IR gold set (grade queries 0/1/2)
+app.js,42,Local data crypto-erased. Restart the app.
+app.js,42,"add a group (one concept, many languages)…"
+app.js,43,Installing — this can take several minutes…
+app.js,45,Set OO_KEY_PASSPHRASE to encrypt keys at rest
+app.js,45,exact corpus-wide article count for this term
+app.js,45,follow the official source for the exact date
+app.js,46,Running full overwrite… this can take a while.
+app.js,48,"country-level stand-in point, not the exact spot"
+app.js,49,Opens a dedicated investigation view in a new tab
+app.js,51,Nothing to split — this family has only one member.
+app.js,60,Several providers publish this calendar — compare them below
+app.js,69,"Watch added. It runs after every collection pass, or use “Check now”."
+app.js,71,"Backup downloaded — save it somewhere safe, then click Uninstall again."
+app.js,71,"Count this coordinated network as one voice (reversible, stays flagged)"
+app.js,76,These signals are merely close in place and time within your current window.
+app.js,85,"distinct independent sources — three articles from one outlet is one voice, not three"
+app.js,118,This grouping merges a form via lemmatization (e.g. study/studied). Split any member out above if a merge looks wrong.
+i18n.js,4,next
+index.html,5,(any)
+index.html,9,FR or all
+index.html,9,https://…
+index.html,9,🛒 Draft (
+index.html,10,World Bank
+index.html,10,china_spot
+index.html,10,data-value
+index.html,10,world-bank
+index.html,11,"(2-letter),"
+index.html,11,Import PDFs
+index.html,11,Law tracked
+index.html,11,Text size ·
+index.html,11,e.g. figure
+index.html,11,example.com
+index.html,11,min sources
+index.html,12,(required) ·
+index.html,12,English (en)
+index.html,12,Example News
+index.html,12,auto (col 1)
+index.html,12,auto (col 2)
+index.html,12,the diff). A
+index.html,12,— you decide
+index.html,13,(co-citation)
+index.html,13,Save gold set
+index.html,13,en (optional)
+index.html,13,fr (optional)
+index.html,14,/home/you/pdfs
+index.html,14,Checking vLLM…
+index.html,14,Neodymium spot
+index.html,14,What this does
+index.html,14,"politics,world"
+index.html,15,Loading themes…
+index.html,15,Nd / AAPL / XAU
+index.html,15,research mirror
+index.html,15,you@example.com
+index.html,16,Leads to look at
+index.html,16,Trend chart lens
+index.html,16,imap.example.com
+index.html,16,not legal advice
+index.html,17,"After adding, use"
+index.html,17,All Leads below ↓
+index.html,17,Run P0 validation
+index.html,17,"news, financial …"
+index.html,18,is also available.
+index.html,18,ollama.com/library
+index.html,18,"weights A e.g. 4,1"
+index.html,18,"weights B e.g. 1,1"
+index.html,19,64-char SHA-256 hex
+index.html,19,Bury signal (.json)
+index.html,19,Emphasize languages
+index.html,19,Major floor · min n
+index.html,19,Qualify the backlog
+index.html,19,Run page-size bench
+index.html,19,e.g. j.doe@newsroom
+index.html,19,flood OR inondation
+index.html,20,Eurostat (SDMX-JSON)
+index.html,20,Flood signal (.json)
+index.html,20,Super-group curation
+index.html,20,search the stoplist…
+index.html,21,(where the number is)
+index.html,21,/home/you/newsletters
+index.html,21,FDR self-test (.json)
+index.html,21,Human Rights Act 1998
+index.html,21,Import a whole folder
+index.html,21,e.g. Monetary figures
+index.html,21,exact name (optional)
+index.html,22,Continue in background
+index.html,22,Entity family curation
+index.html,22,Import documents (PDF)
+index.html,23,Map producer (optional)
+index.html,23,"To CREATE a backup, use"
+index.html,23,"at\\s+([\\d.,]+)\\s*USD"
+index.html,23,"countries e.g. ke,ng,br"
+index.html,23,e.g. Russia–Ukraine war
+index.html,24,(optional capture group)
+index.html,24,(required for protected)
+index.html,24,Rollup benchmark (.json)
+index.html,24,"sources, tagged with the"
+index.html,24,— use Import… at the top
+index.html,25,Excluded keywords (yours)
+index.html,25,Open Omniscience briefing
+index.html,25,Stack overlapping stories
+index.html,25,sends your topic query to
+index.html,25,"— same place, same window"
+index.html,26,Choose PDF files to import
+index.html,26,"politics, markets, climate"
+index.html,26,to find candidate outlets.
+index.html,26,— surface variants grouped
+index.html,27,Run IR eval over a gold set
+index.html,27,Run perception-eval harness
+index.html,27,See the built-in stoplist (
+index.html,27,https://example.com/article
+index.html,28,Checking the active backend…
+index.html,28,Choose what to collect first
+index.html,28,Preview lemmatization merges
+index.html,28,https://example.com/feed.xml
+index.html,29,This is a level (count/total)
+index.html,29,the User Manual (law chapter)
+index.html,29,words filtered automatically)
+index.html,29,"— create, add, remove, delete"
+index.html,30,Enrich source tags from corpus
+index.html,30,Model (a Hugging Face repo id)
+index.html,30,continuously and automatically
+index.html,31,"vLLM (GPU, concurrent requests)"
+index.html,32,Enrich source types (Wikidata) ↗
+index.html,32,Lunar-correlation screen (.json)
+index.html,32,backup passphrase (never stored)
+index.html,32,https://example.org/calendar.ics
+index.html,33,Discover new sources (Wikidata) ↗
+index.html,33,https://exchange.example/quote/nd
+index.html,34,"(comma-separated, quote the cell),"
+index.html,34,socks5://127.0.0.1:9050 (e.g. Tor)
+index.html,35,Collection speed (target / maximum)
+index.html,35,Register cited domains as sources ↗
+index.html,36,", never the authoritative source and"
+index.html,38,"Page-size A/B bench (4K vs 16K, DB-10)"
+index.html,38,— restore these via Import… at the top
+index.html,39,Discover sources worldwide (Wikidata) ↗
+index.html,40,"(AND / OR / NOT, ""phrases"", parentheses)"
+index.html,40,— gathering families and groups together
+index.html,41,save path e.g. /home/you/oo_gold_set.json
+index.html,42,"/blank) are skipped, never stored as zero."
+index.html,42,Adds every producer to your catalogue as a
+index.html,42,Source-tag assignment -- progressive sweep
+index.html,42,"e.g. inflation, Emmanuel Macron, Rio Tinto"
+index.html,42,to filter the catalogue table below to it.
+index.html,45,P0 data-safety validation (v0.2.0 acceptance)
+index.html,45,"Scraping, source aggregation and crawling run"
+index.html,47,Keyword triage -- progressive sweep (Section 8)
+index.html,47,Turn continuous background collection on or off
+index.html,48,Turns frequently-cited external domains into new
+index.html,50,e.g. llama3.2:3b — any tag from ollama.com/library
+index.html,51,— families by kind (zoom out); click one to zoom in
+index.html,53,Who / where / when extraction (AI-derived candidates)
+index.html,54,e.g. an AWQ/GPTQ-quantized Mistral-7B-Instruct repo id
+index.html,56,backup destination dir (a separate empty folder / drive)
+index.html,61,https://fred.stlouisfed.org/graph/fredgraph.csv?id=DCOILWTICO
+index.html,62,gold-set file path (see configs/ir_eval/gold_set.example.json)
+index.html,65,Order by prominence (sources → magnitude → recency; else as Home)
+index.html,67,extra + the Tesseract binary) it is read via OCR and clearly marked
+index.html,68,Advanced (legacy) — collection is automatic; these are rarely needed
+index.html,69,/path/on/this/machine — each run drops the new-articles delta as JSON
+index.html,72,Legacy: batch ingest (collection is automatic — you shouldn't need this)
+index.html,72,"{""pollster"":""…"",""sponsor"":""…"",""sample_size"":1000,""question_wording"":""…""}"
+index.html,73,Legacy: manual ingest (collection is automatic — you shouldn't need this)
+index.html,78,Collect these more often. Leave all off for an even rotation across languages.
+index.html,93,staging dir (optional — default under the data dir; use an external drive for a large corpus)
+index.html,120,Stop the running validation at its next safe point; the throwaway restore staging and any partial backup are cleaned up.
+index.html,126,Optional full free-space overwrite after the wipe (defence-in-depth — the crypto-erase already makes the corpus unrecoverable)
+index.html,127,at the top of this page — it works at any database size. This panel only RESTORES an older single-file backup (additive merge).
+index.html,131,Check the backup's manifest signature and every volume + parity checksum without restoring anything — the live corpus is untouched.
+index.html,140,"Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped."
+index.html,140,Stop at the next safe point (between rebuild/bench phases); staged rebuilds are deleted and the partial report is honestly marked cancelled.
+index.html,145,Write the graded queries as the exact ir_eval gold-set JSON to this server-side path (validated on save). Then point the IR-eval run below at it.
+index.html,152,"A cadence preference — the emphasized languages are collected more often. It orders the rotation; it never stops the others (ordering, never exclusion)."
+index.html,173,By default your app collects from every source. Focus your first collection on the themes you care about — you can widen or change all of this anytime in Settings → Collect.
+index.html,180,"provenance class — the sources' sources. Metadata only: enabling one to actually scrape it stays your consented choice, and “cited” is a descriptive channel, never a quality score."
+index.html,188,"Start the page-size A/B bench as a background job: rebuild at 4096 then 16384 bytes/page (each with the ruled auto_vacuum=INCREMENTAL), verify, bench, clean up. Cancellable between phases."
+index.html,190,"person / org / location kinds await a future NER/gazetteer pass — the extractor does not yet assign them, so they are not offered here rather than shown as a fabricated, always-empty choice."
+index.html,196,"(lower-trust — may contain recognition errors; the original PDF stays the source of truth), otherwise it is skipped with an honest reason. Re-importing the same document is skipped (deduplicated)."
+index.html,205,Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A born-digital PDF uses its exact text layer. A scanned / image-only PDF has no text layer: if OCR is installed (the
+index.html,226,"Run the S6.5 perception-eval harness against the currently active model -- the gate evidence this extraction sweep uses to decide which languages are safe to extract. Bounded (a small synthetic gold set); read-only, no writes."
+index.html,231,"Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source (""Imported PDFs"") so it never blurs with the web."
+index.html,237,"Prove the Benjamini-Hochberg FDR correction (the multiple-testing spine under the flood/bury and lunar screens) on hand-computed fixtures — pass/fail per case, so a regression reddens both this export and CI. No DB, no network, no score."
+index.html,254,"whenever collection is on and you are online — RSS feeds, recursive crawl, markets, laws and Wikipedia, every source. There is nothing to schedule or program; just switch it on. (It pauses itself if the machine runs low on memory and resumes on its own.)"
+index.html,260,"""all"" aggregates every non-term kind (server-side, before any limit). person / org / location kinds await a future NER/gazetteer pass — the extractor does not yet assign them, so they are not offered here rather than shown as a fabricated, always-empty choice."
+index.html,264,"A level (a count or total like population or GDP) is shown as proportional symbols, never colour — colouring a level makes a big country look like 'more' just for being big. Tick this for a count/total; leave unticked for a rate / ratio / % / per-capita indicator."
+index.html,269,"Register a domain cited by ≥2 DISTINCT sources as a new DISABLED source (metadata only — never fetched until you enable it). Independence is counted by distinct sources, not article count; commerce/social storefronts are excluded and existing outlets are alias-deduped."
+index.html,273,"Colour a world map by this indicator (series id above). Only areas sharing the same unit / base year / seasonal adjustment are coloured; an area on a different basis is shown as no-data, never recoloured onto one scale. A level is shown as proportional symbols, not colour."
+index.html,273,"These are the automatic multilingual filter words (function words like the·you·not across your corpus languages). They are curated and language-scoped, so this view is read-only — the toggle above turns the whole list on or off. Search it to see whether a term is filtered."
+index.html,276,"Screen the top keywords' daily coverage against the moon's illuminated fraction, FDR-corrected — a survivor beat multiple-testing, never a bare significant p. Correlation is not causation; the common honest outcome is that nothing survives. Counts + statistics only, no score."
+index.html,281,"Sample your top corpus keywords + their live search results, then grade each result 0/1/2 (0 irrelevant · 1 relevant · 2 highly relevant; press 0/1/2 on a focused row). Nothing is invented — search history is not stored. Save writes the exact ir_eval gold set the run below scores."
+index.html,282,"Sources flooding a single topic far above their OWN history (the flood half of manipulation-pattern card #4). A two-proportion z-test vs the source's own prior share; volume is not importance, so a genuinely big story legitimately dominates. Counts + statistics only, never a score."
+index.html,282,"Toggle the progressive keyword-triage sweep on/off. ON starts (or resumes from the saved cursor) a run across ALL head-scope keywords using the active model; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues."
+index.html,290,"Toggle the progressive source-tag sweep on/off. ON starts (or resumes from the saved cursor) a run across every source with sufficient evidence using the active model; OFF pauses it at the next safe point between pages -- the partial log and cursor are kept, so toggling ON again continues."
+index.html,295,"Open Omniscience runs local inference through Ollama or vLLM — vLLM is preferred automatically on a GPU-equipped machine (concurrent requests; a heavier install), Ollama is kept for CPU-only machines and is never dropped. The active backend and the reason are shown below, never a silent switch."
+index.html,304,"Entities are standalone ALL-CAPS acronyms (WHO, NATO, USA); a multi-word proper name is a topical TERM, not an entity. Rows here show variants the engine already grouped — a shared lemma/plural, or a cross-language group (USA / США / EUA). To correct a grouping (merge or split), use Settings → Keywords."
+index.html,309,"Fill each source's TYPE (newspaper / broadcaster / news agency / scientific journal / …) from Wikidata, verified against the source's own domain. This one goes ONLINE through the guarded transport — it asks for network consent first and is refused in airplane mode. Bounded per click; click again to continue."
+index.html,315,Builds the keyword-daily rollup in-memory over your corpus and times the windowed keyword aggregation both ways — the live mention scan (the Insights/trends freeze) vs summing the rollup — with the speedup and a parity check. Read-only; the win shows only at real corpus size. Takes a few seconds on a large corpus.
+index.html,318,"Every diagnostics log in one archive — one click instead of nine. Runs as a BACKGROUND job (so it never freezes the app on a large corpus, unlike the old synchronous build), shows live progress, and downloads when ready. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button)."
+index.html,320,"Deduce each source's topic tags from the keywords it publishes in your corpus and add them to the source's tags — local, no network, additive (never overwrites curated tags). This also runs automatically in the background; the button forces it now. The networked Wikidata source-type pass is a separate consented action."
+index.html,327,"Run the IR retrieval-eval over a human-judged gold set (queries with documents graded 0/1/2; template at configs/ir_eval/gold_set.example.json). Leave the weight boxes empty to score the current BM25F ranking; fill BOTH to A/B two (title,body) weight sets via the conflation delta. Measure-before-trust; metrics only, no score."
+index.html,334,"Toggle the progressive who/where/when extraction sweep on/off. ON starts (or resumes from the saved cursor) a run across every article whose language cleared the perception-eval harness using the active model; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues."
+index.html,336,"Custody is an action on content: export a signed, tamper-evident copy of an article or corpus, and verify one. Auto-logging on ingest is on by default; OpenTimestamps/Bitcoin anchoring stays off by default (it would reveal your IP and timing). The cryptographic detail (post-quantum signatures, Merkle proofs) is explained in the panel."
+index.html,343,"Preview what lemmatization (OO_FAMILY_LEMMA, ON by default) MERGES among your top keywords (study/studied -> study). Each group is tagged by whether the plural rule already covers it, so you see the true delta. Review for precision; a wrong merge is a _MISLEMMA_DENYLIST note, or set OO_FAMILY_LEMMA=0 to opt out entirely. Read-only, no score."
+index.html,346,"Sources UNDER-covering a topic that is big across the rest of the corpus (the bury half of card #4). Every (source, broad topic) pair is Benjamini-Hochberg FDR-corrected so screening thousands of pairs cannot manufacture a finding; the innocent explanation (specialization) is stated. 'Absence of a flag is not absence of manipulation.' No score."
+index.html,353,"DISCOVER new sources (news orgs / institutions with an official website) from Wikidata for the countries you list, and add them DISABLED for review — nothing is scraped until you enable it in Settings → Sources. Goes ONLINE through the guarded transport (consent-gated, airplane-refused). Tip: pick under-represented countries to keep coverage balanced."
+index.html,386,"Run the P0 data-safety acceptance checks against your live corpus: back up (streaming, bounded RAM), verify (signed manifest + volume checksums), probe a staged restore + dry-run merge preview (never touches the live corpus), and read the unlock + collector instrumentation. One report, a verdict per check, no score, never a fabricated pass. This is the run the v0.2.0 tag is gated on."
+index.html,387,"Why did the app crash / why was unlock slow / what is filling the disk — the app's own records: the previous session's clean-or-unclean-end verdict, the last unlock's phase timings and -wal size, and the data folder's on-disk inventory with any orphaned backup/restore staging (a leftover decrypted corpus snapshot is flagged). Local only; sizes and app-owned names, never file contents."
+index.html,421,"Several families — or cross-language groups (one concept across many languages, e.g. election / élection / wahl) — gathered under one super-group (e.g. Russia–Ukraine war, over Russia, Ukraine, Putin, sanctions…), with real statistics: a dominance disclosure, a windowed trend, and overlap between super-groups. Creating a super-group, adding members, and deleting all live in Settings → Keywords — this view is the data."
+index.html,438,"How each source APPROACHES this corpus, side by side — volume (exact article count), tone (VADER mean + label), timing (first→last publication span) and that outlet's distinctive emphasised terms. A DESCRIPTIVE comparison of how sources DIFFER, never a ranking, a winner or a credibility judgement: no composite score. Tone is VADER (English-lexicon, unreliable for non-English coverage). With a single source there is nothing to compare."
+index.html,449,"Irreversibly destroys the corpus's encryption key (crypto-erase) and removes the data, keys and caches on this machine — the encrypted store becomes permanently unrecoverable at any size, then the app must be restarted. This cannot be undone. You'll be offered an optional full free-space overwrite afterward as defence-in-depth (that pass alone does not guarantee erasure on SSD/flash/copy-on-write disks — the real guarantee is the destroyed key)."
+index.html,465,"The IR retrieval-eval scores the live search against a human-judged gold set — queries with documents graded 0/1/2 (copy the template at configs/ir_eval/gold_set.example.json and fill in your own article ids). With both weight boxes filled it A/Bs two BM25F (title,body) weight sets and reports the recall / precision / nDCG change separately, so the ranking default is chosen on evidence rather than guessed. Per-language, n always stated, never a composite score."
+index.html,468,"Every source is judged for extraction validity — real prose vs a broken/junk scrape — before it joins regular collection: a categorical stamp (qualified · disqualified · not yet judged), never a quality score. A few candidates are judged automatically per online collection round; this runs the SAME judging in bulk to catch up a large backlog. Networked (each judgment is a small trial fetch through your transport) — asks for consent first, refused in airplane mode."
+index.html,482,"Sweeps EVERY source with sufficient evidence, sending its top keywords to the active local model (Settings → AI), which picks ONLY from your corpus's existing tag vocabulary (or 'none') -- canaries + echo-back + closed-vocabulary rejection on every batch. A source below the evidence floor is skipped, never guessed. EXPORT-ONLY: appends a dated JSONL log; Source.tags is never touched. Toggle ON to start (or resume) the sweep; toggle OFF pauses it -- progress is saved either way."
+index.html,485,"Extracts who (persons/organisations), where, and when from each article's text via the active local model -- stored ONLY as labelled ""AI-derived · unreliable"" candidates, never the trusted rule-based extractors. GATED by a live run of the perception-eval harness against the active model: a language that fails it (too much hallucination, or never tested) is skipped, shown below with why. Toggle ON to start (or resume) the sweep; toggle OFF pauses it -- progress is saved either way."
+index.html,507,"Drives the REAL backup engine against your live corpus, verifies it, probes a staged restore with a dry-run merge preview (your live corpus is never replaced or deleted — the restore preview never writes it, and the backup's only touch is a standard WAL checkpoint), and reads the unlock + collector instrumentation — one report, a verdict per check, no composite score. Choose a SEPARATE empty directory (ideally an external drive) as the destination. Full procedure: docs/product/P0_VALIDATION_RUNBOOK.md."
+index.html,509,"Sweeps EVERY head-scope keyword, in bounded batches, through the active local model (Settings → AI) for a junk/content verdict + kind (person/org/place/other) -- canaries + echo-back validation on every batch. EXPORT-ONLY: appends a dated JSONL log, never the trusted keyword index. A Claude session verifies a sample before any stoplist/kind-override PR. Toggle ON to start (or resume) the sweep; toggle OFF pauses it -- progress is saved either way, so turning it back on continues instead of starting over."
+index.html,518,"These are the read-only exploration surfaces behind the statistical manipulation-pattern signals. Every one delegates to a pure analytics module and returns its method + caveat verbatim: distinct SOURCES (not article count) measure breadth, the innocent-twin explanation rides every result, and the whole family of comparisons is multiple-testing corrected so many tests cannot manufacture a finding. They name a SHAPE, never a verdict — a microscope, not a detector. Counts + statistics only, never a composite score."
+index.html,525,"TEMPORARY, removable diagnostic. ONE .zip with everything an analyst needs to decide, per source, whether to EXCLUDE it / OPTIMIZE the extractor / KEEP it: per-article keyword-stat outliers, per-source top-12 keyword fingerprints + furniture share, and a text sample from three independent selectors (a fixed-seed random control + the stat outliers + furniture-flagged sources). Read-only, EXPORT-ONLY, counts-only, no score; private newsletter bodies gated (env). Whole-corpus counts; text heads for the sampled subset only."
+index.html,529,"Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs as a background job you can pause and resume from the task manager — it keeps going if you close this tab and continues where it left off (no more restarting from the beginning). Summaries and translations are left untouched."
+index.html,570,"The same Wikidata discovery over EVERY country (~250), as a long background job — one country at a time through the guarded transport, every find added DISABLED for review, nothing scraped until you enable it. RESUMABLE: progress persists per country, so cancelling (task manager), airplane mode or a restart continues where it stopped instead of re-querying the world. Consent-gated, airplane-refused. This also advances AUTOMATICALLY a few countries per online collection pass (scheduler setting world_discovery_per_pass, 0 disables); this button just runs it all now."
+index.html,622,"Some articles arrive with no language tag, and the fast offline detector cannot always classify them (short text, low confidence, or a language it does not cover). This OPT-IN pass asks the local model to identify the language of those still-unknown articles. It is AI-derived and unreliable — a THIRD, clearly-labelled provenance class shown inline in the article view. It NEVER overwrites the source-asserted or offline-deduced language, and a garbage or unclear answer stores nothing. It runs as a cancellable background job (watch it in the task manager), never during scraping, and only on this machine's local model."
+index.html,660,"Rebuilds your corpus at each candidate page size (encrypted stays encrypted with the same passphrase, so the codec stays in the measurement), self-verifies every rebuilt store's settings, runs the identical workload on each (point lookups · a 30-day index window · sequential content bands, cold-ish and warm), then deletes the rebuilds. Read-only on your live corpus; needs ~1.15× the corpus size free in the staging directory (one rebuild at a time). The rebuild time it reports is also the measured cost of the real store migration at your corpus size. Numbers side by side — no winner is declared; run it on a small and a large corpus and compare the logs."
+investigate.html,3,The
+investigate.html,3,one
+investigate.html,4,news
+investigate.html,6,hidden
+investigate.html,10,main app ↗
+investigate.html,16,Open Omniscience
+investigate.html,30,Investigate — Open Omniscience
+investigate.html,44,Open Omniscience · opened from a Home Lead ·
+reader.js,13,Summarize now
+reader.js,13,Translate now
+reader.js,16,Working locally…
+reader.js,32,Keyword mindmap for this article
+taskmanager.html,19,Task manager · FOOS
+taskmanager.html,85,Airplane mode — filled means offline: every new network request is refused instantly.
+taskmanager.html,98,This window updates on its own. Collection runs continuously while online; airplane mode stops it.
+unlock.html,25,Open Omniscience — unlock
