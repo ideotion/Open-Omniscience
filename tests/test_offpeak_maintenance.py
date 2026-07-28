@@ -86,6 +86,47 @@ def test_run_idle_maintenance_never_raises_on_a_failing_call(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+# W2 (2026-07-26 hardware diagnostics): the /api/database/countries rollup
+# refreshes on the same off-peak cadence as the source-counter reconcile.
+# --------------------------------------------------------------------------- #
+
+
+def test_run_idle_maintenance_refreshes_source_country_rollup(monkeypatch):
+    from src.database.session import init_db
+    from src.scheduler import maintenance as maint_mod
+
+    init_db()
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "src.analytics.source_country_rollup.refresh",
+        lambda s: calls.append("country_rollup"),
+    )
+    out = maint_mod.run_idle_maintenance()
+    assert "country_rollup" in calls
+    assert out["country_rollup"] == {"refreshed": True}
+
+
+def test_a_failing_country_rollup_refresh_never_breaks_the_rest_of_the_cycle(monkeypatch):
+    from src.database.session import init_db
+    from src.scheduler import maintenance as maint_mod
+
+    init_db()
+
+    def _boom(*a, **k):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr("src.analytics.source_country_rollup.refresh", _boom)
+    out = maint_mod.run_idle_maintenance()  # must not raise
+    assert out["country_rollup"] == {"skipped": "error"}
+    # the sibling steps still ran (reconcile/source_counters/cleanup/etc. are real
+    # calls here, not mocked, but their presence in `out` proves the loop continued
+    # past the failing rollup step rather than aborting the whole idle window).
+    assert "cleanup" in out
+    assert "incremental_vacuum" in out
+    assert "stat_snapshot" in out
+
+
+# --------------------------------------------------------------------------- #
 # The scheduler hook: idle-gated, throttled, mutually exclusive, yields
 # --------------------------------------------------------------------------- #
 

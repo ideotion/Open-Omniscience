@@ -91,7 +91,7 @@ def test_benchmark_times_the_optimized_paths(db):
     out = run_benchmark(db, repeats=3)
     by_case = {r["case"]: r for r in out["results"]}
     # The headline optimized cases this session touched are present and ran.
-    for case in ("top_terms_grouped", "supergroups", "associations",
+    for case in ("top_terms_grouped", "supergroups", "sources_by_country", "associations",
                  "layered_graph_keyword"):
         assert case in by_case, f"missing benchmark case {case}"
         r = by_case[case]

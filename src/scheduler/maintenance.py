@@ -74,6 +74,18 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
             except Exception:  # noqa: BLE001
                 _LOG.warning("off-peak source counter reconcile failed", exc_info=True)
                 out["source_counters"] = {"skipped": "error"}
+            # 2026-07-26 hardware diagnostics W2: refresh the /api/database/countries
+            # in-memory rollup (mirrors source_counters above -- sources are few, a
+            # full rebuild every idle window is cheap; see the module docstring for
+            # why this DOESN'T need change-token gating like the DuckDB rollups).
+            try:
+                from src.analytics import source_country_rollup
+
+                source_country_rollup.refresh(session)
+                out["country_rollup"] = {"refreshed": True}
+            except Exception:  # noqa: BLE001
+                _LOG.warning("off-peak country rollup refresh failed", exc_info=True)
+                out["country_rollup"] = {"skipped": "error"}
             if stop():
                 out["cleanup"] = {"skipped": "stopping"}
                 return out

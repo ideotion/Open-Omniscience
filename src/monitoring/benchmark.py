@@ -147,6 +147,8 @@ def _build_cases(session: Session) -> list[_Case]:
     Imports are LOCAL (lazy) — like the /performance endpoint — to avoid any import cycle
     with the API layer and to keep importing this module cheap."""
     from src.analytics import queries as q
+    from src.analytics import source_country_rollup
+    from src.analytics.source_country_rollup import _live_sources_by_country
     from src.database.fts import search_ids
 
     term, _mentions = _top_term(session)
@@ -170,6 +172,16 @@ def _build_cases(session: Session) -> list[_Case]:
             optimized=True,
             note="The 132 s -> fast fix: member keyword ids are resolved first, then the "
                  "counters are read for THOSE ids only (no whole-corpus mention scan).",
+        ),
+        _Case(
+            "sources_by_country",
+            "Database tab per-country breakdown (rollup path)",
+            lambda: source_country_rollup.served(session) or _live_sources_by_country(session),
+            optimized=True,
+            note="2026-07-26 hardware diagnostics: the dominant server-cost item on all 7 "
+                 "field instances (12-81% of total uptime), a bare SCAN sources forced by "
+                 "the uncovered tags column on every poll. Reads the off-peak-refreshed "
+                 "in-memory rollup (mirrors reconcile_source_counters) when warm.",
         ),
     ]
     if term:
