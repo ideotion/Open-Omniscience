@@ -25,8 +25,12 @@ HONESTY BY CONSTRUCTION
   * The only DB writes are ``ai_keyword`` rows via ``record_keywords`` (never the
     trusted rule-based tables); the only file write is the append-only JSONL log +
     this module's own tiny cursor-state file.
-  * Degrades LOUDLY: the local model going unavailable mid-sweep PAUSES it (progress
-    saved, an honest reason recorded) -- never a fabricated completion.
+  * Degrades LOUDLY: a TRANSIENT local-model outage mid-sweep is retried with
+    exponential backoff (2026-07-26 field-remarks items 6/7); only after
+    repeated consecutive failures does it give up, and it does so by raising
+    (the outer ``BackgroundJob`` state genuinely becomes ``error``) -- never a
+    fabricated completion, and never a silent pause-that-looks-like-done on the
+    very first hiccup.
 
 Airplane-mode note: identical to ``triage_job.py`` -- this runs against LOOPBACK
 inference, which the client's own kill-switch check treats as airplane-safe.
@@ -53,6 +57,33 @@ DEFAULT_BATCH_SIZE = 25
 # Lives beside the triage/source-tags progress files (the same log home), but a
 # DIFFERENT filename -- never confused with either sweep's own cursor.
 _PROGRESS_STATE_FILENAME = "perception_extract_progress_state.json"
+
+# 2026-07-26 field-remarks items 6/7 (checked here too, per the doc's "worth
+# checking" note for this sibling chassis): same transient-retry-with-backoff-
+# then-give-up-loudly shape as triage_job.py/source_tags_job.py's own copies.
+# NOTE the shape here is genuinely different, not a blind copy-paste:
+# extract_perception_batch (perception_extract.py) already isolates a PER-ARTICLE
+# LLMError inside its run_concurrent results loop (an isolated failure is tallied
+# and the batch continues) -- only an LLMUnavailable ends the WHOLE batch, signalled
+# via tally["aborted"], never by raising. So the retry belongs around THAT signal
+# (below), not around a try/except -- there is nothing to except here.
+_PERCEPTION_EXTRACT_MAX_CONSECUTIVE_FAILURES = int(
+    os.getenv("OO_PERCEPTION_EXTRACT_MAX_CONSECUTIVE_FAILURES", "10")
+)
+_PERCEPTION_EXTRACT_BACKOFF_BASE_S = float(os.getenv("OO_PERCEPTION_EXTRACT_BACKOFF_BASE_S", "5"))
+_PERCEPTION_EXTRACT_BACKOFF_CAP_S = float(os.getenv("OO_PERCEPTION_EXTRACT_BACKOFF_CAP_S", "60"))
+
+
+def _perception_extract_sleep_interruptible(seconds: float, ctx, *, step: float = 0.5) -> None:
+    """Sleep up to ``seconds``, checking ``ctx.stopping`` every ``step`` so a cancel
+    fired during a backoff wait is honoured promptly instead of blocking the full delay."""
+    import time
+
+    end = time.monotonic() + max(0.0, seconds)
+    while time.monotonic() < end:
+        if ctx.stopping:
+            return
+        time.sleep(min(step, end - time.monotonic()))
 
 
 def _dir() -> Path:
@@ -110,8 +141,12 @@ def run_progressive_perception_extract_job(
     extraction): sweep every non-quarantined article id-ascending, in bounded batches,
     through :func:`src.ai_layer.perception_extract.extract_perception_batch` -- a
     language that failed the S6.5 harness is honestly skipped (never attempted), a
-    persisted cursor survives a cancel/restart/outage, and a local-model outage PAUSES
-    the sweep (progress saved) rather than erroring out.
+    persisted cursor survives a cancel/restart/outage, and a TRANSIENT local-model
+    outage is retried with backoff (2026-07-26 field-remarks items 6/7) rather than
+    pausing the sweep on the first hiccup; only after
+    ``_PERCEPTION_EXTRACT_MAX_CONSECUTIVE_FAILURES`` such failures in a row does it
+    give up, and it does so LOUDLY (raises -- the outer ``BackgroundJob`` state
+    genuinely becomes ``error``). A genuine user cancel still stops immediately.
 
     ``gate_report`` is the test/injection seam for "the last live perception-eval
     report"; when ``None`` it resolves via
@@ -207,6 +242,7 @@ def run_progressive_perception_extract_job(
     paused_reason: str | None = None
     complete = False
     batches_this_call = 0
+    consecutive_failures = 0
 
     ctx.set_progress(done=cursor, total=total_estimate, detail="starting…")
 
@@ -251,18 +287,55 @@ def run_progressive_perception_extract_job(
             # cursor where it was makes the NEXT resumed call re-fetch this exact
             # window; skip_existing then re-skips whatever already got stored, so
             # only the truly-unattempted tail is retried -- never lost, never redone.
+            #
+            # 2026-07-26 field-remarks items 6/7: a TRANSIENT outage (extract_
+            # perception_batch's tally["aborted"] fires ONLY on LLMUnavailable --
+            # a per-article LLMError is already isolated above and never reaches
+            # here) is retried with exponential backoff first, same shape as
+            # triage_job.py/source_tags_job.py's identical fix, rather than
+            # pausing on the very first hiccup.
+            consecutive_failures += 1
             state.update({
                 "totals": totals,
                 "batches_completed": batches_completed,
                 "updated_at": datetime.now().isoformat(timespec="seconds"),
             })
             _save_progress_state(state, path_state)
-            paused_reason = (
-                f"the local model became unavailable — progress is saved; start "
-                f"again to resume ({result.get('reason') or ''})"
+            if consecutive_failures >= _PERCEPTION_EXTRACT_MAX_CONSECUTIVE_FAILURES:
+                err = (
+                    f"stopped after {consecutive_failures} consecutive local-model "
+                    f"failures ({batches_completed} batches completed, "
+                    f"{totals['stored']} articles extracted so far): "
+                    f"{result.get('reason') or ''}"
+                )
+                footer = {
+                    "schema": PERCEPTION_EXTRACT_RUN_SUMMARY_SCHEMA,
+                    "state": "error",
+                    "finished_at": datetime.now().isoformat(timespec="seconds"),
+                    "batches_completed": batches_completed,
+                    **totals,
+                    "error": err,
+                }
+                export_triage_jsonl(path, [footer])
+                state["updated_at"] = datetime.now().isoformat(timespec="seconds")
+                _save_progress_state(state, path_state)
+                # Raise (never return) so the outer BackgroundJob genuinely reaches
+                # state=="error" instead of a benign-looking "done".
+                raise RuntimeError(err)
+            backoff = min(
+                _PERCEPTION_EXTRACT_BACKOFF_BASE_S * (2 ** (consecutive_failures - 1)),
+                _PERCEPTION_EXTRACT_BACKOFF_CAP_S,
             )
-            break
+            ctx.set_progress(
+                detail=(
+                    f"local model hiccup ({consecutive_failures}/"
+                    f"{_PERCEPTION_EXTRACT_MAX_CONSECUTIVE_FAILURES}) — retrying in {backoff:.0f}s"
+                )
+            )
+            _perception_extract_sleep_interruptible(backoff, ctx)
+            continue  # retry the SAME window (cursor was never advanced)
 
+        consecutive_failures = 0  # this batch made it through cleanly
         cursor = int(work[-1].article_id)
         state.update({
             "cursor": cursor,

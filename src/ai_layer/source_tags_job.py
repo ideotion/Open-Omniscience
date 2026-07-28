@@ -80,6 +80,29 @@ CANARY_EXPECTED: dict[str, frozenset[str]] = {
     "canary-stats-agency.example": frozenset({"finance", "economy", "economics", "business"}),
 }
 
+# 2026-07-26 field-remarks item 6: same transient-retry-with-backoff-then-give-up-
+# loudly shape as triage_job.py's own copy of these three knobs -- see that module's
+# comment for the full rationale (env-tunable, own namespace per job kind, mirrors
+# the proven language-detection job fix rather than importing across the src.api /
+# src.ai_layer layering boundary).
+_SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES = int(
+    os.getenv("OO_SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES", "10")
+)
+_SOURCE_TAGS_BACKOFF_BASE_S = float(os.getenv("OO_SOURCE_TAGS_BACKOFF_BASE_S", "5"))
+_SOURCE_TAGS_BACKOFF_CAP_S = float(os.getenv("OO_SOURCE_TAGS_BACKOFF_CAP_S", "60"))
+
+
+def _source_tags_sleep_interruptible(seconds: float, ctx, *, step: float = 0.5) -> None:
+    """Sleep up to ``seconds``, checking ``ctx.stopping`` every ``step`` so a cancel
+    fired during a backoff wait is honoured promptly instead of blocking the full delay."""
+    import time
+
+    end = time.monotonic() + max(0.0, seconds)
+    while time.monotonic() < end:
+        if ctx.stopping:
+            return
+        time.sleep(min(step, end - time.monotonic()))
+
 
 def _dir() -> Path:
     from src.paths import data_dir
@@ -116,7 +139,16 @@ def run_source_tags_job(
 
     Read-only on the corpus; the ONLY write is the JSONL file. ``Source.tags`` is
     read (to build the vocabulary) but NEVER written -- the deduced tags proposed
-    here live ONLY in the JSONL log (this run's separate, labelled channel)."""
+    here live ONLY in the JSONL log (this run's separate, labelled channel).
+
+    NOT the live endpoint's worker (has zero callers outside its own test/this
+    module -- ``POST /api/diagnostics/source-tags/run`` wires
+    :func:`run_progressive_source_tags_job` below, which persists a resumable
+    domain cursor and retries a transient outage with backoff instead of
+    stopping on the first one; see the 2026-07-26 field-remarks item 6
+    investigation). Kept only as a simpler standalone reference / a regression
+    guard for its own one-shot-error behaviour -- do not assume this function's
+    semantics describe what an operator actually experiences."""
     from src.database.session import session_scope
     from src.llm.ollama import LLMUnavailable, OllamaClient
 
@@ -409,9 +441,17 @@ def run_progressive_source_tags_job(
     ``restart=True`` discards any saved cursor and starts a brand-new sweep (a new
     dated log file). Read-only on the corpus except the ONE append-only JSONL log +
     this small local progress-cursor file; ``Source.tags`` is read (to build the
-    vocabulary) but NEVER written."""
+    vocabulary) but NEVER written.
+
+    A TRANSIENT Ollama outage (a timeout, a hiccup, a momentary erroring
+    response) is retried with exponential backoff rather than pausing on the
+    first one (2026-07-26 field-remarks item 6); only after
+    ``_SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES`` such failures in a row does it
+    give up, and it does so LOUDLY (raises, so the outer ``BackgroundJob``
+    state genuinely becomes ``error`` -- never a benign-looking ``done``). A
+    genuine user cancel (``ctx.stopping``) still stops immediately, no retry."""
     from src.database.session import session_scope
-    from src.llm.ollama import LLMUnavailable
+    from src.llm.ollama import LLMError
 
     if session_factory is None:
         session_factory = session_scope
@@ -505,6 +545,7 @@ def run_progressive_source_tags_job(
     paused_reason: str | None = None
     complete = False
     batches_this_call = 0
+    consecutive_failures = 0
 
     ctx.set_progress(
         done=batches_completed * max(1, batch_size), total=total_estimate, detail="starting…"
@@ -543,12 +584,55 @@ def run_progressive_source_tags_job(
                     canary_expected=CANARY_EXPECTED,
                     keep_alive=keep_alive,
                 )
-            except LLMUnavailable as exc:
-                paused_reason = (
-                    f"the local model became unavailable — progress is saved; "
-                    f"start again to resume ({str(exc)[:200]})"
+            except LLMError as exc:
+                # LLMUnavailable IS-A LLMError; catching the base class catches both
+                # a hard connection failure/timeout AND a "server answered but with
+                # an HTTP error" case (2026-07-26 field-remarks item 6 -- plausibly a
+                # context-length overflow given the uncapped, verbatim, corpus-wide
+                # tag vocabulary embedded in the prompt). Retry with backoff first,
+                # same shape as triage_job.py's identical fix.
+                consecutive_failures += 1
+                if consecutive_failures >= _SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES:
+                    err = (
+                        f"stopped after {consecutive_failures} consecutive "
+                        f"local-model failures ({batches_completed} batches "
+                        f"completed, {totals['assigned_count']} tagged so far): "
+                        f"{str(exc)[:200]}"
+                    )
+                    footer = {
+                        "schema": SOURCE_TAGS_RUN_SUMMARY_SCHEMA,
+                        "state": "error",
+                        "finished_at": datetime.now().isoformat(timespec="seconds"),
+                        "batches_completed": batches_completed,
+                        **totals,
+                        "skipped_evidence_floor": skipped_evidence_floor_total,
+                        "canary_ok_overall": canary_ok_overall,
+                        "wall_s_total": round(wall_total, 3),
+                        "error": err,
+                    }
+                    ST.export_source_tags_jsonl(path, [footer])
+                    state.update({
+                        "log_path": str(path),
+                        "totals": totals,
+                        "skipped_evidence_floor_total": skipped_evidence_floor_total,
+                        "batches_completed": batches_completed,
+                        "updated_at": datetime.now().isoformat(timespec="seconds"),
+                    })
+                    _save_progress_state(state, path_state)
+                    raise RuntimeError(err) from exc
+                backoff = min(
+                    _SOURCE_TAGS_BACKOFF_BASE_S * (2 ** (consecutive_failures - 1)),
+                    _SOURCE_TAGS_BACKOFF_CAP_S,
                 )
-                break  # cursor/state untouched -- the SAME page is retried on resume
+                ctx.set_progress(
+                    detail=(
+                        f"local model hiccup ({consecutive_failures}/"
+                        f"{_SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES}) — retrying in {backoff:.0f}s"
+                    )
+                )
+                _source_tags_sleep_interruptible(backoff, ctx)
+                continue  # retry the SAME page (cursor was never advanced)
+            consecutive_failures = 0  # this page's model call made it through cleanly
             pb = out["parsed"]
             rec = ST.source_tag_batch_record(
                 started_at=t0,
@@ -636,7 +720,8 @@ def run_progressive_source_tags_job(
             total=max(total_estimate, batches_completed * max(1, batch_size)),
             detail=(
                 f"batch {batches_completed} · {totals['assigned_count']} tagged · "
-                f"{skipped_evidence_floor_total} skipped so far"
+                f"{skipped_evidence_floor_total} skipped (evidence floor) · "
+                f"{totals['missing']} rejected (validation) so far"
             ),
         )
 

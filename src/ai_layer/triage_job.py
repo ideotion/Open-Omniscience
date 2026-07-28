@@ -77,6 +77,32 @@ CANARY_EXPECTED: dict[str, dict] = {
     "subscribe to our newsletter": {"verdict": "junk"},
 }
 
+# 2026-07-26 field-remarks item 7: run_progressive_triage_job's per-batch try/except
+# caught ONLY LLMUnavailable and paused (resumable, but silently) on the very first
+# hiccup -- a single slow response (OllamaClient's own 120s read timeout maps to
+# LLMUnavailable) or a genuine LLMError (e.g. a context-length-overflow 500 from a
+# server that's up but erroring) both ended a "sweep everything" run early, invisibly.
+# Ports the SAME transient-retry-with-backoff-then-give-up-loudly shape already ruled
+# and shipped for the language-detection job (2026-07-24 Session A, src/api/ai.py's
+# _LANGDETECT_* constants + _langdetect_worker) -- these three knobs are this job's own
+# copy (env-tunable, same defaults) rather than importing api.ai's (that would be a
+# layering inversion: src.ai_layer must not depend on src.api).
+_TRIAGE_MAX_CONSECUTIVE_FAILURES = int(os.getenv("OO_TRIAGE_MAX_CONSECUTIVE_FAILURES", "10"))
+_TRIAGE_BACKOFF_BASE_S = float(os.getenv("OO_TRIAGE_BACKOFF_BASE_S", "5"))
+_TRIAGE_BACKOFF_CAP_S = float(os.getenv("OO_TRIAGE_BACKOFF_CAP_S", "60"))
+
+
+def _triage_sleep_interruptible(seconds: float, ctx, *, step: float = 0.5) -> None:
+    """Sleep up to ``seconds``, checking ``ctx.stopping`` every ``step`` so a cancel
+    fired during a backoff wait is honoured promptly instead of blocking the full delay."""
+    import time
+
+    end = time.monotonic() + max(0.0, seconds)
+    while time.monotonic() < end:
+        if ctx.stopping:
+            return
+        time.sleep(min(step, end - time.monotonic()))
+
 
 def _triage_dir() -> Path:
     from src.paths import data_dir
@@ -115,7 +141,16 @@ def run_keyword_triage_job(
     ONLY write is the JSONL file. ``ctx.stopping`` is checked between batches
     (cooperative cancel -- a batch already in flight always finishes); an Ollama
     outage mid-run (``LLMUnavailable``) stops the job with an honest ``error``
-    summary, never a fabricated completion."""
+    summary, never a fabricated completion.
+
+    NOT the live endpoint's worker (has zero callers outside its own test/this
+    module -- ``POST /api/diagnostics/keyword-triage/run`` wires
+    :func:`run_progressive_triage_job` below, which persists a resumable keyset
+    cursor and retries a transient outage with backoff instead of stopping on the
+    first one; see the 2026-07-26 field-remarks item 7 investigation). Kept only
+    as a simpler standalone reference / a regression guard for its own
+    one-shot-error behaviour -- do not assume this function's semantics describe
+    what an operator actually experiences."""
     from src.database.session import session_scope
     from src.llm.ollama import LLMUnavailable, OllamaClient
 
@@ -288,12 +323,17 @@ def run_progressive_triage_job(
     dated log file); otherwise an existing unfinished sweep's log is REUSED (batches
     append to it) and a finished sweep's cursor stays put until explicitly
     restarted. Read-only on the corpus except the ONE append-only JSONL log + this
-    small local progress-cursor file (never the trusted keyword index) -- an Ollama
-    outage PAUSES the sweep (progress saved, honest reason), it does not error out,
-    since the whole point of a progressive sweep is to survive a hiccup over a
-    multi-hour run."""
+    small local progress-cursor file (never the trusted keyword index) -- a
+    TRANSIENT Ollama outage (a timeout, a hiccup, a momentary erroring response)
+    is retried with exponential backoff rather than pausing on the first one
+    (2026-07-26 field-remarks item 7), since the whole point of a progressive
+    sweep is to survive a hiccup over a multi-hour run; only after
+    ``_TRIAGE_MAX_CONSECUTIVE_FAILURES`` such failures in a row does it give up,
+    and it does so LOUDLY (raises, so the outer ``BackgroundJob`` state genuinely
+    becomes ``error`` -- never a benign-looking ``done``). A genuine user cancel
+    (``ctx.stopping``) still stops immediately, no retry."""
     from src.database.session import session_scope
-    from src.llm.ollama import LLMUnavailable
+    from src.llm.ollama import LLMError  # LLMUnavailable IS-A LLMError; catching the base catches both
 
     if session_factory is None:
         session_factory = session_scope
@@ -354,6 +394,7 @@ def run_progressive_triage_job(
     paused_reason: str | None = None
     complete = False
     batches_this_call = 0
+    consecutive_failures = 0
 
     ctx.set_progress(
         done=batches_completed * max(1, batch_size), total=total_estimate, detail="starting…"
@@ -382,12 +423,58 @@ def run_progressive_triage_job(
                 canary_expected=CANARY_EXPECTED,
                 keep_alive=keep_alive,
             )
-        except LLMUnavailable as exc:
-            paused_reason = (
-                f"the local model became unavailable — progress is saved; start "
-                f"again to resume ({str(exc)[:200]})"
+        except LLMError as exc:
+            # LLMUnavailable IS-A LLMError (src/llm/ollama.py) -- catching the base
+            # class here catches both a hard connection failure/timeout AND a "the
+            # server answered but with an HTTP error" case (e.g. a context-length
+            # overflow 500), which the old except-LLMUnavailable-only clause missed
+            # (2026-07-26 field-remarks item 6/7). A SINGLE such failure no longer
+            # ends the sweep: retry with exponential backoff first, same shape as
+            # the language-detection job's proven fix (src/api/ai.py's
+            # _langdetect_worker). The cursor is untouched on a failure, so a retry
+            # naturally re-attempts the exact same batch.
+            consecutive_failures += 1
+            if consecutive_failures >= _TRIAGE_MAX_CONSECUTIVE_FAILURES:
+                err = (
+                    f"stopped after {consecutive_failures} consecutive local-model "
+                    f"failures ({batches_completed} batches completed, "
+                    f"{totals['verdicts_out']} verdicts so far): {str(exc)[:200]}"
+                )
+                footer = {
+                    "schema": KEYWORD_TRIAGE_RUN_SUMMARY_SCHEMA,
+                    "state": "error",
+                    "finished_at": datetime.now().isoformat(timespec="seconds"),
+                    "batches_completed": batches_completed,
+                    **totals,
+                    "canary_ok_overall": canary_ok_overall,
+                    "wall_s_total": round(wall_total, 3),
+                    "error": err,
+                }
+                T.export_triage_jsonl(path, [footer])
+                state.update({
+                    "log_path": str(path),
+                    "totals": totals,
+                    "batches_completed": batches_completed,
+                    "updated_at": datetime.now().isoformat(timespec="seconds"),
+                })
+                _save_progress_state(state, path_state)
+                # Raise (never return) so the outer BackgroundJob genuinely reaches
+                # state=="error" -- the generic /api/jobs task-manager list has no
+                # triage-specific knowledge, so this is the only way it surfaces a
+                # real, non-resumable-in-place outage instead of a benign "done".
+                raise RuntimeError(err) from exc
+            backoff = min(
+                _TRIAGE_BACKOFF_BASE_S * (2 ** (consecutive_failures - 1)), _TRIAGE_BACKOFF_CAP_S
             )
-            break
+            ctx.set_progress(
+                detail=(
+                    f"local model hiccup ({consecutive_failures}/"
+                    f"{_TRIAGE_MAX_CONSECUTIVE_FAILURES}) — retrying in {backoff:.0f}s"
+                )
+            )
+            _triage_sleep_interruptible(backoff, ctx)
+            continue  # retry the SAME batch (cursor was never advanced)
+        consecutive_failures = 0  # this batch made it through cleanly
         pb = out["parsed"]
         rec = T.batch_record(
             started_at=t0,

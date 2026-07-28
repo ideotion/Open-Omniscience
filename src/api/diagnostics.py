@@ -3964,8 +3964,14 @@ def pagesize_bench_download() -> Response:
 
 
 class KeywordTriageRunBody(BaseModel):
-    model: str = Field(
-        ..., description="an INSTALLED Ollama tag (refused if not in `ollama list`)"
+    model: str | None = Field(
+        default=None,
+        description=(
+            "an INSTALLED model tag on the active backend (refused if not "
+            "installed); omitted or null falls back to the operator's chosen "
+            "active model (Settings -> AI) -- there is no need to type a model "
+            "for a routine run."
+        ),
     )
     restart: bool = Field(
         default=False,
@@ -4001,31 +4007,36 @@ def keyword_triage_run(body: KeywordTriageRunBody) -> JSONResponse:
     JSONL to ``data_dir()/triage/oo-keyword-triage-<date>.jsonl``. NEVER writes the
     trusted keyword index. Loopback Ollama inference is airplane-safe (the socket
     never leaves 127.0.0.1) -- so this endpoint runs fine under airplane mode,
-    gated ONLY by the client's own loopback-vs-clearnet check. Also (400) if
-    ``model`` is not an INSTALLED Ollama tag (``verify_roster`` -- never
-    substitutes a 'close' tag). A PERSISTED CURSOR survives a cancel, a crash, or
-    an app restart, so re-calling this (without ``restart``) continues the SAME
-    sweep instead of starting over. Poll ``/keyword-triage/status``; download the
-    dated log via ``/keyword-triage/download``. 409-free for an already-running
-    job: returns its current status with ``started:false``."""
+    gated ONLY by the client's own loopback-vs-clearnet check. ``model`` omitted
+    falls back to the operator's active model (2026-07-26 field-remarks item 2 --
+    ``active_model()``, the same house-wide fallback every other AI feature
+    already uses); also (400) if the resolved model is not an INSTALLED tag
+    (``verify_roster`` -- never substitutes a 'close' tag). A PERSISTED CURSOR
+    survives a cancel, a crash, or an app restart, so re-calling this (without
+    ``restart``) continues the SAME sweep instead of starting over. Poll
+    ``/keyword-triage/status``; download the dated log via
+    ``/keyword-triage/download``. 409-free for an already-running job: returns
+    its current status with ``started:false``."""
     from src.ai_layer.triage import verify_roster
+    from src.api.llm import active_model
     from src.llm.backend import get_client_with_name
     from src.llm.ollama import LLMUnavailable
 
+    model = body.model or active_model()
     try:
         _, active_client = get_client_with_name()
         installed = active_client.list_installed()
     except LLMUnavailable as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    roster = verify_roster([body.model], installed)
+    roster = verify_roster([model], installed)
     if not roster["ok"]:
         raise HTTPException(
             status_code=400,
-            detail=f"model {body.model!r} is not installed ({installed}); "
+            detail=f"model {model!r} is not installed ({installed}); "
             "pull/serve it first, or check the active backend in Settings -> AI.",
         )
     try:
-        st = _KEYWORD_TRIAGE_JOB.start(model=body.model, restart=body.restart)
+        st = _KEYWORD_TRIAGE_JOB.start(model=model, restart=body.restart)
         st["started"] = True
     except RuntimeError:
         st = _KEYWORD_TRIAGE_JOB.status()
@@ -4094,8 +4105,14 @@ def keyword_triage_download() -> Response:
 
 
 class SourceTagsRunBody(BaseModel):
-    model: str = Field(
-        ..., description="an INSTALLED Ollama tag (refused if not in `ollama list`)"
+    model: str | None = Field(
+        default=None,
+        description=(
+            "an INSTALLED model tag on the active backend (refused if not "
+            "installed); omitted or null falls back to the operator's chosen "
+            "active model (Settings -> AI) -- there is no need to type a model "
+            "for a routine run."
+        ),
     )
     restart: bool = Field(
         default=False,
@@ -4133,29 +4150,34 @@ def source_tags_run(body: SourceTagsRunBody) -> JSONResponse:
     EXPORT-ONLY JSONL to ``data_dir()/triage/oo-source-tags-<date>.jsonl``. NEVER
     writes ``Source.tags``. Loopback Ollama inference is airplane-safe -- this
     endpoint runs fine under airplane mode, gated ONLY by the client's own
-    loopback-vs-clearnet check. Also (400) if ``model`` is not an installed
-    model tag. A PERSISTED CURSOR survives a cancel, a crash, or an app restart,
-    so re-calling this (without ``restart``) continues the SAME sweep. Poll
-    ``/source-tags/status``; download via ``/source-tags/download``. 409-free for
-    an already-running job."""
+    loopback-vs-clearnet check. ``model`` omitted falls back to the operator's
+    active model (2026-07-26 field-remarks item 2 -- ``active_model()``, the
+    same house-wide fallback every other AI feature already uses); also (400)
+    if the resolved model is not an installed tag. A PERSISTED CURSOR survives
+    a cancel, a crash, or an app restart, so re-calling this (without
+    ``restart``) continues the SAME sweep. Poll ``/source-tags/status``;
+    download via ``/source-tags/download``. 409-free for an already-running
+    job."""
     from src.ai_layer.triage import verify_roster
+    from src.api.llm import active_model
     from src.llm.backend import get_client_with_name
     from src.llm.ollama import LLMUnavailable
 
+    model = body.model or active_model()
     try:
         _, active_client = get_client_with_name()
         installed = active_client.list_installed()
     except LLMUnavailable as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    roster = verify_roster([body.model], installed)
+    roster = verify_roster([model], installed)
     if not roster["ok"]:
         raise HTTPException(
             status_code=400,
-            detail=f"model {body.model!r} is not installed ({installed}); "
+            detail=f"model {model!r} is not installed ({installed}); "
             "pull/serve it first, or check the active backend in Settings -> AI.",
         )
     try:
-        st = _SOURCE_TAGS_JOB.start(model=body.model, restart=body.restart)
+        st = _SOURCE_TAGS_JOB.start(model=model, restart=body.restart)
         st["started"] = True
     except RuntimeError:
         st = _SOURCE_TAGS_JOB.status()
@@ -4240,8 +4262,14 @@ def source_tags_selftest(download: bool = Query(False)) -> JSONResponse:
 
 
 class PerceptionExtractRunBody(BaseModel):
-    model: str = Field(
-        ..., description="an INSTALLED model tag on the active backend (refused if not installed)"
+    model: str | None = Field(
+        default=None,
+        description=(
+            "an INSTALLED model tag on the active backend (refused if not "
+            "installed); omitted or null falls back to the operator's chosen "
+            "active model (Settings -> AI) -- there is no need to type a model "
+            "for a routine run."
+        ),
     )
     restart: bool = Field(
         default=False,
@@ -4287,26 +4315,31 @@ def perception_extract_run(body: PerceptionExtractRunBody) -> JSONResponse:
     ONLY ``ai_keyword`` candidates (kinds ``ai-who``/``ai-place``/``ai-date``, labelled
     "AI-derived - unreliable"); NEVER the trusted ``article_mentioned_*``/
     ``article_entities`` tables. A PERSISTED CURSOR survives a cancel, a crash, or an
-    app restart. Loopback inference is airplane-safe. Also (400) if ``model`` is not
-    an installed tag on the active backend. Poll ``/perception-extract/status``;
-    download the dated log via ``/perception-extract/download``. 409-free for an
+    app restart. Loopback inference is airplane-safe. ``model`` omitted falls
+    back to the operator's active model (2026-07-26 field-remarks item 2 --
+    ``active_model()``, the same house-wide fallback every other AI feature
+    already uses); also (400) if the resolved model is not an installed tag on
+    the active backend. Poll ``/perception-extract/status``; download the
+    dated log via ``/perception-extract/download``. 409-free for an
     already-running job: returns its current status with ``started:false``."""
+    from src.api.llm import active_model
     from src.llm.backend import get_client_with_name
     from src.llm.ollama import LLMUnavailable
 
+    model = body.model or active_model()
     try:
         _, active_client = get_client_with_name()
         installed = active_client.list_installed()
     except LLMUnavailable as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if body.model not in installed:
+    if model not in installed:
         raise HTTPException(
             status_code=400,
-            detail=f"model {body.model!r} is not installed ({installed}); "
+            detail=f"model {model!r} is not installed ({installed}); "
             "pull/serve it first, or check the active backend in Settings -> AI.",
         )
     try:
-        st = _PERCEPTION_EXTRACT_JOB.start(model=body.model, restart=body.restart)
+        st = _PERCEPTION_EXTRACT_JOB.start(model=model, restart=body.restart)
         st["started"] = True
     except RuntimeError:
         st = _PERCEPTION_EXTRACT_JOB.status()

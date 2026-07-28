@@ -63,8 +63,9 @@ class RaisingClient:
 
 
 class RaisingAfterNClient:
-    """Succeeds for the first ``n`` calls, then raises -- simulates an outage
-    partway through a batch of concurrent per-article calls."""
+    """Succeeds for the first ``n`` calls, then ALWAYS raises -- simulates a
+    permanent outage partway through a batch of per-article calls (never
+    recovers, unlike FlakyOnceClient below)."""
 
     def __init__(self, n: int):
         self._n = n
@@ -77,6 +78,32 @@ class RaisingAfterNClient:
         if self._calls > self._n:
             raise LLMUnavailable("Ollama not reachable (simulated outage)")
         return _FakeResult("WHO: Acme Corp\nWHERE: Springfield\nWHEN: 2024-01-01")
+
+
+class FlakyOnceClient:
+    """Raises LLMUnavailable on the first ``fail_times`` generate() calls
+    REGARDLESS of which article, then answers normally forever after. Mirrors
+    tests/test_ai_langdetect_resilience.py's ``_FlakyOllama`` (2026-07-26
+    field-remarks items 6/7, the retry-with-backoff fix, 'worth checking'
+    against this sibling chassis too)."""
+
+    def __init__(self, *, fail_times: int):
+        self._fail_times = fail_times
+        self.calls = 0
+
+    def generate(self, prompt, *, model, system=None, keep_alive=None):
+        from src.llm.ollama import LLMUnavailable
+
+        self.calls += 1
+        if self.calls <= self._fail_times:
+            raise LLMUnavailable("simulated transient outage")
+        return _FakeResult("WHO: Acme Corp\nWHERE: Springfield\nWHEN: 2024-01-01")
+
+
+def _fast_backoff(monkeypatch):
+    """Tests must not really sleep for seconds -- shrink the backoff to milliseconds."""
+    monkeypatch.setattr(J, "_PERCEPTION_EXTRACT_BACKOFF_BASE_S", 0.01)
+    monkeypatch.setattr(J, "_PERCEPTION_EXTRACT_BACKOFF_CAP_S", 0.02)
 
 
 @pytest.fixture()
@@ -245,24 +272,60 @@ def test_toggle_stop_then_start_honors_the_cursor(db, tmp_path):
     assert res2["batches_completed"] == 3
 
 
-def test_an_outage_pauses_never_errors_and_never_skips_the_unattempted_tail(db, tmp_path):
-    """The abort-cursor fix: an outage partway through a batch must NOT advance the
-    cursor past articles that were fetched but never actually attempted -- a later
-    resume must eventually cover them too, never silently skip them forever."""
+def test_a_transient_outage_retries_and_the_sweep_completes_without_pausing(
+    db, monkeypatch, tmp_path
+):
+    """2026-07-26 field-remarks items 6/7 fix, applied to this sibling chassis
+    too ('worth checking'): a transient LLMUnavailable (extract_perception_
+    batch's tally["aborted"] signal) must NOT pause the whole sweep -- it
+    retries the SAME unattempted window with backoff and the sweep completes."""
+    _seed(db, n=4)
+    scope = _session_factory(db)
+    state_path = tmp_path / "state.json"
+    _fast_backoff(monkeypatch)
+
+    flaky = FlakyOnceClient(fail_times=1)
+    ctx = FakeCtx()
+    res = J.run_progressive_perception_extract_job(
+        ctx, model="stub:test", batch_size=4, max_workers=1,
+        session_factory=scope, client=flaky, state_path=state_path,
+        gate_report=_CLEAR_EN_REPORT,
+    )
+    assert res["complete"] is True
+    assert "paused_reason" not in res
+    assert res["totals"]["stored"] == 4
+    assert db.query(AiKeyword).filter_by(kind="ai-who").count() == 4
+
+
+def test_an_outage_that_never_recovers_still_never_skips_the_unattempted_tail(
+    db, monkeypatch, tmp_path
+):
+    """The abort-cursor fix, re-verified under the NEW retry-then-give-up-loudly
+    terminal shape: a PERMANENT outage partway through a batch retries (never
+    silently pausing on the very first hiccup), exhausts its failure budget, and
+    genuinely RAISES -- but the 2 articles that succeeded BEFORE the outage
+    stay stored (never rolled back), and the cursor still never advances past
+    the unattempted tail, so a later resume with a healthy client eventually
+    covers every article, never silently skipping any of them forever."""
     _seed(db, n=6)
     scope = _session_factory(db)
     state_path = tmp_path / "state.json"
+    monkeypatch.setattr(J, "_PERCEPTION_EXTRACT_MAX_CONSECUTIVE_FAILURES", 2)
+    _fast_backoff(monkeypatch)
 
     ctx1 = FakeCtx()
-    # batch_size=6 -> the whole corpus fetched in ONE batch; the 3rd call raises.
-    res1 = J.run_progressive_perception_extract_job(
-        ctx1, model="stub:test", batch_size=6, max_workers=1,
-        session_factory=scope, client=RaisingAfterNClient(2), state_path=state_path,
-        gate_report=_CLEAR_EN_REPORT,
-    )
-    assert res1["complete"] is False
-    assert res1["paused_reason"] and "unavailable" in res1["paused_reason"]
-    assert res1["totals"]["stored"] == 2  # the first 2 articles succeeded before the outage
+    # batch_size=6 -> the whole corpus fetched in ONE batch; the 3rd call onward
+    # always raises (RaisingAfterNClient never recovers) -- article 3 fails, the
+    # retry re-fetches articles 3-6 (skip_existing excludes the first 2 already
+    # stored), fails again (calls 4, 5...) until the failure budget is spent.
+    with pytest.raises(RuntimeError, match="2 consecutive"):
+        J.run_progressive_perception_extract_job(
+            ctx1, model="stub:test", batch_size=6, max_workers=1,
+            session_factory=scope, client=RaisingAfterNClient(2), state_path=state_path,
+            gate_report=_CLEAR_EN_REPORT,
+        )
+    # the 2 articles that succeeded before the outage began are preserved,
+    # never rolled back by the later failures/raise.
     assert db.query(AiKeyword).filter_by(kind="ai-who").count() == 2
 
     # resume with a healthy client -- the whole corpus (incl. the 4 unattempted
@@ -276,7 +339,6 @@ def test_an_outage_pauses_never_errors_and_never_skips_the_unattempted_tail(db, 
     )
     assert res2["complete"] is True
     assert db.query(AiKeyword).filter_by(kind="ai-who").count() == 6  # ALL 6 covered
-    assert res2["totals"]["stored"] == 6  # cumulative across both calls
     assert res2["totals"]["skipped_existing"] >= 2  # the 2 already-done articles
 
 

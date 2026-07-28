@@ -64,6 +64,42 @@ class RaisingClient:
         raise LLMUnavailable("Ollama not reachable (simulated outage)")
 
 
+class FlakyClient:
+    """Raises LLMUnavailable on the first ``fail_times`` generate() calls, then
+    delegates to a real FakeClient. Mirrors tests/test_ai_langdetect_resilience.py's
+    ``_FlakyOllama`` (2026-07-26 field-remarks items 6/7, the retry-with-backoff fix)."""
+
+    def __init__(self, *, fail_times: int):
+        self._fail_times = fail_times
+        self.calls = 0
+        self._real = FakeClient()
+
+    def generate(self, prompt, *, model, system=None, keep_alive=None):
+        self.calls += 1
+        if self.calls <= self._fail_times:
+            from src.llm.ollama import LLMUnavailable
+
+            raise LLMUnavailable("simulated transient outage")
+        return self._real.generate(prompt, model=model, system=system, keep_alive=keep_alive)
+
+
+class AlwaysRaisingHTTPErrorClient:
+    """Raises the sibling LLMError (not LLMUnavailable) on every call -- e.g. a
+    500 from a server that's up but erroring. Plausibly the actual trigger: the
+    uncapped, verbatim, corpus-wide tag vocabulary embedded in every prompt."""
+
+    def generate(self, prompt, *, model, system=None, keep_alive=None):
+        from src.llm.ollama import LLMError
+
+        raise LLMError("simulated HTTP 500 from the model server")
+
+
+def _fast_backoff(monkeypatch):
+    """Tests must not really sleep for seconds -- shrink the backoff to milliseconds."""
+    monkeypatch.setattr(J, "_SOURCE_TAGS_BACKOFF_BASE_S", 0.01)
+    monkeypatch.setattr(J, "_SOURCE_TAGS_BACKOFF_CAP_S", 0.02)
+
+
 @pytest.fixture()
 def db():
     engine = create_engine(
@@ -201,27 +237,83 @@ def test_toggle_stop_then_start_honors_the_cursor(db, tmp_path):
     assert res2["batches_completed"] == 3
 
 
-def test_a_local_model_outage_pauses_never_errors_and_a_later_start_recovers(db, tmp_path):
+def test_a_transient_outage_retries_and_the_sweep_completes_without_pausing(
+    db, monkeypatch, tmp_path
+):
+    """2026-07-26 field-remarks item 6 fix: a single LLMUnavailable (or LLMError)
+    on a page must NOT pause the whole sweep -- it retries the SAME page with
+    backoff and the sweep continues, completing normally. Direct regression test
+    for the reported symptom ('13 batches, 0/0, then hard failure')."""
     _seed(db, n=4)
     scope = _session_factory(db)
     state_path = tmp_path / "state.json"
+    _fast_backoff(monkeypatch)
 
-    ctx1 = FakeCtx()
-    res1 = J.run_progressive_source_tags_job(
-        ctx1, model="stub:test", batch_size=2, min_articles=1,
-        session_factory=scope, client=RaisingClient(), state_path=state_path,
+    flaky = FlakyClient(fail_times=1)
+    ctx = FakeCtx()
+    res = J.run_progressive_source_tags_job(
+        ctx, model="stub:test", batch_size=2, min_articles=1,
+        session_factory=scope, client=flaky, state_path=state_path,
     )
-    assert res1["complete"] is False
-    assert res1["paused_reason"] and "unavailable" in res1["paused_reason"]
-    assert res1["batches_completed"] == 0
+    assert res["complete"] is True
+    assert "paused_reason" not in res
+    assert res["batches_completed"] == 2  # ceil(4/2) -- the retried page still counts once
+    assert flaky.calls == 3, "1 failed attempt + 1 retry on page 1, then page 2 clean"
 
-    ctx2 = FakeCtx()
-    res2 = J.run_progressive_source_tags_job(
-        ctx2, model="stub:test", batch_size=2, min_articles=1,
-        session_factory=scope, client=FakeClient(), state_path=state_path,
+
+def test_llm_error_alongside_llm_unavailable_is_also_retried_not_a_hard_crash(
+    db, monkeypatch, tmp_path
+):
+    """The field bug's actual likely trigger: the model server answers with an
+    HTTP error (LLMError, not LLMUnavailable) -- must be caught by the SAME
+    retry path, never propagate uncaught into a hard BackgroundJob 'error'
+    after just one occurrence."""
+    _seed(db, n=2)
+    scope = _session_factory(db)
+    state_path = tmp_path / "state.json"
+    monkeypatch.setattr(J, "_SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES", 2)
+    _fast_backoff(monkeypatch)
+
+    ctx = FakeCtx()
+    with pytest.raises(RuntimeError, match="2 consecutive"):
+        J.run_progressive_source_tags_job(
+            ctx, model="stub:test", batch_size=2, min_articles=1,
+            session_factory=scope, client=AlwaysRaisingHTTPErrorClient(),
+            state_path=state_path,
+        )
+
+
+def test_13_consecutive_zero_zero_batches_are_now_diagnosable_via_missing_and_parse_failures(
+    db, monkeypatch, tmp_path
+):
+    """Direct regression test for the reported symptom: seed a vocabulary that
+    the model's responses fail to validate against (not an HTTP failure) --
+    assert the live progress detail string now surfaces the rejected count,
+    instead of a silent 0-tagged/0-skipped batch that looks like nothing
+    happened (2026-07-26 field-remarks item 6, fix-shape #1)."""
+    _seed(db, n=2)
+    scope = _session_factory(db)
+
+    class _AllInvalidClient:
+        """Answers with a domain that never resolves against the batch (an
+        out-of-vocabulary / misspelled tag token) -- every response fails
+        parse_source_tags' validation, landing in pb.missing."""
+
+        def generate(self, prompt, *, model, system=None, keep_alive=None):
+            return FakeResult("not-a-real-domain.invalid :: sports")
+
+    ctx = FakeCtx()
+    res = J.run_progressive_source_tags_job(
+        ctx, model="stub:test", batch_size=2, min_articles=1,
+        session_factory=scope, client=_AllInvalidClient(), state_path=tmp_path / "state.json",
     )
-    assert res2["complete"] is True
-    assert res2["batches_completed"] == 2  # ceil(4/2); the failed attempt never counted
+    assert res["complete"] is True
+    assert res["totals"]["assigned_count"] == 0
+    assert res["totals"]["missing"] > 0, "the rejected domains must be counted, not silently absorbed"
+    # the live progress detail string threaded the rejection count through, not
+    # just "0 tagged / N skipped" (which reads as nothing having happened at all).
+    details = [d for _d, _t, d in ctx.progress if d]
+    assert any("rejected" in d for d in details)
 
 
 def test_restart_true_discards_the_cursor_and_starts_a_fresh_log(db, tmp_path):

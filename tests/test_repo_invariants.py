@@ -986,6 +986,65 @@ def test_triage_and_source_tags_are_progressive_toggles_not_numeric_one_shots():
     assert "top_n: int = Field" not in diag.split("class SourceTagsRunBody")[1].split("class ")[0]
 
 
+def test_ai_sweep_toggles_never_hold_disabled_across_the_poll_and_have_no_model_input():
+    """2026-07-26 field-remarks items 1-3 (the CSS button[disabled]{opacity:.5}
+    'fades for the whole run' complaint + 'a disabled button can't be re-clicked
+    to Stop' + 'forces a free-text model input even though active_model() is the
+    house-wide fallback everywhere else'). The three progressive-sweep toggles
+    must never hold btn.disabled across their (up to multi-hour) sweep -- state
+    is painted via btn.dataset.running instead, mirroring
+    pollLangDetect/_paintLangDetectButton exactly -- and must carry no model
+    text input, since every run now resolves the operator's active model
+    (Settings -> AI) server-side. Scoped to the SPECIFIC function bodies (never
+    a bare whole-file substring search -- a regression guard proving something
+    was REMOVED is only as strong as the scope it searches, per this project's
+    own S4.1 lesson) so an unrelated legitimate `btn.disabled` elsewhere in
+    app.js can never mask a real regression here."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+
+    def _next_decl(text: str) -> int:
+        cands = [
+            i
+            for i in (text.find("\n    async function "), text.find("\n    function "))
+            if i != -1
+        ]
+        return min(cands) if cands else len(text)
+
+    def _body(signature: str) -> str:
+        start = app.index(signature)
+        rest = app[start + len(signature) :]
+        return rest[: _next_decl(rest)]
+
+    for wrapper in ("toggleKeywordTriage", "toggleSourceTags", "togglePerceptionExtract"):
+        wrapper_body = _body(f"async function {wrapper}(btn) {{")
+        assert "disabled" not in wrapper_body, (
+            f"{wrapper} must delegate entirely to the shared _toggleAiSweep "
+            "chassis, never touch btn.disabled itself"
+        )
+
+    chassis = _body("async function _toggleAiSweep(")
+    assert "for (" not in chassis, (
+        "_toggleAiSweep must never contain its own polling loop -- polling is "
+        "_pollAiSweep's job, so a disabled window here can only ever wrap the "
+        "single brief START request"
+    )
+    assert chassis.index("btn.disabled = false") < chassis.rindex("_pollAiSweep("), (
+        "on the START path, disabled must be released BEFORE polling begins, "
+        "never held across it"
+    )
+
+    poll = _body("async function _pollAiSweep(")
+    assert "disabled" not in poll, "the poll loop itself must never touch btn.disabled"
+
+    html = _ui_source()
+    for gone in ('id="kt-model"', 'id="st-model"', 'id="pe-model"'):
+        assert gone not in html, (
+            f"{gone} must be gone -- every sweep uses the operator's active "
+            "model (Settings -> AI) via the server-side active_model() "
+            "fallback, never a hand-typed model tag"
+        )
+
+
 def test_perception_extraction_is_eval_gated_and_never_touches_the_trusted_tables():
     """2026-07-24 field-feedback Session B (B6, the NEW ask -- "AI-augmented article
     metadata extraction"). The standing LLM-PERCEPTION ruling applies unchanged: a
