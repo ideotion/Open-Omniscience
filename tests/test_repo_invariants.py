@@ -4740,7 +4740,12 @@ def test_naming_sweep_ring_disappears_from_the_user_visible_ui():
         'placeholder="add a ring (one concept, many languages)…"',
         ">Add ring</button>",
         'toast("Ring added.")',
-        'toast("Add ring failed:',
+        # Anchored on the quoted STRING, not on `toast("...` -- the failure
+        # message is now built by _failMsg() (GUI audit 2026-07-28 finding
+        # I-3), and pinning the wrapper made this guard trip on a rename that
+        # never touched the word it guards. The string anchor still catches a
+        # genuine ring->group regression through any wrapper.
+        '"Add ring failed:',
     )
     for lit in forbidden_literals:
         assert lit not in src, f"a user-visible 'ring' literal survived the naming sweep: {lit!r}"
@@ -4756,7 +4761,7 @@ def test_naming_sweep_ring_disappears_from_the_user_visible_ui():
         'placeholder="add a group (one concept, many languages)…"',
         ">Add group</button>",
         'toast("Group added.")',
-        'toast("Add group failed:',
+        '"Add group failed:',  # wrapper-agnostic; see the forbidden-list note above
     )
     for lit in required_literals:
         assert lit in src, f"expected the renamed literal to be present: {lit!r}"
