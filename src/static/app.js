@@ -7592,6 +7592,52 @@
 
     // Regional balance vs the configured floors (configs/catalog_targets.yml) —
     // the de-US-centring metric. Floors are labelled aspirations, never claims.
+    // Sorted bars for "sources per region, against that region's floor".
+    //
+    // GUI audit 2026-07-28 finding V-2: this surface emitted a table and no
+    // chart, yet the question it answers -- WHICH regions sit below their
+    // floor -- is a length comparison against a target, which the project's
+    // own chart-decision framework puts squarely in bar territory (position
+    // on a common scale beats reading paired numbers out of a table).
+    //
+    // Added BESIDE the table, never replacing it (invariant #8 + the Desk
+    // lesson: the table stays the precise, screen-readable, sortable record;
+    // the chart is the glance). Honest by construction: real counts only, no
+    // score; the floor is drawn as its own marked line so "below floor" is
+    // visible rather than asserted; a region with no floor configured is
+    // still plotted, just without a marker (never a fabricated target).
+    function _regionFloorBars(regions) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const rows = (regions || []).filter(r => r && (r.sources > 0 || r.countries_total > 0));
+      if (rows.length < 2) return "";          // one bar compares nothing
+      rows.sort((a, b) => (b.sources || 0) - (a.sources || 0));
+      // Scale to the largest of value-or-floor so a floor above every bar is
+      // still on-canvas -- otherwise a badly-missed target would fall off the
+      // right edge and read as "no floor".
+      const max = Math.max(1, ...rows.map(r => Math.max(r.sources || 0, r.min_sources || 0)));
+      const scale = (window.ooViz && ooViz.linearScale)
+        ? ooViz.linearScale(0, max, 0, 100)
+        : (v => (v / max) * 100);
+      const bars = rows.map(r => {
+        const below = r.sources_met === false;
+        const w = Math.max(0.5, scale(r.sources || 0));
+        const floorPct = (r.min_sources != null) ? scale(r.min_sources) : null;
+        const marker = floorPct == null ? "" :
+          `<span title="${esc(t("floor"))}: ${esc(String(r.min_sources))}" style="position:absolute;`
+          + `left:${floorPct.toFixed(1)}%;top:-2px;bottom:-2px;width:2px;background:var(--fg);opacity:.55"></span>`;
+        return `<div style="display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.8">`
+          + `<span style="flex:0 0 30%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.region)}</span>`
+          + `<span style="flex:1;position:relative;background:var(--panel3);border-radius:3px;height:10px">`
+          + `<span style="display:block;height:100%;border-radius:3px;width:${w.toFixed(1)}%;`
+          + `background:${below ? "var(--warn)" : "var(--accent)"}"></span>${marker}</span>`
+          + `<span class="muted" style="flex:0 0 auto">${esc(String(r.sources || 0))}`
+          + `${r.min_sources != null ? " / " + esc(String(r.min_sources)) : ""}</span></div>`;
+      }).join("");
+      return `<div style="margin-top:8px" role="img" aria-label="${esc(t("Sources per region against each region's floor."))}">`
+        + bars
+        + `<div class="hint" style="margin-top:4px">${esc(t("Bar = sources collected; the vertical mark is that region's floor. Counts only, no score."))}</div></div>`;
+    }
+
     function renderCoverageRegions(c) {
       const reg = c.regional;
       const host = $("coverage-regions");
@@ -7612,6 +7658,7 @@
         : "";
       host.innerHTML =
         `<strong>Regional balance</strong> <span class="muted">(floors are working targets from configs/catalog_targets.yml)</span>` +
+        _regionFloorBars(reg.regions) +
         `<div style="overflow:auto;margin-top:6px"><table>` +
         `<tr><th>Region</th><th>Sources / floor</th><th>Countries / floor</th></tr>${rows}</table></div>` +
         `<div style="margin-top:6px">Top country: <strong>${esc(tcName)}</strong> — ${tc.sources} sources, ` +
