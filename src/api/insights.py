@@ -1364,6 +1364,13 @@ def warm_cache(db: Session) -> dict:
         from src.database.connect import get_passphrase
 
         refresh_persisted_read_model(db, passphrase=get_passphrase())
+        # PR-D / W1 (docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_HARDWARE_
+        # DIAGNOSTICS_COMPARISON.md §1): release the transaction this step's DB
+        # reads opened before the next step starts, so warm_cache's several
+        # heavy steps don't pin ONE long-lived WAL read snapshot for the whole
+        # pass tail. A commit failure (e.g. a bogus non-Session `db` in a unit
+        # test) is swallowed by the SAME except below — never fatal.
+        db.commit()
     except Exception:  # noqa: BLE001 - never fatal to a pass
         _LOG.warning("columnar read-model refresh failed during warm_cache", exc_info=True)
 
@@ -1374,6 +1381,7 @@ def warm_cache(db: Session) -> dict:
 
         rollup_serve.refresh(db)
         map_serve.refresh(db)  # D4 map serve (auto-on with duckdb, P1.11); no-op when off
+        db.commit()  # PR-D / W1: release the transaction between steps (see above)
     except Exception:  # noqa: BLE001 - a background accelerator must never break a pass
         _LOG.warning("rollup serve refresh failed during warm_cache", exc_info=True)
 
@@ -1387,6 +1395,7 @@ def warm_cache(db: Session) -> dict:
         from src.analytics import poll_cache
 
         poll_cache.refresh(db)
+        db.commit()  # PR-D / W1: release the transaction between steps (see above)
     except Exception:  # noqa: BLE001 - a background accelerator must never break a pass
         _LOG.warning("alert poll-cache refresh failed during warm_cache", exc_info=True)
 
@@ -1433,6 +1442,18 @@ def warm_cache(db: Session) -> dict:
                 warmed.append(key)
         except Exception:  # noqa: BLE001 - warming is best-effort, never fatal to a pass
             _LOG.warning("insights cache warm failed for %s", key, exc_info=True)
+            continue
+        # PR-D / W1: release the transaction compute()'s DB reads opened before the
+        # next spec starts — otherwise the WHOLE specs loop (one shared `db` session,
+        # never committed between items) pins a single WAL read snapshot for its
+        # entire duration, starving any checkpoint attempted meanwhile (the diagnosed
+        # mechanism). Independent of whether warming itself succeeded above: the
+        # commit is best-effort and a failure (e.g. a bogus non-Session `db` in a
+        # unit test) must never undo the warmed value already recorded.
+        try:
+            db.commit()
+        except Exception:  # noqa: BLE001 - a commit failure must not break warming
+            _LOG.warning("warm_cache: commit after warming %s failed", key, exc_info=True)
     return {"warmed": warmed}
 
 

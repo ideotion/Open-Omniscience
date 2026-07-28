@@ -188,3 +188,34 @@ def test_parity_probe_reports_exact_on_the_real_corpus(session):
     assert p["distinct_upper_bound_holds"] is True
     assert p["distinct_gap_total"] == 0
     assert p["keywords_compared"] > 0
+
+
+def test_parity_probe_holds_under_a_tiny_batch_size_forcing_many_mid_stream_commits(session):
+    # PR-D / W1: build_keyword_daily now streams via real keyset pagination (id > :cursor
+    # ORDER BY id LIMIT :batch_size), each batch its own bounded query, explicitly closed,
+    # then committed -- REPLACING the old fetchmany()-over-one-open-cursor + periodic-commit
+    # shape (which never released the WAL read-mark between commits; see the module
+    # docstring / _WalGuardResult's docstring for the corrected empirical finding). A
+    # batch_size of 1 forces the SMALLEST possible batches -- one commit (and one
+    # execute+fetchall+close cycle) per mention row -- the maximum stress on the keyset
+    # boundary's correctness: it must never drop or double-count a mention across that many
+    # batch transitions. The honest parity probe must still report EXACT + the upper bound
+    # holding, identical to a single-batch build.
+    con = _con()
+    tally = columnar.build_keyword_daily(session=session, con=con, batch_size=1)
+    # Confirms several mid-stream commits actually happened (more than one batch).
+    assert tally["streamed_mentions"] > 1
+
+    p = columnar.keyword_daily_parity(con, session)
+    assert p["mentions_exact"] is True
+    assert p["mention_mismatches"] == 0
+    assert p["distinct_upper_bound_holds"] is True
+    assert p["distinct_gap_total"] == 0
+    assert p["keywords_compared"] > 0
+
+    # And it matches a single-batch build bit-for-bit (the batch-size-invariance guarantee,
+    # now specifically exercised through the parity probe rather than only the raw windowed
+    # counts).
+    con_one_batch = _con()
+    columnar.build_keyword_daily(session=session, con=con_one_batch, batch_size=100_000)
+    assert columnar.windowed_term_counts(con) == columnar.windowed_term_counts(con_one_batch)

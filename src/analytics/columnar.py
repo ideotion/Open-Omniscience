@@ -747,6 +747,42 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
     ``observed_on`` range, so an undated mention can never fall inside a window. Records
     ``last_mention_id`` (MAX mention id) in ``oo_meta`` so D3 can refresh incrementally.
     Returns a small tally. The canonical store is unchanged; this is a disposable table.
+
+    PR-D / W1 (docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_HARDWARE_DIAGNOSTICS_
+    COMPARISON.md §1; the single highest-value fix in that brief): this streamed scan
+    used to hold ONE open read transaction on ``session`` for its entire duration (a
+    ``session.execute(SELECT ...)`` cursor iterated via ``fetchmany`` with no commit in
+    between) -- on a live corpus this can run for minutes while concurrent article
+    ingest keeps growing the WAL, and the pinned read snapshot means every checkpoint
+    attempted meanwhile reports busy and can never reclaim space.
+
+    **CORRECTED EMPIRICAL FINDING (supersedes the original "periodic commit" design
+    premise this fix first shipped with):** a bare ``session.commit()`` issued while a
+    ``Result``/DBAPI cursor from the SELECT is still open (not fully drained, not
+    ``.close()``d) does **NOT** release SQLite's WAL read-mark, even though the commit
+    itself succeeds with no error and no row is ever skipped or duplicated (that part
+    of the original probe -- "a Result safely continues yielding the rest of its own
+    snapshot after an intervening commit" -- IS true and remains true here; it just
+    never attempted a checkpoint, so it never established that the pattern releases
+    the WAL pin -- it doesn't). See ``src.briefing.registry._WalGuardResult``'s
+    docstring for the full deterministic reproduction of this finding.
+
+    THE ACTUAL FIX: real KEYSET pagination. Each batch is its OWN bounded query
+    (``id > :cursor ORDER BY id LIMIT :batch_size``), fully drained via
+    ``fetchall()`` (LIMIT guarantees the statement reaches natural completion) and
+    then EXPLICITLY ``.close()``d -- the same close-never-just-commit discipline
+    ``_WalGuardResult`` uses -- before the next batch's query is issued and the
+    accumulated staging insert is committed. Because ``id`` is the table's
+    monotonically increasing integer primary key, ``cursor`` (the last row's id in
+    the batch) is a safe, gap-tolerant keyset boundary: a row deleted between
+    batches is simply absent from a later batch (never re-seen, never skipped
+    twice), and a concurrently INSERTed row always gets an id greater than any
+    already-assigned id, so it is picked up by a LATER batch, never missed nor
+    double-counted. ``last_mention_id`` is still computed from the actual streamed
+    rows' own ids (never a separate post-loop ``SELECT MAX(id)``, which would run
+    in a fresh, possibly-newer snapshot once the loop has been committing mid-scan)
+    -- it must never overshoot what this build actually incorporated, or D3's
+    incremental refresh would silently skip mentions forever.
     """
     from sqlalchemy import text as _sql
 
@@ -758,20 +794,32 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
     # -- stream mentions -> DuckDB staging (dates kept as text; cast in the GROUP BY) ---- #
     con.execute("CREATE OR REPLACE TABLE keyword_daily_stage "
                 "(keyword_id BIGINT, day VARCHAR, cnt BIGINT, article_id BIGINT)")
-    result = session.execute(_sql(
-        "SELECT keyword_id, observed_on, count, article_id FROM keyword_mentions "
-        "WHERE observed_on IS NOT NULL"
-    ))
     streamed = 0
+    max_streamed_id = 0
+    cursor = 0
     while True:
-        chunk = result.fetchmany(batch_size)
+        result = session.execute(_sql(
+            "SELECT id, keyword_id, observed_on, count, article_id FROM keyword_mentions "
+            "WHERE observed_on IS NOT NULL AND id > :cursor ORDER BY id LIMIT :batch_size"
+        ), {"cursor": cursor, "batch_size": batch_size})
+        chunk = result.fetchall()
+        # Close -- never just commit -- to actually release: see the docstring's
+        # empirical finding. Closing resets the DBAPI cursor, which is what
+        # actually frees the WAL read-mark; a bare commit with the cursor still
+        # open does not.
+        result.close()
         if not chunk:
             break
         con.executemany(
             "INSERT INTO keyword_daily_stage VALUES (?, ?, ?, ?)",
-            [(int(r[0]), str(r[1])[:10], int(r[2]), int(r[3])) for r in chunk],
+            [(int(r[1]), str(r[2])[:10], int(r[3]), int(r[4])) for r in chunk],
         )
         streamed += len(chunk)
+        cursor = int(chunk[-1][0])  # ids are strictly increasing (ORDER BY id)
+        max_streamed_id = cursor
+        # Release the transaction this batch's read+insert opened before the next
+        # (already-closed) batch query -- the keyset-pagination fix (see docstring).
+        session.commit()
 
     con.execute(_KEYWORD_DAILY_DDL)
     con.execute(
@@ -793,13 +841,12 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
     if meta:
         con.executemany("INSERT INTO keyword_meta VALUES (?, ?, ?, ?, ?, ?, ?)", meta)
 
-    max_id = session.execute(_sql("SELECT MAX(id) FROM keyword_mentions")).scalar()
-    _set_meta(con, "keyword_daily.last_mention_id", int(max_id or 0))
+    _set_meta(con, "keyword_daily.last_mention_id", max_streamed_id)
     return {
         "streamed_mentions": streamed,
         "keyword_daily_rows": int(daily_rows),
         "keyword_meta_rows": len(meta),
-        "last_mention_id": int(max_id or 0),
+        "last_mention_id": max_streamed_id,
     }
 
 
