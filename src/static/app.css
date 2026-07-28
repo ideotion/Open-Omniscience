@@ -64,20 +64,20 @@
     html[data-theme="contrast"]{ --bg:#000; --bg2:#000; --panel:#0a0a0a; --panel2:#161616; --panel3:#222; --fg:#fff; --fg-soft:#f2f2f2; --muted:#cfcfcf; --accent:#ffd400; --accent-fg:#000; --ok:#5cff9d; --warn:#ffd400; --warn-fg:#ffd400; --err:#ff6b6b; --border:#4d4d4d; --border-soft:#333; }
     html[data-theme="light"]{ --bg:#eef1f5; --bg2:#e6eaf0; --panel:#fff; --panel2:#f3f5f9; --panel3:#e7ecf3; --fg:#1b1f27; --fg-soft:#37404f; --muted:#5c6573; --accent:#2f6fb3; --accent-fg:#ffffff; --ok:#2e8b57; --warn:#b07a17; --warn-fg:#7a4308; --err:#c0392b; --border:#dce1e9; --border-soft:#e8ebf1;
       --shadow:0 14px 38px -20px rgba(20,30,50,.28), 0 2px 6px -3px rgba(20,30,50,.14); --caveat:#8a4d0a; color-scheme:light; }
-    html[data-theme="paper"]{ --bg:#f2eee4; --bg2:#ebe5d6; --panel:#fbf8f1; --panel2:#f1ebdc; --panel3:#e6ddc8; --fg:#2b271f; --fg-soft:#4a4436; --muted:#7a715c; --accent:#9a6a2f; --accent-fg:#ffffff; --ok:#5b7d4b; --warn-fg:#7a4308; --err:#b04a3a; --border:#ded2bc; --border-soft:#e7ddca;
+    html[data-theme="paper"]{ --bg:#f2eee4; --bg2:#ebe5d6; --panel:#fbf8f1; --panel2:#f1ebdc; --panel3:#e6ddc8; --fg:#2b271f; --fg-soft:#4a4436; --muted:#7a715c; --accent:#9a6a2f; --accent-fg:#ffffff; --ok:#5b7d4b; --warn:#b58224; --warn-fg:#7a4308; --err:#b04a3a; --border:#ded2bc; --border-soft:#e7ddca;
       --shadow:0 14px 38px -20px rgba(80,60,30,.22), 0 2px 6px -3px rgba(80,60,30,.12); --caveat:#8a4d0a; color-scheme:light; --ff:"Source Serif 4", Georgia, serif; }
     /* New colorways (2026-06-11, maintainer: "people like tuning with themes").
        Bundled-font pairings: Arctic→Inter, Cyber→Outfit, Mint→Manrope,
        Sepia/Paper→Source Serif 4. The Typeface picker overrides any of them. */
     html[data-theme="arctic"]{ --bg:#0f1216; --bg2:#12161b; --panel:#171c22; --panel2:#1e242c; --panel3:#262e38; --fg:#e5e9f0; --fg-soft:#c8cfdb; --muted:#8a94a6; --accent:#88c0d0; --accent-fg:#0b1216; --border:#262e3a; --ff:"Inter", system-ui, sans-serif; }
-    html[data-theme="solar"]{ --bg:#002b36; --bg2:#00313d; --panel:#073642; --panel2:#0a4150; --panel3:#11505f; --fg:#eee8d5; --fg-soft:#cfc7ab; --muted:#839496; --accent:#b58900; --accent-fg:#002b36; --ok:#859900; --warn:#cb4b16; --err:#dc322f; --border:#0e4754; }
+    html[data-theme="solar"]{ --bg:#002b36; --bg2:#00313d; --panel:#073642; --panel2:#0a4150; --panel3:#11505f; --fg:#eee8d5; --fg-soft:#cfc7ab; --muted:#8d9d9e; --accent:#b58900; --accent-fg:#002b36; --ok:#859900; --warn:#db5118; --err:#dc322f; --border:#0e4754; }
     html[data-theme="forest"]{ --bg:#0c120d; --bg2:#0f150f; --panel:#131a14; --panel2:#19231a; --panel3:#223024; --fg:#e3ece2; --fg-soft:#c2d2c2; --muted:#7e957f; --accent:#6fbf73; --accent-fg:#0a140b; --border:#243224; }
     html[data-theme="aubergine"]{ --bg:#120d18; --bg2:#150f1d; --panel:#1a1424; --panel2:#231b30; --panel3:#2e2440; --fg:#ece6f4; --fg-soft:#cfc5e0; --muted:#9a8cb4; --accent:#c084fc; --accent-fg:#160e20; --border:#2c2240; }
     html[data-theme="garnet"]{ --bg:#150e11; --bg2:#191014; --panel:#1f1419; --panel2:#291a20; --panel3:#35222a; --fg:#f0e6ea; --fg-soft:#d8c6cd; --muted:#a88b96; --accent:#d96c7f; --accent-fg:#1c0d12; --border:#33222a; }
     html[data-theme="cyber"]{ --bg:#070910; --bg2:#090c15; --panel:#0d1120; --panel2:#131830; --panel3:#1a2140; --fg:#dbe6ff; --fg-soft:#b6c5ec; --muted:#7787b8; --accent:#22d3ee; --accent-fg:#04121a; --border:#1c2444; --ff:"Outfit", system-ui, sans-serif; }
     html[data-theme="mist"]{ --bg:#eceff2; --bg2:#e4e8ee; --panel:#f9fafc; --panel2:#eff2f6; --panel3:#e3e8ef; --fg:#222831; --fg-soft:#3d4654; --muted:#66707e; --accent:#5e81ac; --ok:#2e8b57; --warn:#b07a17; --warn-fg:#7a4308; --err:#bf4040; --border:#d8dee7; --border-soft:#e5e9f0;
       --shadow:0 14px 38px -20px rgba(30,40,55,.25), 0 2px 6px -3px rgba(30,40,55,.12); --caveat:#8a4d0a; color-scheme:light; }
-    html[data-theme="dawn"]{ --bg:#faf4ed; --bg2:#f4ece2; --panel:#fffaf3; --panel2:#f2e9e1; --panel3:#e9dfd5; --fg:#575279; --fg-soft:#6e6a86; --muted:#9893a5; --accent:#b4637a; --accent-fg:#000000; --ok:#56949f; --warn:#ea9d34; --warn-fg:#7a4308; --err:#c34043; --border:#ddd3c8; --border-soft:#ece3da;
+    html[data-theme="dawn"]{ --bg:#faf4ed; --bg2:#f4ece2; --panel:#fffaf3; --panel2:#f2e9e1; --panel3:#e9dfd5; --fg:#575279; --fg-soft:#6e6a86; --muted:#756f86; --accent:#b4637a; --accent-fg:#000000; --ok:#56949f; --warn:#c77b15; --warn-fg:#7a4308; --err:#c34043; --border:#ddd3c8; --border-soft:#ece3da;
       --shadow:0 14px 38px -20px rgba(90,70,60,.20), 0 2px 6px -3px rgba(90,70,60,.10); --caveat:#8a4d0a; color-scheme:light; }
     html[data-theme="mint"]{ --bg:#edf3ee; --bg2:#e4ece6; --panel:#f8fbf8; --panel2:#ecf2ed; --panel3:#dfe9e1; --fg:#1f2a23; --fg-soft:#3a4a3f; --muted:#5f7466; --accent:#2e7d5b; --accent-fg:#fff; --ok:#2e8b57; --warn:#a8761a; --warn-fg:#7a4308; --err:#b3503e; --border:#d5e0d8; --border-soft:#e2eae4;
       --shadow:0 14px 38px -20px rgba(40,60,48,.22), 0 2px 6px -3px rgba(40,60,48,.11); --caveat:#8a4d0a; color-scheme:light; --ff:"Manrope", system-ui, sans-serif; }
@@ -935,6 +935,35 @@
       .doc-layout { grid-template-columns:1fr; }
     }
     @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
+
+    /* prefers-contrast: more — GUI audit 2026-07-28 finding G-3 (the media
+       feature was unhandled, 0 uses, despite a dedicated `contrast` THEME
+       existing). This deliberately does NOT force that theme: the theme is a
+       user CHOICE, and overriding a chosen palette from a system hint would be
+       the app deciding for the user. Instead it strengthens the elements that
+       are weakest by construction, in WHATEVER theme is active.
+
+       Every value is derived from the theme's own tokens via color-mix (the
+       ruled theme-derived pattern -- never a hardcoded hue), so all 17 themes
+       and any future one inherit it for free:
+         --muted   pulled toward --fg   (secondary text is the usual casualty;
+                   measured below AA 4.5:1 on dawn 2.87 and solar 4.11 before
+                   this pass fixed those two at source -- this covers the rest
+                   for users who ask for more contrast)
+         --border  pulled toward --fg   (hairline separators are the first
+                   thing to disappear at low vision)
+       Opacity-dimmed decorations are restored to full strength for the same
+       reason. */
+    @media (prefers-contrast: more) {
+      :root, html[data-theme] {
+        --muted: color-mix(in srgb, var(--fg) 78%, var(--muted));
+        --border: color-mix(in srgb, var(--fg) 45%, var(--border));
+        --border-soft: color-mix(in srgb, var(--fg) 30%, var(--border-soft, var(--border)));
+      }
+      .muted, .hint { opacity:1; }
+      button, input, select, textarea { border-width:2px; }
+      :focus-visible { outline-width:3px; }
+    }
     /* ===== THE universal hover-for-information convention (ruled 2026-06-12,
        "informed consent" instrument): every element carrying layered info —
        anything with a translated title — is marked AUTOMATICALLY with a

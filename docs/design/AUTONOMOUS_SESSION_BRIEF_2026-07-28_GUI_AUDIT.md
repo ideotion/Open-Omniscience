@@ -156,29 +156,40 @@ A `tf()`-oriented follow-up sweep over interpolated rows is a known remainder.
 
 ## 2. Graphical quality
 
-### 2.1 Finding G-1 — `--warn` fails WCAG AA on 6 of 17 themes *(quantifies the prior report's item 10)*
+### 2.1 Finding G-1 — ~~`--warn` fails WCAG AA on 6 of 17 themes~~ **CORRECTED**
 
-Computed with the same method as the shipped invariant-#23 `--caveat` fix (relative
-luminance → contrast ratio, `--warn` against each theme's own `--panel`, inheriting
-`:root` where a theme does not redefine the variable):
+> **Correction (2026-07-28, while implementing this slice — the original claim below was
+> a false positive).** The measurement applied the **AA 4.5:1 TEXT** bar to `--warn`.
+> `--warn` is not a text colour: grepping every use shows it only ever appears as
+> `border-left: 3px solid var(--warn)` (×2), a `border-color` mix (×2), and
+> `.dot.warn { background }` (×1). **Text uses the dedicated `--warn-fg`** — and
+> `app.css`'s own `pillwarn-severe-contrast (P1)` note documents that split, which was
+> introduced by exactly the fix this finding proposed. `--warn-fg` already cleared AA on
+> all 17 themes (5.78–13.83). So the prior report's item 10 was **already shipped**, and
+> the "6 of 17 failures" figure measured the wrong variable.
+>
+> **What is genuinely true**, once the right bar is applied to each role:
+>
+> | Role | Variable | Bar | Failures found |
+> |---|---|---|---|
+> | warning text | `--warn-fg` | AA 4.5:1 | **none** |
+> | warning mark (dot/border) | `--warn` | **WCAG 1.4.11 non-text, 3:1** | **3** — dawn 2.16, paper 2.12, solar 2.82 |
+> | secondary text | `--muted` | AA 4.5:1 | **2** — dawn 2.87, solar 4.11 |
+>
+> The `--muted` failures are a **real gap this audit originally missed** — that variable
+> *is* text, and it was never measured. Both sets are fixed at source with
+> hue-preserving values, and all four colour roles (`--fg`, `--muted`, `--caveat`,
+> `--warn-fg`, plus `--warn` at 3:1) are now pinned per-theme by
+> `tests/test_theme_contrast_and_donut_guard.py`.
+>
+> **The transferable lesson:** a contrast audit must first establish *what role a colour
+> plays* — text vs non-text marks carry different WCAG bars — before computing anything.
+> Measuring a variable against a bar it was never designed to meet manufactures failures
+> and, worse, hides the real ones next door.
 
-| Theme | `--warn` | `--panel` | ratio | AA 4.5:1 |
-|---|---|---|---:|---|
-| paper | `#d9a441` | `#fbf8f1` | **2.12** | FAIL |
-| dawn | `#ea9d34` | `#fffaf3` | **2.16** | FAIL |
-| solar | `#cb4b16` | `#073642` | **2.82** | FAIL |
-| mist | `#b07a17` | `#f9fafc` | **3.56** | FAIL |
-| light | `#b07a17` | `#fff` | **3.72** | FAIL |
-| mint | `#a8761a` | `#f8fbf8` | **3.82** | FAIL |
-| *(11 dark themes)* | `#d9a441` / `#ffd400` | — | 7.17–13.83 | PASS |
-
-**Every failure is a light theme** — the identical signature the `--caveat` fix already
-solved (it failed 8/17 before its theme-aware value landed). The fix is the same shape: a
-theme-aware `--warn` with a darker light-mode value, verified by re-running
-[`probes/contrast.py`](../audit/gui-audit-2026-07-28/probes/contrast.py) across all 17.
-
-Caveat: this is *computed from the variables*, not sampled from rendered pixels; any rule
-that overrides `--warn` with a literal colour at a specific call site is not captured.
+Caveat that still stands: these are *computed from the variables*, not sampled from
+rendered pixels; any rule overriding a colour with a literal at a specific call site is
+not captured.
 
 ### 2.2 Finding G-2 — the inline-handler debt is ~1.9× the recorded figure
 
