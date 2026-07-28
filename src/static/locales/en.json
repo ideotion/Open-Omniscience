@@ -2234,5 +2234,8 @@
   "Track": "Track",
   "delete": "delete",
   "group": "group",
-  "reset": "reset"
+  "reset": "reset",
+  "floor": "floor",
+  "Sources per region against each region's floor.": "Sources per region against each region's floor.",
+  "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score."
 }

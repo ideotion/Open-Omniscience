@@ -2234,5 +2234,8 @@
   "Track": "ट्रैक करें",
   "delete": "हटाएँ",
   "group": "समूह",
-  "reset": "रीसेट"
+  "reset": "रीसेट",
+  "floor": "न्यूनतम",
+  "Sources per region against each region's floor.": "प्रत्येक क्षेत्र के न्यूनतम की तुलना में प्रति क्षेत्र स्रोत।",
+  "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "बार = एकत्रित स्रोत; ऊर्ध्वाधर चिह्न उस क्षेत्र का न्यूनतम है। केवल गणना, कोई अंक नहीं।"
 }

@@ -2234,5 +2234,8 @@
   "Track": "ট্র্যাক করুন",
   "delete": "মুছুন",
   "group": "গ্রুপ",
-  "reset": "রিসেট"
+  "reset": "রিসেট",
+  "floor": "ন্যূনতম",
+  "Sources per region against each region's floor.": "প্রতিটি অঞ্চলের ন্যূনতমের তুলনায় অঞ্চলভিত্তিক উৎস।",
+  "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "বার = সংগৃহীত উৎস; উল্লম্ব চিহ্নটি সেই অঞ্চলের ন্যূনতম। শুধু গণনা, কোনো স্কোর নেই।"
 }

@@ -2234,5 +2234,8 @@
   "Track": "跟踪",
   "delete": "删除",
   "group": "分组",
-  "reset": "重置"
+  "reset": "重置",
+  "floor": "下限",
+  "Sources per region against each region's floor.": "各地区的来源数量与该地区下限的对比。",
+  "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "条形 = 已收集的来源；竖线标记为该地区的下限。仅为计数，无评分。"
 }

@@ -2234,5 +2234,8 @@
   "Track": "Verfolgen",
   "delete": "löschen",
   "group": "Gruppe",
-  "reset": "zurücksetzen"
+  "reset": "zurücksetzen",
+  "floor": "Untergrenze",
+  "Sources per region against each region's floor.": "Quellen pro Region, verglichen mit der Untergrenze der jeweiligen Region.",
+  "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "Balken = gesammelte Quellen; die senkrechte Markierung ist die Untergrenze der Region. Nur Zählungen, keine Bewertung."
 }

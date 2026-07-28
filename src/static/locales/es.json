@@ -2234,5 +2234,8 @@
   "Track": "Seguir",
   "delete": "eliminar",
   "group": "grupo",
-  "reset": "restablecer"
+  "reset": "restablecer",
+  "floor": "mínimo",
+  "Sources per region against each region's floor.": "Fuentes por región, comparadas con el mínimo de cada región.",
+  "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "Barra = fuentes recopiladas; la marca vertical es el mínimo de la región. Solo recuentos, sin puntuación."
 }

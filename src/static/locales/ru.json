@@ -2234,5 +2234,8 @@
   "Track": "Отслеживать",
   "delete": "удалить",
   "group": "группа",
-  "reset": "сбросить"
+  "reset": "сбросить",
+  "floor": "минимум",
+  "Sources per region against each region's floor.": "Источники по регионам в сравнении с минимумом каждого региона.",
+  "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "Полоса — собранные источники; вертикальная отметка — минимум региона. Только подсчёты, без оценки."
 }

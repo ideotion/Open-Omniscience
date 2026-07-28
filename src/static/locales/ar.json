@@ -2234,5 +2234,8 @@
   "Track": "تتبّع",
   "delete": "حذف",
   "group": "مجموعة",
-  "reset": "إعادة تعيين"
+  "reset": "إعادة تعيين",
+  "floor": "الحد الأدنى",
+  "Sources per region against each region's floor.": "المصادر لكل منطقة مقارنةً بالحد الأدنى لكل منطقة.",
+  "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "الشريط = المصادر المجمَّعة؛ العلامة العمودية هي الحد الأدنى للمنطقة. أعداد فقط، بلا درجات."
 }
