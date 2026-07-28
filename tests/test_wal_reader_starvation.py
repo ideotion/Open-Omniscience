@@ -55,6 +55,17 @@ from src.scheduler.hygiene import checkpoint_wal
 
 _JOURNAL_SIZE_LIMIT_MB = 1
 _JOURNAL_SIZE_LIMIT_BYTES = _JOURNAL_SIZE_LIMIT_MB * 1024 * 1024
+_SCAN_CHUNKS = 12  # fetchmany() iterations in the simulated slow scan. Widened
+# from 8 (2026-07-28) so the window is long enough for BOTH the writer to
+# accumulate WAL past the bar and the checkpointer to get enough attempts in on
+# a slower runner.
+_WRITER_BLOB_BYTES = 1024 * 1024  # per-write payload. Raised from 256 KiB
+# (2026-07-28): measured across writer speeds, 256 KiB peaked at only ~1.2 MB on
+# a slow writer -- under the 2x bar -- which is how the macOS lane failed at
+# 1.63 MB. 1 MiB clears the bar at every speed measured (2.1-14.9 MB). 2 MiB was
+# tried and REJECTED: it clears (a) even more easily but starves the
+# checkpointer (measured 0/8 successful attempts at one speed), which would
+# break assertion (b) -- the discriminating one. 1 MiB satisfies both.
 _SEED_ROWS = 200  # empirically: enough that the fetchmany() scan below never
 # exhausts mid-run (a short seed lets the reader's cursor finish naturally
 # and release its snapshot early, defeating the reproduction — verified
@@ -124,7 +135,7 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
         # for the whole simulated scan, never dereferenced until it
         # completes.
         result = session.execute(text("SELECT x FROM t"))
-        for _ in range(8):
+        for _ in range(_SCAN_CHUNKS):
             chunk = result.fetchmany(3)
             if not chunk:
                 break
@@ -142,7 +153,7 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
         while not stop_writer.is_set():
             try:
                 with eng.connect() as c:
-                    c.exec_driver_sql("INSERT INTO t VALUES (randomblob(262144))")
+                    c.exec_driver_sql(f"INSERT INTO t VALUES (randomblob({_WRITER_BLOB_BYTES}))")
                     c.commit()
             except Exception as exc:  # noqa: BLE001 - captured, asserted below
                 write_errors.append(str(exc))
@@ -167,6 +178,36 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
     checkpointer_thread = threading.Thread(target=_checkpointer)
     checkpointer_thread.start()
 
+    # Sampler thread: track the WAL's PEAK size across the window.
+    #
+    # WHY A TRACKED PEAK AND NOT A SINGLE stat() AT THE END (a macOS-CI
+    # failure, root-caused 2026-07-28): a SUCCESSFUL checkpoint TRUNCATES the
+    # -wal file to 0 bytes (empirically confirmed: sampling right after each
+    # busy=0 attempt reads 0). Once PR-D's fix landed, checkpoints DO succeed
+    # mid-window -- that is the whole point of assertion (b) below -- so an
+    # end-of-window stat() no longer measures "how far the WAL grew"; it
+    # measures only whatever the writer thread happened to re-accumulate
+    # since the LAST successful truncation. That is a pure race against
+    # writer throughput: the Linux runner re-accumulated ~4.9 MB (passing),
+    # the macOS runner only ~1.63 MB (failing the > 2 MB bar) for reasons
+    # entirely unrelated to the behaviour under test. So the assertion was
+    # structurally SELF-DEFEATING -- the better the fix works, the more
+    # likely it failed -- and it never measured the "peak" its own comment
+    # claimed. Tracking the real running maximum restores the stated intent
+    # (prove the scenario produces genuine sustained growth) and is immune to
+    # the fix's own truncations.
+    wal_peak_bytes = 0
+
+    def _sample_wal_peak():
+        nonlocal wal_peak_bytes
+        while not stop_checkpointer.is_set():
+            if wal_path.exists():
+                wal_peak_bytes = max(wal_peak_bytes, wal_path.stat().st_size)
+            time.sleep(0.01)
+
+    sampler_thread = threading.Thread(target=_sample_wal_peak)
+    sampler_thread.start()
+
     # Drive the REAL registry.run_all() -- its shared, never-committed
     # session is exactly the mechanism named in the brief.
     Session = sessionmaker(bind=eng, future=True)
@@ -178,11 +219,13 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
         stop_checkpointer.set()
         writer_thread.join(5.0)
         checkpointer_thread.join(5.0)
-        # Measure the WAL's peak size WHILE the reader's snapshot is still
-        # pinned (before closing the session) -- so a future fix that
-        # cleanly reclaims the WAL once run_all() itself returns can never
-        # retroactively shrink what we are about to assert grew.
-        wal_bytes_during_window = wal_path.stat().st_size if wal_path.exists() else 0
+        sampler_thread.join(5.0)
+        # One last sample WHILE the reader's snapshot is still pinned (before
+        # closing the session), folded into the running peak -- so a future
+        # fix that cleanly reclaims the WAL once run_all() itself returns can
+        # never retroactively shrink what we are about to assert grew.
+        if wal_path.exists():
+            wal_peak_bytes = max(wal_peak_bytes, wal_path.stat().st_size)
         reader_session.close()
 
     assert not write_errors, f"writer thread hit unexpected errors: {write_errors}"
@@ -192,25 +235,35 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
         "so the ratio is observable"
     )
 
-    # (a) the WAL genuinely grew past N x journal_size_limit while the
-    # simulated reader was still iterating -- proves this reproduces real
-    # starvation (sustained, unreclaimed growth), not a trivial edge case.
-    assert wal_bytes_during_window > 2 * _JOURNAL_SIZE_LIMIT_BYTES, (
+    # (a) the WAL genuinely grew past N x journal_size_limit at some point
+    # while the simulated reader was still iterating -- proves this
+    # reproduces real starvation (sustained growth outrunning the
+    # checkpointer), not a trivial edge case. Asserted against the tracked
+    # PEAK, never an end-of-window snapshot: see _sample_wal_peak above for
+    # why a single trailing stat() raced the fix's own truncations.
+    assert wal_peak_bytes > 2 * _JOURNAL_SIZE_LIMIT_BYTES, (
         f"expected the WAL to grow past 2x the {_JOURNAL_SIZE_LIMIT_BYTES}-"
-        f"byte journal_size_limit while run_all()'s shared session held its "
-        f"read open; observed only {wal_bytes_during_window} bytes -- the "
-        "starvation scenario did not reproduce"
+        f"byte journal_size_limit at some point while run_all()'s shared "
+        f"session held its read open; peak observed was only "
+        f"{wal_peak_bytes} bytes -- the starvation scenario did not "
+        "reproduce (widen the simulated scan or the writer's blob size)"
     )
 
     # Cross-check via the app's own diagnostic (storage_composition, the
-    # WAL-visibility surface S3 §Phase-A shipped for operators) -- a fresh,
-    # short-lived session sees the same unreclaimed growth.
+    # WAL-visibility surface S3 §Phase-A shipped for operators): the operator
+    # surface genuinely reports the WAL. NOT asserted against a size
+    # threshold -- this runs AFTER the window, by which point a successful
+    # checkpoint may legitimately have truncated the file to 0, so any
+    # threshold here would race the very fix under test (the same defect
+    # assertion (a) above was fixed for).
     diag_session = Session()
     try:
         composition = storage_composition(diag_session)
     finally:
         diag_session.close()
-    assert composition.get("wal_bytes", 0) > 2 * _JOURNAL_SIZE_LIMIT_BYTES
+    assert isinstance(composition.get("wal_bytes"), int), (
+        "storage_composition must surface wal_bytes for operators"
+    )
 
     # (b) THE REGRESSION (the discriminating assertion): today, with NO
     # commit anywhere in run_all()'s producer loop, the FIRST producer's
