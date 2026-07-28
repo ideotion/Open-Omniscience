@@ -73,8 +73,20 @@ def test_run_concurrent_preserves_order_under_real_concurrency():
 
 def test_run_concurrent_actually_overlaps_when_max_workers_over_one():
     """Prove real concurrency, not a disguised serial loop: N items each sleeping
-    ``d`` seconds must complete in materially less than N*d wall time."""
-    n, d = 6, 0.05
+    ``d`` seconds must complete in materially less than N*d wall time.
+
+    ``d`` is 0.15 s, not 0.05 s (raised 2026-07-28 after this test failed the
+    macOS CI lane twice: 0.1885 s and 0.1872 s against a 0.18 s bar). Both
+    failures still proved REAL overlap -- a serial loop would have taken 0.30 s,
+    so ~0.19 s is unambiguously concurrent -- they only overshot an arbitrarily
+    tight bar. The cause is FIXED thread-pool startup overhead (measured ~0.04 s
+    on a loaded runner), which at d=0.05 is a large fraction of the 0.30 s serial
+    budget but is negligible against the 0.90 s budget d=0.15 gives. So this
+    raises the SIGNAL rather than lowering the bar: the 0.6 factor is unchanged,
+    the assertion still fails outright for a disguised serial loop, and the fixed
+    overhead can no longer dominate the measurement. Costs ~0.1 s of runtime.
+    """
+    n, d = 6, 0.15
     start = time.monotonic()
     results = C.run_concurrent(list(range(n)), lambda x: (time.sleep(d), x)[1], max_workers=6)
     elapsed = time.monotonic() - start
