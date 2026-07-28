@@ -105,6 +105,32 @@ def test_keyword_triage_run_refuses_an_uninstalled_model(monkeypatch):
     assert "not installed" in ei.value.detail
 
 
+def test_keyword_triage_run_falls_back_to_the_active_model_when_none_is_given(monkeypatch):
+    """2026-07-26 field-remarks items 1-3: model omitted entirely (or null) must
+    resolve via active_model() -- the SAME house-wide fallback perception_job.py's
+    own extraction endpoint already uses -- never a required-field 422, and never
+    forcing the user to type a model tag for a routine run."""
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    monkeypatch.setattr(
+        llm_backend,
+        "get_client_with_name",
+        lambda *a, **kw: ("ollama", _fake_client(lambda self: ["installed-default:tag"])),
+    )
+    monkeypatch.setattr("src.api.llm.active_model", lambda: "installed-default:tag")
+    started_kwargs: dict = {}
+    monkeypatch.setattr(
+        d._KEYWORD_TRIAGE_JOB,
+        "start",
+        lambda **kw: (started_kwargs.update(kw), {"state": "running", "kind": "keyword-triage"})[
+            1
+        ],
+    )
+    body = d.KeywordTriageRunBody()  # model omitted -- must NOT 422
+    resp = d.keyword_triage_run(body)
+    assert resp.status_code == 200
+    assert started_kwargs["model"] == "installed-default:tag"
+
+
 def test_keyword_triage_download_is_404_until_a_run_completes():
     with pytest.raises(HTTPException) as ei:
         d.keyword_triage_download()
@@ -179,6 +205,26 @@ def test_source_tags_run_refuses_an_uninstalled_model(monkeypatch):
     assert ei.value.status_code == 400
 
 
+def test_source_tags_run_falls_back_to_the_active_model_when_none_is_given(monkeypatch):
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    monkeypatch.setattr(
+        llm_backend,
+        "get_client_with_name",
+        lambda *a, **kw: ("ollama", _fake_client(lambda self: ["installed-default:tag"])),
+    )
+    monkeypatch.setattr("src.api.llm.active_model", lambda: "installed-default:tag")
+    started_kwargs: dict = {}
+    monkeypatch.setattr(
+        d._SOURCE_TAGS_JOB,
+        "start",
+        lambda **kw: (started_kwargs.update(kw), {"state": "running", "kind": "source-tags"})[1],
+    )
+    body = d.SourceTagsRunBody()  # model omitted -- must NOT 422
+    resp = d.source_tags_run(body)
+    assert resp.status_code == 200
+    assert started_kwargs["model"] == "installed-default:tag"
+
+
 def test_source_tags_download_is_404_until_a_run_completes():
     with pytest.raises(HTTPException) as ei:
         d.source_tags_download()
@@ -204,21 +250,31 @@ def test_source_tags_selftest_endpoint_passes():
     assert body["passed"] is True
 
 
-def test_keyword_triage_job_status_reports_a_paused_progressive_sweep_on_an_outage(
+def test_keyword_triage_job_status_reports_a_genuine_error_after_a_permanent_outage(
     monkeypatch, tmp_path
 ):
-    """B5 (2026-07-24 Session B): the progressive sweep's honest OUTAGE outcome is
-    ``complete: False`` + a ``paused_reason`` naming it -- never a fabricated
-    completion, and (unlike the old one-shot job) never an 'error' state either,
-    since the whole point of a progressive sweep is that a local-model hiccup
-    PAUSES it (resumable) rather than terminating the run. The BackgroundJob LAYER
-    itself still reaches 'done' (the worker caught the exception and returned
-    normally). This test exercises the REAL ``BackgroundJob.start()`` (a thread,
-    joined) to prove the wiring an operator actually hits, not just the worker
-    function in isolation; the outage client is passed directly via the ``client``
-    kwarg (the same seam ``run_progressive_triage_job`` exposes for tests) rather
-    than monkeypatching ``OllamaClient`` globally."""
+    """2026-07-26 field-remarks item 7's honest-contract UPDATE to this test
+    (was: 'reports_a_paused_progressive_sweep_on_an_outage', pinning the
+    paused==done conflation as intentional -- superseded by the retry-with-
+    backoff fix, NOT deleted per the field-remarks doc's own instruction).
+
+    A SINGLE LLMUnavailable no longer immediately pauses the sweep -- it is
+    retried with exponential backoff first (proven in isolation in
+    tests/test_triage_progressive.py). Only once the retry budget is genuinely
+    exhausted does the run terminate, and it now does so HONESTLY: the outer
+    BackgroundJob state becomes 'error' (never a benign-looking 'done'), so
+    /status, /last, and the generic /api/jobs task-manager list all agree a
+    permanently-failed run is NOT resumable-in-place -- closing exactly the
+    state-machine disagreement the original investigation named. This test
+    exercises the REAL ``BackgroundJob.start()`` (a thread, joined) to prove the
+    wiring an operator actually hits, not just the worker function in
+    isolation; the outage client is passed directly via the ``client`` kwarg
+    (the same seam ``run_progressive_triage_job`` exposes for tests) rather
+    than monkeypatching ``OllamaClient`` globally. The retry budget + backoff
+    are shrunk via monkeypatch so this test runs in milliseconds, not minutes."""
     from contextlib import contextmanager
+
+    from src.ai_layer import triage_job as triage_job_mod
 
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
@@ -257,6 +313,13 @@ def test_keyword_triage_job_status_reports_a_paused_progressive_sweep_on_an_outa
 
     monkeypatch.setattr("src.database.session.session_scope", fake_scope)
     monkeypatch.setattr("src.ai_layer.triage_job._triage_dir", lambda: tmp_path)
+    # A permanently-outaged backend now retries with backoff before giving up --
+    # shrink the budget + backoff so this test runs fast (RaisingClient never
+    # recovers, so the FULL default budget would otherwise really sleep for
+    # minutes before this thread ever finishes).
+    monkeypatch.setattr(triage_job_mod, "_TRIAGE_MAX_CONSECUTIVE_FAILURES", 2)
+    monkeypatch.setattr(triage_job_mod, "_TRIAGE_BACKOFF_BASE_S", 0.01)
+    monkeypatch.setattr(triage_job_mod, "_TRIAGE_BACKOFF_CAP_S", 0.02)
 
     d._KEYWORD_TRIAGE_JOB.start(
         model="stub:test", min_articles=0, batch_size=5, client=RaisingClient()
@@ -265,6 +328,10 @@ def test_keyword_triage_job_status_reports_a_paused_progressive_sweep_on_an_outa
 
     st = d.keyword_triage_status()
     body = json.loads(bytes(st.body))
-    assert body["state"] == "done"  # the BackgroundJob layer: no exception escaped
-    assert body["result"]["complete"] is False  # the ACTUAL run outcome: paused, resumable
-    assert "simulated outage" in body["result"]["paused_reason"]
+    assert body["state"] == "error", (
+        "the outer BackgroundJob state must genuinely read 'error' once the retry "
+        "budget is exhausted -- never a benign-looking 'done' the generic "
+        "/api/jobs task-manager list would silently filter out as finished"
+    )
+    assert "2 consecutive" in (body.get("error") or "")
+    assert "simulated outage" in (body.get("error") or "")

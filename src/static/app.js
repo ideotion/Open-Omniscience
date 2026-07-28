@@ -11704,57 +11704,102 @@
     // (src/ai_layer/triage_job.py:run_progressive_triage_job). The toggle always
     // re-checks the REAL job state before deciding start-vs-stop, so it can never drift
     // out of sync with a sweep left running from a previous page load.
-    async function toggleKeywordTriage(btn) {
+    // --- Shared toggle chassis for the three AI-job progressive sweeps (keyword-triage,
+    // source-tags, perception-extract) -- 2026-07-26 field-remarks items 1-3 fix. Mirrors
+    // pollLangDetect/_paintLangDetectButton EXACTLY: NEVER holds btn.disabled for the
+    // sweep's multi-hour duration (a held-disabled button both fades per app.css's
+    // button[disabled]{opacity:.5} AND can't be re-clicked to Start/Stop mid-run) --
+    // state is painted via btn.dataset.running instead, disabled is only ever set for
+    // the brief instant of the START request itself. A per-job polling guard flag
+    // (never a shared one) stops a second poll loop stacking on an existing one, the
+    // same way _langDetectPolling does. No model input anywhere -- every run uses the
+    // operator's active model (Settings -> AI), resolved server-side by active_model().
+    const _aiSweepPolling = {};
+    function _paintAiSweepButton(btnId, running) {
+      const btn = $(btnId);
+      if (!btn) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const el = $("kt-status"); const out = $("kt-result");
-      const set = (m) => { if (el) el.textContent = m; };
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      if (btn) btn.disabled = true;
+      btn.textContent = running ? t("Stop sweep") : t("Start sweep");
+      btn.dataset.running = running ? "1" : "";
+    }
+    async function _pollAiSweep(job, btnId, statusEl, resultEl, renderFn) {
+      if (_aiSweepPolling[job]) return;
+      _aiSweepPolling[job] = true;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const set = (m) => { if (statusEl) statusEl.textContent = m; };
+      let fails = 0;
       try {
-        let s0;
-        try { s0 = await api("/api/diagnostics/keyword-triage/status"); } catch (e) { s0 = {}; }
-        if (s0 && s0.state === "running") {
-          try { await api("/api/diagnostics/keyword-triage/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
-          set(t("Pausing — progress is saved…"));
-          if (btn) btn.textContent = t("Start sweep");
-          return;
-        }
-        const model = (($("kt-model") && $("kt-model").value) || "").trim();
-        if (!model) { if (typeof toast === "function") toast(t("Enter an installed model tag first.")); return; }
-        if (out) out.innerHTML = "";
-        set(t("Starting…"));
-        try {
-          await api("/api/diagnostics/keyword-triage/run", { method: "POST", body: JSON.stringify({ model }) });
-        } catch (e) {
-          set(t("Could not start:") + " " + ((e && e.message) || t("check the model is installed.")));
-          return;
-        }
-        if (btn) btn.textContent = t("Stop sweep");
-        let miss = 0;
-        for (let i = 0; i < 5400; i++) {
+        for (;;) {
           let s;
-          try { s = await api("/api/diagnostics/keyword-triage/status"); miss = 0; }
+          // JOB-STATE-AS-TRUTH: a dropped status poll never reads as failure while it runs.
+          try { s = await api(`/api/diagnostics/${job}/status`); fails = 0; }
           catch (e) {
-            miss++;
+            if (++fails > 30) { set(t("Lost contact with the job — see the task manager.")); break; }
             set(t("Connection hiccup — retrying…"));
-            await sleep(Math.min(2000 * miss, 10000));
-            if (miss > 30) { set(t("Still running — check the task manager.")); break; }
+            await new Promise((r) => setTimeout(r, Math.min(2000 * fails, 10000)));
             continue;
           }
-          if (s && s.state === "done") {
+          const st = s.state;
+          if (st === "running") {
+            _paintAiSweepButton(btnId, true);
+            const detail = s.detail ? " · " + s.detail : "";
+            set(t("Sweeping…") + detail);
+            await new Promise((r) => setTimeout(r, 2000));
+            continue;
+          }
+          _paintAiSweepButton(btnId, false);
+          if (st === "done") {
             const res = s.result || {};
             set(res.complete ? t("Done — sweep complete.") : (res.paused_reason || t("Paused.")));
-            renderKeywordTriageResult(out, s);
-            if (btn) btn.textContent = t("Start sweep");
-            break;
+            renderFn(resultEl, s);
+          } else if (st === "error") {
+            set(t("Failed:") + " " + esc(s.error || ""));
+          } else if (st === "cancelled") {
+            set(t("Cancelled — progress is saved."));
+          } else {
+            set("");
           }
-          const detail = s.detail ? " · " + s.detail : "";
-          set(t("Sweeping…") + detail);
-          await sleep(2000);
+          break;
         }
-      } finally {
-        if (btn) btn.disabled = false;
+      } finally { _aiSweepPolling[job] = false; }
+    }
+    async function _toggleAiSweep(job, btnId, statusEl, resultEl, renderFn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const btn = $(btnId);
+      const set = (m) => { if (statusEl) statusEl.textContent = m; };
+      if (btn && btn.dataset.running === "1") {
+        // Currently running -> this click means STOP (mirrors runLangDetect exactly).
+        try { await api(`/api/diagnostics/${job}/cancel`, { method: "POST" }); }
+        catch (e) { /* idempotent -- a stale click while it's already stopping is fine */ }
+        set(t("Pausing — progress is saved…"));
+        _pollAiSweep(job, btnId, statusEl, resultEl, renderFn);
+        return;
       }
+      if (btn) btn.disabled = true; // brief, START-request-only -- never held across the sweep
+      set(t("Starting…"));
+      try {
+        await api(`/api/diagnostics/${job}/run`, { method: "POST", body: JSON.stringify({}) });
+        _paintAiSweepButton(btnId, true);
+      } catch (e) {
+        set(t("Could not start:") + " " + ((e && e.message) || ""));
+      }
+      if (btn) btn.disabled = false;
+      _pollAiSweep(job, btnId, statusEl, resultEl, renderFn);
+    }
+    // Re-syncs a toggle button with the REAL job state (called when the AI Settings
+    // subtab opens, so a sweep left running/paused from a previous page load shows
+    // correctly instead of the static HTML default, and resumes polling if it is
+    // still running -- the same "reflect reality on open" contract as
+    // loadLangDetectCount).
+    async function _syncAiSweepToggle(job, btnId, statusEl, resultEl, renderFn) {
+      let s;
+      try { s = await api(`/api/diagnostics/${job}/status`); } catch (e) { return; }
+      _paintAiSweepButton(btnId, s.state === "running");
+      if (s.state === "running") _pollAiSweep(job, btnId, statusEl, resultEl, renderFn);
+    }
+
+    async function toggleKeywordTriage(btn) {
+      await _toggleAiSweep("keyword-triage", "kt-toggle-btn", $("kt-status"), $("kt-result"), renderKeywordTriageResult);
     }
 
     function renderKeywordTriageResult(out, status) {
@@ -11769,71 +11814,14 @@
         + t("Download report (.json)").replace(".json", ".jsonl") + "</a></div>";
     }
 
-    // Re-syncs the toggle button's label with the REAL job state (called when the AI
-    // Settings subtab opens, so a sweep left running/paused from a previous page load
-    // shows correctly instead of the static HTML default).
     async function syncKeywordTriageToggle() {
-      const btn = $("kt-toggle-btn"); if (!btn) return;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      try {
-        const s = await api("/api/diagnostics/keyword-triage/status");
-        btn.textContent = s && s.state === "running" ? t("Stop sweep") : t("Start sweep");
-      } catch (e) { /* leave the default label */ }
+      await _syncAiSweepToggle("keyword-triage", "kt-toggle-btn", $("kt-status"), $("kt-result"), renderKeywordTriageResult);
     }
 
     // Source-tag assignment progressive sweep (design entry + GO ruling, maintainer
     // 2026-07-20; B5 2026-07-24 Session B): the same toggle chassis as keyword triage above.
     async function toggleSourceTags(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const el = $("st-status"); const out = $("st-result");
-      const set = (m) => { if (el) el.textContent = m; };
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      if (btn) btn.disabled = true;
-      try {
-        let s0;
-        try { s0 = await api("/api/diagnostics/source-tags/status"); } catch (e) { s0 = {}; }
-        if (s0 && s0.state === "running") {
-          try { await api("/api/diagnostics/source-tags/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
-          set(t("Pausing — progress is saved…"));
-          if (btn) btn.textContent = t("Start sweep");
-          return;
-        }
-        const model = (($("st-model") && $("st-model").value) || "").trim();
-        if (!model) { if (typeof toast === "function") toast(t("Enter an installed model tag first.")); return; }
-        if (out) out.innerHTML = "";
-        set(t("Starting…"));
-        try {
-          await api("/api/diagnostics/source-tags/run", { method: "POST", body: JSON.stringify({ model }) });
-        } catch (e) {
-          set(t("Could not start:") + " " + ((e && e.message) || t("check the model is installed.")));
-          return;
-        }
-        if (btn) btn.textContent = t("Stop sweep");
-        let miss = 0;
-        for (let i = 0; i < 5400; i++) {
-          let s;
-          try { s = await api("/api/diagnostics/source-tags/status"); miss = 0; }
-          catch (e) {
-            miss++;
-            set(t("Connection hiccup — retrying…"));
-            await sleep(Math.min(2000 * miss, 10000));
-            if (miss > 30) { set(t("Still running — check the task manager.")); break; }
-            continue;
-          }
-          if (s && s.state === "done") {
-            const res = s.result || {};
-            set(res.complete ? t("Done — sweep complete.") : (res.paused_reason || t("Paused.")));
-            renderSourceTagsResult(out, s);
-            if (btn) btn.textContent = t("Start sweep");
-            break;
-          }
-          const detail = s.detail ? " · " + s.detail : "";
-          set(t("Sweeping…") + detail);
-          await sleep(2000);
-        }
-      } finally {
-        if (btn) btn.disabled = false;
-      }
+      await _toggleAiSweep("source-tags", "st-toggle-btn", $("st-status"), $("st-result"), renderSourceTagsResult);
     }
 
     function renderSourceTagsResult(out, status) {
@@ -11842,30 +11830,33 @@
       const res = (status && status.result) || {};
       const totals = res.totals || {};
       const label = res.complete ? t("sweep complete") : (res.paused_reason ? t("paused") : "");
+      // 2026-07-26 field-remarks item 6: totals.missing (closed-vocabulary rejections)
+      // and totals.parse_failures were computed but never rendered -- real work was
+      // silently happening while the panel looked like it was doing nothing.
       out.innerHTML = esc(label) + " — " + esc(res.batches_completed || 0) + " batches, "
         + esc(totals.assigned_count || 0) + " tagged, "
         + esc(totals.none_count || 0) + " none, " + esc(res.skipped_evidence_floor || 0)
-        + " skipped (evidence floor), canaries " + (res.canary_ok_overall === false ? "FAILED" : "ok")
+        + " skipped (evidence floor), " + esc(totals.missing || 0) + " rejected (not in your tag vocabulary), "
+        + esc(totals.parse_failures || 0) + " unparsable replies, canaries "
+        + (res.canary_ok_overall === false ? "FAILED" : "ok")
         + '<div style="margin-top:4px"><a href="/api/diagnostics/source-tags/download" target="_blank">'
         + t("Download report (.json)").replace(".json", ".jsonl") + "</a> — "
         + esc(t("proposed tags are logged only, never applied to Source.tags")) + "</div>";
     }
 
     async function syncSourceTagsToggle() {
-      const btn = $("st-toggle-btn"); if (!btn) return;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      try {
-        const s = await api("/api/diagnostics/source-tags/status");
-        btn.textContent = s && s.state === "running" ? t("Stop sweep") : t("Start sweep");
-      } catch (e) { /* leave the default label */ }
+      await _syncAiSweepToggle("source-tags", "st-toggle-btn", $("st-status"), $("st-result"), renderSourceTagsResult);
     }
 
     // Who/where/when PERCEPTION EXTRACTION (B6, 2026-07-24 Session B). Two parts:
     // (1) a bounded, synchronous run of the S6.5 perception-eval harness against the
     // ACTIVE model -- the gate evidence the extraction sweep below reads (mirrors
-    // runIrEval's "bounded read-only eval" posture, not a background job); (2) the
-    // progressive extraction sweep itself -- same toggle chassis as
-    // toggleKeywordTriage/toggleSourceTags above.
+    // runIrEval's "bounded read-only eval" posture, not a background job -- it is a
+    // SINGLE await, never a poll loop, so briefly disabling the button for its
+    // duration is correct double-click-guard UX, not the toggle buttons' held-disabled
+    // bug; checked per the 2026-07-26 field-remarks "worth a quick check" note and
+    // confirmed NOT the same issue); (2) the progressive extraction sweep itself --
+    // same shared toggle chassis as toggleKeywordTriage/toggleSourceTags above.
     async function runPerceptionEvalLive(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("pel-status"); const out = $("pel-result");
@@ -11917,56 +11908,7 @@
     }
 
     async function togglePerceptionExtract(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const el = $("pe-status"); const out = $("pe-result");
-      const set = (m) => { if (el) el.textContent = m; };
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      if (btn) btn.disabled = true;
-      try {
-        let s0;
-        try { s0 = await api("/api/diagnostics/perception-extract/status"); } catch (e) { s0 = {}; }
-        if (s0 && s0.state === "running") {
-          try { await api("/api/diagnostics/perception-extract/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
-          set(t("Pausing — progress is saved…"));
-          if (btn) btn.textContent = t("Start sweep");
-          return;
-        }
-        const model = (($("pe-model") && $("pe-model").value) || "").trim();
-        if (!model) { if (typeof toast === "function") toast(t("Enter an installed model tag first.")); return; }
-        if (out) out.innerHTML = "";
-        set(t("Starting…"));
-        try {
-          await api("/api/diagnostics/perception-extract/run", { method: "POST", body: JSON.stringify({ model }) });
-        } catch (e) {
-          set(t("Could not start:") + " " + ((e && e.message) || t("check the model is installed.")));
-          return;
-        }
-        if (btn) btn.textContent = t("Stop sweep");
-        let miss = 0;
-        for (let i = 0; i < 5400; i++) {
-          let s;
-          try { s = await api("/api/diagnostics/perception-extract/status"); miss = 0; }
-          catch (e) {
-            miss++;
-            set(t("Connection hiccup — retrying…"));
-            await sleep(Math.min(2000 * miss, 10000));
-            if (miss > 30) { set(t("Still running — check the task manager.")); break; }
-            continue;
-          }
-          if (s && s.state === "done") {
-            const res = s.result || {};
-            set(res.complete ? t("Done — sweep complete.") : (res.paused_reason || t("Paused.")));
-            renderPerceptionExtractResult(out, s);
-            if (btn) btn.textContent = t("Start sweep");
-            break;
-          }
-          const detail = s.detail ? " · " + s.detail : "";
-          set(t("Sweeping…") + detail);
-          await sleep(2000);
-        }
-      } finally {
-        if (btn) btn.disabled = false;
-      }
+      await _toggleAiSweep("perception-extract", "pe-toggle-btn", $("pe-status"), $("pe-result"), renderPerceptionExtractResult);
     }
 
     function renderPerceptionExtractResult(out, status) {
@@ -11984,12 +11926,7 @@
     }
 
     async function syncPerceptionExtractToggle() {
-      const btn = $("pe-toggle-btn"); if (!btn) return;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      try {
-        const s = await api("/api/diagnostics/perception-extract/status");
-        btn.textContent = s && s.state === "running" ? t("Stop sweep") : t("Start sweep");
-      } catch (e) { /* leave the default label */ }
+      await _syncAiSweepToggle("perception-extract", "pe-toggle-btn", $("pe-status"), $("pe-result"), renderPerceptionExtractResult);
     }
 
     // IR retrieval-eval over a human-judged gold set (keyword-engine P3): open the

@@ -69,6 +69,43 @@ class RaisingClient:
         raise LLMUnavailable("Ollama not reachable (simulated outage)")
 
 
+class FlakyClient:
+    """Raises LLMUnavailable on the first ``fail_times`` generate() calls, then
+    delegates to a real FakeClient. Mirrors tests/test_ai_langdetect_resilience.py's
+    ``_FlakyOllama`` (2026-07-26 field-remarks items 6/7, the retry-with-backoff fix)."""
+
+    def __init__(self, *, fail_times: int):
+        self._fail_times = fail_times
+        self.calls = 0
+        self._real = FakeClient()
+
+    def generate(self, prompt, *, model, system=None, keep_alive=None):
+        self.calls += 1
+        if self.calls <= self._fail_times:
+            from src.llm.ollama import LLMUnavailable
+
+            raise LLMUnavailable("simulated transient outage")
+        return self._real.generate(prompt, model=model, system=system, keep_alive=keep_alive)
+
+
+class AlwaysRaisingHTTPErrorClient:
+    """Raises the sibling LLMError (not LLMUnavailable) on every call -- e.g. a
+    500 from a server that's up but erroring (plausibly a context-length
+    overflow). Proves the except clause catches LLMError generally, not just
+    the LLMUnavailable subclass."""
+
+    def generate(self, prompt, *, model, system=None, keep_alive=None):
+        from src.llm.ollama import LLMError
+
+        raise LLMError("simulated HTTP 500 from the model server")
+
+
+def _fast_backoff(monkeypatch):
+    """Tests must not really sleep for seconds -- shrink the backoff to milliseconds."""
+    monkeypatch.setattr(J, "_TRIAGE_BACKOFF_BASE_S", 0.01)
+    monkeypatch.setattr(J, "_TRIAGE_BACKOFF_CAP_S", 0.02)
+
+
 @pytest.fixture()
 def db():
     engine = create_engine(
@@ -232,27 +269,114 @@ def test_toggle_stop_then_start_honors_the_cursor(db, tmp_path):
     assert res2["batches_completed"] == 3
 
 
-def test_a_local_model_outage_pauses_never_errors_and_a_later_start_recovers(db, tmp_path):
+def test_a_transient_outage_retries_and_the_sweep_completes_without_pausing(
+    db, monkeypatch, tmp_path
+):
+    """2026-07-26 field-remarks item 7 fix: a single LLMUnavailable (or LLMError)
+    on a batch must NOT pause the whole sweep -- it retries the SAME batch with
+    backoff and the sweep continues, completing normally. Direct regression test
+    for the reported symptom ('keyword-triage stopped after 56 batches')."""
     _seed(db, n=4)
     scope = _session_factory(db)
     state_path = tmp_path / "state.json"
+    _fast_backoff(monkeypatch)
 
-    ctx1 = FakeCtx()
-    res1 = J.run_progressive_triage_job(
-        ctx1, model="stub:test", batch_size=2, min_articles=1,
+    flaky = FlakyClient(fail_times=1)
+    ctx = FakeCtx()
+    res = J.run_progressive_triage_job(
+        ctx, model="stub:test", batch_size=2, min_articles=1,
+        session_factory=scope, client=flaky, state_path=state_path,
+    )
+    assert res["complete"] is True
+    assert "paused_reason" not in res
+    assert res["batches_completed"] == 2  # ceil(4/2) -- the retried batch still counts once
+    assert flaky.calls == 3, "1 failed attempt + 1 retry on batch 1, then batch 2 clean"
+
+
+def test_llm_error_alongside_llm_unavailable_is_also_retried_not_a_hard_crash(
+    db, monkeypatch, tmp_path
+):
+    """The field bug's actual likely trigger: the model server answers with an
+    HTTP error (LLMError, not LLMUnavailable) -- e.g. a context-length overflow
+    from the large embedded keyword batch. Today this must be caught by the SAME
+    retry path as LLMUnavailable, never propagate uncaught."""
+    _seed(db, n=2)
+    scope = _session_factory(db)
+    state_path = tmp_path / "state.json"
+    monkeypatch.setattr(J, "_TRIAGE_MAX_CONSECUTIVE_FAILURES", 2)
+    _fast_backoff(monkeypatch)
+
+    ctx = FakeCtx()
+    with pytest.raises(RuntimeError, match="2 consecutive"):
+        J.run_progressive_triage_job(
+            ctx, model="stub:test", batch_size=2, min_articles=1,
+            session_factory=scope, client=AlwaysRaisingHTTPErrorClient(),
+            state_path=state_path,
+        )
+
+
+def test_after_the_configured_consecutive_failure_budget_the_job_gives_up_loudly(
+    db, monkeypatch, tmp_path
+):
+    """Mirrors test_ai_langdetect_resilience.py::
+    test_n_consecutive_failures_gives_up_loudly_never_as_done: a backend that
+    never recovers must not spin forever, but the terminal outcome must be a
+    genuine raise (so the outer BackgroundJob state becomes 'error'), never a
+    silent, benign-looking 'done' -- and the JSONL log's own trailing summary
+    must say 'error' too, so /keyword-triage/last agrees with /status."""
+    _seed(db, n=2)
+    scope = _session_factory(db)
+    state_path = tmp_path / "state.json"
+    monkeypatch.setattr(J, "_TRIAGE_MAX_CONSECUTIVE_FAILURES", 3)
+    _fast_backoff(monkeypatch)
+
+    ctx = FakeCtx()
+    with pytest.raises(RuntimeError, match="3 consecutive"):
+        J.run_progressive_triage_job(
+            ctx, model="stub:test", batch_size=2, min_articles=1,
+            session_factory=scope, client=RaisingClient(), state_path=state_path,
+        )
+
+    # A resumable cursor state was still persisted (batches_completed=0 here,
+    # since the very first batch never settled) -- a later start can still
+    # pick this cursor up once the operator's backend recovers.
+    persisted = J.load_progress_state(state_path)
+    assert persisted["batches_completed"] == 0
+
+    # find the run's own log via the persisted state (the export path isn't
+    # returned from a raise) and confirm the trailing footer is honest.
+    log_path = persisted["log_path"]
+    recs = _read_jsonl(log_path)
+    assert recs[-1]["schema"] == "oo-keyword-triage-run-summary-1"
+    assert recs[-1]["state"] == "error"
+    assert "3 consecutive" in recs[-1]["error"]
+
+
+def test_a_genuine_cancel_during_a_retry_backoff_stops_immediately_no_further_retry(
+    db, monkeypatch, tmp_path
+):
+    """Cancellation must never be mistaken for a transient outage and retried
+    to exhaustion -- FakeCtx.stopping flips True on the very first check
+    (inside the interruptible sleep helper), so the backoff wait is cut short
+    and the sweep pauses as a genuine cancel, not a give-up-loudly error."""
+    _seed(db, n=2)
+    scope = _session_factory(db)
+    state_path = tmp_path / "state.json"
+    monkeypatch.setattr(J, "_TRIAGE_MAX_CONSECUTIVE_FAILURES", 10_000)
+    # A real (not fast) backoff would make this test slow if the cancel weren't
+    # honoured promptly -- deliberately NOT calling _fast_backoff here, so a
+    # regression that stops checking ctx.stopping inside the sleep would hang
+    # this test for the full default backoff instead of failing fast.
+    monkeypatch.setattr(J, "_TRIAGE_BACKOFF_BASE_S", 5.0)
+    monkeypatch.setattr(J, "_TRIAGE_BACKOFF_CAP_S", 5.0)
+
+    ctx = FakeCtx(stop_after=1)  # stopping() true from the 2nd check onward
+    res = J.run_progressive_triage_job(
+        ctx, model="stub:test", batch_size=2, min_articles=1,
         session_factory=scope, client=RaisingClient(), state_path=state_path,
     )
-    assert res1["complete"] is False
-    assert res1["paused_reason"] and "unavailable" in res1["paused_reason"]
-    assert res1["batches_completed"] == 0  # the very first batch failed
-
-    ctx2 = FakeCtx()
-    res2 = J.run_progressive_triage_job(
-        ctx2, model="stub:test", batch_size=2, min_articles=1,
-        session_factory=scope, client=FakeClient(), state_path=state_path,
-    )
-    assert res2["complete"] is True
-    assert res2["batches_completed"] == 2  # ceil(4/2), the earlier failed attempt never counted
+    assert res["complete"] is False
+    assert res["paused_reason"] and "cancelled" in res["paused_reason"]
 
 
 def test_restart_true_discards_the_cursor_and_starts_a_fresh_log(db, tmp_path):
