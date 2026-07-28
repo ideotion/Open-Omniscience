@@ -1319,7 +1319,7 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   aggregate-vs-single throughput numbers were not yet shared, so none are fabricated here.
   **EXECUTION PLAN AUTHORED same day (maintainer: "optimize it for an autonomous session driven
   by Sonnet 5 with ultracode activated"):**
-  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_EXECUTION_PLAN.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_EXECUTION_PLAN.md)
+  [`docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-26_EXECUTION_PLAN.md`](docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-26_EXECUTION_PLAN.md)
   is the operating manual routing into the two investigation docs' specs — 8 slices in 5
   PR-groups (PR-A low-risk trio W3/W4/W6 · PR-B countries-rollup W2 · PR-C snapshot-sweep W5 ·
   PR-D WAL-restructure W1 · PR-E AI-jobs F2+F1), with the file-collision map
@@ -1951,267 +1951,46 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   caveat non-negotiable is breached, but the as-of staleness should surface). (5) **OPERATIONAL (maintainer):
   run the rollup benchmark on the LIVE 60K/932K corpus** to quantify the real win + decide whether the D1
   httpfs packaging is worth it — the measure-before-build gate for D1.
-- **KEYWORD-ENGINE OPTIMIZATION — RESEARCH FOLDED IN + IMPLEMENTATION STRATEGY (2026-06-26; maintainer
-  ran parallel internet sessions on keyword conflation + IR/search performance; outputs analyzed
-  CODE-GROUNDED + folded in; STRATEGY/DOCS-ONLY this session — the BUILD is a NEXT session):** the 3
-  research reports saved VERBATIM under `docs/research/keywords/` (FOSS conflation research; the
-  complete-log evidence addendum [supersedes a capped first pass — its 8.7% global mismatch was a cap
-  artifact, corrected to 16.2%]; the performance-first IR/computational-journalism report) + indexed in
-  `docs/research/README.md`. SYNTHESIS = `docs/design/KEYWORD_ENGINE_OPTIMIZATION_STRATEGY.md` (code-
-  grounded, dependency-sequenced, build-ready; every anchor verified against the tree). KEY VERDICT
-  (both research streams + the code converge — INDEPENDENTLY confirming the project's own
-  DATA_ARCHITECTURE_SKELETON / SCALING_DERIVED_LAYER_1000X): the pain is a DERIVED-STATE-REBUILD problem,
-  NOT a search-engine problem — KEEP the rule-based trusted index, fix the rebuild + the rollups + the
-  junk, AUGMENT with a LABELLED recall layer that never feeds the trusted index. CODE-GROUNDED FINDINGS:
-  (a) re-index is slow because `reindex_all_batch`/`index_article` (store.py:384/:180) force-re-extract
-  EVERYTHING per article (keywords + when/where/who + sentiment) through the single writer + a SQLCipher
-  per-page decrypt, via a CLIENT loop with NO persisted cursor (`_reindexAllLoop`, restart-from-0) →
-  Phase 1 = a BACKEND re-index JOB (persisted cursor, reuse the NewsletterImportManager pattern) + a
-  KEYWORD-ONLY re-index mode + batched commits (COLLECTOR_WRITER_BATCHING) + FTS5 `'optimize'`; (b)
-  `Keyword.language` is FIRST-WRITE-WINS, never reconciled (store.py:75) = the 16% / 40%-of-head language
-  mismatch → fix = a `reconcile_keyword_language` pass MIRRORING `reconcile_keyword_counters`
-  (store.py:558), which GATES correct lemmatization; (c) **HIGHEST-LEVERAGE — the persisted-columnar D1
-  blocker may be REMOVABLE:** `columnar.py:90 secure_crypto_available` gates on the OpenSSL `httpfs`
-  binary because the OLD DuckDB mbedtls (CBC/CTR) was "NOT securely encrypted," BUT DuckDB ≥1.4 (already
-  pinned) defaults to AUTHENTICATED AES-256-GCM via the native `ATTACH … ENCRYPTION_KEY` the code ALREADY
-  uses (`:131/259`) + the empirical `encryption_gate` (`:111`); **VERIFY the GCM claim → relax the gate
-  for the DISPOSABLE store → unblock the keyword_daily/source_coverage rollups (5A-bis) PERSISTED = the
-  real perf win** (NEVER fabricate the capability — if unconfirmed, keep the in-memory fallback + the
-  httpfs-binary path); (d) lemmatization (simplemma + an evidence-grown mislemma denylist + visible
-  `conflated_by` provenance) belongs in `families.canonical_key` (`:104`, display-time, reversible), NOT
-  `_normalize`; (e) the IR EVAL HARNESS (nDCG/MRR/Recall, pooled gold set, single-assessor-stable
-  [Voorhees], conflation recall-gain-vs-precision-loss reported SEPARATELY with n) is a genuine GAP (the
-  shipped self-test is keyword-QUALITY, not RETRIEVAL) and GATES every quality change; (f) the
-  static-embedding hybrid (model2vec/potion numpy-only [NO torch] + sqlite-vec inside the encrypted file
-  + RRF, labelled/disposable) is the one constraint-clean dense-recall layer — PILOT gated on the eval
-  harness. ALREADY-SHIPPED, don't rebuild: near-dup/coordination (`src/signals/near_dup.py`), BM25-default
-  ranking, the readmodel/columnar seam + the `ix_mention_date_keyword` covering index, the engine
-  report/self-test/growth diagnostics. PHASED PLAN (one PR per slice when built): P1 unblock the rebuild
-  → P2 rollups + the DuckDB-encryption VERIFY → P3 eval harness (parallel) → P4 keyword quality
-  (`reconcile_keyword_language` → simplemma lemmatization → th segmenter URGENT / zh degraded-not-garbage)
-  → P5 BM25F + facets + the static-embedding recall layer → P6 OpenTapioca entity→QID. SPLADE ruled OUT
-  (CC-NonCommercial weights + torch + multilingual gap). Verify-before-build: the DuckDB-1.4 GCM claim,
-  static-embedding PER-LANGUAGE quality, every bundled lib's license (CC0-first; Wiktextract CC-BY-SA =
-  a separate ruling; SPLADE never bundle). Operational/networked (maintainer steps): run cleanup
-  (re-index+prune) + reconcile + baseline-tag backfill on the LIVE corpus; Wikidata Lexeme/ring + a
-  bundled segmenter/embedding/OpenTapioca index. **AUTONOMOUS-SESSION BRIEF to execute this end-to-end:
-  `docs/design/AUTONOMOUS_SESSION_BRIEF_KEYWORD_ENGINE.md`** (reset-proof operating manual — working
-  mode, verification gate, subagent orchestration, the phased scope with per-item build-class tags
-  [BUILDABLE / VERIFY-FIRST / SEAM / OPERATIONAL], honesty non-negotiables, definition of done; points
-  at the strategy doc for the per-item spec).
-  **BUILD SESSION 2026-06-25 (autonomous, maintainer "full authority"; HARNESS = single working branch
-  `claude/modest-gauss-9ae4mc`, so stacked COMMITS under ONE draft PR to `0.09`, each step verified
-  end-to-end before the next — the brief's harness-fallback).** EMPIRICAL WIN vs the brief's "CI-only"
-  assumption: a Python **3.13.12** venv is available here and `pip install -e ".[analysis,dev]"`
-  succeeds INCLUDING `sqlcipher3` + `cryptography` + numpy/pandas/scipy — so the **real pytest suite +
-  the mypy ratchet run LOCALLY** (`.venv`; mypy baseline=127, confirmed at 127). PER-ITEM STATUS (mark
-  as I go): **P1.1 SHIPPED** (backend re-index JOB — `src/analytics/reindex_job.py:ReindexJobManager`
-  mirrors `NewsletterImportManager`: worker thread + stop-event PAUSE + on-disk persisted CURSOR
-  [`data_dir()/reindex_job.json` = last-article-id + total/done/tally/prune_after], so a re-index now
-  SURVIVES a tab close / app restart and RESUMES from where it stopped instead of the old client loop's
-  restart-from-0 trap; drives `reindex_all_batch`; DB-WRITER kind="reindex" joins the
-  collect/import/reindex arbitration set; idempotent re-index = the no-loss net. Endpoints
-  `POST /api/insights/reindex-job{,/{action}}` + `GET .../status`; surfaced in `/api/jobs`
-  [`_reindex_jobs`, pause/resume routed]; the Settings "Clean up keywords" + "Re-index the whole corpus"
-  buttons now START the background job + poll its status [`_startReindexJob`/`_pollReindexJob`], with
-  Pause/Resume in the task manager — the legacy `_reindexAllLoop`/`_pruneCore` cores stay DEFINED as a
-  fallback + for the invariant test. tests/test_reindex_job.py [6: completion · idempotent-no-loss ·
-  pause+resume-from-cursor · persisted-cursor-survives-restart · prune_after-chains · idle/bad-resume] +
-  test_repo_invariants::test_reindex_background_job_is_wired. VERIFIED here: 6/6 + 141 invariants +
-  jobs/insights regression green, ruff F/B clean, mypy 127≤127, node --check, i18n 100%,
-  audit-chrome clean. Frontend BROWSER-UNVERIFIED per fork-3.) **P1.2 SHIPPED** (keyword-only re-index
-  scope — `index_article(scope="keywords")` runs the keyword pass ONLY, skipping the when/where/who
-  [dates/places/entities] + sentiment passes [≈⅔ less work for a keyword cleanup]; the language
-  deduction stays [it picks the stoplist]; threaded through `reindex_all_batch` → the job [persisted +
-  status-reported] → `POST /reindex-job?scope=` [400 on a bad scope]; the Settings "Clean up keywords"
-  button now uses keyword-only, "Re-index the whole corpus" stays full; default `scope="full"` =
-  byte-identical [47-test ingest/index hot-path regression green]; tests in test_analytics_store.py +
-  test_reindex_job.py + the invariant scope guard. VERIFIED here.) **P1.3 SHIPPED** (batched commits,
-  COLLECTOR_WRITER_BATCHING.md — `index_article(commit=True)` primitive [False leaves the work PENDING
-  for a batched commit; default True byte-identical] + `reindex_all_batch(commit_batch=1)` batches every
-  N commits with the PROVEN `ingest_emails` rollback-then-redo-per-article fallback [`_redo_committed`]
-  so a lock/collision/extractor-error never drops a batch-mate [idempotent re-index reproduces it]; the
-  job reads `OO_REINDEX_COMMIT_BATCH` [default 1]. NO-LOSS tests: batched==per-article with counters ==
-  the live GROUP BY [zero drift], the failure-fallback loses nothing, AND a contention test
-  [test_write_gate_dataloss.py] — a batched re-index HOLDING the gate across a batch races concurrent
-  ingest with ZERO locks/loss + exact sentinel counters. **DECISION (autonomous, recorded): the
-  COLLECTOR-path batching [the doc's full store_fetched restructure] is DEFERRED — it is live-perf-gated
-  per its own doc [unmeasurable here] + the riskiest 50-worker hot-path change; the `commit=False`
-  primitive now exists so it is a smaller follow-up when the maintainer can measure live.** VERIFIED
-  here: 57-test ingest/index hot-path regression + 160 targeted green, ruff F/B, mypy 127≤127.)
-  **P1.4 SHIPPED** (FTS5/SQLCipher tuning pass — `src/database/fts.py:optimize_after_bulk(session)` runs
-  the FTS5 `'optimize'` segment-merge [`INSERT INTO article_fts(article_fts) VALUES('optimize')`, DISTINCT
-  from PRAGMA optimize — verified it did NOT run before; only `'rebuild'` at init] + `PRAGMA optimize`
-  [planner stats, analysis_limit-bounded] after a bulk load; gated + SQLite-only + best-effort. Wired
-  after a COMPLETE re-index pass [keyword-table churn → planner] AND after the newsletter folder import
-  [article bulk-load → FTS segment churn]. cache_size left at the memory-conservative `OO_SQLITE_CACHE_MB`
-  default 64 MiB for the reference AppVM [mmap is unavailable under the codec so cache_size is the lever —
-  documented in the fn]; no default change. tests/test_fts_optimize.py [merge keeps search exact;
-  best-effort without an FTS table] + the invariant guard. VERIFIED here: 167 targeted green, ruff F/B,
-  mypy 127≤127.) **PHASE 1 COMPLETE** (unblock-the-rebuild: 1.1 job · 1.2 keyword-only · 1.3 batched
-  commits · 1.4 tuning).
-  **P2.4 VERIFIED-DEFERRED (the VERIFY-FIRST DuckDB-GCM gate, tested on DuckDB 1.5.4 in the venv):
-  the hypothesis that ≥1.4 writes an authenticated AES-256-GCM store NATIVELY [without httpfs] is
-  REFUTED — 1.5.4 refuses an encrypted WRITE without `LOAD httpfs` (OpenSSL): error "DuckDB currently
-  has a read-only crypto module loaded … ensure httpfs is loaded … To write an encrypted database …
-  that is NOT securely encrypted, one can use SET force_mbedtls_unsafe='true'." The only no-httpfs
-  write path is the explicitly-UNSAFE mbedtls = the forbidden fabricated-security. SO: secure_crypto_
-  available stays gated on httpfs, the gate is NOT relaxed, the engine stays IN-MEMORY (never fabricate
-  the capability). The persisted-rollup PERF WIN remains blocked on bundling per-OS httpfs binaries
-  (OPERATIONAL, networked machine). 2nd finding: 1.5.x `enable_external_access=False` in
-  `_offline_config` ALSO blocks a file ATTACH outright — moot while httpfs gates. Recorded in
-  columnar.py's EMPIRICAL FINDING. No code change (the gate already returns False = correct).**
-  NEXT (sequencing is mine): the persisted P2.1–2.3 rollups' BIG win is now confirmed-blocked, so
-  the highest-ROI BUILDABLE-and-unblocked items are P3 (eval harness) · P4.2 (reconcile_keyword_language
-  — fixes the 16% head language mismatch) · P5.1 (BM25F + facets). In-memory rollups remain optional
-  groundwork. (P5 serving · P6 entities later.)
-  **PHASE 1 + P2.4 MERGED into 0.09 (PR #487).** **P4.2 SHIPPED** (new PR; reconcile_keyword_language —
-  `src/analytics/store.py:reconcile_keyword_language(session)` sets `Keyword.language` to the
-  SIGNATURE-MAJORITY article language [the fix for first-write-wins, the 16%/40%-of-head mismatch], a
-  background pass mirroring `reconcile_keyword_counters`: only flips on a CLEAR majority [`>half` of the
-  keyword's located mentions] backed by `>=2` distinct articles, so a stray article never flips a tag.
-  PERF-SAFE per the codec column-order trap: NEVER the per-row `keyword_mentions->articles` join — a
-  COVERING article-language map [`idx_article_language`, no content read] + a covering `(keyword_id,
-  article_id)` mention scan joined in Python [one mention per (kw,article) so a row count == distinct
-  articles]. Endpoint `POST /api/insights/reconcile-keyword-language`; folded into the re-index job's
-  complete-pass [so "Clean up keywords" fixes language too]. The "?" bucket [all-untagged mentions] is
-  left as-is — `global_stopwords` ALREADY routes every keyword incl. unknown-language through the
-  English+all-language stoplist at query time, so "?" boilerplate is filtered there; an aggressive
-  email/web boilerplate denylist stays the EVIDENCE-DRIVEN stoplist process [`analyze_keyword_log.py`],
-  NOT a guess [the no-over-stoplist discipline]. tests/test_analytics_store.py [signature-majority
-  flip · NULL→lang · tie-no-flip · "?"-noop] + the invariant guard. VERIFIED here: 193 targeted green,
-  ruff F/B, mypy 127≤127.) **P3 SHIPPED** (new PR; IR retrieval-eval harness — the GATE that lets the
-  ranking/conflation quality changes [P5.1 BM25F, P4.3 lemmatization, P5.2 embeddings] be MEASURED, not
-  guessed [the measure-before-trust non-negotiable]. `src/analytics/ir_eval.py`: NATIVE pure-Python
-  metrics [nDCG@k/MRR@k/Recall@k/P@k/AP — textbook defs, unit-tested vs hand-computed values; NO new
-  `[eval]` dep to gate/degrade — the strategy allowed pytrec_eval/ranx OR native; native is leaner +
-  more reliable]; `GoldQuery` [id·query·language·axis·graded relevances 0/1/2]; `evaluate` reports
-  PER-LANGUAGE + per-axis with n stated, NEVER one pooled average alone [a method can win overall while
-  losing on Arabic], and NO composite score [each metric stands alone]; `conflation_delta` reports the
-  recall GAIN and precision CHANGE SEPARATELY + the newly-relevant vs newly-irrelevant example sets
-  [never blended]; `regression_check` fails on a metric drop beyond tol; `evaluate_against_corpus` runs
-  the LIVE FTS `search_ids` [pluggable search_fn so a BM25F/hybrid variant A/Bs via conflation_delta];
-  `run_ir_eval_selftest` proves the MECHANISM on a fixture [10/10] → `GET /api/diagnostics/ir-eval-selftest`.
-  tests/test_ir_eval.py [8: metrics vs hand-computed, per-language breakdown + no-composite, conflation
-  both-sides, regression gate, injected search_fn] + the invariant guard. VERIFIED here: 155 targeted
-  green, ruff F/B, mypy 127≤127. The one OPERATIONAL piece: a human-judged GOLD SET [graded 0/1/2 over
-  the maintainer's own corpus] — corpus-specific, can't be bundled; the harness CONSUMES it.) **P5.1a
-  SHIPPED** (new PR; BM25F per-column ranking — `src/database/fts.py` `search_ids` now ranks
-  `ORDER BY bm25(article_fts, :wt, :wb)` instead of the flat `rank`, weighting the TITLE column above
-  the BODY (a title keyword is a stronger relevance signal than a body mention — verified empirically:
-  `bm25(ft,10,1)` ranks a title match first, `bm25(ft,1,10)` flips it). `_bm25_weights()` reads
-  `OO_BM25_TITLE_WEIGHT` (default 4.0) / `OO_BM25_BODY_WEIGHT` (default 1.0), clamps ≥0, and FALLS BACK
-  to the default on a bad value (never crashes); the weights are BOUND PARAMETERS (`:wt`/`:wb`), never
-  f-string-formatted into SQL (no bandit B608 surface). REVERSIBLE by construction — equal weights ==
-  the old flat rank. ONE change covers every consumer: `search_ids` is the single FTS ranking entry
-  point (omnibar, `_query_articles`, framing, reporting, watches, AND the P3 `evaluate_against_corpus`),
-  so the P3 harness can A/B a weight set via `conflation_delta` the moment a gold set exists — the
-  MEASURE-before-trust loop is now closed for ranking. tests/test_bm25f.py [3: a title-only vs body-only
-  match → title ranks first; env reversal → body ranks first; default `wt>wb` + bad-env fallback] + the
-  invariant guard. VERIFIED here: 21 search-suite + 18 ir-eval/watches + 144 invariants green, ruff F/B,
-  mypy 127≤127, py_compile.) **P5.1b SHIPPED** (new PR; INTERACTIVE FACETS — the When/Where/Who subtab of
-  the analysis window becomes a FACET SURFACE co-equal with the text query. TWO genuine increments over
-  the descriptive who/where it already showed: (1) a TEMPORAL (When) facet — `queries.corpus_when(article_ids)`
-  buckets the mentioned-DATE tags (the dates the text is ABOUT, not pub date) by YEAR over the corpus,
-  counts only, user-REJECTED tags excluded, deduced-never-confirmed; (2) a DRILL that makes a facet a query
-  CONSTRAINT — `queries.corpus_facet_article_ids(article_ids, facet, value)` returns the corpus narrowed to
-  the articles mentioning an entity/place/year (in corpus order), so clicking a facet value spawns a refined
-  analysis window over EXACTLY those ids. Both PERF-SAFE per the codec column-order trap: an equality filter
-  over the article_id-indexed mention tables, NEVER a keyword_mentions->articles join. `/api/insights/corpus-www`
-  gains a `when` key (ADDITIVE — who/where unchanged, the existing contract test still passes) + a new
-  `/api/insights/corpus-facet-articles` drill endpoint (reuses `_resolve_corpus` so it intersects whatever
-  corpus is active — an exact id set OR the search + Advanced filters; 400 on an unknown facet, never a silent
-  empty). The existing When/Where/Who subtab is upgraded IN PLACE (no parallel-window debt). Frontend: the
-  `#an-www` loader renders who/where/when as clickable `.an-facet` chips (count shown) → `branchByFacet` →
-  drill → `openAnalysisForIds`; `_anFacets` state; honest empty states + visible caveat; new strings
-  English-fallback via `t()` (i18n gate stays 100%). Counts only, NO score; deduced from text, never confirmed.
-  tests/test_corpus_facets.py [5] + 2 invariant guards (test_corpus_facets_drill_is_wired backend + the facet
-  wiring in test_ui_invariants). VERIFIED here: 5 facet + 17 insights/queries + 19 search + 144 invariants
-  green, ruff F/B, mypy 127≤127, node --check, i18n 100%. Frontend BROWSER-UNVERIFIED per fork-3. P5.1 (BM25F
-  + facets) is now COMPLETE.) **P4.3 SHIPPED (mechanism; OPT-IN, default OFF)** (new PR; simplemma
-  lemmatization at the DISPLAY layer — `src/analytics/families.py` gains a lemma-collapse grouping step
-  (1.6) that conflates morphological keyword variants a plural heuristic MISSES — verb forms + irregulars
-  (study/studied → study, run/running → run, child/children → child, Wahlen → Wahl) — via `simplemma`
-  (pure-Python, NO torch/network; added to the `[analysis]` extra). `_lemma(norm, lang)` is CONSERVATIVE:
-  single-token TERMS only (never entity NAMES), per (kind, LANGUAGE) so an en term never merges a fr one,
-  a `_MISLEMMA_DENYLIST` blocks meaning-changers (media→medium, data→datum, us→we — evidence-grown like
-  `_PLURAL_DENYLIST`), unsupported langs (zh/ja + the ones simplemma covers poorly) + a missing simplemma +
-  any lemmatizer error all FALL BACK to `norm` (graceful degrade — a core install is a no-op). KEY HONESTY
-  CALLS: (a) DISPLAY layer ONLY — `families.py`, NEVER `_normalize`/the stored trusted index (rewriting the
-  canonical index is forbidden); an invariant asserts `extract.py`/`store.py` never import simplemma; (b)
-  REVERSIBLE — a user split override keeps a form out; (c) VISIBLE `conflated_by=["lemma"]` provenance on
-  the family (exposed in `to_dict`); (d) **DEFAULT OFF (`OO_FAMILY_LEMMA`, default "0") — the measure-before-
-  trust discipline: it changes grouping app-wide, so its retrieval-quality impact MUST be measured (the P3
-  eval harness + a human-judged gold set) before it is trusted on-by-default. Default-off + the skip ⇒
-  BYTE-IDENTICAL to the pre-lemma grouping (the plural rule still handles regular -s/-es/-ies on its own).**
-  tests/test_families.py (+5, skip-guarded on simplemma: lemma unit + guards, verb/irregular collapse +
-  conflated_by, off-by-default no-merge [runs everywhere], entity/denylist/reversible, graceful-degrade
-  without simplemma) + test_repo_invariants::test_lemmatization_is_opt_in_display_layer_and_reversible.
-  VERIFIED here: 160 families/invariants + 19 build_families-consumers green, ruff F/B, mypy 127≤127,
-  pyproject valid, external-freshness guard green. REMAINING: (1) the maintainer ENABLES + MEASURES it via
-  P3 on a gold set before it goes default-on (operational); (2) the frontend display of `conflated_by`
-  (a small "conflated by lemma" indicator on family chips — deferred + browser-unverified; nothing renders
-  while the feature is off).) **P4.3 MEASURABILITY SHIPPED (follow-up; new PR)** — the
-  measure-before-trust INSTRUMENTS so the maintainer can review + regression-guard lemmatization WITHOUT
-  enabling it blindly: (a) `engine_report.py` gains a `lemma_preview` block = the candidate conflations
-  among the top-N TERMS (groups of single-token terms that share a lemma per language, e.g. study/studied),
-  with the would-merge member sets + counts, so the maintainer eyeballs PRECISION before flipping
-  `OO_FAMILY_LEMMA` (a wrong merge → a `_MISLEMMA_DENYLIST` entry); reports `available:false` honestly when
-  simplemma is absent, mirrors the families guards (terms only, never entity NAMES), no score. (b)
-  `selftest.py` gains a `lemmatization_mechanism` golden case (checks `_lemma` DIRECTLY — no env toggle, so
-  thread-safe in the live process — that study/studied→study + the denylist blocks media↛medium; omitted on
-  a core install, never a failure), so a conflation regression reddens BOTH the in-app self-test export the
-  maintainer sends AND CI. tests in test_keyword_engine_report.py + test_keyword_selftest.py. VERIFIED here:
-  41 keyword + 30 diagnostic tests green, ruff F/B, mypy 127≤127.) **P3 OPERATIONAL PATH SHIPPED (follow-up;
-  new PR; the gold-set INPUT the harness lacked)** — P3 had the metrics + `GoldQuery` format + `evaluate_
-  against_corpus`, but NO documented FILE input + no one-call A/B, so the maintainer had no path to feed
-  graded queries in. Added: (a) `ir_eval.load_gold_set(path)` — parses a JSON gold set
-  (`{"queries":[{id,query,language,axis,relevances:{docid:0|1|2}}]}`) into `[GoldQuery]`, stringifies doc-id
-  keys (so they compare regardless of how search returns ids), and FAILS LOUDLY (`GoldSetError`) on a
-  missing file / bad JSON / out-of-range grade / duplicate id / empty set — never a silent skip; (b)
-  `ir_eval.bm25f_weight_ab(session, gold, weights_a, weights_b)` — the one-call A/B of two BM25F (title,body)
-  weight sets over the LIVE corpus + a gold set, returning each side's report + `conflation_delta`
-  (recall/precision/ndcg SEPARATELY); (c) `search_ids(..., weights=(wt,wb))` — a per-call THREAD-SAFE
-  weights override (None=env default, byte-identical), so the A/B never mutates the process-wide env; (d)
-  a bundled `configs/ir_eval/gold_set.example.json` TEMPLATE (documented format + grading guidance) the
-  maintainer copies. CORRECTION recorded: an earlier offer to A/B *lemmatization* via P3 was INCOHERENT —
-  lemmatization is a display-layer families change, NOT a retrieval change, so it is invisible to the FTS
-  retrieval harness; BM25F (P5.1a) IS a retrieval change and is the coherent A/B. tests/test_ir_eval_goldset.py
-  (loader parses the template + 6 malformed-input failures; the A/B measures a real title-vs-body ranking
-  move on a fixture corpus, recall unchanged + ndcg moved) + the test_ir_eval_harness_is_wired invariant.
-  VERIFIED here: 14 goldset/ir-eval/bm25f + 146 invariants + 23 search green, ruff F/B, mypy 127≤127, JSON
-  valid. REMAINING (operational, maintainer): produce a real graded gold set over the live corpus + run the
-  A/B to pick the BM25F default on evidence.) **P3 IN-APP ENDPOINT SHIPPED (follow-up; new PR; closes the
-  loop end-to-end)** — the deferred in-app surface: `GET /api/diagnostics/ir-eval?gold_path=&weights_a=&
-  weights_b=&k=` loads a SERVER-SIDE gold-set file (`load_gold_set`) and either scores the live search at
-  the current BM25F default (`evaluate_against_corpus`) or A/Bs two (title,body) weight sets
-  (`bm25f_weight_ab` → `conflation_delta`, recall/precision/ndcg SEPARATELY, no blended score). 400 on a
-  missing/malformed gold set OR half-specified weights (both-or-neither), via GoldSetError/ValueError →
-  HTTPException — never a silent skip. Mirrors the existing diagnostics endpoints (keyword-engine /
-  selftest / ir-eval-selftest): GET + `download=1` dated attachment. Server-side path input is the
-  established local-single-user pattern (folder-backup / dump-reader). So the measure-before-trust loop is
-  now COMPLETE in-app: format (template) → loader → endpoint → report; only the maintainer's GRADED gold-set
-  DATA is still outstanding (corpus-specific, can't be bundled). tests/test_ir_eval_goldset.py (+1: the
-  endpoint single-eval + the BM25F A/B [title-heavy beats body-heavy = negative ndcg_delta] + 400 on
-  missing-file + 400 on half-specified weights) + the ir-eval invariant extended. VERIFIED here: 150
-  goldset/invariants + 5 diagnostics green, ruff F/B, mypy 127≤127. NOT a task-manager job (a bounded
-  read-only eval; the long-fetch job pattern is for network/IO jobs).) **P3 DIAGNOSTICS-PANEL BUTTON
-  SHIPPED (follow-up; new PR; frontend, BROWSER-UNVERIFIED per fork-3)** — the deferred in-app control: the
-  Settings → Diagnostics-log panel gains a gold-set-path input + two optional BM25F weight boxes + a "Run
-  IR eval over a gold set" button → `runIrEval()` opens `/api/diagnostics/ir-eval?gold_path=&weights_a=&
-  weights_b=` (the #500 endpoint) — empty weights = score the current default, BOTH filled = the A/B. So
-  the maintainer runs the whole measure-before-trust loop with a CLICK, not curl. English-fallback via the
-  un-keyed-diagnostics-strings convention (NO new locale keys → zero locale hot-file conflict with the
-  parallel session); a hint points at the bundled template. test_repo_invariants (the ir-eval invariant
-  extended: the panel wires `#ir-eval-path` + `runIrEval` + the endpoint URL). VERIFIED here: node --check,
-  146 invariants, i18n 100%, ruff F/B. NOTE: my standing recommendation (the StatFigure revision-anomaly
-  detector) was found ALREADY BUILT by the parallel session (`src/stats/revision.py` + `store.revision_
-  anomalies` + `/api/stats/revision-anomalies` + the frontend "Check revision anomalies" button + 11 green
-  tests) — so it's done, not re-built. KEYWORD-ENGINE PROGRAM COMPLETE for all autonomously-buildable work.
-  NEXT (ALL need maintainer input/operational steps — do NOT start autonomously): P5.2 (static-embedding
-  recall layer, gated on the P3 gold-set pilot) · the in-memory P2 rollups (optional groundwork; persisted
-  blocked on httpfs bundling) · P6 (entity→QID, operational/networked) · enabling lemmatization/picking the
-  BM25F default (needs a graded gold set) · Thai/zh segmenter (needs a bundled-artifact decision).
+- **KEYWORD-ENGINE OPTIMIZATION — STRATEGY + PROGRAM (2026-06-26 research fold-in → the 2026-06-25
+  build session; strategy of record = [`docs/design/KEYWORD_ENGINE_OPTIMIZATION_STRATEGY.md`](docs/design/KEYWORD_ENGINE_OPTIMIZATION_STRATEGY.md),
+  the three verbatim research reports under `docs/research/keywords/`; per-slice build narration is
+  compressed per rule 5a, one `docs/ledger/shipped.csv` row each):**
+  **KEY VERDICT (both research streams + the code converged, independently confirming the project's
+  own DATA_ARCHITECTURE_SKELETON / SCALING_DERIVED_LAYER_1000X):** the pain is a DERIVED-STATE-REBUILD
+  problem, NOT a search-engine problem — KEEP the rule-based trusted index, fix the rebuild + the
+  rollups + the junk, and AUGMENT with a LABELLED recall layer that never feeds the trusted index.
+  **EMPIRICAL FINDING — P2.4, the DuckDB-GCM hope is REFUTED (verify-before-build, tested on DuckDB
+  1.5.4; do NOT retry without re-probing):** the hypothesis that DuckDB ≥1.4 writes an authenticated
+  AES-256-GCM store NATIVELY (without `httpfs`) is FALSE — it refuses an encrypted WRITE without
+  `LOAD httpfs` (OpenSSL); the only no-httpfs write path is the explicitly-UNSAFE mbedtls, i.e. the
+  forbidden fabricated security. So `secure_crypto_available` stays gated on httpfs, the engine stays
+  IN-MEMORY, and the persisted-rollup perf win remains blocked on bundling per-OS httpfs binaries
+  (OPERATIONAL, needs a networked machine). Second finding: `enable_external_access=False` also
+  blocks a file ATTACH outright. Recorded in `columnar.py`'s own EMPIRICAL FINDING block.
+  **DELIBERATE EXCLUSIONS:** SPLADE is ruled OUT (CC-NonCommercial weights + torch + a multilingual
+  gap) — never bundle it. Licence discipline for any future bundled artifact: CC0-first; Wiktextract
+  CC-BY-SA would need its own ruling.
+  **SHIPPED (the whole autonomously-buildable program; one shipped.csv row per slice):** P1 unblock-
+  the-rebuild (backend re-index JOB with a persisted cursor · keyword-only re-index scope · batched
+  commits · FTS5 `'optimize'` tuning) · P4.2 `reconcile_keyword_language` (the first-write-wins fix
+  for the measured 16% / 40%-of-head language mismatch, perf-safe via a covering map, never the
+  codec-trap join) · P3 the IR retrieval-eval harness end-to-end (native metrics, per-language +
+  per-axis with n, no composite; gold-set loader + BM25F A/B + the in-app endpoint + panel button) ·
+  P5.1 BM25F per-column ranking + interactive When/Where/Who facets with a drill · P4.3 simplemma
+  lemmatization at the DISPLAY layer (reversible, `conflated_by` provenance, never `_normalize`) plus
+  its `lemma_preview` + self-test instruments.
+  **SINCE-CLOSED (formerly "remaining" here — verified stale):** lemmatization is now RULED DEFAULT-ON
+  (2026-07-18, after the maintainer reviewed `lemma_preview` on the live corpus) · the zh/ja/th
+  SEGMENTER shipped 2026-07-10 as the `[segmentation]` extra · the collector-path write-batching
+  deferral is now evidence-justified by the 2026-07-23 fast-box `writer-bound` verdicts (tracked in
+  that entry, not here).
+  **REMAINING:** P5.2 the static-embedding recall layer (model2vec/potion numpy-only, NO torch, +
+  sqlite-vec inside the encrypted file + RRF, labelled/disposable) — gated on the P3 gold-set pilot,
+  and its PER-LANGUAGE quality must be verified before trusting it · P6 OpenTapioca entity→QID
+  (operational/networked) · the persisted P2 rollups (blocked on the httpfs binaries above) · and the
+  one OPERATIONAL input the whole measure-before-trust loop still waits on: **a human-graded gold set
+  over the maintainer's own corpus** (corpus-specific, cannot be bundled; the builder is one click
+  away in Settings → Diagnostics), which is what would let the BM25F default be picked on evidence.
 - **DEFERRED DEAD-UI-CODE CLEANUP — a BROWSER-VERIFIED pass (tracked 2026-06-26; do NOT do blind in a
   non-browser session):** a repo-cleanliness survey found the file tree CLEAN (no tracked junk/zero-byte
   files; `.gitignore` covers venv/pycache/data/build; the old orphan FILES `scripts/import_eml.py` +
@@ -3922,271 +3701,70 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   parallel/official-endpoint direction. keyword diagnostics: language_mismatch
   flagging WORKS (515 flagged, e.g. ANS en→fr:60); "services" tagged kind=entity
   is the ongoing keyword-quality tail, not new.
-- **IN-APP OLLAMA/MODEL INSTALLER + APP SELF-UPDATE (ruled 2026-06-13;
-  designed in FUTURE_DEVELOPMENTS):** Settings → LLM panel installs Ollama +
-  pulls models from the GUI (checksum-verified through the guarded factory,
-  catalog picker with size/RAM/license shown never a score, pulls are
-  task-manager jobs, clearnet stated prerequisite, hardware fit MEASURED).
-  **RE-RAISED + NOW ACTIVE (maintainer 2026-06-16): build it as a DEDICATED
-  Settings SUBTAB for LLM management (invariant-#18 grammar, not the lone
-  read-only panel), with explicit actions — download+install the Ollama
-  BINARY, EXPLORE models, download/pull, install/RUN, REMOVE. VERIFIED STATE
-  2026-06-16: substrate exists (src/llm/ollama.py OllamaClient
-  health/list_installed[_detailed]/generate; /api/llm health·models·generate·
-  summarize·translate·synthesize; #llm top-bar pill; the 'Local models'
-  Settings panel) but is READ-ONLY — it shows installed + the 5-model dated
-  catalog and tells the user to use a TERMINAL ('ollama pull <tag>' as COPY
-  TEXT, not a button); NO pull/remove/install-binary endpoints or buttons exist
-  yet. Pull/rm can stream REAL bytes from ollama's own /api/pull·/api/delete
-  (honest progress, invariant #20); pulls = task-manager jobs, GATED by the ONE
-  consent (#14). OPEN DECISIONS filed for a maintainer ruling: (a) how far the
-  binary install goes — guided+verified vs per-OS auto-exec an installer vs
-  user-space tarball auto-run (security/elevation trade-off); (b) model
-  exploration — curated dated catalog (zero-network) + an OPT-IN consented
-  live-ollama.com-library browse + a free-text 'pull any tag' box, vs always
-  live-browse; (c) TRANSPORT HONESTY — pulls egress via the OLLAMA PROCESS over
-  CLEARNET, NOT our Tor proxy/guarded factory, so airplane+Tor don't cover them
-  (state at consent; the USB offline kit stays the air-gapped path); (d) active
-  model moves from env-only OO_LLM_MODEL to a stored UI setting.**
-  **RULINGS 2026-06-16 (maintainer answered): placement = a Settings SUBTAB
-  (Q6=A); (a) binary install = Q7=B — the app DOWNLOADS + RUNS the official per-OS
-  Ollama installer (verify checksum/signature BEFORE exec through the guarded
-  factory; consent + a VISIBLE explicit OS elevation step, NEVER silent; honest
-  about what is run); (b) model exploration = Q8=A + ELABORATION — the curated
-  dated catalog PLUS a SEARCHABLE consented live-ollama.com-library browse (the
-  full library is too large to list), FILTERABLE/sortable by PROVIDER · DATE ·
-  SIZE (+ hardware-fit + license), showing ONLY app-APPLICABLE models. APP
-  COMPATIBILITY CLARIFIED: our features (summarize/translate/synthesize) use PLAIN
-  /api/generate text generation — NO tool/function-calling — so any instruct/chat
-  TEXT model that fits the hardware works; filter OUT non-applicable kinds
-  (embedding-only, vision-only); 'compatible' = text-generation that fits RAM, not
-  a special protocol; (c) transport = Q9=YES (clearnet via the ollama process,
-  disclosed at consent); (d) active model = Q10=YES (stored UI setting).**
-  **PULL/REMOVE ENDPOINTS SHIPPED 2026-06-16 (backend slice 1):** `OllamaClient.pull`
-  (a generator STREAMING ollama's own /api/pull progress objects — honest real
-  progress, invariant #20) + `OllamaClient.remove` (/api/delete); `POST /api/llm/pull`
-  relays the progress as NDJSON (StreamingResponse), `POST /api/llm/remove` deletes.
-  Both inherit the kill-switch refusal (airplane mode = no socket — the pull would
-  egress over CLEARNET via the ollama process, exactly what airplane forbids; Q9
-  transport honesty in the docstring) + loopback-only; a strict model-name regex
-  blocks path injection (tests assert no ollama call for a bad name). tests in
-  test_llm_ollama.py (stream parse, remove+404, kill-switch refuses pull/remove,
-  bad-name 400). **SETTINGS LLM SUBTAB UI SHIPPED 2026-06-16 (conservative,
-  browser-unverified):** a dedicated Settings → Models subtab (`data-tab="models"` /
-  `#set-models`, Q6=A — the read-only panel moved out of General) with explicit actions —
-  pull (raw fetch reading the NDJSON stream → live status/percent, invariant #20), remove,
-  the active-model picker (`Set active` → PUT /api/settings {llm_model}, Q10) + per-catalog
-  Pull buttons + a free-text pull-any-tag box (Q8). Pull gated by the ONE consent
-  (ensureOnline #14) + a VISIBLE clearnet-egress disclosure (bytes go over clearnet via the
-  ollama process, NOT Tor — Q9); +27 i18n ×12; test_ui_invariants #28. REMAINING: the
-  binary-installer (Q7=B download+verify+run official installer with a VISIBLE elevation
-  step) — BLOCKED OFFLINE (needs real per-OS installer checksums verified against clearnet;
-  fabricating them = forbidden — do on a networked machine); live ollama.com library
-  browse (Q8); pulls as task-manager jobs.
-  **CATALOG REFRESHED 2026-06-17 (maintainer-asked "latest + smallest open models from
-  Mistral, Google, IBM, Nvidia", branch `claude/llm-catalog-refresh`, draft PR onto 0.09):**
-  `MODEL_CATALOG` (src/llm/ollama.py — the ONE source the in-app Settings → Models subtab
-  reads via /api/llm/models; the frontend has NO hardcoded list) now leads with the latest
-  small open models, ALL REAL ollama.com/library tags VERIFIED VIA SEARCH (ollama.com 403s
-  WebFetch here, so WebSearch was the verification path — NEVER fabricated, per the file's own
-  "previous catalog was hallucinated" caution + the no-fabricated-data non-negotiable):
-  granite4:350m + granite4:micro (IBM Granite 4.0, Oct 2025, Apache-2.0; micro=3.4B confirmed
-  2.1 GB Q4_K_M), gemma3:1b + gemma3:4b (Google Gemma 3), nemotron-mini (NVIDIA, 4B),
-  mistral:7b (Apache-2.0 — the smallest OPEN Mistral on Ollama; no smaller official open tag
-  exists, so none invented), keeping llama3.2:1b/3b (Meta, the DEFAULT_MODEL). Sizes are
-  honest ~approximations for the real tags (the field is an advisory hardware hint; the live
-  installed-models picker stays the source of truth). The installer's quick-download menu
-  (install.sh whiptail + the non-whiptail fallback + the OO_OLLAMA_MODEL example) refreshed
-  to gemma3:1b/granite4:micro/nemotron-mini/llama3.2:3b. CATALOG_AS_OF stays "2026-06"
-  (re-verified this month; freshness test green). No frontend/i18n change (backend-driven);
-  no test asserts catalog contents (test_llm_ollama gemma2:2b refs are mock names, not the
-  catalog). REMAINING: re-verify exact sizes on a networked machine when convenient.
-  **Q10 SHIPPED 2026-06-16 (backend):** `AppSettings.llm_model` (a persisted UI
-  preference, model-name-validated against injection; "" clears it) replaces env-only
-  `OO_LLM_MODEL` as the operator default; `api.llm.active_model()` resolves stored ||
-  DEFAULT_MODEL and the generate/summarize/translate/synthesize endpoints + the picker
-  (`/api/llm/models` gains `active`) honor it; settable via the existing PUT
-  /api/settings. tests/test_llm_active_model.py. REMAINING: the Settings LLM subtab UI
-  to choose it from the live installed-models list.
-  **BULK SUMMARIZE/TRANSLATE + READER SUMMARY/TRANSLATION TABS + EDITABLE PROMPTS
-  (maintainer field test 2026-06-17, branch `claude/confident-hopper-ef600p`, draft PR
-  onto 0.09, BROWSER-UNVERIFIED per fork-3) — answers the maintainer's "bulk article
-  summary/translation don't work · can't see the translated article · summaries/
-  translations recorded but NOT analysed/keyword-ingested · keep metadata · never
-  replace, show latest + fold the rest · LLM-offline pill not synced · model unload
-  unnecessary · prompts: detail/incorporate-into-metadata/tweakable":**
-  (1) NO bulk feature existed (single per-row Summarize/Translate in Search only). NEW
-  streaming `POST /api/llm/bulk` (op=summarize|translate) runs the local model over EACH
-  article in a matched set (article_ids OR query/filters, same selection as the analysis
-  window), stores ONE ArticleAnalysis per article (NEVER replacing a prior one),
-  NDJSON honest per-article progress (invariant #20), `skip_existing` tops up only the
-  missing, bounded `_BULK_MAX_ARTICLES=500`, aborts loudly if Ollama goes away mid-run.
-  Frontend: "Summarize all"/"Translate all" in BOTH the Search toolbar and the analysis
-  window action row → `bulkLlm`/`bulkLlmRun` (AbortController cancel, live tally). Ollama
-  is loopback (no egress, no consent popup — like the single path) but airplane mode
-  refuses it, surfaced. (2) READER (standalone, English-only) gained **Summary** +
-  **Translation** tabs (after Read): `GET /api/llm/articles/{id}/analyses?kind=` returns
-  newest-first with full provenance; the tab shows the LATEST + a folded `<details>` of
-  all earlier ones + a generate-now control (target-language `<select>` for translate).
-  NEVER keyword-indexed BY CONSTRUCTION (rows live in article_analyses, the indexer reads
-  only articles.content). (3) **EDITABLE PROMPTS (the user asked — there are THREE system
-  prompts: summary[1-or-many] · translate[1-or-many] · synthesis[several]; bulk reuses the
-  single prompt per article, so "4" → 3).** Settings → Models gained a "Behaviour &
-  prompts" section: keep-alive + 3 prompt textareas (empty = built-in default shown as
-  placeholder; `{target}` substituted in translate) saved via PUT /api/settings;
-  `GET /api/llm/prompts` exposes defaults+current. The EXACT system prompt used is now
-  recorded per result (`ArticleAnalysis.prompt_text`, migration a1b2c3d4e5f6 off head
-  f4a5b6c7d8e9 + `ensure_article_analysis_columns` self-heal since the live DB isn't
-  auto-alembic'd; shown folded in the reader) so provenance stays honest after a prompt
-  edit; version flags default-vs-custom (summary-v1 / summary-custom, translate-v1:X /
-  translate-custom:X). (4) **MODEL KEEP-ALIVE**: `OllamaClient.generate(keep_alive=)`
-  threaded through every call; stored `AppSettings.llm_keep_alive` default **"30m"** (the
-  maintainer's "unloading isn't necessary" — "-1" never unload, "0" unload now). (5)
-  **LLM-OFFLINE PILL SYNC BUG fixed**: `loadLlmHealth()` ran ONCE at boot and the app boots
-  in airplane mode → stuck "offline" even after going online + Ollama up. Now re-checks on:
-  going-online (`_paintNetwork` transition), opening Settings → Models, after every LLM
-  action, tab regaining focus (visibilitychange), and on CLICK (the pill is now clickable).
-  Settings JSON-file (no migration for keep-alive/prompts). +29 i18n keys ×12
-  (AI-drafted, flagged for native review; audit-chrome clean, gate 100%). Tests:
-  test_llm_api.py (bulk stream/skip/abort/target, analyses provenance, prompts endpoint,
-  custom-prompt recorded, keep_alive passed) + test_reader_tabs.py (new tabs). VERIFIED
-  here on py3.13 venv: 103 targeted tests pass · ruff F/B clean · mypy adds 0 new errors ·
-  node --check · alembic single-head · self-heal idempotent. REMAINING: human
-  click-through (fork-3); a per-article Summarize/Translate on the analysis Articles list;
-  bulk as a first-class task-manager job (currently a streaming request).
-  **PROMPTS v2 + LANGUAGE PIN SHIPPED 2026-06-17 (maintainer asked "critically assess +
-  optimize the prompts" → chose "apply as defaults"; branch claude/confident-hopper-ef600p,
-  draft PR onto 0.09, BROWSER-UNVERIFIED):** the three default system prompts were rewritten
-  honesty-first and bumped v1→v2 (provenance versions summary-v2 / translate-v2 / synthesis-v2;
-  the EXACT text is still recorded per result in prompt_text, so the change is fully auditable).
-  Changes: SUMMARY gains a language pin + investigative-essentials (who/what/when/where/figures)
-  + an ATTRIBUTION GUARD ("never turn a claim into a fact") + "if not a coherent article, say
-  so" + no-preamble; TRANSLATE pins title+body, paragraph structure, "already in {target} →
-  unchanged", no-preamble; SYNTHESIS now REQUIRES a per-claim citation [n] and FLAGS any claim
-  carried by only ONE source (its own anti-false-triangulation doctrine, in the prompt). NEW
-  `{language}` pin (`_build_prompting(output_language=)`): the SPA passes the current UI
-  language as an ENGLISH name (`_LANG_EN` map → "French" not "Français") for summary/synthesis;
-  unset → summary "the same language as the article" (faithful — what the standalone reader
-  uses), synthesis "English". `output_language` added to Summarize/Synthesize/Bulk requests
-  (translate already had target_language). No schema change, no migration, no new i18n keys
-  (prompts are backend; Settings textareas show the new defaults via /api/llm/prompts). Tests
-  updated v1→v2 across test_llm_api/test_llm_ollama/test_awareness/test_workflow_integration +
-  new language-pin + v2-content assertions. Verified py3.13: LLM/reader/invariants/wiring/smoke
-  green (the lone failures here were the [analysis]-extra-gated framing + scipy-correlation
-  routes returning 404 in this core-only venv — env gap, not the change), ruff F/B clean,
-  node --check, i18n 100%.
-  **LLM EXPANSION — DESIGN RULINGS 2026-06-17 (maintainer brainstorm; NOT BUILT — record
-  for the next session):** scoped to a hypothetical stronger rig (40 GB RAM / 8 GB VRAM, a
-  ~30B-class 256K-context instruct model). HONEST FRAME carried into the design: a 30B on
-  8 GB VRAM is CPU-bound (~minutes per long pass) so deep LLM work = BACKGROUND VISIBLE
-  TASK-MANAGER JOBS (no fabricated ETA — fits the existing job model); a bigger/more-fluent
-  model makes mistakes more convincing, so cited + verify-against-source matter MORE, not
-  less; model tags stay dated + freshness-tested (never assert a tag we can't verify).
-  RULINGS: (1) COMPUTE = TWO TIERS — a fast small model for interactive bits (status pill,
-  single summarize) + a heavyweight long-context model for background "deep" jobs, with a
-  per-job-class model setting. (2) LONG-CONTEXT UNLOCKS to build (all four, shared plumbing):
-  whole-corpus CITED synthesis (50–150 FULL articles in one pass, single-source flagged,
-  vs today's 20 excerpts) · corpus Q&A WITHOUT RAG (quoted+cited, refuses when absent) ·
-  long SINGLE documents whole (reports/filings/Wikipedia article+revisions/.eml threads,
-  consistent terminology) · CROSS-LANGUAGE synthesis (read FR+DE+AR+ZH together). PLUS
-  extend the LLM lens to named surfaces: Commodities/Markets/Indices (descriptive cited
-  "what the coverage says moved" over the price×coverage overlay — co-occurrence-NEVER-
-  causation, NO price prediction/signal; quantitative-claim extraction as candidates),
-  Agenda (LLM future-date extraction as confirmable candidates + event briefs), World Law
-  (grounded plain-language explainer · version-DIFF narration · cross-jurisdiction
-  comparison — long-context shines), WorldMap (place disambiguation/geocode as confirmable
-  candidates · place-centric corpus brief), Source integrity (cross-language/PARAPHRASE
-  coordination = the strongest LLM-additive where lexical MinHash fails · headline-body
-  mismatch · loaded-language spotter — STRUCTURE never intent/credibility, "name the shape").
-  (3) LLM SCOPE — **SUPERSEDED 2026-06-18 → AI ANALYTICS NOW LIVE IN OWN TABLES IN THE MAIN DB**
-  (maintainer ruled 2026-06-18, weighing UX + performance + the corpus-SELECTION use-case + the
-  summaries/translations precedent — REVERSES the strict-physical-separation ruling that follows).
-  KEY INSIGHT that decided it: UI integration is DECOUPLED from storage (a separate file is invisible
-  to users behind the API; what tipped it was the perf/ergonomics cost of two files for corpus-wide
-  AI-signal FILTERING/selection, which has no cross-file SQL JOIN). So AI-derived analytics live in
-  their OWN tables in the MAIN corpus DB — table `ai_keyword`, a REAL FK to articles (fast indexed
-  JOIN), rendered INLINE in the article view labelled "AI-derived · unreliable" (the existing
-  two-class convention). The integrity guarantee is preserved BY CONSTRUCTION (not physical
-  separation): own table (NEVER the trusted `keywords`/`keyword_mentions`) + NO score column + model
-  provenance + confirm-within-the-lens + an INVARIANT TEST that the trusted rule-based index NEVER
-  reads `ai_keyword` (tests/test_ai_layer.py — the index reads only `articles.content`, the same way
-  summaries/translations are already safe). MIGRATED 2026-06-18 (branch claude/ai-tables-into-main):
-  `src/ai_layer/db.py` (the separate engine) DELETED; `AiKeyword` moved onto the main `Base`;
-  store/jobs/api use the main session + the main single-writer gate; migration d0e1f2a3b4c5 creates
-  the `ai_keyword` table; the read endpoint no longer file-guards. The 2026-06-17 text below is the
-  PRIOR ruling, kept as the record — its "separate file / never-ATTACH / own gate" MECHANICS no
-  longer apply, but its HONESTY rules (no score, provenance, never feed the trusted index,
-  summaries/translations as the carve-out) STILL hold.
-  (3-prior, SUPERSEDED) LLM SCOPE — STRICT PHYSICAL SEPARATION (maintainer RULED 2026-06-17, OVERRIDES the
-  earlier same-day "provenance-partition / no separate DB" recommendation — do NOT revert to
-  it): the AI must NEVER write to the MAIN database EXCEPT to summarize/translate (those stay
-  in article_analyses — the one accepted AI surface in the main store, the maintainer's
-  explicit carve-out). ALL OTHER AI-derived analytics (LLM-extracted keywords/entities/claims/
-  cross-language dedup) live in a SEPARATE, PARALLEL database — a second encrypted SQLCipher
-  file under the SAME passphrase (the one connect() factory), NEVER ATTACHed/joined to the
-  main store (article_id is a soft int reference resolved in app code), surfaced ONLY as its
-  own clearly-labeled lens, rebuildable + disposable. Maintainer rationale: physical
-  separation is a STRONGER guarantee than a provenance column — separate engines can't be
-  joined by a forgotten WHERE clause. The trusted RULE-BASED keyword index stays canonical in
-  the main DB; the AI keyword layer is the parallel second DB ("a second keyword database to
-  manage this parallelism"). Both the read-only lens AND confirmable-candidate curation happen
-  WITHIN the AI layer; a confirmed AI item does NOT migrate into the main trusted tables (that
-  would "touch main", forbidden by the ruling) — it becomes "confirmed within the AI lens".
-  DESIGN TO SETTLE when built: the second file's encryption (same passphrase, no second key
-  surface) + its own single-writer gate (own engine; AI writes are batch jobs, no cross-DB
-  txn) + backup stance (its own oo-backup member vs excluded-as-rebuildable) + whether a
-  user-confirmed AI keyword may EVER cross into the trusted index (default NO). Enforce with an
-  invariant test: the main analytics/keyword index NEVER read the AI DB; the AI never writes
-  the main store beyond article_analyses summary/translation rows.
-  **SCAFFOLD SHIPPED 2026-06-17 (branch claude/llm-two-tier-model, draft PR onto 0.09; backend VERIFIED
-  py3.13 — the 7 tests ran GREEN here):** `src/ai_layer/` = the second store. models.py — `AiBase`
-  (DeclarativeBase, metadata DISJOINT from the main `Base`) + `AiKeyword` (the "second keyword database":
-  soft int `article_id` with NO ForeignKey, term/kind/language, model+prompt_version provenance, a
-  `confirmed` flag for confirm-within-the-lens, NO score column). db.py — a SEPARATE lazy engine on
-  `data_dir()/ai_layer.db` opened through the ONE `connect()` factory (SQLCipher under the SAME passphrase,
-  no second key surface; `OO_AI_DB_PATH` override for tests), its OWN `WriterGate` instance (NOT the main
-  process-wide singleton — different file, different write lock), created LAZILY on first use
-  (`init_ai_db`) so no empty encrypted file appears for users who never run an AI feature + zero boot-path
-  change; `ai_session_scope`/`get_ai_db` release the AI gate. store.py — `record_keywords` (idempotent per
-  article+kind+term) / `keywords_for_article` / `set_confirmed`. tests/test_ai_layer.py (7): round-trip +
-  confirm-within-lens + the SEPARATION invariants — `AiBase ∩ MainBase = ∅`, article_id has no FK + no
-  score column, the AI layer never `ATTACH DATABASE`s nor imports the main ORM, the trusted analytics + DB
-  layer never import `src.ai_layer`, and the production path creates a separate file while the AI gate (not
-  the main one) serialises the write. mypy +0 (115≤127), ruff clean, packaging auto-includes it (`src*`).
-  **FIRST WRITER SHIPPED 2026-06-17 (branch claude/ai-keyword-extraction, draft PR onto 0.09; backend
-  VERIFIED py3.13 — the 14 tests ran GREEN here):** the first real consumer of the AI store, proving the
-  separation end-to-end. `src/ai_layer/extract.py` — `extract_terms(client, title, content, *, model, …)` +
-  `parse_terms` (pure, stub-testable: asks the LOCAL model for salient keywords/entities, cleans list
-  markers, dedups case-insensitively, bounds; honest prompt = "output nothing" for an unusable page);
-  `EXTRACT_PROMPT_VERSION = "ai-keywords-v1"` recorded per row. `src/ai_layer/jobs.py` —
-  `extract_for_articles(work, client, …)` a generator that READS the snapshot + writes AiKeyword rows via
-  `ai_session_scope` (NEVER a main session), yielding honest NDJSON progress (invariant #20), idempotent
-  skip-existing, commit-per-article (short gate window, never held across the slow LLM call), aborts loudly
-  if Ollama goes away mid-run. `src/api/ai.py` (`/api/ai`, wired into the SPINE) — POST `/keywords/extract`
-  (streams; selection mirrors the analysis window: article_ids OR query/filters via `_query_articles`;
-  Ollama is loopback so NOT consent-gated, airplane refuses at the client), GET
-  `/articles/{id}/keywords` (the read-only lens; SIDE-EFFECT-FREE — returns empty WITHOUT creating the file
-  if no AI feature ran), POST `/keywords/confirm` (confirm-within-the-lens). tests/test_ai_keyword_extract.py
-  (8): parse/extract units, the batch writes the AI store + skip-existing + abort-on-unavailable, and the
-  HTTP test PROVES the feature-level separation — after extraction the article has AiKeyword rows but ZERO
-  main `KeywordMention` rows. mypy +0 (115≤127), ruff clean, wiring+llm regression green.
-  **MIGRATED INTO THE MAIN DB 2026-06-18 (branch claude/ai-tables-into-main, per the (3) reversal above;
-  backend VERIFIED py3.13):** the separate `ai_layer.db` is gone — `AiKeyword` is now a main-`Base` table
-  (`ai_keyword`, real FK to articles), `src/ai_layer/db.py` deleted, store/jobs/api on the main session +
-  the main write gate, migration d0e1f2a3b4c5; the feature-level proof STANDS (the HTTP test still asserts
-  ZERO `KeywordMention` for the extracted article) and the invariant test now pins "the trusted analytics
-  never read `ai_keyword`". The backup-stance remaining-item is MOOT (ai_keyword now rides the main
-  oo-backup-2 automatically). REMAINING: the read-only AI lens UI beside the trusted keywords (backend
-  ready); the deep-model tier (1) + whole-corpus cited synthesis (3).
-  ALL LLM features keep the standing
-  honesty invariants: grounded+cited, refuse-when-absent, no score/verdict/ranking, local
-  loopback, provenance recorded, caveats visible, never auto-fed into the pipeline.
-  SELF-UPDATE via GUI: consented check vs GitHub releases → signed
-  oo-backup-2 + install-tree snapshot BEFORE anything → verified release →
-  migrations on a STAGED copy → atomic swap + relaunch → rollback on failure;
-  data dir lives outside the code tree so the corpus/settings/keys survive by
-  construction; never silently decrypt across an update. 5 open questions filed
-  (channel, trust root, cadence, curl|bash-vs-git, mirror-anchoring).
+- **IN-APP OLLAMA/MODEL MANAGEMENT + APP SELF-UPDATE (ruled 2026-06-13/16/17; the build narration
+  is compressed per rule 5a — one `docs/ledger/shipped.csv` row per slice):**
+  **THE BINDING RULINGS (2026-06-16, Q6–Q10):** placement = a dedicated Settings SUBTAB (invariant
+  #18 grammar) · **Q7=B** the app DOWNLOADS + RUNS the official per-OS Ollama installer, verifying
+  checksum/signature BEFORE exec through the guarded factory, with consent + a VISIBLE explicit OS
+  elevation step, NEVER silent · **Q8=A + elaboration** the curated dated catalog PLUS a SEARCHABLE
+  consented live-ollama.com-library browse, filterable by provider · date · size (+ hardware-fit +
+  license), showing only app-APPLICABLE models · **Q9=YES** transport honesty — pulls egress
+  CLEARNET via the OLLAMA PROCESS, NOT our Tor proxy/guarded factory, so airplane+Tor do not cover
+  them; this is disclosed at consent (the USB offline kit stays the air-gapped path) · **Q10=YES**
+  the active model is a stored UI setting, not env-only.
+  **APP-COMPATIBILITY CLARIFICATION (standing):** our features use PLAIN `/api/generate` text
+  generation — NO tool/function-calling — so any instruct/chat TEXT model that fits the hardware
+  works; "compatible" means text-generation that fits RAM, never a special protocol. Filter OUT
+  non-applicable kinds (embedding-only, vision-only).
+  **AI-ANALYTICS STORAGE — SUPERSEDING RULING (2026-06-18; do NOT revert):** AI-derived analytics
+  live in their OWN tables in the MAIN corpus DB (`ai_keyword`, real FK to articles), NOT in a
+  separate parallel database. This REVERSED the 2026-06-17 strict-physical-separation ruling
+  (which had itself overridden an earlier provenance-partition recommendation — do not revert to
+  either). What tipped it: UI integration is decoupled from storage, and two files cost real
+  perf/ergonomics for corpus-wide AI-signal filtering, which has no cross-file SQL JOIN. The
+  separation GUARANTEE is preserved by construction, not by physical separation: an own table
+  (NEVER the trusted `keywords`/`keyword_mentions`), NO score column, model provenance,
+  confirm-within-the-lens, and an INVARIANT TEST that the trusted rule-based index never reads
+  `ai_keyword`. The superseded design's HONESTY rules all still hold.
+  **LLM EXPANSION — DESIGN RULINGS 2026-06-17 (recorded, NOT built):** scoped to a stronger rig
+  (~40 GB RAM / 8 GB VRAM, a 30B-class long-context model). Honest frame: such a model is CPU-bound
+  on that hardware, so deep LLM work = BACKGROUND task-manager jobs with no fabricated ETA; a more
+  fluent model makes mistakes more convincing, so cited + verify-against-source matter MORE, not
+  less. (1) TWO COMPUTE TIERS — a fast small model for interactive bits + a heavyweight
+  long-context model for deep jobs, with a per-job-class model setting. (2) FOUR LONG-CONTEXT
+  UNLOCKS sharing plumbing: whole-corpus CITED synthesis (50–150 FULL articles, single-source
+  flagged) · corpus Q&A WITHOUT RAG (quoted+cited, refuses when absent) · long SINGLE documents
+  whole · CROSS-LANGUAGE synthesis. (3) Extend the LLM lens to Commodities/Markets (descriptive
+  cited "what the coverage says moved" — co-occurrence NEVER causation, no price prediction),
+  Agenda (future-date extraction as confirmable candidates), World Law (plain-language explainer ·
+  version-DIFF narration · cross-jurisdiction comparison), WorldMap (place disambiguation as
+  candidates), and Source integrity (cross-language/PARAPHRASE coordination — the strongest
+  LLM-additive where lexical MinHash fails; STRUCTURE never intent/credibility).
+  **SELF-UPDATE via GUI (designed, NOT built):** consented check vs GitHub releases → signed
+  oo-backup-2 + install-tree snapshot BEFORE anything → verified release → migrations on a STAGED
+  copy → atomic swap + relaunch → rollback on failure. The data dir lives outside the code tree so
+  the corpus/settings/keys survive by construction; never silently decrypt across an update.
+  FIVE OPEN QUESTIONS still unanswered: channel · trust root · cadence · curl|bash-vs-git ·
+  mirror-anchoring. (The 2026-06-17 ruling #4 set the posture: MANUAL, user-driven, git-pull based,
+  NO signing key yet.)
+  **SHIPPED since (each with its own shipped.csv row):** pull/remove endpoints streaming Ollama's
+  real byte progress · the Settings → Models subtab (pull · remove · active-model picker ·
+  free-text pull-any-tag) · the dated `MODEL_CATALOG` (real verified tags only — the file's own
+  "previous catalog was hallucinated" caution stands) · `AppSettings.llm_model` + `active_model()`
+  · bulk summarize/translate + reader Summary/Translation tabs + editable prompts (v2, with the
+  `{language}` pin and per-result `prompt_text` provenance) · model keep-alive · the LLM pill
+  sync fix · the `ai_keyword` layer + its first extractor · the model-download QUEUE
+  (`src/llm/pull_queue.py`) · and **the Q7=B binary installer itself** (`src/llm/installer.py`,
+  2026-06-30 — the per-OS-checksum blocker was resolved by GitHub's attested `digest: sha256:…`
+  release-asset field; see the Lessons entry). ALL LLM features keep the standing honesty
+  invariants: grounded+cited, refuse-when-absent, no score/verdict/ranking, local loopback,
+  provenance recorded, caveats visible, never auto-fed into the trusted pipeline.
+  **REMAINING:** the Q8 live ollama.com library BROWSE (only the curated catalog + a free-text tag
+  box exist; the catalog docstring still points users at the website) · the read-only AI-keyword
+  LENS UI beside the trusted keywords (backend ready, no frontend) · the deep-model TIER (1) and
+  whole-corpus cited synthesis (2) · a per-article Summarize/Translate on the analysis Articles
+  list · bulk as a first-class task-manager job (today a streaming request) · the self-update
+  mechanics + its five rulings · browser click-throughs (fork-3).
 - **THE ONE CORPORA SYSTEM + READER TABS (the flagship analysis object;
   ruled 2026-06-11, extended through 2026-06-12):** one window architecture
   with consistent sub-tabs — **Mindmap · Related articles · Source
@@ -4641,276 +4219,45 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   API, SDMX, exchange open data, archives); truth-seeking is not
   self-certifying — the METHOD is the ethics; against hostile digestion the
   defense is REPRODUCIBILITY, not secrecy.
-- **KEYWORD POLICY (field report #4, 2026-06-12 — export analyzed, first fix
-  shipped):** maintainer position: NOT a fan of capping; data crunching uses
-  as many keywords as possible; if a cap ever became necessary it must be
-  DYNAMIC (the ChatGPT-2020 example: novel rising terms always capturable).
-  The ruled instrument is the EXCEPTION POLICY for function words in ALL
-  corpus languages — SHIPPED: evidence-based stoplists ×16 catalog languages
-  + inflection/month pass (extract.py; global_stopwords applies at query
-  time ⇒ 704 rows / 71,854 mentions retroactively hidden, no migration;
-  en+fr were already clean; junk ≈ 6% of mentions ⇒ capping would buy
-  little; NO CAP stands). The three queued systemic findings SHIPPED (T3,
-  2026-06-12): source SELF-NAMES suppressed at index time as a per-article
-  RULE (_self_name_forms: full name ± leading article + domain labels; other
-  sources' mentions of the outlet STAY — re-indexing applies retroactively);
-  per-source concentration suspects in the diagnostics export (≥90% one
-  source, ≥25% of its articles, both ≥10 — flagged with real counts, never
-  auto-hidden); language_mismatch flag per keyword (stored vs dominant
-  signature language — evidence, not a correction).
-  **KEYWORD-LOG OPTIMIZATION LOOP — TOOL + BATCH SHIPPED 2026-06-16 (draft PR onto
-  0.09; operationalizes the maintainer's "the logging system creates manageable
-  documents you can ingest" intent):** `scripts/analyze_keyword_log.py` (stdlib-only,
-  runs without the app installed) ingests a `keyword-diagnostics` export (oo-export-1)
-  and emits REVIEW-ready proposals — net-new per-language stopword candidates (diffed
-  vs the live `_EXTRA_STOPWORD_TEXT`+stopwords.py, split high-confidence vs review using
-  language_signature CONCENTRATION so names/loan-words that SPREAD demote to review),
-  weekday leaks, cross-source + per_source_concentration boilerplate, sentence-initial
-  false-entity candidates, cross-language ring candidates (top-concepts-per-language for
-  hand-mapping + LOW-confidence cognate hints), and singular/plural family-merge pairs.
-  It PROPOSES, never edits data (honesty by construction). FIRST BATCH APPLIED from the
-  2026-06-14 export (1,201-art corpus): a new dated `_EXTRA_STOPWORD_TEXT` block adds the
-  surfaced FUNCTION words ×14 langs (de können/sondern, ru чтобы/которые, hu szerint/
-  pedig, id dalam/oleh, sl tudi/kot, ar خلال/قبل, it/pt/pl/da/sr/es/fr…), the missing
-  WEEKDAY names ×16 langs (the month passes never covered weekdays — "Sunday"/"sábado"/
-  "lørdag" were top keywords), and sr comment-widget + da paywall BOILERPLATE; applied
-  retroactively at query time (no migration/re-index). Cross-language COLLISIONS
-  deliberately omitted (sea/tom/fin/laut — global_stopwords() is unioned across all
-  langs). tests/test_keyword_log_analyzer.py (10) covers the analyzer + a regression
-  guard that the batch words ARE filtered and the collisions are NOT. REMAINING (queued,
-  bigger): wire keyword_equivalents.yml into LIVE analytics (the "Trans-language
-  equivalence" entry — DONE, wired 2026-06-16); fix sentence-initial-capital false entities
-  (DONE — see ENTITY-DETECTION ruling below); singular/plural family merge (DONE 2026-06-16
-  — see below); the Item AC pre-tagged per-language baseline + keyword-management Settings
-  subtab (DESIGN DOC `docs/design/KEYWORD_BASELINE_AND_MANAGEMENT.md`; maintainer ANSWERED
-  the 6 questions 2026-06-17 — Q1 curated-small+analyzer-grown, Q2 BOTH axes [type+topic],
-  Q3 stoplists→data files, Q4 explore+hide/tag together, Q5 forward-only, Q6 deferred).
-  **ITEM AC S1 — TAG SCHEMA + BASELINE LOADER SHIPPED 2026-06-17 (draft PR onto 0.09):**
-  the positive-baseline MECHANISM. `KeywordTag` model (keyword_id FK · axis type|topic ·
-  tag · source baseline|user · uq(keyword_id,axis,tag,source); migration e3f4a5b6c7d8 off
-  the real head d2e3f4a5b6c7 — verified single-head); `src/analytics/baseline.py` = a
-  network-free dated loader (`BASELINE_AS_OF` + freshness test) over bundled
-  `configs/keyword_baseline/<lang>.yml` (en+fr seeds, both axes; casefold match; missing
-  file/`OO_KEYWORD_TAGS=0` = no-op, never invents); applied FORWARD-ONLY at keyword creation
-  in `store._get_or_create_keyword` (each tag a labelled assertion carrying `source`), +
-  read helper `store.tags_for_keyword` (grouped by axis, no score). tests/test_keyword_tags.py
-  (loader both-axes/casefold/disabled/freshness, forward-only+idempotent application,
-  non-baseline→no tags).
-  **ITEM AC S3a — KEYWORD-TAG API SHIPPED 2026-06-17 (draft PR onto 0.09):** the backend the
-  Settings subtab needs (built before the UI; concrete + testable). Five endpoints on the
-  insights router: `GET /api/insights/keyword-tags?normalized=` (one keyword's tags grouped by
-  axis + per-tag `sources` provenance baseline|user), `POST /keyword-tags` (add a USER tag —
-  validated axis∈{type,topic}, lowercased/bounded, idempotent, 404 on unknown keyword),
-  `POST /keyword-tags/remove` (delete a tag — any source, local curation; reversible; a removed
-  baseline tag is NOT re-applied since tagging is forward-only), `GET /keyword-tags/facets`
-  (distinct tags per axis with DISTINCT-keyword counts — the explore filter; empty axes still
-  listed), `GET /keyword-tags/keywords?axis=&tag=` (keywords carrying a tag with mention/article
-  counts + source, ordered by article spread). Counts only, NO score; tags are labelled
-  assertions, never rewritten. tests/test_keyword_tags_api.py (4, called directly over an
-  in-memory corpus — no TestClient/crypto import).
-  **ITEM AC S2 — BASELINE EXTENDED TO 7 LANGUAGES 2026-06-17 (draft PR onto 0.09):** added
-  curated `configs/keyword_baseline/{de,es,it,pt,nl}.yml` (en+fr already shipped in S1) — the
-  same clearly-typed core keywords (election/inflation/pandemic/drought/satellite…) in each
-  language, both axes where sensible, SINGLE-token only (a multi-word key with an internal
-  stopword never becomes a keyword, so it could never match). The type/topic tags are
-  language-independent; the words are confident common forms (AI-translatable, flagged for
-  native review). `tests/test_baseline_data.py` (3) GUARDS every baseline file in CI: parses,
-  axes ∈ {type,topic}, non-empty tags, the loader round-trips each language, and the 7 core
-  UI languages are present.
-  **ITEM AC — ANALYZER 'TAG GAPS' MODE SHIPPED 2026-06-17 (draft PR onto 0.09):** operationalises
-  the 'analyzer-grown baseline' (Q1). `scripts/analyze_keyword_log.py LOG.json --tag-gaps` lists,
-  per language, the top-frequency TERM keywords that have NO entry in
-  configs/keyword_baseline/<lang>.yml yet — the worklist of what to tag next. It cross-references
-  the baseline files via a stdlib line parser (`load_baseline_keys`, no yaml dep — the analyzer
-  stays runnable without the app), excludes entities, and gates on `--gap-min-articles` (default
-  3). The analyzer PROPOSES candidates only; a human picks the type/topic (no semantic source, no
-  invention). Verified live on the 2026-06-14 log (en baseline=22 → surfaces team/public/national…
-  as next candidates; also exposes residual stopword junk as a bonus). tests/test_keyword_log_analyzer.py
-  (+2: stdlib key parse incl. quoted key/comment; untagged-terms-only gate).
-  **ITEM AC — RETROACTIVE TAG BACKFILL SHIPPED 2026-06-17 (draft PR onto 0.09):** tagging at
-  ingest is FORWARD-ONLY (Q5), so a pre-existing corpus has no baseline tags until a backfill
-  runs. `store.backfill_baseline_tags(session, limit=)` does the one-pass retroactive tag —
-  reads the same bundled baseline, skips keywords it already tagged (idempotent), and the
-  existing-rows query runs ONLY for keywords that actually match the baseline (cheap). Exposed as
-  `POST /api/insights/keyword-tags/backfill?limit=` (limit 0 = all). Counts only {scanned,
-  tagged_keywords, tags_added}, never invents a tag. tests/test_keyword_tags.py +1 (tags election
-  not widget; idempotent second pass = 0 added). This makes the tag feature non-empty on existing
-  corpora (so S3b won't show a blank subtab).
-  **ITEM AC S3b — KEYWORD EXPLORER SUBTAB SHIPPED 2026-06-17 (conservative + browser-unverified per
-  fork-3):** the deferred Item AC frontend. A Settings → Keywords subtab (`data-tab="keywords"` /
-  `#set-keywords`, wired via showSetCat) explores keywords by their type/topic TAGS (the S3a API):
-  `loadKeywordExplorer` reads /keyword-tags/facets → clickable tag chips per axis → kxShowTag reads
-  /keyword-tags/keywords → a keyword list (term · lang · a/m · source) with a HIDE button (reuses
-  POST /api/insights/exclude, reversible); "Apply baseline tags" runs the backfill (POST
-  /keyword-tags/backfill). Panel content is un-keyed English MATCHING the adjacent super-group +
-  diagnostics keyword-curation UIs (so i18n stays 100% with ZERO new keys; the nav label reuses the
-  already-keyed "Keywords"). node --check clean; test_ui_invariants test_keyword_explorer_subtab
-  pins the subtab + the facets/backfill/exclude wiring. REMAINING: the per-keyword TAG add/remove UI
-  (the S3a write endpoints exist; this slice does explore + hide + backfill); S1b stoplists→data
-  files (Q3); S4 in-app analyzer-proposal review; browser click-through (fork-3).
-  **SINGULAR/PLURAL FAMILY MERGE — SHIPPED 2026-06-16 (maintainer "start with the plural-merge
-  risk analysis"; conservative + guarded; draft PR onto 0.09):** RISK ANALYSIS first corrected
-  the size — only **932** real pairs (the earlier ~2753 was an exploratory bug that stripped N
-  chars WITHOUT verifying the word ends in s/es), and the scariest over-merges DON'T ARISE
-  (new/news, use/uses: the singular is a stopword so never a keyword) and the name-plural risk
-  largely dissolved with the entity change (most "entities" are terms now). `build_families`
-  gains pass 1.5: a single-token regular plural (-s/-es/-ies, `_plural_bases`) joins its
-  singular family ONLY when BOTH are plain TERMS of the same kind (never entity NAMES), the
-  base EXISTS as a same-kind term (so a non-plural word ending in -s won't merge unless its
-  stem is real), and the base isn't a known meaning-changer (`_PLURAL_DENYLIST` =
-  mean/right/force/good/arm/… — evidence-based + log-tunable like the stoplists). Reversible
-  via a split override (any override excludes a form from the auto pass); `OO_FAMILY_PLURALS=0`
-  disables. tests/test_families.py (+3: collapse state/states+country/countries, never
-  entities/denylisted, override+env kill-switch). Mentions summed, articles = max member
-  (the existing honest family convention).
-  **ENTITY DETECTION — TITLE-CASE DROPPED, ACRONYMS KEPT (maintainer RULED 2026-06-16
-  "proceed with your recommendation" after a data review; SHIPPED draft PR onto 0.09):**
-  the baseline `kind=entity` flag was PURE capitalization — and the keyword-diagnostics
-  log proved it broken for the multilingual corpus: only `entity`/`term` ever assigned
-  (NO person/org/location semantics), ~60–75% of per-language "entities" were common
-  words (German capitalises EVERY noun — 711 German "entities" were nouns like
-  Behauptung/Medien/Menschen; Romance sentence-initial/day/month caps leak; Arabic/CJK
-  have no case). KEY de-risking facts from the log: (a) the When×Where×Who flagship is
-  INDEPENDENT (it reads ArticleEntity/ArticleMentionedPlace from the timemap extractors,
-  NOT Keyword.is_entity), so this change does NOT touch Who/Where; (b) the WHO-vs-who
-  acronym-homograph cost of casefolding is TINY (only US→us, S.I→si collide; "who" isn't
-  even a stoplisted word). RULING IMPLEMENTED in `BaselineExtractor._entities`: Title-Case
-  is no longer an entity signal; entities are now ONLY stand-alone ALL-CAPS **acronyms**
-  (context-aware — an all-caps token ADJACENT to another all-caps word is a headline/shout
-  run, skipped; a small `_ACRONYM_STOP` excludes ok/vs/ceo/…; digit/hyphen acronyms G7/
-  COVID-19 allowed), with the normalized form kept **UPPERCASE** so an acronym stays
-  distinct from a lowercase homograph (`WHO`≠`who`, `US`≠`us`) and survives the stopword
-  filter — the principled answer to the WHO/Who question. Real person/org/place kinds come
-  from the gazetteer / spaCy (language-aware), promoted in `extract()` (a term whose
-  normalized form is in the gazetteer gets its kind). Multi-word Title-Case names survive
-  as topical TERM n-grams (never lost). Dead Title-Case machinery removed
-  (`_at_sentence_start`/`_SENT_END`/`_CONNECTORS`). tests/test_analytics_extract.py updated
-  (multiword Title-Case→term; +WHO≠who, +US-survives, +German-nouns-are-terms,
-  +headline-not-acronym). DELIBERATE acceptance (testing phase): residual emphasis-acronym
-  noise is iterated away via the diagnostics logs (the maintainer's loop).
-  **STALE-TEST FOLLOW-UP FIXED 2026-06-17 (the base went red — #283 updated
-  test_analytics_extract.py but MISSED two ingest tests that still asserted the old
-  Title-Case behaviour; maintainer steer "look at recent PRs, hint: Keywords" = align
-  them with the new model, not revert it):** (1)
-  test_analytics_store.py::test_index_article_writes_mentions_with_facets used
-  "Emmanuel Macron" (Title-Case) as the entity → now uses the ALL-CAPS acronym "WHO"
-  (entity normalized UPPERCASE, WHO≠who); the facets assertions are unchanged. (2)
-  test_keyword_policy.py::test_index_article_suppresses_own_source_name_only used
-  "The Moscow Times" — but "times"/"the" are stopwords so since #283 dropped the
-  multiword-Title-Case ENTITY path that full name no longer survives as one keyword
-  (only the bare, deliberately-unsuppressed word "moscow"); renamed the outlet to
-  "The Moscow Herald" (content-word tokens) so the self-name suppression is still
-  genuinely demonstrated on the multiword term "moscow herald" the extractor now
-  produces, with "moscow" asserted to STAY content in both articles (the
-  single-shared-word guarantee). Tests-only; verified empirically against the live
-  extractor before editing. NOTE for the record: #283 DID narrow self-name
-  suppression for outlet names whose tokens are stopwords (e.g. literally "The Moscow
-  Times") — accepted as a consequence of the anglocentric-Title-Case removal, not
-  re-litigated here.
-  **ANALYTICS-TOOLS — LOG DIFF MODE SHIPPED 2026-06-16 (green-lit "implement better analytics
-  tools autonomously"; stacked draft PR onto 0.09):** `scripts/analyze_keyword_log.py --baseline
-  OLD.json NEW.json` is the "did my optimization work?" tool — it DIFFS two keyword-diagnostics
-  logs and reports the delta: kind SHIFTS (entity->term proves the Title-Case drop landed —
-  measured 9163→4466 entities / 4697 reclassified on the 2026-06-14 log), keywords GONE
-  (filtered by a stopword batch) vs APPEARED, per-language + corpus deltas, mention growth,
-  language_mismatch before/after. Case-sensitive keyed so a preserved acronym `WHO` stays
-  distinct from the word `who`. `mistagged_entities` is now ACRONYM-AWARE (flags single-word
-  NON-acronym entities — the case-noise the entity change removed — so it self-checks old vs new
-  logs). Reports deltas only, never infers. tests/test_keyword_log_analyzer.py (+4: kind-shift,
-  gone/appeared, acronym-distinct, acronym-aware mistag). Closes the maintainer's loop: send a
-  log next session, see the measured impact.
-  **KEYWORD PRE-SELECTION SELF-TEST + IN-APP TOOL SHIPPED 2026-06-17 (maintainer-asked "an
-  elegant test to challenge the preselection … verify it differentiates Who from WHO … and
-  other language tweaks … an in-app tool to automate the test and log results to send to
-  you"):** `src/analytics/selftest.py` = a DECLARATIVE golden-case harness (`Challenge`
-  dataclass — each line states in DATA exactly what it guards) run over the REAL pipeline
-  (BaselineExtractor / build_families / equivalence / baseline; no DB, no network, no score).
-  22 cases across 11 LANGUAGES (maintainer-flagged 2026-06-17: the stopword filters cover every
-  source language with a stoplist — a UNION applied to all extraction — so the harness must too,
-  not just English). English: who_vs_WHO (the org acronym stays distinct from the pronoun),
-  US-survives-stopword, sentence-initial-not-entity, digit-acronym-kept (G7/COVID-19),
-  headline-caps-not-acronyms, English-stopword-filtered (that), weekday-filtered. Multilingual
-  stopword/weekday filtering verified-present in global_stopwords(): de (können/sondern), fr
-  (mardi/samedi/chez), es (sábado/miércoles/pero…), it (sabato/perché), pt (sábado/porque/embora),
-  nl (maandag/zaterdag/omdat), ru CYRILLIC (чтобы/которые), ar RTL (خلال/قبل/بعد), hu
-  (szerint/pedig/hétfő), id (dalam/oleh/sabtu/minggu); + German-nouns-are-terms + a Romance
-  sentence-initial-not-entity (es mercados). HONEST LIMITATION SURFACED: stoplists are by BASE
-  form, so an INFLECTED weekday ("среду"/"szombaton") still leaks in inflecting languages — the
-  ru/hu cases assert only the function words actually present (non-vacuous), and the gap is noted.
-  zh/ja excluded (no segmentation). Structural: plural-family-merge, equivalence-ring
-  (election/élection/wahl), baseline-tag-applied. `run_keyword_selftest()` returns an exportable
-  log (schema `oo-selftest-1`, summary + per-case pass/fail+detail). THE IN-APP TOOL:
-  `GET /api/diagnostics/keyword-selftest` (+`?download=1` → dated attachment) added to the
-  Diagnostics-log panel (a 'Download keyword self-test (.json)' button + hint, matching the
-  existing un-keyed diagnostics buttons). All 12 PASS on the current pipeline (so a regression
-  reddens BOTH the in-app log the maintainer exports AND the unit test in CI).
-  tests/test_keyword_selftest.py (all-pass + who_vs_WHO + the runner detects a deliberate fail —
-  so a green run is never vacuous). Closes the loop the maintainer asked for: run it in-app,
-  send the log, I see exactly which keyword behaviour regressed.
-  **KEYWORD-ENGINE PRE-TRANSLATION/SYNONYM/SUPER-RING PROGRAM (maintainer ruled 2026-06-17 "proceed
-  with 1,2,3,4 in complete autonomy"; agreed to my plan incl. Wikidata-labels as the translation
-  source):** the 4-level hierarchy = keyword → family (morphology) → RING (cross-language concept +
-  synonyms) → SUPER-RING (theme of rings = a super-group whose members are rings). PLAN: (1) an
-  in-app efficacy+performance report [SHIPPED below]; (2) super-group members can be RINGS (the
-  super-ring model); (3) an OFFLINE Wikidata-labels ring generator + a dated few-hundred-ring
-  snapshot + freshness test (scales pre-translation reliably, sourced by QID, no LLM); (4) wire
-  ring/super-ring editing into the Item AC keyword subtab. Scopes to the 12 UI languages.
-  **STEP 1 — KEYWORD-ENGINE REPORT SHIPPED 2026-06-17 (draft PR onto 0.09):** `src/analytics/
-  engine_report.py:keyword_engine_report(session)` = a bounded, read-only diagnostic — composition,
-  ENTITY PRECISION (% of entities that are valid acronyms post the Title-case drop), cross-language
-  TRANSLATION COVERAGE (% of top-N keywords in a ring — the number that tracks the ring work, near
-  0 today), TAG COVERAGE, per-language FUNCTIONAL STATUS (functional / no_stoplist / unsegmented —
-  flags zh/ja honestly), the self-test summary, and indicative PERFORMANCE (extraction ms/article +
-  grouped-query latency). NO composite score; each block states its method. `GET /api/diagnostics/
-  keyword-engine` (+`?download=1`) + a Diagnostics-panel button. The hand-back loop: run it, send
-  the JSON, diff two over time to prove an optimization landed. tests/test_keyword_engine_report.py
-  (metrics shape, honest entity-precision + language-status, no score).
-  **STEP 2 — SUPER-RINGS SHIPPED 2026-06-17 (draft PR onto 0.09, stacked on Step 1):** a super-group
-  MEMBER can now be a cross-language RING (concept), not just a family — "rings of rings". Schema:
-  `KeywordSuperGroupMember.ring_id` (nullable; migration f4a5b6c7d8e9 off head e3f4a5b6c7d8 —
-  single-head verified). A ring member stores the ring id in BOTH `ring_id` (marker+link) and
-  `normalized_term` (so the unique key + remove-by-key path are unchanged). `_supergroup_totals`
-  rewritten to take member rows: a ring member AGGREGATES mentions/articles over ALL the ring's
-  cross-language terms (election+élection+wahl = 15 in the test), so a super-group with a ring spans
-  languages; `list_supergroups` surfaces `ring_id` + the `ring_members` (lg:term) per ring member;
-  `add_supergroup_members` accepts `rings:[ids]` (validated via `ring_meta`, 400 on unknown). Plain
-  family members unchanged. Backend only (the UI for adding rings lands in Step 4, the keyword
-  subtab). tests/test_super_rings.py (cross-language aggregation, unknown-ring 400, family still
-  works).
-  **STEP 3 — WIKIDATA RING GENERATOR + CURATED EXPANSION SHIPPED 2026-06-17 (draft PR onto 0.09,
-  stacked on Step 2):** the scaling path for pre-translation, no LLM, sourced. `scripts/
-  generate_wikidata_rings.py` = the GENERATOR (stdlib-only, runs on a NETWORKED machine — Wikidata
-  is 403-blocked in this sandbox, the established maintainer-machine pattern): per seed it finds the
-  Wikidata QID (`wbsearchentities`) then pulls multilingual LABELS + ALIASES (`wbgetentities`, CC0)
-  for the 12 UI languages → one ring (translations + synonyms), keyed by QID for audit. Pure parse
-  fns (`parse_search`/`parse_entity`/`build_ring`) offline-tested with API fixtures; only fetch_json
-  touches the net (injectable getter); `--seeds FILE` or `--from-log LOG.json --top N`. Output →
-  `configs/keyword_rings_generated.yml`, which `equivalence.load_rings` now reads ALONGSIDE the
-  curated file (refactored: `_parse_rings`/`_read_yaml`; generated read first, CURATED WINS on an id
-  collision). IMMEDIATE value (since I can't run the generator here): a hand-curated high-confidence
-  EXPANSION of keyword_equivalents.yml — 10→22 rings (government/president/inflation/economy/climate/
-  health/energy/vaccine/pandemic/sanctions/market/refugee across en/fr/de/es/it/pt/nl[/ru]) so the
-  engine report's translation_coverage ticks up NOW. tests/test_wikidata_ring_gen.py (parse fixtures,
-  generate+emit roundtrip, curated-expansion loads, generated-merge with curated-wins). REMAINING:
-  the maintainer runs the generator on a networked box → hundreds of rings (review before trusting;
-  the signature gate still protects).
-  **STEP 4 — RING/SUPER-RING EDITING IN THE UI SHIPPED 2026-06-17 (draft PR onto 0.09, stacked on
-  Step 3; conservative + browser-unverified per fork-3 — COMPLETES the 4-step program):** the Item
-  AC keyword subtab (S3b) was never built, so rather than a whole new subtab I EXTENDED the existing
-  Insights → Groups (super-groups) UI — smaller + reuses its conventions (the super-group UI is
-  un-keyed English + inline handlers; the ring additions MATCH that style, so i18n stays 100% and
-  risk is low). Backend: `GET /api/insights/rings` lists the rings (id · members · languages · size,
-  sorted by language breadth; from the config, no DB) so the UI can offer a ring picker
-  (tests/test_ring_ui.py). Frontend (src/static/app.js + index.html): `loadSuperGroups` now also
-  fetches /rings → a `#sg-ring-options` datalist; `sgCard` renders a ring member distinctly (⊕ id ·
-  "ring·N terms" · the cross-language members in the hover) and offers an "add a ring" input + button
-  beside the family one; new `sgAddRing` POSTs `{rings:[id]}` to the Step-2 super-ring endpoint;
-  remove reuses the existing path (a ring member's normalized_term == its ring id). node --check
-  clean; i18n 100%; test_ui_invariants `test_super_ring_ui` pins the datalist + the /rings fetch +
-  the handler. REMAINING (deferred, honest): the FULL Item AC keyword EXPLORER subtab (hide/tag
-  individual keywords, the S3b that was deferred) is still unbuilt — this step delivered the
-  ring/super-ring editing the program needed, not the whole explorer; browser click-through still
-  owed (fork-3). The pre-translation/synonym/super-ring program (Steps 1-4) is COMPLETE.
+- **KEYWORD POLICY (field report #4, 2026-06-12; the standing rulings — the June/July build
+  narration is compressed per rule 5a, one `docs/ledger/shipped.csv` row per slice):**
+  • **NO CAP (standing maintainer position):** NOT a fan of capping; data crunching uses as many
+    keywords as possible. If a cap ever became necessary it must be DYNAMIC (the ChatGPT-2020
+    example: a novel rising term must always be capturable). Measured basis: junk ≈ 6% of mentions,
+    so capping would buy little. The ruled instrument is instead the EXCEPTION POLICY — evidence-
+    based per-language stoplists, applied at QUERY time (`global_stopwords`), so a batch takes
+    effect retroactively with no migration and no re-index.
+  • **ENTITY DETECTION — TITLE-CASE DROPPED, ACRONYMS KEPT (ruled 2026-06-16; do NOT re-litigate):**
+    Title-Case is not an entity signal (German capitalises every noun; Romance sentence-initial caps
+    leak; Arabic/CJK have no case — the log showed 60–75% of per-language "entities" were common
+    words). Entities are ONLY stand-alone ALL-CAPS acronyms, context-aware (an all-caps token
+    adjacent to another is a headline run, skipped), with the normalized form kept **UPPERCASE** so
+    `WHO`≠`who` and `US`≠`us` survive the stopword filter. Real person/org/place kinds come from the
+    gazetteer/spaCy, not capitalisation. Multi-word Title-Case names survive as topical TERM
+    n-grams (never lost). DELIBERATE ACCEPTANCE: residual emphasis-acronym noise is iterated away
+    via the diagnostics logs, not by re-adding a case heuristic. CONSEQUENCE ACCEPTED: self-name
+    suppression is narrower for outlets whose tokens are all stopwords (literally "The Moscow
+    Times") — recorded, not re-litigated.
+  • **Item AC baseline/tagging answers (maintainer, 2026-06-17):** Q1 curated-small + analyzer-grown ·
+    Q2 BOTH axes (type + topic) · Q3 stoplists→data files · Q4 explore + hide/tag together ·
+    Q5 forward-only (hence the retroactive backfill action) · Q6 deferred.
+  • **HONEST LIMITATION (standing):** stoplists are by BASE form, so an INFLECTED weekday
+    ("среду"/"szombaton") still leaks in inflecting languages — the self-test's ru/hu cases assert
+    only the function words actually present, and the gap is stated rather than papered over.
+  **SHIPPED (each with its own shipped.csv row):** the ×16-language stoplists + weekday/inflection
+  passes · source SELF-NAME suppression at index time · per-source concentration suspects +
+  `language_mismatch` flags in the diagnostics export · `scripts/analyze_keyword_log.py` (propose-
+  never-edit) with its `--tag-gaps` and `--baseline` diff modes · the Item AC tag schema + loader +
+  API + 7-language baseline + retroactive backfill + the Settings→Keywords explorer subtab ·
+  singular/plural family merge (guarded, reversible, `_PLURAL_DENYLIST`) · the keyword-engine report
+  · the declarative keyword self-test (`/api/diagnostics/keyword-selftest`, 22 cases × 11 languages)
+  · and the 4-step pre-translation program (engine report → super-RINGS → the Wikidata ring
+  generator → ring/super-ring editing in the UI). The generator has since been RUN on a networked
+  machine (`configs/keyword_rings_generated.yml`), and Q3's stoplists→data-files migration landed
+  2026-07-23 (`configs/stopwords_extra/<lang>.yml`) — both formerly-open items are now closed.
+  **REMAINING:** the per-keyword TAG add/remove UI (the S3a write endpoints exist; the explorer
+  currently does explore + hide + backfill only) · S4, in-app review of analyzer proposals ·
+  a browser click-through of the keyword/super-group surfaces (fork-3).
 - **LANGUAGE-AWARE KEYWORDS — TRANSLATE, NEVER BLIND (maintainer ruled 2026-06-19):** a
   reader saw top keywords in Arabic they could not read. The REJECTED instinct was a
   blind-by-language FILTER (PR #398 — built then CLOSED: "we shouldn't blind a user from
@@ -6207,7 +5554,6 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `python3.13`/`python3.13-venv` are NOT in Tails' default repos — stated in QUICKSTART; a Tails "just works"
   claim would be fabricated. **fork-3:** the Slice-0 backup gate is source-guard/backend-contract tested but
   BROWSER-UNVERIFIED — a click-through of the Export/Import flow is owed.
-
 - **V1 PATHWAY — PLANNING SESSION 2026-07-14 (maintainer-directed, docs-only; plan of record =
   [`docs/design/V1_PATHWAY_2026-07-14.md`](docs/design/V1_PATHWAY_2026-07-14.md); draft PR onto 0.2,
   branch `claude/app-roadmap-v1-u8q111`):** the maintainer restated the MISSION (a free, local-first
@@ -6273,7 +5619,7 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   an HONEST GAP — link out, never scraped around.
   **ADDENDUM 3 — OPTIMIZATION-TAIL SESSION BRIEF (maintainer-asked 2026-07-14, same session):**
   the operating manual for one autonomous CLI session closing every CODEABLE-NOW optimization
-  left open = [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-14_OPTIMIZATION_TAIL.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-14_OPTIMIZATION_TAIL.md)
+  left open = [`docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-14_OPTIMIZATION_TAIL.md`](docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-14_OPTIMIZATION_TAIL.md)
   — 13 ordered slices: R5 LOOP_SELFTESTS backfill+enforcement (12 harnesses vs 4 registered) ·
   R1 KPI snapshot · R2 kpi_diff · R4 IMPROVEMENT_CYCLE.md · instrument_search live wiring ·
   the maintained per-Source article counter (unblocks source_io + the reader count) ·
@@ -6394,7 +5740,6 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   (candidate→trial→graduated, ruling Q3a, still the parked dedicated-session build) with the
   #663 auditor as its gate; this ruling strengthens the case for trial auto-enable when that
   frontier is built, but review-before-enable was not flipped unilaterally here.
-
 - **DOCUMENTATION REVIEW — SURVEY + ACTION PLAN (maintainer-asked 2026-07-17, docs-only; plan of
   record = [`docs/design/ACTION_PLAN_2026-07-17_DOCS_REVIEW.md`](docs/design/ACTION_PLAN_2026-07-17_DOCS_REVIEW.md),
   branch `claude/project-documentation-review-02fjca`, draft PR onto `main`):** a full survey of the
@@ -6662,7 +6007,6 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   tags at creation. So tag-based filters (analysis `tags` param, scheduler select_tags, wizard
   themes) now find law/wikipedia/statistics/newsletter articles. The law brief's S4 is struck
   SHIPPED (residual: a browser check of the class surfaces, fork-3).
-
 - **CALENDAR/AGENDA — MOON DEDUP + AUTO-IMPORT + EVENT PROVENANCE (maintainer field report +
   rulings 2026-07-17; SHIPPED same day, frontend browser-unverified per fork-3/Q6a):**
   (1) **"Three moon states on one day" ROOT-CAUSED + FIXED:** `mapImportedToAgenda`/
@@ -6696,10 +6040,9 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   dead-host filter); EXPANSION beyond it is a NETWORKED acquisition task (the law-batches
   pattern: parallel sessions verify ICS endpoints, never fabricated) — PENDING operator/next
   networked session.
-
 - **LEMMATIZATION DEFAULT-ON — MAINTAINER RULED 2026-07-18 (the measure-gate is SATISFIED;
   brief of record =
-  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEMMA_DEFAULT_ON.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEMMA_DEFAULT_ON.md);
+  [`docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEMMA_DEFAULT_ON.md`](docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEMMA_DEFAULT_ON.md);
   execution delegated to a CLI session, PENDING):** the maintainer ran `lemma_preview` on the
   live ~500k corpus (top 500 → 35 groups / 71 keywords) and REVIEWED the merges — clean
   (plurals + verb forms/irregulars; nothing meaning-changing; the media→medium class already
@@ -6719,11 +6062,10 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   honestly; core installs (no simplemma) no-op regardless of the default (the Core-only lane
   proves it); the trusted index is untouched (display layer only, invariant-pinned). The
   BM25F default choice stays SEPARATE (retrieval-side, still wants the graded gold set).
-
 - **ENTITY FAMILIES AT REAL SCALE — FIELD EXPORT + SESSION BRIEF (maintainer 2026-07-18, the
   Insights→Families subtab on the live ~500k corpus; "I'd prefer everything to be automated. Or
   this should be moved into the settings"; brief of record =
-  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_FAMILIES_ENTITIES.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_FAMILIES_ENTITIES.md);
+  [`docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_FAMILIES_ENTITIES.md`](docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_FAMILIES_ENTITIES.md);
   execution delegated to a CLI session, PENDING):** three problem classes, each anchored:
   (1) TOP-ENTITY NOISE — caps publishing furniture ranks top-5 (FOTO 4274 · VIDEO 4122 · LIVE ·
   INFO · PREMIUM · PDF · RSS) + pure Roman numerals (XIV/III): the 2026-06-16 acronym ruling's
@@ -6748,12 +6090,11 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   invariant #8, beside the Keywords explorer) showing only rows with a real decision; Insights
   keeps the data view; automation does the bulk (nothing manual required). Out of scope: real
   NER kind population (the LLM-perception track), §8 triage, lemmatization (own brief).
-
 - **SUPER-GROUPS: HONEST STATS + A LEADS FAMILY + NAVIGATION — FIELD EXPORT + SESSION BRIEF
   (maintainer 2026-07-18, the Insights→Groups surface on the live ~500k corpus; ruled: super-group
   statistics ("is a theme rising?"), a Leads family for super-groups, keyword→super-group
   navigation; brief of record =
-  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_SUPERGROUPS.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_SUPERGROUPS.md);
+  [`docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_SUPERGROUPS.md`](docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_SUPERGROUPS.md);
   execution delegated, PENDING — SEQUENCED AFTER the Leads-calibration + Families-entities
   executions, whose primitives it consumes):** the ~77-group scaffold is healthy but the layer has
   NO statistics, and the export exposed the totals as broken: (1) GENERIC CONTAMINATION — "data"
@@ -6775,7 +6116,7 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   → the SAME Settings home the Families session builds (never a second home). Frontend
   conservative+flagged (Q6a).
   **AMENDED same day (maintainer rulings after the ring-country-map review — brief =
-  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_GROUPS_LAYER_AMENDMENT.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_GROUPS_LAYER_AMENDMENT.md),
+  [`docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_GROUPS_LAYER_AMENDMENT.md`](docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_GROUPS_LAYER_AMENDMENT.md),
   same executing session):** (a) **NAMING RULED: keyword → GROUP → SUPER-GROUP** (user-facing,
   ×12; "ring" leaves the UI entirely, stays internal — the Lead-rename precedent; theme/concept
   was REJECTED: ambiguous containment + uneven translation; super-X-contains-X reads in every
@@ -6796,11 +6137,10 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   largest bucket); every ⦾ chip app-wide deep-links to the map; the located-share honesty line
   states that map coverage grows as source countries are filled (the ~49% unlocated share = the
   standing Wikidata source-country generator lever, operator-side).
-
 - **LEADS/CARD-SYSTEM CALIBRATION AT REAL SCALE — FIELD EXPORT + SESSION BRIEF (maintainer
   2026-07-18, a Home-Leads dump from the live ~500k-article corpus, "it clearly shows the card
   system's current limitations"; brief of record =
-  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEADS_CALIBRATION.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEADS_CALIBRATION.md)):**
+  [`docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEADS_CALIBRATION.md`](docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_LEADS_CALIBRATION.md)):**
   VERDICT (assessment delivered + maintainer approved the brief): the HONESTY layer held, the
   SELECTION layer broke — producers were calibrated at ~2k articles; at 500k the base rates
   invert. SEVEN defect families, each anchored + exampled from the export (the brief's §0 table
@@ -6836,7 +6176,7 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   method disclosures that made the dump diagnosable. PENDING: the brief's execution (CLI session).
   **AMENDED same day (maintainer field export of Insights→Convergence, default 7-day window, on
   the same ~500k corpus — "Plenty of bugs and optimizations to do"; amendment brief =
-  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_CONVERGENCE_AMENDMENT.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-18_CONVERGENCE_AMENDMENT.md),
+  [`docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_CONVERGENCE_AMENDMENT.md`](docs/archive/session-briefs/AUTONOMOUS_SESSION_BRIEF_2026-07-18_CONVERGENCE_AMENDMENT.md),
   executed by the SAME Leads-calibration session — it shares the S4.2 place-canonicalization
   primitive):** **NEW RULING (maintainer, verbatim intent "I don't like cap counts, I'd prefer
   having real, reliable data"): REAL, RELIABLE DATA — NEVER CAPPED FIGURES.** A cap may bound
@@ -6856,7 +6196,6 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   "includes future-dated mentions" label on future-extending windows — legitimate deduced dates
   that otherwise read as an error). The producer cards inherit every shared fix; execution
   PENDING with the parent brief.
-
 - **THE OBSERVATORY — THE CORPUS AS A NIGHT SKY, A DEDICATED TAB (maintainer ruled 2026-07-18 —
   SUPERSEDES Q5a (2026-07-13), which had deprioritized the 3D keyword explorer; revives the
   2026-06-16 flagship under its own resolution A (hand-rolled canvas 2.5D, NO WebGL/Three.js);
@@ -6889,7 +6228,6 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   PREREQS before build: the super-groups S1 stats core (the Observatory is its 2nd consumer) +
   the §8 triage / caps-furniture sky-quality cleanups. The maintainer click-through is the ship
   gate for every frontend slice (this surface is NOT conservative-flaggable).
-
 - **VERSION SEQUENCE RULED 2026-07-18 (maintainer, verbatim "I'll run the P0, then mark alpha
   0.2, then move to alpha 0.3"): P0 live validation → TAG `v0.2.0` → FLIP to `0.3.0`.** This
   closes the long-held 0.2 tag gate the honest way (the tag = the release the whole 0.2 cycle
@@ -7505,618 +6843,81 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   established (5 new verticals, the Observatory frontend, the LLM-rig-dependent runs, etc.) —
   none of those are touched. REMAINING: execution (nothing built yet — this is the brief only).
 - **FIELD FEEDBACK 2026-07-23 — seven impressions from multi-VM/multi-machine use (maintainer;
-  INTAKE + INVESTIGATION this session, code-verified against main@7405968; numbered questions put
-  to the maintainer, ANSWERS PENDING — record them here when they arrive):** (1) IMPORT REPORT —
-  downloadable per-import detail (successes/errors/redundancies + executive summary) offered in a
-  dedicated end-of-import popup: COMPOSES with the ruled 2026-07-20 POST-IMPORT RESULTS SCREEN
-  (same surface; the report becomes its download half — one build, not two). (2) IMPORT-TIME
-  ARTICLE SCREENING — what to do when an imported corpus (built by OLDER engines) carries
-  non-articles (link lists/marketplaces) that newer criteria would refuse; maintainer intuition =
-  disregard + count + optional export of the disregarded set for verification. Composes with the
-  0.3 close-gate row 5 (clean-up strategy DISCUSSED→AGREED before execution), the Slice-4a
-  reversible-quarantine carry-over, and the pending nav-soup prose gate; the
-  skip-vs-quarantine-in-DB decision is question 2 (session recommendation: quarantine-in-DB,
-  reversible, criteria-version-stamped — criteria WILL keep evolving). (3) LIBRARY TAB LIVE
-  GRAPHS instead of live figures (articles/hour past 7 days + live speed; database-count
-  evolution), box-sized, click-to-enlarge: the render substrate EXISTS (dashChartSvg tiny cards +
-  chartEnlarge→ooChart); the DATA gap is a history for non-article counts — articles/hour derives
-  retroactively from created_at, but source/keyword/link/price counts have NO history table →
-  needs a lightweight periodic snapshot recorder (honest: those graphs begin when recording
-  begins, never a fabricated backfill). (4) SCRAPING STALLS (minutes to dozens of minutes,
-  several installs) — investigate; candidates ranked: serial post-pass housekeeping between
-  passes (briefing refresh/wiki+law tracking/feed auto-import/idle maintenance), feed-level
-  backoff, Tor circuit trouble, VM suspend, the 2026-07-21 finding-3 stall cluster (cause still
-  unidentified); needs a diagnostics export from an affected instance + the item-3 graphs as the
-  detector. (5) LIBRARY "Downloaded" section COMPRESSES; Wikipedia pages/revisions-tracked and
-  law articles/revisions-tracked get OWN sections WITH graphs (series derivable from stored
-  revision timestamps). (6) ~50,000 "sources discovered" vs ~5,000 articles in 12 h on a fresh
-  install — VERIFIED: the discovery funnel CANNOT produce that (run_discovery is budget-bounded
-  ~10 candidates/pass; curated catalog seeds ~3.4k + 225 legal; world_news_sources.yml is NOT
-  generated/committed), so WHICH figure reads 50k is question 6 (best guess: distinct cited
-  domains from article_links — naturally ~10×/article); the ruled-but-unbuilt qualification
-  lifecycle + a two-class sources-vs-candidates display are the levers. (7) THROUGHPUT ~5,000
-  articles/12 h is too slow (want ≥10×; bandwidth visibly under-utilized) — VERIFIED: parallel
-  collection is ALREADY default-on with ceiling `collect_parallelism=50`, BUT
-  `collect_rate_mode` defaults to "target" at 500 KiB/s — the BandwidthGovernor deliberately
-  parks workers to hold ~500 KiB/s (the under-utilization is BY DESIGN; "maximum" mode ramps to
-  the ceiling and exists today). Other suspects before promising 10×: write-bound collection
-  (the F2 writer-gate saturation lesson; the deferred collector write-batching is
-  live-measure-gated and a collect_perf export from the slow instance is the measurement), and
-  PUBLISH-RATE bound (~3.4k enabled sources ≈ 1.5 new articles/source/12 h — more articles may
-  need more enabled sources [qualification funnel + the pending networked
-  build_world_news_catalog.py run] and/or crawl mode, not just more workers). NOTHING BUILT this
-  session — intake, verification and the question list only.
-  **ANSWERS RECEIVED + RULED same day (maintainer answered all 12 questions; the small ruled
-  slice SHIPPED same session, the rest queued):**
-  • **A1 (import report):** JSON + Markdown, PERSISTED on disk, and the persisted reports RIDE
-    the backup export/import. Folds into the ruled post-import results screen (one build).
-  • **A2 (screening disposition): QUARANTINE-IN-DB ruled** (reversible, criteria-version-
-    stamped, excluded from search/analytics/keywords by default); quarantined articles ALSO
-    ride backup export/import (they are data, never silently dropped).
-  • **A3: the screening runs RETROACTIVELY on existing corpora** (this is the 0.3 close-gate
+  brief of record = [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-23_FIELD_FEEDBACK_WORKFLOW.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-23_FIELD_FEEDBACK_WORKFLOW.md),
+  which carries the verified-current-state table + per-slice specs/acceptance):** the seven items
+  were (1) a downloadable per-import report, (2) import-time screening of non-articles carried in
+  by OLDER engines, (3) Library-tab live GRAPHS instead of figures, (4) scraping STALLS, (5) a
+  compressed "Downloaded" section + own wiki/law tracked sections, (6) "~50,000 sources" vs ~5,000
+  articles, (7) throughput ~5,000 articles/12 h is too slow (want ≥10×).
+  **THE 12 ANSWERS/RULINGS (maintainer, same day) — the binding spec:**
+  • **A1** import report = JSON + Markdown, PERSISTED on disk, and the persisted reports RIDE the
+    backup export/import; folds into the ruled post-import results screen (one build, not two).
+  • **A2** screening disposition = **QUARANTINE-IN-DB** (reversible, criteria-version-stamped,
+    excluded from search/analytics/keywords by default); quarantined articles ALSO ride backup
+    export/import (they are data, never silently dropped).
+  • **A3** the screening runs **RETROACTIVELY on existing corpora** (this is the 0.3 close-gate
     row-5 cleanup; the agreed-strategy-before-execution step still applies to the criteria).
-  • **A4 (criteria scope): BOTH extraction-validity AND borderline classes, tested together
-    via an ITERATIVE loop** — build a TEMPORARY criteria-calibration DIAGNOSTIC first: a
-    downloadable top-100 of disregarded/would-be-disregarded articles with statistics +
-    per-article detail, so the criteria are optimized on real specimens before any execution
-    (propose→human-review→apply, the stoplist discipline applied to articles).
-  • **A5 (Library graphs): confirmed; snapshot recorder with INFINITE retention** (hourly
-    counter snapshots are tiny — ~10 counters × 8,760/yr ≈ trivial rows; no downsampling
-    needed; article-series backfills from created_at, other counts begin at recording start).
-  • **A6 (stalls):** every instance runs over Tor (identity protection); maintainer judges the
-    stalls NOT Tor-linked; the diagnostics export is deferred until after the current builds.
-  • **A7 RESOLVED (the 50k figure) — the maintainer's sources CSV analyzed (46,213 rows):**
-    42,612 DISABLED `via:wikidata-discovery`+`world-catalog` candidates + 3,599 ENABLED
-    (3,200 curated · 205 legal-generated · 88 markets · 58 spectrum · 47 legal · 1 other).
-    So "50k sources" = the world-discovery machinery WORKING AS RULED (2026-07-15
-    "significantly increase the source count" + the default-on ride-along), blended into one
-    Library "Sources" count — a DISPLAY problem, not a registration bug. Composition note:
-    source_type institution 20,777 / news 17,021 / religious 7,957 — the Wikidata specs'
-    breadth makes the qualification membrane ESSENTIAL before any of it enables. Fixes: the
-    TWO-CLASS display (enabled/qualified vs discovered candidates, never one blended number)
-    + the qualification funnel to digest the 42k backlog.
-  • **A8 (workflow order RULED): source QUALIFICATION first, THEN the Library graphs UI** —
-    both in the next workflow; the 2026-07-20 qualification rulings (admission gate · stamp ·
-    background job · re-qualification ladder · all-sources-qualified-by-definition) are the
-    spec.
-  • **A9 RULED + SHIPPED same session:** `collect_rate_mode` default flips "target"→"maximum"
-    (src/scheduler/settings.py; test_parallel_collect updated; existing installs keep a saved
-    choice — the new knob or Settings flips them) + the top-bar SPEED KNOB + the VERSION under
-    the sidebar logo (see the invariant-#4 amendment above; frontend browser-unverified per
-    fork-3). NOTE: a saved settings.json that predates the flip keeps "target" until the user
-    clicks the knob.
-  • **A10:** proceed WITHOUT the collect_perf measurement for now (the all-diagnostics zip is
-    slow on the old test machine; the maintainer will try later). The write-batching decision
-    stays measure-gated — the item-3 graphs + a later export are the measurement path.
-  • **A11 (throughput diagnosis, maintainer facts):** enabled sources publish >10 articles/day
-    (publish-rate bound REJECTED by the maintainer for the enabled set); measured average
-    download is a FEW kB/s — two orders below Tor capability → the bottleneck is app-side.
-    INVESTIGATION NOTE (recorded for the build session): the governor seeds 25 workers and
-    ramps toward w_max=50 in target mode when rate < target, so a few-kB/s average means
-    workers are BLOCKED elsewhere or the duty cycle is low — ranked suspects: per-host Tor
-    circuit builds (one isolated circuit per host × 3.4k hosts), robots.txt fetches per new
-    host, serial inter-pass housekeeping (also the item-4 stall suspect), feed-level backoff
-    shrinking the due set, the single-writer gate. The rate-mode flip is NECESSARY but likely
-    NOT SUFFICIENT — the throughput hunt continues instrumented (item-3 graphs + collect_perf
-    when available).
-  • **A12:** affected instance = 2-core/4 GB over Tor, but an 8-core modern machine shows the
-    SAME download rate — the machine is NOT the issue (weakens a pure CPU/write-bound theory,
-    strengthens the shared-structural suspects above); hardware-aware diagnostics welcome
-    (already ruled in the diagnose-the-diagnostics hardware-profile entry).
-  **DIAGNOSTICS EXPORT ANALYZED same day (supersedes A10's "do without" — the maintainer's
-  all-diagnostics zip from the slow 2-core/3.2 GB AMD 3020e Tor instance arrived and was
-  crunched; 30-run scheduler history + 199 collect_perf samples + 1 pass summary):**
-  (i) **STALENESS CORRECTION — the QUALIFICATION LIFECYCLE IS ALREADY BUILT + LIVE** on main
-  (`src/catalog/qualification.py`: admission gate in `select_sources`, `advance_qualification`
-  ride-along default `qualification_per_pass=5`, backoff ladder 1→2→4→6 months, categorical
-  stamps + append-only `SourceQualificationAttempt`; live evidence in the export: a
-  "qualification trial fetch failed for 'latimes.com'" log line). NEXT-WORKFLOW STEP 1 therefore
-  becomes VERIFY + SCALE + SURFACE, not build: at 5/pass (~4 passes/h) the 42.6k candidate
-  backlog needs ~90+ days — it wants the dedicated bulk qualification job / a higher
-  hardware-aware per-pass, plus the two-class sources display. (ii) **THROUGHPUT VERDICT
-  (three stacked causes, the rate-mode target was only one):** (a) the governor's MEM-LOW floor
-  parks permits at median 2 / max 8 on the 3.3 GB box (35 `mem-low` samples; pass verdict
-  "memory-bound", min avail 395 MB, RSS ~1 GB) — the "maximum" flip cannot lift this floor,
-  RAM is the worker ceiling on 3–4 GB machines; (b) SUPPLY: 92% duplicate rate (per-pass tally
-  e.g. entries 979 · duplicate 900 · stored 62 · not_modified 56), 9–117 new articles/pass
-  across 30 runs — the due feeds OFFER no more; 2,766 of the 3,599 enabled sources have an
-  rss_url and yield ≈2 new/day/feed on average (the maintainer's ">10/day" holds for big-name
-  feeds, not the median), so the 10× is more QUALIFIED+ENABLED sources (the funnel now running)
-  + crawl mode; (c) DUTY CYCLE: inter-pass gaps of 5–7.5 min EVERY cycle (65% fetching / 35%
-  between passes over the 30-run window) — the serial post-pass housekeeping (briefing refresh,
-  auto-imports, wiki/law tracking, discovery + world-discovery + qualification ride-alongs) IS
-  the item-4 "few minutes" stall, structural; the dozens-of-minutes stalls remain unexplained
-  (collect_perf's rolling retention covers ~one pass — too short; the item-3 graphs stay the
-  detector). During-pass burst rate was FINE (avg 1402 KiB/s, above the 500 target — with
-  'above-target' shrinks proving target mode was also costing; the maintainer's "few kB/s"
-  reading is the long-window average diluted by gaps + the 83/199 zero-rate samples). (iii)
-  **the diagnose-the-diagnostics build is CONFIRMED WORKING at field scale** (journal + hardware
-  header + runtime-coverage `complete:true`; total 961 s; slowest members leads-quality 268 s ·
-  date-extraction 229 s · home-cards 131 s — heavy analytics on 2 cores, consistent with the
-  housekeeping-gap finding). (iv) **small defects found in the export, queued:** htmldate.meta
-  "impossible to clear cache" log noise ×85 = 85 of the 93 logged "problems" (third-party
-  logger — filter it so the error log stays signal); the KPI K2 resolver dies with a TypeError
-  (reported as not-measurable — a real resolver bug); `locked_errors` 6 this session (the
-  is_locked_error family, keep watching); event-loop watchdog ~278 ms lag events (minor).
-  **SECOND-INSTANCE COMPARISON (same day — the maintainer's controlled experiment: a SECOND
-  all-diagnostics zip from an i7-13620H Qubes VM, 4 vCPU / 9.7 GB RAM, launched at the same
-  time as the AMD 3020e 2c/3.2 GB instance; the "hardware is not the issue" intuition is
-  CONFIRMED and the diagnosis sharpens):** (a) the memory floor vanishes on the big box (ZERO
-  `mem-low` samples, min avail 6.6 GB, permits median 11 / max 27 vs the slow box's median 2)
-  and passes run 2× faster over MORE sources (527–533 vs 354/pass) — yet stored articles/hour
-  is only ~1.7× (331/h vs 193/h; corpus 6,918 vs 5,731 ≈ 1.2×), nowhere near the ~3× compute
-  gap. (b) WHY — Amdahl at the pass boundary: the inter-pass gap stays 3–8 min on BOTH machines
-  (fast box duty cycle is actually WORSE: 48% fetching / 52% gap, since passes shrank but gaps
-  did not) — the gap work barely scales with CPU because it is SINGLE-CORE analytics (the
-  post-pass briefing refresh: home-cards 96 s vs 131 s in the diagnostics run — only 1.4×
-  faster on 2.7× compute) + SERIAL TOR FETCHES in the ride-alongs (calendar auto-imports,
-  wiki/law tracking, discovery + world-discovery Wikidata queries + qualification trials — each
-  a sequential ~5–15 s Tor fetch). DUTY-CYCLE FIX = the TOP lever (≈2× on fast hardware alone):
-  overlap the ride-alongs/briefing with the next pass or parallelize/bound them. (c) SUPPLY
-  confirmed hardware-independent: ~90% duplicate rate on BOTH (fast 15,214/16,980; slow
-  18,434/20,701) — both drain what the ~2,766 feeds offer. (d) **NEW: the fast box hits
-  "writer-bound" pass verdicts** (writer-saturated samples at permits ~27) — the LIVE
-  measurement the deferred COLLECTOR write-batching was explicitly gated on has now arrived;
-  as supply grows, the single-writer gate + full per-article indexing is the next wall →
-  write-batching graduates from measure-gated to evidence-justified. (e) the fast instance's
-  world-discovery shows added_total 66,697 / countries 245/249 (the candidate pool keeps
-  growing; qualification at 5/pass = 5 qualified/pass, 0 errors — working but far too slow for
-  the backlog). (f) BOTH instances still ran rate_mode "target" (saved settings predate the
-  default flip — the new top-bar knob is how existing installs switch). MAINTAINER'S OFFER of a
-  third 8-core/20 GB test: NOT needed for diagnosis (two points already separate the
-  hardware-dependent mem floor from the hardware-independent gap+supply ceiling); SAVE that
-  machine as the before/after benchmark for the duty-cycle fix.
-  **NEXT WORKFLOW (queued, ruled order, amended per the two exports; BRIEF OF RECORD =
-  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-23_FIELD_FEEDBACK_WORKFLOW.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-23_FIELD_FEEDBACK_WORKFLOW.md)
-  — the operating manual for the executing session(s), with the verified-current-state table +
-  per-slice specs/acceptance):** (1) qualification
-  VERIFY + SCALE (bulk job over the 42.6k–66.7k candidate backlogs / hardware-aware per-pass) +
-  the two-class sources display; (2) the Library graphs UI + the snapshot recorder (infinite
-  retention) + compressed Downloaded section + wiki/law tracked sections (items 3+5) — also the
-  stall detector; (3) the import-report (JSON+Md, persisted, backup-carried) folded into the
-  post-import screen + the quarantine-in-DB screening (import-time + retroactive) with the
-  temporary top-100 criteria-calibration diagnostic FIRST (items 1+2+A4); (4) the throughput
-  levers in evidence order: DUTY-CYCLE fix (overlap/parallelize the inter-pass housekeeping —
-  measured ≈2× on modern hardware) · supply growth via the funnel · COLLECTOR write-batching
-  (now evidence-justified by the fast box's writer-bound verdicts) · memory headroom on small
-  boxes (the mem floor is the worker ceiling; hardware-aware profiles) · crawl mode — plus the
-  first export's small defects (iv). TWO MORE STALENESS CATCHES folded into the brief's
-  current-state table (verified in-tree 2026-07-23): the nav-soup PROSE GATE is BUILT
-  (`src/services/prose_gate.py`, AND-gated function-word + sentence-punctuation density, wired
-  opt-in into `non_article_scan`) and the RETROACTIVE-QUARANTINE JOB exists as a BUILT-BUT-
-  DELIBERATELY-UNWIRED dry-run scaffold (`src/analytics/quarantine_job.py`, `_work_fn` seam, no
-  Article quarantine column yet) — its own docstring gates execution on maintainer sign-off,
-  WHICH THE A2–A4 RULINGS NOW PROVIDE, conditioned on the S3.1 calibration-review round.
-  **S1 SHIPPED 2026-07-23 (qualification verify + scale + surface; branch
-  `claude/oos-optimization-feedback-ygywq7`, draft PR onto `main`; the brief's own S1
-  slices):** S1.1 VERIFICATION found a REAL correctness bug while confirming the live
-  lifecycle: `run_qualification_pass` stamped a candidate `qualified` whenever its trial
-  fetch produced ZERO stored articles (`source_audit.per_source_metrics` omits a
-  zero-article source ENTIRELY, so the empty fails-list read as "healthy" and admitted
-  the source with no verification ever performed — the field log's own "qualification
-  trial fetch failed for 'latimes.com'" line was very likely this exact free pass).
-  Reproduced live, then FIXED: a candidate absent from the metrics (no evidence — a
-  totally-failed fetch, or no rss_url and no prior articles) is left `unqualified` (no
-  attempt row, no stamp) and re-offered on a later pass, tallied honestly as
-  `no_evidence`; four tests pin both directions (zero-evidence never qualifies; existing
-  prior evidence still judges normally). Also pinned (was true by construction, now
-  explicitly tested): a disqualified source's domain is never re-proposed by the
-  discovery channels (domain uniqueness). **S1.2** the bulk qualification BACKGROUND JOB
-  (`src/catalog/qualify_job.py:run_bulk_qualification`) drains the 42.6k–66.7k candidate
-  backlog the 5/pass ride-along would take 90+ days to clear — batches the SAME
-  `run_qualification_pass`, NO persisted cursor (`Source.status` IS the durable progress
-  marker, unlike world-discovery's per-country file cursor), pauses cleanly (never
-  auto-resumes) on cancel/airplane/the process-wide memory guard, and stops honestly
-  after 10 consecutive no-progress batches rather than spinning on permanently-
-  unresolvable candidates. New endpoints `POST/GET/POST /api/sources/qualify-bulk{,
-  /status,/cancel}` mirror `discover-world-sources`'s wiring exactly (same
-  `BackgroundJob` chassis, same status/progress shape); a Settings → Sources panel
-  starts/cancels it with live status. Resume-after-cancel + a no-score-key payload walk
-  are explicitly pinned (10 tests total). **S1.3** the two-class sources display —
-  `database_stats` gains `sources_qualified` (enabled AND status=qualified — exactly
-  `select_sources`'s own admission filter) and `sources_candidates` (enabled=False), so
-  the Library "Sources" tile stops blending actively-collecting sources with disabled
-  discovery candidates (the exact figure the maintainer's export showed as "~50k
-  sources" against a ~5k-article corpus). **STALENESS CATCH:** the 2026-07-20-ruled
-  qualified-citations tally + discovery-provenance trail (optional stretch inside S1.3)
-  were found ALREADY SHIPPED (`src/discovery/source_trail.py`, endpoints
-  `/{source_id}/{provenance,citation-tally}`, 13 tests, frontend-wired) — verified, not
-  rebuilt.
-  **ADVERSARIAL SKEPTIC PASS (before push) found a SECOND real bug, fixed same session:**
-  the S1.1 zero-evidence fix, correct in isolation, combined with `select_unqualified`'s
-  pure `ORDER BY id ASC` to create a LIVELOCK — `scripts/build_world_news_catalog.py`
-  never sets `rss_url` (grep-confirmed), so EVERY Wikidata-discovered candidate can
-  NEVER produce evidence via a trial fetch; once enough of the LOWEST-id candidates are
-  permanently unresolvable, they occupy every future batch's selection window forever,
-  starving any genuinely resolvable candidate behind them in id order. REPRODUCED LIVE
-  (30 feed-less sources blocked one resolvable source across 20 passes) before fixing.
-  FIX: a `no_evidence` outcome is now LOGGED as a `SourceQualificationAttempt` row
-  (`log_no_evidence_attempts`, NEW verdict value, `Source.status` untouched — no free
-  pass, S1.1's fix stands) and `select_unqualified` orders by LEAST-RECENTLY-ATTEMPTED
-  (a LEFT JOIN + `nullsfirst()`, mirroring `select_due_disqualified`'s existing subquery
-  shape) instead of pure id — a stuck candidate rotates OUT of the way after one attempt,
-  in favour of never-yet-tried candidates, and only comes back up once everyone else has
-  had a turn (still retried eventually — a transient failure deserves another chance,
-  it just can never again BLOCK the queue). `consecutive_disqualifications_from_verdicts`
-  was adjusted to SKIP (not break on) a `no_evidence` entry so the re-qualification
-  ladder position isn't wrongly reset by an inconclusive retry. Re-verified the exact
-  repro now resolves in 4 passes; 2 new regression tests pin the scenario at both the
-  `run_qualification_pass` level and end-to-end through `run_bulk_qualification` (using
-  the REAL pass function, a stubbed no-network `trial_fetch`, and a genuinely
-  pre-seeded article — not a mock of the judging logic itself).
-  **A THIRD finding (S1.3 sum-completeness) also fixed:** the two-class split did not sum
-  back to `sources` — an enabled-but-not-yet-qualified source (e.g. freshly seeded,
-  awaiting its first pass) was invisible in both `sources_qualified` and
-  `sources_candidates`. Added `sources_pending` (enabled AND status!=qualified, covering
-  both never-yet-judged and disqualified-but-still-enabled) so the three classes now
-  PARTITION the flat total exactly — pinned with an explicit sum-equality assertion.
-  A concurrency finding (the bulk job and the ride-along could theoretically select
-  overlapping candidates before either commits) was assessed as low-severity/no-data-loss
-  (the single-writer gate still serialises commits; worst case is a redundant attempt row)
-  and recorded as a documented, deliberately-not-addressed risk rather than built out,
-  per the reproducer-first-for-gate-hold-riders discipline.
-  VERIFIED (post-fix): full suite 4378 passed/107 skipped/0 failed (py3.13 venv) both
-  before AND after this fix round, ruff F/B clean, mypy 0 new errors (127==baseline),
-  bandit clean, i18n 100% (2111/2111 ×12, no new keys — the new UI strings use the
-  established un-keyed-diagnostics-panel convention). Frontend BROWSER-UNVERIFIED per
-  fork-3/Q6a.
-  **S2 SHIPPED 2026-07-23 (Library-tab evolution graphs + hourly snapshot recorder; branch
-  `claude/oos-s2-library-graphs`, draft PR onto `main`; the brief's own S2 slices):** new
-  `StatSnapshot` model (table `stat_snapshots`) — an append-only EAV row (metric,
-  hour-bucket `taken_at`, value) mirroring the vintage convention (`StatFigure`/
-  `SourceQualificationAttempt`); migration `f670ae07b75e` off the REAL alembic head
-  (`04c029205aa8`, read via `alembic heads`, never guessed) — `alembic check` confirms zero
-  drift. `src/database/snapshots.py:maybe_snapshot_library_stats` records one hourly
-  snapshot per tracked metric (articles/sources/keywords/wiki_pages/wiki_revisions/
-  law_documents/law_revisions), each a cheap `COUNT(*)` over a small/indexed table (never
-  the codec column-order perf trap); the `(metric, hour)` unique constraint IS the
-  freshness gate — no separate marker file, run inside `run_idle_maintenance` alongside
-  the existing keyword-cleanup/incremental-vacuum steps. `articles_per_hour` is DERIVED
-  live from `Article.created_at` (real history that already existed — backfills for free,
-  no gap); every snapshot-table metric honestly states `recording_began_at` instead of
-  implying a pre-recording gap means nothing happened. New `GET /api/library/history?
-  metric=&days=` serves both kinds through one contract (response window bounded — default
-  30d, clamped ≤10y — even though storage retention is infinite). Frontend: three new
-  dedicated Library-tab sections (Activity / Wikipedia tracked / Law tracked), small tiles
-  reusing the EXISTING `dashChartSvg` (invariant #16) + `chartEnlarge` — no new chart
-  renderer, no larger tile footprint; the "Downloaded" 9-tile grid is compressed into the
-  established collapsed-by-default `<details class="adv-collect">` disclosure (item 5's
-  ask), matching Settings' own legacy/advanced-section convention. Zero new i18n keys
-  (un-keyed English fallback, matching S1's own qualification-panel convention).
-  **A REAL SAFETY FIX caught pre-push by re-reading my own code against this project's OWN
-  documented lesson list (not by an external skeptic this time):** the recorder's per-
-  metric loop initially caught a concurrent-writer `IntegrityError` with a bare
-  `session.flush()` + `session.rollback()` — which per the standing "delete-then-reinsert"/
-  "restore-merge re-index" lesson family would have discarded EVERY prior metric's
-  already-flushed insert in the same loop, not just the colliding one. Fixed by wrapping
-  each row's insert in its own SAVEPOINT (`session.begin_nested()`), so a collision on one
-  metric never discards sibling metrics recorded earlier in the same call; PROVEN (not just
-  asserted) via `test_a_mid_batch_collision_never_discards_sibling_inserts` (seeds a
-  pre-existing colliding row, asserts every OTHER metric still lands). A repo-invariant
-  test pins the three graph hosts, the compressed Downloaded section, the render-function
-  wiring on tab-show, dashChartSvg/chartEnlarge reuse, and the composed real route (the
-  "slice-1c 404 lesson" — never assert two literal strings side by side).
-  VERIFIED: full suite 4423 passed/107 skipped/0 failed (py3.13 venv) — after fixing ONE
-  real cross-cutting failure the full run surfaced: a new test's `Path.read_text()` call
-  was missing `encoding="utf-8"`, caught by this repo's own house-wide
-  `test_all_text_io_declares_utf8_encoding` guard (a reminder that a full-suite run catches
-  defects no single test file run in isolation would). ruff F/B clean; mypy 0 new errors
-  (127==baseline); bandit clean; alembic upgrade-head + check both green; i18n 100%
-  (2111/2111 ×12, unchanged key count). Frontend BROWSER-UNVERIFIED per fork-3/Q6a.
-  REMAINING per the brief's ordering: S3 (import report + quarantine-in-DB screening, gated
-  on the top-100 calibration diagnostic shipping+being reviewed FIRST) then S4 (throughput
-  levers, duty-cycle fix first).
-  **S3.1 SHIPPED 2026-07-23 (the TEMPORARY criteria-calibration diagnostic; branch
-  `claude/oos-s3-import-report-quarantine`, draft PR onto `main`; the brief's own S3.1
-  slice — the binding gate before S3.4's real quarantine execution):**
-  `src/analytics/criteria_calibration.py:calibration_report` is a REPORT over the existing
-  detectors, never new judging — reuses `scan_non_article_candidates(..., include_prose_gate=
-  True)` verbatim, collects up to `top_n` (default 100) sample ids across every URL-shape
-  reason + the prose-gate subpass, fetches real per-article detail for that bounded id set
-  (id/title/url/source/word_count/language/function-word density/sentence-punctuation
-  density/which criterion fired), and aggregates per criterion/per source/per language — so
-  the maintainer optimizes the criteria on real specimens before ANY retroactive quarantine
-  runs on a real corpus. An id that vanished between the scan and the detail fetch (a
-  concurrent delete/prune) is silently skipped, never fabricated. `CRITERIA_VERSION`
-  (`"nav-soup-v1"`) is stamped so a future S3.2 quarantine write can record exactly which
-  criteria generation flagged an article. New `GET /api/diagnostics/criteria-calibration`
-  (plain `def` → threadpool, `download=1` dated attachment) is wired into the all-diagnostics
-  bundle (`_DIAG_COVERAGE_MAP` + a member using a smaller `prose_gate_limit` than the
-  endpoint's own default, keeping the bundle's own runtime bounded) — respects the 2026-07-17
-  completeness ratchet; per the 2026-07-20 button-consolidation ruling, no new per-report
-  Settings button was added (the one all-diagnostics button already carries it). VERIFIED
-  (py3.13 venv): the new test file (negative space — a real article is never collected
-  whatever its URL/length — plus the full field set, the top_n cap, the vanished-row skip,
-  aggregation correctness, no-score-field walk) + `test_non_article_scan.py` +
-  `test_repo_invariants.py` all green (235 tests); ruff F/B clean; mypy 0 new errors (fixed
-  one genuinely-new error — a `dict(session.query(...).all())` call mypy can't type — by
-  switching to the dict-comprehension pattern already proven clean elsewhere, e.g.
-  `src/catalog/csv_io.py:190`); bandit clean; i18n unchanged (2111/2111 ×12 — no frontend
-  strings added). **REMAINING (S3.2–S3.5, each its own follow-up PR per the brief's own
-  data-safety skeptic mandate for the schema/write-path slices):** the quarantine schema +
-  write step, import-time screening, the retroactive screening job (dry-run-default, real
-  execution gated on this report's review), and the import report + post-import screen.
-  **S3.2 SHIPPED 2026-07-23 (the quarantine SCHEMA + WRITE STEP; branch
-  `claude/oos-s3-quarantine-write`, draft PR onto `main`):** the reversible flag +
-  first `/api/articles` exclusion chokepoint the brief's S3.4 execution will need.
-  `Article` gains four additive nullable columns (`quarantined` bool ·
-  `quarantine_reason` · `quarantine_criteria_version` · `quarantined_at`) + a covering
-  `idx_article_quarantined` index — a new `ensure_article_quarantine_columns` boot
-  self-heal (mirrors `ensure_article_ip_columns`, wired before `ensure_hot_indexes`
-  since the new index references the new column) PLUS a matching migration
-  `95120f685050` (chained onto the real `alembic heads` tip, `alembic check` confirms
-  zero drift). `Article.quarantined.isnot(True)` is the ONE exclusion condition (NULL
-  == "never judged" reads identically to `False` — a pre-migration row is never
-  silently hidden). `src/backup/merge.py:_merge_articles`'s explicit column-map INSERT
-  now carries the 4 columns so a quarantine verdict rides the additive-restore merge
-  (a gap noted in passing: `server_ip`/`detected_language`/`content_multihash`/
-  `canon_version` are STILL absent from that same INSERT list — a pre-existing gap,
-  flagged not fixed, out of this slice's scope). `default_quarantine_candidates_batch`
-  (the S3 scaffold) gains a real `write=True` mode — a per-row bulk
-  `Query.update(..., synchronize_session=False)` (confirmed covered by the single-
-  writer gate's `do_orm_execute` listener, no new gate-wiring needed), idempotent (an
-  already-quarantined row is skipped and tallied separately as `already_quarantined`
-  vs `newly_written`), stamping `quarantine_criteria_version` from
-  `criteria_calibration.CRITERIA_VERSION` by default. `QuarantineJobManager` is now
-  WIRED into the app for real (`get_quarantine_manager()` singleton; new
-  `src/api/quarantine.py`: `POST /api/quarantine/start?write=` · `GET .../status` ·
-  `POST /.../{pause,resume,cancel}`, plus the generic `/api/jobs/{quarantine}/...`
-  task-manager dispatch — `_quarantine_jobs()` mirrors `_reindex_jobs()` exactly,
-  `"quarantine"` joins `_DB_WRITER_KINDS`). `write=False` (the endpoint default) is
-  BYTE-IDENTICAL to the pre-slice dry-run scaffold. `/api/articles` (search FTS
-  branch, plain browse branch incl. its S2.3 cached-total path, and the explicit
-  `ids=` bypass) now excludes quarantined rows — deliberately scoped to ONLY this one
-  chokepoint (search + browse + CSV/JSON export + card-seeded exact-id corpora all
-  route through `_query_articles`); the omnibar/watches/reporting/framing surfaces
-  (which call `search_ids` directly) and Home producers/analytics aggregations are an
-  HONEST, undone remainder — not silently claimed covered. **A real design catch made
-  BEFORE writing any code (not via a failing test):** the S2.3 cached-total
-  optimization branches on `if filters:` (a Python list) vs the cached path — so
-  unconditionally appending the quarantine condition to that list would have made
-  `filters` NEVER empty again, silently defeating the cache for the common
-  no-other-filter browse case; fixed by applying `Article.quarantined.isnot(True)` as
-  an ALWAYS-ON condition separate from the optional `filters` list, and making
-  `_browse_total_cached` itself quarantine-aware in its own cached query. **A second
-  catch, also design-time:** `start()`'s write-mode assignment was originally
-  cursor-gated (`if _cursor <= 0: self._write = bool(write)`) on the assumption only a
-  fresh run sets the mode — but `resume()` calls `start()` without passing `write=`,
-  so a legitimately-paused write-mode run with `_cursor==0` (no progress yet) would
-  have silently flipped back to dry-run on resume; fixed by making `start()` always
-  set the mode unconditionally from its own parameter and having `resume()` explicitly
-  re-supply the paused run's `self._write`, pinned by two dedicated regression tests
-  (write-mode and dry-run-mode both survive a pause/resume cycle). VERIFIED (py3.13
-  venv): `test_quarantine_job.py` (11, incl. write-mode stamping/idempotency, dry-run
-  never mutates, the two resume-mode-preservation regressions, and a route-composition
-  test mirroring `test_bulk_qualification_job.py`'s pattern since the manager singleton
-  isn't `Depends()`-wired) + a new `tests/test_article_quarantine_search.py` (4: FTS
-  exclusion, browse exclusion + total, explicit `ids=` exclusion, structured-filter
-  browse exclusion — via the `app.dependency_overrides[get_db]` isolated-engine
-  pattern from `test_api_search.py`) + the backup/merge + migration regression suites,
-  all green; ruff F/B clean; mypy 0 new errors (127==baseline, none attributed to any
-  touched file); bandit clean. **REMAINING (S3.3–S3.5, unchanged from the S3.1 note):**
-  import-time screening, the retroactive screening job's real execution (still
-  gated on the maintainer's review of S3.1's calibration report — nothing in S3.2
-  ran it), and the import report + post-import screen; plus the honest remainder above
-  (omnibar/watches/reporting/framing exclusion, the "clear junk keywords via reindex"
-  step, and any frontend trigger control — none built this slice).
-  **S3.3+S3.5 SHIPPED 2026-07-23 (import-time quarantine screening + persisted
-  downloadable import reports; branch `claude/oos-s3-import-report-quarantine-hook`,
-  draft PR onto `main`):** extends S3.2's reversible quarantine + the ALREADY-SHIPPED
-  2026-07-20 "post-import delta screen" (L6, restore-merge only, corpus-delta
-  before/after inside `merge_batches.report_json` — verified via source read before
-  building anything, so this slice does NOT rebuild it) to (a) the NEWSLETTER
-  folder-import path, which had NEITHER a corpus-delta nor any persisted report before
-  this, and (b) a standalone, DOWNLOADABLE JSON+Markdown report file for BOTH paths
-  (field-feedback A1: "the persisted reports RIDE the backup export/import" — the
-  restore-merge path's `merge_batches.report_json` column is not directly downloadable
-  or human-readable). `default_quarantine_candidates_batch` (S3.2) gains an optional
-  `article_ids: list[int] | None` parameter — when given, scans EXACTLY that explicit
-  set (chunked under SQLite's ~900-bound-variable cap, mirroring the `fts_ids`/`.in_()`
-  chunking precedent in `src/api/main.py`) instead of the `after_id`/`limit` range,
-  processing the WHOLE set in one call rather than truncating to `limit`; the
-  `after_id`/`limit` path is byte-identical when `article_ids` is `None` (11 pre-
-  existing tests unchanged, +3 new: exact-set scanning, chunking past 900, and
-  scoping-correctness — an id outside the given set is NEVER touched). New
-  `src/backup/import_reports.py`: `persist_import_report`/`list_import_reports`/
-  `read_import_report` (atomic temp-file+`os.replace` write, UTF-8, a traversal-guard
-  on read mirroring `src/backup/folder_backup.py`'s `_safe_member_path` resolve-and-
-  contain check) + a pure `render_import_report_markdown` (headline in the ARTICLES
-  unit — never a cross-table row-sum, the maintainer's own 2026-07-20 complaint about
-  "4,855,433 imported ... I'm sure it doesn't contain 5 million articles"). Wired into
-  `run_restore` (`src/backup/merge.py`, reusing the SAME `merged_rows` batch-id query
-  `reindex_imported_articles` already uses to get the new article-id set) and
-  `NewsletterImportManager._run` (`src/ingest/import_job.py`) — both best-effort
-  (try/except around corpus-delta/quarantine/report-persist, mirroring `run_restore`'s
-  existing `_corpus_snapshot` try/except pattern; a hiccup never turns a successful
-  restore or import into a failure). A "work induced" section reuses S1's
-  `sources_pending`/`sources_candidates` qualification counters — reported as
-  CORPUS-WIDE totals (no cheap before/after delta exists for them yet, stated
-  explicitly in the rendering, not silently scoped-as-if-per-import). The
-  `import_reports/` directory is wired into `src/backup/artifact.py`'s
-  `_collect_members` (mirroring the `_ANNOTATIONS_DIR` scan exactly) so reports ride
-  the encrypted oo-backup-2 export; `src/backup/folder_backup.py`'s `collect_items`
-  was checked and DELIBERATELY left untouched (it only covers large, re-downloadable
-  wiki/OSM/model blobs by design — small, private, generated reports don't belong in
-  that category). Two new read-only endpoints on the existing `/api/backup` router:
-  `GET /import-reports` (list) and `GET /import-reports/{filename}` (download,
-  `?format=md` for the Markdown rendering; 404 on an unknown/traversal-attempting
-  name, 400 on an unknown format). **A real coverage gap found + fixed during
-  self-review, BEFORE push (no separate skeptic agent this slice — the same repo,
-  same discipline, done by hand):** the first cut captured the newsletter path's
-  "before" article-id baseline FRESH at the start of every `_run()` invocation
-  (reasoning: "a resume's before-id should reflect reality at resume time") — but this
-  meant a PAUSED run's own articles (stored before the pause, never reaching the
-  success branch where quarantine/report run) were NEVER auto-screened at all, even
-  once a LATER resume completed, since the resume's fresh baseline would already sit
-  above them. Fixed by capturing the baseline (`_quarantine_before_id`/
-  `_corpus_before`) ONCE at the TRUE start of a logical import and PERSISTING it
-  across every pause/resume (a new `_quarantine_baseline_attempted` flag disambiguates
-  "not yet tried" from "tried and failed" — a failed capture is NEVER guessed as `0`,
-  which would have made `Article.id > 0` match every PRE-EXISTING article too; it
-  instead skips quarantine/report entirely for that run, never fabricating a
-  baseline). STASH-VERIFIED per this project's own discipline: temporarily reproduced
-  the old fresh-per-call behavior, confirmed the new pause/resume regression test
-  (`test_paused_then_resumed_import_screens_articles_from_both_halves`) FAILS exactly
-  as predicted (`AssertionError: assert False is True` on the pre-pause article's
-  `quarantined` flag), then restored the fix and confirmed it passes. VERIFIED
-  (py3.13 venv): the full targeted sweep (`test_quarantine_job.py` 14,
-  `test_import_reports.py` 8, `test_newsletter_import_job.py` 11,
-  `test_backup_v2_api.py` 8, plus the existing merge/restore/torture suites — 80 tests
-  total) green; ruff `--select=F,B --extend-ignore=B008` clean; mypy 0 new errors
-  across every touched file (127==baseline); bandit `-r -ll -q` clean; `alembic
-  check`/`heads` unaffected (no schema change this slice — reuses S3.2's columns
-  as-is); i18n unaffected (2111/2111 ×12, no frontend touched). **REMAINING (S3.4,
-  unchanged):** the retroactive screening job's real execution against a real corpus
-  stays gated on the maintainer's review of S3.1's calibration report — nothing in
-  this slice runs it; plus the honest remainder already on record (omnibar/watches/
-  reporting/framing exclusion, the "clear junk keywords via reindex" step, and any
-  frontend results-screen UI — deliberately out of scope, needs a browser
-  click-through per fork-3/Q6a).
-  **S4.1 SHIPPED 2026-07-23 (duty-cycle fix — the top throughput lever, evidence-ordered per the
-  brief's §5): `refresh_briefing` no longer blocks the next pass.** The two field-diagnostics
-  exports both measured a 3–8 min inter-pass gap, named as two stacked causes: "(i) the single-core
-  briefing refresh and (ii) the ride-alongs' serial Tor fetches." This slice fixes (i), the
-  simpler and more isolated of the two design directions the brief offered ("each independently
-  shippable"): `refresh_briefing` — a single-core, whole-corpus recompute (home-cards alone
-  measured up to ~268s on a 2-core box in an earlier diagnostics run) — used to run SYNCHRONOUSLY
-  at the tail of `_default_run_once`, so the very next pass's "collecting" phase could not start
-  until it finished. It is READ-MOSTLY (writes only its own file cache + the watch-evaluation
-  bookkeeping, both already single-writer-gated like every other write in the app), so
-  `BackgroundScheduler._refresh_briefing_async` now hands it to its OWN daemon thread with a FRESH
-  `session_scope()` (the pass's own session closes once `_default_run_once` returns, so the
-  background thread cannot reuse it) — the pass returns IMMEDIATELY after kicking it off, so the
-  scheduler loop's next `_do_run()` (the next collect pass) and `_run_off_peak_maintenance()` can
-  both start concurrently while the refresh finishes; this is SAFE by the existing single-writer
-  gate's own guarantee (reads never block, writes always serialize regardless of which thread/
-  session initiates them — the exact promise that already lets world-discovery/qualification run
-  their OWN concurrent sessions inside a single pass today). Non-overlapping, never queued: a
-  second attempt while one is still running is a no-op (`_briefing_bg_lock.acquire(blocking=False)`)
-  — a skipped cycle is harmless since the corpus grows incrementally between passes, the SAME
-  posture the world-discovery/qualification ride-alongs already use for their own per-pass budgets.
-  Tracked in the task manager (`kind="briefing"`, via `src.monitoring.tasks`, mirroring the
-  qualification ride-along's own register/finish pattern) instead of as a scheduler PHASE, since it
-  can now genuinely outlive the pass that started it — the pass's own phase now stays "background"
-  right through to its return (the `"briefing"` phase value + its now-unreachable `_PHASE_LABELS`
-  entry in `src/api/jobs.py` were removed). `tests/test_collect_first_ordering.py`'s two affected
-  assertions were updated to match the new intentional behaviour (the fixture now joins the
-  background thread before asserting on `calls`/`phases_at`, and `phases_at["briefing"]` now reads
-  `"background"` — the pass's phase at kickoff time — not the retired `"briefing"` phase value); a
-  new `tests/test_briefing_duty_cycle.py` (4 tests) proves the mechanism directly: the kickoff
-  returns before a deliberately-blocked refresh completes, a second concurrent attempt is skipped
-  (never stacked, and allowed again once the first fully finishes), a raising refresh never crashes
-  the thread AND still releases the lock (so a later pass isn't starved forever by one failure), and
-  the running refresh is visible in `tasks.snapshot()` while in flight and gone once it finishes. A
-  new `test_repo_invariants.py` guard pins the wiring (the async method + its lock/thread fields, the
-  non-overlapping acquire + task-manager registration inside it, and that `_default_run_once`'s own
-  body calls ONLY the async kickoff — never `refresh_briefing(` or `_phase_set("briefing")` directly).
-  VERIFIED (py3.13 venv): the new + updated test files plus a 22-file targeted scheduler/briefing/
-  jobs/collect sweep (133 tests) green, plus the full suite; ruff `--select=F,B --extend-ignore=B008`
-  clean; mypy 0 new errors on either touched file (127==baseline); bandit `-r -ll -q` clean; no schema/
-  frontend change (no alembic/i18n impact). **HONESTLY NOT MEASURED HERE (no fabricated numbers,
-  per the standing non-negotiable):** this ships the MECHANISM only — the brief's own designated
-  measurement path is "the maintainer's 8-core/20 GB machine is the clean before/after bench
-  (operator step)"; no duty-cycle percentage is claimed in this entry. **REMAINING (S4.1's own
-  cause (ii), S4.2, S4.3 — unchanged from the brief):** overlapping the network ride-alongs
-  (calendar/wiki/law/discovery/qualification's serial Tor fetches) themselves with the next pass's
-  fetch phase is NOT built this slice (a materially bigger structural change — moving live network
-  I/O across a pass boundary, not just a read-mostly recompute — deliberately left as its own
-  follow-up rather than bundled in); S4.2 (collector write-batching, now evidence-justified by the
-  fast box's `writer-bound` verdicts) is explicitly gated to land AFTER S4.1 "so its effect is
-  measured in isolation," per the brief; S4.3 (memory-headroom honesty for small boxes) is
-  documentation/profiling, not yet done.
-  **S4.3 SHIPPED 2026-07-23 (memory-headroom honesty for small boxes — no magic, per the brief):**
-  the field diagnostics found a real "memory-bound" verdict on the slow 2-core/3.2 GB box (the
-  governor's mem-low back-off — an unconditional -2-permits cut every tick memory falls below the
-  floor — parking parallel collection at ~2 permits, "protecting the machine"), but the
-  `collect_perf` bottleneck classifier only ever surfaced a bare verdict STRING, never a plain-
-  language statement of WHAT the RAM actually capped collection at. Added TWO new measured
-  aggregates to `CollectionMonitor` (`_mem_low_ticks` — how many ticks this pass observed mem-low;
-  `_mem_low_min_permits` — the SMALLEST permits value the governor's own unconditional -2 cut
-  actually reached this pass) and a plain-English `memory_headroom_note` in `_classify()`'s payload
-  ("this machine's available RAM capped parallel collection at N worker(s) this pass (M mem-low
-  back-off tick(s) observed) — never assume a bigger box will hit the same ceiling"), always
-  present (`None`/`0` when never observed this pass — absence reads as absence, never omitted).
-  DELIBERATELY NOT a projected/estimated worker count from total or available RAM (that would be a
-  fabricated capacity claim, exactly what the honesty non-negotiables forbid) — the note derives
-  ONLY from the governor's own REAL back-off events this pass, pinned by a new
-  `test_repo_invariants.py` guard asserting the note-building code never references
-  `mem_total_mb`/`total_mb` (no capacity formula). Rides the EXISTING `/api/diagnostics` collect-
-  perf payload with zero new endpoint (`src/api/diagnostics.py` already passes the whole
-  `bottleneck` dict through). The optional "fold it into the power-profile surface" half of the
-  brief's ask was DELIBERATELY SKIPPED — `power_profiles.py` resolves STATIC configured knob values
-  for a chosen profile, and a live per-pass measured fact (this pass's actual mem-low back-off
-  count) doesn't fit that module's single responsibility; straining it to also surface live
-  telemetry would blur the boundary rather than serve the ask, so the collect-perf verdict (where
-  an operator/diagnostics viewer already sees the real pass numbers) stays the one home for this
-  note. Tests: `test_classifier_memory_bound` extended (asserts the note + both new fields on a
-  genuinely mem-low pass) + a NEGATIVE-SPACE test (`test_memory_headroom_note_absent_when_ram_was_
-  never_low` — a healthy pass reports `mem_low_ticks == 0` and `memory_headroom_note is None`,
-  never a guessed ceiling) + a worst-floor-tracking test (`test_mem_low_min_permits_tracks_the_
-  worst_observed_floor` — proves the field tracks the SMALLEST value reached across the pass, not
-  just the first/last, since the governor cuts by 2 on every mem-low tick down to a floor of 1).
-  VERIFIED (py3.13 venv): `test_collect_perf_monitor.py` (11 tests, +3 new) + the invariant guard +
-  a targeted diagnostics/memory-hygiene sweep green (the ONE failure hit,
-  `test_doctor_healthy_returns_zero`, is the documented pre-existing subset-order flake — passes in
-  isolation, unrelated to this change) + the full suite; ruff `--select=F,B --extend-ignore=B008`
-  clean; mypy 0 new errors (127==baseline, all 22 baseline errors on the touched file's import
-  closure sit in an unrelated `src/crypto/provenance.py`); bandit `-r -ll -q` clean; no schema/
-  frontend change. **S4-SERIES CLOSE-OUT NOTE:** S4.1 and S4.3 are now both shipped; S4.2
-  (collector write-batching, the program's own "riskiest hot-path change") remains the sole
-  outstanding S4 item — deliberately deferred rather than rushed, given the brief's own
-  full-skeptic-matrix mandate for it and this session's lack of a parallel-review workflow phase
-  this cycle.
-  **§6 SLICE S5 SHIPPED 2026-07-23 (small defects from the two exports; 3 of 4 items fixed, 1
-  investigated-and-benign):** (1) **htmldate.meta log-noise filter** — `trafilatura.meta.
-  reset_caches()` (called at EVERY pass boundary by `src/scheduler/hygiene.py`'s memory-hygiene
-  step) internally calls `htmldate.meta.reset_caches()`, which `LOGGER.error()`s "impossible to
-  clear cache for function: %s" every single time it hits an `AttributeError` on
-  `charset_normalizer`'s functions under the installed version pin — measured 85 of 93 logged
-  "problems" on one field session, drowning the real signal `errorlog.summary()`'s
-  `problems_total`/`problems_this_session` counters exist to surface. A TARGETED
-  `logging.Filter` (`_HtmldateCacheNoiseFilter`, attached to the `_JsonlErrorHandler` instance in
-  `install()`) drops ONLY that (logger, message) pair from the counters — never a blanket
-  suppression of the whole `htmldate.meta` logger, so a genuinely different message from the
-  same logger (e.g. its OTHER `.error()` call, "impossible to import charset function name") still
-  counts; matched on LOGGER NAME too, so an unrelated logger emitting a similar-looking message
-  is never masked. (2) **KPI K2 resolver TypeError, fixed** — `_k2_latency` read
-  `summ.get("snappy_bar")` as a plain float (`float(summ.get("snappy_bar") or 500.0)`), but
-  `latency.summary()`'s REAL shape nests it as a dict (`{"bar_ms": ..., "interactive_routes": ...,
-  ...}`) — `float(dict)` raised `TypeError` on EVERY real call, silently degrading K2 to
-  "not-measurable-here" behind the honest resolver-error fallback (`kpi_snapshot`'s own
-  try/except), exactly the "a real resolver bug hiding behind an honest verdict" the brief named.
-  Fixed by reading the nested `bar_ms` field; a live repro (`kpi._k2_latency(...)` against the
-  real un-mocked `latency.summary()`) confirmed the crash BEFORE the fix and the correct
-  numeric/verdict payload AFTER. STASH-VERIFIED: temporarily reverted the fix, confirmed the new
-  regression test fails exactly as predicted (`'not-measurable-here' == 'green'` -> AssertionError),
-  restored the fix, confirmed green. (3) **`locked_errors` 6/session, INVESTIGATED — benign, no
-  code change**: `run_write_with_retry` (`src/database/write.py`) logs a `WARNING` — "hit
-  'database is locked' (attempt N/M); retrying" — on EVERY retry attempt, INCLUDING a
-  successful retry-then-succeed cycle, not only a final exhausted failure; `errorlog.summary()`'s
-  `_is_locked()` counts any WARNING+ record whose message/traceback mentions "database is
-  locked". Spot-checked every `is_locked_error` call site (`src/ingest/batch.py`,
-  `src/ingest/email.py`, `src/analytics/store.py`, plus `src/backup/merge.py`/`src/law/track.py`/
-  `src/law/corpus.py` which reference the same 2026-07-14 cross-driver fix in comments) — all
-  route through the retry/redo-per-row mechanism, no ungated write path found. Given S4.1 makes
-  the world-discovery/qualification ride-alongs + the main pass genuinely MORE concurrent (they
-  can now overlap a PRIOR pass's still-finishing background briefing refresh), occasional
-  single-writer-gate contention retried-and-recovered is the EXPECTED cost of that concurrency,
-  not a bug — recorded here per the brief's own "if benign retries, say so in the ledger"
-  guidance. (4) **world-discovery non-JSON-response observability, fixed** — `_guarded_run_query`
-  (`src/catalog/discover.py`, the production WDQS transport) called `resp.json()` directly; a
-  non-JSON response body (rate-limit page, error page, truncated response) raised a bare
-  `json.JSONDecodeError` ("Expecting value: line 1 column 1 (char 0)") that
-  `src/catalog/build.py`'s `generate_catalog` correctly recorded-and-skipped but with NO way to
-  tell a 429 rate-limit from a genuinely broken query (the exact "gb/news: Expecting value…"
-  the fast box's export showed). Now wraps the `.json()` call, catching `ValueError` and
-  re-raising a `RuntimeError` carrying the REAL HTTP status code + a short first-bytes body
-  snippet — observability only, `generate_catalog`'s own record-and-skip control flow is
-  UNCHANGED (no retry-policy change, per the brief). VERIFIED (py3.13 venv): 58 targeted tests
-  (`test_errorlog_summary.py` +2, `test_kpi.py` +2, `test_source_discovery.py` +2, plus the
-  existing discovery/kpi suites) green + the full suite; ruff `--select=F,B --extend-ignore=B008`
-  clean; mypy 0 new errors on every touched file (127==baseline — confirmed via a git-stash
-  before/after diff that the one errorlog.py mypy hit is a PRE-EXISTING baseline error merely
-  line-shifted by the new code, not a new one); bandit `-r -ll -q` clean; no schema/frontend
-  change.
+  • **A4** criteria scope = BOTH extraction-validity AND borderline classes, tested together via an
+    ITERATIVE loop — a TEMPORARY criteria-calibration DIAGNOSTIC first (top-100 of would-be-
+    disregarded articles + statistics + per-article detail) so criteria are optimised on real
+    specimens before any execution (propose→human-review→apply, the stoplist discipline).
+  • **A5** Library graphs confirmed; snapshot recorder with **INFINITE retention** (hourly counter
+    snapshots are trivial; article series backfills from `created_at`, other counts begin at
+    recording start — never a fabricated backfill).
+  • **A6** every instance runs over Tor; the maintainer judges the stalls NOT Tor-linked.
+  • **A7 RESOLVED (the "50k")** — the maintainer's sources CSV (46,213 rows) = 42,612 DISABLED
+    `via:wikidata-discovery`+`world-catalog` candidates + 3,599 ENABLED. So it is the world-
+    discovery machinery working AS RULED, blended into one Library "Sources" count — a DISPLAY
+    problem, not a registration bug. Composition note: source_type institution 20,777 / news
+    17,021 / religious 7,957 — the Wikidata specs' breadth makes the qualification membrane
+    ESSENTIAL before any of it enables.
+  • **A8 (workflow order RULED)** source QUALIFICATION first, THEN the Library graphs UI; the
+    2026-07-20 qualification rulings are the spec.
+  • **A9** `collect_rate_mode` default flips "target"→"maximum" + the top-bar speed knob + the
+    version under the sidebar logo. NOTE: a saved settings.json predating the flip keeps "target"
+    until the user clicks the knob.
+  • **A10** proceed WITHOUT the collect_perf measurement for now; the write-batching decision stays
+    measure-gated.
+  • **A11/A12 (throughput, maintainer facts)** enabled sources publish >10 articles/day (publish-
+    rate bound REJECTED for the enabled set); measured average download is a FEW kB/s, two orders
+    below Tor capability → the bottleneck is app-side. An 8-core machine shows the SAME download
+    rate as a 2-core/4 GB one — the machine is NOT the issue.
+  **TWO DIAGNOSTICS EXPORTS ANALYSED (slow 2c/3.2 GB AMD 3020e + fast 4-vCPU/9.7 GB i7 Qubes VM,
+  launched together) — THE STANDING THROUGHPUT VERDICT, three stacked causes:** (a) **memory** —
+  the governor's mem-low floor parks permits at median 2 on the 3.3 GB box ("memory-bound"); the
+  "maximum" flip cannot lift it, RAM is the worker ceiling on 3–4 GB machines (ZERO mem-low samples
+  on the big box, so this cause is hardware-dependent). (b) **supply** — ~90% duplicate rate on
+  BOTH machines; 2,766 of 3,599 enabled sources have an rss_url and yield ≈2 new/day/feed (the
+  ">10/day" holds for big-name feeds, not the median), so 10× needs more QUALIFIED+ENABLED sources
+  + crawl mode, not more workers. (c) **duty cycle** — inter-pass gaps of 3–8 min on BOTH machines
+  (the fast box is WORSE: 48% fetching / 52% gap) because the gap work is SINGLE-CORE analytics +
+  SERIAL TOR FETCHES in the ride-alongs, so it barely scales with CPU → the duty-cycle fix is the
+  TOP lever. The fast box also hit **"writer-bound"** pass verdicts — the LIVE measurement the
+  deferred COLLECTOR write-batching was explicitly gated on, so write-batching graduates from
+  measure-gated to evidence-justified. Dozens-of-minutes stalls remain UNEXPLAINED (collect_perf's
+  rolling retention covers ~one pass — too short; the Library graphs are the detector).
+  MAINTAINER'S third 8-core/20 GB machine: SAVE it as the before/after bench for the duty-cycle fix.
+  **SHIPPED (S1 · S2 · S3.1 · S3.2 · S3.3+S3.5 · S4.1 · S4.3 · S5 — one `docs/ledger/shipped.csv`
+  row each, dated 2026-07-23; three genuine defects found pre-push in the process are recorded as
+  Lessons above):** qualification verify+scale+surface (incl. the zero-evidence free-pass fix + its
+  livelock follow-up), the Library graphs + hourly snapshot recorder, the criteria-calibration
+  diagnostic, the quarantine schema+write step, import-time quarantine + persisted import reports,
+  the duty-cycle fix (`refresh_briefing` off the pass-blocking path), memory-headroom honesty, and
+  the small-defects batch. A concurrency risk (bulk job vs ride-along selecting overlapping
+  candidates) was assessed low-severity/no-data-loss and DELIBERATELY not addressed, per the
+  reproducer-first discipline.
+  **REMAINING (the honest open board):** **S3.4** — the retroactive screening job's real execution
+  against a real corpus stays GATED on the maintainer's review of S3.1's calibration report (nothing
+  has run it). **S4.1 cause (ii)** — overlapping the network ride-alongs (calendar/wiki/law/
+  discovery/qualification serial Tor fetches) with the next pass's fetch phase: NOT built (moving
+  live network I/O across a pass boundary is materially bigger than the read-mostly briefing move).
+  **S4.2** — collector write-batching, now evidence-justified, deliberately deferred (the program's
+  own "riskiest hot-path change", wants the full skeptic matrix). Plus the standing quarantine
+  remainder: omnibar/watches/reporting/framing exclusion (only `_query_articles` is gated today),
+  the "clear junk keywords via re-index" step, and any frontend results-screen UI. Every frontend
+  slice above is BROWSER-UNVERIFIED per fork-3/Q6a — a click-through is owed. The duty-cycle fix
+  ships the MECHANISM only; **no duty-cycle percentage is claimed** — the operator bench is the
+  measurement.
 - **FIELD FEEDBACK 2026-07-24 — eight impressions (language detection · Governments/law ·
   imports · Library graphs · Home Alerts · DB-IP attribution · the vLLM/AI-stack rework;
   maintainer; INTAKE + INVESTIGATION this session, code-verified against main@25dcb19 via a
@@ -8375,7 +7176,6 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   pool + segmented downloads) · 4 processing ceilings (dedup front, bulk insert, memory footprint,
   backfill, then S-D evidence-gated + A1 last). Sonnet sessions branch `claude/oos-c-*`. Still
   planning-only in THIS PR (#766) — no engine code; the C-slices are the executing sessions' work.
-
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
