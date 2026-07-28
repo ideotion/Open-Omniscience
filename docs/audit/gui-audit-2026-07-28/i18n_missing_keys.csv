@@ -58,76 +58,43 @@ app.js,10,Enriching…
 app.js,10,Rate slope
 app.js,10,Summarize:
 app.js,10,Translate:
-app.js,11,Add failed:
-app.js,11,Map failed:
 app.js,11,OCR-derived
-app.js,11,Run failed:
 app.js,11,Start sweep
 app.js,11,View chain:
 app.js,11,Wiki pages:
 app.js,11,data source
 app.js,12,Discovering…
 app.js,12,Group added.
-app.js,12,Hide failed:
-app.js,12,Load failed:
-app.js,12,Save failed:
-app.js,12,Seed failed:
-app.js,12,Stop failed:
 app.js,12,has RSS feed
 app.js,13,Aggregate the
 app.js,13,Feed result —
-app.js,13,Pause failed:
-app.js,13,Reset failed:
-app.js,13,Split failed:
-app.js,13,Start failed:
-app.js,13,Track failed:
 app.js,13,Wiki changes:
 app.js,13,add a family…
-app.js,14,Create failed:
-app.js,14,Delete failed:
-app.js,14,Ingest failed:
 app.js,14,Map by country
 app.js,14,NY.GDP.MKTP.CD
-app.js,14,Search failed:
-app.js,14,Trends failed:
-app.js,14,Update failed:
 app.js,15,Could not copy:
-app.js,15,Exclude failed:
-app.js,15,Explore failed:
-app.js,15,Refresh failed:
-app.js,15,Run now failed:
 app.js,15,Small multiples
 app.js,15,e.g. article:42
 app.js,15,on this machine
 app.js,15,sample size (n)
 app.js,16,Collection speed
 app.js,16,Evidence export:
-app.js,16,Tracking failed:
-app.js,17,Add group failed:
 app.js,17,Could not remove:
 app.js,17,Could not update:
-app.js,17,First run failed:
 app.js,17,Storage footprint
-app.js,17,Track now failed:
-app.js,17,Translate failed:
-app.js,17,Uninstall failed:
 app.js,17,Wikipedia tracked
 app.js,17,fixed annual date
 app.js,18,Could not dismiss:
-app.js,18,Panic wipe failed:
 app.js,18,filter by this tag
 app.js,19,Could not register:
 app.js,19,Scanning citations…
 app.js,19,Status unavailable:
-app.js,20,Batch ingest failed:
 app.js,20,Could not save note:
 app.js,20,Source qualification
 app.js,20,exclude this keyword
 app.js,21,Could not edit watch:
 app.js,21,Starting the install…
 app.js,22,Could not load series:
-app.js,22,Full overwrite failed:
-app.js,22,Methods export failed:
 app.js,22,placed at a known city
 app.js,23,Close this analysis tab
 app.js,23,Could not add to draft:
