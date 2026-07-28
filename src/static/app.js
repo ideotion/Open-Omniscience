@@ -80,6 +80,45 @@
       };
     }
 
+    // ONE translatable frame for the ~36 distinct "<Verb> failed: <detail>"
+    // toasts scattered through this file.
+    //
+    // WHY A TEMPLATE AND NOT 36 KEYED SENTENCES: a plain toast whose message
+    // is a WHOLE literal is reachable by i18n.js's DOM walker (the toast node
+    // lands in #toast, which is neither SKIP-listed nor data-i18n-dyn), so it
+    // translates on the next tick if a key exists. A CONCATENATED message is
+    // not: the text node is "Save failed: NetworkError", which can never match
+    // a static key. So these genuinely need an explicit lookup -- and the
+    // honest shape is OOI18N.tf's: the KEY is a fixed template ("{action}
+    // failed: {error}", keyable x12) and the values are DATA interpolated
+    // AFTER translation, so the FRAME translates and the error text does not.
+    // The template is passed WHOLE at each call site ("Save failed: {error}")
+    // rather than assembled from a bare action noun. Two reasons, both
+    // load-bearing:
+    //   * GRAMMAR. 18 of the 36 action words already exist as keys, but as
+    //     BUTTON LABELS in the imperative ("Save" -> fr "Enregistrer").
+    //     Reusing one as a sentence subject yields "Échec de Enregistrer" --
+    //     wrong in every language with case or article agreement. A full
+    //     sentence per action translates naturally everywhere.
+    //   * GREPPABILITY. The literal stays in the source, so the i18n audit
+    //     (and any future widened gate) can still find it; a key built by
+    //     string concatenation would be invisible to static analysis.
+    // The error detail stays DATA, interpolated after translation.
+    // NB: dereferenced as window.OOI18N.tf, not the bare global OOI18N. The
+    // surrounding file's older `(window.OOI18N && OOI18N.tf)` idiom relies on
+    // a browser aliasing window properties into global scope -- true in a
+    // page, but it makes the helper untestable outside one and breaks the
+    // moment this runs in a module scope. Same behaviour, no ambient
+    // assumption.
+    function _failMsg(template, err) {
+      const i18n = (typeof window !== "undefined" && window.OOI18N) || null;
+      const F = (i18n && i18n.tf)
+        ? i18n.tf
+        : ((s, v) => s.replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null ? String(v[k]) : m)));
+      const detail = (err && err.message) ? err.message : String(err == null ? "" : err);
+      return F(template, { error: detail });
+    }
+
     function toast(msg, kind="ok", onClick=null) {
       const n = document.createElement("div");
       n.className = "note " + kind; n.textContent = msg;
@@ -3162,7 +3201,7 @@
         const r = await api("/api/annotations/import", {method:"POST", body: JSON.stringify({bundle})});
         toast(`Imported ${r.annotations} annotation(s) from ${r.author_name}.`);
         loadAuthors();
-      } catch (e) { toast("Import failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Import failed: {error}", e), "err"); }
       finally { input.value = ""; }
     }
     async function loadAuthors() {
@@ -4415,7 +4454,7 @@
       try { const r = await api("/api/law/track", {method:"POST"});
         toast(`Tracked ${r.documents} law(s): ${r.baselines} baselines, ${r.changed} changed, ${r.flagged} flagged, ${r.errors} errors.`);
         loadLaw(); loadLawChanges && loadLawChanges();
-      } catch (e) { toast("Tracking failed: " + e.message, "err"); if (st) loadLaw(); }
+      } catch (e) { toast(_failMsg("Tracking failed: {error}", e), "err"); if (st) loadLaw(); }
       finally { if (btn) { btn.disabled = false; btn.textContent = label || "Track changes now"; } }
     }
     async function lawSeed() {
@@ -5187,7 +5226,7 @@
         $("kf-excluded").value = (f.excluded || []).join("\n");
         $("kf-result").innerHTML = `<span class="pill ok">saved</span> ${f.excluded.length} excluded term(s), min length ${f.min_length}.`;
         toast("Keyword filter saved.");
-      } catch (e) { toast("Save failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
     }
 
     async function saveSettings() {
@@ -5208,7 +5247,7 @@
           setTheme({dark:"ink", light:"light", system:"system"}[$("set-theme").value] || "ink");
         }
         toast("Preferences saved.");
-      } catch (e) { toast("Save failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
     }
 
     // DB-10 §1.4: a full VACUUM is unbounded synchronous work (proportional to
@@ -6706,7 +6745,7 @@
       try {
         await api("/api/safety/settings", {method: "PUT", body: JSON.stringify(body)});
         toast("Fetch mode saved.");
-      } catch (e) { toast("Save failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
     }
     async function saveDiscoveryExternal() {
       // ETH-02/RM-03: the one external-service call is an explicit, knowing opt-in.
@@ -6720,7 +6759,7 @@
         toast(on ? "External topic discovery enabled." : "External topic discovery disabled.");
       } catch (e) {
         $("discovery-external").checked = !on;  // revert the visual state on failure
-        toast("Save failed: " + e.message, "err");
+        toast(_failMsg("Save failed: {error}", e), "err");
       }
     }
     // -- At-rest encryption (PR-E): doctor attestation + one-way encrypt ----- //
@@ -6770,7 +6809,7 @@
         URL.revokeObjectURL(url);
         $("enc-pass").value = "";
         toast("Encrypted backup downloaded.");
-      } catch (e) { toast("Backup failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Backup failed: {error}", e), "err"); }
     }
     // encryptedRestore() (destructive replace-restore) was REMOVED 2026-06-13:
     // restore is additive-only via the merge restore (the signed backup artifact).
@@ -6802,7 +6841,7 @@
           `<button class="danger" onclick="secureErase(8)">${esc(t("Octuple pass"))}</button>` +
           `</div><div class="muted" style="margin-top:4px">${esc(t("This may take several minutes on a large disk. Restart the app when you are done."))}</div></div>`;
         toast("Local data crypto-erased. Restart the app.", "warn");
-      } catch (e) { toast("Panic wipe failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Panic wipe failed: {error}", e), "err"); }
     }
 
     // Phase 2 of the panic flow: an optional full free-space overwrite (defence-in-depth
@@ -6819,7 +6858,7 @@
           `<div class="hint" style="margin-top:6px"><span class="pill warn">overwritten</span> ` +
           `${r.passes}× — ${mib} MiB. <span class="muted">${esc(r.limit)}</span></div>`;
         toast("Full overwrite complete. Restart the app.", "warn");
-      } catch (e) { toast("Full overwrite failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Full overwrite failed: {error}", e), "err"); }
     }
 
     // Resolve {mode, remove_folder, wipe_data, passes} from the picker. Data is removed
@@ -6880,7 +6919,7 @@
         URL.revokeObjectURL(url);
         toast("Backup downloaded — save it somewhere safe, then click Uninstall again.", "ok");
         return true;
-      } catch (e) { toast("Backup failed: " + e.message, "err"); return false; }
+      } catch (e) { toast(_failMsg("Backup failed: {error}", e), "err"); return false; }
     }
 
     async function uninstallApp() {
@@ -6915,7 +6954,7 @@
         _terminalOverlay(
           t("Open Omniscience has been uninstalled and the app has stopped. You can close this window."),
           {tryClose: true});
-      } catch (e) { toast("Uninstall failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Uninstall failed: {error}", e), "err"); }
     }
 
     // -- First-run onboarding (empty corpus) -------------------------------- //
@@ -6963,7 +7002,7 @@
             btn.disabled = false;
           }
         }, 2000);
-      } catch (e) { st.textContent = "First run failed: " + e.message; btn.disabled = false; }
+      } catch (e) { st.textContent = _failMsg("First run failed: {error}", e); btn.disabled = false; }
     }
 
     // -- Database tab ------------------------------------------------------- //
@@ -7694,7 +7733,7 @@
         const r = await api("/api/sources/seed-defaults", {method: "POST"});
         toast(`Seeded ${r.seeded.created} new source(s) (${r.seeded.skipped} already present).`);
         loadSources(); loadManagedSources(); loadDbStats(); loadCoverage();
-      } catch (e) { toast("Seed failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Seed failed: {error}", e), "err"); }
     }
 
     async function addSource() {
@@ -7710,7 +7749,7 @@
         toast("Source added.");
         ["s-name","s-domain","s-rss","s-tags"].forEach(id => $(id).value = "");
         loadSources(); loadManagedSources(); loadDbStats();
-      } catch (e) { toast("Add failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Add failed: {error}", e), "err"); }
     }
 
     // -- Sources: management table ------------------------------------------ //
@@ -7947,14 +7986,14 @@
     async function updateSource(id, body) {
       try { await api("/api/sources/" + id, {method: "PUT", body: JSON.stringify(body)});
         toast("Source updated."); }
-      catch (e) { toast("Update failed: " + e.message, "err"); loadManagedSources(); }
+      catch (e) { toast(_failMsg("Update failed: {error}", e), "err"); loadManagedSources(); }
     }
 
     async function deleteSource(id, name) {
       if (!confirm(`Delete source "${name}"? This also removes its stored articles.`)) return;
       try { await api("/api/sources/" + id, {method: "DELETE"});
         toast("Source deleted."); loadManagedSources(); loadSources(); loadDbStats(); }
-      catch (e) { toast("Delete failed: " + e.message, "err"); }
+      catch (e) { toast(_failMsg("Delete failed: {error}", e), "err"); }
     }
 
     async function importSources() {
@@ -7973,7 +8012,7 @@
           (errs.length ? ` <span class="muted">First issues: ${errs.slice(0,5).map(esc).join("; ")}</span>` : "");
         toast(`Import: +${d.created} new, ${d.updated} updated.`);
         loadManagedSources(); loadSources(); loadDbStats(); loadCoverage();
-      } catch (e) { $("imp-result").textContent = ""; toast("Import failed: " + e.message, "err"); }
+      } catch (e) { $("imp-result").textContent = ""; toast(_failMsg("Import failed: {error}", e), "err"); }
     }
 
     function tally(t) {
@@ -7989,7 +8028,7 @@
         const r = await api(`/api/sources/${id}/ingest`, {method: "POST"});
         $("ingest-result").textContent = "Feed result — " + tally(r.tally);
         toast("Ingest complete."); doSearch();
-      } catch (e) { $("ingest-result").textContent = ""; toast("Ingest failed: " + e.message, "err"); }
+      } catch (e) { $("ingest-result").textContent = ""; toast(_failMsg("Ingest failed: {error}", e), "err"); }
     }
 
     async function ingestUrl() {
@@ -8004,7 +8043,7 @@
         $("ingest-result").innerHTML = `Result: <span class="pill ${r.result==='stored'?'ok':'warn'}">${esc(r.result)}</span>` +
           (r.detail ? ` — ${esc(r.detail)}` : "");
         if (r.result === "stored") { $("ing-url").value = ""; doSearch(); }
-      } catch (e) { $("ingest-result").textContent = ""; toast("Ingest failed: " + e.message, "err"); }
+      } catch (e) { $("ingest-result").textContent = ""; toast(_failMsg("Ingest failed: {error}", e), "err"); }
     }
 
     // -- Batch ingest picker ------------------------------------------------ //
@@ -8080,7 +8119,7 @@
               : `<span class="pill warn">${esc(x.status)}</span>${x.detail ? " " + esc(x.detail) : ""}`}</td></tr>`).join("") +
           `</table>`;
         toast("Batch ingest complete."); doSearch();
-      } catch (e) { $("bi-status").textContent = ""; toast("Batch ingest failed: " + e.message, "err"); }
+      } catch (e) { $("bi-status").textContent = ""; toast(_failMsg("Batch ingest failed: {error}", e), "err"); }
       finally { btn.disabled = false; }
     }
 
@@ -8285,11 +8324,11 @@
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!await ensureOnline(t9("Start continuous background collection"))) return;
       try { renderSchedStatus(await api("/api/scheduler/start", {method: "POST"}));
-        toast("Scheduler started."); } catch (e) { toast("Start failed: " + e.message, "err"); }
+        toast("Scheduler started."); } catch (e) { toast(_failMsg("Start failed: {error}", e), "err"); }
     }
     async function schedulerStop() {
       try { renderSchedStatus(await api("/api/scheduler/stop", {method: "POST"}));
-        toast("Scheduler stopped."); } catch (e) { toast("Stop failed: " + e.message, "err"); }
+        toast("Scheduler stopped."); } catch (e) { toast(_failMsg("Stop failed: {error}", e), "err"); }
     }
     async function schedulerRunNow() {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -8306,7 +8345,7 @@
             if ((!s.active && s.last_run) || ++tries > 20) { clearInterval(poll); doSearch(); loadDbStats(); } }
           catch { clearInterval(poll); }
         }, 1500);
-      } catch (e) { toast("Run now failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Run now failed: {error}", e), "err"); }
     }
 
     async function saveScheduler() {
@@ -8329,7 +8368,7 @@
         else { body.collect_rate_mode = "target"; body.collect_target_kbps = sv; }
       }
       try { applySchedConfig(await api("/api/scheduler/config", {method: "PUT", body: JSON.stringify(body)}));
-        toast("Schedule saved."); previewTargets(); } catch (e) { toast("Save failed: " + e.message, "err"); }
+        toast("Schedule saved."); previewTargets(); } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
     }
 
     // -- Markets (analysis-first dashboard) --------------------------------- //
@@ -8720,7 +8759,7 @@
           : "";
         await loadIndicesBoard();
         toast("Indices updated.");
-      } catch (e) { st.textContent = ""; toast("Load failed: " + e.message, "err"); }
+      } catch (e) { st.textContent = ""; toast(_failMsg("Load failed: {error}", e), "err"); }
       finally { btn.disabled = false; }
     }
 
@@ -9287,7 +9326,7 @@
         await loadDashboard();
         if (_mktConfigLoaded) loadFeeds();
         toast("Market data loaded.");
-      } catch (e) { status.textContent = ""; toast("Load failed: " + e.message, "err"); }
+      } catch (e) { status.textContent = ""; toast(_failMsg("Load failed: {error}", e), "err"); }
       finally { btn.disabled = false; }
     }
 
@@ -9351,7 +9390,7 @@
         const r = await api(`/api/markets/feeds/${encodeURIComponent(key)}/import`, {method: "POST"});
         toast(`Imported ${r.imported} new point(s) for ${r.symbol} (${r.skipped_existing} already had).`);
         delete MKT_PRICES[r.symbol]; loadFeeds(); loadDashboard();
-      } catch (e) { toast("Import failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Import failed: {error}", e), "err"); }
     }
 
     async function importCustomFeed() {
@@ -9371,7 +9410,7 @@
         $("feed-result").innerHTML = `<span class="pill ok">imported</span> ${r.imported} new point(s) for ` +
           `${esc(r.symbol)} (${r.skipped_existing} already present, ${r.received} in feed).`;
         toast("Feed imported."); delete MKT_PRICES[body.symbol]; loadFeeds(); loadDashboard();
-      } catch (e) { $("feed-result").textContent = ""; toast("Import failed: " + e.message, "err"); }
+      } catch (e) { $("feed-result").textContent = ""; toast(_failMsg("Import failed: {error}", e), "err"); }
     }
 
     async function addMarketRule() {
@@ -9397,7 +9436,7 @@
         ["mkt-symbol","mkt-label","mkt-url","mkt-selector","mkt-attr","mkt-regex","mkt-market"]
           .forEach(id => $(id).value = "");
         loadRules();
-      } catch (e) { toast("Add failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Add failed: {error}", e), "err"); }
     }
 
     async function runMarketRule(id) {
@@ -9411,13 +9450,13 @@
         else
           toast(`${o.status}: ${o.reason || ""}`, "err");
         delete MKT_PRICES[o.symbol]; loadRules(); loadDashboard();
-      } catch (e) { toast("Run failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Run failed: {error}", e), "err"); }
     }
 
     async function deleteMarketRule(id) {
       if (!confirm("Delete this rule? Stored price history is kept.")) return;
       try { await api(`/api/markets/rules/${id}`, {method: "DELETE"}); toast("Rule deleted."); loadRules(); }
-      catch (e) { toast("Delete failed: " + e.message, "err"); }
+      catch (e) { toast(_failMsg("Delete failed: {error}", e), "err"); }
     }
 
     // ===== THE chart toolkit (maintainer-ruled: ONE component for every =====
@@ -10187,7 +10226,7 @@
         await api("/api/insights/family/split", {method: "POST",
           body: JSON.stringify({normalized: btn.dataset.norm, kind: btn.dataset.kind})});
         toast("Split out."); loadFamilyCuration();
-      } catch (e) { toast("Split failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Split failed: {error}", e), "err"); }
     }
 
     async function familyMerge() {
@@ -10201,7 +10240,7 @@
           body: JSON.stringify({normalized: norms, label: label.trim() || undefined, kind: picks[0].dataset.kind})});
         const st = $("famc-status"); if (st) st.textContent = `Merged ${r.merged.length} forms into “${r.label}”.`;
         toast("Merged."); loadFamilyCuration();
-      } catch (e) { toast("Merge failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Merge failed: {error}", e), "err"); }
     }
 
     async function familyResetGroup(btn) {
@@ -10209,7 +10248,7 @@
       try {
         for (const n of members) await api("/api/insights/family/override?normalized=" + encodeURIComponent(n), {method: "DELETE"});
         toast("Override cleared."); loadFamilyCuration();
-      } catch (e) { toast("Reset failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Reset failed: {error}", e), "err"); }
     }
 
     // -- Super-groups: groups of families ----------------------------------- //
@@ -10565,7 +10604,7 @@
         await api("/api/insights/supergroups", {method: "POST", body: JSON.stringify({name})});
         $("sgc-name").value = ""; toast("Super-group created."); loadSupergroupCuration();
         if (_insLoaded.has("supergroups")) loadSuperGroups();  // keep the data view in sync
-      } catch (e) { toast("Create failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Create failed: {error}", e), "err"); }
     }
 
     // -- Super-group CURATION (Settings -> Keywords; the interactive counterpart of
@@ -10633,7 +10672,7 @@
         await api(`/api/insights/supergroups/${sg}/members`, {method: "POST", body: JSON.stringify({normalized: [norm]})});
         toast("Added."); loadSupergroupCuration();
         if (_insLoaded.has("supergroups")) loadSuperGroups();
-      } catch (e) { toast("Add failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Add failed: {error}", e), "err"); }
     }
 
     async function sgAddRing(input) {
@@ -10643,7 +10682,7 @@
         await api(`/api/insights/supergroups/${sg}/members`, {method: "POST", body: JSON.stringify({rings: [ring]})});
         toast("Group added."); loadSupergroupCuration();
         if (_insLoaded.has("supergroups")) loadSuperGroups();
-      } catch (e) { toast("Add group failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Add group failed: {error}", e), "err"); }
     }
 
     async function sgRemoveMember(btn) {
@@ -10651,7 +10690,7 @@
         await api(`/api/insights/supergroups/${btn.dataset.sg}/members?normalized=` + encodeURIComponent(btn.dataset.norm), {method: "DELETE"});
         loadSupergroupCuration();
         if (_insLoaded.has("supergroups")) loadSuperGroups();
-      } catch (e) { toast("Remove failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Remove failed: {error}", e), "err"); }
     }
 
     async function deleteSuperGroup(btn) {
@@ -10660,7 +10699,7 @@
         await api(`/api/insights/supergroups/${btn.dataset.sg}`, {method: "DELETE"});
         toast("Deleted."); loadSupergroupCuration();
         if (_insLoaded.has("supergroups")) loadSuperGroups();
-      } catch (e) { toast("Delete failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Delete failed: {error}", e), "err"); }
     }
 
     // -- Keyword explorer (Item AC: explore by tag, hide, apply baseline tags) ---- //
@@ -10718,7 +10757,7 @@
       try {
         await api("/api/insights/exclude", {method: "POST", body: JSON.stringify({term: btn.dataset.norm})});
         btn.textContent = "hidden"; btn.disabled = true;
-      } catch (e) { toast("Hide failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Hide failed: {error}", e), "err"); }
     }
 
     async function kxBackfill() {
@@ -12056,7 +12095,7 @@
         if (typeof toast === "function") toast(`Saved · ${c.graded_queries || 0} graded queries · ${c.total_judgements || 0} judgements`);
         const el = $("gold-builder-cov");
         if (el) el.textContent = `Saved to ${r.saved} — ${c.total_judgements || 0} judgements across ${JSON.stringify(c.by_language || {})}. Point the IR-eval run below at this path.`;
-      } catch (e) { if (typeof toast === "function") toast("Save failed: " + e.message, "err"); }
+      } catch (e) { if (typeof toast === "function") toast(_failMsg("Save failed: {error}", e), "err"); }
       if (btn) btn.disabled = false;
     }
     // Diagnostics: the Tier-2 poll-transparency CHECKLIST (/api/insights/poll-transparency).
@@ -12790,7 +12829,7 @@
                  ${m.article_id?`· <a href="/api/articles/${m.article_id}/view" target="_blank" rel="noopener" title="offline stored copy">open</a>`:""}${m.url?`· ${extLink(m.url, "source ↗", "muted")}`:""}</div>
                <div>${esc(m.snippet)}</div></div>`).join("")
           : '<div class="muted">No context snippets.</div>';
-      } catch (e) { $("ins-trend").innerHTML = ""; toast("Explore failed: " + e.message, "err"); }
+      } catch (e) { $("ins-trend").innerHTML = ""; toast(_failMsg("Explore failed: {error}", e), "err"); }
     }
 
     // The current UI language as a target for verified keyword translations.
@@ -13018,7 +13057,7 @@
         d.terms.forEach(tm => { if (tx[tm.term]) { tm.tentative = tx[tm.term]; n++; } });
         anRenderKwChips();
         if (!n) toast(t("No tentative translations were produced."));
-      } catch (e) { toast("Translate failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Translate failed: {error}", e), "err"); }
     }
     function termListHtml(terms, extra) {
       if (!terms.length) return '<div class="muted">Nothing yet — index the corpus.</div>';
@@ -13055,7 +13094,7 @@
         await api("/api/insights/exclude", {method: "POST", body: JSON.stringify({term})});
         toast(`Excluded “${term}”. Manage exclusions in Settings.`);
         loadTrends(); if ($("ins-term").value.trim()) exploreTerm();
-      } catch (e) { toast("Exclude failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Exclude failed: {error}", e), "err"); }
     }
 
     // Honesty-envelope disclosure (informed-consent-by-layering): the maintained-counter
@@ -13100,7 +13139,7 @@
           t => `${t.mentions} mentions · ${t.articles} articles`);
         $("trd-method").textContent = rising.method ? "Rising = " + rising.method : "";
         const bc = $("trd-basis"); if (bc) bc.innerHTML = basisChip(top.counts, top.basis || rising.basis);
-      } catch (e) { toast("Trends failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Trends failed: {error}", e), "err"); }
       loadTrendWindows();
     }
 
@@ -14531,7 +14570,7 @@
         MAP_VB = {x: 0, y: 0, w: MAP_W, h: MAP_H}; wireMapDrag();
         $("map-countries").innerHTML = rowsFor(d.countries, "Country");
         $("map-cities").innerHTML = rowsFor(d.cities, "City");
-      } catch (e) { toast("Map failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Map failed: {error}", e), "err"); }
     }
 
     // -- World map (ooMap): choropleth + space-time signals + a time slider -- //
@@ -15123,16 +15162,16 @@
       try { await api("/api/wiki/dumps/start", {method:"POST", body: JSON.stringify({wiki: w})});
         toast("Download started."); loadWikiDumps();
         _dumpStartPoll();  // refresh progress a few times
-      } catch (e) { toast("Start failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Start failed: {error}", e), "err"); }
     }
     async function pauseDump(key) {
       try { await api("/api/wiki/dumps/pause?key="+encodeURIComponent(key), {method:"POST"}); loadWikiDumps(); }
-      catch (e) { toast("Pause failed: " + e.message, "err"); }
+      catch (e) { toast(_failMsg("Pause failed: {error}", e), "err"); }
     }
     async function deleteDump(key) {
       if (!confirm("Delete this download and its file?")) return;
       try { await api("/api/wiki/dumps?key="+encodeURIComponent(key), {method:"DELETE"}); loadWikiDumps(); }
-      catch (e) { toast("Delete failed: " + e.message, "err"); }
+      catch (e) { toast(_failMsg("Delete failed: {error}", e), "err"); }
     }
 
     // -- Offline map: OSM region downloads (Group M) ------------------------- //
@@ -15246,7 +15285,7 @@
       try {
         await api("/api/geo/downloads/start", { method: "POST", body: JSON.stringify({ code: c }) });
         toast(t("Download started.")); _osmPoll();
-      } catch (e) { toast("Start failed: " + e.message, "err"); loadOsmMap(); }
+      } catch (e) { toast(_failMsg("Start failed: {error}", e), "err"); loadOsmMap(); }
     }
     function resumeOsm(code, btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -15293,13 +15332,13 @@
     }
     async function pauseOsm(key) {
       try { await api("/api/geo/downloads/pause?key=" + encodeURIComponent(key), { method: "POST" }); loadOsmMap(); }
-      catch (e) { toast("Pause failed: " + e.message, "err"); }
+      catch (e) { toast(_failMsg("Pause failed: {error}", e), "err"); }
     }
     async function deleteOsm(key) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!confirm(t("Delete this download and its file?"))) return;
       try { await api("/api/geo/downloads?key=" + encodeURIComponent(key), { method: "DELETE" }); loadOsmMap(); }
-      catch (e) { toast("Delete failed: " + e.message, "err"); }
+      catch (e) { toast(_failMsg("Delete failed: {error}", e), "err"); }
     }
 
     // -- Official statistics producers (Group N): the curated directory + the --- //
@@ -15601,7 +15640,7 @@
                                 : `Refreshed ${d.refreshed || 0}, stored ${d.stored || 0} new vintage(s).`,
               d.errors ? "err" : "ok");
         loadStatSubs(); loadStatFigures();
-      } catch (e) { toast("Refresh failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Refresh failed: {error}", e), "err"); }
     }
 
     // -- Read a page from a downloaded dump (T14: local, zero network) ------- //
@@ -15826,13 +15865,13 @@
       if (!await ensureOnline(((window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x))("Add a watched Wikipedia page (fetches its current revision)"))) return;
       try { await api("/api/wiki/pages", {method:"POST", body: JSON.stringify(body)});
         toast("Page added to watchlist."); $("wiki-title").value=""; loadWikiPages(); loadWiki(); }
-      catch (e) { toast("Add failed: " + e.message, "err"); }
+      catch (e) { toast(_failMsg("Add failed: {error}", e), "err"); }
     }
 
     async function deleteWikiPage(id, title) {
       if (!confirm(`Stop watching "${title}"? Its stored revisions are removed.`)) return;
       try { await api("/api/wiki/pages/"+id, {method:"DELETE"}); toast("Removed."); loadWiki(); }
-      catch (e) { toast("Delete failed: " + e.message, "err"); }
+      catch (e) { toast(_failMsg("Delete failed: {error}", e), "err"); }
     }
 
     const _ores = () => $("wiki-ores").checked ? "true" : "false";
@@ -15843,7 +15882,7 @@
         const r = await api(`/api/wiki/pages/${id}/track?ores=${_ores()}`, {method:"POST"});
         toast(r.baseline ? "Baseline captured." : `Stored ${r.new} new edit(s), ${r.flagged} flagged.`);
         loadWiki();
-      } catch (e) { toast("Track failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Track failed: {error}", e), "err"); }
     }
 
     async function trackWikiNow() {
@@ -15852,7 +15891,7 @@
         const r = await api(`/api/wiki/track-now?ores=${_ores()}`, {method:"POST"});
         $("wiki-progress").textContent = `${r.pages} page(s): ${r.new_revisions} new edit(s), ${r.flagged} flagged.`;
         toast("Tracking complete."); loadWiki();
-      } catch (e) { $("wiki-progress").textContent=""; toast("Track now failed: " + e.message, "err"); }
+      } catch (e) { $("wiki-progress").textContent=""; toast(_failMsg("Track now failed: {error}", e), "err"); }
     }
 
     async function loadWikiChanges() {
@@ -17205,7 +17244,7 @@
                  <div class="summary muted" style="font-size:12px;margin-top:4px"></div></td></tr>`
           ).join("") : `<tr><td colspan="5" class="muted">No matches.</td></tr>`);
         annotateArticleDups(p, t);   // inline "1 voice" near-dup badges (non-blocking, reuses the helper)
-      } catch (e) { toast("Search failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Search failed: {error}", e), "err"); }
     }
 
     function exportResults(fmt, p) {
@@ -17869,7 +17908,7 @@
         document.body.appendChild(a); a.click(); a.remove();
         URL.revokeObjectURL(a.href);
         toast(`Methods appendix downloaded (${r.article_count} articles).`);
-      } catch (e) { toast("Methods export failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Methods export failed: {error}", e), "err"); }
     }
 
     // The "AI" pill (B4, 2026-07-24 field-feedback Session B — was the "LLM" pill,
@@ -18187,7 +18226,7 @@
         else if (s.anchoring_mode === "opentimestamps" && !s.ots_available)
           toast("OpenTimestamps requested, but the 'timestamping' extra is not installed.", "warn");
         else toast("Custody settings saved.");
-      } catch (e) { toast("Save failed: " + e.message, "err"); }
+      } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
     }
 
     function custItem() {
