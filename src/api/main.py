@@ -144,6 +144,19 @@ def _run_startup_upkeep() -> None:
             logger.info(f"removed {_n} stale restore staging dir(s)")
     except Exception:  # noqa: BLE001 - the janitor must never block startup
         logger.warning("stale-staging cleanup failed", exc_info=True)
+    # W5 (2026-07-26 hardware diagnostics): the recurring off-peak sweep
+    # (src.scheduler.maintenance.run_idle_maintenance) is the primary backstop
+    # for aged pre-restore-*.db safety-net snapshots, but an instance that
+    # restarts occasionally may not accumulate much scheduler idle time before
+    # the next restart -- sweep once at boot too, beside the janitor above.
+    try:
+        from src.backup.merge import prune_pre_restore_snapshots_by_age
+
+        _removed = prune_pre_restore_snapshots_by_age()
+        if _removed:
+            logger.info(f"pruned {len(_removed)} aged pre-restore snapshot(s)")
+    except Exception:  # noqa: BLE001 - the janitor must never block startup
+        logger.warning("pre-restore snapshot age sweep failed", exc_info=True)
     # Bundled initial super-groups (maintainer-ruled 2026-06-11): created only
     # where missing; the user's own curation always wins. Offline, best-effort.
     try:

@@ -386,3 +386,186 @@ def test_merge_cache_mb_is_threaded_through_run_restore(client, monkeypatch):
     finally:
         cleanup_staging(staged)
     assert seen["cache_mb"] == 777
+
+
+# --------------------------------------------------------------------------- #
+# W5 (2026-07-26 hardware diagnostics): the pre-restore snapshot age sweep.
+# The count-based half (_prune_snapshots, already shipped) is exercised
+# end-to-end through the real commit endpoint here; the time-driven half
+# (prune_pre_restore_snapshots_by_age) is pure-filesystem-unit-tested in
+# tests/test_pre_restore_snapshot_sweep.py.
+# --------------------------------------------------------------------------- #
+
+
+def test_repeated_commits_prune_down_to_the_newest_keep_n(client, monkeypatch):
+    """Codifies existing, previously-untested behaviour at n > _SNAPSHOT_KEEP:
+    _prune_snapshots() only ever fires as a side effect of a LATER restore, so
+    committing more than _SNAPSHOT_KEEP times must converge to exactly
+    _SNAPSHOT_KEEP retained snapshots, never fewer (a real bug would either
+    leave them all or over-prune).
+
+    The snapshot filename's timestamp has SECOND granularity
+    (pre-restore-<ts>.db); two commits landing in the same wall-clock second
+    would collide on ONE filename (snapshot_preserving overwriting the
+    earlier one) and understate the count -- a test-timing artifact only
+    (production restores within the same second of each other are not a
+    real-world concern), so freeze+advance the clock by a whole second per
+    commit for a deterministic, collision-free filename sequence."""
+    from datetime import timedelta
+
+    import src.backup.merge as merge_mod
+    from src.paths import data_dir
+
+    class _AdvancingDatetime(datetime):
+        _base = datetime.now(UTC)
+        _step = 0
+
+        @classmethod
+        def now(cls, tz=None):
+            cls._step += 1
+            return cls._base + timedelta(seconds=cls._step)
+
+    monkeypatch.setattr(merge_mod, "datetime", _AdvancingDatetime)
+
+    blob = _build_backup()
+    for _ in range(merge_mod._SNAPSHOT_KEEP + 1):
+        resp = _commit(client, blob)
+        assert resp.status_code == 200
+    snaps = sorted(data_dir().glob("pre-restore-*.db"))
+    assert len(snaps) == merge_mod._SNAPSHOT_KEEP
+
+
+def test_a_committed_restore_never_deletes_its_own_fresh_snapshot(client):
+    """A single commit's own just-created snapshot must always survive that
+    SAME commit's prune stage -- it is always the newest, so _prune_snapshots()
+    (keep-newest-N) can never remove it. Starts from a clean slate (this
+    session's data_dir() is shared across this whole test file, and an
+    earlier test above deliberately monkeypatches an ADVANCED clock to avoid
+    its OWN filename collisions -- those synthetic future timestamps could
+    otherwise sort ahead of this test's real-clock one and make it look
+    'not the newest'; clearing first makes this test's own property
+    independent of any other test's clock/leftover state)."""
+    from src.paths import data_dir
+
+    for stale in data_dir().glob("pre-restore-*.db"):
+        stale.unlink()
+
+    resp = _commit(client, _build_backup())
+    assert resp.status_code == 200
+    report = resp.json()
+    assert Path(report["pre_restore_snapshot"]).exists()
+    fresh_name = Path(report["pre_restore_snapshot"]).name
+    assert fresh_name not in report["pruned_snapshots"]
+
+
+def test_the_snapshot_is_registered_active_before_the_write_starts_not_after(client, monkeypatch):
+    """Skeptic-found (data-loss + config-abuse lenses, 2026-07-26/27, LIVE
+    reproduced against real production code): the OLD code registered
+    ``active_staging(snapshot)`` only AFTER ``snapshot_preserving()`` had
+    ALREADY written the file -- leaving a window (measured, against a real
+    multi-hundred-MB corpus: the entire write duration) where a concurrent
+    off-peak sweep (``prune_pre_restore_snapshots_by_age``) could see the
+    file as unregistered-and-old-enough and delete it mid-write. This test's
+    own synthetic corpus is tiny and writes essentially instantly, so
+    checking file EXISTENCE after a pause would be meaningless/racy either
+    way -- instead this asserts the mechanism directly: ``is_active_staging``
+    is already True the instant ``snapshot_preserving`` is CALLED, before it
+    is even allowed to proceed to the real write (paused here via a
+    monkeypatch), proving registration happens strictly before the write
+    starts rather than only after it returns."""
+    import threading
+
+    import src.backup.merge as merge_mod
+    import src.database.connect as connect_mod
+    from src.backup.stream_backup import is_active_staging
+
+    real_snapshot_preserving = connect_mod.snapshot_preserving
+    started = threading.Event()
+    release = threading.Event()
+    seen_paths: list[Path] = []
+
+    def _paused_snapshot_preserving(src, dst, *a, **kw):
+        # Only the pre_restore_snapshot stage's call targets a
+        # "pre-restore-*.db" destination (the snapshot_working_copy stage's
+        # call targets "working.db" and must run at full speed).
+        if "pre-restore-" in str(dst):
+            seen_paths.append(Path(dst))
+            started.set()
+            release.wait(timeout=5)
+        return real_snapshot_preserving(src, dst, *a, **kw)
+
+    monkeypatch.setattr(connect_mod, "snapshot_preserving", _paused_snapshot_preserving)
+
+    result: dict = {}
+
+    def _run_commit():
+        result["resp"] = _commit(client, _build_backup())
+
+    t = threading.Thread(target=_run_commit)
+    t.start()
+    try:
+        assert started.wait(timeout=5), "the pre_restore_snapshot stage never started"
+        assert seen_paths, "the patched snapshot_preserving was never reached"
+
+        # THE property under test: registered as active BEFORE the real
+        # write is even allowed to proceed -- not merely "eventually, after
+        # the write finishes" (the old, buggy ordering).
+        assert is_active_staging(seen_paths[0]), (
+            "the snapshot must be registered as active BEFORE "
+            "snapshot_preserving() is even called, not only after it returns"
+        )
+        # And the most aggressive possible concurrent sweep still can't
+        # report it removed while paused (a not-yet-written file is
+        # trivially never glob-matched either way, but this also proves the
+        # sweep doesn't misbehave while racing an in-flight registration).
+        for _ in range(20):
+            removed = merge_mod.prune_pre_restore_snapshots_by_age(max_age_hours=0)
+            assert seen_paths[0].name not in removed
+    finally:
+        release.set()
+        t.join(timeout=10)
+    assert not t.is_alive()
+    resp = result["resp"]
+    assert resp.status_code == 200
+    report = resp.json()
+    assert Path(report["pre_restore_snapshot"]).exists()
+
+
+def test_prune_snapshots_never_deletes_a_sibling_restores_active_snapshot(client, monkeypatch):
+    """Skeptic-found (race-concurrency lens, 2026-07-26, LIVE reproduced): the
+    PRE-EXISTING count-based ``_prune_snapshots`` (keep-newest-N, called
+    unconditionally on EVERY commit) had NO awareness of ``active_staging``
+    at all -- so a THIRD/FOURTH overlapping restore's own prune call could
+    delete an EARLIER, still-in-flight restore's registered snapshot the
+    moment enough newer snapshots existed to push it past ``keep``. Proves
+    the fix directly against ``_prune_snapshots`` (not the whole HTTP path,
+    for a fast/deterministic repro): an active snapshot survives being
+    pruned even when it is the OLDEST of ``keep + 1`` candidates."""
+    import src.backup.merge as merge_mod
+    from src.backup.stream_backup import active_staging
+    from src.paths import data_dir
+
+    for stale in data_dir().glob("pre-restore-*.db"):
+        stale.unlink()
+
+    def _make(age_hours: float) -> Path:
+        from datetime import UTC, datetime, timedelta
+
+        ts = (datetime.now(UTC) - timedelta(hours=age_hours)).strftime("%Y%m%dT%H%M%SZ")
+        p = data_dir() / f"pre-restore-{ts}.db"
+        p.write_bytes(b"fake corpus bytes")
+        return p
+
+    active_and_oldest = _make(age_hours=10)  # would be pruned first under keep=3
+    _make(age_hours=3)
+    _make(age_hours=2)
+    _make(age_hours=1)  # 4 total snapshots -- one MUST be pruned under keep=3
+
+    with active_staging(active_and_oldest):
+        removed = merge_mod._prune_snapshots(keep=3)
+        assert active_and_oldest.name not in removed
+        assert active_and_oldest.exists()
+    # Released -- now fair game on its own merits, exactly like the age sweep.
+    removed_after = merge_mod._prune_snapshots(keep=3)
+    assert active_and_oldest.name in removed_after
+    assert not active_and_oldest.exists()
