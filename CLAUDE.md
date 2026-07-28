@@ -6767,6 +6767,81 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the OSM boundary-preprocessing bridge, and the field-diagnostics brief's #728
   fixes. NOT YET EXECUTED — this entry records the AUDIT + PLAN, not the
   remediation itself.
+- **GUI AUDIT 2026-07-28 — TRANSLATION COVERAGE · GRAPHICAL QUALITY · VISUAL DATA REPRESENTATION
+  (maintainer-asked "a detailed comprehensive and critical look at the GUI … notably all parts of
+  the UI that are omitted from the translation, as well as identifying graphical enhancements, as
+  well as all visual data representations or potential visual data representation enhancements.
+  Don't fix anything yet, analyze, document and prepare a PR for another autonomous session";
+  ANALYSIS-ONLY — nothing fixed; brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-28_GUI_AUDIT.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-28_GUI_AUDIT.md);
+  worklist = `docs/audit/gui-audit-2026-07-28/i18n_missing_keys.csv`; the three stdlib probes that
+  produced every number are COMMITTED under `docs/audit/gui-audit-2026-07-28/probes/` so the fix
+  session re-measures rather than trusting the doc):** static source-level audit, deliberately
+  composing with (never restating) the 2026-07-22 behavioural GUI test report — whose own §9 item 9
+  asked for exactly this ("a dedicated i18n sweep … systemic across many surfaces") and item 10 for
+  the `--warn` contrast fix. **MENTAL-MODEL CORRECTION recorded so it is not repeated: a string not
+  wrapped in `t()` is NOT thereby untranslated.** `i18n.js`'s MutationObserver walks
+  DYNAMICALLY-inserted DOM and translates any text node / placeholder|title|aria-label whose
+  normalized value matches a locale key — so a `<th>` built in `app.js` IS translated today if the
+  key exists; **the gap is a missing KEY, not a missing wrapper.** Corollary caught mid-audit:
+  `toast()` appends into the plain `#toast` div (in `<body>`, not SKIP-listed, no `data-i18n-dyn`),
+  so a bare `toast("Preferences saved.")` whose key exists is a ~120 ms ENGLISH FLASH, not an
+  untranslated string — filing those 539 sites as "translations never shown" would have been a
+  fabricated finding. MEASURED (floors, not totals — static matching misses interpolated strings):
+  471 DOM-reachable literals already keyed (the engine works) · **319 (272 distinct) with NO key =
+  permanently English in all 11 non-English locales** · 6 native `confirm()`/`alert()` arguments the
+  walker can never reach · 539 keyed-but-bare flashes. **I-1 (highest leverage): the gate is
+  structurally blind to the UI engine** — `scripts/i18n_report.py` sets `_UI = index.html` (line 38)
+  and opens nothing else, so `--min 100` reads a GREEN 2130/2130 ×12 while `app.js` (18,536 lines,
+  213 permanently-English strings), `reader.js`, `taskmanager.html`, `unlock.html`,
+  `investigate.html` and the 8 `guis/` skins are invisible to it; widening its scope is what stops
+  the class regrowing, and MUST land with/after the key additions or CI reddens instantly. **I-2
+  (leads the fix session — a NON-NEGOTIABLE BREACH): the reader's two-class provenance HEADINGS are
+  unkeyed** — `From the source` / `Deduced by this app — less reliable` / `AI-derived — unreliable`
+  (+7 more, `src/api/main.py:1606/1607/1632/1675/1748/1750/1765/1991/1992/1996`), verified absent
+  from `en.json` by exact AND substring lookup: the labels that CARRY the reliability claim render
+  English-only in 11 locales, so the informed-consent layering degrades exactly where it is
+  load-bearing ("Every consent/caveat string ships ×12 locales"). Ten keys. **I-3:** the largest gap
+  family is 33 distinct `"<Verb> failed:"` strings → ONE `OOI18N.tf()` template
+  (`"{action} failed: {error}"`) ×12 replaces all 33 (naively they would cost 396 entries).
+  **GRAPHICAL — G-1: `--warn` FAILS WCAG AA on 6 of 17 themes**, computed with the same method as
+  the shipped invariant-#23 `--caveat` fix and modelling `:root` inheritance explicitly (getting
+  that wrong under-reports): paper 2.12 · dawn 2.16 · solar 2.82 · mist 3.56 · light 3.72 · mint
+  3.82 — **every failure is a LIGHT theme, the identical signature `--caveat` already had (8/17)**,
+  so the fix is the same shape. **G-2: the inline-handler debt is ~1.9× the ledger's own recorded
+  figure** — the "295 as of 2026-06-15" counted `index.html` only; measured now 317 there + **239
+  inside `app.js`-generated markup (never counted before)** = 556, vs 103 `addEventListener`; stays
+  browser-verify-gated (fork-3), NOT proposed. **G-3:** 5 layout media queries in 1024 CSS lines
+  with NOTHING between 900 px and desktop (source-level corroboration of the prior report's live
+  top-bar P0), `prefers-contrast` unhandled (0 uses) despite a `contrast` theme existing, and 0
+  `.sr-only` in the static shell (though `ooMap` builds one in JS). **VISUAL DATA — V-1 (biggest
+  opportunity): 8 `ooviz.js` primitives are BUILT + TESTED (`test_ooviz.py`, `ooviz_node_test.js`)
+  with ZERO call sites** — `binCounts1D` (histogram) · `fiveNumberSummary` (box plot) · `bin2D`
+  (heatmap) · `sqrtAreaScale`+`symbolRadii` (proportional symbols, the ruled levels-not-normalised
+  map path) · `pathWithGaps` (draws a BREAK instead of bridging a gap = the honest rendering) ·
+  `statSeriesPaths` · `setupCanvas`; app.js uses only 6 of the ~14. The maths is written, the
+  honesty semantics are already encoded, the tests pass — **what is missing is call sites.** **V-2:**
+  parsing all 941 top-level `app.js` functions, 87 call a renderer and **35 emit a table and never a
+  chart** (largest: `renderCorpusCompetitive` 96 lines · `renderCorpusKeywords` 56 · `loadLunar` 49 ·
+  `_uxCorpusDeltaView` 48 · the stats trio); candidates NOT a mandate — a chart is added BESIDE the
+  table, never replacing it (invariant #8 + the Desk lesson), counts only, no score, n + method
+  visible, sparse→bars. **V-3:** the `_SPARSE_BAR_MAX=10` rule reaches `ooChart`/`dashChartSvg`/
+  `slopeChartSvg`/`smallMultiplesSvg` but NOT `ringDumbbellSvg`/`commodityOverlaySvg`/`ooDonut` —
+  flagged for a decision (the dumbbell plots discrete pairs so arguably needs no rule; the commodity
+  overlay DOES draw a price line and should be checked), not asserted as a defect. **V-4: `ooDonut`
+  contradicts the project's OWN committed chart-decision framework** (`docs/research/dataviz/`:
+  "Pie/donut only if ≤4–5 slices … otherwise bars"; "many-slice pie" is on its REJECT list) — it has
+  NO slice-count guard and its single caller feeds it `unlocated.by_language`, an UNBOUNDED language
+  set, coloured `hsl(i*360/n)`; suggested resolution = donut ≤5 slices, sorted bars above, remainder
+  grouped as a labelled "other (n)", never silently truncated. **THE FIX SESSION'S ORDERED PLAN
+  (§4 of the brief, 8 slices, severity×ease, each independently shippable):** 1 reader provenance
+  keys → 2 the `tf()` error templates → 3 the ~239-string Class-A key sweep → 4 widen the gate →
+  5 `--warn` theme-aware value → 6 `ooDonut` guard → 7 `prefers-contrast` → 8 first `ooviz`
+  activations. EXPLICITLY OUT OF SCOPE there: the 72 behavioural findings of the 2026-07-22 report ·
+  the Observatory (browser-gated, already specified) · the inline-handler retirement · the top-bar
+  responsive fix (that report's item 4) · the 539 class-C flashes (lowest value per edit). HONEST
+  LIMITS stated in the brief itself: no browser was run (contrast is COMPUTED from the variables,
+  not sampled pixels) and static matching misses interpolated strings, so every count is a floor.
 - **SYSTEMATIC GUI TEST & CRITICAL REVIEW — EXECUTED 2026-07-22 (maintainer-asked; brief of record =
   [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-22_GUI_SYSTEMATIC_TEST.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-22_GUI_SYSTEMATIC_TEST.md);
   report = [`docs/audit/GUI_TEST_REPORT_2026-07-22.md`](docs/audit/GUI_TEST_REPORT_2026-07-22.md);
