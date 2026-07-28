@@ -1,0 +1,326 @@
+file,line,shape,reachability,family,string
+app.js,1777,title_attr,dom,,sample size (n)
+app.js,1778,title_attr,dom,,"distinct independent sources — three articles from one outlet is one voice, not three"
+app.js,1779,title_attr,dom,,age of the freshest dated evidence
+app.js,2372,toast,dom,,Could not refresh briefing:
+app.js,2707,button,dom,,Expand (revert)
+app.js,2708,button,dom,,Collapse to one actor
+app.js,2708,title_attr,dom,,"Count this coordinated network as one voice (reversible, stays flagged)"
+app.js,2724,title_attr,dom,,Opens a dedicated investigation view in a new tab
+app.js,2878,toast,dom,,Could not dismiss:
+app.js,3006,toast,dom,,Could not add to draft:
+app.js,3035,placeholder,dom,,Your note (ships in the export)…
+app.js,3048,toast,dom,,Could not save note:
+app.js,3055,confirm,native-dialog,,Clear all pinned Leads from the draft?
+app.js,3065,toast,dom,,Could not copy:
+app.js,3077,toast,dom,,Could not update collapse:
+app.js,3093,button,dom,,Expand (revert)
+app.js,3094,button,dom,,Apply collapse
+app.js,3439,title_attr,dom,,Several providers publish this calendar — compare them below
+app.js,3541,title_attr,dom,,exact date moves each year
+app.js,3570,title_attr,dom,,fixed annual date
+app.js,3571,title_attr,dom,,follow the official source for the exact date
+app.js,4281,title_attr,dom,,offline stored copy + history
+app.js,4341,th,dom,,Changes
+app.js,4346,title_attr,dom,,offline stored copy + history
+app.js,4418,toast,dom,verb-failed-template,Tracking failed:
+app.js,5077,toast,dom,,Could not load settings:
+app.js,5090,textContent,dom,,Backup status unavailable:
+app.js,5190,toast,dom,verb-failed-template,Save failed:
+app.js,5211,toast,dom,verb-failed-template,Save failed:
+app.js,5473,textContent,dom,,Enter at least a host and user.
+app.js,5483,textContent,dom,,Pulling…
+app.js,6709,toast,dom,verb-failed-template,Save failed:
+app.js,6723,toast,dom,verb-failed-template,Save failed:
+app.js,6804,toast,dom,,Local data crypto-erased. Restart the app.
+app.js,6805,toast,dom,verb-failed-template,Panic wipe failed:
+app.js,6814,toast,dom,,Running full overwrite… this can take a while.
+app.js,6821,toast,dom,,Full overwrite complete. Restart the app.
+app.js,6822,toast,dom,verb-failed-template,Full overwrite failed:
+app.js,6868,toast,dom,,Backup cancelled — nothing removed.
+app.js,6881,toast,dom,,"Backup downloaded — save it somewhere safe, then click Uninstall again."
+app.js,6890,confirm,native-dialog,,This mode WIPES your data and keys — IRREVERSIBLE.\n\n
+app.js,6918,toast,dom,verb-failed-template,Uninstall failed:
+app.js,6966,textContent,dom,verb-failed-template,First run failed:
+app.js,7660,toast,dom,,Could not load sources:
+app.js,7697,toast,dom,verb-failed-template,Seed failed:
+app.js,7713,toast,dom,verb-failed-template,Add failed:
+app.js,7804,toast,dom,,Could not load sources:
+app.js,7809,title_attr,dom,,filter by this tag
+app.js,7815,title_attr,dom,,has RSS feed
+app.js,7911,title_attr,dom,,Open the articles that cite this domain
+app.js,7950,toast,dom,verb-failed-template,Update failed:
+app.js,7957,toast,dom,verb-failed-template,Delete failed:
+app.js,7990,textContent,dom,,Feed result —
+app.js,7992,toast,dom,verb-failed-template,Ingest failed:
+app.js,8007,toast,dom,verb-failed-template,Ingest failed:
+app.js,8077,th,dom,,Result
+app.js,8083,toast,dom,verb-failed-template,Batch ingest failed:
+app.js,8239,toast,dom,,Could not change the collection speed:
+app.js,8244,textContent,dom,,Scheduler status unavailable:
+app.js,8281,textContent,dom,,Could not preview targets:
+app.js,8288,toast,dom,verb-failed-template,Start failed:
+app.js,8292,toast,dom,verb-failed-template,Stop failed:
+app.js,8309,toast,dom,verb-failed-template,Run now failed:
+app.js,8332,toast,dom,verb-failed-template,Save failed:
+app.js,8723,toast,dom,verb-failed-template,Load failed:
+app.js,8788,textContent,dom,,Could not load series:
+app.js,9290,toast,dom,verb-failed-template,Load failed:
+app.js,9315,th,dom,,Last status
+app.js,9321,title_attr,dom,,Fetch once and apply the rule
+app.js,9322,button,dom,,Chart
+app.js,9334,th,dom,,Series
+app.js,9334,th,dom,,Stored
+app.js,9342,button,dom,,Chart
+app.js,9400,toast,dom,verb-failed-template,Add failed:
+app.js,9414,toast,dom,verb-failed-template,Run failed:
+app.js,9418,confirm,native-dialog,,Delete this rule? Stored price history is kept.
+app.js,9420,toast,dom,verb-failed-template,Delete failed:
+app.js,10117,button,dom,,group
+app.js,10154,title_attr,dom,,This grouping merges a form via lemmatization (e.g. study/studied). Split any member out above if a merge looks wrong.
+app.js,10160,button,dom,,group
+app.js,10177,button,dom,,reset
+app.js,10183,toast,dom,,Nothing to split — this family has only one member.
+app.js,10190,toast,dom,verb-failed-template,Split failed:
+app.js,10212,toast,dom,verb-failed-template,Reset failed:
+app.js,10568,toast,dom,verb-failed-template,Create failed:
+app.js,10605,title_attr,dom,,Open on the cross-country concept map
+app.js,10614,button,dom,,delete
+app.js,10618,placeholder,dom,,add a family…
+app.js,10620,button,dom,,Add family
+app.js,10622,placeholder,dom,,"add a group (one concept, many languages)…"
+app.js,10624,button,dom,,Add group
+app.js,10636,toast,dom,verb-failed-template,Add failed:
+app.js,10644,toast,dom,,Group added.
+app.js,10646,toast,dom,verb-failed-template,Add group failed:
+app.js,10663,toast,dom,verb-failed-template,Delete failed:
+app.js,10720,textContent,dom,,hidden
+app.js,10721,toast,dom,verb-failed-template,Hide failed:
+app.js,10780,textContent,dom,,Scanning citations…
+app.js,10798,textContent,dom,,Could not register:
+app.js,10985,button,dom,,Edit
+app.js,11001,textContent,dom,,Enter a condition (search query) first.
+app.js,11005,textContent,dom,,"Watch added. It runs after every collection pass, or use “Check now”."
+app.js,11011,toast,dom,,Could not update watch:
+app.js,11024,toast,dom,,Could not edit watch:
+app.js,11027,confirm,native-dialog,,Delete this watch and its history?
+app.js,11029,toast,dom,,Could not delete watch:
+app.js,11063,textContent,dom,,Status unavailable:
+app.js,11245,textContent,dom,,Enriching…
+app.js,11388,textContent,dom,,Discovering…
+app.js,11393,textContent,dom,,Discovery failed — see console
+app.js,11985,th,dom,,Lemma
+app.js,11985,th,dom,,Merges
+app.js,12006,textContent,dom,,Build an IR gold set (grade queries 0/1/2)
+app.js,12049,toast,dom,,Enter a save path first.
+app.js,12050,toast,dom,,Load + grade queries first.
+app.js,12059,toast,dom,verb-failed-template,Save failed:
+app.js,12793,toast,dom,verb-failed-template,Explore failed:
+app.js,12889,placeholder,dom,,"keyword, keyword, keyword…"
+app.js,12891,title_attr,dom,,articles mentioning ALL terms
+app.js,12892,title_attr,dom,,articles mentioning ANY term
+app.js,12893,title_attr,dom,,the first term and none of the rest
+app.js,12902,title_attr,dom,,exact corpus-wide article count for this term
+app.js,12904,title_attr,dom,,the set scan reached its cap
+app.js,13021,toast,dom,verb-failed-template,Translate failed:
+app.js,13026,title_attr,dom,,exclude this keyword
+app.js,13044,title_attr,dom,,exclude this keyword
+app.js,13058,toast,dom,verb-failed-template,Exclude failed:
+app.js,13103,toast,dom,verb-failed-template,Trends failed:
+app.js,14368,title_attr,dom,,"country-level stand-in point, not the exact spot"
+app.js,14369,title_attr,dom,,placed at a known city
+app.js,14370,title_attr,dom,,a date extracted from article text
+app.js,14386,title_attr,dom,,data source
+app.js,14404,title_attr,dom,,These signals are merely close in place and time within your current window.
+app.js,14525,th,dom,,Top keywords
+app.js,14534,toast,dom,verb-failed-template,Map failed:
+app.js,14711,title_attr,dom,,show/hide
+app.js,14951,title_attr,dom,,"country-level stand-in point, not the exact spot"
+app.js,14952,title_attr,dom,,placed at a known city
+app.js,14953,title_attr,dom,,a date extracted from article text
+app.js,14963,title_attr,dom,,data source
+app.js,14979,title_attr,dom,,These signals are merely close in place and time within your current window.
+app.js,15058,textContent,dom,,Status unavailable:
+app.js,15126,toast,dom,verb-failed-template,Start failed:
+app.js,15130,toast,dom,verb-failed-template,Pause failed:
+app.js,15133,confirm,native-dialog,,Delete this download and its file?
+app.js,15135,toast,dom,verb-failed-template,Delete failed:
+app.js,15249,toast,dom,verb-failed-template,Start failed:
+app.js,15296,toast,dom,verb-failed-template,Pause failed:
+app.js,15302,toast,dom,verb-failed-template,Delete failed:
+app.js,15378,textContent,dom,,Enter an indicator or dataset id first.
+app.js,15414,th,dom,,Agency
+app.js,15414,th,dom,,Series
+app.js,15414,th,dom,,Area
+app.js,15415,th,dom,,SA/NSA
+app.js,15415,th,dom,,Base yr
+app.js,15436,th,dom,,Area
+app.js,15436,th,dom,,Producers (side by side)
+app.js,15436,th,dom,,Comparability
+app.js,15465,th,dom,,Agency
+app.js,15465,th,dom,,Series
+app.js,15465,th,dom,,Area
+app.js,15466,th,dom,,From → to
+app.js,15467,th,dom,,Robust z
+app.js,15467,th,dom,,Priors
+app.js,15467,th,dom,,Revised at
+app.js,15539,th,dom,,Area
+app.js,15584,th,dom,,Series
+app.js,15584,th,dom,,Interval
+app.js,15584,th,dom,,Last refresh
+app.js,15590,toast,dom,,Could not update:
+app.js,15593,confirm,native-dialog,,Stop tracking this figure for auto-refresh? (Stored vintages are kept.)
+app.js,15595,toast,dom,,Could not remove:
+app.js,15604,toast,dom,verb-failed-template,Refresh failed:
+app.js,15803,th,dom,,Checked
+app.js,15803,th,dom,,Edits
+app.js,15803,th,dom,,Flagged
+app.js,15815,button,dom,,Track
+app.js,15819,toast,dom,,Wiki pages:
+app.js,15829,toast,dom,verb-failed-template,Add failed:
+app.js,15835,toast,dom,verb-failed-template,Delete failed:
+app.js,15846,toast,dom,verb-failed-template,Track failed:
+app.js,15855,toast,dom,verb-failed-template,Track now failed:
+app.js,15864,th,dom,,When
+app.js,15864,th,dom,,Edition · Page
+app.js,15864,th,dom,,Editor
+app.js,15864,th,dom,,Reasons
+app.js,15864,th,dom,,ORES
+app.js,15873,button,dom,,Diff
+app.js,15876,toast,dom,,Wiki changes:
+app.js,15891,toast,dom,,Diff:
+app.js,16093,title_attr,dom,,Close this analysis tab
+app.js,17193,th,dom,,Lang
+app.js,17208,toast,dom,verb-failed-template,Search failed:
+app.js,17761,th,dom,,Channel
+app.js,17761,th,dom,,Evidence
+app.js,17761,th,dom,,First seen
+app.js,17872,toast,dom,verb-failed-template,Methods export failed:
+app.js,17972,toast,dom,,Backend:
+app.js,18015,textContent,dom,,Starting the install…
+app.js,18020,textContent,dom,,Installing — this can take several minutes…
+app.js,18033,textContent,dom,,Install:
+app.js,18049,textContent,dom,,Start:
+app.js,18061,toast,dom,,Stop:
+app.js,18079,toast,dom,,Summarize:
+app.js,18094,toast,dom,,Translate:
+app.js,18116,th,dom,,Outlet
+app.js,18116,th,dom,,Tone (VADER)
+app.js,18116,th,dom,,Emphasised terms
+app.js,18134,toast,dom,,Evidence export:
+app.js,18154,title_attr,dom,,Set OO_KEY_PASSPHRASE to encrypt keys at rest
+app.js,18172,textContent,dom,,Custody settings unavailable:
+app.js,18190,toast,dom,verb-failed-template,Save failed:
+app.js,18204,th,dom,,Actor
+app.js,18204,th,dom,,Time
+app.js,18204,th,dom,,Sig
+app.js,18210,toast,dom,,View chain:
+app.js,18220,toast,dom,,Verify:
+app.js,18232,toast,dom,,Export:
+app.js,18243,toast,dom,,Anchor:
+index.html,105,title_attr,dom,,Activity &amp; vitals — click to open the task manager
+index.html,109,title_attr,dom,,Tasks &amp; system
+index.html,117,title_attr,dom,,Collection speed
+index.html,117,aria_label,dom,,Collection speed (target / maximum)
+index.html,134,title_attr,dom,,Help &amp; documentation
+index.html,266,aria_label,dom,,Channel
+index.html,310,placeholder,dom,,Open Omniscience briefing
+index.html,328,placeholder,dom,,exact name (optional)
+index.html,329,placeholder,dom,,en (optional)
+index.html,543,placeholder,dom,,e.g. j.doe@newsroom
+index.html,551,placeholder,dom,,e.g. article:42
+index.html,652,placeholder,dom,,Human Rights Act 1998
+index.html,660,button,dom,,Add &amp; track now
+index.html,764,title_attr,dom,,previous
+index.html,766,title_attr,dom,,next
+index.html,845,placeholder,dom,,Nd / AAPL / XAU
+index.html,846,placeholder,dom,,Neodymium spot
+index.html,855,placeholder,dom,,data-value
+index.html,859,placeholder,dom,,"at\\s+([\\d.,]+)\\s*USD"
+index.html,862,placeholder,dom,,china_spot
+index.html,873,placeholder,dom,,WTI
+index.html,878,placeholder,dom,,world-bank
+index.html,879,placeholder,dom,,auto (col 1)
+index.html,880,placeholder,dom,,auto (col 2)
+index.html,914,placeholder,dom,,"e.g. inflation, Emmanuel Macron, Rio Tinto"
+index.html,969,aria_label,dom,,Trend chart lens
+index.html,970,button,dom,,Windows
+index.html,971,button,dom,,Rate slope
+index.html,972,button,dom,,Small multiples
+index.html,983,placeholder,dom,,fr (optional)
+index.html,1006,button,dom,,Register cited domains as sources ↗
+index.html,1061,button,dom,,reset
+index.html,1089,placeholder,dom,,flood OR inondation
+index.html,1157,button,dom,,Leads
+index.html,1165,button,dom,,Data &amp; backup
+index.html,1283,placeholder,dom,,search the stoplist…
+index.html,1308,placeholder,dom,,e.g. an AWQ/GPTQ-quantized Mistral-7B-Instruct repo id
+index.html,1324,placeholder,dom,,e.g. llama3.2:3b — any tag from ollama.com/library
+index.html,1360,button,dom,,Save prompts &amp; behaviour
+index.html,1381,placeholder,dom,,e.g. Monetary figures
+index.html,1383,placeholder,dom,,e.g. figure
+index.html,1534,placeholder,dom,,NY.GDP.MKTP.CD
+index.html,1535,placeholder,dom,,FR or all
+index.html,1540,placeholder,dom,,NY.GDP.MKTP.CD
+index.html,1548,placeholder,dom,,worldbank
+index.html,1550,button,dom,,Map by country
+index.html,1657,button,dom,,Continue in background
+index.html,1762,placeholder,dom,,backup destination dir (a separate empty folder / drive)
+index.html,1763,placeholder,dom,,backup passphrase (never stored)
+index.html,1764,button,dom,,Run P0 validation
+index.html,1765,title_attr,dom,,Stop the running validation at its next safe point; the throwaway restore staging and any partial backup are cleaned up.
+index.html,1780,button,dom,,Run page-size bench
+index.html,1803,button,dom,,Start sweep
+index.html,1822,button,dom,,Start sweep
+index.html,1846,button,dom,,Run perception-eval harness
+index.html,1852,button,dom,,Start sweep
+index.html,1864,button,dom,,Source &amp; article quality (.zip) · TEMP
+index.html,1865,button,dom,,Rollup benchmark (.json)
+index.html,1866,button,dom,,Enrich source tags from corpus
+index.html,1867,button,dom,,Enrich source types (Wikidata) ↗
+index.html,1868,placeholder,dom,,"countries e.g. ke,ng,br"
+index.html,1869,button,dom,,Discover new sources (Wikidata) ↗
+index.html,1870,button,dom,,Discover sources worldwide (Wikidata) ↗
+index.html,1878,button,dom,,Build an IR gold set (grade queries 0/1/2)
+index.html,1879,placeholder,dom,,save path e.g. /home/you/oo_gold_set.json
+index.html,1880,button,dom,,Save gold set
+index.html,1895,placeholder,dom,,gold-set file path (see configs/ir_eval/gold_set.example.json)
+index.html,1896,placeholder,dom,,"weights A e.g. 4,1"
+index.html,1897,placeholder,dom,,"weights B e.g. 1,1"
+index.html,1898,button,dom,,Run IR eval over a gold set
+index.html,1906,button,dom,,FDR self-test (.json)
+index.html,1907,button,dom,,Flood signal (.json)
+index.html,1908,button,dom,,Bury signal (.json)
+index.html,1909,button,dom,,Lunar-correlation screen (.json)
+index.html,2003,placeholder,dom,,e.g. Russia–Ukraine war
+index.html,2030,button,dom,,Preview
+index.html,2042,title_attr,dom,,Turn continuous background collection on or off
+index.html,2091,placeholder,dom,,"news, financial …"
+index.html,2092,placeholder,dom,,"politics, markets, climate"
+index.html,2143,placeholder,dom,,news
+index.html,2176,button,dom,,Qualify the backlog
+index.html,2182,placeholder,dom,,Example News
+index.html,2183,placeholder,dom,,example.com
+index.html,2185,placeholder,dom,,"politics,world"
+index.html,2284,aria_label,dom,,Choose PDF files to import
+index.html,2285,button,dom,,Import PDFs
+index.html,2307,placeholder,dom,,imap.example.com
+index.html,2309,placeholder,dom,,you@example.com
+index.html,2351,button,dom,,Open evidence &amp; custody →
+index.html,2378,button,dom,,Encrypt corpus &amp; custody log
+index.html,2430,placeholder,dom,,socks5://127.0.0.1:9050 (e.g. Tor)
+index.html,2489,button,dom,,Uninstall &amp; stop the app
+index.html,2742,aria_label,dom,,Emphasize languages
+index.html,2766,button,dom,,Go online &amp; start collecting
+investigate.html,117,th,dom,,Snippet (provenance)
+investigate.html,167,th,dom,,When
+investigate.html,167,th,dom,,Editor
+investigate.html,167,th,dom,,Comment
+investigate.html,167,th,dom,,Flags
+reader.js,40,title_attr,dom,,Analyse “' + esc(term) + '” across your corpus ↗
+reader.js,343,aria_label,dom,,Keyword mindmap for this article
+reader.js,392,button,dom,,Translate now
+reader.js,394,button,dom,,Summarize now
+reader.js,430,textContent,dom,,Working locally…
+taskmanager.html,132,title_attr,dom,,Airplane mode — filled means offline: every new network request is refused instantly.
+taskmanager.html,140,title_attr,dom,,Help &amp; documentation
