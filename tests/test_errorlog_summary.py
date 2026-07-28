@@ -175,3 +175,44 @@ def test_htmldate_noise_filter_leaves_other_loggers_untouched(monkeypatch, tmp_p
     )
     s = errorlog.summary()
     assert s["problems_this_session"] == 1
+
+
+def test_htmldate_noise_never_reaches_any_other_handler_not_just_our_own(monkeypatch, tmp_path):
+    """The 2026-07-23 fix only stopped this noise from muddying our OWN JSONL
+    counters; a live terminal capture on 2026-07-26 showed it STILL printing to the
+    console on a fresh install. The fix must drop the record at the LOGGER level so
+    it never reaches ANY handler attached anywhere in the process -- proven here
+    with a second, independent dummy handler standing in for "the console" (or any
+    future handler), which must never see the noisy record but must still see a
+    genuinely different one from the same logger."""
+    _fresh(monkeypatch, tmp_path)
+    errorlog.install()
+    sink: list[str] = []
+    probe = logging.Handler()
+    probe.emit = lambda record: sink.append(record.getMessage())  # type: ignore[method-assign]
+    logging.getLogger().addHandler(probe)
+    try:
+        noisy = logging.getLogger("htmldate.meta")
+        noisy.error("impossible to clear cache for function: %s", "AttributeError('x')")
+        noisy.error("impossible to import charset function name")  # a different message -- must pass
+    finally:
+        logging.getLogger().removeHandler(probe)
+    assert not any("impossible to clear cache for function" in m for m in sink)
+    assert any("impossible to import charset function name" in m for m in sink)
+
+
+def test_trafilatura_metadata_noise_is_filtered_the_same_way(monkeypatch, tmp_path):
+    """The 2026-07-26 hardware-diagnostics batch found a second, structurally
+    identical noise source on a different logger -- 58% of one field instance's
+    300-record error-log sample. Fixed with the SAME mechanism, one new table row."""
+    _fresh(monkeypatch, tmp_path)
+    errorlog.install()
+    noisy = logging.getLogger("trafilatura.metadata")
+    for _ in range(10):
+        noisy.error("error in JSON metadata extraction: 'NoneType' object is not subscriptable")
+    noisy.error("a genuinely different trafilatura.metadata problem")  # must still count
+
+    recs = errorlog.recent_errors()
+    problem_msgs = [r["message"] for r in recs if r.get("level") in errorlog._PROBLEM_LEVELS]
+    assert not any("error in JSON metadata extraction" in m for m in problem_msgs)
+    assert any("a genuinely different trafilatura.metadata problem" in m for m in problem_msgs)

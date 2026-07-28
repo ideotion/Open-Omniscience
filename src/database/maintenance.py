@@ -573,7 +573,18 @@ _SOURCE_LAST_CRAWLED_COLUMN: dict[str, str] = {
 
 
 def ensure_source_last_crawled_column(engine: Engine) -> list[str]:
-    """Self-heal ``sources.last_crawled_at`` on a store created before it existed."""
+    """Self-heal ``sources.last_crawled_at`` AND its covering index on a store created
+    before either existed. The migration (4fc4be4dffef) creates the column and the
+    index together; this self-heal must mirror that pairing exactly -- a store that
+    got only the column (every real install, since the live store is never
+    ``alembic upgrade``d) was left with a bare ``SCAN sources`` on the
+    least-recently-crawled ORDER BY the §8 crawl-by-default rung depends on across a
+    76k+-row ``sources`` table (2026-07-26 field diagnostics, 3 of 7 instances). The
+    index is created INSIDE this function's own transaction, after the column-add
+    loop, rather than via the ``HOT_INDEXES`` registry above -- that registry runs in
+    ONE transaction at boot BEFORE this function does (session.py), so registering it
+    there would try ``CREATE INDEX ... (last_crawled_at)`` before the column exists on
+    any pre-2026-07-24 store."""
     if engine.url.get_backend_name() != "sqlite":
         return []
     added: list[str] = []
@@ -587,6 +598,15 @@ def ensure_source_last_crawled_column(engine: Engine) -> list[str]:
             if name not in cols:
                 conn.execute(text(ddl))
                 added.append(f"sources.{name}")
+        # Idempotent (IF NOT EXISTS) and unconditional so a store that already has the
+        # column from a partial/earlier self-heal run (added is empty) still gets the
+        # index repaired on this boot.
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS idx_source_last_crawled "
+                "ON sources (last_crawled_at)"
+            )
+        )
     if added:
         _LOG.info(f"added source last-crawled column(s): {', '.join(added)}")
     return added

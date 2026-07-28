@@ -151,6 +151,87 @@ def test_collect_parallelism_optimized_matches_the_real_scheduler_default():
     assert knob.max == SchedulerSettings().collect_parallelism  # today IS the hard ceiling
 
 
+def test_setting_backed_knobs_report_the_live_persisted_value_not_the_profile_table(
+    tmp_path, monkeypatch
+):
+    """2026-07-26 hardware diagnostics: a field export showed the /power-profile
+    diagnostic reporting a stale collect_parallelism because it read the static
+    profile table, never the live persisted SchedulerSettings/AppSettings value --
+    for these three SETTING-backed knobs, the persisted value is ALWAYS what's
+    genuinely in effect (nothing today rewrites it on a profile switch), so the
+    diagnostic must reflect that, at every profile, even one whose table value
+    happens to differ from the live setting."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from src.config.app_settings import save_settings as save_app_settings
+    from src.config.power_profiles import live_setting_overrides
+    from src.scheduler.settings import save_settings as save_scheduler_settings
+
+    # Persist values that DIFFER from every profile's table entry (collect_parallelism
+    # table has low=10, optimized=50, max=50 -- pick something outside that set).
+    save_scheduler_settings({"collect_parallelism": 7, "qualification_per_pass": 3})
+    save_app_settings({"llm_keep_alive": "5m"})
+
+    overrides = live_setting_overrides()
+    assert overrides["collect_parallelism"] == 7
+    assert overrides["qualification_per_pass"] == 3
+    assert overrides["llm_keep_alive"] == "5m"
+
+    for profile in PROFILE_NAMES:
+        report = power_profile_report(active_profile=profile, overrides=overrides)
+        eff = report["effective"]
+        assert eff["collect_parallelism"]["value"] == 7
+        assert eff["collect_parallelism"]["source"] == "override"
+        assert eff["qualification_per_pass"]["value"] == 3
+        assert eff["llm_keep_alive"]["value"] == "5m"
+        # An env-var-backed knob is UNAFFECTED and still tracks the profile.
+        assert eff["dump_concurrency"]["source"] == f"profile:{profile}"
+
+
+def test_live_setting_overrides_degrades_to_empty_on_a_settings_read_fault(monkeypatch):
+    """A diagnostic must never break because a setting can't be read -- the caller
+    then falls back to the profile-table value for that knob, same as before this
+    existed. Simulate a fault in BOTH settings stores."""
+    from src.config import power_profiles as pp_mod
+
+    def _boom():
+        raise RuntimeError("simulated settings-store fault")
+
+    monkeypatch.setattr("src.scheduler.settings.load_settings", _boom)
+    monkeypatch.setattr("src.config.app_settings.load_settings", _boom)
+    assert pp_mod.live_setting_overrides() == {}
+
+
+def test_power_profile_endpoint_matches_the_live_scheduler_setting(tmp_path, monkeypatch):
+    """End-to-end: GET /api/diagnostics/power-profile must agree with the live
+    scheduler setting, not the static table -- the exact discrepancy the field
+    diagnostic surfaced."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from fastapi.testclient import TestClient
+
+    from src.api.main import app
+    from src.scheduler.settings import save_settings as save_scheduler_settings
+
+    save_scheduler_settings({"collect_parallelism": 33})
+    client = TestClient(app)
+    diag = client.get("/api/diagnostics/power-profile?profile=optimized").json()
+    assert diag["effective"]["collect_parallelism"]["value"] == 33
+    assert diag["effective"]["collect_parallelism"]["source"] == "override"
+
+
+def test_power_profile_selftest_stays_pure_and_ignores_persisted_settings(tmp_path, monkeypatch):
+    """The selftest/resolve_effective path must NEVER read a live setting -- its whole
+    value is being deterministic/no-DB/no-env (run_power_profile_selftest's own
+    docstring promise). Persist a collect_parallelism that DIFFERS from every
+    profile's table entry (low=10, optimized=50, max=50) and confirm the selftest's
+    own internal checks (which never pass overrides) are unaffected."""
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from src.scheduler.settings import save_settings as save_scheduler_settings
+
+    save_scheduler_settings({"collect_parallelism": 25})
+    log = run_power_profile_selftest()
+    assert log["passed"] is True, [c for c in log["checks"] if not c["passed"]]
+
+
 def test_every_profile_resolves_every_knob():
     for profile in PROFILE_NAMES:
         eff = resolve_effective(profile)

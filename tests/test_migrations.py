@@ -11,6 +11,7 @@ Proves:
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 import sys
@@ -77,3 +78,38 @@ def test_init_db_stamps_fresh_database(tmp_path, monkeypatch):
         text=True,
     )
     assert res.returncode == 0, res.stdout + res.stderr
+
+
+def test_env_py_fileconfig_never_disables_pre_existing_loggers(tmp_path):
+    """2026-07-26 hardware-diagnostics regression: ``migrations/env.py`` called
+    ``fileConfig(config.config_file_name)`` with its ``disable_existing_loggers``
+    DEFAULT (True) -- Python's stdlib then silently sets ``.disabled = True`` on
+    EVERY pre-existing logger not listed in ``alembic.ini``'s ``[loggers]`` (root,
+    sqlalchemy, alembic only), for the rest of the PROCESS. Any Alembic call that
+    stamps/upgrades against a real engine (``stamp_if_unstamped``, run at EVERY app
+    boot's self-heal) triggered this -- silently and permanently swallowing every
+    ERROR+ record from any OTHER already-imported logger (live-caught via
+    ``trafilatura``/``trafilatura.metadata``/``htmldate``, imported earlier in
+    ``src.api.main``'s import chain). Pinned generically -- a fresh, unrelated
+    marker logger, not tied to any specific third-party module -- so this guards
+    the mechanism, not just the one library that happened to surface it."""
+    from src.database.migrate import stamp_if_unstamped
+    from src.database.models import Base
+
+    marker = logging.getLogger("test_env_py_fileconfig_marker")
+    marker.disabled = False  # a real, pre-existing logger object
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'stamp.db'}", future=True)
+    try:
+        Base.metadata.create_all(engine)
+        # This is the exact call app boot's self-heal makes; it must NOT disable
+        # any pre-existing logger it doesn't own.
+        assert stamp_if_unstamped(engine) is True
+    finally:
+        engine.dispose()
+
+    assert marker.disabled is False, (
+        "Alembic's env.py fileConfig() disabled a pre-existing logger it never "
+        "listed -- pass disable_existing_loggers=False to fileConfig() in "
+        "migrations/env.py"
+    )

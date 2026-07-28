@@ -21,7 +21,15 @@ from src.database.session import DATABASE_URL, engine
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers defaults to True, which silently DISABLES every
+    # pre-existing logger not listed in alembic.ini's [loggers] (root, sqlalchemy,
+    # alembic only) for the rest of the process -- caught 2026-07-26 when the app's
+    # own boot-time Alembic self-heal (init_db()) disabled the already-imported
+    # `trafilatura`/`trafilatura.metadata`/`htmldate` loggers, silently swallowing
+    # their diagnostics (including the noise-filtered ERROR the W4 fix targets)
+    # forever after. uvicorn's own default logging config makes the same call with
+    # this same override for the identical reason.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata
 

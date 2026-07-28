@@ -1405,10 +1405,17 @@ def power_profile(
     visibility or a caveat; Optimized IS the current default (selecting it changes nothing), and
     Low/Max are PROVISIONAL until measured on the GAMMA harness. Degrades loudly on a bad profile
     name. ``download=1`` returns a dated attachment. (The active-profile CHIP + suggest-a-lower-
-    level proposal are browser-gated; this endpoint is the inspectable table.)"""
-    from src.config.power_profiles import power_profile_report
+    level proposal are browser-gated; this endpoint is the inspectable table.)
 
-    report = power_profile_report(active_profile=profile)
+    The three SETTING-backed knobs (``collect_parallelism``, ``qualification_per_pass``,
+    ``llm_keep_alive``) report their LIVE persisted value (source ``"override"``) rather than the
+    profile-table suggestion, since nothing today rewrites the persisted setting on a profile
+    switch — the persisted value is always what's genuinely in effect (2026-07-26 hardware
+    diagnostics: a field export showed this diagnostic reporting a stale/wrong effective
+    ``collect_parallelism`` for exactly this reason)."""
+    from src.config.power_profiles import live_setting_overrides, power_profile_report
+
+    report = power_profile_report(active_profile=profile, overrides=live_setting_overrides())
     headers = {}
     if download:
         fname = f"oo-power-profile-{datetime.now().strftime('%Y%m%d')}.json"
