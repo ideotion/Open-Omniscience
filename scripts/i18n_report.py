@@ -75,16 +75,83 @@ class _ChromeExtractor(HTMLParser):
         self.texts.add(k)
 
 
+# Surfaces the chrome audit reads BESIDES index.html.
+#
+# WHY (GUI audit 2026-07-28, finding I-1): this audit used to open index.html
+# and nothing else, so it reported "1069 UI strings, 801 keyed" and --min 100
+# read a green 2130/2130 x12 -- while app.js, the actual 18.5k-line UI engine,
+# was entirely invisible to it. That is how the coverage number could say
+# "100%" while untranslated surfaces kept turning up in the field. Widening the
+# scope does NOT change the blocking --min gate (that compares locale files
+# against en.json and never touches these paths); it only lets the REPORT see
+# what the engine actually renders.
+_AUX_HTML = ("taskmanager.html", "unlock.html", "investigate.html")
+_AUX_JS = ("app.js", "reader.js")
+
+# String shapes in JS that reach the DOM (and so are translatable by i18n.js
+# if a key exists). Deliberately conservative: a shape that could match a
+# non-user-facing literal is left out rather than inflating the count.
+_JS_SHAPES = (
+    re.compile(r"<th[^>]*>([A-Za-z][^<{`$]{2,80})</th>"),
+    re.compile(r"<button[^>]*>([A-Za-z][^<{`$]{2,80})</button>"),
+    re.compile(r'placeholder="([A-Za-z][^"{`$]{2,90})"'),
+    re.compile(r'\btitle="([A-Za-z][^"{`$]{2,120})"'),
+    re.compile(r'aria-label="([A-Za-z][^"{`$]{2,90})"'),
+    re.compile(r'\.textContent\s*=\s*"([^"{`$]{3,120})"'),
+    re.compile(r'\btoast\(\s*"([^"{`$]{3,140})"'),
+)
+
+
+def _js_chrome(text: str) -> set[str]:
+    out: set[str] = set()
+    for rx in _JS_SHAPES:
+        for m in rx.finditer(text):
+            k = re.sub(r"\s+", " ", m.group(1)).strip()
+            if len(k) < 3 or "${" in k:
+                continue
+            if re.fullmatch(r"[\W\d_…→↗·—-]+", k):
+                continue
+            if k.startswith(("http", "/api", "data:", "var(", "#")):
+                continue
+            out.add(k)
+    return out
+
+
+def _static_dir() -> Path:
+    return _UI.parent
+
+
 def audit_chrome() -> dict:
     parser = _ChromeExtractor()
     parser.feed(_UI.read_text(encoding="utf-8"))
+    texts = set(parser.texts)
+    per_file = {"index.html": len(parser.texts)}
+
+    for name in _AUX_HTML:
+        path = _static_dir() / name
+        if not path.exists():
+            continue
+        aux = _ChromeExtractor()
+        aux.feed(path.read_text(encoding="utf-8"))
+        per_file[name] = len(aux.texts)
+        texts |= aux.texts
+
+    for name in _AUX_JS:
+        path = _static_dir() / name
+        if not path.exists():
+            continue
+        found = _js_chrome(path.read_text(encoding="utf-8"))
+        per_file[name] = len(found)
+        texts |= found
+
     en_keys = _keys(_load(_LOCALES / "en.json"))
-    missing = sorted(t for t in parser.texts if t not in en_keys)
+    missing = sorted(t for t in texts if t not in en_keys)
     return {
-        "ui_strings": len(parser.texts),
-        "keyed": len(parser.texts) - len(missing),
+        "ui_strings": len(texts),
+        "keyed": len(texts) - len(missing),
         "missing_from_en": len(missing),
         "missing": missing,
+        "per_file": per_file,
     }
 
 
@@ -169,8 +236,12 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(
                 f"chrome audit — {audit['ui_strings']} UI strings, "
-                f"{audit['keyed']} keyed, {audit['missing_from_en']} untranslatable:\n"
+                f"{audit['keyed']} keyed, {audit['missing_from_en']} untranslatable\n"
             )
+            print("  scanned:")
+            for name, count in sorted(audit.get("per_file", {}).items()):
+                print(f"    {count:5d}  {name}")
+            print()
             for m in audit["missing"]:
                 print(f"  {m}")
         return 0
