@@ -7500,11 +7500,48 @@
     let _covTick = 0;         // slow-cadence counter for the library live poller
     let _covStamp = "";       // last payload fingerprint (skip repaint when unchanged)
 
+    // Part-to-whole with more categories than a donut can honestly carry: sorted
+    // horizontal bars, the replacement this project's OWN chart-decision framework
+    // names (docs/research/dataviz/chart_decision_framework.md). Bar length on a
+    // common scale beats angle/area for reading shares, and it degrades gracefully
+    // to any number of rows. Same data contract and same honesty as ooDonut: real
+    // total, real per-row counts, no score.
+    function _ooShareBars(el, items, total, opts, t) {
+      const max = items[0] ? items[0].value : 1;
+      const rows = items.map((d) =>
+        `<div style="display:flex;align-items:center;gap:8px;font-size:12px;line-height:1.7">`
+        + `<span style="flex:0 0 34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"`
+        + ` title="${esc(d.label)}">${esc(d.label)}</span>`
+        + `<span style="flex:1;background:var(--panel3);border-radius:3px;height:9px;position:relative">`
+        + `<span style="display:block;height:100%;border-radius:3px;background:var(--accent);`
+        + `width:${Math.max(1, Math.round(d.value / max * 100))}%"></span></span>`
+        + `<span class="muted" style="flex:0 0 auto">${esc(fmtNum(d.value))} · `
+        + `${Math.round(d.value / total * 100)}%</span></div>`
+      ).join("");
+      el.innerHTML =
+        `<div role="img" aria-label="${esc(opts.aria || "")}">`
+        + `<div style="font-size:12px;margin-bottom:6px">${esc(fmtNum(total))} `
+        + `${esc(opts.centerLabel || "")}</div>${rows}</div>`;
+    }
+
     // Reusable self-contained SVG DONUT (no deps; like ooChart/ooMap) — categorical
     // proportions with a legend. data: [{label, value}] (labels already display-ready).
     // Stroke-dasharray on one circle per slice handles any slice count AND the single
     // full-ring case robustly. Honest: shows the real total + per-slice counts; no score.
-    // Colours are evenly-spaced hues so any number of categories stays distinguishable.
+    //
+    // SLICE-COUNT GUARD (GUI audit 2026-07-28, finding V-4). The project's own
+    // committed chart-decision framework says, for part-to-whole: "Pie/donut only
+    // if <=4-5 slices, share labels shown, and precise comparison is not required;
+    // otherwise bars" — and lists "many-slice pie" on its REJECT list. This
+    // renderer had no guard and its only caller feeds it `unlocated.by_language`,
+    // an UNBOUNDED language set: past ~5 slices the evenly-spaced hues stop being
+    // distinguishable and angle-reading stops being reliable, which is exactly the
+    // failure the framework rejects. Above the threshold we fall back to sorted
+    // bars. NOTHING IS TRUNCATED -- every category is still shown, just in the
+    // encoding that can carry it (the anti-capping rule: a display cap may never
+    // silently drop data).
+    const _DONUT_MAX_SLICES = 5;
+
     function ooDonut(host, data, opts) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
       const el = (typeof host === "string") ? document.getElementById(host) : host;
@@ -7516,6 +7553,7 @@
         el.innerHTML = `<div class="muted">${esc(opts.empty || t("Nothing to chart."))}</div>`;
         return;
       }
+      if (items.length > _DONUT_MAX_SLICES) { _ooShareBars(el, items, total, opts, t); return; }
       const size = opts.size || 184, cx = size / 2, cy = size / 2;
       const sw = size * 0.16, rMid = size * 0.42 - sw / 2;
       const C = 2 * Math.PI * rMid;
