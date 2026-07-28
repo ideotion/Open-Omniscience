@@ -36,6 +36,28 @@ asserts the FIXED guarantee instead: that at least one checkpoint attempted
 during a ``run_all()`` pass eventually succeeds. That is false today and
 will flip true once PR-D's fix (a commit between producers, opening a real
 transaction boundary mid-pass) lands.
+
+Why the window is WRITE-GATED, not time-boxed
+---------------------------------------------
+The reader's window closes once the writer has committed ``_TARGET_WRITES``
+times — it is NOT a fixed wall-clock duration. This matters because the two
+assertions below are in direct tension:
+
+* (b), the discriminating guard, proves checkpoints now SUCCEED mid-pass;
+* a successful checkpoint TRUNCATES the ``-wal`` to 0 bytes;
+* so (a), the "the WAL really did grow" precondition, gets harder to
+  satisfy exactly as the fix works better.
+
+Originally the window was ``12 x 0.1s`` of wall clock, which made how much
+WAL accumulated depend entirely on how many writes a given runner happened
+to fit into that fixed time. Three CI lanes failed on this — Linux
+core-only at 815,792 B, macOS at 1,087,712 B and 1,631,552 B, all under the
+2 MiB bar — while the same code passed locally, purely because the local
+writer was faster. Gating on writes observed makes the accumulated volume
+deterministic (``_TARGET_WRITES x _WRITER_BLOB_BYTES``); a slow machine
+simply takes longer, and ``_WINDOW_CAP_S`` fails loudly rather than
+silently measuring less. Measured constant at ~5.2 MB across a 150x
+writer-speed sweep, against a 2.1 MB bar.
 """
 
 from __future__ import annotations
@@ -55,6 +77,17 @@ from src.scheduler.hygiene import checkpoint_wal
 
 _JOURNAL_SIZE_LIMIT_MB = 1
 _JOURNAL_SIZE_LIMIT_BYTES = _JOURNAL_SIZE_LIMIT_MB * 1024 * 1024
+_WRITER_BLOB_BYTES = 1024 * 1024  # per-write payload; contributes ~1.005 MB of
+# WAL per commit, so _TARGET_WRITES of them clear the 2 MiB bar with ~2.5x
+# margin. 2 MiB was tried and REJECTED: it clears (a) more easily but starves
+# the checkpointer (measured 0/8 successful attempts at one speed), which would
+# break assertion (b) -- the discriminating one. 1 MiB satisfies both.
+_TARGET_WRITES = 4  # the reader's window closes once the writer has committed
+# this many times -- NOT after a fixed wall-clock duration. This is what makes
+# assertion (a) runner-speed-INDEPENDENT; see the "why the window is
+# write-gated" section of the module docstring.
+_WINDOW_CAP_S = 30.0  # safety cap so a hung/failing writer can never hang the
+# suite. Exceeding it fails LOUDLY below rather than silently measuring less.
 _SEED_ROWS = 200  # empirically: enough that the fetchmany() scan below never
 # exhausts mid-run (a short seed lets the reader's cursor finish naturally
 # and release its snapshot early, defeating the reproduction — verified
@@ -98,14 +131,19 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
 
     A generator-shaped producer mimics ``build_keyword_daily``: it calls
     ``session.execute(SELECT ...)`` ONCE and holds the resulting cursor open
-    across a ``fetchmany()`` loop with a deliberate ``time.sleep()`` between
-    chunks (simulating a slow multi-minute scan, scaled down for a fast
-    test). A second thread does many small commits on a SEPARATE connection
-    throughout the run (simulating ongoing article ingest — this is what
-    actually grows the WAL). A third thread periodically attempts a
-    checkpoint on roughly the project's real ~300 s cadence, scaled down so
-    the RATIO of attempts landing during the open reader is observable in a
-    normal test run.
+    across a ``fetchmany()`` loop (simulating a slow multi-minute scan,
+    scaled down for a fast test). A second thread does many small commits on
+    a SEPARATE connection throughout the run (simulating ongoing article
+    ingest — this is what actually grows the WAL). A third thread repeatedly
+    attempts a checkpoint, standing in for the project's real ~300 s cadence
+    at a scale where the RATIO of attempts landing during the open reader is
+    observable in a fast test.
+
+    The producer advances ONE ``fetchmany()`` per write it observes, so the
+    window is bounded by WRITES rather than wall clock — see the module
+    docstring's "why the window is write-gated" section for the three CI
+    failures that motivated it. A fourth thread samples the ``-wal`` to
+    accumulate its total GROWTH, which a mid-window truncation cannot erase.
     """
     monkeypatch.setenv("OO_WAL_SIZE_LIMIT_MB", str(_JOURNAL_SIZE_LIMIT_MB))
     _fresh_cadence(monkeypatch)
@@ -117,18 +155,45 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
     # monkeypatch restores the real registry when this test ends).
     monkeypatch.setattr(registry, "_REGISTRY", [])
 
+    # Signalled once per committed write, so the reader below can gate its
+    # window on WRITES OBSERVED rather than on wall-clock time.
+    write_ticks = threading.Semaphore(0)
+    writes_committed = 0
+    window_timed_out = False
+    window_open_mono = 0.0
+    window_close_mono = 0.0
+
     def _slow_scan_producer(session):
         # Mimics build_keyword_daily's shape exactly: ONE session.execute()
-        # SELECT, held open across a fetchmany() loop with sleeps between
-        # chunks -- the SAME cursor stays alive (unfetched rows remaining)
-        # for the whole simulated scan, never dereferenced until it
-        # completes.
+        # SELECT, held open across a fetchmany() loop -- the SAME cursor
+        # stays alive (unfetched rows remaining) for the whole simulated
+        # scan, never dereferenced until it completes.
+        #
+        # One fetchmany() per OBSERVED WRITE, instead of a fixed iteration
+        # count with a fixed sleep. See the module docstring: this is what
+        # decouples how much WAL accumulates from how fast the runner is.
+        nonlocal window_timed_out, window_open_mono, window_close_mono
         result = session.execute(text("SELECT x FROM t"))
-        for _ in range(8):
+        window_open_mono = time.monotonic()
+        deadline = window_open_mono + _WINDOW_CAP_S
+        seen = 0
+        while seen < _TARGET_WRITES:
+            if time.monotonic() > deadline:
+                window_timed_out = True
+                break
+            if not write_ticks.acquire(timeout=0.25):
+                continue  # writer is slow -- keep the cursor open and wait
+            seen += 1
             chunk = result.fetchmany(3)
             if not chunk:
-                break
-            time.sleep(0.1)
+                break  # cursor exhausted (cannot happen: _SEED_ROWS >> reads)
+        # Stamped BEFORE returning, i.e. while the cursor is still open. Any
+        # checkpoint attempt after this instant is OUTSIDE the window under
+        # test -- run_all() releases the snapshot on the way out, so a late
+        # attempt succeeds even on unpatched code and would make assertion
+        # (b) pass spuriously. Measured: that race made the unpatched run
+        # pass 1 time in 3 before this filter existed.
+        window_close_mono = time.monotonic()
         return []
 
     registry.register("fake_slow_scan_producer", _slow_scan_producer)
@@ -139,11 +204,14 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
     write_errors: list[str] = []
 
     def _writer():
+        nonlocal writes_committed
         while not stop_writer.is_set():
             try:
                 with eng.connect() as c:
-                    c.exec_driver_sql("INSERT INTO t VALUES (randomblob(262144))")
+                    c.exec_driver_sql(f"INSERT INTO t VALUES (randomblob({_WRITER_BLOB_BYTES}))")
                     c.commit()
+                writes_committed += 1
+                write_ticks.release()
             except Exception as exc:  # noqa: BLE001 - captured, asserted below
                 write_errors.append(str(exc))
             time.sleep(0.02)
@@ -161,11 +229,58 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
         while not stop_checkpointer.is_set():
             rec = checkpoint_wal(engine=eng, force=True, busy_timeout_ms=50)
             if rec is not None:
-                ckpt_results.append(rec)
-            time.sleep(0.05)
+                ckpt_results.append({**rec, "_mono": time.monotonic()})
+            # 0.02s, not 0.05s: on a FAST runner the write-gated window can be
+            # ~0.1s, which at 0.05s left only 2 attempts. This raises the
+            # sample count without coupling WAL VOLUME to wall clock (that
+            # stays write-gated) -- the checkpointer just needs enough tries.
+            time.sleep(0.02)
 
     checkpointer_thread = threading.Thread(target=_checkpointer)
     checkpointer_thread.start()
+
+    # Sampler thread: track CUMULATIVE WAL growth across the window -- the sum
+    # of every positive size delta, so a truncation subtracts nothing.
+    #
+    # WHY CUMULATIVE AND NOT A TRAILING stat(), NOR EVEN A PEAK (root-caused
+    # 2026-07-28 from three CI failures): a SUCCESSFUL checkpoint TRUNCATES
+    # the -wal to 0 bytes (empirically confirmed by sampling right after each
+    # busy=0 attempt). Once PR-D's fix landed, checkpoints DO succeed
+    # mid-window -- that is exactly what assertion (b) proves -- so:
+    #
+    #   * a trailing stat() measures only what the writer re-accumulated
+    #     since the LAST truncation. Observed in CI: 815,792 B (Linux
+    #     core-only), 1,087,712 B and 1,631,552 B (macOS) -- all under the
+    #     2 MiB bar, for reasons unrelated to the behaviour under test.
+    #   * a tracked PEAK is better but STILL insufficient: measured here
+    #     across a writer-speed sweep, the peak plateaus at 2,010,592 B once
+    #     the writer is slow enough that only two writes land between
+    #     truncations -- just UNDER the 2,097,152 B bar. A peak-only fix
+    #     would have kept this lane red.
+    #
+    # Assertions (a) and (b) are in direct TENSION: the better the fix works,
+    # the more the WAL is reclaimed, and the harder an instantaneous-size
+    # assertion is to satisfy. Cumulative growth removes that tension --
+    # truncation cannot erase it -- so (a) becomes a genuine, fix-INVARIANT
+    # precondition ("the scenario really did put the WAL under sustained
+    # pressure") while (b) stays the discriminating regression guard.
+    wal_growth_bytes = 0
+
+    def _sample_wal_growth():
+        nonlocal wal_growth_bytes
+        previous = 0
+        while not stop_checkpointer.is_set():
+            try:
+                current = wal_path.stat().st_size if wal_path.exists() else 0
+            except OSError:  # raced a truncation/unlink -- treat as 0, never crash
+                current = 0
+            if current > previous:
+                wal_growth_bytes += current - previous
+            previous = current
+            time.sleep(0.005)
+
+    sampler_thread = threading.Thread(target=_sample_wal_growth)
+    sampler_thread.start()
 
     # Drive the REAL registry.run_all() -- its shared, never-committed
     # session is exactly the mechanism named in the brief.
@@ -178,39 +293,58 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
         stop_checkpointer.set()
         writer_thread.join(5.0)
         checkpointer_thread.join(5.0)
-        # Measure the WAL's peak size WHILE the reader's snapshot is still
-        # pinned (before closing the session) -- so a future fix that
-        # cleanly reclaims the WAL once run_all() itself returns can never
-        # retroactively shrink what we are about to assert grew.
-        wal_bytes_during_window = wal_path.stat().st_size if wal_path.exists() else 0
+        sampler_thread.join(5.0)
         reader_session.close()
 
     assert not write_errors, f"writer thread hit unexpected errors: {write_errors}"
+    assert not window_timed_out, (
+        f"the reader's window hit its {_WINDOW_CAP_S}s safety cap before the "
+        f"writer committed {_TARGET_WRITES} times (only {writes_committed} "
+        "landed) -- the runner is far slower than any measured here, or the "
+        "writer thread is wedged. Failing loudly rather than silently "
+        "measuring a shorter window."
+    )
     assert len(ckpt_results) > 0, (
         "no checkpoint attempts landed during run_all()'s window -- widen "
-        "the simulated scan (more fetchmany() iterations / longer sleeps) "
-        "so the ratio is observable"
+        "the simulated scan (raise _TARGET_WRITES) so the ratio is observable"
     )
 
-    # (a) the WAL genuinely grew past N x journal_size_limit while the
-    # simulated reader was still iterating -- proves this reproduces real
-    # starvation (sustained, unreclaimed growth), not a trivial edge case.
-    assert wal_bytes_during_window > 2 * _JOURNAL_SIZE_LIMIT_BYTES, (
-        f"expected the WAL to grow past 2x the {_JOURNAL_SIZE_LIMIT_BYTES}-"
-        f"byte journal_size_limit while run_all()'s shared session held its "
-        f"read open; observed only {wal_bytes_during_window} bytes -- the "
-        "starvation scenario did not reproduce"
+    # (a) PRECONDITION: the WAL genuinely accumulated past 2x
+    # journal_size_limit while the simulated reader held its read open --
+    # proving this reproduces real sustained pressure, not a trivial edge
+    # case. Asserted against CUMULATIVE growth, never an instantaneous size:
+    # see _sample_wal_growth above for why both a trailing stat() and a
+    # tracked peak raced the fix's own truncations.
+    #
+    # Measured stability of this figure across a 150x writer-speed sweep
+    # (0.02s -> 3.0s per write), which is what makes it runner-independent:
+    #   trailing stat(): 1,062,992 -> 0          (fails below ~0.5s/write)
+    #   tracked peak:    2,125,952 -> 2,010,592  (fails below ~1.0s/write)
+    #   cumulative:      5,203,688 -> 5,203,688  (constant; ~2.5x the bar)
+    assert wal_growth_bytes > 2 * _JOURNAL_SIZE_LIMIT_BYTES, (
+        f"expected the WAL to accumulate more than 2x the "
+        f"{_JOURNAL_SIZE_LIMIT_BYTES}-byte journal_size_limit while "
+        f"run_all()'s shared session held its read open; total growth was "
+        f"only {wal_growth_bytes} bytes across {writes_committed} writes -- "
+        "the starvation scenario did not reproduce (raise _TARGET_WRITES or "
+        "_WRITER_BLOB_BYTES)"
     )
 
     # Cross-check via the app's own diagnostic (storage_composition, the
-    # WAL-visibility surface S3 §Phase-A shipped for operators) -- a fresh,
-    # short-lived session sees the same unreclaimed growth.
+    # WAL-visibility surface S3 §Phase-A shipped for operators): the operator
+    # surface genuinely reports the WAL. NOT asserted against a size
+    # threshold -- this runs AFTER the window, by which point a successful
+    # checkpoint may legitimately have truncated the file to 0, so any
+    # threshold here would race the very fix under test (the same defect
+    # assertion (a) above was fixed for).
     diag_session = Session()
     try:
         composition = storage_composition(diag_session)
     finally:
         diag_session.close()
-    assert composition.get("wal_bytes", 0) > 2 * _JOURNAL_SIZE_LIMIT_BYTES
+    assert isinstance(composition.get("wal_bytes"), int), (
+        "storage_composition must surface wal_bytes for operators"
+    )
 
     # (b) THE REGRESSION (the discriminating assertion): today, with NO
     # commit anywhere in run_all()'s producer loop, the FIRST producer's
@@ -219,13 +353,32 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
     # succeeding. Once PR-D lands (a commit between producers), a genuine
     # transaction boundary opens mid-pass and at least one checkpoint
     # attempted during the window should succeed.
-    assert any(rec["busy"] == 0 for rec in ckpt_results), (
-        f"every one of the {len(ckpt_results)} checkpoint attempts made "
-        "while run_all() was executing reported busy=1 (none ever "
-        "succeeded) -- run_all()'s shared session, never committed between "
-        "producers, starves the checkpoint for its ENTIRE duration. This is "
-        "the diagnosed root cause (PR-D / W1): fix run_all() to commit "
-        "between producers so a checkpoint attempted mid-pass can "
+    #
+    # Restricted to attempts that landed STRICTLY INSIDE the producer's
+    # held-cursor window. run_all() releases the read snapshot on its way out
+    # (the between-producer commit, and the WAL-guard context's exit cleanup),
+    # so an attempt landing in the gap between run_all() returning and the
+    # checkpointer thread observing its stop flag succeeds even on UNPATCHED
+    # code. Measured before this filter existed: the unpatched run passed 1
+    # time in 3 on that race alone -- i.e. the guard silently stopped
+    # discriminating a third of the time.
+    in_window = [
+        rec for rec in ckpt_results
+        if window_open_mono <= rec["_mono"] <= window_close_mono
+    ]
+    assert in_window, (
+        f"no checkpoint attempt landed inside the producer's held-cursor "
+        f"window ({window_close_mono - window_open_mono:.3f}s, "
+        f"{len(ckpt_results)} attempts total) -- the window is too short to "
+        "observe anything; raise _TARGET_WRITES."
+    )
+    assert any(rec["busy"] == 0 for rec in in_window), (
+        f"every one of the {len(in_window)} checkpoint attempts made while "
+        "run_all()'s producer held its cursor open reported busy=1 (none "
+        "ever succeeded) -- run_all()'s shared session, never committed "
+        "between producers, starves the checkpoint for its ENTIRE duration. "
+        "This is the diagnosed root cause (PR-D / W1): fix run_all() to "
+        "commit between producers so a checkpoint attempted mid-pass can "
         "eventually succeed."
     )
 
