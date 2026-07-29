@@ -1774,6 +1774,101 @@ def import_cache_mb() -> int:
     return 512
 
 
+# The canonical stage sequence a restore walks, in order. Kept BESIDE the
+# ``timings.stage(...)`` calls in run_restore that produce it -- a drift here shows
+# up immediately as a wrong "phase N of M", and tests/test_restore_stage_plan.py
+# pins the two lists against each other by reading this module's own source.
+_RESTORE_STAGES_ALWAYS: tuple[str, ...] = (
+    "prepare_staged",
+    "snapshot_working_copy",
+    "merge",
+    "verify",
+    "corpus_delta_before",
+)
+# Everything after the dry-run early return (``if not commit``) -- i.e. only a
+# COMMITTING restore reaches these.
+_RESTORE_STAGES_COMMIT: tuple[str, ...] = (
+    "pre_restore_snapshot",
+    "side_files_and_custody",
+    "report_json_write",
+    "swap",
+    "corpus_delta_after",
+    "corpus_epoch_bump",
+    "event_mirror_refresh",
+    "reindex",
+    "quarantine_scan",
+    "work_induced_tally",
+    "prune_snapshots",
+)
+
+
+def restore_stage_plan(*, commit: bool, reindex_imported: bool = True) -> tuple[str, ...]:
+    """The stages THIS restore will actually walk, in order.
+
+    Exists so a caller can show an honest "phase N of M" (field ruling 2026-07-29
+    item 17: the number of remaining phases must be visible). M is NOT a constant --
+    a dry run stops after ``corpus_delta_before`` and a restore with
+    ``reindex_imported=False`` never runs the ``reindex`` stage -- so a hardcoded
+    denominator would be a fabricated number, exactly the thing this project's
+    honesty rules forbid. Pure + total, so it is trivially testable and can never
+    itself fail a restore."""
+    if not commit:
+        return _RESTORE_STAGES_ALWAYS
+    tail = tuple(s for s in _RESTORE_STAGES_COMMIT if s != "reindex" or reindex_imported)
+    return _RESTORE_STAGES_ALWAYS + tail
+
+
+def _stage_pinger(
+    plan: tuple[str, ...], sink: Callable[[str, int, int], None] | None
+) -> Callable[[str], None] | None:
+    """Adapt :class:`StageTimings`' ``on_start(name)`` to a ``(name, index, total)``
+    sink, so the caller gets the position without StageTimings itself having to know
+    about restore plans (its contract stays exactly as its own tests pin it).
+
+    A stage absent from the plan reports index 0 -- an honest "position unknown"
+    rather than a guessed one (this happens only if the plan and the code drift, and
+    a 0 is visibly wrong in a way a plausible-looking wrong number would not be)."""
+    if sink is None:
+        return None
+    total = len(plan)
+
+    def _ping(name: str) -> None:
+        index = plan.index(name) + 1 if name in plan else 0
+        sink(name, index, total)
+
+    return _ping
+
+
+def import_reindex_commit_batch() -> int:
+    """Commit batch for the post-merge re-index when the import owns the machine
+    (field report 2026-07-29: a 50,000-article import quoted a multi-hour re-index).
+
+    WHY THIS EXISTS SEPARATELY from :func:`_default_reindex_commit_batch`: that one
+    reads ``OO_REINDEX_COMMIT_BATCH``, whose default is ``1`` -- ONE COMMIT, hence one
+    fsync through the SQLCipher codec, PER ARTICLE. That default is the right
+    conservative choice for the BACKGROUND corpus re-index, which must interleave with
+    a live scrape and therefore must not hold the single-writer gate across a long
+    batch. A restore's re-index is the opposite situation: background collection is
+    paused for its duration, so nothing is waiting on the gate and a wide batch is
+    pure win (fewer fsyncs, fewer gate acquisitions).
+
+    ``OO_IMPORT_REINDEX_COMMIT_BATCH`` overrides; default 200 (maintainer-ruled
+    2026-07-29). NO DATA LOSS at any batch width: ``reindex_articles``' batched path
+    keeps the proven rollback-then-redo-per-article fallback, so a collision or a bad
+    article never drops its batch-mates -- the batch size trades fsyncs for the SIZE
+    of the redo on failure, never for correctness.
+
+    Used ONLY when the caller confirmed exclusivity (``was_paused``); otherwise the
+    caller passes None and the conservative env default applies."""
+    raw = os.getenv("OO_IMPORT_REINDEX_COMMIT_BATCH", "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    return 200
+
+
 def run_restore(
     staged: StagedArtifact,
     *,
@@ -1785,7 +1880,7 @@ def run_restore(
     reindex_workers: int | None = None,
     reindex_progress_cb: Callable[[int, int], None] | None = None,
     merge_cache_mb: int | None = None,
-    stage_progress_cb: Callable[[str], None] | None = None,
+    stage_progress_cb: Callable[[str, int, int], None] | None = None,
 ) -> dict:
     """Preview (commit=False) or perform (commit=True) a merge-restore.
 
@@ -1818,16 +1913,21 @@ def run_restore(
     ``tests/test_backup_timing.py``). Attached before every return so even a
     refused/preview-only report carries the stages that actually ran.
 
-    ``stage_progress_cb`` ("progress everywhere", §4 item 2): fired with just
-    the stage NAME the instant each stage BEGINS — a coarse "now doing: swap"
-    ping for the stages (B/D/E/G) that have no callback of their own (unlike
-    the fine-grained 14-step ``progress_cb`` or the per-article
-    ``reindex_progress_cb``). Report-only, never load-bearing."""
+    ``stage_progress_cb`` ("progress everywhere", §4 item 2): fired with the
+    stage NAME **and its position** ``(name, index, total)`` the instant each
+    stage BEGINS — a coarse "now doing: swap (phase 9 of 19)" ping for the
+    stages (B/D/E/G) that have no callback of their own (unlike the
+    fine-grained 14-step ``progress_cb`` or the per-article
+    ``reindex_progress_cb``). The position comes from :func:`restore_stage_plan`,
+    computed from THIS call's own ``commit``/``reindex_imported`` — never a
+    hardcoded denominator (field ruling 2026-07-29 item 17). Report-only, never
+    load-bearing."""
     from src.backup.sqlite_backup import live_db_path
     from src.backup.timing import StageTimings
     from src.database.session import dispose_engine, init_db
 
-    timings = StageTimings(on_start=stage_progress_cb)
+    stage_plan = restore_stage_plan(commit=commit, reindex_imported=reindex_imported)
+    timings = StageTimings(on_start=_stage_pinger(stage_plan, stage_progress_cb))
     # Fold in stage-A (decrypt/reassemble) timing, already measured by whichever
     # producer (read_artifact / read_stream_backup / read_volume_backup) built
     # this StagedArtifact — run_restore itself never touches stage A (it only

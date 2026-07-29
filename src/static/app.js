@@ -5702,6 +5702,20 @@
         : mode === "verify" ? t("Verifying volumes…") : t("Restoring…");
       return m[phase] || dflt;
     }
+    // "phase 9 of 18" — the honest position of the current phase within THIS run.
+    // Both numbers come from the backend (src/backup/merge.py::restore_stage_plan +
+    // volume_job's own manager phases), never from a hardcoded denominator: a dry run
+    // walks 5 stages, a committing restore 16, and one fewer when the re-index is
+    // skipped. index 0 means the backend could not place the stage in its own plan —
+    // an honest unknown, so we render nothing rather than a guess.
+    function _uxPhaseCount(p, t) {
+      const i = p.phase_index || 0, n = p.phase_total || 0;
+      if (!i || !n || i > n) return "";
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf
+        : ((s, vars) => s.replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m));
+      return ` · ${tf("phase {n} of {total}", { n: i, total: n })}`;
+    }
     function _uxProgressView(kind, s, t) {
       const p = s.progress || {};
       if (kind === "newsletters") {
@@ -5725,22 +5739,30 @@
       // (frozen on the merge's last-reported step) for however long the post-merge
       // per-article re-index took — sometimes hours on a large restore, reading as a
       // hang (2026-07-19 field report).
+      const phaseCount = esc(_uxPhaseCount(p, t));
       if (p.merge_steps) {
         const frac = Math.min(1, (p.merge_step || 0) / p.merge_steps);
         const label = p.merge_label
           ? `${esc(_uxVolPhase("merging", s.mode, t))} <span class="muted">(${p.merge_step}/${p.merge_steps} · ${esc(p.merge_label)})</span>`
           : esc(_uxVolPhase("merging", s.mode, t));
-        return { pct: Math.round(frac * 100), indeterminate: false, frac, text: label };
+        // phaseKey scopes the rule-of-three ETA to THIS phase (see _uxPoll): the
+        // merge and the re-index are different units of work at wildly different
+        // rates, so one baseline across both produced the field report's absurd
+        // "4000 min left" the instant the phase flipped and frac reset to ~0.
+        return { pct: Math.round(frac * 100), indeterminate: false, frac, phaseKey: "merge",
+          text: label + `<span class="muted">${phaseCount}</span>` };
       }
       if (p.reindex_total) {
         const frac = Math.min(1, (p.reindex_done || 0) / p.reindex_total);
         const label = `${esc(_uxVolPhase("reindexing", s.mode, t))} <span class="muted">(${p.reindex_done || 0}/${p.reindex_total} ${esc(t("articles"))})</span>`;
-        return { pct: Math.round(frac * 100), indeterminate: false, frac, text: label };
+        return { pct: Math.round(frac * 100), indeterminate: false, frac, phaseKey: "reindex",
+          text: label + `<span class="muted">${phaseCount}</span>` };
       }
       let extra = "";
       if (p.volumes_written) extra += ` · ${p.volumes_written} ${esc(t("volumes"))}`;
       if (p.bytes_written) extra += ` · ${esc(humanBytes(p.bytes_written))}`;
-      return { pct: null, indeterminate: true, text: `${esc(_uxVolPhase(p.phase, s.mode, t))}${extra}` };
+      return { pct: null, indeterminate: true, phaseKey: `phase:${p.phase || ""}`,
+        text: `${esc(_uxVolPhase(p.phase, s.mode, t))}${extra}<span class="muted">${phaseCount}</span>` };
     }
     function _uxPaintBar(bar, view) {
       if (!bar) return;
@@ -5753,7 +5775,15 @@
     function _uxPoll(url, kind, ui) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const prefix = ui.prefix ? `${esc(ui.prefix)}: ` : "";
-      const startMs = Date.now();
+      // PER-PHASE ETA baseline (field report 2026-07-29: a 50,000-article import
+      // quoted "~4000 min left"). This used to be ONE startMs for the whole job while
+      // `view.frac` resets to ~0 at every phase boundary, so the rule of three computed
+      // (verify + reassemble + merge + reindex-so-far) x (1-f)/f — charging the whole
+      // preceding job to the fraction of the phase that had just started, an
+      // over-estimate of roughly 5-15x early in the re-index. Re-baselining per phase
+      // makes the estimate mean what it says: time left in THIS phase.
+      let etaKey = null;
+      let etaStart = Date.now();
       return new Promise((resolve, reject) => {
         // JOB-STATE-AS-TRUTH (field-test Item 9): a dropped/failed status poll does NOT
         // mean the backup failed — the job keeps running server-side. So a transport hiccup
@@ -5784,7 +5814,9 @@
           _uxPaintBar(ui.bar, view);
           // A client-side rule-of-three ETA for byte/fraction-based jobs (folder copy);
           // the newsletter job carries its own backend eta_seconds already in view.text.
-          const etaSec = _uxRuleOfThree(startMs, view.frac);
+          const key = view.phaseKey || kind;
+          if (key !== etaKey) { etaKey = key; etaStart = Date.now(); }
+          const etaSec = _uxRuleOfThree(etaStart, view.frac);
           const etaTxt = etaSec != null ? _uxEta(etaSec, t, true) : "";
           if (ui.label) ui.label.innerHTML = prefix + view.text + esc(etaTxt);
           if (state === "done" || state === "paused") return resolve(s);  // paused = stopped, not a hang

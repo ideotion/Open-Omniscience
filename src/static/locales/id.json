@@ -2238,5 +2238,6 @@
   "floor": "batas bawah",
   "Sources per region against each region's floor.": "Sumber per wilayah dibandingkan dengan batas bawah tiap wilayah.",
   "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "Batang = sumber terkumpul; tanda vertikal adalah batas bawah wilayah itu. Hanya hitungan, tanpa skor.",
-  "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.": "VADER adalah leksikon bahasa Inggris: nada hanya diukur untuk liputan berbahasa Inggris. Tidak adanya nada di sini berarti tidak terukur — bukan netral."
+  "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.": "VADER adalah leksikon bahasa Inggris: nada hanya diukur untuk liputan berbahasa Inggris. Tidak adanya nada di sini berarti tidak terukur — bukan netral.",
+  "phase {n} of {total}": "fase {n} dari {total}"
 }
