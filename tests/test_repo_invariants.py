@@ -1055,6 +1055,14 @@ def test_perception_extraction_is_eval_gated_and_never_touches_the_trusted_table
     core = (_SRC / "ai_layer" / "perception_extract.py").read_text(encoding="utf-8")
     assert "def gate_languages_from_report(" in core and "def language_gate(" in core
     assert "MAX_HALLUCINATION_RATE" in core
+    # 2026-07-29: the gate needs BOTH floors. A hallucination floor alone is
+    # one-sided -- an extractor that returns NOTHING scores tp+fp==0, so its
+    # hallucination rate is None, so it never failed and was licensed for EVERY
+    # language. The recall floor is what catches silence; do not remove it.
+    assert "MIN_RECALL" in core, (
+        "the eval gate must keep its RECALL floor -- without it a model that "
+        "extracts nothing passes for every language (the 2026-07-29 defect)"
+    )
     assert '"ai-who"' in core and '"ai-place"' in core and '"ai-date"' in core
     assert '"ai-event"' not in core and '"ai-person"' not in core and '"ai-org"' not in core, (
         "WHO stays ONE combined kind (persons AND orgs) -- splitting it would fabricate "

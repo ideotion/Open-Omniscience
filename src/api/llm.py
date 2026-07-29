@@ -291,15 +291,27 @@ def llm_health(client=Depends(get_llm_client)) -> dict:
     ``available``, no model count."""
     from src.llm.backend import resolve_backend
 
+    # ONE resolution pass -- this call already happened here, so the V4 capability
+    # fields ride into the payload for free: the top-bar pill can then name the
+    # REAL situation ("no backend at all") instead of a generic "offline" that
+    # reads the same whether the fallback is up or down.
     try:
-        backend = resolve_backend()["backend"]
+        resolved = resolve_backend()
     except Exception:  # noqa: BLE001 - a resolution hiccup must not break the health check
-        backend = "ollama"
+        resolved = {}
+    # NEVER fabricate a backend name we did not resolve. This previously said
+    # "ollama" unconditionally on failure -- a claim about which backend is active
+    # that nothing had observed. None = honestly unknown.
+    backend = resolved.get("backend")
+    no_backend = resolved.get("no_backend")
+    backend_reason = resolved.get("reason")
     try:
         installed = client.list_installed()
         return {
             "available": True,
             "backend": backend,
+            "no_backend": no_backend,
+            "backend_reason": backend_reason,
             "base_url": client.base_url,
             "installed_models": installed,
         }
@@ -307,6 +319,8 @@ def llm_health(client=Depends(get_llm_client)) -> dict:
         return {
             "available": False,
             "backend": backend,
+            "no_backend": no_backend,
+            "backend_reason": backend_reason,
             "base_url": client.base_url,
             "installed_models": [],
             "detail": str(exc),
@@ -593,6 +607,9 @@ def vllm_status() -> dict:
 
 class VllmInstallRequest(BaseModel):
     version: str | None = None
+    # The operator's explicit confirmation past a preflight WARNING (low RAM, or
+    # a RAM-backed install target). Never overrides a BLOCKING refusal.
+    acknowledge_low_resources: bool = False
 
 
 _VLLM_INSTALL_JOB = None
@@ -623,9 +640,11 @@ def vllm_install(req: VllmInstallRequest | None = None) -> dict:
     venv + ``pip install vllm==<verified version>`` (drags torch/CUDA, several
     GB -- disclosed via ``/api/llm/vllm/status``'s ``estimated_size_note``
     before the frontend even offers this button). Refuses (409) on a non-Linux
-    host (no vLLM wheel exists there at all), a CPU-only machine, or under
-    airplane mode; 409-free for an already-running install (returns its
-    current status).
+    host (no vLLM wheel exists there at all), a CPU-only machine, under
+    airplane mode, or when the resource preflight BLOCKS (not enough disk to
+    unpack the wheels) / WARNS without an acknowledgement (low RAM, or a
+    RAM-backed install target); 409-free for an already-running install
+    (returns its current status).
 
     The platform/CPU/airplane checks run HERE, synchronously, before the
     background job even starts -- ``run_install_job`` re-checks all three
@@ -638,7 +657,11 @@ def vllm_install(req: VllmInstallRequest | None = None) -> dict:
     conditions gate STARTING a new install, not an already-running one)."""
     from src.ingest import kill_switch_active
     from src.llm.backend import detect_gpu
-    from src.llm.vllm_lifecycle import VLLM_VERIFIED_VERSION, platform_support
+    from src.llm.vllm_lifecycle import (
+        VLLM_VERIFIED_VERSION,
+        install_preflight,
+        platform_support,
+    )
 
     body = req or VllmInstallRequest()
     job = _get_vllm_install_job()
@@ -655,19 +678,62 @@ def vllm_install(req: VllmInstallRequest | None = None) -> dict:
             detail="Network is OFF (airplane mode): refusing to install vLLM. "
             "Turn airplane mode off to install.",
         )
-    if not detect_gpu().get("available"):
+    gpu = detect_gpu()
+    if not gpu.get("available"):
         raise HTTPException(
             status_code=409,
             detail="No GPU detected on this machine -- vLLM is GPU-first and would "
             "install into a backend that can never usefully run. Use Ollama instead.",
         )
+    # Same synchronous-duplication rationale as the three checks above: the worker
+    # re-runs the preflight itself, but a check made only inside the worker THREAD
+    # surfaces as an async job failure instead of this endpoint's 409. The detail is
+    # a DICT here (not a string) so the frontend can tell an acknowledgeable warning
+    # from a hard refusal and drive the confirm dialog from the real numbers.
+    pre = install_preflight(version=body.version or VLLM_VERIFIED_VERSION, gpu=gpu)
+    if pre["blocking"]:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "Cannot install vLLM on this machine.",
+                "acknowledgeable": False,
+                "blocking": pre["blocking"],
+                "preflight": pre,
+            },
+        )
+    if pre["requires_acknowledgement"] and not body.acknowledge_low_resources:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "This machine is below a resource floor for a vLLM install.",
+                "acknowledgeable": True,
+                "warnings": pre["warnings"],
+                "preflight": pre,
+            },
+        )
     try:
-        st = job.start(version=body.version or VLLM_VERIFIED_VERSION)
+        st = job.start(
+            version=body.version or VLLM_VERIFIED_VERSION,
+            acknowledge_low_resources=body.acknowledge_low_resources,
+        )
         st["started"] = True
     except RuntimeError:
         st = job.status()
         st["started"] = False
     return st
+
+
+@router.get("/vllm/install/preflight")
+def vllm_install_preflight() -> dict:
+    """What a vLLM install would cost THIS machine, measured, before the click
+    (V2): free disk on the volume the venv will live on, total system RAM, and
+    whether that volume is RAM-backed. ``blocking`` = the install will be
+    refused; ``warnings`` = refused unless ``acknowledge_low_resources`` is set;
+    ``notes`` = a probe that could not read its value (stated, never estimated).
+    Read-only, no network."""
+    from src.llm.vllm_lifecycle import install_preflight
+
+    return install_preflight()
 
 
 @router.get("/vllm/install/status")

@@ -96,6 +96,22 @@ def test_health_reports_available_with_models():
         assert body["installed_models"]
 
 
+def test_health_payload_carries_the_backend_capability_fields():
+    """V4 (2026-07-29): the top-bar pill needs to distinguish "the selected
+    backend is down" from "there is no backend at all". Presence only -- the
+    payload's `available` comes from the INJECTED fake client while `no_backend`
+    comes from the real resolver's own probes, so under a test double their
+    VALUES legitimately describe different things; the frontend only consults
+    `no_backend` on the `available: False` path, so no contradiction ever reaches
+    a user. `backend` may be None if resolution itself failed -- honestly
+    unknown, never the fabricated "ollama" this replaced."""
+    _override(_FakeOllama(available=True))
+    with TestClient(app) as client:
+        body = client.get("/api/llm/health").json()
+        assert "no_backend" in body and "backend_reason" in body
+        assert "backend" in body
+
+
 def test_generate_round_trip():
     fake = _FakeOllama()
     _override(fake)

@@ -12019,13 +12019,24 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const g = await api("/api/diagnostics/perception-extract/gate");
-        const active = Object.keys(g).filter((l) => g[l] && g[l].active).sort();
-        const disabled = Object.keys(g).filter((l) => g[l] && !g[l].active).sort();
+        // TRI-STATE (2026-07-29): true = evaluated + cleared, false = evaluated + FAILED,
+        // null = NO harness evidence. "unmeasured" is never folded into either of the
+        // other two — an absence of measurement is not a verdict.
+        const keys = Object.keys(g).filter((l) => g[l]);
+        const active = keys.filter((l) => g[l].active === true).sort();
+        const disabled = keys.filter((l) => g[l].active === false).sort();
+        const unmeasured = keys.filter((l) => g[l].active == null).sort();
+        const detail = (l) => esc(l) + " (" + esc(g[l].reason || "") + ")";
+        // Active languages show their reason too — that is what makes "cleared on 1
+        // synthetic case — low statistical power" visible rather than implied.
         let html = "<b>" + t("Active languages:") + "</b> "
-          + (active.length ? esc(active.join(", ")) : t("none yet — run the harness above"));
+          + (active.length ? active.map(detail).join("; ") : t("none yet — run the harness above"));
         if (disabled.length) {
-          html += "<br><b>" + t("Disabled:") + "</b> "
-            + disabled.map((l) => esc(l) + " (" + esc(g[l].reason || "") + ")").join("; ");
+          html += "<br><b>" + t("Disabled:") + "</b> " + disabled.map(detail).join("; ");
+        }
+        if (unmeasured.length) {
+          html += "<br><b>" + t("Unmeasured (no harness evidence):") + "</b> "
+            + unmeasured.map(detail).join("; ");
         }
         out.innerHTML = html;
       } catch (e) { out.textContent = ""; }
@@ -18053,7 +18064,13 @@
         } else {
           el.className = "pill warn";
           el.textContent = "AI";
-          el.title = (h.detail ? h.detail + " — " : "")
+          // V4 (2026-07-29): the red pill must name the REAL situation.
+          // `no_backend` means NOTHING is reachable (not merely that the selected
+          // backend is down), so lead with the server's own resolution sentence
+          // (`backend_reason` — English server text, the same class as `h.detail`,
+          // which this line already concatenated) instead of a generic "offline".
+          const why = h.no_backend ? (h.backend_reason || h.detail || "") : (h.detail || "");
+          el.title = (why ? why + " — " : "")
             + t("AI is offline — click to start it, or open AI settings to install one");
         }
       } catch (e) {
@@ -18069,6 +18086,7 @@
     //  load takes tens of seconds — never a fake instant green).
     // --------------------------------------------------------------------- //
     async function loadAiBackendPanel() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("ai-backend-box");
       const sel = $("ai-backend-select");
       if (!box) return;
@@ -18081,7 +18099,13 @@
           `<p class="hint">GPU: ${gpu.available ? esc(gpu.name || "detected") : "not detected"}` +
           ` &middot; vLLM: ${vllm.installed ? "installed" : "not installed"}` +
           `${vllm.installed ? (vllm.running ? ", running" : ", not running") : ""}` +
-          ` &middot; Ollama: ${b.ollama_available ? "reachable" : "not reachable"}</p>`;
+          ` &middot; Ollama: ${b.ollama_available ? "reachable" : "not reachable"}</p>` +
+          // V4: selection != capability. When neither backend can serve a request,
+          // say so where the decision is disclosed, in the theme-aware caveat colour
+          // (invariant #23's var(--caveat), AA-verified on all 17 themes).
+          (b.no_backend
+            ? `<p class="card-caveat">${esc(t("No AI backend is reachable right now — install or start one below."))}</p>`
+            : "");
         if (sel) sel.value = b.stored_override || "auto";
       } catch (e) {
         box.innerHTML = `<p class="muted">Could not read the backend status.</p>`;
@@ -18231,12 +18255,19 @@
         if (!d.framing || !d.framing.length) {
           el.innerHTML = "<span class='muted'>Not enough coverage to compare framing for this term.</span>"; return;
         }
-        const rows = d.framing.map(f =>
-          `<tr><td>${esc(f.source)}</td>
-               <td><span class="pill ${f.tone_label==='positive'?'ok':f.tone_label==='negative'?'err':''}">${esc(f.tone_label)} ${f.avg_tone.toFixed(2)}</span></td>
+        const tLoc = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        const rows = d.framing.map(f => {
+          // avg_tone is null when VADER could not read this outlet's coverage (it is an
+          // ENGLISH lexicon). Render the honest gap -- never 0.00, never "neutral".
+          const cls = f.tone_label === 'positive' ? 'ok' : f.tone_label === 'negative' ? 'err' : '';
+          const tone = (f.avg_tone != null)
+            ? `<span class="pill ${cls}">${esc(f.tone_label || '')} ${f.avg_tone.toFixed(2)}</span>`
+            : `<span class="muted" title="${esc(tLoc('VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.'))}">—</span>`;
+          return `<tr><td>${esc(f.source)}</td>
+               <td>${tone}</td>
                <td class="muted">${f.article_count}</td>
-               <td class="muted" style="font-size:12px">${(f.top_terms||[]).slice(0,6).map(esc).join(", ")}</td></tr>`
-        ).join("");
+               <td class="muted" style="font-size:12px">${(f.top_terms||[]).slice(0,6).map(esc).join(", ")}</td></tr>`;
+        }).join("");
         el.innerHTML = `<table><tr><th>Outlet</th><th>Tone (VADER)</th><th>#</th><th>Emphasised terms</th></tr>${rows}</table>
           <div class="hint">${esc(d.caveat||"")}</div>`;
       } catch (e) {

@@ -174,10 +174,15 @@ _CLEAR_EN_REPORT = {
     "run_at": "2026-07-24T00:00:00",
     "report": {
         "by_language": {
+            # Mirrors a shape the REAL harness can actually emit (recall/n_gold
+            # alongside the rate) -- a hand-typed shape the production chain
+            # cannot produce is exactly what let the 2026-07-25 nesting bug and
+            # the 2026-07-29 one-sided gate both ship green.
             "en": {
-                "who": {"hallucination_rate": 0.0},
-                "where": {"hallucination_rate": 0.0},
-                "when": {"hallucination_rate": 0.0},
+                "who": {"hallucination_rate": 0.0, "recall": 1.0, "n_gold": 1, "n_pred": 1},
+                "where": {"hallucination_rate": 0.0, "recall": 1.0, "n_gold": 1, "n_pred": 1},
+                "when": {"hallucination_rate": 0.0, "recall": 1.0, "n_gold": 1, "n_pred": 1},
+                "n_cases": 1,
             }
         },
     },
@@ -465,3 +470,34 @@ def test_current_language_gate_reads_the_last_saved_live_eval_report(monkeypatch
     )
     gate = J.current_language_gate()
     assert gate["en"]["active"] is True
+
+
+def test_run_header_separates_failed_from_unmeasured_languages(db, tmp_path):
+    """TRI-STATE in the DURABLE run log (2026-07-29): a language the harness never
+    touched must not be recorded as "evaluated and disabled". Both states are
+    falsy, so both used to land in disabled_languages together."""
+    _seed(db, n=1)
+    report = {
+        "status": "ok",
+        "report": {
+            "by_language": {
+                "en": {
+                    "where": {"hallucination_rate": 0.0, "recall": 1.0, "n_gold": 1},
+                    "n_cases": 1,
+                },
+                "ar": {
+                    "where": {"hallucination_rate": 0.9, "recall": 1.0, "n_gold": 1},
+                    "n_cases": 1,
+                },
+                "zh": {},
+            }
+        },
+    }
+    res = J.run_progressive_perception_extract_job(
+        FakeCtx(), model="stub:test", batch_size=5, session_factory=_session_factory(db),
+        client=FakeClient(), state_path=tmp_path / "state.json", gate_report=report,
+    )
+    header = _read_jsonl(res["path"])[0]
+    assert header["active_languages"] == ["en"]
+    assert set(header["disabled_languages"]) == {"ar"}
+    assert set(header["unmeasured_languages"]) == {"zh"}

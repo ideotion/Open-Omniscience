@@ -11,12 +11,34 @@ rule-based extractors (``article_mentioned_dates``/``article_mentioned_places``/
 (``perception_extract_job.py``) -- every write here lands in ``ai_keyword`` only, via
 ``src.ai_layer.store.record_keywords``, labelled "AI-derived - unreliable".
 
-EVAL-GATED (the standing ruling's "harness first" requirement): a language whose
-last live perception-eval run (``src.ai_layer.perception_job``) shows hallucination
-above :data:`MAX_HALLUCINATION_RATE` on ANY of the who/where/when fields is DISABLED --
-:func:`language_gate` reports it honestly, and the extraction batch runner below never
-calls the model for an article in a disabled/never-evaluated language. Absence from the
-report is NEVER assumed safe ("never evaluated" is its own, explicit reason).
+EVAL-GATED (the standing ruling's "harness first" requirement) and TRI-STATE. For each
+language the LAST live perception-eval run (``src.ai_layer.perception_job``) yields one
+of exactly three states, which are NEVER collapsed into each other:
+
+  * ``active: True``  -- EVALUATED and cleared (every field that carried evidence passed
+    both floors). The reason states ``n_cases``, because clearing on one synthetic case
+    is low statistical power and saying so is part of the measurement;
+  * ``active: False`` -- EVALUATED and FAILED, on either floor:
+      - hallucination above :data:`MAX_HALLUCINATION_RATE` on a field it predicted into, OR
+      - recall at or below :data:`MIN_RECALL` on a field that CARRIED GOLD. This second
+        floor closes the one-sided gate (2026-07-29): an extractor that returns NOTHING
+        scores ``tp+fp == 0`` -> ``hallucination_rate is None`` -> the old loop never
+        failed it, so a model that says nothing was licensed for EVERY language. A gate
+        that only catches invention, never silence, is half a gate;
+  * ``active: None``  -- NO harness evidence for this language (no gold AND no predictions
+    on any field). It is UNMEASURED, and must never be describable as "cleared" -- the old
+    loop returned "cleared the S6.5 harness" for a row with no metrics at all.
+
+``None`` is EPISTEMIC, not permissive: :func:`language_gate` still returns ``False`` for
+it, with a reason that says *unmeasured* rather than *cleared*. The tri-state exists so
+the run header and the UI can say WHY, never to grant permission on an absence of
+measurement.
+
+The recall floor is applied ONLY to fields whose gold is non-empty (``recall is not
+None``, i.e. ``n_gold > 0``). Nine of the thirteen gold languages carry ONLY ``where``
+gold, so failing them on ``who``/``when`` would be a FABRICATED FAIL -- as dishonest as
+the fabricated pass this fix removes. Absence from the report entirely is still "never
+evaluated" (:func:`language_gate`), never assumed safe.
 
 DELIBERATE KIND-NAMING DEVIATION from the brief's illustrative kind list (``ai-date`` /
 ``ai-place`` / ``ai-person`` / ``ai-org`` / ``ai-event``): the extraction adapter's
@@ -41,13 +63,31 @@ if TYPE_CHECKING:
 # whose hallucination-rate on the S6.5 harness exceeds this is DISABLED for extraction.
 MAX_HALLUCINATION_RATE = 0.5
 
+# The RECALL floor, applied only where the gold is non-empty. A tested field must score
+# STRICTLY ABOVE this value. 0.0 therefore means "recovered at least ONE gold item" --
+# deliberately the lowest non-vacuous bar, because the gold set's power cannot honestly
+# support more: 12 of its 13 languages carry n_cases == 1, so recall there is 0.0 or 1.0
+# and any intermediate threshold would be a number invented from a single case. Raise it
+# when the gold set grows; do not raise it to look strict.
+MIN_RECALL = 0.0
+
 _FIELDS = ("who", "where", "when")
 _KIND_OF_FIELD = {"who": "ai-who", "where": "ai-place", "when": "ai-date"}
 PERCEPTION_KINDS = tuple(_KIND_OF_FIELD.values())
 
 
+def _gold_n(metrics: dict) -> int:
+    """Gold items for this language/field. Prefers the harness's own ``n_gold`` and falls
+    back to ``tp + fn`` so a hand-written/legacy report still states an honest
+    denominator."""
+    n = metrics.get("n_gold")
+    if isinstance(n, int):
+        return n
+    return int(metrics.get("tp") or 0) + int(metrics.get("fn") or 0)
+
+
 def gate_languages_from_report(report: dict | None) -> dict[str, dict]:
-    """Which languages the LAST live perception-eval report clears for extraction.
+    """Which languages the LAST live perception-eval report clears for extraction, TRI-STATE.
 
     ``report`` is the FULL persisted/live-eval ARTIFACT (``last_perception_eval_
     live_report()``'s return value): run metadata (``status``/``model``/``backend``/
@@ -67,42 +107,103 @@ def gate_languages_from_report(report: dict | None) -> dict[str, dict]:
 
     A language ABSENT from the harness report is never assumed safe -- it simply
     never appears in the returned gate; :func:`language_gate` reports that omission
-    as "never evaluated". Returns ``{language: {"active": bool, "reason": str}}``.
+    as "never evaluated".
+
+    Returns ``{language: {"active": True|False|None, "reason": str, "n_cases": int|None,
+    "checks": [str, ...]}}``. ``checks`` lists every floor that was ACTUALLY applied, so
+    a "cleared" verdict is auditable rather than asserted; an empty ``checks`` IS the
+    ``active: None`` (unmeasured) state.
     """
     harness_report = (report or {}).get("report") or {}
     by_lang = harness_report.get("by_language") or {}
     out: dict[str, dict] = {}
     for lang, fields in by_lang.items():
+        if not isinstance(fields, dict):
+            continue
+        n_cases = fields.get("n_cases")
+        n_cases = n_cases if isinstance(n_cases, int) else None
         failing: list[str] = []
+        checks: list[str] = []
         for fld in _FIELDS:
-            metrics = fields.get(fld) or {}
+            metrics = fields.get(fld)
+            if not isinstance(metrics, dict):
+                continue
             rate = metrics.get("hallucination_rate")
-            if rate is not None and rate > MAX_HALLUCINATION_RATE:
-                failing.append(f"{fld} hallucination {rate}")
-        if failing:
+            recall = metrics.get("recall")
+            # Floor 1 -- INVENTION. Applies only where the model actually predicted
+            # something (rate is None <=> n_pred == 0 <=> it stayed silent on this field).
+            if rate is not None:
+                checks.append(f"{fld} hallucination {rate}")
+                if rate > MAX_HALLUCINATION_RATE:
+                    failing.append(f"{fld} hallucination {rate} above {MAX_HALLUCINATION_RATE}")
+            # Floor 2 -- SILENCE. Applies only where the gold is NON-EMPTY (recall is
+            # None <=> n_gold == 0 <=> this field was never tested for this language).
+            # Failing a `where`-only language on who/when would be a fabricated FAIL.
+            if recall is not None:
+                gold = _gold_n(metrics)
+                checks.append(f"{fld} recall {recall} on {gold} gold item(s)")
+                if recall <= MIN_RECALL:
+                    failing.append(
+                        f"{fld} recall {recall} on {gold} gold item(s) -- recovered nothing"
+                    )
+        power = f" on {n_cases} synthetic case(s)" if n_cases is not None else ""
+        if not checks:
+            # NO evidence in any field: no gold to recall and nothing predicted. This is
+            # NOT a pass. Never the word "cleared".
+            out[lang] = {
+                "active": None,
+                "reason": (
+                    "no harness evidence for this language"
+                    f"{power} -- UNMEASURED, never evaluated against gold; "
+                    "running extraction here would be unmeasured"
+                ),
+                "n_cases": n_cases,
+                "checks": [],
+            }
+        elif failing:
             out[lang] = {
                 "active": False,
-                "reason": (
-                    f"hallucination-rate above {MAX_HALLUCINATION_RATE} on the S6.5 "
-                    "harness: " + "; ".join(failing)
-                ),
+                "reason": "failed the S6.5 harness" + power + ": " + "; ".join(failing),
+                "n_cases": n_cases,
+                "checks": checks,
             }
         else:
-            out[lang] = {"active": True, "reason": "cleared the S6.5 harness"}
+            out[lang] = {
+                "active": True,
+                "reason": (
+                    "cleared the S6.5 harness"
+                    + power
+                    + (" -- low statistical power" if (n_cases or 0) <= 1 else "")
+                    + "; checked: "
+                    + "; ".join(checks)
+                ),
+                "n_cases": n_cases,
+                "checks": checks,
+            }
     return out
 
 
 def language_gate(language: str | None, gate: dict[str, dict]) -> tuple[bool, str]:
     """Whether ``language`` may run extraction, per a gate produced by
-    :func:`gate_languages_from_report`. Absence is honestly DISABLED -- "never
-    evaluated" -- never assumed safe by omission (the standing absence-is-not-a-pass
-    lesson: an aggregation that silently omits an untested case reads as a pass)."""
+    :func:`gate_languages_from_report`.
+
+    The gate's ``active`` is TRI-STATE but the RUN decision is binary and conservative:
+    only ``active is True`` runs. ``active is None`` (no harness evidence) is DISABLED --
+    the tri-state exists so the UI/run-log can say WHY ("unmeasured", not "failed"), never
+    to grant permission on an absence of measurement. Absence from the gate entirely is
+    likewise honestly DISABLED -- "never evaluated" -- never assumed safe by omission (the
+    standing absence-is-not-a-pass lesson: an aggregation that silently omits an untested
+    case reads as a pass)."""
     if not language:
         return False, "article has no known language"
     entry = gate.get(language)
     if entry is None:
         return False, "never evaluated"
-    return bool(entry["active"]), str(entry["reason"])
+    active = entry.get("active")
+    reason = str(entry.get("reason") or "")
+    if active is None:
+        return False, reason or "no harness evidence -- unmeasured"
+    return bool(active), reason
 
 
 def _combined_text(w: "ArticleWork") -> str:
@@ -240,6 +341,7 @@ def extract_perception_batch(
 
 __all__ = [
     "MAX_HALLUCINATION_RATE",
+    "MIN_RECALL",
     "PERCEPTION_KINDS",
     "extract_perception_batch",
     "gate_languages_from_report",

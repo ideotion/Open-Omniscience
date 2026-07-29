@@ -44,6 +44,8 @@ def test_backend_status_endpoint_discloses_the_decision(monkeypatch):
     assert r["backend"] == "ollama"
     assert "reason" in r and "gpu" in r and "vllm" in r
     assert r["stored_override"] == "auto"
+    # V4: /api/llm/backend surfaces CAPABILITY, not only selection.
+    assert r["available"] is True and r["no_backend"] is False
 
 
 def test_vllm_status_endpoint_reports_not_installed(tmp_path):
@@ -199,3 +201,63 @@ def test_settings_api_roundtrips_the_new_dual_backend_fields(tmp_path, monkeypat
         assert body["llm_backend"] == "ollama"
         assert body["llm_model_vllm"] == "a/b"
         assert c.put("/api/settings", json={"llm_backend": "bogus"}).status_code == 400
+
+
+# --------------------------------------------------------------------------- #
+# V2 (2026-07-29): the resource preflight, surfaced before the click and
+# enforced at the endpoint so a doomed multi-GB download never starts.
+# --------------------------------------------------------------------------- #
+def _preflight_stub(monkeypatch, *, ram, free, ram_backed=False):
+    from src.llm import vllm_lifecycle as V
+
+    monkeypatch.setattr("platform.system", lambda: "Linux")
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    monkeypatch.setattr(
+        "src.llm.backend.detect_gpu", lambda: {"available": True, "vram_mb": 8192}
+    )
+    monkeypatch.setattr(V, "_total_ram_bytes", lambda: ram)
+    monkeypatch.setattr(V, "_free_disk_bytes", lambda p: free)
+    monkeypatch.setattr(V, "_filesystem_type_of", lambda p: "tmpfs" if ram_backed else "ext4")
+
+
+def test_vllm_install_preflight_endpoint_exposes_the_cost_before_the_click():
+    r = L.vllm_install_preflight()
+    assert r["schema"] == "oo-vllm-install-preflight-1"
+    for key in ("disk", "ram", "unpack_area", "blocking", "warnings", "notes"):
+        assert key in r
+    assert "requires_acknowledgement" in r
+
+
+def test_vllm_install_409s_with_an_acknowledgeable_detail_on_low_ram(monkeypatch):
+    _preflight_stub(monkeypatch, ram=6_025_867_264, free=200 * 1024**3)
+    with pytest.raises(HTTPException) as exc:
+        L.vllm_install(L.VllmInstallRequest())
+    assert exc.value.status_code == 409
+    assert exc.value.detail["acknowledgeable"] is True
+    assert "5.61 GB" in exc.value.detail["warnings"][0]["detail"]
+
+
+def test_a_low_disk_409_is_not_acknowledgeable_even_with_the_flag_set(monkeypatch):
+    _preflight_stub(monkeypatch, ram=32 * 1024**3, free=2 * 1024**3)
+    with pytest.raises(HTTPException) as exc:
+        L.vllm_install(L.VllmInstallRequest(acknowledge_low_resources=True))
+    assert exc.value.status_code == 409
+    assert exc.value.detail["acknowledgeable"] is False
+    assert exc.value.detail["blocking"]
+
+
+def test_vllm_install_passes_the_acknowledgement_through_to_the_job(monkeypatch):
+    """The flag is useless if the endpoint swallows it."""
+    _preflight_stub(monkeypatch, ram=6 * 1024**3, free=200 * 1024**3)
+    seen = {}
+    job = L._get_vllm_install_job()
+    monkeypatch.setattr(job, "start", lambda **kw: (seen.update(kw), {"state": "running"})[1])
+    L.vllm_install(L.VllmInstallRequest(acknowledge_low_resources=True))
+    assert seen["acknowledge_low_resources"] is True
+
+
+def test_vllm_status_endpoint_carries_the_preflight_and_the_attempt_history():
+    r = L.vllm_status()
+    assert r["preflight"]["schema"] == "oo-vllm-install-preflight-1"
+    assert isinstance(r["install_history"], list)
+    assert "attempts_cap" in r["install_history_bounds"]

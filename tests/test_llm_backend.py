@@ -143,3 +143,162 @@ def test_detect_gpu_degrades_honestly_when_nvidia_smi_is_absent(monkeypatch):
     r = B.detect_gpu()
     assert r["available"] is False
     assert "reason" in r
+
+
+# --------------------------------------------------------------------------- #
+# V4 (2026-07-29): SELECTION vs CAPABILITY. The operator's bundle read
+# backend="ollama" / "using Ollama meanwhile" while ollama_available was false --
+# true about selection, misleading about capability. `available` and `no_backend`
+# make the difference explicit, and every reason must name the real situation.
+# --------------------------------------------------------------------------- #
+def test_no_backend_when_neither_ollama_nor_vllm_is_reachable(monkeypatch):
+    """The operator's exact 2026-07-29 machine: a real GPU, vLLM not installed,
+    Ollama not running. Selection still falls back to Ollama -- but NOTHING can
+    serve a request, and the payload + reason must both say so."""
+    _stub(
+        monkeypatch,
+        gpu={"available": True, "vram_mb": 8188},
+        vllm_installed=False,
+        vllm_running=False,
+        ollama_ok=False,
+    )
+    r = B.resolve_backend()
+    assert r["backend"] == "ollama"  # selection is unchanged
+    assert r["available"] is False   # ... but it cannot serve
+    assert r["no_backend"] is True
+    assert B.NO_BACKEND_REASON in r["reason"]
+    # the old, misleading promise of a working fallback must be gone
+    assert "using Ollama meanwhile (Ollama is reachable)" not in r["reason"]
+
+
+def test_selected_backend_down_but_the_other_one_is_up_is_not_no_backend(monkeypatch):
+    """The middle state: an explicit vLLM override whose server is not running,
+    while Ollama IS reachable. available=False (the SELECTED backend is down) but
+    no_backend=False -- a backend exists, and the reason must point at it."""
+    _stub(
+        monkeypatch,
+        gpu={"available": True},
+        vllm_installed=True,
+        vllm_running=False,
+        ollama_ok=True,
+    )
+    r = B.resolve_backend(override="vllm")
+    assert r["backend"] == "vllm"
+    assert r["available"] is False
+    assert r["no_backend"] is False
+    assert B.NO_BACKEND_REASON not in r["reason"]
+    assert "Ollama IS reachable" in r["reason"]
+
+
+def test_a_running_vllm_never_reads_as_no_backend_even_when_not_auto_selected(monkeypatch):
+    """is_running() detects "a server started by another means entirely", so vLLM
+    can be SERVING while auto-selection declines it (no detected GPU). Ollama
+    being down must NOT then be reported as "no AI backend" -- one IS reachable."""
+    _stub(
+        monkeypatch,
+        gpu={"available": False},
+        vllm_installed=False,
+        vllm_running=True,
+        ollama_ok=False,
+    )
+    r = B.resolve_backend()
+    assert r["backend"] == "ollama"
+    assert r["available"] is False
+    assert r["no_backend"] is False, "a reachable vLLM server is a backend"
+    assert B.NO_BACKEND_REASON not in r["reason"]
+
+
+def test_vllm_installed_but_not_running_is_distinguished_from_not_installed(monkeypatch):
+    """Two situations that both fall back to Ollama, and that the operator must
+    be able to tell apart: one needs a START, the other an INSTALL."""
+    _stub(monkeypatch, gpu={"available": True}, vllm_installed=True, vllm_running=False)
+    not_running = B.resolve_backend()
+    _stub(monkeypatch, gpu={"available": True}, vllm_installed=False, vllm_running=False)
+    not_installed = B.resolve_backend()
+    assert not_running["reason"] != not_installed["reason"]
+    assert "not running" in not_running["reason"]
+    assert "not installed" in not_installed["reason"]
+    assert not_running["available"] is True and not_installed["available"] is True
+
+
+def test_available_is_true_only_when_the_selected_backend_is_reachable(monkeypatch):
+    """available tracks the SELECTED backend, never "some backend somewhere"."""
+    _stub(
+        monkeypatch,
+        gpu={"available": True},
+        vllm_installed=True,
+        vllm_running=True,
+        ollama_ok=False,
+    )
+    r = B.resolve_backend()
+    assert r["backend"] == "vllm" and r["available"] is True    # vLLM is up
+    r2 = B.resolve_backend(override="ollama")
+    assert r2["backend"] == "ollama" and r2["available"] is False  # Ollama is not
+
+
+def test_capability_fields_are_present_in_EVERY_branch(monkeypatch):
+    """Membership, not .get() -- a missing key must fail loudly rather than
+    defaulting to a falsy value that reads like a measured answer."""
+    cases = [
+        (dict(gpu={"available": False}, vllm_installed=False, vllm_running=False), None),
+        (dict(gpu={"available": True}, vllm_installed=False, vllm_running=False), None),
+        (dict(gpu={"available": True}, vllm_installed=True, vllm_running=False), None),
+        (dict(gpu={"available": True}, vllm_installed=True, vllm_running=True), None),
+        (dict(gpu={"available": True}, vllm_installed=True, vllm_running=True), "ollama"),
+        (dict(gpu={"available": False}, vllm_installed=False, vllm_running=False), "vllm"),
+    ]
+    for stub_kwargs, override in cases:
+        _stub(monkeypatch, **stub_kwargs)
+        r = B.resolve_backend(override=override)
+        assert "available" in r, f"missing 'available' for {stub_kwargs} / {override}"
+        assert "no_backend" in r, f"missing 'no_backend' for {stub_kwargs} / {override}"
+        for k in ("backend", "reason", "override", "gpu", "vllm", "ollama_available"):
+            assert k in r, f"V4 must be ADDITIVE -- lost {k!r}"
+
+
+def test_available_and_no_backend_are_never_both_true(monkeypatch):
+    """The whole 16-state auto matrix + both overrides: `available` implies a
+    reachable backend, so it can never coexist with no_backend, and no_backend can
+    never be claimed while a probe reported something reachable."""
+    import itertools
+
+    for gpu_ok, installed, running, ollama_ok in itertools.product([False, True], repeat=4):
+        for override in (None, "ollama", "vllm"):
+            _stub(
+                monkeypatch,
+                gpu={"available": gpu_ok},
+                vllm_installed=installed,
+                vllm_running=running,
+                ollama_ok=ollama_ok,
+            )
+            r = B.resolve_backend(override=override)
+            state = (gpu_ok, installed, running, ollama_ok, override)
+            assert not (r["available"] and r["no_backend"]), state
+            assert r["no_backend"] == (not (ollama_ok or running)), state
+            # the reason NAMES the state, in both directions
+            assert (B.NO_BACKEND_REASON in r["reason"]) == r["no_backend"], (state, r["reason"])
+            # never a fabricated capability claim
+            if r["available"]:
+                assert ollama_ok if r["backend"] == "ollama" else running, state
+
+
+def test_the_capability_fields_add_no_new_probe(monkeypatch):
+    """The performance contract: `available`/`no_backend` are DERIVED from probes
+    resolve_backend already ran. Each probe must still be called exactly ONCE per
+    resolution -- a regression costs real latency, because _ollama_available()
+    builds an OllamaClient whose default timeout is 120s and _vllm_status() makes
+    a live HTTP health call."""
+    calls = {"gpu": 0, "vllm": 0, "ollama": 0}
+
+    def _count(key, value):
+        def _fn():
+            calls[key] += 1
+            return value
+
+        return _fn
+
+    monkeypatch.setattr(B, "detect_gpu", _count("gpu", {"available": True}))
+    monkeypatch.setattr(B, "_vllm_status", _count("vllm", {"installed": False, "running": False}))
+    monkeypatch.setattr(B, "_ollama_available", _count("ollama", False))
+    B.resolve_backend()
+    assert calls == {"gpu": 1, "vllm": 1, "ollama": 1}

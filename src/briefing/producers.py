@@ -298,6 +298,8 @@ def framing_split(session) -> list[Card]:
                     "title": article.title,
                     "content": article.get_content(),
                     "url": article.url,
+                    # LOAD-BEARING: framing gates tone on this (VADER is English-only).
+                    "language": article.language or article.detected_language,
                     "published_at": article.published_at.isoformat()
                     if article.published_at
                     else None,
@@ -307,12 +309,19 @@ def framing_split(session) -> list[Card]:
             continue
         result = compare_framing(by_source)
         framings = result.get("framing", [])
-        labels = {f["tone_label"] for f in framings}
+        # Only MEASURED outlets can take part in a tone comparison. An outlet whose
+        # coverage VADER cannot read has avg_tone None: it is not a third, "neutral"
+        # position, and sorting on it would raise. Excluding it makes the card's own
+        # denominators honest -- the split is among the outlets we could actually measure.
+        measured = [f for f in framings if f.get("avg_tone") is not None]
+        if len(measured) < 2:
+            continue
+        labels = {f["tone_label"] for f in measured}
         # A split = at least one source reads positive and another negative on the
         # SAME topic. We surface the divergence; we never call either one biased.
         if not ({"positive", "negative"} <= labels):
             continue
-        framings_sorted = sorted(framings, key=lambda f: f["avg_tone"])
+        framings_sorted = sorted(measured, key=lambda f: f["avg_tone"])
         low, high = framings_sorted[0], framings_sorted[-1]
         evidence = []
         for f in (high, low):
@@ -331,7 +340,14 @@ def framing_split(session) -> list[Card]:
             ("Most-negative outlet's tone (VADER, −1…+1)", f"{low['avg_tone']:+.2f}"),
             ("Tone spread = positive − negative", f"{spread:+.2f}"),
             ("Outlets compared on this topic", str(len(by_source))),
+            # VADER is English-only, so state the tone denominators rather than letting
+            # the spread read as though every outlet/piece had been measured.
+            ("Outlets whose tone was measurable (English only)", str(len(measured))),
             ("Pieces of coverage analysed", str(result.get("total_articles") or 0)),
+            (
+                "Pieces whose tone was measurable (English only)",
+                str(result.get("tone_measured_articles") or 0),
+            ),
         ]
         return [
             Card(
