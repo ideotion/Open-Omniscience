@@ -697,3 +697,18 @@ def import_queue_clear() -> dict:
         return get_import_queue().clear()
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/reindex-backlog")
+def reindex_backlog_status() -> dict:
+    """Imports whose articles are merged but not yet confirmed re-indexed.
+
+    The mandatory guard on the 2026-07-29 option-(a) ruling: the merge no longer copies
+    the incoming corpus's derived rows, so an un-re-indexed import has NO keywords. That
+    is honoured structurally by every analytics path, but it trades a bounded staleness
+    for an unbounded invisibility if the backlog is ever lost — so it has to be
+    readable. ``available: false`` means the backlog could not be read, never that it is
+    empty."""
+    from src.backup.merge import reindex_backlog
+
+    return reindex_backlog()

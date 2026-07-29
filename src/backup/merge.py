@@ -1842,10 +1842,15 @@ def mark_reindex_complete(batch_id: int) -> None:
 def pending_reindex_batches() -> list[dict]:
     """Imports whose articles are merged but not confirmed re-indexed.
 
-    This is what a boot check reads to surface the backlog. Each entry carries the real
-    article count from ``merged_rows``, so the number shown is measured, never estimated.
-    Degrades to [] on any read failure -- a diagnostic that cannot read must not claim
-    "nothing pending", so callers report the degrade rather than the emptiness.
+    Each entry carries the real article count from ``merged_rows``, so the number shown
+    is measured, never estimated.
+
+    Returns [] BOTH when there is genuinely nothing pending and when the read failed --
+    which is why callers should use :func:`reindex_backlog` instead, whose payload keeps
+    those two apart. (An earlier docstring here claimed callers "report the degrade
+    rather than the emptiness"; they could not, because this shape gives them nothing to
+    tell the two apart with. That is the project's own degrade-sentinel lesson, and the
+    wrapper below is the fix.)
     """
     from sqlalchemy import text
 
@@ -1870,6 +1875,58 @@ def pending_reindex_batches() -> list[dict]:
     except Exception:  # noqa: BLE001
         _LOG.warning("could not read the re-index backlog", exc_info=True)
         return []
+
+
+def reindex_backlog() -> dict:
+    """The re-index backlog, with "measured nothing" kept distinct from "could not read".
+
+    THE MANDATORY GUARD that travels with the option-(a) ruling (2026-07-29): the merge
+    no longer copies the incoming corpus's derived rows, so "not yet re-indexed" means
+    "has no keywords" -- which every analytics path honours structurally, at the price of
+    trading a BOUNDED staleness for an UNBOUNDED invisibility if the re-index is ever
+    lost. The durable cursor is what makes it resumable; THIS is what makes it visible,
+    so a backlog can never sit unseen.
+
+    ``available: false`` means the backlog could not be read (a locked or missing store),
+    NOT that it is empty -- reporting the two the same way would be the exact
+    fabricated-reassurance this guard exists to prevent."""
+    from sqlalchemy import text
+
+    from src.database.session import session_scope
+
+    try:
+        with session_scope() as session:
+            rows = session.execute(
+                text(
+                    "SELECT b.id, b.created_at, COUNT(m.row_id) AS n"
+                    " FROM merge_batches b"
+                    " LEFT JOIN merged_rows m"
+                    "   ON m.batch_id = b.id AND m.table_name = 'articles'"
+                    " WHERE b.status = :s"
+                    " GROUP BY b.id, b.created_at"
+                    " HAVING COUNT(m.row_id) > 0"
+                    " ORDER BY b.id"
+                ),
+                {"s": _STATUS_MERGED},
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never 500
+        _LOG.warning("could not read the re-index backlog", exc_info=True)
+        return {"available": False, "reason": str(exc)}
+    batches = [
+        {"batch_id": int(r[0]), "created_at": str(r[1]) if r[1] is not None else None,
+         "articles": int(r[2])}
+        for r in rows
+    ]
+    return {
+        "available": True,
+        "batches": batches,
+        "batches_pending": len(batches),
+        "articles_pending": sum(b["articles"] for b in batches),
+        "method": (
+            "imports whose articles were merged but whose re-index has not been "
+            "confirmed complete; counts read from merged_rows, never estimated"
+        ),
+    }
 
 
 def reindex_imported_articles(
