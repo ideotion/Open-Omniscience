@@ -1274,6 +1274,161 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     publishes a real value; the sad path publishes the sentinel and NOT the measurement key).
 
 ## Open queue (when maintainer says proceed)
+- **FIELD REMARKS 2026-07-29 — BACKUP-IMPORT SPEED + THE MULTI-IMPORT UI (maintainer; 20 rulings
+  given the same day; INVESTIGATION + PLANNING ONLY this session, code-verified against `main` via
+  a 10-agent read-only fan-out [7 recon + 3 adversarial skeptics, 0 errors]; brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-29_IMPORT_PERFORMANCE.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-29_IMPORT_PERFORMANCE.md);
+  nothing built this session; the maintainer will execute it with Opus 5 + ultracode):** two
+  remarks — a 50,000-article import quoting a ~4000-minute re-index ETA (and a further 3–5×
+  slowdown when collecting concurrently), and a 6-backup folder import showing ONE shared progress
+  bar with no per-item identity, no true rate, no pause, no stop.
+  **ROOT CAUSES (ranked, each anchored):** (1) `_get_or_create_keyword` runs a fresh
+  `session.query(Keyword).filter_by(normalized_term=…).first()` per kept term per article
+  (`store.py:72`, called `:331`) — VERIFIED always a real round-trip (identity map short-circuits
+  PK lookups only; `SessionLocal` is `autoflush=False`, `session.py:149`), so ~200 terms × 50k
+  articles ≈ 10M index probes through the SQLCipher codec against a ~6.9M-row keywords table (the
+  SHARE of wall time is NOT yet measured — that is what the instrumentation slice is for). (2) the
+  restore re-indexes with ONE FSYNC PER ARTICLE: `volume_job.py:269-278` passes `reindex_workers`
+  + `merge_cache_mb` but NEVER `reindex_commit_batch`, so `merge.py:1737` falls back to
+  `OO_REINDEX_COMMIT_BATCH` default `"1"`. (3) **the 4000-minute figure is itself inflated — a real
+  ETA bug**: `_uxPoll` captures `startMs` once per JOB (`app.js:5753`) while `view.frac` resets to
+  ~0 when the phase flips merge→reindex, so `_uxRuleOfThree` (`:5669`) computes
+  `(verify+reassemble+merge+reindex-so-far)×(1−f)/f` — an over-estimate of roughly 5–15× early in
+  the phase. (4) the "import owns the machine" pause is REAL but bounded + leaky: it is wired only
+  on the volume path (`volume_job.py:208`) and `_do_run` has NO mid-pass stop check (its own
+  docstring, `runner.py:1915-1927`), so a pass already fetching runs to completion; worse, the
+  per-backup loop RESUMES collection between every backup (`volume_job.py:284-290` in a `finally`),
+  re-opening the race five times in a 6-backup run. (5) no engine-fingerprint skip (the manifest's
+  `app_version` IS carried on `merge_batches`, `models.py:2159-2160`). UI half CONFIRMED point by
+  point: `_uxImRun` (`app.js:6111-6190`) is a client-side sequential loop writing every kind into
+  the SAME bar with only a constant `t("Corpus")` prefix; **pause/stop genuinely do not exist for
+  imports** — `_run_restore` never reads `self._stop` (only `_run_backup` does, `:126`), so the
+  endpoints are inert during a restore and any pause button today would be fabricated capability;
+  a reload kills the client-side sequencing (`app.js:6196`); ten ids + a LITERAL source-substring
+  anchor (`tests/test_unified_backup_ui.py:246`) pin the dialog.
+  **THE 20 RULINGS:** (1) defer the re-index off the blocking import path — YES. (2) the re-index
+  is AUTONOMOUS + VISIBLE, integrated in the backup UI **as the last backup stage** with its own
+  progress; **articles not yet re-indexed must not be part of analytics**. (3) extraction
+  FINGERPRINT in the manifest; a match skips the re-index. (4) a mismatch ⇒ FULL re-index. (5) the
+  keyword-cache decision was deferred to a risk memo (answered — see below). (6) extend the cache
+  to the COLLECTOR ingest path. (7) `commit_batch` ≈ 200 when the import owns the machine —
+  approved. (8) WAL/checkpoint is NOT a user-facing surface; it belongs in all-diagnostics. (9)
+  collector stop must be IMMEDIATE. (10) collection does NOT resume between backups — a
+  multi-backup run is ONE import. (11) **legacy single-file imports are being REMOVED soon — do
+  not invest in them** (removal recorded in FUTURE_DEVELOPMENTS). (12) the UI states that
+  collection is paused for the import. (13) server-side import QUEUE confirmed — and it does NOT
+  replace the remark-2 UI changes. (14) rate = the honest unit for the current phase + a cumulative
+  line. (15) stop/abort is IMMEDIATE, losing the current import and everything related to it. (16)
+  a "Show details" panel, persisting across a reload. (17) per-PHASE ETA + the number of remaining
+  phases visible. (18) do the quick wins AND the architecture. (19) add the instrumentation. (20)
+  the session runs on Opus 5 + ultracode.
+  **⚠ RULING 2's PREMISE WAS REFUTED — ONE RE-DECISION IS OWED BEFORE BUILDING (brief §3):** merged
+  articles are ALREADY fully present in analytics before any re-index — `_merge_keyword_mentions`
+  copies the incoming corpus's `keyword_mentions` straight into the live DB during the merge
+  (`merge.py:693`,`:726`), so the post-merge re-index is a REFRESH that overwrites them
+  (`store.py:479-480`), never an admission gate. A per-article "pending" flag would therefore
+  delete an entire imported corpus from analytics to fix bounded engine-version staleness — and
+  imported corpora skew OLD, so that hits cross-time recall. It is also uncheap + inconsistency-
+  prone: the hot corpus-wide `top_terms` reads ONLY the denormalised counters and never touches
+  `Article` (`queries.py:300-317`); FIFTEEN further paths aggregate mentions without joining
+  `Article` (`queries.py:334/254/1340/1763/1967/1005/436/2238/2325`, `columnar.py:802`,
+  `rollup_serve.py`, `briefing/producers.py:494`); adding that join is the documented SQLCipher
+  codec trap (`queries.py:1941-1946`); the `Article.quarantined` precedent appears in ZERO
+  analytics files and already yields two disagreeing corpus totals (`main.py:951` vs
+  `queries.py:2191`, the latter claiming "REAL, EXACT"); and a never-finished re-index would strand
+  an arbitrary subset PERMANENTLY invisible (`store.py:506` stamps no per-article completion).
+  **RECOMMENDED INSTEAD (option a): do NOT merge the derived rows — let the re-index PRODUCE them.**
+  "Not yet re-indexed" then means "has no mentions", which every analytics path already honours
+  STRUCTURALLY (no gate, no flag, no join, no 15-path sweep, no rollup problem; localised to the
+  merge step tuple `merge.py:315-330`). It also serves the speed remark three ways: the merge stops
+  writing the largest table (~10M rows for a 50k-article backup), the re-index stops
+  delete-then-reinserting rows it is about to replace, and **it fixes the counter-drift bug below
+  by construction**. HONEST COST, which makes ONE guard mandatory: an imported article then has NO
+  keywords rather than STALE keywords until re-indexed ⇒ **a durable per-article re-index CURSOR is
+  required** (resume exactly where it left off; surface its backlog at boot), else a bounded
+  staleness is traded for an unbounded invisibility. Options (b) keep merging + DECLINE the
+  exclusion, disclosing pending refreshes from `merged_rows` (the skeptic's own recommendation, on
+  cross-time-recall grounds) and (c) the per-article flag as framed (NOT recommended) are recorded
+  in the brief. **PENDING the maintainer's (a)/(b)/(c) choice.**
+  **⚠ A PROBABLE REAL BUG FOUND WHILE ATTACKING IT (read-verified, NOT reproduced — reproducer
+  FIRST, per the standing rule):** keyword counters never absorb a merged corpus. `_merge_keywords`'
+  INSERT column list omits `mention_count`/`article_count` so new keywords land at 0 and existing
+  ones are matched by `NOT EXISTS` and never updated (`merge.py:631`); NO `backfill_keyword_counters`
+  call exists in the restore path (its only caller in the tree is `src/ingest/email.py:756`);
+  `merge.py:2025-2027` explicitly reconciles `Source.article_count` for exactly this reason and does
+  NOT do the same for keywords; and at re-index `old_contrib` is read from the LIVE mention rows —
+  which after a merge ARE the imported rows (`store.py:294-301`) — so the re-index SUBTRACTS a
+  contribution that was never added. `maybe_reconcile_counters` would eventually repair it
+  (`scheduler/maintenance.py:83`) but requires the app ONLINE with the collector idle, so an
+  airplane-first user who imports and browses offline sits on drifted counters indefinitely,
+  undisclosed.
+  **RULING 5 ANSWERED — the keyword cache is a NARROWED GO (brief §5).** The adversarial pass could
+  NOT find the naive proposal safe: stale ids survive the rollback-then-redo fallbacks
+  (`store.py:576/597/613/639`, `batch.py:260`, `pipeline.py:282`) and FK enforcement is ON
+  (`session.py:101`, FK `models.py:1752`) so the bulk mention insert raises `IntegrityError`, which
+  `is_locked_error` deliberately never retries (`write.py:95`) — destroying the no-loss guarantee
+  `_redo_committed` exists to provide; the savepoint variant is SILENT (`batch.py:353-369` swallows
+  non-lock errors); and it violates `run_write_with_retry`'s stated contract (`write.py:20`).
+  STRUCTURALLY DECISIVE: **there is NO UNIQUE index on `keywords.normalized_term`** (`models.py:934`;
+  baseline migration `unique=False`; `merge.py:614-617` calls the absence DELIBERATE), so a cache bug
+  yields a SILENT DUPLICATE ROW, not an IntegrityError — the standard `except IntegrityError:
+  re-SELECT` idiom CANNOT fire here. Also: the entity-upgrade branch MUTATES an existing row
+  (`store.py:93-97`) so an id-only cache silently kills every upgrade with nothing failing loudly,
+  and one `IN (…)` over a window's terms blows SQLite's ~999-variable ceiling. **THE NARROWED
+  FORM:** warm the READ side only (bulk `SELECT` chunked ≤900 params) and leave the CREATE path
+  exactly as-is (per-miss `add`+`flush`), which keeps `baseline_tags` (`:88-92`), first-write-wins
+  `language` (`:78`) and the load-bearing flush (`:87`) byte-identical; cache `(id, is_entity)`;
+  TRANSACTION-scoped, invalidated on `after_rollback` AND on nested rollback (`writer.py:275`'s
+  parent-is-None discrimination must NOT be copied); deterministic `MIN(id)` tie-break for
+  duplicate `normalized_term` (matching `merge.py:638`); re-index path FIRST, collector second.
+  **EMPIRICALLY PROBE whether SQLAlchemy fires those events for SAVEPOINT rollbacks before
+  building — it is the hinge of the whole guard; if not observable, scope the cache to the re-index
+  path only.**
+  **RULING 8 ANSWERED — WAL IS ALREADY IN ALL-DIAGNOSTICS (the staleness guard paid off):** WAL size
+  in FOUR members (`storage.py:106`, `forensics.py:171`, `:353`, `:266`), `journal_size_limit` in
+  `storage-composition.json` (`storage.py:96-97`, SQLite's -1 honestly normalised to None), and
+  checkpoint-starvation evidence via BOTH a heuristic `wal_note` (`storage.py:107-112`) and a hard
+  per-pass measurement from `checkpoint_wal()` (`hygiene.py:225-236`) persisted into
+  `scheduler_runs.jsonl` and reaching the export at
+  `debug-bundle.json → payload.scheduler.recent_runs[].hygiene.wal_checkpoint`; the WAL fields are
+  computed BEFORE the dbstat walk so they survive on SQLCipher builds where dbstat is absent. Only
+  three small gaps remain: `PRAGMA wal_autocheckpoint` is never read in production, the last
+  checkpoint record is not surfaced in `storage-composition.json` (discoverability only), and there
+  is no historical WAL series (`ALL_METRICS` is counts-only).
+  **RULING 15 SCOPED HONESTLY (brief §7):** abort is FREE and COMPLETE before `os.replace`
+  (`merge.py:1985`) — everything runs on a disposable `.restore-<hex>` staging dir + a `working.db`
+  copy under ONE `BEGIN IMMEDIATE` (`merge.py:295`,`:353-362`) — with two caveats: "live untouched"
+  actually ends one stage EARLIER (`side_files_and_custody`, `merge.py:1950`, writes into
+  `data_dir()` + a separate `custody_log.db`), and there is NO abort hook at all today
+  (`run_restore` takes no `should_stop`; all three progress callbacks swallow exceptions by design,
+  `merge.py:333`/`timing.py:51`/`store.py:523`). AFTER the swap there is NO undo and building one is
+  UNSOUND: a `merged_rows` delete leaves dangling ids (the re-index delete-then-reinserts,
+  `store.py:304`), `map_articles` joins on hash so a batch legitimately attaches rows to
+  PRE-EXISTING articles (`merge.py:601-604`), nothing repairs `Keyword`/`Source` counters after such
+  a delete, and the merge's raw `connect()` sets no `foreign_keys` pragma so cascades silently do
+  not fire; snapshot-undo is incomplete and `_SNAPSHOT_KEEP=3` (`merge.py:59`) means item 1's
+  snapshot is gone by item 4 of a 6-backup run. So: pre-swap Stop = abort now, full undo (ruling 15
+  exactly); post-swap Stop = stop the REMAINING work, said plainly in the UI; the swap itself is
+  explicitly UNINTERRUPTIBLE. **CONVERGENCE:** once ruling 1 moves the re-index out of the import,
+  the post-swap window shrinks to a few cheap stages — ruling 1 is what MAKES ruling 15 honest.
+  **THE PLAN:** 11 slices in 4 phases — A quick wins (S1 per-phase ETA + a server-computed
+  `phase_index`/`phase_total` since M is 19/18/8 depending on `commit`+`reindex_imported`, NEVER a
+  hardcoded constant · S2 rate instrumentation as a SIBLING report key, since `StageTimings` is
+  float-only and `_uxTimingsView` formats every value as a duration · S3 pass `commit_batch` ·
+  S11 the three WAL gaps) → B correctness (S4 the counter bug, reproducer first · S5 the re-index
+  as an autonomous resumable job + the §3 decision · S6 the fingerprint, which must hash MORE than
+  `app_version` since stoplists are data files that change without a version bump) → C the measured
+  optimisation (S7 the narrowed cache, gated on S2's numbers) → D the queue + UI (S8 immediate
+  collector stop + ONE exclusive window across the whole queue · S9 the server-side queue, a HYBRID
+  of `DumpDownloadManager`'s persisted-order skeleton [`wiki/dumps.py:121`,`:192-210`,`:233-268`]
+  and `NewsletterImportManager`'s per-run cursor discipline · S10 the dialog redesign mirroring
+  `_renderOsmList` [`app.js:15337-15385`], whose CSS already exists). SCOPE FENCES: never touch the
+  legacy path (ruling 11) · never build a post-swap undo · never add a UNIQUE index on
+  `normalized_term` (its absence is deliberate) · never claim a speedup S2 has not measured · no new
+  network behaviour. FOUR items still need the maintainer: the §3 (a)/(b)/(c) choice · confirming
+  the narrowed cache GO · confirming the counter reconcile belongs at the end of `run_restore` ·
+  whether imported articles should also be hidden from SEARCH during the re-index window (the recon
+  found no code evidence of intent either way; the recommended design leaves them searchable).
 - **FIELD REMARKS 2026-07-26 — AI-job toggle UX, translation-gap detector ask, two progressive-sweep
   job bugs, P0/pagesize-bench removal question, qualification-backlog wiring gap (maintainer;
   INVESTIGATION-ONLY this session, code-verified against `main` via a 6-agent read-only fan-out;
