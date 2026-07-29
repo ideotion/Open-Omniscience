@@ -47,7 +47,15 @@ _LOG = logging.getLogger(__name__)
 # ``.restore-<hex>`` (:515); the folder backup's in-progress temps are ``*.oopart``
 # (src/backup/folder_backup.py:48). All are cleaned on success — their presence
 # means a CRASHED run left them behind.
-_STAGING_DIR_PREFIXES = (".bak-build-", ".restore-")
+# ``.oo-vllm-pip-build`` (src/llm/vllm_lifecycle.py:pip_tmpdir) joins the list
+# 2026-07-29: it is pip's unpack area for the vLLM install and holds up to ~10 GB of
+# half-unpacked torch/CUDA wheels. It is removed in a ``finally``, but that does not
+# run when the process is KILLED -- SIGKILL, OOM, or the app's own SIGTERM shutdown
+# (the install worker sits on a daemon thread, abandoned at interpreter exit). It
+# previously lived in the ambient /tmp, which the OS clears; it now lives on real
+# disk beside the venv, where nothing did. Same class as the others: present == a
+# run that did not finish cleanly.
+_STAGING_DIR_PREFIXES = (".bak-build-", ".restore-", ".oo-vllm-pip-build")
 _PART_SUFFIX = ".oopart"
 _PLAINTEXT_MEMBER_NAMES = ("corpus.db", "custody_log.db")
 

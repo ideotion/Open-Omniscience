@@ -59,7 +59,13 @@ def test_competitive_is_descriptive_never_a_ranking_or_score():
     assert "there is no winner and no composite score" in _JS
     # n=1 -> honest "nothing to compare"; tone falls back to a REAL value, never invented
     assert "Only one source in this corpus — nothing to compare." in _JS
-    assert "(f.avg_tone != null) ? f.avg_tone : r.mean_tone" in _JS
+    # AMENDED 2026-07-29 (stale-anchor lesson: the expression this pinned changed in
+    # the same commit as the behaviour). The corpus-sources mean is still the fallback,
+    # but ONLY when framing has no row for the outlet -- a framing row that honestly
+    # reports no measurable tone must NOT borrow a number computed over a different,
+    # uncapped article set.
+    assert "(f.avg_tone != null) ? f.avg_tone : (hasFraming ? null : r.mean_tone)" in _JS
+    assert "Object.prototype.hasOwnProperty.call(byName, r.name)" in _JS
     # no fabricated competitive score anywhere
     assert "competitiveScore" not in _JS and "competitive_score" not in _JS
 

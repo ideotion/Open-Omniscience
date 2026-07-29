@@ -27,8 +27,8 @@ def test_report_carries_every_named_ai_job_summary():
         "keyword_triage", "source_tags", "perception_eval_live",
         "perception_extract", "language_detection",
     }
-    # each is a real report dict (honest {available: False} stubs on a fresh
-    # test environment where nothing has ever run -- never a crash, never absent).
+    # each is a real report dict (honest "nothing has run yet" stubs on a fresh
+    # test environment -- never a crash, never absent).
     for name, report in jobs.items():
         assert isinstance(report, dict), f"{name} report must be a dict"
 
@@ -49,7 +49,11 @@ def test_a_backend_probe_failure_degrades_that_section_only(monkeypatch):
 
     monkeypatch.setattr(AID, "_backend_facts", _raise)
     out = AID.ai_diagnostics_report()
-    assert out["backend"]["available"] is False
+    # section_ok, NOT available: a crashed PROBE and a genuinely unreachable
+    # BACKEND are different facts and must not share a key (2026-07-29).
+    assert out["backend"]["section_ok"] is False
+    assert "available" not in out["backend"], (
+        "a failed probe must not report a capability it never observed")
     assert "simulated nvidia-smi probe crash" in out["backend"]["error"]
     # the rest of the report still comes back -- one section's crash never
     # takes down the whole diagnostics member.
@@ -64,7 +68,7 @@ def test_a_job_report_failure_degrades_that_one_job_only(monkeypatch):
         "src.ai_layer.triage_job.last_keyword_triage_report", _raise
     )
     out = AID.ai_diagnostics_report()
-    assert out["jobs"]["keyword_triage"]["available"] is False
+    assert out["jobs"]["keyword_triage"]["section_ok"] is False
     assert "simulated corrupt log" in out["jobs"]["keyword_triage"]["error"]
     # a sibling job report is unaffected.
     assert isinstance(out["jobs"]["source_tags"], dict)
@@ -117,3 +121,47 @@ def test_the_vllm_block_carries_the_install_attempt_history_and_its_bound():
     assert bounds["output_line_cap"] >= 1
     assert "attempts_kept" in bounds and "recording" in bounds
     assert vllm["preflight"]["schema"] == "oo-vllm-install-preflight-1"
+
+
+def test_a_failed_probe_is_distinguishable_from_an_unreachable_backend(monkeypatch):
+    """The sentinel key must not collide with a real measurement.
+
+    ``resolve_backend()`` returns ``available: False`` to mean "the selected backend
+    is unreachable right now" -- a MEASUREMENT, and the operator's actual 2026-07-29
+    state. ``_safe`` used the SAME key to mean "this probe raised" -- the ABSENCE of a
+    measurement. A reader of ai.json comparing two machines could not tell one from
+    the other, which turns a graceful degrade into a hiding place for the very fault
+    it exists to survive.
+
+    Both directions are pinned here: the happy path must still publish a REAL
+    ``available``, and the sad path must publish ``section_ok`` and no ``available``
+    at all."""
+    real = AID.ai_diagnostics_report()["backend"]
+    assert "available" in real and isinstance(real["available"], bool), (
+        "the success path must still report measured capability")
+    assert "section_ok" not in real, "a working section must not carry the failure sentinel"
+
+    def _raise():
+        raise RuntimeError("nvidia-smi hung")
+
+    monkeypatch.setattr(AID, "_backend_facts", _raise)
+    degraded = AID.ai_diagnostics_report()["backend"]
+    assert degraded["section_ok"] is False
+    assert "available" not in degraded
+    assert "nvidia-smi hung" in degraded["error"]
+
+
+def test_a_crashed_backend_probe_never_becomes_a_claim_about_vllm(monkeypatch):
+    """`_context_settings` derives its vLLM branch from the backend facts. When the
+    backend probe CRASHED, `vllm.installed` is missing because nothing was observed --
+    not because vLLM is absent -- so reporting "vLLM is not installed" would
+    manufacture a fact about the machine out of a failed probe."""
+    def _raise():
+        raise RuntimeError("nvidia-smi hung")
+
+    monkeypatch.setattr(AID, "_backend_facts", _raise)
+    ctx = AID.ai_diagnostics_report()["context"]
+    assert ctx["vllm"]["available"] is None, "unknown, never a fabricated False"
+    assert "probe failed" in ctx["vllm"]["reason"]
+    # ...and the honest gap for Ollama's static setting is still reported.
+    assert "configured_num_ctx" in ctx["ollama"]

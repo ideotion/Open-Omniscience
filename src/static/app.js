@@ -1353,11 +1353,24 @@
     // so the fix applies everywhere a validation error can surface, not just the
     // endpoint the finding was reported against. A plain string `detail` (or none)
     // renders BYTE-IDENTICALLY to before -- only the Array case changes.
+    // AMENDED 2026-07-29 (skeptic finding, same shared-path reasoning): a `detail`
+    // can also be a PLAIN OBJECT. POST /api/llm/vllm/install returns one so the
+    // frontend can tell an acknowledgeable warning from a hard refusal -- and a
+    // bare object hits `msg = d`, which is truthy, so the old code returned the
+    // OBJECT and `new Error(obj).message` rendered "[object Object]": the exact
+    // string this helper exists to abolish, re-entered through the sibling case.
+    // Prefer the object's own `error`/`detail`/`msg` prose; JSON.stringify only as
+    // a last resort so a shape we did not anticipate is still readable.
     function _apiErrorMessage(data, res) {
       const d = data && data.detail;
-      const msg = Array.isArray(d)
-        ? d.map((item) => (item && typeof item === "object" && item.msg) ? item.msg : JSON.stringify(item)).join("; ")
-        : d;
+      let msg;
+      if (Array.isArray(d)) {
+        msg = d.map((item) => (item && typeof item === "object" && item.msg) ? item.msg : JSON.stringify(item)).join("; ");
+      } else if (d && typeof d === "object") {
+        msg = d.error || d.detail || d.msg || JSON.stringify(d);
+      } else {
+        msg = d;
+      }
       return msg || (res.status + " " + res.statusText);
     }
     async function api(path, opts={}) {
@@ -1378,7 +1391,17 @@
           const text = await res.text();
           let data; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
           if (res.status === 503 && data && data.locked) { location.replace("/unlock"); throw new Error(data.detail); }
-          if (!res.ok) throw new Error(_apiErrorMessage(data, res));
+          if (!res.ok) {
+            // ADDITIVE (2026-07-29): the message is unchanged; the STRUCTURED detail
+            // and status ride along so a caller that can act on a machine-readable
+            // refusal (e.g. an acknowledgeable vLLM-install 409) is not forced to
+            // re-parse prose. Every existing `catch (e) { ... e.message }` is
+            // byte-identical.
+            const err = new Error(_apiErrorMessage(data, res));
+            err.status = res.status;
+            err.detail = data && data.detail;
+            throw err;
+          }
           return data;
         }
       } finally { _bumpInflight(-1); }
@@ -12560,8 +12583,15 @@
         const emphasis = (f.top_terms && f.top_terms.length) ? chips(f.top_terms)
           : `<span class="muted" style="font-size:12px">${fr ? esc(t("No distinctive terms.")) : esc(t("Needs the [analysis] extra."))}</span>`;
         // Tone: prefer the framing label+avg; fall back to the corpus-sources mean
-        // (same VADER number) when framing has no row for this outlet — real value.
-        const toneVal = (f.avg_tone != null) ? f.avg_tone : r.mean_tone;
+        // (same VADER number) ONLY when framing has no row for this outlet at all.
+        // AMENDED 2026-07-29: framing can now honestly report avg_tone:null ("none of
+        // this outlet's sampled pieces were in a language the lexicon reads"). Falling
+        // through to r.mean_tone there would print a number computed over a DIFFERENT,
+        // uncapped article set, with no label — the denominator mismatch the same
+        // change added tone_articles/tone_unmeasured to prevent. An outlet framing
+        // declared unmeasurable renders the honest em-dash.
+        const hasFraming = Object.prototype.hasOwnProperty.call(byName, r.name);
+        const toneVal = (f.avg_tone != null) ? f.avg_tone : (hasFraming ? null : r.mean_tone);
         const toneLbl = f.tone_label || null;
         const span = (r.first && r.last)
           ? `${esc(day(r.first))} → ${esc(day(r.last))}`
@@ -17288,7 +17318,11 @@
         const f = byName[r.name] || {};
         const emphasis = (f.top_terms && f.top_terms.length) ? chips(f.top_terms)
           : `<span class="muted" style="font-size:12px">${esc(emphasisNA)}</span>`;
-        const toneVal = (f.avg_tone != null) ? f.avg_tone : r.mean_tone;   // real value, never invented
+        // real value, never invented -- and never the WRONG denominator: see the sibling
+        // renderer above. A framing row that honestly reports no tone renders the em-dash
+        // rather than borrowing corpus-sources' whole-set mean.
+        const hasFraming = Object.prototype.hasOwnProperty.call(byName, r.name);
+        const toneVal = (f.avg_tone != null) ? f.avg_tone : (hasFraming ? null : r.mean_tone);
         const toneLbl = f.tone_label || null;
         const span = (r.first && r.last) ? `${esc(day(r.first))} → ${esc(day(r.last))}` : `<span class="muted">—</span>`;
         return `<tr style="border-bottom:1px solid var(--line)">
@@ -18158,13 +18192,42 @@
       }
     }
 
+    // The install endpoint answers 409 with a machine-readable detail when the
+    // resource preflight WARNS (low RAM / a RAM-backed unpack area). That is a
+    // "state the cost, then let the operator decide" refusal, not a dead end --
+    // without this the button is unclickable forever on exactly the machines the
+    // preflight exists to warn (verified: a 6.03 GB host warns on every click).
+    // A BLOCKING refusal (acknowledgeable:false) is never offered an override.
+    async function _vllmInstallStart() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        return await api("/api/llm/vllm/install", {method: "POST", body: JSON.stringify({})});
+      } catch (e) {
+        const d = e && e.detail;
+        if (!(e.status === 409 && d && typeof d === "object" && d.acknowledgeable)) throw e;
+        const warnings = (d.warnings || []).map(w => "• " + (w.detail || w.check)).join("\n\n");
+        const ok = confirm(
+          (d.error || t("This machine is below a resource floor for a vLLM install.")) +
+          "\n\n" + warnings + "\n\n" +
+          t("Install anyway? The download is several GB and cannot be resumed if it fails."));
+        if (!ok) return null;
+        return await api("/api/llm/vllm/install",
+          {method: "POST", body: JSON.stringify({acknowledge_low_resources: true})});
+      }
+    }
+
     async function installVllm(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (btn) { btn.disabled = true; btn.textContent = "Starting the install…"; }
       const prog = $("vllm-install-progress");
       try {
         await ensureOnline(t("install vLLM (downloads several GB)"));
-        await api("/api/llm/vllm/install", {method: "POST", body: JSON.stringify({})});
+        const started = await _vllmInstallStart();
+        if (started === null) {  // the operator declined the resource warning
+          if (prog) prog.textContent = t("Install cancelled.");
+          if (btn) { btn.disabled = false; btn.textContent = t("Install vLLM"); }
+          return;
+        }
         if (prog) prog.textContent = "Installing — this can take several minutes…";
         const poll = setInterval(async () => {
           try {

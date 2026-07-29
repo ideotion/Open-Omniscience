@@ -263,6 +263,61 @@ def test_framing_caveat_states_the_gap_is_not_a_neutral():
     assert "signals" in caveat and "not a judgement" in caveat
 
 
+def test_framing_measures_region_tagged_english_en_us_en_gb():
+    """REGRESSION (2026-07-29): the tone gate compared ``language`` to a bare "en",
+    so genuinely English coverage tagged ``en-US`` / ``en_GB`` -- what most major
+    outlets actually put in ``<html lang>``, stored raw by ``pipeline.py:167`` and
+    documented as a real value space at ``models.py:307`` -- silently lost a
+    CORRECT, measurable tone.
+
+    Refusing to measure English is not the conservative direction of this gate. It
+    destroys a real measurement exactly as surely as scoring French would fabricate
+    one, so the fix is to compare on the normalised code (the house
+    ``normalize_lang`` convention), not to widen what counts as readable."""
+    body = "a catastrophic and terrible failure that harmed thousands"
+    res = compare_framing(
+        {
+            "BBC": [{"title": "t", "content": body, "url": "1",
+                     "published_at": None, "language": "en-US"}],
+            "Guardian": [{"title": "t", "content": body, "url": "2",
+                          "published_at": None, "language": "en"}],
+            "Sky": [{"title": "t", "content": body, "url": "3",
+                     "published_at": None, "language": "EN"}],
+        }
+    )
+    by = {f["source"]: f for f in res["framing"]}
+    for name in ("BBC", "Guardian", "Sky"):
+        assert by[name]["tone_articles"] == 1, f"{name}: English must be measurable"
+        assert by[name]["avg_tone"] is not None, f"{name}: a real tone must be published"
+        assert by[name]["tone_label"] == "negative", f"{name}: and labelled"
+    # Identical text, identical tag family -> identical number. A region subtag must
+    # not change what the lexicon reports.
+    assert by["BBC"]["avg_tone"] == by["Guardian"]["avg_tone"] == by["Sky"]["avg_tone"]
+    assert res["tone_unmeasured_articles"] == 0
+
+
+def test_framing_still_refuses_every_language_vader_cannot_read():
+    """The negative twin of the test above: normalising the code must NOT become a
+    licence to score non-English text. A region/script subtag on an unreadable
+    language stays unreadable."""
+    body = "le scandale de corruption absolument catastrophique"
+    res = compare_framing(
+        {
+            "LeMonde": [{"title": "t", "content": body, "url": "1",
+                         "published_at": None, "language": "fr-CA"}],
+            "Xinhua": [{"title": "t", "content": "政府昨天宣布了新的经济措施。", "url": "2",
+                        "published_at": None, "language": "zh-Hans"}],
+            "Unknown": [{"title": "t", "content": body, "url": "3",
+                         "published_at": None, "language": None}],
+        }
+    )
+    for f in res["framing"]:
+        assert f["avg_tone"] is None, f"{f['source']} must report no tone"
+        assert f["tone_label"] is None, f"{f['source']} must not be labelled"
+        assert f["tone_articles"] == 0 and f["tone_unmeasured"] == 1
+    assert res["tone_measured_articles"] == 0
+
+
 def test_framing_split_never_sorts_on_a_missing_tone():
     """producers.framing_split sorted EVERY framing row by avg_tone; once an
     unreadable-language outlet reports None that raises TypeError and blanks the
@@ -276,3 +331,56 @@ def test_framing_split_never_sorts_on_a_missing_tone():
         "framing_split must filter to measured outlets before sorting on avg_tone"
     )
     assert "sorted(measured" in src
+
+
+def test_framing_split_runs_over_a_corpus_containing_an_unreadable_outlet(monkeypatch):
+    """BEHAVIOURAL twin of the source guard above (2026-07-29).
+
+    The guard is two substring assertions; nothing in the suite ever RAN
+    ``framing_split`` with a None-tone outlet, so "sorting on None raises TypeError
+    and silently blanks the producer" was pinned only by text matching. This drives
+    the real producer body -- the real ``compare_framing``, the real measured filter,
+    the real sort -- with only the DATA SOURCE stubbed, and asserts both halves: the
+    card is still produced, and its denominators count the measurable outlets only."""
+    from src.briefing import producers as P
+
+    class _Kw:
+        id = 1
+
+    class _Art:
+        _n = 0
+
+        def __init__(self, title, body, lang):
+            _Art._n += 1
+            self.id = _Art._n
+            self.title, self._b, self.language = title, body, lang
+            self.url, self.published_at, self.detected_language = "u", None, None
+
+        def get_content(self):
+            return self._b
+
+    rows = [
+        (_Art("a", "a wonderful, excellent and happy triumph", "en"), "PosWire"),
+        (_Art("b", "a terrible, awful disaster and a tragedy", "en-GB"), "NegWire"),
+        # The outlet VADER cannot read: NOT a third, "neutral" position.
+        (_Art("c", "政府昨天宣布了新的经济措施。", "zh"), "Xinhua"),
+    ]
+    monkeypatch.setattr(P, "_is_young", lambda s: False)
+    monkeypatch.setattr(
+        "src.analytics.queries.trending",
+        lambda s, **k: {"terms": [{"term": "budget", "normalized": "budget"}]},
+    )
+    monkeypatch.setattr(P, "resolve_keyword", lambda s, t: _Kw())
+    monkeypatch.setattr(P, "_articles_for_term", lambda s, kid, **k: rows)
+
+    cards = P.framing_split(session=None)
+    assert cards, "an unreadable third outlet must not blank the producer"
+    card = cards[0]
+    math = {r["label"]: r["value"] for r in (card.trigger or {}).get("math") or []}
+    assert math.get("Outlets whose tone was measurable (English only)") == "2", (
+        "the card must state the MEASURED denominator, not all 3 outlets")
+    assert math.get("Pieces of coverage analysed") == "3", (
+        "coverage/volume still counts every article -- only TONE is gated")
+    assert math.get("Pieces whose tone was measurable (English only)") == "2"
+    # And the unmeasurable outlet is never presented as a tone position.
+    assert "Xinhua" not in str(card.to_dict())

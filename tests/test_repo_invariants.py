@@ -6613,10 +6613,40 @@ def test_api_error_handles_a_pydantic_validation_array_detail():
         "the no-detail-at-all fallback (status + statusText) must be preserved"
 
     # The throw site must route through the helper, not the old inline expression.
-    assert "throw new Error(_apiErrorMessage(data, res));" in app, \
-        "the !res.ok throw must call the shared helper"
+    # Anchored on the CALL, not on a whole literal statement: the 2026-07-29 change
+    # names the Error so the structured detail can ride along, so a
+    # `throw new Error(...)`-shaped anchor would have gone stale (the recorded
+    # stale-source-anchor lesson). What is load-bearing is that the thrown Error's
+    # message comes from the shared helper.
+    assert "new Error(_apiErrorMessage(data, res))" in app, \
+        "the !res.ok throw must build its message with the shared helper"
     assert 'throw new Error((data && data.detail) || res.status + " " + res.statusText)' not in app, \
         "the old inline (never-Array-aware) expression must not linger as a duplicate"
+
+
+def test_api_error_handles_an_object_detail_and_carries_it_to_the_caller():
+    """The SIBLING of the Array case, and the same "[object Object]" defect.
+
+    ``POST /api/llm/vllm/install`` answers 409 with a DICT ``detail`` so the
+    frontend can tell an acknowledgeable resource warning from a hard refusal.
+    A plain object is truthy, so the Array-only helper returned the OBJECT and
+    ``new Error(obj).message`` rendered the literal "[object Object]" -- on the
+    operator's own 6.03 GB machine, for every click, with no way to read why.
+
+    Two properties are pinned: the helper must render an object detail as PROSE,
+    and ``api()`` must attach the structured ``detail``/``status`` to the thrown
+    Error so a caller can act on a machine-readable refusal without re-parsing
+    the message."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    fn = app.split("function _apiErrorMessage(data, res) {", 1)[1].split("\n    }\n", 1)[0]
+    assert 'typeof d === "object"' in fn, \
+        "the helper must branch on a plain-object detail, not only on an Array"
+    assert "d.error" in fn, "an object detail must prefer its own prose (`error`) field"
+
+    assert "err.detail = data && data.detail;" in app, \
+        "api() must attach the structured detail to the thrown Error"
+    assert "err.status = res.status;" in app, \
+        "api() must attach the HTTP status to the thrown Error"
 
 
 def test_home_briefing_re_renders_on_language_switch():

@@ -2237,5 +2237,6 @@
   "reset": "রিসেট",
   "floor": "ন্যূনতম",
   "Sources per region against each region's floor.": "প্রতিটি অঞ্চলের ন্যূনতমের তুলনায় অঞ্চলভিত্তিক উৎস।",
-  "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "বার = সংগৃহীত উৎস; উল্লম্ব চিহ্নটি সেই অঞ্চলের ন্যূনতম। শুধু গণনা, কোনো স্কোর নেই।"
+  "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "বার = সংগৃহীত উৎস; উল্লম্ব চিহ্নটি সেই অঞ্চলের ন্যূনতম। শুধু গণনা, কোনো স্কোর নেই।",
+  "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.": "VADER একটি ইংরেজি শব্দকোষ: সুর কেবল ইংরেজি সংবাদের জন্য পরিমাপ করা হয়। এখানে সুর না থাকার অর্থ অপরিমিত — নিরপেক্ষ নয়।"
 }

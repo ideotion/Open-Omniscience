@@ -1208,6 +1208,70 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     class of bulk DML, so no additional gate-wiring was needed. General form: before assuming a new
     write pattern needs its own gate wiring, read the gate module's own docstring/listener list
     FIRST — a project this write-safety-conscious usually already anticipated the bulk-DML case.
+  - **A SHARED ERROR/RENDER PATH FIXED FOR ONE PAYLOAD SHAPE IS RE-BROKEN BY THE NEXT SIBLING
+    SHAPE — AND THE SAME COMMIT CAN DO IT (2026-07-29, the vLLM-install 409):**
+    `app.js:_apiErrorMessage` was written to abolish `"[object Object]"` from a Pydantic 422
+    `detail` ARRAY, and its own comment says the fix "must not be scoped narrowly to one
+    endpoint". A later change then introduced the FIRST dict-valued `detail=` in the whole API
+    (a 409 carrying machine-readable preflight warnings) — which is truthy, so it fell past the
+    `Array.isArray` branch, was returned AS AN OBJECT, and `new Error(obj).message` rendered the
+    exact string the helper existed to prevent. GENERAL FORM: when a helper branches on a type
+    to normalise a payload, enumerate EVERY type that field can now hold (string · array ·
+    object · null), not just the one that motivated it — and when you ADD a new shape to a
+    field a shared helper consumes, the helper is part of your change. COROLLARY, and the more
+    expensive half here: the endpoint's structured refusal was reachable ONLY through that
+    helper, so the frontend had no way to read `acknowledgeable` and always POSTed `{}` — a
+    machine-readable refusal with no caller that reads it is a DEAD END, not a feature. Before
+    shipping an endpoint that answers "here is why, and here is how to proceed", grep for the
+    caller that actually sends the proceed flag; the endpoint tests passed because they
+    constructed the request body directly, which is the standing "a test double injected via a
+    parameter bypasses the production path" lesson wearing a different hat.
+  - **NORMALISE A LANGUAGE CODE BEFORE GATING ON IT — REFUSING TO MEASURE IS NOT THE SAFE
+    DIRECTION (2026-07-29, the framing tone gate):** closing a fabricated-neutral hole,
+    `_scorable` compared `Article.language` to a bare `"en"`. But `language` is stored RAW from
+    trafilatura's `<html lang>` read (`pipeline.py:167`, no normalisation on write) and
+    `models.py:307` documents the value space as *e.g. "en", "fr", "en-US"* — so most major
+    outlets arrive as `en-US`/`en-GB` and the new gate silently DESTROYED a correct, measurable
+    tone, on the very surface the fix was meant to make honest. The repo already had
+    `analytics.managed.normalize_lang` at 24 call sites (store-raw / normalise-on-read), and a
+    sibling module even documents "Mirrors managed.normalize_lang" — the convention existed and
+    was simply not reached for. TWO GENERAL RULES: (1) a fix that turns a fabricated value into
+    an honest gap needs a NEGATIVE-SPACE TWIN in the same commit — one test that the gap is
+    produced, one that a genuinely measurable input still produces a REAL number — because an
+    over-tight gate reads as "conservative" while quietly deleting data, and only the second
+    test catches it; (2) when two modules publish the same quantity and one falls back to the
+    other (here the framing table falls back to `Article.sentiment_score`), they must agree on
+    the gate, or the fallback prints a number computed over a different denominator.
+  - **AN OPERATION THAT BECOMES SLOW BECAUSE YOU FIXED IT NEEDS ITS CANCEL PATH RE-EXAMINED
+    (2026-07-29, the vLLM install):** `run_install_job` checked `ctx.stopping` once per YIELDED
+    LINE while `_default_runner` sat in `for line in proc.stdout`, so a silent child was never
+    interrupted and nothing ever killed it — live-reproduced (worker still blocked 3 s after
+    cancel; returned only when the child finished on its own). Pre-existing, and harmless while
+    the install died fast on ENOSPC; the TMPDIR fix turned it into a multi-GB download over
+    Tor, i.e. hours of silence, and the wedged job also made the endpoint refuse every retry
+    (`if job.status().get("running")`). The job advertised `cancellable=True`, which
+    `BackgroundJob`'s own docstring reserves for workers that genuinely stop early — so the fix
+    made it true rather than dropping the claim: a pump thread + an idle HEARTBEAT so the stop
+    check runs on a schedule + SIGTERM-then-SIGKILL teardown (the module's own `stop()` already
+    had that shape). TESTING NOTE that is the whole reason this survived: all 21 existing runner
+    doubles were generators yielding lines instantly, so the per-line check always fired; only a
+    test driving a REAL subprocess that goes SILENT reproduces it. COROLLARY: a `finally` is not
+    a cleanup guarantee — the worker runs on a DAEMON thread, so SIGKILL, OOM and the app's own
+    SIGTERM shutdown all skip it; moving a multi-GB scratch area off the OS-cleared `/tmp` onto
+    permanent disk therefore needs a sweep-at-start and a forensics entry, or it becomes
+    invisible orphaned storage (the recorded P0.2 swept-prefix lesson, in a new subsystem).
+  - **A DEGRADE SENTINEL MUST NOT SHARE A KEY WITH A REAL MEASUREMENT (2026-07-29,
+    `ai_diagnostics._safe`):** the bundle's per-section guard returned
+    `{"available": False, "error": ...}` on a crashed probe — and `resolve_backend()`
+    legitimately returns `available: False` to mean "the selected backend is unreachable",
+    which was the operator's actual state. One key, two meanings: "we measured, it's down" and
+    "we never measured" became indistinguishable in `ai.json`, so a hung `nvidia-smi` on one
+    machine read as a capability claim about another. Renamed to `section_ok`. GENERAL FORM:
+    when adding a field to a payload that is ALSO wrapped by a try/except degrade helper, check
+    the sentinel's key set first — this is the K2 lesson (a graceful fallback becoming the
+    hiding place for the bug it was built to survive) at the schema level rather than the
+    resolver level, and the test that pins it must assert BOTH directions (the happy path still
+    publishes a real value; the sad path publishes the sentinel and NOT the measurement key).
 
 ## Open queue (when maintainer says proceed)
 - **FIELD REMARKS 2026-07-26 — AI-job toggle UX, translation-gap detector ask, two progressive-sweep

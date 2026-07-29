@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
 
+from src.analytics.managed import normalize_lang
 from src.services.keyword_extractor import KeywordExtractor
 
 _analyzer = SentimentIntensityAnalyzer()
@@ -41,8 +42,11 @@ _CAVEAT = (
 
 # VADER is an ENGLISH lexicon. Text it cannot read yields compound 0.0 -- indistinguishable
 # from a genuinely neutral English sentence -- so scoring a non-English article publishes a
-# FABRICATED "measured neutral" (verified 2026-07-29: fr/ru/zh news bodies all score exactly
-# 0.0). Same rail, same reason, as src/analytics/sentiment.py:55, which refuses this by
+# FABRICATED "measured neutral". Measured 2026-07-29: plain fr/ru/zh news prose all score
+# exactly 0.0, AND a French sentence containing a COGNATE the lexicon happens to match
+# ("catastrophique et terrible") scores -0.4767 -- so the failure is not only a fabricated
+# neutral but, for the Romance languages, a fabricated SIGNED tone driven by accidental
+# spelling overlap. Same rail, same reason, as src/analytics/sentiment.py:55, which refuses this by
 # design. NOTE for anyone re-reading the old code: the `if tones else 0.0` this replaced was
 # unreachable (the loop already `continue`s on an empty article list) -- the live fabrication
 # was always the ungated scoring, not the empty-set branch.
@@ -50,8 +54,18 @@ _TONE_LANGUAGE = "en"
 
 
 def _scorable(language: str | None) -> bool:
-    """Only English is measurable by VADER. Unknown language is a GAP, not a licence."""
-    return (language or "").strip().lower() == _TONE_LANGUAGE
+    """Only English is measurable by VADER. Unknown language is a GAP, not a licence.
+
+    Compared on the NORMALISED code (``normalize_lang``: 'en-US'/'en_GB'/'EN' -> 'en'),
+    which is this project's standing store-raw/normalise-on-read convention -- 24 call
+    sites, including the keyword engine in the same ``index_article`` chokepoint.
+    ``Article.language`` is written straight from trafilatura's read of ``<html lang>``
+    with NO normalisation (``pipeline.py:167``), and ``models.py:307`` documents the
+    value space as *e.g. "en", "fr", "en-US"* -- so a bare ``== "en"`` silently drops
+    the tone of genuinely English coverage from most major outlets. Refusing to measure
+    English is not the safe direction of this gate: it destroys a real measurement
+    exactly as surely as scoring French would fabricate one."""
+    return normalize_lang(language) == _TONE_LANGUAGE
 
 
 def _tone_label(compound: float | None) -> str | None:

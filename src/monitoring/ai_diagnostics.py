@@ -25,10 +25,20 @@ SCHEMA = "oo-ai-diagnostics-1"
 
 
 def _safe(fn):
+    """Run one section, degrading to a SENTINEL rather than taking down the bundle.
+
+    The sentinel key is ``section_ok`` and NOT ``available`` (renamed 2026-07-29).
+    ``resolve_backend()`` legitimately returns ``available: False`` to mean "the
+    selected backend is unreachable", which is a MEASUREMENT; the old sentinel used
+    the same key to mean "this probe crashed", which is the ABSENCE of one. A reader
+    of ``ai.json`` could not tell the operator's real "Ollama is down" from a hung
+    ``nvidia-smi`` -- a measurement fabricated out of a failed probe, and the exact
+    shape of the K2 lesson where a graceful degrade became a hiding place for the bug
+    it was built to survive."""
     try:
         return fn()
     except Exception as exc:  # noqa: BLE001 - one section's failure must not break the rest
-        return {"available": False, "error": str(exc)[:300]}
+        return {"section_ok": False, "error": str(exc)[:300]}
 
 
 def _backend_facts() -> dict:
@@ -48,7 +58,15 @@ def _context_settings(backend_facts: dict) -> dict:
     out: dict = {}
     gpu = backend_facts.get("gpu") or {}
     vllm_installed = bool((backend_facts.get("vllm") or {}).get("installed"))
-    if vllm_installed:
+    if backend_facts.get("section_ok") is False:
+        # The backend probe CRASHED, so `vllm_installed` is False because we learned
+        # nothing -- not because vLLM is absent. Saying "vLLM is not installed" here
+        # would be a claim about the machine derived from a failed probe.
+        out["vllm"] = {
+            "available": None,
+            "reason": "the backend probe failed, so nothing was observed about vLLM here",
+        }
+    elif vllm_installed:
         from src.llm.vllm_lifecycle import compute_server_args
 
         out["vllm"] = compute_server_args(gpu.get("vram_mb"))
@@ -107,7 +125,10 @@ def ai_diagnostics_report() -> dict:
     def _vllm_status():
         from src.llm.vllm_lifecycle import status
 
-        return status()
+        # history_limit=None: the diagnostics bundle takes the COMPLETE attempt
+        # journal. Being diagnosable after a restart is what V3 exists for; the
+        # interactive default is trimmed for the UI panel, not for this member.
+        return status(history_limit=None)
 
     return {
         "schema": SCHEMA,
