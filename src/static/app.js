@@ -18260,8 +18260,23 @@
       if (btn) { btn.disabled = true; btn.textContent = t("Queued…"); }
       try {
         await api("/api/llm/pull/queue", {method: "POST", body: JSON.stringify({model: m.tag})});
-        toast(t("Ministral queued for download."));
+        // FULLY automatic (maintainer 2026-07-29: "make the installation fully
+        // automatic with a simple option to install the default ministral model"):
+        // queue the download AND make it the active model, so one click is the whole
+        // job rather than a download the user must then go and select. Recorded as a
+        // preference now; it takes effect once the pull lands (the model list reads
+        // truth from Ollama, so a not-yet-downloaded active choice simply shows as
+        // pending rather than as a fabricated ready state).
+        try {
+          await api("/api/settings", {method: "PUT", body: JSON.stringify({llm_model: m.tag})});
+          toast(t("Ministral queued — it will become the active model once downloaded."));
+        } catch (e2) {
+          // The download is the load-bearing half; a settings hiccup must not read as
+          // a failed install, but it must not be silent either.
+          toast(t("Ministral queued, but it could not be set active:") + " " + e2.message, "err");
+        }
         if (typeof _llmPullRefresh === "function") _llmPullRefresh();
+        loadLlmHealth();
       } catch (e) {
         // A wrong tag CANNOT pass silently: Ollama 404s an unknown model, so the tag
         // is named in the failure. That refusal IS the verification step.
@@ -18291,7 +18306,19 @@
         parts.push(s.installed ? "installed" : "not installed");
         if (s.installed) parts.push(s.running ? "running" : "not running");
         parts.push(s.gpu && s.gpu.available ? "GPU detected" : "no GPU detected");
-        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>`;
+        // The last start's own output, shown exactly when it is needed: installed but
+        // not running (field report 2026-07-29 — a start that failed on a bad model id
+        // or a CUDA OOM previously died with its reason discarded, leaving only a
+        // permanent "not running"). A CUDA OOM puts the actionable numbers at the END,
+        // so the tail is the useful part.
+        const lg = s.server_log || {};
+        const logBlock = (s.installed && !s.running && lg.available && (lg.tail || "").trim())
+          ? `<details style="margin-top:6px"><summary>${esc(t("Why it is not running — last server output"))}</summary>` +
+            `<pre style="max-height:16em;overflow:auto;white-space:pre-wrap">${esc(lg.tail)}</pre>` +
+            (lg.truncated ? `<p class="muted">${esc(t("Truncated — full log:"))} ${esc(lg.path || "")}</p>` : "") +
+            `</details>`
+          : "";
+        box.innerHTML = `<p class="hint">${esc(parts.join(" · "))} &middot; ${esc(s.base_url || "")}</p>` + logBlock;
         if (!s.installed) {
           if (!installBox) return;
           if (!s.gpu || !s.gpu.available) {
