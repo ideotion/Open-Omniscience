@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy import func, inspect, select
 from sqlalchemy.exc import IntegrityError
@@ -107,6 +108,47 @@ _FILTERED_METRICS: dict[str, Callable[[Session], int]] = {
     "sources_disqualified": _count_sources_disqualified,
     "sources_never_judged": _count_sources_never_judged,
     "sources_candidates": _count_sources_candidates,
+}
+
+
+def _gauge_wal_bytes(session: Session) -> int | None:
+    """Size of the live ``-wal`` sidecar right now, in bytes — or None when there
+    is nothing to measure.
+
+    Returning None (rather than 0) on a non-SQLite/in-memory backend is the whole
+    point: an unmeasurable gauge must leave a GAP in the series, never a recorded
+    zero that reads as "the WAL was empty at that hour". A genuinely absent ``-wal``
+    file on a real SQLite store IS a real zero, and is recorded as one.
+    """
+    from src.database.session import engine
+
+    if engine.url.get_backend_name() != "sqlite":
+        return None
+    db_file = engine.url.database
+    if not db_file or db_file == ":memory:":
+        return None
+    try:
+        wal = Path(db_file + "-wal")
+        return wal.stat().st_size if wal.exists() else 0
+    except OSError:  # a stat failure is unmeasured, never a fabricated 0
+        return None
+
+
+# GAUGES: point-in-time measurements that are NOT a COUNT(*) over a table, so they
+# live in their own dict (a gauge may legitimately report "unmeasurable" -> None,
+# which the two count-based families never do). Recorded into the SAME append-only
+# StatSnapshot store, keyed by metric name.
+#
+# ``wal_bytes`` closes the last of the three WAL-visibility gaps (field ruling
+# 2026-07-29 item 8): storage-composition already reports the WAL's size RIGHT NOW
+# and the scheduler's own checkpoint measurement, but neither can answer "is this
+# WAL growing across days?" — the exact shape of the checkpoint-starvation hazard,
+# which is invisible in any single reading. Deliberately NOT in ALL_METRICS: item 8
+# ruled the WAL is diagnostics material, not a user-facing Library surface, and
+# ALL_METRICS is the Library endpoint's allowlist. The series is served through the
+# all-diagnostics bundle instead (see monitoring/storage.py).
+_GAUGE_METRICS: dict[str, Callable[[Session], int | None]] = {
+    "wal_bytes": _gauge_wal_bytes,
 }
 
 ALL_METRICS = tuple(_SNAPSHOT_TABLES) + tuple(_FILTERED_METRICS) + ("articles_per_hour",)
@@ -193,6 +235,24 @@ def maybe_snapshot_library_stats(session: Session, *, now: datetime | None = Non
                 continue
             recorded[metric] = value
 
+    # Gauges — same savepoint-per-insert discipline. A gauge that cannot be measured
+    # returns None and is SKIPPED, leaving an honest hole in the series rather than a
+    # recorded zero (a fabricated "the WAL was empty" reading).
+    for metric, gauge in _GAUGE_METRICS.items():
+        try:
+            measured = gauge(session)
+        except Exception:  # noqa: BLE001 - one bad gauge must not lose the rest
+            _LOG.warning("snapshot gauge failed for %s", metric, exc_info=True)
+            continue
+        if measured is None:
+            continue
+        try:
+            with session.begin_nested():
+                session.add(StatSnapshotRow(metric=metric, taken_at=bucket, value=int(measured)))
+        except IntegrityError:
+            continue
+        recorded[metric] = int(measured)
+
     if not recorded:
         return {"skipped": "no-metrics"}
     return {"hour": bucket.isoformat(), "recorded": recorded}
@@ -234,7 +294,11 @@ def metric_history(session: Session, *, metric: str, days: int) -> dict:
     (the timestamp of the metric's very first snapshot ever, regardless of the
     window) so the UI can state honestly "recording began at X" instead of
     implying a gap is a real absence of activity."""
-    if metric not in _SNAPSHOT_TABLES and metric not in _FILTERED_METRICS:
+    # Every RECORDED family is readable here, gauges included. This is deliberately
+    # wider than ALL_METRICS (the Library endpoint's user-facing allowlist): a gauge
+    # like wal_bytes is diagnostics material, so it must be queryable by the bundle
+    # without also appearing as a Library counter.
+    if metric not in _SNAPSHOT_TABLES and metric not in _FILTERED_METRICS and metric not in _GAUGE_METRICS:
         return {"metric": metric, "series": [], "recording_began_at": None, "error": "unknown metric"}
     now = datetime.now(UTC)
     since = _hour_bucket(now) - timedelta(days=days)

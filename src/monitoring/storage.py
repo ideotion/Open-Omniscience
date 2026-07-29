@@ -61,6 +61,62 @@ def _pragma(session: Session, name: str) -> int | None:
         return None
 
 
+def _last_wal_checkpoint() -> dict[str, Any] | None:
+    """The most recent REAL checkpoint measurement, lifted out of the scheduler run log.
+
+    The scheduler already measures a TRUNCATE checkpoint every pass and persists it to
+    ``scheduler_runs.jsonl`` — but it was only ever readable from the bundle's *scheduler*
+    section, so the one member an operator opens to judge WAL health could not say whether
+    a checkpoint had recently completed, or been blocked by a long-lived reader
+    (``busy: 1`` — the starvation signature). Best-effort: a missing/unreadable log yields
+    None, never an exception into the diagnostic.
+    """
+    try:
+        from src.scheduler.runlog import recent_runs
+
+        for run in recent_runs(limit=50):
+            ck = (run.get("hygiene") or {}).get("wal_checkpoint")
+            if isinstance(ck, dict):
+                out = dict(ck)
+                when = run.get("finished_at") or run.get("started_at")
+                if when:
+                    out["run_at"] = when
+                return out
+    except Exception:  # noqa: BLE001 - a diagnostic read degrades, never raises
+        return None
+    return None
+
+
+def _wal_history(session: Session) -> dict[str, Any] | None:
+    """The recorded ``wal_bytes`` series — the only view that can show a WAL growing
+    across days, which is exactly what a single point-in-time reading cannot.
+
+    Bounded to a 30-day response (storage retention is infinite by ruling; the READ
+    window is a query-time concern). ``recording_began_at`` travels with it so an empty
+    window reads as "not recorded yet", never as "the WAL was fine".
+    """
+    try:
+        from src.database.snapshots import metric_history
+
+        hist = metric_history(session, metric="wal_bytes", days=30)
+        if hist.get("error"):
+            return None
+        series = hist.get("series") or []
+        out: dict[str, Any] = {
+            "series": series,
+            "recording_began_at": hist.get("recording_began_at"),
+            "days": 30,
+        }
+        if series:
+            values = [int(p["n"]) for p in series]
+            out["min_bytes"] = min(values)
+            out["max_bytes"] = max(values)
+            out["n"] = len(values)
+        return out
+    except Exception:  # noqa: BLE001 - a diagnostic read degrades, never raises
+        return None
+
+
 def storage_composition(session: Session) -> dict[str, Any]:
     """Per-table / per-index byte composition of the live SQLite store.
 
@@ -95,6 +151,22 @@ def storage_composition(session: Session) -> dict[str, Any]:
     # completing — the classic reader-starvation hazard, now diagnosable). Both degrade to None.
     jsl = _pragma(session, "journal_size_limit")
     out["journal_size_limit"] = jsl if (jsl is not None and jsl >= 0) else None
+    # wal_autocheckpoint is the OTHER half of WAL sizing, and was never read in
+    # production: it is the page threshold at which a WRITER checkpoints on its own,
+    # BETWEEN our inter-pass TRUNCATE checkpoints. A store where it is 0/negative has
+    # automatic checkpointing DISABLED and grows its -wal until the scheduler's next
+    # pass — a state indistinguishable from a healthy one in every export produced
+    # before this. Reported in SQLite's own unit (pages) and, when page_size is known,
+    # resolved to bytes so it is directly comparable with journal_size_limit/wal_bytes.
+    wac = _pragma(session, "wal_autocheckpoint")
+    out["wal_autocheckpoint_pages"] = wac
+    if wac is not None:
+        out["wal_autocheckpoint_bytes"] = (wac * page_size) if (wac > 0 and page_size) else None
+        if wac <= 0:
+            out["wal_autocheckpoint_note"] = (
+                "automatic checkpointing is DISABLED on this connection — the -wal grows "
+                "until an explicit checkpoint runs (the scheduler's inter-pass TRUNCATE)."
+            )
     try:
         main_db = None
         for row in _rows(session, "PRAGMA database_list"):
@@ -112,6 +184,15 @@ def storage_composition(session: Session) -> dict[str, Any]:
                 )
     except Exception:  # noqa: BLE001 - WAL visibility is best-effort; never break the diagnostic
         pass
+    # Did a checkpoint actually complete, and when? (present only when the scheduler has
+    # run at least once and recorded one — absence is honest, never a fabricated "ok".)
+    last_ck = _last_wal_checkpoint()
+    if last_ck is not None:
+        out["last_checkpoint"] = last_ck
+    # Is it growing ACROSS DAYS? No single reading can answer that.
+    hist = _wal_history(session)
+    if hist is not None:
+        out["wal_history"] = hist
     if page_size and page_count is not None:
         out["db_bytes"] = page_size * page_count
     if page_size and freelist is not None:

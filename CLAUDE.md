@@ -1392,9 +1392,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `scheduler_runs.jsonl` and reaching the export at
   `debug-bundle.json → payload.scheduler.recent_runs[].hygiene.wal_checkpoint`; the WAL fields are
   computed BEFORE the dbstat walk so they survive on SQLCipher builds where dbstat is absent. Only
-  three small gaps remain: `PRAGMA wal_autocheckpoint` is never read in production, the last
-  checkpoint record is not surfaced in `storage-composition.json` (discoverability only), and there
-  is no historical WAL series (`ALL_METRICS` is counts-only).
+  three small gaps remained: `PRAGMA wal_autocheckpoint` was never read in production, the last
+  checkpoint record was not surfaced in `storage-composition.json` (discoverability only), and there
+  was no historical WAL series (`ALL_METRICS` is counts-only). **ALL THREE CLOSED 2026-07-29 (S11;
+  shipped.csv row "monitoring/diagnostics — WAL visibility"):** the autocheckpoint threshold is read
+  and resolved to bytes (with an explicit note when it is 0 = automatic checkpointing DISABLED, a
+  state previously indistinguishable from health in every export); `storage-composition.json` now
+  carries the newest run that ACTUALLY measured a checkpoint (runs whose checkpoint honestly returned
+  None are skipped, never mistaken for the answer); and the hourly snapshot recorder gained a THIRD
+  metric family — GAUGES — recording `wal_bytes`, so multi-day growth is finally visible (an
+  unmeasurable gauge is SKIPPED, leaving an honest hole, never a recorded 0 that would read as "the
+  WAL was empty"). `wal_bytes` is DELIBERATELY absent from `ALL_METRICS` (the Library endpoint's
+  user-facing allowlist) — ruling 8 says this is diagnostics material, not a user surface.
   **RULING 15 SCOPED HONESTLY (brief §7):** abort is FREE and COMPLETE before `os.replace`
   (`merge.py:1985`) — everything runs on a disposable `.restore-<hex>` staging dir + a `working.db`
   copy under ONE `BEGIN IMMEDIATE` (`merge.py:295`,`:353-362`) — with two caveats: "live untouched"
