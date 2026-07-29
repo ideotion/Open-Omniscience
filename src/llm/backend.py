@@ -110,6 +110,18 @@ def _ollama_available() -> bool:
         return False
 
 
+def _ollama_installed() -> bool:
+    """Is the ``ollama`` BINARY present? Cheap (``shutil.which``), no network, and --
+    crucially -- truthful while the daemon is stopped."""
+    try:
+        from src.llm.ollama_lifecycle import is_installed
+
+        return is_installed()
+    except Exception:  # noqa: BLE001 - a probe must never crash the resolver
+        return False
+
+
+
 def _result(
     *,
     backend: str,
@@ -128,6 +140,12 @@ def _result(
     already run this call -- no extra probe, no extra latency."""
     vllm_running = bool(vllm.get("running"))
     reachable = ollama_ok if backend == "ollama" else vllm_running
+    # INSTALLED-vs-RUNNING for Ollama (field report 2026-07-29). Derived HERE, in the
+    # one builder, for the same reason every other field is: so it cannot be present
+    # in three branches and silently missing from the fourth. The reachability half is
+    # reused from the probe the caller already ran -- only the binary check is new, and
+    # that is a shutil.which, not a network call, so no branch pays a second probe.
+    ollama_installed = _ollama_installed()
     return {
         "backend": backend,
         "reason": reason,
@@ -138,6 +156,16 @@ def _result(
         # --- V4 (2026-07-29) capability fields, purely ADDITIVE ------------ #
         "available": reachable,
         "no_backend": not (ollama_ok or vllm_running),
+        # --- launchability (2026-07-29 field report), purely ADDITIVE ------ #
+        # ``ollama`` mirrors the shape of ``vllm`` above so the UI can treat the two
+        # backends uniformly. ``can_launch`` says a Launch button is honest to show:
+        # the software is here, it is simply not answering.
+        "ollama": {
+            "installed": ollama_installed,
+            "running": ollama_ok,
+            "can_launch": ollama_installed and not ollama_ok,
+        },
+        "vllm_can_launch": bool(vllm.get("installed")) and not vllm_running,
     }
 
 

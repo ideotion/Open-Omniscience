@@ -4775,10 +4775,25 @@
           `<td class="muted">${esc(m.note)}</td>` +
           `<td><button class="tiny" onclick="pullModel(${esc(JSON.stringify(m.tag))})">${esc(t("Pull"))}</button></td></tr>`;
       }).join("");
+      // One-click Ministral (maintainer 2026-07-29), rendered SEPARATELY from the
+      // suggested-models table on purpose: that table is the dated, verified catalog,
+      // and this tag is explicitly NOT verified to the same standard. Its unconfirmed
+      // status is shown here rather than only in the confirm dialog, so the user reads
+      // it before clicking, not after (caveats visible by default).
+      const mini = d.ministral && d.ministral.tag ? d.ministral : null;
+      const miniBlock = mini
+        ? `<h3 style="margin:14px 0 4px">${esc(t("Ministral — one-click install"))}</h3>` +
+          `<p><code>${esc(mini.tag)}</code> <span class="muted">${esc(mini.size || "")}</span> ` +
+          `<button class="tiny" onclick="pullMinistral(this)">${esc(t("Install Ministral"))}</button></p>` +
+          `<p class="card-caveat">${esc(t("Not part of the verified catalog above."))} ` +
+          `${esc(t("Licence:"))} ${esc(mini.license || "")} — ${esc(mini.verification || "")}. ` +
+          `${esc((mini.caveats || []).join(" "))}</p>`
+        : "";
       box.innerHTML = `<p class="muted">${esc(ram)}.</p>` + installed +
         `<h3 style="margin:14px 0 4px">${esc(t("Suggested models"))} <span class="muted" style="font-weight:400">(${esc(t("as of"))} ${esc(d.catalog_as_of)} — ${esc(t("newer likely exist"))})</span></h3>` +
         `<table><tr><th>${esc(t("Model"))}</th><th>${esc(t("Size"))}</th><th>${esc(t("Your hardware"))}</th><th>${esc(t("Note"))}</th><th></th></tr>${cat}</table>` +
-        `<div class="hint">${esc(t("Hardware fit is advisory — it informs your choice, it doesn't decide. Pull any model from the full library below."))}</div>`;
+        `<div class="hint">${esc(t("Hardware fit is advisory — it informs your choice, it doesn't decide. Pull any model from the full library below."))}</div>` +
+        miniBlock;
     }
     async function setActiveModel(tag) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -18160,12 +18175,33 @@
         const b = await api("/api/llm/backend");
         const gpu = b.gpu || {};
         const vllm = b.vllm || {};
+        // Ollama is now reported as two INDEPENDENT facts (installed / running), so
+        // "installed but stopped" is finally a state the UI can see. Older payloads
+        // carried only `ollama_available`; fall back to it so a stale server still
+        // renders truthfully rather than claiming "not installed".
+        const oll = b.ollama || {installed: !!b.ollama_available, running: !!b.ollama_available,
+                                 can_launch: false};
+        const ollTxt = oll.installed
+          ? (oll.running ? t("installed, running") : t("installed, not running"))
+          : t("not installed");
         box.innerHTML =
           `<p><b>Active backend:</b> ${esc(b.backend)} <span class="muted">— ${esc(b.reason)}</span></p>` +
           `<p class="hint">GPU: ${gpu.available ? esc(gpu.name || "detected") : "not detected"}` +
           ` &middot; vLLM: ${vllm.installed ? "installed" : "not installed"}` +
           `${vllm.installed ? (vllm.running ? ", running" : ", not running") : ""}` +
-          ` &middot; Ollama: ${b.ollama_available ? "reachable" : "not reachable"}</p>` +
+          ` &middot; Ollama: ${esc(ollTxt)}</p>` +
+          // A LAUNCH control, offered precisely when the software is present but not
+          // answering (maintainer 2026-07-29). Shown only when it is honest to show:
+          // `can_launch` is decided server-side so the rule lives in one place, and a
+          // backend that is absent gets the install box instead, never a Launch button
+          // that could only fail.
+          (oll.can_launch
+            ? `<p><button class="btn" onclick="launchOllama(this)">${esc(t("Launch Ollama"))}</button>` +
+              ` <span class="muted">${esc(t("starts the local Ollama service"))}</span></p>`
+            : "") +
+          (b.vllm_can_launch
+            ? `<p class="hint">${esc(t("vLLM is installed but not running — use Start in the vLLM section below."))}</p>`
+            : "") +
           // V4: selection != capability. When neither backend can serve a request,
           // say so where the decision is disclosed, in the theme-aware caveat colour
           // (invariant #23's var(--caveat), AA-verified on all 17 themes).
@@ -18175,6 +18211,63 @@
         if (sel) sel.value = b.stored_override || "auto";
       } catch (e) {
         box.innerHTML = `<p class="muted">Could not read the backend status.</p>`;
+      }
+    }
+
+    async function launchOllama(btn) {
+      // Immediate feedback, then the REAL outcome from the server -- never an
+      // optimistic green. The backend waits for the daemon to actually answer and
+      // says so honestly if it did not, so a slow start reads as "still starting"
+      // rather than as a ready server the next call would find unreachable.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const was = btn ? btn.textContent : "";
+      if (btn) { btn.disabled = true; btn.textContent = t("Launching…"); }
+      try {
+        const r = await api("/api/llm/ollama/start", {method: "POST"});
+        if (r.started && r.ready) toast(t("Ollama is running."));
+        else if (r.started) toast(r.note || t("Ollama was launched — it may still be starting."));
+        else toast(t("Ollama was already running."));
+      } catch (e) {
+        toast("Ollama: " + e.message, "err");
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = was; }
+      }
+      loadAiBackendPanel();
+      loadLlmHealth();
+    }
+
+    async function pullMinistral(btn) {
+      // The dedicated one-click install (maintainer 2026-07-29). It rides the SAME
+      // pull queue as every other model -- one download at a time, cancellable, real
+      // byte progress -- rather than a second parallel download path.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // Read the tag from the SERVER rather than hardcoding it here: the tag, its
+      // caveats and its verification status live in one place (src/llm/ollama.py), so
+      // the confirm dialog can never drift from what is actually pulled.
+      let m = null;
+      try { m = (await api("/api/llm/models")).ministral || null; }
+      catch (e) { toast("Ministral: " + e.message, "err"); return; }
+      if (!m || !m.tag) { toast(t("Ministral suggestion unavailable."), "err"); return; }
+      // The licence is REPORTED, not established, and the previous generation of this
+      // family was research-only. Ask before downloading rather than let a one-click
+      // button imply a verification nobody performed.
+      const ok = confirm(
+        t("Install Ministral 3 (3B)?") + "\n\n" + m.tag + "\n\n" +
+        (m.caveats || []).join("\n")
+      );
+      if (!ok) return;
+      const was = btn ? btn.textContent : "";
+      if (btn) { btn.disabled = true; btn.textContent = t("Queued…"); }
+      try {
+        await api("/api/llm/pull/queue", {method: "POST", body: JSON.stringify({model: m.tag})});
+        toast(t("Ministral queued for download."));
+        if (typeof _llmPullRefresh === "function") _llmPullRefresh();
+      } catch (e) {
+        // A wrong tag CANNOT pass silently: Ollama 404s an unknown model, so the tag
+        // is named in the failure. That refusal IS the verification step.
+        toast("Ministral: " + e.message, "err");
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = was; }
       }
     }
 
