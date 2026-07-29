@@ -1260,6 +1260,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     SIGTERM shutdown all skip it; moving a multi-GB scratch area off the OS-cleared `/tmp` onto
     permanent disk therefore needs a sweep-at-start and a forensics entry, or it becomes
     invisible orphaned storage (the recorded P0.2 swept-prefix lesson, in a new subsystem).
+  - **A BASELINE DIFF IS BLIND WHERE THE BASELINE IS ALREADY RED — AN ENVIRONMENTALLY-FAILING
+    TEST MASKS A GENUINE NEW FAILURE IN THE SAME TEST (2026-07-29, the option-(a) merge change):**
+    the established discipline (run the suite against clean `main`, diff the failure SETS, ship
+    only on "zero introduced") reported byte-identical 435/435 — and CI then failed on three real
+    regressions. The diff compares NAMES, so a test that is already failing locally for an
+    environmental reason cannot ever appear as "introduced", no matter how badly the change breaks
+    it: `test_merge_symmetry` was red in both runs (for different reasons each side) and
+    `test_t5_round_trips_preserve_content` errored on a fixture that needs a full env. THE FIX IS
+    CHEAP AND WAS AVAILABLE ALL ALONG: the whole `test_db_reliability_torture.py` suite runs here
+    with `PYTHONPATH=<repo>` (its `_run` helper shells out to `tests/torture_helper.py`, which
+    needs `src` importable — nothing else was missing; 11/11 pass). So: before trusting a
+    zero-introduced diff, LIST the already-red tests that touch the code you changed and try to
+    make them runnable — a name-diff is evidence only about tests that actually execute. Corollary
+    when a genuinely-red-everywhere assertion blocks a new test: verify the count against CLEAN src
+    (stash `src/`, keep the test) and assert only the portable property — here "every imported
+    article reaches the re-index", never `failed == 0`, which pins the environment rather than the
+    behaviour.
   - **A DEGRADE SENTINEL MUST NOT SHARE A KEY WITH A REAL MEASUREMENT (2026-07-29,
     `ai_diagnostics._safe`):** the bundle's per-section guard returned
     `{"available": False, "error": ...}` on a crashed probe — and `resolve_backend()`

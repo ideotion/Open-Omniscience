@@ -38,6 +38,30 @@ _REPO = Path(__file__).resolve().parents[1]
 _HELPER = _REPO / "tests" / "torture_helper.py"
 
 
+# Tables the merge DELIBERATELY no longer carries (maintainer ruling 2026-07-29,
+# option (a)): the post-swap re-index recomputes them from the article text instead.
+# The harness runs with the re-index OFF on purpose -- see torture_helper's own comment,
+# "it makes the FULL restore direction-dependent in DERIVED data BY DESIGN" -- so with
+# the rows no longer copied either, a derived table is simply whatever the LOCAL corpus
+# already had. That is direction-dependent by construction and belongs out of the
+# engine's determinism/fidelity comparisons, exactly like the kept-local commodity
+# divergence these tests already pop.
+#
+# This EXCLUDES the derived rows from the merge-determinism assertions; it does not drop
+# the guarantee. ``test_reindex_restores_the_derived_rows_the_merge_no_longer_carries``
+# below pins the other half: with the re-index ON, the mentions are produced.
+_DERIVED_TABLES = ("keyword_mentions",)
+
+
+def _without_derived(dump: dict) -> dict:
+    """A dump comparable across merge directions: source data only."""
+    return {
+        k: v
+        for k, v in dump.items()
+        if k not in _DERIVED_TABLES and k not in {f"{t}_n" for t in _DERIVED_TABLES}
+    }
+
+
 def _run(data_dir: Path, *args: str, expect_kill: bool = False) -> dict:
     env = dict(os.environ, OO_DATA_DIR=str(data_dir), OO_NO_SCHEDULER="1")
     proc = subprocess.run(
@@ -246,7 +270,17 @@ def test_t5_round_trips_preserve_content(corpora, tmp_path_factory):
     assert rep2["committed"] and rep2["verification"]["ok"]
 
     dump_d = _run(d, "dump")["dump"]
-    assert dump_d == dump_a, "A -> plaintext -> C -> encrypted -> D lost or altered content"
+    # SOURCE data must survive the round trip byte-for-byte. Derived rows are excluded
+    # because the merge no longer carries them (see _DERIVED_TABLES) and this harness
+    # runs with the re-index off -- the artifact still CONTAINS them, the merge simply
+    # stops applying them, and the re-index regenerates them with the current engine.
+    assert _without_derived(dump_d) == _without_derived(dump_a), (
+        "A -> plaintext -> C -> encrypted -> D lost or altered content"
+    )
+    # ...and the derived table is absent for the right reason: a fresh corpus that
+    # imported everything and never re-indexed has no mentions yet, not stale ones.
+    assert dump_d["keyword_mentions_n"] == 0
+    assert dump_a["keyword_mentions_n"] > 0, "the source corpus really did carry some"
 
 
 # --------------------------------------------------------------------------- #
@@ -272,4 +306,60 @@ def test_merge_symmetry(tmp_path_factory):
     assert rep_ba["plan"]["commodity_prices"]["conflict"] == 1
     da, db = _run(a1, "dump")["dump"], _run(b1, "dump")["dump"]
     da.pop("commodity_prices"), db.pop("commodity_prices")  # the kept-local divergence
-    assert da == db, "merge(A,B) and merge(B,A) disagree outside the reported conflict"
+    # Derived rows are direction-dependent by construction now (each side keeps its own;
+    # neither imports the other's) -- excluded here, and pinned separately below.
+    assert _without_derived(da) == _without_derived(db), (
+        "merge(A,B) and merge(B,A) disagree outside the reported conflict"
+    )
+
+
+# --------------------------------------------------------------------------- #
+#  The other half of the option-(a) ruling: the re-index PRODUCES what the merge
+#  stopped carrying. Without this, excluding derived tables from the determinism
+#  assertions above would be a weakened guarantee rather than a relocated one.
+# --------------------------------------------------------------------------- #
+def test_reindex_restores_the_derived_rows_the_merge_no_longer_carries(tmp_path_factory):
+    """Maintainer ruling 2026-07-29, option (a): the merge stops copying
+    keyword_mentions and the post-swap re-index recomputes them from the article text.
+
+    What this harness can honestly show is the DISPATCH: without the re-index the derived
+    rows are simply absent, and with it every imported article is actually handed to the
+    re-index. It deliberately does NOT assert that terms come out, because this fixture
+    cannot support that claim -- its keywords are HAND-PLANTED ("elections") and appear
+    nowhere in its ~10-word article bodies, so nothing derived from that text could
+    reproduce them. Asserting a mention count here would be asserting something the
+    fixture was never built to deliver.
+
+    The extraction half is proven where the content is real:
+    ``tests/test_reindex_on_import.py::test_reindex_recomputes_core_engine_and_keeps_ai_artifacts_verbatim``.
+    """
+    root = tmp_path_factory.mktemp("reindex_produces")
+    src_dir, no_rx, with_rx = root / "SRC", root / "NORX", root / "WITHRX"
+    src_dir.mkdir(), no_rx.mkdir(), with_rx.mkdir()
+    art = root / "src.oobak"
+    _run(src_dir, "build", "A", "--artifact", str(art))
+    assert _run(src_dir, "dump")["dump"]["keyword_mentions_n"] > 0
+
+    # Merge WITHOUT the re-index: the derived rows are simply not there.
+    assert _run(no_rx, "merge", str(art), "--commit")["report"]["committed"]
+    assert _run(no_rx, "dump")["dump"]["keyword_mentions_n"] == 0, (
+        "the merge must no longer carry the derived rows"
+    )
+
+    # Merge WITH the re-index: every imported article is actually dispatched to it.
+    # This is the load-bearing half -- if the re-index silently re-indexed NOTHING, the
+    # merge's dropped rows would never be regenerated and those articles would be
+    # permanently invisible to keyword analytics.
+    imported = _run(src_dir, "dump")["dump"]["articles_n"]
+    rep = _run(with_rx, "merge", str(art), "--commit", "--reindex")["report"]
+    assert rep["committed"]
+    rx = rep["reindexed"]
+    assert rx["reindexed"] + rx["failed"] == imported, (
+        f"the re-index must reach every imported article, got {rx} for {imported} articles"
+    )
+    # Deliberately NOT asserting failed == 0: whether an individual article re-indexes
+    # cleanly depends on extraction dependencies this harness does not install, and the
+    # count is non-zero on clean main in exactly the same way (verified by running this
+    # test against unmodified src). Asserting it here would pin the environment, not the
+    # behaviour. What matters for the ruling is that no article is silently SKIPPED --
+    # a skipped one would never regenerate the rows the merge stopped carrying.
