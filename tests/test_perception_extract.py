@@ -67,16 +67,24 @@ def test_gate_disables_a_language_that_hallucinates_above_the_floor():
     assert "who hallucination 0.9" in gate["ar"]["reason"]
 
 
-def test_gate_none_hallucination_rate_never_disqualifies():
-    """A field with no predictions at all (tp+fp==0) reports hallucination_rate=None
-    -- that must never be treated as a failure (nothing to gate on)."""
+def test_a_none_hallucination_rate_alone_never_disqualifies():
+    """The TRUE half of the retired test_gate_none_hallucination_rate_never_
+    disqualifies: silence on a field is not a hallucination. It is only a FAILURE
+    when that field also carried gold (then the recall floor speaks) -- here
+    who/when carry none and `where` was recovered, so the language clears.
+
+    Its retired predecessor asserted `active is True` for an ALL-None row, which
+    encoded the 2026-07-29 defect as a requirement: an extractor returning
+    nothing scored tp+fp==0 everywhere -> rate None everywhere -> never failed ->
+    licensed for every language."""
     report = {
         "report": {
             "by_language": {
                 "fr": {
-                    "who": {"hallucination_rate": None},
-                    "where": {"hallucination_rate": None},
-                    "when": {"hallucination_rate": None},
+                    "who": {"hallucination_rate": None, "recall": None, "n_gold": 0, "n_pred": 0},
+                    "where": {"hallucination_rate": 0.0, "recall": 1.0, "n_gold": 1, "n_pred": 1},
+                    "when": {"hallucination_rate": None, "recall": None, "n_gold": 0, "n_pred": 0},
+                    "n_cases": 1,
                 }
             }
         }
@@ -121,9 +129,15 @@ def test_gate_from_a_real_harness_run_populates_the_gate():
     assert gate, "gate must be non-empty after a real harness run -- the nesting bug made this always {}"
     assert set(gate.keys()) == set(harness_report["by_language"].keys())
     for lang in gate:
-        # A no-predictions client can never hallucinate (fp=0 always) -- every
-        # evaluated language should clear.
-        assert gate[lang]["active"] is True, gate[lang]
+        # AMENDED 2026-07-29 (the assertion, never the test -- this file's whole
+        # reason for existing is the NESTING guarantee above, which is unchanged):
+        # its extractor returns NOTHING, and under the new RECALL floor that is a
+        # FAILURE, not a pass. It used to read `active is True` because the gate
+        # caught only invention, never silence -- a model that says nothing was
+        # licensed for every language. Every one of these gold languages carries
+        # `where` gold, so every one is now correctly failed on recall.
+        assert gate[lang]["active"] is False, gate[lang]
+        assert "recall" in gate[lang]["reason"], gate[lang]
 
 
 def test_language_gate_none_language_is_gated_honestly():
@@ -416,3 +430,113 @@ def test_an_llm_outage_aborts_the_batch_and_reports_it_honestly(db):
     assert result["aborted"] is True
     assert "simulated outage" in result["reason"]
     assert result["stored"] == 0
+
+
+# --------------------------------------------------------------------------- #
+# 2026-07-29: the RECALL floor + the TRI-STATE gate. The old loop failed only on
+# hallucination, so an extractor that returned NOTHING scored tp+fp==0 ->
+# hallucination_rate None -> never failed -> licensed for EVERY language. A gate
+# that catches invention but never silence is half a gate.
+#
+# Every test below drives the REAL evaluate_perception() over the REAL gold set,
+# per the house lesson: the 2026-07-25 nesting bug AND this one both shipped
+# green because the tests mocked a shape the production chain cannot emit.
+# --------------------------------------------------------------------------- #
+def _real_gate(extract_fn):
+    """A gate built the way production builds it: the REAL S6.5 harness over the
+    REAL gold set, wrapped in the EXACT envelope run_perception_eval_against_
+    model() persists."""
+    from src.analytics.perception_eval import PERCEPTION_GOLD, evaluate_perception
+
+    return PE.gate_languages_from_report(
+        {
+            "status": "ok",
+            "model": "stub:test",
+            "backend": "ollama",
+            "prompt_version": "test-1",
+            "report": evaluate_perception(extract_fn, PERCEPTION_GOLD),
+        }
+    )
+
+
+def _gold_answer(text):
+    from src.analytics.perception_eval import PERCEPTION_GOLD
+
+    for c in PERCEPTION_GOLD:
+        if c.text == text:
+            return {"who": list(c.who), "where": list(c.where), "when": list(c.when)}
+    return {"who": [], "where": [], "when": []}
+
+
+def test_negative_space_an_extractor_that_answers_nothing_fails_every_language():
+    """THE 2026-07-29 defect, pinned."""
+    gate = _real_gate(lambda text, language: {"who": [], "where": [], "when": []})
+    assert gate, "the real harness produced no per-language stats -- test setup broken"
+    for lang, entry in gate.items():
+        assert entry["active"] is False, (lang, entry)
+        assert "recall" in entry["reason"], entry["reason"]
+        assert "cleared" not in entry["reason"], entry["reason"]
+
+
+def test_negative_space_a_where_only_language_is_never_failed_on_who_or_when():
+    """Nine of the thirteen gold languages carry ONLY `where` gold. An extractor
+    correct on `where` and silent on who/when must CLEAR them -- failing a field
+    that was never tested is a FABRICATED FAIL, exactly as dishonest as the
+    fabricated pass this fix removes. The four languages that DO carry who/when
+    gold must still fail, or the floor is not biting."""
+    gate = _real_gate(
+        lambda text, language: {"who": [], "where": _gold_answer(text)["where"], "when": []}
+    )
+    for lang in ("pt", "nl", "ru", "id", "ar", "zh", "ja", "hi", "bn"):
+        assert gate[lang]["active"] is True, (lang, gate[lang])
+        # and it must not even MENTION who/when -- they were never checked.
+        assert "who" not in gate[lang]["reason"] and "when" not in gate[lang]["reason"]
+    for lang in ("en", "de", "es", "fr"):
+        assert gate[lang]["active"] is False, (lang, gate[lang])
+
+
+def test_a_perfect_extractor_clears_every_language_and_states_its_power():
+    gate = _real_gate(lambda text, language: _gold_answer(text))
+    assert all(e["active"] is True for e in gate.values()), gate
+    assert gate["ru"]["n_cases"] == 1
+    assert "1 synthetic case" in gate["ru"]["reason"]
+    assert "low statistical power" in gate["ru"]["reason"]
+    assert gate["en"]["n_cases"] == 5
+    # the clearing verdict is AUDITABLE: it lists the floors actually applied.
+    assert any("recall" in c for c in gate["en"]["checks"])
+
+
+def test_a_language_row_with_no_evidence_is_unmeasured_never_cleared():
+    """TRI-STATE null. A row with no field metrics at all used to return
+    {"active": True, "reason": "cleared the S6.5 harness"} -- a fabricated pass on
+    literally zero evidence."""
+    gate = PE.gate_languages_from_report({"report": {"by_language": {"en": {}}}})
+    assert gate["en"]["active"] is None
+    assert gate["en"]["checks"] == []
+    assert "cleared" not in gate["en"]["reason"].lower()
+    assert "unmeasured" in gate["en"]["reason"].lower()
+
+
+def test_unmeasured_never_runs_and_says_why():
+    """null is EPISTEMIC, not permissive: it explains the ABSENCE of a
+    measurement, it never grants permission on one. The run decision stays False."""
+    gate = PE.gate_languages_from_report({"report": {"by_language": {"en": {}}}})
+    active, reason = PE.language_gate("en", gate)
+    assert active is False
+    assert "unmeasured" in reason.lower() and "cleared" not in reason.lower()
+
+
+def test_gate_entries_carry_no_score_shaped_keys():
+    gate = _real_gate(lambda text, language: _gold_answer(text))
+    banned = ("score", "ranking", "rating", "grade")
+
+    def walk(o):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                assert not any(b in str(k).lower() for b in banned), f"score-shaped key {k!r}"
+                walk(v)
+        elif isinstance(o, list):
+            for x in o:
+                walk(x)
+
+    walk(gate)

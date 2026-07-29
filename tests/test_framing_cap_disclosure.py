@@ -77,6 +77,11 @@ def test_under_cap_is_byte_identical_plus_additive_disclosure():
         by_source.setdefault(a.source.name if a.source else "Unknown", []).append(
             {"title": a.title, "content": (a.content or "")[:fr._FRAMING_MAX_CHARS],
              "url": a.url,
+             # Mirrors the endpoint exactly (2026-07-29): it threads `language`
+             # because compare_framing gates tone on it. A reference build that
+             # omits it would silently stop mirroring the production path and the
+             # "byte-identical" claim would quietly become false.
+             "language": a.language or a.detected_language,
              "published_at": a.published_at.isoformat() if a.published_at else None}
         )
     ref = compare_framing(by_source)

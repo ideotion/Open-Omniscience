@@ -88,6 +88,11 @@ def framing(
                         "title": a.title,
                         "content": (a.content or "")[:_FRAMING_MAX_CHARS],
                         "url": a.url,
+                        # LOAD-BEARING: compare_framing gates tone on this (VADER is an
+                        # English lexicon). Asserted language first, deduced second -- the
+                        # standing provenance order; both come off the row already loaded,
+                        # so this costs no extra query.
+                        "language": a.language or a.detected_language,
                         "published_at": a.published_at.isoformat() if a.published_at else None,
                     }
                 )

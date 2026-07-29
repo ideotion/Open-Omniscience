@@ -1148,6 +1148,55 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     builtin type name (`list`/`dict`/`set`/`type`/…), NEVER trust `list[...]`/`dict[...]`
     annotations declared later in that same class; reach for the `collections.abc` equivalent, or
     rename one of the two.
+  - **A QUALITY GATE THAT ONLY CATCHES INVENTION LICENSES SILENCE — every floor needs its
+    negative-space twin, applied ONLY where the evidence exists (2026-07-29, the perception
+    eval gate):** `perception_extract.gate_languages_from_report` failed a language only on
+    `hallucination_rate > MAX`, and `hallucination_rate = fp/(tp+fp) if (tp+fp) else None` —
+    so an extractor returning NOTHING scored `tp+fp==0` → rate `None` → never failed → was
+    **licensed for every language**. Verified live against the real harness: a null extractor
+    cleared all 13 gold languages before the fix and fails all 13 after. THE SYMMETRIC TRAP the
+    obvious fix walks into: adding a blanket recall floor would fail the NINE `where`-only gold
+    languages on `who`/`when` — fields they were never tested on — and **a fabricated FAIL is
+    exactly as dishonest as the fabricated pass**. So gate each floor on its own denominator:
+    apply the recall floor only where `recall is not None` (⟺ `n_gold > 0`) and the
+    hallucination floor only where `rate is not None` (⟺ `n_pred > 0`). Corollary found in the
+    same pass: a report row with NO field metrics at all returned `{"active": True, "reason":
+    "cleared the S6.5 harness"}` — a fabricated pass on literally zero evidence; that needs a
+    THIRD state (`None` = unmeasured), and the third state must stay **epistemic, not
+    permissive** — it explains the absence of a measurement, the run decision still refuses.
+    General form: for any pass/fail gate over a metric that can be `None`, ask separately what
+    `None` means for EACH direction — "nothing to judge" is not "nothing wrong".
+  - **A LANGUAGE-BLIND LEXICON MEASUREMENT PUBLISHES A FABRICATED NEUTRAL — and when two modules
+    score the same quantity, the honest one is the spec (2026-07-29, `awareness/framing.py`):**
+    VADER returns compound **0.0** for text it cannot read, which is *indistinguishable* from a
+    genuinely neutral English sentence (verified live: fr/ru/zh news bodies all score exactly
+    0.0). `compare_framing` ran it ungated across every language, so EVERY non-English outlet
+    published `tone_label: "neutral"` as a measured value — while its sibling
+    `analytics/sentiment.py:55` had refused exactly this for months with the reason written in a
+    comment. TWO PROCESS POINTS worth more than the fix: (a) **the design doc's cited line was
+    unreachable dead code** (`avg = ... if tones else 0.0`, guarded by an earlier `if not
+    articles: continue`) — patching the cited line would have shipped a "fix" that changed
+    nothing, so re-derive a defect's mechanism from the code before patching the line a report
+    names; (b) turning a fabricated value into an honest `None` is never a one-file change —
+    grep every consumer, because `producers.framing_split`'s `sorted(key=lambda f:
+    f["avg_tone"])` would have raised `TypeError` on the first `None` and silently blanked the
+    producer. Ship the gap WITH its denominator (`tone_articles`/`tone_unmeasured` per outlet)
+    so "no tone" reads as *unmeasured*, never as *neutral*.
+  - **A FIX RECORDED IN THE LEDGER DOES NOT PROPAGATE ITSELF TO A NEWER SIBLING MODULE
+    (2026-07-29, the vLLM install TMPDIR recurrence):** CLAUDE.md:519-520 already carried "pip
+    unpacks big wheels in TMPDIR (=/tmp = tmpfs on Qubes) → Errno 28 even with disk free; point
+    TMPDIR at the install volume", fixed in `install.sh:pip_install` — but `vllm_lifecycle.py`
+    was written later, ran `pip install vllm` through a bare `Popen` with **no `env=`**, and
+    pulls wheels an order of magnitude larger. So when adding a NEW subprocess/install path,
+    grep the Lessons list for the operation class (pip, subprocess, SQLite writes) rather than
+    trusting that a past fix is structural. Two design points the recurrence clarified: derive
+    the temp dir from the **install target** (`venv_dir().parent`), not `data_dir()` — an env
+    override can put the venv on an unrelated volume, and same-volume is the property that makes
+    a measured free-disk figure real; and the ledger entry's *second* half ("classify disk-full
+    vs network failures honestly") is as load-bearing as the first — a bare "exit code 1" sends
+    the operator hunting the wrong thing. Diverging from the precedent is fine when the
+    divergence is verified: `install.sh` KEEPS its build dir, this one deletes it, safe because
+    pip's resumable cache is `$XDG_CACHE_HOME/pip` (checked with `pip cache dir`), not TMPDIR.
   - **THE SINGLE-WRITER GATE ALREADY COVERS BULK `session.execute(insert()/update()/delete())` —
     NOT JUST ORM `session.add()` (2026-07-24, C13 throughput-brief slice, batching keyword-mention
     inserts):** before restructuring `index_article`'s per-term loop from N `session.add(KeywordMention(...))`

@@ -82,6 +82,13 @@ def _metrics(tp: int, fp: int, fn: int) -> dict:
         "tp": tp,
         "fp": fp,
         "fn": fn,
+        # The DENOMINATORS, stated: n_gold == 0 means this field was never TESTED here
+        # (so `recall is None` is an untested field, not a failure), and n_pred == 0 means
+        # nothing was predicted (so `hallucination_rate is None` is silence, not
+        # cleanliness). Consumers must not have to re-derive tp+fn / tp+fp to know the
+        # statistical power -- the 2026-07-29 gate fix reads exactly this distinction.
+        "n_gold": tp + fn,
+        "n_pred": tp + fp,
         "precision": round(precision, 4) if precision is not None else None,
         "recall": round(recall, 4) if recall is not None else None,
         "hallucination_rate": round(hallucination_rate, 4)
@@ -207,7 +214,7 @@ def perception_delta(baseline: dict, candidate: dict) -> dict:
 # --------------------------------------------------------------------------- #
 # The synthetic gold set — MODEST, clearly synthetic, expandable. Simple factual sentences
 # with UNAMBIGUOUS entities (low fabrication risk); ar/zh/ja/hi/bn flagged needs_native_review.
-# `when` uses ISO dates / bare years as the extractor should emit them. Covers 12 languages,
+# `when` uses ISO dates / bare years as the extractor should emit them. Covers 13 languages,
 # 3 tiers, and the phenomena incl. a NEGATIVE case (empty gold) + an ambiguous-place-with-geo.
 # --------------------------------------------------------------------------- #
 PERCEPTION_GOLD: list[PerceptionCase] = [

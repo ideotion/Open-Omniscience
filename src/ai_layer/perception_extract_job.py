@@ -204,8 +204,19 @@ def run_progressive_perception_extract_job(
                 "report_run_at": gate_report.get("run_at"),
                 "report_model": gate_report.get("model"),
             },
-            "active_languages": sorted(lang for lang, g in gate.items() if g["active"]),
-            "disabled_languages": {lang: g["reason"] for lang, g in gate.items() if not g["active"]},
+            # TRI-STATE (2026-07-29): "evaluated + failed" and "no harness evidence at
+            # all" are DIFFERENT facts and are recorded apart -- folding them together
+            # (both are falsy) would let the run log read as "we measured it and disabled
+            # it" for a language the harness never touched.
+            "active_languages": sorted(
+                lang for lang, g in gate.items() if g.get("active") is True
+            ),
+            "disabled_languages": {
+                lang: g.get("reason") for lang, g in gate.items() if g.get("active") is False
+            },
+            "unmeasured_languages": {
+                lang: g.get("reason") for lang, g in gate.items() if g.get("active") is None
+            },
         }
         export_triage_jsonl(path, [header])
         # log_path is set IMMEDIATELY (not only once a batch completes) -- an outage
