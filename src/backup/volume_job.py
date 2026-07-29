@@ -28,6 +28,14 @@ _LOG = logging.getLogger(__name__)
 # every other stage gets its own honest, distinct phase name.
 _STAGE_TO_PHASE = {"merge": "merging", "reindex": "reindexing"}
 
+# The manager's OWN phases, emitted before run_restore is ever entered. They come
+# first in the user-visible phase count, so run_restore's stage positions are
+# offset by exactly this many (field ruling 2026-07-29 item 17: the remaining
+# phase count must be visible, and it must be REAL -- a restore's true phase total
+# is these plus run_restore's own plan, which itself varies with commit /
+# reindex_imported).
+_RESTORE_MANAGER_PHASES: tuple[str, ...] = ("verifying", "reassembling")
+
 
 def _stage_phase_name(stage_name: str) -> str:
     return _STAGE_TO_PHASE.get(stage_name, stage_name)
@@ -169,7 +177,12 @@ class VolumeBackupManager:
             self._pause_requested = False
             self._state, self._mode, self._dest = "running", "restore", str(srcp)
             self._error, self._summary = None, None
-            self._progress = {"phase": "verifying"}
+            # phase 1 of the restore's user-visible sequence (the total is filled in
+            # by _run_restore, which knows run_restore's own plan for these flags).
+            self._progress = {
+                "phase": "verifying",
+                "phase_index": _RESTORE_MANAGER_PHASES.index("verifying") + 1,
+            }
             self._thread = threading.Thread(
                 target=self._run_restore,
                 args=(srcp, passphrase, allow_unverified, corpus_passphrase, _restore_fn),
@@ -188,7 +201,12 @@ class VolumeBackupManager:
                     self._progress = {"phase": "done"}
                 return
             from src.backup.artifact import cleanup_staging, read_volume_backup
-            from src.backup.merge import import_cache_mb, run_restore
+            from src.backup.merge import (
+                import_cache_mb,
+                import_reindex_commit_batch,
+                restore_stage_plan,
+                run_restore,
+            )
 
             # "Import owns the machine" (field-feedback Session A §4, ruled):
             # a large volume restore competes for the single-writer gate and
@@ -209,13 +227,34 @@ class VolumeBackupManager:
             except Exception:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
                 _LOG.warning("pausing background collection for the restore failed", exc_info=True)
 
+            # The user-visible phase TOTAL for this restore: our own manager phases
+            # plus run_restore's own plan for these exact flags. Computed, never a
+            # constant -- run_restore's plan legitimately differs by commit /
+            # reindex_imported (field ruling 2026-07-29 item 17).
+            _restore_plan = restore_stage_plan(commit=True, reindex_imported=True)
+            _phase_total = len(_RESTORE_MANAGER_PHASES) + len(_restore_plan)
+
+            def _phase_of(stage_name: str) -> int:
+                """Visible phase index of one run_restore stage. 0 means "not in this
+                restore's plan" -- an honest unknown, never a guessed position."""
+                if stage_name not in _restore_plan:
+                    return 0
+                return len(_RESTORE_MANAGER_PHASES) + _restore_plan.index(stage_name) + 1
+
             try:
-                self._on_prog({"phase": "reassembling", "own_the_machine": True})
+                self._on_prog({
+                    "phase": "reassembling", "own_the_machine": True,
+                    "phase_index": _RESTORE_MANAGER_PHASES.index("reassembling") + 1,
+                    "phase_total": _phase_total,
+                })
                 staged = read_volume_backup(
                     srcp, passphrase, corpus_passphrase=corpus_passphrase
                 )  # verify + parity-recover + reassemble
                 try:
-                    self._on_prog({"phase": "merging", "own_the_machine": True})
+                    self._on_prog({
+                        "phase": "merging", "own_the_machine": True,
+                        "phase_total": _phase_total,
+                    })
 
                     def _merge_prog(done: int, total: int, name: str) -> None:
                         # Report the merge step so the UI shows a determinate bar + a
@@ -227,6 +266,12 @@ class VolumeBackupManager:
                                 "merge_steps": total,
                                 "merge_label": name,
                                 "own_the_machine": True,
+                                # Carry the position through the fine-grained pings
+                                # too: without it the "phase N of M" counter would
+                                # blank out for the whole of the two LONGEST phases,
+                                # which are exactly the ones a user is waiting on.
+                                "phase_index": _phase_of("merge"),
+                                "phase_total": _phase_total,
                             }
                         )
 
@@ -240,14 +285,28 @@ class VolumeBackupManager:
                         self._on_prog({
                             "phase": "reindexing", "reindex_done": done,
                             "reindex_total": total, "own_the_machine": True,
+                            "phase_index": _phase_of("reindex"),
+                            "phase_total": _phase_total,
                         })
 
                     from src.analytics.reindex_parallel import all_cores_worker_count
 
                     def _stage_prog(name: str) -> None:
-                        # A coarse "now doing: X" ping for stages B/D/E/G,
-                        # which have no callback of their own (§4 item 2).
-                        self._on_prog({"phase": _stage_phase_name(name), "own_the_machine": True})
+                        # A coarse "now doing: X" ping for stages B/D/E/G, which have
+                        # no callback of their own (§4 item 2), carrying its POSITION
+                        # so the UI can say "phase 11 of 19" instead of leaving the
+                        # user with no sense of how much remains (field ruling
+                        # 2026-07-29 item 17). The position is derived HERE from
+                        # run_restore's own published plan rather than being pushed
+                        # through stage_progress_cb: widening that callback's contract
+                        # would silently starve any caller still passing a 1-argument
+                        # sink, because StageTimings swallows the resulting TypeError.
+                        self._on_prog({
+                            "phase": _stage_phase_name(name),
+                            "own_the_machine": True,
+                            "phase_index": _phase_of(name),
+                            "phase_total": _phase_total,
+                        })
 
                     # Own-the-machine only when the pause ACTUALLY confirmed a
                     # running pass was there and got signalled to stop (§4 item 3) --
@@ -263,8 +322,17 @@ class VolumeBackupManager:
                     # default: worker_count()'s auto-detect / no PRAGMA at all)
                     # there costs a little throughput, never correctness -- the
                     # safe direction to err.
+                    # ``reindex_commit_batch`` (field report 2026-07-29) was the one
+                    # own-the-machine knob this call site never passed, so the restore's
+                    # re-index silently fell back to OO_REINDEX_COMMIT_BATCH's default of
+                    # 1 -- one commit, hence one fsync through the SQLCipher codec, PER
+                    # ARTICLE, for every merged article. Gated on was_paused exactly like
+                    # its two siblings above: a wide batch holds the single-writer gate
+                    # across the batch, which is free when collection is confirmed paused
+                    # and rude when it is not.
                     _reindex_workers = all_cores_worker_count() if was_paused else None
                     _merge_cache_mb = import_cache_mb() if was_paused else None
+                    _reindex_batch = import_reindex_commit_batch() if was_paused else None
 
                     report = run_restore(
                         staged,
@@ -274,6 +342,7 @@ class VolumeBackupManager:
                         reindex_progress_cb=_reindex_prog,
                         stage_progress_cb=_stage_prog,
                         reindex_workers=_reindex_workers,
+                        reindex_commit_batch=_reindex_batch,
                         merge_cache_mb=_merge_cache_mb,
                     )
                     with self._lock:

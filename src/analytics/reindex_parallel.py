@@ -51,6 +51,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
@@ -198,6 +199,7 @@ def precompute_batch(
     *,
     extractor,
     workers: int | None = None,
+    stats: dict | None = None,
 ) -> dict[int, ArticleDerivatives]:
     """Compute ``{article_id: ArticleDerivatives}`` for a batch of
     ``(article_id, content, title, language, sentiment_language)`` tuples.
@@ -207,9 +209,28 @@ def precompute_batch(
     pool failure) computes serially in-process with the CALLER's own
     ``extractor`` object -- byte-identical to calling ``extractor.extract`` +
     ``score_article`` directly per article, just batched.
+
+    ``stats`` (optional, an out-parameter the caller owns): accumulates WHICH
+    PATH actually ran -- ``pool`` / ``serial`` (the deliberate small-batch or
+    unknown-extractor short-circuit) / ``fallback`` (a pool that broke and
+    degraded). Without this a wall-clock measurement of this function cannot
+    distinguish genuine parallel CPU work from a SILENT degradation to one
+    core, which is exactly the question a "why is my import slow?" report has
+    to answer. An out-parameter rather than a changed return type, so every
+    existing caller and its exact-equality assertions are untouched.
     """
     if not tasks:
         return {}
+
+    def _note(path: str, seconds: float) -> None:
+        if stats is None:
+            return
+        stats["windows"] = stats.get("windows", 0) + 1
+        stats["articles"] = stats.get("articles", 0) + len(tasks)
+        stats["seconds"] = round(stats.get("seconds", 0.0) + seconds, 3)
+        by = stats.setdefault("by_path", {})
+        by[path] = by.get(path, 0) + 1
+
     n_workers = worker_count(workers)
     extractor_name = getattr(extractor, "name", None)
     if (
@@ -217,11 +238,15 @@ def precompute_batch(
         or len(tasks) < _MIN_PARALLEL_BATCH
         or extractor_name not in _RECONSTRUCTIBLE_EXTRACTORS
     ):
-        return _serial(tasks, extractor)
+        _t0 = time.monotonic()
+        out_serial = _serial(tasks, extractor)
+        _note("serial", time.monotonic() - _t0)
+        return out_serial
 
     gazetteer = getattr(extractor, "gazetteer", None)
     n_workers = min(n_workers, len(tasks))
     chunksize = max(1, len(tasks) // (n_workers * 4))
+    _t0 = time.monotonic()
     try:
         out: dict[int, ArticleDerivatives] = {}
         with ProcessPoolExecutor(
@@ -234,7 +259,14 @@ def precompute_batch(
                 _worker_compute, ids, contents, titles, languages, slangs, chunksize=chunksize
             ):
                 out[aid] = ArticleDerivatives(aid, terms, score, label, error=err)
+        _note("pool", time.monotonic() - _t0)
         return out
     except Exception:  # noqa: BLE001 - a multiprocessing hiccup must NEVER cost a re-index its result
         _LOG.warning("parallel precompute failed; falling back to serial", exc_info=True)
-        return _serial(tasks, extractor)
+        out_fb = _serial(tasks, extractor)
+        # Charge the WHOLE window (the wasted pool attempt AND the serial redo) to the
+        # fallback -- measured from _t0, before the pool was attempted. That total is
+        # what the operator actually waited for; timing only the redo would understate
+        # exactly the degradation this stat exists to expose.
+        _note("fallback", time.monotonic() - _t0)
+        return out_fb

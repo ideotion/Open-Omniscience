@@ -2238,5 +2238,6 @@
   "floor": "下限",
   "Sources per region against each region's floor.": "各地区的来源数量与该地区下限的对比。",
   "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "条形 = 已收集的来源；竖线标记为该地区的下限。仅为计数，无评分。",
-  "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.": "VADER 是英语词典：仅对英语报道测量情感倾向。此处无情感倾向表示未经测量 — 而非中性。"
+  "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.": "VADER 是英语词典：仅对英语报道测量情感倾向。此处无情感倾向表示未经测量 — 而非中性。",
+  "phase {n} of {total}": "第 {n} 阶段（共 {total} 个）"
 }

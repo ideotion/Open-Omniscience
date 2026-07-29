@@ -170,13 +170,14 @@ def test_reindex_imported_articles_threads_batching_and_progress(monkeypatch):
         captured = {}
         real_reindex_articles = store_mod.reindex_articles
 
-        def _spy(session, *, extractor, article_ids, commit_batch, workers, progress_cb):
+        def _spy(session, *, extractor, article_ids, commit_batch, workers, progress_cb, **kw):
             captured["commit_batch"] = commit_batch
             captured["workers"] = workers
             captured["progress_cb"] = progress_cb
             return real_reindex_articles(
                 session, extractor=extractor, article_ids=article_ids,
                 commit_batch=commit_batch, workers=workers, progress_cb=progress_cb,
+                **kw,
             )
 
         # reindex_imported_articles does `from src.analytics.store import

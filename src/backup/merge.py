@@ -1708,6 +1708,7 @@ def reindex_imported_articles(
     commit_batch: int | None = None,
     workers: int | None = None,
     progress_cb: Callable[[int, int], None] | None = None,
+    stats: dict | None = None,
 ) -> dict:
     """Recompute CORE-ENGINE metadata for the articles imported by ``batch_id``.
 
@@ -1754,6 +1755,7 @@ def reindex_imported_articles(
             commit_batch=commit_batch,
             workers=workers,
             progress_cb=progress_cb,
+            stats=stats,
         )
 
 
@@ -1772,6 +1774,81 @@ def import_cache_mb() -> int:
         except ValueError:
             pass
     return 512
+
+
+# The canonical stage sequence a restore walks, in order. Kept BESIDE the
+# ``timings.stage(...)`` calls in run_restore that produce it -- a drift here shows
+# up immediately as a wrong "phase N of M", and tests/test_restore_stage_plan.py
+# pins the two lists against each other by reading this module's own source.
+_RESTORE_STAGES_ALWAYS: tuple[str, ...] = (
+    "prepare_staged",
+    "snapshot_working_copy",
+    "merge",
+    "verify",
+    "corpus_delta_before",
+)
+# Everything after the dry-run early return (``if not commit``) -- i.e. only a
+# COMMITTING restore reaches these.
+_RESTORE_STAGES_COMMIT: tuple[str, ...] = (
+    "pre_restore_snapshot",
+    "side_files_and_custody",
+    "report_json_write",
+    "swap",
+    "corpus_delta_after",
+    "corpus_epoch_bump",
+    "event_mirror_refresh",
+    "reindex",
+    "keyword_counter_reconcile",
+    "quarantine_scan",
+    "work_induced_tally",
+    "prune_snapshots",
+)
+
+
+def restore_stage_plan(*, commit: bool, reindex_imported: bool = True) -> tuple[str, ...]:
+    """The stages THIS restore will actually walk, in order.
+
+    Exists so a caller can show an honest "phase N of M" (field ruling 2026-07-29
+    item 17: the number of remaining phases must be visible). M is NOT a constant --
+    a dry run stops after ``corpus_delta_before`` and a restore with
+    ``reindex_imported=False`` never runs the ``reindex`` stage -- so a hardcoded
+    denominator would be a fabricated number, exactly the thing this project's
+    honesty rules forbid. Pure + total, so it is trivially testable and can never
+    itself fail a restore."""
+    if not commit:
+        return _RESTORE_STAGES_ALWAYS
+    tail = tuple(s for s in _RESTORE_STAGES_COMMIT if s != "reindex" or reindex_imported)
+    return _RESTORE_STAGES_ALWAYS + tail
+
+
+def import_reindex_commit_batch() -> int:
+    """Commit batch for the post-merge re-index when the import owns the machine
+    (field report 2026-07-29: a 50,000-article import quoted a multi-hour re-index).
+
+    WHY THIS EXISTS SEPARATELY from :func:`_default_reindex_commit_batch`: that one
+    reads ``OO_REINDEX_COMMIT_BATCH``, whose default is ``1`` -- ONE COMMIT, hence one
+    fsync through the SQLCipher codec, PER ARTICLE. That default is the right
+    conservative choice for the BACKGROUND corpus re-index, which must interleave with
+    a live scrape and therefore must not hold the single-writer gate across a long
+    batch. A restore's re-index is the opposite situation: background collection is
+    paused for its duration, so nothing is waiting on the gate and a wide batch is
+    pure win (fewer fsyncs, fewer gate acquisitions).
+
+    ``OO_IMPORT_REINDEX_COMMIT_BATCH`` overrides; default 200 (maintainer-ruled
+    2026-07-29). NO DATA LOSS at any batch width: ``reindex_articles``' batched path
+    keeps the proven rollback-then-redo-per-article fallback, so a collision or a bad
+    article never drops its batch-mates -- the batch size trades fsyncs for the SIZE
+    of the redo on failure, never for correctness.
+
+    Used ONLY when the caller confirmed exclusivity (``was_paused``); otherwise the
+    caller passes None and the conservative env default applies."""
+    raw = os.getenv("OO_IMPORT_REINDEX_COMMIT_BATCH", "").strip()
+    if raw:
+        try:
+            return max(1, int(raw))
+        except ValueError:
+            pass
+    return 200
 
 
 def run_restore(
@@ -1822,7 +1899,15 @@ def run_restore(
     the stage NAME the instant each stage BEGINS — a coarse "now doing: swap"
     ping for the stages (B/D/E/G) that have no callback of their own (unlike
     the fine-grained 14-step ``progress_cb`` or the per-article
-    ``reindex_progress_cb``). Report-only, never load-bearing."""
+    ``reindex_progress_cb``). Report-only, never load-bearing.
+
+    The contract stays ONE argument on purpose. An earlier cut of the 2026-07-29
+    "phase N of M" work widened it to ``(name, index, total)``, which is a SILENT
+    breaking change: ``StageTimings`` wraps ``on_start`` in its own try/except, so
+    a caller still passing a 1-argument callable stopped receiving pings entirely,
+    with no error anywhere. A caller that wants the position derives it from
+    :func:`restore_stage_plan` — which is public, pure and drift-guarded for
+    exactly that purpose."""
     from src.backup.sqlite_backup import live_db_path
     from src.backup.timing import StageTimings
     from src.database.session import dispose_engine, init_db
@@ -2046,12 +2131,21 @@ def run_restore(
         if reindex_imported:
             with timings.stage("reindex"):
                 try:
+                    # A SIBLING report key, deliberately not a StageTimings entry:
+                    # StageTimings is float-seconds-only and the frontend formats every
+                    # one of its values as a duration, so a rate parked there would
+                    # render as "1200.0 s" AND displace the real slowest stage in the
+                    # "how long did this take?" table.
+                    _rx_stats: dict = {}
+                    report["reindex_rates"] = _rx_stats
                     report["reindexed"] = reindex_imported_articles(
                         batch_id,
                         commit_batch=reindex_commit_batch,
                         workers=reindex_workers,
                         progress_cb=reindex_progress_cb,
+                        stats=_rx_stats,
                     )
+                    _rx_stats["commit_batch"] = reindex_commit_batch
                 except Exception:  # noqa: BLE001 - never undo a committed, additive restore
                     _LOG.warning("post-restore re-index of imported articles failed", exc_info=True)
                     # The whole batch failed before touching a single article, so NONE of the
@@ -2061,6 +2155,37 @@ def run_restore(
                     # of this feature is built to avoid (see reindex_imported_articles above).
                     _imported = int((counts.get("articles") or {}).get("new") or 0)
                     report["reindexed"] = {"reindexed": 0, "failed": _imported, "skipped": "see server log"}
+
+        # Keyword counters after a merge (bug found + reproduced 2026-07-29,
+        # tests/test_restore_counter_drift.py). TWO independent halves left them wrong:
+        #   (1) _merge_keywords' INSERT column list omits mention_count/article_count, so a
+        #       merged keyword lands at the column default 0, and an ALREADY-PRESENT keyword
+        #       is matched by WHERE NOT EXISTS and never updated -- while
+        #       _merge_keyword_mentions copies the real mention rows straight in.
+        #   (2) the re-index above then reads ``old_contrib`` from the LIVE mention rows --
+        #       which after a merge ARE the imported rows -- so its ``new - old`` delta nets
+        #       to ~0 and CEMENTS the drift instead of repairing it.
+        # maybe_reconcile_counters would eventually fix this, but only from the scheduler's
+        # idle pass, i.e. only if the app goes ONLINE with the collector idle -- so an
+        # airplane-first user who imports and browses offline would sit on drifted counters
+        # indefinitely, undisclosed. Repair it HERE, authoritatively.
+        #
+        # UNCONDITIONAL (outside the reindex_imported branch above): the drift comes from the
+        # MERGE, so it exists whether or not the re-index ran, and it must also be repaired on
+        # the re-index's own failure path. Idempotent, so running it after a successful
+        # re-index is free. Best-effort + timed, exactly like the reconcile of
+        # Source.article_count a few stages above -- which exists for this same class of
+        # stale-but-non-NULL counter ("a wrong count shown as exact").
+        with timings.stage("keyword_counter_reconcile"):
+            try:
+                from src.analytics.store import backfill_keyword_counters
+                from src.database.session import session_scope
+
+                with session_scope() as _cnt_sess:
+                    report["keyword_counters"] = backfill_keyword_counters(_cnt_sess)
+            except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+                _LOG.warning("keyword-counter reconcile after restore-merge failed", exc_info=True)
+                report["keyword_counters"] = {"reconciled": False, "error": "see server log"}
 
         # S3.3 (2026-07-23 field-feedback workflow, import-time screening): scan the
         # NEWLY-MERGED articles (the exact batch_id's rows in merged_rows -- the same set

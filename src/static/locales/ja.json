@@ -2238,5 +2238,6 @@
   "floor": "下限値",
   "Sources per region against each region's floor.": "地域ごとの情報源数と、各地域の下限値との比較。",
   "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "バー = 収集した情報源。縦の印はその地域の下限値です。件数のみで、スコアはありません。",
-  "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.": "VADER は英語の辞書です。トーンは英語の記事に対してのみ測定されます。ここでトーンがないのは未測定という意味であり — 中立ではありません。"
+  "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.": "VADER は英語の辞書です。トーンは英語の記事に対してのみ測定されます。ここでトーンがないのは未測定という意味であり — 中立ではありません。",
+  "phase {n} of {total}": "フェーズ {n}/{total}"
 }

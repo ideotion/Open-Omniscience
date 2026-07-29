@@ -362,3 +362,78 @@ def test_a_pause_hiccup_never_aborts_the_restore(tmp_path, monkeypatch):
     assert st["state"] == "done"  # the restore completed despite the pause hiccup
     assert captured["reindex_workers"] is None, "no all-cores claim when exclusivity was never confirmed"
     assert captured["merge_cache_mb"] is None, "no enlarged cache when exclusivity was never confirmed"
+
+
+@pytest.mark.parametrize("exclusive", [True, False])
+def test_restore_passes_a_wide_reindex_commit_batch_only_when_it_owns_the_machine(
+    tmp_path, monkeypatch, exclusive
+):
+    """Field report 2026-07-29: a 50,000-article import quoted a multi-hour re-index.
+
+    ``reindex_commit_batch`` was the ONE own-the-machine knob this call site never
+    passed, so ``merge.run_restore`` fell back to ``OO_REINDEX_COMMIT_BATCH``'s default
+    of 1 -- one commit, hence one fsync through the SQLCipher codec, PER ARTICLE, for
+    every merged article.
+
+    Pinned in BOTH directions, because the conservative side is the one that protects a
+    live scrape: a wide batch holds the single-writer gate across the batch, which is
+    free only when collection is confirmed paused. When the pause did NOT confirm
+    exclusivity the call must pass None and let the conservative env default apply --
+    exactly like its two siblings (``reindex_workers`` / ``merge_cache_mb``).
+    """
+    import src.backup.artifact as artifact_mod
+    import src.backup.merge as merge_mod
+    import src.scheduler.runner as sched_mod
+
+    captured = {}
+
+    def fake_run_restore(
+        staged, *, commit, allow_unverified, reindex_commit_batch=None,
+        reindex_workers=None, merge_cache_mb=None, **kw,
+    ):
+        captured["reindex_commit_batch"] = reindex_commit_batch
+        captured["reindex_workers"] = reindex_workers
+        return {"committed": True}
+
+    monkeypatch.setattr(
+        sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: exclusive
+    )
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
+    monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
+
+    src = tmp_path / "src"
+    src.mkdir()
+    mgr = VolumeBackupManager()
+    mgr.start_restore(str(src), "pw")
+    assert _wait(mgr)["state"] == "done"
+
+    if exclusive:
+        batch = captured["reindex_commit_batch"]
+        assert batch is not None and batch > 1, (
+            "an exclusive import must batch its re-index commits, not fsync per article"
+        )
+        assert batch == merge_mod.import_reindex_commit_batch()
+    else:
+        assert captured["reindex_commit_batch"] is None, (
+            "never hold the write gate across a wide batch while a pass may still be running"
+        )
+
+
+def test_import_reindex_commit_batch_is_wide_by_default_and_env_overridable(monkeypatch):
+    """The knob itself: a sane wide default, an env override, and never below 1
+    (a 0/negative override would be a division-by-zero-shaped footgun downstream)."""
+    from src.backup.merge import import_reindex_commit_batch
+
+    monkeypatch.delenv("OO_IMPORT_REINDEX_COMMIT_BATCH", raising=False)
+    assert import_reindex_commit_batch() == 200
+
+    monkeypatch.setenv("OO_IMPORT_REINDEX_COMMIT_BATCH", "50")
+    assert import_reindex_commit_batch() == 50
+
+    monkeypatch.setenv("OO_IMPORT_REINDEX_COMMIT_BATCH", "0")
+    assert import_reindex_commit_batch() == 1
+
+    monkeypatch.setenv("OO_IMPORT_REINDEX_COMMIT_BATCH", "not-a-number")
+    assert import_reindex_commit_batch() == 200, "a junk override degrades to the default"

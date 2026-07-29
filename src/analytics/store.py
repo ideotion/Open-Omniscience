@@ -18,6 +18,7 @@ queries stay single-scan.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 
@@ -470,6 +471,7 @@ def reindex_articles(
     commit_batch: int = 1,
     workers: int | None = None,
     progress_cb: Callable[[int, int], None] | None = None,
+    stats: dict | None = None,
 ) -> dict:
     """Recompute CORE-ENGINE derived metadata for an EXPLICIT set of articles.
 
@@ -502,7 +504,18 @@ def reindex_articles(
     ``progress_cb(done, total)``, if given, is called after every article is
     finalised (reindexed or failed) so a caller can show real progress instead of a
     frozen bar during what used to be an entirely silent phase -- report-only,
-    wrapped so a reporting error can never affect the re-index."""
+    wrapped so a reporting error can never affect the re-index.
+
+    ``stats`` (optional out-parameter, 2026-07-29 "instrument first"): fills in the
+    measured split -- ``load_s`` (fetch + decompress the article bodies), ``precompute_s``
+    (the pure, parallelisable extraction + sentiment), ``apply_s`` (the serial DB write:
+    delete-then-reinsert, counter deltas, when/where/who, commits) and the
+    ``precompute`` sub-dict from :func:`~src.analytics.reindex_parallel.precompute_batch`
+    naming WHICH path ran. That split is the whole point: it says whether a slow
+    re-index is CPU-bound (precompute), write-bound (apply), or silently degraded to
+    one core -- three very different fixes. An out-parameter, so the RETURN shape stays
+    exactly ``{"reindexed", "failed"}`` and every existing exact-equality assertion on
+    it keeps passing."""
     total = len(article_ids)
     reindexed = 0
     failed = 0
@@ -648,13 +661,19 @@ def reindex_articles(
                 _flush()
         _flush()
 
+    _pre_stats: dict = {}
+    _load_s = _pre_s = _apply_s = 0.0
+    _t_all = time.monotonic()
+
     for w_start in range(0, len(article_ids), _PRECOMPUTE_WINDOW):
         window_ids = article_ids[w_start : w_start + _PRECOMPUTE_WINDOW]
         articles: list[Article] = []
+        _t0 = time.monotonic()
         for aid in window_ids:
             art = session.get(Article, aid)
             if art is not None:
                 articles.append(art)
+        _load_s += time.monotonic() - _t0
         if not articles:
             continue
 
@@ -664,13 +683,36 @@ def reindex_articles(
         # decompressed text instead of decompressing every article a second time.
         tasks = []
         content_by_id: dict[int, str] = {}
+        _t0 = time.monotonic()
         for art in articles:
             body = art.get_content() if hasattr(art, "get_content") else (art.content or "")
             lang = _resolve_known_language(art, body)
             tasks.append((art.id, body, art.title or "", lang or "en", lang))
             content_by_id[art.id] = body
-        derivs = precompute_batch(tasks, extractor=extractor, workers=workers)
+        _load_s += time.monotonic() - _t0
+
+        _t0 = time.monotonic()
+        derivs = precompute_batch(tasks, extractor=extractor, workers=workers, stats=_pre_stats)
+        _pre_s += time.monotonic() - _t0
+
+        _t0 = time.monotonic()
         _apply_window(articles, derivs, content_by_id)
+        _apply_s += time.monotonic() - _t0
+
+    if stats is not None:
+        done = reindexed + failed
+        elapsed = time.monotonic() - _t_all
+        stats.update({
+            "articles": done,
+            "wall_s": round(elapsed, 3),
+            "load_s": round(_load_s, 3),
+            "precompute_s": round(_pre_s, 3),
+            "apply_s": round(_apply_s, 3),
+            "precompute": _pre_stats,
+            # A rate ONLY when both sides of the division are real. A zero-article or
+            # zero-elapsed run reports None -- never a fabricated or infinite rate.
+            "articles_per_second": round(done / elapsed, 2) if done and elapsed > 0 else None,
+        })
 
     return {"reindexed": reindexed, "failed": failed}
 
