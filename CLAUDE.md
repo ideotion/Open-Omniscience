@@ -1260,6 +1260,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     SIGTERM shutdown all skip it; moving a multi-GB scratch area off the OS-cleared `/tmp` onto
     permanent disk therefore needs a sweep-at-start and a forensics entry, or it becomes
     invisible orphaned storage (the recorded P0.2 swept-prefix lesson, in a new subsystem).
+  - **A BASELINE DIFF IS BLIND WHERE THE BASELINE IS ALREADY RED — AN ENVIRONMENTALLY-FAILING
+    TEST MASKS A GENUINE NEW FAILURE IN THE SAME TEST (2026-07-29, the option-(a) merge change):**
+    the established discipline (run the suite against clean `main`, diff the failure SETS, ship
+    only on "zero introduced") reported byte-identical 435/435 — and CI then failed on three real
+    regressions. The diff compares NAMES, so a test that is already failing locally for an
+    environmental reason cannot ever appear as "introduced", no matter how badly the change breaks
+    it: `test_merge_symmetry` was red in both runs (for different reasons each side) and
+    `test_t5_round_trips_preserve_content` errored on a fixture that needs a full env. THE FIX IS
+    CHEAP AND WAS AVAILABLE ALL ALONG: the whole `test_db_reliability_torture.py` suite runs here
+    with `PYTHONPATH=<repo>` (its `_run` helper shells out to `tests/torture_helper.py`, which
+    needs `src` importable — nothing else was missing; 11/11 pass). So: before trusting a
+    zero-introduced diff, LIST the already-red tests that touch the code you changed and try to
+    make them runnable — a name-diff is evidence only about tests that actually execute. Corollary
+    when a genuinely-red-everywhere assertion blocks a new test: verify the count against CLEAN src
+    (stash `src/`, keep the test) and assert only the portable property — here "every imported
+    article reaches the re-index", never `failed == 0`, which pins the environment rather than the
+    behaviour.
   - **A DEGRADE SENTINEL MUST NOT SHARE A KEY WITH A REAL MEASUREMENT (2026-07-29,
     `ai_diagnostics._safe`):** the bundle's per-section guard returned
     `{"available": False, "error": ...}` on a crashed probe — and `resolve_backend()`
@@ -1349,7 +1366,15 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   staleness is traded for an unbounded invisibility. Options (b) keep merging + DECLINE the
   exclusion, disclosing pending refreshes from `merged_rows` (the skeptic's own recommendation, on
   cross-time-recall grounds) and (c) the per-article flag as framed (NOT recommended) are recorded
-  in the brief. **PENDING the maintainer's (a)/(b)/(c) choice.**
+  in the brief. **RULED 2026-07-29 (maintainer chose (a)): DO NOT MERGE THE DERIVED ROWS — the
+  re-index PRODUCES them.** So the merge stops copying the incoming corpus's `keyword_mentions`
+  (localised to the merge step tuple, `merge.py:315-330`), "not yet re-indexed" means "has no
+  mentions" — which every analytics path already honours STRUCTURALLY, no flag/gate/join/15-path
+  sweep — and the counter-drift bug is fixed by construction. THE MANDATORY GUARD travels with the
+  ruling: a DURABLE per-article re-index CURSOR (resume exactly where it left off; surface its
+  backlog at boot), because option (a) trades a bounded staleness for an UNBOUNDED invisibility if
+  the re-index can be lost. Ruling 2's original per-article-flag framing is formally superseded (its
+  premise was refuted — merged articles were already in analytics), and (b)/(c) are closed.
   **⚠ A PROBABLE REAL BUG FOUND WHILE ATTACKING IT (read-verified, NOT reproduced — reproducer
   FIRST, per the standing rule):** keyword counters never absorb a merged corpus. `_merge_keywords`'
   INSERT column list omits `mention_count`/`article_count` so new keywords land at 0 and existing
@@ -1392,9 +1417,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `scheduler_runs.jsonl` and reaching the export at
   `debug-bundle.json → payload.scheduler.recent_runs[].hygiene.wal_checkpoint`; the WAL fields are
   computed BEFORE the dbstat walk so they survive on SQLCipher builds where dbstat is absent. Only
-  three small gaps remain: `PRAGMA wal_autocheckpoint` is never read in production, the last
-  checkpoint record is not surfaced in `storage-composition.json` (discoverability only), and there
-  is no historical WAL series (`ALL_METRICS` is counts-only).
+  three small gaps remained: `PRAGMA wal_autocheckpoint` was never read in production, the last
+  checkpoint record was not surfaced in `storage-composition.json` (discoverability only), and there
+  was no historical WAL series (`ALL_METRICS` is counts-only). **ALL THREE CLOSED 2026-07-29 (S11;
+  shipped.csv row "monitoring/diagnostics — WAL visibility"):** the autocheckpoint threshold is read
+  and resolved to bytes (with an explicit note when it is 0 = automatic checkpointing DISABLED, a
+  state previously indistinguishable from health in every export); `storage-composition.json` now
+  carries the newest run that ACTUALLY measured a checkpoint (runs whose checkpoint honestly returned
+  None are skipped, never mistaken for the answer); and the hourly snapshot recorder gained a THIRD
+  metric family — GAUGES — recording `wal_bytes`, so multi-day growth is finally visible (an
+  unmeasurable gauge is SKIPPED, leaving an honest hole, never a recorded 0 that would read as "the
+  WAL was empty"). `wal_bytes` is DELIBERATELY absent from `ALL_METRICS` (the Library endpoint's
+  user-facing allowlist) — ruling 8 says this is diagnostics material, not a user surface.
   **RULING 15 SCOPED HONESTLY (brief §7):** abort is FREE and COMPLETE before `os.replace`
   (`merge.py:1985`) — everything runs on a disposable `.restore-<hex>` staging dir + a `working.db`
   copy under ONE `BEGIN IMMEDIATE` (`merge.py:295`,`:353-362`) — with two caveats: "live untouched"

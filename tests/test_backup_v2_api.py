@@ -133,7 +133,13 @@ def test_encrypted_roundtrip_and_self_merge(client):
 
     after = client.get("/api/backup/v2/batches").json()
     assert len(after["batches"]) == len(before["batches"]) + 1
-    assert after["batches"][0]["status"] == "merged"
+    # The batch is recorded, and its status reflects how far the import got. Since the
+    # 2026-07-29 option-(a) ruling the vocabulary has two terminal values: 'merged' means
+    # the rows landed but the re-index is not confirmed finished (so a backlog is still
+    # owed), 'reindexed' means it completed. Both are healthy outcomes here; what must
+    # never happen is a status outside that set, which would mean the durable backlog
+    # signal had drifted from what the code writes.
+    assert after["batches"][0]["status"] in {"merged", "reindexed"}
 
 
 def test_restore_preview_wrong_passphrase_is_loud(client):
