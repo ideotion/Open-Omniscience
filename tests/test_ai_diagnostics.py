@@ -37,6 +37,10 @@ def test_backend_section_reports_gpu_and_ollama_facts():
     out = AID.ai_diagnostics_report()
     backend = out["backend"]
     assert "backend" in backend and "gpu" in backend and "ollama_available" in backend
+    # V4 (2026-07-29): capability rides into ai.json for free (the block is a
+    # verbatim resolve_backend() passthrough) -- the bundle must be able to say
+    # "no working backend", not just "ollama selected".
+    assert "available" in backend and "no_backend" in backend
 
 
 def test_a_backend_probe_failure_degrades_that_section_only(monkeypatch):
@@ -95,3 +99,21 @@ def test_endpoint_returns_the_same_report_as_json():
     resp = d.ai_diagnostics()
     body = json.loads(bytes(resp.body))
     assert body["schema"] == AID.SCHEMA
+
+
+def test_the_vllm_block_carries_the_install_attempt_history_and_its_bound():
+    """V3 (2026-07-29): a FAILED vLLM install leaves no marker (correct, by
+    design), so a bundle would otherwise show install_info: null with nothing
+    saying an install was ever attempted or why it died -- exactly what the
+    2026-07-29 operator bundle showed. The attempt journal rides ai.json's vllm
+    block (a verbatim status() passthrough), bounded, and states its own bound so
+    a tail is never read as a complete log. The measured install COST rides with
+    it, so a refusal is diagnosable from the bundle alone."""
+    out = AID.ai_diagnostics_report()
+    vllm = out["vllm"]
+    assert isinstance(vllm.get("install_history"), list)
+    bounds = vllm["install_history_bounds"]
+    assert bounds["attempts_cap"] >= 1
+    assert bounds["output_line_cap"] >= 1
+    assert "attempts_kept" in bounds and "recording" in bounds
+    assert vllm["preflight"]["schema"] == "oo-vllm-install-preflight-1"

@@ -31,6 +31,10 @@ from src.llm.ollama import GenerationResult
 
 _VALID_OVERRIDES = ("auto", "ollama", "vllm")
 
+# The clause every reason ends with when NOTHING can serve a request. A module
+# constant so tests and any UI pin the sentence instead of a brittle literal.
+NO_BACKEND_REASON = "no AI backend is reachable right now"
+
 
 @runtime_checkable
 class LlmBackend(Protocol):
@@ -106,26 +110,81 @@ def _ollama_available() -> bool:
         return False
 
 
+def _result(
+    *,
+    backend: str,
+    reason: str,
+    override: str | None,
+    gpu: dict,
+    vllm: dict,
+    ollama_ok: bool,
+) -> dict:
+    """Build the resolution payload. ONE builder for EVERY branch, so a field can
+    never be present in three returns and silently missing from the fourth (the
+    "an aggregation that omits an entry makes absent read as passed" family --
+    the four hand-repeated dict literals this replaces were exactly that shape).
+
+    ``available``/``no_backend`` are DERIVED from probes ``resolve_backend`` has
+    already run this call -- no extra probe, no extra latency."""
+    vllm_running = bool(vllm.get("running"))
+    reachable = ollama_ok if backend == "ollama" else vllm_running
+    return {
+        "backend": backend,
+        "reason": reason,
+        "override": override,
+        "gpu": gpu,
+        "vllm": vllm,
+        "ollama_available": ollama_ok,
+        # --- V4 (2026-07-29) capability fields, purely ADDITIVE ------------ #
+        "available": reachable,
+        "no_backend": not (ollama_ok or vllm_running),
+    }
+
+
 def resolve_backend(*, override: str | None = None) -> dict:
     """The ONE decision point: which backend should serve inference right now,
     and why. Returns::
 
         {
-          "backend": "ollama" | "vllm",
+          "backend": "ollama" | "vllm",   # SELECTION -- who would serve
           "reason": "<disclosed, human-readable>",
           "override": "<the requested override, or None>",
           "gpu": {...},            # detect_gpu()
           "vllm": {"installed": bool, "running": bool},
           "ollama_available": bool,
+          "available": bool,       # CAPABILITY -- is the SELECTED backend reachable NOW
+          "no_backend": bool,      # NOTHING is reachable (neither Ollama nor vLLM)
         }
 
+    SELECTION AND CAPABILITY ARE NOT THE SAME QUESTION (V4, 2026-07-29). The
+    operator's 2026-07-29 diagnostics bundle showed ``backend: "ollama"`` with
+    the reason "... using Ollama meanwhile" while ``ollama_available`` was
+    ``false``: true about selection, misleading about capability -- that machine
+    had NO working backend. ``ollama_available`` was computed and returned but
+    consulted by no branch. Now every reason names the real situation, and a
+    caller can test capability without re-deriving it.
+
+    COST: both new fields are derived from probes this function ALREADY runs on
+    every call (``_ollama_available()``, and ``_vllm_status()``'s ``is_running()``
+    live health check) -- no additional probe, no additional latency.
+
+    HONESTY: ``available`` is never assumed true. Both probes return False when
+    they fail OR error, so False means "not observed reachable", never "known
+    dead" -- the conservative direction; neither can report an unreachable
+    backend as reachable. Two known conflations ride along, named not hidden:
+    ``_ollama_available()`` cannot distinguish a stopped daemon from a
+    misconfigured non-loopback ``OO_OLLAMA_URL``, and ``_vllm_status()``'s
+    ImportError fallback reports ``running: False`` without probing.
+
     Precedence: an explicit ``override`` (or ``OO_LLM_BACKEND``) of "ollama"/"vllm"
-    always wins (an operator's explicit choice is never second-guessed); "auto"
-    (the default) prefers vLLM ONLY when a GPU is present AND vLLM is installed
-    AND its server is currently running -- vLLM is never auto-selected merely
-    because it is installed (a stopped server would silently 503 every call);
-    the caller-facing "start vLLM" flow (B2/B4) is what brings it up. Ollama is
-    the default and fallback in every other case (RULED A12 -- never dropped)."""
+    always wins (an operator's explicit choice is never second-guessed) -- but an
+    override that selects an unreachable backend now SAYS SO rather than reading
+    as a working choice; "auto" (the default) prefers vLLM ONLY when a GPU is
+    present AND vLLM is installed AND its server is currently running -- vLLM is
+    never auto-selected merely because it is installed (a stopped server would
+    silently 503 every call); the caller-facing "start vLLM" flow (B2/B4) is what
+    brings it up. Ollama is the default and fallback in every other case (RULED
+    A12 -- never dropped)."""
     env_override = os.getenv("OO_LLM_BACKEND", "").strip().lower()
     chosen_override = (override or env_override or "auto").strip().lower()
     if chosen_override not in _VALID_OVERRIDES:
@@ -134,50 +193,95 @@ def resolve_backend(*, override: str | None = None) -> dict:
     gpu = detect_gpu()
     vllm = _vllm_status()
     ollama_ok = _ollama_available()
+    vllm_running = bool(vllm.get("running"))
 
     if chosen_override == "ollama":
-        return {
-            "backend": "ollama",
-            "reason": "explicit override (ollama)",
-            "override": chosen_override,
-            "gpu": gpu,
-            "vllm": vllm,
-            "ollama_available": ollama_ok,
-        }
+        if ollama_ok:
+            reason = "explicit override (ollama) -- Ollama is reachable"
+        elif vllm_running:
+            reason = (
+                "explicit override (ollama), but Ollama is NOT reachable "
+                "-- vLLM's server IS running; clear the override or start Ollama"
+            )
+        else:
+            reason = (
+                f"explicit override (ollama), but Ollama is NOT reachable -- {NO_BACKEND_REASON}"
+            )
+        return _result(
+            backend="ollama",
+            reason=reason,
+            override=chosen_override,
+            gpu=gpu,
+            vllm=vllm,
+            ollama_ok=ollama_ok,
+        )
+
     if chosen_override == "vllm":
-        return {
-            "backend": "vllm",
-            "reason": "explicit override (vllm)",
-            "override": chosen_override,
-            "gpu": gpu,
-            "vllm": vllm,
-            "ollama_available": ollama_ok,
-        }
+        if vllm_running:
+            reason = "explicit override (vllm) -- its server is running"
+        elif ollama_ok:
+            reason = (
+                "explicit override (vllm), but its server is NOT running "
+                "-- Ollama IS reachable; clear the override to use it"
+            )
+        else:
+            reason = (
+                "explicit override (vllm), but its server is NOT running "
+                f"-- {NO_BACKEND_REASON}"
+            )
+        return _result(
+            backend="vllm",
+            reason=reason,
+            override=chosen_override,
+            gpu=gpu,
+            vllm=vllm,
+            ollama_ok=ollama_ok,
+        )
+
     # auto: vLLM only when a GPU is present AND vLLM is installed AND running.
-    if gpu.get("available") and vllm.get("installed") and vllm.get("running"):
-        reason = "GPU detected + vLLM installed and running (concurrency-capable)"
-        return {
-            "backend": "vllm",
-            "reason": reason,
-            "override": None,
-            "gpu": gpu,
-            "vllm": vllm,
-            "ollama_available": ollama_ok,
-        }
-    if gpu.get("available") and vllm.get("installed") and not vllm.get("running"):
-        reason = "GPU + vLLM installed but its server is not running -- using Ollama meanwhile"
-    elif gpu.get("available") and not vllm.get("installed"):
-        reason = "GPU detected but vLLM is not installed -- using Ollama meanwhile"
+    if gpu.get("available") and vllm.get("installed") and vllm_running:
+        return _result(
+            backend="vllm",
+            reason="GPU detected + vLLM installed and running (concurrency-capable)",
+            override=None,
+            gpu=gpu,
+            vllm=vllm,
+            ollama_ok=ollama_ok,
+        )
+
+    # Every remaining branch FALLS BACK to Ollama -- so the reason must state
+    # whether that fallback can actually serve a request (the V4 finding). The
+    # SELECTION half of each sentence is unchanged (it is substring-pinned by
+    # tests); only the trailing capability clause is now computed from a probe.
+    if gpu.get("available") and vllm.get("installed"):
+        selection = "GPU + vLLM installed but its server is not running"
+        fallback = "using Ollama meanwhile (Ollama is reachable)"
+    elif gpu.get("available"):
+        selection = "GPU detected but vLLM is not installed"
+        fallback = "using Ollama meanwhile (Ollama is reachable)"
     else:
-        reason = "no GPU detected (or vLLM unavailable) -- Ollama is the CPU-first backend"
-    return {
-        "backend": "ollama",
-        "reason": reason,
-        "override": None,
-        "gpu": gpu,
-        "vllm": vllm,
-        "ollama_available": ollama_ok,
-    }
+        selection = "no GPU detected (or vLLM unavailable)"
+        fallback = "Ollama is the CPU-first backend (reachable)"
+    if ollama_ok:
+        reason = f"{selection} -- {fallback}"
+    elif vllm_running:
+        # A vLLM server CAN be up while auto-selection declines it (is_running()
+        # detects "a server started by another means entirely"): a backend IS
+        # reachable, so this must NOT read as no_backend.
+        reason = (
+            f"{selection}, and Ollama is NOT reachable -- vLLM's server IS running "
+            "but was not auto-selected (that needs a detected GPU and an installed vLLM)"
+        )
+    else:
+        reason = f"{selection}, and Ollama is NOT reachable either -- {NO_BACKEND_REASON}"
+    return _result(
+        backend="ollama",
+        reason=reason,
+        override=None,
+        gpu=gpu,
+        vllm=vllm,
+        ollama_ok=ollama_ok,
+    )
 
 
 # One client instance PER BACKEND KIND (never per call -- httpx connection pooling

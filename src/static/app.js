@@ -18053,7 +18053,13 @@
         } else {
           el.className = "pill warn";
           el.textContent = "AI";
-          el.title = (h.detail ? h.detail + " — " : "")
+          // V4 (2026-07-29): the red pill must name the REAL situation.
+          // `no_backend` means NOTHING is reachable (not merely that the selected
+          // backend is down), so lead with the server's own resolution sentence
+          // (`backend_reason` — English server text, the same class as `h.detail`,
+          // which this line already concatenated) instead of a generic "offline".
+          const why = h.no_backend ? (h.backend_reason || h.detail || "") : (h.detail || "");
+          el.title = (why ? why + " — " : "")
             + t("AI is offline — click to start it, or open AI settings to install one");
         }
       } catch (e) {
@@ -18069,6 +18075,7 @@
     //  load takes tens of seconds — never a fake instant green).
     // --------------------------------------------------------------------- //
     async function loadAiBackendPanel() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("ai-backend-box");
       const sel = $("ai-backend-select");
       if (!box) return;
@@ -18081,7 +18088,13 @@
           `<p class="hint">GPU: ${gpu.available ? esc(gpu.name || "detected") : "not detected"}` +
           ` &middot; vLLM: ${vllm.installed ? "installed" : "not installed"}` +
           `${vllm.installed ? (vllm.running ? ", running" : ", not running") : ""}` +
-          ` &middot; Ollama: ${b.ollama_available ? "reachable" : "not reachable"}</p>`;
+          ` &middot; Ollama: ${b.ollama_available ? "reachable" : "not reachable"}</p>` +
+          // V4: selection != capability. When neither backend can serve a request,
+          // say so where the decision is disclosed, in the theme-aware caveat colour
+          // (invariant #23's var(--caveat), AA-verified on all 17 themes).
+          (b.no_backend
+            ? `<p class="card-caveat">${esc(t("No AI backend is reachable right now — install or start one below."))}</p>`
+            : "");
         if (sel) sel.value = b.stored_override || "auto";
       } catch (e) {
         box.innerHTML = `<p class="muted">Could not read the backend status.</p>`;
