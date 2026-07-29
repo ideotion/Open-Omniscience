@@ -256,17 +256,53 @@ memory constraint simultaneously — which `mistral:7b` cannot do.
 **The blocker to verify before adding it is licensing.** Every non-restricted
 model in this catalog is Apache-2.0 or MIT; the restricted ones (Gemma, Llama
 Community, NVIDIA Open Model License) are explicitly labelled "use
-restrictions". My recollection is that the Ministral family shipped under a
-**Mistral Research License** (non-commercial research use) rather than
-Apache-2.0 — which would be disqualifying for an application given away free,
-and stronger than the "use restrictions" the catalog already tolerates.
+restrictions". The recollection recorded here was that the Ministral family
+shipped under a **Mistral Research License** (non-commercial research use)
+rather than Apache-2.0 — which would be disqualifying for an application given
+away free, and stronger than the "use restrictions" the catalog already
+tolerates. That was flagged as explicitly unasserted, pending research.
 
-**I am explicitly not asserting this.** My knowledge has a cutoff, this may have
-changed, and this project's rule is that an unverified model claim is worth less
-than an admitted gap. The open web research now running is tasked with settling
-it from the model card itself. **Action: verify the Ministral license and the
-exact Ollama tag before adding it.** If it is permissively licensed, it belongs
-in the catalog and is arguably the best single candidate for this fleet.
+#### RESEARCH RESULT (2026-07-29, same day) — the blocker is probably cleared
+
+The web research came back **favourable, with one caveat that must not be
+skipped**:
+
+- **Ministral 3 (3B / 8B / 14B) is reported as Apache-2.0** — a licence change
+  from the previous generation. The recollection above was correct about the
+  *old* family (Ministral 8B-2410 did ship under the non-commercial Mistral
+  Research License) and **wrong about the current one**.
+- **The caveat: no licence was read from a model card.** The Apache-2.0 finding
+  is search-convergence, **single-sourced**, against a family with a documented
+  licence-flip history. The verifying agent's own words: *"This deserves one
+  confirmation before it lands in a catalogue."* Given this repo's hallucinated-
+  catalogue incident, **one page fetch of the model card settles it** and must
+  happen before any catalog entry.
+- **Tag:** `ministral-3:3b-instruct-2512-q4_K_M`, ~3.0 GB, `[search-verified]`.
+  The short `ministral-3:3b` form **could not be verified**, and the researcher
+  correctly refused to substitute it — do not invent the short tag.
+- **Multilingual gap — the substantive concern.** The enumerated language list
+  names only **ar, zh, ja, ko**. Absent: **ru, hi, bn, id, th, vi, el, sr, mr**.
+  For a corpus spanning 20+ languages that is a real limitation, and it is
+  precisely the axis where a 3B model is most likely to disappoint. It does not
+  disqualify Ministral, but it means the bench (§3) must report **per-language**
+  results before it is made a default anywhere.
+- Unresolved: an Ollama ≥0.13.1 version gate and a possible multimodal/mmproj
+  footprint (dead weight on a 3.46 GB box).
+
+**Net:** at ~3.0 GB it fits the fleet where `mistral:7b` (~4.4 GB) cannot, and
+it satisfies the Mistral preference. **Action: fetch the model card to confirm
+Apache-2.0, then add it** — and measure it per-language rather than assuming
+the multilingual tail.
+
+**Wider warning from the same research.** Its own anti-fabrication critic caught
+the draft roster presenting unsourced numbers as fact — a RAM-at-context figure
+with no source ("the exact shape of the prior hallucinated catalogue"), a
+throughput claim absent from the evidence, and a model recommended for "all
+tiers" whose licence, quant size, per-language quality and JSON reliability were
+*all* unverified. It also caught the draft asserting "Serbian has zero evidence
+anywhere" while omitting that the one Serbian-capable candidate had been dropped
+earlier on licence grounds. **Treat that roster as leads requiring fetches, not
+as a catalog.**
 
 ---
 
@@ -404,8 +440,10 @@ strongest, having measured them only in the place they are weakest.
 
 1. **Default model.** Close the drift toward Mistral per the standing ruling,
    plus a hardware-resolved fallback ladder? (Recommended.)
-2. **Ministral.** Add to the catalog if the license verifies as permissive —
-   pending that verification.
+2. **Ministral.** Research reports Ministral 3 as Apache-2.0 (§2.4), so the licence
+   blocker is probably cleared — but it is search-verified only. Fetch the model
+   card to confirm, then add `ministral-3:3b-instruct-2512-q4_K_M`? Note the
+   unverified multilingual tail (ru/hi/bn/id/th/vi/el/sr/mr are not named).
 3. **vLLM on the 6 GB host.** Fix the install and measure, accepting it may
    prove unviable on this host; or treat the GPU VM as needing more RAM first?
 4. **RAM preflight posture.** Hard refusal below a floor, or a warning with the
@@ -444,7 +482,10 @@ V5 (measure vLLM on the real host)
 | `AiKeyword.evidence` has zero writers | **verified** — grep across `src/ai_layer/`, `src/api/ai.py` |
 | `framing.py` fabricates a 0.0 neutral | **verified** — `src/awareness/framing.py:81` |
 | Ministral absent from the catalog | **verified** — no match in `src/llm/ollama.py`, `configs/` |
-| **Ministral license is research-only** | **UNVERIFIED — recollection only, must be confirmed from the model card** |
+| ~~Ministral license is research-only~~ | **SUPERSEDED 2026-07-29** — true of the 8B-2410 generation; Ministral 3 is reported Apache-2.0 (§2.4) |
+| Ministral 3 is Apache-2.0 | **search-verified only, single-sourced** — never read from the model card; one page fetch from confirmed |
+| Ministral tag `ministral-3:3b-instruct-2512-q4_K_M` | **search-verified** — the short `ministral-3:3b` form could **not** be verified; do not substitute it |
+| Ministral covers ru/hi/bn/id/th/vi/el/sr/mr | **NOT verified — absent from the enumerated language list**; only ar/zh/ja/ko are named |
 | vLLM unusable at 6 GB host RAM | **UNVERIFIED — plausible, not measured; V5 settles it** |
 | zh/ja/th FTS search failure | **reported by analysis, not re-verified here** |
 | ~2.6-year sweep projection | **derived**, not measured |
