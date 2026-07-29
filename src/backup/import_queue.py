@@ -202,67 +202,73 @@ class ImportQueueManager:
 
     # -- the run ------------------------------------------------------------ #
     def _run(self) -> None:
-        # ONE exclusive window for the WHOLE queue (ruling item 10). The per-item
-        # restore takes its own nested hold, which is now a no-op -- so collection
-        # goes down once here and comes back up once at the end, instead of flapping
-        # between every backup.
-        from src.scheduler.runner import (
-            pause_for_exclusive_operation,
-            resume_after_exclusive_operation,
-        )
+        # ONE exclusive window for the WHOLE queue (ruling item 10): collection goes
+        # down once here and comes back up once at the end, instead of flapping
+        # between every backup. The per-item restore's own pause nests inside this
+        # and becomes a no-op -- including, crucially, its resume.
+        from src.scheduler.runner import exclusive_window
 
-        was_paused = False
+        # ``drove`` is set BEFORE the call, not after: the fallback below exists for
+        # the case where the WINDOW could not be established, and must never re-run an
+        # import that already started. (A first cut called _drive() from the except
+        # block, which would have run the whole import TWICE if _drive itself raised.)
+        drove = False
         try:
-            was_paused = pause_for_exclusive_operation()
-            with self._lock:
-                self._collection_paused = True
-        except Exception:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
-            _LOG.warning("pausing background collection for the import failed", exc_info=True)
-
-        try:
-            for idx, item in enumerate(self._items):
-                if self._stop.is_set():
-                    break
+            with exclusive_window():
                 with self._lock:
-                    self._cursor = idx
-                    item["state"] = "running"
-                    item["started_at"] = time.time()
-                    self._save()
-                try:
-                    summary = self._run_item(item)
-                    state = "stopped" if self._stop.is_set() else "done"
-                    with self._lock:
-                        item["state"] = state
-                        item["summary"] = summary
-                except Exception as exc:  # noqa: BLE001 - one bad item must not lose the rest
-                    _LOG.exception("import item %s failed", item.get("id"))
-                    with self._lock:
-                        item["state"] = "error"
-                        item["error"] = str(exc)
-                finally:
-                    with self._lock:
-                        item["ended_at"] = time.time()
-                        self._save()
-            with self._lock:
-                stopped = self._stop.is_set()
-                for it in self._items:
-                    if it["state"] == "queued":
-                        # Explicitly cancelled, never left looking "still to come" --
-                        # a queued item after a stop would read as work still pending.
-                        it["state"] = "cancelled" if stopped else "skipped"
-                any_error = any(it["state"] == "error" for it in self._items)
-                self._state = "stopped" if stopped else ("error" if any_error else "done")
-                self._cursor = -1
-                self._ended_at = time.time()
-                self._passphrase = ""  # drop the key the moment the run ends
-                self._save()
+                    self._collection_paused = True
+                drove = True
+                self._drive()
+        except Exception:  # noqa: BLE001 - the pause is a courtesy, never load-bearing
+            _LOG.warning("the exclusive window for the import failed", exc_info=True)
         finally:
             with self._lock:
                 self._collection_paused = False
+        if not drove:
+            # The pause is a throughput courtesy; the import is the point. A scheduler
+            # that refused to stop must not cost the user their import.
+            self._drive()
+
+    def _drive(self) -> None:
+        """Walk the queue. Separated from :meth:`_run` so the exclusive window is a
+        plain ``with`` block -- the courtesy pause must never be able to skip the
+        import it was only meant to make faster."""
+        for idx, item in enumerate(self._items):
+            if self._stop.is_set():
+                break
+            with self._lock:
+                self._cursor = idx
+                item["state"] = "running"
+                item["started_at"] = time.time()
+                self._save()
             try:
-                resume_after_exclusive_operation(was_paused)
-            except Exception:  # noqa: BLE001 - the resume is a courtesy, never load-bearing
-                _LOG.warning("resuming background collection after the import failed", exc_info=True)
+                summary = self._run_item(item)
+                state = "stopped" if self._stop.is_set() else "done"
+                with self._lock:
+                    item["state"] = state
+                    item["summary"] = summary
+            except Exception as exc:  # noqa: BLE001 - one bad item must not lose the rest
+                _LOG.exception("import item %s failed", item.get("id"))
+                with self._lock:
+                    item["state"] = "error"
+                    item["error"] = str(exc)
+            finally:
+                with self._lock:
+                    item["ended_at"] = time.time()
+                    self._save()
+        with self._lock:
+            stopped = self._stop.is_set()
+            for it in self._items:
+                if it["state"] == "queued":
+                    # Explicitly cancelled, never left looking "still to come" --
+                    # a queued item after a stop would read as work still pending.
+                    it["state"] = "cancelled" if stopped else "skipped"
+            any_error = any(it["state"] == "error" for it in self._items)
+            self._state = "stopped" if stopped else ("error" if any_error else "done")
+            self._cursor = -1
+            self._ended_at = time.time()
+            self._passphrase = ""  # drop the key the moment the run ends
+            self._save()
 
     def _run_item(self, item: dict) -> dict:
         kind = item["kind"]
