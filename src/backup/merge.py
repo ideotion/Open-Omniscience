@@ -1708,6 +1708,7 @@ def reindex_imported_articles(
     commit_batch: int | None = None,
     workers: int | None = None,
     progress_cb: Callable[[int, int], None] | None = None,
+    stats: dict | None = None,
 ) -> dict:
     """Recompute CORE-ENGINE metadata for the articles imported by ``batch_id``.
 
@@ -1754,6 +1755,7 @@ def reindex_imported_articles(
             commit_batch=commit_batch,
             workers=workers,
             progress_cb=progress_cb,
+            stats=stats,
         )
 
 
@@ -1796,6 +1798,7 @@ _RESTORE_STAGES_COMMIT: tuple[str, ...] = (
     "corpus_epoch_bump",
     "event_mirror_refresh",
     "reindex",
+    "keyword_counter_reconcile",
     "quarantine_scan",
     "work_induced_tally",
     "prune_snapshots",
@@ -2146,12 +2149,21 @@ def run_restore(
         if reindex_imported:
             with timings.stage("reindex"):
                 try:
+                    # A SIBLING report key, deliberately not a StageTimings entry:
+                    # StageTimings is float-seconds-only and the frontend formats every
+                    # one of its values as a duration, so a rate parked there would
+                    # render as "1200.0 s" AND displace the real slowest stage in the
+                    # "how long did this take?" table.
+                    _rx_stats: dict = {}
+                    report["reindex_rates"] = _rx_stats
                     report["reindexed"] = reindex_imported_articles(
                         batch_id,
                         commit_batch=reindex_commit_batch,
                         workers=reindex_workers,
                         progress_cb=reindex_progress_cb,
+                        stats=_rx_stats,
                     )
+                    _rx_stats["commit_batch"] = reindex_commit_batch
                 except Exception:  # noqa: BLE001 - never undo a committed, additive restore
                     _LOG.warning("post-restore re-index of imported articles failed", exc_info=True)
                     # The whole batch failed before touching a single article, so NONE of the
@@ -2161,6 +2173,37 @@ def run_restore(
                     # of this feature is built to avoid (see reindex_imported_articles above).
                     _imported = int((counts.get("articles") or {}).get("new") or 0)
                     report["reindexed"] = {"reindexed": 0, "failed": _imported, "skipped": "see server log"}
+
+        # Keyword counters after a merge (bug found + reproduced 2026-07-29,
+        # tests/test_restore_counter_drift.py). TWO independent halves left them wrong:
+        #   (1) _merge_keywords' INSERT column list omits mention_count/article_count, so a
+        #       merged keyword lands at the column default 0, and an ALREADY-PRESENT keyword
+        #       is matched by WHERE NOT EXISTS and never updated -- while
+        #       _merge_keyword_mentions copies the real mention rows straight in.
+        #   (2) the re-index above then reads ``old_contrib`` from the LIVE mention rows --
+        #       which after a merge ARE the imported rows -- so its ``new - old`` delta nets
+        #       to ~0 and CEMENTS the drift instead of repairing it.
+        # maybe_reconcile_counters would eventually fix this, but only from the scheduler's
+        # idle pass, i.e. only if the app goes ONLINE with the collector idle -- so an
+        # airplane-first user who imports and browses offline would sit on drifted counters
+        # indefinitely, undisclosed. Repair it HERE, authoritatively.
+        #
+        # UNCONDITIONAL (outside the reindex_imported branch above): the drift comes from the
+        # MERGE, so it exists whether or not the re-index ran, and it must also be repaired on
+        # the re-index's own failure path. Idempotent, so running it after a successful
+        # re-index is free. Best-effort + timed, exactly like the reconcile of
+        # Source.article_count a few stages above -- which exists for this same class of
+        # stale-but-non-NULL counter ("a wrong count shown as exact").
+        with timings.stage("keyword_counter_reconcile"):
+            try:
+                from src.analytics.store import backfill_keyword_counters
+                from src.database.session import session_scope
+
+                with session_scope() as _cnt_sess:
+                    report["keyword_counters"] = backfill_keyword_counters(_cnt_sess)
+            except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+                _LOG.warning("keyword-counter reconcile after restore-merge failed", exc_info=True)
+                report["keyword_counters"] = {"reconciled": False, "error": "see server log"}
 
         # S3.3 (2026-07-23 field-feedback workflow, import-time screening): scan the
         # NEWLY-MERGED articles (the exact batch_id's rows in merged_rows -- the same set
