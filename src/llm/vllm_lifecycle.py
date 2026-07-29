@@ -129,6 +129,54 @@ def _marker_path() -> Path:
     return venv_dir() / ".oo_vllm_installed.json"
 
 
+def server_log_path() -> Path:
+    """Where the vLLM server's own stdout/stderr is captured.
+
+    Field report 2026-07-29: a maintainer set a HuggingFace model, clicked start, and
+    got "doesn't work" with nothing to act on. Root cause was here -- the server was
+    spawned with stdout AND stderr to DEVNULL, so every startup failure (a gated or
+    misspelled repo id, a missing HF token, and above all a CUDA OOM when the weights
+    do not fit the card) killed the process SILENTLY. The UI could then only report
+    "not running", forever, with no way to learn why.
+
+    A server whose failures are invisible is not diagnosable, and this project's rule
+    is to degrade LOUDLY. The log is truncated at each start so it always describes the
+    CURRENT attempt rather than accumulating unboundedly.
+    """
+    return venv_dir() / "server.log"
+
+
+# How much of the server log the status payload carries. Enough to hold a Python
+# traceback's final frames and a CUDA OOM message (which is verbose and puts the
+# actionable numbers at the END), bounded so the Settings panel never has to render a
+# multi-megabyte field.
+_LOG_TAIL_BYTES = 8000
+
+
+def server_log_tail(*, limit: int = _LOG_TAIL_BYTES) -> dict:
+    """The tail of the last server start's output, for the UI and the diagnostics
+    bundle. Degrades to a stated absence -- never an empty string that would read as
+    "the server said nothing wrong"."""
+    p = server_log_path()
+    try:
+        if not p.is_file():
+            return {"available": False, "reason": "no server log yet (never started here)"}
+        size = p.stat().st_size
+        with p.open("rb") as fh:
+            if size > limit:
+                fh.seek(size - limit)
+            data = fh.read()
+        return {
+            "available": True,
+            "path": str(p),
+            "bytes": size,
+            "truncated": size > limit,
+            "tail": data.decode("utf-8", errors="replace"),
+        }
+    except OSError as exc:
+        return {"available": False, "reason": f"could not read the server log: {exc}"}
+
+
 def venv_python() -> Path:
     """The venv's own Python interpreter (POSIX layout; Windows is out of scope
     per the standing Debian-first V1 pathway ruling)."""
@@ -568,11 +616,80 @@ def server_argv(
     return argv
 
 
+_PARAM_RE = re.compile(r"(?<![A-Za-z0-9.])(\d+(?:\.\d+)?)\s*[Bb](?![A-Za-z0-9])")
+# Quantisation hints that appear in real repo/tag names. ~0.6 GB per billion params is
+# the 4-bit ballpark (4 bits of weight + scales/zeros overhead); fp16/bf16 is 2.0.
+_QUANT_HINTS = ("q4", "q5", "q8", "awq", "gptq", "int4", "int8", "4bit", "8bit", "nf4")
+
+
+def estimate_weights_gb(model: str) -> dict:
+    """Rough weight footprint for a model id, or an honest "unknown".
+
+    vLLM loads fp16/bf16 by default, so an 8B model needs ~16 GB of WEIGHTS ALONE --
+    it cannot start on an 8 GB card no matter how the KV cache is tuned. That is
+    exactly the failure a maintainer hit with ``Ministral-3-8B-Instruct-2512`` on an
+    8 GB GPU, and before this it surfaced only as a silent death.
+
+    This is a HEURISTIC over the model NAME and says so: ``method`` states how the
+    number was reached and ``confident`` is False whenever the name did not actually
+    carry a parameter count. It never fabricates a figure -- an unparseable name
+    returns None and the caller must not pretend to know.
+    """
+    name = (model or "").lower()
+    m = _PARAM_RE.search(name)
+    if not m:
+        return {
+            "params_b": None,
+            "weights_gb": None,
+            "quantised": None,
+            "confident": False,
+            "method": "no parameter count in the model name -- footprint unknown",
+        }
+    params = float(m.group(1))
+    quantised = any(h in name for h in _QUANT_HINTS)
+    per_b = 0.6 if quantised else 2.0
+    return {
+        "params_b": params,
+        "weights_gb": round(params * per_b, 1),
+        "quantised": quantised,
+        "confident": True,
+        "method": (
+            f"{params:g}B parameters x {per_b} GB/B "
+            f"({'4-bit quantised' if quantised else 'fp16/bf16, vLLM default'}), "
+            "read from the model NAME -- weights only, excludes KV cache and activations"
+        ),
+    }
+
+
+def vram_fit(model: str, vram_mb: int | None) -> dict:
+    """Does this model's weight footprint plausibly fit this card?
+
+    Verdicts: ``fits`` / ``tight`` / ``too_large`` / ``unknown``. ``unknown`` is a real
+    answer, not a soft pass -- when the name carries no parameter count nothing is
+    claimed either way, and the caller proceeds rather than refusing on a guess.
+    """
+    est = estimate_weights_gb(model)
+    if not vram_mb or vram_mb <= 0 or est["weights_gb"] is None:
+        return {"verdict": "unknown", "estimate": est, "vram_gb": None}
+    vram_gb = round(vram_mb / 1024.0, 1)
+    w = est["weights_gb"]
+    # Weights must leave room for the KV cache and activations; a model whose weights
+    # alone exceed the card cannot load at all.
+    if w >= vram_gb:
+        verdict = "too_large"
+    elif w > vram_gb * 0.75:
+        verdict = "tight"
+    else:
+        verdict = "fits"
+    return {"verdict": verdict, "estimate": est, "vram_gb": vram_gb}
+
+
 def start(
     model: str,
     *,
     max_model_len: int | None = None,
     gpu_memory_utilization: float | None = None,
+    allow_oversized: bool = False,
     popen: Callable[..., subprocess.Popen] | None = None,
 ) -> dict:
     """Launch the vLLM server as a subprocess bound to loopback. Refuses outright
@@ -592,6 +709,21 @@ def start(
         )
     if process_alive() or is_running():
         return {"started": False, "reason": "already running", "base_url": base_url()}
+    # Refuse a model whose WEIGHTS alone exceed the card, with the numbers, instead of
+    # letting it CUDA-OOM into a silent death (field report 2026-07-29). Acknowledgeable
+    # rather than absolute -- the estimate reads the model NAME, so a quantised repo
+    # that does not say so in its name must still be startable by an operator who knows
+    # better. Never fires on `unknown`: refusing on a guess would be its own fabrication.
+    fit = vram_fit(model, gpu.get("vram_mb"))
+    if fit["verdict"] == "too_large" and not allow_oversized:
+        est = fit["estimate"]
+        raise VllmUnsupportedError(
+            f"{model} needs about {est['weights_gb']} GB of weights "
+            f"({est['method']}), but this GPU has {fit['vram_gb']} GB. "
+            "vLLM loads fp16 by default, so the weights alone do not fit and the server "
+            "would fail to start. Use a smaller or quantised (AWQ/GPTQ) variant, or "
+            "Ollama, which runs quantised models on far less memory."
+        )
     args = compute_server_args(
         gpu.get("vram_mb"),
         max_model_len_override=max_model_len,
@@ -603,7 +735,19 @@ def start(
         gpu_memory_utilization=args["gpu_memory_utilization"],
     )
     run = popen or subprocess.Popen
-    proc = run(argv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # noqa: S603
+    # CAPTURE the server's output instead of discarding it (field report 2026-07-29).
+    # This used to be stdout=DEVNULL, stderr=DEVNULL, which made every startup failure
+    # invisible: a gated/misspelled HF repo, a missing token, or a CUDA OOM all ended
+    # as "not running" with no explanation anywhere in the app. Opened in "wb" so each
+    # start describes the CURRENT attempt and the file cannot grow without bound.
+    log_fh = None
+    try:
+        server_log_path().parent.mkdir(parents=True, exist_ok=True)
+        log_fh = server_log_path().open("wb")
+    except OSError:  # noqa: BLE001 - losing the log must never block the start itself
+        log_fh = None
+    out = log_fh or subprocess.DEVNULL
+    proc = run(argv, stdout=out, stderr=subprocess.STDOUT)  # noqa: S603
     _proc = proc
     return {
         "started": True,
@@ -611,6 +755,7 @@ def start(
         "argv": argv,
         "server_args": args,
         "base_url": base_url(),
+        "log_path": str(server_log_path()) if log_fh is not None else None,
         "note": "starting (model load takes tens of seconds) -- poll is_running() before use",
     }
 
@@ -667,6 +812,11 @@ def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
         "platform": platform_support(),
         "base_url": base_url(),
         "venv_dir": str(venv_dir()),
+        # The last start's own output (field report 2026-07-29). Without this, a server
+        # that died on a gated repo, a bad model id or a CUDA OOM was reported only as
+        # "not running", with the reason discarded to DEVNULL and unrecoverable.
+        # `installed and not running` is precisely when an operator needs it.
+        "server_log": server_log_tail(),
         "verified_version": VLLM_VERIFIED_VERSION,
         "verified_as_of": VLLM_VERIFIED_AS_OF,
         "estimated_size_note": ESTIMATED_INSTALL_SIZE_NOTE,

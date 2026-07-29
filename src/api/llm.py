@@ -757,6 +757,11 @@ class VllmStartRequest(BaseModel):
     model: str
     max_model_len: int | None = None
     gpu_memory_utilization: float | None = None
+    # Acknowledge a model whose estimated weights exceed this GPU's VRAM. The estimate
+    # reads the model NAME, so a quantised repo that does not advertise it in its name
+    # must remain startable by an operator who knows better -- the refusal is a guard
+    # against a silent CUDA OOM, not a claim to know every model's true footprint.
+    allow_oversized: bool = False
 
 
 @router.post("/vllm/start")
@@ -775,6 +780,7 @@ def vllm_start(req: VllmStartRequest) -> dict:
             req.model,
             max_model_len=req.max_model_len,
             gpu_memory_utilization=req.gpu_memory_utilization,
+            allow_oversized=req.allow_oversized,
         )
     except VllmUnsupportedError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
