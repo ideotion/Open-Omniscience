@@ -1941,11 +1941,37 @@ def get_scheduler() -> BackgroundScheduler:
     return _scheduler
 
 
+# Reentrancy for the exclusive window (field ruling 2026-07-29 item 10:
+# "collection does NOT resume between backups -- a multi-backup run is ONE
+# import"). Each volume restore pauses collection for its own duration, so a
+# 6-backup run used to pause and RESUME five times in the middle, re-opening
+# the very race the pause exists to close. The import queue now takes an OUTER
+# hold spanning the whole run; the inner per-restore holds nest inside it and
+# become no-ops, so collection stays down for exactly one continuous window.
+#
+# Depth is process-wide because the thing being guarded is process-wide (ONE
+# scheduler). A pause/resume pair is always called from the same job thread in
+# a try/finally, and a nested pair can only ever be an INNER operation of the
+# outer one, so a simple counter is sufficient -- there is no case where two
+# genuinely independent exclusive operations run concurrently (the managers
+# themselves serialise: one restore, one queue).
+_EXCL_LOCK = threading.Lock()
+_EXCL_DEPTH = 0
+
+
 def pause_for_exclusive_operation(timeout: float = 10.0) -> bool:
     """Pause background collection for the duration of an exclusive,
     machine-owning operation (field-feedback Session A §4, "import owns the
     machine": a large restore competes for CPU and the write path with any
     in-flight collection pass).
+
+    REENTRANT (2026-07-29): when an exclusive window is ALREADY open, this
+    records the nesting and returns False without touching the scheduler --
+    False being exactly the "I did not pause anything, so do not resume
+    anything" contract the return value already had. The matching
+    :func:`resume_after_exclusive_operation` likewise leaves the outer window
+    standing. So an inner restore inside an import queue neither re-pauses nor
+    (crucially) resumes collection mid-run.
 
     Returns True iff the CONTINUOUS LOOP was actually running and got
     signalled to stop -- the caller MUST call
@@ -1972,6 +1998,12 @@ def pause_for_exclusive_operation(timeout: float = 10.0) -> bool:
     :meth:`BackgroundScheduler.stop`'s bounded join means a pass already deep
     in a fetch may still be finishing when this returns.
     """
+    global _EXCL_DEPTH
+    with _EXCL_LOCK:
+        _EXCL_DEPTH += 1
+        nested = _EXCL_DEPTH > 1
+    if nested:
+        return False
     get_scheduler().hold_exclusive()
     return get_scheduler().stop(timeout=timeout)
 
@@ -2017,7 +2049,19 @@ def resume_after_exclusive_operation(
     never be silently overridden by this best-effort courtesy — bail out
     without starting anything; :func:`~src.api.system.set_network_mode`
     starts the scheduler again the next time THEY choose to go online.
+
+    REENTRANT (2026-07-29): only the OUTERMOST call releases the hold or
+    restarts the loop. An inner operation finishing inside a still-open outer
+    window (a single backup inside a multi-backup import queue) returns
+    immediately, so collection stays down for the whole run rather than
+    flapping between items -- field ruling item 10.
     """
+    global _EXCL_DEPTH
+    with _EXCL_LOCK:
+        _EXCL_DEPTH = max(0, _EXCL_DEPTH - 1)
+        outermost = _EXCL_DEPTH == 0
+    if not outermost:
+        return
     try:
         if not was_paused:
             return

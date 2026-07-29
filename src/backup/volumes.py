@@ -71,8 +71,13 @@ def _sha256_file(path: Path) -> str:
 
 
 class VolumeStopped(VolumeError):
-    """Raised when ``write_volume_set`` is asked to stop (``should_stop``) mid-build; the
-    partial set is incomplete and the caller cleans it up + marks the job cancelled."""
+    """Raised when a volume operation is asked to stop (``should_stop``) mid-flight.
+
+    On a BUILD (``write_volume_set``) the partial set is incomplete and the caller
+    cleans it up + marks the job cancelled. On a READ (``read_volume_set``,
+    2026-07-29) nothing was published at all -- the reassembled archive only ever
+    appears via the closing atomic ``os.replace``, so an aborted read leaves the
+    source set untouched and no partial destination behind."""
 
 
 def write_volume_set(
@@ -179,6 +184,7 @@ def read_volume_set(
     dest: str | os.PathLike[str],
     *,
     recover: Callable[[dict[str, Any], list[str]], list[str]] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict[str, Any]:
     """Verify, (optionally) recover, then decrypt + reassemble the archive into ``dest``.
 
@@ -188,7 +194,15 @@ def read_volume_set(
     them, raises :class:`VolumeError` naming exactly which volumes failed.
 
     ``recover`` is the slice-2 parity hook: given the manifest and the bad-volume list it
-    rebuilds them on disk and returns the volumes it could NOT repair."""
+    rebuilds them on disk and returns the volumes it could NOT repair.
+
+    ``should_stop`` (2026-07-29, ruling item 15 "stop is IMMEDIATE"): polled before
+    each volume. Reassembling a large set is one of the longest phases of an import,
+    so a Stop that could not reach it would leave the operator waiting out the very
+    work they cancelled. Raises :class:`VolumeStopped`; the half-written ``dest`` is
+    a ``.reassembling`` temp that the ``finally`` below removes, so an aborted
+    reassembly leaves NO partial archive anywhere -- the atomic ``os.replace`` at the
+    end is the only thing that ever publishes one."""
     m = load_manifest(out_dir)
     if m.get("kind") != VOLUME_KIND:
         raise VolumeError(
@@ -220,6 +234,8 @@ def read_volume_set(
     try:
         with open(tmp, "wb") as outf:
             for v in m["volumes"]:
+                if should_stop is not None and should_stop():
+                    raise VolumeStopped("stopped while reassembling the backup")
                 vtmp = out / (v["name"] + ".plain")
                 try:
                     decrypt_file(out / v["name"], vtmp, passphrase)

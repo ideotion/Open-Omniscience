@@ -193,6 +193,8 @@ class VolumeBackupManager:
             return self.status()
 
     def _run_restore(self, srcp, passphrase, allow_unverified, corpus_passphrase, restore_fn):
+        from src.backup.merge import RestoreAborted
+
         try:
             if restore_fn is not None:
                 summary = restore_fn(srcp, passphrase)
@@ -248,7 +250,8 @@ class VolumeBackupManager:
                     "phase_total": _phase_total,
                 })
                 staged = read_volume_backup(
-                    srcp, passphrase, corpus_passphrase=corpus_passphrase
+                    srcp, passphrase, corpus_passphrase=corpus_passphrase,
+                    should_stop=self._stop.is_set,
                 )  # verify + parity-recover + reassemble
                 try:
                     self._on_prog({
@@ -344,6 +347,12 @@ class VolumeBackupManager:
                         reindex_workers=_reindex_workers,
                         reindex_commit_batch=_reindex_batch,
                         merge_cache_mb=_merge_cache_mb,
+                        # Ruling 2026-07-29 item 15: Stop is IMMEDIATE. Before the
+                        # atomic swap this aborts with the live corpus untouched;
+                        # after it, it stops the (resumable) re-index tail. This job
+                        # used to ignore self._stop entirely on the restore path, so
+                        # a Stop button during an import was inert.
+                        should_stop=self._stop.is_set,
                     )
                     with self._lock:
                         self._state, self._summary = "done", {"report": report}
@@ -357,6 +366,15 @@ class VolumeBackupManager:
                     _LOG.warning(
                         "resuming background collection after the restore failed", exc_info=True
                     )
+        except RestoreAborted as exc:
+            # The operator's own Stop, honoured before the swap -- a normal outcome,
+            # never an error. The live corpus is byte-identical; the staging dir is
+            # cleaned by the finally above.
+            _LOG.info("volume restore stopped by the operator: %s", exc)
+            with self._lock:
+                self._state = "cancelled"
+                self._error = None
+                self._progress = {"phase": "cancelled", "detail": str(exc)}
         except Exception as exc:  # noqa: BLE001
             _LOG.exception("volume restore failed")
             from src.backup.merge import MergeError, classify_restore_error
@@ -422,9 +440,19 @@ class VolumeBackupManager:
 
     # -- controls ----------------------------------------------------------- #
     def cancel(self) -> None:
-        """Stop a running backup (between volumes) and CLEAN its partial set so it
-        can never be mistaken for a good backup. A restore is not interruptible
-        mid-merge (the merge is atomic); cancel only affects a build."""
+        """Stop a running backup OR restore.
+
+        A BACKUP stops between volumes and its partial set is CLEANED, so it can
+        never be mistaken for a good backup.
+
+        A RESTORE (2026-07-29, ruling item 15 -- this path used to ignore the stop
+        entirely) stops at the next boundary in reassembly, the 14 merge steps, or
+        a pre-swap stage: all of those run on a disposable staging dir and a working
+        copy, so the abort is FREE and COMPLETE and the live corpus is byte-identical.
+        The atomic swap itself is uninterruptible by design (there is no sound undo
+        for it), so a stop arriving after it stops only the remaining post-swap work
+        -- the re-index, whose durable cursor resumes it later. The UI must state
+        which of the two happened rather than implying an undo that does not exist."""
         with self._lock:
             self._pause_requested = False
         self._stop.set()
