@@ -21,7 +21,6 @@ from pathlib import Path
 from src.backup.merge import (
     _RESTORE_STAGES_ALWAYS,
     _RESTORE_STAGES_COMMIT,
-    _stage_pinger,
     restore_stage_plan,
 )
 
@@ -78,31 +77,3 @@ def test_skipping_the_reindex_shrinks_the_denominator():
     # ...and every stage BEFORE the reindex keeps its position (only the tail shifts).
     cut = with_reindex.index("reindex")
     assert without[:cut] == with_reindex[:cut]
-
-
-def test_the_pinger_reports_one_based_positions_against_the_real_plan():
-    plan = restore_stage_plan(commit=True)
-    seen: list[tuple[str, int, int]] = []
-    ping = _stage_pinger(plan, lambda name, i, total: seen.append((name, i, total)))
-    assert ping is not None
-    for name in plan:
-        ping(name)
-    assert [s[0] for s in seen] == list(plan)
-    assert [s[1] for s in seen] == list(range(1, len(plan) + 1))
-    assert {s[2] for s in seen} == {len(plan)}
-
-
-def test_an_unplanned_stage_reports_zero_never_a_guessed_position():
-    """An honest unknown. A plausible-but-wrong index would be worse than a visibly
-    wrong 0, because nobody would notice it."""
-    seen: list[tuple[str, int, int]] = []
-    ping = _stage_pinger(("a", "b"), lambda name, i, total: seen.append((name, i, total)))
-    assert ping is not None
-    ping("something_new")
-    assert seen == [("something_new", 0, 2)]
-
-
-def test_the_pinger_is_none_when_there_is_no_sink():
-    """StageTimings treats None as "no on_start", so the no-callback path stays
-    byte-identical to before this feature existed."""
-    assert _stage_pinger(restore_stage_plan(commit=True), None) is None

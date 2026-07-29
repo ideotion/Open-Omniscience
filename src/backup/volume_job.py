@@ -291,20 +291,21 @@ class VolumeBackupManager:
 
                     from src.analytics.reindex_parallel import all_cores_worker_count
 
-                    def _stage_prog(name: str, index: int, total: int) -> None:
-                        # A coarse "now doing: X" ping for stages B/D/E/G,
-                        # which have no callback of their own (§4 item 2), now
-                        # carrying its POSITION so the UI can say "phase 9 of 18"
-                        # instead of leaving the user with no sense of how much
-                        # remains (field ruling 2026-07-29 item 17). run_restore's
-                        # index is 1-based within ITS plan, so it is offset by the
-                        # manager phases that already ran before it.
-                        offset = len(_RESTORE_MANAGER_PHASES)
+                    def _stage_prog(name: str) -> None:
+                        # A coarse "now doing: X" ping for stages B/D/E/G, which have
+                        # no callback of their own (§4 item 2), carrying its POSITION
+                        # so the UI can say "phase 11 of 19" instead of leaving the
+                        # user with no sense of how much remains (field ruling
+                        # 2026-07-29 item 17). The position is derived HERE from
+                        # run_restore's own published plan rather than being pushed
+                        # through stage_progress_cb: widening that callback's contract
+                        # would silently starve any caller still passing a 1-argument
+                        # sink, because StageTimings swallows the resulting TypeError.
                         self._on_prog({
                             "phase": _stage_phase_name(name),
                             "own_the_machine": True,
-                            "phase_index": (offset + index) if index else 0,
-                            "phase_total": offset + total,
+                            "phase_index": _phase_of(name),
+                            "phase_total": _phase_total,
                         })
 
                     # Own-the-machine only when the pause ACTUALLY confirmed a

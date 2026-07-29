@@ -1821,27 +1821,6 @@ def restore_stage_plan(*, commit: bool, reindex_imported: bool = True) -> tuple[
     return _RESTORE_STAGES_ALWAYS + tail
 
 
-def _stage_pinger(
-    plan: tuple[str, ...], sink: Callable[[str, int, int], None] | None
-) -> Callable[[str], None] | None:
-    """Adapt :class:`StageTimings`' ``on_start(name)`` to a ``(name, index, total)``
-    sink, so the caller gets the position without StageTimings itself having to know
-    about restore plans (its contract stays exactly as its own tests pin it).
-
-    A stage absent from the plan reports index 0 -- an honest "position unknown"
-    rather than a guessed one (this happens only if the plan and the code drift, and
-    a 0 is visibly wrong in a way a plausible-looking wrong number would not be)."""
-    if sink is None:
-        return None
-    total = len(plan)
-
-    def _ping(name: str) -> None:
-        index = plan.index(name) + 1 if name in plan else 0
-        sink(name, index, total)
-
-    return _ping
-
-
 def import_reindex_commit_batch() -> int:
     """Commit batch for the post-merge re-index when the import owns the machine
     (field report 2026-07-29: a 50,000-article import quoted a multi-hour re-index).
@@ -1883,7 +1862,7 @@ def run_restore(
     reindex_workers: int | None = None,
     reindex_progress_cb: Callable[[int, int], None] | None = None,
     merge_cache_mb: int | None = None,
-    stage_progress_cb: Callable[[str, int, int], None] | None = None,
+    stage_progress_cb: Callable[[str], None] | None = None,
 ) -> dict:
     """Preview (commit=False) or perform (commit=True) a merge-restore.
 
@@ -1916,21 +1895,24 @@ def run_restore(
     ``tests/test_backup_timing.py``). Attached before every return so even a
     refused/preview-only report carries the stages that actually ran.
 
-    ``stage_progress_cb`` ("progress everywhere", §4 item 2): fired with the
-    stage NAME **and its position** ``(name, index, total)`` the instant each
-    stage BEGINS — a coarse "now doing: swap (phase 9 of 19)" ping for the
-    stages (B/D/E/G) that have no callback of their own (unlike the
-    fine-grained 14-step ``progress_cb`` or the per-article
-    ``reindex_progress_cb``). The position comes from :func:`restore_stage_plan`,
-    computed from THIS call's own ``commit``/``reindex_imported`` — never a
-    hardcoded denominator (field ruling 2026-07-29 item 17). Report-only, never
-    load-bearing."""
+    ``stage_progress_cb`` ("progress everywhere", §4 item 2): fired with just
+    the stage NAME the instant each stage BEGINS — a coarse "now doing: swap"
+    ping for the stages (B/D/E/G) that have no callback of their own (unlike
+    the fine-grained 14-step ``progress_cb`` or the per-article
+    ``reindex_progress_cb``). Report-only, never load-bearing.
+
+    The contract stays ONE argument on purpose. An earlier cut of the 2026-07-29
+    "phase N of M" work widened it to ``(name, index, total)``, which is a SILENT
+    breaking change: ``StageTimings`` wraps ``on_start`` in its own try/except, so
+    a caller still passing a 1-argument callable stopped receiving pings entirely,
+    with no error anywhere. A caller that wants the position derives it from
+    :func:`restore_stage_plan` — which is public, pure and drift-guarded for
+    exactly that purpose."""
     from src.backup.sqlite_backup import live_db_path
     from src.backup.timing import StageTimings
     from src.database.session import dispose_engine, init_db
 
-    stage_plan = restore_stage_plan(commit=commit, reindex_imported=reindex_imported)
-    timings = StageTimings(on_start=_stage_pinger(stage_plan, stage_progress_cb))
+    timings = StageTimings(on_start=stage_progress_cb)
     # Fold in stage-A (decrypt/reassemble) timing, already measured by whichever
     # producer (read_artifact / read_stream_backup / read_volume_backup) built
     # this StagedArtifact — run_restore itself never touches stage A (it only

@@ -24,6 +24,7 @@ import os
 import random
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from src.database.query import capped
@@ -132,18 +133,41 @@ class _PassWindDown:
     Workers consult :meth:`admit` BEFORE starting a source — a cheap check
     (the guard's own mutex + this class's counter mutex, both leaf-level and
     held for nanoseconds), so nothing is ever interrupted mid-fetch. Reasons:
-    ``"memory"`` (the RSS memory guard engaged — P0.3 E3,
-    checked FIRST: new work must never start under proven memory pressure),
+    ``"stopping"`` (an explicit stop was requested — checked FIRST, see below),
+    ``"memory"`` (the RSS memory guard engaged — P0.3 E3:
+    new work must never start under proven memory pressure),
     ``"budget"`` (wall-clock budget expired), ``"work"`` (per-pass source cap
     reached). ``now`` is injectable for deterministic tests. Thread-safe.
+
+    ``should_stop`` (field report 2026-07-29: importing while collecting was
+    3-5x slower): ``BackgroundScheduler.stop()`` sets its event and joins with a
+    10 s timeout, but a pass already inside a fetch had NO mid-pass stop check
+    at all — it ran its whole remaining source list to completion, which over
+    Tor is easily tens of minutes of full contention with the import that just
+    asked it to stop. Consulting the stop event HERE makes the pause effective
+    within one source instead of one pass.
+
+    Deliberately still "stop admitting", never "abort in flight": an in-flight
+    fetch finishes so per-host politeness and the robots contract are untouched,
+    and the un-admitted remainder rides the SAME deferral path as a budget
+    wind-down (``_record_deferred`` -> ``_consume_deferred`` runs them FIRST next
+    pass), so an interrupted pass starves nobody. Ordering, never exclusion.
     """
 
-    def __init__(self, *, budget_s: float, max_sources: int, now=time.monotonic) -> None:
+    def __init__(
+        self,
+        *,
+        budget_s: float,
+        max_sources: int,
+        now=time.monotonic,
+        should_stop: Callable[[], bool] | None = None,
+    ) -> None:
         self._now = now
         self._deadline = (now() + budget_s) if budget_s > 0 else None
         self._max = max(0, int(max_sources))
         self._admitted = 0
         self._lock = threading.Lock()
+        self._should_stop = should_stop
 
     def admit(self) -> str | None:
         """None = process the next source; else the wind-down reason."""
@@ -151,6 +175,16 @@ class _PassWindDown:
         # can swap the singleton.
         from src.scheduler import memguard
 
+        # An EXPLICIT stop outranks every other reason, and — like "memory" —
+        # deliberately has NO forward-progress floor: when the operator (or an
+        # exclusive import) has asked collection to stop, admitting "just one
+        # more" source is the opposite of what was asked.
+        if self._should_stop is not None:
+            try:
+                if self._should_stop():
+                    return "stopping"
+            except Exception:  # noqa: BLE001 - a broken predicate must never wedge a pass
+                _LOG.debug("wind-down stop predicate raised; pass continues", exc_info=True)
         if memguard.memory_guard.engaged:
             return "memory"
         with self._lock:
@@ -556,12 +590,20 @@ def _process_source(source, *, session, fetcher, mode: str, crawl_cfg) -> tuple[
         return {"errors": 1}, 0, 0
 
 
-def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
+def run_scrape_once(
+    session, fetcher, settings: SchedulerSettings, *, should_stop: Callable[[], bool] | None = None
+) -> dict:
     """Run one ingestion pass over enabled sources and return an aggregated tally.
 
     In ``rss`` mode each enabled source with a feed is ingested; in ``crawl`` mode
     each enabled source is crawled (bounded by the crawl caps in ``settings``).
     Sources are taken highest-priority first, capped at ``max_sources_per_run``.
+
+    ``should_stop`` (field report 2026-07-29): consulted before each source via
+    :class:`_PassWindDown`, so an explicit stop (the operator's, or an exclusive
+    import's ``pause_for_exclusive_operation``) takes effect within ONE source
+    instead of one whole pass. In-flight work always finishes; the remainder is
+    deferred to run first next pass, never dropped.
     """
     from src.database.models import MarketExtractionRule
     from src.ingest.crawl import CrawlConfig
@@ -749,7 +791,9 @@ def run_scrape_once(session, fetcher, settings: SchedulerSettings) -> dict:
     # cap is reached the pass stops ADMITTING new sources; whatever is in
     # flight finishes (politeness untouched) and the remainder is deferred to
     # run first next pass. Checked before each source — never mid-fetch.
-    wind = _PassWindDown(budget_s=_pass_budget_s(), max_sources=_pass_max_sources())
+    wind = _PassWindDown(
+        budget_s=_pass_budget_s(), max_sources=_pass_max_sources(), should_stop=should_stop
+    )
     deferred_sources: list = []
     deferred_lock = threading.Lock()
     wind_reasons: dict[str, int] = {}
@@ -1669,7 +1713,12 @@ class BackgroundScheduler:
             # LIVE per fetch (EthicalFetcher, fail-closed), so scraping before the
             # preflight LOG is written is safe — the log is instrumentation, not a gate.
             _phase_set("collecting")
-            result = run_scrape_once(session, fetcher, settings)
+            # Hand the pass this scheduler's own stop event: stop()/
+            # pause_for_exclusive_operation() then takes effect within one source
+            # rather than one whole pass (field report 2026-07-29 -- importing while
+            # collecting ran 3-5x slower because the pause could not actually reach
+            # an in-flight pass).
+            result = run_scrape_once(session, fetcher, settings, should_stop=self._stop.is_set)
             # Opt-in drop-folder export (WP3/RM-06): write the new-articles
             # delta into the operator's local folder. Best-effort; off when
             # export_dir is empty (the default).

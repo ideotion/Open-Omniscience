@@ -54,10 +54,12 @@ def test_restore_stage_pings_carry_their_position_offset_by_the_manager_phases(
     import src.scheduler.runner as sched_mod
 
     def fake_run_restore(staged, *, commit, allow_unverified, stage_progress_cb=None, **kw):
-        # run_restore reports 1-based positions within ITS OWN plan; the manager owns
-        # the phases that ran before it and must offset them.
+        # stage_progress_cb is deliberately ONE argument (widening it would silently
+        # starve any caller still passing a 1-arg sink, since StageTimings swallows
+        # the TypeError). The manager derives the position from run_restore's own
+        # published plan instead.
         assert stage_progress_cb is not None
-        stage_progress_cb("swap", 9, 16)
+        stage_progress_cb("swap")
         return {"committed": True}
 
     monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
@@ -76,11 +78,15 @@ def test_restore_stage_pings_carry_their_position_offset_by_the_manager_phases(
     mgr.start_restore(str(src), "pw")
     assert _wait(mgr)["state"] == "done"
 
+    from src.backup.merge import restore_stage_plan
+
+    plan = restore_stage_plan(commit=True, reindex_imported=True)
     offset = len(_RESTORE_MANAGER_PHASES)
     swap = [p for p in seen if p.get("phase") == "swap"]
     assert swap, "the swap stage must ping with its position"
-    assert swap[-1]["phase_index"] == offset + 9
-    assert swap[-1]["phase_total"] == offset + 16
+    # Computed from the real plan, never hardcoded — the plan legitimately grows.
+    assert swap[-1]["phase_index"] == offset + plan.index("swap") + 1
+    assert swap[-1]["phase_total"] == offset + len(plan)
 
 
 def test_the_position_survives_the_two_longest_phases(tmp_path, monkeypatch):

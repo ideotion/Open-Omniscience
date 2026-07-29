@@ -32,7 +32,10 @@ def order(monkeypatch):
     monkeypatch.setattr("src.database.session.session_scope", _fake_scope)
     monkeypatch.setattr("src.safety.fetcher.make_fetcher", lambda: object())
 
-    def _scrape(session, fetcher, settings):
+    def _scrape(session, fetcher, settings, **kw):
+        # **kw so this double tracks run_scrape_once's real signature as it grows
+        # (it gained should_stop in 2026-07-29's immediate-stop fix). This test is
+        # about ORDERING, not the pass's own parameters.
         calls.append("scrape")
         phases_at["scrape"] = current_phase()
         return {"ok": True, "tally": {}}

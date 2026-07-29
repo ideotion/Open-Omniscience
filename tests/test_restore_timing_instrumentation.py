@@ -197,8 +197,8 @@ _EXPECTED_PREVIEW_STAGES = {
 _EXPECTED_COMMIT_ONLY_STAGES = {
     "corpus_delta_before", "pre_restore_snapshot", "side_files_and_custody",
     "report_json_write", "swap", "corpus_delta_after", "corpus_epoch_bump",
-    "event_mirror_refresh", "reindex", "quarantine_scan", "work_induced_tally",
-    "prune_snapshots",
+    "event_mirror_refresh", "reindex", "keyword_counter_reconcile",
+    "quarantine_scan", "work_induced_tally", "prune_snapshots",
 }
 
 
@@ -355,8 +355,8 @@ def test_stage_progress_cb_pings_fire_for_every_stage_in_order(client):
         "prepare_staged", "snapshot_working_copy", "merge", "verify",
         "corpus_delta_before", "pre_restore_snapshot", "side_files_and_custody",
         "report_json_write", "swap", "corpus_delta_after", "corpus_epoch_bump",
-        "event_mirror_refresh", "reindex", "quarantine_scan", "work_induced_tally",
-        "prune_snapshots",
+        "event_mirror_refresh", "reindex", "keyword_counter_reconcile",
+        "quarantine_scan", "work_induced_tally", "prune_snapshots",
     ]
 
 
