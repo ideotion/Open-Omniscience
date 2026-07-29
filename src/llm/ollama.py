@@ -77,6 +77,60 @@ MODEL_CATALOG: list[dict] = [
     {"tag": "nomic-embed-text-v2-moe", "size": "~1 GB", "min_ram_gb": 4, "kind": "embedding", "license": "Apache-2.0", "note": "Nomic Embed v2 MoE — multilingual embeddings (~100 languages); not used by summarize/translate"},
     {"tag": "bge-m3", "size": "~1.2 GB", "min_ram_gb": 4, "kind": "embedding", "license": "MIT", "note": "BAAI BGE-M3 — multilingual embeddings; not used by summarize/translate"},
 ]
+
+# --------------------------------------------------------------------------- #
+#  One-click Ministral (maintainer request 2026-07-29: "automate the ministral
+#  installation with a dedicated button, the version adapted to below 8Gb Vram
+#  hardware")
+# --------------------------------------------------------------------------- #
+# DELIBERATELY NOT IN ``MODEL_CATALOG`` ABOVE, and the distinction is the honest part.
+# That list carries an explicit contract -- "verified against https://ollama.com/library
+# this cycle" -- and this cycle already REMOVED two entries (gemma4:e4b,
+# translategemma:4b) rather than ship them on faith. This tag has not met that bar:
+# docs/design/AI_LAYER_STRATEGY_2026-07-29.md §2.4 records it as SEARCH-VERIFIED only
+# and sets an explicit gate ("one page fetch of the model card settles it and must
+# happen before any catalog entry"). That fetch could not be performed -- ollama.com
+# and huggingface.co both return 403 through this environment's egress allowlist -- so
+# promoting it into the catalogue would assert a verification nobody performed.
+#
+# It ships instead as a SEPARATE, self-describing suggestion whose unverified status
+# travels with it into the UI. Two things make that safe rather than a loophole:
+#   * a wrong tag CANNOT pass silently -- Ollama 404s an unknown model, so the pull
+#     fails loudly naming the exact tag, which is precisely the "degrade loudly"
+#     contract; and
+#   * clicking the button ON A NETWORKED MACHINE *is* the verification the design doc
+#     asked for. It either resolves (tag confirmed) or refuses (tag wrong, stated).
+#
+# Do NOT substitute the short ``ministral-3:3b`` form: §2.4 records that the researcher
+# could not verify it and correctly refused to invent it. The project's standing rule is
+# that a model tag is verified or it is not used -- never a close-looking neighbour.
+MINISTRAL_SUGGESTION: dict = {
+    "tag": "ministral-3:3b-instruct-2512-q4_K_M",
+    "size": "~3.0 GB",
+    "min_ram_gb": 8,
+    # Sized for the maintainer's stated constraint: at ~3.0 GB of weights this sits
+    # comfortably under an 8 GB VRAM budget, where mistral:7b (~4.4 GB) leaves little
+    # headroom for context on the same card.
+    "max_vram_gb": 8,
+    # Stated as REPORTED, never as established. Research converged on Apache-2.0 for
+    # the Ministral 3 generation, but it was single-sourced and never read from a model
+    # card -- against a family with a documented licence flip (Ministral 8B-2410 shipped
+    # under the non-commercial Mistral Research License). Saying plain "Apache-2.0" here
+    # would manufacture an assurance.
+    "license": "Apache-2.0 (reported — UNCONFIRMED)",
+    "verification": "search-verified only; model card never fetched",
+    "note": (
+        "Mistral Ministral 3 (3B, q4_K_M) — ~3.0 GB, fits under 8 GB VRAM. "
+        "Licence reported Apache-2.0 but UNCONFIRMED (the previous generation was "
+        "research-only); confirm on the model card before relying on it. Enumerated "
+        "languages are ar/zh/ja/ko only — the wider corpus languages are untested."
+    ),
+    "caveats": [
+        "Licence reported Apache-2.0 but never read from the model card.",
+        "Enumerated language coverage is ar/zh/ja/ko; ru/hi/bn/id/th/vi/el/sr/mr untested.",
+        "May require a newer Ollama than this cycle was tested against (0.5.x).",
+    ],
+}
 # The app's default model tag (a fallback when the operator has not chosen one in
 # Settings). Apache-2.0, low-spec-friendly, and matched by the installer's quick
 # pull so a fresh install's default is actually present. Override with OO_LLM_MODEL.

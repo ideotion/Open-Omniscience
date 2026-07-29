@@ -358,7 +358,7 @@ def llm_models(client: OllamaClient = Depends(get_ollama_client)) -> dict:
     hardware-annotated suggestion list with an honest `catalog_as_of` date --
     it goes stale fast; newer models may exist at https://ollama.com/library.
     """
-    from src.llm.ollama import annotate_catalog, total_ram_gb
+    from src.llm.ollama import MINISTRAL_SUGGESTION, annotate_catalog, total_ram_gb
 
     try:
         installed = client.list_installed_detailed()
@@ -373,6 +373,12 @@ def llm_models(client: OllamaClient = Depends(get_ollama_client)) -> dict:
         "catalog_as_of": CATALOG_AS_OF,
         "catalog": annotate_catalog(),
         "installed": installed,
+        # The one-click Ministral suggestion (maintainer 2026-07-29). Served BESIDE
+        # `catalog`, never inside it: the catalog carries a "verified against
+        # ollama.com/library" contract this tag has not met, and merging it in would
+        # launder an unverified entry into a verified list. Its own `verification` and
+        # `caveats` fields travel with it so the UI can state what is and is not known.
+        "ministral": MINISTRAL_SUGGESTION,
     }
 
 
@@ -792,6 +798,44 @@ def vllm_stop() -> dict:
     from src.llm.vllm_lifecycle import stop
 
     return stop()
+
+
+@router.get("/ollama/state")
+def ollama_state() -> dict:
+    """INSTALLED and RUNNING as two independent facts (field report 2026-07-29).
+
+    Before this, the only Ollama predicate in any availability path was a probe of the
+    RUNNING daemon, so an installed-but-stopped Ollama looked exactly like an absent
+    one and the UI offered no control at all for it. Read-only, no network, and
+    truthful while the daemon is down -- which is the whole point.
+    """
+    from src.llm.ollama_lifecycle import state
+
+    return state()
+
+
+@router.post("/ollama/start")
+def ollama_start() -> dict:
+    """Launch ``ollama serve`` (field report 2026-07-29: "a 'launch' button would then
+    be made available to the user to start either service").
+
+    Idempotent BY PROBE: an already-answering daemon reports ``started: false, reason:
+    "already running"`` and nothing is spawned -- important because the daemon is
+    frequently owned by systemd rather than by us. 409 when the binary is absent (that
+    is an install problem, not a launch problem, and the install box is the right
+    surface for it).
+
+    NOT airplane-gated, deliberately: ``ollama serve`` binds a loopback port, and it is
+    what makes the already-ruled offline loopback inference possible at all. Refusing it
+    under the kill switch would make that allowance unusable exactly when it matters.
+    Pull/remove stay refused offline -- their egress is real.
+    """
+    from src.llm.ollama_lifecycle import OllamaLifecycleError, start
+
+    try:
+        return start()
+    except OllamaLifecycleError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/articles/{article_id}/summarize")
