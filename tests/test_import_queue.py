@@ -264,3 +264,34 @@ def test_clear_refuses_while_a_run_is_in_flight(queue, monkeypatch):
         queue.clear()
     gate.set()
     _drain(queue)
+
+
+# --------------------------------------------------------------------------- #
+#  the sub-manager contract the sequencer depends on
+# --------------------------------------------------------------------------- #
+def test_every_sub_manager_is_running_before_its_worker_is_spawned():
+    """Load-bearing and non-obvious: ``_await`` polls the sub-manager immediately
+    after start() and treats "idle" as terminal, so a manager that spawned its thread
+    FIRST and set its state afterwards would be raced straight past -- the queue would
+    mark the item done and begin the next one while the first was still writing.
+
+    Every manager currently sets ``_state = "running"`` inside its lock before
+    ``Thread.start()``, which is what makes the sequencer safe. Pinned here rather than
+    left as an assumption, because the failure mode is silent (two importers running
+    at once) rather than an exception."""
+    from pathlib import Path as _P
+
+    root = _P(__file__).resolve().parents[1] / "src"
+    for rel, fn in (
+        ("backup/volume_job.py", "start_restore"),
+        ("backup/folder_backup.py", "start"),
+        ("ingest/import_job.py", "start"),
+    ):
+        src = (root / rel).read_text(encoding="utf-8")
+        body = src.split(f"def {fn}(", 1)[1].split("\n    def ", 1)[0]
+        run_at = body.index('self._state')
+        spawn_at = body.index("self._thread.start()")
+        assert run_at < spawn_at, (
+            f"{rel}:{fn} spawns its worker before publishing its state — the import "
+            "queue would race past it"
+        )
