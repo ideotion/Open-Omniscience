@@ -2944,3 +2944,43 @@ Workflow rulings recorded the same day: all coding via Claude Code CLI (Opus 4.8
 the web Fable-5 instance does planning/design and writes the briefs/kickoff prompts. Everything
 above is gated behind the S1–S6 program's completion and the STALENESS GUARD (verify against
 the tree before building).
+
+## Legacy single-file import — scheduled for REMOVAL (maintainer ruled 2026-07-29)
+
+**Ruling (verbatim intent): "the legacy imports will soon be removed. no need to touch them."**
+Recorded here so the removal is not lost and so no future session invests in that path.
+
+**What is being removed** — the legacy single-file (OOENC1, ≤ 2 GiB) *import* path:
+
+- `POST /api/backup/legacy/restore` (`src/api/backup_v2.py:269`) — a synchronous, blocking
+  server-side restore of one legacy archive discovered by the import scan.
+- The `doLegacy` branch of the unified Import dialog (`src/static/app.js:6151-6156`) and the
+  `ux-i-legacy` checkbox row that `_uxImScan` builds for it.
+- The `legacy_backup` classification in `src/backup/import_scan.py` once nothing consumes it.
+
+**Why it is the right thing to remove, not merely tidy:**
+
+- It is the ONE import kind that can never show real progress or a rate — a single blocking POST
+  with no status endpoint to poll (`app.js:6154`), so it paints an indeterminate bar and waits.
+  Every other kind is a pollable background job.
+- It does not pause background collection and passes neither `reindex_commit_batch` nor
+  `reindex_workers`, so it is strictly slower than the volume path for the same corpus.
+- It cannot participate in the server-side import queue (2026-07-29 ruling 13) without being
+  re-shaped into a job first — work that would be thrown away by the removal.
+
+**Constraints on the removal (the Desk lesson — never silently lose a capability):**
+
+- Legacy single-file archives were the ONLY backup format before the OOENC2 streaming-volume path,
+  so this is a MIGRATION path, not a redundant one. Remove it only once either (a) the maintainer
+  confirms no legacy archive remains that anyone might restore, or (b) a one-way "convert a legacy
+  archive to a volume set" step exists.
+- `read_artifact` accepts legacy formats FOREVER (D7, wired into restore at `backup_v2.py:118`) —
+  that acceptance is a separate, load-bearing guarantee and must NOT be removed with the endpoint.
+- The 2 GiB legacy *create* path is already UI-unreachable and is tracked separately in
+  [`docs/design/UNIFIED_IMPORT_EXPORT.md`](design/UNIFIED_IMPORT_EXPORT.md); the two removals
+  should land together.
+
+Until then: **do not invest in the legacy import path** — no progress plumbing, no pause/stop, no
+queue membership, no rate display. See
+[`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-29_IMPORT_PERFORMANCE.md`](design/AUTONOMOUS_SESSION_BRIEF_2026-07-29_IMPORT_PERFORMANCE.md)
+§9 (scope fences).
