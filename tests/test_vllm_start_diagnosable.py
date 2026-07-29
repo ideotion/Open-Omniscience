@@ -10,8 +10,12 @@ to act on. Two independent defects produced that:
   1. the server was spawned with stdout AND stderr to ``DEVNULL``, so every startup
      failure (gated repo, misspelled id, missing HF token, CUDA OOM) killed the process
      silently and the UI could only ever report "not running";
-  2. an 8B model at fp16 needs ~16 GB of WEIGHTS ALONE, so on an 8 GB card it could
-     never have started — and nothing checked before launching.
+  2. the model could not fit that card, and nothing checked before launching. (The
+     first fix mis-stated WHY, reporting ~16 GB on an fp16 assumption; Ministral 3's
+     Instruct checkpoints actually ship FP8, so it is ~8 GB. Still too large — the
+     weights alone meet the card, leaving nothing for the KV cache — but the estimate
+     now reports a RANGE and judges on the optimistic end rather than inventing a
+     single figure a model NAME cannot support.)
 
 Both directions are pinned here. A refusal that fires on a guess would be its own
 fabrication, so ``unknown`` must NOT refuse.
@@ -43,12 +47,37 @@ def gpu8(monkeypatch, tmp_path):
 #  the footprint estimate
 # --------------------------------------------------------------------------- #
 def test_the_maintainers_model_is_measured_as_too_large_for_8gb():
-    """THE reported case. 8B x 2 GB/B = ~16 GB of weights against an 8 GB card."""
+    """THE reported case — and the CORRECTION that followed it.
+
+    The first version of this estimate assumed fp16 and published "16.0 GB" to the
+    maintainer. That was wrong: Ministral 3's Instruct checkpoints ship in FP8, so the
+    8B is ~8 GB of weights. A model NAME does not carry its dtype, so claiming a single
+    number was fabricated precision. The estimate now reports a RANGE and judges on the
+    OPTIMISTIC end, which is the only claim it can actually support.
+
+    The verdict survives the correction: even at FP8 the weights alone meet the card,
+    leaving nothing for the KV cache. It genuinely could not have started."""
     fit = V.vram_fit("mistralai/Ministral-3-8B-Instruct-2512", 8192)
     assert fit["verdict"] == "too_large"
-    assert fit["estimate"]["params_b"] == 8
-    assert fit["estimate"]["weights_gb"] == 16.0
+    est = fit["estimate"]
+    assert est["params_b"] == 8
+    assert (est["weights_gb_low"], est["weights_gb_high"]) == (8.0, 16.0)
+    assert est["weights_gb"] == 8.0, "the single figure must be the OPTIMISTIC end"
+    assert "NOT stated in the name" in est["method"]
     assert fit["vram_gb"] == 8.0
+
+
+def test_the_3B_variant_the_card_says_fits_8gb_is_not_refused():
+    """The maintainer's real GPU option: the card states the 3B is "capable of fitting
+    in 8GB of VRAM in FP8". A guard that refused it would block the one model that
+    works."""
+    assert V.vram_fit("mistralai/Ministral-3-3B-Instruct-2512", 8192)["verdict"] != "too_large"
+
+
+def test_an_explicit_fp8_name_is_not_charged_fp16_rates():
+    est = V.estimate_weights_gb("someorg/model-8b-fp8")
+    assert est["weights_gb_low"] == est["weights_gb_high"] == 8.0
+    assert "FP8" in est["method"]
 
 
 def test_a_quantised_variant_of_the_same_family_fits():

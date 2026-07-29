@@ -18297,6 +18297,7 @@
     }
 
     async function loadVllmStatusPanel() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("vllm-status-box");
       const installBox = $("vllm-install-box");
       if (!box) return;
