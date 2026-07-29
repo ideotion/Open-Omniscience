@@ -142,11 +142,22 @@ class DomainResult:
     new: int = 0
     duplicate: int = 0
     conflict: int = 0
+    # Rows the incoming corpus carried that this merge DELIBERATELY did not copy,
+    # with the reason. Distinct from every other field here: new/duplicate/conflict
+    # describe what the merge DID, `deferred` describes what it chose not to do and
+    # who does it instead. Emitted only when set, so every existing report shape is
+    # byte-unchanged (the same additive convention as `samples`/`conflicts`).
+    deferred: int = 0
+    note: str = ""
     samples: list[str] = field(default_factory=list)
     conflicts: list[dict] = field(default_factory=list)
 
     def as_dict(self) -> dict:
         d: dict = {"new": self.new, "duplicate": self.duplicate, "conflict": self.conflict}
+        if self.deferred:
+            d["deferred"] = self.deferred
+        if self.note:
+            d["note"] = self.note
         if self.samples:
             d["samples"] = self.samples
         if self.conflicts:
@@ -691,49 +702,47 @@ def _merge_article_keyword_links(con, batch_id, results) -> None:
 
 
 def _merge_keyword_mentions(con, batch_id, results) -> None:
+    """DELIBERATELY DOES NOT COPY the incoming mentions (maintainer ruling 2026-07-29,
+    option (a)) -- the post-swap re-index PRODUCES them from the article text instead.
+
+    Ruling 2 asked that articles not yet re-indexed stay out of analytics. Its premise
+    was refuted: this step used to copy the incoming corpus's mentions straight in, so a
+    merged article was ALREADY fully in analytics before any re-index -- the re-index was
+    a refresh, not an admission gate. The chosen fix is structural rather than a flag:
+    with the derived rows never copied, "not yet re-indexed" simply MEANS "has no
+    mentions", which every analytics path already honours by construction (no gate, no
+    per-article flag, no join added to the fifteen mention-aggregating paths, and none of
+    the documented SQLCipher codec trap that join would have walked into).
+
+    Three things fall out of it, all wanted:
+      * the merge stops writing the largest table in the artifact (~10M rows for a
+        50k-article backup), which is the single biggest write in a large import;
+      * the re-index stops delete-then-reinserting rows it was about to replace anyway;
+      * the keyword-counter drift is fixed BY CONSTRUCTION -- counters could never absorb
+        a merged corpus (the INSERT omitted the counter columns under a NOT EXISTS that
+        never updated), and the re-index then read `old_contrib` from the live rows, which
+        after a merge WERE the imported rows, so it subtracted a contribution never added.
+
+    THE COST, stated honestly and guarded: an imported article now has NO keywords rather
+    than STALE keywords until the re-index reaches it. That trades a bounded staleness for
+    an UNBOUNDED invisibility if the re-index can be lost, which is why the batch carries a
+    durable re-index state (see ``mark_reindex_complete`` / ``pending_reindex_batches``) and
+    the backlog is surfaced rather than forgotten.
+
+    The count of what was NOT copied is reported, so the deferral is quantified in the
+    restore report rather than merely asserted -- a domain silently reporting 0/0/0 would
+    be indistinguishable from an empty artifact.
+    """
     r = DomainResult()
-    r.duplicate = _count(
-        con,
-        "SELECT COUNT(*) FROM inc.keyword_mentions i"
-        " JOIN temp.map_articles ma ON ma.old = i.article_id"
-        " JOIN temp.map_keywords mk ON mk.old = i.keyword_id"
-        " JOIN keyword_mentions t ON t.article_id = ma.new AND t.keyword_id = mk.new"
-        " WHERE t.count = i.count",
-    )
-    r.conflict = _count(
-        con,
-        "SELECT COUNT(*) FROM inc.keyword_mentions i"
-        " JOIN temp.map_articles ma ON ma.old = i.article_id"
-        " JOIN temp.map_keywords mk ON mk.old = i.keyword_id"
-        " JOIN keyword_mentions t ON t.article_id = ma.new AND t.keyword_id = mk.new"
-        " WHERE t.count <> i.count",
-    )
-    # INSERT OR IGNORE (field bug 2026-07-16: an 18 GB restore failed after hours of
-    # merging with "UNIQUE constraint failed: keyword_mentions.keyword_id,
-    # keyword_mentions.article_id"). Root cause is the same collapsing-map hazard as
-    # _merge_article_keyword_links above: `keywords` carries no unique constraint on
-    # (normalized_term, language) by design, so a large/old corpus can genuinely contain
-    # two keyword rows for the same term+language (a known historical gap this project's
-    # own family/ring reconciliation layer exists to paper over, never to delete). When
-    # such a corpus is the SOURCE of a restore, `map_keywords` collapses both incoming ids
-    # onto the one local keyword, and if both had a mention on the same article the two
-    # candidate rows target the identical (keyword_id, article_id) pair -- the real unique
-    # index (ix_mention_keyword_article) then aborts the whole restore on the second one,
-    # since the NOT EXISTS guard only sees the target table's pre-statement state, not a
-    # sibling candidate row inserted moments earlier by this SAME statement. Reproduced
-    # directly against sqlite3 (not mocked) before this fix; confirmed to raise the exact
-    # field error without OR IGNORE.
-    r.new = _insert_tracked(
-        con, batch_id, "keyword_mentions",
-        "INSERT OR IGNORE INTO keyword_mentions (keyword_id, article_id, count, first_offset,"
-        " observed_on, country, city, extractor, created_at)"
-        " SELECT mk.new, ma.new, i.count, i.first_offset, i.observed_on, i.country,"
-        " i.city, i.extractor, i.created_at"
-        " FROM inc.keyword_mentions i"
-        " JOIN temp.map_articles ma ON ma.old = i.article_id"
-        " JOIN temp.map_keywords mk ON mk.old = i.keyword_id"
-        " WHERE NOT EXISTS (SELECT 1 FROM keyword_mentions t"
-        "  WHERE t.article_id = ma.new AND t.keyword_id = mk.new)",
+    # One bare table count (no join): the previous three heavy join queries + the 10M-row
+    # INSERT are exactly what this step no longer does, so paying for them to describe the
+    # skip would defeat its purpose.
+    r.deferred = _count(con, "SELECT COUNT(*) FROM inc.keyword_mentions")
+    r.note = (
+        "not copied by design: the post-swap re-index recomputes these from the article "
+        "text with the CURRENT extraction engine (maintainer ruling 2026-07-29). Until it "
+        "reaches an article, that article has no keywords and is absent from keyword "
+        "analytics -- see the restore report's reindex section for the backlog."
     )
     results["keyword_mentions"] = r
 
@@ -1702,6 +1711,130 @@ def _corpus_snapshot(session) -> dict:
     }
 
 
+# --------------------------------------------------------------------------- #
+#  Durable re-index state (the guard the 2026-07-29 option-(a) ruling requires)
+# --------------------------------------------------------------------------- #
+# Since the merge no longer copies the incoming keyword_mentions, an imported article
+# carries NO keywords until the re-index reaches it. That is only safe if the work can
+# never be silently lost, so it is tracked in TWO places with different jobs:
+#
+#   * merge_batches.status -- DURABLE, in the corpus itself, survives anything the
+#     corpus survives. 'merged' means the rows landed but the re-index is not confirmed
+#     finished; 'reindexed' means it is. This is the source of truth for "is there a
+#     backlog", and it is what makes the work impossible to forget.
+#   * a small marker file -- the WATERMARK, for resuming mid-batch without redoing work.
+#     Its loss costs time, never correctness: the re-index is idempotent (it
+#     delete-then-reinserts), so a lost watermark just redoes a batch already known to be
+#     pending from the DB. It is deliberately NOT the source of truth.
+#
+# The asymmetry is the point: the cheap, losable thing is the optimisation, and the
+# durable thing is the guarantee.
+_REINDEX_STATE_FILE = "reindex_backlog.json"
+
+_STATUS_MERGED = "merged"
+_STATUS_REINDEXED = "reindexed"
+
+
+def _reindex_state_path() -> Path:
+    return data_dir() / _REINDEX_STATE_FILE
+
+
+def _save_reindex_cursor(batch_id: int, *, last_id: int, done: int, total: int) -> None:
+    """Best-effort watermark write. Never raises: a resilience sidecar that can itself
+    break the operation it exists to protect is worse than no sidecar (the project's
+    recorded crash-journal lesson)."""
+    try:
+        path = _reindex_state_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(
+            json.dumps(
+                {"batch_id": batch_id, "last_id": last_id, "done": done, "total": total},
+                sort_keys=True,
+            ),
+            encoding="utf-8",
+        )
+        os.replace(tmp, path)  # atomic: a torn read can never yield a bogus watermark
+    except Exception:  # noqa: BLE001 - the watermark is an optimisation, never a guarantee
+        _LOG.debug("could not persist the re-index watermark", exc_info=True)
+
+
+def _load_reindex_cursor(batch_id: int) -> int | None:
+    """The last completed article id for THIS batch, or None. A cursor belonging to a
+    different batch is ignored rather than trusted -- resuming batch B from batch A's
+    watermark would skip real work and leave articles permanently keyword-less."""
+    try:
+        raw = json.loads(_reindex_state_path().read_text(encoding="utf-8"))
+        if int(raw.get("batch_id", -1)) != int(batch_id):
+            return None
+        last = raw.get("last_id")
+        return int(last) if last is not None else None
+    except Exception:  # noqa: BLE001 - absent/torn/foreign cursor => start from the top
+        return None
+
+
+def clear_reindex_cursor() -> None:
+    try:
+        _reindex_state_path().unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        _LOG.debug("could not clear the re-index watermark", exc_info=True)
+
+
+def mark_reindex_complete(batch_id: int) -> None:
+    """Record that ``batch_id``'s imported articles are fully re-indexed.
+
+    Called ONLY when the re-index actually finished the batch. A partially-completed
+    re-index deliberately leaves the batch 'merged', so the backlog survives a crash,
+    a cancel, or a power loss -- that is the whole guarantee.
+    """
+    from sqlalchemy import text
+
+    from src.database.session import session_scope
+
+    try:
+        with session_scope() as session:
+            session.execute(
+                text("UPDATE merge_batches SET status = :s WHERE id = :b"),
+                {"s": _STATUS_REINDEXED, "b": int(batch_id)},
+            )
+        clear_reindex_cursor()
+    except Exception:  # noqa: BLE001 - never undo a committed, additive restore
+        _LOG.warning("could not stamp batch %s as re-indexed", batch_id, exc_info=True)
+
+
+def pending_reindex_batches() -> list[dict]:
+    """Imports whose articles are merged but not confirmed re-indexed.
+
+    This is what a boot check reads to surface the backlog. Each entry carries the real
+    article count from ``merged_rows``, so the number shown is measured, never estimated.
+    Degrades to [] on any read failure -- a diagnostic that cannot read must not claim
+    "nothing pending", so callers report the degrade rather than the emptiness.
+    """
+    from sqlalchemy import text
+
+    from src.database.session import session_scope
+
+    try:
+        with session_scope() as session:
+            rows = session.execute(
+                text(
+                    "SELECT b.id, b.created_at, COUNT(m.row_id) AS n"
+                    " FROM merge_batches b"
+                    " LEFT JOIN merged_rows m"
+                    "   ON m.batch_id = b.id AND m.table_name = 'articles'"
+                    " WHERE b.status = :s"
+                    " GROUP BY b.id, b.created_at"
+                    " HAVING COUNT(m.row_id) > 0"
+                    " ORDER BY b.id"
+                ),
+                {"s": _STATUS_MERGED},
+            ).fetchall()
+        return [{"batch_id": int(r[0]), "created_at": r[1], "articles": int(r[2])} for r in rows]
+    except Exception:  # noqa: BLE001
+        _LOG.warning("could not read the re-index backlog", exc_info=True)
+        return []
+
+
 def reindex_imported_articles(
     batch_id: int,
     *,
@@ -1745,18 +1878,54 @@ def reindex_imported_articles(
             ),
             {"b": batch_id},
         ).fetchall()
-        ids = [int(r[0]) for r in rows]
-        if not ids:
+        all_ids = sorted(int(r[0]) for r in rows)
+        if not all_ids:
+            mark_reindex_complete(batch_id)
             return {"reindexed": 0, "failed": 0}
-        return reindex_articles(
+
+        # RESUME. Ascending order + a last-completed watermark is an exact cursor: every
+        # id at or below it is already re-indexed. A missing/foreign watermark simply
+        # starts from the top -- correct, only slower (the re-index is idempotent).
+        resume_after = _load_reindex_cursor(batch_id)
+        ids = [i for i in all_ids if i > resume_after] if resume_after is not None else all_ids
+        already = len(all_ids) - len(ids)
+        if not ids:
+            mark_reindex_complete(batch_id)
+            out: dict = {"reindexed": 0, "failed": 0}
+            if already:
+                out["resumed_already_done"] = already
+            return out
+
+        total = len(ids)
+
+        def _tracked(done: int, _total: int) -> None:
+            # Persist the watermark as the re-index advances, so a crash resumes here
+            # rather than redoing the batch. `done` counts FINALISED articles in list
+            # order, so ids[done-1] is the last one that completed.
+            if 0 < done <= total:
+                _save_reindex_cursor(
+                    batch_id, last_id=ids[done - 1], done=already + done, total=len(all_ids)
+                )
+            if progress_cb is not None:
+                progress_cb(already + done, len(all_ids))
+
+        result = reindex_articles(
             session,
             extractor=get_extractor("baseline"),
             article_ids=ids,
             commit_batch=commit_batch,
             workers=workers,
-            progress_cb=progress_cb,
+            progress_cb=_tracked,
             stats=stats,
         )
+        # Only a batch that reached the end is stamped done. Anything short of that
+        # deliberately stays 'merged', so the backlog survives the interruption -- the
+        # whole point of not merging the derived rows in the first place.
+        if int(result.get("reindexed", 0)) + int(result.get("failed", 0)) >= total:
+            mark_reindex_complete(batch_id)
+        if already:
+            result["resumed_already_done"] = already
+        return result
 
 
 def import_cache_mb() -> int:
@@ -2176,6 +2345,16 @@ def run_restore(
         # re-index is free. Best-effort + timed, exactly like the reconcile of
         # Source.article_count a few stages above -- which exists for this same class of
         # stale-but-non-NULL counter ("a wrong count shown as exact").
+        #
+        # SINCE THE 2026-07-29 OPTION-(a) RULING this is INSURANCE, not the load-bearing
+        # repair: half (1) above cannot arise any more, because the merge no longer copies
+        # the mention rows at all and the re-index is what creates them (with correct
+        # counter deltas). It is deliberately KEPT because it still repairs drift already
+        # sitting in corpora imported BEFORE that ruling -- real, on this maintainer's own
+        # store -- and because a reconcile that runs only sometimes is the kind of
+        # conditional an operator cannot reason about. Its cost is a full GROUP BY over
+        # keyword_mentions, which is why it is a NAMED, TIMED stage: the real number shows
+        # up in report["timings"] on the operator's hardware rather than being guessed at.
         with timings.stage("keyword_counter_reconcile"):
             try:
                 from src.analytics.store import backfill_keyword_counters

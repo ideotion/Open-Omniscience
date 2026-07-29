@@ -1349,7 +1349,15 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   staleness is traded for an unbounded invisibility. Options (b) keep merging + DECLINE the
   exclusion, disclosing pending refreshes from `merged_rows` (the skeptic's own recommendation, on
   cross-time-recall grounds) and (c) the per-article flag as framed (NOT recommended) are recorded
-  in the brief. **PENDING the maintainer's (a)/(b)/(c) choice.**
+  in the brief. **RULED 2026-07-29 (maintainer chose (a)): DO NOT MERGE THE DERIVED ROWS — the
+  re-index PRODUCES them.** So the merge stops copying the incoming corpus's `keyword_mentions`
+  (localised to the merge step tuple, `merge.py:315-330`), "not yet re-indexed" means "has no
+  mentions" — which every analytics path already honours STRUCTURALLY, no flag/gate/join/15-path
+  sweep — and the counter-drift bug is fixed by construction. THE MANDATORY GUARD travels with the
+  ruling: a DURABLE per-article re-index CURSOR (resume exactly where it left off; surface its
+  backlog at boot), because option (a) trades a bounded staleness for an UNBOUNDED invisibility if
+  the re-index can be lost. Ruling 2's original per-article-flag framing is formally superseded (its
+  premise was refuted — merged articles were already in analytics), and (b)/(c) are closed.
   **⚠ A PROBABLE REAL BUG FOUND WHILE ATTACKING IT (read-verified, NOT reproduced — reproducer
   FIRST, per the standing rule):** keyword counters never absorb a merged corpus. `_merge_keywords`'
   INSERT column list omits `mention_count`/`article_count` so new keywords land at 0 and existing

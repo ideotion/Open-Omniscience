@@ -108,12 +108,24 @@ def test_incoming_corpus_with_duplicate_keyword_rows_sharing_a_mention_does_not_
     counts, _batch = merge_corpus(staged, working, _BATCH_META)
 
     assert counts["keywords"]["new"] == 1  # both incoming rows collapse to one local keyword
-    # Exactly one mention/link row per table survives -- OR IGNORE dropped the collision,
-    # it did not abort the whole restore and it did not double-insert either.
-    assert _counts(working, "keyword_mentions") == 1
+    # article_keywords is STILL merged, so its collapse hazard is still live and still
+    # guarded: exactly one row survives -- OR IGNORE dropped the collision, it neither
+    # aborted the restore nor double-inserted.
     assert _counts(working, "article_keywords") == 1
-    assert counts["keyword_mentions"]["new"] == 1
     assert counts["article_keyword_links"]["new"] == 1
+
+    # keyword_mentions is NO LONGER COPIED (maintainer ruling 2026-07-29, option (a)):
+    # the post-swap re-index recomputes it from the article text. So this table's
+    # collision cannot arise at all any more -- structurally, not by a guard. The
+    # deferral must be REPORTED, though: a domain reporting a bare 0/0/0 would be
+    # indistinguishable from an empty artifact, which is the thing this project's
+    # honesty rules exist to prevent.
+    assert _counts(working, "keyword_mentions") == 0
+    assert counts["keyword_mentions"]["new"] == 0
+    assert counts["keyword_mentions"]["deferred"] == 2, (
+        "both incoming mention rows must be counted as deliberately not copied"
+    )
+    assert "re-index" in counts["keyword_mentions"]["note"]
 
 
 def test_target_already_has_a_mention_and_incoming_duplicate_still_does_not_abort(tmp_path):
@@ -147,5 +159,14 @@ def test_target_already_has_a_mention_and_incoming_duplicate_still_does_not_abor
 
     counts, _batch = merge_corpus(staged, working, _BATCH_META)
 
-    assert _counts(working, "keyword_mentions") == 1  # the local row is kept; nothing added or lost
+    # The local row is kept, nothing added or lost. NOTE the reason changed with the
+    # 2026-07-29 option-(a) ruling: this used to pass because the NOT EXISTS guard saw the
+    # local row, and now passes because incoming mentions are never copied at all. Asserted
+    # explicitly so the test cannot go on passing VACUOUSLY -- "nothing was added" is
+    # trivially true when nothing is ever added, and a test that no longer knows why it
+    # passes is not a guard.
+    assert _counts(working, "keyword_mentions") == 1
     assert counts["keyword_mentions"]["new"] == 0
+    assert counts["keyword_mentions"]["deferred"] == 2, (
+        "the two incoming rows were deferred to the re-index, not silently discarded"
+    )
