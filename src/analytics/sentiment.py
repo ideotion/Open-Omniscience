@@ -22,6 +22,8 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from src.analytics.managed import normalize_lang
+
 # VADER thresholds (the library's documented convention).
 _POS, _NEG = 0.05, -0.05
 
@@ -51,8 +53,17 @@ def score_article(text: str | None, language: str | None) -> tuple[float | None,
     Returns ``(None, None)`` for any non-English / unknown language or empty text —
     never a fabricated neutral. The score is the VADER compound, rounded; the label
     is positive / negative / neutral by the standard thresholds.
+
+    English is matched on the NORMALISED code (2026-07-29): ``Article.language`` is
+    stored raw from trafilatura's ``<html lang>`` read, so a major outlet arrives as
+    ``en-US``/``en-GB`` and a bare ``!= "en"`` silently refused to score genuinely
+    English coverage. Refusing to measure English is not the conservative direction of
+    this gate — it destroys a real measurement as surely as scoring French would
+    fabricate one. Kept deliberately IN STEP with ``src/awareness/framing.py``'s
+    ``_scorable``: the two publish the same quantity (the framing table falls back from
+    one to the other), so they must agree on what is measurable.
     """
-    if (language or "").strip().lower() != "en":
+    if normalize_lang(language) != "en":
         return None, None
     body = (text or "").strip()
     if not body:

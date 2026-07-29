@@ -2237,5 +2237,6 @@
   "reset": "zurücksetzen",
   "floor": "Untergrenze",
   "Sources per region against each region's floor.": "Quellen pro Region, verglichen mit der Untergrenze der jeweiligen Region.",
-  "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "Balken = gesammelte Quellen; die senkrechte Markierung ist die Untergrenze der Region. Nur Zählungen, keine Bewertung."
+  "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "Balken = gesammelte Quellen; die senkrechte Markierung ist die Untergrenze der Region. Nur Zählungen, keine Bewertung.",
+  "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.": "VADER ist ein englisches Lexikon: Der Ton wird nur für englischsprachige Berichterstattung gemessen. Kein Ton bedeutet hier ungemessen — nicht neutral."
 }

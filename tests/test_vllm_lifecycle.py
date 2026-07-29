@@ -10,7 +10,9 @@ in a sandbox with no GPU either).
 from __future__ import annotations
 
 import io
+import json
 import os
+import time
 from pathlib import Path
 
 import pytest
@@ -290,7 +292,7 @@ def test_install_job_writes_the_marker_only_on_a_successful_exit(monkeypatch):
     # Pretend the venv (with its pip) already exists -- skip the `python -m venv` phase.
     _fake_venv()
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         yield "Collecting vllm==0.25.1"
         yield "Successfully installed vllm-0.25.1"
         yield "__exit__ 0"
@@ -308,7 +310,7 @@ def test_install_job_never_writes_a_marker_on_a_failed_exit(monkeypatch):
     _allow_install(monkeypatch)
     _fake_venv()
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         yield "ERROR: could not find a version that satisfies the requirement"
         yield "__exit__ 1"
 
@@ -321,7 +323,7 @@ def test_install_job_creates_the_venv_first_when_absent(monkeypatch):
     _allow_install(monkeypatch)
     seen_argvs = []
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         seen_argvs.append(argv)
         if "venv" in argv:
             # Simulate venv creation actually producing a python binary, so the
@@ -343,7 +345,7 @@ def test_install_job_creates_the_venv_first_when_absent(monkeypatch):
 def test_install_job_honours_a_cancel_between_venv_and_pip(monkeypatch):
     _allow_install(monkeypatch)
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         yield "creating venv"
         yield "__exit__ 0"
 
@@ -410,7 +412,7 @@ def test_install_points_pip_tmpdir_at_the_install_volume_not_the_ambient_tmpdir(
     _fake_venv()
     envs = []
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         envs.append(env)
         yield "__exit__ 0"
 
@@ -434,7 +436,7 @@ def test_the_pip_unpack_dir_exists_during_the_run_and_is_cleaned_up_on_success(m
     _fake_venv()
     existed = []
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         existed.append(Path(env["TMPDIR"]).is_dir())
         yield "__exit__ 0"
 
@@ -448,7 +450,7 @@ def test_the_pip_unpack_dir_is_cleaned_up_even_when_pip_fails(monkeypatch):
     _fake_venv()
     existed = []
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         existed.append(Path(env["TMPDIR"]).is_dir())
         yield "__exit__ 1"
 
@@ -462,7 +464,7 @@ def test_the_pip_unpack_dir_is_cleaned_up_on_cancel(monkeypatch):
     """The finally covers the early cancel RETURN, not only the raise."""
     _allow_install(monkeypatch)
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         yield "creating venv"
         yield "__exit__ 0"
 
@@ -478,7 +480,7 @@ def test_a_disk_full_preflight_refuses_before_any_subprocess_runs(monkeypatch):
     _allow_install(monkeypatch, free=2 * 1024**3)
     calls = []
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         calls.append(argv)
         yield "__exit__ 0"
 
@@ -499,7 +501,7 @@ def test_acknowledging_low_resources_never_overrides_a_disk_refusal(monkeypatch)
     _allow_install(monkeypatch, free=2 * 1024**3)
     calls = []
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         calls.append(argv)
         yield "__exit__ 0"
 
@@ -529,7 +531,7 @@ def test_low_ram_refuses_without_acknowledgement_then_proceeds_with_it(monkeypat
     _fake_venv()
     calls = []
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         calls.append(argv)
         yield "__exit__ 0"
 
@@ -566,7 +568,7 @@ def test_an_unmeasurable_preflight_never_blocks_the_install(monkeypatch):
     monkeypatch.setattr(V, "_filesystem_type_of", lambda p: None)
     _fake_venv()
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         yield "__exit__ 0"
 
     assert V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)["installed"] is True
@@ -633,7 +635,7 @@ def test_a_runner_that_never_reports_an_exit_status_is_not_recorded_as_installed
     _allow_install(monkeypatch)
     _fake_venv()
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         yield "Collecting vllm"
 
     with pytest.raises(V.VllmLifecycleError, match="no exit status"):
@@ -645,7 +647,7 @@ def test_a_disk_full_pip_failure_is_classified_not_reported_as_a_bare_exit_code(
     _allow_install(monkeypatch)
     _fake_venv()
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         yield "ERROR: Could not install packages due to an OSError:"
         yield "[Errno 28] No space left on device"
         yield "__exit__ 1"
@@ -660,7 +662,7 @@ def test_a_venv_without_pip_is_an_actionable_refusal_not_a_raw_filenotfound(monk
     _allow_install(monkeypatch)
     _fake_venv(with_pip=False)
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         yield "__exit__ 0"
 
     with pytest.raises(V.VllmLifecycleError, match="has no pip"):
@@ -676,7 +678,7 @@ def test_a_failed_install_records_an_attempt_with_the_real_exit_code(monkeypatch
     _allow_install(monkeypatch)
     _fake_venv()
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         yield "Collecting vllm==0.26.0"
         yield "ERROR: [Errno 28] No space left on device"
         yield "__exit__ 2"
@@ -704,7 +706,7 @@ def test_a_successful_install_records_the_attempt_and_writes_the_marker(monkeypa
     _allow_install(monkeypatch)
     _fake_venv()
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         yield "Successfully installed vllm-0.26.0"
         yield "__exit__ 0"
 
@@ -729,7 +731,7 @@ def test_a_journal_write_failure_never_breaks_the_install(monkeypatch):
 
     monkeypatch.setattr(V, "_history_path", _boom)
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         yield "Successfully installed vllm-0.26.0"
         yield "__exit__ 0"
 
@@ -761,7 +763,7 @@ def test_the_journal_discloses_its_own_bound(monkeypatch):
     _allow_install(monkeypatch)
     _fake_venv()
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         yield from (f"pip output line {i}" for i in range(500))
         yield "__exit__ 1"
 
@@ -788,7 +790,7 @@ def test_a_cancelled_install_is_recorded_as_cancelled_not_absent(monkeypatch):
     attempted'. A cancellation is a real event with its own outcome."""
     _allow_install(monkeypatch)
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         yield "creating venv"
         yield "__exit__ 0"
 
@@ -805,7 +807,7 @@ def test_credentials_in_captured_output_are_redacted(monkeypatch):
     _allow_install(monkeypatch)
     _fake_venv()
 
-    def fake_runner(argv, env=None):
+    def fake_runner(argv, env=None, should_stop=None):
         yield "Looking in indexes: https://alice:hunter2@pypi.internal/simple"
         yield "__exit__ 1"
 
@@ -861,3 +863,245 @@ def test_no_banned_metric_key_substrings_in_the_status_payload(monkeypatch):
         return bad
 
     assert walk(V.status()) == []
+
+
+# --------------------------------------------------------------------------- #
+# Skeptic findings, 2026-07-29
+# --------------------------------------------------------------------------- #
+def test_cancel_kills_a_SILENT_child_instead_of_waiting_for_it(monkeypatch, tmp_path):
+    """The load-bearing cancel test: it drives the REAL ``_default_runner`` against a
+    REAL subprocess that goes SILENT, which is pip's actual shape while a multi-GB
+    wheel downloads (no live progress on a non-TTY).
+
+    The pre-existing tests all inject a generator that yields lines instantly, so the
+    per-line ``ctx.stopping`` check always ran and the wedge was invisible: the worker
+    blocked in ``for line in proc.stdout`` and the child kept downloading for as long
+    as it liked, while the job stayed "running" and the endpoint refused every retry.
+    Since the job advertises ``cancellable=True``, that was Cancel theater."""
+    child = "import time,sys; print('Collecting vllm', flush=True); time.sleep(60)"
+    real_popen = V.subprocess.Popen
+    spawned = []
+
+    def _popen(argv, **kw):
+        kw.pop("env", None)
+        p = real_popen([V.sys.executable, "-c", child], **kw)
+        spawned.append(p)
+        return p
+
+    monkeypatch.setattr(V.subprocess, "Popen", _popen)
+
+    stop = {"now": False}
+    seen = []
+    gen = V._default_runner(["pip", "install", "vllm"], env=None, should_stop=lambda: stop["now"])
+    t0 = time.time()
+    for line in gen:
+        seen.append(line)
+        if len(seen) >= 2:  # one real line, then at least one idle heartbeat
+            stop["now"] = True
+    elapsed = time.time() - t0
+
+    assert V._HEARTBEAT in seen, (
+        "an idle child must still wake the caller, or ctx.stopping is never re-read")
+    assert elapsed < 30, f"cancel must not wait out the child ({elapsed:.1f}s of a 60s sleep)"
+    assert spawned and spawned[0].poll() is not None, "the child must be KILLED, not left running"
+    assert not any(s.startswith("__exit__") for s in seen), (
+        "a cancelled run must not report an exit status it never legitimately observed")
+
+
+def test_a_heartbeat_is_never_recorded_as_pip_output(monkeypatch):
+    """The heartbeat is OUR sentinel, not something pip said. If it reached the
+    journal or the progress line it would be a fabricated log entry."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+    monkeypatch.setattr(V, "_package_present", lambda venv, name: True)
+
+    def fake_runner(argv, env=None, should_stop=None):
+        yield V._HEARTBEAT
+        yield "Collecting vllm"
+        yield V._HEARTBEAT
+        yield "__exit__ 0"
+
+    ctx = FakeCtx()
+    assert V.run_install_job(ctx, version="0.26.0", runner=fake_runner)["installed"] is True
+    assert V._HEARTBEAT not in " ".join(ctx.details)
+    rec = V.install_history()[-1]
+    assert V._HEARTBEAT not in rec["output_tail"]
+    assert rec["output_lines_total"] == 1, "only the real pip line counts as output"
+
+
+def test_a_venv_with_python_but_no_pip_is_REPAIRED_not_blamed_on_the_system(monkeypatch):
+    """`python -m venv` writes bin/python well before ensurepip finishes, so a cancel
+    or crash in that window leaves python-without-pip. Keying only on venv_python()
+    then skipped repair FOREVER and raised a message blaming a missing system package
+    -- self-perpetuating, and misleading about a state the previous attempt created."""
+    _allow_install(monkeypatch)
+    _fake_venv(with_pip=False)  # the interrupted-venv state
+    monkeypatch.setattr(V, "_package_present", lambda venv, name: True)
+    calls = []
+
+    def fake_runner(argv, env=None, should_stop=None):
+        calls.append(argv)
+        if "venv" in argv:
+            V.venv_bin("pip").write_text("#!/bin/sh\n", encoding="utf-8")  # ensurepip finishes
+        yield "__exit__ 0"
+
+    assert V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)["installed"] is True
+    assert any("venv" in a for a in calls), "the incomplete venv must be re-created, not skipped"
+
+
+def test_pip_exiting_zero_without_installing_vllm_never_writes_the_marker(monkeypatch):
+    """pip exiting 0 is evidence about PIP, not about this venv: PIP_TARGET /
+    PIP_PREFIX / PIP_USER in the inherited environment all redirect the install and
+    still exit 0. The marker claims vLLM is installed HERE, so it needs a measured
+    absence to be refused -- and an UNRECOGNISED layout must not fabricate one."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+
+    def fake_runner(argv, env=None, should_stop=None):
+        yield "__exit__ 0"
+
+    monkeypatch.setattr(V, "_package_present", lambda venv, name: False)  # measured absence
+    with pytest.raises(V.VllmLifecycleError, match="not present"):
+        V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)
+    assert V.is_installed() is False, "a redirected install must leave NO marker"
+
+    monkeypatch.setattr(V, "_package_present", lambda venv, name: None)  # unknown layout
+    assert V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)["installed"] is True
+
+
+def test_package_present_is_tristate_over_a_real_directory_tree(tmp_path):
+    venv = tmp_path / "v"
+    assert V._package_present(venv, "vllm") is None, "no site-packages -> unknown, never False"
+    sp = venv / "lib" / "python3.13" / "site-packages"
+    sp.mkdir(parents=True)
+    assert V._package_present(venv, "vllm") is False, "a readable, empty site-packages -> absent"
+    (sp / "vllm").mkdir()
+    assert V._package_present(venv, "vllm") is True
+    (venv / "lib" / "python3.13" / "site-packages" / "vllm").rmdir()
+    (sp / "vllm-0.26.0.dist-info").mkdir()
+    assert V._package_present(venv, "vllm") is True, "a dist-info alone is still evidence"
+
+
+def test_the_pip_unpack_dir_is_swept_before_use_not_only_after(monkeypatch):
+    """The ``finally`` cleanup does not run when the process is KILLED -- SIGKILL, OOM,
+    or the app's own SIGTERM shutdown (the worker sits on a daemon thread, abandoned at
+    interpreter exit). Up to ~10 GB then persists, because this area moved from the
+    ambient /tmp (which the OS clears) onto real disk beside the venv (which nothing
+    clears). Sweeping at the START reclaims that residue and stops pip unpacking into a
+    stale tree."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+    monkeypatch.setattr(V, "_package_present", lambda venv, name: True)
+    residue = V.pip_tmpdir()
+    residue.mkdir(parents=True, exist_ok=True)
+    (residue / "half-unpacked-torch.whl").write_text("x" * 1024, encoding="utf-8")
+    seen = {}
+
+    def fake_runner(argv, env=None, should_stop=None):
+        seen["residue_at_run_time"] = (residue / "half-unpacked-torch.whl").exists()
+        yield "__exit__ 0"
+
+    V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)
+    assert seen["residue_at_run_time"] is False, "stale unpack residue must be gone BEFORE pip runs"
+
+
+def test_a_torn_marker_does_not_read_as_installed(monkeypatch):
+    """`is_installed()` tested file EXISTENCE only, so a truncated marker made the app
+    report vLLM installed while `install_info()` returned None. "Installed" is a claim;
+    an unreadable record cannot support it."""
+    _fake_venv()
+    V._marker_path().write_text("", encoding="utf-8")  # a torn write
+    assert V.install_info() is None
+    assert V.is_installed() is False
+
+
+def test_the_journal_trim_is_atomic(monkeypatch):
+    """The append degrades safely by design (a torn tail is one skipped line), but the
+    TRIM truncates the file first -- a crash in that window destroyed the WHOLE
+    history, which is the one thing a crash journal must not do to itself."""
+    for i in range(V._ATTEMPTS_CAP + 3):
+        V.record_install_attempt(version=f"0.{i}", phase="pip", outcome="error", error="boom")
+    assert len(V.install_history()) == V._ATTEMPTS_CAP
+
+    calls = []
+    real_replace = os.replace
+
+    def _boom(src, dst):
+        calls.append((src, dst))
+        raise OSError(28, "No space left on device")
+
+    monkeypatch.setattr(V.os, "replace", _boom)
+    V.record_install_attempt(version="9.9", phase="pip", outcome="error", error="boom")
+    monkeypatch.setattr(V.os, "replace", real_replace)
+    assert calls, "the trim must go through os.replace, not a truncating write"
+    # The prior history survived the failed trim, and the temp is not orphaned.
+    assert len(V.install_history()) >= V._ATTEMPTS_CAP
+    assert not list(V._history_path().parent.glob("*.tmp")), "a failed swap must clean its temp"
+
+
+def test_the_preflight_states_how_much_of_it_is_a_measurement(monkeypatch):
+    """"We measured this machine and it is fine" and "this machine told us nothing"
+    produced IDENTICAL gate output. The gate is deliberately unchanged (an unmeasurable
+    preflight must never block), but the DISTINCTION is now stated."""
+    _allow_install(monkeypatch)
+    full = V.install_preflight()
+    assert full["checks_measured"] == full["checks_total"] == 3
+    assert full["fully_unmeasured"] is False
+
+    monkeypatch.setattr(V, "_total_ram_bytes", lambda: None)
+    monkeypatch.setattr(V, "_free_disk_bytes", lambda p: None)
+    monkeypatch.setattr(V, "_filesystem_type_of", lambda p: None)
+    blind = V.install_preflight()
+    assert blind["checks_measured"] == 0 and blind["fully_unmeasured"] is True
+    # ...and still never a fabricated refusal.
+    assert blind["blocking"] == [] and blind["requires_acknowledgement"] is False
+
+
+def test_the_ui_status_payload_is_bounded_but_the_bundle_gets_the_whole_journal():
+    """The journal is bounded by construction, but its worst case is REAL: 20
+    attempts x 50 lines x 400 chars measured ~414 KB, and status() rides the
+    Settings -> AI panel and the red-pill click -- on exactly the machine whose
+    installs keep failing, which is what fills it. The interactive payload is
+    trimmed; the diagnostics bundle still takes everything, because being
+    diagnosable after a restart is what the journal is FOR. Neither is silent."""
+    for i in range(V._ATTEMPTS_CAP + 3):
+        V.record_install_attempt(
+            version=f"0.{i}", phase="pip", outcome="error", error="boom",
+            output_tail=["x" * V._OUTPUT_LINE_CHARS] * V._OUTPUT_TAIL_LINES,
+            output_lines_total=99999,
+        )
+    full = V.install_history()
+    assert len(full) == V._ATTEMPTS_CAP
+
+    ui = V.status()
+    assert len(ui["install_history"]) == V._UI_HISTORY_LIMIT < V._ATTEMPTS_CAP
+    assert ui["install_history"] == full[-V._UI_HISTORY_LIMIT:], "keep the NEWEST attempts"
+    # the truncation is DISCLOSED, never inferred from a short list
+    b = ui["install_history_bounds"]
+    assert b["attempts_in_this_payload"] == V._UI_HISTORY_LIMIT
+    assert b["attempts_kept"] == V._ATTEMPTS_CAP
+    assert len(json.dumps(ui)) < len(json.dumps(V.status(history_limit=None)))
+
+    whole = V.status(history_limit=None)
+    assert whole["install_history"] == full
+    assert whole["install_history_bounds"]["attempts_in_this_payload"] == V._ATTEMPTS_CAP
+
+
+def test_the_diagnostics_member_takes_the_complete_journal():
+    """Source guard on the WIRING: trimming status() for the UI must not silently
+    trim the diagnostics bundle, whose whole purpose is the full record."""
+    src = (Path(__file__).resolve().parents[1] / "src" / "monitoring" / "ai_diagnostics.py")
+    assert "status(history_limit=None)" in src.read_text(encoding="utf-8")
+
+
+def test_a_refusal_message_never_reads_as_self_contradictory_at_the_floor(monkeypatch):
+    """Available space is truncated for display, not rounded to nearest: one byte
+    short of the floor used to render "Only 15.0 GB free -- needs at least 15.0 GB",
+    a refusal that reads as a bug. Truncating also never over-reports headroom."""
+    monkeypatch.setattr(V, "_free_disk_bytes", lambda p: V.INSTALL_DISK_FLOOR_BYTES - 1)
+    monkeypatch.setattr(V, "_total_ram_bytes", lambda: 32 * 1024**3)
+    monkeypatch.setattr(V, "_filesystem_type_of", lambda p: "ext4")
+    pre = V.install_preflight(gpu={"available": True})
+    assert pre["disk"]["sufficient"] is False
+    assert pre["disk"]["free_gb"] < pre["disk"]["floor_gb"], (
+        "the DISPLAYED free figure must stay below the displayed floor it is refused against")

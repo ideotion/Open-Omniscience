@@ -103,3 +103,7 @@ def test_empty_match_is_honest_and_uncapped():
     out = fr.framing(query="zzzznomatch", limit=10, db=s)
     assert out["analyzed_n"] == 0 and out["total_n"] == 0 and out["capped"] is False
     assert out["sources_compared"] == 0 and out["framing"] == []
+    # The tone-gap disclosure is in every OTHER branch of this handler, so it is in
+    # this one too. A field that vanishes on one path teaches consumers to `|| 0` it
+    # and stop noticing when it is genuinely absent.
+    assert out["tone_measured_articles"] == 0 and out["tone_unmeasured_articles"] == 0

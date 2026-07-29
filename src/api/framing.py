@@ -70,6 +70,11 @@ def framing(
                         "analyzed_n": 0,
                         "total_n": 0,
                         "capped": False,
+                        # Present in every OTHER branch, so present here too: a field
+                        # that appears in three shapes and vanishes in a fourth is how
+                        # a consumer learns to write `|| 0` and stop noticing gaps.
+                        "tone_measured_articles": 0,
+                        "tone_unmeasured_articles": 0,
                     }
                 total_n = len(ids)  # the FULL match count (ids is non-empty here)
                 articles = q.filter(Article.id.in_(ids)).limit(limit).all()

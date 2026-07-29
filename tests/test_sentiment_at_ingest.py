@@ -53,6 +53,26 @@ def test_score_article_is_english_only_and_signed():
 
 
 @_needs_vader
+def test_region_tagged_english_is_scored_and_matches_the_bare_code():
+    """``Article.language`` is stored RAW from trafilatura's ``<html lang>`` read, so
+    a major outlet arrives as ``en-US``/``en-GB``. A bare ``!= "en"`` refused to score
+    genuinely English coverage — a lost real measurement, not a conservative gap.
+
+    Kept deliberately in step with ``src/awareness/framing.py``'s ``_scorable``: the
+    framing table falls back from one of these to the other, so a disagreement about
+    what counts as English would surface as a tone number beside the wrong
+    denominator."""
+    body = "This is terrible, awful — a disaster and a tragedy."
+    bare = score_article(body, "en")
+    assert bare[0] is not None
+    for tag in ("en-US", "en_GB", "EN", "en-Latn-US"):
+        assert score_article(body, tag) == bare, f"{tag} is English and must score identically"
+    # ...and normalising the code is NOT a licence to read other languages.
+    for tag in ("fr-CA", "zh-Hans", "de"):
+        assert score_article(body, tag) == (None, None), f"{tag} must stay an honest gap"
+
+
+@_needs_vader
 def test_index_article_populates_sentiment_at_ingest():
     s = _sess()
     s.add(Source(name="Src", domain="s.test"))

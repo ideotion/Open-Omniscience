@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import platform
 import re
@@ -157,9 +158,15 @@ def pip_tmpdir() -> Path:
 
 
 def is_installed() -> bool:
-    """A cheap, file-existence-only check (no subprocess) -- the marker is written
-    ONLY after a verified successful ``pip install`` (see ``run_install_job``)."""
-    return _marker_path().is_file() and venv_python().is_file()
+    """A cheap check (no subprocess) -- the marker is written ONLY after a verified
+    successful ``pip install`` (see ``run_install_job``).
+
+    The marker must be READABLE, not merely present (2026-07-29): a torn write left
+    a zero-byte file that satisfied ``is_file()``, so the app reported vLLM installed
+    while ``install_info()`` returned None. "Installed" is a claim; an unreadable
+    record cannot support it. ``_write_marker`` is atomic, so this only matters for
+    a marker written by an older build."""
+    return _marker_path().is_file() and venv_python().is_file() and install_info() is not None
 
 
 def install_info() -> dict | None:
@@ -173,10 +180,30 @@ def install_info() -> dict | None:
         return None
 
 
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` via a sibling temp + ``os.replace``.
+
+    The project's standing convention for any file whose HALF-WRITTEN state would be
+    misread (``_atomic_copy`` / the manifest swap). Used here for the install marker
+    (a torn one used to read as "installed") and the journal trim (a torn one used to
+    destroy the whole history). The temp is cleaned if the replace itself fails, so a
+    validated temp is never orphaned."""
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        with tmp.open("w", encoding="utf-8") as fh:
+            fh.write(text)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def _write_marker(version: str) -> None:
     venv_dir().mkdir(parents=True, exist_ok=True)
-    _marker_path().write_text(
-        json.dumps({"version": version, "installed_at": time.time()}), encoding="utf-8"
+    _atomic_write_text(
+        _marker_path(), json.dumps({"version": version, "installed_at": time.time()})
     )
 
 
@@ -206,6 +233,18 @@ def _write_marker(version: str) -> None:
 #  stopped -- an incomplete history is never presented as complete.
 # --------------------------------------------------------------------------- #
 _ATTEMPTS_CAP = 20
+
+# How often an IDLE install subprocess wakes the caller so its cancel check can run.
+# pip is silent for the whole of a multi-GB wheel download, so without this a Cancel
+# click is not seen until the download ends (see _default_runner).
+_RUNNER_POLL_S = 0.5
+# How many attempts an INTERACTIVE status() carries. The full journal (bounded at
+# _ATTEMPTS_CAP) is ~414 KB at worst case and rides a panel the operator refreshes;
+# the diagnostics bundle asks for all of it explicitly.
+_UI_HISTORY_LIMIT = 3
+# Yielded while the child is silent. Consumed by run_install_job's stop check and
+# NEVER counted as output: it is our own heartbeat, not something pip said.
+_HEARTBEAT = "__tick__"
 
 # Set once if the journal ever fails to write: log + disable, never raise.
 _history_disabled = False
@@ -315,7 +354,12 @@ def record_install_attempt(
         # cheap -- unlike the 2000-line rolling error log, which amortises it.
         lines = path.read_text(encoding="utf-8").splitlines()
         if len(lines) > _ATTEMPTS_CAP:
-            path.write_text("\n".join(lines[-_ATTEMPTS_CAP:]) + "\n", encoding="utf-8")
+            # ATOMIC (2026-07-29): the APPEND above degrades safely by design (a torn
+            # tail is one unparseable line, which install_history skips), but a
+            # truncate-then-write TRIM has a window in which the file is EMPTY -- and a
+            # crash there destroys the whole history. That is the one thing a journal
+            # whose stated purpose is surviving a crash must not do to itself.
+            _atomic_write_text(path, "\n".join(lines[-_ATTEMPTS_CAP:]) + "\n")
     except Exception as exc:  # noqa: BLE001 - must NEVER break the install it records
         _history_disabled = True
         _history_disabled_reason = f"{type(exc).__name__}: {exc}"[:200]
@@ -587,12 +631,21 @@ def stop(*, timeout: float = 10.0) -> dict:
     return {"stopped": True}
 
 
-def status() -> dict:
+def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
     """A full status snapshot for the Settings -> AI tab and the diagnostics
     member (B7) -- installed/running/GPU/platform facts, never a fabricated
     readiness. ``platform`` is disclosed here (not just at install-attempt
     time) so a non-Linux machine sees "not supported here" BEFORE ever
     reaching for the install button.
+
+    ``history_limit`` bounds ``install_history`` for INTERACTIVE callers. The
+    journal is bounded by construction, but its worst case is real: 20 attempts x
+    50 lines x 400 chars measured 414 KB, and this payload is fetched by the
+    Settings -> AI panel and by the red-pill click -- on precisely the machine
+    whose installs keep failing, which is what fills it. The diagnostics member
+    passes ``None`` for the COMPLETE journal, because being diagnosable after a
+    restart is the whole point of V3. The truncation is never silent:
+    ``install_history_bounds`` states what was kept and the real total.
 
     ``preflight`` (V2) carries the MEASURED install cost -- free disk on the
     volume the venv lives on, total system RAM, whether the unpack area is
@@ -604,6 +657,7 @@ def status() -> dict:
     from src.llm.backend import detect_gpu
 
     gpu = detect_gpu()
+    hist = install_history()
     return {
         "installed": is_installed(),
         "install_info": install_info(),
@@ -619,8 +673,15 @@ def status() -> dict:
         # `gpu` is passed in so the preflight never spawns a SECOND nvidia-smi
         # probe for a status call that already paid for one.
         "preflight": install_preflight(gpu=gpu),
-        "install_history": install_history(),
-        "install_history_bounds": install_history_bounds(),
+        "install_history": (
+            hist if history_limit is None else hist[-history_limit:] if history_limit > 0 else []
+        ),
+        "install_history_bounds": {
+            **install_history_bounds(),
+            "attempts_in_this_payload": (
+                len(hist) if history_limit is None else min(len(hist), max(history_limit, 0))
+            ),
+        },
     }
 
 
@@ -688,9 +749,17 @@ def platform_support() -> dict:
 #  Install resource preflight (V2, 2026-07-29) -- REAL measurements or an
 #  honest absence. Never a guess, and never a fabricated 0.
 # --------------------------------------------------------------------------- #
-def _gb(n: int | None) -> float | None:
-    """Bytes -> GB for display. ``None`` stays ``None`` -- never rendered as 0."""
-    return None if n is None else round(n / (1024**3), 2)
+def _gb(n: int | None, *, down: bool = False) -> float | None:
+    """Bytes -> GB for display. ``None`` stays ``None`` -- never rendered as 0.
+
+    ``down=True`` truncates instead of rounding, and is used for AVAILABLE space: with
+    round-to-nearest, one byte short of the floor renders as "Only 15.0 GB free --
+    needs at least 15.0 GB", a refusal that reads as a bug. Truncating also never
+    over-reports how much room the operator actually has."""
+    if n is None:
+        return None
+    gb = n / (1024**3)
+    return math.floor(gb * 100) / 100 if down else round(gb, 2)
 
 
 def _nearest_existing(path: Path) -> Path | None:
@@ -776,6 +845,33 @@ def _filesystem_facts(path: Path) -> dict:
     }
 
 
+def _package_present(venv: Path, name: str) -> bool | None:
+    """Is ``name`` importable from ``venv``'s site-packages?
+
+    ``True`` / ``False`` / ``None`` -- and ``None`` (no readable site-packages, i.e.
+    an unrecognised layout) is load-bearing: the caller must refuse ONLY on a
+    measured absence. A file-existence check, never a subprocess: this runs on the
+    install's success path, where spawning the freshly built interpreter is a slower
+    and more fragile way to learn the same fact."""
+    roots = sorted(venv.glob("lib/python*/site-packages")) + sorted(venv.glob("Lib/site-packages"))
+    readable = [r for r in roots if r.is_dir()]
+    if not readable:
+        return None
+    for root in readable:
+        if (root / name).is_dir() or any(root.glob(f"{name}-*.dist-info")):
+            return True
+    return False
+
+
+def _stop_probe(ctx) -> Callable[[], bool]:
+    """``ctx.stopping`` as a callable, for ``_default_runner``'s cancel poll.
+
+    The runner cannot import the job chassis, and a BackgroundJob ctx is not the only
+    thing that can drive an install, so the cancel signal crosses that boundary as a
+    plain predicate. A ctx without ``stopping`` never cancels rather than raising."""
+    return lambda: bool(getattr(ctx, "stopping", False))
+
+
 def install_preflight(*, version: str = VLLM_VERIFIED_VERSION, gpu: dict | None = None) -> dict:
     """Measure what a vLLM install would actually cost THIS machine, before any
     download. Callable on its own (``GET /api/llm/vllm/install/preflight``, and
@@ -816,7 +912,7 @@ def install_preflight(*, version: str = VLLM_VERIFIED_VERSION, gpu: dict | None 
     ram = _total_ram_bytes()
     fs = _filesystem_facts(tmp)
 
-    free_gb, ram_gb = _gb(free), _gb(ram)
+    free_gb, ram_gb = _gb(free, down=True), _gb(ram, down=True)
     disk_floor_gb, ram_floor_gb = _gb(INSTALL_DISK_FLOOR_BYTES), _gb(LOW_RAM_WARN_BYTES)
     disk_ok: bool | None = None if free is None else free >= INSTALL_DISK_FLOOR_BYTES
     ram_ok: bool | None = None if ram is None else ram >= LOW_RAM_WARN_BYTES
@@ -897,6 +993,15 @@ def install_preflight(*, version: str = VLLM_VERIFIED_VERSION, gpu: dict | None 
             }
         )
 
+    # "We measured this machine and it is fine" and "this machine told us nothing"
+    # produce IDENTICAL gate output: blocking=[] and requires_acknowledgement=False.
+    # That is the absent-reads-as-passed shape. The gate itself is deliberately NOT
+    # changed -- refusing on an unreadable /proc file would manufacture exactly the
+    # kind of fabricated verdict this preflight exists to avoid, and an unmeasurable
+    # preflight must never block (pinned by its own test). What was missing is the
+    # DISTINCTION, so it is now stated: a consumer can tell a clean pass from an
+    # empty one without re-deriving it from the notes list.
+    checks_measured = sum(1 for v in (free, ram, fs["filesystem"]) if v is not None)
     return {
         "schema": "oo-vllm-install-preflight-1",
         "version": version,
@@ -937,6 +1042,13 @@ def install_preflight(*, version: str = VLLM_VERIFIED_VERSION, gpu: dict | None 
         "warnings": warnings,
         "notes": notes,
         "requires_acknowledgement": bool(warnings),
+        # How much of this preflight is a MEASUREMENT rather than a silence. An empty
+        # `blocking` from `checks_measured: 0` says nothing about the machine, and a
+        # reader (UI, diagnostics bundle, future gate) must be able to see that
+        # without inferring it from the absence of entries.
+        "checks_measured": checks_measured,
+        "checks_total": 3,
+        "fully_unmeasured": checks_measured == 0,
         "estimated_size_note": ESTIMATED_INSTALL_SIZE_NOTE,
     }
 
@@ -946,7 +1058,13 @@ def _install_env(tmpdir: Path) -> dict[str, str]:
     (PATH, proxy vars, locale -- all preserved) with ``TMPDIR`` redirected onto
     real disk. Mirrors ``install.sh:pip_install``'s ``TMPDIR="$pip_tmp" pip
     install ...``; TMPDIR only, matching that precedent (TMP/TEMP are Windows
-    conventions and this path is Linux-only)."""
+    conventions and this path is Linux-only).
+
+    An operator-set ``TMPDIR`` IS overridden, deliberately: same-volume-as-the-install-
+    target is the property that makes the preflight's measured free-disk figure the one
+    pip actually consumes, and the whole defect being fixed here is an inherited TMPDIR
+    on a RAM-backed filesystem. The path used is not hidden -- ``install_preflight``
+    reports it as ``disk.path`` and the ENOSPC message names it."""
     env = dict(os.environ)
     env["TMPDIR"] = str(tmpdir)
     return env
@@ -1042,6 +1160,14 @@ def run_install_job(
     d = venv_dir()
     tmp = pip_tmpdir()
     env = _install_env(tmp)
+    # Sweep BEFORE creating it, not only in the finally afterwards. The finally does
+    # not run when the process is killed -- SIGKILL, OOM, or the app's own SIGTERM
+    # shutdown, whose worker sits on a DAEMON thread that is abandoned at interpreter
+    # exit. Up to ~10 GB of half-unpacked wheels then persists (this area moved from
+    # the ambient /tmp, which the OS clears, onto real disk beside the venv, which
+    # nothing clears). Sweeping at the start reclaims that residue on the next attempt
+    # AND means pip never unpacks into a stale tree.
+    shutil.rmtree(tmp, ignore_errors=True)
     try:
         tmp.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
@@ -1050,14 +1176,24 @@ def run_install_job(
         ) from exc
     try:
         run = runner or _default_runner
-        if not venv_python().is_file():
+        stop = _stop_probe(ctx)
+        # `python -m venv` writes bin/python well BEFORE ensurepip finishes, so a
+        # cancel/crash in that window leaves a venv with python and no pip. Keying
+        # only on venv_python() then SKIPPED repair forever and blamed a missing
+        # system package ("install python3-venv") for a state the previous attempt
+        # created -- self-perpetuating, since bin/python exists from then on. A venv
+        # missing EITHER is incomplete; `python -m venv` is idempotent, so re-running
+        # it repairs in place. (Window confirmed live against a real venv creation.)
+        if not venv_python().is_file() or not venv_bin("pip").is_file():
             # None, not 0: only the `__exit__` sentinel may declare success. A
             # runner that yields no sentinel must never write the marker.
             venv_exit_code: int | None = None
-            for line in run([sys.executable, "-m", "venv", str(d)], env=env):
+            for line in run([sys.executable, "-m", "venv", str(d)], env=env, should_stop=stop):
                 if ctx.stopping:
                     _journal("cancelled")
                     return {"installed": False, "state": "cancelled"}
+                if line == _HEARTBEAT:
+                    continue
                 if line.startswith("__exit__ "):
                     venv_exit_code = int(line.split(" ", 1)[1].strip() or "1")
                     continue
@@ -1098,10 +1234,12 @@ def run_install_job(
         # distribution", and a 5-10 GB download is exposed to that for a long time.
         argv = [str(pip), "install", "--retries", "5", "--timeout", "60", f"vllm=={version}"]
         exit_code: int | None = None
-        for line in run(argv, env=env):
+        for line in run(argv, env=env, should_stop=stop):
             if ctx.stopping:
                 _journal("cancelled")
                 return {"installed": False, "state": "cancelled"}
+            if line == _HEARTBEAT:
+                continue
             if line.startswith("__exit__ "):
                 exit_code = int(line.split(" ", 1)[1].strip() or "1")
                 continue
@@ -1129,6 +1267,22 @@ def run_install_job(
                 msg = f"pip install vllm=={version} failed (exit code {exit_code})."
             _journal("error", exit_code=exit_code, error=msg)
             raise VllmLifecycleError(msg)
+        # pip exiting 0 is evidence about PIP, not about this venv: PIP_TARGET /
+        # PIP_PREFIX / PIP_USER in the ambient environment (which _install_env
+        # deliberately inherits, for proxy settings) all make pip install SOMEWHERE
+        # ELSE and still exit 0. The marker is a claim that vLLM is installed HERE, so
+        # confirm the package actually landed before writing it. Tri-state on purpose:
+        # only a site-packages we could READ and that does NOT contain vllm is a
+        # failure -- an unrecognised venv layout is a note, never a fabricated refusal.
+        if _package_present(venv_dir(), "vllm") is False:
+            msg = (
+                f"pip reported success but vllm is not present in {venv_dir()}. "
+                "Something redirected the install (PIP_TARGET / PIP_PREFIX / PIP_USER "
+                "in the environment will do this). Refusing to record an install this "
+                "venv cannot actually use."
+            )
+            _journal("error", exit_code=exit_code, error=msg)
+            raise VllmLifecycleError(msg)
         _write_marker(version)
         phase = "done"
         _journal("installed", exit_code=0)
@@ -1138,7 +1292,28 @@ def run_install_job(
         shutil.rmtree(tmp, ignore_errors=True)
 
 
-def _default_runner(argv: list[str], env: dict[str, str] | None = None) -> Iterator[str]:
+def _terminate_child(proc: subprocess.Popen, *, timeout: float = 10.0) -> None:
+    """SIGTERM, then SIGKILL after ``timeout`` -- the same shape ``stop()`` already
+    uses for the served process. Never raises: a child that died on its own between
+    the poll and the signal is a success, not an error."""
+    try:
+        if proc.poll() is not None:
+            return
+        proc.terminate()
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+    except Exception:  # noqa: BLE001 - best-effort teardown; never mask the real outcome
+        _LOG.warning("could not terminate the install subprocess", exc_info=True)
+
+
+def _default_runner(
+    argv: list[str],
+    env: dict[str, str] | None = None,
+    should_stop: Callable[[], bool] | None = None,
+) -> Iterator[str]:
     """Run a real subprocess, yielding its output lines then a final
     ``__exit__ <code>`` sentinel (mirrors ``src.llm.installer.run_installer``'s
     streaming shape).
@@ -1146,7 +1321,27 @@ def _default_runner(argv: list[str], env: dict[str, str] | None = None) -> Itera
     ``env`` defaults to ``None``, which is ``Popen``'s inherit-the-ambient-
     environment behaviour -- i.e. byte-identical to this function before the
     TMPDIR fix, so any other caller is unaffected. The vLLM install passes an
-    env whose ``TMPDIR`` is on real disk (``_install_env``)."""
+    env whose ``TMPDIR`` is on real disk (``_install_env``).
+
+    CANCELLABLE (2026-07-29). The output is drained on a pump thread and consumed
+    through a timed queue, for one reason: the caller checks ``ctx.stopping``
+    once PER YIELDED LINE, and a plain ``for line in proc.stdout`` blocks for as
+    long as the child is silent. pip is silent for the whole of a wheel download
+    -- 5-10 GB of torch/CUDA, hours on the operator's Tor-routed link -- so a
+    Cancel click did nothing at all until the download finished on its own
+    (live-reproduced: the worker sat in this loop 3s after cancel, and the job
+    stayed "running", which also made the endpoint refuse every retry). Since the
+    job advertises ``cancellable=True``, that was Cancel THEATER, which
+    ``BackgroundJob``'s own docstring forbids.
+
+    So: while idle this yields a ``_HEARTBEAT`` sentinel every ``_RUNNER_POLL_S``
+    so the caller's stop check runs on a schedule, and when ``should_stop`` fires
+    -- or the generator is closed -- the CHILD IS KILLED rather than left
+    downloading. ``should_stop`` is optional; omitted, behaviour is the previous
+    blocking drain."""
+    import queue as _queue
+    import threading as _threading
+
     proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
         argv,
         stdout=subprocess.PIPE,
@@ -1156,10 +1351,48 @@ def _default_runner(argv: list[str], env: dict[str, str] | None = None) -> Itera
         env=env,
     )
     assert proc.stdout is not None
+    q: _queue.Queue = _queue.Queue()
+    eof = object()
+
+    def _pump() -> None:
+        try:
+            for line in proc.stdout:  # type: ignore[union-attr]
+                q.put(line.rstrip("\n"))
+        except Exception:  # noqa: BLE001 - a closed pipe during teardown is expected
+            pass
+        finally:
+            q.put(eof)
+
+    _threading.Thread(target=_pump, name="vllm-install-pump", daemon=True).start()
+    cancelled = False
     try:
-        for line in proc.stdout:
-            yield line.rstrip("\n")
+        while True:
+            try:
+                item = q.get(timeout=_RUNNER_POLL_S)
+            except _queue.Empty:
+                if should_stop is not None and should_stop():
+                    cancelled = True
+                    break
+                yield _HEARTBEAT  # wake the caller so ITS stop check runs too
+                continue
+            if item is eof:
+                break
+            yield item
+            if should_stop is not None and should_stop():
+                cancelled = True
+                break
+    except GeneratorExit:
+        # The caller abandoned us (returned mid-loop). Kill the child rather than
+        # blocking forever in proc.wait() on a live multi-GB download.
+        cancelled = True
+        raise
     finally:
-        proc.stdout.close()
+        if cancelled:
+            _terminate_child(proc)
+        try:
+            proc.stdout.close()
+        except Exception:  # noqa: BLE001, S110 - teardown only
+            pass
         code = proc.wait()
-    yield f"__exit__ {code}"
+    if not cancelled:
+        yield f"__exit__ {code}"

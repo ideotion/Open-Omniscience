@@ -2237,5 +2237,6 @@
   "reset": "réinitialiser",
   "floor": "plancher",
   "Sources per region against each region's floor.": "Sources par région, comparées au plancher de chaque région.",
-  "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "Barre = sources collectées ; le repère vertical est le plancher de la région. Comptages uniquement, aucun score."
+  "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "Barre = sources collectées ; le repère vertical est le plancher de la région. Comptages uniquement, aucun score.",
+  "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.": "VADER est un lexique anglais : la tonalité n'est mesurée que pour la couverture en anglais. L'absence de tonalité signifie non mesurée — et non neutre."
 }
