@@ -278,6 +278,48 @@ def _volume_backup_jobs() -> list[dict]:
     ]
 
 
+def _import_queue_jobs() -> list[dict]:
+    """The whole IMPORT RUN as one visible job (2026-07-29, remark 2 + ruling 13).
+
+    Distinct from the per-item jobs below it: those show what is running right now
+    (a volume restore, a folder copy), while this shows the RUN they belong to --
+    "3 of 6 imported" -- which is the thing the maintainer could not see at all when
+    six backups shared one anonymous bar. kind="import" so it arbitrates with
+    collection like every other DB writer.
+
+    Its only action is CANCEL, and honestly so: an import run has no pause. Before a
+    backup's atomic swap a stop is a complete abort; after it, that backup stands and
+    only the remaining work stops. Offering "pause" would imply a resume that does
+    not exist -- the passphrase is never stored, so a run cannot be picked back up."""
+    from src.backup.import_queue import get_import_queue
+
+    s = get_import_queue().status()
+    if s.get("state") != "running":
+        return []
+    total = int(s.get("items_total") or 0)
+    done = int(s.get("items_done") or 0)
+    cur = s.get("current") or {}
+    label = cur.get("label") or ""
+    return [
+        {
+            "id": "import-queue",
+            "kind": "import",
+            "label": f"Importing {label}" if label else "Importing",
+            "state": "running",
+            "progress": (
+                {"done": done, "total": total, "unit": "items",
+                 "percent": round(100.0 * done / total, 1)}
+                if total else None
+            ),
+            # No ETA: the items are different kinds of work over different units, so
+            # extrapolating one from the others would be a fabricated number.
+            "eta_seconds": None,
+            "error": None,
+            "actions": ["cancel"],
+        }
+    ]
+
+
 def _import_jobs() -> list[dict]:
     """The server-side .eml folder import as a visible job (§2.B). It is a DB-WRITER
     (kind="import"), so it joins the arbitration set — collecting WHILE importing both
@@ -489,6 +531,7 @@ def list_jobs() -> dict:
     jobs.extend(_osm_jobs())
     jobs.extend(_folder_backup_jobs())
     jobs.extend(_volume_backup_jobs())
+    jobs.extend(_import_queue_jobs())
     jobs.extend(_import_jobs())
     jobs.extend(_reindex_jobs())
     jobs.extend(_quarantine_jobs())
@@ -569,6 +612,19 @@ def cancel_job(job_id: str) -> dict:
 
         get_folder_manager().pause()
         return {"cancelled": job_id, "detail": "folder backup paused (resumable from Settings → Data & backup)"}
+    if job_id == "import-queue":
+        # Stop, never pause: see _import_queue_jobs for why an import run has no resume.
+        from src.backup.import_queue import get_import_queue
+
+        get_import_queue().stop()
+        return {
+            "cancelled": job_id,
+            "detail": (
+                "import stopped — a backup not yet swapped in is abandoned completely "
+                "(your corpus is untouched); one already merged stays merged and its "
+                "re-index resumes later"
+            ),
+        }
     if job_id == "newsletter-import":
         from src.ingest.import_job import get_import_manager
 

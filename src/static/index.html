@@ -1652,8 +1652,20 @@
         <input id="ux-imp-pass" type="password" style="width:100%"></div>
       <progress id="ux-imp-bar" style="width:100%;margin-top:8px;display:none"></progress>
       <div id="ux-imp-progress" class="hint" style="margin-top:4px"></div>
+      <!-- The RUN: one row per item, each with its own identity, state and elapsed time.
+           A multi-backup folder is one import, so the collection-paused note and the Stop
+           belong to the run as a whole, not to any single item. -->
+      <div id="ux-imp-queue" style="display:none;margin-top:8px">
+        <div id="ux-imp-queue-note" class="hint"></div>
+        <div id="ux-imp-queue-rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px"></div>
+        <details id="ux-imp-details" style="margin-top:6px">
+          <summary class="muted" style="cursor:pointer">Show details</summary>
+          <div id="ux-imp-details-body" class="hint" style="margin-top:4px"></div>
+        </details>
+      </div>
       <div id="ux-imp-summary" style="margin-top:8px"></div>
       <div class="row" style="margin-top:12px;justify-content:flex-end;gap:8px">
+        <button id="ux-imp-stop" class="secondary" style="display:none" onclick="_uxImStop(this)" title="Stops the import now. Before a backup's atomic swap this is a complete abort — your corpus is untouched. After it, that backup has already merged and this stops the remaining work (the re-index resumes later from where it left off); it is not an undo.">Stop</button>
         <button id="ux-imp-bg" class="secondary" style="display:none" onclick="_uxImBackground()">Continue in background</button>
         <button class="secondary" onclick="document.getElementById('ux-import').close()">Close</button>
         <button id="ux-imp-run" onclick="_uxImRun(this)" disabled>Import selected</button>
