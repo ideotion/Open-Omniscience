@@ -181,7 +181,7 @@ def test_a_missing_log_is_a_stated_absence_not_an_empty_string(gpu8):
 def test_each_start_truncates_so_the_log_describes_the_CURRENT_attempt(gpu8):
     V.server_log_path().write_bytes(b"stale failure from a previous model\n")
     V.start("someorg/tiny-1b", popen=lambda *a, **k: None)
-    assert "stale failure" not in V.server_log_path().read_text(), (
+    assert "stale failure" not in V.server_log_path().read_text(encoding="utf-8"), (
         "a stale log would misattribute an old error to the current attempt"
     )
 
