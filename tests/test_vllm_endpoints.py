@@ -261,3 +261,63 @@ def test_vllm_status_endpoint_carries_the_preflight_and_the_attempt_history():
     assert r["preflight"]["schema"] == "oo-vllm-install-preflight-1"
     assert isinstance(r["install_history"], list)
     assert "attempts_cap" in r["install_history_bounds"]
+
+
+# --------------------------------------------------------------------------- #
+#  The default-model button on a vLLM machine (field ask 2026-07-30)
+# --------------------------------------------------------------------------- #
+def _vllm_backend(monkeypatch):
+    """Stub only the RESOLVER -- the plan itself stays the production function, so
+    these exercise the real path rather than a double of it."""
+    from src.llm import backend as B
+
+    monkeypatch.setattr(
+        B, "resolve_backend", lambda: {"backend": "vllm", "reason": "GPU + vLLM running"}
+    )
+
+
+def test_the_vllm_plan_is_a_real_download_with_a_real_cached_answer(monkeypatch, tmp_path):
+    """It used to report ``server_start`` + ``installed: None`` -- true (vLLM does fetch
+    at start) and useless as a button: no download, no progress, and no way to know
+    whether the several GB were already on the disk."""
+    _vllm_backend(monkeypatch)
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    p = L.default_model_plan()
+    assert p["backend"] == "vllm"
+    assert p["mechanism"] == "download", "not 'the server will fetch it later'"
+    assert p["installed"] is False, "a real probe, not an unknown"
+
+    from src.llm.ollama import MINISTRAL_SUGGESTION
+
+    rev = tmp_path / ("models--" + MINISTRAL_SUGGESTION["vllm_model"].replace("/", "--")) / "snapshots" / "r1"
+    rev.mkdir(parents=True)
+    (rev / "config.json").write_text("{}", encoding="utf-8")
+    assert L.default_model_plan()["installed"] is True
+
+
+def test_downloading_before_vllm_is_installed_says_which_button_to_press(monkeypatch):
+    _vllm_backend(monkeypatch)
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    with pytest.raises(HTTPException) as exc:
+        L.default_model_install()
+    assert exc.value.status_code == 409
+    assert "Install vLLM first" in str(exc.value.detail)
+
+
+def test_the_download_is_refused_under_airplane_mode(monkeypatch):
+    _vllm_backend(monkeypatch)
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: True)
+    with pytest.raises(HTTPException) as exc:
+        L.default_model_install()
+    assert exc.value.status_code == 409
+
+
+def test_the_status_route_reports_the_vllm_download_job(monkeypatch, tmp_path):
+    """The Ollama half always had a live surface (the pull queue); the vLLM half had
+    none, because there was no download to report on."""
+    _vllm_backend(monkeypatch)
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    st = L.default_model_status()
+    assert st["backend"] == "vllm"
+    assert "job" in st and "plan" in st
+    assert st["job"]["running"] is False

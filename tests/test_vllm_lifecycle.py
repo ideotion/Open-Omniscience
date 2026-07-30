@@ -441,7 +441,10 @@ def test_the_pip_unpack_dir_exists_during_the_run_and_is_cleaned_up_on_success(m
         yield "__exit__ 0"
 
     V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)
-    assert existed == [True]
+    # Every subprocess of the install (the uv bootstrap AND the big resolve) sees the
+    # redirected unpack dir -- checking only the first would leave the one that
+    # actually downloads 5-10 GB unverified, which is the whole point of the redirect.
+    assert existed and all(existed)
     assert not V.pip_tmpdir().exists()
 
 
@@ -456,7 +459,7 @@ def test_the_pip_unpack_dir_is_cleaned_up_even_when_pip_fails(monkeypatch):
 
     with pytest.raises(V.VllmLifecycleError):
         V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)
-    assert existed == [True]
+    assert existed and all(existed)
     assert not V.pip_tmpdir().exists()
 
 
@@ -1105,3 +1108,180 @@ def test_a_refusal_message_never_reads_as_self_contradictory_at_the_floor(monkey
     assert pre["disk"]["sufficient"] is False
     assert pre["disk"]["free_gb"] < pre["disk"]["floor_gb"], (
         "the DISPLAYED free figure must stay below the displayed floor it is refused against")
+
+
+# --------------------------------------------------------------------------- #
+#  uv-first install (field report 2026-07-30: "I had to install uv ... then
+#  use `uv pip install vllm`")
+# --------------------------------------------------------------------------- #
+def _record(calls, *, uv_ok=True, install_exit="0"):
+    """A runner that logs every argv and can make the uv bootstrap fail."""
+
+    def runner(argv, env=None, should_stop=None):
+        calls.append(list(argv))
+        if argv[-1] == "uv":
+            if uv_ok:
+                V.venv_bin("uv").write_text("#!/bin/sh\n", encoding="utf-8")
+                yield "__exit__ 0"
+            else:
+                yield "__exit__ 1"
+            return
+        yield f"__exit__ {install_exit}"
+
+    return runner
+
+
+def test_the_install_uses_uv_for_the_big_resolve(monkeypatch):
+    """The operator's own successful path. vLLM's graph is torch plus the CUDA
+    runtime, and pip's backtracking resolver on a graph that size is where installs go
+    to die -- no output, no progress, no end, which is what "seems broken" looks like."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+    calls: list[list[str]] = []
+    V.run_install_job(FakeCtx(), version="0.26.0", runner=_record(calls))
+
+    bootstrap, big = calls[0], calls[-1]
+    assert bootstrap[-1] == "uv" and bootstrap[0].endswith("/pip"), (
+        "uv comes from PyPI over HTTPS into the unprivileged venv -- the SAME channel "
+        "this module already trusts, never a piped shell script from a vendor site"
+    )
+    assert big[0].endswith("/uv") and big[1:3] == ["pip", "install"]
+    assert "--python" in big and str(V.venv_python()) in big, (
+        "uv otherwise resolves against its own idea of an interpreter, not the one "
+        "that will run the server"
+    )
+    assert big[-1] == "vllm==0.26.0"
+
+
+def test_a_uv_bootstrap_failure_falls_back_to_pip(monkeypatch):
+    """Falling back IS the design: this can make the install work where it did not,
+    and must not be able to make it fail where it worked."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+    calls: list[list[str]] = []
+    out = V.run_install_job(FakeCtx(), version="0.26.0", runner=_record(calls, uv_ok=False))
+
+    big = calls[-1]
+    assert big[0].endswith("/pip") and big[-1] == "vllm==0.26.0"
+    assert "--retries" in big, "the pip path keeps its own long-download flags"
+    assert out["installed"] is True
+
+
+def test_the_resolver_can_be_forced_back_to_pip(monkeypatch):
+    _allow_install(monkeypatch)
+    _fake_venv()
+    monkeypatch.setenv("OO_VLLM_RESOLVER", "pip")
+    calls: list[list[str]] = []
+    V.run_install_job(FakeCtx(), version="0.26.0", runner=_record(calls))
+    assert len(calls) == 1, "no uv bootstrap at all"
+    assert calls[0][0].endswith("/pip")
+
+
+def test_a_failure_names_the_resolver_that_actually_ran(monkeypatch):
+    """The journal and the error have to say WHICH resolver failed, or a field report
+    describes a pip failure that was really uv's (or the reverse)."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+    calls: list[list[str]] = []
+    with pytest.raises(V.VllmLifecycleError) as exc:
+        V.run_install_job(FakeCtx(), version="0.26.0", runner=_record(calls, install_exit="1"))
+    assert "uv install vllm==0.26.0 failed" in str(exc.value)
+    assert V.install_history()[-1]["phase"] == "uv"
+
+
+# --------------------------------------------------------------------------- #
+#  Pre-downloading the model WEIGHTS (field ask 2026-07-30)
+# --------------------------------------------------------------------------- #
+def test_an_interrupted_download_is_not_reported_as_cached(monkeypatch, tmp_path):
+    """huggingface_hub creates the repo tree as soon as a download STARTS, so a naive
+    "does the directory exist" check calls a half-fetched model ready. Reporting an
+    incomplete model as downloaded is the fabrication this probe exists to avoid."""
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    repo = tmp_path / "models--mistralai--Ministral-3-3B-Instruct-2512"
+    (repo / "snapshots").mkdir(parents=True)
+    assert V.model_cache_state("mistralai/Ministral-3-3B-Instruct-2512")["cached"] is False
+
+    rev = repo / "snapshots" / "abc123"
+    rev.mkdir()
+    assert V.model_cache_state("mistralai/Ministral-3-3B-Instruct-2512")["cached"] is False, (
+        "an empty revision directory is a started download, not a finished one"
+    )
+
+    (rev / "config.json").write_text("{}", encoding="utf-8")
+    st = V.model_cache_state("mistralai/Ministral-3-3B-Instruct-2512")
+    assert st["cached"] is True and st["bytes"] == 2
+
+
+def test_the_cache_dir_follows_hugging_faces_own_rules(monkeypatch, tmp_path):
+    """A probe here and a download inside the managed venv must agree about the same
+    directory, or the button reports on a cache nothing writes to."""
+    monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "hf"))
+    assert V.hf_cache_dir() == tmp_path / "hf" / "hub"
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path / "explicit"))
+    assert V.hf_cache_dir() == tmp_path / "explicit"
+
+
+def test_an_already_cached_model_is_not_re_downloaded(monkeypatch, tmp_path):
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    rev = tmp_path / "models--org--m" / "snapshots" / "r1"
+    rev.mkdir(parents=True)
+    (rev / "config.json").write_text("{}", encoding="utf-8")
+    _fake_venv()
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+
+    called: list[int] = []
+    out = V.run_model_download_job(
+        FakeCtx(), model="org/m", runner=lambda *a, **k: called.append(1) or iter(())
+    )
+    assert out["state"] == "already_cached" and called == []
+
+
+def test_the_download_needs_the_vllm_env_and_says_so(monkeypatch):
+    """The downloader lives in the managed venv (huggingface_hub ships with vLLM), so
+    the refusal names that -- the fix is one button away on the same panel."""
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    with pytest.raises(V.VllmUnsupportedError) as exc:
+        V.run_model_download_job(FakeCtx(), model="org/m")
+    assert "Install vLLM first" in str(exc.value)
+
+
+def test_the_download_is_refused_under_airplane_mode(monkeypatch):
+    """Hugging Face is clearnet, not Tor."""
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: True)
+    with pytest.raises(V.VllmLifecycleError):
+        V.run_model_download_job(FakeCtx(), model="org/m")
+
+
+def test_success_needs_the_librarys_own_path_not_just_an_exit_code(monkeypatch, tmp_path):
+    """A shell exits 0 for a script that printed a traceback and downloaded nothing.
+    The sentinel is snapshot_download's returned path, so a silent no-op cannot be
+    recorded as a completed download."""
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    _fake_venv()
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+
+    def _silent(argv, env=None, should_stop=None):
+        yield "__exit__ 0"
+
+    with pytest.raises(V.VllmLifecycleError):
+        V.run_model_download_job(FakeCtx(), model="org/m", runner=_silent)
+
+
+def test_a_real_download_reports_the_cache_it_produced(monkeypatch, tmp_path):
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    _fake_venv()
+    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+
+    def _runner(argv, env=None, should_stop=None):
+        assert argv[0] == str(V.venv_python()) and argv[-1] == "org/m"
+        rev = tmp_path / "models--org--m" / "snapshots" / "r1"
+        rev.mkdir(parents=True)
+        (rev / "config.json").write_text("{}", encoding="utf-8")
+        yield "Fetching 3 files:  33%"
+        yield f"__downloaded__ {rev}"
+        yield "__exit__ 0"
+
+    out = V.run_model_download_job(FakeCtx(), model="org/m", runner=_runner)
+    assert out["downloaded"] is True and out["state"] == "downloaded"
+    assert out["cached"] is True
