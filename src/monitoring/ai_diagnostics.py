@@ -47,6 +47,25 @@ def _backend_facts() -> dict:
     return resolve_backend()
 
 
+def _hardware_facts(backend_facts: dict) -> dict:
+    """Is local inference PRACTICAL on this machine (2026-07-30, maintainer-ruled)?
+
+    A SEPARATE question from ``_backend_facts()``'s "which backend would serve" --
+    an unsuitable machine can still resolve a backend, start it, and then crawl.
+
+    SENTINEL DISCIPLINE: this payload's own key is ``practical``, so a crashed
+    probe (which ``_safe`` marks ``section_ok: False``) can never be mistaken for
+    a measured "impractical" -- the same reason ``_safe``'s sentinel was renamed
+    off ``available`` in 2026-07-29. Reuses the ``gpu`` dict the backend probe
+    already produced, so this member costs ZERO additional nvidia-smi probes;
+    when that probe CRASHED there is no gpu dict to reuse and ``inference_capability``
+    honestly runs (and reports) its own."""
+    from src.llm.backend import inference_capability
+
+    gpu = backend_facts.get("gpu") if backend_facts.get("section_ok") is not False else None
+    return inference_capability(gpu=gpu if isinstance(gpu, dict) else None)
+
+
 def _context_settings(backend_facts: dict) -> dict:
     """Context/window sizing for whichever backend is active. vLLM's is a
     COMPUTED, disclosed heuristic (``compute_server_args``, B2); Ollama's is
@@ -133,6 +152,7 @@ def ai_diagnostics_report() -> dict:
     return {
         "schema": SCHEMA,
         "backend": backend,
+        "hardware": _safe(lambda: _hardware_facts(backend if isinstance(backend, dict) else {})),
         "active_model": _safe(_active_model),
         "context": context,
         "vllm": _safe(_vllm_status),

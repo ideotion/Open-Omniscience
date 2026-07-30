@@ -18439,6 +18439,17 @@
           el.className = "pill ok";
           el.textContent = "AI";   // no model count anymore (maintainer 2026-07-24)
           el.title = t("AI — click to open AI settings");
+        } else if (h.hardware_practical === false) {
+          // HARDWARE SUITABILITY (2026-07-30): a THIRD state, distinct from
+          // "offline". Starting a backend would not fix this machine, so the pill
+          // must NOT invite that — it points at the disclosure + the override
+          // instead. `=== false` on purpose: `null` means the probe could not
+          // decide, which must fall through to the ordinary offline copy rather
+          // than assert a hardware verdict nothing measured.
+          el.className = "pill warn";
+          el.textContent = "AI";
+          el.title = (h.hardware_reason ? h.hardware_reason + " — " : "")
+            + t("AI features are off by default on this hardware — open AI settings to override");
         } else {
           el.className = "pill warn";
           el.textContent = "AI";
@@ -18481,6 +18492,26 @@
         const ollTxt = oll.installed
           ? (oll.running ? t("installed, running") : t("installed, not running"))
           : t("not installed");
+        // HARDWARE SUITABILITY (2026-07-30). `hw` may be absent from an older
+        // server payload — render nothing then, rather than claiming a verdict.
+        const hw = b.hardware;
+        let hwHtml = "";
+        if (hw && typeof hw.practical === "boolean") {
+          const chk = hw.override_requested ? " checked" : "";
+          const line = hw.practical
+            ? (hw.overridden
+                // Practical ONLY because the operator forced it: say so plainly, so
+                // an override is never mistaken for a hardware pass.
+                ? `<p class="card-caveat">${esc(t("AI features are enabled by your override, not by this hardware."))} ${esc(hw.reason)}</p>`
+                : `<p class="hint">${esc(t("Hardware:"))} ${esc(hw.reason)}</p>`)
+            : `<p class="card-caveat">${esc(t("AI features are off by default on this hardware."))} ${esc(hw.reason)}</p>`;
+          hwHtml = line +
+            `<p><label><input type="checkbox" id="ai-hw-override"${chk}` +
+            ` onchange="setAllowImpracticalHw(this.checked)"> ` +
+            `${esc(t("Run local AI anyway on this hardware"))}</label>` +
+            ` <span class="muted">${esc(t("Your choice always wins — this is a default, never a block."))}</span></p>` +
+            `<p class="hint">${esc(hw.method)} ${esc(hw.caveat)}</p>`;
+        }
         box.innerHTML =
           `<p><b>Active backend:</b> ${esc(b.backend)} <span class="muted">— ${esc(b.reason)}</span></p>` +
           `<p class="hint">GPU: ${gpu.available ? esc(gpu.name || "detected") : "not detected"}` +
@@ -18504,11 +18535,37 @@
           // (invariant #23's var(--caveat), AA-verified on all 17 themes).
           (b.no_backend
             ? `<p class="card-caveat">${esc(t("No AI backend is reachable right now — install or start one below."))}</p>`
-            : "");
+            : "") +
+          // HARDWARE SUITABILITY (2026-07-30, maintainer-ruled). Disclosed in BOTH
+          // directions — never a silent block, never a silent enable — beside the
+          // checkbox that reverses it. The caveat colour is invariant #23's
+          // var(--caveat) (AA-verified on all 17 themes).
+          hwHtml;
         if (sel) sel.value = b.stored_override || "auto";
       } catch (e) {
         box.innerHTML = `<p class="muted">Could not read the backend status.</p>`;
       }
+    }
+
+    async function setAllowImpracticalHw(on) {
+      // The operator's explicit "run it anyway" (2026-07-30). Loopback settings
+      // PUT only — no egress, so never ensureOnline-gated (same class as the
+      // top-bar rate knob). Repaints from the SERVER's re-computed verdict rather
+      // than assuming the flip took, and refreshes the pill so its third state
+      // (impractical vs offline) updates immediately.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        await api("/api/settings", {
+          method: "PUT",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({llm_allow_impractical_hw: !!on}),
+        });
+        toast(on ? t("Local AI enabled on this hardware.") : t("Local AI back to the default for this hardware."));
+      } catch (e) {
+        toast("AI: " + e.message, "err");
+      }
+      loadAiBackendPanel();
+      loadLlmHealth();
     }
 
     async function launchOllama(btn) {

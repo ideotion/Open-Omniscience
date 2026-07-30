@@ -17,7 +17,12 @@ from src.monitoring import ai_diagnostics as AID
 def test_report_has_the_expected_top_level_shape():
     out = AID.ai_diagnostics_report()
     assert out["schema"] == AID.SCHEMA
-    assert set(out) == {"schema", "backend", "active_model", "context", "vllm", "jobs"}
+    # `hardware` joined in 2026-07-30 (the inference hardware-suitability gate):
+    # a SEPARATE question from `backend`'s "which backend would serve" -- an
+    # unsuitable machine can still resolve a backend, start it, and then crawl.
+    assert set(out) == {
+        "schema", "backend", "hardware", "active_model", "context", "vllm", "jobs",
+    }
 
 
 def test_report_carries_every_named_ai_job_summary():
