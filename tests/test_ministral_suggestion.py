@@ -55,6 +55,17 @@ def test_the_tag_would_actually_be_pullable():
     )
 
 
+def test_it_carries_the_vllm_counterpart_so_the_button_can_pick_per_backend():
+    """2026-07-30: the default-model install resolves WHICH backend will serve and
+    fetches that backend's artifact. Ollama wants the quantised image; vLLM wants the
+    HuggingFace weights. One entry carries both, so the two can never drift apart into
+    different model families."""
+    assert MINISTRAL_SUGGESTION["vllm_model"] == "mistralai/Ministral-3-3B-Instruct-2512"
+    assert MINISTRAL_SUGGESTION["tag"] != MINISTRAL_SUGGESTION["vllm_model"], (
+        "they are genuinely different artifacts — installing one does not install the other"
+    )
+
+
 def test_it_IS_in_the_verified_catalog_now_that_the_licence_was_read():
     """SUPERSEDED 2026-07-29. It was held OUT while the licence was only search-verified,
     because MODEL_CATALOG advertises itself as verified and this cycle already removed
