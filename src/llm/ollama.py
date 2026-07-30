@@ -58,6 +58,12 @@ MODEL_CATALOG: list[dict] = [
     {"tag": "qwen3:1.7b", "size": "~1.4 GB", "min_ram_gb": 4, "license": "Apache-2.0", "note": "Alibaba Qwen3 (1.7B) — small & permissive; Apache-2.0"},
     {"tag": "granite4:micro", "size": "~2.1 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "IBM Granite 4.0 — small (3.4B, hybrid); the app's default; Apache-2.0"},
     {"tag": "granite4.1:3b", "size": "~2 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "IBM Granite 4.1 — multilingual (3B); Apache-2.0"},
+    # Licence read from the model card 2026-07-29 (apache-2.0, ungated) and tag read
+    # from ollama.com/library — so it meets this list's verification bar. Needs Ollama
+    # 0.13.1+, which is NEWER than OLLAMA_TESTED_VERSION; stated in the note rather than
+    # discovered through a failed pull. Card names 11 languages; ru/hi/bn/id/th/vi/el/sr/mr
+    # are not among them.
+    {"tag": "ministral-3:3b-instruct-2512-q4_K_M", "size": "~3.0 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "Mistral Ministral 3 (3B) — fits 8 GB VRAM; needs Ollama 0.13.1+; Apache-2.0; card names 11 languages (not ru/hi/bn/id/th/vi/el/sr/mr)"},
     {"tag": "qwen3:4b", "size": "~2.6 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "Alibaba Qwen3 (4B) — balanced & permissive; Apache-2.0"},
     {"tag": "phi4-mini", "size": "~2.5 GB", "min_ram_gb": 8, "license": "MIT", "note": "Microsoft Phi-4-mini (3.8B) — MIT"},
     {"tag": "olmo2:7b", "size": "~4.5 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "Allen AI OLMo 2 (7B) — fully open; Apache-2.0"},
@@ -79,56 +85,58 @@ MODEL_CATALOG: list[dict] = [
 ]
 
 # --------------------------------------------------------------------------- #
-#  One-click Ministral (maintainer request 2026-07-29: "automate the ministral
-#  installation with a dedicated button, the version adapted to below 8Gb Vram
-#  hardware")
+#  One-click Ministral (maintainer request 2026-07-29)
 # --------------------------------------------------------------------------- #
-# DELIBERATELY NOT IN ``MODEL_CATALOG`` ABOVE, and the distinction is the honest part.
-# That list carries an explicit contract -- "verified against https://ollama.com/library
-# this cycle" -- and this cycle already REMOVED two entries (gemma4:e4b,
-# translategemma:4b) rather than ship them on faith. This tag has not met that bar:
-# docs/design/AI_LAYER_STRATEGY_2026-07-29.md §2.4 records it as SEARCH-VERIFIED only
-# and sets an explicit gate ("one page fetch of the model card settles it and must
-# happen before any catalog entry"). That fetch could not be performed -- ollama.com
-# and huggingface.co both return 403 through this environment's egress allowlist -- so
-# promoting it into the catalogue would assert a verification nobody performed.
+# LICENCE BLOCKER CLEARED 2026-07-29. docs/design/AI_LAYER_STRATEGY_2026-07-29.md §2.4
+# required "one page fetch of the model card" before any catalog entry, because the
+# Apache-2.0 finding was single-sourced and the PREVIOUS generation (Ministral
+# 8B-Instruct-2410) shipped under the non-commercial Mistral Research License. The
+# maintainer performed that fetch: all three Ministral 3 cards (3B/8B/14B) carry
+# `license: apache-2.0` in the README YAML and the verbatim line "This model is
+# licensed under the Apache 2.0 License." The repos are ungated (no consent banner,
+# no extra_gated_fields; an anonymous README fetch succeeded).
 #
-# It ships instead as a SEPARATE, self-describing suggestion whose unverified status
-# travels with it into the UI. Two things make that safe rather than a loophole:
-#   * a wrong tag CANNOT pass silently -- Ollama 404s an unknown model, so the pull
-#     fails loudly naming the exact tag, which is precisely the "degrade loudly"
-#     contract; and
-#   * clicking the button ON A NETWORKED MACHINE *is* the verification the design doc
-#     asked for. It either resolves (tag confirmed) or refuses (tag wrong, stated).
+# So this is now a NORMAL catalog entry, held to the same bar as its peers -- it is
+# listed in MODEL_CATALOG above rather than kept in quarantine.
 #
-# Do NOT substitute the short ``ministral-3:3b`` form: §2.4 records that the researcher
-# could not verify it and correctly refused to invent it. The project's standing rule is
-# that a model tag is verified or it is not used -- never a close-looking neighbour.
+# TAG CORRECTION, recorded because the earlier code asserted the opposite: the short
+# form `ministral-3:3b` DOES exist and carries the SAME digest (f04aa1c738f6) as
+# `ministral-3:3b-instruct-2512-q4_K_M` -- one image, two names. The long form is kept
+# because it pins the quantisation explicitly; the short form is not "unverifiable", it
+# is simply less specific. Do NOT use `ministral-3:latest`: it resolves to the 8B image.
+MINISTRAL_TAG = "ministral-3:3b-instruct-2512-q4_K_M"
+# The vLLM (GPU) counterpart. The model card states the 3B is "capable of fitting in
+# 8GB of VRAM in FP8", and ships a vllm serve command requiring vllm >= 0.12.0 (our pin
+# is 0.26.0). The 8B does NOT fit 8 GB in any published build: its FP8 weights are ~9 GB
+# and the only 4-bit AWQ build reports 13.4 GB at runtime.
+MINISTRAL_VLLM_MODEL = "mistralai/Ministral-3-3B-Instruct-2512"
+# Ollama's own model page states this requirement. Our OLLAMA_TESTED_VERSION is 0.5.x,
+# so an operator on the tested version CANNOT run it -- stated rather than discovered
+# through a failed pull.
+MINISTRAL_MIN_OLLAMA = "0.13.1"
 MINISTRAL_SUGGESTION: dict = {
-    "tag": "ministral-3:3b-instruct-2512-q4_K_M",
+    "tag": MINISTRAL_TAG,
     "size": "~3.0 GB",
     "min_ram_gb": 8,
-    # Sized for the maintainer's stated constraint: at ~3.0 GB of weights this sits
-    # comfortably under an 8 GB VRAM budget, where mistral:7b (~4.4 GB) leaves little
-    # headroom for context on the same card.
     "max_vram_gb": 8,
-    # Stated as REPORTED, never as established. Research converged on Apache-2.0 for
-    # the Ministral 3 generation, but it was single-sourced and never read from a model
-    # card -- against a family with a documented licence flip (Ministral 8B-2410 shipped
-    # under the non-commercial Mistral Research License). Saying plain "Apache-2.0" here
-    # would manufacture an assurance.
-    "license": "Apache-2.0 (reported — UNCONFIRMED)",
-    "verification": "search-verified only; model card never fetched",
+    "vllm_model": MINISTRAL_VLLM_MODEL,
+    "min_ollama": MINISTRAL_MIN_OLLAMA,
+    "license": "Apache-2.0",
+    "verification": "licence read from the model card 2026-07-29; tag read from ollama.com/library",
     "note": (
-        "Mistral Ministral 3 (3B, q4_K_M) — ~3.0 GB, fits under 8 GB VRAM. "
-        "Licence reported Apache-2.0 but UNCONFIRMED (the previous generation was "
-        "research-only); confirm on the model card before relying on it. Enumerated "
-        "languages are ar/zh/ja/ko only — the wider corpus languages are untested."
+        "Mistral Ministral 3 (3B, q4_K_M) — ~3.0 GB, fits under 8 GB VRAM. Apache-2.0, "
+        "ungated. GPU users: mistralai/Ministral-3-3B-Instruct-2512 fits 8 GB in FP8."
     ),
     "caveats": [
-        "Licence reported Apache-2.0 but never read from the model card.",
-        "Enumerated language coverage is ar/zh/ja/ko; ru/hi/bn/id/th/vi/el/sr/mr untested.",
-        "May require a newer Ollama than this cycle was tested against (0.5.x).",
+        f"Requires Ollama {MINISTRAL_MIN_OLLAMA} or newer (this cycle was tested against "
+        f"{OLLAMA_TESTED_VERSION}).",
+        # CORRECTED 2026-07-29: the earlier text claimed only ar/zh/ja/ko were named. The
+        # card actually enumerates ELEVEN languages. The substantive gap is unchanged and
+        # is what matters for this corpus -- none of ru/hi/bn/id/th/vi/el/sr/mr is named,
+        # though the card does say "dozens of languages", so they are unenumerated and
+        # unbenchmarked rather than stated unsupported.
+        "Card names 11 languages (en fr es de it pt nl zh ja ko ar). Not named: "
+        "ru, hi, bn, id, th, vi, el, sr, mr — unenumerated, not stated unsupported.",
     ],
 }
 # The app's default model tag (a fallback when the operator has not chosen one in

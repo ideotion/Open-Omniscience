@@ -72,6 +72,26 @@ class MergeError(RuntimeError):
     """Raised when a merge cannot proceed safely. The live DB is untouched."""
 
 
+class RestoreAborted(RuntimeError):
+    """The operator stopped this restore BEFORE the swap; nothing was applied.
+
+    Distinct from :class:`MergeError` on purpose: a MergeError is the engine
+    REFUSING an unsafe artifact (a failure the user must read), while this is
+    the user's own Stop being honoured (a normal outcome the UI reports as
+    "cancelled", never as an error).
+
+    Field ruling 2026-07-29 item 15 -- "stop/abort is IMMEDIATE, losing the
+    current import and everything related to it" -- is honest ONLY on the
+    pre-swap side, and that is exactly where this is raised. Everything before
+    ``swap`` runs on a disposable ``.restore-<hex>`` staging directory and a
+    ``working.db`` copy, so abandoning it costs nothing and leaves the live
+    corpus byte-identical. After ``os.replace`` there is no undo -- building
+    one would be unsound (see the ruling's own analysis) -- so the swap is
+    UNINTERRUPTIBLE by design and a Stop arriving later stops only the
+    remaining post-swap work. The UI must say which of the two happened rather
+    than implying an undo that does not exist."""
+
+
 @functools.lru_cache(maxsize=1)
 def _db_integrity_error_types() -> tuple[type, ...]:
     """The IntegrityError classes a UNIQUE/FK/NOT-NULL violation can surface as.
@@ -270,7 +290,7 @@ def _build_map(con: sqlite3.Connection, name: str, select_old_new: str) -> None:
 # --------------------------------------------------------------------------- #
 def merge_corpus(
     staged_corpus: Path, working_copy: Path, batch_meta: dict, progress_cb=None,
-    cache_mb: int | None = None,
+    cache_mb: int | None = None, should_stop: Callable[[], bool] | None = None,
 ) -> tuple[dict, int]:
     """Merge the staged corpus into the working copy. Returns (per-domain counts,
     batch_id). The working copy is disposable; the live DB is never touched.
@@ -289,7 +309,17 @@ def merge_corpus(
     given, an enlarged ``PRAGMA cache_size`` is applied to THIS connection only —
     a pure resource-usage tuning knob (never a behaviour/correctness change), so
     it is safe unconditionally and best-effort (a tuning-PRAGMA failure must
-    never break a merge)."""
+    never break a merge).
+
+    ``should_stop`` (field ruling 2026-07-29 item 15): checked BETWEEN the 14
+    table-merge steps. The whole merge runs inside ONE ``BEGIN IMMEDIATE`` on
+    the DISPOSABLE working copy, so aborting mid-sequence rolls that
+    transaction back and throws the copy away -- the live corpus is untouched
+    either way. Checked between steps rather than inside them because a single
+    step is one bulk SQL statement set; the granularity is honest (a Stop takes
+    effect at the next step boundary, not instantly mid-statement) and is the
+    difference between a Stop that works during the LONGEST phase of an import
+    and one that only appears to."""
     from src.database.connect import attach
     from src.database.connect import connect as db_connect
 
@@ -341,6 +371,13 @@ def merge_corpus(
         )
         total = len(steps)
         for i, (name, fn) in enumerate(steps, 1):
+            if should_stop is not None and should_stop():
+                # The `except` below rolls this BEGIN IMMEDIATE back; the working
+                # copy is disposable and the live corpus was never opened.
+                raise RestoreAborted(
+                    f"stopped during the merge (before the '{name}' step) — "
+                    "nothing was written to your corpus"
+                )
             fn(con, batch_id, results)
             if progress_cb is not None:
                 try:
@@ -1805,10 +1842,15 @@ def mark_reindex_complete(batch_id: int) -> None:
 def pending_reindex_batches() -> list[dict]:
     """Imports whose articles are merged but not confirmed re-indexed.
 
-    This is what a boot check reads to surface the backlog. Each entry carries the real
-    article count from ``merged_rows``, so the number shown is measured, never estimated.
-    Degrades to [] on any read failure -- a diagnostic that cannot read must not claim
-    "nothing pending", so callers report the degrade rather than the emptiness.
+    Each entry carries the real article count from ``merged_rows``, so the number shown
+    is measured, never estimated.
+
+    Returns [] BOTH when there is genuinely nothing pending and when the read failed --
+    which is why callers should use :func:`reindex_backlog` instead, whose payload keeps
+    those two apart. (An earlier docstring here claimed callers "report the degrade
+    rather than the emptiness"; they could not, because this shape gives them nothing to
+    tell the two apart with. That is the project's own degrade-sentinel lesson, and the
+    wrapper below is the fix.)
     """
     from sqlalchemy import text
 
@@ -1835,6 +1877,58 @@ def pending_reindex_batches() -> list[dict]:
         return []
 
 
+def reindex_backlog() -> dict:
+    """The re-index backlog, with "measured nothing" kept distinct from "could not read".
+
+    THE MANDATORY GUARD that travels with the option-(a) ruling (2026-07-29): the merge
+    no longer copies the incoming corpus's derived rows, so "not yet re-indexed" means
+    "has no keywords" -- which every analytics path honours structurally, at the price of
+    trading a BOUNDED staleness for an UNBOUNDED invisibility if the re-index is ever
+    lost. The durable cursor is what makes it resumable; THIS is what makes it visible,
+    so a backlog can never sit unseen.
+
+    ``available: false`` means the backlog could not be read (a locked or missing store),
+    NOT that it is empty -- reporting the two the same way would be the exact
+    fabricated-reassurance this guard exists to prevent."""
+    from sqlalchemy import text
+
+    from src.database.session import session_scope
+
+    try:
+        with session_scope() as session:
+            rows = session.execute(
+                text(
+                    "SELECT b.id, b.created_at, COUNT(m.row_id) AS n"
+                    " FROM merge_batches b"
+                    " LEFT JOIN merged_rows m"
+                    "   ON m.batch_id = b.id AND m.table_name = 'articles'"
+                    " WHERE b.status = :s"
+                    " GROUP BY b.id, b.created_at"
+                    " HAVING COUNT(m.row_id) > 0"
+                    " ORDER BY b.id"
+                ),
+                {"s": _STATUS_MERGED},
+            ).fetchall()
+    except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never 500
+        _LOG.warning("could not read the re-index backlog", exc_info=True)
+        return {"available": False, "reason": str(exc)}
+    batches = [
+        {"batch_id": int(r[0]), "created_at": str(r[1]) if r[1] is not None else None,
+         "articles": int(r[2])}
+        for r in rows
+    ]
+    return {
+        "available": True,
+        "batches": batches,
+        "batches_pending": len(batches),
+        "articles_pending": sum(b["articles"] for b in batches),
+        "method": (
+            "imports whose articles were merged but whose re-index has not been "
+            "confirmed complete; counts read from merged_rows, never estimated"
+        ),
+    }
+
+
 def reindex_imported_articles(
     batch_id: int,
     *,
@@ -1842,6 +1936,7 @@ def reindex_imported_articles(
     workers: int | None = None,
     progress_cb: Callable[[int, int], None] | None = None,
     stats: dict | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict:
     """Recompute CORE-ENGINE metadata for the articles imported by ``batch_id``.
 
@@ -1917,6 +2012,7 @@ def reindex_imported_articles(
             workers=workers,
             progress_cb=_tracked,
             stats=stats,
+            should_stop=should_stop,
         )
         # Only a batch that reached the end is stamped done. Anything short of that
         # deliberately stays 'merged', so the backlog survives the interruption -- the
@@ -2032,6 +2128,7 @@ def run_restore(
     reindex_progress_cb: Callable[[int, int], None] | None = None,
     merge_cache_mb: int | None = None,
     stage_progress_cb: Callable[[str], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict:
     """Preview (commit=False) or perform (commit=True) a merge-restore.
 
@@ -2076,12 +2173,38 @@ def run_restore(
     a caller still passing a 1-argument callable stopped receiving pings entirely,
     with no error anywhere. A caller that wants the position derives it from
     :func:`restore_stage_plan` — which is public, pure and drift-guarded for
-    exactly that purpose."""
+    exactly that purpose.
+
+    ``should_stop`` (field ruling 2026-07-29 item 15, "stop/abort is IMMEDIATE,
+    losing the current import"): polled at every PRE-SWAP stage boundary and
+    between the 14 merge steps. Every one of those stages works on the
+    disposable ``.restore-<hex>`` staging dir and the ``working.db`` copy, so
+    aborting there raises :class:`RestoreAborted` with the live corpus
+    byte-identical -- a genuinely free, genuinely complete abort.
+
+    The LAST poll is immediately before ``swap``. From ``os.replace`` onward
+    there is deliberately NO abort hook: the swap is atomic and there is no
+    sound undo for it (a ``merged_rows`` delete leaves dangling ids, hash-joined
+    rows legitimately attach to PRE-EXISTING articles, and nothing repairs the
+    counters afterward), so offering one would be fabricated capability. The
+    post-swap tail (re-index, counters, tallies) is resumable work that a Stop
+    simply leaves for later, which the caller reports as such rather than as an
+    undo."""
     from src.backup.sqlite_backup import live_db_path
     from src.backup.timing import StageTimings
     from src.database.session import dispose_engine, init_db
 
     timings = StageTimings(on_start=stage_progress_cb)
+
+    def _abort_point(before: str) -> None:
+        """Honour a Stop at a PRE-SWAP boundary (ruling item 15). Never called
+        after the swap -- see this function's docstring for why that is a design
+        decision rather than an omission."""
+        if should_stop is not None and should_stop():
+            raise RestoreAborted(
+                f"stopped before '{before}' — nothing was written to your corpus"
+            )
+
     # Fold in stage-A (decrypt/reassemble) timing, already measured by whichever
     # producer (read_artifact / read_stream_backup / read_volume_backup) built
     # this StagedArtifact — run_restore itself never touches stage A (it only
@@ -2090,6 +2213,7 @@ def run_restore(
     for _name, _seconds in (staged.stage_a_timings or {}).items():
         timings.record(f"stage_a:{_name}", _seconds)
 
+    _abort_point("prepare_staged")
     with timings.stage("prepare_staged"):
         original_rev = prepare_staged_corpus(staged, allow_unverified=allow_unverified)
 
@@ -2100,6 +2224,7 @@ def run_restore(
     # encrypted corpus must never yield a plaintext live file at the swap.
     from src.database.connect import snapshot_preserving
 
+    _abort_point("snapshot_working_copy")
     with timings.stage("snapshot_working_copy"):
         snapshot_preserving(live_db_path(), working)
 
@@ -2125,12 +2250,15 @@ def run_restore(
         if progress_cb is not None:
             progress_cb(done, total, name)
 
+    _abort_point("merge")
     with timings.stage("merge"):
         _step_clock["t"] = time.monotonic()
         counts, batch_id = merge_corpus(
             staged.corpus_path, working, meta,
             progress_cb=_timed_progress_cb, cache_mb=merge_cache_mb,
+            should_stop=should_stop,
         )
+    _abort_point("verify")
     with timings.stage("verify"):
         verification = verify_copy(working, staged.corpus_path, batch_id)
 
@@ -2161,6 +2289,7 @@ def run_restore(
     # (the merge above only touched the disposable working copy) -- so this is the
     # true pre-import state. Best-effort: a snapshot hiccup must never abort an
     # otherwise-good restore; absence just means the UI shows no delta view.
+    _abort_point("corpus_delta_before")
     with timings.stage("corpus_delta_before"):
         try:
             from src.database.session import session_scope
@@ -2197,10 +2326,12 @@ def run_restore(
     _snapshot_guard = ExitStack()
     _snapshot_guard.enter_context(active_staging(snapshot))
     try:
+        _abort_point("pre_restore_snapshot")
         with timings.stage("pre_restore_snapshot"):
             snapshot_preserving(live_db_path(), snapshot)
         report["pre_restore_snapshot"] = str(snapshot)
 
+        _abort_point("side_files_and_custody")
         with timings.stage("side_files_and_custody"):
             report["side_files"] = merge_side_files(staged)
             if staged.custody_path is not None:
@@ -2213,6 +2344,7 @@ def run_restore(
         # happened yet at the moment this row is written.)
         from src.database.connect import connect as db_connect
 
+        _abort_point("report_json_write")
         with timings.stage("report_json_write"):
             report["timings"] = timings.report()
             con = db_connect(working, check_same_thread=False)
@@ -2229,6 +2361,9 @@ def run_restore(
         # crash-sensitivity moment in the whole engine) -- the timer adds only two
         # cheap time.monotonic() calls around the UNCHANGED block, never a new
         # exception path (a raise here still propagates exactly as before).
+        # THE LAST ABORT POINT. Past os.replace there is no undo, so no
+        # further poll exists -- by design, not by omission.
+        _abort_point("swap")
         with timings.stage("swap"):
             target = live_db_path()
             dispose_engine()
@@ -2313,6 +2448,11 @@ def run_restore(
                         workers=reindex_workers,
                         progress_cb=reindex_progress_cb,
                         stats=_rx_stats,
+                        # POST-SWAP stop (ruling item 15): the corpus is already
+                        # committed and additive, so this is not an abort -- it
+                        # leaves the batch marked 'merged' with its durable cursor
+                        # intact, and the backlog resumes later exactly here.
+                        should_stop=should_stop,
                     )
                     _rx_stats["commit_batch"] = reindex_commit_batch
                 except Exception:  # noqa: BLE001 - never undo a committed, additive restore

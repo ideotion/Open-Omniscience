@@ -275,20 +275,44 @@ def legacy_restore(body: LegacyRestoreBody) -> dict:
     legacy archive nested in a subfolder is now a first-class importable item, not just a
     note pointing at the old panel. The 2 GiB legacy-format cap still applies (these
     single files were always ≤2 GiB — the volume set is the large path)."""
-    from pathlib import Path
+    return restore_legacy_path(
+        body.path,
+        body.passphrase or None,
+        include_newsletters=body.include_newsletters,
+        allow_unverified=body.allow_unverified,
+    )
 
-    p = Path(body.path)
+
+def restore_legacy_path(
+    path: str,
+    passphrase: str | None,
+    *,
+    include_newsletters: bool = True,
+    allow_unverified: bool = False,
+    should_stop=None,
+) -> dict:
+    """The legacy single-file restore, callable WITHOUT a request.
+
+    Extracted from the endpoint above (2026-07-29) so the server-side import queue
+    runs the IDENTICAL path -- staging, selection filter, additive merge, staging
+    cleanup and the same honest error classification -- rather than a second
+    implementation that could drift from it. The endpoint is now a thin wrapper, so
+    there is exactly one legacy-restore code path in the app."""
+    from pathlib import Path as _Path
+
+    p = _Path(path)
     if not p.is_file():
         raise HTTPException(status_code=400, detail=f"{p} is not a file to restore.")
     try:
         data = p.read_bytes()
     except OSError as exc:
         raise HTTPException(status_code=400, detail=f"could not read {p}: {exc}") from exc
-    staged = _stage_upload(data, body.passphrase or None)
-    _apply_restore_selection(staged, include_newsletters=body.include_newsletters)
+    staged = _stage_upload(data, passphrase or None)
+    _apply_restore_selection(staged, include_newsletters=include_newsletters)
     try:
-        report = run_restore(staged, commit=True, allow_unverified=body.allow_unverified)
-        return report
+        return run_restore(
+            staged, commit=True, allow_unverified=allow_unverified, should_stop=should_stop
+        )
     except MergeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except HTTPException:
@@ -606,3 +630,85 @@ def volume_backup_pause() -> dict:
     mgr = get_volume_manager()
     mgr.pause()
     return mgr.status()
+
+
+# --------------------------------------------------------------------------- #
+#  Server-side IMPORT QUEUE (field remarks 2026-07-29 remark 2, rulings 10/13/15/16).
+#  A multi-backup folder is ONE import: the sequencing, the identity of each item,
+#  the single exclusive collection window and the Stop all live here rather than in
+#  the browser, so a page reload no longer decapitates a running import.
+# --------------------------------------------------------------------------- #
+class ImportQueueItem(BaseModel):
+    kind: str
+    path: str
+    label: str | None = None
+    categories: list[str] = []
+
+
+class ImportQueueBody(BaseModel):
+    items: list[ImportQueueItem]
+    passphrase: str = ""
+
+
+@router.post("/import-queue/start")
+def import_queue_start(body: ImportQueueBody) -> dict:
+    """Queue an import run and begin it. 409 if one is already in flight."""
+    from src.backup.import_queue import get_import_queue
+
+    try:
+        return get_import_queue().start(
+            [i.model_dump() for i in body.items], passphrase=body.passphrase
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/import-queue/status")
+def import_queue_status() -> dict:
+    """The whole run: per-item identity + outcome, the live sub-job progress, real
+    elapsed times. Safe to poll; also how the dialog recovers its own state after a
+    reload (ruling item 16)."""
+    from src.backup.import_queue import get_import_queue
+
+    return get_import_queue().status()
+
+
+@router.post("/import-queue/stop")
+def import_queue_stop() -> dict:
+    """Stop the run IMMEDIATELY (ruling item 15). Before a restore's atomic swap the
+    abort is free and complete — the live corpus is byte-identical. After it, the
+    swap has already landed (there is no sound undo) and this stops the remaining
+    work, whose durable cursor resumes it later. Items still queued are cancelled."""
+    from src.backup.import_queue import get_import_queue
+
+    mgr = get_import_queue()
+    mgr.stop()
+    return mgr.status()
+
+
+@router.post("/import-queue/clear")
+def import_queue_clear() -> dict:
+    """Forget a FINISHED run so the dialog starts clean. 409 while one is running."""
+    from src.backup.import_queue import get_import_queue
+
+    try:
+        return get_import_queue().clear()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/reindex-backlog")
+def reindex_backlog_status() -> dict:
+    """Imports whose articles are merged but not yet confirmed re-indexed.
+
+    The mandatory guard on the 2026-07-29 option-(a) ruling: the merge no longer copies
+    the incoming corpus's derived rows, so an un-re-indexed import has NO keywords. That
+    is honoured structurally by every analytics path, but it trades a bounded staleness
+    for an unbounded invisibility if the backlog is ever lost — so it has to be
+    readable. ``available: false`` means the backlog could not be read, never that it is
+    empty."""
+    from src.backup.merge import reindex_backlog
+
+    return reindex_backlog()

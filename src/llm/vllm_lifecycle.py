@@ -620,6 +620,11 @@ _PARAM_RE = re.compile(r"(?<![A-Za-z0-9.])(\d+(?:\.\d+)?)\s*[Bb](?![A-Za-z0-9])"
 # Quantisation hints that appear in real repo/tag names. ~0.6 GB per billion params is
 # the 4-bit ballpark (4 bits of weight + scales/zeros overhead); fp16/bf16 is 2.0.
 _QUANT_HINTS = ("q4", "q5", "q8", "awq", "gptq", "int4", "int8", "4bit", "8bit", "nf4")
+# FP8 is ~1 byte/param. Named separately from the 4-bit hints because it is a real,
+# distinct tier -- and because assuming fp16 for anything unlabelled is what produced a
+# wrong figure in the field (Ministral 3's Instruct checkpoints ship FP8 without saying
+# so in the repo name).
+_FP8_HINTS = ("fp8", "f8")
 
 
 def estimate_weights_gb(model: str) -> dict:
@@ -647,16 +652,37 @@ def estimate_weights_gb(model: str) -> dict:
         }
     params = float(m.group(1))
     quantised = any(h in name for h in _QUANT_HINTS)
-    per_b = 0.6 if quantised else 2.0
+    fp8 = any(h in name for h in _FP8_HINTS)
+    # A RANGE, not a point estimate. The earlier version reported a single fp16 figure
+    # and was WRONG in the field: Ministral 3's Instruct checkpoints ship in FP8, so
+    # "Ministral-3-8B-Instruct-2512" is ~8 GB of weights, not the ~16 GB that was
+    # published to a maintainer. A model NAME does not carry its dtype, so claiming one
+    # number was fabricated precision. The honest form states both ends and lets the
+    # caller refuse only when even the OPTIMISTIC end does not fit.
+    if quantised:
+        low = high = params * 0.6
+        basis = "4-bit quantised (from the name)"
+    elif fp8:
+        low = high = params * 1.0
+        basis = "FP8 (from the name)"
+    else:
+        low, high = params * 1.0, params * 2.0
+        basis = (
+            "dtype NOT stated in the name -- FP8 (1 GB/B) to fp16/bf16 (2 GB/B); "
+            "many recent Instruct checkpoints ship FP8"
+        )
     return {
         "params_b": params,
-        "weights_gb": round(params * per_b, 1),
+        "weights_gb_low": round(low, 1),
+        "weights_gb_high": round(high, 1),
+        # Kept for callers that want one number to show: the OPTIMISTIC end, so nothing
+        # downstream can overstate a model's cost.
+        "weights_gb": round(low, 1),
         "quantised": quantised,
         "confident": True,
         "method": (
-            f"{params:g}B parameters x {per_b} GB/B "
-            f"({'4-bit quantised' if quantised else 'fp16/bf16, vLLM default'}), "
-            "read from the model NAME -- weights only, excludes KV cache and activations"
+            f"{params:g}B parameters x {basis}, read from the model NAME -- "
+            "weights only, excludes KV cache and activations"
         ),
     }
 
@@ -672,12 +698,16 @@ def vram_fit(model: str, vram_mb: int | None) -> dict:
     if not vram_mb or vram_mb <= 0 or est["weights_gb"] is None:
         return {"verdict": "unknown", "estimate": est, "vram_gb": None}
     vram_gb = round(vram_mb / 1024.0, 1)
-    w = est["weights_gb"]
-    # Weights must leave room for the KV cache and activations; a model whose weights
-    # alone exceed the card cannot load at all.
-    if w >= vram_gb:
+    # Judge on the OPTIMISTIC end of the range. A refusal built on the pessimistic end
+    # would block models that actually fit -- exactly the mistake that reported ~16 GB
+    # for an FP8 8B. "too_large" now means "cannot fit even at the most favourable dtype
+    # the name permits", which is a claim the estimate can actually support.
+    low = est["weights_gb_low"]
+    high = est.get("weights_gb_high", low)
+    if low >= vram_gb:
         verdict = "too_large"
-    elif w > vram_gb * 0.75:
+    elif high > vram_gb * 0.75:
+        # Either genuinely close, or unknown-dtype where the pessimistic end is close.
         verdict = "tight"
     else:
         verdict = "fits"
@@ -717,12 +747,14 @@ def start(
     fit = vram_fit(model, gpu.get("vram_mb"))
     if fit["verdict"] == "too_large" and not allow_oversized:
         est = fit["estimate"]
+        lo, hi = est["weights_gb_low"], est.get("weights_gb_high", est["weights_gb_low"])
+        span = f"{lo} GB" if lo == hi else f"{lo}-{hi} GB"
         raise VllmUnsupportedError(
-            f"{model} needs about {est['weights_gb']} GB of weights "
-            f"({est['method']}), but this GPU has {fit['vram_gb']} GB. "
-            "vLLM loads fp16 by default, so the weights alone do not fit and the server "
-            "would fail to start. Use a smaller or quantised (AWQ/GPTQ) variant, or "
-            "Ollama, which runs quantised models on far less memory."
+            f"{model} needs about {span} of weights ({est['method']}), but this GPU has "
+            f"{fit['vram_gb']} GB -- so it does not fit even at the most favourable "
+            "precision, before any KV cache. Use a smaller variant (the 3B class fits "
+            "8 GB), a 4-bit AWQ/GPTQ build, or Ollama, which runs quantised models on "
+            "far less memory."
         )
     args = compute_server_args(
         gpu.get("vram_mb"),

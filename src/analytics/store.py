@@ -472,6 +472,7 @@ def reindex_articles(
     workers: int | None = None,
     progress_cb: Callable[[int, int], None] | None = None,
     stats: dict | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> dict:
     """Recompute CORE-ENGINE derived metadata for an EXPLICIT set of articles.
 
@@ -515,7 +516,14 @@ def reindex_articles(
     re-index is CPU-bound (precompute), write-bound (apply), or silently degraded to
     one core -- three very different fixes. An out-parameter, so the RETURN shape stays
     exactly ``{"reindexed", "failed"}`` and every existing exact-equality assertion on
-    it keeps passing."""
+    it keeps passing.
+
+    ``should_stop`` (2026-07-29): polled at each precompute-window boundary so a
+    long post-swap re-index can be stopped by the operator. It returns the counts
+    achieved so far rather than raising -- a stopped re-index is not a failure, and
+    every article it DID finish is committed and correct. The caller distinguishes
+    "stopped early" from "finished" by comparing the returned total against the
+    ids it asked for."""
     total = len(article_ids)
     reindexed = 0
     failed = 0
@@ -666,6 +674,17 @@ def reindex_articles(
     _t_all = time.monotonic()
 
     for w_start in range(0, len(article_ids), _PRECOMPUTE_WINDOW):
+        # Cooperative stop (field ruling 2026-07-29 item 15): a POST-SWAP import
+        # Stop must be able to reach the re-index, which is by far the longest
+        # remaining phase -- a Stop that could not would be a button that does
+        # nothing for hours. Checked at the WINDOW boundary, which is the one
+        # place with no accumulated-but-uncommitted work: the previous window's
+        # _apply_window has already flushed, so nothing a batch-mate contributed
+        # can be lost here (the standing mid-batch-rollback-discards-siblings
+        # lesson). Returning early leaves done < total, so the caller does NOT
+        # stamp the batch complete and its durable cursor resumes exactly here.
+        if should_stop is not None and should_stop():
+            break
         window_ids = article_ids[w_start : w_start + _PRECOMPUTE_WINDOW]
         articles: list[Article] = []
         _t0 = time.monotonic()

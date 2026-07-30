@@ -6003,6 +6003,9 @@
       _uxImFound = null; _uxImSrc = "";
       document.getElementById("ux-import").showModal();
       _uxShowLastCompletedSummary();  // best-effort; never blocks opening the dialog
+      // Reattach to a run already in flight on the SERVER (ruling item 16): a reload no
+      // longer decapitates an import, so the dialog must be able to find it again.
+      _uxImReattach();
     }
 
     // Field report 2026-07-16: "after a successful import/merge, the interface doesn't
@@ -6155,85 +6158,212 @@
       btn.disabled = false;
     }
 
+    // The RUN. Field remarks 2026-07-29 remark 2: this used to be a client-side loop
+    // over the discovered items, POSTing each in turn and writing every one of them into
+    // the same bar behind a constant "Corpus" prefix. That shape made four things
+    // structurally impossible -- per-item identity, a Stop, survival of a reload, and a
+    // single exclusive collection window across the run. So the sequencing now lives on
+    // the server (/api/backup/import-queue) and this function only BUILDS the plan and
+    // renders what the server reports.
     async function _uxImRun(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const src = _uxImSrc, f = _uxImFound || {};
-      const prog = document.getElementById("ux-imp-progress");
-      const bar = document.getElementById("ux-imp-bar");
       const summaryEl = document.getElementById("ux-imp-summary");
       summaryEl.innerHTML = "";
       const cb = (id) => { const el = document.getElementById(id); return el && el.checked; };
       const corpus = Array.isArray(f.corpus) ? f.corpus : (f.corpus ? [f.corpus] : []);
       const legacy = f.legacy_backup || [];
       const blobRoots = f.blob_roots || (f.blobs ? [{ root: src, categories: Object.keys(f.blobs).map(k => ({ wiki: "wiki_dumps", maps: "osm_regions", models: "models" }[k])) }] : []);
-      const doCorpus = corpus.length && cb("ux-i-corpus");
-      const doLegacy = legacy.length && cb("ux-i-legacy");
-      const doBlobs = blobRoots.length && cb("ux-i-blobs");
-      const doEml = f.newsletters && cb("ux-i-eml");
       const pass = document.getElementById("ux-imp-pass").value || "";
-      // The volume corpus is ALWAYS encrypted → a passphrase is required. A legacy
+      // The volume corpus is ALWAYS encrypted -> a passphrase is required. A legacy
       // single-file archive may be plaintext, so its passphrase is optional here;
       // an encrypted one with an empty/wrong passphrase fails loudly at the backend.
-      if (doCorpus && !pass) {
+      if (corpus.length && cb("ux-i-corpus") && !pass) {
         toast(t("Enter the passphrase to restore the corpus."), "err"); return;
       }
-      const summaries = [];  // {title, plan?} | {title, lines?}
+      // Each volume set lives in its OWN folder (the scan returns the exact dir the
+      // manifest is in) -- queue each with THAT path, never the scanned parent.
+      const items = [];
+      if (corpus.length && cb("ux-i-corpus")) {
+        for (const c of corpus) items.push({ kind: "corpus", path: c.path, label: _uxImLabel(c.path, t("Corpus backup")) });
+      }
+      if (legacy.length && cb("ux-i-legacy")) {
+        for (const lg of legacy) items.push({ kind: "legacy", path: lg.path, label: lg.name });
+      }
+      if (blobRoots.length && cb("ux-i-blobs")) {
+        for (const br of blobRoots) items.push({ kind: "blobs", path: br.root, label: t("Large data"), categories: br.categories });
+      }
+      if (f.newsletters && cb("ux-i-eml")) items.push({ kind: "newsletters", path: src, label: t("Newsletters") });
+      if (!items.length) { toast(t("Nothing selected to import."), "err"); return; }
+
       btn.disabled = true;
-      // The import runs as background jobs (visible + pausable in the task manager);
-      // offer to leave the modal and keep working while it finishes.
       const bgBtn = document.getElementById("ux-imp-bg");
       if (bgBtn) bgBtn.style.display = "";
-      const dlg = document.getElementById("ux-import");
-      const backgrounded = () => dlg && !dlg.open;  // user closed the modal to keep working
       try {
-        // Each volume set lives in its OWN folder (the scan returns the exact dir the
-        // manifest is in) — restore each with THAT path, never the scanned parent.
-        for (const c of (doCorpus ? corpus : [])) {
-          await api("/api/backup/v2/volumes/restore", { method: "POST", body: JSON.stringify({ src: c.path, passphrase: pass }) });
-          const s = await _uxPoll("/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Corpus") });
-          const rep = (s.summary && s.summary.report) || {};
-          summaries.push({ title: t("Corpus backup"), plan: rep.plan || {}, ..._uxPlanExtras(rep) });
-        }
-        // Legacy single-file backups: merge each additively (server-side path).
-        for (const lg of (doLegacy ? legacy : [])) {
-          if (bar) { bar.style.display = ""; bar.removeAttribute("value"); }
-          prog.innerHTML = `${esc(t("Legacy"))}: ${esc(lg.name)} — ${esc(t("Merging (additive)…"))}`;
-          const rep = await api("/api/backup/legacy/restore", { method: "POST", body: JSON.stringify({ path: lg.path, passphrase: pass }) });
-          summaries.push({ title: lg.name, plan: rep.plan || {}, ..._uxPlanExtras(rep) });
-        }
-        // Large-data blobs: one folder/restore call per root dir the scan grouped.
-        for (const br of (doBlobs ? blobRoots : [])) {
-          await api("/api/backup/folder/restore", { method: "POST", body: JSON.stringify({ src: br.root, categories: br.categories }) });
-          const s = await _uxPoll("/api/backup/folder/status", "folder", { bar, label: prog, prefix: t("Large data") });
-          const p = s.progress || {};
-          summaries.push({ title: t("Large data"), tally: { restored: p.restored || 0, skipped: p.skipped || 0 }, lines: [
-            `${p.restored || 0} ${t("restored")}`, `${p.skipped || 0} ${t("skipped")}`] });
-        }
-        if (doEml) {
-          await api("/api/newsletters/import-folder", { method: "POST", body: JSON.stringify({ folder: src }) });
-          const s = await _uxPoll("/api/newsletters/import-folder/status", "newsletters", { bar, label: prog, prefix: t("Newsletters") });
-          const tl = s.tally || {};
-          summaries.push({ title: t("Newsletters"), tally: { stored: tl.stored || 0, duplicate: tl.duplicate || 0, empty: tl.empty || 0, errors: tl.errors || 0 }, lines: [
-            `${tl.stored || 0} ${t("stored")}`, `${tl.duplicate || 0} ${t("already present")}`,
-            `${tl.empty || 0} ${t("empty")}`, `${tl.errors || 0} ${t("errors")}`] });
-        }
-        if (bar) bar.style.display = "none";
-        prog.innerHTML = `<b>${esc(t("Import complete."))}</b>`;
-        _renderImportSummary(summaryEl, summaries);
-        // If the user left the modal to keep working, tell them it finished (the
-        // summary stays in the dialog — reopening Import shows it).
-        if (backgrounded()) toast(t("Import complete."));
+        await api("/api/backup/import-queue/start", { method: "POST", body: JSON.stringify({ items, passphrase: pass }) });
       } catch (e) {
-        if (bar) bar.style.display = "none";
-        // HONEST failure: show the real backend detail, not "see console".
-        prog.innerHTML = `<span class="note err">${esc(t("Import failed:"))} ${esc(e.message || e)}</span>`;
-        if (summaries.length) _renderImportSummary(summaryEl, summaries);  // show what DID import
-        if (backgrounded()) toast(t("Import failed:") + " " + (e.message || e), "err");
-        console.error("ux import run", e);
-      } finally {
+        btn.disabled = false;
         if (bgBtn) bgBtn.style.display = "none";
+        document.getElementById("ux-imp-progress").innerHTML = `<span class="note err">${esc(t("Import failed:"))} ${esc(e.message || e)}</span>`;
+        return;
       }
+      _uxImQueuePoll();
+    }
+
+    // A backup set's folder name is its most useful identity (the maintainer's six
+    // backups differ only by folder). Falls back to the generic label, never to a
+    // blank row.
+    function _uxImLabel(path, fallback) {
+      const parts = String(path || "").split(/[\\/]+/).filter(Boolean);
+      return parts.length ? parts[parts.length - 1] : fallback;
+    }
+
+    let _uxImPollTimer = null;
+
+    // Poll the ONE server-side run and mirror it. Deliberately not a client-side
+    // sequencer: nothing here decides what runs next, so closing the tab or reloading
+    // the page cannot decapitate the import (the reason the old loop could not).
+    async function _uxImQueuePoll() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (_uxImPollTimer) { clearTimeout(_uxImPollTimer); _uxImPollTimer = null; }
+      let st = null;
+      try { st = await api("/api/backup/import-queue/status"); }
+      catch (e) { console.error("import queue status", e); }
+      if (!st) { _uxImPollTimer = setTimeout(_uxImQueuePoll, 3000); return; }
+      _uxImRenderQueue(st);
+      if (st.state === "running") { _uxImPollTimer = setTimeout(_uxImQueuePoll, 1000); return; }
+      // Terminal: surface the per-item reports through the SAME summary renderer the
+      // single-archive path uses, so nothing about the outcome view changes.
+      const runBtn = document.getElementById("ux-imp-run");
+      const stopBtn = document.getElementById("ux-imp-stop");
+      const bgBtn = document.getElementById("ux-imp-bg");
+      if (runBtn) runBtn.disabled = false;
+      if (stopBtn) stopBtn.style.display = "none";
+      if (bgBtn) bgBtn.style.display = "none";
+      const summaries = [];
+      for (const it of (st.items || [])) {
+        const sm = it.summary || {};
+        if (it.kind === "corpus" || it.kind === "legacy") {
+          const rep = sm.report || sm || {};
+          summaries.push({ title: it.label, plan: rep.plan || {}, ..._uxPlanExtras(rep) });
+        } else if (it.kind === "blobs") {
+          summaries.push({ title: it.label, tally: { restored: sm.restored || 0, skipped: sm.skipped || 0 },
+            lines: [`${sm.restored || 0} ${t("restored")}`, `${sm.skipped || 0} ${t("skipped")}`] });
+        } else if (it.kind === "newsletters") {
+          const tl = sm.tally || {};
+          summaries.push({ title: it.label, tally: { stored: tl.stored || 0, duplicate: tl.duplicate || 0, empty: tl.empty || 0, errors: tl.errors || 0 },
+            lines: [`${tl.stored || 0} ${t("stored")}`, `${tl.duplicate || 0} ${t("already present")}`,
+                    `${tl.empty || 0} ${t("empty")}`, `${tl.errors || 0} ${t("errors")}`] });
+        }
+      }
+      if (summaries.length) _renderImportSummary(document.getElementById("ux-imp-summary"), summaries);
+      const dlg = document.getElementById("ux-import");
+      if (dlg && !dlg.open) {
+        if (st.state === "done") toast(t("Import complete."));
+        else if (st.state === "stopped") toast(t("Import stopped."));
+        else if (st.state === "error") toast(t("Import finished with errors."), "err");
+      }
+    }
+
+    const _UX_IM_STATE_LABEL = {
+      queued: "Waiting", running: "Running", done: "Done", error: "Failed",
+      cancelled: "Cancelled", skipped: "Skipped", stopped: "Stopped",
+      interrupted: "Interrupted",
+    };
+
+    function _uxImRenderQueue(st) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = document.getElementById("ux-imp-queue");
+      const rows = document.getElementById("ux-imp-queue-rows");
+      const note = document.getElementById("ux-imp-queue-note");
+      if (!box || !rows) return;
+      const items = st.items || [];
+      if (!items.length) { box.style.display = "none"; return; }
+      box.style.display = "";
+      const stopBtn = document.getElementById("ux-imp-stop");
+      if (stopBtn) stopBtn.style.display = st.state === "running" ? "" : "none";
+      const runBtn = document.getElementById("ux-imp-run");
+      if (runBtn && st.state === "running") runBtn.disabled = true;
+      // The run header: what it is doing overall + the collection statement (ruling 12).
+      const head = `${items.filter(i => i.state === "done").length}/${items.length} ${esc(t("imported"))}`;
+      note.innerHTML = `<b>${head}</b>${st.elapsed_s != null ? ` · ${esc(_uxImDur(st.elapsed_s))}` : ""}`
+        + (st.state === "running" && st.collection_paused ? `<br>${esc(t("Background collection is paused for this whole import and resumes when it finishes."))}` : "")
+        + (st.state === "interrupted" ? `<br><span class="note err">${esc(t("This import was interrupted when the app stopped. It cannot resume (the passphrase is never stored) — start it again."))}</span>` : "");
+      rows.innerHTML = items.map((it) => {
+        const label = esc(it.label || it.kind);
+        const state = esc(t(_UX_IM_STATE_LABEL[it.state] || it.state));
+        const el = it.elapsed_s != null ? ` · ${esc(_uxImDur(it.elapsed_s))}` : "";
+        const err = it.error ? `<div class="note err" style="margin-left:14px">${esc(it.error)}</div>` : "";
+        const live = it.state === "running" ? _uxImLive(st.live, t) : "";
+        const dot = { done: "var(--ok)", error: "var(--err)", running: "var(--accent)" }[it.state] || "var(--muted)";
+        return `<div><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${dot};margin-right:6px"></span>`
+          + `<b>${label}</b> <span class="muted">— ${state}${el}</span>${live}</div>${err}`;
+      }).join("");
+      const body = document.getElementById("ux-imp-details-body");
+      if (body) body.innerHTML = _uxImDetails(st, t);
+    }
+
+    // The current PHASE's own honest unit (ruling 14) -- never a made-up percentage of
+    // the whole run, whose items are different kinds of work over different units.
+    function _uxImLive(live, t) {
+      const p = (live && live.progress) || {};
+      if (!p.phase) return "";
+      const bits = [esc(_uxVolPhase(p.phase, "restore", t))];
+      if (p.phase_index && p.phase_total) bits.push(`${p.phase_index}/${p.phase_total}`);
+      if (p.merge_steps) bits.push(`${p.merge_step || 0}/${p.merge_steps} ${esc(t("steps"))}`);
+      if (p.reindex_total) {
+        bits.push(`${p.reindex_done || 0}/${p.reindex_total} ${esc(t("articles"))}`);
+      }
+      return ` <span class="muted">· ${bits.join(" · ")}</span>`;
+    }
+
+    function _uxImDur(s) {
+      s = Math.max(0, Math.round(Number(s) || 0));
+      if (s < 60) return `${s}s`;
+      const m = Math.floor(s / 60);
+      if (m < 60) return `${m}m ${s % 60}s`;
+      return `${Math.floor(m / 60)}h ${m % 60}m`;
+    }
+
+    // "Show details" (ruling 16): the per-item facts behind the rows. Reads from the
+    // SERVER's status, so it is still correct after a reload -- there is no client-side
+    // record it could disagree with.
+    function _uxImDetails(st, t) {
+      const rows = (st.items || []).map((it) => {
+        const bits = [`<b>${esc(it.label || it.kind)}</b>`, esc(it.kind), esc(t(_UX_IM_STATE_LABEL[it.state] || it.state))];
+        if (it.elapsed_s != null) bits.push(esc(_uxImDur(it.elapsed_s)));
+        bits.push(`<span class="muted">${esc(it.path)}</span>`);
+        return `<div>${bits.join(" · ")}</div>`;
+      });
+      if (st.started_at) {
+        // fmtDateTime, never toLocaleString: dates render in the APP language, not
+        // whatever locale the browser happens to be set to.
+        rows.unshift(`<div class="muted">${esc(t("Started"))}: ${esc(fmtDateTime(st.started_at * 1000))}</div>`);
+      }
+      return rows.join("") || `<span class="muted">${esc(t("No details yet."))}</span>`;
+    }
+
+    // Stop the run. The two halves are genuinely different, so the confirmation says
+    // which one the user is about to get rather than implying an undo that does not
+    // exist for an already-swapped backup.
+    async function _uxImStop(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Stop this import? Any backup that has not yet been swapped in is abandoned completely — your corpus is untouched. A backup already merged stays merged (there is no undo); only the remaining work stops, and its re-index resumes later."))) return;
+      btn.disabled = true;
+      try { await api("/api/backup/import-queue/stop", { method: "POST" }); }
+      catch (e) { toast(t("Could not stop the import:") + " " + (e.message || e), "err"); }
       btn.disabled = false;
+      _uxImQueuePoll();
+    }
+
+    // Reattach to a run already in flight (or just finished) when the dialog opens --
+    // the whole point of moving the sequencing server-side (ruling 16).
+    async function _uxImReattach() {
+      let st = null;
+      try { st = await api("/api/backup/import-queue/status"); } catch { return; }
+      if (!st || !(st.items || []).length) return;
+      _uxImRenderQueue(st);
+      if (st.state === "running") { _uxImQueuePoll(); }
     }
 
     // Leave the (modal) Import dialog while the import keeps running as background
@@ -6241,9 +6371,9 @@
     // aborted by closing the dialog, so the sequence continues and finishes; the task
     // manager shows every job (and pauses/resumes the pausable ones — folder + .eml;
     // a volume-corpus merge is atomic, so it runs to completion). A toast reports the
-    // outcome. (Reloading the page would stop the client-side sequencing — only the
-    // job currently on the server finishes — so this is "keep working", not "survive a
-    // reload"; server-side resumable sequencing is a later step.)
+    // outcome. Since 2026-07-29 the SEQUENCING itself lives on the server, so this now
+    // genuinely survives a reload: the whole run appears in the task manager as one
+    // "Importing …" job, and reopening this dialog reattaches to it (_uxImReattach).
     function _uxImBackground() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const dlg = document.getElementById("ux-import");
@@ -18297,6 +18427,7 @@
     }
 
     async function loadVllmStatusPanel() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("vllm-status-box");
       const installBox = $("vllm-install-box");
       if (!box) return;

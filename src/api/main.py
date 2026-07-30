@@ -119,6 +119,27 @@ def _run_startup_upkeep() -> None:
         optimize_at_boot(_engine)
     except Exception:  # noqa: BLE001 - upkeep must never block startup
         logger.warning("planner-statistics refresh failed", exc_info=True)
+    # The re-index BACKLOG, stated at boot (the mandatory guard on the 2026-07-29
+    # option-(a) ruling). Since the merge no longer copies the incoming corpus's
+    # derived rows, an un-re-indexed import has NO keywords -- honoured structurally
+    # everywhere, but it trades a bounded staleness for an UNBOUNDED invisibility if
+    # the backlog is ever lost. So it is said out loud once per boot, and a read
+    # FAILURE is said too rather than passing for "nothing pending".
+    try:
+        from src.backup.merge import reindex_backlog
+
+        _bk = reindex_backlog()
+        if not _bk.get("available"):
+            logger.warning("could not read the re-index backlog: %s", _bk.get("reason"))
+        elif _bk.get("batches_pending"):
+            logger.warning(
+                "%s imported article(s) across %s import(s) are merged but not yet "
+                "re-indexed -- they carry no keywords until it finishes",
+                _bk.get("articles_pending"), _bk.get("batches_pending"),
+            )
+    except Exception:  # noqa: BLE001 - a report must never block startup
+        logger.warning("re-index backlog check failed", exc_info=True)
+
     # Rolling WARNING+ error log (the debug bundle's heart) — best-effort.
     try:
         from src.monitoring.errorlog import install as _install_errorlog

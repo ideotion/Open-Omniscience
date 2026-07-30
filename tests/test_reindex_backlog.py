@@ -22,6 +22,7 @@ rather than guess.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -132,3 +133,47 @@ def test_the_merge_no_longer_copies_mentions_but_still_handles_the_table():
     )
     assert "r.deferred" in src, "and the skip must be quantified"
     assert "keyword_mentions" in merge_mod._MERGE_HANDLED
+
+
+# --------------------------------------------------------------------------- #
+#  the backlog must be VISIBLE, and "could not read" must not pass for "empty"
+# --------------------------------------------------------------------------- #
+def test_the_backlog_distinguishes_measured_empty_from_could_not_read(monkeypatch):
+    """THE mandatory guard on the option-(a) ruling. The merge no longer copies the
+    incoming corpus's derived rows, so an un-re-indexed import has NO keywords -- a
+    bounded staleness traded for an UNBOUNDED invisibility if the backlog is ever
+    lost. The durable cursor makes it resumable; this makes it visible.
+
+    ``pending_reindex_batches`` returns [] for BOTH outcomes, which is why the wrapper
+    exists: a diagnostic that cannot read must never report the reassurance it did not
+    measure (the project's own degrade-sentinel lesson)."""
+    from src.backup import merge as M
+
+    class _Boom:
+        def __enter__(self):
+            raise RuntimeError("database is locked")
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr("src.database.session.session_scope", lambda: _Boom())
+    out = M.reindex_backlog()
+    assert out["available"] is False
+    assert "locked" in out["reason"]
+    assert "articles_pending" not in out, (
+        "a failed read must not publish a count key at all — a 0 there would read as "
+        "'nothing pending', the exact fabricated reassurance this guard prevents"
+    )
+
+
+def test_the_boot_path_states_the_backlog_out_loud():
+    """A backlog nobody can see is the failure mode option (a) trades for. Pinned at
+    the boot call site, scoped to the upkeep function's own body."""
+    src = (
+        Path(__file__).resolve().parents[1] / "src" / "api" / "main.py"
+    ).read_text(encoding="utf-8")
+    body = src.split("def _run_startup_upkeep(", 1)[1].split("\ndef ", 1)[0]
+    assert "reindex_backlog" in body
+    assert "could not read the re-index backlog" in body, (
+        "a read failure must be reported too, never left to pass for 'nothing pending'"
+    )

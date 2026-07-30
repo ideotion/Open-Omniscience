@@ -505,6 +505,7 @@ def read_volume_backup(
     *,
     corpus_passphrase: str | None = None,
     include_merge_budget: bool = True,
+    should_stop: Callable[[], bool] | None = None,
 ) -> StagedArtifact:
     """Verify + (parity-)recover + reassemble a volume-set backup from the server-side
     directory ``src_dir``, then stage it like any oo-backup-2 artifact. Streams the
@@ -537,7 +538,12 @@ def read_volume_backup(
     stage_a_timings: dict[str, float] = {}
     try:
         t0 = time.monotonic()
-        read_volume_set(src_dir, passphrase, temp_zip)  # verify + parity recover + checksum
+        # ``should_stop`` (ruling item 15): reassembly is one of an import's longest
+        # phases, so a Stop must reach it. An abort raises VolumeStopped; the except
+        # below removes the whole disposable staging dir, so nothing partial survives.
+        read_volume_set(
+            src_dir, passphrase, temp_zip, should_stop=should_stop
+        )  # verify + parity recover + checksum
         stage_a_timings["verify_recover_reassemble"] = round(time.monotonic() - t0, 3)
         with open(temp_zip, "rb") as fh:
             if fh.read(4) != _ZIP_MAGIC:

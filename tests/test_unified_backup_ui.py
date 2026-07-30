@@ -31,14 +31,32 @@ def test_export_dialog_covers_the_streaming_backup_capabilities():
 
 
 def test_import_dialog_covers_restore_and_ingest_capabilities():
-    for ep in (
-        "/api/backup/import-scan",
-        "/api/backup/v2/volumes/restore",
-        "/api/backup/folder/restore",
-        "/api/newsletters/import-folder",
-        "/api/backup/legacy/restore",  # legacy single-file backups now import in the unified dialog
-    ):
+    """The absorption gate, moved with the capability (2026-07-29).
+
+    The dialog used to call the four restore/ingest endpoints DIRECTLY, in a
+    client-side loop. That loop is now a server-side queue -- so asserting the
+    endpoints still appear in app.js would fail for a reason that is not a
+    regression, while asserting nothing would let the capabilities be silently
+    lost. Both halves are checked instead: the dialog reaches the queue, and the
+    queue still dispatches every one of the four kinds."""
+    for ep in ("/api/backup/import-scan", "/api/backup/import-queue/start"):
         assert ep in _APP, ep
+    queue = (
+        Path(__file__).resolve().parents[1] / "src" / "backup" / "import_queue.py"
+    ).read_text(encoding="utf-8")
+    for call in (
+        "get_volume_manager",       # the encrypted volume-set corpus restore
+        "restore_legacy_path",      # legacy single-file archives
+        "get_folder_manager",       # large data (wiki / maps / models)
+        "get_import_manager",       # .eml newsletters
+    ):
+        assert call in queue, f"the queue lost the {call} capability"
+    # And every kind the scan can surface has a runner -- a kind with no branch
+    # would be queued and then silently do nothing.
+    from src.backup.import_queue import KINDS
+
+    for kind in KINDS:
+        assert f"_run_{kind}" in queue, kind
 
 
 def test_dialogs_have_a_real_progress_bar_and_import_summary():
