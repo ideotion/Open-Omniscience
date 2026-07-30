@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 
 from src.analytics import queries as q
 from src.analytics.families import build_families
+from src.api.heavy import guarded_read
 from src.database.maintenance import StatementTimeout, statement_deadline
 from src.database.models import (
     Article,
@@ -1552,6 +1553,203 @@ def leads_quality(download: bool = Query(False), db: Session = Depends(get_db)) 
 
 
 # --------------------------------------------------------------------------- #
+#  CARD-SYSTEM AUDIT — the deep per-card fact bundle (src/briefing/card_audit.py).
+#
+#  The THIRD tier beside /home-cards (click plumbing) and /leads-quality (feed
+#  composition), which both stay exactly as they are. This one carries, per card:
+#  the trigger arithmetic RE-EVALUATED, the article_ids resolved against the live
+#  corpus, independence via the existing near-dup/shared-origin primitives, the
+#  non-fabrication checks, keyword facts, provenance mix, cross-card overlaps and
+#  the disclosed ordering facts -- PLUS an inventory row for EVERY registered
+#  producer distinguishing ok / no-signal / ERROR, the three states run_all
+#  collapses into one indistinguishable empty list.
+#
+#  Two surfaces, deliberately: the GET below is SUMMARY depth (no article content,
+#  bounded, guarded+deadlined) and is the all-diagnostics bundle member; the deep
+#  standard/full-depth run is a cancellable BackgroundJob, because reading article
+#  content through the SQLCipher codec must never sit on the request thread.
+# --------------------------------------------------------------------------- #
+
+
+@router.get("/card-audit")
+def card_audit(
+    depth: str = Query("summary", pattern="^(summary|standard|full)$"),
+    determinism: bool = Query(True),
+    download: bool = Query(False),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Deep card-system audit at SUMMARY depth — the validate-and-optimize instrument
+    for the card/Lead system, built to be re-run each round and diffed against the
+    previous export.
+
+    Reports, per card: the ``trigger`` arithmetic recomputed (a row that cannot be
+    mechanically checked says so with its reason, and is never counted as a pass),
+    the ``article_ids`` resolved against the live corpus, independence (distinct
+    sources · near-identical copies · shared origins, via the existing primitives),
+    the non-fabrication checks, keyword facts, provenance mix and the disclosed
+    ordering facts. PLUS an inventory row for EVERY registered producer stating
+    ``ok`` / ``no-signal`` / ``error`` — so a producer that crashes on every run is
+    no longer indistinguishable from a quiet one.
+
+    Read-only; writes nothing. Counts are exact and uncapped — every bounded list
+    states its exact total beside it. ``depth`` above ``summary`` carries article
+    CONTENT and is better run as the background job (``POST /card-audit/run``), which
+    is why this endpoint's own default is ``summary``."""
+    from src.briefing.card_audit import audit_report_env_defaults, card_audit_report
+
+    bounds = audit_report_env_defaults()
+    budget = bounds.pop("determinism_budget_s", None)
+
+    def _compute() -> dict:
+        return card_audit_report(
+            db,
+            depth=depth,
+            determinism=determinism,
+            # Dimension 6 is ON by default here too. The bundle member cannot afford an
+            # unbounded second producer pass, so it carries a MEASURED budget: if the
+            # first pass already exceeded it the report says {"ran": false, "skipped":
+            # "budget"} with both numbers -- an honest, visible skip, never a silent
+            # default-off (OO_CARD_AUDIT_DETERMINISM_BUDGET_S raises it).
+            determinism_budget_s=budget,
+            **bounds,
+        )
+
+    report = guarded_read(db, "card-audit", _compute)
+    headers = {}
+    if download:
+        fname = f"oo-card-audit-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(report, headers=headers)
+
+
+@router.get("/card-audit/preflight")
+def card_audit_preflight(
+    depth: str = Query("standard", pattern="^(summary|standard|full)$"),
+    excerpt_chars: int = Query(2000, ge=0, le=200000),
+    max_articles_per_card: int = Query(40, ge=0, le=500),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Size ESTIMATE for a deep card-audit run, so the operator sees roughly how large
+    a ``full`` run will be before starting it. Runs the real producer pass and sizes
+    from the REAL card/article counts (exact) times measured per-row JSON costs (an
+    estimate, stated as one). Cheap and read-only; never writes a report."""
+    from src.briefing.card_audit import estimate_card_audit
+
+    return JSONResponse(
+        guarded_read(
+            db,
+            "card-audit-preflight",
+            lambda: estimate_card_audit(
+                db,
+                depth=depth,
+                excerpt_chars=excerpt_chars,
+                max_articles_per_card=max_articles_per_card,
+            ),
+        )
+    )
+
+
+class CardAuditRunBody(BaseModel):
+    depth: str = Field(
+        "standard",
+        description=(
+            "summary (no article content) | standard (a bounded excerpt per article) | "
+            "full (complete article content -- operator-chosen only)"
+        ),
+    )
+    excerpt_chars: int = Field(2000, ge=0, le=200000)
+    max_articles_per_card: int = Field(40, ge=0, le=500)
+    max_linked_rows: int = Field(25, ge=0, le=200)
+    max_coordination_articles: int = Field(60, ge=0, le=500)
+    determinism: bool = Field(
+        True,
+        description=(
+            "run the producer pass twice and diff it (dimension 6). ON by default; the "
+            "deep job carries no budget, so an explicitly-requested run pays the second "
+            "pass rather than skipping it."
+        ),
+    )
+
+
+def _card_audit_worker(ctx, **kwargs) -> dict:
+    from src.briefing.card_audit import card_audit_worker
+
+    return card_audit_worker(ctx, **kwargs)
+
+
+_CARD_AUDIT_JOB = register_job(
+    BackgroundJob(
+        "card-audit", "card-system audit (deep)", _card_audit_worker,
+        is_writer=False, cancellable=True,
+    )
+)
+
+
+@router.post("/card-audit/run")
+def card_audit_run(body: CardAuditRunBody) -> JSONResponse:
+    """Start a DEEP card-audit run as a BACKGROUND job.
+
+    A deep run reads article content through the SQLCipher codec, so it never sits on
+    the request thread (a multi-minute synchronous handler would freeze the whole
+    single-worker server). Read-only on the corpus; stops cooperatively at the next
+    card boundary when cancelled. Poll ``/card-audit/status``, fetch via
+    ``/card-audit/download``. An already-running job returns its status with
+    ``started:false`` rather than a 409."""
+    if body.depth not in ("summary", "standard", "full"):
+        raise HTTPException(status_code=400, detail=f"unknown depth {body.depth!r}")
+    try:
+        st = _CARD_AUDIT_JOB.start(**body.model_dump())
+        st["started"] = True
+    except RuntimeError:
+        st = _CARD_AUDIT_JOB.status()
+        st["started"] = False
+    return JSONResponse(st)
+
+
+@router.get("/card-audit/status")
+def card_audit_status() -> JSONResponse:
+    """Live status of the deep card-audit job (state, progress, and when done the
+    ready report filename + summary in ``result``). No score."""
+    st = _CARD_AUDIT_JOB.status()
+    res = st.get("result") or {}
+    st["ready"] = bool(st.get("state") == "done" and res.get("path"))
+    st["download_filename"] = res.get("filename")
+    return JSONResponse(st)
+
+
+@router.post("/card-audit/cancel")
+def card_audit_cancel() -> JSONResponse:
+    """Ask a running deep card-audit to stop at its next safe point (between cards).
+    Idempotent; no partial report is written."""
+    _CARD_AUDIT_JOB.cancel()
+    return JSONResponse(_CARD_AUDIT_JOB.status())
+
+
+@router.get("/card-audit/download")
+def card_audit_download() -> Response:
+    """Serve the finished deep card-audit report. 404 until a run has completed.
+
+    NOTE: at ``standard``/``full`` depth this file carries corpus CONTENT — the report's
+    own ``content_notice`` block states exactly what it contains, so the operator knows
+    before sharing it."""
+    st = _CARD_AUDIT_JOB.status()
+    res = st.get("result") or {}
+    path = res.get("path")
+    if st.get("state") != "done" or not path or not os.path.exists(path):
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "no card-audit report is ready — start one with "
+                "POST /api/diagnostics/card-audit/run"
+            ),
+        )
+    return FileResponse(
+        path, media_type="application/json",
+        filename=res.get("filename") or "oo-card-audit.json",
+    )
+
+
+# --------------------------------------------------------------------------- #
 # TEMPORARY / REMOVABLE diagnostic — Source & article quality triage bundle.
 # THROWAWAY: delete this endpoint + its Settings→Diagnostics button once the
 # external analyst has used the export to decide, per source, exclude/optimise/keep.
@@ -2870,6 +3068,14 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # S6.1 (Leads-calibration, 2026-07-18): the CURRENT Home Leads feed as a
         # bounded, real-facts report — the measurement loop for the card system.
         ("leads-quality.json", lambda: leads_quality(download=False, db=db)),
+        # The DEEP card-system audit at SUMMARY depth (no article content): the
+        # per-card trigger arithmetic recomputed, corpus fidelity, independence,
+        # non-fabrication checks, and — the reason it exists — an inventory row for
+        # EVERY registered producer distinguishing ok / no-signal / ERROR, so a
+        # producer crashing on every run stops being indistinguishable from a quiet
+        # one. Bounded via audit_report_env_defaults(); the content-carrying
+        # standard/full depths are the separate background job, never this member.
+        ("card-audit.json", lambda: card_audit(depth="summary", download=False, db=db)),
     ]
 
 
@@ -3027,6 +3233,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/pagesize-bench/last": "pagesize-bench.json",
     "/law-coverage": "law-coverage.json",  # S5 of the law-vertical brief 2026-07-17
     "/leads-quality": "leads-quality.json",  # S6.1 of the Leads-calibration brief 2026-07-18
+    "/card-audit": "card-audit.json",  # the DEEP card-system audit (summary depth)
     "/keyword-triage/last": "keyword-triage-run.json",
     "/source-tags-selftest": "source-tags-selftest.json",
     "/source-tags/last": "source-tags-run.json",
@@ -3057,6 +3264,11 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/source-tags/status": "job control", "/source-tags/download": "job control",
     "/perception-extract/status": "job control", "/perception-extract/download": "job control",
     "/perception-extract/gate": "job control — a live, cheap gate preview, not a static report",
+    "/card-audit/status": "job control", "/card-audit/download": "job control",
+    "/card-audit/preflight": (
+        "a live, cheap size ESTIMATE for a deep run, not a static report — the "
+        "summary-depth audit itself is the bundle member (card-audit.json)"
+    ),
     # src/api/integrity.py (transversal audit 09, C2): functional source-integrity
     # API endpoints a UI feature calls directly (coordination/prominence views) —
     # not diagnostic reports, unlike their sibling /fixity above.
@@ -3332,6 +3544,13 @@ def _all_diagnostics_manifest(
                 "endpoint": "/api/diagnostics/source-quality",
                 "reason": "a whole-corpus decrypt pass producing a bulky per-source "
                 "text-sample ZIP — run it from its own Diagnostics button",
+            },
+            {
+                "endpoint": "/api/diagnostics/card-audit/preflight",
+                "reason": "a live size ESTIMATE for a deep card-audit run, not a static "
+                "report — the SUMMARY-depth audit itself IS a bundle member "
+                "(card-audit.json); the deeper depths carry article CONTENT and are "
+                "an operator-chosen background job",
             },
             {
                 "endpoint": "/api/diagnostics/rollup-benchmark",
