@@ -145,13 +145,19 @@ def test_worker_compute_isolates_one_articles_error():
 
     rp._worker_extractor = Boom()
     try:
-        aid, terms, score, label, err = rp._worker_compute(1, "x", "t", "en", None)
+        # 6 elements since 2026-07-30: the when/where/who EXTRACTION half joined
+        # this same precompute (it was the serial ~200-300 ms/article that capped a
+        # field import at ~2 art/s). On the error path it is None -- "not
+        # precomputed", so index_article extracts inline, which is the same
+        # correct-and-slower fallback the terms/sentiment error path already takes.
+        aid, terms, score, label, err, www = rp._worker_compute(1, "x", "t", "en", None)
     finally:
         rp._worker_extractor = None
     assert aid == 1
     assert terms == []
     assert score is None and label is None
     assert err is not None and "simulated extraction failure" in err
+    assert www is None, "a failed article must not claim a when/where/who result"
 
 
 def test_pool_failure_degrades_to_serial(monkeypatch):
