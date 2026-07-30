@@ -312,3 +312,68 @@ def test_a_failed_fast_path_never_leaves_a_partial_copy_behind(tmp_path, monkeyp
         assert con.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 200
     finally:
         con.close()
+
+
+@sqlcipher_only
+def test_the_fast_path_refuses_when_the_write_gate_is_disabled(tmp_path, monkeypatch):
+    """``write_lock()`` is a documented NO-OP under ``OO_WRITE_GATE=0``, so on that
+    escape hatch the fast path's first precondition -- "no write can land mid-copy" --
+    would be silently FALSE while the docstring still claimed it. A guard named for a
+    safety property has to enforce it; with the gate off, nothing can prove the source
+    is quiescent, so the honest answer is to refuse."""
+    monkeypatch.setattr("src.database.connect._passphrase", _PW, raising=False)
+    set_passphrase(_PW)
+    monkeypatch.setenv("OO_WRITE_GATE", "0")
+    src = tmp_path / "live.db"
+    _encrypted_corpus(src)
+
+    import src.database.connect as C
+
+    copied: list[int] = []
+    monkeypatch.setattr(shutil, "copyfile", lambda a, b: copied.append(1))
+    assert C._quiesced_file_copy(src, tmp_path / "w.db") is False
+    assert copied == [], "no byte copy was attempted with the gate off"
+
+    # ...and the caller still produces a real, complete snapshot via the codec path.
+    dest = tmp_path / "working.db"
+    monkeypatch.undo()
+    set_passphrase(_PW)
+    monkeypatch.setenv("OO_WRITE_GATE", "0")
+    C.snapshot_preserving(src, dest, allow_file_copy=True)
+    con = connect(dest, key=_PW, check_same_thread=False)
+    try:
+        assert con.execute("SELECT COUNT(*) FROM articles").fetchone()[0] == 200
+    finally:
+        con.close()
+
+
+def test_a_mismatch_that_survives_a_rebuild_is_reported_as_a_failure():
+    """The negative space. Every other case here ends in agreement, so nothing yet
+    proves the verdict can be FALSE -- and this feeds ``verify_copy``'s ``ok``, which is
+    what refuses a restore before the swap. A check that can only ever pass is the
+    tautology this change replaced."""
+
+    class _StuckIndex:
+        """Counts never move, however many times the index is rebuilt."""
+
+        def __init__(self):
+            self.rebuilds = 0
+
+        def execute(self, sql, *a):
+            if "rebuild" in sql:
+                self.rebuilds += 1
+                return self
+            return self
+
+        def fetchone(self):
+            return (3,)  # docsize says 3 ...
+
+        def commit(self):  # pragma: no cover - trivial
+            pass
+
+    con = _StuckIndex()
+    out = _verify_fts(con, True, 7)  # ... while the corpus holds 7 articles
+    assert con.rebuilds == 1, "it tried the repair"
+    assert out["fts_rebuilt"] is True
+    assert out["fts_indexed"] == 3
+    assert out["fts_matches_articles"] is False, "an unrepaired index must fail the gate"

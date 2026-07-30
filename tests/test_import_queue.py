@@ -355,3 +355,32 @@ def test_a_stop_skips_the_tuning_pass(queue, monkeypatch):
     queue2.start([{"kind": "corpus", "path": "/b/one"}])
     _drain(queue2)
     assert called == [], "no index merge after a Stop"
+
+
+def test_the_tuning_pass_reports_itself_instead_of_freezing_the_bar(queue, monkeypatch):
+    """It runs AFTER the last item, so without a phase of its own the run sits at
+    "running" with no item in flight and the last item's numbers frozen on screen --
+    which reads as a hang, the exact defect the post-merge re-index used to be."""
+    seen: list[dict] = []
+    monkeypatch.setattr(queue, "_run_corpus", lambda item: {})
+
+    def _slow(session):
+        seen.append(dict(queue.status()))
+        return {"fts": True, "planner": True}
+
+    monkeypatch.setattr("src.database.fts.optimize_after_bulk", _slow)
+    queue.start([{"kind": "corpus", "path": "/b/one"}])
+    st = _drain(queue)
+
+    assert seen, "the tuning pass ran"
+    live = seen[0]["live"] or {}
+    assert live.get("phase") == "tuning", "the run says what it is doing"
+    assert seen[0]["current"] is None, "no item is claimed to be in flight"
+    # Pin the key SET rather than searching for substrings: "detail" itself contains
+    # "eta", which is exactly the false positive this project's ledger records about
+    # substring checks over a payload.
+    assert set(live) == {"phase", "own_the_machine", "detail"}, (
+        "SQLite reports neither progress nor an ETA for 'optimize' -- any percentage or "
+        "countdown here would be fabricated progress"
+    )
+    assert st["live"] is None, "the phase is cleared when the pass ends"

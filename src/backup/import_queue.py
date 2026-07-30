@@ -300,6 +300,20 @@ class ImportQueueManager:
         imports into a failed run."""
         if self._stop.is_set():
             return
+        # SAID, not silent. An FTS5 segment merge over a large index is minutes of
+        # single-threaded work, and it happens after the LAST item finishes -- so
+        # without this the run would sit at "running" with no item in flight and the
+        # last item's numbers frozen on screen, which reads as a hang (the exact class
+        # of defect the post-merge re-index used to be before it got its own phase).
+        # No percentage and no ETA: SQLite reports neither for 'optimize', and inventing
+        # one would be the fabricated-progress this project refuses.
+        with self._lock:
+            self._cursor = -1
+            self._live = {
+                "phase": "tuning",
+                "own_the_machine": True,
+                "detail": "merging the search index after the import",
+            }
         try:
             from src.database.fts import optimize_after_bulk
             from src.database.session import session_scope
@@ -308,6 +322,9 @@ class ImportQueueManager:
                 self._tuned = optimize_after_bulk(session)
         except Exception:  # noqa: BLE001 - tuning is never load-bearing
             _LOG.warning("post-import tuning pass failed", exc_info=True)
+        finally:
+            with self._lock:
+                self._live = None
 
     def _run_item(self, item: dict) -> dict:
         kind = item["kind"]

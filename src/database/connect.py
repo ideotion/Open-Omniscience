@@ -489,9 +489,18 @@ def _quiesced_file_copy(src_p: Path, dest_p: Path) -> bool:
     A busy checkpoint means some reader still holds a snapshot the WAL must serve; that
     is a legitimate state, not an error, so it degrades to the slow-but-always-correct
     path rather than copying something it cannot prove complete. Never a silent torn
-    copy: the failure direction is "slower", never "wrong"."""
-    from src.database.writer import write_lock
+    copy: the failure direction is "slower", never "wrong".
 
+    ...WHICH IS WHY THE GATE IS CHECKED, NOT ASSUMED. ``write_lock()`` is a documented
+    NO-OP when ``OO_WRITE_GATE=0``, so on that escape hatch precondition 1 would be
+    silently false and this would copy a file nothing was holding still -- a guard named
+    for a safety property that does not enforce it. With the gate off there is no way to
+    prove the source is quiescent, so the honest answer is to refuse and let the codec
+    path (which is consistent by construction, being a read transaction) do the work."""
+    from src.database.writer import gate_enabled, write_lock
+
+    if not gate_enabled():
+        return False
     with write_lock():
         conn = connect(src_p, check_same_thread=False)
         try:
