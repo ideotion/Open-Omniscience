@@ -1179,10 +1179,14 @@ def insights_map(
     by country) so the UI can plot them; cities not in the gazetteer keep their
     keyword data but carry no coordinates (honest: no fabricated position).
     """
-    from src.catalog.cities import build_index, load_cities, lookup
+    # cached_index(): the gazetteer is generated offline and never written at
+    # runtime, so re-parsing its YAML on every request bought nothing (17 s at
+    # 50,000 cities -- an endpoint-level freeze, since a `def` handler holds a
+    # threadpool slot for the whole time).
+    from src.catalog.cities import cached_index, lookup
 
     data = q.map_data(db, days=days, kind=_kind(kind), top_per_area=top_per_area)
-    index = build_index(load_cities())
+    index = cached_index()
     placed = 0
     for city in data.get("cities", []):
         hit = lookup(index, city.get("name", ""), city.get("country"))

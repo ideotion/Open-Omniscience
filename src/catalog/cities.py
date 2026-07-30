@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 import yaml
@@ -82,6 +83,31 @@ def build_index(cities: list[City]) -> dict:
         if cur is None or (c.population or 0) > (cur.population or 0):
             by_name[nl] = c
     return {"pair": by_pair, "name": by_name}
+
+
+@lru_cache(maxsize=1)
+def cached_index() -> dict:
+    """The default gazetteer's lookup index, parsed ONCE per process.
+
+    ``build_index(load_cities())`` re-reads and re-parses the whole YAML on every
+    call, and :func:`src.timemap.locextract.extract_locations` was calling it
+    PER ARTICLE. Measured 2026-07-30 on a gazetteer the size
+    ``scripts/build_city_gazetteer.py`` actually produces from Wikidata (50,000
+    cities, 5.2 MB): ``load_cities`` alone takes 17.0 SECONDS, so a 500,000-article
+    import spent something like 2,300 core-hours re-parsing the same file. Even
+    with the tiny shipped 21-city sample it was ~6 ms per article, 6% of
+    ``extract_locations``.
+
+    No new staleness class: ``locextract._patterns()`` and ``geocode._index()``
+    already cache exactly this data for the process lifetime, so the gazetteer was
+    ALREADY assumed immutable while the app runs -- it is generated offline by a
+    script, never written at runtime. If anything this removes an inconsistency,
+    since the cached patterns and the freshly-parsed index could previously come
+    from two different versions of the file.
+
+    Callers that supply their OWN city list keep using :func:`build_index`
+    directly; this is only the default-gazetteer path."""
+    return build_index(load_cities())
 
 
 def lookup(index: dict, name: str, country: str | None = None) -> City | None:

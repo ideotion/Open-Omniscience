@@ -27,6 +27,33 @@ def _wait(mgr: VolumeBackupManager, timeout: float = 5.0) -> dict:
     return mgr.status()
 
 
+def _own_the_machine(monkeypatch, owned: bool) -> None:
+    """Make ``runner.owns_the_machine()`` answer deterministically, WITHOUT
+    replacing the predicate itself.
+
+    The own-the-machine knobs used to be gated on ``pause_for_exclusive_operation``'s
+    return -- a LIVENESS answer ("did I stop a running loop?") -- and these tests
+    mocked that function to control them. Since 2026-07-30 they are gated on
+    OWNERSHIP instead, which is the fact they always meant (see
+    ``runner.owns_the_machine``): a fresh install and every queued import item stop
+    nothing, yet own the machine completely.
+
+    So the seam moves one level down -- the scheduler singleton, whose state is the
+    predicate's real input -- and the predicate's own logic still runs for real from
+    the call site. Substituting ``owns_the_machine`` itself would prove only that
+    the test double was consulted (the standing "a test double injected via a
+    parameter bypasses the production path" lesson). The predicate's own four-state
+    behaviour is pinned separately in tests/test_reindex_throughput.py."""
+    import src.scheduler.runner as sched_mod
+
+    class _FakeScheduler:
+        def holds_exclusive(self) -> bool:
+            return owned
+
+    monkeypatch.setattr(sched_mod, "get_scheduler", lambda: _FakeScheduler())
+    monkeypatch.setattr(sched_mod, "exclusive_window_open", lambda: False)
+
+
 def test_backup_runs_to_done_and_strips_envelope(tmp_path):
     def fake(dest, pw, *, include_newsletters, parity_fraction, should_stop, progress_cb):
         progress_cb({"phase": "volumes", "volumes_written": 2})
@@ -205,13 +232,13 @@ def test_restore_reports_a_distinct_reindexing_phase(tmp_path, monkeypatch):
         reindex_workers=None, merge_cache_mb=None, **_ignored,
     ):
         captured["reindex_progress_cb"] = reindex_progress_cb
-        # "Import owns the machine" (Session A §4): applied ONLY when the pause
-        # actually confirmed exclusivity (was_paused=True, mocked below) -- a
-        # concurrency-skeptic MEDIUM fix (2026-07-24): these used to be
-        # unconditional, so this test's own assertion was silently riding
-        # whatever state the REAL, process-wide scheduler singleton happened
-        # to be in (fragile); explicitly mocking pause here makes it
-        # deterministic regardless of any other test's side effects on it.
+        # "Import owns the machine" (Session A §4): applied ONLY when the machine
+        # is genuinely OWNED (_own_the_machine below) -- a concurrency-skeptic
+        # MEDIUM fix (2026-07-24): these used to be unconditional, so this test's
+        # own assertion was silently riding whatever state the REAL, process-wide
+        # scheduler singleton happened to be in (fragile); controlling that
+        # singleton here makes it deterministic regardless of any other test's
+        # side effects on it.
         assert reindex_workers is not None and reindex_workers >= 1
         assert merge_cache_mb is not None and merge_cache_mb > 0
         assert progress_cb is not None
@@ -223,6 +250,7 @@ def test_restore_reports_a_distinct_reindexing_phase(tmp_path, monkeypatch):
 
     monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
     monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    _own_the_machine(monkeypatch, True)
     monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
     monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
@@ -328,12 +356,17 @@ def test_restore_resumes_collection_even_when_the_restore_itself_fails(tmp_path,
 def test_a_pause_hiccup_never_aborts_the_restore(tmp_path, monkeypatch):
     """Best-effort, never load-bearing: if pausing collection itself raises,
     the restore must still proceed to completion. ALSO proves the
-    concurrency-skeptic fix (2026-07-24, MEDIUM): when was_paused stays False
-    because the pause raised (the scheduler's real state is then UNKNOWN --
-    it may still be running), the restore must fall back to the conservative,
+    concurrency-skeptic fix (2026-07-24, MEDIUM): when the pause raised, the
+    scheduler's real state is UNKNOWN -- it may still be running -- so nothing
+    ever claimed ownership, and the restore must fall back to the conservative,
     pre-existing defaults (reindex_workers=None, merge_cache_mb=None) rather
     than still claiming all cores + an enlarged cache on the unverified
-    premise that nothing else is competing for them."""
+    premise that nothing else is competing for them.
+
+    (2026-07-30: the knobs now read OWNERSHIP rather than the pause's return, so
+    the unowned state is pinned explicitly instead of relying on whatever the
+    process-global scheduler happened to hold -- the direction that protects a
+    live scrape is exactly the one that must not be left to chance.)"""
     import src.backup.artifact as artifact_mod
     import src.backup.merge as merge_mod
     import src.scheduler.runner as sched_mod
@@ -350,6 +383,7 @@ def test_a_pause_hiccup_never_aborts_the_restore(tmp_path, monkeypatch):
 
     monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", _boom_pause)
     monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    _own_the_machine(monkeypatch, False)
     monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
     monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
@@ -377,9 +411,16 @@ def test_restore_passes_a_wide_reindex_commit_batch_only_when_it_owns_the_machin
 
     Pinned in BOTH directions, because the conservative side is the one that protects a
     live scrape: a wide batch holds the single-writer gate across the batch, which is
-    free only when collection is confirmed paused. When the pause did NOT confirm
-    exclusivity the call must pass None and let the conservative env default apply --
-    exactly like its two siblings (``reindex_workers`` / ``merge_cache_mb``).
+    free only when this process OWNS the machine. When nothing owns it the call must
+    pass None and let the conservative env default apply -- exactly like its two
+    siblings (``reindex_workers`` / ``merge_cache_mb``).
+
+    2026-07-30: the parameter is OWNERSHIP, not the pause's return value. Gating on
+    the latter was a second, independent defect behind the same field report -- it is
+    False on a fresh install (nothing was running to stop) and False for every item of
+    an import queue (the queue's window already paused collection), so on exactly the
+    two paths a large import actually takes, all three knobs silently reverted to
+    their conservative defaults, ``reindex_commit_batch`` to 1 among them.
     """
     import src.backup.artifact as artifact_mod
     import src.backup.merge as merge_mod
@@ -395,10 +436,12 @@ def test_restore_passes_a_wide_reindex_commit_batch_only_when_it_owns_the_machin
         captured["reindex_workers"] = reindex_workers
         return {"committed": True}
 
-    monkeypatch.setattr(
-        sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: exclusive
-    )
+    # The pause deliberately returns False in BOTH cases -- the fresh-install /
+    # queued-item shape, where nothing was running to stop. Ownership is the fact
+    # under test, and it must decide the knobs on its own.
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: False)
     monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    _own_the_machine(monkeypatch, exclusive)
     monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
     monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
     monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)

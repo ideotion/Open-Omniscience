@@ -36,7 +36,13 @@ def _to_row(tag: ArticleMentionedDate) -> dict:
     }
 
 
-def store_for_article(db: Session, article: Article, *, today: date | None = None) -> int:
+def store_for_article(
+    db: Session,
+    article: Article,
+    *,
+    today: date | None = None,
+    precomputed: list[dict] | None = None,
+) -> int:
     """Extract dates from one article's text and store new candidate tags. Returns the count added.
 
     Idempotent: an existing (article, date, precision) tag is left untouched — so a human's
@@ -60,7 +66,16 @@ def store_for_article(db: Session, article: Article, *, today: date | None = Non
     observed = article.published_at or article.created_at
     anchor = observed.date() if observed else None
     added = 0
-    for c in extract_dates(article.content, today=today, anchor=anchor, language=article.language):
+    # ``precomputed`` is the SAME list ``extract_dates`` returns, computed in a worker
+    # process (the re-index's pooled precompute, 2026-07-30 -- date extraction measured
+    # ~280 ms on a 50 KB body, which is what capped a field import at ~2 articles/sec
+    # while seven worker processes sat idle). None means "not precomputed", which must
+    # extract inline: it is NOT the same fact as "this article has no dates", and
+    # treating it as such would silently drop every date on every non-pooled path.
+    found = precomputed if precomputed is not None else extract_dates(
+        article.content, today=today, anchor=anchor, language=article.language
+    )
+    for c in found:
         key = (c["date"], c["precision"])
         if key in existing:
             continue

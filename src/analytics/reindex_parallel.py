@@ -19,12 +19,33 @@ single-threaded extraction).
 
 This module offloads JUST those two pure steps to a bounded process pool, so N
 articles' text extraction runs across N cores concurrently while the caller's
-single DB session/writer still applies the results (delete-then-reinsert +
-counter deltas + when/where/who) serially, exactly as before -- the
-single-writer SQLite design is untouched; only the CPU-bound, DB-free
-precomputation is parallelised. When/where/who extraction stays inline in
-``index_article`` (unchanged): it is more tightly DB-coupled (savepoints, error
-handling tuned to a live session) and is not the dominant per-article cost.
+single DB session/writer still applies the results serially, exactly as before
+-- the single-writer SQLite design is untouched; only the CPU-bound, DB-free
+precomputation is parallelised.
+
+WHEN/WHERE/WHO IS PART OF THAT PRECOMPUTE (2026-07-30). This module used to say
+WWW "is more tightly DB-coupled ... and is not the dominant per-article cost",
+and left it running inline. That claim was asserted, never measured, and it is
+FALSE. Measured on date/place-SPARSE generic prose, so it is not an artifact of
+date-dense synthetic text:
+
+    body size   extract_dates   extract_locations   serial total   ceiling
+       10 KB         57.9 ms            22.5 ms         80.5 ms   12.4 art/s
+       25 KB        143.9 ms            47.6 ms        191.5 ms    5.2 art/s
+       40 KB        226.1 ms            71.7 ms        297.8 ms    3.4 art/s
+       50 KB        278.7 ms            94.2 ms        373.0 ms    2.7 art/s
+
+against ~36 ms for the pooled half at the same size. At this project's own
+stated ~35 KB article (the SQLCipher codec-trap lesson), the SERIAL half was
+roughly TEN TIMES the parallel one -- so the pool was carefully parallelising
+the cheap part while the expensive part pinned one core. A field import
+measured ~2 articles/sec, which is exactly the ceiling that table predicts and
+which no amount of extra workers could have moved.
+
+The EXTRACTION half of when/where/who is as pure as the other two -- a function
+of the article's own text -- so it now rides the same pool. Only the STORE half
+(savepoints, live-session error handling, the delete-then-reinsert) stays in
+the main process, where it belongs and where its cost is small.
 
 SAFE BY CONSTRUCTION:
   * a worker process is handed only plain data (article id + text/title/
@@ -85,8 +106,17 @@ _MAX_EXCLUSIVE_WORKERS_CAP = 32
 # (possibly custom/test) extractor object is used directly, never guessed at.
 _RECONSTRUCTIBLE_EXTRACTORS = ("baseline", "spacy")
 
-# One (article_id, content, title, language, sentiment_language) task.
-Task = tuple[int, str, str, str, "str | None"]
+#: One task. The first five elements are ``(article_id, content, title, language,
+#: sentiment_language)``; a SIXTH, optional element carries the when/where/who
+#: context ``(country, anchor_iso_date, today_iso_date)`` and opts that article
+#: into pooled WWW extraction. Deliberately optional rather than a widened
+#: tuple: every existing caller and its exact-equality assertions keep working
+#: unchanged, and a caller that cannot supply the context (or does not want WWW
+#: precomputed) simply omits it and gets the previous behaviour exactly.
+Task = tuple  # (int, str, str, str, str | None[, WwwContext | None])
+
+#: ``(country, anchor_iso, today_iso)`` -- plain data, never an ORM object.
+WwwContext = tuple
 
 
 @dataclass
@@ -98,6 +128,12 @@ class ArticleDerivatives:
     sentiment_score: float | None
     sentiment_label: str | None
     error: str | None = None  # set only when THIS article's compute failed
+    #: The when/where/who EXTRACTION result, when the task asked for it. ``None``
+    #: means "not precomputed" -- which the caller must treat as "extract it
+    #: inline", NOT as "this article has none". The two are different facts and
+    #: conflating them would silently drop every date and place on any path that
+    #: does not use the pool.
+    www: dict | None = None
 
 
 def worker_count(requested: int | None = None) -> int:
@@ -152,9 +188,61 @@ def _worker_init(extractor_name: str, gazetteer: dict[str, str] | None) -> None:
     _worker_extractor = get_extractor(extractor_name, gazetteer=gazetteer)
 
 
+def _extract_www(content: str, language: str | None, www_ctx) -> dict | None:
+    """The PURE half of when/where/who: extraction only, no database.
+
+    Returns plain, picklable data (lists of dicts) or ``None`` when the caller
+    did not ask for it. Runs in a worker process, so it must never touch an ORM
+    object or a session -- it is handed only the article's own text plus the
+    three scalars the extractors need (``country`` for place disambiguation,
+    ``anchor`` for relative dates like "yesterday", ``today`` for the same).
+
+    A failure here returns ``None`` rather than raising: ``None`` means "not
+    precomputed", so the caller falls back to extracting inline exactly as it
+    did before, and a broken WWW extraction can never cost the article its
+    keywords.
+
+    ...WHICH IS WHY THE FAILURE IS RECORDED, not just swallowed. This degrade is
+    SILENT BY DESIGN -- correct results, quietly at the old speed -- so on its own
+    it is a perfect hiding place for the very bug it exists to survive. (Proven
+    immediately: the first cut imported ``extract_entities`` from the wrong module,
+    every call returned None, every article fell back to inline extraction, and
+    NOTHING failed -- the optimisation simply did not happen. A benchmark caught it;
+    no test would have.) The ``__www_error__`` marker rides back with the result so
+    the caller can count it and the import report can say so."""
+    if not www_ctx:
+        return None
+    from datetime import date as _date
+
+    country, anchor_iso, today_iso = (list(www_ctx) + [None, None, None])[:3]
+    try:
+        from src.timemap.dateextract import extract_dates
+        from src.timemap.entextract import extract_entities
+        from src.timemap.locextract import extract_locations
+
+        return {
+            "dates": extract_dates(
+                content or "",
+                today=_date.fromisoformat(today_iso) if today_iso else None,
+                anchor=_date.fromisoformat(anchor_iso) if anchor_iso else None,
+                language=language,
+            ),
+            "places": extract_locations(content or "", source_country=country),
+            "entities": extract_entities(content or ""),
+        }
+    except Exception as exc:  # noqa: BLE001 - degrades to inline, never to "none found"
+        _LOG.warning("pooled when/where/who extraction failed", exc_info=True)
+        return {"__www_error__": str(exc)}
+
+
 def _worker_compute(
-    article_id: int, content: str, title: str, language: str, sentiment_lang: str | None
-) -> tuple[int, list[ExtractedTerm], float | None, str | None, str | None]:
+    article_id: int,
+    content: str,
+    title: str,
+    language: str,
+    sentiment_lang: str | None,
+    www_ctx=None,
+) -> tuple[int, list[ExtractedTerm], float | None, str | None, str | None, "dict | None"]:
     """Runs in a worker process. Never raises: one article's extraction error
     is returned as a marker (5th element) so the caller can isolate just that
     article, instead of losing the whole batch's parallel work."""
@@ -165,22 +253,33 @@ def _worker_compute(
             content or "", title=title or "", language=language or "en"
         )
         score, label = score_article(content, sentiment_lang)
-        return article_id, terms, score, label, None
+        return article_id, terms, score, label, None, _extract_www(content, language, www_ctx)
     except Exception as exc:  # noqa: BLE001 - isolate one bad article, never the batch
-        return article_id, [], None, None, str(exc)
+        return article_id, [], None, None, str(exc), None
 
 
 # --------------------------------------------------------------------------- #
 #  serial computation: the reference implementation AND the universal fallback
 # --------------------------------------------------------------------------- #
 def _compute_one(
-    extractor, article_id: int, content: str, title: str, language: str, sentiment_lang: str | None
+    extractor,
+    article_id: int,
+    content: str,
+    title: str,
+    language: str,
+    sentiment_lang: str | None,
+    www_ctx=None,
 ) -> ArticleDerivatives:
     from src.analytics.sentiment import score_article
 
     try:
         terms = extractor.extract(content or "", title=title or "", language=language or "en")
         score, label = score_article(content, sentiment_lang)
+        # DELIBERATELY NOT precomputed on the serial path. Serial means "one core",
+        # which is the situation pooled WWW exists to escape; doing it here would
+        # move the same work from one place to another at identical cost, and the
+        # caller's inline path already handles www=None correctly. Keeping it out
+        # also keeps this function the byte-identical reference the fallback needs.
         return ArticleDerivatives(article_id, terms, score, label)
     except Exception as exc:  # noqa: BLE001 - one bad article's precompute must not abort the batch
         _LOG.warning("precompute failed for article %s", article_id, exc_info=True)
@@ -189,8 +288,8 @@ def _compute_one(
 
 def _serial(tasks: Sequence[Task], extractor) -> dict[int, ArticleDerivatives]:
     return {
-        aid: _compute_one(extractor, aid, content, title, language, slang)
-        for aid, content, title, language, slang in tasks
+        t[0]: _compute_one(extractor, t[0], t[1], t[2], t[3], t[4])
+        for t in tasks
     }
 
 
@@ -254,11 +353,25 @@ def precompute_batch(
             initializer=_worker_init,
             initargs=(extractor_name, gazetteer),
         ) as pool:
-            ids, contents, titles, languages, slangs = zip(*tasks, strict=True)
-            for aid, terms, score, label, err in pool.map(
-                _worker_compute, ids, contents, titles, languages, slangs, chunksize=chunksize
+            # Tolerate BOTH task shapes (5-tuple, or 6-tuple with the WWW context)
+            # in the same batch: zip(*tasks) would raise on a ragged mix, and a
+            # caller that supplies context for some articles and not others is a
+            # legitimate case (an article with no usable anchor, say).
+            ids = [t[0] for t in tasks]
+            contents = [t[1] for t in tasks]
+            titles = [t[2] for t in tasks]
+            languages = [t[3] for t in tasks]
+            slangs = [t[4] for t in tasks]
+            ctxs = [t[5] if len(t) > 5 else None for t in tasks]
+            for aid, terms, score, label, err, www in pool.map(
+                _worker_compute, ids, contents, titles, languages, slangs, ctxs,
+                chunksize=chunksize,
             ):
-                out[aid] = ArticleDerivatives(aid, terms, score, label, error=err)
+                out[aid] = ArticleDerivatives(aid, terms, score, label, error=err, www=www)
+                if stats is not None and isinstance(www, dict) and "__www_error__" in www:
+                    stats["www_errors"] = stats.get("www_errors", 0) + 1
+                elif stats is not None and www:
+                    stats["www_precomputed"] = stats.get("www_precomputed", 0) + 1
         _note("pool", time.monotonic() - _t0)
         return out
     except Exception:  # noqa: BLE001 - a multiprocessing hiccup must NEVER cost a re-index its result

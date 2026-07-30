@@ -1410,6 +1410,11 @@ class BackgroundScheduler:
         with self._state_lock:
             self._exclusive_hold = False
 
+    def holds_exclusive(self) -> bool:
+        """Is the machine currently claimed for an exclusive operation?"""
+        with self._state_lock:
+            return bool(self._exclusive_hold)
+
     # -- internals --------------------------------------------------------- #
 
     def _loop(self) -> None:
@@ -1971,6 +1976,47 @@ def exclusive_window_open() -> bool:
     """True while an outer exclusive window (an import run) holds the machine."""
     with _EXCL_LOCK:
         return _EXCL_WINDOW
+
+
+def owns_the_machine() -> bool:
+    """Is an exclusive operation genuinely holding this machine right now?
+
+    THE PREDICATE THE THROUGHPUT KNOBS SHOULD ALWAYS HAVE USED (field report
+    2026-07-30: a re-index running at ~2 articles/sec). Those knobs -- all-cores
+    re-index workers, the enlarged merge cache, the wide commit batch -- were gated
+    on ``was_paused``, the return of :func:`pause_for_exclusive_operation`. But that
+    is a LIVENESS answer ("did I stop a running collection loop?"), and it is False
+    in two situations where the machine is in fact owned MORE completely, not less:
+
+      * a FRESH INSTALL, or any app that has not gone online -- boot engages
+        airplane mode and starts no scheduler, so ``stop()`` returns False because
+        there was nothing to stop;
+      * every item of an import QUEUE, because the queue's own
+        :func:`exclusive_window` already paused collection and the per-item pause
+        correctly declines to do it twice.
+
+    In both, every knob silently reverted to its conservative default -- most
+    damagingly ``OO_REINDEX_COMMIT_BATCH``'s 1, and the un-enlarged merge cache.
+    A guard named for a safety property has to enforce that property; this one was
+    answering a different question than the one its call sites were asking.
+
+    OWNERSHIP is what ``hold_exclusive()`` records, and it is claimed
+    UNCONDITIONALLY by both :func:`pause_for_exclusive_operation` and
+    :func:`exclusive_window` -- its own docstring says it "must hold even when the
+    loop was already stopped (e.g. under airplane mode)", which is exactly the
+    fresh-install case. So this answers the real question, and it stays False when
+    no exclusive operation is running, which is the direction that matters: a knob
+    turned on while collection could still be scraping is the situation the
+    conservative defaults exist for.
+
+    Degrades to False if the scheduler cannot be reached -- an unknown ownership is
+    treated as "not owned", never assumed."""
+    if exclusive_window_open():
+        return True
+    try:
+        return bool(get_scheduler().holds_exclusive())
+    except Exception:  # noqa: BLE001 - unknown ownership is never assumed ownership
+        return False
 
 
 def exclusive_window_token() -> int:

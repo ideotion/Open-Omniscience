@@ -97,9 +97,12 @@ def extract_locations(
     if not text:
         return []
     text = text[:_MAX_SCAN]
-    from src.catalog.cities import build_index, load_cities, lookup
+    # cached_index() rather than build_index(load_cities()): the latter re-read and
+    # re-parsed the whole gazetteer YAML on EVERY call, i.e. once per article
+    # through the re-index. Measured at 50,000 cities: 17 seconds. Per article.
+    from src.catalog.cities import cached_index, lookup
 
-    index = build_index(load_cities())
+    index = cached_index()
     found: dict[str, dict] = {}
     for rx, name, kind in _patterns():
         for m in rx.finditer(text):

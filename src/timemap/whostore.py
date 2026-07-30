@@ -22,10 +22,19 @@ from src.timemap.locextract import extract_locations
 _EXTRACTOR = "lexical-v1"
 
 
-def store_places_for_article(db: Session, article: Article) -> int:
+def store_places_for_article(
+    db: Session, article: Article, *, precomputed: list[dict] | None = None
+) -> int:
+    """``precomputed`` is the same list ``extract_locations`` returns, optionally
+    computed in a worker process (the re-index's pooled precompute). ``None`` means
+    "not precomputed" -- extract inline -- and is deliberately NOT the same fact as
+    "no places found"."""
     text = (article.content or "")
     db.query(ArticleMentionedPlace).filter_by(article_id=article.id).delete()
-    places = extract_locations(text, source_country=article.country)
+    places = (
+        precomputed if precomputed is not None
+        else extract_locations(text, source_country=article.country)
+    )
     for pl in places:
         db.add(
             ArticleMentionedPlace(
@@ -103,10 +112,14 @@ def entities_for_article(db: Session, article_id: int, limit: int = 5) -> dict:
     return result
 
 
-def store_entities_for_article(db: Session, article: Article) -> int:
+def store_entities_for_article(
+    db: Session, article: Article, *, precomputed: dict | None = None
+) -> int:
+    """``precomputed`` is the same dict ``extract_entities`` returns, optionally
+    computed in a worker process. ``None`` means "not precomputed", never "none found"."""
     text = (article.content or "")
     db.query(ArticleEntity).filter_by(article_id=article.id).delete()
-    ents = extract_entities(text)
+    ents = precomputed if precomputed is not None else extract_entities(text)
     n = 0
     for cls, key in (("person", "people"), ("organization", "organizations")):
         for e in ents.get(key, []):

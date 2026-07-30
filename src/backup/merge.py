@@ -2138,21 +2138,78 @@ def reindex_imported_articles(
         return result
 
 
+def _available_ram_mb() -> int | None:
+    """Currently AVAILABLE RAM in MiB, from ``/proc/meminfo``'s ``MemAvailable``.
+
+    ``MemAvailable`` rather than ``MemFree`` or ``MemTotal``: the kernel's own
+    estimate of what a new allocation can actually get without swapping, which
+    already accounts for reclaimable page cache and slab. That is the honest
+    denominator for "how much may this import claim" -- MemTotal would ignore
+    everything else on the box, and MemFree would under-read a machine whose RAM
+    is mostly healthy page cache.
+
+    ``/proc/meminfo`` rather than ``psutil`` for the same reason
+    ``vllm_lifecycle._total_ram_bytes`` does: psutil is an optional extra
+    ([analysis]) and a core install must not silently lose the measurement.
+
+    ``None`` when unreadable (non-Linux, restricted /proc) -- an honest unknown,
+    never a fabricated number, and the caller falls back to the fixed default."""
+    try:
+        with open("/proc/meminfo", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    # "MemAvailable:   10261176 kB"
+                    return int(line.split()[1]) // 1024
+    except (OSError, ValueError, IndexError):
+        return None
+    return None
+
+
+#: Share of AVAILABLE RAM an owning import may claim for the merge page cache.
+#: A quarter, deliberately: the same import concurrently runs a process pool of
+#: up to :data:`reindex_parallel._MAX_EXCLUSIVE_WORKERS_CAP` extraction workers,
+#: each holding an article body and an extractor, and the page cache is the one
+#: allocation that can be claimed in a single lump. Leaving three quarters is
+#: what keeps the enlarged cache a throughput win rather than the thing that
+#: pushes a 12 GB box into swap -- where it would be far slower than the small
+#: cache it replaced.
+_IMPORT_CACHE_RAM_SHARE = 0.25
+_IMPORT_CACHE_FLOOR_MB = 512  # never below the fixed default this replaced
+_IMPORT_CACHE_CEIL_MB = 4096  # past this, SQLite's cache stops being the bottleneck
+
+
 def import_cache_mb() -> int:
     """Enlarged SQLite page-cache MiB for the import merge connection
     specifically (field-feedback Session A §4, "import owns the machine") --
     SEPARATE from the app's general ``OO_SQLITE_CACHE_MB``
     (``src/config/power_profiles.py``), which never reaches this connection
     (opened via the raw ``connect()`` factory, not the pooled app engine).
-    ``OO_IMPORT_CACHE_MB`` overrides; default 512 MiB (8x the app's own 64 MiB
-    default) -- a resource-usage tuning knob only, never a behaviour change."""
+
+    SCALED TO AVAILABLE RAM (maintainer ask 2026-07-30, on a 12 GB box whose RAM
+    sat at 30% through an import): a fixed 512 MiB is simultaneously too big for
+    a 3 GB field machine and far too small for a 12 GB one. A quarter of
+    MemAvailable, clamped to [512, 4096] MiB, adapts to both -- the floor keeps
+    it never worse than the fixed default it replaced, and the ceiling stops a
+    very large box from claiming a cache past the point where SQLite's page
+    cache is what limits the merge.
+
+    ``OO_IMPORT_CACHE_MB`` still overrides absolutely -- an operator's explicit
+    number is never second-guessed, in either direction. A machine whose RAM
+    cannot be read falls back to the fixed 512 MiB default, never to a guess.
+
+    A resource-usage tuning knob only, never a behaviour change: the merge's
+    results are byte-identical at any cache size."""
     raw = os.getenv("OO_IMPORT_CACHE_MB", "").strip()
     if raw:
         try:
             return max(2, int(raw))
         except ValueError:
             pass
-    return 512
+    avail = _available_ram_mb()
+    if not avail or avail <= 0:
+        return _IMPORT_CACHE_FLOOR_MB
+    scaled = int(avail * _IMPORT_CACHE_RAM_SHARE)
+    return max(_IMPORT_CACHE_FLOOR_MB, min(_IMPORT_CACHE_CEIL_MB, scaled))
 
 
 # The canonical stage sequence a restore walks, in order. Kept BESIDE the
@@ -2318,8 +2375,28 @@ def run_restore(
     from src.backup.sqlite_backup import live_db_path
     from src.backup.timing import StageTimings
     from src.database.session import dispose_engine, init_db
+    from src.scheduler.runner import owns_the_machine
 
     timings = StageTimings(on_start=stage_progress_cb)
+
+    # OWNERSHIP-DERIVED DEFAULTS (field report 2026-07-30). Two callers -- the legacy
+    # single-archive restore and the /v2/restore commit -- pass none of the throughput
+    # knobs and never pause anything, so their re-index ran at ONE COMMIT PER ARTICLE
+    # even when nothing else was touching the machine. Derived here rather than at each
+    # call site so there is one answer to "does this restore own the machine", and so a
+    # future caller cannot forget. An explicit argument always wins: a caller that says
+    # what it wants is never second-guessed.
+    _owned = exclusive or owns_the_machine()
+    if _owned:
+        if reindex_commit_batch is None:
+            reindex_commit_batch = import_reindex_commit_batch()
+        if reindex_workers is None:
+            from src.analytics.reindex_parallel import all_cores_worker_count
+
+            reindex_workers = all_cores_worker_count()
+        if merge_cache_mb is None:
+            merge_cache_mb = import_cache_mb()
+    exclusive = exclusive or _owned
 
     def _abort_point(before: str) -> None:
         """Honour a Stop at a PRE-SWAP boundary (ruling item 15). Never called
@@ -2596,6 +2673,14 @@ def run_restore(
                         should_stop=should_stop,
                     )
                     _rx_stats["commit_batch"] = reindex_commit_batch
+                    # R3: the EFFECTIVE knobs, not the requested ones. The field
+                    # report that produced this fix was "~2 articles/sec", noticed by
+                    # watching a progress bar -- there was no way to see that the
+                    # commit batch had silently reverted to 1 and the cache to its
+                    # compiled-in default. Now the report says so.
+                    _rx_stats["owned_the_machine"] = _owned
+                    _rx_stats["workers"] = reindex_workers
+                    _rx_stats["merge_cache_mb"] = merge_cache_mb
                 except Exception:  # noqa: BLE001 - never undo a committed, additive restore
                     _LOG.warning("post-restore re-index of imported articles failed", exc_info=True)
                     # The whole batch failed before touching a single article, so NONE of the
