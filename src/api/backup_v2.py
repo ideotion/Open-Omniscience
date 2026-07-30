@@ -25,6 +25,7 @@ from starlette.concurrency import run_in_threadpool
 
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import MergeError, run_restore
+from src.scheduler.runner import exclusive_window_open
 
 _LOG = logging.getLogger("api.backup_v2")
 
@@ -311,7 +312,16 @@ def restore_legacy_path(
     _apply_restore_selection(staged, include_newsletters=include_newsletters)
     try:
         return run_restore(
-            staged, commit=True, allow_unverified=allow_unverified, should_stop=should_stop
+            staged,
+            commit=True,
+            allow_unverified=allow_unverified,
+            should_stop=should_stop,
+            # The import queue holds ONE exclusive window across the whole run, so a
+            # restore driven from it owns the machine: the whole-corpus snapshots may
+            # take the byte-copy fast path instead of re-encrypting the corpus row by
+            # row. Read live rather than passed in, so the plain endpoint wrapper (a
+            # user-facing request that must NOT stall the app) keeps the default.
+            exclusive=exclusive_window_open(),
         )
     except MergeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

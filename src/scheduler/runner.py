@@ -1964,12 +1964,26 @@ def get_scheduler() -> BackgroundScheduler:
 # drives runs on a thread the sub-manager spawns.
 _EXCL_LOCK = threading.Lock()
 _EXCL_WINDOW = False
+_EXCL_TOKEN = 0
 
 
 def exclusive_window_open() -> bool:
     """True while an outer exclusive window (an import run) holds the machine."""
     with _EXCL_LOCK:
         return _EXCL_WINDOW
+
+
+def exclusive_window_token() -> int:
+    """A stable identity for the CURRENT exclusive window; 0 when none is open.
+
+    Lets work that should happen ONCE PER RUN (rather than once per item of a run)
+    recognise "still the same run" without any plumbing through the queue and its
+    sub-managers. MONOTONIC and never reused -- it only ever counts up, so a later
+    window can never be mistaken for an earlier one (the project's own recorded
+    "never key on something that can recur" rule; ``id()``-style keys are exactly
+    what that lesson forbids)."""
+    with _EXCL_LOCK:
+        return _EXCL_TOKEN if _EXCL_WINDOW else 0
 
 
 @contextmanager
@@ -1983,7 +1997,7 @@ def exclusive_window(timeout: float = 10.0) -> Iterator[bool]:
 
     Re-entrant and imbalance-proof: an inner ``with`` restores the flag to what it
     found rather than clearing it, so only the OUTERMOST block ever resumes."""
-    global _EXCL_WINDOW
+    global _EXCL_TOKEN, _EXCL_WINDOW
     already = exclusive_window_open()
     # The flag is raised AFTER the pause and lowered BEFORE the resume, so this
     # window's own pause/resume go through the SAME guarded functions everything
@@ -1991,6 +2005,8 @@ def exclusive_window(timeout: float = 10.0) -> Iterator[bool]:
     # self-defeating: the pause would read its own flag and decline to pause.
     was_paused = pause_for_exclusive_operation(timeout=timeout) if not already else False
     with _EXCL_LOCK:
+        if not already:
+            _EXCL_TOKEN += 1  # a NEW run; a nested window keeps the outer one's identity
         _EXCL_WINDOW = True
     try:
         yield was_paused

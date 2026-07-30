@@ -73,6 +73,9 @@ class ImportQueueManager:
         self._ended_at: float | None = None
         self._passphrase: str = ""  # memory only, never persisted
         self._collection_paused = False
+        # What the post-run tuning pass actually did ({"fts", "planner"} bools), or None
+        # while a run is still going -- reported, never assumed to have succeeded.
+        self._tuned: dict[str, bool] | None = None
         # Live progress of the sub-job currently in flight (mirrored, never authored).
         self._live: dict[str, Any] | None = None
         self._load_persisted()
@@ -256,6 +259,7 @@ class ImportQueueManager:
                 with self._lock:
                     item["ended_at"] = time.time()
                     self._save()
+        self._tune_after_run()
         with self._lock:
             stopped = self._stop.is_set()
             for it in self._items:
@@ -269,6 +273,41 @@ class ImportQueueManager:
             self._ended_at = time.time()
             self._passphrase = ""  # drop the key the moment the run ends
             self._save()
+
+    def _tune_after_run(self) -> None:
+        """ONE post-bulk tuning pass for the whole run (import-speed fix 2026-07-30).
+
+        ``verify_copy`` used to run a full FTS5 ``'rebuild'`` on every item, which
+        incidentally left the search index as one merged segment. That rebuild is gone
+        (it re-read every article's text through the codec to redo work the sync
+        triggers had already done), so the segment churn a bulk import causes now needs
+        the operation that actually addresses it: ``optimize_after_bulk`` -- an FTS5
+        ``'optimize'`` (merge the segments, no article content re-read) plus a
+        ``PRAGMA optimize`` refresh of the planner statistics after the big
+        ``keyword_mentions`` churn, which the restore path never did at all.
+
+        HERE rather than inside the restore, and once rather than per item: this is the
+        one place that knows a run has ENDED, and running it per item would put back a
+        per-item index-scaled cost in the middle of the very queue this fix is for.
+
+        SKIPPED after a Stop: ruling item 15 makes Stop IMMEDIATE, and an FTS segment
+        merge over a large index is minutes of work the user just asked to end. The
+        committed items keep their (unmerged, entirely correct) index entries; the next
+        run's pass -- or the standalone re-index job's -- merges them.
+
+        Best-effort and never fatal, exactly like the tuning pass's other two callers:
+        a failed optimisation must not turn a completed set of committed, additive
+        imports into a failed run."""
+        if self._stop.is_set():
+            return
+        try:
+            from src.database.fts import optimize_after_bulk
+            from src.database.session import session_scope
+
+            with session_scope() as session:
+                self._tuned = optimize_after_bulk(session)
+        except Exception:  # noqa: BLE001 - tuning is never load-bearing
+            _LOG.warning("post-import tuning pass failed", exc_info=True)
 
     def _run_item(self, item: dict) -> dict:
         kind = item["kind"]
@@ -357,6 +396,7 @@ class ImportQueueManager:
             state = self._state
             started, ended = self._started_at, self._ended_at
             paused = self._collection_paused
+            tuned = self._tuned
         now = time.time()
         for it in items:
             s, e = it.get("started_at"), it.get("ended_at")
@@ -374,6 +414,10 @@ class ImportQueueManager:
             "ended_at": ended,
             "elapsed_s": round((ended or now) - started, 1) if started else None,
             "collection_paused": paused,
+            # What the one post-run tuning pass actually managed (FTS segment merge +
+            # planner statistics). None while the run is still going; a False half is
+            # reported as such rather than quietly presented as done.
+            "tuned": dict(tuned) if isinstance(tuned, dict) else None,
             # Stated so the UI can say it rather than the user having to infer it
             # (ruling item 12).
             "collection_note": (

@@ -40,6 +40,7 @@ import math
 import os
 import re
 import sqlite3
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -602,19 +603,26 @@ def _merge_sources(con, batch_id, results) -> None:
 
 def _merge_articles(con, batch_id, results) -> None:
     r = DomainResult()
-    # Bit-level duplicate test: same hash AND same content bytes = duplicate.
-    r.duplicate = _count(
+    # Bit-level duplicate test: same hash AND same content bytes = duplicate; same hash,
+    # different bytes = a collision or normalisation drift, i.e. a conflict (local kept,
+    # surfaced with both ids).
+    #
+    # ONE PASS for both tallies (import-speed fix 2026-07-30). These were two separate
+    # COUNT queries over the SAME hash join, and the predicate is the article CONTENT --
+    # so on an encrypted corpus each one dragged every hash-matching pair's full article
+    # text through the SQLCipher codec, and the pair was read TWICE. Duplicate rates on
+    # re-imported backups are high by nature (that is what makes the restore additive),
+    # so this is most of the incoming corpus, twice. Conditional aggregation reads each
+    # pair once and is arithmetically identical, NULL content included: a NULL comparison
+    # is neither TRUE nor FALSE, so it counted in neither COUNT before and takes the ELSE
+    # in both CASEs now.
+    row = _q(
         con,
-        "SELECT COUNT(*) FROM inc.articles i JOIN articles m ON m.hash = i.hash"
-        " WHERE m.content = i.content",
-    )
-    # Same hash, different bytes: collision or normalisation drift -- a conflict,
-    # local kept, surfaced with both ids.
-    r.conflict = _count(
-        con,
-        "SELECT COUNT(*) FROM inc.articles i JOIN articles m ON m.hash = i.hash"
-        " WHERE m.content <> i.content",
-    )
+        "SELECT COALESCE(SUM(CASE WHEN m.content = i.content THEN 1 ELSE 0 END), 0),"
+        "       COALESCE(SUM(CASE WHEN m.content <> i.content THEN 1 ELSE 0 END), 0)"
+        " FROM inc.articles i JOIN articles m ON m.hash = i.hash",
+    )[0]
+    r.duplicate, r.conflict = int(row[0]), int(row[1])
     for row in _q(
         con,
         "SELECT i.hash, i.title FROM inc.articles i JOIN articles m ON m.hash = i.hash"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
@@ -1242,6 +1250,116 @@ def _merge_source_candidates(con, batch_id, results) -> None:
     results["source_candidates"] = r
 
 
+_RUN_SNAPSHOT_LOCK = threading.Lock()
+#: (exclusive-window token, snapshot path) — the pre-restore safety net already taken
+#: for the CURRENT import run. Process-local by design: it is an optimisation about
+#: work already done in THIS process, and a restart legitimately re-takes one.
+_RUN_SNAPSHOT: tuple[int, Path] | None = None
+
+
+def _run_scoped_snapshot() -> Path | None:
+    """The pre-restore safety net already taken for this import run, if any.
+
+    ONE SAFETY NET PER RUN, not one per item (import-speed fix 2026-07-30). Each item
+    of a queue used to write a full copy of the whole live corpus as its safety net --
+    on a 130 GB corpus a 16-item run meant ~2 TB written and ~390 GB of disk held at a
+    time. It was also NOT giving what it appeared to: ``_SNAPSHOT_KEEP`` is 3, so the
+    run's earliest (and only genuinely useful) snapshot was pruned away by item 4 --
+    a defect this project's own ledger already records. The run-start copy is what an
+    operator would actually want to return to ("undo this import"), and keeping exactly
+    that one is both cheaper AND more useful than keeping the last three mid-run states.
+
+    Scoped by :func:`~src.scheduler.runner.exclusive_window_token`, so:
+      * a lone restore (no window; token 0) ALWAYS takes its own — unchanged behaviour;
+      * every item of one queue run shares the first item's;
+      * a LATER run gets a new token and therefore a new snapshot.
+
+    Re-verifies the file still exists before reusing it: a snapshot someone deleted must
+    be re-taken, never silently reported as still standing."""
+    from src.scheduler.runner import exclusive_window_token
+
+    token = exclusive_window_token()
+    if not token:
+        return None
+    with _RUN_SNAPSHOT_LOCK:
+        prior = _RUN_SNAPSHOT
+    if prior is None or prior[0] != token:
+        return None
+    return prior[1] if prior[1].exists() else None
+
+
+def _remember_run_snapshot(path: Path) -> None:
+    """Record a freshly-written safety net as THIS run's, so later items reuse it."""
+    from src.scheduler.runner import exclusive_window_token
+
+    token = exclusive_window_token()
+    if not token:
+        return
+    global _RUN_SNAPSHOT
+    with _RUN_SNAPSHOT_LOCK:
+        _RUN_SNAPSHOT = (token, path)
+
+
+def _verify_fts(con, has_fts: bool, articles: int) -> dict:
+    """Check that the FTS index covers every article, rebuilding ONLY if it does not.
+
+    THE P0.4 FIX, APPLIED TO THE RESTORE PATH. ``verify_copy`` used to run an
+    unconditional ``INSERT INTO article_fts(article_fts) VALUES('rebuild')`` here --
+    the exact corpus-scaled operation ``ensure_fts`` was fixed to stop doing on every
+    boot (``src/database/fts.py``, which records the measured cost on the field's own
+    130 GB corpus: 981-1645 s PER RUN). On the boot path that cost recurred once per
+    unlock; here it recurs once per IMPORTED BACKUP, so a 16-backup queue paid it
+    sixteen times over a corpus that grows with every item -- hours of single-threaded
+    codec work, on the largest and most repetitive import a user will ever run.
+
+    It was also redundant AND the check it fed was tautological:
+      * REDUNDANT -- ``_merge_articles`` inserts through ``INSERT INTO articles ...
+        SELECT``, and the ``article_fts_ai`` trigger fires on those rows exactly as it
+        does on ordinary ingest, so the merged articles are already indexed when this
+        runs. (The working copy is a snapshot of the live corpus, so it carries the
+        FTS table AND its triggers.)
+      * TAUTOLOGICAL -- ``COUNT(*) FROM article_fts`` on an EXTERNAL-CONTENT FTS5 table
+        reads the CONTENT table (``articles``), never the index (fts.py's own
+        "external-content gotcha"), so the old ``fts_rows == articles`` compared
+        ``COUNT(*) FROM articles`` against itself. It could not fail, which is why the
+        rebuild's removal costs no real coverage: there was none to lose.
+
+    The population probe that DOES mean something is the ``article_fts_docsize`` shadow
+    table (one row per indexed document). Comparing it to the article count is a REAL
+    check -- it detects a partial or empty index, which the old one could not -- and it
+    is what decides the rebuild, so a genuinely incomplete index is still repaired here
+    (the restore keeps its "the swapped-in corpus has a complete index" property; it
+    just stops paying for it when it already holds).
+
+    A build without the docsize shadow (``columnsize=0``) cannot be probed cheaply:
+    fts.py's own precedent applies -- trust the triggers and SKIP rather than risk a
+    corpus-scaled rebuild on a false negative -- and the unprovable state is reported
+    rather than asserted as a pass."""
+    if not has_fts:
+        return {"fts_matches_articles": True}
+    try:
+        indexed = _count(con, "SELECT COUNT(*) FROM article_fts_docsize")
+    except Exception:  # noqa: BLE001 - a columnsize=0 build has no docsize shadow
+        return {
+            "fts_matches_articles": True,
+            "fts_indexed": None,
+            "fts_rebuilt": False,
+            "fts_note": "index population not probeable on this FTS5 build; "
+            "the sync triggers are trusted (never rebuilt on a false negative)",
+        }
+    rebuilt = False
+    if indexed != articles:
+        con.execute("INSERT INTO article_fts(article_fts) VALUES('rebuild')")
+        con.commit()
+        indexed = _count(con, "SELECT COUNT(*) FROM article_fts_docsize")
+        rebuilt = True
+    return {
+        "fts_indexed": indexed,
+        "fts_rebuilt": rebuilt,
+        "fts_matches_articles": indexed == articles,
+    }
+
+
 # --------------------------------------------------------------------------- #
 #  Verification on the working copy (design §3: the merge gate)
 # --------------------------------------------------------------------------- #
@@ -1263,12 +1381,8 @@ def verify_copy(working_copy: Path, staged_corpus: Path, batch_id: int) -> dict:
                 "SELECT 1 FROM sqlite_master WHERE name='article_fts' LIMIT 1"
             ).fetchone()
         )
-        if has_fts:
-            con.execute("INSERT INTO article_fts(article_fts) VALUES('rebuild')")
-            con.commit()
-            v["fts_rows"] = _count(con, "SELECT COUNT(*) FROM article_fts")
         v["articles"] = _count(con, "SELECT COUNT(*) FROM articles")
-        v["fts_matches_articles"] = (not has_fts) or v["fts_rows"] == v["articles"]
+        v.update(_verify_fts(con, has_fts, v["articles"]))
 
         # Sampled transfer-integrity check: merged articles' content must equal
         # the staged source's content byte-for-byte (joined on the content hash).
@@ -2129,6 +2243,7 @@ def run_restore(
     merge_cache_mb: int | None = None,
     stage_progress_cb: Callable[[str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    exclusive: bool = False,
 ) -> dict:
     """Preview (commit=False) or perform (commit=True) a merge-restore.
 
@@ -2189,7 +2304,17 @@ def run_restore(
     counters afterward), so offering one would be fabricated capability. The
     post-swap tail (re-index, counters, tallies) is resumable work that a Stop
     simply leaves for later, which the caller reports as such rather than as an
-    undo."""
+    undo.
+
+    ``exclusive`` (import-speed fix 2026-07-30): the caller asserts that this restore
+    OWNS the machine -- background collection is paused and nothing else is expected to
+    write the live corpus. It is passed to the two whole-corpus snapshots below as
+    ``allow_file_copy``, which lets them copy the corpus's bytes instead of
+    re-encrypting it row by row through the SQLCipher codec. Purely a resource decision
+    with no behavioural difference: the fast path itself refuses unless it can PROVE the
+    copy is complete (see :func:`~src.database.connect._quiesced_file_copy`), so passing
+    it wrongly costs correctness nothing. Default False keeps every existing caller
+    byte-for-byte on the old path."""
     from src.backup.sqlite_backup import live_db_path
     from src.backup.timing import StageTimings
     from src.database.session import dispose_engine, init_db
@@ -2226,7 +2351,7 @@ def run_restore(
 
     _abort_point("snapshot_working_copy")
     with timings.stage("snapshot_working_copy"):
-        snapshot_preserving(live_db_path(), working)
+        snapshot_preserving(live_db_path(), working, allow_file_copy=exclusive)
 
     meta = {
         "artifact_kind": staged.kind,
@@ -2323,13 +2448,29 @@ def run_restore(
 
     from src.backup.stream_backup import active_staging
 
+    _reuse = _run_scoped_snapshot()
     _snapshot_guard = ExitStack()
-    _snapshot_guard.enter_context(active_staging(snapshot))
+    # Registered whether it is being WRITTEN now or REUSED from an earlier item of this
+    # run: the age-based sweep never touches a registered path, so the run's one safety
+    # net is protected for every item's commit tail exactly as the writer's own is.
+    # (The sweep's two callers -- boot and the scheduler's idle pass -- cannot fire
+    # mid-run anyway, the latter because collection is paused for the window; this makes
+    # the protection explicit rather than a consequence of that.)
+    _snapshot_guard.enter_context(active_staging(_reuse if _reuse is not None else snapshot))
     try:
         _abort_point("pre_restore_snapshot")
         with timings.stage("pre_restore_snapshot"):
-            snapshot_preserving(live_db_path(), snapshot)
-        report["pre_restore_snapshot"] = str(snapshot)
+            if _reuse is None:
+                snapshot_preserving(live_db_path(), snapshot, allow_file_copy=exclusive)
+                _remember_run_snapshot(snapshot)
+                report["pre_restore_snapshot"] = str(snapshot)
+            else:
+                report["pre_restore_snapshot"] = str(_reuse)
+                report["pre_restore_snapshot_reused"] = (
+                    "one safety net for the whole import run — this is the corpus as it "
+                    "was BEFORE the run started, which is the state an operator would "
+                    "actually want to return to"
+                )
 
         _abort_point("side_files_and_custody")
         with timings.stage("side_files_and_custody"):
@@ -2492,16 +2633,28 @@ def run_restore(
         # counter deltas). It is deliberately KEPT because it still repairs drift already
         # sitting in corpora imported BEFORE that ruling -- real, on this maintainer's own
         # store -- and because a reconcile that runs only sometimes is the kind of
-        # conditional an operator cannot reason about. Its cost is a full GROUP BY over
-        # keyword_mentions, which is why it is a NAMED, TIMED stage: the real number shows
-        # up in report["timings"] on the operator's hardware rather than being guessed at.
+        # conditional an operator cannot reason about.
+        #
+        # IMPORT-SPEED FIX (field report 2026-07-30): it used to call the UNBOUNDED
+        # `backfill_keyword_counters`, a whole-corpus GROUP BY over keyword_mentions plus
+        # a rewrite of EVERY keyword row -- paid in full on EVERY item of an import queue,
+        # over a corpus that grows with each one. It now runs the BOUNDED, RESUMABLE
+        # sweep the scheduler's idle maintenance already uses: same authoritative repair,
+        # same zero-then-set arithmetic, but walked in id-ordered slices under a soft
+        # deadline with a DURABLE cursor (`counter_reconcile_cursor`) that survives across
+        # items -- so a queue amortises ONE sweep across its items instead of redoing a
+        # whole-corpus one per item. Nothing is hidden by the change: only the keywords a
+        # pass actually verified get stamped, so `counter_envelope` keeps disclosing the
+        # counters as `estimated` until a whole sweep lands -- a half-reconciled corpus can
+        # never masquerade as exact. Still a NAMED, TIMED stage, so the real number shows up
+        # in report["timings"] on the operator's hardware rather than being guessed at.
         with timings.stage("keyword_counter_reconcile"):
             try:
-                from src.analytics.store import backfill_keyword_counters
+                from src.analytics.store import reconcile_keyword_counters
                 from src.database.session import session_scope
 
                 with session_scope() as _cnt_sess:
-                    report["keyword_counters"] = backfill_keyword_counters(_cnt_sess)
+                    report["keyword_counters"] = reconcile_keyword_counters(_cnt_sess)
             except Exception:  # noqa: BLE001 - never undo a committed, additive restore
                 _LOG.warning("keyword-counter reconcile after restore-merge failed", exc_info=True)
                 report["keyword_counters"] = {"reconciled": False, "error": "see server log"}

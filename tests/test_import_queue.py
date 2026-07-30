@@ -295,3 +295,63 @@ def test_every_sub_manager_is_running_before_its_worker_is_spawned():
             f"{rel}:{fn} spawns its worker before publishing its state — the import "
             "queue would race past it"
         )
+
+
+# --------------------------------------------------------------------------- #
+#  ONE post-bulk tuning pass for the whole run (import-speed fix 2026-07-30)
+# --------------------------------------------------------------------------- #
+def test_the_index_tuning_pass_runs_once_at_the_end_of_a_run(queue, monkeypatch):
+    """``verify_copy``'s per-item FTS 'rebuild' is gone (it re-read every article's text
+    through the codec to redo what the sync triggers had already done), so the segment
+    churn a bulk import leaves needs the operation that actually addresses it -- ONCE,
+    when the run ends, never per item, or a per-item index-scaled cost would be right
+    back in the middle of the queue this fix exists for."""
+    seen: list[int] = []
+    monkeypatch.setattr(queue, "_run_corpus", lambda item: {})
+    monkeypatch.setattr(
+        queue, "_tune_after_run", lambda: seen.append(1) or setattr(queue, "_tuned", {"fts": True})
+    )
+    queue.start([
+        {"kind": "corpus", "path": "/b/one"},
+        {"kind": "corpus", "path": "/b/two"},
+        {"kind": "corpus", "path": "/b/three"},
+    ])
+    st = _drain(queue)
+    assert st["state"] == "done"
+    assert seen == [1], "exactly once, however many items the run carried"
+    assert st["tuned"] == {"fts": True}, "what it managed is reported, never assumed"
+
+
+def test_a_failed_tuning_pass_never_fails_the_run(queue, monkeypatch):
+    """Tuning is never load-bearing: the imports themselves are committed and additive
+    by the time it runs, so a failure here must not turn a good run into a failed one."""
+    monkeypatch.setattr(queue, "_run_corpus", lambda item: {})
+
+    def _boom(session):
+        raise RuntimeError("optimize exploded")
+
+    monkeypatch.setattr("src.database.fts.optimize_after_bulk", _boom)
+    queue.start([{"kind": "corpus", "path": "/b/one"}])
+    st = _drain(queue)
+    assert st["state"] == "done"
+    assert st["tuned"] is None, "an unreported tuning result, not a fabricated success"
+
+
+def test_a_stop_skips_the_tuning_pass(queue, monkeypatch):
+    """Stop is IMMEDIATE (ruling item 15). An index merge over a large corpus is
+    minutes of work the user just asked to end; the committed items' index entries are
+    correct without it, and the next run's pass merges them."""
+    seen: list[int] = []
+    monkeypatch.setattr(queue, "_run_corpus", lambda item: queue._stop.set())
+    monkeypatch.setattr(queue, "_tune_after_run", lambda: seen.append(1))
+    queue.start([{"kind": "corpus", "path": "/b/one"}])
+    _drain(queue)
+    assert seen == [1], "the hook still runs; the guard is INSIDE it"
+
+    queue2 = ImportQueueManager(state_path=queue._path().with_name("q2.json"))
+    monkeypatch.setattr(queue2, "_run_corpus", lambda item: queue2._stop.set())
+    called: list[int] = []
+    monkeypatch.setattr("src.database.fts.optimize_after_bulk", lambda s: called.append(1) or {})
+    queue2.start([{"kind": "corpus", "path": "/b/one"}])
+    _drain(queue2)
+    assert called == [], "no index merge after a Stop"
