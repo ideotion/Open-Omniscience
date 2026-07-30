@@ -324,10 +324,13 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
     if apple.get("available"):
         # COERCE before comparing. A probe that hands back a non-numeric value
         # (the project has been bitten by TEXT-typed read-backs before) would
-        # otherwise raise straight out of a comparison -- and the langdetect
-        # ride-along swallows exceptions, so a raise there would fail the gate
-        # OPEN, the one direction a default-off gate must never fail. An
-        # uncoercible value is UNMEASURED, which is the honest third state below.
+        # otherwise raise straight out of this comparison. Found by the pre-push
+        # adversarial pass, when the langdetect ride-along still swallowed
+        # exceptions -- so the raise made the gate fail OPEN, the one direction a
+        # default-off gate must never fail. That call site now fails CLOSED too;
+        # this stays as the first line of defence, because a caller that guards
+        # itself is not a reason for a probe to raise. An uncoercible value is
+        # UNMEASURED, which is the honest third state below.
         ram = apple.get("unified_ram_gb")
         try:
             ram = None if ram is None else float(ram)
