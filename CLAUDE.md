@@ -6809,19 +6809,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   entry's own text names ("design of record pending the go"). Row 1 does NOT require it;
   closing row 1 does not wait on it.**
   (2) **a fully TRANSVERSAL AUDIT of the entire repo** (the `07_TRANSVERSAL_AUDIT_V01` precedent — a new tool-by-tool edition for
-  0.3). (3) **full diagnostics taken from a MEDIUM corpus — at least 5 MILLION articles**
-  (the all-diagnostics bundle run at that scale; NOTE recorded honestly: the live corpus is
-  ~an order of magnitude below 5M today, so this row implies the corpus keeps growing via
-  the maintainer's ongoing merges — the spirit is REAL field data, per the
-  P0-live-run-not-synthetic precedent). (4) **a FULL IMPORT of the database that RE-CHECKS
+  0.3). (3) **full diagnostics taken from the REAL corpus at its ACTUAL release scale
+  (~1 MILLION articles) — the 5-MILLION bar is WITHDRAWN for 0.3 (maintainer ruled
+  2026-07-30: "we won't be able to achieve the 5 million mark for the next release due to
+  the overall app speed. We should be content with what we already have (roughly one
+  million, waiting for the full imports that take very long)").** The bar was never about
+  the number itself — it was REAL FIELD DATA at whatever scale the app genuinely reaches
+  (the P0-live-run-not-synthetic precedent), and ~1M on the live corpus satisfies that.
+  WHAT THIS COSTS, stated rather than glossed: any finding from this run is evidence AT ~1M
+  and must be reported as such — a 0.3 gate row must never carry language implying a 5M bar
+  it did not test (the standing "a verdict must map to the bar it actually tested" lesson).
+  Behaviour that only appears an order of magnitude higher stays UNMEASURED for 0.3, and the
+  5M bar returns as a LATER-cycle target once the throughput work makes it reachable (the
+  2026-07-24 SCRAPING_10X_SCALING_STRATEGIES doc + the C-slice brief are exactly that work —
+  the app's speed is the reason this bar moved, so the bar moves back when the speed does). (4) **a FULL IMPORT of the database that RE-CHECKS
   ALL SOURCES** — the ruled qualification-at-import admission gate demonstrated at full
   scale (every source through the pass, verdicts stamped — the curated catalog INCLUDED,
   no grandfathering per the same-day seed ruling; catalog failures = catalog-review work
   items) before the switch; this row
-  EXPLICITLY doubles as the backup/restore-AT-SCALE validation (a ~5M-article import IS a
-  restore at ~10× the P0-validated 2.5 GB scale — state it in the gate evidence). (5) **an
+  EXPLICITLY doubles as the backup/restore-AT-SCALE validation — RESTATED 2026-07-30 with
+  row 3's withdrawn 5M bar: at ~1M articles this is a restore at roughly 2× the P0-validated
+  2.5 GB scale, NOT the ~10× the 5M framing claimed. State the REAL multiple in the gate
+  evidence; carrying the old 10× wording over a 1M run would be a fabricated pass on a bar
+  that was never tested. (5) **an
   ARTICLE CLEAN-UP strategy: DISCUSSED → AGREED (explicit maintainer sign-off BEFORE
-  execution) → implemented → EXECUTED** on the ≥5M corpus, removing the undesired-article
+  execution) → implemented → EXECUTED** on the real ~1M corpus (per row 3's withdrawn 5M
+  bar), removing the undesired-article
   class (the nav-soup/list specimens — "a list, not an article"); building blocks = the
   prose gate (ingest door, stops new ones) + the Slice-4a retroactive QUARANTINE (reversible,
   never a blind delete) + the post-cleanup re-index (clears the junk keywords/entities);

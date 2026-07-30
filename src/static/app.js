@@ -4738,6 +4738,22 @@
       loadLlmHealth(); loadOllamaInstall(); loadLlmModels();
     }
 
+    // The default-model install block. Shared so it renders in BOTH panel states --
+    // notably the Ollama-not-running one, where installing the default model is the
+    // whole point. Kept SEPARATE from the suggested-models table on purpose: that
+    // table is the dated, verified catalog, and this entry carries its own licence
+    // provenance, which is shown here rather than only in the confirm dialog so the
+    // user reads it before clicking, not after.
+    function _miniBlockHtml(d, t) {
+      const mini = d && d.ministral && d.ministral.tag ? d.ministral : null;
+      if (!mini) return "";
+      return `<h3 style="margin:14px 0 4px">${esc(t("Default model — one-click install"))}</h3>` +
+        `<p><code>${esc(mini.tag)}</code> <span class="muted">${esc(mini.size || "")}</span> ` +
+        `<button class="tiny" onclick="pullMinistral(this)">${esc(t("Install the default model"))}</button></p>` +
+        `<p class="card-caveat">${esc(t("Licence:"))} ${esc(mini.license || "")} — ${esc(mini.verification || "")}. ` +
+        `${esc((mini.caveats || []).join(" "))}</p>`;
+    }
+
     async function loadLlmModels() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("llm-models-box");
@@ -4746,7 +4762,15 @@
       try { d = await api("/api/llm/models"); }
       catch (e) { box.innerHTML = `<p class="muted">${esc(t("Model info unavailable:"))} ${esc(e.message)}</p>`; return; }
       if (!d.available) {
-        box.innerHTML = `<p class="muted">${esc(t("Ollama isn't running. Start it (or install it) to use the LLM features; once running, your installed models appear here."))}</p>`;
+        // Ollama is not answering. This used to return HERE, which hid the Launch
+        // control and the one-click model install in the EXACT state where they are
+        // the only useful things on the panel (field report 2026-07-30: "I don't see
+        // a download the default model"). The installed-models table genuinely cannot
+        // be shown -- that truth comes from Ollama -- but the two ACTIONS can, so they
+        // are rendered here instead of behind a state the user is trying to leave.
+        box.innerHTML = `<p class="muted">${esc(t("Ollama isn't running. Start it to use the local AI; your installed models appear here once it answers."))}</p>`
+          + `<p><button class="tiny" onclick="aiPillClick()">${esc(t("Start the local AI"))}</button></p>`
+          + _miniBlockHtml(d, t);
         return;
       }
       const FIT = {fits:["✓ fits","ok"], tight:["~ tight","warn"], too_large:["✗ too large","err"], unknown:["?","muted"]};
@@ -4780,15 +4804,7 @@
       // and this tag is explicitly NOT verified to the same standard. Its unconfirmed
       // status is shown here rather than only in the confirm dialog, so the user reads
       // it before clicking, not after (caveats visible by default).
-      const mini = d.ministral && d.ministral.tag ? d.ministral : null;
-      const miniBlock = mini
-        ? `<h3 style="margin:14px 0 4px">${esc(t("Ministral — one-click install"))}</h3>` +
-          `<p><code>${esc(mini.tag)}</code> <span class="muted">${esc(mini.size || "")}</span> ` +
-          `<button class="tiny" onclick="pullMinistral(this)">${esc(t("Install Ministral"))}</button></p>` +
-          `<p class="card-caveat">${esc(t("Not part of the verified catalog above."))} ` +
-          `${esc(t("Licence:"))} ${esc(mini.license || "")} — ${esc(mini.verification || "")}. ` +
-          `${esc((mini.caveats || []).join(" "))}</p>`
-        : "";
+      const miniBlock = _miniBlockHtml(d, t);
       box.innerHTML = `<p class="muted">${esc(ram)}.</p>` + installed +
         `<h3 style="margin:14px 0 4px">${esc(t("Suggested models"))} <span class="muted" style="font-weight:400">(${esc(t("as of"))} ${esc(d.catalog_as_of)} — ${esc(t("newer likely exist"))})</span></h3>` +
         `<table><tr><th>${esc(t("Model"))}</th><th>${esc(t("Size"))}</th><th>${esc(t("Your hardware"))}</th><th>${esc(t("Note"))}</th><th></th></tr>${cat}</table>` +
@@ -18234,24 +18250,83 @@
       try { (_setSubtabs || { select: showSetCat }).select("models"); }
       catch (e) { showSetCat("models"); }
     }
+    // Clicking the red AI pill should START the local AI, not merely navigate to a
+    // panel (field report 2026-07-30: "clicking the AI button does not start vLLM, it
+    // should start either vLLM or Ollama automatically and load the default model and
+    // then turn green"). The previous version only ever tried vLLM, and only under four
+    // simultaneous conditions -- so on an Ollama-only machine, or with no vLLM model
+    // chosen, it silently fell through to opening Settings.
+    //
+    // WHERE THE LINE IS, and why it is not "do everything silently": starting a local
+    // daemon is free, local and instantly reversible, so it happens automatically.
+    // DOWNLOADING a model is multi-gigabyte network traffic that egresses CLEARNET via
+    // the Ollama process (NOT through Tor) -- so it is offered, with its size, and
+    // never begun by a single click on a status pill.
     async function aiPillStartOrInstall() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      try {
-        const vs = await api("/api/llm/vllm/status");
-        if (vs.installed && !vs.running && vs.gpu && vs.gpu.available) {
+      let b = null;
+      try { b = await api("/api/llm/backend"); }
+      catch (e) { openAiSettings(); return; }
+
+      // 1. vLLM first when it can actually serve: it is the GPU path and the only one
+      //    that gives concurrency. It needs a model id up front, so a missing choice
+      //    is a reason to fall through to Ollama, not to give up.
+      if (b.vllm_can_launch) {
+        try {
           const settings = await api("/api/settings");
           if (settings.llm_model_vllm) {
-            toast(t("Starting the local AI backend…"));
+            toast(t("Starting the local AI…"));
             await api("/api/llm/vllm/start", {
               method: "POST",
               body: JSON.stringify({model: settings.llm_model_vllm}),
             });
-            setTimeout(loadLlmHealth, 3000);
+            _aiPillSettle();
             return;
           }
+        } catch (e) { /* fall through to Ollama rather than stopping here */ }
+      }
+
+      // 2. Ollama otherwise -- the CPU path, and the case the old code never handled.
+      if (b.ollama && b.ollama.can_launch) {
+        try {
+          toast(t("Starting the local AI…"));
+          await api("/api/llm/ollama/start", {method: "POST"});
+          await _aiPillEnsureModel(t);
+          _aiPillSettle();
+          return;
+        } catch (e) {
+          toast(t("Could not start the local AI:") + " " + (e.message || e), "err");
+          openAiSettings();
+          return;
         }
-      } catch (e) { /* fall through to the install/settings path below */ }
+      }
+
+      // 3. Running already but still not usable -- almost always "no model installed".
+      if (b.ollama && b.ollama.running) {
+        if (await _aiPillEnsureModel(t)) { _aiPillSettle(); return; }
+      }
+
+      // 4. Nothing installed to start. Installing a BACKEND is a bigger, consented
+      //    flow that lives in Settings; sending the user there is the honest end.
       openAiSettings();
+    }
+
+    // Re-read health a few times after a start: a daemon needs a moment to answer, and
+    // a pill that stayed red until the next poll would read as "it didn't work".
+    function _aiPillSettle() {
+      [800, 2500, 6000].forEach((ms) => setTimeout(loadLlmHealth, ms));
+    }
+
+    // Returns true if a model is present (or a download was started). Offers the
+    // default model when none is installed -- the "load the default model" half of the
+    // ask, with the download offered rather than silently begun.
+    async function _aiPillEnsureModel(t) {
+      let d = null;
+      try { d = await api("/api/llm/models"); } catch (e) { return false; }
+      if ((d.installed || []).length) return true;
+      if (!(d.ministral && d.ministral.tag)) return false;
+      await pullMinistral(null);
+      return true;
     }
     async function aiPillClick() {
       try {
