@@ -355,19 +355,91 @@ def test_import_cache_scales_with_available_ram(monkeypatch):
 
     monkeypatch.delenv("OO_IMPORT_CACHE_MB", raising=False)
 
-    monkeypatch.setattr(M, "_available_ram_mb", lambda: 12000)
-    assert M.import_cache_mb() == 3000, "a roomy box gets a proportionally bigger cache"
+    def _ram(avail: int, total: int) -> None:
+        monkeypatch.setattr(M, "_available_ram_mb", lambda: avail)
+        monkeypatch.setattr(M, "_total_ram_mb", lambda: total)
+
+    # A roomy box gets a proportionally bigger cache -- bounded by an eighth of
+    # the MACHINE, not a quarter of whatever happens to be free this second.
+    _ram(avail=96_000, total=128_000)
+    assert M.import_cache_mb() == 4096, "an eighth of 128 GB, clamped at the ceiling"
 
     # A small box is clamped UP to the old fixed default, never below it: this
     # change may not make any machine worse than what already shipped.
-    monkeypatch.setattr(M, "_available_ram_mb", lambda: 1200)
+    _ram(avail=1200, total=3072)
     assert M.import_cache_mb() == M._IMPORT_CACHE_FLOOR_MB == 512
 
     # A very large box is clamped DOWN: past the ceiling the page cache is no
     # longer what limits the merge, and the same import is concurrently running
     # a process pool that needs the rest.
-    monkeypatch.setattr(M, "_available_ram_mb", lambda: 256_000)
+    _ram(avail=256_000, total=512_000)
     assert M.import_cache_mb() == M._IMPORT_CACHE_CEIL_MB == 4096
+
+
+def test_total_ram_bounds_the_cache_even_when_the_box_looks_idle(monkeypatch):
+    """THE REGRESSION THIS EXISTS FOR (field, 2026-07-30, within hours of the
+    available-only version shipping): a 12 GB box mid-merge at RSS 8.07 GB, 137
+    MiB free, and 538 MiB of a 1 GiB swap consumed.
+
+    A quarter of MemAvailable is not a safe budget on its own. MemAvailable is a
+    SNAPSHOT, but the cache is set once on the merge connection and held for the
+    entire merge -- and the consumer is ONE transaction (the whole 14-step merge
+    runs inside a single BEGIN IMMEDIATE), so pages dirtied early cannot be
+    evicted until the final COMMIT. Handed to a long single transaction, a page
+    cache is closer to a floor on residency than a ceiling on it.
+
+    So the total-RAM bound must BITE on a quiet machine, which is exactly the
+    case the available-only heuristic got wrong."""
+    import src.backup.merge as M
+
+    monkeypatch.delenv("OO_IMPORT_CACHE_MB", raising=False)
+    # The maintainer's box, freshly booted: 10 GB free of 11 GB total.
+    monkeypatch.setattr(M, "_available_ram_mb", lambda: 10 * 1024)
+    monkeypatch.setattr(M, "_total_ram_mb", lambda: 11 * 1024)
+
+    got = M.import_cache_mb()
+    available_only = int(10 * 1024 * M._IMPORT_CACHE_RAM_SHARE)  # what shipped first
+    assert got == int(11 * 1024 * M._IMPORT_CACHE_TOTAL_SHARE) == 1408
+    assert got < available_only, (
+        "the total-RAM bound must bite on an idle box -- that is the whole point"
+    )
+
+
+def test_the_smaller_of_the_two_bounds_always_wins(monkeypatch):
+    """Neither bound is decorative. A BUSY machine is limited by what is actually
+    free; a QUIET one by what the machine can sustain. Taking the minimum is what
+    makes both true at once, so pin each direction separately."""
+    import src.backup.merge as M
+
+    monkeypatch.delenv("OO_IMPORT_CACHE_MB", raising=False)
+
+    # Busy: only 2.4 GB free of 64 GB -> available wins (600), not total (4096).
+    monkeypatch.setattr(M, "_available_ram_mb", lambda: 2400)
+    monkeypatch.setattr(M, "_total_ram_mb", lambda: 64 * 1024)
+    assert M.import_cache_mb() == 600
+
+    # Quiet: 30 GB free of 32 GB -> total wins (4096 after the ceiling), and the
+    # available-only figure (7680) is never reached.
+    monkeypatch.setattr(M, "_available_ram_mb", lambda: 30 * 1024)
+    monkeypatch.setattr(M, "_total_ram_mb", lambda: 32 * 1024)
+    assert M.import_cache_mb() == 4096
+
+
+def test_one_unreadable_ram_field_still_bounds_by_the_other(monkeypatch):
+    """A partial read is not a licence to overcommit. If only ONE of the two
+    figures is legible, the budget still respects it rather than falling back to
+    the unbounded path -- an unknown may never widen the budget."""
+    import src.backup.merge as M
+
+    monkeypatch.delenv("OO_IMPORT_CACHE_MB", raising=False)
+
+    monkeypatch.setattr(M, "_available_ram_mb", lambda: None)
+    monkeypatch.setattr(M, "_total_ram_mb", lambda: 8 * 1024)
+    assert M.import_cache_mb() == 1024, "total alone still bounds it"
+
+    monkeypatch.setattr(M, "_available_ram_mb", lambda: 2000)
+    monkeypatch.setattr(M, "_total_ram_mb", lambda: None)
+    assert M.import_cache_mb() == 512, "available alone still bounds it (floored)"
 
 
 def test_unreadable_ram_falls_back_to_the_fixed_default_never_a_guess(monkeypatch):
@@ -378,8 +450,10 @@ def test_unreadable_ram_falls_back_to_the_fixed_default_never_a_guess(monkeypatc
 
     monkeypatch.delenv("OO_IMPORT_CACHE_MB", raising=False)
     monkeypatch.setattr(M, "_available_ram_mb", lambda: None)
+    monkeypatch.setattr(M, "_total_ram_mb", lambda: None)
     assert M.import_cache_mb() == 512
     monkeypatch.setattr(M, "_available_ram_mb", lambda: 0)
+    monkeypatch.setattr(M, "_total_ram_mb", lambda: 0)
     assert M.import_cache_mb() == 512
 
 
@@ -391,10 +465,12 @@ def test_an_explicit_operator_override_is_never_second_guessed(monkeypatch):
     import src.backup.merge as M
 
     monkeypatch.setattr(M, "_available_ram_mb", lambda: 64_000)
+    monkeypatch.setattr(M, "_total_ram_mb", lambda: 64_000)
     monkeypatch.setenv("OO_IMPORT_CACHE_MB", "64")
     assert M.import_cache_mb() == 64, "small override on a huge box is honoured"
 
     monkeypatch.setattr(M, "_available_ram_mb", lambda: 900)
+    monkeypatch.setattr(M, "_total_ram_mb", lambda: 4096)
     monkeypatch.setenv("OO_IMPORT_CACHE_MB", "8192")
     assert M.import_cache_mb() == 8192, "large override on a small box is honoured"
 

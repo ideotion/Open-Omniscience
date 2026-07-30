@@ -2138,42 +2138,65 @@ def reindex_imported_articles(
         return result
 
 
-def _available_ram_mb() -> int | None:
-    """Currently AVAILABLE RAM in MiB, from ``/proc/meminfo``'s ``MemAvailable``.
-
-    ``MemAvailable`` rather than ``MemFree`` or ``MemTotal``: the kernel's own
-    estimate of what a new allocation can actually get without swapping, which
-    already accounts for reclaimable page cache and slab. That is the honest
-    denominator for "how much may this import claim" -- MemTotal would ignore
-    everything else on the box, and MemFree would under-read a machine whose RAM
-    is mostly healthy page cache.
+def _meminfo_mb(*keys: str) -> dict[str, int]:
+    """Read the named ``/proc/meminfo`` fields, in MiB.
 
     ``/proc/meminfo`` rather than ``psutil`` for the same reason
     ``vllm_lifecycle._total_ram_bytes`` does: psutil is an optional extra
     ([analysis]) and a core install must not silently lose the measurement.
 
-    ``None`` when unreadable (non-Linux, restricted /proc) -- an honest unknown,
+    A key absent from the result means "could not be read" -- an honest unknown,
     never a fabricated number, and the caller falls back to the fixed default."""
+    want = set(keys)
+    out: dict[str, int] = {}
     try:
         with open("/proc/meminfo", encoding="utf-8") as f:
             for line in f:
-                if line.startswith("MemAvailable:"):
+                name, _, rest = line.partition(":")
+                if name in want:
                     # "MemAvailable:   10261176 kB"
-                    return int(line.split()[1]) // 1024
+                    out[name] = int(rest.split()[0]) // 1024
+                    if len(out) == len(want):
+                        break
     except (OSError, ValueError, IndexError):
-        return None
-    return None
+        return {}
+    return out
+
+
+def _available_ram_mb() -> int | None:
+    """Currently AVAILABLE RAM in MiB (``MemAvailable``) -- the kernel's own
+    estimate of what a new allocation can get without swapping."""
+    return _meminfo_mb("MemAvailable").get("MemAvailable")
+
+
+def _total_ram_mb() -> int | None:
+    """TOTAL physical RAM in MiB (``MemTotal``)."""
+    return _meminfo_mb("MemTotal").get("MemTotal")
 
 
 #: Share of AVAILABLE RAM an owning import may claim for the merge page cache.
-#: A quarter, deliberately: the same import concurrently runs a process pool of
-#: up to :data:`reindex_parallel._MAX_EXCLUSIVE_WORKERS_CAP` extraction workers,
-#: each holding an article body and an extractor, and the page cache is the one
-#: allocation that can be claimed in a single lump. Leaving three quarters is
-#: what keeps the enlarged cache a throughput win rather than the thing that
-#: pushes a 12 GB box into swap -- where it would be far slower than the small
-#: cache it replaced.
 _IMPORT_CACHE_RAM_SHARE = 0.25
+#: Share of TOTAL RAM it may claim, whatever happens to be free right now.
+#:
+#: THE AVAILABLE-ONLY VERSION OF THIS WAS WRONG, and the field caught it within
+#: hours (2026-07-30, a 12 GB box mid-merge: RSS 8.07 GB, 137 MiB free, 538 MiB
+#: of a 1 GiB swap consumed). Two reasons a fraction of MemAvailable is not a
+#: safe budget on its own:
+#:
+#:   * MemAvailable is a snapshot, and the cache OUTLIVES it. It is set once on
+#:     the merge connection and held for the whole merge, while everything the
+#:     import does afterwards -- the working-copy write path, the app's own
+#:     engine -- competes for what is left.
+#:   * The consumer is ONE transaction. The entire 14-step merge runs inside a
+#:     single ``BEGIN IMMEDIATE`` (see :func:`merge_corpus`), so pages dirtied
+#:     early cannot be evicted until the final COMMIT. A page cache handed to a
+#:     long single transaction is closer to a floor on residency than a ceiling.
+#:
+#: Bounding by TOTAL as well fixes both: an eighth of the machine is a budget
+#: that does not evaporate when something else allocates, and it degrades
+#: proportionally on exactly the small boxes this project targets. 12 GB -> 1.4
+#: GB (was up to 3 GB); 64 GB -> the 4 GB ceiling; 4 GB -> the 512 MiB floor.
+_IMPORT_CACHE_TOTAL_SHARE = 0.125
 _IMPORT_CACHE_FLOOR_MB = 512  # never below the fixed default this replaced
 _IMPORT_CACHE_CEIL_MB = 4096  # past this, SQLite's cache stops being the bottleneck
 
@@ -2185,17 +2208,23 @@ def import_cache_mb() -> int:
     (``src/config/power_profiles.py``), which never reaches this connection
     (opened via the raw ``connect()`` factory, not the pooled app engine).
 
-    SCALED TO AVAILABLE RAM (maintainer ask 2026-07-30, on a 12 GB box whose RAM
-    sat at 30% through an import): a fixed 512 MiB is simultaneously too big for
-    a 3 GB field machine and far too small for a 12 GB one. A quarter of
-    MemAvailable, clamped to [512, 4096] MiB, adapts to both -- the floor keeps
-    it never worse than the fixed default it replaced, and the ceiling stops a
-    very large box from claiming a cache past the point where SQLite's page
-    cache is what limits the merge.
+    SCALED TO RAM (maintainer ask 2026-07-30): a fixed 512 MiB is simultaneously
+    too big for a 3 GB field machine and too small for a 12 GB one. The budget is
+    the SMALLER of a quarter of what is available right now and an eighth of the
+    machine's total, clamped to [512, 4096] MiB.
+
+    BOTH BOUNDS ARE LOAD-BEARING, and shipping only the first was a real
+    regression the field caught the same day (see
+    :data:`_IMPORT_CACHE_TOTAL_SHARE` for the measurements): available-only lets
+    a momentarily-idle box hand a single, hours-long transaction more memory than
+    the machine can sustain once the rest of the import allocates. Taking the
+    minimum means a busy machine is respected AND a quiet one cannot be talked
+    into overcommitting.
 
     ``OO_IMPORT_CACHE_MB`` still overrides absolutely -- an operator's explicit
-    number is never second-guessed, in either direction. A machine whose RAM
-    cannot be read falls back to the fixed 512 MiB default, never to a guess.
+    number is never second-guessed, in either direction, and it remains the
+    escape hatch for a box already under pressure. A machine whose RAM cannot be
+    read falls back to the fixed 512 MiB default, never to a guess.
 
     A resource-usage tuning knob only, never a behaviour change: the merge's
     results are byte-identical at any cache size."""
@@ -2205,11 +2234,17 @@ def import_cache_mb() -> int:
             return max(2, int(raw))
         except ValueError:
             pass
-    avail = _available_ram_mb()
-    if not avail or avail <= 0:
+    budgets = [
+        int(v * share)
+        for v, share in (
+            (_available_ram_mb(), _IMPORT_CACHE_RAM_SHARE),
+            (_total_ram_mb(), _IMPORT_CACHE_TOTAL_SHARE),
+        )
+        if v and v > 0
+    ]
+    if not budgets:
         return _IMPORT_CACHE_FLOOR_MB
-    scaled = int(avail * _IMPORT_CACHE_RAM_SHARE)
-    return max(_IMPORT_CACHE_FLOOR_MB, min(_IMPORT_CACHE_CEIL_MB, scaled))
+    return max(_IMPORT_CACHE_FLOOR_MB, min(_IMPORT_CACHE_CEIL_MB, min(budgets)))
 
 
 # The canonical stage sequence a restore walks, in order. Kept BESIDE the
