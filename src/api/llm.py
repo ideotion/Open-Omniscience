@@ -36,6 +36,7 @@ from src.llm.backend import LlmBackend
 from src.llm.ollama import (
     CATALOG_AS_OF,
     DEFAULT_MODEL,
+    DEFAULT_VLLM_MODEL,
     LLMError,
     LLMUnavailable,
     OllamaClient,
@@ -147,7 +148,12 @@ def active_model() -> str:
                     return served[0]
             except Exception:  # noqa: BLE001 - a probe hiccup falls through honestly
                 pass
-            return DEFAULT_MODEL
+            # NEVER DEFAULT_MODEL here: that is an OLLAMA TAG, and vLLM cannot resolve
+            # one — the two backends consume different artifacts (GGUF tag vs HF
+            # safetensors repo) and their quantisation vocabularies do not translate.
+            # Before DEFAULT_VLLM_MODEL existed this path handed vLLM a name it could
+            # never serve, so the fallback silently produced a guaranteed failure.
+            return DEFAULT_VLLM_MODEL
         return s.llm_model or DEFAULT_MODEL
     except Exception:  # noqa: BLE001 - a settings hiccup must not break inference
         return DEFAULT_MODEL

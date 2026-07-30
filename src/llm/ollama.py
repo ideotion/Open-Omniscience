@@ -56,7 +56,7 @@ MODEL_CATALOG: list[dict] = [
     {"tag": "mistral-small:latest", "size": "~14 GB", "min_ram_gb": 24, "license": "Apache-2.0", "note": "Mistral Small 3.x (~24B) — prioritised; capable but needs ~24 GB RAM; Apache-2.0"},
     {"tag": "granite4:350m", "size": "~0.3 GB", "min_ram_gb": 4, "license": "Apache-2.0", "note": "IBM Granite 4.0 — tiny (350M); simple tasks; Apache-2.0"},
     {"tag": "qwen3:1.7b", "size": "~1.4 GB", "min_ram_gb": 4, "license": "Apache-2.0", "note": "Alibaba Qwen3 (1.7B) — small & permissive; Apache-2.0"},
-    {"tag": "granite4:micro", "size": "~2.1 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "IBM Granite 4.0 — small (3.4B, hybrid); the app's default; Apache-2.0"},
+    {"tag": "granite4:micro", "size": "~2.1 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "IBM Granite 4.0 — small (3.4B, hybrid); Apache-2.0"},
     {"tag": "granite4.1:3b", "size": "~2 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "IBM Granite 4.1 — multilingual (3B); Apache-2.0"},
     # Licence read from the model card 2026-07-29 (apache-2.0, ungated) and tag read
     # from ollama.com/library — so it meets this list's verification bar. Needs Ollama
@@ -64,6 +64,23 @@ MODEL_CATALOG: list[dict] = [
     # discovered through a failed pull. Card names 11 languages; ru/hi/bn/id/th/vi/el/sr/mr
     # are not among them.
     {"tag": "ministral-3:3b-instruct-2512-q4_K_M", "size": "~3.0 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "Mistral Ministral 3 (3B) — fits 8 GB VRAM; needs Ollama 0.13.1+; Apache-2.0; card names 11 languages (not ru/hi/bn/id/th/vi/el/sr/mr)"},
+    # The app's DEFAULT since 2026-07-30 (see DEFAULT_MODEL). Tag, size, quant list and
+    # digest read from ollama.com/library that day; the library publishes only q4_K_M,
+    # q8_0 and fp16 for this model — there is no Q5_K_M there (see the entry below).
+    # Multimodal (8.4B LM + 0.4B vision encoder); this blob bundles the vision projector,
+    # though nothing in this app calls vision — summarize/translate/synthesize/triage/
+    # source-tags/perception are all text.
+    {"tag": "ministral-3:8b-instruct-2512-q4_K_M", "size": "~6.0 GB", "min_ram_gb": 16, "max_vram_gb": 8, "license": "Apache-2.0", "note": "Mistral Ministral 3 (8B) — the app's default; needs Ollama 0.13.1+; Apache-2.0; card names 11 languages but says 'dozens of languages, including' (non-exhaustive)"},
+    # The Q5_K_M the maintainer asked for. It exists ONLY as a GGUF file in Mistral's own
+    # repo, not on ollama.com/library, so it is reachable through Ollama's hf.co
+    # passthrough. Listed rather than defaulted, with its gaps stated: (a) nobody has run
+    # this pull, so that the tag RESOLVES is unverified — the file's existence and size
+    # are verified, which is not the same claim; (b) the passthrough resolves one quant
+    # file and almost certainly does NOT fetch the separate 858 MB mmproj, so vision is
+    # likely lost (irrelevant here — see above — but stated rather than discovered).
+    # Same size as the q4_K_M above because that one spends its budget on the vision
+    # projector and this one spends it on text precision.
+    {"tag": "hf.co/mistralai/Ministral-3-8B-Instruct-2512-GGUF:Q5_K_M", "size": "~6.06 GB", "min_ram_gb": 16, "max_vram_gb": 8, "license": "Apache-2.0", "note": "Mistral Ministral 3 (8B, Q5_K_M) — higher-precision text than the library q4_K_M; pulled from Mistral's own GGUF repo via hf.co passthrough. UNVERIFIED: the file exists (6.06 GB) but this pull has not been run; vision projector likely not fetched."},
     {"tag": "qwen3:4b", "size": "~2.6 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "Alibaba Qwen3 (4B) — balanced & permissive; Apache-2.0"},
     {"tag": "phi4-mini", "size": "~2.5 GB", "min_ram_gb": 8, "license": "MIT", "note": "Microsoft Phi-4-mini (3.8B) — MIT"},
     {"tag": "olmo2:7b", "size": "~4.5 GB", "min_ram_gb": 8, "license": "Apache-2.0", "note": "Allen AI OLMo 2 (7B) — fully open; Apache-2.0"},
@@ -103,7 +120,15 @@ MODEL_CATALOG: list[dict] = [
 # form `ministral-3:3b` DOES exist and carries the SAME digest (f04aa1c738f6) as
 # `ministral-3:3b-instruct-2512-q4_K_M` -- one image, two names. The long form is kept
 # because it pins the quantisation explicitly; the short form is not "unverifiable", it
-# is simply less specific. Do NOT use `ministral-3:latest`: it resolves to the 8B image.
+# is simply less specific.
+#
+# `ministral-3:latest` resolves to the 8B image (6.0 GB, q4_K_M, digest 1922accd5827 —
+# the same blob as `ministral-3:8b` and `ministral-3:8b-instruct-2512-q4_K_M`), re-checked
+# 2026-07-30. This used to be recorded as a warning ("do NOT use :latest") back when the
+# 8B was the wrong model to land on; since 2026-07-30 the 8B IS the default, so it is
+# recorded as a plain fact instead. Still prefer the explicit tag over `:latest`: a bare
+# name silently follows whatever upstream re-points it at, which for a 6 GB download is
+# a surprise worth not having.
 MINISTRAL_TAG = "ministral-3:3b-instruct-2512-q4_K_M"
 # The vLLM (GPU) counterpart. The model card states the 3B is "capable of fitting in
 # 8GB of VRAM in FP8", and ships a vllm serve command requiring vllm >= 0.12.0 (our pin
@@ -139,10 +164,43 @@ MINISTRAL_SUGGESTION: dict = {
         "ru, hi, bn, id, th, vi, el, sr, mr — unenumerated, not stated unsupported.",
     ],
 }
-# The app's default model tag (a fallback when the operator has not chosen one in
-# Settings). Apache-2.0, low-spec-friendly, and matched by the installer's quick
-# pull so a fresh install's default is actually present. Override with OO_LLM_MODEL.
-DEFAULT_MODEL = os.getenv("OO_LLM_MODEL", "granite4:micro")
+# The app's default OLLAMA model tag (a fallback when the operator has not chosen one
+# in Settings). Override with OO_LLM_MODEL.
+#
+# RULED 2026-07-30 (maintainer): Ministral 3 8B replaces granite4:micro as the default.
+# The previous default was chosen to be "low-spec-friendly"; that constraint is dropped
+# by the same ruling, which scopes local inference to machines with a DEDICATED GPU (or
+# Apple Silicon's unified memory) — on a GPU-less laptop inference is impractically slow
+# whatever the model, so sizing the default down bought nothing real.
+#
+# 6.0 GB, Apache-2.0, ungated. Needs Ollama MINISTRAL_MIN_OLLAMA or newer.
+#
+# QUANT, stated because it is NOT what was asked for: the maintainer asked for Q5_K_M.
+# ollama.com/library publishes NO Q5_K_M for any Ministral-3 size — only q4_K_M, q8_0
+# and fp16 (checked 2026-07-30). A Q5_K_M does exist in Mistral's own GGUF repo and is
+# listed in MODEL_CATALOG as a hf.co passthrough, but nobody has yet confirmed that the
+# passthrough tag actually PULLS, and an unverified tag as the default would break every
+# fresh install. So the verified library tag is the default and the Q5_K_M is one click
+# away in the picker, carrying its own honest status. Promote it here once a real
+# `ollama pull` confirms it.
+DEFAULT_MODEL = os.getenv("OO_LLM_MODEL", "ministral-3:8b-instruct-2512-q4_K_M")
+
+# The app's default VLLM model — a SEPARATE identifier, never the Ollama tag above.
+#
+# The two backends consume different artifacts of the same model and their quantisation
+# vocabularies do not translate: Ollama takes GGUF tags (Q4_K_M/Q5_K_M/…), vLLM takes a
+# HuggingFace safetensors repo (awq/gptq/fp8/…). Handing an Ollama tag to vLLM cannot
+# work, which is exactly what api/llm.py::active_model did on its fallback path before
+# this constant existed.
+#
+# This is the 3B, DELIBERATELY, on the same evidence recorded at MINISTRAL_VLLM_MODEL
+# above: the 8B does not fit 8 GB of VRAM in any published vLLM build. Re-verified
+# 2026-07-30 — the only 4-bit AWQ build is 7.18 GB of weights (~6.69 GiB resident,
+# because the vision tower, the multimodal projector, lm_head and the embedding table
+# all stay BF16 through 4-bit quantisation) and OOMs at startup on an 8 GB card. So on
+# an 8 GB GPU the honest split is: 8B through Ollama for one-at-a-time quality work,
+# 3B through vLLM where its concurrency actually pays (the corpus-wide sweeps).
+DEFAULT_VLLM_MODEL = os.getenv("OO_VLLM_MODEL", MINISTRAL_VLLM_MODEL)
 
 
 def total_ram_gb() -> float | None:
