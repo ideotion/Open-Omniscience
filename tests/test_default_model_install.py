@@ -67,26 +67,41 @@ def test_each_backend_gets_its_OWN_artifact():
 #  the mechanisms are genuinely different, and said so
 # --------------------------------------------------------------------------- #
 def test_the_two_mechanisms_are_reported_distinctly():
+    """They really are different operations -- a HuggingFace weights fetch and a
+    registry image pull -- so the button says which one it is about to do."""
     body = _pyfn("_default_model_plan")
-    assert '"mechanism": "server_start"' in body
+    assert '"mechanism": "download"' in body
     assert '"mechanism": "pull"' in body
 
 
-def test_the_vllm_path_does_not_claim_a_download_job_that_does_not_exist():
-    """vLLM fetches weights at server start. Reporting byte progress for it would be
-    inventing a job — the note says so instead."""
+def test_the_vllm_path_invents_no_progress_number():
+    """AMENDED 2026-07-30. This used to pin the OPPOSITE: that vLLM claims no download
+    job at all, because it fetched weights at server start. That was true and useless as
+    a button (no download, no progress, no way to know if the GB were already there), so
+    the plan now describes a real pre-fetch. What survives unchanged is the honesty
+    constraint underneath: the downloader reports progress as text, so turning it into a
+    percentage here would be a guess."""
     body = _pyfn("_default_model_plan")
     vllm = body.split('"backend": "vllm"', 1)[1].split('"backend": "ollama"', 1)[0]
-    assert "no separate download step" in vllm
-    assert "no byte progress" in vllm
+    assert "would be a guess" in vllm
+    # The note SAYS "No percentage" -- what must not appear is a percentage FIELD.
+    assert not [k for k in ("percent", "progress_pct", "eta_seconds") if f'"{k}"' in vllm]
 
 
 def test_an_unknown_install_state_is_None_not_a_guessed_false():
     """A guessed false nags a user who already has the weights; a guessed true hides a
-    missing model. Both backends have a genuinely unknowable case, and both say so."""
+    missing model. AMENDED 2026-07-30: the vLLM side no longer has to say "unknown" for
+    the ORDINARY case -- it probes the HF cache -- but an unreadable cache is still
+    None, never a False, and the probe is strict about a half-finished download."""
     body = _pyfn("_default_model_plan")
-    assert '"installed": None' in body, "vLLM: the HF cache is not probed"
+    assert "model_cache_state" in body, "vLLM: the HF cache IS probed now"
+    assert 'cache["cached"]' in body, "and the probe's answer is what is reported"
     assert "installed = None" in body, "Ollama: the daemon being down is not 'absent'"
+
+    from src.llm.vllm_lifecycle import model_cache_state
+
+    st = model_cache_state("nope/does-not-exist-anywhere")
+    assert st["cached"] is False and st["bytes"] is None
 
 
 # --------------------------------------------------------------------------- #

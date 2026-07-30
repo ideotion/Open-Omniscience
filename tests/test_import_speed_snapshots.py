@@ -40,6 +40,7 @@ import pytest
 from src.backup.merge import _verify_fts
 from src.database.connect import (
     connect,
+    get_passphrase,
     have_driver,
     is_encrypted_file,
     set_passphrase,
@@ -49,6 +50,26 @@ from src.database.connect import (
 sqlcipher_only = pytest.mark.skipif(not have_driver(), reason="sqlcipher3 not installed")
 
 _PW = "correct horse battery staple"
+
+
+@pytest.fixture()
+def passphrase():
+    """Own the PROCESS passphrase and always put it back.
+
+    `set_passphrase` writes a module global, so a test that sets it and does not
+    restore it leaks into every later test in the run -- concretely, it made
+    `test_sqlcipher.py::test_factory_plaintext_and_fresh_policy` stop raising
+    DatabaseLockedError for a fresh file, because a passphrase WAS available by then.
+    A fixture with its own teardown is the only version of this that cannot be
+    defeated by an early return, a raise, or a mid-test `monkeypatch.undo()` (which
+    is exactly how the leak got in)."""
+    before = get_passphrase()
+    set_passphrase(_PW)
+    try:
+        yield _PW
+    finally:
+        set_passphrase(before)
+
 
 _FTS_SCHEMA = """
 CREATE TABLE articles(id INTEGER PRIMARY KEY, title TEXT, content TEXT);
@@ -170,12 +191,10 @@ def _encrypted_corpus(path: Path, n: int = 200) -> None:
 
 
 @sqlcipher_only
-def test_the_fast_path_produces_a_readable_byte_identical_encrypted_copy(tmp_path, monkeypatch):
+def test_the_fast_path_produces_a_readable_byte_identical_encrypted_copy(tmp_path, monkeypatch, passphrase):
     """A byte copy cannot get ``page_size``/``auto_vacuum`` wrong the way a
     re-created target can (the documented ``_match_source_pragmas`` hazard) -- it does
     not re-create anything. It must still be openable under the same key."""
-    monkeypatch.setattr("src.database.connect._passphrase", _PW, raising=False)
-    set_passphrase(_PW)
     src = tmp_path / "live.db"
     _encrypted_corpus(src)
     assert is_encrypted_file(src)
@@ -193,11 +212,9 @@ def test_the_fast_path_produces_a_readable_byte_identical_encrypted_copy(tmp_pat
 
 
 @sqlcipher_only
-def test_a_stale_wal_beside_the_destination_is_removed(tmp_path, monkeypatch):
+def test_a_stale_wal_beside_the_destination_is_removed(tmp_path, monkeypatch, passphrase):
     """A snapshot is a lone file. A ``-wal`` inherited from whatever previously lived at
     that path would be read as THIS database's log -- silently wrong data, not an error."""
-    monkeypatch.setattr("src.database.connect._passphrase", _PW, raising=False)
-    set_passphrase(_PW)
     src = tmp_path / "live.db"
     _encrypted_corpus(src)
     dest = tmp_path / "working.db"
@@ -209,13 +226,11 @@ def test_a_stale_wal_beside_the_destination_is_removed(tmp_path, monkeypatch):
 
 @sqlcipher_only
 def test_an_undrainable_wal_falls_back_instead_of_copying_something_unproven(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, passphrase
 ):
     """The failure direction is "slower", never "wrong": when the checkpoint cannot
     prove every committed page reached the main file, the fast path REFUSES and the
     always-correct codec path runs instead. A torn copy is never the outcome."""
-    monkeypatch.setattr("src.database.connect._passphrase", _PW, raising=False)
-    set_passphrase(_PW)
     src = tmp_path / "live.db"
     _encrypted_corpus(src)
 
@@ -265,12 +280,10 @@ def test_an_undrainable_wal_falls_back_instead_of_copying_something_unproven(
 
 
 @sqlcipher_only
-def test_the_default_is_the_unchanged_codec_path(tmp_path, monkeypatch):
+def test_the_default_is_the_unchanged_codec_path(tmp_path, monkeypatch, passphrase):
     """Every pre-existing caller keeps the old behaviour: the fast path is OPT-IN
     because it holds the single-writer gate for the copy, which is free during an import
     and rude during ordinary operation."""
-    monkeypatch.setattr("src.database.connect._passphrase", _PW, raising=False)
-    set_passphrase(_PW)
     src = tmp_path / "live.db"
     _encrypted_corpus(src)
 
@@ -289,11 +302,9 @@ def test_the_default_is_the_unchanged_codec_path(tmp_path, monkeypatch):
 
 
 @sqlcipher_only
-def test_a_failed_fast_path_never_leaves_a_partial_copy_behind(tmp_path, monkeypatch):
+def test_a_failed_fast_path_never_leaves_a_partial_copy_behind(tmp_path, monkeypatch, passphrase):
     """A half-written destination that a later stage mistook for a good snapshot would
     be the worst possible outcome of an optimisation -- so the fallback clears it first."""
-    monkeypatch.setattr("src.database.connect._passphrase", _PW, raising=False)
-    set_passphrase(_PW)
     src = tmp_path / "live.db"
     _encrypted_corpus(src)
 
@@ -315,14 +326,12 @@ def test_a_failed_fast_path_never_leaves_a_partial_copy_behind(tmp_path, monkeyp
 
 
 @sqlcipher_only
-def test_the_fast_path_refuses_when_the_write_gate_is_disabled(tmp_path, monkeypatch):
+def test_the_fast_path_refuses_when_the_write_gate_is_disabled(tmp_path, monkeypatch, passphrase):
     """``write_lock()`` is a documented NO-OP under ``OO_WRITE_GATE=0``, so on that
     escape hatch the fast path's first precondition -- "no write can land mid-copy" --
     would be silently FALSE while the docstring still claimed it. A guard named for a
     safety property has to enforce it; with the gate off, nothing can prove the source
     is quiescent, so the honest answer is to refuse."""
-    monkeypatch.setattr("src.database.connect._passphrase", _PW, raising=False)
-    set_passphrase(_PW)
     monkeypatch.setenv("OO_WRITE_GATE", "0")
     src = tmp_path / "live.db"
     _encrypted_corpus(src)
@@ -335,10 +344,11 @@ def test_the_fast_path_refuses_when_the_write_gate_is_disabled(tmp_path, monkeyp
     assert copied == [], "no byte copy was attempted with the gate off"
 
     # ...and the caller still produces a real, complete snapshot via the codec path.
+    # No monkeypatch.undo() here: with the gate off the fast path refuses BEFORE it
+    # would copy, so the copyfile stub is simply never reached. (The undo was also how
+    # the passphrase leak above got in -- it restored the global, and the re-set
+    # afterwards had nothing left to restore it.)
     dest = tmp_path / "working.db"
-    monkeypatch.undo()
-    set_passphrase(_PW)
-    monkeypatch.setenv("OO_WRITE_GATE", "0")
     C.snapshot_preserving(src, dest, allow_file_copy=True)
     con = connect(dest, key=_PW, check_same_thread=False)
     try:
