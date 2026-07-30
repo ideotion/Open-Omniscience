@@ -181,3 +181,132 @@ def test_pool_failure_degrades_to_serial(monkeypatch):
 
 def test_empty_batch_returns_empty():
     assert rp.precompute_batch([], extractor=BaselineExtractor(), workers=4) == {}
+
+
+# --------------------------------------------------------------------------- #
+#  A pool that does not FAIL but simply never answers (field hang, 2026-07-30).
+#  An import sat at 3000/686896 for over an hour: fork from the threaded API
+#  process left a worker deadlocked on an inherited lock, the parent blocked in
+#  pool.map, and the except-Exception guard above could not fire -- a deadlock
+#  is not an exception. These pin the three things that make that survivable.
+# --------------------------------------------------------------------------- #
+class _FakeWorker:
+    def __init__(self):
+        self.terminated = False
+
+    def is_alive(self):
+        return not self.terminated
+
+    def terminate(self):
+        self.terminated = True
+
+
+class _WedgedPool:
+    """Accepts the work, then never answers."""
+
+    def __init__(self, *a, **k):
+        self.map_kwargs = None
+        self.shutdown_calls = []
+        self.worker = _FakeWorker()
+        self._processes = {1: self.worker}
+
+    def map(self, *a, **k):
+        self.map_kwargs = k
+        raise TimeoutError("simulated: the worker never answered")
+
+    def shutdown(self, wait=True, cancel_futures=False):
+        self.shutdown_calls.append({"wait": wait, "cancel_futures": cancel_futures})
+
+    # Deliberately a context manager: the PRE-FIX code used `with
+    # ProcessPoolExecutor(...)`, so without these the old code would fail these
+    # tests merely for lacking __enter__ -- an attribute-absence failure, which
+    # proves nothing about behaviour. With them, the old code reaches map() and
+    # exits through shutdown(wait=True), and the tests fail for the real reason.
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self.shutdown(wait=True)
+        return False
+
+
+def _wedged(monkeypatch):
+    made = []
+
+    class _P(_WedgedPool):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            made.append(self)
+
+    monkeypatch.setattr(rp, "ProcessPoolExecutor", _P)
+    # raising=False so this helper also runs against the pre-fix module, which
+    # has no _pool_context -- see __exit__ above.
+    monkeypatch.setattr(rp, "_pool_context", lambda: None, raising=False)
+    return made
+
+
+def test_a_wedged_pool_times_out_and_still_returns_the_right_answer(monkeypatch):
+    made = _wedged(monkeypatch)
+    ex = BaselineExtractor()
+    stats: dict = {}
+    out = rp.precompute_batch(_ARTICLE_TEXTS, extractor=ex, workers=4, stats=stats)
+
+    ref = rp._serial(_ARTICLE_TEXTS, ex)
+    assert set(out) == set(ref)
+    for aid in ref:
+        assert _sorted_terms(out[aid].terms) == _sorted_terms(ref[aid].terms)
+    assert stats["by_path"] == {"fallback": 1}, "a hang must be recorded as a degradation"
+    assert made, "the pool was never constructed"
+
+
+def test_pool_map_actually_receives_a_timeout(monkeypatch):
+    """A timeout that is never wired through is the entire bug -- pool.map without
+    one waits forever, so this asserts the argument, not just the constant."""
+    made = _wedged(monkeypatch)
+    rp.precompute_batch(_ARTICLE_TEXTS, extractor=BaselineExtractor(), workers=4)
+    assert made[0].map_kwargs["timeout"] == rp._POOL_TIMEOUT_S
+
+
+def test_a_wedged_worker_is_never_joined(monkeypatch):
+    """`with ProcessPoolExecutor(...)` exits via shutdown(wait=True), which joins
+    the very worker that is stuck -- the cleanup then hangs exactly as hard as the
+    thing it is cleaning up after. Teardown must never wait, and must kill."""
+    made = _wedged(monkeypatch)
+    rp.precompute_batch(_ARTICLE_TEXTS, extractor=BaselineExtractor(), workers=4)
+    pool = made[0]
+    assert pool.shutdown_calls == [{"wait": False, "cancel_futures": True}]
+    assert pool.worker.terminated is True
+
+
+def test_pool_timeout_env_override(monkeypatch):
+    monkeypatch.setenv("OO_REINDEX_POOL_TIMEOUT_S", "12.5")
+    assert rp._pool_timeout_s() == 12.5
+    monkeypatch.setenv("OO_REINDEX_POOL_TIMEOUT_S", "0")
+    assert rp._pool_timeout_s() is None, "0 disables the backstop, per the docstring"
+    monkeypatch.setenv("OO_REINDEX_POOL_TIMEOUT_S", "not-a-number")
+    assert rp._pool_timeout_s() == rp._POOL_TIMEOUT_S, "garbage must not disable it"
+
+
+def test_env_worker_count_outranks_an_explicit_request(monkeypatch):
+    """The import's exclusive path passes all_cores_worker_count() explicitly, so
+    before this the documented OO_REINDEX_WORKERS=0 had no effect on precisely the
+    run most likely to need it. An escape hatch an internal default outranks is
+    not an escape hatch."""
+    monkeypatch.setenv("OO_REINDEX_WORKERS", "0")
+    assert rp.worker_count(rp.all_cores_worker_count()) == 0
+    monkeypatch.setenv("OO_REINDEX_WORKERS", "3")
+    assert rp.worker_count(32) == 3
+    monkeypatch.delenv("OO_REINDEX_WORKERS", raising=False)
+    assert rp.worker_count(32) == 32, "without the env var, the caller still decides"
+
+
+def test_the_resolved_start_method_is_never_bare_fork(monkeypatch):
+    """fork copies the parent's memory but only the calling thread, so a mutex held
+    by any other thread is inherited locked with no owner -- the deadlock this whole
+    section exists for. Availability is not usability, so this resolves for real."""
+    monkeypatch.setattr(rp, "_POOL_CTX_RESOLVED", False)
+    monkeypatch.setattr(rp, "_POOL_CTX", None)
+    ctx = rp._pool_context()
+    if ctx is None:  # honest: neither forkserver nor spawn is usable in this env
+        return
+    assert ctx.get_start_method() in {"forkserver", "spawn"}

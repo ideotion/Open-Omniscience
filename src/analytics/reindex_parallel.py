@@ -64,6 +64,10 @@ SAFE BY CONSTRUCTION:
     environment, a pickling hiccup, a broken worker, ...) degrades to the
     exact serial computation over the WHOLE batch -- a parallelism problem
     must never cost a re-index its result, only its speed.
+  * ...INCLUDING a pool that does not fail but simply never answers. An
+    exception handler cannot catch a deadlock, so the pool also runs under a
+    wall-clock timeout and is torn down WITHOUT joining its workers; see
+    ``_pool_context`` and ``_abandon_pool``.
   * a small batch skips the pool entirely (process-spawn overhead would cost
     more than it saves) -- see ``_MIN_PARALLEL_BATCH``.
 """
@@ -71,7 +75,9 @@ SAFE BY CONSTRUCTION:
 from __future__ import annotations
 
 import logging
+import multiprocessing as _mp
 import os
+import threading
 import time
 from collections.abc import Sequence
 from concurrent.futures import ProcessPoolExecutor
@@ -85,6 +91,18 @@ _LOG = logging.getLogger(__name__)
 # Below this batch size, process-spawn + IPC overhead is not worth it -- just
 # compute inline (the byte-identical serial path is also the fallback).
 _MIN_PARALLEL_BATCH = 16
+# How long ONE precompute window may sit in the pool before we abandon it and
+# redo that window serially. Deliberately generous -- this is a backstop against
+# a wedged pool, NOT a performance budget, and a false trip costs real parallel
+# work. ``OO_REINDEX_POOL_TIMEOUT_S`` overrides; 0 disables the timeout.
+_POOL_TIMEOUT_S = 900.0
+# Starting ONE worker that returns True: short, because this is a liveness
+# question and not a workload. Generous enough for a cold interpreter start.
+_PROBE_TIMEOUT_S = 60.0
+# Which start method actually works here, resolved once -- see _pool_context.
+_POOL_CTX_LOCK = threading.Lock()
+_POOL_CTX_RESOLVED = False
+_POOL_CTX: Any = None
 # A hard cap independent of core count: on a huge box, dozens of worker
 # processes buy little beyond a handful (the DB-writing main process stays the
 # other half of the pipeline) and cost more idle memory per worker.
@@ -144,15 +162,22 @@ def worker_count(requested: int | None = None) -> int:
     parallel precompute entirely -- useful in a constrained/sandboxed
     environment or for debugging); otherwise the default leaves ONE core for
     the writer process, which is doing DB work concurrently with the pool.
+
+    When set, the env var outranks an explicit ``requested`` as well. It is the
+    operator's escape hatch for a box in trouble, and a hatch that an internal
+    default silently outranks is not a hatch: the import's exclusive path passes
+    ``all_cores_worker_count()`` explicitly, so the documented ``=0`` used to
+    have no effect on precisely the run most likely to need it (found while
+    root-causing a field import wedged for over an hour, 2026-07-30).
     """
-    if requested is not None:
-        return max(0, requested)
     raw = os.getenv("OO_REINDEX_WORKERS", "").strip()
     if raw:
         try:
             return max(0, int(raw))
         except ValueError:
             pass
+    if requested is not None:
+        return max(0, requested)
     cpu = os.cpu_count() or 1
     return max(0, min(_MAX_WORKERS_CAP, cpu - 1))
 
@@ -172,6 +197,126 @@ def all_cores_worker_count() -> int:
     per precompute window, stacked on top of the concurrently-enlarged SQLite
     cache -- a resource-EXHAUSTION concern, not a correctness one."""
     return max(1, min(_MAX_EXCLUSIVE_WORKERS_CAP, os.cpu_count() or 1))
+
+
+def _pool_timeout_s() -> float | None:
+    """Wall-clock budget for one precompute window, or ``None`` for no limit."""
+    raw = os.getenv("OO_REINDEX_POOL_TIMEOUT_S", "").strip()
+    if raw:
+        try:
+            parsed = float(raw)
+        except ValueError:
+            return _POOL_TIMEOUT_S
+        return parsed if parsed > 0 else None
+    return _POOL_TIMEOUT_S
+
+
+def _noop_probe() -> bool:
+    """Module-level (so it pickles) no-op used to prove a start method works."""
+    return True
+
+
+def _probe_context(method: str) -> Any:
+    """Return the context for ``method`` only if a worker actually STARTS.
+
+    Availability is not usability. ``forkserver`` and ``spawn`` both re-import
+    ``__main__`` in the worker, so either can be unusable for reasons that have
+    nothing to do with this module -- an entry point that is not importable, a
+    launcher without an ``if __name__ == "__main__"`` guard. Asking
+    ``get_context`` merely asks whether the platform HAS the method; only
+    running something proves the pool can serve a window.
+    """
+    try:
+        ctx = _mp.get_context(method)
+    except (ValueError, RuntimeError):  # not supported on this platform
+        return None
+    probe: ProcessPoolExecutor | None = None
+    try:
+        probe = ProcessPoolExecutor(max_workers=1, mp_context=ctx)
+        if probe.submit(_noop_probe).result(timeout=_PROBE_TIMEOUT_S) is True:
+            probe.shutdown(wait=True)
+            probe = None
+            return ctx
+    except Exception:  # noqa: BLE001 - an unusable method is a fact to record, not an error
+        _LOG.debug("start method %r is unusable here", method, exc_info=True)
+    finally:
+        if probe is not None:
+            _abandon_pool(probe)
+    return None
+
+
+def _pool_context() -> Any:
+    """A multiprocessing context that is SAFE to start workers from here.
+
+    ``fork`` -- CPython's historical POSIX default -- copies the parent's memory
+    but only the CALLING thread. Any mutex some other thread happened to hold at
+    that instant (the allocator's arena lock, a logging handler lock) is
+    inherited already-locked, with no owner left alive to ever release it, so the
+    child deadlocks the first time it allocates or logs. This module is called
+    from the API/scheduler process, which is emphatically multithreaded, and
+    ``_worker_init`` allocates immediately -- it builds an extractor.
+
+    That is not a theoretical hazard: it wedged a field import for over an hour
+    at a window boundary, parent blocked in ``pool.map``, no exception to catch.
+    Memory pressure makes it far likelier, by widening the window in which a
+    lock is held, which is how a latent race became reproducible.
+
+    ``forkserver`` fixes it at the root. Its server process is started via exec
+    -- a fresh interpreter that inherits no locks -- and is single-threaded, so
+    every worker forks from THAT rather than from us. Workers stay cheap to
+    create, which matters because a pool is built once per precompute window.
+    ``spawn`` is the fallback where forkserver is unavailable (Windows); it is
+    equally safe, only slower to start.
+
+    Resolved ONCE per process (a probe costs a process start) and cached. If
+    neither is usable we return ``None`` -- the platform default, i.e. the
+    unsafe ``fork`` we are trying to avoid. That is deliberate rather than
+    refusing to parallelise at all: the pool timeout still converts the
+    worst case from "hangs forever" into "one slow window, then serial", and
+    a loud warning says which tradeoff is in force.
+    """
+    global _POOL_CTX, _POOL_CTX_RESOLVED
+    with _POOL_CTX_LOCK:
+        if _POOL_CTX_RESOLVED:
+            return _POOL_CTX
+        for method in ("forkserver", "spawn"):
+            ctx = _probe_context(method)
+            if ctx is not None:
+                _POOL_CTX = ctx
+                break
+        else:
+            _LOG.warning(
+                "no fork-safe start method is usable here; falling back to the platform "
+                "default. On POSIX that is fork, which can deadlock when called from a "
+                "threaded process -- the pool timeout is the only backstop."
+            )
+            _POOL_CTX = None
+        _POOL_CTX_RESOLVED = True
+        return _POOL_CTX
+
+
+def _abandon_pool(pool: ProcessPoolExecutor) -> None:
+    """Tear a pool down WITHOUT waiting for its workers.
+
+    ``with ProcessPoolExecutor(...)`` exits via ``shutdown(wait=True)``, which
+    joins every worker -- so on the single failure this code most needs to
+    survive, a wedged worker, the cleanup hangs exactly as hard as the thing it
+    is cleaning up after. Hence: never join, and forcibly terminate whatever is
+    still alive. A leaked worker is strictly better than a hung import.
+    """
+    try:
+        pool.shutdown(wait=False, cancel_futures=True)
+    except Exception:  # noqa: BLE001 - teardown must never mask the original failure
+        _LOG.debug("pool shutdown raised while abandoning", exc_info=True)
+    # Private attribute by necessity: there is no public API for "stop waiting
+    # and kill", and leaving a deadlocked worker alive would keep its share of
+    # the memory that most likely caused the deadlock in the first place.
+    for worker in list((getattr(pool, "_processes", None) or {}).values()):
+        try:
+            if worker.is_alive():
+                worker.terminate()
+        except Exception:  # noqa: BLE001 - best effort
+            _LOG.debug("could not terminate a pool worker", exc_info=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -346,36 +491,50 @@ def precompute_batch(
     n_workers = min(n_workers, len(tasks))
     chunksize = max(1, len(tasks) // (n_workers * 4))
     _t0 = time.monotonic()
+    # Deliberately NOT `with`: that exits via shutdown(wait=True), which joins
+    # the very worker that may be wedged. See _abandon_pool.
+    pool: ProcessPoolExecutor | None = None
     try:
         out: dict[int, ArticleDerivatives] = {}
-        with ProcessPoolExecutor(
+        ctx = _pool_context()
+        pool = ProcessPoolExecutor(
             max_workers=n_workers,
             initializer=_worker_init,
             initargs=(extractor_name, gazetteer),
-        ) as pool:
-            # Tolerate BOTH task shapes (5-tuple, or 6-tuple with the WWW context)
-            # in the same batch: zip(*tasks) would raise on a ragged mix, and a
-            # caller that supplies context for some articles and not others is a
-            # legitimate case (an article with no usable anchor, say).
-            ids = [t[0] for t in tasks]
-            contents = [t[1] for t in tasks]
-            titles = [t[2] for t in tasks]
-            languages = [t[3] for t in tasks]
-            slangs = [t[4] for t in tasks]
-            ctxs = [t[5] if len(t) > 5 else None for t in tasks]
-            for aid, terms, score, label, err, www in pool.map(
-                _worker_compute, ids, contents, titles, languages, slangs, ctxs,
-                chunksize=chunksize,
-            ):
-                out[aid] = ArticleDerivatives(aid, terms, score, label, error=err, www=www)
-                if stats is not None and isinstance(www, dict) and "__www_error__" in www:
-                    stats["www_errors"] = stats.get("www_errors", 0) + 1
-                elif stats is not None and www:
-                    stats["www_precomputed"] = stats.get("www_precomputed", 0) + 1
+            **({"mp_context": ctx} if ctx is not None else {}),
+        )
+        # Tolerate BOTH task shapes (5-tuple, or 6-tuple with the WWW context)
+        # in the same batch: zip(*tasks) would raise on a ragged mix, and a
+        # caller that supplies context for some articles and not others is a
+        # legitimate case (an article with no usable anchor, say).
+        ids = [t[0] for t in tasks]
+        contents = [t[1] for t in tasks]
+        titles = [t[2] for t in tasks]
+        languages = [t[3] for t in tasks]
+        slangs = [t[4] for t in tasks]
+        ctxs = [t[5] if len(t) > 5 else None for t in tasks]
+        for aid, terms, score, label, err, www in pool.map(
+            _worker_compute, ids, contents, titles, languages, slangs, ctxs,
+            chunksize=chunksize,
+            timeout=_pool_timeout_s(),
+        ):
+            out[aid] = ArticleDerivatives(aid, terms, score, label, error=err, www=www)
+            if stats is not None and isinstance(www, dict) and "__www_error__" in www:
+                stats["www_errors"] = stats.get("www_errors", 0) + 1
+            elif stats is not None and www:
+                stats["www_precomputed"] = stats.get("www_precomputed", 0) + 1
+        pool.shutdown(wait=True)
+        pool = None
         _note("pool", time.monotonic() - _t0)
         return out
     except Exception:  # noqa: BLE001 - a multiprocessing hiccup must NEVER cost a re-index its result
+        # Covers a TIMEOUT too (pool.map raises TimeoutError from the iterator),
+        # which is the only thing standing between a deadlocked worker and an
+        # import that never finishes.
         _LOG.warning("parallel precompute failed; falling back to serial", exc_info=True)
+        if pool is not None:
+            _abandon_pool(pool)
+            pool = None
         out_fb = _serial(tasks, extractor)
         # Charge the WHOLE window (the wasted pool attempt AND the serial redo) to the
         # fallback -- measured from _t0, before the pool was attempted. That total is
@@ -383,3 +542,10 @@ def precompute_batch(
         # exactly the degradation this stat exists to expose.
         _note("fallback", time.monotonic() - _t0)
         return out_fb
+    finally:
+        # Only reachable via BaseException (KeyboardInterrupt, SystemExit): both
+        # normal exits clear `pool` themselves. Without this, a Ctrl-C mid-window
+        # would leave a live pool whose atexit handler joins it -- turning a
+        # deliberate interrupt into the same hang, at shutdown instead.
+        if pool is not None:
+            _abandon_pool(pool)
