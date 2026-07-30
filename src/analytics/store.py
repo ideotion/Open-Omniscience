@@ -220,6 +220,7 @@ def index_article(
     content: str | None = None,
     precomputed_terms: list[ExtractedTerm] | None = None,
     precomputed_sentiment: tuple[float | None, str | None] | None = None,
+    precomputed_www: dict | None = None,
 ) -> dict:
     """Extract + store mentions for one article (idempotent). Returns a small tally.
 
@@ -396,10 +397,25 @@ def index_article(
             # secondary tracebacks. A savepoint lets a WWW-pass failure roll back
             # on its own without touching the keyword mentions already added
             # above in this same transaction.
+            # ``precomputed_www`` (2026-07-30): the EXTRACTION half, already done in a
+            # worker process. Only the STORE half runs here -- savepoint, live-session
+            # error handling, delete-then-reinsert -- which is where it belongs and
+            # which is cheap. A missing key means "not precomputed" and the store
+            # extracts inline exactly as before; that is deliberately NOT the same as
+            # "nothing found", so a partial precompute degrades to correct-and-slower,
+            # never to silently-empty.
+            # A precompute that FAILED hands back a marker, not silence: fall back to
+            # inline extraction (correct, slower) and let the failure be countable
+            # rather than invisible.
+            _pw = precomputed_www or {}
+            if "__www_error__" in _pw:
+                _pw = {}
             with session.begin_nested():
-                www["dates"] = _store_dates(session, article)
-                www["places"] = _store_places(session, article)
-                www["entities_stored"] = _store_ents(session, article)
+                www["dates"] = _store_dates(session, article, precomputed=_pw.get("dates"))
+                www["places"] = _store_places(session, article, precomputed=_pw.get("places"))
+                www["entities_stored"] = _store_ents(
+                    session, article, precomputed=_pw.get("entities")
+                )
     except Exception as exc:  # noqa: BLE001 - deductions are a bonus, never a blocker
         # A transient 'database is locked' here must NOT be swallowed: doing so
         # leaves the session in a failed-flush state, so the line-below commit
@@ -549,14 +565,18 @@ def reindex_articles(
 
     def _derived_args(
         deriv: ArticleDerivatives | None,
-    ) -> tuple[list[ExtractedTerm] | None, tuple[float | None, str | None] | None]:
+    ) -> tuple[
+        list[ExtractedTerm] | None, tuple[float | None, str | None] | None, dict | None
+    ]:
         # A precompute error for THIS article (isolated by reindex_parallel, never
         # dropping the rest of the window) falls back to index_article's own inline
         # computation for just this one -- so a single bad article never loses its
         # re-index, it only loses the parallelism for itself.
         if deriv is None or deriv.error is not None:
-            return None, None
-        return deriv.terms, (deriv.sentiment_score, deriv.sentiment_label)
+            return None, None, None
+        # deriv.www is None on the serial/fallback path, which index_article reads as
+        # "extract inline" -- correct-and-slower, never silently-empty.
+        return deriv.terms, (deriv.sentiment_score, deriv.sentiment_label), deriv.www
 
     # Audit finding 2026-07-17: index_article's own contract explicitly re-raises a
     # transient lock so a caller's run_write_with_retry can roll back and redo it
@@ -568,7 +588,7 @@ def reindex_articles(
     def _reindex_one_committed_with_retry(
         article: Article, deriv: ArticleDerivatives | None, content: str | None = None
     ) -> None:
-        terms, sentiment = _derived_args(deriv)
+        terms, sentiment, www = _derived_args(deriv)
         run_write_with_retry(
             lambda: index_article(
                 session,
@@ -578,6 +598,7 @@ def reindex_articles(
                 content=content,
                 precomputed_terms=terms,
                 precomputed_sentiment=sentiment,
+                precomputed_www=www,
             ),
             session=session,
             label=f"reindex_articles[{article.id}]",
@@ -638,7 +659,7 @@ def reindex_articles(
 
         for art in articles:
             deriv = derivs.get(art.id)
-            terms, sentiment = _derived_args(deriv)
+            terms, sentiment, www = _derived_args(deriv)
             try:
                 index_article(
                     session,
@@ -649,6 +670,7 @@ def reindex_articles(
                     content=content_by_id.get(art.id),
                     precomputed_terms=terms,
                     precomputed_sentiment=sentiment,
+                    precomputed_www=www,
                 )
                 pending.append((art, deriv))
             except Exception:  # noqa: BLE001 - this article corrupted the in-flight batch
@@ -706,7 +728,21 @@ def reindex_articles(
         for art in articles:
             body = art.get_content() if hasattr(art, "get_content") else (art.content or "")
             lang = _resolve_known_language(art, body)
-            tasks.append((art.id, body, art.title or "", lang or "en", lang))
+            # The sixth element opts this article into POOLED when/where/who
+            # extraction (2026-07-30): plain scalars only -- the article's country
+            # for place disambiguation, and its own observed date as the anchor for
+            # relative forms ("yesterday", a bare weekday). No ORM object crosses
+            # the process boundary. Measured: date+place extraction is ~200-300 ms
+            # on a 25-50 KB body versus ~36 ms for the keyword half, so leaving it
+            # inline capped the whole re-index at ~2-3 articles/sec no matter how
+            # many workers were running.
+            observed = art.published_at or art.created_at
+            www_ctx = (
+                art.country,
+                observed.date().isoformat() if observed else None,
+                None,  # `today`: the store's own default, never a worker's clock
+            )
+            tasks.append((art.id, body, art.title or "", lang or "en", lang, www_ctx))
             content_by_id[art.id] = body
         _load_s += time.monotonic() - _t0
 

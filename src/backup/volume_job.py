@@ -219,7 +219,7 @@ class VolumeBackupManager:
             # pause/resume hiccup must never abort or corrupt an otherwise-
             # good restore, so both sides are best-effort.
             from src.scheduler.runner import (
-                exclusive_window_open,
+                owns_the_machine,
                 pause_for_exclusive_operation,
                 resume_after_exclusive_operation,
             )
@@ -334,9 +334,19 @@ class VolumeBackupManager:
                     # its two siblings above: a wide batch holds the single-writer gate
                     # across the batch, which is free when collection is confirmed paused
                     # and rude when it is not.
-                    _reindex_workers = all_cores_worker_count() if was_paused else None
-                    _merge_cache_mb = import_cache_mb() if was_paused else None
-                    _reindex_batch = import_reindex_commit_batch() if was_paused else None
+                    # OWNERSHIP, not liveness (field report 2026-07-30). These were
+                    # gated on `was_paused`, which answers "did I stop a running
+                    # collection loop" -- False on a fresh install (nothing was
+                    # running to stop) and False for every item of an import queue
+                    # (the queue's own window already paused it). In BOTH cases the
+                    # machine is owned MORE completely, and all three knobs silently
+                    # reverted to their conservative defaults -- most damagingly
+                    # OO_REINDEX_COMMIT_BATCH's 1, one commit per article. See
+                    # runner.owns_the_machine for the full reasoning.
+                    _owned = owns_the_machine()
+                    _reindex_workers = all_cores_worker_count() if _owned else None
+                    _merge_cache_mb = import_cache_mb() if _owned else None
+                    _reindex_batch = import_reindex_commit_batch() if _owned else None
 
                     report = run_restore(
                         staged,
@@ -361,7 +371,7 @@ class VolumeBackupManager:
                         # the queue's window, when this restore is one item of a run):
                         # the fast path holds the write gate for the copy, which is free
                         # when collection is confirmed paused and rude when it is not.
-                        exclusive=bool(was_paused) or exclusive_window_open(),
+                        exclusive=_owned,
                     )
                     with self._lock:
                         self._state, self._summary = "done", {"report": report}
