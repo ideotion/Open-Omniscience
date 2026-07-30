@@ -4747,11 +4747,81 @@
     function _miniBlockHtml(d, t) {
       const mini = d && d.ministral && d.ministral.tag ? d.ministral : null;
       if (!mini) return "";
-      return `<h3 style="margin:14px 0 4px">${esc(t("Default model — one-click install"))}</h3>` +
-        `<p><code>${esc(mini.tag)}</code> <span class="muted">${esc(mini.size || "")}</span> ` +
-        `<button class="tiny" onclick="pullMinistral(this)">${esc(t("Install the default model"))}</button></p>` +
-        `<p class="card-caveat">${esc(t("Licence:"))} ${esc(mini.license || "")} — ${esc(mini.verification || "")}. ` +
-        `${esc((mini.caveats || []).join(" "))}</p>`;
+      // The artifact + mechanism are filled in by _paintDefaultModel from
+      // /api/llm/default-model, which resolves WHICH backend will actually serve.
+      // Rendered as a placeholder first so the block exists even if that call fails,
+      // rather than silently vanishing.
+      return `<h3 style="margin:14px 0 4px">${esc(t("Default model"))}</h3>` +
+        `<div id="llm-default-model"><p class="muted">${esc(t("Checking which backend will be used…"))}</p></div>`;
+    }
+
+    // Paint the default-model block from the SERVER's plan. The two backends download
+    // differently -- Ollama pulls an image with real byte progress, vLLM fetches the
+    // weights when its server starts -- so the button says which one it is about to do
+    // instead of implying a single uniform "download".
+    async function _paintDefaultModel() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("llm-default-model");
+      if (!host) return;
+      let p = null;
+      try { p = await api("/api/llm/default-model"); }
+      catch (e) {
+        host.innerHTML = `<p class="muted">${esc(t("Could not determine the default model:"))} ${esc(e.message || e)}</p>`;
+        return;
+      }
+      const already = p.installed === true;
+      const lines = [
+        `<p><code>${esc(p.artifact)}</code> <span class="muted">${esc(p.size || "")}</span>` +
+        ` <span class="pill">${esc(p.backend)}</span>` +
+        (already
+          ? ` <span class="pill ok">${esc(t("installed"))}</span>`
+          : ` <button class="tiny" onclick="installDefaultModel(this)">${esc(t("Download the default model"))}</button>`) +
+        `</p>`,
+        // WHY this artifact: the resolver's own reason, not a restatement of it.
+        `<p class="hint">${esc(p.reason || "")}</p>`,
+        `<p class="hint">${esc(p.mechanism_note || "")}</p>`,
+      ];
+      if (p.installed === null && !already) {
+        lines.push(`<p class="hint">${esc(t("Whether it is already present here is not checked — downloading again is harmless."))}</p>`);
+      }
+      lines.push(`<p class="card-caveat">${esc(t("Licence:"))} ${esc(p.license || "")}. ${esc((p.caveats || []).join(" "))}</p>`);
+      host.innerHTML = lines.join("");
+    }
+
+    // ONE button for both backends. The server decides which artifact and how; this
+    // only reports what it did, including the case where "download" means "the vLLM
+    // server is now starting and fetching weights" rather than a queued pull.
+    async function installDefaultModel(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      let p = null;
+      try { p = await api("/api/llm/default-model"); }
+      catch (e) { toast(t("Could not determine the default model:") + " " + (e.message || e), "err"); return; }
+      // Consent BEFORE the bytes: this is multi-gigabyte clearnet traffic (the model
+      // registry / Hugging Face), and it does NOT go through Tor. Stated with the real
+      // artifact and size rather than a generic "download?".
+      const ok = confirm(
+        t("Download the default model?") + "\n\n" +
+        p.artifact + "  (" + (p.size || "?") + ", " + p.backend + ")\n\n" +
+        t("This downloads over the clearnet — not through Tor.") + "\n" +
+        (p.mechanism_note || "") + "\n\n" +
+        (p.caveats || []).join("\n")
+      );
+      if (!ok) return;
+      const was = btn ? btn.textContent : "";
+      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
+      try {
+        const r = await api("/api/llm/default-model/install", {method: "POST"});
+        toast(r.action === "queued"
+          ? t("Queued — it becomes the active model once downloaded.")
+          : t("The AI server is starting and fetching the weights. This takes a while the first time."));
+        if (typeof _llmPullRefresh === "function") _llmPullRefresh();
+        _aiPillSettle();
+        _paintDefaultModel();
+      } catch (e) {
+        toast(t("Download failed:") + " " + (e.message || e), "err");
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = was; }
+      }
     }
 
     async function loadLlmModels() {
@@ -4771,6 +4841,7 @@
         box.innerHTML = `<p class="muted">${esc(t("Ollama isn't running. Start it to use the local AI; your installed models appear here once it answers."))}</p>`
           + `<p><button class="tiny" onclick="aiPillClick()">${esc(t("Start the local AI"))}</button></p>`
           + _miniBlockHtml(d, t);
+        _paintDefaultModel();
         return;
       }
       const FIT = {fits:["✓ fits","ok"], tight:["~ tight","warn"], too_large:["✗ too large","err"], unknown:["?","muted"]};
@@ -4810,6 +4881,7 @@
         `<table><tr><th>${esc(t("Model"))}</th><th>${esc(t("Size"))}</th><th>${esc(t("Your hardware"))}</th><th>${esc(t("Note"))}</th><th></th></tr>${cat}</table>` +
         `<div class="hint">${esc(t("Hardware fit is advisory — it informs your choice, it doesn't decide. Pull any model from the full library below."))}</div>` +
         miniBlock;
+      _paintDefaultModel();
     }
     async function setActiveModel(tag) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -18325,7 +18397,10 @@
       try { d = await api("/api/llm/models"); } catch (e) { return false; }
       if ((d.installed || []).length) return true;
       if (!(d.ministral && d.ministral.tag)) return false;
-      await pullMinistral(null);
+      // The SAME backend-aware path as the button, never the Ollama-only one: on a
+      // machine vLLM will serve, pulling the Ollama image would download the wrong
+      // artifact and still leave the pill red.
+      await installDefaultModel(null);
       return true;
     }
     async function aiPillClick() {
@@ -18439,56 +18514,6 @@
       }
       loadAiBackendPanel();
       loadLlmHealth();
-    }
-
-    async function pullMinistral(btn) {
-      // The dedicated one-click install (maintainer 2026-07-29). It rides the SAME
-      // pull queue as every other model -- one download at a time, cancellable, real
-      // byte progress -- rather than a second parallel download path.
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      // Read the tag from the SERVER rather than hardcoding it here: the tag, its
-      // caveats and its verification status live in one place (src/llm/ollama.py), so
-      // the confirm dialog can never drift from what is actually pulled.
-      let m = null;
-      try { m = (await api("/api/llm/models")).ministral || null; }
-      catch (e) { toast("Ministral: " + e.message, "err"); return; }
-      if (!m || !m.tag) { toast(t("Ministral suggestion unavailable."), "err"); return; }
-      // The licence is REPORTED, not established, and the previous generation of this
-      // family was research-only. Ask before downloading rather than let a one-click
-      // button imply a verification nobody performed.
-      const ok = confirm(
-        t("Install Ministral 3 (3B)?") + "\n\n" + m.tag + "\n\n" +
-        (m.caveats || []).join("\n")
-      );
-      if (!ok) return;
-      const was = btn ? btn.textContent : "";
-      if (btn) { btn.disabled = true; btn.textContent = t("Queued…"); }
-      try {
-        await api("/api/llm/pull/queue", {method: "POST", body: JSON.stringify({model: m.tag})});
-        // FULLY automatic (maintainer 2026-07-29: "make the installation fully
-        // automatic with a simple option to install the default ministral model"):
-        // queue the download AND make it the active model, so one click is the whole
-        // job rather than a download the user must then go and select. Recorded as a
-        // preference now; it takes effect once the pull lands (the model list reads
-        // truth from Ollama, so a not-yet-downloaded active choice simply shows as
-        // pending rather than as a fabricated ready state).
-        try {
-          await api("/api/settings", {method: "PUT", body: JSON.stringify({llm_model: m.tag})});
-          toast(t("Ministral queued — it will become the active model once downloaded."));
-        } catch (e2) {
-          // The download is the load-bearing half; a settings hiccup must not read as
-          // a failed install, but it must not be silent either.
-          toast(t("Ministral queued, but it could not be set active:") + " " + e2.message, "err");
-        }
-        if (typeof _llmPullRefresh === "function") _llmPullRefresh();
-        loadLlmHealth();
-      } catch (e) {
-        // A wrong tag CANNOT pass silently: Ollama 404s an unknown model, so the tag
-        // is named in the failure. That refusal IS the verification step.
-        toast("Ministral: " + e.message, "err");
-      } finally {
-        if (btn) { btn.disabled = false; btn.textContent = was; }
-      }
     }
 
     async function setAiBackend(value) {

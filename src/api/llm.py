@@ -806,6 +806,133 @@ def vllm_stop() -> dict:
     return stop()
 
 
+def _default_model_plan() -> dict:
+    """WHICH default-model artifact would be installed, for the backend that will
+    actually serve, and by WHAT mechanism.
+
+    The two backends do not merely want different files -- they DOWNLOAD differently,
+    and pretending otherwise would be the fabrication here:
+
+      * Ollama pulls a quantised image through the pull queue: a real download, one at
+        a time, cancellable, with real byte progress.
+      * vLLM has NO separate download step. It fetches the HuggingFace weights when the
+        server STARTS with ``--model``. So the honest "install" for vLLM is to record
+        the model and start the server; there is no byte progress to show because there
+        is no download job to show it for.
+
+    Read-only and network-free: it reports the PLAN so the UI can label the button
+    truthfully before the click, never after.
+    """
+    from src.llm.backend import resolve_backend
+    from src.llm.ollama import MINISTRAL_SUGGESTION
+
+    r = resolve_backend()
+    backend = r.get("backend") or "ollama"
+    mini = MINISTRAL_SUGGESTION
+    if backend == "vllm":
+        return {
+            "backend": "vllm",
+            "reason": r.get("reason"),
+            "artifact": mini["vllm_model"],
+            "mechanism": "server_start",
+            "mechanism_note": (
+                "vLLM downloads the weights from Hugging Face when the server starts — "
+                "there is no separate download step, so there is no byte progress to "
+                "report. The server reports 'starting' until the weights are in place."
+            ),
+            # Whether the weights are already in the HF cache is not something we probe,
+            # so it is UNKNOWN rather than a guessed false (which would nag a user who
+            # already has them).
+            "installed": None,
+            "size": "~8 GB (FP8 weights)",
+            "license": mini["license"],
+            "caveats": mini["caveats"],
+        }
+    installed = False
+    try:
+        client = OllamaClient()
+        installed = any(m.get("tag") == mini["tag"] for m in client.list_installed_detailed())
+    except LLMUnavailable:
+        # The daemon is down, so "is it installed" is genuinely unknown -- NOT false.
+        installed = None  # type: ignore[assignment]
+    return {
+        "backend": "ollama",
+        "reason": r.get("reason"),
+        "artifact": mini["tag"],
+        "mechanism": "pull",
+        "mechanism_note": (
+            "Downloaded through the model pull queue — one at a time, cancellable, with "
+            "real byte progress."
+        ),
+        "installed": installed,
+        "size": mini["size"],
+        "license": mini["license"],
+        "caveats": mini["caveats"],
+    }
+
+
+@router.get("/default-model")
+def default_model_plan() -> dict:
+    """What "install the default model" would do on THIS machine (read-only)."""
+    return _default_model_plan()
+
+
+@router.post("/default-model/install")
+def default_model_install() -> dict:
+    """Install the default model for whichever backend will actually be used.
+
+    Field ask 2026-07-30: "download the appropriate ministral from either vllm or
+    ollama depending on which will be used". The choice is not re-derived here -- it
+    comes from :func:`resolve_backend`, the same function the pill and every inference
+    call already trust, so the button can never install for a backend that will not
+    serve.
+
+    BOTH paths egress CLEARNET (Ollama's registry / Hugging Face), and neither goes
+    through Tor, so both are refused under the kill switch rather than only the one that
+    happens to route through our own client.
+    """
+    from src.ingest import kill_switch_active
+
+    if kill_switch_active():
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Airplane mode is engaged. Downloading a model is clearnet traffic "
+                "(the model registry / Hugging Face), so it is refused while offline. "
+                "Local inference with an already-installed model still works."
+            ),
+        )
+    plan = _default_model_plan()
+    if plan["backend"] == "vllm":
+        from src.llm.vllm_lifecycle import VllmLifecycleError, VllmUnsupportedError, start
+
+        try:
+            result = start(plan["artifact"])
+        except (VllmUnsupportedError, VllmLifecycleError) as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        try:
+            from src.config.app_settings import save_settings
+
+            save_settings({"llm_model_vllm": plan["artifact"]})
+        except Exception:  # noqa: BLE001 - a settings hiccup must not read as a failed install
+            pass
+        return {**plan, "action": "server_starting", "result": result}
+
+    from src.llm.pull_queue import get_pull_manager
+
+    try:
+        queued = get_pull_manager().enqueue(plan["artifact"])
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        from src.config.app_settings import save_settings
+
+        save_settings({"llm_model": plan["artifact"]})
+    except Exception:  # noqa: BLE001 - the download is the load-bearing half
+        pass
+    return {**plan, "action": "queued", "result": queued}
+
+
 @router.get("/ollama/state")
 def ollama_state() -> dict:
     """INSTALLED and RUNNING as two independent facts (field report 2026-07-29).

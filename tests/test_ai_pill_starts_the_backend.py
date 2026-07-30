@@ -63,7 +63,10 @@ def test_a_missing_model_offers_the_default_rather_than_ending_red():
     still cannot answer, which is exactly the state that reads as broken."""
     assert "_aiPillEnsureModel" in _fn("aiPillStartOrInstall")
     ensure = _fn("_aiPillEnsureModel")
-    assert "pullMinistral" in ensure
+    # 2026-07-30: routed through the BACKEND-AWARE installer, so a vLLM machine no
+    # longer gets the Ollama image (which would download the wrong artifact and still
+    # leave the pill red). tests/test_default_model_install.py owns that property.
+    assert "installDefaultModel" in ensure
     assert "d.installed" in ensure, "an already-installed model must not re-prompt"
 
 
@@ -71,7 +74,7 @@ def test_a_multi_gigabyte_download_is_never_started_by_a_single_pill_click():
     """The honest line. Starting a local daemon is free and reversible, so it is
     automatic; a model download is clearnet traffic (via the Ollama process, NOT Tor),
     so it keeps its confirm. A status pill must not silently pull gigabytes."""
-    assert "confirm(" in _fn("pullMinistral"), (
+    assert "confirm(" in _fn("installDefaultModel"), (
         "the download keeps its confirmation even when reached from the pill"
     )
     # The rationale lives in the comment block introducing the function, so the slice
@@ -100,7 +103,11 @@ def test_the_default_model_install_shows_when_ollama_is_DOWN():
 def test_the_install_block_is_shared_by_both_panel_states():
     """One renderer, so the two states cannot drift into showing different caveats."""
     assert _APP.count("_miniBlockHtml(d, t)") >= 2
-    mini = _fn("_miniBlockHtml")
-    assert "card-caveat" in mini and "Licence:" in mini, (
+    # 2026-07-30: the block became a placeholder that _paintDefaultModel fills from the
+    # server's per-backend plan, so the licence + caveats now render THERE. Still one
+    # renderer, one source of truth -- just fed by the backend that will actually serve.
+    painted = _fn("_paintDefaultModel")
+    assert "card-caveat" in painted and "Licence:" in painted, (
         "the licence provenance travels with the button, visible before the click"
     )
+    assert "p.caveats" in painted
