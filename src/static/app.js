@@ -4759,6 +4759,7 @@
     // differently -- Ollama pulls an image with real byte progress, vLLM fetches the
     // weights when its server starts -- so the button says which one it is about to do
     // instead of implying a single uniform "download".
+    let _dlModelPoll = null;
     async function _paintDefaultModel() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $("llm-default-model");
@@ -4782,7 +4783,23 @@
         `<p class="hint">${esc(p.mechanism_note || "")}</p>`,
       ];
       if (p.installed === null && !already) {
-        lines.push(`<p class="hint">${esc(t("Whether it is already present here is not checked — downloading again is harmless."))}</p>`);
+        lines.push(`<p class="hint">${esc(t("Whether it is already present here could not be read — downloading again is harmless."))}</p>`);
+      }
+      // A live line while the vLLM weights come down. The pull queue already has its
+      // own live surface for the Ollama half, so this only fills the gap that existed
+      // for vLLM -- where "download" used to mean "the server will fetch it later".
+      if (p.backend === "vllm" && !already) {
+        try {
+          const st = await api("/api/llm/default-model/status");
+          const j = (st && st.job) || {};
+          if (j.running) {
+            lines.push(`<p class="hint">${esc(t("Downloading…"))} ${esc((j.progress && j.progress.detail) || "")}</p>`);
+            clearTimeout(_dlModelPoll);
+            _dlModelPoll = setTimeout(_paintDefaultModel, 3000);
+          } else if (j.error) {
+            lines.push(`<p class="card-caveat">${esc(t("Download failed:"))} ${esc(j.error)}</p>`);
+          }
+        } catch (e) { /* the block still renders without the live line */ }
       }
       lines.push(`<p class="card-caveat">${esc(t("Licence:"))} ${esc(p.license || "")}. ${esc((p.caveats || []).join(" "))}</p>`);
       host.innerHTML = lines.join("");
@@ -4813,7 +4830,7 @@
         const r = await api("/api/llm/default-model/install", {method: "POST"});
         toast(r.action === "queued"
           ? t("Queued — it becomes the active model once downloaded.")
-          : t("The AI server is starting and fetching the weights. This takes a while the first time."));
+          : t("Downloading the weights. This takes a while the first time."));
         if (typeof _llmPullRefresh === "function") _llmPullRefresh();
         _aiPillSettle();
         _paintDefaultModel();

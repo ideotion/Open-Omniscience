@@ -640,6 +640,47 @@ def _get_vllm_install_job():
     return _VLLM_INSTALL_JOB
 
 
+_VLLM_MODEL_JOB = None
+
+
+def _get_vllm_model_job():
+    """The model-WEIGHTS download job, separate from the vLLM install job.
+
+    Two jobs, not one, because they fail and cancel for different reasons and an
+    operator may legitimately want the second without repeating the first (a second
+    model, or a first download after an install they already ran). Same lazy
+    registration as its sibling above."""
+    global _VLLM_MODEL_JOB
+    if _VLLM_MODEL_JOB is None:
+        from src.jobs.background import BackgroundJob, register_job
+
+        def _worker(ctx, **kwargs):
+            from src.llm.vllm_lifecycle import run_model_download_job
+
+            return run_model_download_job(ctx, **kwargs)
+
+        _VLLM_MODEL_JOB = register_job(
+            BackgroundJob(
+                "vllm-model-download", "Downloading the model", _worker, cancellable=True
+            )
+        )
+    return _VLLM_MODEL_JOB
+
+
+@router.get("/default-model/status")
+def default_model_status() -> dict:
+    """Live state of the default-model download, for whichever backend serves.
+
+    The Ollama half already had a live surface (the pull queue); the vLLM half had
+    none, because there was no download to report on. There is now."""
+    plan = _default_model_plan()
+    if plan["backend"] != "vllm":
+        from src.llm.pull_queue import get_pull_manager
+
+        return {"backend": "ollama", "plan": plan, "queue": get_pull_manager().status()}
+    return {"backend": "vllm", "plan": plan, "job": _get_vllm_model_job().status()}
+
+
 @router.post("/vllm/install")
 def vllm_install(req: VllmInstallRequest | None = None) -> dict:
     """Start the CONSENTED, task-manager-visible vLLM install (B2.3): a dedicated
@@ -815,10 +856,11 @@ def _default_model_plan() -> dict:
 
       * Ollama pulls a quantised image through the pull queue: a real download, one at
         a time, cancellable, with real byte progress.
-      * vLLM has NO separate download step. It fetches the HuggingFace weights when the
-        server STARTS with ``--model``. So the honest "install" for vLLM is to record
-        the model and start the server; there is no byte progress to show because there
-        is no download job to show it for.
+      * vLLM fetches HuggingFace weights. It WOULD do that on its own at server start,
+        which is why this used to report ``server_start`` and no download -- true, and
+        useless as a button (field ask 2026-07-30: "there really should be a simple
+        button to download locally Ministral-3b-instruct"). It now pre-fetches into the
+        same HF cache the server reads, as a real job.
 
     Read-only and network-free: it reports the PLAN so the UI can label the button
     truthfully before the click, never after.
@@ -830,20 +872,25 @@ def _default_model_plan() -> dict:
     backend = r.get("backend") or "ollama"
     mini = MINISTRAL_SUGGESTION
     if backend == "vllm":
+        from src.llm.vllm_lifecycle import model_cache_state
+
+        cache = model_cache_state(mini["vllm_model"])
         return {
             "backend": "vllm",
             "reason": r.get("reason"),
             "artifact": mini["vllm_model"],
-            "mechanism": "server_start",
+            "mechanism": "download",
             "mechanism_note": (
-                "vLLM downloads the weights from Hugging Face when the server starts — "
-                "there is no separate download step, so there is no byte progress to "
-                "report. The server reports 'starting' until the weights are in place."
+                "Downloaded from Hugging Face into the local model cache the vLLM "
+                "server reads at start. No percentage: the downloader reports progress "
+                "as text, and turning that into a number here would be a guess."
             ),
-            # Whether the weights are already in the HF cache is not something we probe,
-            # so it is UNKNOWN rather than a guessed false (which would nag a user who
-            # already has them).
-            "installed": None,
+            # A REAL answer now (the cache is probed) rather than the honest-but-useless
+            # "we do not look", so the button can say "already downloaded" instead of
+            # inviting a re-fetch of several GB the operator already holds. Still None,
+            # never False, when the cache itself is unreadable.
+            "installed": cache["cached"],
+            "cache": cache,
             "size": "~8 GB (FP8 weights)",
             "license": mini["license"],
             "caveats": mini["caveats"],
@@ -904,19 +951,32 @@ def default_model_install() -> dict:
         )
     plan = _default_model_plan()
     if plan["backend"] == "vllm":
-        from src.llm.vllm_lifecycle import VllmLifecycleError, VllmUnsupportedError, start
+        from src.llm.vllm_lifecycle import VllmUnsupportedError, venv_python
 
-        try:
-            result = start(plan["artifact"])
-        except (VllmUnsupportedError, VllmLifecycleError) as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        # The downloader lives in the managed venv (huggingface_hub ships with vLLM),
+        # so name THAT as the reason rather than failing generically -- the fix is one
+        # button away, on the same panel.
+        if not venv_python().is_file():
+            raise HTTPException(
+                status_code=409,
+                detail=str(
+                    VllmUnsupportedError(
+                        "vLLM is not installed yet, and the model downloader lives in "
+                        "its environment. Install vLLM first, then download the model."
+                    )
+                ),
+            )
+        job = _get_vllm_model_job()
+        if job.status().get("running"):
+            return {**plan, "action": "downloading", "result": job.status()}
         try:
             from src.config.app_settings import save_settings
 
             save_settings({"llm_model_vllm": plan["artifact"]})
         except Exception:  # noqa: BLE001 - a settings hiccup must not read as a failed install
             pass
-        return {**plan, "action": "server_starting", "result": result}
+        job.start(model=plan["artifact"])
+        return {**plan, "action": "downloading", "result": job.status()}
 
     from src.llm.pull_queue import get_pull_manager
 

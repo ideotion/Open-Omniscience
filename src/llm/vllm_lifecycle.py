@@ -1252,6 +1252,201 @@ def _install_env(tmpdir: Path) -> dict[str, str]:
     return env
 
 
+#  ------------------------------------------------------------------------- #
+#  Pre-download the model WEIGHTS (field ask 2026-07-30: "there really should be
+#  a simple button to download locally Ministral-3b-instruct")
+#  ------------------------------------------------------------------------- #
+def hf_cache_dir() -> Path:
+    """Where Hugging Face keeps downloaded weights, by ITS OWN documented rules.
+
+    Resolved the same way ``huggingface_hub`` resolves it -- ``HF_HUB_CACHE``, else
+    ``HF_HOME/hub``, else ``~/.cache/huggingface/hub`` -- so a probe here and a download
+    run inside the managed venv agree about the same directory. Read from the
+    environment rather than by importing the library, because the app's own interpreter
+    does not have ``huggingface_hub`` (it lives in the vLLM venv) and the answer must be
+    available before anything is installed."""
+    if (explicit := os.environ.get("HF_HUB_CACHE")):
+        return Path(explicit)
+    if (home := os.environ.get("HF_HOME")):
+        return Path(home) / "hub"
+    return Path.home() / ".cache" / "huggingface" / "hub"
+
+
+def model_cache_state(model: str) -> dict:
+    """Is ``model`` already downloaded? ``{cached, path, bytes}``.
+
+    Turns the plan's previously-honest-but-useless ``installed: None`` ("we do not
+    probe") into a real answer, so the button can say "already downloaded" instead of
+    inviting an operator to re-fetch several GB they already hold.
+
+    A repo is cached when its ``snapshots/`` directory holds at least one revision with
+    at least one file. That is deliberately stricter than "the directory exists":
+    ``huggingface_hub`` creates the tree as soon as a download STARTS, so an interrupted
+    fetch leaves a directory that a naive existence check would call cached -- reporting
+    a half-downloaded model as ready is the fabrication to avoid here. ``bytes`` is the
+    real on-disk size, or None when it cannot be read (never a 0)."""
+    repo = "models--" + model.replace("/", "--")
+    root = hf_cache_dir() / repo
+    snaps = root / "snapshots"
+    try:
+        revisions = [d for d in snaps.iterdir() if d.is_dir()] if snaps.is_dir() else []
+        cached = any(any(rev.iterdir()) for rev in revisions)
+    except OSError:
+        return {"cached": None, "path": str(root), "bytes": None}
+    size: int | None = None
+    if cached:
+        try:
+            size = sum(f.stat().st_size for f in root.rglob("*") if f.is_file())
+        except OSError:
+            size = None
+    return {"cached": cached, "path": str(root), "bytes": size}
+
+
+#: Run INSIDE the managed venv (which has ``huggingface_hub`` -- vLLM depends on it).
+#: ``-u`` so the progress lines reach us while the download runs rather than at the end.
+_SNAPSHOT_SCRIPT = (
+    "import sys\n"
+    "from huggingface_hub import snapshot_download\n"
+    "p = snapshot_download(sys.argv[1])\n"
+    "print('__downloaded__ ' + p)\n"
+)
+
+
+def run_model_download_job(
+    ctx,
+    *,
+    model: str,
+    runner: Callable[..., Iterator[str]] | None = None,
+) -> dict:
+    """``BackgroundJob`` worker: fetch ``model``'s weights into the HF cache NOW.
+
+    Field ask 2026-07-30. Before this, "install the default model" on a vLLM machine
+    only recorded the name and started the server, because vLLM fetches weights itself
+    on first start -- technically true, and useless as a button: the operator got no
+    download, no progress, and no way to know whether the several GB were on the disk.
+    Running ``snapshot_download`` in the managed venv gives the real thing, populating
+    exactly the cache the server reads at start, so a later start is fast rather than
+    silently downloading for ten minutes.
+
+    Requires the vLLM venv (that is where ``huggingface_hub`` lives) -- refused with
+    that as the reason, not a generic failure, since the fix is one button away. Refuses
+    under airplane mode: this is clearnet traffic to Hugging Face, not Tor.
+
+    No percentage: ``snapshot_download``'s progress goes to stderr as tqdm bars, which
+    are honest to SHOW and dishonest to parse into a number here. The lines are streamed
+    as they come and the success sentinel is the library's own returned path -- never an
+    exit code alone, which a shell would give for a script that printed a traceback."""
+    _check_online()
+    if not venv_python().is_file():
+        raise VllmUnsupportedError(
+            "The vLLM environment is not installed yet, and the downloader lives in it "
+            "(huggingface_hub ships with vLLM). Install vLLM first, then download the "
+            "model."
+        )
+    state = model_cache_state(model)
+    if state["cached"]:
+        return {"downloaded": True, "state": "already_cached", **state}
+
+    run = runner or _default_runner
+    stop = _stop_probe(ctx)
+    ctx.set_progress(detail=f"downloading {model} from Hugging Face")
+    argv = [str(venv_python()), "-u", "-c", _SNAPSHOT_SCRIPT, model]
+    exit_code: int | None = None
+    path: str | None = None
+    tail: deque[str] = deque(maxlen=_OUTPUT_TAIL_LINES)
+    for line in run(argv, env=_install_env(pip_tmpdir()), should_stop=stop):
+        if ctx.stopping:
+            return {"downloaded": False, "state": "cancelled"}
+        if line == _HEARTBEAT:
+            continue
+        if line.startswith("__exit__ "):
+            exit_code = int(line.split(" ", 1)[1].strip() or "1")
+            continue
+        if line.startswith("__downloaded__ "):
+            path = line.split(" ", 1)[1].strip()
+            continue
+        tail.append(line)
+        ctx.set_progress(detail=line[:200])
+    if exit_code != 0 or path is None:
+        raise VllmLifecycleError(
+            f"downloading {model} failed"
+            + (f" (exit code {exit_code})" if exit_code is not None else "")
+            + (": " + " | ".join(list(tail)[-3:]) if tail else "")
+        )
+    return {"downloaded": True, "state": "downloaded", **model_cache_state(model)}
+
+
+#: pip's own flags for a very large download. ``--retries``/``--timeout`` mirror
+#: ``install.sh:pip_install``: pip's 15 s default turns a dropped link into a
+#: MISLEADING "ResolutionImpossible / no matching distribution", and 5-10 GB is exposed
+#: to that for a long time. ``uv`` retries by default and takes neither flag.
+_PIP_NET_FLAGS = ["--retries", "5", "--timeout", "60"]
+
+
+def _resolver_argv(
+    pip: Path,
+    version: str,
+    run: Callable[..., Iterator[str]],
+    env: dict[str, str],
+    stop: Callable[[], bool] | None,
+    ctx,
+    tail: deque[str],
+) -> tuple[str, list[str]]:
+    """Pick the resolver for the big install: ``uv`` when it can be had, else ``pip``.
+
+    FIELD REPORT 2026-07-30: "vLLM installation seems broken. I had to install uv ...
+    then use ``uv pip install vllm``." The operator's own successful path is the
+    evidence, so the built-in installer now takes it.
+
+    WHY uv and not "pip, but harder": vLLM's dependency graph is torch plus the CUDA
+    runtime, and pip's backtracking resolver on a graph that size is where installs go
+    to die -- it can churn for a very long time and hold a lot of memory doing it, which
+    is exactly what "seems broken" looks like from the outside (no output, no progress,
+    no end). uv resolves that graph in one pass and downloads/unpacks in parallel. This
+    is NOT a claim that pip is at fault in some measured way: the honest statement is
+    that the operator's uv path worked where this one did not, and uv is the difference.
+
+    ``pip install uv`` -- deliberately NOT ``curl https://astral.sh/uv/install.sh | sh``,
+    which is what the operator had to do by hand. uv publishes a self-contained binary
+    wheel with no dependencies, so it comes down the SAME channel (PyPI over HTTPS, into
+    an unprivileged venv) that this module's trust model already rests on, with no shell
+    pipe, no elevation and no second trust boundary to justify.
+
+    FALLING BACK IS THE POINT, not a nicety: if uv cannot be installed for any reason
+    the install continues on pip exactly as before, so this can make the install work
+    where it did not, and cannot make it fail where it worked. Returns the resolver name
+    (which becomes the journalled phase, so the field can tell the two apart) and its
+    argv."""
+    if os.environ.get("OO_VLLM_RESOLVER", "").lower() == "pip":
+        return "pip", [str(pip), "install", *_PIP_NET_FLAGS, f"vllm=={version}"]
+    ctx.set_progress(detail="installing uv (a fast resolver for vLLM's dependency graph)")
+    exit_code: int | None = None
+    try:
+        for line in run(
+            [str(pip), "install", *_PIP_NET_FLAGS, "uv"], env=env, should_stop=stop
+        ):
+            if ctx.stopping:
+                break
+            if line == _HEARTBEAT:
+                continue
+            if line.startswith("__exit__ "):
+                exit_code = int(line.split(" ", 1)[1].strip() or "1")
+                continue
+            tail.append(line)
+    except Exception:  # noqa: BLE001 - uv is an accelerator; pip is the floor
+        _LOG.warning("could not install uv; falling back to pip", exc_info=True)
+        exit_code = None
+    uv = venv_bin("uv")
+    if exit_code == 0 and uv.is_file():
+        # `--python` because uv defaults to ITS OWN idea of an interpreter; without it a
+        # uv living in the managed venv could resolve against a different Python than
+        # the one that will run the server.
+        return "uv", [
+            str(uv), "pip", "install", "--python", str(venv_python()), f"vllm=={version}"
+        ]
+    return "pip", [str(pip), "install", *_PIP_NET_FLAGS, f"vllm=={version}"]
+
+
 def run_install_job(
     ctx,
     *,
@@ -1404,17 +1599,20 @@ def run_install_job(
             )
             _journal("error", error=msg)
             raise VllmLifecycleError(msg)
-        ctx.set_progress(
-            detail=f"pip install vllm=={version} (this downloads {ESTIMATED_INSTALL_SIZE_NOTE})"
-        )
-        # A fresh tail per phase: if pip fails, the venv phase's output is noise.
-        phase = "pip"
+        # A fresh tail per phase: if the resolver fails, the venv phase's output is noise.
+        phase = "uv"
         tail.clear()
         lines_total = 0
-        # --retries/--timeout mirror install.sh:pip_install: pip's 15s default turns a
-        # dropped link into a MISLEADING "ResolutionImpossible / no matching
-        # distribution", and a 5-10 GB download is exposed to that for a long time.
-        argv = [str(pip), "install", "--retries", "5", "--timeout", "60", f"vllm=={version}"]
+        resolver, argv = _resolver_argv(pip, version, run, env, stop, ctx, tail)
+        phase = resolver
+        tail.clear()
+        lines_total = 0
+        ctx.set_progress(
+            detail=(
+                f"{resolver} install vllm=={version} "
+                f"(this downloads {ESTIMATED_INSTALL_SIZE_NOTE})"
+            )
+        )
         exit_code: int | None = None
         for line in run(argv, env=env, should_stop=stop):
             if ctx.stopping:
@@ -1430,8 +1628,8 @@ def run_install_job(
             ctx.set_progress(detail=line[:200])
         if exit_code is None:
             msg = (
-                f"pip install vllm=={version} produced no exit status -- refusing to "
-                "record an install that was never confirmed to succeed."
+                f"{resolver} install vllm=={version} produced no exit status -- refusing "
+                "to record an install that was never confirmed to succeed."
             )
             _journal("error", error=msg)
             raise VllmLifecycleError(msg)
@@ -1440,13 +1638,13 @@ def run_install_job(
             if any(m in joined for m in _ENOSPC_MARKERS):
                 # Classify rather than echo a bare exit code (CLAUDE.md:519-520).
                 msg = (
-                    f"pip install vllm=={version} ran out of disk space while unpacking "
-                    "(pip: 'No space left on device'). This install already points pip's "
-                    f"TMPDIR at {tmp}, so the volume behind that path is what filled up. "
-                    f"Check it (look at the 'Avail' column):  df -h {tmp}"
+                    f"{resolver} install vllm=={version} ran out of disk space while "
+                    "unpacking ('No space left on device'). This install already points "
+                    f"the unpack area at {tmp}, so the volume behind that path is what "
+                    f"filled up. Check it (look at the 'Avail' column):  df -h {tmp}"
                 )
             else:
-                msg = f"pip install vllm=={version} failed (exit code {exit_code})."
+                msg = f"{resolver} install vllm=={version} failed (exit code {exit_code})."
             _journal("error", exit_code=exit_code, error=msg)
             raise VllmLifecycleError(msg)
         # pip exiting 0 is evidence about PIP, not about this venv: PIP_TARGET /
