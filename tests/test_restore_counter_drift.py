@@ -235,7 +235,13 @@ def test_run_restore_reconciles_unconditionally_not_only_after_a_successful_rein
     body = body[: nxt.start()] if nxt else body
 
     assert 'timings.stage("keyword_counter_reconcile")' in body
-    assert "backfill_keyword_counters" in body
+    # The AUTHORITATIVE zero-then-set repair, in its bounded/resumable form (the
+    # 2026-07-30 import-speed fix swapped the unbounded whole-corpus
+    # `backfill_keyword_counters` for the sweep the idle maintenance already uses,
+    # so an import queue amortises ONE sweep across its items instead of redoing a
+    # whole-corpus GROUP BY per item). What this test pins is unchanged: the restore
+    # reconciles, and it does so outside the `if reindex_imported:` branch.
+    assert "reconcile_keyword_counters" in body
 
     # The reconcile must NOT live inside the `if reindex_imported:` block. That block
     # ends at the first line whose indentation returns to its own level, so slice it

@@ -219,6 +219,7 @@ class VolumeBackupManager:
             # pause/resume hiccup must never abort or corrupt an otherwise-
             # good restore, so both sides are best-effort.
             from src.scheduler.runner import (
+                exclusive_window_open,
                 pause_for_exclusive_operation,
                 resume_after_exclusive_operation,
             )
@@ -353,6 +354,14 @@ class VolumeBackupManager:
                         # used to ignore self._stop entirely on the restore path, so
                         # a Stop button during an import was inert.
                         should_stop=self._stop.is_set,
+                        # Import-speed fix 2026-07-30: lets the two whole-corpus
+                        # snapshots copy the corpus's bytes instead of re-encrypting it
+                        # row by row through the codec. Gated on the SAME confirmed
+                        # exclusivity as the three own-the-machine knobs above (or on
+                        # the queue's window, when this restore is one item of a run):
+                        # the fast path holds the write gate for the copy, which is free
+                        # when collection is confirmed paused and rude when it is not.
+                        exclusive=bool(was_paused) or exclusive_window_open(),
                     )
                     with self._lock:
                         self._state, self._summary = "done", {"report": report}
