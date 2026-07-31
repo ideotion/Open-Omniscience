@@ -41,6 +41,7 @@ from src.llm.ollama import (
     LLMUnavailable,
     OllamaClient,
 )
+from src.llm.prompts_i18n import PROMPTS as _PROMPTS
 
 router = APIRouter(prefix="/api/llm", tags=["llm"])
 
@@ -48,25 +49,15 @@ router = APIRouter(prefix="/api/llm", tags=["llm"])
 # v2 (2026-06-17): tighter, honesty-first prompts — language pin, attribution guard,
 # per-claim citations + single-source flag for synthesis (see _build_prompting).
 SUMMARY_PROMPT_VERSION = "summary-v2"
-_SUMMARY_SYSTEM = (
-    "You are a careful research assistant for an investigative journalist. Summarize the "
-    "article below in 3-5 sentences, using only its text. Keep the essentials: who, what, "
-    "when, where, and any figures, dates, or attributed/quoted claims. Preserve attribution "
-    '("X said", "allegedly") -- never turn a claim into a fact. Stay neutral: add no '
-    "background, do not interpret, judge credibility, or conclude. If it is not a coherent "
-    "article (paywall, navigation, error page), say exactly that. Write in {language}. "
-    "Output only the summary, with no preamble."
-)
+# The English bodies live in ONE place (src/llm/prompts_i18n) alongside their
+# eleven translations, so a copy here could never silently fork from them. The
+# names are kept: they are the honest default for any path with no UI language
+# to select with, and several tests + the prompt-editor endpoint refer to them.
+_SUMMARY_SYSTEM = _PROMPTS["summary"]["en"]
 
 TRANSLATE_PROMPT_VERSION = "translate-v2"
-_TRANSLATE_SYSTEM = (
-    "You are a faithful translator for an investigative journalist. Translate the title and "
-    "body below into {target}, as literally as the target language allows. Preserve meaning, "
-    "names, numbers, dates, quotations and paragraph breaks exactly. Do NOT summarize, "
-    "interpret, soften, censor, or add; keep proper nouns in their original form. If a passage "
-    "is already in {target}, leave it unchanged. Output only the translation, with no preamble "
-    "or notes."
-)
+_TRANSLATE_SYSTEM = _PROMPTS["translate"]["en"]
+
 # Keep prompts within a small CPU model's context.
 _MAX_CHARS = 6000
 
@@ -235,33 +226,37 @@ def _build_prompting(
     summary/synthesis we append a native-language directive (``_NATIVE_DIRECTIVE``) so a
     weak model actually answers in the UI language instead of echoing the source.
     """
+    from src.llm.prompts_i18n import prompt_for, prompt_version
+
     s = _llm_settings()
     overrides = {
         "summary": (s.llm_prompt_summary if s else ""),
         "translate": (s.llm_prompt_translate if s else ""),
         "synthesis": (s.llm_prompt_synthesis if s else ""),
     }
-    defaults = {
-        "summary": _SUMMARY_SYSTEM,
-        "translate": _TRANSLATE_SYSTEM,
-        "synthesis": _SYNTHESIS_SYSTEM,
-    }
     override = (overrides.get(op) or "").strip()
     is_custom = bool(override)
-    template = override or defaults[op]
+    # RULING 14 (2026-07-31): the built-in body is now written in the UI language.
+    # An OPERATOR OVERRIDE still wins verbatim -- unchanged contract: whoever wrote
+    # their own prompt gets exactly it, in whatever language they wrote it, and no
+    # translation table is consulted.
+    template = override or prompt_for(op, output_lang_code)
     if op == "translate":
         tgt = (target or "English")
         system = _apply_target(template, tgt)
-        base = "translate-custom" if is_custom else TRANSLATE_PROMPT_VERSION
+        base = "translate-custom" if is_custom else prompt_version(
+            TRANSLATE_PROMPT_VERSION, output_lang_code)
         version = f"{base}:{tgt}"
     elif op == "synthesis":
         lang = (output_language or "").strip() or "English"
         system = template.replace("{language}", lang)
-        version = "synthesis-custom" if is_custom else SYNTHESIS_PROMPT_VERSION
+        version = ("synthesis-custom" if is_custom
+                   else prompt_version(SYNTHESIS_PROMPT_VERSION, output_lang_code))
     else:  # summary
         lang = (output_language or "").strip() or "the same language as the article"
         system = template.replace("{language}", lang)
-        version = "summary-custom" if is_custom else SUMMARY_PROMPT_VERSION
+        version = ("summary-custom" if is_custom
+                   else prompt_version(SUMMARY_PROMPT_VERSION, output_lang_code))
     if op in ("summary", "synthesis"):
         directive = _NATIVE_DIRECTIVE.get((output_lang_code or "").strip().lower())
         if directive:
@@ -288,6 +283,11 @@ class SummarizeRequest(BaseModel):
 class TranslateRequest(BaseModel):
     target_language: str = "English"
     model: str | None = None
+    # UI language CODE. Ruling 14 (2026-07-31) put the built-in prompt BODY into
+    # the operator's language, and this is the only thing that selects it. Unset
+    # falls back to the English body -- the behaviour before the ruling, so an
+    # older client keeps working exactly as it did.
+    ui_lang: str | None = None
 
 
 @router.get("/health")
@@ -424,7 +424,7 @@ def llm_models(client: OllamaClient = Depends(get_ollama_client)) -> dict:
 
 
 @router.get("/prompts")
-def llm_prompts() -> dict:
+def llm_prompts(lang: str | None = None) -> dict:
     """The local-LLM behaviour the operator can tune (maintainer 2026-06-17): the
     keep-alive duration and the editable SYSTEM PROMPTS, each with its built-in
     default and the current override ("" = using the default). Read by Settings → Models.
@@ -434,34 +434,43 @@ def llm_prompts() -> dict:
     across several), and ``ai_keywords`` (the built-in keyword/entity EXTRACTION prompt,
     Part B; ``{max_terms}`` is the per-article cap). Bulk reuses the single-article
     summary/translate prompt per article — there is no separate "several" prompt.
-    """
-    from src.ai_layer.extract import _EXTRACT_SYSTEM, EXTRACT_PROMPT_VERSION
-    from src.config.app_settings import AppSettings
 
+    ``lang``: the UI language code. Ruling 14 (2026-07-31) put the four built-in
+    bodies into the operator's language, so the DEFAULTS shown here must follow --
+    otherwise the editor would display an English placeholder while a French prompt
+    was the one actually running, which is exactly the kind of quiet disagreement
+    between what is shown and what is used that provenance exists to prevent. Unset
+    = English, so an older client sees precisely what it saw before.
+    """
+    from src.ai_layer.extract import EXTRACT_PROMPT_VERSION
+    from src.config.app_settings import AppSettings
+    from src.llm.prompts_i18n import normalize_lang, prompt_for, prompt_version
+
+    code = normalize_lang(lang)
     s = _llm_settings()
     return {
         "keep_alive": (s.llm_keep_alive if s else AppSettings().llm_keep_alive),
         "keep_alive_default": AppSettings().llm_keep_alive,
         "prompts": {
             "summary": {
-                "default": _SUMMARY_SYSTEM,
+                "default": prompt_for("summary", code),
                 "current": (s.llm_prompt_summary if s else "") or "",
-                "version": SUMMARY_PROMPT_VERSION,
+                "version": prompt_version(SUMMARY_PROMPT_VERSION, code),
             },
             "translate": {
-                "default": _TRANSLATE_SYSTEM,
+                "default": prompt_for("translate", code),
                 "current": (s.llm_prompt_translate if s else "") or "",
-                "version": TRANSLATE_PROMPT_VERSION,
+                "version": prompt_version(TRANSLATE_PROMPT_VERSION, code),
             },
             "synthesis": {
-                "default": _SYNTHESIS_SYSTEM,
+                "default": prompt_for("synthesis", code),
                 "current": (s.llm_prompt_synthesis if s else "") or "",
-                "version": SYNTHESIS_PROMPT_VERSION,
+                "version": prompt_version(SYNTHESIS_PROMPT_VERSION, code),
             },
             "ai_keywords": {
-                "default": _EXTRACT_SYSTEM,
+                "default": prompt_for("ai_keywords", code),
                 "current": (s.llm_prompt_ai_keywords if s else "") or "",
-                "version": EXTRACT_PROMPT_VERSION,
+                "version": prompt_version(EXTRACT_PROMPT_VERSION, code),
             },
         },
         "note": (
@@ -470,6 +479,10 @@ def llm_prompts() -> dict:
             "target language; the keyword-extraction prompt may contain {max_terms}. "
             "Save changes via Settings (PUT /api/settings)."
         ),
+        # Which language's built-in bodies are shown above. Stated rather than
+        # implied: an operator comparing this editor against a stored result's
+        # prompt_version needs to know the two are talking about the same text.
+        "prompt_language": code,
     }
 
 
@@ -1147,7 +1160,9 @@ def translate_article(
         raise HTTPException(status_code=400, detail="Article has no content to translate.")
 
     model = req.model or active_model()
-    system, prompt_version, prompt_text = _build_prompting("translate", target=req.target_language)
+    system, prompt_version, prompt_text = _build_prompting(
+        "translate", target=req.target_language, output_lang_code=req.ui_lang
+    )
     prompt = f"Title: {article.title or '(untitled)'}\n\n{article.content[:_MAX_CHARS]}"
     from src.monitoring.tasks import track
 
@@ -1246,15 +1261,7 @@ def list_article_analyses(
 # --------------------------------------------------------------------------- #
 
 SYNTHESIS_PROMPT_VERSION = "synthesis-v2"
-_SYNTHESIS_SYSTEM = (
-    "You are a careful research assistant for an investigative journalist. Below are numbered "
-    "excerpts from several stored articles; they may be in different languages. In {language}, "
-    "write a neutral synthesis in three labeled parts: (1) what the sources agree on, (2) where "
-    "they disagree, (3) open questions they leave unanswered. After every statement, cite the "
-    "source number(s) in brackets, e.g. [2][5]. Flag any claim that appears in only one source. "
-    "Use only the excerpts: add no outside information, do not decide who is right, do not "
-    "assess credibility, and do not speculate. Output only the synthesis."
-)
+_SYNTHESIS_SYSTEM = _PROMPTS["synthesis"]["en"]
 _SYNTHESIS_MAX_ARTICLES = 20
 # Total prompt budget across all excerpts (keeps a small CPU model's context safe).
 _SYNTHESIS_BUDGET_CHARS = 24_000
@@ -1540,7 +1547,9 @@ def bulk_llm(
         )
     else:
         kind = "translation"
-        system, prompt_version, prompt_text = _build_prompting("translate", target=target)
+        system, prompt_version, prompt_text = _build_prompting(
+            "translate", target=target, output_lang_code=req.ui_lang
+        )
 
     # skip_existing tops up only what's missing: which of these already have THIS exact
     # result (same kind, and for a translation the same target language)? We never

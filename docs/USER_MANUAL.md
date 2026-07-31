@@ -973,14 +973,32 @@ Official **figures** are not here at all — they are data, so they live under
   resumable (pause/resume + a progress table). These offline dumps are heavy and
   optional, and are only for offline reading/search — live change-tracking (the
   Wikipedia tab) doesn't need them.
-- **AI (local LLM):** detect a running Ollama, see installed models and a curated dated
-  catalog, **pull** a model (a **queued** download job — one at a time, cancellable, with
-  live byte progress; the bytes go over clearnet via the Ollama process, **not** Tor —
-  stated at the consent prompt), **remove** one, and set the **active model** the
-  summarise/translate/synthesise features use. A **"Behaviour & prompts"** editor exposes
-  the four editable system prompts (summary / translate / synthesis / keyword extraction)
-  and the model keep-alive; a **Custom extractors** list lets you define managed prompts
-  that write AI-derived metadata (labelled *unreliable*, never the trusted keyword index).
+- **AI (local LLM):** a **Set up local AI** box at the top states the whole remaining
+  plan in one place — which backend this machine will use (vLLM where a dedicated
+  NVIDIA GPU can serve it, Ollama otherwise), what still needs installing, and the
+  download sizes — and runs it from **one button** after **one** consent. It hides
+  itself once there is nothing left to do; the per-component controls below it are
+  unchanged, so you can still do each step yourself. Below that: the active backend
+  and **why** it was chosen, installed models and a curated dated catalog, **pull** a
+  model (a **queued** download job — one at a time, cancellable, with live byte
+  progress; the bytes go over clearnet via the Ollama process, **not** Tor — stated at
+  the consent prompt), **remove** one, and set the **active model**.
+  **Hardware suitability** is stated once, here, with what it means for you: local
+  inference is refused by default only below a floor (fewer than 4 CPU cores, or less
+  than 6 GB of RAM, with no accelerator); running without a dedicated GPU, on a
+  thin-VRAM card, or on a small unified-memory Mac is a **warning about what to
+  expect**, not a refusal. It is **never a block** — a checkbox turns AI back on, and
+  the disclosure stays visible either way. **Starting** the local AI is the top-bar
+  **AI pill**, from any screen.
+  A **"Behaviour & prompts"** editor exposes the four editable system prompts
+  (summary / translate / synthesis / keyword extraction) and the model keep-alive.
+  Those four prompts **ship in all twelve interface languages**, so a French or
+  Japanese reader gets a summary written in their language rather than English work;
+  the editor shows the built-in text for **your** language, and the exact prompt used
+  is recorded with every result. Your own prompt, if you write one, is used **exactly
+  as you wrote it**, in whatever language you wrote it. A **Custom extractors** list
+  lets you define managed prompts that write AI-derived metadata (labelled
+  *unreliable*, never the trusted keyword index).
   When Ollama isn't present, an **in-app installer** appears (Linux/Debian): it downloads
   the official install script, verifies it against GitHub's attested sha256 digest, shows
   a visible elevation step, and runs it — refusing on any digest mismatch. macOS/Windows

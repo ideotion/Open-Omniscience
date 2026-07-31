@@ -118,9 +118,25 @@ def test_both_paths_are_refused_under_airplane_mode():
 
 
 def test_the_confirm_names_the_real_artifact_and_that_it_is_not_tor():
-    body = _fn("installDefaultModel")
+    # ANCHOR MOVED, property unchanged (2026-07-31): `installDefaultModel` became a
+    # one-line delegator to `_installDefaultModel` so the fused "Set up local AI"
+    # chain can pass its already-taken consent through instead of asking twice for
+    # the same bytes. The confirm and its wording live in the delegate now.
+    body = _fn("_installDefaultModel")
     assert "p.artifact" in body and "p.size" in body, "the real artifact, not a generic prompt"
     assert "not through Tor" in body
+
+
+def test_the_only_way_past_the_confirm_is_a_consent_already_taken():
+    """The fused setup chain skips this prompt because it ALREADY asked, naming this
+    exact artifact and size. Pinned so the bypass can never widen into a default: the
+    ordinary entry point must pass no flag, and the chain's own confirm must be the
+    thing that earns the skip."""
+    assert "_installDefaultModel(btn, {})" in _fn("installDefaultModel")
+    chain = _fn("runAiSetup")
+    assert "confirm(" in chain, "the chain must take the consent it then passes through"
+    assert "s.artifact" in chain and "s.size" in chain
+    assert "_installDefaultModel(null, {confirmed: true})" in chain
 
 
 # --------------------------------------------------------------------------- #

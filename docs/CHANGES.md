@@ -11,6 +11,26 @@ loop, and recalibrates the analytics against a real ~500k-article corpus. On the
 - **The recursive improvement loop v1** — the machine-readable KPI snapshot + diff and
   the standing improvement-cycle protocol
   ([`docs/design/V1_PATHWAY_2026-07-14.md`](design/V1_PATHWAY_2026-07-14.md) §2).
+- **Settings, restructured** — fifteen subtabs became ten. What was scattered
+  configuration is grouped by what you are actually doing: **Cards** is new and finally
+  exposes all 37 Lead producers across their 8 families, each with a plain description
+  and — where tunable — a stated **safe range** rather than a silent clamp; **Advanced**
+  is new and folds away the acquisition plumbing (Collect, Sources, Keywords, the
+  ~500-feed calendar catalogue, the statistics producers), loading each section only when
+  you expand it, so a folded section never costs a fetch. Shortcuts moved into General,
+  Newsletters into Data & backup, the statistics *figures* to Governments → Statistics
+  where the data belongs, Offline map became **OpenStreetMap**, and Leads went away
+  entirely. Along the way: calendar feed verification became progressive (it rides
+  collection passes, never boot) with a capped re-check ladder so a feed is never retired
+  for good; a chip-contrast bug that failed WCAG AA on 16 of the 17 themes was measured
+  and fixed at the token level; and the AI tab gained a single **Set up local AI** button
+  in place of three scattered installs. Local inference is now refused by default only
+  below a real floor (fewer than 4 cores, or under 6 GB of RAM, with no accelerator) —
+  running without a dedicated GPU is a warning about what to expect, not a refusal, and
+  never a block. **The four prompts you read the output of** — summary, translation,
+  synthesis and keyword extraction — now ship in **all twelve interface languages**, so a
+  non-English reader stops getting English work back from the local model; your own
+  prompt, if you write one, is still used exactly as you wrote it.
 - **Scale recalibration of the analytics surfaces** — the six delegated 2026-07-18
   briefs: Leads/card-system selection calibration (+ the convergence exploration
   amendment and the **no-capped-figures rule**: a displayed number is never a cap),

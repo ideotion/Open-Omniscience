@@ -430,7 +430,18 @@
     if (status) { status.className = "r-gen-status r-muted"; status.textContent = "Working locally…"; }
     var url = "/api/llm/articles/" + encodeURIComponent(aid)
       + (key === "summary" ? "/summarize" : "/translate");
-    var body = key === "summary" ? {} : { target_language: target || "English" };
+    // The UI language code, read the same way i18n.js does (the reader loads it,
+    // so window.OOI18N is normally there; the localStorage read is the fallback for
+    // the case where it is not). Ruling 14 (2026-07-31): this selects which language
+    // the built-in prompt BODY is written in, so a French reader asking for a
+    // summary does not get English work back. Unset = the English body, unchanged.
+    var uiLang = "en";
+    try {
+      uiLang = (window.OOI18N && window.OOI18N.current && window.OOI18N.current())
+        || localStorage.getItem("oo.lang") || "en";
+    } catch (e) { /* a storage-denied browser still gets the English default */ }
+    var body = key === "summary" ? { ui_lang: uiLang }
+                                 : { target_language: target || "English", ui_lang: uiLang };
     fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
