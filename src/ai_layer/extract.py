@@ -26,14 +26,14 @@ EXTRACT_PROMPT_VERSION = "ai-keywords-v1"
 # Keep the prompt within a small CPU model's context (mirrors src.api.llm._MAX_CHARS).
 _MAX_CHARS = 6000
 
-_EXTRACT_SYSTEM = (
-    "You are a research assistant indexing an article for an investigative journalist. "
-    "From the text below, list the most salient KEYWORDS and NAMED ENTITIES (people, "
-    "organisations, places, topics) the article is actually about — using only its text. "
-    "Output ONE per line, at most {max_terms} lines, no numbering, no commentary, no "
-    "duplicates; keep proper nouns as written. If the text is not a usable article "
-    "(paywall, navigation, error page), output nothing."
-)
+# The English body lives in ONE place (src/llm/prompts_i18n) alongside its eleven
+# translations, so the two can never drift apart -- a second copy here would be a
+# silent fork the moment either is edited. The name is kept because callers and
+# tests refer to it, and because this stays the honest default for any path that
+# has no UI language to select with.
+from src.llm.prompts_i18n import PROMPTS as _PROMPTS
+
+_EXTRACT_SYSTEM = _PROMPTS["ai_keywords"]["en"]
 
 # Strip a leading list marker the model may emit despite the instruction:
 # "1. ", "2) ", "- ", "* ", "• ".

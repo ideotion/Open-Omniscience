@@ -31,13 +31,23 @@ _NOT_APPLE = {"available": False, "reason": "not macOS (platform.system() = 'Lin
 @pytest.fixture(autouse=True)
 def _neutral_override(monkeypatch):
     """No env override, and a settings read that yields the default (off), so a
-    test asserting a refusal can never be silently rescued by an ambient enable."""
+    test asserting a refusal can never be silently rescued by an ambient enable.
+
+    ALSO pins the CPU/RAM figures, which ruling 15 (2026-07-31) turned into
+    decision inputs. Left unstubbed they read the REAL runner, so every
+    "GPU-less is refused" assertion would pass or fail depending on the machine
+    the suite happens to run on -- and would go green on a small CI box for the
+    wrong reason. The default here is the maintainer's own weakest field machine
+    (2 cores / 3.2 GB), i.e. genuinely below the floor; a test that wants the
+    clearing-floor case says so with ``_stub_cpu``."""
     monkeypatch.delenv(B.ENV_ALLOW_IMPRACTICAL_HW, raising=False)
 
     class _S:
         llm_allow_impractical_hw = False
 
     monkeypatch.setattr("src.config.app_settings.load_settings", lambda: _S())
+    monkeypatch.setattr(B.os, "cpu_count", lambda: 2)
+    monkeypatch.setattr(B, "total_ram_gb", lambda: 3.2)
     yield
 
 
@@ -103,57 +113,218 @@ def test_dedicated_nvidia_gpu_is_practical(monkeypatch):
     assert cap["overridden"] is False
 
 
-def test_gpuless_linux_box_is_not_practical_and_says_why(monkeypatch):
+# --------------------------------------------------------------------------- #
+#  RULING 15 (2026-07-31) SUPERSEDES the 2026-07-30 GPU-absence rule these three
+#  tests used to encode. That rule refused local inference wherever a dedicated
+#  GPU was absent -- explicitly including "a 64 GB GPU-less workstation", which
+#  is the case the maintainer named as too blunt. GPU-less is now a WARNING; the
+#  hard refusal is the CPU/RAM floor. Rewritten to the new policy rather than
+#  weakened: each still pins the SAME honesty properties (name what the probes
+#  said, never flatten a failed probe into a measurement), just on the branch the
+#  machine now lands in.
+# --------------------------------------------------------------------------- #
+def _stub_cpu(monkeypatch, *, cores, ram_gb):
+    """NB: backend.py binds total_ram_gb at import, so the patch must target ITS
+    namespace -- patching src.llm.ollama would leave the bound name untouched and
+    the test would pass without ever simulating the machine it claims to."""
+    monkeypatch.setattr(B.os, "cpu_count", lambda: cores)
+    monkeypatch.setattr(B, "total_ram_gb", lambda: ram_gb)
+
+
+def test_a_gpuless_box_that_clears_the_floor_is_practical_and_warns(monkeypatch):
+    """Ruling 15's headline change. The machine runs AI features by DEFAULT, and
+    the CPU-only reality is stated as a warning instead of a refusal."""
     _stub_hw(monkeypatch, gpu=_NO_GPU, apple=_NOT_APPLE)
+    _stub_cpu(monkeypatch, cores=8, ram_gb=16.0)
+    cap = B.inference_capability()
+    assert cap["practical"] is True
+    assert cap["kind"] is None            # practical, but no accelerator was found
+    assert cap["overridden"] is False     # ... and it passed on its own, not by override
+    assert cap["warnings"], "a CPU-only machine must say what to expect"
+    warned = " ".join(cap["warnings"])
+    # The warning must carry BOTH probes' own words, so "nvidia-smi timed out"
+    # never flattens into the bare claim "this machine has no GPU".
+    assert "nvidia-smi not found or timed out" in warned
+    assert "not macOS" in warned
+
+
+def test_a_gpuless_machine_with_plenty_of_ram_is_practical_under_ruling_15(monkeypatch):
+    """The exact case ruling 15 was written to correct: the old rule refused a
+    "64 GB GPU-less workstation". If this ever flips back to False, the
+    superseded GPU-absence rule has been reintroduced."""
+    _stub_hw(monkeypatch, gpu=_NO_GPU, apple=_NOT_APPLE)
+    _stub_cpu(monkeypatch, cores=16, ram_gb=256.0)
+    assert B.inference_capability()["practical"] is True
+
+
+def test_a_gpuless_box_below_the_floor_is_refused_and_names_both_shortfalls(monkeypatch):
+    """The hard tier. Both figures that fell short are named -- a refusal that
+    said only "unsuitable" would leave the operator guessing which to fix."""
+    _stub_hw(monkeypatch, gpu=_NO_GPU, apple=_NOT_APPLE)
+    _stub_cpu(monkeypatch, cores=2, ram_gb=3.2)
     cap = B.inference_capability()
     assert cap["practical"] is False
     assert cap["kind"] is None
     assert cap["overridden"] is False
-    # The reason must carry BOTH probes' own words, so "nvidia-smi timed out"
-    # never flattens into the bare claim "this machine has no GPU".
-    assert "nvidia-smi not found or timed out" in cap["reason"]
-    assert "not macOS" in cap["reason"]
+    assert cap["cpu_cores"] == 2 and cap["total_ram_gb"] == 3.2
+    assert "2 CPU core(s)" in cap["reason"]
+    assert "3.2 GB RAM" in cap["reason"]
+    assert "nvidia-smi not found or timed out" in cap["reason"]   # never flattened
     assert B.IMPRACTICAL_CONSEQUENCE in cap["reason"]
 
 
-def test_a_gpuless_machine_with_plenty_of_ram_is_still_not_practical(monkeypatch):
-    """The ruling is about the ABSENCE OF A DEDICATED GPU, not only about RAM.
-    A 256 GB GPU-less workstation still lands here -- if this ever flips, the
-    gate has quietly become a RAM check and stopped implementing the ruling."""
+def test_either_shortfall_alone_refuses(monkeypatch):
+    """The floor is an OR, per the ruling's wording ("< 4 cores OR < 6 GB")."""
     _stub_hw(monkeypatch, gpu=_NO_GPU, apple=_NOT_APPLE)
-    # NB: backend.py binds total_ram_gb at import, so the patch must target ITS
-    # namespace -- patching src.llm.ollama would leave the bound name untouched
-    # and this test would pass without ever simulating the big-RAM machine.
-    monkeypatch.setattr(B, "total_ram_gb", lambda: 256.0)
-    assert B.inference_capability()["practical"] is False
+
+    _stub_cpu(monkeypatch, cores=2, ram_gb=64.0)          # cores short, RAM fine
+    cap = B.inference_capability()
+    assert cap["practical"] is False and "2 CPU core(s)" in cap["reason"]
+    assert "RAM, below" not in cap["reason"]              # ... and only the real one is named
+
+    _stub_cpu(monkeypatch, cores=32, ram_gb=4.0)          # RAM short, cores fine
+    cap = B.inference_capability()
+    assert cap["practical"] is False and "4 GB RAM" in cap["reason"]
+    assert "CPU core(s), below" not in cap["reason"]
+
+
+def test_the_floor_is_inclusive_at_exactly_the_ruled_thresholds(monkeypatch):
+    """Boundary: 4 cores / 6 GB are the stated minima, so a machine sitting
+    exactly on them is not refused by an off-by-one."""
+    _stub_hw(monkeypatch, gpu=_NO_GPU, apple=_NOT_APPLE)
+    _stub_cpu(monkeypatch, cores=B.MIN_CPU_CORES, ram_gb=B.MIN_SYSTEM_RAM_GB)
+    assert B.inference_capability()["practical"] is True
+
+
+def test_an_unreadable_cpu_or_ram_figure_refuses_as_UNMEASURED(monkeypatch):
+    """A core install has no psutil, so the RAM read returns None. The floor
+    CANNOT BE CHECKED -- which is neither a pass nor a measured shortfall. The
+    refusal must say the figure was unreadable, never invent one."""
+    _stub_hw(monkeypatch, gpu=_NO_GPU, apple=_NOT_APPLE)
+    _stub_cpu(monkeypatch, cores=8, ram_gb=None)
+    cap = B.inference_capability()
+    assert cap["practical"] is False
+    assert cap["total_ram_gb"] is None               # an honest absence, never a 0
+    assert "could not be read" in cap["reason"]
+    assert "below" not in cap["reason"]              # never a shortfall we did not measure
+    assert "override" in cap["reason"]
+
+    _stub_cpu(monkeypatch, cores=None, ram_gb=16.0)
+    cap = B.inference_capability()
+    assert cap["practical"] is False and cap["cpu_cores"] is None
+    assert "CPU core count" in cap["reason"]
+
+
+def test_an_unreadable_ram_figure_never_refuses_a_DETECTED_accelerator(monkeypatch):
+    """The defect the first cut shipped: the floor ran BEFORE the probes, so on a
+    core install (no psutil -> RAM None) it refused EVERY machine, a good NVIDIA
+    GPU included. A detected accelerator is positive evidence and is never
+    refused for want of a RAM count."""
+    _stub_hw(monkeypatch, gpu=_NVIDIA, apple=_NOT_APPLE)
+    _stub_cpu(monkeypatch, cores=None, ram_gb=None)
+    cap = B.inference_capability()
+    assert cap["practical"] is True and cap["kind"] == "nvidia"
 
 
 def test_amd_discrete_gpus_are_named_as_an_honest_gap(monkeypatch):
-    """A Radeon owner falls into "not practical". That is a NON-DETECTION, not a
-    measurement, and the refusal must say so + point at the override rather than
-    implying their card was examined and judged."""
+    """A Radeon owner reports as GPU-less. That is a NON-DETECTION, not a
+    measurement, and the disclosure must say so rather than implying their card
+    was examined and judged. Under ruling 15 they are now PRACTICAL, so the
+    naming moved from the refusal reason to the warning -- but it must still be
+    said, on the surface the operator actually reads."""
     _stub_hw(monkeypatch, gpu=_NO_GPU, apple=_NOT_APPLE)
+    _stub_cpu(monkeypatch, cores=8, ram_gb=16.0)
     cap = B.inference_capability()
-    assert "AMD" in cap["reason"]
-    assert "override" in cap["reason"]
+    assert cap["practical"] is True
+    assert "AMD" in " ".join(cap["warnings"])
     assert "not probed" in cap["caveat"].lower()
+
+
+def test_a_thin_vram_gpu_is_warned_never_refused(monkeypatch):
+    """Ruling 15 sets the VRAM line at 5 GB, and sets it as a WARNING: a card
+    that genuinely runs the default model must not be turned away."""
+    _stub_hw(
+        monkeypatch,
+        gpu={"available": True, "name": "NVIDIA GTX 1650", "vram_mb": 4096},
+        apple=_NOT_APPLE,
+    )
+    cap = B.inference_capability()
+    assert cap["practical"] is True and cap["kind"] == "nvidia"
+    assert cap["warnings"], "a 4 GB card must set expectations"
+    assert "4" in " ".join(cap["warnings"])
+
+
+def test_the_vram_line_sits_below_the_default_models_measured_use(monkeypatch):
+    """The threshold is 5 GB rather than 6 for a MEASURED reason (ruling 15:
+    Mistral-7B Q4 needs ~4.4 GB and measured 5.1 GB in use). A 6 GB line would
+    warn about cards that work, so pin that a 5.1 GB card stays unwarned."""
+    assert B.MIN_VRAM_WARN_GB == 5.0
+    _stub_hw(
+        monkeypatch,
+        gpu={"available": True, "name": "NVIDIA RTX 2060", "vram_mb": int(5.1 * 1024)},
+        apple=_NOT_APPLE,
+    )
+    assert B.inference_capability()["warnings"] == []
+
+
+@pytest.mark.parametrize("bogus", [None, True, False, "n/a", "", object(), [], {}])
+def test_unmeasured_vram_produces_no_warning_rather_than_a_guessed_one(monkeypatch, bogus):
+    """Symmetric to the unmeasured-RAM rule: inventing a shortfall from an absent
+    measurement is the same fabrication as inventing a pass from one.
+
+    `True`/`False` are in here deliberately. bool subclasses int, so a naive
+    float() turns them into a measured 1 MB / 0 MB and emits a warning about a
+    number nobody read -- the int(True) == 1 trap, in the one direction where it
+    would produce a confident-sounding falsehood."""
+    _stub_hw(
+        monkeypatch,
+        gpu={"available": True, "name": "NVIDIA Tesla", "vram_mb": bogus},
+        apple=_NOT_APPLE,
+    )
+    cap = B.inference_capability()
+    assert cap["practical"] is True and cap["warnings"] == []
+
+
+def test_a_TEXT_typed_vram_readback_is_still_honoured_as_the_measurement_it_is(monkeypatch):
+    """The narrowing must not throw away a real figure: some probes hand numbers
+    back as strings, and the house response is to coerce, not discard."""
+    _stub_hw(
+        monkeypatch,
+        gpu={"available": True, "name": "NVIDIA GTX 1650", "vram_mb": "4096"},
+        apple=_NOT_APPLE,
+    )
+    cap = B.inference_capability()
+    assert cap["practical"] is True
+    assert cap["warnings"], "a 4 GB card read back as text must still warn"
 
 
 # --------------------------------------------------------------------------- #
 #  Apple Silicon RAM floor -- and the third, EPISTEMIC state.
 # --------------------------------------------------------------------------- #
-def test_apple_silicon_below_the_unified_ram_floor_is_not_practical(monkeypatch):
+def test_apple_silicon_below_the_unified_ram_floor_is_practical_and_warns(monkeypatch):
+    """SUPERSEDED BY RULING 15 (2026-07-31), and this is the one judgement call
+    in that ruling's reading, so it is pinned with its reasoning:
+
+    ruling 15 states the hard-refusal tier IS the CPU/RAM floor, while also
+    saying the Apple Silicon carve-out is "unchanged". A SECOND, higher hard
+    floor for Apple Silicon alone would contradict the first half -- and would
+    refuse an 8 GB M-series Mac while passing a 4-core/6 GB GPU-less PC, i.e.
+    treat the carve-out's own hardware WORSE than the machines it exists to
+    favour. So the recognition is unchanged and the 16 GB line became a warning
+    threshold, exactly like the VRAM line. The floor CONSTANT is still reported,
+    so nothing about the number was lost -- only its tier changed."""
     _stub_hw(
         monkeypatch,
         gpu=_NO_GPU,
         apple={"available": True, "name": "Apple Silicon (arm64)", "unified_ram_gb": 8.0},
     )
     cap = B.inference_capability()
-    assert cap["practical"] is False
+    assert cap["practical"] is True
     assert cap["kind"] == "apple-silicon"
     assert cap["unified_ram_gb"] == 8.0
     assert cap["min_unified_ram_gb"] == B.APPLE_SILICON_MIN_UNIFIED_RAM_GB
-    assert "below" in cap["reason"]
+    assert cap["warnings"], "under the comfort floor, the operator is told what to expect"
+    assert "16 GB" in " ".join(cap["warnings"])
 
 
 def test_apple_silicon_with_unreadable_ram_refuses_as_UNMEASURED_not_as_too_small(monkeypatch):
@@ -348,24 +519,33 @@ def test_only_the_exact_env_value_1_enables(monkeypatch):
 _KEYS = {
     "practical", "kind", "name", "vram_mb", "unified_ram_gb", "reason",
     "method", "caveat", "overridden", "override_requested", "min_unified_ram_gb",
+    # Ruling 15 (2026-07-31): the tiers, reported so no caller re-derives them.
+    # "warnings" is in EVERY branch on purpose -- an absent key would read as
+    # "nothing to warn about" in exactly the branch that forgot to set it.
+    "warnings", "cpu_cores", "total_ram_gb",
+    "min_cpu_cores", "min_system_ram_gb", "min_vram_warn_gb",
 }
 
 
 @pytest.mark.parametrize(
-    "gpu,apple",
+    "gpu,apple,cores,ram",
     [
-        (_NVIDIA, _NOT_APPLE),
-        (_NO_GPU, _APPLE),
-        (_NO_GPU, {"available": True, "name": "AS", "unified_ram_gb": 8.0}),
-        (_NO_GPU, {"available": True, "name": "AS", "unified_ram_gb": None}),
-        (_NO_GPU, _NOT_APPLE),
+        (_NVIDIA, _NOT_APPLE, 2, 3.2),
+        ({"available": True, "name": "thin", "vram_mb": 2048}, _NOT_APPLE, 8, 16.0),
+        (_NO_GPU, _APPLE, 8, 16.0),
+        (_NO_GPU, {"available": True, "name": "AS", "unified_ram_gb": 8.0}, 8, 8.0),
+        (_NO_GPU, {"available": True, "name": "AS", "unified_ram_gb": None}, 8, 8.0),
+        (_NO_GPU, _NOT_APPLE, 2, 3.2),        # below the floor -> refused
+        (_NO_GPU, _NOT_APPLE, 8, 16.0),       # clears the floor -> practical, warned
+        (_NO_GPU, _NOT_APPLE, None, None),    # unmeasurable -> refused as UNMEASURED
     ],
 )
-def test_every_branch_returns_the_same_keys_and_no_score_field(monkeypatch, gpu, apple):
-    """One builder, every branch -- a field must never be present in four returns
-    and silently missing from the fifth (an absent field reads as an answer).
+def test_every_branch_returns_the_same_keys_and_no_score_field(monkeypatch, gpu, apple, cores, ram):
+    """One builder, every branch -- a field must never be present in seven returns
+    and silently missing from the eighth (an absent field reads as an answer).
     Also walks the keys for the project's banned score/rating/grade substrings."""
     _stub_hw(monkeypatch, gpu=gpu, apple=apple)
+    _stub_cpu(monkeypatch, cores=cores, ram_gb=ram)
     cap = B.inference_capability()
     assert set(cap) == _KEYS
     assert cap["reason"] and cap["method"] and cap["caveat"]
@@ -399,6 +579,7 @@ def test_passing_a_precomputed_gpu_dict_runs_no_second_nvidia_smi_probe(monkeypa
     "gpu,apple,override",
     [
         (_NVIDIA, _NOT_APPLE, None),
+        ({"available": True, "name": "thin", "vram_mb": 2048}, _NOT_APPLE, None),
         (_NO_GPU, _APPLE, None),
         (_NO_GPU, {"available": True, "name": "AS", "unified_ram_gb": 4.0}, None),
         (_NO_GPU, {"available": True, "name": "AS", "unified_ram_gb": 4.0}, True),
@@ -416,8 +597,10 @@ def test_no_hardware_damage_claim_reaches_the_user(monkeypatch, gpu, apple, over
     the inline case and leaves the rationale writable."""
     _stub_hw(monkeypatch, gpu=gpu, apple=apple)
     cap = B.inference_capability(override=override)
+    # WARNINGS are user-facing too, and ruling 15 moved a lot of text into them --
+    # a damage claim that migrated from a reason into a warning must still fail.
     user_text = " ".join(
-        str(cap[k]) for k in ("reason", "method", "caveat")
+        [str(cap[k]) for k in ("reason", "method", "caveat")] + list(cap["warnings"])
     ).lower()
     for banned in ("damage", "destroy", "burn out", "fry ", "harm your", "ruin"):
         assert banned not in user_text, (
@@ -459,11 +642,18 @@ def test_llm_health_carries_the_hardware_state_in_BOTH_branches(monkeypatch):
         def list_installed(self):
             raise LLMUnavailable("connection refused")
 
+    reasons = []
     for client in (_Up(), _Down()):
         out = L.llm_health(client=client)
         assert out["hardware_practical"] is False, client
-        assert "no dedicated GPU" in out["hardware_reason"], client
         assert out["hardware_overridden"] is False, client
+        # The REASON travels too -- a bare False would leave the pill unable to
+        # say why. (The fixture's machine is below ruling 15's CPU/RAM floor.)
+        assert "below the 4 needed" in out["hardware_reason"], client
+        reasons.append(out["hardware_reason"])
+    # ... and it is the SAME reason on both paths: the model-list call succeeding
+    # or failing is unrelated to what the hardware is.
+    assert reasons[0] == reasons[1]
 
 
 def test_llm_health_reports_unknown_hardware_as_None_not_as_a_verdict(monkeypatch):
@@ -542,7 +732,9 @@ def test_the_background_langdetect_ridealong_is_gated_and_names_the_skip(monkeyp
     out = A.advance_langdetect_auto_start(session=None)
     assert out["enabled"] is True
     assert out["skipped"].startswith("hardware:")
-    assert "no dedicated GPU" in out["skipped"]
+    # The skip carries the gate's own reason, so the operator is not left with a
+    # bare "hardware". (The fixture's machine is below ruling 15's CPU/RAM floor.)
+    assert "below the 4 needed" in out["skipped"]
 
 
 def test_the_ridealong_runs_again_once_the_operator_overrides(monkeypatch):

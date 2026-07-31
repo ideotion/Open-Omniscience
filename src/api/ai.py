@@ -109,6 +109,10 @@ class AiExtractRequest(BaseModel):
     model: str | None = None
     skip_existing: bool = True
     limit: int = 0  # 0 = no cap (process the whole matched set)
+    # UI language CODE. Ruling 14 (2026-07-31): the built-in extraction prompt is
+    # now written in the operator's language, so a French reader's article is not
+    # indexed with English keywords. Unset falls back to the English body.
+    ui_lang: str | None = None
 
 
 @router.post("/keywords/extract")
@@ -139,8 +143,15 @@ def extract_keywords(
         _override = (load_settings().llm_prompt_ai_keywords or "").strip()
     except Exception:  # noqa: BLE001 - a settings hiccup must not break extraction
         _override = ""
-    system = _override or None
-    pv = "ai-keywords-custom" if system else EXTRACT_PROMPT_VERSION
+    # RULING 14 (2026-07-31): the BUILT-IN body is now the operator's language, so
+    # this passes it explicitly rather than letting extract.py fall back to its
+    # English constant. An operator override still wins verbatim and unversioned
+    # by language -- it is their text, in their language, unchanged.
+    from src.llm.prompts_i18n import prompt_for, prompt_version
+
+    system = _override or prompt_for("ai_keywords", req.ui_lang)
+    pv = ("ai-keywords-custom" if _override
+          else prompt_version(EXTRACT_PROMPT_VERSION, req.ui_lang))
 
     # Visible in the task manager while it runs ("are keywords being extracted?").
     from src.monitoring import tasks as _bgtasks

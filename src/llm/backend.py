@@ -133,6 +133,28 @@ APPLE_SILICON_MIN_UNIFIED_RAM_GB = 16.0
 # "below the practicality bar this gate enforces" -- NOT "will not function".
 ENV_ALLOW_IMPRACTICAL_HW = "OO_LLM_ALLOW_IMPRACTICAL_HW"
 
+# RULING 15 (maintainer, 2026-07-31) REFINES the 2026-07-30 rule this file used
+# to encode. That rule refused local inference wherever a dedicated GPU was
+# absent -- explicitly including "a 64 GB GPU-less workstation", which is the
+# case that made it too blunt. The tiers are now:
+#
+#   HARD REFUSAL   fewer than MIN_CPU_CORES cores OR less than MIN_SYSTEM_RAM_GB
+#                  of RAM. Below this, local inference is not worth starting.
+#   WARNING        no dedicated GPU at all, or a GPU with less than
+#                  MIN_VRAM_WARN_GB. Practical, but say so.
+#
+# So a GPU-less machine that clears the floor now DEFAULTS ON with the warning
+# stated, rather than being refused. The Apple Silicon carve-out, the override
+# and the never-a-hard-block posture are unchanged.
+MIN_CPU_CORES = 4
+MIN_SYSTEM_RAM_GB = 6.0
+
+# 5, not 6, and the reason is measured rather than chosen: Mistral-7B Q4 needs
+# ~4.4 GB and was measured at 5.1 GB in use, so a 6 GB line would warn about
+# cards that genuinely run the default model. The warning exists to set
+# expectations, not to discourage hardware that works.
+MIN_VRAM_WARN_GB = 5.0
+
 # The verifiable consequence of running local inference on unsuitable hardware.
 # DELIBERATE WORDING (2026-07-30): the rationale behind the ruling mentions heat
 # damaging hardware, but this project does not state claims it cannot
@@ -151,11 +173,12 @@ _CAPABILITY_METHOD = (
 
 _CAPABILITY_CAVEAT = (
     "Detects dedicated NVIDIA GPUs and Apple Silicon only. AMD/Intel discrete "
-    "GPUs are NOT probed (an honest gap, not a measurement) and read as "
-    "impractical here; integrated GPUs are deliberately excluded. Presence is "
-    "not a performance promise -- a low-VRAM dedicated GPU still passes this "
-    "gate, and per-model fit is judged separately by the model catalog's RAM "
-    "hints and the vLLM install preflight."
+    "GPUs are NOT probed (an honest gap, not a measurement), so such a machine "
+    "reports as GPU-less and is judged on its CPU/RAM alone; integrated GPUs are "
+    "deliberately excluded. Presence is not a performance promise -- a low-VRAM "
+    "dedicated GPU still passes this gate with a warning, and per-model fit is "
+    "judged separately by the model catalog's RAM hints and the vLLM install "
+    "preflight."
 )
 
 
@@ -215,6 +238,9 @@ def _capability(
     override_requested: bool,
     vram_mb: int | None = None,
     unified_ram_gb: float | None = None,
+    warnings: list[str] | None = None,
+    cpu_cores: int | None = None,
+    total_ram_gb_: float | None = None,
 ) -> dict:
     """ONE builder for EVERY branch, so a field can never be present in three
     returns and silently missing from the fourth (the same rationale as
@@ -231,6 +257,15 @@ def _capability(
         "overridden": overridden,
         "override_requested": override_requested,
         "min_unified_ram_gb": APPLE_SILICON_MIN_UNIFIED_RAM_GB,
+        # Ruling 15's tiers, reported so a caller never has to re-derive them.
+        # warnings is ALWAYS a list: an absent key would read as "no warnings"
+        # in exactly the branch that forgot to set it.
+        "warnings": list(warnings or []),
+        "cpu_cores": cpu_cores,
+        "total_ram_gb": total_ram_gb_,
+        "min_cpu_cores": MIN_CPU_CORES,
+        "min_system_ram_gb": MIN_SYSTEM_RAM_GB,
+        "min_vram_warn_gb": MIN_VRAM_WARN_GB,
     }
 
 
@@ -270,15 +305,44 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
           "overridden": bool,           # practical is True BECAUSE of the override
           "override_requested": bool,   # the operator set the override at all
           "min_unified_ram_gb": float,  # the documented Apple Silicon floor
+          "warnings": list[str],        # practical, but say what to expect
+          "cpu_cores": int | None,
+          "total_ram_gb": float | None,
+          "min_cpu_cores": int,
+          "min_system_ram_gb": float,
+          "min_vram_warn_gb": float,
         }
 
-    POLICY (maintainer-ruled 2026-07-30, see the block comment above):
-      * a dedicated NVIDIA GPU  -> practical;
-      * Apple Silicon with unified RAM >= ``APPLE_SILICON_MIN_UNIFIED_RAM_GB``
-        -> practical (the maintainer's explicit unified-memory carve-out);
-      * everything else -> NOT practical, regardless of system RAM. The ruling
-        is about the ABSENCE OF A GPU, not only about RAM, so a 64 GB GPU-less
-        workstation is still impractical here.
+    POLICY (maintainer-ruled 2026-07-31, RULING 15, superseding the 2026-07-30
+    GPU-absence rule this function used to encode):
+
+      HARD REFUSAL -- and ONLY this:
+        no accelerator at all AND (fewer than ``MIN_CPU_CORES`` cores OR less
+        than ``MIN_SYSTEM_RAM_GB`` of RAM).
+
+      PRACTICAL, with a WARNING:
+        * no dedicated GPU but the CPU/RAM floor clears -- the case the old rule
+          refused and ruling 15 explicitly named as too blunt;
+        * a dedicated NVIDIA GPU under ``MIN_VRAM_WARN_GB``;
+        * Apple Silicon under ``APPLE_SILICON_MIN_UNIFIED_RAM_GB``.
+
+      PRACTICAL, no warning:
+        a dedicated NVIDIA GPU with enough VRAM, or Apple Silicon at/above the
+        unified-memory floor.
+
+    A DETECTED ACCELERATOR IS POSITIVE EVIDENCE and is never refused by the
+    CPU/RAM floor: the floor exists to judge the machine when nothing else
+    vouches for it. This also keeps the gate correct on a core install, where
+    ``psutil`` is an optional ``[analysis]`` dependency and the RAM read returns
+    ``None``.
+
+    ONE JUDGEMENT CALL, stated rather than hidden: ruling 15 says the Apple
+    Silicon carve-out is "unchanged" while also stating that the hard-refusal
+    tier IS the CPU/RAM floor. A SECOND, higher hard floor for Apple Silicon
+    alone would contradict that, and would refuse an 8 GB M-series Mac while
+    passing a 4-core/6 GB GPU-less PC -- treating the carve-out's own hardware
+    worse than the machines it exists to favour. So the recognition is unchanged
+    and the 16 GB line becomes a warning threshold, exactly like the VRAM line.
 
     NEVER A HARD BLOCK. ``practical: False`` means AI features DEFAULT to off
     with the reason stated; the operator can always turn them back on
@@ -286,11 +350,13 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
     the verdict says ``overridden: True`` and the disclosure still shows. Neither
     direction is silent.
 
-    THE THIRD STATE IS EPISTEMIC, NOT PERMISSIVE. Apple Silicon whose unified RAM
-    could not be READ is ``practical: False`` naming the unmeasured RAM -- we
-    cannot verify the floor, and a pass granted on an absent measurement is a
-    fabricated capability just as a fail invented from one would be a fabricated
-    refusal. The refusal explains the absence and points at the override.
+    THE THIRD STATE IS EPISTEMIC, NOT PERMISSIVE. Where a floor CANNOT BE
+    CHECKED because the measurement is missing -- Apple Silicon whose unified RAM
+    could not be read, or a GPU-less machine whose cores/RAM could not be counted
+    -- the answer is ``practical: False`` naming the ABSENCE. A pass granted on an
+    absent measurement is a fabricated capability just as a fail invented from one
+    would be a fabricated refusal. The refusal explains the absence and points at
+    the override.
 
     ``gpu``: an already-computed ``detect_gpu()`` payload. Callers that just ran
     it (``resolve_backend()``, ``/api/llm/backend``) pass it through so this costs
@@ -308,6 +374,75 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
     except Exception as exc:  # noqa: BLE001 - likewise; degrade, never crash
         apple = {"available": False, "reason": f"Apple Silicon probe failed: {str(exc)[:120]}"}
 
+    # ---- ruling 15's HARD floor, applied where it actually decides something.
+    #
+    # ORDER MATTERS, and the first cut had it wrong: this ran BEFORE the probes,
+    # so on a core install -- where psutil is an optional [analysis] dependency
+    # and total_ram_gb() returns None -- it refused local inference on EVERY
+    # machine, including one with a perfectly good dedicated GPU, because RAM
+    # could not be counted. A detected GPU is itself strong evidence the machine
+    # is capable; refusing it over an unreadable RAM figure inverts the point of
+    # the floor.
+    #
+    # So: a detected dedicated GPU or Apple Silicon is POSITIVE EVIDENCE and is
+    # never refused for want of a measurement (an unreadable figure downgrades to
+    # a warning below). The floor is decisive exactly where ruling 15 aimed it --
+    # the CPU-only case, where nothing else vouches for the machine.
+    cores = os.cpu_count()
+    ram_gb = total_ram_gb()
+    has_accelerator = bool(gpu.get("available")) or bool(apple.get("available"))
+    if not has_accelerator:
+        # NAME what the probes actually said. "nvidia-smi timed out" and "this
+        # machine has no GPU" are different claims, and only one of them was
+        # measured -- collapsing them is the fabrication the probe-failure tests
+        # exist to catch.
+        probe_why = f"{gpu.get('reason') or 'no dedicated NVIDIA GPU detected'}; {apple.get('reason')}"
+        if cores is None or ram_gb is None:
+            missing = "CPU core count" if cores is None else "total system RAM"
+            return _capability(
+                practical=bool(requested),
+                kind=None,
+                name=None,
+                reason=(
+                    f"no usable accelerator was detected ({probe_why}), and this "
+                    f"machine's {missing} could not be read, so the {MIN_CPU_CORES}-core / "
+                    f"{MIN_SYSTEM_RAM_GB:g} GB floor could not be checked either"
+                    + (
+                        " -- enabled anyway by the operator override."
+                        if requested
+                        else ". AI features default to off; the override turns them on."
+                    )
+                ),
+                overridden=bool(requested),
+                override_requested=requested,
+                cpu_cores=cores,
+                total_ram_gb_=ram_gb,
+            )
+        if cores < MIN_CPU_CORES or ram_gb < MIN_SYSTEM_RAM_GB:
+            short = []
+            if cores < MIN_CPU_CORES:
+                short.append(f"{cores} CPU core(s), below the {MIN_CPU_CORES} needed")
+            if ram_gb < MIN_SYSTEM_RAM_GB:
+                short.append(f"{ram_gb:g} GB RAM, below the {MIN_SYSTEM_RAM_GB:g} GB needed")
+            return _capability(
+                practical=bool(requested),
+                kind=None,
+                name=None,
+                reason=(
+                    f"{' and '.join(short)}, and no usable accelerator ({probe_why}) "
+                    f"-- {IMPRACTICAL_CONSEQUENCE}"
+                    + (
+                        ". Enabled anyway by the operator override."
+                        if requested
+                        else ". AI features default to off; the override turns them on."
+                    )
+                ),
+                overridden=bool(requested),
+                override_requested=requested,
+                cpu_cores=cores,
+                total_ram_gb_=ram_gb,
+            )
+
     # NVIDIA first and deterministically: if both somehow report available, the
     # CUDA path is the one that also unlocks vLLM, so it is the honest label.
     if gpu.get("available"):
@@ -319,6 +454,9 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
             reason="a dedicated NVIDIA GPU is present -- local inference is practical here",
             overridden=False,
             override_requested=requested,
+            warnings=_vram_warnings(gpu.get("vram_mb")),
+            cpu_cores=cores,
+            total_ram_gb_=ram_gb,
         )
 
     if apple.get("available"):
@@ -355,6 +493,11 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
                 ),
                 overridden=bool(requested),
                 override_requested=requested,
+                # Reported even here: these WERE read, and blanking a figure we
+                # actually have would be an invented absence -- the mirror image
+                # of the invented measurement this branch exists to refuse.
+                cpu_cores=cores,
+                total_ram_gb_=ram_gb,
             )
         if ram >= APPLE_SILICON_MIN_UNIFIED_RAM_GB:
             return _capability(
@@ -369,46 +512,85 @@ def inference_capability(*, override: bool | None = None, gpu: dict | None = Non
                 ),
                 overridden=False,
                 override_requested=requested,
+                cpu_cores=cores,
+                total_ram_gb_=ram_gb,
             )
         return _capability(
-            practical=bool(requested),
+            practical=True,
             kind="apple-silicon",
             name=apple.get("name"),
             unified_ram_gb=ram,
             reason=(
-                f"Apple Silicon with {ram:g} GB unified memory, below the "
-                f"{APPLE_SILICON_MIN_UNIFIED_RAM_GB:g} GB floor -- {IMPRACTICAL_CONSEQUENCE}"
-                + (
-                    ". Enabled anyway by the operator override."
-                    if requested
-                    else ". AI features default to off; the override turns them on."
-                )
+                f"Apple Silicon with {ram:g} GB unified memory -- practical, though "
+                f"below the {APPLE_SILICON_MIN_UNIFIED_RAM_GB:g} GB that fits an "
+                "8B-class model alongside the app with headroom"
             ),
-            overridden=bool(requested),
+            overridden=False,
             override_requested=requested,
+            warnings=[
+                f"{ram:g} GB unified memory is under the "
+                f"{APPLE_SILICON_MIN_UNIFIED_RAM_GB:g} GB comfort floor: expect a "
+                "smaller model, or slower going on a large one."
+            ],
+            cpu_cores=cores,
+            total_ram_gb_=ram_gb,
         )
 
-    # Neither. State WHICH probe said what, so "nvidia-smi timed out" never reads
-    # as the flat, fabricated claim "this machine has no GPU".
+    # No dedicated GPU. Under ruling 15 this is a WARNING, not a refusal: the
+    # machine already cleared the CPU/RAM floor above, which is the bar that
+    # actually decides whether local inference is worth starting. Still state
+    # WHICH probe said what, so "nvidia-smi timed out" never reads as the flat,
+    # fabricated claim "this machine has no GPU".
     gpu_why = gpu.get("reason") or "no dedicated NVIDIA GPU detected"
-    reason = (
-        f"no dedicated GPU and not Apple Silicon ({gpu_why}; {apple.get('reason')}) -- "
-        f"{IMPRACTICAL_CONSEQUENCE}. AMD/Intel discrete GPUs are not probed by this "
-        "app, so a discrete-Radeon machine also lands here and can use the override"
-        + (
-            ". Enabled anyway by the operator override."
-            if requested
-            else ". AI features default to off; the override turns them on."
-        )
-    )
     return _capability(
-        practical=bool(requested),
+        practical=True,
         kind=None,
         name=None,
-        reason=reason,
-        overridden=bool(requested),
+        reason=(
+            f"{cores} CPU cores and {ram_gb:g} GB RAM clear the "
+            f"{MIN_CPU_CORES}-core / {MIN_SYSTEM_RAM_GB:g} GB floor -- local inference is "
+            "practical here, on the CPU"
+        ),  # both figures are readable here: the floor above returned otherwise
+        overridden=False,
         override_requested=requested,
+        warnings=[
+            "No dedicated GPU was found, so inference runs on the CPU: expect it to "
+            "be slow and to keep the cores busy while it works. "
+            f"({gpu_why}; {apple.get('reason')}. AMD/Intel discrete GPUs are not "
+            "probed by this app, so a discrete-Radeon machine reports this too.)"
+        ],
+        cpu_cores=cores,
+        total_ram_gb_=ram_gb,
     )
+
+
+def _vram_warnings(vram_mb: object) -> list[str]:
+    """Warn about a thin-VRAM dedicated GPU -- never refuse one (ruling 15).
+
+    UNMEASURED VRAM produces NO warning rather than a guessed one: the GPU is
+    present and practical either way, and inventing a shortfall from an absent
+    measurement is the same fabrication as inventing a pass from one.
+
+    The parameter is ``object`` on purpose -- ``detect_gpu()`` reads a subprocess
+    and the project has been bitten by TEXT-typed read-backs before -- so the type
+    is NARROWED here rather than asserted. ``bool`` is excluded explicitly: it is
+    a subclass of ``int``, so ``float(True)`` would quietly become a measured
+    "1 MB of VRAM" and emit a warning about a number nobody read. That is the
+    ``int(True) == 1`` trap this codebase already has a lesson about.
+    """
+    if isinstance(vram_mb, bool) or not isinstance(vram_mb, (int, float, str)):
+        return []
+    try:
+        mb = float(vram_mb)
+    except (TypeError, ValueError):
+        return []
+    gb = mb / 1024.0
+    if gb >= MIN_VRAM_WARN_GB:
+        return []
+    return [
+        f"{gb:.1f} GB of VRAM is under the {MIN_VRAM_WARN_GB:g} GB the default model "
+        "wants: expect to use a smaller one, or to run partly on the CPU."
+    ]
 
 
 def _vllm_status() -> dict:

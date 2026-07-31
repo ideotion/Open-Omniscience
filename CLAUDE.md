@@ -1384,7 +1384,25 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     GENERAL FORM: in any two-run comparison harness, the run that is supposed to be
     DIFFERENT must carry a positive, independently-predictable signature of its difference;
     without one, a harness bug that silently makes the two runs identical presents as the
-    best possible result.
+    best possible result. **THIRD WAY THE SAME HARNESS LIES, hit on the very next PR
+    (2026-07-31, PR-8): pytest ABORTS the whole run on collection errors**, and this sandbox
+    is py3.11 against a py3.13 repo, so ~46 files fail to import. Both sides then finish in
+    ~20 s having executed ZERO tests, and the name-diff comes back empty — a perfect-looking
+    result from a run that never happened. `--continue-on-collection-errors` is mandatory
+    here, and the tell is the same one as the cwd bug: **the totals line has no `passed` in
+    it at all**. So the harness must print BOTH sides' full summary lines and the delta, not
+    just the diff — a diff over two empty sets is empty.
+  - **A "MUST BE GONE" SOURCE GUARD FAILS ON THE COMMENT THAT RECORDS THE REMOVAL
+    (2026-07-31, PR-8's AI-subtab guards):** every assertion of the form "this string no
+    longer appears in function X" is written next to a comment explaining WHY it was
+    removed — and that comment necessarily QUOTES the removed string. The first draft of
+    three such guards failed against correct code, on their own explanations. The repo
+    already knew this in one place (the hardware-damage guard is deliberately BEHAVIOURAL,
+    with a docstring saying a source grep "would also forbid the comments that EXPLAIN why
+    the claim is absent") — the generalisation is: a negative source guard must read
+    COMMENT-STRIPPED source (drop whole-line `//`, which leaves a `https://` inside a string
+    literal untouched), or be behavioural. Do not solve it by rewording the comment: the
+    comment is the thing a future session reads before deciding the removal was a mistake.
 
 ## Open queue (when maintainer says proceed)
 - **THE BULLETIN — PERIODIC CORPUS DOCUMENT (maintainer design conversation 2026-07-30/31; 16
@@ -1522,6 +1540,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   guard forbids OS/arch/hardware POLICY entering `detect_gpu()`'s body (vLLM ships manylinux wheels
   only and cannot serve Apple Metal, so collapsing the two predicates routes every Mac to a vLLM
   that cannot run).
+  **⚠ ONE JUDGEMENT CALL MADE WHILE BUILDING RULING 15 (PR-8, 2026-07-31) — maintainer correction
+  welcome, it is the single place this reading could differ:** the ruling calls the Apple-Silicon
+  carve-out "UNCHANGED" while ALSO stating that the hard-refusal tier IS the CPU/RAM floor. Those
+  two halves conflict for a sub-16 GB Mac, so the build resolved it as: the RECOGNITION is
+  unchanged (Apple Silicon still counts as an accelerator despite having no NVIDIA GPU) and the
+  16 GB line became a WARNING threshold exactly like the new VRAM one. RATIONALE: a second, HIGHER
+  hard floor for Apple Silicon alone would contradict the ruling's own statement of what the hard
+  tier is, AND would refuse an 8 GB M-series Mac while passing a 4-core/6 GB GPU-less PC — treating
+  the carve-out's own hardware WORSE than the machines it exists to favour. The floor CONSTANT is
+  still reported in the payload, so only its tier changed. Recorded in the function docstring and
+  pinned with its reasoning in `test_apple_silicon_below_the_unified_ram_floor_is_practical_and_warns`.
+  **A REAL DEFECT CAUGHT PRE-PUSH, worth keeping because the shape recurs:** the first cut applied
+  the CPU/RAM floor BEFORE the GPU/Apple probes, and `total_ram_gb()` returns `None` on a core
+  install (psutil is an optional `[analysis]` dep) — so it refused local inference on EVERY machine
+  INCLUDING one with a perfectly good NVIDIA GPU, because RAM could not be counted. A detected
+  accelerator is POSITIVE EVIDENCE and must never be refused for want of a measurement; the floor
+  is decisive only in the CPU-only case, where nothing else vouches for the machine.
   **VERIFIED FACTS THAT CHANGED THE PLAN (read from the tree — do not re-derive):** the text-size
   slider CANNOT work (`applyUi` scales the root correctly, but app.css has 103 `px` font-sizes and
   ZERO `rem`, `body{font-size:15px}`, + 46 inline `px` in index.html — the root scale reaches
@@ -1554,6 +1589,10 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   ruling, or a future session reads the missing label as a regression and restores the dead
   slider. Do NOT touch `tests/test_sqlcipher.py`/`sqlcipher_helper.py` when removing the page-size
   bench — they exercise the `cipher_page_size` PRAGMA, not the bench.
+  **STATUS 2026-07-31: THE 8-PR STACK IS COMPLETE** — PR-1..PR-7 merged (#811 #812 #813 #814 #815
+  #816 #818), PR-8 pushed (the AI subtab: one hardware statement, one setup button, ruling 15's
+  refined thresholds, ruling 14's four prompts ×12). Per-PR detail = the eight 2026-07-31
+  `docs/ledger/shipped.csv` rows. Nothing in the 18 rulings is left unbuilt.
   **OPERATOR STEPS (maintainer, not the coding session):** run the P0 validation on the big corpus
   · the networked research pass filling `news_url` for ~150 statistics agencies (the law-batches
   pattern — never fabricate an endpoint) · a browser CLICK-THROUGH of all eight PRs (every

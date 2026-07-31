@@ -74,7 +74,15 @@ def test_a_multi_gigabyte_download_is_never_started_by_a_single_pill_click():
     """The honest line. Starting a local daemon is free and reversible, so it is
     automatic; a model download is clearnet traffic (via the Ollama process, NOT Tor),
     so it keeps its confirm. A status pill must not silently pull gigabytes."""
-    assert "confirm(" in _fn("installDefaultModel"), (
+    # ANCHOR MOVED, property unchanged (2026-07-31): `installDefaultModel` is now a
+    # one-line delegator so the fused setup chain can pass an already-taken consent
+    # through; the confirm itself lives in `_installDefaultModel`. Following the code
+    # rather than relaxing the assertion -- the guarantee is that the PILL path
+    # confirms, and the pill reaches the download through exactly this pair.
+    assert "_installDefaultModel(btn, {})" in _fn("installDefaultModel"), (
+        "the pill's entry point must not start passing a pre-taken consent"
+    )
+    assert "confirm(" in _fn("_installDefaultModel"), (
         "the download keeps its confirmation even when reached from the pill"
     )
     # The rationale lives in the comment block introducing the function, so the slice
@@ -97,7 +105,16 @@ def test_the_default_model_install_shows_when_ollama_is_DOWN():
     # branch contains template literals full of them.
     down = body.split("if (!d.available)", 1)[1].split("const FIT", 1)[0]
     assert "_miniBlockHtml" in down, "the install block must render while Ollama is down"
-    assert "aiPillClick" in down, "and so must a way to start it"
+    # SUPERSEDED IN FORM (maintainer review 2026-07-31), not in substance: this branch
+    # used to carry its own "Start the local AI" button beside the top-bar AI pill --
+    # two controls for one action. The button is gone; the requirement that this state
+    # offer a way OUT of it is not, so the sentence must now POINT AT the pill. That is
+    # also the only way a reader learns the pill is clickable at all.
+    assert "AI pill in the top bar" in down, "and so must a way to start it"
+    assert "aiPillClick" not in down, (
+        "the duplicate in-panel start button must stay removed -- the pill is the one "
+        "start control (maintainer review 2026-07-31)"
+    )
 
 
 def test_the_install_block_is_shared_by_both_panel_states():

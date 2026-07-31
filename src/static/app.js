@@ -1831,7 +1831,7 @@
       }
 
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
-      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
+      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); loadAiSetup(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
       if (cat === "advanced") _advWire();             // Collection / Sources / Keywords, lazily per section
       if (cat === "general") loadShortcuts();         // the shortcuts panel moved into General (2026-07-31)
       if (cat === "cards") loadCardCatalog();     // the Leads catalogue (PR-7): lazy, one loopback read
@@ -4752,6 +4752,9 @@
     }
     function recheckOllama() {
       loadLlmHealth(); loadOllamaInstall(); loadLlmModels();
+      // The fused setup box's plan is now stale by construction -- a backend that
+      // just appeared removes a step from it.
+      if (typeof loadAiSetup === "function") loadAiSetup();
     }
 
     // The default-model install block. Shared so it renders in BOTH panel states --
@@ -4824,7 +4827,13 @@
     // ONE button for both backends. The server decides which artifact and how; this
     // only reports what it did, including the case where "download" means "the vLLM
     // server is now starting and fetching weights" rather than a queued pull.
-    async function installDefaultModel(btn) {
+    function installDefaultModel(btn) { return _installDefaultModel(btn, {}); }
+
+    // `opts.confirmed` is set ONLY by the fused setup chain, which already took a
+    // single consent naming this exact artifact and its size. Without it the
+    // operator would be asked twice for the same bytes -- and a consent asked
+    // twice teaches people to click through it.
+    async function _installDefaultModel(btn, opts) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       let p = null;
       try { p = await api("/api/llm/default-model"); }
@@ -4832,7 +4841,7 @@
       // Consent BEFORE the bytes: this is multi-gigabyte clearnet traffic (the model
       // registry / Hugging Face), and it does NOT go through Tor. Stated with the real
       // artifact and size rather than a generic "download?".
-      const ok = confirm(
+      const ok = (opts && opts.confirmed) || confirm(
         t("Download the default model?") + "\n\n" +
         p.artifact + "  (" + (p.size || "?") + ", " + p.backend + ")\n\n" +
         t("This downloads over the clearnet — not through Tor.") + "\n" +
@@ -4871,8 +4880,13 @@
         // a download the default model"). The installed-models table genuinely cannot
         // be shown -- that truth comes from Ollama -- but the two ACTIONS can, so they
         // are rendered here instead of behind a state the user is trying to leave.
-        box.innerHTML = `<p class="muted">${esc(t("Ollama isn't running. Start it to use the local AI; your installed models appear here once it answers."))}</p>`
-          + `<p><button class="tiny" onclick="aiPillClick()">${esc(t("Start the local AI"))}</button></p>`
+        // The in-panel "Start the local AI" button is GONE (maintainer review
+        // 2026-07-31): the top-bar AI pill is the one start control, reachable
+        // from every screen, and a second button beside it made two controls for
+        // one action. Nothing is lost -- the sentence now POINTS AT the control
+        // instead of duplicating it, which is also the only way a reader learns
+        // the pill is clickable at all.
+        box.innerHTML = `<p class="muted">${esc(t("Ollama isn't running. Click the AI pill in the top bar to start it; your installed models appear here once it answers."))}</p>`
           + _miniBlockHtml(d, t);
         _paintDefaultModel();
         return;
@@ -5007,7 +5021,10 @@
     async function loadLlmPrompts() {
       if (!$("llm-keep-alive")) return;
       let d;
-      try { d = await api("/api/llm/prompts"); }
+      // Ruling 14 (2026-07-31): ask for THIS language's built-in bodies, so the
+      // editor's placeholders are the prompts that actually run rather than the
+      // English ones a non-English operator would never see used.
+      try { d = await api("/api/llm/prompts?lang=" + encodeURIComponent(_uiLangCode())); }
       catch (e) { return; }   // optional surface; the models box already reports Ollama state
       $("llm-keep-alive").value = d.keep_alive || "";
       $("llm-keep-alive").placeholder = d.keep_alive_default || "30m";
@@ -17650,9 +17667,11 @@
     // in the user's language. Translate carries its own explicit target instead.
     const _LANG_EN = {en:"English",fr:"French",de:"German",es:"Spanish",pt:"Portuguese",
       ru:"Russian",ar:"Arabic",zh:"Chinese",ja:"Japanese",hi:"Hindi",bn:"Bengali",id:"Indonesian"};
+    function _uiLangCode() {
+      return (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
+    }
     function _uiLangName() {
-      const code = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en";
-      return _LANG_EN[code] || "English";
+      return _LANG_EN[_uiLangCode()] || "English";
     }
     function _bulkParams(ctx) { return ctx === "an" ? anParams() : searchParams(); }
     // --- Bulk summarize / translate QUEUE (maintainer 2026-06-21) -------------- //
@@ -17736,8 +17755,12 @@
       }
       const hasSel = body.article_ids || body.query || body.source || body.language || body.start_date || body.end_date;
       if (!hasSel) { toast(t("Run a search first."), "err"); return; }
+      // `ui_lang` goes on BOTH ops now (ruling 14, 2026-07-31): it no longer only
+      // pins the OUTPUT language of a summary, it also selects which language the
+      // built-in prompt BODY is written in — which a translation run needs too.
       if (op === "translate") { const e = $("bulk-tgt-" + ctx); body.target_language = (e && e.value.trim()) || _uiLangName(); }
-      else { body.output_language = _uiLangName(); body.ui_lang = (window.OOI18N && OOI18N.current && OOI18N.current()) || "en"; }
+      else { body.output_language = _uiLangName(); }
+      body.ui_lang = _uiLangCode();
       const job = { id: _bulkJobSeq++, op, body, label: _bulkSelLabel(op, body),
         status: "queued", total: 0, done: 0, storedN: 0, skippedN: 0, failedN: 0, todo: null, skip: 0, err: "" };
       _bulkQueue.push(job);
@@ -18268,6 +18291,164 @@
     //  the install/start/stop controls, and honest "starting…" states (model
     //  load takes tens of seconds — never a fake instant green).
     // --------------------------------------------------------------------- //
+    // ------------------------------------------------------------------ //
+    //  ONE setup control (maintainer 2026-07-31, the Settings review). The AI
+    //  tab used to scatter three separate installs across three panels -- the
+    //  Ollama binary, vLLM, and the default model -- so "get local AI working"
+    //  meant finding all three and knowing which applied to this machine. This
+    //  box states the WHOLE remaining plan in one place and runs it from one
+    //  button, choosing the backend from the hardware (vLLM where a dedicated
+    //  GPU can serve it, Ollama otherwise) instead of asking the operator to.
+    //
+    //  NOTHING IS LOST (the Desk lesson): the per-component controls stay
+    //  exactly where they were, and this box HIDES ITSELF once there is nothing
+    //  left to do -- it is a shortcut past the scatter, never a replacement.
+    //
+    //  WHERE THE LINE IS, same as the pill's: starting a local daemon is free
+    //  and reversible, so it just happens; DOWNLOADING is multi-gigabyte
+    //  CLEARNET traffic (not through Tor), so the total is stated up front and
+    //  the whole chain runs only after one explicit confirmation.
+    // ------------------------------------------------------------------ //
+    async function _aiSetupPlan() {
+      // Every fact comes from the server. A failed read returns null so the box
+      // hides rather than proposing a plan built on a guess.
+      let b, models, dm;
+      try {
+        b = await api("/api/llm/backend");
+        models = await api("/api/llm/models");
+      } catch (e) { return null; }
+      const gpu = b.gpu || {};
+      const vllm = b.vllm || {};
+      const oll = b.ollama || {installed: !!b.ollama_available, running: !!b.ollama_available};
+      // vLLM is GPU-first: proposing it on a CPU-only machine would install
+      // several GB into a backend that could never usefully serve here.
+      const target = gpu.available ? "vllm" : "ollama";
+      const steps = [];
+      if (target === "vllm" && !vllm.installed) {
+        let s = null;
+        try { s = await api("/api/llm/vllm/status"); } catch (e) { /* size stays unknown */ }
+        steps.push({
+          id: "install-vllm",
+          label: "Install vLLM",
+          size: (s && s.estimated_size_note) || "several GB",
+        });
+      }
+      if (target === "ollama" && !oll.installed) {
+        let s = null;
+        try { s = await api("/api/llm/install/status"); } catch (e) { return null; }
+        steps.push({
+          id: "install-ollama",
+          label: "Install Ollama",
+          size: "",
+          scripted: !!(s.platform && s.platform.scripted),
+          download_url: (s.platform && s.platform.download_url) || "https://ollama.com/download",
+        });
+      }
+      if (!(models.installed || []).length) {
+        try { dm = await api("/api/llm/default-model"); } catch (e) { dm = null; }
+        if (dm && dm.artifact) {
+          steps.push({id: "model", label: "Download the default model",
+                      artifact: dm.artifact, size: dm.size || "", note: dm.mechanism_note || "",
+                      caveats: dm.caveats || []});
+        }
+      }
+      return {target, steps, backend: b, running: target === "vllm" ? !!vllm.running : !!oll.running};
+    }
+
+    let _aiSetupRunning = false;
+    async function loadAiSetup() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("ai-setup-box");
+      if (!box || _aiSetupRunning) return;   // never clobber a run's own output
+      const plan = await _aiSetupPlan();
+      if (!plan || !plan.steps.length) { box.style.display = "none"; box.innerHTML = ""; return; }
+      const backendName = plan.target === "vllm" ? "vLLM" : "Ollama";
+      const rows = plan.steps.map((s) => {
+        const size = s.size ? ` <span class="muted">(${esc(s.size)})</span>` : "";
+        const what = s.id === "model" ? `${s.label} — <code>${esc(s.artifact)}</code>` : esc(s.label);
+        return `<li>${what}${size}</li>`;
+      }).join("");
+      // macOS/Windows have no scripted Ollama install, so a "one click" button
+      // there would be a promise the app cannot keep -- link the real installer.
+      const manual = plan.steps.find((s) => s.id === "install-ollama" && !s.scripted);
+      const action = manual
+        ? `<p><a href="${esc(manual.download_url)}" target="_blank" rel="noopener">${esc(t("Open ollama.com/download ↗"))}</a> ` +
+          `<span class="muted">${esc(t("then return here — the rest is one click."))}</span></p>`
+        : `<p><button id="ai-setup-btn" onclick="runAiSetup(this)">${esc(t("Set up local AI"))}</button></p>`;
+      box.style.display = "";
+      box.innerHTML =
+        `<div class="panel" style="border-color:var(--accent);margin:0 0 10px">` +
+        `<strong>${esc(t("Set up local AI"))}</strong>` +
+        `<p class="muted" style="margin:6px 0">` +
+        esc(t("This machine will use")) + ` <b>${esc(backendName)}</b>. ` +
+        esc(t("Remaining steps:")) + `</p><ul style="margin:4px 0 8px 18px">${rows}</ul>` +
+        `<p class="card-caveat">${esc(t("The downloads go over the clear internet — not through this app's Tor proxy. They happen once; the model then runs fully offline."))}</p>` +
+        action +
+        `<div id="ai-setup-status" class="hint" style="margin-top:6px"></div></div>`;
+    }
+
+    async function runAiSetup(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const plan = await _aiSetupPlan();
+      if (!plan || !plan.steps.length) { loadAiSetup(); return; }
+      // ONE consent for the WHOLE chain, naming every artifact and its size --
+      // the same "state the cost before the bytes" rule the per-step buttons
+      // follow, asked once instead of three times.
+      const lines = plan.steps.map((s) =>
+        "• " + (s.id === "model" ? `${s.label}: ${s.artifact}` : s.label) + (s.size ? `  (${s.size})` : ""));
+      const modelStep = plan.steps.find((s) => s.id === "model");
+      const ok = confirm(
+        t("Set up local AI on this machine?") + "\n\n" + lines.join("\n") + "\n\n" +
+        t("This downloads over the clearnet — not through Tor.") +
+        (modelStep && modelStep.note ? "\n" + modelStep.note : "") +
+        (modelStep && modelStep.caveats.length ? "\n\n" + modelStep.caveats.join("\n") : "")
+      );
+      if (!ok) return;
+      const status = $("ai-setup-status");
+      const say = (msg) => { if (status) status.textContent = msg; };
+      const was = btn ? btn.textContent : "";
+      _aiSetupRunning = true;
+      if (btn) { btn.disabled = true; btn.textContent = t("Working…"); }
+      try {
+        for (const step of plan.steps) {
+          if (step.id === "install-vllm") {
+            say(t("Installing vLLM…"));
+            // Reuses the existing installer, 409-acknowledgement path included --
+            // a resource warning must still be answerable here, not only from the
+            // vLLM section's own button.
+            const r = await _vllmInstallStart();
+            if (!r) { say(t("Cancelled.")); return; }   // the operator declined the warning
+          } else if (step.id === "install-ollama") {
+            // Ends in the "Install Ollama" box below: elevation is explicit and
+            // may need a password this app must never pretend to have.
+            say(t("Continue in the Install Ollama box below."));
+            await prepareOllamaInstall();
+            return;
+          } else if (step.id === "model") {
+            say(t("Downloading the default model…"));
+            // The chain already took ONE consent covering this download, so the
+            // per-button confirm would be a second ask for the same bytes.
+            await _installDefaultModel(null, {confirmed: true});
+          }
+        }
+        // Free, local, reversible -- so it just happens, per the pill's own rule.
+        say(t("Starting the local AI…"));
+        try { await aiPillStartOrInstall(); } catch (e) { /* the panels report the real state */ }
+        say(t("Done."));
+      } catch (e) {
+        say(t("Setup failed:") + " " + (e.message || e));
+      } finally {
+        _aiSetupRunning = false;
+        if (btn) { btn.disabled = false; btn.textContent = was; }
+        refreshAiPanels();
+      }
+    }
+
+    function refreshAiPanels() {
+      loadAiSetup(); loadAiBackendPanel(); loadVllmStatusPanel();
+      loadOllamaInstall(); loadLlmModels(); loadLlmHealth();
+    }
+
     async function loadAiBackendPanel() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("ai-backend-box");
@@ -18297,9 +18478,19 @@
                 // Practical ONLY because the operator forced it: say so plainly, so
                 // an override is never mistaken for a hardware pass.
                 ? `<p class="card-caveat">${esc(t("AI features are enabled by your override, not by this hardware."))} ${esc(hw.reason)}</p>`
-                : `<p class="hint">${esc(t("Hardware:"))} ${esc(hw.reason)}</p>`)
+                : `<p class="hint">${esc(t("Hardware:"))}${hw.name ? " " + esc(hw.name) + " —" : ""} ${esc(hw.reason)}</p>`)
             : `<p class="card-caveat">${esc(t("AI features are off by default on this hardware."))} ${esc(hw.reason)}</p>`;
-          hwHtml = line +
+          // RULING 15 (2026-07-31): the tier between "refused" and "fine" -- a
+          // CPU-only machine, a thin-VRAM card, a small unified-memory Mac. These
+          // are EXPECTATIONS, not refusals, and this is the ONE place on the tab
+          // that states them: the maintainer's review found the same "no GPU"
+          // sentence repeated in four separate boxes, which reads as nagging and
+          // buries the one statement that carries the actual consequence.
+          const warns = (hw.warnings || []).length
+            ? `<ul class="hint" style="margin:4px 0 4px 18px">` +
+              hw.warnings.map((w) => `<li>${esc(w)}</li>`).join("") + `</ul>`
+            : "";
+          hwHtml = line + warns +
             `<p><label><input type="checkbox" id="ai-hw-override"${chk}` +
             ` onchange="setAllowImpracticalHw(this.checked)"> ` +
             `${esc(t("Run local AI anyway on this hardware"))}</label>` +
@@ -18308,8 +18499,12 @@
         }
         box.innerHTML =
           `<p><b>Active backend:</b> ${esc(b.backend)} <span class="muted">— ${esc(b.reason)}</span></p>` +
-          `<p class="hint">GPU: ${gpu.available ? esc(gpu.name || "detected") : "not detected"}` +
-          ` &middot; vLLM: ${vllm.installed ? "installed" : "not installed"}` +
+          // The GPU is named here only when there IS one -- its absence is stated
+          // ONCE, in the hardware block below, with the consequence attached.
+          // (Repeating "not detected" here made it the first of four identical
+          // sentences on this tab; maintainer review, 2026-07-31.)
+          `<p class="hint">${gpu.available ? "GPU: " + esc(gpu.name || "detected") + " &middot; " : ""}` +
+          `vLLM: ${vllm.installed ? "installed" : "not installed"}` +
           `${vllm.installed ? (vllm.running ? ", running" : ", not running") : ""}` +
           ` &middot; Ollama: ${esc(ollTxt)}</p>` +
           // A LAUNCH control, offered precisely when the software is present but not
@@ -18404,7 +18599,11 @@
         const parts = [];
         parts.push(s.installed ? "installed" : "not installed");
         if (s.installed) parts.push(s.running ? "running" : "not running");
-        parts.push(s.gpu && s.gpu.available ? "GPU detected" : "no GPU detected");
+        // GPU presence is NOT restated here. It is one of the four repetitions the
+        // maintainer's 2026-07-31 review flagged, and the hardware block at the top
+        // of this tab already states it once with its consequence. What this
+        // section owes the operator is why ITS controls are unavailable, which the
+        // install box and the Start button's title say directly.
         // The last start's own output, shown exactly when it is needed: installed but
         // not running (field report 2026-07-29 — a start that failed on a bad model id
         // or a CUDA OOM previously died with its reason discarded, leaving only a
@@ -18422,9 +18621,11 @@
           if (!installBox) return;
           if (!s.gpu || !s.gpu.available) {
             installBox.style.display = "";
+            // States the CONSEQUENCE, not the detection: "no GPU" is said once, at
+            // the top of this tab (maintainer review 2026-07-31). What is genuinely
+            // needed here is why vLLM is not offered and what serves instead.
             installBox.innerHTML =
-              `<p class="muted">No GPU detected on this machine — vLLM is GPU-first and would install ` +
-              `into a backend that can never usefully run here. Ollama (above) is the CPU path.</p>`;
+              `<p class="muted">${esc(t("vLLM needs a dedicated NVIDIA GPU, so it is not offered on this machine — installing it would put several GB into a backend that could never serve here. Ollama, above, is the path that works: local inference runs on the CPU."))}</p>`;
           } else {
             installBox.style.display = "";
             installBox.innerHTML =
@@ -18437,7 +18638,16 @@
           installBox.style.display = "none";
         }
         const btn = $("vllm-start-btn");
-        if (btn) btn.disabled = !(s.installed && s.gpu && s.gpu.available);
+        const canStart = !!(s.installed && s.gpu && s.gpu.available);
+        if (btn) {
+          btn.disabled = !canStart;
+          // A disabled control that does not say WHY is a dead end. The reason is
+          // carried in the #oo-tip hover (invariant #17) rather than as a fifth
+          // copy of the GPU sentence in the page body.
+          btn.title = canStart ? "" : (!s.installed
+            ? t("vLLM is not installed.")
+            : t("vLLM needs a dedicated NVIDIA GPU — see Hardware at the top of this tab."));
+        }
       } catch (e) {
         box.innerHTML = `<p class="muted">Could not read vLLM status.</p>`;
       }
