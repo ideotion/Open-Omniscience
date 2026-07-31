@@ -57,6 +57,8 @@ class VolumeBackupManager:
         self._error: str | None = None
         self._summary: dict[str, Any] | None = None
         self._pause_requested = False
+        #: Re-merge even an artifact already recorded as merged (set per start_restore).
+        self._force = False
 
     def _alive(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
@@ -166,6 +168,7 @@ class VolumeBackupManager:
         *,
         allow_unverified: bool = False,
         corpus_passphrase: str | None = None,
+        force: bool = False,
         _restore_fn: Callable[..., dict] | None = None,
     ) -> dict:
         with self._lock:
@@ -173,6 +176,11 @@ class VolumeBackupManager:
             srcp = Path(src)
             if not srcp.is_dir():
                 raise ValueError(f"{srcp} is not a folder to restore from.")
+            # Re-merge an artifact this corpus has already merged. Additive and
+            # off by default: the skip exists because the redundant work is
+            # expensive, not because re-merging is unsafe -- the merge is
+            # idempotent, so forcing costs time and nothing else.
+            self._force = bool(force)
             self._stop.clear()
             self._pause_requested = False
             self._state, self._mode, self._dest = "running", "restore", str(srcp)
@@ -204,11 +212,44 @@ class VolumeBackupManager:
                 return
             from src.backup.artifact import cleanup_staging, read_volume_backup
             from src.backup.merge import (
+                artifact_source_digest,
+                find_completed_import,
                 import_cache_mb,
                 import_reindex_commit_batch,
                 restore_stage_plan,
                 run_restore,
             )
+
+            # ALREADY MERGED? Answered from one small JSON read, BEFORE verify,
+            # parity-recovery, reassembly and staging -- which is the only place
+            # the question is worth asking. Field logs 2026-07-31: 8 of 18 imports
+            # added ZERO articles, the largest spending 2.96 h to merge 700,503
+            # duplicates and leave the corpus byte-identical.
+            #
+            # Deliberately NOT silent (an import that quietly does nothing is
+            # indistinguishable from one that failed): the skip names the batch and
+            # date it matched, and `force` re-imports regardless.
+            _digest = artifact_source_digest(srcp)
+            _already = None if self._force else find_completed_import(_digest)
+            if _already is not None:
+                summary = {
+                    "skipped": "already-merged",
+                    "source_digest": _digest,
+                    "merged_as_batch": _already["batch_id"],
+                    "merged_at": _already["imported_at"],
+                    "note": (
+                        "this exact artifact was already merged; nothing to do. "
+                        "Re-import with force to merge it again."
+                    ),
+                }
+                _LOG.info(
+                    "skipping %s: already merged as batch %s on %s",
+                    srcp, _already["batch_id"], _already["imported_at"],
+                )
+                with self._lock:
+                    self._state, self._summary = "done", summary
+                    self._progress = {"phase": "skipped-already-merged"}
+                return
 
             # "Import owns the machine" (field-feedback Session A §4, ruled):
             # a large volume restore competes for the single-writer gate and
@@ -352,6 +393,11 @@ class VolumeBackupManager:
                         staged,
                         commit=True,
                         allow_unverified=allow_unverified,
+                        # Recorded WITH the merge, in its transaction, so the next
+                        # import of these same bytes is answered in milliseconds
+                        # instead of hours. None when unreadable -- an unknown
+                        # never matches, so it costs a redundant import at worst.
+                        source_digest=_digest,
                         progress_cb=_merge_prog,
                         reindex_progress_cb=_reindex_prog,
                         stage_progress_cb=_stage_prog,

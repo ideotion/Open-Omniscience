@@ -2158,6 +2158,17 @@ class MergeBatch(Base):
     origin_fingerprint: Mapped[str] = mapped_column(String(128), nullable=False, default="unsigned")
     app_version: Mapped[str | None] = mapped_column(String(20))  # from the manifest (legacy: None)
     alembic_rev: Mapped[str | None] = mapped_column(String(32))  # schema rev the artifact carried
+    #: SHA-256 of the SOURCE ARTIFACT's whole plaintext archive, read from the
+    #: container manifest's ``plaintext_sha256`` -- the identity of the BYTES that
+    #: were imported, not of the signer (``origin_fingerprint`` is the signer, and
+    #: every backup a machine writes shares it, so it can never answer "have I
+    #: already merged THIS one?"). Recorded so a re-import of an artifact already
+    #: fully merged can be refused up front instead of rediscovered three hours
+    #: later: field logs 2026-07-31 show 8 of 18 imports adding ZERO articles, one
+    #: of them spending 2.96 h to merge 700,503 duplicates and change nothing.
+    #: NULL for batches merged before this column existed, and for any container
+    #: whose manifest carries no digest -- an unknown must never read as a match.
+    source_digest: Mapped[str | None] = mapped_column(String(64), index=True)
     manifest_json: Mapped[str | None] = mapped_column(Text)  # the verified manifest (or synthesized stub)
     counts_json: Mapped[str | None] = mapped_column(Text)  # per-domain plan {new, duplicate, conflict}
     report_json: Mapped[str | None] = mapped_column(Text)  # post-merge verification verdicts

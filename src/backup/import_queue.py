@@ -366,10 +366,20 @@ class ImportQueueManager:
         from src.backup.volume_job import get_volume_manager
 
         mgr = get_volume_manager()
-        mgr.start_restore(item["path"], self._passphrase)
+        mgr.start_restore(item["path"], self._passphrase, force=bool(item.get("force")))
         st = self._await(mgr.status, mgr.cancel)
-        rep = (st.get("summary") or {}).get("report") or {}
-        return {"report": rep, "state": st.get("state")}
+        summary = st.get("summary") or {}
+        rep = summary.get("report") or {}
+        out = {"report": rep, "state": st.get("state")}
+        # An artifact already merged completes in milliseconds with no report. Say so
+        # explicitly: a fast, empty success is otherwise indistinguishable from a
+        # failure that produced nothing, and the queue's own log is where the
+        # operator looks to find out which of the two happened.
+        if summary.get("skipped") == "already-merged":
+            out["skipped"] = "already-merged"
+            out["merged_as_batch"] = summary.get("merged_as_batch")
+            out["merged_at"] = summary.get("merged_at")
+        return out
 
     def _run_legacy(self, item: dict) -> dict:
         # The endpoint's own extracted helper -- ONE legacy-restore code path, so the
