@@ -1324,6 +1324,100 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     publishes a real value; the sad path publishes the sentinel and NOT the measurement key).
 
 ## Open queue (when maintainer says proceed)
+- **SETTINGS-TAB REVIEW 2026-07-31 — 15 SUBTABS → 10, A NEW CARDS TAB, A NEW ADVANCED TAB
+  (maintainer reviewed every Settings subtab and gave per-subtab remarks; 23 follow-up questions
+  put and ANSWERED the same day; PLANNING ONLY this session, code-verified against `main`@b5bc6b6;
+  brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-31_SETTINGS_RESTRUCTURE.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-31_SETTINGS_RESTRUCTURE.md)
+  — 8-PR stack, per-PR specs, anchors, test-breakage table; NOTHING BUILT):**
+  **TARGET:** `Graphics · General · Cards(new) · AI · Wikipedia(untouched) · OpenStreetMap(renamed)
+  · Agenda · Data & backup · Safety · Advanced(new)`. REMOVED: Shortcuts (→General), Leads
+  (deleted), Collect (→Advanced), Sources (→Advanced), Newsletters (→Data & backup), Keywords
+  (→Advanced), Statistics (split: producers→Advanced, the rest→a NEW Governments>Statistics
+  subtab). `Advanced` = foldable, folded-by-default sections, and **folded must not mean fetched**
+  (its loaders fire on section EXPAND, not subtab select — the source catalog can hold ~46k rows).
+  **THE 18 RULINGS:** (1) Cards grouped by FAMILY, ALL 8 families accessible + tweakable, (2)
+  `overtold` built end-to-end FIRST as the reusable pattern, (3) every tunable carries a documented
+  min/max SAFE RANGE stated visibly — never a silent clamp, (4) the text-size slider is REMOVED
+  (rely on browser zoom), (5) the P0 validation STAYS untouched ("I'll run it on the big corpus" —
+  keeps 0.3 close-gate rows 4+7 runnable), (6) the page-size bench is REMOVED ENTIRELY (panel +
+  module + endpoints + bundle member + ratchet + tests), (7) legacy restore REMOVED entirely
+  frontend+backend (the maintainer has already merged their pre-volumes backups), (8) the "Older
+  backup tool" raw-.db snapshot REMOVED entirely, (9) statistics sources register ENABLED and
+  CRAWLABLE by default + a NEW per-agency `news_url`, (10) Agenda gets NO new fetch behaviour —
+  remove the manual buttons, surface the existing automation, (11) feed verification becomes
+  PROGRESSIVE riding collect passes (NEVER boot — airplane/zero-network) and VISIBLE in the task
+  manager, (12) dysfunctional calendar feeds get automated re-check MIRRORING the source ladder
+  (1→2→4→6 months capped, append-only attempts, bounded per-pass) — never a permanent exclusion,
+  (13) the Keywords subtab is REMOVED, (14) TRANSLATE the 4 user-facing PROSE prompt bodies ×12,
+  (15) the hardware gate is REFINED (below), (16) a STACK of draft PRs merged progressively, each
+  appending its own shipped.csv row with a REBASE after every merge (append-at-EOF conflicts
+  otherwise), (17) the 3 existing recipe toggles keep their exact behaviour but get a MODERNIZED
+  UI, (18) Wikipedia is NOT touched — record in FUTURE_DEVELOPMENTS that Wikipedia should be a
+  source like any other journal, differing only by a tracked audit trail (check first whether the
+  existing "Versioned sources as first-class Articles" section already says this — EXTEND, never
+  duplicate).
+  **⚠ TWO RULINGS SUPERSEDE EARLIER ONES — do NOT re-litigate them as regressions:**
+  **(a) RULING 14 partially supersedes the 2026-06-21 prompt finding.** That finding ("the tuned
+  ENGLISH prompt BODY is KEPT — translating multi-sentence instructions ×12 risks DEGRADING a weak
+  model's compliance; forcing the OUTPUT language via `_NATIVE_DIRECTIVE` is the reliable win") now
+  governs ONLY the machine-parsed half. The 4 USER-FACING PROSE prompts (summary · translate ·
+  synthesis · ai-keywords) ARE translated ×12 — maintainer rationale: "our small model speaks ~30
+  languages, our 12 languages will be well covered, and we don't want a non-english user to have
+  the AI create some english work; AI work is marked unreliable everywhere, it's OK." The ~10
+  `ai_layer` prompts (triage · source_tags · qualification_assist · perception · langdetect ·
+  extract) STAY ENGLISH BY CONSTRUCTION: their parsers validate against English tokens (a single
+  word, an exact echo-back of a term, a fixed label vocabulary, a language code) and they produce
+  NOTHING a user reads — translating them breaks parsing without improving any output.
+  **(b) RULING 15 supersedes the 2026-07-30 GPU-absence rule.** That rule refused local inference
+  wherever a dedicated GPU was absent, explicitly including "a 64 GB GPU-less workstation". NOW:
+  the HARD refusal tier is **< 4 CPU cores OR < 6 GB RAM**; **GPU-less is a WARNING, not a
+  refusal** (a GPU-less ≥4-core/≥6 GB machine defaults ON with the warning stated); **< 5 GB VRAM
+  is a WARNING** — set at 5 not 6 because Mistral-7B Q4 needs ~4.4 GB and measured 5.1 GB, so a
+  6 GB line would warn on cards that genuinely work. The Apple-Silicon carve-out, the override
+  toggle, and the NEVER-A-HARD-BLOCK posture are UNCHANGED. **The two-predicate invariant STILL
+  HOLDS and is the thing most likely to be broken by this edit:** `detect_gpu()` answers "can vLLM
+  run HERE?" and `inference_capability()` answers "is local inference PRACTICAL?" — the new CPU/RAM
+  floor belongs in `inference_capability()` ONLY; `tests/test_inference_hardware_gate.py`'s ast
+  guard forbids OS/arch/hardware POLICY entering `detect_gpu()`'s body (vLLM ships manylinux wheels
+  only and cannot serve Apple Metal, so collapsing the two predicates routes every Mac to a vLLM
+  that cannot run).
+  **VERIFIED FACTS THAT CHANGED THE PLAN (read from the tree — do not re-derive):** the text-size
+  slider CANNOT work (`applyUi` scales the root correctly, but app.css has 103 `px` font-sizes and
+  ZERO `rem`, `body{font-size:15px}`, + 46 inline `px` in index.html — the root scale reaches
+  nothing; the maintainer declined the ~149-site `px`→`rem` migration, hence ruling 4) · there are
+  **39 card producers** (35 `_DEFAULT_PRODUCERS` + 4 `RECIPE_PRODUCERS`), not the 3 the UI exposes,
+  and only the 4 recipe producers consult ANY persisted flag (`recipes_disabled`) — the other 35
+  have no per-producer persistence and their thresholds are module constants / inline literals ·
+  calendar auto-import ALREADY rides every online collect pass default-on (8 feeds/pass, 12 h
+  gate, robots-dead skipped) so ruling 10's ask is visibility, not fetching · the Agenda contrast
+  bug is `.ag-cal`'s `opacity:.6` compounding `var(--muted)`, which is why it fails in BOTH light
+  and dark · the `statistics` TAG is ALREADY auto-implied via `CLASS_IMPLIED_TAGS` (that half of
+  ruling 9 is done) · statistics agencies carry `home_url` only and `crawl_source` starts at
+  `https://{domain}`, so enabling them would crawl DATASET PORTALS — hence the `news_url` field ·
+  crawl-by-default SHIPPED (`crawl_supplement=True`, `crawl_per_pass=3`) so "enabled" for a
+  feedless source is NOT cosmetic · legacy restore is ALREADY absorbed by the unified Import
+  ("there is exactly one legacy-restore code path in the app") · **`#ux-export` lives INSIDE
+  `#set-data` and set-views are `display:none`, so `showModal()` will NOT render it from another
+  subtab — the dialog markup must move to top level** · "Typeface" IS currently keyed so the
+  "Fonts" rename REGRESSES a translation unless the key is added ×12 ("OpenStreetMap" needs no key
+  — proper noun, English fallback is correct everywhere) · DB-10 §1b is already wired
+  (`_FRESH_PAGE_SIZE = 16384`), which is what makes ruling 6 safe · `uninstallBackupFirst()` and
+  `encryptedBackup()` share the SAME 2 GiB-capped endpoint, so "remove Encrypted backup" and
+  "rewire Download a backup first" are ONE fix.
+  **THE STALE-ANCHOR HAZARD (the brief carries the full table):** panel ids are used as SOURCE-
+  SLICING DELIMITERS, so moving a panel breaks tests that are not about it —
+  `test_repo_invariants.py:4636` slices the **Keywords** view using `id="set-leads"` as its END
+  delimiter, and `:3015` slices between `set-wikipedia` and `set-agenda`. Also
+  `test_repo_invariants.py:6452-6461` pins `<label class="sl" for="dr-font">` — an ACCESSIBILITY
+  fix guarding the very slider ruling 4 removes: DELETE that test WITH a comment recording the
+  ruling, or a future session reads the missing label as a regression and restores the dead
+  slider. Do NOT touch `tests/test_sqlcipher.py`/`sqlcipher_helper.py` when removing the page-size
+  bench — they exercise the `cipher_page_size` PRAGMA, not the bench.
+  **OPERATOR STEPS (maintainer, not the coding session):** run the P0 validation on the big corpus
+  · the networked research pass filling `news_url` for ~150 statistics agencies (the law-batches
+  pattern — never fabricate an endpoint) · a browser CLICK-THROUGH of all eight PRs (every
+  frontend slice here is browser-unverified per fork-3/Q6a).
 - **FIELD REMARKS 2026-07-29 — BACKUP-IMPORT SPEED + THE MULTI-IMPORT UI (maintainer; 20 rulings
   given the same day; INVESTIGATION + PLANNING ONLY this session, code-verified against `main` via
   a 10-agent read-only fan-out [7 recon + 3 adversarial skeptics, 0 errors]; brief of record =
