@@ -43,6 +43,7 @@ LOOP_SELFTESTS: tuple[tuple[str, str, str], ...] = (
     ("source-tags-selftest", "src.ai_layer.source_tags", "run_source_tags_selftest"),
     ("conjunction-selftest", "src.analytics.conjunction", "run_conjunction_selftest"),
     ("leads-selftest", "src.briefing.leads", "run_leads_selftest"),
+    ("card-audit-diff-selftest", "src.briefing.card_audit_diff", "run_card_audit_diff_selftest"),
     ("non-article-selftest", "src.ingest.non_article", "run_non_article_selftest"),
     ("power-profile-selftest", "src.config.power_profiles", "run_power_profile_selftest"),
     ("search-timing-selftest", "src.monitoring.search_timing", "run_search_timing_selftest"),
