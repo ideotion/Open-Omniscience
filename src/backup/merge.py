@@ -472,6 +472,7 @@ _MERGE_HANDLED = {
     "article_analyses", "article_mentioned_dates", "wiki_pages", "wiki_revisions",
     "law_documents", "law_revisions", "commodity_prices", "market_extraction_rules",
     "link_classification_rules", "source_credibility_rules", "source_candidates",
+    "source_qualification_attempts",
 }
 # Deliberately not merged: the other corpus's OWN import history + schema/FTS internals,
 # plus ``app_state`` — per-machine settings/UI prefs (DB-reliability D1 / T10: local wins
@@ -582,14 +583,37 @@ def _merge_sources(con, batch_id, results) -> None:
         "SELECT COUNT(*) FROM inc.sources i JOIN sources m ON m.domain = i.domain"
         " WHERE COALESCE(i.name,'') <> COALESCE(m.name,'')",
     )
+    # The QUALIFICATION STAMP (status / qualified_at / qualification_criteria_version)
+    # rides this INSERT. It was omitted until 2026-07-24, and the omission was not
+    # cosmetic: `Source.status` carries server_default='unqualified', so every source a
+    # restore introduced landed UNQUALIFIED regardless of what the incoming corpus had
+    # judged it. Two consequences, both real:
+    #   * `select_sources` (scheduler/runner.py) admits only status='qualified', so a
+    #     merged-in source was excluded from collection until re-trialled over the
+    #     network at `qualification_per_pass` (default 5) a pass — a large multi-instance
+    #     merge therefore starved its own collector.
+    #   * WORSE, and the reason this is a data-safety fix rather than a nicety: a source
+    #     the incoming corpus had DISQUALIFIED arrived indistinguishable from
+    #     never-judged, and `select_unqualified` selects exactly status='unqualified' —
+    #     so a merge LAUNDERED a known-bad source back into the trial queue with its
+    #     backoff ladder reset. Carrying the stamp is what stops that.
+    # Cross-version safe by construction: `prepare_staged` runs the alembic chain on the
+    # staged copy first (§D7), and migration 8249f1450472 adds all three columns, so
+    # `inc.sources` always has them by merge time even from a pre-qualification backup.
+    # The WHERE NOT EXISTS guard is UNCHANGED: this only stamps sources the merge itself
+    # introduces. For a domain that already exists locally the local row still wins
+    # untouched (the merge's standing policy) — the incoming EVIDENCE for it is carried
+    # instead by the source_qualification_attempts merge below, which is what keeps the
+    # re-qualification ladder honest without overwriting a local verdict.
     r.new = _insert_tracked(
         con, batch_id, "sources",
         "INSERT INTO sources (name, domain, rss_url, rate_limit_ms, enabled, priority, tags,"
         " reliability_score, language, region, country, source_type, update_frequency,"
-        " cacheability)"
+        " cacheability, status, qualified_at, qualification_criteria_version)"
         " SELECT i.name, i.domain, i.rss_url, i.rate_limit_ms, i.enabled, i.priority, i.tags,"
         " i.reliability_score, i.language, i.region, i.country, i.source_type,"
-        " i.update_frequency, i.cacheability"
+        " i.update_frequency, i.cacheability, i.status, i.qualified_at,"
+        " i.qualification_criteria_version"
         " FROM inc.sources i"
         " WHERE NOT EXISTS (SELECT 1 FROM sources m WHERE m.domain = i.domain)",
     )
@@ -650,6 +674,48 @@ def _merge_sources(con, batch_id, results) -> None:
     )
     m.duplicate = max(0, _count(con, "SELECT COUNT(*) FROM inc.source_metadata") - m.new)
     results["source_metadata"] = m
+
+    # The qualification ATTEMPT HISTORY (append-only, the vintage convention). Until
+    # 2026-07-24 this table had NO handler at all — it appeared in neither
+    # _MERGE_HANDLED nor _MERGE_IGNORED, so it fell through to _unmerged_tables: its row
+    # count was reported and not one row was carried. That dropped the history for EVERY
+    # domain in the incoming corpus, including domains that already existed locally.
+    #
+    # It matters because this table is the SYSTEM OF RECORD for the re-qualification
+    # backoff ladder: `consecutive_disqualifications` counts the trailing run of
+    # 'disqualified' verdicts newest-first, so losing the history silently reset every
+    # merged source's ladder to zero.
+    #
+    # Merging it is what makes the fix complete for sources that already exist locally,
+    # where the Source stamp above deliberately does NOT overwrite the local verdict: the
+    # local row keeps its own current status (standing local-wins policy), while the
+    # incoming EVIDENCE accumulates into the shared history the ladder actually reads. So
+    # a domain disqualified on another instance still moves that instance's evidence into
+    # this corpus even though its current stamp is left alone.
+    #
+    # source_id is REMAPPED through temp.map_sources (built above from a domain join), the
+    # same machinery source_metadata/articles use — ids differ between corpora, which is
+    # precisely why this table was non-trivial to merge rather than a one-line omission.
+    # Dedup is on (source_id, attempted_at): re-importing the SAME backup twice adds
+    # nothing, while two DIFFERENT instances' attempts on the same domain are genuinely
+    # distinct attempts at distinct times and both survive. That predicate is served by
+    # the table's own idx_qual_attempt_source_time index.
+    q = DomainResult()
+    q.new = _insert_tracked(
+        con, batch_id, "source_qualification_attempts",
+        "INSERT INTO source_qualification_attempts"
+        " (source_id, attempted_at, verdict, criteria_version)"
+        " SELECT ms.new, i.attempted_at, i.verdict, i.criteria_version"
+        " FROM inc.source_qualification_attempts i"
+        " JOIN temp.map_sources ms ON ms.old = i.source_id"
+        " WHERE NOT EXISTS ("
+        "   SELECT 1 FROM source_qualification_attempts m2"
+        "   WHERE m2.source_id = ms.new AND m2.attempted_at = i.attempted_at)",
+    )
+    q.duplicate = max(
+        0, _count(con, "SELECT COUNT(*) FROM inc.source_qualification_attempts") - q.new
+    )
+    results["source_qualification_attempts"] = q
     results["sources"] = r
 
 

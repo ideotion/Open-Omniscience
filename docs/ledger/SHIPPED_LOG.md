@@ -4135,3 +4135,39 @@ gating them on the pause's own success) and, from a separate data-loss-lens
 pass, a third MEDIUM (the all-cores worker count had NO upper bound at all,
 unlike the everyday default's `_MAX_WORKERS_CAP`; fixed with a SEPARATE,
 higher-but-still-finite ceiling for the exclusive path).
+
+**LESSON: an explicit column allowlist silently drops every column added after it —
+and a `server_default` makes the loss invisible.** `_merge_sources` (the additive
+restore-merge's sources handler) copies a hardcoded 14-column list; the three
+source-qualification stamp columns added in 2026-07 were never added to it, so no
+restore ever carried a qualification verdict. The dangerous part is not the omission
+itself but its signature: `Source.status` carries `server_default='unqualified'`, so
+the merged row arrives POPULATED with a plausible, legal value. There is no NULL, no
+error, no visibly empty column — a dropped column with a NOT NULL default is
+indistinguishable from genuine data at every layer above the INSERT, which is why this
+survived a shipped feature, a migration, and a boot self-heal without anyone noticing.
+GENERAL FORM: when you add a column to a model, grep for the explicit column lists that
+copy that table (merge / export / ETL / `INSERT ... SELECT`) — they fail OPEN and
+silently, unlike a schema change, which fails loudly. When auditing such a list, diff it
+against the model rather than reading it for plausibility; a 14-column list looks
+complete on its own terms.
+
+COROLLARY (the same bug's second half): a table registered in NEITHER the handled set
+NOR the deliberately-ignored set lands in a "reported-but-not-merged" middle state that
+READS as intentional. `source_qualification_attempts` appeared in the restore report's
+unmerged-tables section with an honest row count on every single restore, and was
+copied on none — the report made the gap look like a disclosed decision. Any
+handled/ignored registry pair wants a completeness check that a new table must join one
+set or the other, or the gap presents itself as a feature.
+
+DIRECTIONAL LESSON, worth more than either of the above: the loss inverted a SAFETY
+property. A source the incoming corpus had DISQUALIFIED arrived as `unqualified`, which
+is byte-identical to never-judged, and the trial-queue selector matches exactly
+`status == 'unqualified'` — so a merge LAUNDERED known-bad sources back into the queue
+with their backoff ladder reset to zero. When a dropped or defaulted field encodes a
+NEGATIVE verdict, the question is not only "what was lost" but "what does the default
+now assert on its behalf". Worth recording how this was found: three independent
+readers all correctly identified the dropped columns, and only the adversarial pass —
+prompted to attack the negative space rather than confirm the finding — named the
+inversion. The positive finding was easy; the direction that made it a data-safety bug
+was not.
