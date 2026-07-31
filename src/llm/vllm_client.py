@@ -28,6 +28,7 @@ unreachable or the model is not loaded, raise -- never return a fabricated
 
 from __future__ import annotations
 
+import logging
 import os
 
 import httpx
@@ -40,8 +41,98 @@ from src.llm.ollama import (
     _require_loopback,
 )
 
+_LOG = logging.getLogger(__name__)
+
 # Default OpenAI-compatible port `vllm serve` binds to.
 DEFAULT_VLLM_URL = "http://127.0.0.1:8000"
+
+# -- sampling-option mapping ----------------------------------------------- #
+#
+# Ollama takes sampling knobs in an ``options`` dict; the OpenAI-compatible
+# chat-completions body takes them as TOP-LEVEL fields under different names.
+# Before 2026-07-31 this client accepted ``options`` purely for signature parity
+# and dropped it on the floor, so a caller asking for ``temperature: 0`` got the
+# server's default sampling and never learned otherwise -- a silent determinism
+# bug on exactly the backend the GPU path uses.
+#
+# ONLY EXACT EQUIVALENTS ARE MAPPED. A knob whose meaning differs between the two
+# APIs is dropped and reported, never approximated: a silently-approximated
+# sampling parameter changes generation in a way the caller did not ask for, which
+# is worse than an absent one.
+#
+# The mapped set is deliberately the OpenAI chat-completions SPEC subset, so it is
+# safe against any OpenAI-compatible server rather than only vLLM. (docs.vllm.ai is
+# not reachable from this sandbox -- the same limitation this module's header
+# already records -- so vLLM-only extensions such as ``top_k`` and
+# ``repetition_penalty`` are deliberately NOT sent: they are outside the spec and
+# would 400 on a strict server. They are listed in ``_DROPPED_REASONS`` so the
+# omission is stated rather than silent.)
+_OPTION_TO_OPENAI: dict[str, str] = {
+    "temperature": "temperature",
+    "top_p": "top_p",
+    "seed": "seed",
+    "stop": "stop",
+    "presence_penalty": "presence_penalty",
+    "frequency_penalty": "frequency_penalty",
+}
+
+# Ollama's ``num_predict`` is "max tokens to GENERATE" == OpenAI's ``max_tokens``,
+# but Ollama overloads negatives (-1 unlimited, -2 fill context) which have no
+# OpenAI spelling -- so a negative is dropped rather than sent as a bogus bound.
+_NUM_PREDICT = "num_predict"
+
+_DROPPED_REASONS: dict[str, str] = {
+    "repeat_penalty": (
+        "Ollama's repeat_penalty and OpenAI's frequency_penalty use different "
+        "formulations and ranges; mapping one onto the other would change sampling"
+    ),
+    "repeat_last_n": "no OpenAI chat-completions equivalent",
+    "num_ctx": "vLLM fixes context length at server start (--max-model-len), not per request",
+    "mirostat": "no OpenAI chat-completions equivalent",
+    "mirostat_eta": "no OpenAI chat-completions equivalent",
+    "mirostat_tau": "no OpenAI chat-completions equivalent",
+    "tfs_z": "no OpenAI chat-completions equivalent",
+    "typical_p": "no OpenAI chat-completions equivalent",
+    "top_k": "outside the OpenAI chat-completions spec; a strict server rejects it",
+    "repetition_penalty": "outside the OpenAI chat-completions spec; a strict server rejects it",
+}
+
+
+def openai_sampling_params(options: dict | None) -> tuple[dict, list[str]]:
+    """Map Ollama-style ``options`` onto OpenAI-compatible sampling parameters.
+
+    Pure and side-effect free, so the mapping is unit-testable without a running
+    vLLM server (the whole point: the bug it fixes was invisible to every test
+    because no test could reach a server).
+
+    Returns ``(params, dropped)`` -- the body fields to merge into the request, and
+    the option names that were NOT sent. ``dropped`` is what makes the omission
+    honest: the caller (and the log) can see exactly which knobs did not apply,
+    instead of assuming all of them did.
+
+    ``temperature: 0`` maps to ``temperature: 0`` -- note it must survive the
+    falsiness trap: a plain ``if value:`` test would drop precisely the value a
+    determinism-seeking caller cares most about.
+    """
+    if not options:
+        return {}, []
+    params: dict = {}
+    dropped: list[str] = []
+    for key, value in options.items():
+        if value is None:  # "unset", not "set to nothing"
+            continue
+        if key in _OPTION_TO_OPENAI:
+            params[_OPTION_TO_OPENAI[key]] = value
+        elif key == _NUM_PREDICT:
+            # Ollama's negative sentinels have no OpenAI spelling; omitting
+            # max_tokens IS "no explicit bound", which is what -1 means.
+            if isinstance(value, int) and value >= 0:
+                params["max_tokens"] = value
+            else:
+                dropped.append(key)
+        else:
+            dropped.append(key)
+    return params, dropped
 
 
 class VllmClient:
@@ -139,16 +230,23 @@ class VllmClient:
         *,
         model: str = "",
         system: str | None = None,
-        options: dict | None = None,  # noqa: ARG002 - signature parity with OllamaClient
+        options: dict | None = None,
         keep_alive: str | None = None,  # noqa: ARG002 - no vLLM analog; see note below
     ) -> GenerationResult:
         """Single-shot completion via ``POST /v1/chat/completions``.
 
-        ``keep_alive``/``options`` are Ollama-specific knobs accepted here ONLY for
-        signature parity with ``OllamaClient.generate`` (so a caller need not branch
-        by backend) -- they have no vLLM analog (a served vLLM model stays resident
-        for the server's whole lifetime; there is no per-call unload/reload), so they
-        are silently ignored rather than raising or faking an effect.
+        ``options`` carries Ollama-style sampling knobs and IS honoured here, mapped
+        onto their OpenAI-compatible spellings by :func:`openai_sampling_params`
+        (``temperature``, ``top_p``, ``seed``, ``stop``, the two penalties, and
+        ``num_predict`` -> ``max_tokens``). Knobs with no exact equivalent are
+        dropped and logged rather than approximated -- see ``_DROPPED_REASONS``.
+        Until 2026-07-31 the whole dict was discarded for "signature parity", so a
+        caller requesting ``temperature: 0`` silently got the server's default
+        sampling; that made any determinism claim false on the GPU backend.
+
+        ``keep_alive`` genuinely has no vLLM analog -- a served vLLM model stays
+        resident for the server's whole lifetime, with no per-call unload/reload --
+        so it is still accepted for signature parity and ignored.
         """
         self._check_kill_switch()
         messages = []
@@ -156,6 +254,18 @@ class VllmClient:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
         payload: dict = {"model": model, "messages": messages, "stream": False}
+        sampling, dropped = openai_sampling_params(options)
+        payload.update(sampling)
+        if dropped:
+            _LOG.debug(
+                "vLLM: %d sampling option(s) not sent (%s); reasons: %s",
+                len(dropped),
+                ", ".join(sorted(dropped)),
+                "; ".join(
+                    f"{k}: {_DROPPED_REASONS.get(k, 'no OpenAI chat-completions equivalent')}"
+                    for k in sorted(dropped)
+                ),
+            )
         try:
             resp = self._client.post("/v1/chat/completions", json=payload)
             resp.raise_for_status()
