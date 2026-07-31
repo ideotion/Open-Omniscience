@@ -267,16 +267,35 @@ def test_the_vram_line_sits_below_the_default_models_measured_use(monkeypatch):
     assert B.inference_capability()["warnings"] == []
 
 
-def test_unmeasured_vram_produces_no_warning_rather_than_a_guessed_one(monkeypatch):
+@pytest.mark.parametrize("bogus", [None, True, False, "n/a", "", object(), [], {}])
+def test_unmeasured_vram_produces_no_warning_rather_than_a_guessed_one(monkeypatch, bogus):
     """Symmetric to the unmeasured-RAM rule: inventing a shortfall from an absent
-    measurement is the same fabrication as inventing a pass from one."""
+    measurement is the same fabrication as inventing a pass from one.
+
+    `True`/`False` are in here deliberately. bool subclasses int, so a naive
+    float() turns them into a measured 1 MB / 0 MB and emits a warning about a
+    number nobody read -- the int(True) == 1 trap, in the one direction where it
+    would produce a confident-sounding falsehood."""
     _stub_hw(
         monkeypatch,
-        gpu={"available": True, "name": "NVIDIA Tesla", "vram_mb": None},
+        gpu={"available": True, "name": "NVIDIA Tesla", "vram_mb": bogus},
         apple=_NOT_APPLE,
     )
     cap = B.inference_capability()
     assert cap["practical"] is True and cap["warnings"] == []
+
+
+def test_a_TEXT_typed_vram_readback_is_still_honoured_as_the_measurement_it_is(monkeypatch):
+    """The narrowing must not throw away a real figure: some probes hand numbers
+    back as strings, and the house response is to coerce, not discard."""
+    _stub_hw(
+        monkeypatch,
+        gpu={"available": True, "name": "NVIDIA GTX 1650", "vram_mb": "4096"},
+        apple=_NOT_APPLE,
+    )
+    cap = B.inference_capability()
+    assert cap["practical"] is True
+    assert cap["warnings"], "a 4 GB card read back as text must still warn"
 
 
 # --------------------------------------------------------------------------- #

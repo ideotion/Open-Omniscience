@@ -570,12 +570,19 @@ def _vram_warnings(vram_mb: object) -> list[str]:
     UNMEASURED VRAM produces NO warning rather than a guessed one: the GPU is
     present and practical either way, and inventing a shortfall from an absent
     measurement is the same fabrication as inventing a pass from one.
+
+    The parameter is ``object`` on purpose -- ``detect_gpu()`` reads a subprocess
+    and the project has been bitten by TEXT-typed read-backs before -- so the type
+    is NARROWED here rather than asserted. ``bool`` is excluded explicitly: it is
+    a subclass of ``int``, so ``float(True)`` would quietly become a measured
+    "1 MB of VRAM" and emit a warning about a number nobody read. That is the
+    ``int(True) == 1`` trap this codebase already has a lesson about.
     """
-    try:
-        mb = None if vram_mb is None else float(vram_mb)
-    except (TypeError, ValueError):
+    if isinstance(vram_mb, bool) or not isinstance(vram_mb, (int, float, str)):
         return []
-    if mb is None:
+    try:
+        mb = float(vram_mb)
+    except (TypeError, ValueError):
         return []
     gb = mb / 1024.0
     if gb >= MIN_VRAM_WARN_GB:
