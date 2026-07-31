@@ -629,7 +629,7 @@ def reindex_articles(
         per ``commit_batch``. A fresh, single-call scope (never nested in the
         window loop below) so ``pending``/``_flush`` are unambiguous locals, not a
         closure over a variable a loop reassigns."""
-        nonlocal reindexed, failed
+        nonlocal reindexed, failed, _apply_index_s
         if commit_batch <= 1:
             for art in articles:
                 try:
@@ -645,11 +645,13 @@ def reindex_articles(
         pending: list[tuple[Article, ArticleDerivatives | None]] = []
 
         def _flush() -> None:
-            nonlocal reindexed
+            nonlocal reindexed, _apply_commit_s
             if not pending:
                 return
             try:
+                _t_c = time.monotonic()
                 session.commit()
+                _apply_commit_s += time.monotonic() - _t_c
                 reindexed += len(pending)
             except Exception:  # noqa: BLE001 - a lock/collision must not drop batch-mates
                 session.rollback()
@@ -660,6 +662,7 @@ def reindex_articles(
         for art in articles:
             deriv = derivs.get(art.id)
             terms, sentiment, www = _derived_args(deriv)
+            _t_i = time.monotonic()
             try:
                 index_article(
                     session,
@@ -673,6 +676,7 @@ def reindex_articles(
                     precomputed_www=www,
                 )
                 pending.append((art, deriv))
+                _apply_index_s += time.monotonic() - _t_i
             except Exception:  # noqa: BLE001 - this article corrupted the in-flight batch
                 # A rollback here drops THIS article's partial work AND every
                 # already-staged-but-uncommitted batch-mate in ``pending`` (they were
@@ -693,6 +697,14 @@ def reindex_articles(
 
     _pre_stats: dict = {}
     _load_s = _pre_s = _apply_s = 0.0
+    # apply_s is the serial 94% of a re-index (field logs 2026-07-31: 758 s of an
+    # 806 s run) and, like prepare_staged before it, was ONE opaque number. It is
+    # two unrelated costs: staging each article (keyword lookups, mention rows,
+    # when/where/who, sentiment) and the periodic COMMIT (fsync + WAL through the
+    # codec). Which dominates decides whether the next fix is a query change or a
+    # durability one -- and a measured 1.9x on the keyword lookup turned out to be
+    # 0.2% of apply, so guessing here has already been tried and was wrong.
+    _apply_index_s = _apply_commit_s = 0.0
     _t_all = time.monotonic()
 
     for w_start in range(0, len(article_ids), _PRECOMPUTE_WINDOW):
@@ -763,6 +775,11 @@ def reindex_articles(
             "load_s": round(_load_s, 3),
             "precompute_s": round(_pre_s, 3),
             "apply_s": round(_apply_s, 3),
+            # The split of apply_s. They do not sum to it: the remainder is the
+            # per-article bookkeeping between them, and calling that out is the
+            # point -- a residual nobody can name is exactly what an aggregate hides.
+            "apply_index_s": round(_apply_index_s, 3),
+            "apply_commit_s": round(_apply_commit_s, 3),
             "precompute": _pre_stats,
             # A rate ONLY when both sides of the division are real. A zero-article or
             # zero-elapsed run reports None -- never a fabricated or infinite rate.

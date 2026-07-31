@@ -237,3 +237,47 @@ def test_a_failing_validate_still_records_the_time_the_operator_waited():
     src = inspect.getsource(m.prepare_staged_corpus)
     body = src[src.index("def _sub("):]
     assert "finally:" in body, "the sub-timer must record through an exception"
+
+
+# --------------------------------------------------------------------------- #
+#  apply: the serial 94% of a re-index, previously ONE number
+# --------------------------------------------------------------------------- #
+def test_apply_reports_staging_and_commit_separately():
+    """Field logs 2026-07-31: apply_s was 758 s of an 806 s re-index -- and, like
+    prepare_staged, one opaque figure over two unrelated costs. Staging an article
+    (keyword lookups, mention rows, when/where/who, sentiment) is CPU and reads;
+    the periodic COMMIT is fsync and WAL through the codec. The fix for one is not
+    the fix for the other.
+
+    This split exists because guessing was already tried: a covering index on the
+    per-term keyword lookup measured 1.9x on plaintext, which works out to ~0.2%
+    of apply -- a real speedup of an irrelevant slice.
+    """
+    import inspect
+
+    from src.analytics import store as st
+
+    src = inspect.getsource(st.reindex_articles)
+    assert "_apply_index_s" in src and "_apply_commit_s" in src
+    assert '"apply_index_s"' in src and '"apply_commit_s"' in src
+
+    # The commit timer must wrap the COMMIT only -- not the staging before it, or
+    # the two buckets stop meaning different things.
+    flush = src[src.index("def _flush("):]
+    flush = flush[: flush.index("for art in articles:")]
+    assert "session.commit()" in flush
+    before, after = flush.split("session.commit()", 1)
+    assert "_t_c = time.monotonic()" in before.rsplit("try:", 1)[-1]
+    assert "_apply_commit_s += time.monotonic() - _t_c" in after.split("\n")[1]
+
+
+def test_the_apply_split_is_disclosed_as_not_summing_to_the_whole():
+    """apply_index_s + apply_commit_s < apply_s, and the remainder is real
+    per-article bookkeeping. Presenting two parts as if they were the whole would
+    be the same aggregate-hides-a-residual problem one level down."""
+    import inspect
+
+    from src.analytics import store as st
+
+    src = inspect.getsource(st.reindex_articles)
+    assert "do not sum to it" in src, "the residual must be stated, not implied"
