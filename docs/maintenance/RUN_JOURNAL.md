@@ -17,12 +17,26 @@ leaves nothing behind.
 
 The journal is the missing sink. It writes while the run is in flight.
 
-## It is on by default
+## It is on by default, everywhere
 
-Nothing to enable, no button. Every volume import and every volume export opens
-a journal for itself; the import **queue** drives the same code path, so each
-queued item gets its **own** run (eight ten-hour imports under one id would wrap
-the heartbeat ring and lose the early hours of all but the last).
+Nothing to enable, no button, and no path is special. Every long-running import
+or export opens a journal for itself:
+
+| kind | prefix | what it covers |
+|---|---|---|
+| `import` | `imp-` | volume+parity restore (incl. every import-queue item), and the single-shot REST commit |
+| `export` | `exp-` | volume+parity backup |
+| `folder-export` | `fex-` | large-data folder backup (wiki dumps, OSM regions, model blobs) |
+| `folder-import` | `fim-` | large-data folder restore |
+| `verify` | `vfy-` | folder-backup verification (a full read of the whole set) |
+| `newsletter-import` | `nim-` | `.eml` folder import |
+
+Each **queue item is its own run** — eight ten-hour imports under one id would
+wrap the heartbeat ring and lose the early hours of all but the last.
+
+A journal with exceptions is one you have to remember the shape of, which is the
+same failure as not having one. A test lists these workers by hand, so a new
+long-running import/export path has to add itself and notice why.
 
 `OO_RUN_JOURNAL=0` turns it off. The escape hatch is the thing you have to ask
 for, not the recording — a flight recorder you must remember to arm is off

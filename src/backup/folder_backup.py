@@ -579,6 +579,8 @@ def verify_folder_backup(
 # --------------------------------------------------------------------------- #
 import threading  # noqa: E402  (kept local to the job section)
 
+from src.backup import runlog  # noqa: E402  (same, beside the manager it serves)
+
 
 class FolderBackupManager:
     """ONE pausable folder backup/restore at a time (you don't run two giant copies at
@@ -672,57 +674,85 @@ class FolderBackupManager:
             return self.status()
 
     def _run_backup(self, destp: Path, items: list[BackupItem], _cats: list[str]) -> None:
-        try:
-            res = write_folder_backup(
-                destp, items, progress_cb=self._on_prog, should_stop=self._stop.is_set
-            )
-            with self._lock:
-                if res["stopped"]:
-                    self._state = "cancelled" if self._cancelled else "paused"
-                else:
-                    self._state = "done"
-                self._progress = {**self._progress, **res}
-        except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
-            with self._lock:
-                self._state = "error"
-                self._error = str(exc)
+        # The large-data (wiki dumps / OSM regions / model blobs) half of an
+        # export. Journalled on the SAME terms as the encrypted one: it copies
+        # tens of GB across a drive, so "it seems to be stuck" is exactly as
+        # askable here, and until now it left nothing behind either.
+        with runlog.run("folder-export", label=destp.name, dest=str(destp), items=len(items)):
+            try:
+                res = write_folder_backup(
+                    destp, items, progress_cb=self._on_prog, should_stop=self._stop.is_set
+                )
+                with self._lock:
+                    if res["stopped"]:
+                        self._state = "cancelled" if self._cancelled else "paused"
+                    else:
+                        self._state = "done"
+                    self._progress = {**self._progress, **res}
+                runlog.end(
+                    ("cancelled" if self._cancelled else "paused") if res["stopped"] else "ok",
+                    copied=res.get("copied"), skipped=res.get("skipped"),
+                    bytes=res.get("bytes_copied"),
+                )
+            except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
+                with self._lock:
+                    self._state = "error"
+                    self._error = str(exc)
+                raise
 
     def _run_restore(self, srcp: Path, _items: list[BackupItem], cats: list[str]) -> None:
-        try:
-            res = restore_folder_backup(
-                srcp,
-                categories=cats,
-                targets=getattr(self, "_targets", None),
-                progress_cb=self._on_prog,
-                should_stop=self._stop.is_set,
-            )
-            with self._lock:
-                if res["stopped"]:
-                    self._state = "cancelled" if self._cancelled else "paused"
-                else:
-                    self._state = "done"
-                self._progress = {**self._progress, **res}
-        except Exception as exc:  # noqa: BLE001
-            with self._lock:
-                self._state = "error"
-                self._error = str(exc)
+        with runlog.run("folder-import", label=srcp.name, dest=str(srcp), categories=cats):
+            try:
+                res = restore_folder_backup(
+                    srcp,
+                    categories=cats,
+                    targets=getattr(self, "_targets", None),
+                    progress_cb=self._on_prog,
+                    should_stop=self._stop.is_set,
+                )
+                with self._lock:
+                    if res["stopped"]:
+                        self._state = "cancelled" if self._cancelled else "paused"
+                    else:
+                        self._state = "done"
+                    self._progress = {**self._progress, **res}
+                runlog.end(
+                    ("cancelled" if self._cancelled else "paused") if res["stopped"] else "ok",
+                    copied=res.get("copied"), skipped=res.get("skipped"),
+                    refused_symlinks=res.get("refused_symlinks"),
+                )
+            except Exception as exc:  # noqa: BLE001
+                with self._lock:
+                    self._state = "error"
+                    self._error = str(exc)
+                raise
 
     def _run_verify(self, srcp: Path, _items: list[BackupItem], _cats: list[str]) -> None:
-        try:
-            res = verify_folder_backup(
-                srcp, progress_cb=self._on_prog, should_stop=self._stop.is_set
-            )
-            with self._lock:
-                if res.get("stopped"):
-                    self._state = "cancelled" if self._cancelled else "paused"
-                else:
-                    self._state = "done"
-                self._verify = res
-                self._progress = {**self._progress, "verify": res}
-        except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
-            with self._lock:
-                self._state = "error"
-                self._error = str(exc)
+        # A verify is a full read of the whole set -- 1521 s of one field import
+        # was verification alone -- so it belongs in the journal for the same
+        # reason the copy does.
+        with runlog.run("verify", label=srcp.name, dest=str(srcp)):
+            try:
+                res = verify_folder_backup(
+                    srcp, progress_cb=self._on_prog, should_stop=self._stop.is_set
+                )
+                with self._lock:
+                    if res.get("stopped"):
+                        self._state = "cancelled" if self._cancelled else "paused"
+                    else:
+                        self._state = "done"
+                    self._verify = res
+                    self._progress = {**self._progress, "verify": res}
+                runlog.end(
+                    ("cancelled" if self._cancelled else "paused")
+                    if res.get("stopped") else "ok",
+                    checked=res.get("checked"), mismatches=res.get("mismatches"),
+                )
+            except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
+                with self._lock:
+                    self._state = "error"
+                    self._error = str(exc)
+                raise
 
     def pause(self) -> None:
         self._stop.set()  # the worker stops between/within files; state -> paused

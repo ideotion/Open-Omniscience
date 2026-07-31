@@ -139,9 +139,23 @@ def _utc_iso() -> str:
     return datetime.now(UTC).isoformat(timespec="seconds")
 
 
-def _new_run_id(prefix: str) -> str:
+#: run_id prefix per kind. A kind not listed here still journals -- it just gets a
+#: generic prefix, because refusing to record an operation because its name is
+#: unfamiliar is exactly the coverage gap this table exists to close.
+_KIND_PREFIX: dict[str, str] = {
+    "import": "imp",
+    "export": "exp",
+    "verify": "vfy",
+    "folder-export": "fex",
+    "folder-import": "fim",
+    "newsletter-import": "nim",
+}
+
+
+def _new_run_id(kind: str) -> str:
     import secrets
 
+    prefix = _KIND_PREFIX.get(kind, "run")
     return f"{prefix}-{datetime.now(UTC):%Y%m%dT%H%M%SZ}-{secrets.token_hex(3)}"
 
 
@@ -584,7 +598,7 @@ def begin(kind: str, *, label: str = "", dest: str | None = None, **header: Any)
                     kind, cur.run_id,
                 )
                 return None
-            rl = RunLog(_new_run_id("imp" if kind == "import" else "exp"), kind)
+            rl = RunLog(_new_run_id(kind), kind)
             _CURRENT = rl
         try:
             from src.api.diagnostics import _hardware_profile
@@ -630,6 +644,42 @@ def progress(p: dict) -> None:
     rl = _CURRENT
     if rl is not None:
         rl.progress(p)
+
+
+@contextmanager
+def run(kind: str, *, label: str = "", dest: str | None = None, **header: Any) -> Iterator[Any]:
+    """Open a run for the duration of a block, closing it however the block ends.
+
+    This is what makes coverage a PROPERTY rather than a checklist. Hand-wiring
+    begin/end at every worker means every exit path -- the raise, the operator's
+    cancel, the early return, the one nobody thought of -- is a separate chance
+    to forget, and the paths that get forgotten are the unusual ones, which are
+    precisely the ones worth having a journal for.
+
+    A block that wants a more specific outcome than "ok" simply calls
+    :func:`end` itself; the exits here are no-ops once a run has been closed, so
+    an explicit outcome always wins over the generic one.
+    """
+    rl = begin(kind, label=label, dest=dest, **header)
+    try:
+        yield rl
+    except BaseException as exc:
+        import traceback
+
+        milestone(
+            "error",
+            cls=type(exc).__name__,
+            msg=str(exc)[:2000],
+            traceback="".join(traceback.format_exception(exc))[-8000:],
+        )
+        end("error", cls=type(exc).__name__)
+        raise
+    else:
+        end("ok")
+    finally:
+        # The net for a path that returned without an outcome. Names its own
+        # ignorance rather than guessing success.
+        end("ended-without-a-recorded-outcome")
 
 
 @contextmanager

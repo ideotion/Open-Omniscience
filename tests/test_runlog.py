@@ -403,6 +403,87 @@ def test_every_import_and_export_opens_a_run_without_being_asked_to():
     assert "start_restore(" in inspect.getsource(import_queue.ImportQueueManager._run_corpus)
 
 
+def test_every_long_import_export_worker_journals_no_exceptions():
+    """THE ratchet behind "automated / default".
+
+    The first cut covered the volume import/export -- the path the maintainer's
+    17 GB actually takes -- and left three others silent: the large-data folder
+    backup/restore/verify, the single-shot REST commit (which wires NO progress
+    callbacks at all, making it the least observable import path in the app),
+    and the .eml folder import. A journal with exceptions is a journal you have
+    to remember the shape of, which is the same failure as not having one.
+
+    Listed by hand ON PURPOSE: a new long-running import/export worker should
+    have to add itself here, and notice why.
+    """
+    import inspect
+
+    from src.api import backup_v2
+    from src.backup import folder_backup, volume_job
+    from src.ingest import import_job
+
+    workers = [
+        volume_job.VolumeBackupManager._run_restore,
+        volume_job.VolumeBackupManager._run_backup,
+        folder_backup.FolderBackupManager._run_backup,
+        folder_backup.FolderBackupManager._run_restore,
+        folder_backup.FolderBackupManager._run_verify,
+        import_job.NewsletterImportManager._run,
+        backup_v2._commit_sync,
+        backup_v2.restore_legacy_path,
+    ]
+    for fn in workers:
+        src = inspect.getsource(fn)
+        assert "runlog.run(" in src or "runlog.begin(" in src, (
+            f"{fn.__qualname__} runs an import/export and does not open a run journal"
+        )
+
+
+def test_the_run_contextmanager_closes_the_journal_however_the_block_ends():
+    """Hand-wired begin/end means every exit path is a fresh chance to forget --
+    and the forgotten ones are the unusual paths, which are exactly the ones
+    worth a journal."""
+    with runlog.run("verify", label="ok-path"):
+        pass
+    assert runlog.list_runs()[0]["outcome"] == "ok"
+
+    # Looked up BY LABEL, not by position: these runs all start within the same
+    # second, so "newest first" is a genuine tie and asserting an order would
+    # pin nothing.
+    def _by_label(label):
+        return next(r for r in runlog.list_runs() if r["label"] == label)
+
+    with pytest.raises(RuntimeError), runlog.run("verify", label="raising"):
+        raise RuntimeError("boom")
+    top = _by_label("raising")
+    assert top["outcome"] == "error"
+    info = runlog.summarise(top["run_id"])
+    assert info["errors"] and info["errors"][0]["cls"] == "RuntimeError"
+
+    # An explicit outcome inside the block always wins over the generic one.
+    with runlog.run("verify", label="cancelled"):
+        runlog.end("cancelled", reason="operator stop")
+    assert _by_label("cancelled")["outcome"] == "cancelled"
+    assert _by_label("ok-path")["outcome"] == "ok"
+
+
+def test_every_kind_gets_a_distinguishable_run_id_and_an_unknown_one_still_records():
+    """Refusing to record an operation because its name is unfamiliar would be
+    the coverage gap the prefix table exists to close."""
+    seen = set()
+    for kind in runlog._KIND_PREFIX:
+        rl = runlog.begin(kind, label="x")
+        assert rl is not None
+        seen.add(rl.run_id.split("-", 1)[0])
+        rl.end("ok")
+        runlog._CURRENT = None
+    assert len(seen) == len(runlog._KIND_PREFIX), "two kinds share a prefix"
+
+    rl = runlog.begin("some-future-thing", label="x")
+    assert rl is not None and rl.run_id.startswith("run-")
+    rl.end("ok")
+
+
 def test_the_journal_rides_the_all_diagnostics_bundle_automatically():
     """The operator's existing one-button download carries it -- no separate
     export step to remember, and no new place to look."""
