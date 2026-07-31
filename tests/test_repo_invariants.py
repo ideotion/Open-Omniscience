@@ -277,9 +277,9 @@ def test_reindex_background_job_is_wired():
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
     assert "_startReindexJob(" in app and "_pollReindexJob(" in app
     assert "/api/insights/reindex-job" in app
-    # the Settings buttons drive the background job (kept reindexAllCorpus/cleanupKeywords)
-    # reindexAllCorpus/pruneKeywords were removed 2026-07-31 (Settings review): the one
-    # "Clean up keywords" button drives the same job, so it is the surviving driver.
+    # The Settings button drives the background job. reindexAllCorpus/pruneKeywords were
+    # removed 2026-07-31 (Settings review) as redundant with "Clean up keywords", which
+    # chains the same two cores — so it is now the sole surviving driver.
     assert "cleanupKeywords(" in app
     # Phase 1.2: keyword-only scope plumbs end-to-end (index_article -> reindex_all_batch
     # -> the job -> the endpoint -> the cleanup button uses the keyword-only scope).

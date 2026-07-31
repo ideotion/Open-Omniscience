@@ -5324,8 +5324,11 @@
     // DB-10 §1.4: a full VACUUM is unbounded synchronous work (proportional to
     // the whole file), so gate it on real size with an honest estimate — never
     // let a multi-GB corpus start a rebuild the user didn't know would take
-    // minutes. Rate is the project's own measured pagesize_bench rebuild cost
-    // (~10-17 s/GB across corpus sizes; CLAUDE.md DB-10 §1b evidence, 2026-07-19/20).
+    // minutes. Rate is the project's own measured whole-file rebuild cost
+    // (~10-17 s/GB across corpus sizes) from the DB-10 §1b page-size A/B runs of
+    // 2026-07-19/20. That bench was removed once it had answered its question
+    // (Settings review 2026-07-31, ruling 6); the MEASUREMENT it produced is what
+    // these two constants encode, and it stands on its own.
     const VACUUM_GATE_BYTES = 500 * 1000 * 1000; // 500 MB — below this, always fast
     const VACUUM_LO_S_PER_GB = 10, VACUUM_HI_S_PER_GB = 17;
 
