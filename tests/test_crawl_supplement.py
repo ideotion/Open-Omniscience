@@ -269,7 +269,11 @@ def test_step_stamps_last_crawled_at_for_attempted_sources(monkeypatch):
 
     calls = []
 
-    def _fake_crawl_source(session_, source, *, fetcher, config):
+    def _fake_crawl_source(session_, source, *, fetcher, config, start_url=None):
+        # An ordinary (non-statistics) source keeps the crawler's OWN default start
+        # URL: crawl_start_url_for answers None for everything but a statistics
+        # producer, so the supplement must not redirect this crawl anywhere.
+        assert start_url is None
         calls.append(source.domain)
         return _FakeReport()
 
@@ -292,7 +296,8 @@ def test_one_source_failing_does_not_abort_the_rest(monkeypatch):
     class _FakeReport:
         pages_fetched = 1
 
-    def _flaky(session_, source, *, fetcher, config):
+    def _flaky(session_, source, *, fetcher, config, start_url=None):
+        assert start_url is None  # non-statistics sources keep the default start URL
         if source.domain == "a.example":
             raise RuntimeError("simulated crawl failure")
         return _FakeReport()
@@ -317,15 +322,19 @@ def test_the_supplement_uses_a_tight_crawl_config(monkeypatch):
     class _FakeReport:
         pages_fetched = 0
 
-    def _capture(session_, source, *, fetcher, config):
+    def _capture(session_, source, *, fetcher, config, start_url=None):
         seen_cfg["max_pages"] = config.max_pages
         seen_cfg["max_depth"] = config.max_depth
+        seen_cfg["start_url"] = start_url
         return _FakeReport()
 
     monkeypatch.setattr("src.ingest.crawl.crawl_source", _capture)
     _lane_step_crawl(session, _no_sitemap_fetcher(), settings)
     assert seen_cfg["max_pages"] < 500
     assert seen_cfg["max_depth"] < 6
+    # And the supplement did not redirect an ordinary source's crawl: only a
+    # statistics producer with a researched news_url gets an explicit start URL.
+    assert seen_cfg["start_url"] is None
 
 
 def test_step_calls_only_the_ONE_fetch_paths_no_raw_http():
