@@ -1345,6 +1345,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     verdict, ask what the default means, not just what was lost; and note that this direction
     was found only by the adversarial pass — both initial readers correctly identified the
     dropped columns and neither noticed the inversion.
+  - **ELEMENT `opacity` MAKES A CONTRAST PAIR LIE — score the COMPOSITED colour, not the
+    declared one (2026-07-31, the `.ag-cal` calendar-chip field report):** a rule reading
+    `background:var(--panel); color:var(--muted); opacity:.6` looks like a muted-on-panel
+    pair, and muted-on-panel passes AA on every theme. It is not that pair. Element opacity
+    composites the WHOLE element over what is BEHIND it, so the real text pixel is
+    `0.6*--muted + 0.4*--panel` while the background pixel stays `--panel` — the dimming eats
+    40% of an already-soft pair and contributes nothing to the background it is measured
+    against. Measured across all 17 themes: **16 FAILED WCAG AA 4.5:1** (worst 2.25 on Paper);
+    only `contrast` passed, which is exactly why the maintainer reported it as broken in light
+    AND dark rather than as a light-theme bug like the earlier `--caveat`/`--warn` failures.
+    THREE RULES: (a) any contrast check over a rule that sets `opacity` (or sits inside an
+    opacity-carrying ancestor) must compute `α*fg + (1-α)*parent_bg` vs `parent_bg`, or it
+    scores a pair that never appears on screen; (b) do not fix it by nudging the token — plain
+    `--muted` passes once the opacity is gone, but only just (worst 4.56), so prefer a
+    dedicated theme-DERIVED token (`--chip-off:color-mix(in srgb, var(--fg) 50%, var(--muted)
+    50%)`, worst 5.70) for the same reason `--caveat` exists: a hardcoded hue failed 8/17
+    themes; (c) dimming was never the right way to say "off" anyway — the ON state here was
+    already carried by an accent background + border, so removing the opacity cost no
+    legibility of STATE, and the toggle additionally gained `aria-pressed` so state is not
+    colour-only. Corollary for the guard: assert the opacity is ABSENT from the rule (a
+    re-added `opacity` silently restores the bug while every declared colour still looks fine).
 
 ## Open queue (when maintainer says proceed)
 - **SETTINGS-TAB REVIEW 2026-07-31 — 15 SUBTABS → 10, A NEW CARDS TAB, A NEW ADVANCED TAB

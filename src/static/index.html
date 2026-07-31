@@ -1208,7 +1208,7 @@
         <button data-tab="general">General</button>
         <button data-tab="models">AI</button>
         <button data-tab="wikipedia">Wikipedia</button>
-        <button data-tab="offlinemap">Offline map</button>
+        <button data-tab="offlinemap">OpenStreetMap</button>
         <button data-tab="agenda">Agenda</button>
         <button data-tab="data">Data &amp; backup</button>
         <button data-tab="safety">Safety</button>
@@ -1535,7 +1535,7 @@
 
     <div class="set-view" id="set-offlinemap" style="display:none">
     <section class="panel">
-      <h2>Offline map regions</h2>
+      <h2>OpenStreetMap regions</h2>
       <p class="muted" style="margin-top:0">Download OpenStreetMap region extracts for offline use — managed like the Wikipedia dumps (resumable, with pause/resume, and a download queue). Regions are listed largest first; the size shown is a dated estimate from a bundled catalogue (no network) — the exact size is read from the mirror when the download starts. Continents come from Geofabrik; the whole planet from the OpenStreetMap planet mirror. These can be very large (a continent is several GB; the planet is tens of GB).</p>
       <!-- Available maps as a LIST, not a dropdown (field test 2026-06-19 #15): every
            region visible at once with its size + a direct Download button. -->
@@ -1554,40 +1554,9 @@
       <h2>Calendars</h2>
       <p class="hint" style="margin-top:0">Subscribe to the calendars you want in your agenda; tap to toggle.</p>
       <div id="agenda-cals" class="ag-cals"><div class="muted">Loading…</div></div>
+      <p class="hint" id="agenda-auto" style="margin-bottom:0">Calendars update on their own while collection is on: new events are imported and each feed is re-checked in turn, a few per pass. There is nothing to start.</p>
     </section>
 
-    <!-- Calendar feed directory (bundled candidates; explicit verify/import).
-         Lives in Settings by ruling: the Agenda tab shows DATA, never plumbing. -->
-    <section class="panel" id="agenda-feeds">
-      <h2>Calendar directory</h2>
-      <p class="hint" style="margin-top:0"><span>A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Nothing is fetched until you click.</span>
-        <span>When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.</span></p>
-      <div class="row">
-        <div><label for="feeddir-kind">Kind</label><select id="feeddir-kind" onchange="renderFeedDir()">
-          <option value="">all</option></select></div>
-        <div><label for="feeddir-status-filter">Status</label><select id="feeddir-status-filter" onchange="renderFeedDir()">
-          <option value="">all</option><option value="ok">Reachable</option><option value="error">Dysfunctional</option><option value="unchecked">Not checked</option></select></div>
-        <div><label for="feeddir-sort">Sort</label><select id="feeddir-sort" onchange="renderFeedDir()">
-          <option value="name">Name</option><option value="country">Country</option><option value="kind">Kind</option><option value="status">Status</option><option value="imported">Imported</option></select></div>
-        <div style="flex:1"><label for="feeddir-q">Filter</label><input id="feeddir-q" placeholder="type to filter (name or country)…" oninput="renderFeedDir()"></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="verifyFeedBatch(this)">Verify next 25</button></div>
-        <div id="feeddir-status" class="hint" style="align-self:end"></div>
-      </div>
-      <div id="feeddir-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
-      <div id="feeddir-imported" style="margin-top:12px"></div>
-      <div id="feeddir-user" style="margin-top:12px"></div>
-      <h3 style="margin:14px 0 6px">Add a calendar</h3>
-      <p class="hint" style="margin-top:0"><span>Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.</span></p>
-      <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap">
-        <div><label for="ics-name">Calendar name</label><input id="ics-name" placeholder="My calendar"></div>
-        <div><label for="ics-file">Choose a .ics file</label><input id="ics-file" type="file" accept=".ics,text/calendar"></div>
-        <button class="secondary" onclick="importIcsFile(this)">Import calendar</button>
-      </div>
-      <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin-top:6px">
-        <div style="flex:1 1 240px"><label for="ics-url">…or subscribe by URL (webcal / https)</label><input id="ics-url" placeholder="https://example.org/calendar.ics"></div>
-        <button class="secondary" onclick="importIcsUrl(this)">Add from URL</button>
-      </div>
-    </section>
     </div>
 
     <div class="set-view" id="set-data" style="display:none">
@@ -2182,7 +2151,38 @@
     </section>
     </details>
 
-    </div>
+        <details class="adv-sec" data-adv="calendars">
+      <summary><span class="adv-sec-t">Calendar directory</span> <span class="muted">— the bundled feed catalogue, its check verdicts, and adding your own</span></summary>
+    <section class="panel" id="agenda-feeds">
+      <h2>Calendar directory</h2>
+      <p class="hint" style="margin-top:0"><span>A bundled directory of ~500 public calendar feeds (country holidays, religions, elections, UN days, space, astronomy). Feeds are checked a few at a time on each collection pass — never at startup, and never while you are offline.</span>
+        <span>When several providers publish the same calendar, they are grouped into one folder — you see the duplicate and can compare every source.</span></p>
+      <div class="row">
+        <div><label for="feeddir-kind">Kind</label><select id="feeddir-kind" onchange="renderFeedDir()">
+          <option value="">all</option></select></div>
+        <div><label for="feeddir-status-filter">Status</label><select id="feeddir-status-filter" onchange="renderFeedDir()">
+          <option value="">all</option><option value="ok">Reachable</option><option value="error">Dysfunctional</option><option value="unchecked">Not checked</option></select></div>
+        <div><label for="feeddir-sort">Sort</label><select id="feeddir-sort" onchange="renderFeedDir()">
+          <option value="name">Name</option><option value="country">Country</option><option value="kind">Kind</option><option value="status">Status</option><option value="imported">Imported</option></select></div>
+        <div style="flex:1"><label for="feeddir-q">Filter</label><input id="feeddir-q" placeholder="type to filter (name or country)…" oninput="renderFeedDir()"></div>
+        <div id="feeddir-status" class="hint" style="align-self:end"></div>
+      </div>
+      <div id="feeddir-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="feeddir-user" style="margin-top:12px"></div>
+      <h3 style="margin:14px 0 6px">Add a calendar</h3>
+      <p class="hint" style="margin-top:0"><span>Upload a local .ics file — no network. Its events join your agenda (deduplicated) as a removable calendar; the file is parsed and discarded.</span></p>
+      <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap">
+        <div><label for="ics-name">Calendar name</label><input id="ics-name" placeholder="My calendar"></div>
+        <div><label for="ics-file">Choose a .ics file</label><input id="ics-file" type="file" accept=".ics,text/calendar"></div>
+        <button class="secondary" onclick="importIcsFile(this)">Import calendar</button>
+      </div>
+      <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin-top:6px">
+        <div style="flex:1 1 240px"><label for="ics-url">…or subscribe by URL (webcal / https)</label><input id="ics-url" placeholder="https://example.org/calendar.ics"></div>
+        <button class="secondary" onclick="importIcsUrl(this)">Add from URL</button>
+      </div>
+    </section>
+    </details>
+</div>
 
 
 

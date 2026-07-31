@@ -1963,6 +1963,17 @@ def test_ui_invariants():
     )
     assert 'id="agenda-feeds"' in html, "the calendar directory must still exist (in Settings)"
     assert 'id="set-agenda"' in html, "Settings must host the Agenda configuration section"
+    # 2026-07-31: the directory moved one level further out — out of the Agenda SUBTAB
+    # and into Advanced, on the same principle (it is the catalogue that feeds the
+    # agenda, not agenda configuration). Pinned so it cannot drift back.
+    _adv = html[html.index('id="set-advanced"'):]
+    _adv = _adv[: _adv.index('<div class="set-view"')] if '<div class="set-view"' in _adv else _adv
+    assert 'id="agenda-feeds"' in _adv, (
+        "the calendar directory lives in Settings → Advanced (2026-07-31 ruling)"
+    )
+    _ag = html[html.index('id="set-agenda"'):]
+    _ag = _ag[: _ag.index('<div class="set-view"')]
+    assert 'id="agenda-feeds"' not in _ag, "the directory must not sit in the Agenda subtab"
     assert 'id="agenda-month"' in agenda_tab and 'id="agenda-views"' in agenda_tab, (
         "the agenda month grid + view switcher must exist in the tab"
     )
@@ -2513,7 +2524,13 @@ def test_ui_invariants():
     #     MUST pass the ONE consent popup (ensureOnline, invariant #14) — assert the
     #     gate is present in the start path so it can't regress to a silent fetch.
     assert 'data-tab="offlinemap"' in html and 'id="set-offlinemap"' in html, (
-        "the Offline map Settings subtab button + panel must exist (Group M frontend)"
+        "the OpenStreetMap Settings subtab button + panel must exist (Group M frontend)"
+    )
+    # Renamed 2026-07-31 (maintainer ruling): the subtab is named for what it actually
+    # is. The data-tab / id stay "offlinemap" on purpose — language-neutral identifiers,
+    # like url anchors — so only the LABEL is pinned here.
+    assert '<button data-tab="offlinemap">OpenStreetMap</button>' in html, (
+        'the subtab must be labelled "OpenStreetMap", not "Offline map"'
     )
     assert "function loadOsmMap(" in html and 'cat === "offlinemap"' in html, (
         "loadOsmMap() must exist and be lazy-loaded from showSetCat()"
@@ -3387,7 +3404,7 @@ def test_library_central_dashboard():
     # the two layers are labelled + the AI-derived layer is disclosed unreliable.
     assert "Downloaded — the raw" in html and "Extrapolated — AI-derived" in html
     # representative downloaded + extrapolated tiles.
-    assert "AI summaries" in html and "Wikipedia dumps" in html and "Offline map regions" in html
+    assert "AI summaries" in html and "Wikipedia dumps" in html and "OpenStreetMap regions" in html
 
 
 def test_storage_footprint_shown_wherever_db_size_shows():
@@ -7656,3 +7673,95 @@ def test_hazards_are_ingested_as_articles_with_a_home_strip_and_map_rings():
     # a fabricated size for a fact the provider didn't state.
     assert 's.kind === "hazard" && typeof s.magnitude === "number"' in app
     assert "Math.sqrt(Math.max(0, s.magnitude))" in app
+
+
+def test_agenda_verification_is_progressive_never_at_boot():
+    """Settings restructure PR-6 (maintainer rulings 10/11/12, 2026-07-31).
+
+    Ruling 10: the Agenda subtab gets NO new fetch behaviour — the manual buttons
+    go and the automation that already existed is surfaced instead.
+    Ruling 11: feed verification becomes PROGRESSIVE, riding collect passes, and
+    VISIBLE in the task manager. NEVER at boot — the airplane-mode/zero-network
+    boot guarantee is a non-negotiable, so the "rides a pass" property is pinned
+    structurally here, not just asserted in prose.
+    """
+    src = (_SRC / "scheduler" / "runner.py").read_text(encoding="utf-8")
+    html = _ui_source()
+
+    # 1. The ONLY production caller of verify_due_feeds is the housekeeping lane's
+    #    calendar step. The lane exists only during an online pass, so "never at
+    #    boot" and "never offline" follow from the call graph rather than from a
+    #    convention someone has to remember.
+    callers = sorted(
+        str(f.relative_to(_SRC))
+        for f in _live_py_files()
+        if "verify_due_feeds(" in f.read_text(encoding="utf-8")
+        and f.name != "feeds.py"
+    )
+    assert callers == ["scheduler/runner.py"], (
+        f"verify_due_feeds must only be called from the scheduler lane, found: {callers}"
+    )
+    step = src.split("def _lane_step_calendar(", 1)[1].split("\ndef ", 1)[0]
+    assert "verify_due_feeds(" in step, "the calendar lane rung must run the verification"
+    assert "_CALENDAR_VERIFY_PER_PASS" in step, "the per-pass batch must be bounded"
+    # a verification failure must never cost the import half its tally
+    assert "except Exception" in step and "return out" in step
+
+    # 2. Visible in the task manager: the lane's tally reaches the payload the
+    #    task-manager window already polls, and the window renders it.
+    assert '"housekeeping": self._last_lane_result' in src, (
+        "the lane tally must be exposed on /api/scheduler/activity (ruling 11)"
+    )
+    assert "function _housekeepingHtml(" in html and "a.housekeeping" in html, (
+        "the task manager's Schedule tab must render the housekeeping tally"
+    )
+    assert "Calendar feeds checked" in html
+
+    # 3. The manual sweep button is gone; the per-feed action and the ENDPOINT stay
+    #    (never remove a tool, only a redundant button — the Desk lesson).
+    assert "verifyFeedBatch" not in html, "the manual 'Verify next 25' button must be gone"
+    assert "/feeds/verify-batch" in (_SRC / "api" / "events.py").read_text(encoding="utf-8"), (
+        "the batch endpoint stays — only the redundant button was removed"
+    )
+    assert 'feedAction(' in html, "the per-feed Check/Import actions must survive"
+
+    # 4. The redundant imported-events preview is gone: those events are the Agenda.
+    assert "feeddir-imported" not in html and "renderImported" not in html
+
+    # 5. The catalogue is plumbing -> Advanced, and folded must not mean fetched.
+    assert 'data-adv="calendars"' in html, "the Calendar directory must be an Advanced section"
+    assert "calendars: () => { loadFeedDir(); }" in html, (
+        "the directory must load on section EXPAND, via the Advanced loader map"
+    )
+    agenda_loader = html.split("if (!_agViewTabs)", 1)[1].split("\n    }", 1)[0]
+    assert "loadFeedDir()" not in agenda_loader, (
+        "opening the Agenda tab must no longer pull the ~500-feed catalogue"
+    )
+    # ...and the automation is STATED where the user subscribes (ruling 10), and its
+    # real backlog is shown in the directory that used to carry the manual button.
+    assert 'id="agenda-auto"' in html
+    assert "_feedDir.verification" in html and "not checked yet" in html, (
+        "the directory must show the progressive verification's real backlog"
+    )
+
+
+def test_calendar_chip_contrast_and_toggle_state():
+    """The 2026-07-31 field report: unsubscribed calendar chips are unreadable.
+
+    Cause was element `opacity:.6`, which composites the whole chip over the panel
+    and ate 40% of an already-soft --muted/--panel pair: measured across all 17
+    themes, 16 FAILED WCAG AA 4.5:1 (worst 2.25 on Paper). The fix must not be
+    re-broken by re-adding the opacity, and the off-state colour must stay a
+    theme-DERIVED token (a hardcoded hue is the recorded --caveat failure mode).
+    """
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+    rule = css.split(".ag-cal {", 1)[1].split("}", 1)[0]
+    assert "opacity" not in rule, "the opacity that caused the contrast failure must not return"
+    assert "var(--chip-off)" in rule, "the off state must use the theme-aware token"
+    assert "--chip-off:color-mix(" in css, (
+        "--chip-off must be DERIVED from the theme's own --fg/--muted, never a fixed hue"
+    )
+    # state must not be conveyed by colour alone
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    chip = app.split('class="ag-cal', 1)[1][:400]
+    assert "aria-pressed" in chip, "a subscribe toggle must announce its state"

@@ -4171,3 +4171,54 @@ readers all correctly identified the dropped columns, and only the adversarial p
 prompted to attack the negative space rather than confirm the finding — named the
 inversion. The positive finding was easy; the direction that made it a data-safety bug
 was not.
+
+## 2026-07-31 — element `opacity` makes a contrast pair lie (the `.ag-cal` chips)
+
+Field report: the unsubscribed calendar chips in Settings → Agenda are unreadable —
+and, unusually, in light AND dark themes alike.
+
+The rule looked innocent:
+
+```css
+.ag-cal { background:var(--panel); color:var(--muted); ... opacity:.6; }
+```
+
+Read as a colour pair that is `--muted` on `--panel`, which passes WCAG AA on every one
+of the 17 themes. But that pair never appears on screen. Element `opacity` composites the
+WHOLE element over what is behind it, and the chip sits on a `.panel`, so the real
+rendered text is `0.6*--muted + 0.4*--panel` while the real background is just `--panel`
+— the dimming eats 40% of an already-soft pair and contributes nothing to the background
+it is being measured against.
+
+Scored properly, modelling `:root` inheritance explicitly (a theme that does not override
+a variable inherits it — getting that wrong under-reports failures):
+
+| | themes failing AA 4.5:1 | worst |
+|---|---|---|
+| today (`opacity:.6` + `--muted`) | **16 / 17** | 2.25 (Paper) |
+| drop the opacity, keep `--muted` | 0 / 17 | 4.56 (Paper) |
+| drop the opacity, use `--chip-off` | 0 / 17 | 5.70 (Dawn) |
+
+Only `contrast` passed — which is precisely why this presented differently from the
+earlier `--caveat` (8/17) and `--warn` (6/17) failures. Those were light-theme bugs, and
+their signature was a set of light themes. This one is a *mechanism* bug, so it failed
+almost everywhere, and the maintainer correctly reported it as theme-independent.
+
+Three things worth keeping:
+
+1. **Any contrast check over a rule that sets `opacity`, or that sits inside an
+   opacity-carrying ancestor, must score `α*fg + (1-α)*parent_bg` against `parent_bg`.**
+   Scoring the declared `color`/`background` pair measures something that is not rendered.
+2. **Do not fix it by nudging the token.** Plain `--muted` passes once the opacity is
+   gone — but only just (4.56), too thin a margin for a token a future theme may retint.
+   A dedicated theme-DERIVED token is the same answer `--caveat` already established:
+   `--chip-off: color-mix(in srgb, var(--fg) 50%, var(--muted) 50%)`, never a hardcoded
+   hue (a fixed hue is what failed 8/17 themes last time).
+3. **Dimming was never the right way to say "off".** The ON state was already carried by
+   an accent background and border, so deleting the opacity cost no legibility of STATE.
+   The toggle additionally gained `aria-pressed`, because state conveyed by colour alone
+   is its own defect — and the fix was the natural moment to close it.
+
+Guard shape: assert the `opacity` is ABSENT from the rule and that the off-state colour
+is a `color-mix`-derived token. A re-added `opacity` silently restores the bug while
+every declared colour in the rule still looks perfectly fine on inspection.

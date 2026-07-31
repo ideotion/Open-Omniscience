@@ -1029,6 +1029,12 @@ _LANE_FLOORS: dict[str, float] = {
 # invocations, like the pass-recycling deferred-ids state above.
 _LANE_LADDER = KindLadder(rates=_LANE_RATES, floors=_LANE_FLOORS)
 
+# How many calendar feeds the "calendar" rung VERIFIES per pass (ruling 11's
+# "progressive"). Small on purpose: verification is a real fetch each, and the
+# directory is ~500 feeds, so this is a slow, polite sweep that finishes over
+# many passes rather than a burst. The import half keeps its own budget.
+_CALENDAR_VERIFY_PER_PASS = 5
+
 
 def _lane_pending_kinds(settings: SchedulerSettings) -> set[str]:
     """Which housekeeping kinds are DUE this lane invocation, per each
@@ -1089,9 +1095,31 @@ def _lane_step_markets(session, fetcher, settings: SchedulerSettings) -> dict:
 
 
 def _lane_step_calendar(session, fetcher, settings: SchedulerSettings) -> dict:
-    from src.events.feeds import auto_import_due_feeds
+    """Import due calendar feeds, and VERIFY a few of them (ruling 11, 2026-07-31).
 
-    return auto_import_due_feeds(fetcher)
+    Verification used to be a manual "Verify next 25" button; it is now
+    progressive and rides this pass, which is also why it can never run at boot
+    -- the housekeeping lane only exists on an online pass. The verify tally is
+    returned under its own keys so the task manager can show it separately from
+    the import tally; a verification failure never affects the import step.
+    """
+    from src.events.feeds import auto_import_due_feeds, verify_due_feeds
+
+    out = dict(auto_import_due_feeds(fetcher))
+    try:
+        checked = verify_due_feeds(fetcher, batch=_CALENDAR_VERIFY_PER_PASS)
+    except Exception as exc:  # noqa: BLE001 - verification is a rider; imports still count
+        _LOG.warning("calendar feed verification failed this pass", exc_info=True)
+        # RECORD the failure in the tally, do not merely log it. A guard that
+        # swallows an exception into "no keys" makes a permanently-broken
+        # verification indistinguishable from one that had nothing due -- the
+        # fallback becomes the hiding place for the bug it was built to survive.
+        out["verify_error"] = str(exc)[:200] or exc.__class__.__name__
+        return out
+    out["verified"] = checked.get("checked", 0)
+    out["verified_ok"] = checked.get("ok", 0)
+    out["verified_failed"] = checked.get("failed", 0)
+    return out
 
 
 def _lane_step_law(session, fetcher, settings: SchedulerSettings) -> dict:
@@ -1934,6 +1962,12 @@ class BackgroundScheduler:
         return {
             **self.status(),
             "plan": plan_preview(session, self._settings_provider(), last_result=last),
+            # The last housekeeping lane's own tallies (calendar import + the
+            # progressive calendar-feed VERIFICATION, law, discovery, ...). It was
+            # computed and stored but never exposed, so a ride-along's work was
+            # invisible; ruling 11 requires the verification to be VISIBLE in the
+            # task manager, and this is the payload that window already polls.
+            "housekeeping": self._last_lane_result,
             # Break the last pass's fetch_failed count down by reason (Tor-403 vs
             # DNS vs connect vs …) so the number is never a mystery. Reads the flat
             # "ff:<reason>" tally keys; empty when the last pass had no failures.

@@ -1132,7 +1132,41 @@
         sect(t("Schedule")) +
         `<div class="vr"><span>${esc(t("Cadence"))}</span><b>${cadence}</b></div>` +
         nextHtml + lastHtml + modeHtml +
+        _housekeepingHtml(a.housekeeping, t, row, sect) +
         `<div class="vnote">${esc(t("These are the scheduler’s own facts — the schedule is managed in Settings. Times are relative; hover for the exact local moment and the method."))}</div>`;
+    }
+    // The last housekeeping lane's own tallies, rendered from what it ACTUALLY
+    // reported — the calendar-feed verification rides the collect pass now
+    // (there is no manual button), so this is where a user sees it happening.
+    // Absent keys render nothing rather than a fabricated zero: a lane that did
+    // not run this pass has no number to show.
+    function _housekeepingHtml(hk, t, row, sect) {
+      if (!hk || typeof hk !== "object") return "";
+      if (hk.skipped) {
+        return sect(t("Background work")) +
+          row(t("Housekeeping"), `<span class="muted">${esc(t("paused — airplane mode is engaged"))}</span>`);
+      }
+      const cal = hk.calendar;
+      if (!cal || typeof cal !== "object") return "";
+      const rows = [];
+      // A broken verification is SAID, never hidden behind an absent row — the
+      // absence of a number must not read the same as "nothing was due".
+      if (cal.verify_error) {
+        rows.push(row(t("Calendar feeds checked"),
+          `<span class="pill warn" title="${esc(String(cal.verify_error))}">${esc(t("check failed — see the diagnostics log"))}</span>`));
+      }
+      if (cal.verified != null) {
+        const ok = cal.verified_ok || 0, bad = cal.verified_failed || 0;
+        rows.push(row(
+          `<span title="${esc(t("Calendar feeds are checked a few at a time on each pass, never at startup. A feed that fails is re-checked after 1 month, then 2, 4 and 6 — capped, so it is never written off."))}">${esc(t("Calendar feeds checked"))}</span>`,
+          `${cal.verified} <span class="muted">· ${ok} ${esc(t("reachable"))} · ${bad} ${esc(t("failed"))}</span>`));
+      }
+      if (cal.imported != null) {
+        const off = cal.backed_off
+          ? ` <span class="muted">· ${cal.backed_off} ${esc(t("waiting on a re-check"))}</span>` : "";
+        rows.push(row(t("Calendar events imported"), `${cal.imported}${off}`));
+      }
+      return rows.length ? sect(t("Background work")) + rows.join("") : "";
     }
     // Per-tag scraping COVERAGE (the "how far has collection reached" view).
     // Lazy: fetched only when the Coverage subtab is opened (its own read-only
@@ -1822,6 +1856,9 @@
       stats:    () => { loadStatAgencies(); },
       // loadKeywordFilter moved off loadSettings with its panel, so it loads here too.
       keywords: () => { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration(); loadKeywordFilter(); },
+      // The ~500-feed calendar catalogue: plumbing, so it moved out of the Agenda
+      // subtab (invariant #8). It no longer loads with the agenda — only on expand.
+      calendars: () => { loadFeedDir(); },   // loadFeedDir renders the user calendars too
     };
     // Deep-link into one Advanced section. The old showTab("ingest") / showTab("sources")
     // redirects pointed at subtabs that no longer exist, so every palette entry and
@@ -3374,7 +3411,11 @@
         renderAgendaCatChips();
         renderAgenda();
       } catch (e) { box.innerHTML = `<div class="muted">Could not load agenda: ${esc(e.message)}</div>`; }
-      loadFeedDir();   // the bundled directory (no network: it reads the catalog)
+      // The feed DIRECTORY is no longer loaded here: it moved to Settings → Advanced
+      // (invariant #8 — this tab shows the agenda, not the catalogue that feeds it)
+      // and loads only when that section is expanded. The agenda's own per-event
+      // provenance pills do not depend on it: _agFeedById() self-loads the map on
+      // first use when _feedDir is still null.
     }
 
     // -- Calendar feed directory: candidates -> explicit verify/import ------- //
@@ -3389,7 +3430,6 @@
       $("feeddir-kind").innerHTML = '<option value="">all</option>' +
         kinds.map(k => `<option value="${esc(k)}">${esc(k)}</option>`).join("");
       renderFeedDir();
-      renderImported();
       renderUserCalendars();
     }
     function _verdictChip(v, feed) {
@@ -3450,12 +3490,20 @@
     }
     function renderFeedDir() {
       if (!_feedDir) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const excl = agExcluded();
       let fams = _feedDirFiltered();
       const total = fams.length;
       fams = fams.slice(0, 40);
-      $("feeddir-status").textContent =
-        `${_feedDir.total_feeds} feeds · ${_feedDir.families.length} folders · ${_feedDir.checked} checked`;
+      // The manual "Verify next 25" button is gone; what replaced it is stated here
+      // instead, with the REAL backlog — so the automation is visible rather than
+      // implied (ruling 10/11). Every figure is a count the backend measured.
+      const _v = _feedDir.verification || {};
+      $("feeddir-status").innerHTML =
+        esc(`${_feedDir.total_feeds} feeds · ${_feedDir.families.length} folders · ${_feedDir.checked} checked`) +
+        (_v.unchecked
+          ? ` <span class="muted" title="${esc(_v.method || "")}">· ${_v.unchecked} ${esc(t("not checked yet"))}</span>`
+          : "");
       const bulk = `<div class="row" style="gap:6px;margin-bottom:8px;align-items:center;flex-wrap:wrap">
         <button class="secondary tiny" onclick="agExcludeBulk('dysfunctional')">Exclude dysfunctional</button>
         <button class="secondary tiny" onclick="agExcludeBulk('shown')">Exclude shown</button>
@@ -3488,14 +3536,13 @@
       } catch (e) { toast(e.message, "err"); }
       loadFeedDir();
     }
-    async function verifyFeedBatch(btn) {
-      btn.disabled = true;
-      try {
-        const r = await api("/api/events/feeds/verify-batch?limit=25", {method: "POST"});
-        toast(`Checked ${r.checked} — ${r.ok} reachable · ${r.remaining_unchecked} left`, "ok");
-      } catch (e) { toast(e.message, "err"); }
-      finally { btn.disabled = false; loadFeedDir(); }
-    }
+    // NOTE: the "Verify next 25" button is gone (ruling 10/11, 2026-07-31) —
+    // verification is progressive now, riding each collection pass, and its tally
+    // shows in the task manager's Schedule tab. The per-feed "Check" action below
+    // stays: verifying ONE feed you are looking at is a real, bounded choice, not
+    // the manual sweep the ruling retired. POST /api/events/feeds/verify-batch is
+    // deliberately KEPT on the backend — never remove an endpoint, only a
+    // redundant button (the Desk lesson).
     // Upload a local .ics (no network): events join the agenda (deduped) as a
     // removable, user-owned calendar. The file is read client-side and posted.
     async function importIcsFile(btn) {
@@ -3509,7 +3556,7 @@
         const r = await api("/api/events/feeds/import-ics", { method: "POST", body: JSON.stringify({ name, ics }) });
         toast(`${r.added} / ${r.events_in_file}`, "ok");
         $("ics-file").value = ""; $("ics-name").value = "";
-        renderImported(); renderUserCalendars(); _agendaMaybeReload();
+        renderUserCalendars(); _agendaMaybeReload();
       } catch (e) { toast(e.message, "err"); }
       finally { btn.disabled = false; }
     }
@@ -3526,7 +3573,7 @@
         const r = await api("/api/events/feeds/import-url", { method: "POST", body: JSON.stringify({ url, name }) });
         toast(`${r.added} / ${r.events_in_file}`, "ok");
         $("ics-url").value = ""; $("ics-name").value = "";
-        renderImported(); renderUserCalendars(); _agendaMaybeReload();
+        renderUserCalendars(); _agendaMaybeReload();
       } catch (e) { toast(e.message, "err"); }
       finally { btn.disabled = false; }
     }
@@ -3542,28 +3589,17 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try { await api("/api/events/feeds/user/" + encodeURIComponent(key), { method: "DELETE" }); toast(t("Calendar removed."), "ok"); }
       catch (e) { toast(e.message, "err"); }
-      renderUserCalendars(); renderImported(); _agendaMaybeReload();
-    }
-    async function renderImported() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      let data; try { data = await api("/api/events/imported"); } catch { return; }
-      if (!data.count) { $("feeddir-imported").innerHTML = ""; return; }
-      const today = new Date().toISOString().slice(0, 10);
-      const next = data.events.filter(e => e.date >= today).slice(0, 30);
-      $("feeddir-imported").innerHTML = `<h3 style="margin-bottom:6px">Imported events</h3>` +
-        next.map(e => {
-          const folders = e.family_count > 1 ? ` +${e.family_count - 1}` : "";
-          const srcs = e.source_count > 1 ? ` · ${e.source_count}×` : "";
-          return `<div class="vr"><span>${esc(e.date)} · ${esc(e.title)}</span>` +
-            `<b class="muted" title="${esc((e.family_names || [e.family_name]).join(', '))}">${esc(e.family_name)}${folders}${srcs}</b></div>`;
-        }).join("") +
-        `<div class="hint">${data.count}${data.occurrences > data.count ? ` / ${data.occurrences}` : ""} · <span>The same event carried by several feeds is shown once, listing every source; a date disagreement stays visible as separate entries.</span></div>`;
+      renderUserCalendars(); _agendaMaybeReload();
     }
 
     function renderAgendaCals() {
       const subs = agSubs();
       $("agenda-cals").innerHTML = AG.cals.map(c =>
+        // aria-pressed: subscribed/not is a TOGGLE state, and after the contrast fix
+        // it is carried by the accent background + border. Colour alone must never be
+        // the only channel, so the state is announced too.
         `<button class="ag-cal${subs.has(c.key) ? " on" : ""}" data-k="${esc(c.key)}" onclick="toggleCalSub(this)"
+           aria-pressed="${subs.has(c.key) ? "true" : "false"}"
            title="${esc(c.description || "")}">${esc(c.name)} <span class="muted">${c.count}</span></button>`).join("");
     }
     function toggleCalSub(btn) {
@@ -7213,7 +7249,7 @@
 
     function _sfLabel(kind, name, t) {
       const L = { db: t("Database"), wal: t("Database WAL"), shm: t("Database SHM"),
-        wiki_dumps: t("Wikipedia dumps"), osm_regions: t("Offline map regions"),
+        wiki_dumps: t("Wikipedia dumps"), osm_regions: t("OpenStreetMap regions"),
         staging: t("Backup/restore staging"), other: t("Other (data folder)"),
         ollama_models: t("Local AI models") };
       return L[kind] || name || kind;
@@ -7298,7 +7334,7 @@
         tile(num(wiki.tracked_pages), t("Wikipedia pages tracked")),
         tile(num(wiki.revisions), t("Wikipedia revisions")),
         tile(`${num((wiki.dumps || {}).count)} · ${sz((wiki.dumps || {}).total_bytes)}`, t("Wikipedia dumps")),
-        tile(`${num((maps.osm_regions || {}).count)} · ${sz((maps.osm_regions || {}).total_bytes)}`, t("Offline map regions")),
+        tile(`${num((maps.osm_regions || {}).count)} · ${sz((maps.osm_regions || {}).total_bytes)}`, t("OpenStreetMap regions")),
         tile(num((dl.markets || {}).commodity_prices), t("Market price points")),
         tile(num(laws.documents), t("Law documents")),
         tile(num(laws.revisions), t("Law revisions")),
@@ -14539,7 +14575,7 @@
       try {
         const dl = await api("/api/geo/downloads");
         const done = (dl.downloads || []).filter(d => d.status === "done" && d.code);
-        if (!done.length) { toast(t("No offline-map region downloaded yet — get one in Settings → Offline map."), "err"); return; }
+        if (!done.length) { toast(t("No map region downloaded yet — get one in Settings → OpenStreetMap."), "err"); return; }
         const code = done[0].code;
         toast(t("Reading the offline map…"));
         // BINARY fetch (the bounded prefix). Loopback file read — no network egress.
