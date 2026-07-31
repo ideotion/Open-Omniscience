@@ -1347,6 +1347,83 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     dropped columns and neither noticed the inversion.
 
 ## Open queue (when maintainer says proceed)
+- **THE BULLETIN — PERIODIC CORPUS DOCUMENT (maintainer design conversation 2026-07-30/31; 16
+  numbered decisions ANSWERED 2026-07-31; DESIGN ONLY, nothing built; record of record =
+  [`docs/design/BULLETIN_DESIGN_2026-07-31.md`](docs/design/BULLETIN_DESIGN_2026-07-31.md),
+  code-verified against `main`@0d76fac by a 13-agent verify+critique pass then a second 8-agent
+  mechanics pass, every load-bearing claim hand-re-verified):** a periodic (daily → yearly)
+  document generated from the corpus with numbered citations, deterministic first, with an
+  optional removable local-LLM narration layer, plus an owner-only evidence ZIP.
+  **THE RULINGS:** (1) NAME = **Bulletin**, chosen so "Synthesis" keeps its existing meaning
+  (the shipped selection tool) and NOTHING existing is renamed — and because "AI summary" would
+  mislabel a deterministic-first artifact whose narration is off below the hardware gate.
+  (2) **THE WHOLE FEATURE IS GATED ON AI-CAPABLE HARDWARE** via the existing
+  `inference_capability()` (`src/llm/backend.py:258`) — NOT `detect_gpu()` (the two-predicate
+  invariant holds; hardware policy never enters `detect_gpu()`); the standing
+  `llm_allow_impractical_hw` override still reveals it (never a hard block). Deliberately
+  STRICTER than ruling 15's warning tier, justified by workload shape: ruling 15 covers
+  interactive one-off inference, the Bulletin's narration is thousands of calls. RECORDED
+  CONSEQUENCE: Layer A is pure SQL and would run anywhere, so gating the whole feature denies a
+  GPU-less operator even the deterministic document — implemented as instructed, reversible in
+  one condition (open question 4). (3) WINDOW RULE: **the rising RECENT window EQUALS the
+  coverage window; baseline is a multiple**. The proposed fraction-of-period ratios were
+  REFUTED with a worked example — a story peaking on day 2 sits in its own baseline and reads as
+  FALLING (growth 0.17) in the edition covering its own week, and 6/7 of corpus time never
+  contributes to any rising signal. Defaults ARE the shipped `_TREND_WINDOWS` for daily/weekly/
+  monthly (1/7, 7/30, 30/90), extended 3× for trimester/semester/yearly; operator-editable.
+  (4) **HOURLY IS BLOCKED, not tweakable** — `KeywordMention.observed_on` is a `Date` and the
+  time is destroyed at write (`store.py:285`); `created_at` is unusable because re-index
+  delete-then-reinserts every row stamped `now()` (`store.py:306`). Daily is the floor cadence.
+  (5) date convention = `coalesce(published_at, created_at)` app-wide for the edition.
+  (6) CONTENT ANCHORING addressed frontally: extractive floor → cached analyses → narration over
+  REAL article text; **stage 2 (When/Where/Who) already exists complete and eval-gated in
+  `src/ai_layer/perception.py` — reuse, do not rebuild**; the proposed per-article "confirm
+  keywords" stage is deliberately NOT built (the rule-based index is the trusted layer); no
+  cascade — narration reads text directly, extracted facts are hints only. (7) the AI volume
+  setting is a **TIME BUDGET, not a count** (there is NO recorded per-call latency in the repo —
+  measuring is build step 5); deterministic counts stay exact and uncapped, only narration is
+  sampled. (8) TRUSTWORTHINESS = mechanical support-checking (language-agnostic) + human grading
+  ONLY in languages the operator reads + a **tri-state** per-language gate on the
+  `gate_languages_from_report` pattern, where "never evaluated" is epistemic and still REFUSES.
+  (9) story-cluster unit + metrics appendix. (10) temperature selectable on BOTH backends —
+  `options` is silently ignored on vLLM (`vllm_client.py:142`), a real determinism bug.
+  (11) TWO EXITS, ONE RECORD: the edition JSON rides the encrypted backup free (register in
+  `artifact.py::_collect_members`, the import-reports pattern); the evidence ZIP is a separate
+  on-demand export (plaintext leaving the encrypted store — disclosed, not assumed); + TOC +
+  `20260731-OOS-…` naming. (12) published artifact carries EXTERNAL links only — a local reader
+  link resolves to a DIFFERENT article on a recipient's install. (13) delivery = download
+  primary, short digest for paste (Gmail clips ~102 KB and eats the reference list; Gecko
+  `ClipboardItem` support is weaker and Gecko is the verification bar). (14) mandatory masthead
+  (contributing sources, top-3 share, language split, days-with-ingest, selection math),
+  operator-tweakable. (15) **CONTINUOUS IMPROVEMENT (maintainer-clarified, app-wide posture, not
+  cards-only):** iterative improve→audit→improve, pharma-style. The prerequisite is ALREADY
+  BUILT — `src/briefing/card_audit.py` (1,891 lines, merged 2026-07-30) implements the proposed
+  per-card fact-bundle auditor including `observe_producers`, which closes the ok/no-signal/error
+  conflation the draft called "the gap that matters most". MISSING = three small instruments: a
+  determinism check (run twice, diff), persisted audit runs, and an audit-to-audit diff —
+  **`scripts/kpi_diff.py` already has that exact shape** (`classify`/`diff_snapshots`), just not
+  pointed at card audits; register in `src/monitoring/recursive_loop.py`. (16) placement = a
+  FOLDED section at the BOTTOM of Advanced (NOT a new subtab: there are **12** subtabs now, not
+  the draft's 18, heading to a ruled 10). (17) producers are NOT pre-classified — each prints its
+  REAL window and gets a per-producer TOGGLE in the review screen, so classification falls out of
+  observed content.
+  **A REAL SHIPPED BUG FOUND WHILE VERIFYING (independent of this feature, own reviewed slice):**
+  `trending()`'s recent window is `[today−N, today+1)` = **N+1 days** (`queries.py:1361`) while
+  `expected` scales the rate to **N** days (`:1370`), inflating growth by (N+1)/N — **2× on the
+  shipped "Past 24h" preset**, drifting through the day since today is partial. The same `+1`
+  CANCELS in `supergroup_rising.py:180` / `concentration.py:64` (same-window share tests) but not
+  here. Unnoticed because tests place fixtures inside windows and never assert width.
+  **THREE FURTHER CORRECTIONS to the earlier draft, all verified:** Layer A can NOT live in the
+  housekeeping lane (the lane is refused wholesale under airplane, `runner.py:1684`, contradicting
+  "Layer A is airplane-safe"); analytics has **zero** `quarantined` references
+  (`queries/store/rollup_serve/columnar`), so every keyword aggregate currently counts quarantined
+  articles; and `_window_filter` (`:1659-1665`) is INCLUSIVE (`<= end`) while `_counts` (`:1341`)
+  is half-open — two conventions in one file, so consecutive periods double-count the boundary day.
+  **BUILD ORDER (§21):** trending fix → vLLM temperature → the three continuous-improvement
+  instruments + cycles → explicit `start`/`end` windows on the three aggregates → measure LLM
+  latency → Layer A → persistence/backup/ZIP → Layer B → UI. Steps 1–3 are worth doing whether or
+  not the Bulletin is built. FIVE OPEN QUESTIONS remain in §20 (section list · introduction · mail
+  sending · whether Layer A should be available below the hardware gate · review-screen UX).
 - **SETTINGS-TAB REVIEW 2026-07-31 — 15 SUBTABS → 10, A NEW CARDS TAB, A NEW ADVANCED TAB
   (maintainer reviewed every Settings subtab and gave per-subtab remarks; 23 follow-up questions
   put and ANSWERED the same day; PLANNING ONLY this session, code-verified against `main`@b5bc6b6;
