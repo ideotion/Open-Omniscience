@@ -24,10 +24,11 @@ only the RESOLVED client type changes when a GPU + an installed vLLM are present
 from __future__ import annotations
 
 import os
+import platform
 import subprocess  # noqa: S404 - fixed argv, no shell, 5s timeout (nvidia-smi probe only)
 from typing import Protocol, runtime_checkable
 
-from src.llm.ollama import GenerationResult
+from src.llm.ollama import GenerationResult, total_ram_gb
 
 _VALID_OVERRIDES = ("auto", "ollama", "vllm")
 
@@ -88,6 +89,326 @@ def detect_gpu() -> dict:
         except ValueError:
             vram_mb = None
     return {"available": True, "name": name, "vram_mb": vram_mb}
+
+
+# --------------------------------------------------------------------------- #
+#  HARDWARE SUITABILITY GATE (2026-07-30, maintainer-ruled)
+#
+#  RULED: "Using vLLM or Ollama on <8GB RAM, GPU-less laptops is impractical,
+#  it's ok to limit them. This is only for my GPU enabled machine (by GPU, I
+#  mean dedicated GPU, not the integrated ones we find on most CPUs nowadays,
+#  and I exclude from this reasoning the sorts of Mac minis having dual-use
+#  memory that is precisely good at inference, this is another matter)."
+#
+#  TWO PREDICATES, DELIBERATELY NOT ONE -- do not merge them:
+#
+#    1. "Can vLLM run HERE?"  ->  detect_gpu() (above). CUDA-capable dedicated
+#       NVIDIA GPU. resolve_backend() routes to vLLM on this and this only.
+#    2. "Is local inference PRACTICAL on this machine at all?" -> the policy
+#       predicate below. Dedicated NVIDIA GPU **OR** Apple Silicon.
+#
+#  vLLM is CUDA/ROCm and does NOT run on Apple Metal (vllm ships manylinux
+#  wheels only -- see vllm_lifecycle.platform_support()). So teaching
+#  detect_gpu() to answer True on Apple Silicon would route every Mac to a
+#  vLLM that cannot serve them. Apple Silicon is inference-PRACTICAL (unified
+#  memory, the maintainer's explicit carve-out) while remaining vLLM-INCAPABLE,
+#  and only two separate predicates can express both facts at once.
+# --------------------------------------------------------------------------- #
+
+# The unified-memory floor at/above which Apple Silicon is treated as practical.
+#
+# REASONING (a stated, revisable judgement -- NOT a benchmark this project has
+# run): Apple Silicon shares ONE pool between CPU and GPU, and macOS caps the
+# GPU-usable fraction well below the total. An 8B-class model at 4-bit is
+# roughly 4.5-5 GB of weights BEFORE the KV cache and context window, and this
+# app is not the only tenant -- it is simultaneously running a browser UI and an
+# encrypted SQLCipher corpus. On an 8 GB machine that combination leaves the
+# system swapping rather than inferring; 16 GB fits an 8B-class model alongside
+# the app with headroom. Below the floor the operator can still force it on
+# (OO_LLM_ALLOW_IMPRACTICAL_HW / the Settings toggle) -- this is a DEFAULT, never
+# a block.
+APPLE_SILICON_MIN_UNIFIED_RAM_GB = 16.0
+
+# Env override (the OO_* convention). "unsupported/impractical" here means
+# "below the practicality bar this gate enforces" -- NOT "will not function".
+ENV_ALLOW_IMPRACTICAL_HW = "OO_LLM_ALLOW_IMPRACTICAL_HW"
+
+# The verifiable consequence of running local inference on unsuitable hardware.
+# DELIBERATE WORDING (2026-07-30): the rationale behind the ruling mentions heat
+# damaging hardware, but this project does not state claims it cannot
+# substantiate -- modern CPUs thermal-THROTTLE rather than damage themselves.
+# The throttling/slowness/core-saturation half is observable and survives
+# challenge; the damage half is not asserted anywhere in this codebase.
+IMPRACTICAL_CONSEQUENCE = (
+    "local inference here would be impractically slow, saturate every core for "
+    "hours, and run the machine into sustained thermal throttling"
+)
+
+_CAPABILITY_METHOD = (
+    "nvidia-smi probe for a dedicated NVIDIA GPU; platform.system()/machine() "
+    "plus total system RAM for Apple Silicon unified memory. Read-only, no network."
+)
+
+_CAPABILITY_CAVEAT = (
+    "Detects dedicated NVIDIA GPUs and Apple Silicon only. AMD/Intel discrete "
+    "GPUs are NOT probed (an honest gap, not a measurement) and read as "
+    "impractical here; integrated GPUs are deliberately excluded. Presence is "
+    "not a performance promise -- a low-VRAM dedicated GPU still passes this "
+    "gate, and per-model fit is judged separately by the model catalog's RAM "
+    "hints and the vLLM install preflight."
+)
+
+
+def detect_apple_silicon() -> dict:
+    """Best-effort Apple Silicon (arm64 macOS) presence + unified-RAM probe.
+
+    PURE DETECTION, no policy: this answers "is this an Apple Silicon Mac, and
+    how much unified memory does it have?" -- the RAM FLOOR is applied by
+    ``inference_capability()``, exactly as ``detect_gpu()`` reports GPU presence
+    while ``resolve_backend()`` owns the routing policy.
+
+    An Intel Mac is NOT Apple Silicon: it has no unified memory, which is the
+    entire reason for the maintainer's carve-out. ``unified_ram_gb`` is ``None``
+    when the RAM probe cannot read a value -- an honest absence, never a 0.
+    """
+    try:
+        system = platform.system()
+        machine = platform.machine()
+    except Exception as exc:  # noqa: BLE001 - a probe must never crash the resolver
+        return {"available": False, "reason": f"platform probe failed: {str(exc)[:120]}"}
+    if system != "Darwin":
+        return {
+            "available": False,
+            "reason": f"not macOS (platform.system() = {system or 'unknown'!r})",
+        }
+    if machine.lower() not in ("arm64", "aarch64"):
+        # Named specifically, because "not Apple Silicon" on a Mac is a different
+        # situation from "not a Mac" and the operator deserves the real reason.
+        # DELIBERATELY not phrased as "this is an Intel Mac": an x86_64 Python
+        # running under Rosetta on an M-series Mac reports x86_64 here too, and
+        # asserting the hardware from an interpreter-level reading would be a
+        # claim we cannot make. What we DID observe is the architecture Python
+        # reports -- so that is what the sentence says.
+        return {
+            "available": False,
+            "reason": (
+                f"macOS, but Python reports architecture {machine or 'unknown'!r} rather "
+                "than arm64 -- either an Intel Mac (no unified memory) or an x86_64 "
+                "interpreter running under Rosetta; install an arm64 Python to use "
+                "Apple Silicon here"
+            ),
+        }
+    return {
+        "available": True,
+        "name": f"Apple Silicon ({machine})",
+        "unified_ram_gb": total_ram_gb(),
+    }
+
+
+def _capability(
+    *,
+    practical: bool,
+    kind: str | None,
+    name: str | None,
+    reason: str,
+    overridden: bool,
+    override_requested: bool,
+    vram_mb: int | None = None,
+    unified_ram_gb: float | None = None,
+) -> dict:
+    """ONE builder for EVERY branch, so a field can never be present in three
+    returns and silently missing from the fourth (the same rationale as
+    ``_result()`` above -- an absent field reads as an answer)."""
+    return {
+        "practical": practical,
+        "kind": kind,
+        "name": name,
+        "vram_mb": vram_mb,
+        "unified_ram_gb": unified_ram_gb,
+        "reason": reason,
+        "method": _CAPABILITY_METHOD,
+        "caveat": _CAPABILITY_CAVEAT,
+        "overridden": overridden,
+        "override_requested": override_requested,
+        "min_unified_ram_gb": APPLE_SILICON_MIN_UNIFIED_RAM_GB,
+    }
+
+
+def _override_requested(override: bool | None) -> bool:
+    """Has the operator asked to run local inference on hardware this gate calls
+    impractical?
+
+    Precedence: an explicit argument (a caller that already loaded settings passes
+    it, so no branch pays a second read) -> the persisted Settings toggle -> the
+    ``OO_LLM_ALLOW_IMPRACTICAL_HW`` env var. The settings read is GUARDED: a
+    settings hiccup falls through to the env var rather than taking down a
+    hardware probe, and never fabricates an enable."""
+    if override is not None:
+        return bool(override)
+    try:
+        from src.config.app_settings import load_settings
+
+        if bool(load_settings().llm_allow_impractical_hw):
+            return True
+    except Exception:  # noqa: BLE001 - a preference read must never break the probe
+        pass
+    return os.getenv(ENV_ALLOW_IMPRACTICAL_HW, "0") == "1"
+
+
+def inference_capability(*, override: bool | None = None, gpu: dict | None = None) -> dict:
+    """Is running a local LLM on THIS machine practical? Returns::
+
+        {
+          "practical": bool,          # the EFFECTIVE answer callers gate on
+          "kind": "nvidia" | "apple-silicon" | None,
+          "name": str | None,
+          "vram_mb": int | None,          # NVIDIA only
+          "unified_ram_gb": float | None, # Apple Silicon only
+          "reason": str,              # why practical / why not -- ALWAYS present
+          "method": str,
+          "caveat": str,
+          "overridden": bool,           # practical is True BECAUSE of the override
+          "override_requested": bool,   # the operator set the override at all
+          "min_unified_ram_gb": float,  # the documented Apple Silicon floor
+        }
+
+    POLICY (maintainer-ruled 2026-07-30, see the block comment above):
+      * a dedicated NVIDIA GPU  -> practical;
+      * Apple Silicon with unified RAM >= ``APPLE_SILICON_MIN_UNIFIED_RAM_GB``
+        -> practical (the maintainer's explicit unified-memory carve-out);
+      * everything else -> NOT practical, regardless of system RAM. The ruling
+        is about the ABSENCE OF A GPU, not only about RAM, so a 64 GB GPU-less
+        workstation is still impractical here.
+
+    NEVER A HARD BLOCK. ``practical: False`` means AI features DEFAULT to off
+    with the reason stated; the operator can always turn them back on
+    (``OO_LLM_ALLOW_IMPRACTICAL_HW=1`` or the Settings toggle), and when they do
+    the verdict says ``overridden: True`` and the disclosure still shows. Neither
+    direction is silent.
+
+    THE THIRD STATE IS EPISTEMIC, NOT PERMISSIVE. Apple Silicon whose unified RAM
+    could not be READ is ``practical: False`` naming the unmeasured RAM -- we
+    cannot verify the floor, and a pass granted on an absent measurement is a
+    fabricated capability just as a fail invented from one would be a fabricated
+    refusal. The refusal explains the absence and points at the override.
+
+    ``gpu``: an already-computed ``detect_gpu()`` payload. Callers that just ran
+    it (``resolve_backend()``, ``/api/llm/backend``) pass it through so this costs
+    ZERO additional ``nvidia-smi`` probes -- mirroring ``install_preflight(gpu=)``.
+    """
+    requested = _override_requested(override)
+
+    if gpu is None:
+        try:
+            gpu = detect_gpu()
+        except Exception as exc:  # noqa: BLE001 - a failed probe is never a "no GPU"
+            gpu = {"available": False, "reason": f"GPU probe failed: {str(exc)[:120]}"}
+    try:
+        apple = detect_apple_silicon()
+    except Exception as exc:  # noqa: BLE001 - likewise; degrade, never crash
+        apple = {"available": False, "reason": f"Apple Silicon probe failed: {str(exc)[:120]}"}
+
+    # NVIDIA first and deterministically: if both somehow report available, the
+    # CUDA path is the one that also unlocks vLLM, so it is the honest label.
+    if gpu.get("available"):
+        return _capability(
+            practical=True,
+            kind="nvidia",
+            name=gpu.get("name"),
+            vram_mb=gpu.get("vram_mb"),
+            reason="a dedicated NVIDIA GPU is present -- local inference is practical here",
+            overridden=False,
+            override_requested=requested,
+        )
+
+    if apple.get("available"):
+        # COERCE before comparing. A probe that hands back a non-numeric value
+        # (the project has been bitten by TEXT-typed read-backs before) would
+        # otherwise raise straight out of this comparison. Found by the pre-push
+        # adversarial pass, when the langdetect ride-along still swallowed
+        # exceptions -- so the raise made the gate fail OPEN, the one direction a
+        # default-off gate must never fail. That call site now fails CLOSED too;
+        # this stays as the first line of defence, because a caller that guards
+        # itself is not a reason for a probe to raise. An uncoercible value is
+        # UNMEASURED, which is the honest third state below.
+        ram = apple.get("unified_ram_gb")
+        try:
+            ram = None if ram is None else float(ram)
+        except (TypeError, ValueError):
+            ram = None
+        if ram is None:
+            # UNMEASURED, not "too small". Distinguishable from a real shortfall.
+            return _capability(
+                practical=bool(requested),
+                kind="apple-silicon",
+                name=apple.get("name"),
+                unified_ram_gb=None,
+                reason=(
+                    "Apple Silicon detected, but its unified memory could not be read, "
+                    f"so the {APPLE_SILICON_MIN_UNIFIED_RAM_GB:g} GB floor could not be "
+                    "checked"
+                    + (
+                        " -- enabled anyway by the operator override."
+                        if requested
+                        else ". AI features default to off; the override turns them on."
+                    )
+                ),
+                overridden=bool(requested),
+                override_requested=requested,
+            )
+        if ram >= APPLE_SILICON_MIN_UNIFIED_RAM_GB:
+            return _capability(
+                practical=True,
+                kind="apple-silicon",
+                name=apple.get("name"),
+                unified_ram_gb=ram,
+                reason=(
+                    f"Apple Silicon with {ram:g} GB unified memory (>= the "
+                    f"{APPLE_SILICON_MIN_UNIFIED_RAM_GB:g} GB floor) -- unified memory is "
+                    "well suited to local inference"
+                ),
+                overridden=False,
+                override_requested=requested,
+            )
+        return _capability(
+            practical=bool(requested),
+            kind="apple-silicon",
+            name=apple.get("name"),
+            unified_ram_gb=ram,
+            reason=(
+                f"Apple Silicon with {ram:g} GB unified memory, below the "
+                f"{APPLE_SILICON_MIN_UNIFIED_RAM_GB:g} GB floor -- {IMPRACTICAL_CONSEQUENCE}"
+                + (
+                    ". Enabled anyway by the operator override."
+                    if requested
+                    else ". AI features default to off; the override turns them on."
+                )
+            ),
+            overridden=bool(requested),
+            override_requested=requested,
+        )
+
+    # Neither. State WHICH probe said what, so "nvidia-smi timed out" never reads
+    # as the flat, fabricated claim "this machine has no GPU".
+    gpu_why = gpu.get("reason") or "no dedicated NVIDIA GPU detected"
+    reason = (
+        f"no dedicated GPU and not Apple Silicon ({gpu_why}; {apple.get('reason')}) -- "
+        f"{IMPRACTICAL_CONSEQUENCE}. AMD/Intel discrete GPUs are not probed by this "
+        "app, so a discrete-Radeon machine also lands here and can use the override"
+        + (
+            ". Enabled anyway by the operator override."
+            if requested
+            else ". AI features default to off; the override turns them on."
+        )
+    )
+    return _capability(
+        practical=bool(requested),
+        kind=None,
+        name=None,
+        reason=reason,
+        overridden=bool(requested),
+        override_requested=requested,
+    )
 
 
 def _vllm_status() -> dict:

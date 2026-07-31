@@ -658,8 +658,33 @@ def advance_langdetect_auto_start(session) -> dict:
 
     if not load_app_settings().ai_langdetect_auto:
         return {"enabled": False}
+    # Cheapest check first, and semantically the right one to lead with: if the job
+    # is ALREADY running there is nothing to start, so no other probe is relevant.
     if _LANGDETECT_JOB.status().get("state") == "running":
         return {"enabled": True, "skipped": "already running"}
+    # HARDWARE SUITABILITY GATE (2026-07-30, maintainer-ruled). An unattended
+    # background sweep is exactly the case the ruling targets: without a dedicated
+    # GPU (or Apple Silicon unified memory) it would saturate every core for hours.
+    # DEFAULT-OFF, never a hard block -- the operator's explicit override
+    # (Settings toggle / OO_LLM_ALLOW_IMPRACTICAL_HW=1) turns it back on, and the
+    # skip is NAMED here and disclosed in the UI rather than being a silent no-op.
+    # Placed BEFORE the model-availability probe (an HTTP call), so an unsuitable
+    # machine is not asked to also go find a backend it should not be driving.
+    # The MANUAL "Detect languages" button is deliberately NOT gated: an operator
+    # asking for a bounded run on their own machine is a choice, not a background
+    # cost imposed on them.
+    try:
+        from src.llm.backend import inference_capability
+
+        hw = inference_capability()
+        practical = hw["practical"]
+    except Exception:  # noqa: BLE001 - never fail the scrape on a hardware probe
+        # A probe that could not decide must not silently ENABLE an hours-long
+        # background sweep -- but it must not invent a hardware verdict either.
+        # Skip this pass and say exactly that; the next pass re-probes.
+        return {"enabled": True, "skipped": "hardware: the suitability probe failed"}
+    if not practical:
+        return {"enabled": True, "skipped": f"hardware: {hw['reason']}"}
     try:
         # B3: gate on whichever backend is ACTUALLY resolved (vLLM on a GPU
         # machine, Ollama otherwise) -- not hardcoded Ollama, which would

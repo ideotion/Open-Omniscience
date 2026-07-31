@@ -85,6 +85,13 @@ class AppSettings:
     # Set False in Settings -> AI to opt out; the manual "Detect languages" button
     # still works either way.
     ai_langdetect_auto: bool = True
+    # HARDWARE SUITABILITY OVERRIDE (2026-07-30, maintainer-ruled). Local inference
+    # is impractical without a dedicated GPU (or Apple Silicon unified memory), so
+    # AI features DEFAULT TO OFF there -- see src.llm.backend.inference_capability().
+    # This is never a hard block: setting this True runs them anyway, and the
+    # verdict then reports overridden=True so the disclosure still shows. Env
+    # equivalent: OO_LLM_ALLOW_IMPRACTICAL_HW=1.
+    llm_allow_impractical_hw: bool = False
 
     def __post_init__(self) -> None:
         if self.recipes_disabled is None:
@@ -200,6 +207,12 @@ def load_settings() -> AppSettings:
     if not isinstance(ai_langdetect_auto, bool):
         ai_langdetect_auto = defaults.ai_langdetect_auto
 
+    llm_allow_impractical_hw = raw.get(
+        "llm_allow_impractical_hw", defaults.llm_allow_impractical_hw
+    )
+    if not isinstance(llm_allow_impractical_hw, bool):
+        llm_allow_impractical_hw = defaults.llm_allow_impractical_hw
+
     llm_backend = raw.get("llm_backend", defaults.llm_backend)
     if llm_backend not in ("auto", "ollama", "vllm"):
         _LOG.warning("ignoring invalid stored llm_backend %r", llm_backend)
@@ -223,6 +236,7 @@ def load_settings() -> AppSettings:
         ai_langdetect_auto=ai_langdetect_auto,
         llm_backend=llm_backend,
         llm_model_vllm=str(llm_model_vllm) if llm_model_vllm else None,
+        llm_allow_impractical_hw=llm_allow_impractical_hw,
     )
 
 
@@ -283,6 +297,14 @@ def save_settings(updates: dict) -> AppSettings:
         if not isinstance(val, bool):
             raise AppSettingsError("ai_langdetect_auto must be a boolean")
         current.ai_langdetect_auto = val
+    if (
+        "llm_allow_impractical_hw" in updates
+        and updates["llm_allow_impractical_hw"] is not None
+    ):
+        val = updates["llm_allow_impractical_hw"]
+        if not isinstance(val, bool):
+            raise AppSettingsError("llm_allow_impractical_hw must be a boolean")
+        current.llm_allow_impractical_hw = val
     if "llm_backend" in updates and updates["llm_backend"] is not None:
         val = updates["llm_backend"]
         if val not in ("auto", "ollama", "vllm"):

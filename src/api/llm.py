@@ -305,6 +305,29 @@ def llm_health(client=Depends(get_llm_client)) -> dict:
     backend = resolved.get("backend")
     no_backend = resolved.get("no_backend")
     backend_reason = resolved.get("reason")
+    # HARDWARE SUITABILITY (2026-07-30) -- a THIRD, distinct state for the pill.
+    # "this machine cannot practically run a local LLM" is NOT the same as "the
+    # backend is offline": the first is not fixed by starting anything, so the pill
+    # must not invite the operator to start a backend that would then crawl. Built
+    # ONCE and spread into BOTH branches below, so it can never be present in one
+    # return and silently missing from the other. Reuses resolve_backend()'s own
+    # `gpu` dict -> no additional nvidia-smi probe on this (event-driven) path.
+    from src.llm.backend import inference_capability
+
+    try:
+        hw = inference_capability(gpu=resolved.get("gpu"))
+        hw_fields = {
+            "hardware_practical": hw["practical"],
+            "hardware_reason": hw["reason"],
+            "hardware_overridden": hw["overridden"],
+        }
+    except Exception:  # noqa: BLE001 - a probe hiccup must not break the health check
+        # None = honestly unknown, NEVER a fabricated "practical" or "impractical".
+        hw_fields = {
+            "hardware_practical": None,
+            "hardware_reason": None,
+            "hardware_overridden": None,
+        }
     try:
         installed = client.list_installed()
         return {
@@ -314,6 +337,7 @@ def llm_health(client=Depends(get_llm_client)) -> dict:
             "backend_reason": backend_reason,
             "base_url": client.base_url,
             "installed_models": installed,
+            **hw_fields,
         }
     except LLMUnavailable as exc:
         return {
@@ -324,6 +348,7 @@ def llm_health(client=Depends(get_llm_client)) -> dict:
             "base_url": client.base_url,
             "installed_models": [],
             "detail": str(exc),
+            **hw_fields,
         }
 
 
@@ -333,17 +358,27 @@ def llm_backend_status() -> dict:
     which backend is active, why, and the detection facts (GPU / vLLM installed
     + running / Ollama available). Drives the Settings -> AI tab's disclosure
     (the maintainer must never see a silent switch)."""
-    from src.llm.backend import resolve_backend
+    from src.llm.backend import inference_capability, resolve_backend
     from src.config.app_settings import load_settings
 
+    allow_impractical: bool | None = None
     try:
         s = load_settings()
         override = s.llm_backend if s.llm_backend != "auto" else None
         stored_override = s.llm_backend
+        allow_impractical = bool(s.llm_allow_impractical_hw)
     except Exception:  # noqa: BLE001 - a settings hiccup must not break the status view
         override, stored_override = None, "auto"
     resolved = resolve_backend(override=override)
     resolved["stored_override"] = stored_override
+    # HARDWARE SUITABILITY (2026-07-30, maintainer-ruled). A SEPARATE question from
+    # "which backend would serve": this says whether running a local LLM on this
+    # machine is practical at all. Reuses the `gpu` dict resolve_backend() just
+    # produced, so this costs ZERO additional nvidia-smi probes, and passes the
+    # already-loaded setting so it costs zero additional settings reads either.
+    resolved["hardware"] = inference_capability(
+        override=allow_impractical, gpu=resolved.get("gpu")
+    )
     return resolved
 
 

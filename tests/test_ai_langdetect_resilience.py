@@ -261,6 +261,20 @@ def test_langdetect_job_reaches_error_state_after_repeated_transient_failures(
     assert "consecutive" in (st.get("error") or "").lower()
 
 
+def _suitable_hardware(monkeypatch):
+    """Declare this machine inference-PRACTICAL for the ride-along tests.
+
+    Added 2026-07-30 with the hardware-suitability gate: these tests exercise the
+    ride-along's job/model/candidate logic, and CI runners have no dedicated GPU,
+    so without this they would all skip at the hardware gate and stop testing what
+    their names claim. Stated explicitly rather than left implicit -- the hardware
+    gate's own behaviour is covered in tests/test_inference_hardware_gate.py."""
+    monkeypatch.setattr(
+        "src.llm.backend.inference_capability",
+        lambda **kw: {"practical": True, "reason": "stubbed suitable hardware"},
+    )
+
+
 def test_advance_langdetect_auto_start_respects_the_setting(db, monkeypatch, tmp_path):
     """The ride-along is a named skip, never a silent no-op, at every gate."""
     monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
@@ -291,6 +305,7 @@ def test_advance_langdetect_auto_start_skips_when_already_running(db, monkeypatc
 
 def test_advance_langdetect_auto_start_skips_when_model_unavailable(db, monkeypatch, tmp_path):
     monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
+    _suitable_hardware(monkeypatch)
 
     class _Settings:
         ai_langdetect_auto = True
@@ -311,6 +326,7 @@ def test_advance_langdetect_auto_start_skips_when_model_unavailable(db, monkeypa
 
 def test_advance_langdetect_auto_start_skips_when_no_candidates(db, monkeypatch, tmp_path):
     monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
+    _suitable_hardware(monkeypatch)
 
     class _Settings:
         ai_langdetect_auto = True
@@ -334,6 +350,7 @@ def test_advance_langdetect_auto_start_starts_the_job_when_due(db, monkeypatch, 
     _seed(db, tag="A")
     db.commit()
     monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
+    _suitable_hardware(monkeypatch)
 
     class _Settings:
         ai_langdetect_auto = True

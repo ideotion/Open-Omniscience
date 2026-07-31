@@ -45,6 +45,11 @@ class SettingsUpdate(BaseModel):
     llm_backend: str | None = None
     # The active model id for the vLLM backend (a HF repo id). "" / null clears it.
     llm_model_vllm: str | None = None
+    # HARDWARE SUITABILITY OVERRIDE (2026-07-30): run local inference even on
+    # hardware the gate calls impractical (no dedicated GPU / below the Apple
+    # Silicon unified-memory floor). Never a hard block -- this is the operator's
+    # explicit "anyway", and the verdict then discloses overridden=True.
+    llm_allow_impractical_hw: bool | None = None
 
 
 def _payload() -> dict:

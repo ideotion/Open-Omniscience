@@ -7566,6 +7566,41 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   pool + segmented downloads) · 4 processing ceilings (dedup front, bulk insert, memory footprint,
   backfill, then S-D evidence-gated + A1 last). Sonnet sessions branch `claude/oos-c-*`. Still
   planning-only in THIS PR (#766) — no engine code; the C-slices are the executing sessions' work.
+- **LOCAL INFERENCE IS GATED ON HARDWARE SUITABILITY (maintainer RULED 2026-07-30, verbatim: "Using
+  vLLM or Ollama on <8GB RAM, GPU-less laptops is impractical, it's ok to limit them. This is only for
+  my GPU enabled machine (by GPU, I mean dedicated GPU, not the integrated ones we find on most CPUs
+  nowadays, and I exclude from this reasoning the sorts of Mac minis having dual-use memory that is
+  precisely good at inference, this is another matter)"; SHIPPED same day — shipped.csv row
+  "llm/hardware", branch `claude/inference-hardware-gate`):** AI features DEFAULT OFF where a local LLM
+  cannot practically run. **THE INVARIANT THAT MUST NOT BE UNDONE — TWO PREDICATES, NEVER ONE:**
+  `detect_gpu()` answers "can vLLM run HERE?" (CUDA/nvidia-smi) and is read by 8+ vLLM-gating call
+  sites; the NEW `inference_capability()` answers "is local inference PRACTICAL at all?" and composes
+  `detect_gpu()` with a new `detect_apple_silicon()`. **vLLM ships manylinux wheels ONLY and does not
+  run on Apple Metal, so teaching `detect_gpu()` to return True on Apple Silicon — the obvious way to
+  implement the carve-out — routes every Mac to a vLLM that cannot serve it.** Apple Silicon is
+  inference-PRACTICAL and vLLM-INCAPABLE simultaneously; only two predicates state both. Pinned by
+  `tests/test_inference_hardware_gate.py` (a behavioural pin + an ast guard that no OS/arch policy
+  enters `detect_gpu()`'s body, stash-verified to redden on exactly that edit). POLICY: dedicated
+  NVIDIA GPU → practical · Apple Silicon ≥ `APPLE_SILICON_MIN_UNIFIED_RAM_GB` (16.0, a named constant
+  whose comment states the reasoning AND that it is a judgement, not a benchmark we ran) → practical ·
+  everything else → NOT, **regardless of RAM** (the ruling is about GPU ABSENCE; a test pins that a
+  256 GB GPU-less box still refuses, so the gate cannot decay into a RAM check). **NEVER A HARD BLOCK:**
+  the Settings toggle `llm_allow_impractical_hw` / `OO_LLM_ALLOW_IMPRACTICAL_HW=1` turns it back on,
+  the verdict then reports `overridden: true` and the disclosure still renders — neither direction is
+  silent. THIRD STATE IS EPISTEMIC: unreadable unified RAM refuses naming the UNMEASURED memory and
+  deliberately NOT "below" (a pass on an absent measurement = fabricated capability; a claimed
+  shortfall = fabricated measurement). AMD/Intel discrete GPUs stay an HONEST GAP (not probed — said in
+  the caveat and in the refusal, which points a Radeon owner at the override); never fabricate
+  detection for them. **WORDING (binding): NEVER state a hardware-DAMAGE claim** — the rationale
+  mentions heat damaging hardware, but modern CPUs thermal-throttle rather than damage themselves, so
+  the shipped strings assert only the substantiable half ("impractically slow, saturate every core for
+  hours, and run the machine into sustained thermal throttling"), guarded by a BEHAVIOURAL test over
+  the emitted strings (a source grep would forbid the comments explaining the absence and still miss an
+  inline f-string). Gated today: the background langdetect ride-along (the MANUAL button stays ungated —
+  an operator asking for a bounded run is a choice, not an imposed cost). REMAINING: extend the gate to
+  the other unattended AI sweeps (triage / source-tags / perception-extract) if the maintainer wants
+  them default-off too; the frontend (pill third state + Settings disclosure/toggle) is
+  BROWSER-UNVERIFIED per fork-3.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
