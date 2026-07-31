@@ -339,8 +339,8 @@ def merge_corpus(
 
         cur = con.execute(
             "INSERT INTO merge_batches (imported_at, artifact_kind, origin_fingerprint,"
-            " app_version, alembic_rev, manifest_json, status)"
-            " VALUES (?, ?, ?, ?, ?, ?, 'merged')",
+            " app_version, alembic_rev, manifest_json, source_digest, status)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, 'merged')",
             (
                 datetime.now(UTC).isoformat(timespec="seconds"),
                 batch_meta.get("artifact_kind", "oo-backup-2"),
@@ -348,6 +348,11 @@ def merge_corpus(
                 batch_meta.get("app_version"),
                 batch_meta.get("alembic_rev"),
                 json.dumps(batch_meta.get("manifest")) if batch_meta.get("manifest") else None,
+                # Written inside the SAME transaction as the merge itself, so the
+                # digest exists if and only if the merge committed. A crash or an
+                # abort rolls it back with everything else -- a half-merged artifact
+                # must never be recorded as done, or the skip would strand its rows.
+                batch_meta.get("source_digest"),
             ),
         )
         batch_id = int(cur.lastrowid or 0)
@@ -1886,6 +1891,71 @@ _STATUS_MERGED = "merged"
 _STATUS_REINDEXED = "reindexed"
 
 
+def artifact_source_digest(src: str | os.PathLike[str]) -> str | None:
+    """The identity of the BYTES in a backup folder, or None if it has none.
+
+    Reads only the container manifest -- one small JSON file -- so this is
+    answerable in milliseconds, BEFORE verify, parity-recovery, reassembly and
+    staging. That is the whole point: on the field's largest run those stages cost
+    2.96 h and the merge that followed them changed nothing.
+
+    Returns None rather than raising for every reason a digest might be absent (no
+    manifest, a legacy container, an unreadable folder). None means "cannot tell",
+    which callers MUST treat as "do the work" -- never as "already done".
+    """
+    try:
+        from src.backup.volumes import load_manifest
+
+        digest = load_manifest(src).get("plaintext_sha256")
+    except Exception:  # noqa: BLE001 - an unreadable manifest is an unknown, not an error
+        return None
+    if not isinstance(digest, str) or len(digest) != 64:
+        return None
+    return digest
+
+
+def find_completed_import(digest: str | None) -> dict | None:
+    """The batch that already merged this exact artifact, or None.
+
+    Only a COMMITTED batch counts. The merge writes its row inside the same
+    transaction as the data, so a row existing is proof the merge reached COMMIT;
+    an aborted or crashed restore leaves nothing behind and is correctly retried.
+
+    Both 'merged' and 'reindexed' count as done for THIS purpose: the distinction
+    between them is whether the post-swap re-index finished, and re-importing the
+    artifact would not advance that -- the re-index backlog is its own resumable
+    job. Skipping here never hides a re-index backlog, which reindex_backlog()
+    reports independently.
+    """
+    if not digest:
+        return None
+    from sqlalchemy import text
+
+    from src.database.session import session_scope
+
+    try:
+        with session_scope() as session:
+            row = session.execute(
+                text(
+                    "SELECT id, imported_at, artifact_kind, status FROM merge_batches"
+                    " WHERE source_digest = :d AND status IN ('merged', 'reindexed')"
+                    " ORDER BY id LIMIT 1"
+                ),
+                {"d": digest},
+            ).fetchone()
+    except Exception:  # noqa: BLE001 - a store we cannot read must not veto an import
+        _LOG.warning("could not check whether this artifact was already merged", exc_info=True)
+        return None
+    if row is None:
+        return None
+    return {
+        "batch_id": int(row[0]),
+        "imported_at": row[1],
+        "artifact_kind": row[2],
+        "status": row[3],
+    }
+
+
 def _reindex_state_path() -> Path:
     return data_dir() / _REINDEX_STATE_FILE
 
@@ -2336,6 +2406,7 @@ def run_restore(
     stage_progress_cb: Callable[[str], None] | None = None,
     should_stop: Callable[[], bool] | None = None,
     exclusive: bool = False,
+    source_digest: str | None = None,
 ) -> dict:
     """Preview (commit=False) or perform (commit=True) a merge-restore.
 
@@ -2471,6 +2542,11 @@ def run_restore(
         "app_version": (staged.manifest or {}).get("app_version"),
         "alembic_rev": original_rev,
         "manifest": staged.manifest,
+        # Identity of the source BYTES, supplied by the caller that read the
+        # container manifest. None when the caller could not tell -- recorded as
+        # NULL, which never matches, so an unknown can only ever cost a redundant
+        # import, never a skipped one.
+        "source_digest": source_digest,
     }
     # Wrap the caller's own progress_cb so EACH of the 14 merge steps also gets
     # its own per-step timing (into "merge_step:<name>"), with NO change to

@@ -194,6 +194,45 @@ _ARTICLE_IDENTITY_COLUMNS: dict[str, str] = {
     "canon_version": "ALTER TABLE articles ADD COLUMN canon_version VARCHAR(16)",
 }
 
+# Which ARTIFACT a merge batch came from, so a re-import of the same bytes can be
+# refused up front. Additive + nullable, and deliberately NOT backfilled: the
+# digest of an artifact merged before this column existed is genuinely unknown,
+# and inventing one would risk skipping an import that was never actually done.
+_MERGE_BATCH_SOURCE_COLUMNS: dict[str, str] = {
+    "source_digest": "ALTER TABLE merge_batches ADD COLUMN source_digest VARCHAR(64)",
+}
+
+
+def ensure_merge_batch_source_digest(engine: Engine) -> list[str]:
+    """Self-heal ``merge_batches.source_digest`` (+ its index) on an existing store.
+
+    Mirrors the other self-heals -- the live DB never auto-runs alembic. Existing
+    rows keep NULL, which never matches a lookup, so an older corpus simply does
+    the redundant import once more and records the digest on its way through.
+    Idempotent; no-op on non-sqlite or a store with no merge_batches table.
+    """
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='merge_batches'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(merge_batches)")).fetchall()}
+        for name, ddl in _MERGE_BATCH_SOURCE_COLUMNS.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+        conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_merge_batches_source_digest"
+                " ON merge_batches (source_digest)"
+            )
+        )
+    return added
+
 
 def ensure_article_identity_columns(engine: Engine) -> list[str]:
     """Self-heal ``articles.content_multihash`` / ``canon_version`` + backfill them.

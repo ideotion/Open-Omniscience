@@ -208,6 +208,7 @@ def init_db() -> None:
         ensure_article_quarantine_columns,
         ensure_law_document_language_columns,
         ensure_law_text_columns,
+        ensure_merge_batch_source_digest,
         ensure_source_counter_columns,
         ensure_source_last_crawled_column,
         ensure_source_qualification_columns,
@@ -224,6 +225,10 @@ def init_db() -> None:
 
     # Source IP provenance columns (self-heal for pre-existing stores; no backfill).
     ensure_article_ip_columns(engine)
+
+    # Which artifact a merge batch came from (self-heal; NO backfill -- an unknown
+    # digest must never match, or a never-done import could be skipped).
+    ensure_merge_batch_source_digest(engine)
 
     # QUARANTINE columns (S3.2, self-heal for pre-existing stores; no backfill) --
     # BEFORE ensure_hot_indexes, since idx_article_quarantined needs the column to exist.
