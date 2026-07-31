@@ -1228,6 +1228,18 @@ class ArticleLink(Base):
     # Indexes for performance
     __table_args__ = (
         Index("idx_article_link_article_id", "article_id"),
+        # COVERING index for the restore-merge's link dedup, which asks
+        # "does this article already have this url at this position?" once per
+        # INCOMING link row -- 4,163,474 of them on the field's largest import
+        # (2026-07-31 report #15, where the link-graph step cost 2483 s, 87% of
+        # the whole merge). EXPLAIN QUERY PLAN confirmed the old plan was
+        # `SEARCH t USING INDEX idx_article_link_article_id (article_id=?)`:
+        # a seek, then a ROW READ per candidate just to compare url/position --
+        # and those are two String(1000) columns, so under SQLCipher every one
+        # of those reads is a page decrypt. With this index the same query is
+        # `SEARCH t USING COVERING INDEX idx_article_link_dedup
+        # (article_id=? AND url=?)` -- answered from the index, no row touched.
+        Index("idx_article_link_dedup", "article_id", "url", "position"),
         Index("idx_article_link_url", "url"),
         Index("idx_article_link_normalized_url", "normalized_url"),
         Index("idx_article_link_classification", "classification"),

@@ -89,6 +89,18 @@ HOT_INDEXES: dict[str, str] = {
     "idx_article_quarantined": (
         "CREATE INDEX IF NOT EXISTS idx_article_quarantined ON articles (quarantined)"
     ),
+    # Restore-merge link dedup (field logs 2026-07-31: the link-graph step was
+    # 2483 s of report #15's 2857 s merge, over 4,163,474 incoming link rows --
+    # every one of them a duplicate). Makes the per-row EXISTS index-only instead
+    # of a seek-then-row-read of two String(1000) columns; see the ArticleLink
+    # model for the measured EXPLAIN plans. Mirrored on the model (fresh DBs) and
+    # migration d4e9c1a7b036 (alembic-managed); this covers installs that never
+    # run `make migrate`. ONE-TIME BUILD COST on an existing large corpus, paid at
+    # the next boot -- same as every other entry here.
+    "idx_article_link_dedup": (
+        "CREATE INDEX IF NOT EXISTS idx_article_link_dedup "
+        "ON article_links (article_id, url, position)"
+    ),
 }
 
 
