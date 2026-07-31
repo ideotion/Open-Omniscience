@@ -2243,5 +2243,11 @@
   "phase {n} of {total}": "フェーズ {n}/{total}",
   "Keywords — explore & curate": "キーワード — 閲覧と整理",
   "Entity family curation — you decide": "エンティティ群の整理 — あなたが決めます",
-  "Super-group curation — create, add, remove, delete": "スーパーグループ — 作成・追加・削除"
+  "Super-group curation — create, add, remove, delete": "スーパーグループ — 作成・追加・削除",
+  "Import documents (PDF)": "文書を取り込む（PDF）",
+  "Import PDFs": "PDF を取り込む",
+  "Import a whole folder": "フォルダー全体を取り込む",
+  "Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source (\"Imported PDFs\") so it never blurs with the web.": "自分の PDF ファイルをコーパスに取り込みます。テキストが抽出され、各文書は記事と同じように検索・分析・関連付けされますが、独立した絞り込み可能なソース（「取り込んだ PDF」）として保たれ、ウェブと混ざることはありません。",
+  "Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A born-digital PDF uses its exact text layer. A scanned / image-only PDF has no text layer: if OCR is installed (the [ocr] extra plus the Tesseract binary) it is read via OCR and clearly marked OCR-derived (lower-trust — may contain recognition errors; the original PDF stays the source of truth), otherwise it is skipped with an honest reason. Re-importing the same document is skipped (deduplicated).": "ネットワーク不使用：各 PDF はローカルで読み取られ、テキストが抽出されます — 何も取得しません。デジタル生成の PDF は正確なテキストレイヤーを使います。スキャンまたは画像のみの PDF にはテキストレイヤーがありません。OCR が導入されていれば（[ocr] エクストラと Tesseract バイナリ）、OCR で読み取り「OCR 由来」と明示します（信頼度は低め — 認識誤りを含む可能性があり、元の PDF が真実の source of truth です）。導入されていなければ、正直な理由を添えてスキップします。同じ文書の再取り込みはスキップされます（重複排除）。",
+  "Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped.": "このマシン上のフォルダーを指定すると、その中のすべての PDF が取り込まれます。同じローカルかつネットワーク不使用の経路で、取り込み済みの文書はスキップされます。"
 }

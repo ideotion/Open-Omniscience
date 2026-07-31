@@ -2243,5 +2243,11 @@
   "phase {n} of {total}": "चरण {n} / {total}",
   "Keywords — explore & curate": "कीवर्ड — देखें और व्यवस्थित करें",
   "Entity family curation — you decide": "इकाई समूह — निर्णय आपका",
-  "Super-group curation — create, add, remove, delete": "सुपर-समूह — बनाएँ, जोड़ें, हटाएँ, मिटाएँ"
+  "Super-group curation — create, add, remove, delete": "सुपर-समूह — बनाएँ, जोड़ें, हटाएँ, मिटाएँ",
+  "Import documents (PDF)": "दस्तावेज़ आयात करें (PDF)",
+  "Import PDFs": "PDF आयात करें",
+  "Import a whole folder": "पूरा फ़ोल्डर आयात करें",
+  "Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source (\"Imported PDFs\") so it never blurs with the web.": "अपनी PDF फ़ाइलें अपने कॉर्पस में आयात करें — पाठ निकाला जाता है और हर दस्तावेज़ किसी भी लेख की तरह खोजा, विश्लेषित और सहसंबंधित होता है, फिर भी एक अलग, फ़िल्टर करने योग्य स्रोत (\"आयातित PDF\") बना रहता है ताकि वह वेब के साथ कभी न मिले।",
+  "Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A born-digital PDF uses its exact text layer. A scanned / image-only PDF has no text layer: if OCR is installed (the [ocr] extra plus the Tesseract binary) it is read via OCR and clearly marked OCR-derived (lower-trust — may contain recognition errors; the original PDF stays the source of truth), otherwise it is skipped with an honest reason. Re-importing the same document is skipped (deduplicated).": "शून्य नेटवर्क: हर PDF स्थानीय रूप से पढ़ा जाता है और उसका पाठ निकाला जाता है — कभी कुछ भी डाउनलोड नहीं होता। मूल रूप से डिजिटल PDF अपनी सटीक टेक्स्ट परत का उपयोग करता है। स्कैन किए या केवल-छवि PDF में टेक्स्ट परत नहीं होती: यदि OCR स्थापित है ([ocr] एक्स्ट्रा और Tesseract बाइनरी), तो उसे OCR से पढ़ा जाता है और स्पष्ट रूप से \"OCR से प्राप्त\" चिह्नित किया जाता है (कम भरोसेमंद — पहचान त्रुटियाँ हो सकती हैं; मूल PDF ही सत्य का स्रोत रहता है), अन्यथा उसे ईमानदार कारण के साथ छोड़ दिया जाता है। वही दस्तावेज़ दोबारा आयात करने पर छोड़ दिया जाता है (डुप्लिकेट हटाकर)।",
+  "Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped.": "इस मशीन पर एक फ़ोल्डर बताएँ और उसके भीतर हर PDF आयात हो जाएगा। वही स्थानीय, नेटवर्क-रहित रास्ता; पहले से आयातित दस्तावेज़ छोड़ दिए जाते हैं।"
 }

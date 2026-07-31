@@ -2243,5 +2243,11 @@
   "phase {n} of {total}": "ধাপ {n} / {total}",
   "Keywords — explore & curate": "কীওয়ার্ড — অন্বেষণ ও সাজানো",
   "Entity family curation — you decide": "সত্তা পরিবার — সিদ্ধান্ত আপনার",
-  "Super-group curation — create, add, remove, delete": "সুপার-গ্রুপ — তৈরি, যোগ, সরানো, মুছুন"
+  "Super-group curation — create, add, remove, delete": "সুপার-গ্রুপ — তৈরি, যোগ, সরানো, মুছুন",
+  "Import documents (PDF)": "নথি আমদানি করুন (PDF)",
+  "Import PDFs": "PDF আমদানি করুন",
+  "Import a whole folder": "সম্পূর্ণ ফোল্ডার আমদানি করুন",
+  "Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source (\"Imported PDFs\") so it never blurs with the web.": "আপনার নিজের PDF ফাইল কর্পাসে আমদানি করুন — লেখা নিষ্কাশিত হয় এবং প্রতিটি নথি যেকোনো নিবন্ধের মতোই অনুসন্ধান, বিশ্লেষণ ও সম্পর্কযুক্ত হয়, তবু একটি পৃথক, ফিল্টারযোগ্য উৎস (\"আমদানিকৃত PDF\") হিসেবে থাকে যাতে তা কখনও ওয়েবের সঙ্গে মিশে না যায়।",
+  "Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A born-digital PDF uses its exact text layer. A scanned / image-only PDF has no text layer: if OCR is installed (the [ocr] extra plus the Tesseract binary) it is read via OCR and clearly marked OCR-derived (lower-trust — may contain recognition errors; the original PDF stays the source of truth), otherwise it is skipped with an honest reason. Re-importing the same document is skipped (deduplicated).": "শূন্য নেটওয়ার্ক: প্রতিটি PDF স্থানীয়ভাবে পড়া হয় ও তার লেখা নিষ্কাশিত হয় — কখনও কিছু আনা হয় না। মূলত ডিজিটাল PDF তার সঠিক টেক্সট স্তর ব্যবহার করে। স্ক্যান করা বা কেবল-ছবি PDF-এ টেক্সট স্তর থাকে না: OCR ইনস্টল থাকলে ([ocr] এক্সট্রা এবং Tesseract বাইনারি) সেটি OCR দিয়ে পড়া হয় ও স্পষ্টভাবে \"OCR থেকে প্রাপ্ত\" চিহ্নিত হয় (কম নির্ভরযোগ্য — শনাক্তকরণে ভুল থাকতে পারে; মূল PDF-ই সত্যের উৎস থাকে), না থাকলে সৎ কারণ জানিয়ে বাদ দেওয়া হয়। একই নথি পুনরায় আমদানি করলে বাদ পড়ে (ডিডুপ্লিকেট)।",
+  "Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped.": "এই মেশিনে একটি ফোল্ডার নির্দেশ করুন, তার ভেতরের প্রতিটি PDF আমদানি হবে। একই স্থানীয়, নেটওয়ার্কবিহীন পথ; আগে আমদানি করা নথি বাদ পড়ে।"
 }
