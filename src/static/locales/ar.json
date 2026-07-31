@@ -2240,5 +2240,8 @@
   "Sources per region against each region's floor.": "المصادر لكل منطقة مقارنةً بالحد الأدنى لكل منطقة.",
   "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "الشريط = المصادر المجمَّعة؛ العلامة العمودية هي الحد الأدنى للمنطقة. أعداد فقط، بلا درجات.",
   "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.": "فادر (VADER) معجم إنجليزي: تُقاس النبرة فقط للتغطية بالإنجليزية. غياب النبرة هنا يعني أنها غير مقاسة — وليست محايدة.",
-  "phase {n} of {total}": "المرحلة {n} من {total}"
+  "phase {n} of {total}": "المرحلة {n} من {total}",
+  "Keywords — explore & curate": "الكلمات المفتاحية — استكشاف وتنظيم",
+  "Entity family curation — you decide": "تنظيم عائلات الكيانات — القرار لك",
+  "Super-group curation — create, add, remove, delete": "المجموعات الكبرى — إنشاء وإضافة وإزالة وحذف"
 }

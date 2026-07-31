@@ -1522,14 +1522,14 @@
     }
     function showTab(name, push = true) {
       if (name === "database") name = "library";  // legacy #database deep-links
-      if (name === "ingest") {  // Collect moved into Settings → Collect (content-first §6)
+      if (name === "ingest") {  // Collect moved into Settings → Advanced → Collection
         showTab("settings", push);
-        try { _setSubtabs.select("collect"); } catch (e) { showSetCat("collect"); }
+        _openAdvanced("collect");
         return;
       }
-      if (name === "sources") {  // Sources moved into Settings → Sources (content-first §6)
+      if (name === "sources") {  // Sources moved into Settings → Advanced → Sources
         showTab("settings", push);
-        try { _setSubtabs.select("sources"); } catch (e) { showSetCat("sources"); }
+        _openAdvanced("sources");
         return;
       }
       if (name === "wiki") {  // Wikipedia moved into Settings → Wikipedia (content-first §6)
@@ -1789,7 +1789,7 @@
       // switches the panel + does the section's one-time setup.
       document.querySelectorAll("#tab-settings .set-view").forEach(v =>
         v.style.display = (v.id === "set-" + cat) ? "" : "none");
-      if (cat !== "collect") stopSchedRatePoll();   // stop the live download-rate poll when leaving Collect
+      if (cat !== "advanced") stopSchedRatePoll();  // the scheduler panel moved into Advanced
       // Graphics = Appearance + the alternative-interfaces gallery, fused (remark 11).
       if (cat === "graphics") {
         buildDrawer();                                                    // (re)paint theme/accent state
@@ -1797,16 +1797,52 @@
       }
 
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
-      if (cat === "collect") loadScheduler();         // the moved Collect tab's onShow
-      if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); loadQualifyBulk(); }  // moved Sources onShow (facets feed the multi-select filters #23)
       if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
-      if (cat === "keywords") { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration(); }  // Item AC: explore/hide/tag; family + super-group curation relocated here (invariant #8)
+      if (cat === "advanced") _advWire();             // Collection / Sources / Keywords, lazily per section
       if (cat === "shortcuts") loadShortcuts();       // list + rebind the global keyboard shortcuts (UI-shell §4)
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
       if (cat === "newsletters") { loadNewsletterRemoveCount(); _folderImportStartPoll(); }  // remove panel + the folder-import job status
+    }
+
+    // ADVANCED subtab (2026-07-31 Settings review): Collection, Sources and Keywords moved
+    // into folded <details> sections. Their loaders run when a SECTION IS EXPANDED, never
+    // when the subtab is selected -- folded must not mean fetched. That distinction is not
+    // cosmetic here: the source catalog can hold ~46k rows, and loading all three eagerly
+    // would make opening Advanced the most expensive click in Settings.
+    const _ADV_LOADERS = {
+      collect:  () => { loadScheduler(); },
+      sources:  () => { loadSrcFacets(); loadManagedSources(); loadCandidates(); loadQualifyBulk(); },
+      // loadKeywordFilter moved off loadSettings with its panel, so it loads here too.
+      keywords: () => { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration(); loadKeywordFilter(); },
+    };
+    // Deep-link into one Advanced section. The old showTab("ingest") / showTab("sources")
+    // redirects pointed at subtabs that no longer exist, so every palette entry and
+    // "Collect now" button that used them would have landed on nothing. They now select
+    // Advanced and OPEN the right section -- which also fires its toggle listener, so the
+    // section loads exactly as if the user had opened it by hand.
+    function _openAdvanced(section) {
+      try { _setSubtabs.select("advanced"); } catch (e) { showSetCat("advanced"); }
+      _advWire();
+      const d = document.querySelector(`#set-advanced details.adv-sec[data-adv="${section}"]`);
+      if (d && !d.open) d.open = true;
+      if (d) d.scrollIntoView({block: "start"});
+    }
+    function _advWire() {
+      document.querySelectorAll("#set-advanced details.adv-sec").forEach(d => {
+        if (d.dataset.advWired === "1") return;
+        d.dataset.advWired = "1";
+        d.addEventListener("toggle", () => {
+          if (!d.open || d.dataset.advLoaded === "1") return;
+          d.dataset.advLoaded = "1";                       // load once, keep the data on re-collapse
+          const load = _ADV_LOADERS[d.dataset.adv];
+          if (!load) return;
+          // One section failing must not take the others down with it.
+          try { load(); } catch (e) { console.error("advanced section failed to load", d.dataset.adv, e); }
+        });
+      });
     }
 
     function buildDrawer() {
@@ -5199,7 +5235,6 @@
           (st.reclaimable_bytes == null) ? "—" : _fmtBytes(st.reclaimable_bytes);
         _dbFileBytes = (st.file && st.file.bytes != null) ? st.file.bytes : null;
       } catch (e) { /* the reclaim readout stays at its placeholder — no panel to report into */ }
-      loadKeywordFilter();
       loadDumpLanguages();
       loadWikiDumps();
       loadFetchMode();

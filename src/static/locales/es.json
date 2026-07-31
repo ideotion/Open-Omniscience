@@ -2240,5 +2240,8 @@
   "Sources per region against each region's floor.": "Fuentes por región, comparadas con el mínimo de cada región.",
   "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "Barra = fuentes recopiladas; la marca vertical es el mínimo de la región. Solo recuentos, sin puntuación.",
   "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.": "VADER es un léxico en inglés: el tono solo se mide para la cobertura en inglés. La ausencia de tono significa no medido — no neutral.",
-  "phase {n} of {total}": "fase {n} de {total}"
+  "phase {n} of {total}": "fase {n} de {total}",
+  "Keywords — explore & curate": "Palabras clave — explorar y curar",
+  "Entity family curation — you decide": "Familias de entidades — usted decide",
+  "Super-group curation — create, add, remove, delete": "Supergrupos — crear, añadir, quitar, eliminar"
 }

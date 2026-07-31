@@ -2240,5 +2240,8 @@
   "Sources per region against each region's floor.": "Sources per region against each region's floor.",
   "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.",
   "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.": "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.",
-  "phase {n} of {total}": "phase {n} of {total}"
+  "phase {n} of {total}": "phase {n} of {total}",
+  "Keywords — explore & curate": "Keywords — explore & curate",
+  "Entity family curation — you decide": "Entity family curation — you decide",
+  "Super-group curation — create, add, remove, delete": "Super-group curation — create, add, remove, delete"
 }
