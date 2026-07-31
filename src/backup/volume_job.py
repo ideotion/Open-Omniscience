@@ -17,6 +17,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+# Module-level, not lazy: _on_prog fires once per merged article (~700k times on
+# a large import), and even a sys.modules lookup does not belong on that path.
+# runlog imports nothing but stdlib at module scope, so this cannot cycle.
+from src.backup import runlog
+
 _LOG = logging.getLogger(__name__)
 
 # "Progress everywhere" (field-feedback Session A §4 item 2): run_restore's
@@ -83,6 +88,11 @@ class VolumeBackupManager:
     def _on_prog(self, p: dict) -> None:
         with self._lock:
             self._progress = p
+        # The run journal's view of progress. Deliberately AFTER the lock and
+        # outside it: this fires once per merged article (~700k times on a large
+        # import), and it is two attribute stores with no I/O -- see
+        # runlog.RunLog.progress.
+        runlog.progress(p)
 
     # -- backup ------------------------------------------------------------- #
     def start_backup(
@@ -122,6 +132,13 @@ class VolumeBackupManager:
     def _run_backup(self, destp, passphrase, include_newsletters, parity_fraction, backup_fn):
         from src.backup.volumes import VolumeStopped
 
+        # The export "seems to work fine" (maintainer, 2026-07-31) -- which is
+        # exactly why it is worth journalling: the numbers it has never left the
+        # process, so nobody knows what "fine" costs, or where.
+        runlog.begin(
+            "export", label=destp.name, dest=str(destp),
+            include_newsletters=include_newsletters, parity_fraction=parity_fraction,
+        )
         try:
             fn = backup_fn
             if fn is None:
@@ -140,6 +157,15 @@ class VolumeBackupManager:
                 self._state = "done"
                 self._summary = {k: v for k, v in summary.items() if k != "envelope"}
                 self._progress = {**self._progress, "phase": "done"}
+            runlog.end(
+                "ok",
+                volumes=summary.get("volumes"),
+                bytes=summary.get("total_bytes") or summary.get("bytes"),
+                # The ENGINE's own wall_s, kept beside (never instead of) the
+                # journal's: they measure slightly different spans and both are real.
+                engine_wall_s=summary.get("wall_s"),
+                gate_held_s=summary.get("gate_held_s"),
+            )
         except VolumeStopped:
             with self._lock:
                 paused = self._pause_requested
@@ -151,14 +177,35 @@ class VolumeBackupManager:
                 # for a good backup meanwhile.
                 with self._lock:
                     self._state = "paused"
+                runlog.end("paused")
             else:
+                # END AFTER the cleanup, not before: deleting the partial set is
+                # part of this run, it touches the destination drive, and it is
+                # exactly the step an operator would want timed if a cancel ever
+                # appears to hang.
+                runlog.milestone("stage_begin", name="cleanup_partial")
                 self._cleanup_partial(destp)
+                runlog.milestone("stage_end", name="cleanup_partial")
                 with self._lock:
                     self._state = "cancelled"
+                runlog.end("cancelled")
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
             _LOG.exception("volume backup failed")
+            import traceback
+
+            runlog.milestone(
+                "error",
+                cls=type(exc).__name__,
+                msg=str(exc)[:2000],
+                traceback="".join(traceback.format_exception(exc))[-8000:],
+            )
+            runlog.end("error", cls=type(exc).__name__)
             with self._lock:
                 self._state, self._error = "error", str(exc)
+        finally:
+            # The same net as the restore path: a no-op whenever an outcome was
+            # recorded, and honest about its own ignorance when one was not.
+            runlog.end("ended-without-a-recorded-outcome")
 
     # -- restore ------------------------------------------------------------ #
     def start_restore(
@@ -203,12 +250,17 @@ class VolumeBackupManager:
     def _run_restore(self, srcp, passphrase, allow_unverified, corpus_passphrase, restore_fn):
         from src.backup.merge import RestoreAborted
 
+        # ONE run journal per queue item, opened before anything expensive. Eight
+        # sequential imports at ~10 h each sharing one run_id would wrap the beat
+        # ring and lose the early hours of every item but the last.
+        runlog.begin("import", label=srcp.name, dest=str(srcp), force=self._force)
         try:
             if restore_fn is not None:
                 summary = restore_fn(srcp, passphrase)
                 with self._lock:
                     self._state, self._summary = "done", summary
                     self._progress = {"phase": "done"}
+                runlog.end("ok", injected_restore_fn=True)
                 return
             from src.backup.artifact import cleanup_staging, read_volume_backup
             from src.backup.merge import (
@@ -249,6 +301,10 @@ class VolumeBackupManager:
                 with self._lock:
                     self._state, self._summary = "done", summary
                     self._progress = {"phase": "skipped-already-merged"}
+                runlog.end(
+                    "skipped-already-merged",
+                    merged_as_batch=_already["batch_id"], merged_at=_already["imported_at"],
+                )
                 return
 
             # "Import owns the machine" (field-feedback Session A §4, ruled):
@@ -318,6 +374,17 @@ class VolumeBackupManager:
                                 "phase_index": _phase_of("merge"),
                                 "phase_total": _phase_total,
                             }
+                        )
+                        # durable=False: this fires from inside merge_corpus's
+                        # single BEGIN IMMEDIATE, which holds the process-wide
+                        # write gate. Fourteen fsyncs there are bounded and
+                        # negligible against hours of work -- but on the failing
+                        # or full disk this journal exists to diagnose, an fsync
+                        # can block for seconds while the gate is held, and every
+                        # other writer would feel it. The next milestone's fsync
+                        # flushes these to the platter anyway.
+                        runlog.milestone(
+                            "merge_step", durable=False, step=done, steps=total, label=name
                         )
 
                     def _reindex_prog(done: int, total: int) -> None:
@@ -389,6 +456,21 @@ class VolumeBackupManager:
                     _merge_cache_mb = import_cache_mb() if _owned else None
                     _reindex_batch = import_reindex_commit_batch() if _owned else None
 
+                    # The knobs this run ACTUALLY resolved, recorded before the
+                    # work rather than in the final report -- a killed run's
+                    # settings are half the diagnosis, and the final report is
+                    # precisely what a killed run never writes.
+                    runlog.milestone(
+                        "knobs",
+                        owns_the_machine=_owned,
+                        was_paused=was_paused,
+                        reindex_workers=_reindex_workers,
+                        merge_cache_mb=_merge_cache_mb,
+                        reindex_commit_batch=_reindex_batch,
+                        exclusive=_owned,
+                        phase_total=_phase_total,
+                    )
+
                     report = run_restore(
                         staged,
                         commit=True,
@@ -422,6 +504,10 @@ class VolumeBackupManager:
                     with self._lock:
                         self._state, self._summary = "done", {"report": report}
                         self._progress = {"phase": "done"}
+                    runlog.end("ok", **{
+                        k: report.get(k) for k in ("batch_id", "reindexed", "articles_merged")
+                        if report.get(k) is not None
+                    })
                 finally:
                     cleanup_staging(staged)
             finally:
@@ -436,6 +522,7 @@ class VolumeBackupManager:
             # never an error. The live corpus is byte-identical; the staging dir is
             # cleaned by the finally above.
             _LOG.info("volume restore stopped by the operator: %s", exc)
+            runlog.end("stopped-by-operator", detail=str(exc)[:500])
             with self._lock:
                 self._state = "cancelled"
                 self._error = None
@@ -452,8 +539,25 @@ class VolumeBackupManager:
             # instead, so a data-merge conflict read as an unqualified, unhelpful
             # "UNIQUE constraint failed:" in the UI (field bug 2026-07-15).
             detail = str(exc) if isinstance(exc, MergeError) else classify_restore_error("restore", exc)
+            # The traceback, bounded and scrubbed. `cls` + `msg` alone lose the
+            # single most useful artefact a failed run leaves behind.
+            import traceback
+
+            runlog.milestone(
+                "error",
+                cls=type(exc).__name__,
+                msg=str(exc)[:2000],
+                traceback="".join(traceback.format_exception(exc))[-8000:],
+            )
+            runlog.end("error", cls=type(exc).__name__)
             with self._lock:
                 self._state, self._error = "error", detail
+        finally:
+            # A net for an exit path not enumerated above. A no-op whenever an
+            # outcome WAS recorded (the ambient run is already cleared), so it can
+            # never overwrite a real one -- and it names its own ignorance rather
+            # than guessing "ok".
+            runlog.end("ended-without-a-recorded-outcome")
 
     # -- verify -------------------------------------------------------------- #
     def start_verify(

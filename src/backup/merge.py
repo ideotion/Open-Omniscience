@@ -232,10 +232,19 @@ def prepare_staged_corpus(
     # stage_a:* sub-timings a few lines up are recorded rather than staged for the
     # same reason; this follows them.
     _record = getattr(timings, "record", None)
+    # ...and prefer StageTimings.sub() when the recorder has it: same timing, same
+    # no-phase-ping guarantee, but it ALSO emits a begin to the run journal. That
+    # begin is what names prepare_staged:validate as the stage a killed run died
+    # in; bare record() is end-only, so an interrupted sub-stage left no trace.
+    _sub_cm = getattr(timings, "sub", None)
 
     @contextmanager
     def _sub(name: str):
         """Time a sub-stage when a recorder was supplied, else do nothing."""
+        if _sub_cm is not None:
+            with _sub_cm(name):
+                yield
+            return
         if _record is None:
             yield
             return
@@ -2018,6 +2027,22 @@ def _save_reindex_cursor(batch_id: int, *, last_id: int, done: int, total: int) 
         _LOG.debug("could not persist the re-index watermark", exc_info=True)
 
 
+def peek_reindex_cursor() -> dict | None:
+    """The cursor file's RAW contents, whoever it belongs to.
+
+    :func:`_load_reindex_cursor` deliberately answers ``None`` both when no
+    cursor exists and when one exists for a DIFFERENT batch -- correct for
+    resuming, and a conflation for diagnosing: "never checkpointed" and
+    "checkpoint discarded as foreign" are different answers to "did this resume
+    or restart?". The journal records this instead of the boolean.
+    """
+    try:
+        raw = json.loads(_reindex_state_path().read_text(encoding="utf-8"))
+        return raw if isinstance(raw, dict) else None
+    except Exception:  # noqa: BLE001 - absent/torn cursor is a real, reportable state
+        return None
+
+
 def _load_reindex_cursor(batch_id: int) -> int | None:
     """The last completed article id for THIS batch, or None. A cursor belonging to a
     different batch is ignored rather than trusted -- resuming batch B from batch A's
@@ -2206,6 +2231,26 @@ def reindex_imported_articles(
         resume_after = _load_reindex_cursor(batch_id)
         ids = [i for i in all_ids if i > resume_after] if resume_after is not None else all_ids
         already = len(all_ids) - len(ids)
+
+        # "Did this resume or start over?" -- answered from the artefact, with the
+        # raw cursor so a FOREIGN checkpoint (a different batch's, correctly
+        # ignored) is distinguishable from no checkpoint at all.
+        from src.backup import runlog as _runlog
+
+        _raw = peek_reindex_cursor()
+        _runlog.milestone(
+            "reindex_resume",
+            batch_id=batch_id,
+            cursor_on_disk=_raw,
+            cursor_batch_id=(_raw or {}).get("batch_id"),
+            resumed_after_id=resume_after,
+            already_done=already,
+            # BOTH denominators, named. `remaining` is what this invocation will
+            # walk; `batch_total` is the batch. "3000/686896" meant different
+            # things in different lines before they were both stated.
+            remaining=len(ids),
+            batch_total=len(all_ids),
+        )
         if not ids:
             mark_reindex_complete(batch_id)
             out: dict = {"reindexed": 0, "failed": 0}
@@ -2521,7 +2566,18 @@ def run_restore(
     from src.database.session import dispose_engine, init_db
     from src.scheduler.runner import owns_the_machine
 
-    timings = StageTimings(on_start=stage_progress_cb)
+    # The journal sink is separate from on_start on purpose: on_start drives the
+    # user-visible phase counter (whose denominator is restore_stage_plan()), the
+    # sink is the durable record. Sub-stages reach the second and not the first.
+    def _journal_stage(kind: str, name: str, seconds: float | None) -> None:
+        from src.backup import runlog
+
+        if kind == "begin":
+            runlog.milestone("stage_begin", name=name)
+        else:
+            runlog.milestone("stage_end", name=name, seconds=seconds)
+
+    timings = StageTimings(on_start=stage_progress_cb, sink=_journal_stage)
 
     # OWNERSHIP-DERIVED DEFAULTS (field report 2026-07-30). Two callers -- the legacy
     # single-archive restore and the /v2/restore commit -- pass none of the throughput

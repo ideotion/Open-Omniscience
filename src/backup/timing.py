@@ -40,14 +40,29 @@ class StageTimings:
     own progress_cb contract) and never delays entry into the stage.
     """
 
-    def __init__(self, *, on_start: Callable[[str], None] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        on_start: Callable[[str], None] | None = None,
+        sink: Callable[[str, str, float | None], None] | None = None,
+    ) -> None:
         self._t0 = time.monotonic()
         self._values: dict[str, float] = {}
         self._order: list[str] = []
         self._on_start = on_start
+        self._sink = sink
+
+    def _emit(self, kind: str, name: str, seconds: float | None = None) -> None:
+        if self._sink is None:
+            return
+        try:
+            self._sink(kind, name, seconds)
+        except Exception:  # noqa: BLE001 - a journal must never break the timed work
+            pass
 
     @contextmanager
     def stage(self, name: str) -> Iterator[None]:
+        self._emit("begin", name)
         if self._on_start is not None:
             try:
                 self._on_start(name)
@@ -59,10 +74,35 @@ class StageTimings:
         finally:
             self.record(name, time.monotonic() - t0)
 
+    @contextmanager
+    def sub(self, name: str) -> Iterator[None]:
+        """A SUB-stage: timed and journalled, but never pinged as a phase.
+
+        ``stage()`` does two things -- it times, and it fires ``on_start``,
+        whose names are the user-visible phases counted against
+        ``restore_stage_plan()``. A sub-stage that used it flashed an unknown
+        phase in the UI mid-import (fixed in 3bd990a), so sub-stages have
+        called bare ``record()`` since -- which is end-only, and therefore
+        invisible in a run that was killed INSIDE one. ``prepare_staged:validate``
+        is 4,103 s of a large import; a journal that cannot name it as the stage
+        that died is as coarse as no split at all.
+
+        This is the third option: the journal sink gets its begin, the phase
+        counter does not.
+        """
+        self._emit("begin", name)
+        t0 = time.monotonic()
+        try:
+            yield
+        finally:
+            self.record(name, time.monotonic() - t0)
+
     def record(self, name: str, seconds: float) -> None:
         if name not in self._values:
             self._order.append(name)
-        self._values[name] = round(max(0.0, seconds), 3)
+        value = round(max(0.0, seconds), 3)
+        self._values[name] = value
+        self._emit("end", name, value)
 
     def report(self) -> dict:
         """``{"stages": {name: seconds, ...}, "wall_s": total_since_construction}``.

@@ -83,11 +83,48 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
     lines.append(f"# Import report ({kind})")
     lines.append("")
 
+    # OUTCOME FIRST. A run that aborted or was killed still carries a `plan`
+    # (it is computed before the commit point), so headlining the plan's article
+    # count unconditionally printed "**686,896 new articles**" at the top of a
+    # run that committed nothing -- a fabricated success on the one artefact a
+    # human actually opens. The plan is still shown below, under a heading that
+    # says what it is: intended, not applied.
+    outcome = str(report.get("outcome") or "").lower()
+    committed = outcome in ("", "ok", "done", "success", "committed")
+    if not committed:
+        lines.append(f"> **This run did not complete — outcome: `{outcome}`.**")
+        reason = report.get("note") or report.get("reason") or report.get("error")
+        if reason:
+            lines.append(f"> {reason}")
+        if report.get("died_in_stage"):
+            lines.append(f"> Last stage entered: `{report['died_in_stage']}`.")
+        if report.get("last_seen_at"):
+            lines.append(f"> Last observed alive: {report['last_seen_at']}.")
+        lines.append(
+            "> The numbers below describe what this import WOULD have merged; "
+            "they are not a record of what the corpus now contains."
+        )
+        lines.append("")
+        stages = report.get("stages")
+        if stages:
+            lines.append("## Stage timings up to the interruption")
+            lines.append("")
+            lines.append("| stage | seconds |")
+            lines.append("| --- | ---: |")
+            for nm, secs in stages.items():
+                lines.append(f"| {nm} | {secs} |")
+            lines.append("")
+
     plan = report.get("plan") or {}
     articles_plan = plan.get("articles") or {}
     new_articles = articles_plan.get("new")
     dup_articles = articles_plan.get("duplicate")
-    if new_articles is not None:
+    if new_articles is not None and not committed:
+        lines.append(
+            f"**{_fmt_count(new_articles)} articles were planned** "
+            "(NOT merged — see the outcome above)."
+        )
+    elif new_articles is not None:
         headline = f"**{_fmt_count(new_articles)} new articles**"
         if dup_articles:
             headline += f" ({_fmt_count(dup_articles)} duplicates skipped)"
@@ -183,6 +220,30 @@ def _safe_report_path(filename: str) -> Path | None:
     return candidate
 
 
+#: A report bigger than this is not parsed for its outcome during a listing --
+#: the listing must stay cheap. Unknown is reported as unknown.
+_OUTCOME_PARSE_MAX_BYTES = 4 * 1024 * 1024
+
+
+def _report_outcome(p: Path, size_bytes: int) -> str:
+    """``"ok"`` / the report's own outcome / ``"unknown"``.
+
+    A report with no ``outcome`` key at all predates this field and came from
+    the success path (it is written after the commit), so it reads ``ok``. An
+    unreadable or oversized one reads ``unknown`` -- never ``ok``, because
+    guessing success is the one direction that misleads.
+    """
+    if size_bytes > _OUTCOME_PARSE_MAX_BYTES:
+        return "unknown"
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001 - a torn/half-written report is not a success
+        return "unknown"
+    if not isinstance(data, dict):
+        return "unknown"
+    return str(data.get("outcome") or "ok")
+
+
 def list_import_reports() -> list[dict[str, Any]]:
     """Every persisted report, newest first. Read-only; an empty/missing directory is
     simply an empty list (never an error -- a fresh install has no reports yet)."""
@@ -201,6 +262,12 @@ def list_import_reports() -> list[dict[str, Any]]:
             {
                 "filename": p.name,
                 "kind": kind,
+                # The kind alone CANNOT carry this: "restore-partial-…" splits to
+                # kind "restore", identical to a fully-committed one, so a crashed
+                # run listed as a normal one. Read the outcome out of the file --
+                # a listing that erases the distinction is the conflation this
+                # project forbids.
+                "outcome": _report_outcome(p, stat.st_size),
                 "created_at": datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(),
                 "size_bytes": stat.st_size,
             }

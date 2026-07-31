@@ -26,6 +26,19 @@ loop, and recalibrates the analytics against a real ~500k-article corpus. On the
 - **The Observatory** — the corpus-as-night-sky exploration tab (design of record:
   [`docs/design/OBSERVATORY_DESIGN.md`](design/OBSERVATORY_DESIGN.md)), gated on the
   group-statistics core and maintainer click-through.
+- **The import/export run journal** — a crash-surviving record of what each import and
+  export was doing *while it ran*, on by default
+  ([`docs/maintenance/RUN_JOURNAL.md`](maintenance/RUN_JOURNAL.md)). The import path was
+  already well instrumented; every number it produced was held in memory and written
+  once, at the end, on the success path — so a run that never reached its end left
+  nothing at all, and "is it stuck or is it slow?" needed `ps` by hand. Milestones and a
+  heartbeat now land on disk as the run goes, carrying the cumulative CPU of the parent
+  **and its pool children** (the only pair that separates a healthy re-index from a
+  deadlocked one), memory, swap, disk-free, WAL size and write-gate state. It refuses to
+  guess: no `moving` verdict for a phase that publishes no counter, no zeroed field
+  standing in for an unmeasurable one, no "crashed" where "killed, or its journal was
+  muted" is all the file can support — and an interrupted run's report no longer
+  headlines the article count it never merged.
 
 ## 0.2.0 — data safety at scale (the `0.1` cycle, version set 2026-07-10)
 
