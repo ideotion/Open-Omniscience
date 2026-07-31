@@ -2240,5 +2240,8 @@
   "Sources per region against each region's floor.": "प्रत्येक क्षेत्र के न्यूनतम की तुलना में प्रति क्षेत्र स्रोत।",
   "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "बार = एकत्रित स्रोत; ऊर्ध्वाधर चिह्न उस क्षेत्र का न्यूनतम है। केवल गणना, कोई अंक नहीं।",
   "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.": "VADER एक अंग्रेज़ी शब्दकोश है: स्वर केवल अंग्रेज़ी कवरेज के लिए मापा जाता है। यहाँ स्वर न होने का अर्थ है अमापित — न कि तटस्थ।",
-  "phase {n} of {total}": "चरण {n} / {total}"
+  "phase {n} of {total}": "चरण {n} / {total}",
+  "Keywords — explore & curate": "कीवर्ड — देखें और व्यवस्थित करें",
+  "Entity family curation — you decide": "इकाई समूह — निर्णय आपका",
+  "Super-group curation — create, add, remove, delete": "सुपर-समूह — बनाएँ, जोड़ें, हटाएँ, मिटाएँ"
 }

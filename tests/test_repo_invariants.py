@@ -2922,9 +2922,13 @@ def test_collect_tab_moved_into_settings():
     html = _ui_source()
     sidebar = html.split('id="set-subtabs"')[0]
     assert 'data-tab="ingest"' not in sidebar, "Collect must leave the sidebar (content-first)"
-    assert 'id="set-collect"' in html and '<button data-tab="collect">' in html, (
-        "Collect must exist as a Settings subtab (#set-collect + its nav button)"
+    # 2026-07-31 (Settings review): Collect stopped being its own subtab and became a
+    # FOLDED section of Advanced. The absorption property is unchanged and is what the
+    # rest of this test checks; only the address moved.
+    assert 'id="set-advanced"' in html and '<button data-tab="advanced">' in html, (
+        "Advanced must exist as a Settings subtab (#set-advanced + its nav button)"
     )
+    assert 'data-adv="collect"' in html, "Collection must be a section of Advanced"
     # absorption: the moved controls must all still exist (nothing lost in the move —
     # the schedule/manual/batch knobs are demoted into "Advanced (legacy)" <details>,
     # NOT deleted; the full removal is a browser-verified follow-up per Q6a)
@@ -2938,11 +2942,13 @@ def test_collect_tab_moved_into_settings():
         "the schedule/manual/batch knobs must be demoted into the Advanced (legacy) details"
     )
     # the redirect keeps every showTab('ingest') reference working
-    assert 'if (name === "ingest")' in html and '_setSubtabs.select("collect")' in html, (
-        "showTab('ingest') must redirect to Settings → Collect"
+    assert 'if (name === "ingest")' in html and '_openAdvanced("collect")' in html, (
+        "showTab('ingest') must still land on the scheduler — now Advanced → Collection"
     )
-    assert 'if (cat === "collect") loadScheduler()' in html, (
-        "the Collect subtab must run the scheduler's onShow load"
+    # The loader runs on section EXPAND, not on subtab select: folded must not mean
+    # fetched. _openAdvanced opens the section, so the deep-link still loads it.
+    assert "collect:  () => { loadScheduler(); }" in html, (
+        "expanding Advanced → Collection must run the scheduler's load"
     )
 
 
@@ -2977,18 +2983,19 @@ def test_sources_tab_moved_into_settings():
     assert '<button class="nav-item" data-tab="sources"' not in html, (
         "Sources must leave the sidebar (content-first)"
     )
-    assert 'id="set-sources"' in html, "Sources must exist as a Settings subtab panel"
+    # 2026-07-31 (Settings review): Sources became a FOLDED section of Advanced.
+    assert 'data-adv="sources"' in html, "Sources must be a section of Advanced"
     for ctrl in ('id="src-table"', 'id="candidates-list"', "addSource(", 'id="src-search"'):
         assert ctrl in html, f"moved Sources control missing after the move: {ctrl}"
-    assert 'if (name === "sources")' in html and '_setSubtabs.select("sources")' in html, (
-        "showTab('sources') must redirect to Settings → Sources"
+    assert 'if (name === "sources")' in html and '_openAdvanced("sources")' in html, (
+        "showTab('sources') must still land on source management — now Advanced → Sources"
     )
     # The Sources subtab runs its onShow loads (loadSrcFacets feeds the #23 multi-select
     # dropdowns; managed-sources + candidates as before). Assert each call, not the exact
     # line, so adding an onShow load never reddens this verbatim check again.
-    src_onshow = html.split('if (cat === "sources") {', 1)[1].split("}", 1)[0]
+    src_onshow = html.split("sources:  () => {", 1)[1].split("}", 1)[0]
     for call in ("loadSrcFacets()", "loadManagedSources()", "loadCandidates()"):
-        assert call in src_onshow, f"the Sources subtab onShow must run {call}"
+        assert call in src_onshow, f"expanding Advanced → Sources must run {call}"
 
 
 def test_wikipedia_tab_moved_into_settings():
@@ -4567,8 +4574,10 @@ def test_keyword_explorer_subtab():
     (backfill). Panel content is un-keyed English, matching the adjacent super-group
     + diagnostics keyword-curation UIs; the nav label reuses the keyed 'Keywords'."""
     src = _ui_source()
-    assert 'data-tab="keywords"' in src, "the Settings Keywords subtab button must exist"
-    assert 'id="set-keywords"' in src, "the Keywords panel must exist"
+    # 2026-07-31 (Settings review, ruling 13): the Keywords subtab was removed and its
+    # panels became a FOLDED section of Advanced — users were never going to come here to
+    # tweak. Everything it held must still be present, which is what this test pins.
+    assert 'data-adv="keywords"' in src, "Keywords must be a section of Advanced"
     assert "function loadKeywordExplorer" in src, "the explorer loader must exist"
     assert "/api/insights/keyword-tags/facets" in src, "explore must read the tag facets"
     assert "/api/insights/keyword-tags/backfill" in src, "the apply-baseline-tags action must exist"
@@ -4625,11 +4634,11 @@ def test_family_curation_relocated_to_settings_and_single_member_guarded():
     for gone in ("fam-pick", "familyMerge()", "familySplit(", "Merge selected"):
         assert gone not in ins_section, f"{gone!r} must not remain on the Insights data view"
 
-    set_i = src.index('id="set-keywords"')
+    set_i = src.index('data-adv="keywords"')
     # Anchor on the NEXT set-view rather than a NAMED sibling panel: sibling names move
     # (id="set-leads" was this delimiter until the Leads subtab was removed 2026-07-31),
     # and a delimiter that moves silently re-scopes a test that is not about it.
-    set_j = src.index('<div class="set-view"', set_i)  # the whole Settings Keywords view
+    set_j = src.index("</details>", set_i)  # the whole Advanced → Keywords section
     set_section = src[set_i:set_j]
     assert 'id="famc-list"' in set_section, "the relocated curation list must exist in Settings"
     assert 'onclick="familyMerge()"' in set_section
@@ -4687,9 +4696,10 @@ def test_supergroup_curation_relocated_to_settings():
         "the create-group input must live in the Settings curation panel"
     )
     assert "function loadSupergroupCuration(" in src and "function sgCurationCard(" in src
-    assert 'loadSupergroupCuration();' in src[
-        src.index('if (cat === "keywords")') : src.index('if (cat === "keywords")') + 200
-    ], "the Settings Keywords subtab must load the super-group curation panel"
+    kw_onshow = src.split("keywords: () => {", 1)[1].split("}", 1)[0]
+    assert "loadSupergroupCuration()" in kw_onshow, (
+        "expanding Advanced → Keywords must load the super-group curation panel"
+    )
 
     # sgCard (Insights, the data view) must carry NONE of the mutation actions.
     card_fn = src[src.index("function sgCard(") : src.index("async function createSuperGroup(")]

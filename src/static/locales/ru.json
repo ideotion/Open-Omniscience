@@ -2240,5 +2240,8 @@
   "Sources per region against each region's floor.": "Источники по регионам в сравнении с минимумом каждого региона.",
   "Bar = sources collected; the vertical mark is that region's floor. Counts only, no score.": "Полоса — собранные источники; вертикальная отметка — минимум региона. Только подсчёты, без оценки.",
   "VADER is an English lexicon: tone is measured only for English coverage. No tone here means unmeasured — not neutral.": "VADER — англоязычный словарь: тональность измеряется только для англоязычных материалов. Отсутствие тональности означает неизмеренно — а не нейтрально.",
-  "phase {n} of {total}": "этап {n} из {total}"
+  "phase {n} of {total}": "этап {n} из {total}",
+  "Keywords — explore & curate": "Ключевые слова — обзор и настройка",
+  "Entity family curation — you decide": "Семейства сущностей — решаете вы",
+  "Super-group curation — create, add, remove, delete": "Супергруппы — создать, добавить, убрать, удалить"
 }

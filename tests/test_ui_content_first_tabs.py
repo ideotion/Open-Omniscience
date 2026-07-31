@@ -47,24 +47,34 @@ def test_no_top_level_sources_or_wiki_page_survives():
 
 
 def test_showtab_reroutes_legacy_names_into_settings():
-    # showTab("sources")/showTab("wiki") land on Settings + select the right subtab.
+    """showTab("sources")/showTab("wiki") land on Settings at the right place.
+
+    2026-07-31: Sources moved into Advanced, so its redirect selects Advanced AND opens
+    the section (_openAdvanced) rather than selecting a subtab that no longer exists. This
+    is the guard that would have caught the deep-link landing on nothing."""
     assert 'if (name === "sources")' in _JS
     assert 'if (name === "wiki")' in _JS
-    assert '_setSubtabs.select("sources")' in _JS
+    assert '_openAdvanced("sources")' in _JS
     assert '_setSubtabs.select("wikipedia")' in _JS
 
 
 def test_settings_subtabs_expose_sources_and_wikipedia():
+    """2026-07-31 (Settings review): Sources stopped being its own subtab and became a
+    folded section of Advanced. What this guards is that both destinations are REACHABLE
+    from the subtab strip, so the check follows Sources to its new address rather than
+    pinning a subtab name that the restructure deliberately retired."""
     m = re.search(r'<nav[^>]*id="set-subtabs".*?</nav>', _HTML, re.S)
     assert m, "the Settings subtab nav #set-subtabs must exist"
     strip = m.group(0)
-    assert 'data-tab="sources"' in strip
+    assert 'data-tab="advanced"' in strip
+    assert 'data-adv="sources"' in _HTML, "Sources must be reachable as an Advanced section"
     assert 'data-tab="wikipedia"' in strip
 
 
 def test_sources_panel_absorbs_every_moved_control():
-    # #set-sources must carry the source-management toolkit that moved out of the sidebar.
-    assert 'id="set-sources"' in _HTML
+    # The source-management toolkit that left the sidebar now lives in Advanced → Sources.
+    # The absorption list below is the point of the test and is unchanged.
+    assert 'data-adv="sources"' in _HTML
     for ident in ("s-name", "s-domain", "s-rss", "s-tags", "src-table", "src-search",
                   "candidates-panel", "imp-file"):
         assert f'"{ident}"' in _HTML or f"id={ident}" in _HTML or ident in _HTML, (

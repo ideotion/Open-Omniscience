@@ -1153,9 +1153,6 @@
         <button data-tab="general">General</button>
         <button data-tab="shortcuts">Shortcuts</button>
         <button data-tab="models">AI</button>
-        <button data-tab="keywords">Keywords</button>
-        <button data-tab="collect">Collect</button>
-        <button data-tab="sources">Sources</button>
         <button data-tab="newsletters">Newsletters</button>
         <button data-tab="wikipedia">Wikipedia</button>
         <button data-tab="stats">Statistics</button>
@@ -1163,6 +1160,7 @@
         <button data-tab="agenda">Agenda</button>
         <button data-tab="data">Data &amp; backup</button>
         <button data-tab="safety">Safety</button>
+        <button data-tab="advanced">Advanced</button>
       </nav>
 
     <div class="set-view" id="set-graphics">
@@ -1254,32 +1252,6 @@
 
       <button onclick="saveSettings()">Save preferences</button>
       <div class="hint">Stored in your encrypted corpus database (app_state) — your settings ride your backups; no telemetry, nothing leaves the machine.</div>
-    </section>
-
-    <section class="panel">
-      <h2>Keyword filtering</h2>
-      <p class="muted" style="margin-top:0">"Dumb" keywords (function words like the, you, not, one) are removed
-        automatically by a built-in multilingual stoplist. Fine-tune below: exclude extra terms (one per line or
-        comma-separated), set the minimum length, and toggle options. Excluding hides a keyword everywhere
-        (reversibly — stored mentions are kept). You can also click the ✕ next to any keyword in Insights.</p>
-      <div class="row">
-        <div><label for="kf-minlen">Minimum keyword length</label>
-          <input id="kf-minlen" type="number" min="1" max="20" step="1"></div>
-        <div style="align-self:end"><label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" id="kf-numeric" style="width:auto"> Drop purely numeric terms</label></div>
-        <div style="align-self:end"><label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" id="kf-builtin" style="width:auto"> Use built-in multilingual stoplist</label></div>
-      </div>
-      <label for="kf-excluded">Excluded keywords (yours)</label>
-      <textarea id="kf-excluded" rows="5" placeholder="one term per line (or comma-separated)"></textarea>
-      <button onclick="saveKeywordFilter()">Save keyword filter</button>
-      <div id="kf-result" class="hint"></div>
-      <details id="kf-builtin-view" style="margin-top:10px">
-        <summary style="cursor:pointer">See the built-in stoplist (<span id="kf-builtin-count">…</span> words filtered automatically)</summary>
-        <p class="muted" style="margin:6px 0">These are the automatic multilingual filter words (function words like the·you·not across your corpus languages). They are curated and language-scoped, so this view is read-only — the toggle above turns the whole list on or off. Search it to see whether a term is filtered.</p>
-        <input id="kf-builtin-q" type="search" placeholder="search the stoplist…" oninput="loadBuiltinStoplist()" style="max-width:280px">
-        <div id="kf-builtin-list" class="hint" style="max-height:180px;overflow:auto;margin-top:6px;display:flex;flex-wrap:wrap;gap:4px"></div>
-      </details>
     </section>
     </div>
 
@@ -1813,54 +1785,22 @@
     </section>
     </div>
 
-    <div class="set-view" id="set-keywords" style="display:none">
+    <!-- ADVANCED (2026-07-31 Settings review): the plumbing surfaces — collection,
+         source management, keyword curation — gathered here behind FOLDED sections so
+         the everyday subtabs stay about content (invariant #8).
+         FOLDED MUST NOT MEAN FETCHED: each section's loader runs when that section is
+         EXPANDED, never when the subtab is selected. The source catalog alone can hold
+         ~46k rows, so opening Advanced must cost nothing until you open a section. -->
+    <div class="set-view" id="set-advanced" style="display:none">
     <section class="panel">
-      <h2 style="margin-top:0;font-size:13px">Keywords <span class="muted">— explore &amp; curate</span></h2>
-      <p class="hint" style="margin-top:0">Browse keywords by their type/topic tags, hide noise, and apply the
-        curated baseline tags to your existing corpus. Tags are labelled assertions, never scores; hiding is
-        reversible (see Keyword filtering under General). Nothing in the keyword store is rewritten.</p>
-      <div class="row" style="margin-top:6px">
-        <button class="secondary" onclick="kxBackfill()">Apply baseline tags</button>
-        <button class="secondary" onclick="loadKeywordExplorer()">Refresh</button>
-      </div>
-      <div id="kx-facets" style="margin-top:10px"><div class="muted">Loading…</div></div>
-      <div id="kx-keywords" style="margin-top:8px"></div>
+      <h2>Advanced</h2>
+      <p class="hint" style="margin-top:0">Collection plumbing, source management and keyword
+        curation. None of it is needed for everyday use, and each section only loads its data
+        once you open it.</p>
     </section>
-    <section class="panel">
-      <h2 style="margin-top:0;font-size:13px">Entity family curation <span class="muted">— you decide</span></h2>
-      <p class="hint" style="margin-top:0">Surface variants are grouped automatically (a shared lemma/plural, or a
-        cross-language group — USA / США / EUA). Only rows where there is actually something to decide are shown
-        below: a multi-member family, a group merge, or a family you already overrode. Tick two or more rows and
-        Merge them, or click a member's ✕ to split it out. Your decisions win over the automatic rules and are
-        fully reversible.</p>
-      <div class="row" style="align-items:center">
-        <div style="flex:0 0 auto;align-self:end"><button onclick="familyMerge()">Merge selected</button></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadFamilyCuration()">Refresh</button></div>
-        <span id="famc-status" class="hint"></span>
-      </div>
-      <div id="famc-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
-      <div id="fam-overrides" style="margin-top:14px"></div>
-    </section>
-    <section class="panel">
-      <h2 style="margin-top:0;font-size:13px">Super-group curation <span class="muted">— create, add, remove, delete</span></h2>
-      <p class="hint" style="margin-top:0">Gather several families — or cross-language groups (one concept across
-        many languages, e.g. election / élection / wahl) — under one theme (e.g. Russia–Ukraine war, over Russia,
-        Ukraine, Putin, sanctions…). A group member makes the super-group span languages. Pure curation —
-        nothing in the keyword store changes; see the super-group's real statistics in Insights → Super-groups.</p>
-      <div class="row" style="align-items:center">
-        <div style="flex:2"><label for="sgc-name">New super-group</label>
-          <input id="sgc-name" placeholder="e.g. Russia–Ukraine war" onkeydown="if(event.key==='Enter')createSuperGroup()"></div>
-        <div style="flex:0 0 auto;align-self:end"><button onclick="createSuperGroup()">Create</button></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadSupergroupCuration()">Refresh</button></div>
-        <span id="sgc-status" class="hint"></span>
-      </div>
-      <datalist id="sg-family-options"></datalist>
-      <datalist id="sg-ring-options"></datalist>
-      <div id="sgc-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
-    </section>
-    </div>
 
-    <div class="set-view" id="set-collect" style="display:none">
+    <details class="adv-sec" data-adv="collect">
+      <summary><span class="adv-sec-t">Collection</span> <span class="muted">— schedule, crawl modes, manual and batch ingest</span></summary>
     <section class="panel">
       <h2>Collection</h2>
       <p class="hint">Scraping, source aggregation and crawling run <strong>continuously and automatically</strong> whenever collection is on and you are online — RSS feeds, recursive crawl, markets, laws and Wikipedia, every source. There is nothing to schedule or program; just switch it on. (It pauses itself if the machine runs low on memory and resumes on its own.)</p>
@@ -1986,11 +1926,10 @@
       <div id="bi-results" style="margin-top:8px"></div>
     </section>
     </details>
-    </div>
+    </details>
 
-    <!-- ===================== SOURCE MANAGEMENT ====================== -->
-
-    <div class="set-view" id="set-sources" style="display:none">
+    <details class="adv-sec" data-adv="sources">
+      <summary><span class="adv-sec-t">Sources</span> <span class="muted">— discovery candidates, qualification, manage and import/export</span></summary>
     <section class="panel" id="candidates-panel" style="display:none">
       <h2>Discovery candidates <span class="muted" style="font-weight:400">(machine-suggested — nothing happens without you)</span></h2>
       <p class="muted" style="margin-top:0">Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence. Promote creates a disabled source you still have to enable; Dismiss is remembered and never re-suggested.</p>
@@ -2072,6 +2011,82 @@
       <button onclick="importSources()">Import CSV</button>
       <div id="imp-result" class="hint"></div>
     </section>
+    </details>
+
+    <details class="adv-sec" data-adv="keywords">
+      <summary><span class="adv-sec-t">Keywords</span> <span class="muted">— explore, curate, filter</span></summary>
+    <section class="panel">
+      <h2 style="margin-top:0;font-size:13px">Keywords <span class="muted">— explore &amp; curate</span></h2>
+      <p class="hint" style="margin-top:0">Browse keywords by their type/topic tags, hide noise, and apply the
+        curated baseline tags to your existing corpus. Tags are labelled assertions, never scores; hiding is
+        reversible (see Keyword filtering under General). Nothing in the keyword store is rewritten.</p>
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" onclick="kxBackfill()">Apply baseline tags</button>
+        <button class="secondary" onclick="loadKeywordExplorer()">Refresh</button>
+      </div>
+      <div id="kx-facets" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="kx-keywords" style="margin-top:8px"></div>
+    </section>
+    <section class="panel">
+      <h2 style="margin-top:0;font-size:13px">Entity family curation <span class="muted">— you decide</span></h2>
+      <p class="hint" style="margin-top:0">Surface variants are grouped automatically (a shared lemma/plural, or a
+        cross-language group — USA / США / EUA). Only rows where there is actually something to decide are shown
+        below: a multi-member family, a group merge, or a family you already overrode. Tick two or more rows and
+        Merge them, or click a member's ✕ to split it out. Your decisions win over the automatic rules and are
+        fully reversible.</p>
+      <div class="row" style="align-items:center">
+        <div style="flex:0 0 auto;align-self:end"><button onclick="familyMerge()">Merge selected</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadFamilyCuration()">Refresh</button></div>
+        <span id="famc-status" class="hint"></span>
+      </div>
+      <div id="famc-list" style="margin-top:10px"><div class="muted">Loading…</div></div>
+      <div id="fam-overrides" style="margin-top:14px"></div>
+    </section>
+    <section class="panel">
+      <h2 style="margin-top:0;font-size:13px">Super-group curation <span class="muted">— create, add, remove, delete</span></h2>
+      <p class="hint" style="margin-top:0">Gather several families — or cross-language groups (one concept across
+        many languages, e.g. election / élection / wahl) — under one theme (e.g. Russia–Ukraine war, over Russia,
+        Ukraine, Putin, sanctions…). A group member makes the super-group span languages. Pure curation —
+        nothing in the keyword store changes; see the super-group's real statistics in Insights → Super-groups.</p>
+      <div class="row" style="align-items:center">
+        <div style="flex:2"><label for="sgc-name">New super-group</label>
+          <input id="sgc-name" placeholder="e.g. Russia–Ukraine war" onkeydown="if(event.key==='Enter')createSuperGroup()"></div>
+        <div style="flex:0 0 auto;align-self:end"><button onclick="createSuperGroup()">Create</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="loadSupergroupCuration()">Refresh</button></div>
+        <span id="sgc-status" class="hint"></span>
+      </div>
+      <datalist id="sg-family-options"></datalist>
+      <datalist id="sg-ring-options"></datalist>
+      <div id="sgc-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
+    </section>
+
+    <section class="panel">
+      <h2>Keyword filtering</h2>
+      <p class="muted" style="margin-top:0">"Dumb" keywords (function words like the, you, not, one) are removed
+        automatically by a built-in multilingual stoplist. Fine-tune below: exclude extra terms (one per line or
+        comma-separated), set the minimum length, and toggle options. Excluding hides a keyword everywhere
+        (reversibly — stored mentions are kept). You can also click the ✕ next to any keyword in Insights.</p>
+      <div class="row">
+        <div><label for="kf-minlen">Minimum keyword length</label>
+          <input id="kf-minlen" type="number" min="1" max="20" step="1"></div>
+        <div style="align-self:end"><label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="kf-numeric" style="width:auto"> Drop purely numeric terms</label></div>
+        <div style="align-self:end"><label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+          <input type="checkbox" id="kf-builtin" style="width:auto"> Use built-in multilingual stoplist</label></div>
+      </div>
+      <label for="kf-excluded">Excluded keywords (yours)</label>
+      <textarea id="kf-excluded" rows="5" placeholder="one term per line (or comma-separated)"></textarea>
+      <button onclick="saveKeywordFilter()">Save keyword filter</button>
+      <div id="kf-result" class="hint"></div>
+      <details id="kf-builtin-view" style="margin-top:10px">
+        <summary style="cursor:pointer">See the built-in stoplist (<span id="kf-builtin-count">…</span> words filtered automatically)</summary>
+        <p class="muted" style="margin:6px 0">These are the automatic multilingual filter words (function words like the·you·not across your corpus languages). They are curated and language-scoped, so this view is read-only — the toggle above turns the whole list on or off. Search it to see whether a term is filtered.</p>
+        <input id="kf-builtin-q" type="search" placeholder="search the stoplist…" oninput="loadBuiltinStoplist()" style="max-width:280px">
+        <div id="kf-builtin-list" class="hint" style="max-height:180px;overflow:auto;margin-top:6px;display:flex;flex-wrap:wrap;gap:4px"></div>
+      </details>
+    </section>
+    </details>
+
     </div>
 
     <!-- ===================== NEWSLETTERS (.eml import) ================ -->
