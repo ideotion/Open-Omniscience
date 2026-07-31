@@ -223,16 +223,29 @@ def prepare_staged_corpus(
 
     from contextlib import contextmanager
 
-    _stage = getattr(timings, "stage", None)
+    # RECORD, never STAGE. timings.stage() also fires stage_progress_cb, which
+    # drives the user-visible phase counter -- and that counter's honest
+    # denominator is restore_stage_plan(). A sub-stage is not a phase: pinging one
+    # would make volume_job._phase_of return 0 ("not in this restore's plan", its
+    # deliberate honest-unknown value) for work that is really part of
+    # prepare_staged, so the UI would flash an unknown phase mid-import. The
+    # stage_a:* sub-timings a few lines up are recorded rather than staged for the
+    # same reason; this follows them.
+    _record = getattr(timings, "record", None)
 
     @contextmanager
     def _sub(name: str):
-        """Record a sub-stage when a recorder was supplied, else do nothing."""
-        if _stage is None:
+        """Time a sub-stage when a recorder was supplied, else do nothing."""
+        if _record is None:
             yield
             return
-        with _stage(name):
+        _t0 = time.monotonic()
+        try:
             yield
+        finally:
+            # In a finally: time spent before a failure is real time the operator
+            # waited, and a validate that raises is exactly when knowing that helps.
+            _record(name, time.monotonic() - _t0)
 
     try:
         with _sub("prepare_staged:validate"):

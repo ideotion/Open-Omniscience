@@ -156,9 +156,11 @@ def test_prepare_staged_records_its_two_expensive_halves_separately():
     src = inspect.getsource(m.prepare_staged_corpus)
     assert "prepare_staged:validate" in src
     assert "prepare_staged:upgrade" in src
-    # The recorder is duck-typed and optional, so a missing/odd one cannot break a
-    # restore -- timing must never be load-bearing.
-    assert 'getattr(timings, "stage", None)' in src
+    # RECORD, not STAGE: .stage() also fires stage_progress_cb, whose names are
+    # the user-visible phases counted against restore_stage_plan(). A sub-stage
+    # pinged as a phase makes _phase_of report its honest-unknown 0.
+    assert 'getattr(timings, "record", None)' in src
+    assert "_stage(name)" not in src, "a sub-timing must never emit a phase ping"
 
     caller = inspect.getsource(m.run_restore)
     assert "timings=timings" in caller, "run_restore must actually pass its recorder"
@@ -174,4 +176,64 @@ def test_prepare_staged_still_works_with_no_recorder(tmp_path, monkeypatch):
     src = inspect.getsource(m.prepare_staged_corpus)
     # With no recorder the sub-context yields straight through: no attribute is
     # touched on the absent recorder, so None can never raise.
-    assert "if _stage is None:" in src and "yield" in src
+    assert "if _record is None:" in src and "yield" in src
+
+
+def test_sub_timings_are_recorded_but_never_pinged_as_phases(monkeypatch, tmp_path):
+    """THE defect this pair exists for, pinned behaviourally rather than by grep.
+
+    timings.stage() does two things: it records a duration AND fires
+    stage_progress_cb, whose names are the user-visible phases counted against
+    restore_stage_plan(). Using it for a sub-stage emitted a phase ping for a name
+    that is not in the plan, which volume_job._phase_of answers with its
+    honest-unknown 0 -- so the UI would flash an unknown phase mid-import.
+    (Caught by test_stage_progress_cb_pings_fire_for_every_stage_in_order, which
+    asserts the ping list EXACTLY; this is its positive half.)
+    """
+    from src.backup import merge as m
+
+    recorded: list[str] = []
+    staged_names: list[str] = []
+
+    class _Recorder:
+        def record(self, name, seconds):
+            recorded.append(name)
+            assert seconds >= 0, "a recorded duration must be real"
+
+        def stage(self, name):  # pragma: no cover - must never be reached here
+            staged_names.append(name)
+            raise AssertionError(f"sub-timing {name!r} emitted a user-visible phase ping")
+
+    monkeypatch.setattr(m, "prepare_staged_corpus", m.prepare_staged_corpus)
+    monkeypatch.setattr(
+        "src.backup.sqlite_backup.validate_sqlite_file", lambda p: 1, raising=False
+    )
+    monkeypatch.setattr("src.database.migrate.file_revision", lambda p: "abc123", raising=False)
+    monkeypatch.setattr("src.database.migrate.known_revisions", lambda: {"abc123"}, raising=False)
+    monkeypatch.setattr(
+        "src.database.migrate.upgrade_database_file", lambda p: None, raising=False
+    )
+
+    class _Staged:
+        hash_failures: list = []
+        kind = "oo-backup-2"
+        signature_state = "verified"
+        corpus_path = tmp_path / "corpus.db"
+
+    m.prepare_staged_corpus(_Staged(), timings=_Recorder())
+
+    assert recorded == ["prepare_staged:validate", "prepare_staged:upgrade"]
+    assert staged_names == [], "no sub-timing may reach timings.stage()"
+
+
+def test_a_failing_validate_still_records_the_time_the_operator_waited():
+    """A quick_check that reads 90 minutes of a multi-GB file and THEN rejects it
+    has still cost 90 minutes. Recording only on success would hide exactly the
+    case worth measuring."""
+    import inspect
+
+    from src.backup import merge as m
+
+    src = inspect.getsource(m.prepare_staged_corpus)
+    body = src[src.index("def _sub("):]
+    assert "finally:" in body, "the sub-timer must record through an exception"
