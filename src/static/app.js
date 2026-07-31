@@ -1602,7 +1602,7 @@
 
     // -- Appearance / customization (local-only, never transmitted) --------- //
     const UI_KEY = "oo.ui";
-    const UI_DEFAULTS = {theme:"ink", accent:"", density:"comfortable", font:100, face:"", sidebar:"expanded"};
+    const UI_DEFAULTS = {theme:"ink", accent:"", density:"comfortable", face:"", sidebar:"expanded"};
     const THEMES = [
       {id:"ink",name:"Ink",c:"#5b9dd9"}, {id:"slate",name:"Slate",c:"#7aa2f7"},
       {id:"midnight",name:"Midnight",c:"#8b7dff"}, {id:"arctic",name:"Arctic",c:"#88c0d0"},
@@ -1645,7 +1645,6 @@
       const face = FACES.find(f => f.id === (ui.face || ""));
       if (face && face.ff) r.style.setProperty("--ff", face.ff); else r.style.removeProperty("--ff");
       if (ui.density === "compact") r.setAttribute("data-density", "compact"); else r.removeAttribute("data-density");
-      r.style.fontSize = (ui.font || 100) + "%";
       if (ui.sidebar === "collapsed") r.setAttribute("data-sidebar", "collapsed"); else r.removeAttribute("data-sidebar");
       // The sidebar-visibility feature was removed (#17, 2026-06-22): the flat nav is
       // always complete (every tab also reachable via the palette), so no nav-item is
@@ -1655,7 +1654,6 @@
     function setAccent(a)  { const u = getUi(); u.accent = a;  saveUi(u); applyUi(u); buildDrawer(); }
     function setDensity(d) { const u = getUi(); u.density = d; saveUi(u); applyUi(u); buildDrawer(); }
     function setFace(f)    { const u = getUi(); u.face = f;    saveUi(u); applyUi(u); buildDrawer(); }
-    function setFont(v)    { const u = getUi(); u.font = +v;   saveUi(u); applyUi(u); $("dr-font-val").textContent = v + "%"; }
     function setSidebar(s) { const u = getUi(); u.sidebar = s; saveUi(u); applyUi(u); buildDrawer(); }
     function toggleSidebar(){ setSidebar(getUi().sidebar === "collapsed" ? "expanded" : "collapsed"); }
     function resetUi() { localStorage.removeItem(UI_KEY); applyUi(getUi()); buildDrawer(); syncThemeSelect();
@@ -1803,7 +1801,6 @@
       if (cat === "sources") { loadSrcFacets(); loadManagedSources(); loadCandidates(); loadQualifyBulk(); }  // moved Sources onShow (facets feed the multi-select filters #23)
       if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
       if (cat === "keywords") { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration(); }  // Item AC: explore/hide/tag; family + super-group curation relocated here (invariant #8)
-      if (cat === "leads") loadLeadsView();           // S12 Leads 2.0 preview: evidence chips + disclosed order (browser-unverified)
       if (cat === "shortcuts") loadShortcuts();       // list + rebind the global keyboard shortcuts (UI-shell §4)
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
@@ -1812,68 +1809,6 @@
       if (cat === "newsletters") { loadNewsletterRemoveCount(); _folderImportStartPoll(); }  // remove panel + the folder-import job status
     }
 
-    // S12 Leads 2.0 — an ISOLATED preview surface (Settings → Leads). It NEVER touches Home /
-    // renderBriefing, so the flagship feed stays byte-identical; the new ordering/chips activate
-    // only here, by user choice, until a browser click-through graduates them onto Home.
-    function leadsPrefs() {
-      return {
-        sort: localStorage.getItem("oo.leads.sort") || "default",
-        min_n: localStorage.getItem("oo.leads.min_n") || "50",
-        min_sources: localStorage.getItem("oo.leads.min_sources") || "5",
-        cluster: localStorage.getItem("oo.leads.cluster") === "1",
-      };
-    }
-    function leadsPrefsChanged() {
-      localStorage.setItem("oo.leads.sort", ($("leads-prominence") || {}).checked ? "prominence" : "default");
-      localStorage.setItem("oo.leads.min_n", String(($("leads-min-n") || {}).value || "50"));
-      localStorage.setItem("oo.leads.min_sources", String(($("leads-min-sources") || {}).value || "5"));
-      localStorage.setItem("oo.leads.cluster", ($("leads-cluster") || {}).checked ? "1" : "0");
-      loadLeadsView();
-    }
-    function leadsChipHtml(ld) {
-      const c = ld.evidence_chips || {}, maj = ld.major || {};
-      const age = (c.newest_age_days == null) ? "no dated evidence" : (c.newest_age_days + "d old");
-      const major = maj.major
-        ? `<span class="chip" title="${esc(maj.method || "")}">major</span>` : "";
-      // REAL facts only, each with its #17 hover method — never a composite score.
-      return `<span class="chip" title="sample size (n)">n=${esc(String(c.n))}</span>`
-        + `<span class="chip" title="distinct independent sources — three articles from one outlet is one voice, not three">${esc(String(c.distinct_sources))} source(s)</span>`
-        + `<span class="chip" title="age of the freshest dated evidence">${esc(age)}</span>`
-        + major
-        + `<span class="chip" title="${esc(maj.method || "")}">${esc(maj.fact || "")}</span>`;
-    }
-    function leadsViewHtml(data) {
-      const leads = (data && data.leads) || [];
-      if (!leads.length) return `<div class="muted">No leads yet.</div>`;
-      const rows = leads.map(ld =>
-        `<div style="padding:6px 0;border-bottom:1px solid var(--line)">
-           <div title="${esc(ld.order_explain || "")}">${esc(ld.title || ld.key || ld.type || "")}</div>
-           <div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:4px">${leadsChipHtml(ld)}</div>
-         </div>`).join("");
-      const cl = (data.clusters && data.clusters.n_clusters)
-        ? `<div class="hint" style="margin-top:8px" title="${esc(data.clusters.method || "")}">${esc(String(data.clusters.n_clusters))} story cluster(s) — leads over overlapping articles, stacked (a shape, not a merge).</div>`
-        : "";
-      const caveat = data.caveat
-        ? `<div class="card-caveat" title="${esc(data.method || "")}">${esc(data.caveat)}</div>` : "";
-      return `<div>${rows}</div>${cl}${caveat}`;
-    }
-    async function loadLeadsView() {
-      const host = $("leads-preview");
-      if (!host) return;
-      const p = leadsPrefs();  // restore the controls from storage (persist across sessions)
-      if ($("leads-prominence")) $("leads-prominence").checked = (p.sort === "prominence");
-      if ($("leads-min-n")) $("leads-min-n").value = p.min_n;
-      if ($("leads-min-sources")) $("leads-min-sources").value = p.min_sources;
-      if ($("leads-cluster")) $("leads-cluster").checked = p.cluster;
-      host.innerHTML = `<div class="muted">Loading…</div>`;
-      try {
-        const qs = `sort=${encodeURIComponent(p.sort)}&min_n=${encodeURIComponent(p.min_n)}`
-          + `&min_sources=${encodeURIComponent(p.min_sources)}&cluster=${p.cluster ? 1 : 0}`;
-        host.innerHTML = leadsViewHtml(await api("/api/insights/leads-view?" + qs));
-      } catch (e) {
-        host.innerHTML = `<div class="muted">No leads to preview yet.</div>`;
-      }
-    }
     function buildDrawer() {
       const ui = getUi();
       $("dr-themes").innerHTML = THEMES.map(t =>
@@ -1889,7 +1824,6 @@
            style="${f.ff ? "font-family:" + esc(f.ff) : ""}">${esc(f.name)}</button>`).join("");
       $("dr-sidebar").innerHTML = [["expanded", "Expanded"], ["collapsed", "Collapsed"]].map(([v, l]) =>
         `<button class="${v === ui.sidebar ? "sel" : ""}" onclick="setSidebar('${v}')">${l}</button>`).join("");
-      $("dr-font").value = ui.font; $("dr-font-val").textContent = ui.font + "%";
       // (The "Tools shown in the sidebar" checklist was removed — #17, 2026-06-22.)
     }
 
@@ -1907,7 +1841,7 @@
         {grp:"Actions", label:"Run a search", sub:"Search", run:() => { showTab("search"); setTimeout(() => $("q").focus(), 50); }},
         {grp:"Actions", label:"Collect now (one scraper pass)", sub:"Collect", run:() => { showTab("ingest"); schedulerRunNow(); }},
         {grp:"Actions", label:"Track Wikipedia now", sub:"Wikipedia", run:() => { showTab("wiki"); trackWikiNow(); }},
-        {grp:"Actions", label:"Download a backup", sub:"Library", run:() => downloadBackup()},
+        {grp:"Actions", label:"Export / Back up…", sub:"Data & backup", run:() => { showTab("settings"); openUnifiedExport(); }},
         {grp:"Actions", label:"Open the User Manual", sub:"Help", run:() => { showTab("help"); openDoc("user-manual"); }},
         {grp:"Actions", label:"Open Settings", sub:"System", run:() => showTab("settings")},
         {grp:"Actions", label:"Customize appearance", sub:"Theme", run:() => openDrawer()},
@@ -5261,17 +5195,11 @@
       // Backup support is backend-dependent; reflect reality, never assume.
       try {
         const st = await api("/api/database/stats");
-        $("backup-status").innerHTML = st.backup_supported
-          ? `Backend <span class="pill ok">${esc(st.backend)}</span> — backup &amp; restore available.`
-          : `Backend <span class="pill warn">${esc(st.backend)}</span> — file backup/restore is SQLite-only; use the backend's native dump tool.`;
-        document.querySelectorAll("#backup-panel .danger, #backup-panel button.secondary")
-          .forEach(b => { b.disabled = !st.backup_supported; });
         $("vacuum-reclaim").textContent =
           (st.reclaimable_bytes == null) ? "—" : _fmtBytes(st.reclaimable_bytes);
         _dbFileBytes = (st.file && st.file.bytes != null) ? st.file.bytes : null;
-      } catch (e) { $("backup-status").textContent = "Backup status unavailable: " + e.message; }
+      } catch (e) { /* the reclaim readout stays at its placeholder — no panel to report into */ }
       loadKeywordFilter();
-      loadV2Batches();
       loadDumpLanguages();
       loadWikiDumps();
       loadFetchMode();
@@ -6938,95 +6866,7 @@
     // exact same signature read_artifact uses — so the passphrase field appears ONLY
     // for an encrypted backup; a plaintext archive needs none. Degrades safely: on any
     // read error it just shows the field (the old always-visible behaviour).
-    async function v2DetectEncryption() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const wrap = $("v2-restore-pass-wrap"), note = $("v2-restore-enc");
-      const f = $("v2-restore-file").files[0];
-      if (!f) { if (wrap) wrap.hidden = true; if (note) note.textContent = ""; return; }
-      let encrypted = true;  // safe default: if we can't read the header, show the field
-      try {
-        const buf = new Uint8Array(await f.slice(0, 8).arrayBuffer());
-        const magic = [0x4f, 0x4f, 0x45, 0x4e, 0x43, 0x31, 0x00, 0x00];  // "OOENC1\0\0"
-        encrypted = magic.every((b, i) => buf[i] === b);
-      } catch (_e) { encrypted = true; }
-      if (wrap) wrap.hidden = !encrypted;
-      if (note) note.textContent = encrypted
-        ? t("Encrypted backup — enter its passphrase.")
-        : t("Plaintext archive — no passphrase needed.");
-    }
-    async function v2Preview() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const f = $("v2-restore-file").files[0];
-      const out = $("v2-commit-result");
-      if (!f) { out.textContent = t("Choose a backup file first."); return; }
-      // Preview copies the whole corpus and dry-run-merges it (so the plan can't
-      // lie) — minutes on a large corpus. Say so, and reassure the app stays usable.
-      out.textContent = t("Previewing — nothing is changed yet. This copies and dry-run-merges your corpus, so it can take several minutes on a large corpus; the app stays usable in another tab.");
-      const fd = new FormData();
-      fd.append("file", f); fd.append("passphrase", $("v2-restore-pass").value || "");
-      // "What to restore": the staged corpus is filtered at preview time, so the
-      // token-based commit restores exactly what the preview shows.
-      const nlEl = $("v2-restore-newsletters");
-      fd.append("include_newsletters", (nlEl ? !!nlEl.checked : true) ? "true" : "false");
-      try {
-        const r = await fetch("/api/backup/v2/restore/preview", {method: "POST", body: fd});
-        const body = await r.json();
-        if (!r.ok) throw new Error(body.detail || r.statusText);
-        _v2Token = body.commit_token;
-        $("v2-preview").style.display = "";
-        const ver = body.verification || {};
-        const sig = body.signature_state || "?";
-        // Honest encryption verdict (P0-2): confirm at the verification point that the
-        // archive really is AES-256-GCM ciphertext (the "same size" doubt) or plaintext.
-        const encPill = body.encrypted
-          ? `<span class="pill ok" title="${esc(t("This archive is AES-256-GCM ciphertext (it had to be decrypted with your passphrase to read it)."))}">${esc(t("encrypted (AES-256-GCM)"))}</span> `
-          : `<span class="pill warn" title="${esc(t("This archive is not encrypted — it protects nothing at rest."))}">${esc(t("plaintext archive"))}</span> `;
-        $("v2-verify").innerHTML =
-          encPill +
-          `<span class="pill ${ver.ok ? "ok" : "warn"}">${esc(ver.ok ? t("verification passed") : t("verification FAILED — merge will be refused"))}</span> ` +
-          `<span class="muted">${esc(t("signature:"))} ${esc(sig)} · ${esc(t("archive schema:"))} ${esc(body.artifact_schema_rev || "?")}</span>`;
-        $("v2-plan").innerHTML = _v2PlanTable(body.plan);
-        $("v2-apply-btn").disabled = !ver.ok;
-        out.textContent = "";
-      } catch (e) { out.textContent = t("Preview failed:") + " " + e.message; $("v2-preview").style.display = "none"; }
-    }
-    async function v2Apply() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const out = $("v2-commit-result");
-      if (!_v2Token) { out.textContent = t("Preview first."); return; }
-      out.textContent = t("Merging… a safety snapshot is taken first.");
-      const fd = new FormData(); fd.append("token", _v2Token);
-      try {
-        const r = await fetch("/api/backup/v2/restore/commit", {method: "POST", body: fd});
-        const body = await r.json();
-        if (!r.ok) throw new Error(body.detail || r.statusText);
-        _v2Token = null; $("v2-preview").style.display = "none";
-        out.innerHTML = body.committed
-          ? `<span class="pill ok">${esc(t("Merge applied."))}</span> <span class="muted">${esc(t("batch"))} ${esc(String(body.batch_id))} · ${esc(t("snapshot:"))} ${esc(body.pre_restore_snapshot || "—")}</span>`
-          : `<span class="pill warn">${esc(t("Merge refused:"))} ${esc(body.refused || "?")}</span>`;
-        loadV2Batches();
-      } catch (e) { out.textContent = t("Merge failed:") + " " + e.message; }
-    }
-    async function v2Discard() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (_v2Token) { try { await api(`/api/backup/v2/restore/preview/${encodeURIComponent(_v2Token)}`, {method: "DELETE"}); } catch (_e) {} }
-      _v2Token = null; $("v2-preview").style.display = "none";
-      $("v2-commit-result").textContent = t("Preview discarded; nothing was changed.");
-    }
-    async function loadV2Batches() {
-      try {
-        const d = await api("/api/backup/v2/batches");
-        const rows = (d.batches || []).slice(0, 10).map(b =>
-          `<div>#${esc(String(b.id))} · ${esc(b.imported_at || "?")} · ${esc(b.artifact_kind || "?")} · ${esc((b.origin_fingerprint || "?").slice(0, 12))} · ${esc(b.status || "?")}</div>`);
-        $("v2-batches").innerHTML = rows.join("") || "—";
-      } catch (_e) { /* panel stays at dash */ }
-    }
 
-    function downloadBackup() {
-      // Stream the snapshot straight to disk via a normal navigation download.
-      window.open("/api/database/backup", "_blank");
-      toast("Preparing backup download…");
-    }
 
     // restoreBackup() (destructive replace-restore) was REMOVED 2026-06-13:
     // restore is additive-only via the merge restore (Settings → Data & backup).
@@ -7097,25 +6937,6 @@
       finally { btn.disabled = false; }
     }
 
-    async function encryptedBackup() {
-      const pass = $("enc-pass").value;
-      if (!pass) { toast("Enter a passphrase first.", "err"); return; }
-      try {
-        const res = await fetch("/api/safety/backup/encrypted",
-          {method: "POST", headers: {"Content-Type": "application/json"},
-           body: JSON.stringify({passphrase: pass})});
-        if (!res.ok) { const d = await res.json().catch(() => ({}));
-          throw new Error(d.detail || res.statusText); }
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = "open-omniscience-backup.ooenc";
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url);
-        $("enc-pass").value = "";
-        toast("Encrypted backup downloaded.");
-      } catch (e) { toast(_failMsg("Backup failed: {error}", e), "err"); }
-    }
     // encryptedRestore() (destructive replace-restore) was REMOVED 2026-06-13:
     // restore is additive-only via the merge restore (the signed backup artifact).
     async function panicWipe() {
@@ -7207,25 +7028,6 @@
     // Offer a backup before a destructive uninstall (maintainer-asked). Reuses the
     // encrypted-backup endpoint; downloads the .ooenc, then the user re-clicks Uninstall
     // (we never run the uninstall while a backup is still streaming from this server).
-    async function uninstallBackupFirst() {
-      const pass = prompt("Choose a passphrase to encrypt the backup (you'll need it to restore):");
-      if (!pass) { toast("Backup cancelled — nothing removed.", "err"); return false; }
-      try {
-        const res = await fetch("/api/safety/backup/encrypted",
-          {method: "POST", headers: {"Content-Type": "application/json"},
-           body: JSON.stringify({passphrase: pass})});
-        if (!res.ok) { const d = await res.json().catch(() => ({}));
-          throw new Error(d.detail || res.statusText); }
-        const blob = await res.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url; a.download = "open-omniscience-backup.ooenc";
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url);
-        toast("Backup downloaded — save it somewhere safe, then click Uninstall again.", "ok");
-        return true;
-      } catch (e) { toast(_failMsg("Backup failed: {error}", e), "err"); return false; }
-    }
 
     async function uninstallApp() {
       const sel = _uninstallSel();
@@ -7234,7 +7036,7 @@
         const backFirst = confirm("This mode WIPES your data and keys — IRREVERSIBLE.\n\n" +
           "Create an encrypted backup first?\n\nOK = back up now (then click Uninstall again)\n" +
           "Cancel = continue WITHOUT a backup");
-        if (backFirst) { await uninstallBackupFirst(); return; }
+        if (backFirst) { openUnifiedExport(); return; }
       }
       let msg = "UNINSTALL: remove the virtualenv and desktop launchers, then stop the server.";
       if (sel.remove_folder) msg += "\nAlso delete the app folder.";
@@ -11590,32 +11392,7 @@
         await new Promise((r) => setTimeout(r, 1500));
       }
     }
-    async function reindexAllCorpus(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (!confirm(t("Re-index every article with the current engine? This is heavy on a large corpus but runs in the background."))) return;
-      if (btn) btn.disabled = true;
-      const st = $("reindex-all-status");
-      try {
-        await _startReindexJob(false, "full");
-        await _pollReindexJob(st, t);
-      } catch (e) { if (st) st.textContent = esc(e.message); }
-      finally { if (btn) btn.disabled = false; }
-    }
 
-    // Garbage-collect keywords that no view references (zero mentions) — the cleanup
-    // that shrinks an inflated keyword count after a re-index drains markup junk. Pure
-    // GC, not a cap: any keyword with a mention, and any curated term, is kept.
-    async function pruneKeywords(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (!confirm(t("Delete keywords that have no mentions left? This is cleanup — keywords still in use, and any you curated, are kept."))) return;
-      const st = $("reindex-all-status");
-      if (btn) btn.disabled = true;
-      try {
-        const r = await _pruneCore(st, t);
-        if (st) st.textContent = `${(r.pruned || 0).toLocaleString()} ${t("unused keywords removed")}${r.kept_curated ? ` · ${r.kept_curated} ${t("curated kept")}` : ""}`;
-      } catch (e) { if (st) st.textContent = esc(e.message); }
-      finally { if (btn) btn.disabled = false; }
-    }
 
     // One-click "Clean up keywords": re-index the whole corpus (drains markup junk)
     // THEN prune the now-orphaned keywords — the recommended order in one action, so
@@ -12042,91 +11819,11 @@
       const el = $("p0-status"); if (el) el.textContent = t("Cancelling…");
     }
 
-    // Page-size A/B bench (DB-10 §1b, 2026-07-17): start the background job, poll status,
-    // render the per-size numbers SIDE BY SIDE (no winner — the operator compares logs
-    // across corpus sizes; the TREND is the decision signal). Mirrors runP0Validation.
-    async function runPagesizeBench(btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const el = $("psb-status"); const out = $("psb-result");
-      const set = (m) => { if (el) el.textContent = m; };
-      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-      const wd = (($("psb-workdir") && $("psb-workdir").value) || "").trim();
-      if (btn) btn.disabled = true;
-      if (out) out.innerHTML = "";
-      set(t("Starting…"));
-      try {
-        try {
-          await api("/api/diagnostics/pagesize-bench", {
-            method: "POST", body: JSON.stringify(wd ? { work_dir: wd } : {}),
-          });
-        } catch (e) {
-          set(t("Could not start:") + " " + ((e && e.message) || t("check the staging directory.")));
-          return;
-        }
-        let miss = 0;
-        for (let i = 0; i < 5400; i++) {  // generous bounded ceiling: a big corpus rebuilds for hours
-          let s;
-          try { s = await api("/api/diagnostics/pagesize-bench/status"); miss = 0; }
-          catch (e) {
-            miss++;
-            set(t("Connection hiccup — retrying…"));  // the JOB is still running server-side
-            await sleep(Math.min(2000 * miss, 10000));
-            if (miss > 30) { set(t("Still running — check the task manager.")); break; }
-            continue;
-          }
-          const state = s && s.state;
-          if (state === "done" && s.ready) { set(t("Done.")); renderPagesizeResult(out); break; }
-          if (state === "error") { set(t("Bench failed:") + " " + (s.error || t("unknown error"))); break; }
-          if (state === "cancelled") { set(t("Bench cancelled.")); renderPagesizeResult(out); break; }
-          if (state === "done") { set(t("Done — check the task manager for the report.")); break; }
-          const member = s.detail ? " · " + s.detail : "";
-          set(t("Running in the background…") + member);
-          await sleep(2000);
-        }
-      } finally {
-        if (btn) btn.disabled = false;
-      }
-    }
-
-    async function renderPagesizeResult(out) {
-      if (!out) return;
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      // Audit finding 2026-07-17 (M7, recurrence): same shadowing bug as
-      // renderP0Result -- a local esc() falling back to the non-existent global
-      // escapeHtml, which never exists, so every esc() call below (incl. s.error,
-      // an operator/exception-reflected string) fed out.innerHTML unescaped. Use
-      // the real module-level esc().
-      let rep = null;
-      try { rep = await api("/api/diagnostics/pagesize-bench/last"); } catch (e) { /* link below still works */ }
-      let rows = "";
-      const fmt = (st) => st && st.p50_ms != null ? esc(st.p50_ms) + "/" + esc(st.p95_ms) + "ms" : "—";
-      ((rep && rep.sizes) || []).forEach((s) => {
-        if (s.error) {
-          rows += "<div>" + esc(s.page_size) + ": <span style=\"color:var(--err)\">" + esc(s.error) + "</span></div>";
-          return;
-        }
-        const w = (s.workload && s.workload.second_pass_warm) || {};
-        rows += "<div><b>" + esc(s.page_size) + "</b> — " + t("rebuild") + " "
-          + esc(s.rebuild && s.rebuild.seconds) + "s · " + t("point (p50/p95)") + " " + fmt(w.point_lookup)
-          + " · " + t("index window") + " " + fmt(w.index_window)
-          + " · " + t("content band") + " " + fmt(w.content_band) + " <span class=\"hint\">("
-          + t("warm pass; first-pass numbers in the report") + ")</span></div>";
-      });
-      out.innerHTML = rows
-        + '<div style="margin-top:4px"><a href="/api/diagnostics/pagesize-bench/download" target="_blank">'
-        + t("Download report (.json)") + "</a> · "
-        + esc(t("no winner is declared — compare logs across corpus sizes")) + "</div>";
-    }
-
-    async function cancelPagesizeBench() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      try { await api("/api/diagnostics/pagesize-bench/cancel", { method: "POST" }); } catch (e) { /* idempotent */ }
-      const el = $("psb-status"); if (el) el.textContent = t("Cancelling…");
-    }
 
     // Keyword-triage real run (Section 8, ruled 2026-07-20): start the background job, poll
     // status, render the run summary + a download link for the dated JSONL log. Mirrors
-    // runPagesizeBench/runP0Validation exactly.
+    // runP0Validation exactly (the page-size bench it also used to mirror was removed
+    // 2026-07-31, Settings review ruling 6).
     // B5 (2026-07-24 Session B, ruled): the numeric limit/batch-size inputs are GONE --
     // one ON/OFF TOGGLE button now drives a PROGRESSIVE sweep across ALL head-scope
     // keywords, resumable across a cancel or an app restart via a persisted cursor
@@ -12498,105 +12195,6 @@
         if (el) el.textContent = `Saved to ${r.saved} — ${c.total_judgements || 0} judgements across ${JSON.stringify(c.by_language || {})}. Point the IR-eval run below at this path.`;
       } catch (e) { if (typeof toast === "function") toast(_failMsg("Save failed: {error}", e), "err"); }
       if (btn) btn.disabled = false;
-    }
-    // Diagnostics: the Tier-2 poll-transparency CHECKLIST (/api/insights/poll-transparency).
-    // B3 (field-test F2): the per-field form is the primary input; the raw-JSON box (a
-    // collapsed fallback) overrides/extends it for power users (never lose a tool). Renders
-    // a per-item checklist of what was STATED vs not — the disclosure FLOOR, never a score:
-    // a disclosed n=100 counts like n=10000, non-disclosure of a CORE item outranks any
-    // disclosed imperfection, and it never grades, ranks, or calls a poll "useless".
-    const POLL_FIELDS = [
-      { key: "pollster", tier: "core" }, { key: "sponsor", tier: "core" },
-      { key: "fielding_dates", tier: "core" }, { key: "sample_size", tier: "core" },
-      { key: "population", tier: "core" }, { key: "question_wording", tier: "core" },
-      { key: "sampling_method", tier: "supplementary" }, { key: "margin_of_error", tier: "supplementary" },
-      { key: "mode", tier: "supplementary" }, { key: "weighting", tier: "supplementary" },
-      { key: "response_rate", tier: "supplementary" },
-    ];
-    function _pollFieldLabel(key) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
-      const m = {
-        pollster: "Who conducted the poll", sponsor: "Who paid for or commissioned it",
-        fielding_dates: "When it was in the field", sample_size: "Sample size (n)",
-        population: "Who was sampled (the population)", question_wording: "The exact question asked",
-        sampling_method: "Sampling method (probability vs not)", margin_of_error: "Margin of error / credibility interval",
-        mode: "Mode (phone / online / in-person …)", weighting: "Weighting / adjustments",
-        response_rate: "Response / completion rate",
-      };
-      return t(m[key] || key);
-    }
-    function pollTransparencyClear() {
-      POLL_FIELDS.forEach(f => { const el = document.getElementById("pf_" + f.key); if (el) el.value = ""; });
-      const raw = document.getElementById("poll-fields"); if (raw) raw.value = "";
-      const box = document.getElementById("poll-transparency-out"); if (box) box.innerHTML = "";
-    }
-    async function pollTransparencyCheck() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
-      const box = document.getElementById("poll-transparency-out");
-      // Build the disclosed fields from the per-field form; only non-empty values count.
-      const fields = {};
-      POLL_FIELDS.forEach(f => {
-        const el = document.getElementById("pf_" + f.key);
-        const v = el ? (el.value || "").trim() : "";
-        if (v) fields[f.key] = v;
-      });
-      // The raw-JSON fallback OVERRIDES / EXTENDS the form (power-user path, never lost).
-      const raw = ((document.getElementById("poll-fields") || {}).value || "").trim();
-      if (raw) {
-        let extra;
-        try { extra = JSON.parse(raw); }
-        catch (e) { if (box) box.innerHTML = `<div class="err">${esc(t("Invalid JSON:") + " " + ((e && e.message) || e))}</div>`; return; }
-        if (extra && typeof extra === "object") Object.assign(fields, extra);
-      }
-      if (box) box.innerHTML = `<div class="muted">${esc(t("Checking…"))}</div>`;
-      try {
-        const d = await api("/api/insights/poll-transparency", {method: "POST", body: JSON.stringify(fields)});
-        _renderPollTransparency(d);
-      } catch (e) { if (box) box.innerHTML = `<div class="err">${esc(t("Error:") + " " + ((e && e.message) || e))}</div>`; }
-    }
-    // Render the checklist honestly: a PLAIN tally (never a score), the missing CORE
-    // disclosures highlighted as the interpretation floor, each item marked stated / not
-    // stated (neutral marks, never good/bad), the verbatim question when present, the
-    // factual disclosure-gap notes, and the backend method + caveat verbatim (visible).
-    function _renderPollTransparency(d) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : (x => x);
-      const box = document.getElementById("poll-transparency-out"); if (!box || !d) return;
-      const tally = `${fmtNum(d.n_disclosed)} / ${fmtNum(d.n_items)} ${t("standard disclosures stated")}`;
-      // Missing CORE disclosures = the floor a reader lacks (highlighted, never a verdict).
-      const gaps = (d.core_gaps || []).map(k => _pollFieldLabel(k));
-      const floor = gaps.length
-        ? `<div class="card-caveat" style="margin-top:6px">${esc(t("Missing core disclosures — needed to interpret this poll at all:"))} ${esc(gaps.join(" · "))}</div>`
-        : `<div class="hint" style="margin-top:6px">${esc(t("All core disclosures are stated."))}</div>`;
-      const item = c => {
-        const label = _pollFieldLabel(c.key);
-        // PRESENCE only, neutral marks — never a good/bad value judgment.
-        const mark = c.disclosed
-          ? `<span style="color:var(--accent);white-space:nowrap">✓ ${esc(t("stated"))}</span>`
-          : `<span class="muted" style="white-space:nowrap">— ${esc(t("not stated"))}</span>`;
-        return `<div style="display:flex;justify-content:space-between;gap:10px;align-items:baseline"${c.why ? ` title="${esc(c.why)}"` : ""}>
-          <span${c.disclosed ? "" : ' class="muted"'}>${esc(label)}</span>${mark}</div>`;
-      };
-      const section = (title, tier) => {
-        const rows = (d.checklist || []).filter(c => c.tier === tier).map(item).join("");
-        return rows ? `<div style="margin-top:8px"><div class="small muted" style="font-weight:600">${esc(title)}</div>${rows}</div>` : "";
-      };
-      const q = d.question
-        ? `<div style="margin-top:8px"><div class="small muted" style="font-weight:600">${esc(t("The exact question, shown verbatim as structure:"))}</div>
-             <blockquote style="margin:4px 0;padding:6px 10px;border-left:3px solid var(--border);white-space:pre-wrap">${esc(d.question)}</blockquote></div>`
-        : "";
-      const notes = (d.notes || []).length
-        ? `<div style="margin-top:8px"><div class="small muted" style="font-weight:600">${esc(t("Notes"))}</div>
-             <ul style="margin:4px 0;padding-left:18px">${d.notes.map(n => `<li>${esc(n)}</li>`).join("")}</ul></div>`
-        : "";
-      box.innerHTML = `
-        <div><strong>${esc(tally)}</strong> <span class="muted">(${esc(t("a tally, never a score"))})</span></div>
-        ${floor}
-        ${section(t("Core disclosures — the floor to interpret a poll"), "core")}
-        ${section(t("Supplementary disclosures"), "supplementary")}
-        ${q}
-        ${notes}
-        ${d.caveat ? `<div class="card-caveat" style="margin-top:8px">${esc(d.caveat)}</div>` : ""}
-        ${d.method ? `<div class="hint" style="margin-top:4px">${esc(d.method)}</div>` : ""}`;
     }
 
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
