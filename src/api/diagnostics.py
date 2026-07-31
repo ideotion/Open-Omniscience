@@ -3117,9 +3117,6 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("search-timing-selftest.json", lambda: search_timing_selftest(download=False)),
         ("power-profile-selftest.json", lambda: power_profile_selftest(download=False)),
         ("source-audit-selftest.json", lambda: source_audit_selftest(download=False)),
-        # DB-10 §1b: the last saved page-size A/B bench report (read-only; never RUNS
-        # the bench — that is its own background job, like p0-validation above).
-        ("pagesize-bench.json", lambda: _pagesize_bench_last_member()),
         # S5 (law-vertical brief 2026-07-17): per-jurisdiction law-tracking coverage/
         # freshness — "is law working?" answered by one JSON, in the bundle by default.
         ("law-coverage.json", lambda: law_coverage(download=False, db=db)),
@@ -3136,11 +3133,6 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("card-audit.json", lambda: card_audit(depth="summary", download=False, db=db)),
     ]
 
-
-def _pagesize_bench_last_member() -> dict:
-    from src.monitoring.pagesize_bench import last_pagesize_bench_report
-
-    return last_pagesize_bench_report()
 
 
 def _all_diag_db_member_deadline_s() -> float:
@@ -3289,7 +3281,6 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/integrity": "corpus-integrity.json",
     "/debug-bundle": "debug-bundle.json",
     "/p0-validation/last": "p0-validation.json",
-    "/pagesize-bench/last": "pagesize-bench.json",
     "/law-coverage": "law-coverage.json",  # S5 of the law-vertical brief 2026-07-17
     "/leads-quality": "leads-quality.json",  # S6.1 of the Leads-calibration brief 2026-07-18
     "/card-audit": "card-audit.json",  # the DEEP card-system audit (summary depth)
@@ -3316,7 +3307,6 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/all": "the bundle itself",
     "/all-job/status": "job control", "/all-job/download": "job control",
     "/p0-validation/status": "job control", "/p0-validation/download": "job control",
-    "/pagesize-bench/status": "job control", "/pagesize-bench/download": "job control",
     "/discover-world/status": "job control",
     "/enrich-source-types/status": "job control",
     "/keyword-triage/status": "job control", "/keyword-triage/download": "job control",
@@ -3630,7 +3620,7 @@ def _all_diagnostics_manifest(
             },
             {
                 "endpoint": "job control/status/download endpoints",
-                "reason": "p0-validation, pagesize-bench, keyword-triage and source-tags each "
+                "reason": "p0-validation, keyword-triage and source-tags each "
                 "contribute their LAST saved report/summary as a member; starting/cancelling a "
                 "job or downloading its raw dated JSONL log is not a report",
             },
@@ -4102,130 +4092,6 @@ def p0_validation_download(fmt: str = Query("json", alias="format")) -> Response
     )
 
 
-# ---------------------------------------------------------------------------
-#  Page-size A/B bench (DB-10 §1b, maintainer-asked 2026-07-17): rebuild the
-#  live corpus at candidate page sizes (self-verified pragmas), run the same
-#  bounded workload on each, report side-by-side numbers — never a winner.
-#  Run it on corpora of DIFFERENT sizes and compare the logs: the TREND is the
-#  decision signal. Mirrors the P0-validation job surface exactly.
-# ---------------------------------------------------------------------------
-
-
-class PageSizeBenchBody(BaseModel):
-    work_dir: str | None = Field(
-        None,
-        description=(
-            "optional staging directory for the rebuilds (~1.15x the corpus size is "
-            "needed, one rebuild at a time; defaults under the data dir — pass an "
-            "external drive for a large corpus)"
-        ),
-    )
-    page_sizes: list[int] | None = Field(
-        None, description="candidate page sizes (default [4096, 16384])"
-    )
-
-
-def _pagesize_bench_worker(ctx, **kwargs) -> dict:
-    from src.monitoring.pagesize_bench import pagesize_bench_worker
-
-    return pagesize_bench_worker(ctx, **kwargs)
-
-
-_PAGESIZE_BENCH_JOB = register_job(
-    BackgroundJob(
-        "pagesize-bench", "page-size A/B bench (DB-10)", _pagesize_bench_worker,
-        is_writer=False, cancellable=True,
-    )
-)
-
-
-@router.post("/pagesize-bench")
-def pagesize_bench_start(body: PageSizeBenchBody) -> JSONResponse:
-    """Start the page-size A/B bench as a BACKGROUND job. Rebuilds the live corpus
-    at each candidate page size (plaintext: VACUUM INTO; encrypted: sqlcipher_export
-    with the SAME passphrase, so the codec stays in the measurement), SELF-VERIFIES
-    every rebuilt target's pragmas, benches the identical workload on each, then
-    deletes the rebuilds. Read-only on the live corpus. Poll ``/pagesize-bench/status``;
-    download via ``/pagesize-bench/download``. 409-free: an already-running job
-    returns its status with ``started:false``."""
-    from src.monitoring.pagesize_bench import (
-        BenchRefused,
-        _live_db_path,
-        validate_work_dir,
-    )
-
-    if body.work_dir:
-        try:
-            validate_work_dir(body.work_dir, _live_db_path().stat().st_size)
-        except (BenchRefused, OSError) as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-    if body.page_sizes:
-        from src.monitoring.pagesize_bench import _ALLOWED_PAGE_SIZES
-
-        bad = [p for p in body.page_sizes if p not in _ALLOWED_PAGE_SIZES]
-        if bad:
-            raise HTTPException(
-                status_code=400,
-                detail=f"page sizes {bad} are not valid SQLite page sizes {_ALLOWED_PAGE_SIZES}",
-            )
-    try:
-        st = _PAGESIZE_BENCH_JOB.start(
-            work_dir=body.work_dir, page_sizes=body.page_sizes
-        )
-        st["started"] = True
-    except RuntimeError:
-        st = _PAGESIZE_BENCH_JOB.status()
-        st["started"] = False
-    return JSONResponse(st)
-
-
-@router.get("/pagesize-bench/status")
-def pagesize_bench_status() -> JSONResponse:
-    """Live status of the page-size bench job (state, per-phase progress; when done,
-    the ready report filename + the summary in ``result``). No score."""
-    st = _PAGESIZE_BENCH_JOB.status()
-    res = st.get("result") or {}
-    st["ready"] = bool(st.get("state") == "done" and res.get("path"))
-    st["download_filename"] = res.get("filename")
-    return JSONResponse(st)
-
-
-@router.post("/pagesize-bench/cancel")
-def pagesize_bench_cancel() -> JSONResponse:
-    """Ask the running bench to stop at its next safe point (between rebuild/bench
-    phases; the partial report is honestly marked ``cancelled`` and every staged
-    rebuild is deleted). Idempotent."""
-    _PAGESIZE_BENCH_JOB.cancel()
-    return JSONResponse(_PAGESIZE_BENCH_JOB.status())
-
-
-@router.get("/pagesize-bench/last")
-def pagesize_bench_last() -> JSONResponse:
-    """The newest saved page-size bench report (read-only; never runs a bench).
-    ``{available:false}`` honestly when none has been run."""
-    from src.monitoring.pagesize_bench import last_pagesize_bench_report
-
-    return JSONResponse(last_pagesize_bench_report())
-
-
-@router.get("/pagesize-bench/download")
-def pagesize_bench_download() -> Response:
-    """Serve the finished page-size bench report. 404 until a run has completed."""
-    st = _PAGESIZE_BENCH_JOB.status()
-    res = st.get("result") or {}
-    path = res.get("path")
-    if st.get("state") not in ("done", "cancelled") or not path or not os.path.exists(path):
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                "no page-size bench report is ready — start one with "
-                "POST /api/diagnostics/pagesize-bench"
-            ),
-        )
-    return FileResponse(
-        path, media_type="application/json",
-        filename=res.get("filename") or "oo-pagesize-bench.json",
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -4233,7 +4099,7 @@ def pagesize_bench_download() -> Response:
 #  runner + parser + canaries + EXPORT-ONLY JSONL already existed
 #  (``src/ai_layer/triage.py``) but its only caller was its own selftest. This is
 #  the REAL wiring -- a visible, abortable BackgroundJob over the live corpus,
-#  driving the SAME core. Mirrors the p0-validation / pagesize-bench job surface
+#  driving the SAME core. Mirrors the p0-validation job surface
 #  exactly. NEVER writes the trusted keyword index -- EXPORT-ONLY JSONL, per the
 #  ruling. The airplane/Ollama gate split (2026-07-24 field-feedback Session A,
 #  §7) landed: this runs offline too, gated only by the client's own loopback-

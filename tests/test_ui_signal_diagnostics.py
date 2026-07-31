@@ -6,11 +6,14 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 The read-only statistical-signal endpoints that had no UI now have explicit
 exploration buttons in Settings → Diagnostics: the Benjamini-Hochberg FDR self-test,
 the flood + bury manipulation-pattern surfaces, the lunar-correlation screen (all GET,
-each opens/downloads its honest JSON with its own method + caveat), and a POST
-poll-transparency checklist form. flood/bury also auto-render as Home Leads — this is
-the explicit dig-in surface. Counts + statistics only, never a score. Un-keyed English
-(matches the diagnostics panel). Pure string-assertion wiring guard (browser-unverified
-per fork-3).
+each opens/downloads its honest JSON with its own method + caveat). flood/bury also
+auto-render as Home Leads — this is the explicit dig-in surface. Counts + statistics
+only, never a score. Un-keyed English (matches the diagnostics panel). Pure
+string-assertion wiring guard (browser-unverified per fork-3).
+
+The poll-transparency checklist that used to live beside these was REMOVED entirely
+(frontend, endpoint and module) by the 2026-07-31 Settings review; its two guards went
+with it rather than being weakened to keep passing.
 """
 
 from __future__ import annotations
@@ -29,20 +32,16 @@ def test_get_signal_buttons_present():
     assert "window.open('/api/insights/lunar-correlation','_blank')" in _HTML
 
 
-def test_poll_transparency_form_and_handler():
-    assert 'id="poll-fields"' in _HTML
-    assert 'id="poll-transparency-out"' in _HTML
-    assert 'onclick="pollTransparencyCheck()"' in _HTML
-    assert "async function pollTransparencyCheck(" in _JS
-    # a POST of the disclosed fields to the checklist endpoint
-    assert '"/api/insights/poll-transparency", {method: "POST", body: JSON.stringify(fields)}' in _JS
-    # invalid JSON is reported, never a silent failure
-    assert "Invalid JSON:" in _JS
+def test_poll_transparency_is_gone():
+    """The checklist was removed whole — a leftover input, handler or endpoint call would
+    mean a half-removal, which is the failure mode worth guarding here."""
+    for gone in ('id="poll-fields"', 'id="poll-transparency-out"', "pollTransparencyCheck"):
+        assert gone not in _HTML, gone
+        assert gone not in _JS, gone
+    assert "/api/insights/poll-transparency" not in _JS
 
 
 def test_honesty_statistics_not_a_score():
     # the surrounding hints state the honesty stance (shape not verdict, no score)
     assert "never a composite score" in _HTML
     assert "a microscope, not a detector" in _HTML
-    # poll-transparency records presence only, never grades/ranks
-    assert "records PRESENCE only" in _HTML

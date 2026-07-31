@@ -193,8 +193,19 @@ def test_capped_single_file_create_ui_is_removed():
 
 
 def test_legacy_single_file_restore_is_kept_for_migration():
-    # restoring an EXISTING single-file backup stays reachable (data-safety)
-    assert "v2Preview()" in _HTML
+    """Restoring an EXISTING single-file backup stays reachable (data-safety).
+
+    2026-07-31 (Settings review, ruling 7): the dedicated upload PANEL was removed, so
+    this no longer asserts v2Preview(). The property it protects is unchanged and is now
+    carried by the unified Import, which is the stronger route anyway — it discovers a
+    legacy archive nested anywhere in a scanned folder instead of requiring the operator
+    to know where it is. Assert the whole chain, because a break in any link would strand
+    old backups exactly as deleting the panel outright would have."""
+    # the scan surfaces it, the dialog offers it, the queue has a runner for that kind
+    assert "legacy_backup" in (_STATIC.parents[0] / "backup" / "import_scan.py").read_text(encoding="utf-8")
+    assert 'id="ux-i-legacy"' in _APP and 'kind: "legacy"' in _APP
+    queue = (_STATIC.parents[0] / "backup" / "import_queue.py").read_text(encoding="utf-8")
+    assert '"legacy"' in queue and "def _run_legacy(" in queue and "restore_legacy_path" in queue
 
 
 def test_backup_poll_is_job_state_as_truth_not_transport_failure():

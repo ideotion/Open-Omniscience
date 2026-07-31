@@ -83,8 +83,11 @@ _FRESH_AUTO_VACUUM = 2  # INCREMENTAL
 _FRESH_PAGE_SIZE = 16384
 
 # The full set of page sizes SQLite/SQLCipher can validly use (powers of 2,
-# 512..65536 — the same domain pagesize_bench.py's own _ALLOWED_PAGE_SIZES
-# covers). An adversarial-review finding (2026-07-23): probing ONLY
+# 512..65536). This was the same domain the DB-10 page-size A/B bench probed;
+# that bench was removed on 2026-07-31 (Settings review ruling 6) once its job
+# was done — the 16384 default below IS its result — so the domain is stated
+# here rather than by reference. An adversarial-review finding (2026-07-23):
+# probing ONLY
 # [16384, None] left any store at some OTHER legitimate size (e.g. one this
 # factory's own snapshot/re-encrypt machinery faithfully PRESERVES via
 # _match_source_pragmas below, for a corpus that predates this ruling at a
@@ -327,11 +330,14 @@ def connect(
 
         conn = sqc.connect(str(p), check_same_thread=check_same_thread, timeout=timeout)
         _apply_key(conn, key)
-        # ORDER MATTERS (empirically verified): cipher_page_size MUST be set
-        # BEFORE auto_vacuum on a fresh SQLCipher connection, matching
-        # pagesize_bench.rebuild_at_pragmas' proven ordering exactly — setting
-        # auto_vacuum first corrupts page 1's HMAC once the schema is written
-        # (the store fails to reopen at all, not just at the wrong size).
+        # ORDER MATTERS (empirically verified, DB-10 §1b, 2026-07-17): on a fresh
+        # SQLCipher connection cipher_page_size MUST be set BEFORE auto_vacuum —
+        # setting auto_vacuum first corrupts page 1's HMAC once the schema is
+        # written, and the store then fails to reopen AT ALL, not merely at the
+        # wrong size. This was proven by the page-size A/B bench's own
+        # rebuild_at_pragmas; the bench was removed on 2026-07-31 (Settings review
+        # ruling 6) after delivering its verdict, so the ordering fact is recorded
+        # here — it is load-bearing for every encrypted store this factory creates.
         page_size = cipher_page_size if cipher_page_size is not None else _FRESH_PAGE_SIZE
         conn.execute(f"PRAGMA cipher_page_size = {int(page_size)}")
         conn.execute(f"PRAGMA auto_vacuum = {_FRESH_AUTO_VACUUM}")
