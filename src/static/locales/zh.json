@@ -2243,5 +2243,11 @@
   "phase {n} of {total}": "第 {n} 阶段（共 {total} 个）",
   "Keywords — explore & curate": "关键词 — 浏览与整理",
   "Entity family curation — you decide": "实体族整理 — 由你决定",
-  "Super-group curation — create, add, remove, delete": "超组整理 — 创建、添加、移除、删除"
+  "Super-group curation — create, add, remove, delete": "超组整理 — 创建、添加、移除、删除",
+  "Import documents (PDF)": "导入文档（PDF）",
+  "Import PDFs": "导入 PDF",
+  "Import a whole folder": "导入整个文件夹",
+  "Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source (\"Imported PDFs\") so it never blurs with the web.": "将你自己的 PDF 文件导入语料库——文本会被提取，每份文档都像任何文章一样被搜索、分析和关联，同时保留为独立、可筛选的来源（“已导入的 PDF”），绝不与网络内容混淆。",
+  "Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A born-digital PDF uses its exact text layer. A scanned / image-only PDF has no text layer: if OCR is installed (the [ocr] extra plus the Tesseract binary) it is read via OCR and clearly marked OCR-derived (lower-trust — may contain recognition errors; the original PDF stays the source of truth), otherwise it is skipped with an honest reason. Re-importing the same document is skipped (deduplicated).": "零联网：每个 PDF 都在本地读取并提取文本——从不获取任何内容。原生数字 PDF 使用其精确的文本层。扫描件或纯图像 PDF 没有文本层：若已安装 OCR（[ocr] 附加组件加上 Tesseract 程序），则通过 OCR 读取并明确标记为“OCR 得出”（可信度较低——可能含识别错误；原始 PDF 仍是事实来源）；否则将跳过并给出诚实的原因。重复导入同一文档会被跳过（去重）。",
+  "Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped.": "指定本机上的一个文件夹，其中的每个 PDF 都会被导入。同样是本地、零联网的路径；已导入的文档会被跳过。"
 }

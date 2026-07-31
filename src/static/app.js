@@ -1804,7 +1804,10 @@
       if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
-      if (cat === "newsletters") { loadNewsletterRemoveCount(); _folderImportStartPoll(); }  // remove panel + the folder-import job status
+      // The newsletter/PDF import panels moved into Data & backup (2026-07-31). Both
+      // calls are cheap and loopback-only -- a count query and a job-status poll -- so
+      // they load with the subtab rather than needing the Advanced lazy treatment.
+      if (cat === "data") { loadNewsletterRemoveCount(); _folderImportStartPoll(); }
     }
 
     // ADVANCED subtab (2026-07-31 Settings review): Collection, Sources and Keywords moved

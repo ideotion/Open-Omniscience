@@ -2243,5 +2243,11 @@
   "phase {n} of {total}": "fase {n} de {total}",
   "Keywords — explore & curate": "Palavras-chave — explorar e organizar",
   "Entity family curation — you decide": "Famílias de entidades — você decide",
-  "Super-group curation — create, add, remove, delete": "Supergrupos — criar, adicionar, remover, eliminar"
+  "Super-group curation — create, add, remove, delete": "Supergrupos — criar, adicionar, remover, eliminar",
+  "Import documents (PDF)": "Importar documentos (PDF)",
+  "Import PDFs": "Importar PDFs",
+  "Import a whole folder": "Importar uma pasta inteira",
+  "Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source (\"Imported PDFs\") so it never blurs with the web.": "Importe os seus próprios ficheiros PDF para o corpus — o texto é extraído e cada documento é pesquisado, analisado e correlacionado como qualquer artigo, mantendo-se como uma fonte separada e filtrável («PDF importados») para nunca se misturar com a web.",
+  "Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A born-digital PDF uses its exact text layer. A scanned / image-only PDF has no text layer: if OCR is installed (the [ocr] extra plus the Tesseract binary) it is read via OCR and clearly marked OCR-derived (lower-trust — may contain recognition errors; the original PDF stays the source of truth), otherwise it is skipped with an honest reason. Re-importing the same document is skipped (deduplicated).": "Zero rede: cada PDF é lido e o seu texto extraído localmente — nada é alguma vez obtido. Um PDF nativo digital usa a sua camada de texto exata. Um PDF digitalizado ou só de imagem não tem camada de texto: se o OCR estiver instalado (o extra [ocr] mais o binário Tesseract), é lido por OCR e claramente marcado como «derivado de OCR» (menor fiabilidade — pode conter erros de reconhecimento; o PDF original continua a ser a fonte de verdade), caso contrário é ignorado com uma razão honesta. Reimportar o mesmo documento é ignorado (desduplicado).",
+  "Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped.": "Indique uma pasta NESTA MÁQUINA e todos os PDF nela são importados. O mesmo percurso local, sem rede; documentos já importados são ignorados."
 }

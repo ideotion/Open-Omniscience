@@ -3161,13 +3161,20 @@ def test_dates_render_in_app_language_not_browser_locale():
 
 
 def test_live_mailbox_pull_ui():
-    """Live mailbox ingestion (ruling 2026-06-17 #11): Settings → Newsletters gains a
-    "Pull from a mailbox (IMAP/POP3)" form. It is a NETWORK action -> must pass
-    ensureOnline (invariant #14); it posts to /api/newsletters/mailbox; the anonymise +
-    kill-switch guarantees live in the (tested) backend. Browser-unverified static guard."""
+    """Live mailbox ingestion (ruling 2026-06-17 #11): a "Pull from a mailbox (IMAP/POP3)"
+    form. It is a NETWORK action -> must pass ensureOnline (invariant #14); it posts to
+    /api/newsletters/mailbox; the anonymise + kill-switch guarantees live in the (tested)
+    backend. Browser-unverified static guard.
+
+    2026-07-31 (Settings review): the Newsletters subtab was dissolved into Data & backup,
+    so the panel is pinned to ITS OWN id rather than to the subtab that used to hold it --
+    the ensureOnline gate below is the property that actually matters here, and it must
+    survive any further re-homing."""
     html = _ui_source()
-    assert 'id="set-newsletters"' in html and "function pullMailbox(" in html, (
-        "the mailbox-pull form + handler must exist in the Newsletters subtab (#11)"
+    assert "function pullMailbox(" in html, "the mailbox-pull handler must exist (#11)"
+    data_view = html.split('id="set-data"', 1)[1].split('<div class="set-view"', 1)[0]
+    assert 'id="mbox-host"' in data_view, (
+        "the mailbox-pull form must live in Settings → Data & backup after the 2026-07-31 move"
     )
     assert 'id="mbox-host"' in html and 'id="mbox-proto"' in html, "mailbox form fields must exist"
     assert "/api/newsletters/mailbox" in html, "the pull must call the mailbox endpoint"

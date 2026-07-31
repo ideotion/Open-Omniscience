@@ -1152,7 +1152,6 @@
         <button class="active" data-tab="graphics">Graphics</button>
         <button data-tab="general">General</button>
         <button data-tab="models">AI</button>
-        <button data-tab="newsletters">Newsletters</button>
         <button data-tab="wikipedia">Wikipedia</button>
         <button data-tab="stats">Statistics</button>
         <button data-tab="offlinemap">Offline map</button>
@@ -1612,6 +1611,86 @@
         <button onclick="openUnifiedImport()">Import…</button>
       </div>
     </section>
+    <!-- Newsletter / document IMPORT (2026-07-31 Settings review): moved here from its
+         own subtab. Importing .eml and PDF files is bringing data IN, which is exactly
+         what this subtab is for; it sat apart only for historical reasons. -->
+    <section class="panel">
+      <h2>Import newsletters (.eml)</h2>
+      <p class="hint">Import local .eml newsletter files into your corpus — searched, analysed and correlated like any article, and kept as a separate, filterable source so email and web never blur.</p>
+      <p class="hint" style="margin-top:5px">Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.</p>
+      <p class="hint" style="margin-top:5px">These articles join your no-recovery encrypted corpus. Keep your original .eml files as the re-import path.</p>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <input type="file" id="nl-files" accept=".eml" multiple aria-label="Choose .eml files to import">
+        <button class="secondary" id="nl-import-btn" onclick="importNewsletters(this)">Import .eml files</button>
+      </div>
+      <div id="nl-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
+      <hr>
+      <h3 style="margin-bottom:6px">Import a whole folder (for very large sets)</h3>
+      <p class="hint" style="margin-top:0">Point to a folder ON THIS MACHINE and every .eml under it is imported as a pausable background job — for a 20&nbsp;GB+ archive the file picker can't handle. Same anonymise-at-ingest path, zero network. Already-imported messages are skipped, so you can pause and resume safely.</p>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <div style="flex:2"><label for="nl-folder">Folder path (on this machine)</label>
+          <input id="nl-folder" placeholder="/home/you/newsletters" size="30"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" type="button" onclick="ooFolderPicker('nl-folder', false)">Browse…</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="startFolderImport(this)">Import folder</button></div>
+      </div>
+      <progress id="nl-folder-bar" value="0" max="100" style="width:100%;margin-top:6px;display:none"></progress>
+      <div id="nl-folder-progress" class="hint" style="margin-top:6px" role="status" aria-live="polite"></div>
+      <div class="row" id="nl-folder-controls" style="gap:8px;margin-top:6px;display:none">
+        <button class="secondary" id="nl-folder-pause" onclick="folderImportAction('pause', this)">Pause</button>
+        <button class="secondary" id="nl-folder-resume" onclick="folderImportAction('resume', this)" style="display:none">Resume</button>
+        <button class="secondary" id="nl-folder-cancel" onclick="folderImportAction('cancel', this)">Cancel</button>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Import documents (PDF)</h2>
+      <p class="hint">Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source ("Imported PDFs") so it never blurs with the web.</p>
+      <p class="hint" style="margin-top:5px">Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A born-digital PDF uses its exact text layer. A scanned / image-only PDF has no text layer: if OCR is installed (the [ocr] extra plus the Tesseract binary) it is read via OCR and clearly marked OCR-derived (lower-trust — may contain recognition errors; the original PDF stays the source of truth), otherwise it is skipped with an honest reason. Re-importing the same document is skipped (deduplicated).</p>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <input type="file" id="pdf-files" accept=".pdf,application/pdf" multiple aria-label="Choose PDF files to import">
+        <button class="secondary" id="pdf-import-btn" onclick="importPdfs(this)">Import PDFs</button>
+      </div>
+      <div id="pdf-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
+      <hr>
+      <h3 style="margin-bottom:6px">Import a whole folder</h3>
+      <p class="hint" style="margin-top:0">Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped.</p>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <div style="flex:2"><label for="pdf-folder">Folder path (on this machine)</label>
+          <input id="pdf-folder" placeholder="/home/you/pdfs" size="30"></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" type="button" onclick="ooFolderPicker('pdf-folder', false)">Browse…</button></div>
+        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="importPdfFolder(this)">Import folder</button></div>
+      </div>
+      <div id="pdf-folder-result" class="hint" style="margin-top:6px" role="status" aria-live="polite"></div>
+    </section>
+    <section class="panel">
+      <h2>Pull from a mailbox (IMAP/POP3)</h2>
+      <p class="hint">Pull newsletters live from a mailbox instead of exporting files one by one. Each message goes
+        through the same anonymise-at-ingest path as the file import — the recipient is never stored, no raw message
+        is retained, and tracking links are de-toxed and never followed.</p>
+      <p class="hint" style="margin-top:5px"><span class="warn">This is a network action.</span> It is refused under airplane mode, and connects to your mail provider directly over TLS (revealing your IP to that provider, like any email client) — it is not routed through Tor. Credentials are used for this one fetch and not stored.</p>
+      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <label>Protocol<br><select id="mbox-proto"><option value="imap">IMAP</option><option value="pop3">POP3</option></select></label>
+        <label>Host<br><input id="mbox-host" placeholder="imap.example.com" size="18"></label>
+        <label>Port<br><input id="mbox-port" type="number" placeholder="auto" style="width:80px"></label>
+        <label>User<br><input id="mbox-user" placeholder="you@example.com" size="16"></label>
+        <label>Password<br><input id="mbox-pass" type="password" size="14"></label>
+        <label>Folder (IMAP)<br><input id="mbox-folder" value="INBOX" size="10"></label>
+        <label>Max messages<br><input id="mbox-limit" type="number" value="50" min="1" max="500" style="width:80px"></label>
+        <button class="secondary" id="mbox-btn" onclick="pullMailbox()">Pull newsletters</button>
+      </div>
+      <div id="mbox-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
+    </section>
+    <section class="panel" id="nl-remove-panel" style="display:none">
+      <h2>Remove imported newsletters</h2>
+      <p class="hint">Delete every imported-newsletter article (.eml + mailbox) from your corpus — for replacing a faulty set with a cleaned re-import. Restoring a backup is additive, so leaving newsletters out of a backup never removes them from the live corpus; this does.</p>
+      <p class="hint" style="margin-top:5px"><span class="warn">This cannot be undone except from a backup.</span> It removes the articles and all their analysis (keywords, dates, places); the empty newsletter source stays so a clean re-import re-attaches.</p>
+      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
+        <button class="secondary" id="nl-backup-first-btn" onclick="downloadBackupFirst(this)">Back up first</button>
+        <button class="secondary" id="nl-remove-btn" onclick="removeImportedNewsletters(this)">Remove imported newsletters</button>
+        <span id="nl-remove-count" class="muted"></span>
+      </div>
+      <div id="nl-remove-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
+    </section>
+
     <!-- "Local LLM models (separate backup)" panel removed: models are now a category in the
          unified Export/Import dialogs above (and the capped .oomodels flow was retired). -->
     <!-- Large-data folder backup + encrypted volume backup panels removed (Slice 3):
@@ -2094,85 +2173,6 @@
 
     </div>
 
-    <!-- ===================== NEWSLETTERS (.eml import) ================ -->
-    <div class="set-view" id="set-newsletters" style="display:none">
-    <section class="panel">
-      <h2>Import newsletters (.eml)</h2>
-      <p class="hint">Import local .eml newsletter files into your corpus — searched, analysed and correlated like any article, and kept as a separate, filterable source so email and web never blur.</p>
-      <p class="hint" style="margin-top:5px">Anonymised at import, zero network: the recipient is never stored, recipient echoes are redacted, tracker tokens are stripped and server-side tracker wrappers are flagged. Nothing is ever fetched — a tracking pixel or link is never followed, so importing can never reveal that you opened or clicked.</p>
-      <p class="hint" style="margin-top:5px">These articles join your no-recovery encrypted corpus. Keep your original .eml files as the re-import path.</p>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
-        <input type="file" id="nl-files" accept=".eml" multiple aria-label="Choose .eml files to import">
-        <button class="secondary" id="nl-import-btn" onclick="importNewsletters(this)">Import .eml files</button>
-      </div>
-      <div id="nl-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
-      <hr>
-      <h3 style="margin-bottom:6px">Import a whole folder (for very large sets)</h3>
-      <p class="hint" style="margin-top:0">Point to a folder ON THIS MACHINE and every .eml under it is imported as a pausable background job — for a 20&nbsp;GB+ archive the file picker can't handle. Same anonymise-at-ingest path, zero network. Already-imported messages are skipped, so you can pause and resume safely.</p>
-      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
-        <div style="flex:2"><label for="nl-folder">Folder path (on this machine)</label>
-          <input id="nl-folder" placeholder="/home/you/newsletters" size="30"></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" type="button" onclick="ooFolderPicker('nl-folder', false)">Browse…</button></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="startFolderImport(this)">Import folder</button></div>
-      </div>
-      <progress id="nl-folder-bar" value="0" max="100" style="width:100%;margin-top:6px;display:none"></progress>
-      <div id="nl-folder-progress" class="hint" style="margin-top:6px" role="status" aria-live="polite"></div>
-      <div class="row" id="nl-folder-controls" style="gap:8px;margin-top:6px;display:none">
-        <button class="secondary" id="nl-folder-pause" onclick="folderImportAction('pause', this)">Pause</button>
-        <button class="secondary" id="nl-folder-resume" onclick="folderImportAction('resume', this)" style="display:none">Resume</button>
-        <button class="secondary" id="nl-folder-cancel" onclick="folderImportAction('cancel', this)">Cancel</button>
-      </div>
-    </section>
-    <section class="panel">
-      <h2>Import documents (PDF)</h2>
-      <p class="hint">Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source ("Imported PDFs") so it never blurs with the web.</p>
-      <p class="hint" style="margin-top:5px">Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A born-digital PDF uses its exact text layer. A scanned / image-only PDF has no text layer: if OCR is installed (the <code>[ocr]</code> extra + the Tesseract binary) it is read via OCR and clearly marked <em>OCR-derived</em> (lower-trust — may contain recognition errors; the original PDF stays the source of truth), otherwise it is skipped with an honest reason. Re-importing the same document is skipped (deduplicated).</p>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
-        <input type="file" id="pdf-files" accept=".pdf,application/pdf" multiple aria-label="Choose PDF files to import">
-        <button class="secondary" id="pdf-import-btn" onclick="importPdfs(this)">Import PDFs</button>
-      </div>
-      <div id="pdf-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
-      <hr>
-      <h3 style="margin-bottom:6px">Import a whole folder</h3>
-      <p class="hint" style="margin-top:0">Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped.</p>
-      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:6px">
-        <div style="flex:2"><label for="pdf-folder">Folder path (on this machine)</label>
-          <input id="pdf-folder" placeholder="/home/you/pdfs" size="30"></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" type="button" onclick="ooFolderPicker('pdf-folder', false)">Browse…</button></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="importPdfFolder(this)">Import folder</button></div>
-      </div>
-      <div id="pdf-folder-result" class="hint" style="margin-top:6px" role="status" aria-live="polite"></div>
-    </section>
-    <section class="panel">
-      <h2>Pull from a mailbox (IMAP/POP3)</h2>
-      <p class="hint">Pull newsletters live from a mailbox instead of exporting files one by one. Each message goes
-        through the same anonymise-at-ingest path as the file import — the recipient is never stored, no raw message
-        is retained, and tracking links are de-toxed and never followed.</p>
-      <p class="hint" style="margin-top:5px"><span class="warn">This is a network action.</span> It is refused under airplane mode, and connects to your mail provider directly over TLS (revealing your IP to that provider, like any email client) — it is not routed through Tor. Credentials are used for this one fetch and not stored.</p>
-      <div class="row" style="align-items:end;gap:8px;flex-wrap:wrap;margin-top:8px">
-        <label>Protocol<br><select id="mbox-proto"><option value="imap">IMAP</option><option value="pop3">POP3</option></select></label>
-        <label>Host<br><input id="mbox-host" placeholder="imap.example.com" size="18"></label>
-        <label>Port<br><input id="mbox-port" type="number" placeholder="auto" style="width:80px"></label>
-        <label>User<br><input id="mbox-user" placeholder="you@example.com" size="16"></label>
-        <label>Password<br><input id="mbox-pass" type="password" size="14"></label>
-        <label>Folder (IMAP)<br><input id="mbox-folder" value="INBOX" size="10"></label>
-        <label>Max messages<br><input id="mbox-limit" type="number" value="50" min="1" max="500" style="width:80px"></label>
-        <button class="secondary" id="mbox-btn" onclick="pullMailbox()">Pull newsletters</button>
-      </div>
-      <div id="mbox-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
-    </section>
-    <section class="panel" id="nl-remove-panel" style="display:none">
-      <h2>Remove imported newsletters</h2>
-      <p class="hint">Delete every imported-newsletter article (.eml + mailbox) from your corpus — for replacing a faulty set with a cleaned re-import. Restoring a backup is additive, so leaving newsletters out of a backup never removes them from the live corpus; this does.</p>
-      <p class="hint" style="margin-top:5px"><span class="warn">This cannot be undone except from a backup.</span> It removes the articles and all their analysis (keywords, dates, places); the empty newsletter source stays so a clean re-import re-attaches.</p>
-      <div style="display:flex;align-items:center;gap:8px;margin-top:10px;flex-wrap:wrap">
-        <button class="secondary" id="nl-backup-first-btn" onclick="downloadBackupFirst(this)">Back up first</button>
-        <button class="secondary" id="nl-remove-btn" onclick="removeImportedNewsletters(this)">Remove imported newsletters</button>
-        <span id="nl-remove-count" class="muted"></span>
-      </div>
-      <div id="nl-remove-result" class="hint" style="margin-top:10px" role="status" aria-live="polite"></div>
-    </section>
-    </div>
 
 
     <!-- =========================== LIBRARY =========================== -->

@@ -2243,5 +2243,11 @@
   "phase {n} of {total}": "Phase {n} von {total}",
   "Keywords — explore & curate": "Schlüsselwörter — erkunden und kuratieren",
   "Entity family curation — you decide": "Entitätsfamilien kuratieren — Sie entscheiden",
-  "Super-group curation — create, add, remove, delete": "Supergruppen — erstellen, hinzufügen, entfernen, löschen"
+  "Super-group curation — create, add, remove, delete": "Supergruppen — erstellen, hinzufügen, entfernen, löschen",
+  "Import documents (PDF)": "Dokumente importieren (PDF)",
+  "Import PDFs": "PDFs importieren",
+  "Import a whole folder": "Ganzen Ordner importieren",
+  "Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source (\"Imported PDFs\") so it never blurs with the web.": "Importieren Sie eigene PDF-Dateien in Ihr Korpus — der Text wird extrahiert und jedes Dokument wie jeder Artikel durchsucht, analysiert und in Beziehung gesetzt, bleibt aber eine eigene, filterbare Quelle („Importierte PDFs“), sodass es nie mit dem Web verschwimmt.",
+  "Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A born-digital PDF uses its exact text layer. A scanned / image-only PDF has no text layer: if OCR is installed (the [ocr] extra plus the Tesseract binary) it is read via OCR and clearly marked OCR-derived (lower-trust — may contain recognition errors; the original PDF stays the source of truth), otherwise it is skipped with an honest reason. Re-importing the same document is skipped (deduplicated).": "Kein Netzwerk: Jedes PDF wird lokal gelesen und sein Text extrahiert — nichts wird je abgerufen. Ein digital erzeugtes PDF nutzt seine exakte Textebene. Ein gescanntes oder reines Bild-PDF hat keine Textebene: Ist OCR installiert (das Extra [ocr] plus die Tesseract-Binärdatei), wird es per OCR gelesen und klar als „OCR-abgeleitet“ markiert (geringere Verlässlichkeit — kann Erkennungsfehler enthalten; das Original-PDF bleibt die Quelle der Wahrheit), andernfalls wird es mit ehrlicher Begründung übersprungen. Ein erneuter Import desselben Dokuments wird übersprungen (dedupliziert).",
+  "Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped.": "Geben Sie einen Ordner AUF DIESEM RECHNER an, und jedes darin enthaltene PDF wird importiert. Derselbe lokale Weg ohne Netzwerk; bereits importierte Dokumente werden übersprungen."
 }

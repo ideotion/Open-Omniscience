@@ -2243,5 +2243,11 @@
   "phase {n} of {total}": "المرحلة {n} من {total}",
   "Keywords — explore & curate": "الكلمات المفتاحية — استكشاف وتنظيم",
   "Entity family curation — you decide": "تنظيم عائلات الكيانات — القرار لك",
-  "Super-group curation — create, add, remove, delete": "المجموعات الكبرى — إنشاء وإضافة وإزالة وحذف"
+  "Super-group curation — create, add, remove, delete": "المجموعات الكبرى — إنشاء وإضافة وإزالة وحذف",
+  "Import documents (PDF)": "استيراد المستندات (PDF)",
+  "Import PDFs": "استيراد ملفات PDF",
+  "Import a whole folder": "استيراد مجلد كامل",
+  "Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source (\"Imported PDFs\") so it never blurs with the web.": "استورد ملفات PDF الخاصة بك إلى مجموعتك — يُستخرج النص ويُبحث في كل مستند ويُحلَّل ويُربط مثل أي مقال، مع بقائه مصدرًا منفصلًا قابلًا للتصفية (\"ملفات PDF المستوردة\") حتى لا يختلط أبدًا بالويب.",
+  "Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A born-digital PDF uses its exact text layer. A scanned / image-only PDF has no text layer: if OCR is installed (the [ocr] extra plus the Tesseract binary) it is read via OCR and clearly marked OCR-derived (lower-trust — may contain recognition errors; the original PDF stays the source of truth), otherwise it is skipped with an honest reason. Re-importing the same document is skipped (deduplicated).": "دون أي اتصال بالشبكة: يُقرأ كل ملف PDF ويُستخرج نصه محليًا — لا يُجلب أي شيء إطلاقًا. ملف PDF الرقمي الأصل يستخدم طبقة النص الدقيقة الخاصة به. أما ملف PDF الممسوح ضوئيًا أو الصوري فلا طبقة نص له: إذا كان OCR مثبتًا (إضافة [ocr] مع ملف Tesseract التنفيذي) فيُقرأ عبر OCR ويُوسم بوضوح بأنه \"مستخرج بالتعرف الضوئي\" (ثقة أقل — قد يحتوي أخطاء تعرّف؛ ويبقى ملف PDF الأصلي مصدر الحقيقة)، وإلا فيُتخطى مع ذكر سبب صريح. وإعادة استيراد المستند نفسه تُتخطى (إزالة التكرار).",
+  "Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped.": "حدِّد مجلدًا على هذا الجهاز، وسيُستورد كل ملف PDF بداخله. المسار المحلي نفسه دون شبكة؛ وتُتخطى المستندات المستوردة سابقًا."
 }

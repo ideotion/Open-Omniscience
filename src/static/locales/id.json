@@ -2243,5 +2243,11 @@
   "phase {n} of {total}": "fase {n} dari {total}",
   "Keywords — explore & curate": "Kata kunci — jelajahi & kurasi",
   "Entity family curation — you decide": "Kurasi keluarga entitas — Anda yang memutuskan",
-  "Super-group curation — create, add, remove, delete": "Kurasi supergrup — buat, tambah, hapus"
+  "Super-group curation — create, add, remove, delete": "Kurasi supergrup — buat, tambah, hapus",
+  "Import documents (PDF)": "Impor dokumen (PDF)",
+  "Import PDFs": "Impor PDF",
+  "Import a whole folder": "Impor seluruh folder",
+  "Import your own PDF files into your corpus — the text is extracted and each document is searched, analysed and correlated like any article, and kept as a separate, filterable source (\"Imported PDFs\") so it never blurs with the web.": "Impor berkas PDF Anda sendiri ke korpus — teksnya diekstraksi dan setiap dokumen dicari, dianalisis, dan dikorelasikan seperti artikel mana pun, namun tetap menjadi sumber terpisah yang dapat difilter (\"PDF terimpor\") sehingga tidak pernah bercampur dengan web.",
+  "Zero network: each PDF is read and its text extracted locally — nothing is ever fetched. A born-digital PDF uses its exact text layer. A scanned / image-only PDF has no text layer: if OCR is installed (the [ocr] extra plus the Tesseract binary) it is read via OCR and clearly marked OCR-derived (lower-trust — may contain recognition errors; the original PDF stays the source of truth), otherwise it is skipped with an honest reason. Re-importing the same document is skipped (deduplicated).": "Tanpa jaringan: setiap PDF dibaca dan teksnya diekstraksi secara lokal — tidak ada yang pernah diambil. PDF asli digital memakai lapisan teksnya yang persis. PDF hasil pindai atau hanya gambar tidak punya lapisan teks: jika OCR terpasang (ekstra [ocr] plus biner Tesseract), berkas dibaca via OCR dan ditandai jelas sebagai \"berasal dari OCR\" (kepercayaan lebih rendah — mungkin memuat galat pengenalan; PDF asli tetap sumber kebenaran), jika tidak, berkas dilewati dengan alasan yang jujur. Mengimpor ulang dokumen yang sama akan dilewati (deduplikasi).",
+  "Point to a folder ON THIS MACHINE and every PDF under it is imported. Same local, zero-network path; already-imported documents are skipped.": "Tunjuk sebuah folder DI MESIN INI dan setiap PDF di dalamnya akan diimpor. Jalur lokal tanpa jaringan yang sama; dokumen yang sudah diimpor dilewati."
 }
