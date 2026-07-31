@@ -61,30 +61,19 @@ def test_additive_only_restore_no_destructive_paths():
     assert 'onclick="encryptedRestore()"' not in _HTML
 
 
-def test_v2_preview_precedes_commit_and_warns_on_failed_verification():
-    assert "v2Preview" in _HTML and "v2Apply" in _HTML and "v2Discard" in _HTML
-    js = _HTML.split("async function v2Apply", 1)[1].split("async function", 1)[0]
-    assert "_v2Token" in js, "apply must use the preview's one-shot commit token"
-    prev = _HTML.split("async function v2Preview", 1)[1].split("async function", 1)[0]
-    assert '"v2-apply-btn").disabled = !ver.ok' in prev, (
-        "a failed verification must disable Apply (the merge would refuse anyway; "
-        "the UI must not invite it)"
-    )
-
-
-def test_js_matches_the_api_form_contract():
-    # The API expects multipart fields named exactly: file, passphrase, token.
-    assert 'fd.append("file", f)' in _HTML
-    assert 'fd.append("passphrase"' in _HTML
-    assert 'fd.append("token", _v2Token)' in _HTML
-    assert '"/api/backup/v2/restore/preview"' in _HTML
-    assert '"/api/backup/v2/restore/commit"' in _HTML
+# REMOVED 2026-07-31 (Settings review, ruling 7): test_v2_preview_precedes_commit_and_
+# warns_on_failed_verification and test_js_matches_the_api_form_contract both guarded the
+# legacy-restore UPLOAD FORM (file picker -> preview -> apply, multipart file/passphrase/
+# token). That panel is gone, so both asserted properties of markup that no longer exists.
+# The /v2/restore preview+commit ENDPOINTS they exercised are deliberately retained and
+# still pinned by test_additive_restore_only; restoring an existing single-file backup now
+# runs through the unified Import (test_legacy_single_file_restore_is_kept_for_migration).
 
 
 def test_merge_semantics_stated_to_the_operator():
-    # The non-technical promise, verbatim in the chrome (and keyed x12):
-    assert "nothing is replaced\n        or deleted" in _HTML.replace("<b>merges</b>", "merges") or (
-        "nothing is replaced" in _HTML
-    )
-    assert "your local version is kept" in _HTML
-    assert "safety snapshot" in _HTML
+    """The non-technical additive-restore promise must stay visible to the operator.
+
+    2026-07-31: it moved with the restore itself. The legacy panel's wording went with
+    that panel; the unified Import states the same guarantee, so this asserts it there.
+    The promise is the point — where it is rendered is not."""
+    assert "Additive restore: nothing in your corpus was replaced or deleted." in _HTML
