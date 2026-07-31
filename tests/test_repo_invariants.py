@@ -7765,3 +7765,52 @@ def test_calendar_chip_contrast_and_toggle_state():
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
     chip = app.split('class="ag-cal', 1)[1][:400]
     assert "aria-pressed" in chip, "a subscribe toggle must announce its state"
+
+
+def test_cards_subtab_lists_every_family_and_states_its_safe_ranges():
+    """Settings restructure PR-7 (rulings 1/2/3/17, 2026-07-31).
+
+    The Cards subtab is where every Lead becomes visible and switchable. Three
+    properties are pinned because losing any of them would quietly undo a ruling:
+    the subtab exists and loads lazily; the SAFE RANGE and the reason for a floor
+    are rendered beside the control rather than only enforced server-side; and the
+    legacy per-recipe toggles are gone from General WITHOUT the general save being
+    able to wipe the operator's choices.
+    """
+    html = _ui_source()
+
+    # 1. the subtab exists and is lazy
+    assert '<button data-tab="cards">' in html and 'id="set-cards"' in html
+    assert 'if (cat === "cards") loadCardCatalog();' in html, (
+        "the catalogue must load when the subtab opens, not with every Settings load"
+    )
+    assert "/api/settings/cards" in html
+
+    # 2. the range, the impact and the floor's REASON are all rendered (ruling 3):
+    #    a clamp the operator only discovers by being corrected is a silent clamp.
+    assert "card-tune-range" in html and "safe range" in html
+    assert "card-tune-impact" in html and "tn.impact" in html
+    assert "floor_reason" in html and "card-tune-floor" in html
+    assert "s.clamped" in html, "an adjusted value must be reported back to the operator"
+    assert "cardResetTunable(" in html, "every tunable needs a reset to the shipped default"
+
+    # 3. the legacy recipe toggles are gone -- and, the part that would actually
+    #    have hurt, the general save no longer posts recipes_disabled at all.
+    #    Reading it off checkboxes that no longer exist would POST an empty list
+    #    and wipe every choice on an unrelated save.
+    assert "recipe-toggle" not in html, "the legacy per-recipe checkboxes must be gone"
+    save = html.split("async function saveSettings() {", 1)[1].split("\n    }", 1)[0]
+    assert "recipes_disabled" not in save, (
+        "saveSettings must not post recipes_disabled — Settings → Cards owns it now"
+    )
+
+
+def test_every_card_family_reaches_the_operator():
+    """Ruling 1: all 8 families accessible. Asserted against the CATALOG rather
+    than a hardcoded list, so a new family cannot be added without surfacing."""
+    from src.briefing.card import BUCKETS
+    from src.briefing.catalog import CARD_CATALOG, FAMILY_ORDER
+
+    assert FAMILY_ORDER == BUCKETS
+    covered = {s.family for s in CARD_CATALOG}
+    assert covered == set(BUCKETS), f"families with no producer surfaced: {set(BUCKETS) - covered}"

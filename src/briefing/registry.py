@@ -372,6 +372,24 @@ def _wal_guard(session):
         # call (or the session's own eventual close/disposal) reclaims it.
 
 
+def _disabled_names() -> frozenset[str]:
+    """Producer names the operator has switched off (Settings → Cards).
+
+    Read ONCE per pass rather than per producer, and fail-safe: if settings
+    cannot be read, nothing is treated as disabled, so a settings problem can
+    only ever leave the feed fuller — never blank it (CLAUDE.md: Home must never
+    go blank-and-silent).
+    """
+    try:
+        from src.config.app_settings import load_settings
+
+        s = load_settings()
+        return frozenset(set(s.cards_disabled or []) | set(s.recipes_disabled or []))
+    except Exception:  # noqa: BLE001 - settings must never take down the briefing
+        _LOG.debug("card settings unavailable; running every producer", exc_info=True)
+        return frozenset()
+
+
 def run_all(session, on_progress: Callable[[int, int, str], None] | None = None) -> list[Card]:
     """Run every registered producer, isolating failures.
 
@@ -385,10 +403,17 @@ def run_all(session, on_progress: Callable[[int, int, str], None] | None = None)
     """
     cards: list[Card] = []
     total = len(_REGISTRY)
+    disabled = _disabled_names()
     with _wal_guard(session):  # PR-D / W1: release the WAL snapshot within a producer's own scan too
         for i, (name, producer) in enumerate(_REGISTRY):
             try:
-                produced = producer(session) or []
+                # Settings restructure PR-7: ONE place decides whether a producer
+                # runs at all, so every Lead is switchable from Settings → Cards
+                # without each producer needing its own opt-out check. The recipe
+                # producers keep their own internal check as a belt; this is the
+                # braces, and it also saves the work rather than discarding the
+                # cards afterwards.
+                produced = [] if name in disabled else (producer(session) or [])
             except Exception:  # noqa: BLE001 - one bad producer must not abort the feed
                 _LOG.warning("briefing producer %r failed", name, exc_info=True)
                 produced = []

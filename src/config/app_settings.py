@@ -50,6 +50,15 @@ class AppSettings:
     # RM-20). All recipes are on by default; a name in this list makes that
     # producer yield no cards.
     recipes_disabled: list = None  # type: ignore[assignment]
+    # Settings restructure PR-7 (2026-07-31): the SAME mechanism widened from the 4
+    # recipe producers to every Lead producer, rather than a second list beside it.
+    # The loader seeds this from recipes_disabled, so an existing settings file keeps
+    # working and recipes_disabled stays readable for one cycle.
+    cards_disabled: list = None  # type: ignore[assignment]
+    # Per-producer tunables: {producer_name: {tunable_key: value}}. Only keys the
+    # catalog declares survive, always clamped to the declared safe range -- see
+    # src/briefing/catalog.py, which owns the ranges and the reasons for them.
+    card_settings: dict = None  # type: ignore[assignment]
     # Active local LLM model tag (maintainer Q10, 2026-06-16): a STORED UI setting
     # that replaces the env-only OO_LLM_MODEL as the operator's default. None =
     # fall back to DEFAULT_MODEL (env/built-in).
@@ -96,6 +105,12 @@ class AppSettings:
     def __post_init__(self) -> None:
         if self.recipes_disabled is None:
             self.recipes_disabled = []
+        if self.cards_disabled is None:
+            # Seed from the legacy key so an operator who switched a recipe off
+            # before this field existed keeps that choice.
+            self.cards_disabled = list(self.recipes_disabled)
+        if self.card_settings is None:
+            self.card_settings = {}
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -190,6 +205,12 @@ def load_settings() -> AppSettings:
     recipes_disabled = (
         [str(x) for x in raw_disabled] if isinstance(raw_disabled, list) else []
     )
+    raw_cards = raw.get("cards_disabled")
+    cards_disabled = (
+        [str(x) for x in raw_cards] if isinstance(raw_cards, list) else list(recipes_disabled)
+    )
+    raw_card_settings = raw.get("card_settings")
+    card_settings = raw_card_settings if isinstance(raw_card_settings, dict) else {}
     llm_model = raw.get("llm_model")
     if llm_model is not None and not _MODEL_RE.match(str(llm_model)):
         _LOG.warning("ignoring invalid stored llm_model %r", llm_model)
@@ -227,6 +248,8 @@ def load_settings() -> AppSettings:
         theme=theme,
         default_result_limit=limit,
         recipes_disabled=recipes_disabled,
+        cards_disabled=cards_disabled,
+        card_settings=card_settings,
         llm_model=str(llm_model) if llm_model else None,
         llm_keep_alive=keep_alive,
         llm_prompt_summary=_prompt("llm_prompt_summary"),
@@ -266,6 +289,34 @@ def save_settings(updates: dict) -> AppSettings:
         if not isinstance(names, list) or not all(isinstance(x, str) for x in names):
             raise AppSettingsError("recipes_disabled must be a list of producer names")
         current.recipes_disabled = sorted(set(names))
+    if "cards_disabled" in updates and updates["cards_disabled"] is not None:
+        names = updates["cards_disabled"]
+        if not isinstance(names, list) or not all(isinstance(x, str) for x in names):
+            raise AppSettingsError("cards_disabled must be a list of producer names")
+        current.cards_disabled = sorted(set(names))
+    if "card_settings" in updates and updates["card_settings"] is not None:
+        raw = updates["card_settings"]
+        if not isinstance(raw, dict):
+            raise AppSettingsError("card_settings must be a mapping of producer -> settings")
+        # CLAMPED HERE, at the one write point, so no path can persist a value
+        # outside a producer's safe range. The notes are attached to the settings
+        # object for the caller to surface -- a clamp the operator is not told
+        # about is exactly what ruling 3 forbids.
+        from src.briefing.catalog import clamp_settings
+
+        cleaned: dict = {}
+        notes: list[dict] = []
+        for producer, values in raw.items():
+            kept, why = clamp_settings(str(producer), values)
+            notes.extend(why)
+            if kept:
+                cleaned[str(producer)] = kept
+        current.card_settings = cleaned
+        # Attached as an UNDECLARED attribute on purpose: persistence goes through
+        # asdict(), which walks declared fields only, so these notes reach the caller
+        # (the endpoint, which shows them) and can never leak into settings.json.
+        # They describe one request, not a stored preference.
+        current.last_clamp_notes = notes  # type: ignore[attr-defined]
     if "llm_model" in updates:
         val = updates["llm_model"]
         # Empty string / None clears the override (back to DEFAULT_MODEL).

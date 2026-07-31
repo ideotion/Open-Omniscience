@@ -1206,6 +1206,7 @@
       <nav class="tabs" id="set-subtabs" style="position:static;padding:0;border:0;margin-top:2px">
         <button class="active" data-tab="graphics">Graphics</button>
         <button data-tab="general">General</button>
+        <button data-tab="cards">Cards</button>
         <button data-tab="models">AI</button>
         <button data-tab="wikipedia">Wikipedia</button>
         <button data-tab="offlinemap">OpenStreetMap</button>
@@ -1277,20 +1278,6 @@
         </div>
       </div>
 
-      <h3 style="margin-bottom:6px">Investigation recipes on Home</h3>
-      <p class="muted" style="margin-top:0">Space-time scenario Leads that watch your own corpus
-        (all local, no network) and offer a one-click investigation view. Untick to switch one off.</p>
-      <div class="row" id="recipes-toggles">
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" class="recipe-toggle" value="promises_due" checked> Promises due
-          <span class="muted">(a mentioned future date has arrived)</span></label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" class="recipe-toggle" value="edit_war_burst" checked> Edit-war burst
-          <span class="muted">(a tracked Wikipedia page is churning)</span></label>
-        <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-          <input type="checkbox" class="recipe-toggle" value="region_gone_quiet" checked> Region gone quiet
-          <span class="muted">(a usually-covered country stopped arriving)</span></label>
-      </div>
 
       <h3 style="margin-bottom:6px">First-launch guide</h3>
       <p class="muted" style="margin-top:0">The one-time guided welcome that introduces the app and helps you go online for your first collection (your language and passphrase are chosen on the unlock screen). You can re-open it anytime, or have it show again the next time the app loads.</p>
@@ -1310,6 +1297,22 @@
       <h2>Keyboard shortcuts</h2>
       <p class="hint muted">Rebind the app's global shortcuts. Changes are saved on this device only and never transmitted. The command palette is bound by default; the others are opt-in.</p>
       <div id="kb-panel"></div>
+    </section>
+    </div>
+
+    <div class="set-view" id="set-cards" style="display:none">
+    <section class="panel">
+      <h2>Leads on Home</h2>
+      <p class="hint" style="margin-top:0">Every Lead this app can raise, grouped by family.
+        Switch one off and it stops appearing — that changes nothing about the articles
+        themselves, only which prompts reach your Home. Where a Lead has thresholds, they are
+        the ones it already applied; you can now see and adjust them.</p>
+      <p class="hint" id="cards-fence" style="margin-top:6px">Each setting states a safe range.
+        You can always make a Lead <em>stricter</em>; the lower bounds exist so a Lead can never
+        claim more than the evidence behind it supports — where a bound is there for that reason,
+        it says so.</p>
+      <div id="cards-host"><div class="muted">Loading…</div></div>
+      <div id="cards-msg" class="hint" style="margin-top:8px"></div>
     </section>
     </div>
 

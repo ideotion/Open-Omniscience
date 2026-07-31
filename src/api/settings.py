@@ -29,6 +29,10 @@ class SettingsUpdate(BaseModel):
     default_result_limit: int | None = None
     # Investigation-recipe producers to switch off (0.0.8 WP8 / RM-20).
     recipes_disabled: list[str] | None = None
+    # Settings restructure PR-7: the same switch, widened to every Lead producer,
+    # plus their per-producer tunables ({producer: {key: value}}).
+    cards_disabled: list[str] | None = None
+    card_settings: dict | None = None
     # Active local LLM model tag (maintainer Q10): "" / null clears the override.
     llm_model: str | None = None
     # Local-LLM behaviour (maintainer 2026-06-17): how long Ollama keeps the model
@@ -67,7 +71,76 @@ def get_settings() -> dict:
 def update_settings(update: SettingsUpdate) -> dict:
     """Apply a partial preferences update (only provided fields change)."""
     try:
-        save_settings(update.model_dump(exclude_unset=True))
+        saved = save_settings(update.model_dump(exclude_unset=True))
     except AppSettingsError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return _payload()
+    payload = _payload()
+    # Any value that had to be pulled back into a producer's safe range is
+    # REPORTED, never applied in silence (ruling 3, 2026-07-31). An empty list
+    # means nothing was adjusted -- the caller can rely on that distinction.
+    payload["clamped"] = list(getattr(saved, "last_clamp_notes", []) or [])
+    return payload
+
+
+@router.get("/cards")
+def cards_catalog() -> dict:
+    """Every Lead producer, grouped by family, with its tunables and their SAFE RANGES.
+
+    This is what the Settings -> Cards surface renders. Each tunable carries its
+    default, its ``lo``/``hi`` bounds, the plain-language ``impact`` of moving it
+    and -- where a bound exists to stop an underpowered claim rather than merely
+    to be sensible -- the ``floor_reason`` for it, so a limit is never presented
+    as an arbitrary restriction.
+
+    Read-only and local: no network, no scores, no ranking of producers.
+    """
+    from src.briefing.catalog import by_family, defaults_for, settings_for
+    from src.briefing.card import BUCKET_LABELS
+
+    s = load_settings()
+    off = set(s.cards_disabled or []) | set(s.recipes_disabled or [])
+    families = []
+    for family, specs in by_family():
+        if not specs:
+            continue
+        families.append({
+            "family": family,
+            "label": BUCKET_LABELS.get(family, family),
+            "producers": [
+                {
+                    "name": spec.name,
+                    "label": spec.label,
+                    "description": spec.description,
+                    "enabled": spec.name not in off,
+                    "tunables": [
+                        {
+                            "key": t.key,
+                            "label": t.label,
+                            "kind": t.kind,
+                            "unit": t.unit,
+                            "default": defaults_for(spec.name)[t.key],
+                            "value": settings_for(spec.name)[t.key],
+                            "lo": t.lo,
+                            "hi": t.hi,
+                            "impact": t.impact,
+                            "floor_reason": t.floor_reason,
+                        }
+                        for t in spec.tunables
+                    ],
+                }
+                for spec in specs
+            ],
+        })
+    return {
+        "families": families,
+        "method": (
+            "Every Lead producer registered in this app, with the thresholds it "
+            "already applied — now visible and adjustable. Turning one off stops it "
+            "producing Leads; it changes nothing about the articles themselves."
+        ),
+        "caveat": (
+            "Each range has a safe minimum and maximum. You can always make a Lead "
+            "stricter; the lower bounds exist so a Lead can never claim more than "
+            "the evidence behind it supports."
+        ),
+    }

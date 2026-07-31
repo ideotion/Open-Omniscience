@@ -1834,6 +1834,7 @@
       if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
       if (cat === "advanced") _advWire();             // Collection / Sources / Keywords, lazily per section
       if (cat === "general") loadShortcuts();         // the shortcuts panel moved into General (2026-07-31)
+      if (cat === "cards") loadCardCatalog();     // the Leads catalogue (PR-7): lazy, one loopback read
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
@@ -5260,10 +5261,6 @@
         const s = await api("/api/settings");
         $("set-limit").value = s.default_result_limit;
         DEFAULT_LIMIT = s.default_result_limit;
-        const disabled = new Set(s.recipes_disabled || []);
-        document.querySelectorAll(".recipe-toggle").forEach(cb => {
-          cb.checked = !disabled.has(cb.value);
-        });
         // The local "Customize" theme is authoritative; on first ever run, seed it
         // from the server preference so existing users keep their dark/light choice.
         if (!localStorage.getItem(UI_KEY)) {
@@ -5380,12 +5377,119 @@
       } catch (e) { toast(_failMsg("Save failed: {error}", e), "err"); }
     }
 
+    // -- Settings -> Cards: every Lead producer, by family (PR-7, rulings 1/2/3). --
+    //    Reads the catalog endpoint, which carries each tunable's SAFE RANGE, the
+    //    plain-language impact of moving it, and -- where a bound exists to stop an
+    //    underpowered claim -- the reason for that bound. Nothing here ranks or
+    //    scores a producer; these are the thresholds each already applied.
+    let _cardCat = null;
+    async function loadCardCatalog() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const host = $("cards-host"); if (!host) return;
+      try { _cardCat = await api("/api/settings/cards"); }
+      catch (e) {
+        host.innerHTML = `<div class="muted">${esc(t("Could not load the Leads catalogue."))}</div>`;
+        return;
+      }
+      renderCardCatalog();
+    }
+    function _cardTunableRow(prod, tn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const step = tn.kind === "float" ? "0.01" : "1";
+      const changed = Number(tn.value) !== Number(tn.default);
+      // The range is SHOWN, not just enforced: an operator should be able to read
+      // the bounds without discovering them by being corrected.
+      const range = `${tn.lo}–${tn.hi}${tn.unit ? " " + esc(tn.unit) : ""}`;
+      return `<div class="card-tune" data-prod="${esc(prod)}" data-key="${esc(tn.key)}">
+        <label class="sl" for="ct-${esc(prod)}-${esc(tn.key)}">${esc(tn.label)}</label>
+        <input id="ct-${esc(prod)}-${esc(tn.key)}" type="number" class="card-tune-in"
+               value="${esc(String(tn.value))}" min="${esc(String(tn.lo))}" max="${esc(String(tn.hi))}"
+               step="${step}" data-default="${esc(String(tn.default))}">
+        <span class="muted card-tune-range">${esc(t("safe range"))} ${range}</span>
+        <button class="ghost tiny card-tune-reset" ${changed ? "" : "disabled"}
+                onclick="cardResetTunable('${esc(prod)}','${esc(tn.key)}')"
+                title="${esc(t("Put this back to the value the app ships with."))}">${esc(t("Reset"))}</button>
+        <div class="hint card-tune-impact">${esc(tn.impact)}${
+          tn.floor_reason ? ` <span class="card-tune-floor">${esc(tn.floor_reason)}</span>` : ""}</div>
+      </div>`;
+    }
+    function renderCardCatalog() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const host = $("cards-host"); if (!host || !_cardCat) return;
+      host.innerHTML = (_cardCat.families || []).map(fam => {
+        const on = fam.producers.filter(p => p.enabled).length;
+        return `<details class="card-fam" data-fam="${esc(fam.family)}">
+          <summary><span class="card-fam-t">${esc(fam.label)}</span>
+            <span class="muted">— ${on}/${fam.producers.length} ${esc(t("on"))}</span></summary>
+          ${fam.producers.map(p => `<div class="card-prod" data-prod="${esc(p.name)}">
+            <label class="switch">
+              <input type="checkbox" class="card-on" value="${esc(p.name)}" ${p.enabled ? "checked" : ""}
+                     onchange="cardSetEnabled(this)"> <b>${esc(p.label)}</b></label>
+            <div class="hint card-prod-d">${esc(p.description)}</div>
+            ${p.tunables.length ? p.tunables.map(tn => _cardTunableRow(p.name, tn)).join("") : ""}
+          </div>`).join("")}
+        </details>`;
+      }).join("") + `<div class="row" style="margin-top:10px;gap:8px">
+        <button onclick="saveCardSettings()">${esc(t("Save Lead settings"))}</button></div>`;
+    }
+    function cardSetEnabled(cb) {
+      const fam = cb.closest(".card-fam");
+      if (!fam) return;
+      // keep the family's "N/M on" counter honest as you click, before any save
+      const boxes = fam.querySelectorAll(".card-on");
+      const on = Array.from(boxes).filter(b => b.checked).length;
+      const label = fam.querySelector("summary .muted");
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (label) label.textContent = `— ${on}/${boxes.length} ${t("on")}`;
+    }
+    function cardResetTunable(prod, key) {
+      const el = document.querySelector(`.card-tune[data-prod="${prod}"][data-key="${key}"] input`);
+      if (!el) return;
+      el.value = el.dataset.default;
+      const btn = el.parentElement.querySelector(".card-tune-reset");
+      if (btn) btn.disabled = true;
+    }
+    async function saveCardSettings() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const msg = $("cards-msg");
+      const disabled = Array.from(document.querySelectorAll("#cards-host .card-on"))
+        .filter(cb => !cb.checked).map(cb => cb.value);
+      const settings = {};
+      document.querySelectorAll("#cards-host .card-tune").forEach(row => {
+        const input = row.querySelector("input");
+        if (!input || input.value === "") return;
+        (settings[row.dataset.prod] = settings[row.dataset.prod] || {})[row.dataset.key] =
+          Number(input.value);
+      });
+      try {
+        const s = await api("/api/settings", {method: "PUT", body: JSON.stringify(
+          {cards_disabled: disabled, card_settings: settings})});
+        // A value the backend had to pull into range is REPORTED here, never applied
+        // in silence (ruling 3) -- the operator would otherwise believe a Lead runs
+        // at a setting it does not have.
+        const notes = s.clamped || [];
+        if (notes.length) {
+          msg.innerHTML = `<span class="note warn">${esc(t("Some values were adjusted to stay in their safe range:"))}</span>` +
+            notes.map(n => `<div class="hint">${esc(n.producer)} · ${esc(n.key)}${
+              n.given !== undefined ? ` ${esc(String(n.given))} → ${esc(String(n.used))}` : ""} — ${esc(n.reason || "")}</div>`).join("");
+        } else {
+          msg.innerHTML = `<span class="note ok">${esc(t("Lead settings saved."))}</span>`;
+        }
+        loadCardCatalog();   // re-read so the inputs show what is actually stored
+      } catch (e) {
+        msg.innerHTML = `<span class="note err">${esc(_failMsg("Save failed: {error}", e))}</span>`;
+      }
+    }
+
     async function saveSettings() {
       const body = {
         theme: $("set-theme").value,
         default_result_limit: Number($("set-limit").value),
-        recipes_disabled: Array.from(document.querySelectorAll(".recipe-toggle"))
-          .filter(cb => !cb.checked).map(cb => cb.value),
+        // NOT sent from here any more: Settings → Cards owns which Leads are on.
+        // Reading it off checkboxes that no longer exist would post an EMPTY list
+        // and silently wipe the operator's choices on every unrelated save — the
+        // same lossy-overwrite shape the theme comment below guards against. The
+        // backend applies only the fields it is sent (exclude_unset).
       };
       try {
         const s = await api("/api/settings", {method: "PUT", body: JSON.stringify(body)});
