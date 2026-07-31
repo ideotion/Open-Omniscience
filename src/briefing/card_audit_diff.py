@@ -414,14 +414,20 @@ def run_card_audit_diff_selftest() -> dict:
     _check("a metric only one side knows is reported as not-comparable",
            bool(zz) and zz[0]["classification"] == NOT_COMPARABLE, str(zz))
 
-    passed = sum(1 for c in cases if c["passed"])
+    # SHAPE CONTRACT: ``recursive_loop._selftest_passed`` reads a top-level ``passed``
+    # BOOL (or a ``summary.failed`` int) and reports None -- "shape not recognized",
+    # never a fabricated green -- for anything else. An earlier cut returned ``passed``
+    # as a COUNT, which is an int, so the loop honestly refused to call it green. Counts
+    # therefore live under ``*_count``, matching run_leads_selftest / run_skeleton_selftest.
+    passed = all(c["passed"] for c in cases)
     return {
         "schema": "oo-card-audit-diff-selftest-1",
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "cases": cases,
         "total": len(cases),
         "passed": passed,
-        "failed": len(cases) - passed,
+        "passed_count": sum(1 for c in cases if c["passed"]),
+        "failed_count": sum(1 for c in cases if not c["passed"]),
         "method": (
             "Synthetic before/after reports through the real projection and classifier. "
             "Proves the mechanism only — it says nothing about any real corpus."

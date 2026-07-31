@@ -190,7 +190,7 @@ def test_diff_latest_degrades_with_a_reason_when_there_is_nothing_to_compare(mon
 
 def test_selftest_passes_and_is_registered_in_the_recursive_loop():
     out = run_card_audit_diff_selftest()
-    assert out["failed"] == 0, [c for c in out["cases"] if not c["passed"]]
+    assert out["failed_count"] == 0, [c for c in out["cases"] if not c["passed"]]
     assert out["total"] >= 9
 
     from src.monitoring.recursive_loop import LOOP_SELFTESTS
@@ -199,3 +199,20 @@ def test_selftest_passes_and_is_registered_in_the_recursive_loop():
         mod == "src.briefing.card_audit_diff" and fn == "run_card_audit_diff_selftest"
         for _, mod, fn in LOOP_SELFTESTS
     ), "the differ's selftest must be registered so the loop cannot silently lapse"
+
+
+def test_selftest_payload_matches_the_loops_verdict_contract():
+    """The loop must be able to READ our verdict, not just import us.
+
+    ``recursive_loop._selftest_passed`` accepts a top-level ``passed`` BOOL or a
+    ``summary.failed`` int, and returns None — "shape not recognized", reported
+    honestly and never assumed green — for anything else. An earlier cut returned
+    ``passed`` as a COUNT (an int, not a bool), so the loop correctly refused to
+    call it green and the gate went red in CI. Registration alone is not enough;
+    the payload shape is part of the contract, so it is pinned here.
+    """
+    from src.monitoring.recursive_loop import _selftest_passed
+
+    out = run_card_audit_diff_selftest()
+    assert isinstance(out["passed"], bool), "top-level 'passed' must be a bool, not a count"
+    assert _selftest_passed(out) is True, "the loop could not read this selftest's verdict"
