@@ -529,9 +529,9 @@ def compute_server_args(
 ) -> dict:
     """Compute ``--max-model-len`` and ``--gpu-memory-utilization`` from detected
     VRAM (pure, testable). METHOD (disclosed, not asserted as exact): reserve
-    ``weight_footprint_gb`` for the model's own weights (a stated ESTIMATE -- the
-    default 5.0 GB matches a 4-bit-quantized Mistral-7B-class model, the RULED
-    default model, per A13); of the remainder, ``kv_cache_reserve_frac`` is kept
+    ``weight_footprint_gb`` for the model's own weights (a stated ESTIMATE -- see
+    the note below on why the default is 5.0); of the remainder,
+    ``kv_cache_reserve_frac`` is kept
     as headroom (activation memory / fragmentation), and ``gpu_memory_utilization``
     is set to use the rest. ``max_model_len`` scales with the remaining VRAM at a
     rough ~1 MB/token/layer-class budget (a conservative, DISCLOSED heuristic --
@@ -539,6 +539,17 @@ def compute_server_args(
 
     Returns ``{"max_model_len", "gpu_memory_utilization", "method", "caveat"}``.
     An explicit override for either field is honoured verbatim (no re-derivation).
+
+    ON THE 5.0 GB DEFAULT (corrected 2026-07-30): this used to be documented as
+    matching "a 4-bit-quantized Mistral-7B-class model, the RULED default model".
+    That description is stale -- ``DEFAULT_VLLM_MODEL`` is Ministral 3 **3B** served
+    in FP8 (~3.5 GB), because the 8B does not fit 8 GB of VRAM in any published vLLM
+    build. The NUMBER is deliberately left at 5.0 rather than lowered to match:
+    over-reserving costs context length, while under-reserving costs an OOM at
+    startup, and on a small card the second failure is much worse than the first.
+    So 5.0 is now an explicit conservative MARGIN over the real footprint, not a
+    match to it. An operator who wants the extra context sets
+    ``weight_footprint_gb`` (or ``max_model_len`` directly) and the override wins.
     """
     method = (
         f"reserve {weight_footprint_gb} GB for model weights, "
