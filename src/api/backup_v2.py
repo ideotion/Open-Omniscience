@@ -212,8 +212,14 @@ async def restore_preview(
 def _commit_sync(staged: StagedArtifact, *, allow_unverified: bool) -> dict:
     """The blocking body of restore_commit (full merge + atomic swap). Runs OFF the
     event loop for the same reason preview does (see _preview_sync)."""
+    from src.backup import runlog
+
+    # The single-shot REST commit. It wires no progress callbacks at all, so
+    # before this it was the LEAST observable import path in the app -- and it
+    # is the one a scripted or legacy restore takes.
     try:
-        return run_restore(staged, commit=True, allow_unverified=allow_unverified)
+        with runlog.run("import", label="rest-commit", path="/api/backup/v2/restore/commit"):
+            return run_restore(staged, commit=True, allow_unverified=allow_unverified)
     except MergeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except HTTPException:
@@ -310,19 +316,23 @@ def restore_legacy_path(
         raise HTTPException(status_code=400, detail=f"could not read {p}: {exc}") from exc
     staged = _stage_upload(data, passphrase or None)
     _apply_restore_selection(staged, include_newsletters=include_newsletters)
+    from src.backup import runlog
+
     try:
-        return run_restore(
-            staged,
-            commit=True,
-            allow_unverified=allow_unverified,
-            should_stop=should_stop,
-            # The import queue holds ONE exclusive window across the whole run, so a
-            # restore driven from it owns the machine: the whole-corpus snapshots may
-            # take the byte-copy fast path instead of re-encrypting the corpus row by
-            # row. Read live rather than passed in, so the plain endpoint wrapper (a
-            # user-facing request that must NOT stall the app) keeps the default.
-            exclusive=exclusive_window_open(),
-        )
+        with runlog.run("import", label=p.name, dest=str(p), legacy_single_file=True):
+            return run_restore(
+                staged,
+                commit=True,
+                allow_unverified=allow_unverified,
+                should_stop=should_stop,
+                # The import queue holds ONE exclusive window across the whole run, so
+                # a restore driven from it owns the machine: the whole-corpus snapshots
+                # may take the byte-copy fast path instead of re-encrypting the corpus
+                # row by row. Read live rather than passed in, so the plain endpoint
+                # wrapper (a user-facing request that must NOT stall the app) keeps the
+                # default.
+                exclusive=exclusive_window_open(),
+            )
     except MergeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except HTTPException:

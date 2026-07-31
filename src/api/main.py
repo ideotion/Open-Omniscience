@@ -301,6 +301,19 @@ async def lifespan(app: FastAPI):
     except Exception:  # noqa: BLE001 - forensics must never block startup
         logger.warning("could not stamp the session sentinel", exc_info=True)
 
+    # Import/export run journals that never reached run_end: marked here, BEFORE the
+    # lock check, because they need no database (only files under data_dir()) and
+    # because "what happened to last night's import?" is asked on a LOCKED store, by
+    # an operator who came back to a dead app. Same flight-recorder family as the
+    # session sentinel above -- and it answers the question the sentinel cannot: not
+    # "did the app die" but "what was it doing when it did".
+    try:
+        from src.backup.runlog import promote_incomplete_runs
+
+        promote_incomplete_runs()
+    except Exception:  # noqa: BLE001 - a forensic marker must never block startup
+        logger.debug("could not mark incomplete run journals", exc_info=True)
+
     state = app_lock_state()
     if state.startswith("unlocked"):
         run_deferred_startup()

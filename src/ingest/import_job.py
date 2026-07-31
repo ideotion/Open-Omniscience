@@ -204,6 +204,15 @@ class NewsletterImportManager:
             return self.status()
 
     def _run(self, files: list[Path], session_factory) -> None:
+        # A 20 GB folder of .eml is an import like any other, and its worker can
+        # be paused, resumed and killed like any other -- so it journals like any
+        # other. "Automated / default" means no path is special.
+        from src.backup import runlog
+
+        runlog.begin(
+            "newsletter-import", label=str(self._folder or ""), dest=str(self._folder or ""),
+            files=len(files), resumed_from=self._cursor,
+        )
         try:
             session = (session_factory or _default_session)()
             try:
@@ -326,13 +335,24 @@ class NewsletterImportManager:
                     self._save()
                     if self._state in ("done", "cancelled"):
                         self._clear_state()
+                    _outcome = "ok" if self._state == "done" else self._state
+                runlog.end(_outcome, tally=dict(self._tally), files_done=self._cursor)
             finally:
                 session.close()
         except Exception as exc:  # noqa: BLE001 - surface the failure, never crash the thread
+            import traceback
+
+            runlog.milestone(
+                "error", cls=type(exc).__name__, msg=str(exc)[:2000],
+                traceback="".join(traceback.format_exception(exc))[-8000:],
+            )
+            runlog.end("error", cls=type(exc).__name__)
             with self._lock:
                 self._state = "error"
                 self._error = str(exc)
                 self._save()
+        finally:
+            runlog.end("ended-without-a-recorded-outcome")
 
     def pause(self) -> None:
         self._stop.set()  # the worker stops between chunks; state -> paused (persisted)

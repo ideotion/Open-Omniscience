@@ -1239,6 +1239,52 @@ def search_timing(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
+def _run_journal_raw() -> dict:
+    from src.backup.runlog import raw_runs
+
+    return raw_runs()
+
+
+@router.get("/run-journal")
+def run_journal(download: bool = Query(False), limit: int = Query(20, ge=1, le=200)) -> JSONResponse:
+    """Import/export RUN JOURNALS — the crash-surviving record of what each run was
+    doing while it ran.
+
+    Field night 2026-07-31: a 686,896-article import sat on one progress line for
+    seven hours, and answering "stuck or slow?" took manual ``ps`` sampling. When it
+    was killed there was no report at all, because every number the import path
+    produces is written once, at the end, on the success path. This reads the sink
+    that fixes that: per-run milestones (stage begin/end, knobs, merge steps, resume
+    state, errors) plus a heartbeat carrying CPU-time deltas for the parent AND its
+    pool children, memory, swap, disk-free, WAL size and write-gate state.
+
+    Read-only; an install that has never imported returns an empty list, which is a
+    real answer and not an error. ``download=1`` returns a dated attachment."""
+    from src.backup.runlog import list_runs, summarise
+
+    runs = list_runs()[:limit]
+    detail: list[dict] = []
+    for r in runs:
+        try:
+            detail.append(summarise(r["run_id"]))
+        except Exception as exc:  # noqa: BLE001 - one unreadable journal never hides the rest
+            detail.append({"run_id": r.get("run_id"), "unreadable": f"{type(exc).__name__}"})
+    payload = {
+        "runs": runs,
+        "detail": detail,
+        "note": (
+            "A run with no run_end was killed, OR had its journal disabled mid-run "
+            "(e.g. a full disk). Those two are not distinguishable from the files alone, "
+            "so neither is asserted."
+        ),
+    }
+    headers = {}
+    if download:
+        fname = f"oo-run-journal-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(payload, headers=headers)
+
+
 @router.get("/search-timing-selftest")
 def search_timing_selftest(download: bool = Query(False)) -> JSONResponse:
     """§4: prove the search-timing MECHANISM on a deterministic injected clock — the per-phase
@@ -3016,6 +3062,18 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # §4 search-instrumentation: the per-search phase-timing aggregate (empty-honest until
         # instrument_search is wired into the search endpoint on the operator's rig).
         ("search-timing.json", lambda: search_timing(download=False)),
+        # The import/export RUN JOURNAL (2026-07-31). Rides the bundle rather than the
+        # backup archive on purpose: _build_backup_zip hashes members and THEN writes
+        # them, and an EXPORT's own journal is appended to between those two reads --
+        # over minutes, for a 17 GB set -- so every such backup would carry a member
+        # its own restore rejects as "sha256 mismatch (corrupted or altered)". The
+        # bundle is a read-at-one-moment snapshot, with no hash to contradict.
+        ("run-journal.json", lambda: run_journal(download=False)),
+        # ...and the raw lines behind it. The summary is the answer; this is the
+        # evidence, and a stall is a SHAPE across hundreds of beats (swap climbing
+        # while CPU flatlines; the gate held with waiters piling up) that no summary
+        # substitutes for. Bounded, with what was dropped stated.
+        ("run-journal-raw.json", lambda: _run_journal_raw()),
         # 2026-07-17 completeness fix (maintainer: "all diagnostics should comprise ALL
         # diagnostics"): the read-only reports + cheap deterministic selftests that had
         # accumulated OUTSIDE the bundle since the #645 membership pass. Deliberate
@@ -3201,6 +3259,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/recursive-loop": "recursive-loop.json",
     "/kpi": "kpi.json",
     "/search-timing": "search-timing.json",
+    "/run-journal": "run-journal.json",
     "/search-timing-selftest": "search-timing-selftest.json",
     "/lemma-preview": "lemma-preview.json",
     "/home-cards": "home-cards.json",

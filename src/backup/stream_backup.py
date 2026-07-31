@@ -875,6 +875,18 @@ def write_stream_backup(
                 progress_cb=progress_cb,
                 run_token=secrets.token_hex(3),
             )
+            # Export stage boundaries into the run journal. The export's only
+            # measurements today are wall_s and gate_held_s for the WHOLE run, both
+            # returned in memory on the success path -- so "the export seems fine"
+            # has never been checked against anything. durable=False inside the
+            # freeze window: those milestones fire while the process-wide write gate
+            # is held (see runlog._write).
+            def _ms(ev: str, name: str, **kw) -> None:
+                from src.backup import runlog
+
+                runlog.milestone(ev, name=name, durable=kw.pop("durable", True), **kw)
+
+            _ms("stage_begin", "export:collecting")
             st.phase = "collecting"
             st.progress()
             side = side_members if side_members is not None else _collect_side_members(tmp_dir)
@@ -914,21 +926,33 @@ def write_stream_backup(
                 dest, corpus_bytes, side_bytes, parity_fraction, reuse_possible=bool(pool)
             )
 
+            _ms("stage_end", "export:collecting")
             members_out: list[dict[str, Any]] = []
+            _ms("stage_begin", "export:side_members", n=len(side))
             st.phase = "members"
             for mf in side:
                 e = _emit_member(st, mf)
                 members_out.append(e)
 
+            _ms("stage_end", "export:side_members")
             st.phase = "corpus (writes paused)"
             st.progress()
+            # THE GATE WINDOW, split three ways. It is one `with src.freeze()`
+            # spanning the corpus member, the residual WAL member and _corpus_facts
+            # -- and _corpus_facts runs full table counts plus a hash chain, all
+            # while the process-wide write lock is held. Reported as one number,
+            # there is no way to tell which of the three the operator waited on.
+            _ms("stage_begin", "export:gate_window")
             gate_t0 = time.monotonic()
             wal_member: str | None = None
             with src.freeze() as wal_path:
+                _ms("stage_begin", "export:corpus_member", durable=False)
                 ce = _emit_member(st, MemberFile(src.member_name, "corpus", src.path))
                 ce["sqlcipher"] = src.encrypted
                 members_out.append(ce)
+                _ms("stage_end", "export:corpus_member", durable=False)
                 if wal_path is not None:
+                    _ms("stage_begin", "export:wal_member", durable=False)
                     we = _emit_member(
                         st, MemberFile(src.member_name + "-wal", "corpus-wal", wal_path)
                     )
@@ -940,9 +964,14 @@ def write_stream_backup(
                         "active); the residual WAL rides as a member and is folded "
                         "back in at restore"
                     )
+                    _ms("stage_end", "export:wal_member", durable=False)
+                _ms("stage_begin", "export:corpus_facts", durable=False)
                 stats, arev = _corpus_facts(src.path, key=src.facts_key)
+                _ms("stage_end", "export:corpus_facts", durable=False)
             gate_held_s = time.monotonic() - gate_t0
+            _ms("stage_end", "export:gate_window", seconds=round(gate_held_s, 3))
 
+            _ms("stage_begin", "export:finalizing")
             st.phase = "finalizing"
             st.progress()
             envelope = _build_envelope(members_out, src, stats, arev, notes)
@@ -984,6 +1013,7 @@ def write_stream_backup(
             from src.backup.parity import parity_available
 
             if parity_available():
+                _ms("stage_begin", "export:parity")
                 st.phase = "parity"
                 st.progress()
                 from src.backup.parity import write_parity
@@ -996,6 +1026,7 @@ def write_stream_backup(
                     manifest=vman,
                     write_manifest=False,
                 )
+                _ms("stage_end", "export:parity")
 
             # Sign LAST so the signature covers the parity block too, then swap
             # the canonical manifest atomically as the single commit point.
@@ -1003,6 +1034,7 @@ def write_stream_backup(
             vman["signature"] = _sign_manifest(vman)
             _write_json_atomic(dest / MANIFEST_NAME, vman)
             final = vman
+            _ms("stage_end", "export:finalizing")
             (dest / BUILDING_NAME).unlink(missing_ok=True)
             gc_removed = _gc_orphan_volumes(dest, final)
 

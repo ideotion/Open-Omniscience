@@ -1277,6 +1277,39 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     (stash `src/`, keep the test) and assert only the portable property — here "every imported
     article reaches the re-index", never `failed == 0`, which pins the environment rather than the
     behaviour.
+  - **A MEASUREMENT THAT NEVER TOUCHES DISK WHILE THE RUN IS IN FLIGHT CANNOT DIAGNOSE A RUN
+    THAT NEVER FINISHES — the gap is a SINK, not instrumentation (2026-07-31, the import/export
+    run journal):** the import path was already well instrumented and every number it produced
+    was correct — `StageTimings` accumulates in a call frame, `VolumeBackupManager._progress` is
+    a bare in-memory dict, `reindex_rates` is filled by one `stats.update()` *after* the article
+    loop exits, and `persist_import_report` is called from exactly one site on the success path.
+    So a 686,896-article import that sat on one progress line for seven hours and was then killed
+    left **no report at all**, and "stuck or slow?" took manual `ps` sampling over several rounds
+    (with the first verdict wrong). Before building more instruments, check whether the existing
+    ones ever reach durable storage DURING the operation; if they do not, the fix is a streaming
+    sink over what already exists, not new measurements. FOUR SPECIFICS worth keeping: (a) **a
+    healthy process pool makes the PARENT near-idle**, indistinguishable from the deadlocked
+    case — only the CHILDREN's cumulative CPU (`psutil.Process.cpu_times()` per child, a
+    measurement absent repo-wide until now; every existing reading was instantaneous
+    `cpu_percent`) separates them, so any "is it working?" signal over pooled work must sample
+    children. (b) **a progress-delta rule fabricates a stall on any phase that publishes no
+    counter** — `prepare_staged` is 54% of a large import and reports a phase and nothing else,
+    so `d_done == 0 ⇒ not moving` would print `moving:false` for ninety minutes of healthy work;
+    emit the verdict ONLY when the active phase owns a real counter and two samples both read
+    it, and name the counter keys the app ACTUALLY publishes (`reindex_done`/`merge_step` — there
+    is no generic `done`/`total` anywhere in the tree, and assuming one blinds every path
+    forever). (c) **the absence of a terminal marker IS the evidence, so never write one to mark
+    the journal handled** — a boot-time promotion that appends `run_end` makes every crashed run
+    read as finished from the first restart; use a distinct event. And do not call it a crash: a
+    journal muted mid-run by ENOSPC leaves the identical signature, and the two are not
+    distinguishable from the file. (d) **an aborted run still carries a `plan`** (it is computed
+    before the commit point), so a renderer that headlines it prints "**686,896 new articles**"
+    at the top of a run that committed nothing — branch on outcome FIRST, and surface outcome in
+    any listing, because a filename `kind` cannot carry it (`restore-partial-…` splits to kind
+    `restore`, identical to a committed one). SAFETY COROLLARY: the journal's own fork discipline
+    is load-bearing — `os.register_at_fork` plus a PID guard checked BEFORE the lock, because a
+    child blocking on an inherited lock with no owner alive to release it is precisely the
+    deadlock the journal exists to diagnose.
   - **A DEGRADE SENTINEL MUST NOT SHARE A KEY WITH A REAL MEASUREMENT (2026-07-29,
     `ai_diagnostics._safe`):** the bundle's per-section guard returned
     `{"available": False, "error": ...}` on a crashed probe — and `resolve_backend()`
