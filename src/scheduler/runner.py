@@ -581,7 +581,12 @@ def _process_source(source, *, session, fetcher, mode: str, crawl_cfg) -> tuple[
 
     try:
         if mode == "crawl":
-            report = crawl_source(session, source, fetcher=fetcher, config=crawl_cfg)
+            from src.stats.ingest import crawl_start_url_for
+
+            report = crawl_source(
+                session, source, fetcher=fetcher, config=crawl_cfg,
+                start_url=crawl_start_url_for(source),
+            )
             return report.tally, report.pages_fetched, 1
         if not source.rss_url:
             return {}, 0, 0
@@ -1200,7 +1205,12 @@ def _lane_step_crawl(session, fetcher, settings: SchedulerSettings) -> dict:
                     attempted += 1
                 sitemap_urls_ingested += attempted
             else:
-                report = crawl_source(session, source, fetcher=fetcher, config=cfg)
+                from src.stats.ingest import crawl_start_url_for
+
+                report = crawl_source(
+                    session, source, fetcher=fetcher, config=cfg,
+                    start_url=crawl_start_url_for(source),
+                )
                 pages_fetched += report.pages_fetched
             source.last_crawled_at = datetime.now(UTC)
             sources_crawled += 1

@@ -38,6 +38,13 @@ class StatAgency:
     country: str | None  # ISO-3166 alpha-2 for national agencies; None for IGOs
     region: str  # continent / "International"
     home_url: str  # official site (descriptive metadata; NOT fetched here)
+    # The agency's NEWS / press-release section, when one is known (maintainer ruling 9,
+    # 2026-07-31). home_url points at a dataset portal for most producers, and crawling a
+    # dataset portal yields PDFs and download pages, not articles -- so this is the entry
+    # point a crawl should actually use. It is NEVER guessed: a value here means someone
+    # fetched the page and confirmed it. Absent (None) is the honest default, and an agency
+    # without one is registered DISABLED rather than pointed at its dataset portal.
+    news_url: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -48,6 +55,7 @@ class StatAgency:
             "country": self.country,
             "region": self.region,
             "home_url": self.home_url,
+            "news_url": self.news_url,
             # No verdict field (maintainer ruling 2026-06-19 #50): present the producer
             # descriptively and let the user form their own opinion. The stanced nature
             # of an official figure is stated as a descriptive CAVEAT in the API response,

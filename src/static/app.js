@@ -1801,7 +1801,6 @@
       if (cat === "advanced") _advWire();             // Collection / Sources / Keywords, lazily per section
       if (cat === "general") loadShortcuts();         // the shortcuts panel moved into General (2026-07-31)
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
-      if (cat === "stats") { loadStatAgencies(); loadStatFigures(); loadStatSubs(); }  // directory + figures + tracked auto-refresh (Group N / #12)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
       if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
       // The newsletter/PDF import panels moved into Data & backup (2026-07-31). Both
@@ -1818,6 +1817,9 @@
     const _ADV_LOADERS = {
       collect:  () => { loadScheduler(); },
       sources:  () => { loadSrcFacets(); loadManagedSources(); loadCandidates(); loadQualifyBulk(); },
+      // The official-statistics producer DIRECTORY is source management, so it lives here;
+      // the FIGURES surface moved to Governments → Statistics (2026-07-31).
+      stats:    () => { loadStatAgencies(); },
       // loadKeywordFilter moved off loadSettings with its panel, so it loads here too.
       keywords: () => { loadKeywordExplorer(); loadFamilyCuration(); loadSupergroupCuration(); loadKeywordFilter(); },
     };
@@ -4074,11 +4076,15 @@
       else if (_govSubtabs) _govSubtabs.select("countries");
     }
     function showGovView(cat) {
-      ["countries", "map", "law"].forEach(v =>
+      ["countries", "map", "law", "statistics"].forEach(v =>
         { const el = $("gov-" + v); if (el) el.style.display = (v === cat) ? "" : "none"; });
       if (cat === "countries") loadGovCountries();
       else if (cat === "map") loadGovMap();
       else if (cat === "law") loadLaw();
+      // Official FIGURES (2026-07-31): vintages, revision anomalies, triangulation and the
+      // tracked auto-refresh list are DATA about governments, so they live here rather than
+      // in Settings (invariant #8). The producer directory stayed in Settings → Advanced.
+      else if (cat === "statistics") { loadStatFigures(); loadStatSubs(); }
     }
 
     // ---- Countries subtab ---- //
@@ -15389,7 +15395,9 @@
     }
 
     // -- Official statistics producers (Group N): the curated directory + the --- //
-    //    one-click "register as DISABLED sources" action.                         //
+    //    one-click "add producers to my sources" action. A producer with a known  //
+    //    news section registers ENABLED and is crawled from there; one without    //
+    //    registers disabled, because its home URL is a dataset portal (ruling 9). //
     //    Descriptive only: NO figures, NO score, NO verdict label (ruling #50 —   //
     //    a producer is a STANCED source, stated as a caveat; the user judges).    //
     //    home URLs open the LOCAL link-preview first (extLink, invariant #6/#6e). //
@@ -15431,7 +15439,7 @@
     async function ingestStatSources() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const msg = $("stat-ingest-msg"), btn = $("stat-ingest-btn");
-      if (!confirm(t("Register all official-statistics producers as DISABLED sources? They are added disabled and NOT scraped — enable any to start collecting."))) return;
+      if (!confirm(t("Add every official-statistics producer to your sources? Those with a known news section are enabled and collected; the rest stay disabled until that address is researched."))) return;
       if (btn) btn.disabled = true;
       if (msg) msg.textContent = t("Registering…");
       try {
@@ -15440,7 +15448,14 @@
         const d = await api("/api/stats/sources/ingest", { method: "POST" });
         const n = (x) => (x || 0).toLocaleString();
         if (msg) {
+          // The enabled / awaiting split is the point of the news_url field: it says
+          // exactly how many producers still need a researched news section before
+          // they can be collected. Shown whenever anything was created.
+          const split = d.created
+            ? ` · ${n(d.enabled)} ${esc(t("enabled"))} · ${n(d.awaiting_news_url)} ${esc(t("awaiting a news section URL"))}`
+            : "";
           msg.innerHTML = `<b>${n(d.created)}</b> ${esc(t("created"))} · ${n(d.skipped_existing)} ${esc(t("already present"))}`
+            + split
             + (d.skipped_no_domain ? ` · ${n(d.skipped_no_domain)} ${esc(t("skipped (no domain)"))}` : "")
             + (d.caveat ? `<div class="muted" style="margin-top:5px">${esc(d.caveat)}</div>` : "");
         }
