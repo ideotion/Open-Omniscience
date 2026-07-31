@@ -575,6 +575,7 @@
         <button class="active" data-tab="countries">Countries</button>
         <button data-tab="map">Map</button>
         <button data-tab="law">Law</button>
+        <button data-tab="statistics">Statistics</button>
       </nav>
 
       <!-- Countries: per-country indicators (GDP/population/life-expectancy/labour/
@@ -665,6 +666,60 @@
         <div style="overflow:auto"><table id="law-docs"></table></div>
       </section>
       </div><!-- /gov-law -->
+
+      <!-- Statistics (2026-07-31 Settings review): the official FIGURES surface moved out
+           of Settings. Fetching, vintages, revision anomalies and triangulation are DATA
+           about governments, not app plumbing (invariant #8); the producer DIRECTORY stayed
+           behind, in Settings → Advanced, because that is source management. -->
+      <div class="gov-view" id="gov-statistics" style="display:none">
+      <section class="panel">
+        <h2>Official figures</h2>
+        <p class="muted" style="margin-top:0">Fetch a published figure from a documented official machine endpoint (the World Bank API, or a Eurostat / SDMX-JSON dataset). Each value is stored with its full provenance trail and a first-class vintage — a re-fetch later is a new row, never an overwrite, so revisions are preserved as evidence. Producers are compared side by side, never averaged, and a cell mixing different units / seasonal adjustment / base years is flagged, not reconciled. No score is ever computed. <span class="warn">This is the one networked action here: the fetch egresses over your configured transport and is refused while airplane mode is on.</span></p>
+        <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
+          <label>Source<br><select id="statfig-source">
+            <option value="worldbank">World Bank</option>
+            <option value="eurostat">Eurostat (SDMX-JSON)</option>
+          </select></label>
+          <label>Indicator / dataset id<br><input id="statfig-series" placeholder="NY.GDP.MKTP.CD" size="22"></label>
+          <label>Country (World Bank)<br><input id="statfig-country" placeholder="FR or all" size="10"></label>
+          <button class="secondary" id="statfig-fetch" onclick="fetchStatFigure()">Fetch figures</button>
+        </div>
+        <div id="statfig-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
+        <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px">
+          <label>View stored figures — series id<br><input id="statfig-view-series" placeholder="NY.GDP.MKTP.CD" size="22"></label>
+          <label>Area (for the chart)<br><input id="statfig-view-area" placeholder="FR" size="8"></label>
+          <button class="secondary" onclick="loadStatFigures()">Show stored</button>
+          <button class="secondary" onclick="triangulateStatSeries()">Triangulate producers</button>
+          <button class="secondary" onclick="renderStatChart()" title="Plot the series over time. A new line segment starts at every unit / base-year / seasonal-adjustment change (never joined); a gap is a break, never interpolated.">Chart over time</button>
+        </div>
+        <div id="statfig-chart" style="margin-top:10px"></div>
+        <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px">
+          <label>Map producer (optional)<br><input id="statfig-map-agency" placeholder="worldbank" size="12"></label>
+          <label title="A level (a count or total like population or GDP) is shown as proportional symbols, never colour — colouring a level makes a big country look like 'more' just for being big. Tick this for a count/total; leave unticked for a rate / ratio / % / per-capita indicator."><input type="checkbox" id="statfig-map-level"> This is a level (count/total)</label>
+          <button class="secondary" onclick="renderStatMap()" title="Colour a world map by this indicator (series id above). Only areas sharing the same unit / base year / seasonal adjustment are coloured; an area on a different basis is shown as no-data, never recoloured onto one scale. A level is shown as proportional symbols, not colour.">Map by country</button>
+        </div>
+        <div id="statfig-map-meta" class="muted" style="margin-top:4px;font-size:12px"></div>
+        <div id="statfig-map" style="margin-top:6px"></div>
+        <div style="overflow:auto;margin-top:10px" id="statfig-table"></div>
+        <div style="overflow:auto;margin-top:10px" id="statfig-tri"></div>
+        <div style="margin-top:14px">
+          <div class="row" style="align-items:center;justify-content:space-between">
+            <h3 style="margin:0;font-size:12px">Revision anomalies</h3>
+            <button class="secondary" onclick="loadRevisionAnomalies()" title="Flag a stored figure whose newest vintage moved a past value unusually far for that series' own revision history — retrospective, no score.">Check revision anomalies</button>
+          </div>
+          <p class="hint" style="margin-top:2px">History must not be silently rewritten. This flags an official figure whose most recent vintage revised a past value by an amount unusually large for that series' own revision history — retrospective only (never a forecast), naming the shape (an outlier-sized revision), never the intent. Leave the series id above blank to scan all stored figures.</p>
+          <div id="statfig-revisions" style="overflow:auto;margin-top:8px"></div>
+        </div>
+        <div style="margin-top:14px">
+          <div class="row" style="align-items:center;justify-content:space-between">
+            <h3 style="margin:0;font-size:12px">Tracked for auto-refresh</h3>
+            <button class="secondary" onclick="refreshStatSubs()" title="Replay due fetches now (also runs in the background while you are online)">Refresh due now</button>
+          </div>
+          <p class="hint" style="margin-top:2px">Every figure you fetch is tracked and re-fetched on its interval while you are online, storing a new vintage each time (revisions are preserved, never overwritten). Disable or remove any you do not want.</p>
+          <div id="statfig-subs"></div>
+        </div>
+      </section>
+      </div>
     </div>
 
     <!-- ========================== INTEGRITY ========================= -->
@@ -1153,7 +1208,6 @@
         <button data-tab="general">General</button>
         <button data-tab="models">AI</button>
         <button data-tab="wikipedia">Wikipedia</button>
-        <button data-tab="stats">Statistics</button>
         <button data-tab="offlinemap">Offline map</button>
         <button data-tab="agenda">Agenda</button>
         <button data-tab="data">Data &amp; backup</button>
@@ -1478,72 +1532,6 @@
     </section>
     </div>
 
-    <div class="set-view" id="set-stats" style="display:none">
-    <section class="panel">
-      <h2>Official statistics producers</h2>
-      <p class="muted" style="margin-top:0">A curated directory of government and international statistical
-        agencies — deliberately global (BRICS, Africa and smaller economies alongside the usual Western producers
-        and IGOs). Every producer here is a stanced source: an official figure carries its producing
-        state's interests — this directory shows WHO publishes so you can judge for yourself. We attach no
-        credibility verdict and no score. No figures are fetched and nothing leaves your machine.</p>
-      <p class="hint" id="stat-coverage" style="margin-top:0"></p>
-      <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
-        <button class="secondary" id="stat-ingest-btn" onclick="ingestStatSources()">Register as sources</button>
-        <div class="hint" style="align-self:center">Adds every producer to your catalogue as a <b>disabled</b>
-          source — registered, not scraped (enable any to start collecting; idempotent, safe to repeat). This is a
-          local database change, not a network action.</div>
-      </div>
-      <div id="stat-ingest-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
-      <div style="overflow:auto;margin-top:10px" id="stat-agencies"><div class="muted">Loading…</div></div>
-    </section>
-    <section class="panel">
-      <h2>Official figures</h2>
-      <p class="muted" style="margin-top:0">Fetch a published figure from a documented official machine endpoint (the World Bank API, or a Eurostat / SDMX-JSON dataset). Each value is stored with its full provenance trail and a first-class vintage — a re-fetch later is a new row, never an overwrite, so revisions are preserved as evidence. Producers are compared side by side, never averaged, and a cell mixing different units / seasonal adjustment / base years is flagged, not reconciled. No score is ever computed. <span class="warn">This is the one networked action here: the fetch egresses over your configured transport and is refused while airplane mode is on.</span></p>
-      <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap">
-        <label>Source<br><select id="statfig-source">
-          <option value="worldbank">World Bank</option>
-          <option value="eurostat">Eurostat (SDMX-JSON)</option>
-        </select></label>
-        <label>Indicator / dataset id<br><input id="statfig-series" placeholder="NY.GDP.MKTP.CD" size="22"></label>
-        <label>Country (World Bank)<br><input id="statfig-country" placeholder="FR or all" size="10"></label>
-        <button class="secondary" id="statfig-fetch" onclick="fetchStatFigure()">Fetch figures</button>
-      </div>
-      <div id="statfig-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
-      <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px">
-        <label>View stored figures — series id<br><input id="statfig-view-series" placeholder="NY.GDP.MKTP.CD" size="22"></label>
-        <label>Area (for the chart)<br><input id="statfig-view-area" placeholder="FR" size="8"></label>
-        <button class="secondary" onclick="loadStatFigures()">Show stored</button>
-        <button class="secondary" onclick="triangulateStatSeries()">Triangulate producers</button>
-        <button class="secondary" onclick="renderStatChart()" title="Plot the series over time. A new line segment starts at every unit / base-year / seasonal-adjustment change (never joined); a gap is a break, never interpolated.">Chart over time</button>
-      </div>
-      <div id="statfig-chart" style="margin-top:10px"></div>
-      <div class="row" style="gap:8px;align-items:flex-end;flex-wrap:wrap;margin-top:12px">
-        <label>Map producer (optional)<br><input id="statfig-map-agency" placeholder="worldbank" size="12"></label>
-        <label title="A level (a count or total like population or GDP) is shown as proportional symbols, never colour — colouring a level makes a big country look like 'more' just for being big. Tick this for a count/total; leave unticked for a rate / ratio / % / per-capita indicator."><input type="checkbox" id="statfig-map-level"> This is a level (count/total)</label>
-        <button class="secondary" onclick="renderStatMap()" title="Colour a world map by this indicator (series id above). Only areas sharing the same unit / base year / seasonal adjustment are coloured; an area on a different basis is shown as no-data, never recoloured onto one scale. A level is shown as proportional symbols, not colour.">Map by country</button>
-      </div>
-      <div id="statfig-map-meta" class="muted" style="margin-top:4px;font-size:12px"></div>
-      <div id="statfig-map" style="margin-top:6px"></div>
-      <div style="overflow:auto;margin-top:10px" id="statfig-table"></div>
-      <div style="overflow:auto;margin-top:10px" id="statfig-tri"></div>
-      <div style="margin-top:14px">
-        <div class="row" style="align-items:center;justify-content:space-between">
-          <h3 style="margin:0;font-size:12px">Revision anomalies</h3>
-          <button class="secondary" onclick="loadRevisionAnomalies()" title="Flag a stored figure whose newest vintage moved a past value unusually far for that series' own revision history — retrospective, no score.">Check revision anomalies</button>
-        </div>
-        <p class="hint" style="margin-top:2px">History must not be silently rewritten. This flags an official figure whose most recent vintage revised a past value by an amount unusually large for that series' own revision history — retrospective only (never a forecast), naming the shape (an outlier-sized revision), never the intent. Leave the series id above blank to scan all stored figures.</p>
-        <div id="statfig-revisions" style="overflow:auto;margin-top:8px"></div>
-      </div>
-      <div style="margin-top:14px">
-        <div class="row" style="align-items:center;justify-content:space-between">
-          <h3 style="margin:0;font-size:12px">Tracked for auto-refresh</h3>
-          <button class="secondary" onclick="refreshStatSubs()" title="Replay due fetches now (also runs in the background while you are online)">Refresh due now</button>
-        </div>
-        <p class="hint" style="margin-top:2px">Every figure you fetch is tracked and re-fetched on its interval while you are online, storing a new vintage each time (revisions are preserved, never overwritten). Disable or remove any you do not want.</p>
-        <div id="statfig-subs"></div>
-      </div>
-    </section>
-    </div>
 
     <div class="set-view" id="set-offlinemap" style="display:none">
     <section class="panel">
@@ -2094,6 +2082,29 @@
       <input type="file" id="imp-file" accept=".csv,text/csv">
       <button onclick="importSources()">Import CSV</button>
       <div id="imp-result" class="hint"></div>
+    </section>
+    </details>
+
+    <details class="adv-sec" data-adv="stats">
+      <summary><span class="adv-sec-t">Statistics producers</span> <span class="muted">— the official-statistics source directory</span></summary>
+    <section class="panel">
+      <h2>Official statistics producers</h2>
+      <p class="muted" style="margin-top:0">A curated directory of government and international statistical
+        agencies — deliberately global (BRICS, Africa and smaller economies alongside the usual Western producers
+        and IGOs). Every producer here is a stanced source: an official figure carries its producing
+        state's interests — this directory shows WHO publishes so you can judge for yourself. We attach no
+        credibility verdict and no score. No figures are fetched and nothing leaves your machine.</p>
+      <p class="hint" id="stat-coverage" style="margin-top:0"></p>
+      <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+        <button class="secondary" id="stat-ingest-btn" onclick="ingestStatSources()">Add producers to my sources</button>
+        <div class="hint" style="align-self:center">Adds every producer above to your source catalogue. A producer
+          with a known news section is added ENABLED, so collection picks it up; one without is added disabled,
+          because its site is a dataset portal and crawling that would collect download pages rather than
+          articles. Idempotent — safe to repeat, and it never modifies a source you already have. This is a local
+          database change, not a network action.</div>
+      </div>
+      <div id="stat-ingest-msg" class="hint" role="status" aria-live="polite" style="margin-top:8px"></div>
+      <div style="overflow:auto;margin-top:10px" id="stat-agencies"><div class="muted">Loading…</div></div>
     </section>
     </details>
 

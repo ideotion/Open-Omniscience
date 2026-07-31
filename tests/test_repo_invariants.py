@@ -2543,18 +2543,21 @@ def test_ui_invariants():
     )
     # the pull path is gated by the ONE consent popup (clearnet egress via Ollama)
     assert "ensureOnline(" in html, "pulling a model must pass ensureOnline (invariant #14)"
-    # 29. Official-statistics producers (Group N) Settings subtab: a descriptive
-    #     directory over /api/stats/agencies + a one-click "register as DISABLED
-    #     sources" action over /api/stats/sources/ingest, living in a Settings subtab.
-    #     The directory is DESCRIPTIVE only (no figures, no score, NO "controversial"
-    #     verdict label — ruling #50: a producer is a stanced source stated as a
-    #     caveat; the user judges). Outbound home URLs MUST go through extLink so they
-    #     open the LOCAL preview first (invariant #6/#6e — no bare external <a href>).
-    assert 'data-tab="stats"' in html and 'id="set-stats"' in html, (
-        "the Statistics Settings subtab button + panel must exist (Group N frontend)"
+    # 29. Official-statistics producers (Group N): a descriptive directory over
+    #     /api/stats/agencies + a one-click register action over
+    #     /api/stats/sources/ingest. The directory is DESCRIPTIVE only (no figures, no
+    #     score, NO "controversial" verdict label — ruling #50: a producer is a stanced
+    #     source stated as a caveat; the user judges). Outbound home URLs MUST go through
+    #     extLink so they open the LOCAL preview first (invariant #6/#6e).
+    #     2026-07-31 (Settings review, ruling 9): the Statistics subtab was SPLIT — the
+    #     producer DIRECTORY is source management, so it became a folded Advanced section;
+    #     the FIGURES surface is data about governments and moved to Governments →
+    #     Statistics (29b below). Both halves are still pinned, at their new addresses.
+    assert 'data-adv="stats"' in html, (
+        "the producer directory must be a section of Settings → Advanced"
     )
-    assert "function loadStatAgencies(" in html and 'cat === "stats"' in html, (
-        "loadStatAgencies() must exist and be lazy-loaded from showSetCat()"
+    assert "function loadStatAgencies(" in html and "stats:    () => { loadStatAgencies(); }" in html, (
+        "loadStatAgencies() must exist and load when the Advanced section is expanded"
     )
     assert "/api/stats/agencies" in html and "/api/stats/sources/ingest" in html, (
         "the Statistics view must read the agency directory + the ingest endpoint"
@@ -2565,15 +2568,22 @@ def test_ui_invariants():
         "the agencies render must use extLink() for home_url (invariant #6/#6e — "
         "outbound links open the local preview, never a bare external <a href>)"
     )
-    # 29b. Official-statistics FIGURES UI (Group N figure layer): the Statistics subtab
-    #      also carries a consented fetch + the stored-figures table + triangulation. The
-    #      fetch is a network action -> it MUST pass ensureOnline (invariant #14); it reads
-    #      the figure endpoints; triangulation is shown side by side. (Browser-unverified:
-    #      this static guard pins the wiring so it cannot silently regress — fork-3.)
+    # 29b. Official-statistics FIGURES UI (Group N figure layer): a consented fetch + the
+    #      stored-figures table + triangulation. The fetch is a network action -> it MUST
+    #      pass ensureOnline (invariant #14); it reads the figure endpoints; triangulation
+    #      is shown side by side. (Browser-unverified static guard — fork-3.)
+    #      Lives in Governments → Statistics since 2026-07-31.
     for fn in ("function fetchStatFigure(", "function loadStatFigures(", "function triangulateStatSeries("):
         assert fn in html, f"the figures UI needs {fn}"
-    assert 'id="set-stats"' in html and 'id="statfig-fetch"' in html and 'id="statfig-table"' in html, (
-        "the figures panel (fetch button + table) must exist in the Statistics subtab"
+    assert 'id="gov-statistics"' in html and 'data-tab="statistics"' in html, (
+        "the figures surface must be a Governments subtab (panel + nav button)"
+    )
+    gov_stats = html.split('id="gov-statistics"', 1)[1].split('<div class="tab-page"', 1)[0]
+    assert 'id="statfig-fetch"' in gov_stats and 'id="statfig-table"' in gov_stats, (
+        "the figures panel (fetch button + table) must live in the Governments Statistics view"
+    )
+    assert 'else if (cat === "statistics") { loadStatFigures(); loadStatSubs(); }' in html, (
+        "showGovView must load the figures + tracked-refresh panels for its Statistics view"
     )
     assert "/api/stats/figures/fetch" in html and "/api/stats/triangulate" in html, (
         "the figures UI must call the fetch + triangulate endpoints"

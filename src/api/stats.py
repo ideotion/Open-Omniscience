@@ -49,14 +49,17 @@ def stat_agencies() -> dict:
 
 @router.post("/sources/ingest")
 def ingest_stat_sources() -> dict:
-    """Register the curated statistical producers as DISABLED sources.
+    """Register the curated statistical producers as sources.
 
     Each agency is added to the source catalog as a ``source_type="statistics"``
     Source, carrying the ``official-statistics`` + region tags (NO "controversial"
     verdict tag — ruling #50: an official figure is a STANCED source, stated as a
-    caveat, but the user judges). Rows are created DISABLED — registered, NOT
-    scraped: official machine endpoints (SDMX / APIs)
-    are preferred over scraping, wired up in a later slice.
+    caveat, but the user judges). A producer whose directory entry carries a
+    researched ``news_url`` is created ENABLED and crawled from there; one without is
+    created disabled, since its ``home_url`` is a dataset portal and crawling it would
+    collect download pages (maintainer ruling 9, 2026-07-31). The tally reports the
+    split. Official machine endpoints (SDMX / APIs) remain the path to the FIGURES —
+    enabling a producer collects its written coverage, not its datasets.
 
     Additive and IDEMPOTENT — a domain already in the catalog is left untouched, so
     this is safe to call repeatedly; an operator's curation is never clobbered. NO
@@ -404,7 +407,7 @@ def registered_sources(
     region: str | None = Query(None, description="region-slug tag filter, e.g. africa"),
     enabled: bool | None = Query(None),
 ) -> dict:
-    """The registered official-statistics SOURCE rows (ingested as DISABLED; no verdict tag).
+    """The registered official-statistics SOURCE rows (no verdict tag).
 
     A filterable directory of what has been registered as a source via
     ``/sources/ingest`` — descriptive provenance only (name · domain · country ·
@@ -441,7 +444,8 @@ def registered_sources(
                 for r in rows
             ],
             "caveat": (
-                "Registered producers (disabled by default) — a STANCED-source "
-                "directory, never a credibility ranking. No score is stored or shown."
+                "Registered producers — a STANCED-source directory, never a "
+                "credibility ranking. Each row's own 'enabled' field says whether it "
+                "is collected. No score is stored or shown."
             ),
         }
