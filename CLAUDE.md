@@ -1322,6 +1322,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     hiding place for the bug it was built to survive) at the schema level rather than the
     resolver level, and the test that pins it must assert BOTH directions (the happy path still
     publishes a real value; the sad path publishes the sentinel and NOT the measurement key).
+  - **AN EXPLICIT COLUMN ALLOWLIST SILENTLY DROPS EVERY COLUMN ADDED AFTER IT — AND A
+    `server_default` MAKES THE LOSS INVISIBLE (2026-07-24, source qualification through the
+    restore-merge):** `_merge_sources` copies a hardcoded 14-column list, so the three
+    qualification-stamp columns added in 2026-07 were never carried. The dangerous part is not
+    the omission, it is that `Source.status` has `server_default='unqualified'`: the merged row
+    arrives POPULATED with a plausible, legal value, so nothing looks missing — no NULL, no
+    error, no empty column in a spot check. A dropped column with a NOT NULL default is
+    indistinguishable from genuine data at every layer above the INSERT. GENERAL FORM: when you
+    add a column to a model, grep for explicit column lists that copy that table (merge/export/
+    ETL/`INSERT ... SELECT`), because they fail OPEN and silently; and when auditing one, compare
+    it against the model rather than reading it for plausibility — a 14-column list looks
+    complete on its own. COROLLARY, the same bug's second half: a table in NEITHER the
+    handled-registry NOR the deliberately-ignored registry lands in a
+    "reported-but-not-merged" middle state that READS as intentional in the restore report —
+    `source_qualification_attempts` was counted on every restore and copied on none. Any
+    handled/ignored pair needs a completeness check that a new table must join one set or the
+    other, or the gap presents itself as a feature. DIRECTIONAL LESSON worth more than either:
+    the loss inverted a SAFETY property — a `disqualified` source arrived as `unqualified`,
+    which is byte-identical to never-judged, so the merge laundered known-bad sources back into
+    the trial queue with their backoff ladder reset. When a dropped field encodes a NEGATIVE
+    verdict, ask what the default means, not just what was lost; and note that this direction
+    was found only by the adversarial pass — both initial readers correctly identified the
+    dropped columns and neither noticed the inversion.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD REMARKS 2026-07-29 — BACKUP-IMPORT SPEED + THE MULTI-IMPORT UI (maintainer; 20 rulings
@@ -6830,7 +6853,24 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   + citations tally/drills + corpus filters · the nav-soup prose gate · the post-import
   delta screen · the LLM triage/tag runs with the Claude-verification chain — each build
   verified per the house gates AND field-confirmed, not merely merged (merged ≠ green ≠
-  verified); "double-checked" INCLUDES docs↔app reciprocity — USER_MANUAL chapters for
+  verified). **ROW-1 AMENDMENT 2026-07-24 (a concrete instance of this row's own
+  "merged ≠ verified" warning, found by a field report — the maintainer runs 8 parallel
+  instances for download throughput and merges their backups into one corpus): the
+  qualification lifecycle shipped correct in isolation but did NOT survive a restore.**
+  `_merge_sources`' explicit column allowlist omitted the three stamp columns, and
+  `source_qualification_attempts` had no merge handler at all — so every merged-in source
+  landed `unqualified` (the column's own `server_default`, hence invisible: a plausible
+  legal value, never a NULL or an error) and its whole attempt history was dropped.
+  Because `select_unqualified` matches exactly `status=='unqualified'`, a DISQUALIFIED
+  source arrived indistinguishable from never-judged, so a merge LAUNDERED known-bad
+  sources back into the trial queue with the backoff ladder reset. FIXED same day (see the
+  shipped.csv row); the export side was verified already complete and unchanged. THE ROW-1
+  IMPLICATION worth keeping: "the qualification lifecycle is implemented" was true and
+  still left this hole, because the lifecycle was never exercised ACROSS a
+  backup/restore — so this row's field-confirmation clause should be read as covering the
+  lifecycle's interaction with import/export, not only its behaviour on one instance.
+  Row 4 (the full import that re-checks all sources) is the natural place that gets
+  demonstrated at scale. "double-checked" INCLUDES docs↔app reciprocity — USER_MANUAL chapters for
   qualification / source management / the post-import screen (**SHIPPED 2026-07-25,
   transversal audit 09 fix-forward** — see §3.3/§3.9 of `docs/USER_MANUAL.md`; the standing
   reciprocity rule applies to everything else this row builds too). **RECONCILED
