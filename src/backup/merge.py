@@ -189,10 +189,20 @@ class DomainResult:
 # --------------------------------------------------------------------------- #
 #  Stage preparation (schema floor + upgrade on the staged copy)
 # --------------------------------------------------------------------------- #
-def prepare_staged_corpus(staged: StagedArtifact, *, allow_unverified: bool = False) -> str:
+def prepare_staged_corpus(
+    staged: StagedArtifact, *, allow_unverified: bool = False, timings: object = None
+) -> str:
     """Validate + upgrade the staged corpus to the running schema. Never touches
     the live DB; the staged copy is disposable. Returns the artifact's original
-    schema revision."""
+    schema revision.
+
+    ``timings`` (optional): a StageTimings-like recorder. When supplied, the two
+    genuinely expensive halves are recorded SEPARATELY -- ``prepare_staged:validate``
+    (a quick_check that reads every page of a multi-GB file) and
+    ``prepare_staged:upgrade`` (the alembic chain, which on an artifact several
+    revisions behind runs real migrations over the whole corpus). Optional so every
+    existing caller and test is untouched, and so a timing failure can never break a
+    restore."""
     from src.backup.sqlite_backup import BackupError, validate_sqlite_file
     from src.database.migrate import file_revision, known_revisions, upgrade_database_file
 
@@ -211,8 +221,35 @@ def prepare_staged_corpus(staged: StagedArtifact, *, allow_unverified: bool = Fa
             "allow_unverified to merge it anyway (its origin cannot be proven)"
         )
 
+    from contextlib import contextmanager
+
+    # RECORD, never STAGE. timings.stage() also fires stage_progress_cb, which
+    # drives the user-visible phase counter -- and that counter's honest
+    # denominator is restore_stage_plan(). A sub-stage is not a phase: pinging one
+    # would make volume_job._phase_of return 0 ("not in this restore's plan", its
+    # deliberate honest-unknown value) for work that is really part of
+    # prepare_staged, so the UI would flash an unknown phase mid-import. The
+    # stage_a:* sub-timings a few lines up are recorded rather than staged for the
+    # same reason; this follows them.
+    _record = getattr(timings, "record", None)
+
+    @contextmanager
+    def _sub(name: str):
+        """Time a sub-stage when a recorder was supplied, else do nothing."""
+        if _record is None:
+            yield
+            return
+        _t0 = time.monotonic()
+        try:
+            yield
+        finally:
+            # In a finally: time spent before a failure is real time the operator
+            # waited, and a validate that raises is exactly when knowing that helps.
+            _record(name, time.monotonic() - _t0)
+
     try:
-        validate_sqlite_file(staged.corpus_path)
+        with _sub("prepare_staged:validate"):
+            validate_sqlite_file(staged.corpus_path)
     except BackupError as exc:
         raise MergeError(str(exc)) from exc
 
@@ -227,7 +264,8 @@ def prepare_staged_corpus(staged: StagedArtifact, *, allow_unverified: bool = Fa
             f"artifact schema revision {original_rev!r} is unknown to this build "
             "(made by a NEWER app or a foreign fork) -- upgrade the app, then restore"
         )
-    upgrade_database_file(staged.corpus_path)  # no-op when already at head
+    with _sub("prepare_staged:upgrade"):
+        upgrade_database_file(staged.corpus_path)  # no-op when already at head
     return original_rev
 
 
@@ -2523,7 +2561,16 @@ def run_restore(
 
     _abort_point("prepare_staged")
     with timings.stage("prepare_staged"):
-        original_rev = prepare_staged_corpus(staged, allow_unverified=allow_unverified)
+        # SPLIT, because the aggregate cannot be acted on. On the field's largest
+        # import this ONE number was 5773 s -- 54% of the entire run, more than the
+        # merge and verification combined -- and it covers two unrelated things: a
+        # PRAGMA quick_check that reads every page of a multi-GB file, and an
+        # alembic upgrade chain over a 700k-article corpus (report #15's artifact
+        # was several revisions behind). Optimising either without knowing which is
+        # the guessing that already cost a night on this import.
+        original_rev = prepare_staged_corpus(
+            staged, allow_unverified=allow_unverified, timings=timings
+        )
 
     working = staged.staging_dir / "working.db"
     if working.exists():
