@@ -494,6 +494,27 @@
       border-radius:8px; margin-bottom:7px; background:var(--panel2); }
     .ag-when { flex:0 0 86px; }
     .ag-body { flex:1; min-width:0; }
+    /* Settings → Cards (PR-7): the Leads catalogue. Families fold; a producer is a
+       switch + its description + (where wired) its tunables with their stated range. */
+    .card-fam { border:1px solid var(--border); border-radius:var(--radius-sm); margin:8px 0;
+      background:var(--panel2); }
+    .card-fam > summary { cursor:pointer; padding:8px 12px; font-weight:600; list-style:none; }
+    .card-fam > summary::-webkit-details-marker { display:none; }
+    .card-fam > summary::before { content:"\25B8"; display:inline-block; width:1em;
+      transition:transform .15s ease; color:var(--muted); }
+    .card-fam[open] > summary::before { transform:rotate(90deg); }
+    .card-prod { padding:10px 12px 12px; border-top:1px solid var(--border-soft); }
+    .card-prod-d { margin:2px 0 0 26px; }
+    .card-tune { display:grid; grid-template-columns:minmax(140px,auto) 92px 1fr auto;
+      gap:8px; align-items:center; margin:8px 0 0 26px; }
+    .card-tune-in { width:88px; }
+    .card-tune-range { font-size:11px; white-space:nowrap; }
+    .card-tune-impact { grid-column:1 / -1; margin:0; }
+    /* The reason a floor exists is shown WITH the control, never hidden behind a
+       hover: a limit whose rationale is invisible reads as an arbitrary restriction. */
+    .card-tune-floor { color:var(--caveat); }
+    @media (max-width:700px) { .card-tune { grid-template-columns:1fr auto; }
+      .card-tune-range { grid-column:1 / -1; } }
     .ag-cals { display:flex; flex-wrap:wrap; gap:6px; margin-top:5px; }
     /* Month grid (the agenda's default view): 7 columns, 4-6 week rows. */
     .ag-grid { display:grid; grid-template-columns:repeat(7,1fr); gap:4px; }

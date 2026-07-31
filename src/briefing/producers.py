@@ -737,9 +737,9 @@ def diet_self_audit(session) -> list[Card]:
 # --------------------------------------------------------------------------- #
 #  Echo chamber — one story carried across N coordinated sources (§6/§1)
 # --------------------------------------------------------------------------- #
-_MAX_ECHO = 3
+# NOTE (PR-7): echo_chamber's own thresholds moved to src/briefing/catalog.py so
+# the operator can tune them; _ECHO_DAYS stays because lonely_signal shares it.
 _ECHO_DAYS = 14
-_ECHO_MIN_SOURCES = 3
 
 
 def _articles_by_id(session, ids: list[str]) -> dict[str, dict]:
@@ -769,12 +769,19 @@ def echo_chamber(session) -> list[Card]:
     from src.integrity.actors import corpus_actors
     from src.integrity.collapse import is_applied
 
-    result = corpus_actors(session, days=_ECHO_DAYS)
+    # PR-7: the thresholds are the operator's now (Settings -> Cards -> Overtold).
+    # settings_for() returns the shipped defaults when nothing is stored, so the
+    # untouched behaviour is byte-identical to the old module constants.
+    from src.briefing.catalog import settings_for
+
+    cfg = settings_for("echo_chamber")
+    min_sources, max_cards = cfg["min_sources"], cfg["max_cards"]
+    result = corpus_actors(session, days=cfg["days"])
     cards: list[Card] = []
     for actor in result.actors:
-        if len(actor.sources) < _ECHO_MIN_SOURCES:
+        if len(actor.sources) < min_sources:
             continue
-        if len(cards) >= _MAX_ECHO:
+        if len(cards) >= max_cards:
             break
         sig = actor.signature
         applied = bool(sig and is_applied(sig))
@@ -798,7 +805,7 @@ def echo_chamber(session) -> list[Card]:
         math_rows = [
             ("Sources that published near-identical text", str(n)),
             ("Stories they shared", str(actor.shared_stories)),
-            ("Minimum sources for this Lead", f"≥ {_ECHO_MIN_SOURCES} ✓"),
+            ("Minimum sources for this Lead", f"≥ {min_sources} ✓"),
             (
                 "Hours between the first and the median copy",
                 str(actor.median_span_hours) if actor.median_span_hours is not None else "—",
@@ -1901,7 +1908,6 @@ def watch_matches(session) -> list[Card]:
     return cards
 
 
-_MAX_LAUNDERING = 4
 
 
 def source_laundering(session) -> list[Card]:
@@ -1917,13 +1923,18 @@ def source_laundering(session) -> list[Card]:
     try:
         from src.analytics.laundering import LAUNDERING_CAVEAT, find_source_laundering
 
-        found = find_source_laundering(session)
+        from src.briefing.catalog import settings_for
+
+        cfg = settings_for("source_laundering")
+        found = find_source_laundering(
+            session, min_sources=cfg["min_sources"], min_articles=cfg["min_articles"]
+        )
     except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
         _LOG.warning("source-laundering scan failed", exc_info=True)
         return []
 
     cards: list[Card] = []
-    for c in found.get("clusters", [])[:_MAX_LAUNDERING]:
+    for c in found.get("clusters", [])[: cfg["max_cards"]]:
         dom = c["origin_domain"] or c["origin"]
         names = ", ".join(c["source_names"][:4]) + ("…" if len(c["source_names"]) > 4 else "")
         cards.append(
@@ -2191,7 +2202,6 @@ def manufactured_emergence(session) -> list[Card]:
     return cards
 
 
-_MAX_FLOOD = 4
 
 
 def flooded_topic(session) -> list[Card]:
@@ -2205,13 +2215,23 @@ def flooded_topic(session) -> list[Card]:
     try:
         from src.analytics.concentration import FLOOD_CAVEAT, find_flooded_topics
 
-        found = find_flooded_topics(session)
+        from src.briefing.catalog import settings_for
+
+        cfg = settings_for("flooded_topic")
+        found = find_flooded_topics(
+            session,
+            recent_days=cfg["recent_days"],
+            baseline_days=cfg["baseline_days"],
+            min_recent_articles=cfg["min_recent_articles"],
+            min_share=cfg["min_share"],
+            z_min=cfg["z_min"],
+        )
     except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
         _LOG.warning("flood scan failed", exc_info=True)
         return []
 
     cards: list[Card] = []
-    for it in found.get("items", [])[:_MAX_FLOOD]:
+    for it in found.get("items", [])[: cfg["max_cards"]]:
         pct_now = round(100 * it["share_now"])
         pct_base = round(100 * it["baseline_share"])
         cards.append(
@@ -2255,7 +2275,6 @@ def flooded_topic(session) -> list[Card]:
     return cards
 
 
-_MAX_COPYPASTA = 4
 
 
 def copypasta(session) -> list[Card]:
@@ -2270,13 +2289,21 @@ def copypasta(session) -> list[Card]:
     try:
         from src.analytics.copypasta import COPYPASTA_CAVEAT, find_copypasta
 
-        found = find_copypasta(session)
+        from src.briefing.catalog import settings_for
+
+        cfg = settings_for("copypasta")
+        found = find_copypasta(
+            session,
+            recent_days=cfg["recent_days"],
+            k=cfg["k"],
+            min_sources=cfg["min_sources"],
+        )
     except Exception:  # noqa: BLE001 - a scan problem must never blank the feed
         _LOG.warning("copypasta scan failed", exc_info=True)
         return []
 
     cards: list[Card] = []
-    for it in found.get("items", [])[:_MAX_COPYPASTA]:
+    for it in found.get("items", [])[: cfg["max_cards"]]:
         phrase = it["phrase"]
         shown = phrase if len(phrase) <= 80 else phrase[:77] + "…"
         cards.append(

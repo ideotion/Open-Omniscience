@@ -946,6 +946,16 @@ Official **figures** are not here at all — they are data, so they live under
   Focus, Terminal, Canvas, Editorial** — over the same data and the same honesty
   guarantees; picking one reloads to apply it. (The former floating "Customize" drawer is
   now this first-class section.)
+- **Cards (Leads on Home):** every Lead producer the app can run, grouped by its family
+  (*Rising · Overtold · Undertold · Worth investigating · Check the framing · Keep watching ·
+  Context · Data integrity*). Switch any one off and it stops appearing — that changes nothing
+  about the articles themselves, only which prompts reach your Home. Where a Lead has
+  thresholds they are now visible and adjustable, each with a stated **safe range**, a
+  one-line note on what moving it does, and a **Reset**. You can always make a Lead
+  *stricter*; the lower bounds exist so a Lead can never claim more than its evidence
+  supports — the flooding check, for instance, will not go below the p<0.05 threshold,
+  because under it the test can no longer tell a real surge from ordinary variation. Any
+  value outside a range is corrected **and reported**, never adjusted in silence.
 - **Preferences (General):** **Theme** (System/Dark/Light), **language**, and **Default
   search results**.
 - **Keyword filtering (Advanced → Keywords):** "dumb" function words (the, you, not, …) are removed by a
@@ -2404,7 +2414,8 @@ card's caveat verbatim at the top, and ends with a **"Go deeper"** strip where e
 suggestion is a normal action with its parameters shown. The page's whole state lives in
 its URL: bookmark it, reopen it, share it between your own machines.
 
-Switch individual recipes off under **Settings → General → Investigation recipes on Home**.
+Switch individual recipes off under **Settings → Cards**, where they now sit beside every
+other Lead this app can raise, grouped by family — the same switch, applied to all of them.
 
 ## Methods appendix
 
