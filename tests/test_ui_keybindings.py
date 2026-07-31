@@ -21,14 +21,19 @@ _JS = (_STATIC / "app.js").read_text(encoding="utf-8")
 _CSS = (_STATIC / "app.css").read_text(encoding="utf-8")
 
 
-def test_shortcuts_subtab_and_panel_exist():
-    assert 'data-tab="shortcuts"' in _HTML, "the Settings subtab button must exist"
-    assert 'id="set-shortcuts"' in _HTML, "the Settings shortcuts panel must exist"
+def test_shortcuts_panel_exists():
+    """2026-07-31 (Settings review): Shortcuts stopped being its own subtab -- one panel
+    did not earn a top-level slot -- and moved into General. The panel and its render host
+    are what matter, so those are what this pins; it no longer asserts a subtab name the
+    restructure deliberately retired."""
     assert 'id="kb-panel"' in _HTML, "the panel needs a render host"
+    assert "<h2>Keyboard shortcuts</h2>" in _HTML, "the shortcuts panel must still exist"
+    gen = _HTML.split('id="set-general"', 1)[1].split('<div class="set-view"', 1)[0]
+    assert 'id="kb-panel"' in gen, "the shortcuts panel must live in the General subtab"
 
 
 def test_shortcuts_wired_into_showsetcat():
-    assert 'if (cat === "shortcuts") loadShortcuts();' in _JS
+    assert 'if (cat === "general") loadShortcuts();' in _JS
 
 
 def test_bindings_are_local_and_defaults_are_opt_in():
