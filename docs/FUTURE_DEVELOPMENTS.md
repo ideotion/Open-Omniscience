@@ -76,6 +76,41 @@ statistics vintages, tracked gazettes, case-law) can reuse it later.
 **Status: recorded, NOT built. Future version, gated on the P0 scale set.** Tracked on the roadmap
 under "Wikipedia as a living source" and the world-law vertical.
 
+### The Settings surface says the opposite (2026-07-31, maintainer, Settings-tab review)
+
+Reviewing every Settings subtab, the maintainer landed on the same principle from the UI side and
+ruled the **Wikipedia subtab a future revamp — explicitly NOT touched by the 2026-07-31 Settings
+restructure**, recorded here rather than built:
+
+> "Wikipedia should be considered as a source like any other journal, the only difference being that
+> we should track changes with an audit trail. So currently the interface suggests that wikipedia
+> articles are not part of the corpus and deserve a separate search tool and so forth. We should
+> address that."
+
+This is the design above stated as a UX defect, and it is worth keeping distinct from it because it
+is **actionable earlier and independently of the scale-gated ingest**. `#set-wikipedia` presents
+Wikipedia as a parallel universe with its own machinery — *Wikipedia change-tracking*, *Watch a
+page*, *Flagged changes*, *Wikipedia offline baselines*, and its own *Search downloaded dumps (full
+text)* box. The framing teaches the user that wiki content sits outside the corpus and needs its own
+search, which is **already false for watched pages**: they are real `Article` rows under a
+per-edition `Source`, keyworded through `index_article`, and reachable from the omnibar. The subtab's
+shape contradicts what the code already does.
+
+Two consequences to settle when the revamp is scheduled:
+
+1. **Separate the acquisition plumbing from the reading surface.** Dump downloads and watchlists are
+   acquisition — they belong wherever other source acquisition lives (invariant #8: data tabs show
+   DATA, Settings holds plumbing). What must NOT persist is a *second search tool*: one corpus, one
+   search. Retiring `Search downloaded dumps (full text)` is gated on the omnibar genuinely covering
+   dump content, which is the unbuilt whole-edition ingest above — so the honest interim is to state
+   plainly *why* a separate box exists (dumps are files, not yet ingested), not to hide it.
+2. **The audit trail is the only thing that should look different.** Under the versioned-source
+   pattern, "tracked changes" is a per-article linked layer, so its natural home is the article
+   reader (a revisions view), not a Settings panel listing *Flagged changes* corpus-wide.
+
+Until then the subtab stays as-is by ruling; do not partially restructure it, because a half-move
+would leave the misleading framing while breaking the machinery that currently works.
+
 ## Remove the legacy single-file backup RESTORE (2026-07-01, maintainer-flagged)
 
 The size-capped single-file backup **create** was retired 2026-07-01 (the `POST

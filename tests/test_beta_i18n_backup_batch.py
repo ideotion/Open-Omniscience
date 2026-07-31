@@ -25,13 +25,19 @@ _BATCH = [
     "Writing encrypted volumes…", "Writing parity…", "Verifying volumes…", "Reassembling the archive…",
     "Restoring…", "Restore complete.", "Merging (additive)…", "Preparing…", "Choose a destination folder.",
     "Choose a folder to restore from.", "This folder is not writable — pick another for a backup destination.",
-    "Enter a passphrase.", "Enter the passphrase.", "Plaintext archive — no passphrase needed.",
-    "Encrypted backup — enter its passphrase.", "(volumes only — parity needs the analysis features)",
+    "Enter a passphrase.", "Enter the passphrase.",
+    "(volumes only — parity needs the analysis features)",
     "Import successful", "Import failed:", "Import continues in the background — watch it in the task manager.",
     "Backup complete:", "Export / Backup", "Destination folder (on this machine / a mounted drive)",
     "Folder to import from", "Passphrase (to decrypt the corpus backup)",
-    "Passphrase — encrypts the corpus (no recovery for a lost passphrase)", "Restore a legacy backup file",
+    "Passphrase — encrypts the corpus (no recovery for a lost passphrase)",
 ]
+# Dropped 2026-07-31 (Settings review, ruling 7) with the legacy-restore panel that was
+# their only UI: "Plaintext archive — no passphrase needed.", "Encrypted backup — enter
+# its passphrase." and "Restore a legacy backup file". Their locale entries are LEFT in
+# place (harmless, and removing 3 keys x 12 files is churn that conflicts with parallel
+# work); this list tracks what the UI actually renders, which is what the no-dead-keys
+# guard below is for.
 
 
 def test_batch_keys_present_and_nonempty_in_all_twelve_locales():

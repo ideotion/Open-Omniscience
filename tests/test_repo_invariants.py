@@ -231,7 +231,7 @@ def test_prune_unused_keywords_action_is_discoverable():
     er = (_SRC / "analytics" / "engine_report.py").read_text(encoding="utf-8")
     assert "mention_distribution" in er, "the report must surface the mention distribution"
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    assert "function pruneKeywords(" in app and "/api/insights/prune-keywords" in app
+    assert "_pruneCore(" in app and "/api/insights/prune-keywords" in app
     # The one-click "clean up" chains re-index THEN prune (the recommended order) so
     # the operator runs one action, reusing the confirm-free cores.
     assert "function cleanupKeywords(" in app, "the one-click clean-up convenience must exist"
@@ -250,9 +250,9 @@ def test_reindex_whole_corpus_action_is_discoverable():
     api = (_SRC / "api" / "insights.py").read_text(encoding="utf-8")
     assert "/reindex-all" in api, "the reindex-all endpoint must be registered"
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    assert "reindexAllCorpus(" in html, "a discoverable re-index button must exist"
+    assert "cleanupKeywords(" in html, "a discoverable re-index button must exist"
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    assert "function reindexAllCorpus(" in app and "/api/insights/reindex-all" in app
+    assert "_reindexAllLoop(" in app and "/api/insights/reindex-all" in app
 
 
 def test_reindex_background_job_is_wired():
@@ -277,8 +277,10 @@ def test_reindex_background_job_is_wired():
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
     assert "_startReindexJob(" in app and "_pollReindexJob(" in app
     assert "/api/insights/reindex-job" in app
-    # the Settings buttons drive the background job (kept reindexAllCorpus/cleanupKeywords)
-    assert "reindexAllCorpus(" in app and "cleanupKeywords(" in app
+    # The Settings button drives the background job. reindexAllCorpus/pruneKeywords were
+    # removed 2026-07-31 (Settings review) as redundant with "Clean up keywords", which
+    # chains the same two cores — so it is now the sole surviving driver.
+    assert "cleanupKeywords(" in app
     # Phase 1.2: keyword-only scope plumbs end-to-end (index_article -> reindex_all_batch
     # -> the job -> the endpoint -> the cleanup button uses the keyword-only scope).
     store = (_SRC / "analytics" / "store.py").read_text(encoding="utf-8")
@@ -416,20 +418,9 @@ def test_render_p0_result_does_not_shadow_the_real_html_escaper():
     assert body.count("esc(") >= 5
 
 
-def test_render_pagesize_result_does_not_shadow_the_real_html_escaper():
-    """Audit finding 2026-07-17 (M7 recurrence): renderPagesizeResult (the page-size
-    A/B bench result renderer, DB-10 §1b) was written with the EXACT SAME shadowing
-    bug as renderP0Result -- a local `esc` falling back to the non-existent global
-    `escapeHtml`, silently defeating every esc() call (incl. s.error, an operator/
-    exception-reflected string) that feeds out.innerHTML. Same fix, same regression
-    guard shape."""
-    appjs = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    start = appjs.index("async function renderPagesizeResult(")
-    end = appjs.index("\n    }\n", start)
-    body = appjs[start:end]
-    assert "typeof escapeHtml" not in body, "must not fall back to the non-existent global escapeHtml"
-    assert "const esc" not in body, "must not shadow the real module-level esc()"
-    assert body.count("esc(") >= 5
+# REMOVED 2026-07-31 (Settings review, ruling 6): guarded renderPagesizeResult, which went
+# with the page-size bench. The sibling guard for renderP0Result above still pins the same
+# esc()-shadowing defect class for the surviving renderer.
 
 
 def test_dump_and_osm_pollers_clear_before_set():
@@ -1262,15 +1253,15 @@ def test_backup_can_exclude_newsletters():
     """Maintainer field test 2026-06-21: the "replace faulty newsletters" workflow.
 
     UNIFIED 2026-07-01: the create-side "what to back up" tickbox was simplified away —
-    the unified Export always captures the FULL corpus (encrypted volumes). The workflow
-    is NOT lost: newsletters can be dropped at RESTORE (test_restore_can_exclude_newsletters)
-    AND removed live (test_remove_imported_newsletters_live_action). The BACKEND exclusion
-    capability is retained (used by the restore-side filter), so this test now pins the
-    backend + the surviving restore-side UI toggle."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    the unified Export always captures the FULL corpus (encrypted volumes).
+
+    AMENDED 2026-07-31 (Settings review, ruling 7): the restore-side TOGGLE went with the
+    legacy-restore panel that hosted it. It only ever applied to the legacy single-file
+    upload path — the unified Import's volume restore has no such option — so what is gone
+    is one affordance, not the workflow: the LIVE remove action
+    (test_remove_imported_newsletters_live_action) is the surviving user-facing path, and
+    the BACKEND exclusion capability is untouched. This test pins the backend."""
     art = (_SRC / "backup" / "artifact.py").read_text(encoding="utf-8")
-    # The restore-side selective toggle survives (backup is now full-corpus by design).
-    assert 'id="v2-restore-newsletters"' in html and "What to restore" in html
     # backend: the exclusion helper + write_backup_v2's honest default is retained.
     assert "def _drop_newsletter_articles(" in art and "def write_backup_v2(" in art
     assert "include_newsletters: bool = True" in art, "default keeps newsletters (no silent change)"
@@ -1279,16 +1270,18 @@ def test_backup_can_exclude_newsletters():
 
 
 def test_restore_can_exclude_newsletters():
-    """Maintainer field test 2026-06-21: selective RESTORE — 'what to restore' lets the
-    user drop imported newsletters from the merge (symmetric to backup). The staged
-    plaintext corpus is filtered BEFORE the merge, so the preview reflects the commit."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    """Maintainer field test 2026-06-21: selective RESTORE — drop imported newsletters
+    from the merge. The staged plaintext corpus is filtered BEFORE the merge, so a
+    preview reflects the commit.
+
+    AMENDED 2026-07-31 (Settings review, ruling 7): the UI toggle lived on the
+    legacy-restore panel and was removed with it. The BACKEND filter is deliberately
+    KEPT — it still runs on the retained /v2/restore preview+commit path (itself pinned
+    by test_additive_restore_only), so re-homing the toggle into the unified Import
+    dialog is a UI change, not a rebuild. Pinning the backend is what makes that true;
+    weakening this guard to 'the feature is gone' would quietly authorise deleting the
+    capability next time someone tidies unreferenced code."""
     bk = (_SRC / "api" / "backup_v2.py").read_text(encoding="utf-8")
-    # UI: a "what to restore" fieldset + the newsletter toggle
-    assert 'id="v2-restore-newsletters"' in html and "What to restore" in html
-    # frontend sends include_newsletters at preview (token commit inherits the filter)
-    assert 'fd.append("include_newsletters"' in app
     # backend: the filter runs on the STAGED copy before the merge (reuses the tested helper)
     assert "def _apply_restore_selection(" in bk and "_drop_newsletter_articles" in bk
     assert "include_newsletters: bool = Form(True)" in bk
@@ -2682,7 +2675,7 @@ def test_diagnostics_panel_button_consolidation():
     # (c) SURVIVING ACTION CONTROLS (job-starters / interactive tools, never downloads):
     for marker in (
         'id="all-diag-btn"', "runAllDiagnostics(", 'id="p0-run-btn"', "runP0Validation(",
-        'id="psb-run-btn"', "runPagesizeBench(", "viewKeywordGrowth(", "enrichSources(",
+        "viewKeywordGrowth(", "enrichSources(",
         "enrichSourceTypes(", "discoverSources(", "discoverWorld(", "goldBuilderLoad(",
         "goldBuilderSave(", "loadLemmaPreview(", "runIrEval(", "loadSessionForensics(",
     ):
@@ -4633,7 +4626,10 @@ def test_family_curation_relocated_to_settings_and_single_member_guarded():
         assert gone not in ins_section, f"{gone!r} must not remain on the Insights data view"
 
     set_i = src.index('id="set-keywords"')
-    set_j = src.index('id="set-leads"', set_i)  # the whole Settings Keywords view
+    # Anchor on the NEXT set-view rather than a NAMED sibling panel: sibling names move
+    # (id="set-leads" was this delimiter until the Leads subtab was removed 2026-07-31),
+    # and a delimiter that moves silently re-scopes a test that is not about it.
+    set_j = src.index('<div class="set-view"', set_i)  # the whole Settings Keywords view
     set_section = src[set_i:set_j]
     assert 'id="famc-list"' in set_section, "the relocated curation list must exist in Settings"
     assert 'onclick="familyMerge()"' in set_section
@@ -5642,21 +5638,10 @@ def test_server_side_folder_picker_wired():
     assert "files_router" in wiring
 
 
-def test_restore_auto_detects_encryption_client_side():
-    """Field test 2026-06-22 #10: restore reads the file's OOENC1 magic LOCALLY and
-    shows the passphrase field only for an encrypted backup (no upload-to-check); a
-    plaintext archive needs none. The magic matches read_artifact's exact signature."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    assert 'onchange="v2DetectEncryption()"' in html
-    assert 'id="v2-restore-pass-wrap"' in html and "hidden" in html
-    assert "function v2DetectEncryption(" in app
-    # reads only the first 8 bytes locally, compares the OOENC1 magic bytes.
-    assert "f.slice(0, 8).arrayBuffer()" in app
-    assert "0x4f, 0x4f, 0x45, 0x4e, 0x43, 0x31, 0x00, 0x00" in app  # "OOENC1\\0\\0"
-    # backend already raises the matching clear error (the source of truth).
-    art = (_SRC / "backup" / "artifact.py").read_text(encoding="utf-8")
-    assert 'blob[:8] == b"OOENC1\\x00\\x00"' in art
+# REMOVED 2026-07-31 (Settings review, ruling 7): guarded the client-side OOENC1 magic sniff
+# on the legacy-restore FILE PICKER, which was removed with that panel. The backend half it
+# cross-checked (read_artifact raising on the same magic) is unchanged and still pinned by
+# the artifact tests -- only the upload-form affordance is gone.
 
 
 def test_home_card_click_diagnostics_and_download_all_wired():
@@ -6357,32 +6342,11 @@ def test_vacuum_button_has_a_real_size_gate():
     )
 
 
-def test_pagesize_bench_job_is_wired():
-    """DB-10 §1b: the page-size A/B bench is a background job with the full
-    P0-validation-style surface (start/status/cancel/last/download composed under
-    the router prefix), its rebuild SELF-VERIFIES the target pragmas (the ruled
-    verify-before-trust probe), and the frontend panel calls the same composed
-    routes (the 1c composed-route lesson)."""
-    core = (_SRC / "monitoring" / "pagesize_bench.py").read_text(encoding="utf-8")
-    api = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
-    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-
-    for marker in ("BenchVerifyError", "PRAGMA page_size", "PRAGMA tgt.cipher_page_size",
-                   "sqlcipher_export", "VACUUM INTO", "sweep_stale_stages"):
-        assert marker in core, f"pagesize_bench core lost its {marker!r} mechanism"
-    assert 'APIRouter(prefix="/api/diagnostics"' in api
-    for decorator in ('@router.post("/pagesize-bench")',
-                      '@router.get("/pagesize-bench/status")',
-                      '@router.post("/pagesize-bench/cancel")',
-                      '@router.get("/pagesize-bench/last")',
-                      '@router.get("/pagesize-bench/download")'):
-        assert decorator in api, f"missing endpoint {decorator}"
-    assert '"pagesize-bench", "page-size A/B bench (DB-10)"' in api, "job not registered"
-    # The frontend must call the COMPOSED routes (prefix + decorator), never a drifted path.
-    for url in ("/api/diagnostics/pagesize-bench", "/api/diagnostics/pagesize-bench/status",
-                "/api/diagnostics/pagesize-bench/cancel",
-                "/api/diagnostics/pagesize-bench/download"):
-        assert url in js, f"frontend does not call {url}"
+# REMOVED 2026-07-31 (Settings review, ruling 6): the DB-10 page-size A/B bench was removed
+# whole -- panel, module, endpoints, bundle member and this guard -- after it delivered its
+# verdict. Its result IS src/database/connect.py:_FRESH_PAGE_SIZE = 16384, and the PRAGMA
+# ordering it proved (cipher_page_size BEFORE auto_vacuum on a fresh SQLCipher connection)
+# is now recorded inline there rather than by reference to a module that no longer exists.
 
 
 def test_agenda_dated_instances_place_in_their_own_year_and_show_provenance():
@@ -6447,21 +6411,13 @@ def test_rate_mode_knob_in_top_bar_and_maximum_default():
     )[1][:200], "the maximum state paints with the theme accent (never a hardcoded hue)"
 
 
-def test_font_size_slider_has_an_accessible_label():
-    """GUI-test finding font-size-slider-missing-label (P0, axe: label, critical):
-    the Settings > Graphics 'Text size' range slider (#dr-font) had its visible label
-    text sitting in a plain, unassociated <div class="sl">, so a screen-reader user
-    tabbing to the slider heard only "slider, 88 to 124" with no indication of what it
-    controls. Fixed by turning the wrapping element into a real <label for="dr-font">
-    (same visual result via the unchanged .sl class; a <label> may wrap other markup
-    like the live-percentage <span>), matching this file's own established convention
-    for range sliders (see #mm-size / #sch-speed, both driven by a <label for=...>)."""
-    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    assert '<label class="sl" for="dr-font">' in html, \
-        "the Text-size label must be a real <label for=\"dr-font\">, not a bare div"
-    # The old, unassociated markup must be gone from directly before the input.
-    assert '<div class="sl">Text size' not in html, \
-        "the old unassociated <div class=\"sl\">Text size...</div> must not survive"
+# REMOVED 2026-07-31 (Settings review, ruling 4): test_font_size_slider_has_an_accessible_label
+# guarded the <label for="dr-font"> on the Settings > Graphics text-size slider. The SLIDER
+# itself was removed, because it could never work: applyUi scaled the ROOT font-size, but
+# app.css carries 103 font-size declarations in px and zero in rem (plus 46 inline px in
+# index.html), so the scale reached nothing. The maintainer declined the ~149-site px->rem
+# migration and chose browser zoom instead. This note exists so the missing label is never
+# read as an accessibility regression and the dead control restored.
 
 
 def test_analysis_tab_restore_runs_before_the_deep_link_hydration():

@@ -1154,7 +1154,6 @@
         <button data-tab="shortcuts">Shortcuts</button>
         <button data-tab="models">AI</button>
         <button data-tab="keywords">Keywords</button>
-        <button data-tab="leads">Leads</button>
         <button data-tab="collect">Collect</button>
         <button data-tab="sources">Sources</button>
         <button data-tab="newsletters">Newsletters</button>
@@ -1174,10 +1173,8 @@
       <div class="seg"><div class="sl">Theme</div><div class="theme-grid" id="dr-themes"></div></div>
       <div class="seg"><div class="sl">Accent</div><div class="swatches" id="dr-accents"></div></div>
       <div class="seg"><div class="sl">Density</div><div class="seg-toggle" id="dr-density"></div></div>
-      <div class="seg"><div class="sl">Typeface</div><div class="seg-toggle wrap" id="dr-faces"></div>
+      <div class="seg"><div class="sl">Fonts</div><div class="seg-toggle wrap" id="dr-faces"></div>
         <div class="hint">Open-source fonts bundled with the app — nothing to download, nothing fetched.</div></div>
-      <div class="seg"><label class="sl" for="dr-font">Text size · <span id="dr-font-val">100%</span></label>
-        <input type="range" id="dr-font" min="88" max="124" step="2" oninput="setFont(this.value)"></div>
       <div class="seg"><div class="sl">Sidebar</div><div class="seg-toggle" id="dr-sidebar"></div></div>
       <!-- "Tools shown in the sidebar" checklist removed (maintainer-ruled 2026-06-22,
            #17): it listed moved/dissolved tabs and was outdated; the sidebar is now a
@@ -1638,117 +1635,11 @@
         <button onclick="openUnifiedImport()">Import…</button>
       </div>
     </section>
-    <dialog id="ux-import" style="max-width:560px;width:92%;border:none;border-radius:12px;padding:18px">
-      <h3 style="margin:0 0 4px">Import</h3>
-      <p class="muted" style="margin-top:0">Point at a folder and we'll find what's importable inside it — a backup to restore, large data (models&nbsp;/&nbsp;maps&nbsp;/&nbsp;dumps), or newsletters. Restore is always additive: nothing you already have is overwritten.</p>
-      <div><label for="ux-imp-src">Folder to import from</label>
-        <div class="row" style="gap:6px"><input id="ux-imp-src" type="text" placeholder="/mnt/backup  or  D:\oo-backup" style="flex:2">
-          <button class="secondary" type="button" onclick="ooFolderPicker('ux-imp-src', false)">Browse…</button>
-          <button class="secondary" type="button" onclick="_uxImScan(this)">Scan</button>
-          <button class="secondary" type="button" onclick="_uxImVerify(this)" title="Check the backup's manifest signature and every volume + parity checksum without restoring anything — the live corpus is untouched.">Verify</button></div></div>
-      <p class="muted" id="ux-imp-status" style="margin-top:8px"></p>
-      <div id="ux-imp-checklist" style="display:flex;flex-direction:column;gap:6px"></div>
-      <div id="ux-imp-pass-row" style="margin-top:6px;display:none"><label for="ux-imp-pass">Passphrase (to decrypt the corpus backup)</label>
-        <input id="ux-imp-pass" type="password" style="width:100%"></div>
-      <progress id="ux-imp-bar" style="width:100%;margin-top:8px;display:none"></progress>
-      <div id="ux-imp-progress" class="hint" style="margin-top:4px"></div>
-      <!-- The RUN: one row per item, each with its own identity, state and elapsed time.
-           A multi-backup folder is one import, so the collection-paused note and the Stop
-           belong to the run as a whole, not to any single item. -->
-      <div id="ux-imp-queue" style="display:none;margin-top:8px">
-        <div id="ux-imp-queue-note" class="hint"></div>
-        <div id="ux-imp-queue-rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px"></div>
-        <details id="ux-imp-details" style="margin-top:6px">
-          <summary class="muted" style="cursor:pointer">Show details</summary>
-          <div id="ux-imp-details-body" class="hint" style="margin-top:4px"></div>
-        </details>
-      </div>
-      <div id="ux-imp-summary" style="margin-top:8px"></div>
-      <div class="row" style="margin-top:12px;justify-content:flex-end;gap:8px">
-        <button id="ux-imp-stop" class="secondary" style="display:none" onclick="_uxImStop(this)" title="Stops the import now. Before a backup's atomic swap this is a complete abort — your corpus is untouched. After it, that backup has already merged and this stops the remaining work (the re-index resumes later from where it left off); it is not an undo.">Stop</button>
-        <button id="ux-imp-bg" class="secondary" style="display:none" onclick="_uxImBackground()">Continue in background</button>
-        <button class="secondary" onclick="document.getElementById('ux-import').close()">Close</button>
-        <button id="ux-imp-run" onclick="_uxImRun(this)" disabled>Import selected</button>
-      </div>
-    </dialog>
-    <dialog id="ux-export" style="max-width:560px;width:92%;border:none;border-radius:12px;padding:18px">
-      <h3 style="margin:0 0 4px">Export / Backup</h3>
-      <p class="muted" id="ux-inv-status" style="margin-top:0">Loading what's available…</p>
-      <div id="ux-checklist" style="display:flex;flex-direction:column;gap:6px"></div>
-      <div style="margin-top:10px"><label for="ux-dest">Destination folder (on this machine / a mounted drive)</label>
-        <div class="row" style="gap:6px"><input id="ux-dest" type="text" placeholder="/mnt/backup  or  D:\oo-backup" style="flex:2">
-          <button class="secondary" type="button" onclick="ooFolderPicker('ux-dest', true)">Browse…</button></div></div>
-      <div style="margin-top:6px"><label for="ux-pass">Passphrase — encrypts the corpus (no recovery for a lost passphrase)</label>
-        <input id="ux-pass" type="password" style="width:100%"></div>
-      <div class="hint" style="margin-top:6px">The corpus is written as encrypted volumes plus parity. Parity (corruption recovery) requires the analysis extra (numpy); otherwise the backup is volumes only.</div>
-      <progress id="ux-bar" style="width:100%;margin-top:8px;display:none"></progress>
-      <div id="ux-progress" class="hint" style="margin-top:4px"></div>
-      <div class="row" style="margin-top:12px;justify-content:flex-end;gap:8px">
-        <button class="secondary" onclick="document.getElementById('ux-export').close()">Close</button>
-        <button id="ux-pause" class="secondary" style="display:none" onclick="_uxPauseResume(this)">Pause</button>
-        <button id="ux-run" onclick="_uxRun(this)">Back up</button>
-      </div>
-    </dialog>
     <!-- "Local LLM models (separate backup)" panel removed: models are now a category in the
          unified Export/Import dialogs above (and the capped .oomodels flow was retired). -->
     <!-- Large-data folder backup + encrypted volume backup panels removed (Slice 3):
          both are now driven by the unified Export/Import dialogs above. The backend
          engines + endpoints are unchanged; only these redundant panels were collapsed. -->
-    <section class="panel" id="backup-panel">
-      <h2>Restore a legacy backup file</h2>
-      <div id="backup-status" class="hint">Checking backend…</div>
-
-      <p class="muted" style="margin-top:0">To CREATE a backup, use <b>Export / Back up…</b> at the top of this page — it works at any database size. This panel only RESTORES an older single-file backup (additive merge).</p>
-      <hr>
-      <h3 style="margin-bottom:6px">Restore — merge with a preview</h3>
-      <p class="muted" style="margin-top:0">Restoring merges the archive into your corpus — nothing is replaced
-        or deleted, duplicates are detected bit-for-bit, and where a value conflicts your local version is kept and
-        both values are reported. Preview first: the plan below shows exactly what would happen. A safety snapshot is
-        taken before anything is applied, and the merge refuses to proceed if verification fails.</p>
-      <div class="row">
-        <div style="flex:2"><label for="v2-restore-file">Backup file</label>
-          <input type="file" id="v2-restore-file" accept=".oobak,.ooenc,application/octet-stream" onchange="v2DetectEncryption()"></div>
-        <div style="flex:2" id="v2-restore-pass-wrap" hidden><label for="v2-restore-pass">Passphrase for this file</label>
-          <input id="v2-restore-pass" type="password" autocomplete="off" placeholder="empty for an unencrypted archive"></div>
-        <div style="flex:0 0 auto;align-self:end"><button class="secondary" onclick="v2Preview()">Preview merge</button></div>
-      </div>
-      <div id="v2-restore-enc" class="hint muted" style="margin-top:2px"></div>
-      <fieldset style="border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:8px 0">
-        <legend class="muted" style="padding:0 6px">What to restore</legend>
-        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" checked disabled> Articles &amp; corpus data <span class="muted">(always merged)</span></label>
-        <label style="display:flex;align-items:center;gap:6px"><input type="checkbox" id="v2-restore-newsletters" checked> Imported newsletters (.eml / mailbox) <span class="muted">— untick to restore everything except them</span></label>
-        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Local LLM models <span class="muted">— use Import… at the top</span></label>
-        <label style="display:flex;align-items:center;gap:6px;opacity:.7"><input type="checkbox" disabled> Offline maps · Wikipedia dumps <span class="muted">— restore these via Import… at the top</span></label>
-        <div class="hint" style="margin-top:4px">The preview reflects your choice — what you preview is exactly what gets merged.</div>
-      </fieldset>
-      <div id="v2-preview" style="display:none">
-        <div id="v2-verify" class="hint"></div>
-        <div id="v2-plan"></div>
-        <div class="row" style="margin-top:8px">
-          <button id="v2-apply-btn" onclick="v2Apply()">Apply this merge</button>
-          <button class="secondary" onclick="v2Discard()">Discard preview</button>
-        </div>
-      </div>
-      <div id="v2-commit-result" class="hint"></div>
-
-      <details style="margin-top:8px">
-        <summary class="muted">Import history</summary>
-        <div id="v2-batches" class="hint">—</div>
-      </details>
-
-      <hr>
-      <details>
-        <summary class="muted">Older backup tool: download a raw .db snapshot…</summary>
-      <div class="row" style="margin-top:6px">
-        <button class="secondary" onclick="downloadBackup()">Download backup (.db)</button>
-      </div>
-      <div class="hint">A consistent snapshot of the entire corpus, taken live via SQLite's online-backup API.</div>
-      <div class="hint">Restore is additive-only: use the merge restore above — it complements your
-        corpus and never replaces it. (The destructive replace-restore was removed; a raw .db
-        download is a snapshot for manual/advanced use.)</div>
-      </details>
-    </section>
-
     <section class="panel" id="diagnostics-panel">
       <h2>Diagnostics log</h2>
       <p class="hint" style="margin-top:0">A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.</p>
@@ -1778,22 +1669,6 @@
           <span id="p0-status" class="small" style="margin-left:6px"></span>
         </div>
         <div id="p0-result" class="small" style="margin-top:6px"></div>
-      </div>
-      <!-- PAGE-SIZE A/B BENCH (DB-10 §1b, 2026-07-17): rebuilds the live corpus at candidate
-           page sizes (self-verified pragmas), runs the identical workload on each, reports the
-           numbers side by side — never a winner. Run it on corpora of DIFFERENT sizes and
-           compare the logs: the TREND is the decision signal. Un-keyed English (matches this
-           diagnostics panel). Browser-unverified per fork-3. -->
-      <div id="pagesize-bench-box" style="margin-top:10px">
-        <div class="small" style="font-weight:600">Page-size A/B bench (4K vs 16K, DB-10)</div>
-        <div class="hint">Rebuilds your corpus at each candidate page size (encrypted stays encrypted with the same passphrase, so the codec stays in the measurement), self-verifies every rebuilt store's settings, runs the identical workload on each (point lookups · a 30-day index window · sequential content bands, cold-ish and warm), then deletes the rebuilds. Read-only on your live corpus; needs ~1.15× the corpus size free in the staging directory (one rebuild at a time). The rebuild time it reports is also the measured cost of the real store migration at your corpus size. Numbers side by side — no winner is declared; run it on a small and a large corpus and compare the logs.</div>
-        <div class="row" style="margin-top:6px">
-          <input id="psb-workdir" type="text" style="min-width:280px" placeholder="staging dir (optional — default under the data dir; use an external drive for a large corpus)">
-          <button id="psb-run-btn" onclick="runPagesizeBench(this)" title="Start the page-size A/B bench as a background job: rebuild at 4096 then 16384 bytes/page (each with the ruled auto_vacuum=INCREMENTAL), verify, bench, clean up. Cancellable between phases.">Run page-size bench</button>
-          <button class="secondary" onclick="cancelPagesizeBench()" title="Stop at the next safe point (between rebuild/bench phases); staged rebuilds are deleted and the partial report is honestly marked cancelled.">Cancel</button>
-          <span id="psb-status" class="small" style="margin-left:6px"></span>
-        </div>
-        <div id="psb-result" class="small" style="margin-top:6px"></div>
       </div>
       <!-- KEYWORD-TRIAGE progressive sweep (Section 8, ruled 2026-07-20; B5 2026-07-24
            Session B: the numeric limit/batch-size inputs are GONE -- an ON/OFF TOGGLE now
@@ -1921,46 +1796,8 @@
         <button class="secondary" onclick="window.open('/api/insights/lunar-correlation','_blank')" title="Screen the top keywords' daily coverage against the moon's illuminated fraction, FDR-corrected — a survivor beat multiple-testing, never a bare significant p. Correlation is not causation; the common honest outcome is that nothing survives. Counts + statistics only, no score.">Lunar-correlation screen (.json)</button>
       </div>
       <div class="hint">These are the read-only exploration surfaces behind the statistical manipulation-pattern signals. Every one delegates to a pure analytics module and returns its method + caveat verbatim: distinct SOURCES (not article count) measure breadth, the innocent-twin explanation rides every result, and the whole family of comparisons is multiple-testing corrected so many tests cannot manufacture a finding. They name a SHAPE, never a verdict — a microscope, not a detector. Counts + statistics only, never a composite score.</div>
-      <!-- B3 (F2): per-field poll-transparency form (was a paste-raw-JSON box). Each field
-           is a standard methodological disclosure (AAPOR Transparency Initiative-style). It
-           records what was STATED, never whether a value is good — a disclosed n=100 counts
-           like n=10000, non-disclosure of a core item outranks any disclosed imperfection,
-           and it never grades or ranks a poll. No score. The raw-JSON box is kept as a
-           collapsed power-user fallback (never lose a tool). -->
-      <div id="poll-transparency-box" style="margin-top:6px">
-        <div class="hint">Enter what a poll DISCLOSED and get a per-item checklist of what was stated versus not — the disclosure FLOOR, never a score. It records PRESENCE only (a disclosed n=100 counts like n=10000), non-disclosure of a core item outranks any disclosed imperfection, and it never grades, ranks, or calls a poll “useless”. It surfaces the facts and lets you conclude.</div>
-        <div class="small muted" style="margin-top:6px;font-weight:600">Core disclosures — the floor to interpret a poll</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:4px">
-          <div><label for="pf_pollster" class="small muted">Who conducted the poll</label><input id="pf_pollster" type="text" style="width:100%"></div>
-          <div><label for="pf_sponsor" class="small muted">Who paid for or commissioned it</label><input id="pf_sponsor" type="text" style="width:100%"></div>
-          <div><label for="pf_fielding_dates" class="small muted">When it was in the field</label><input id="pf_fielding_dates" type="text" style="width:100%"></div>
-          <div><label for="pf_sample_size" class="small muted">Sample size (n)</label><input id="pf_sample_size" type="text" style="width:100%"></div>
-          <div><label for="pf_population" class="small muted">Who was sampled (the population)</label><input id="pf_population" type="text" style="width:100%"></div>
-        </div>
-        <div style="margin-top:6px"><label for="pf_question_wording" class="small muted">The exact question asked</label><textarea id="pf_question_wording" rows="2" style="width:100%"></textarea></div>
-        <div class="small muted" style="margin-top:8px;font-weight:600">Supplementary disclosures</div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px;margin-top:4px">
-          <div><label for="pf_sampling_method" class="small muted">Sampling method (probability vs not)</label><input id="pf_sampling_method" type="text" style="width:100%"></div>
-          <div><label for="pf_margin_of_error" class="small muted">Margin of error / credibility interval</label><input id="pf_margin_of_error" type="text" style="width:100%"></div>
-          <div><label for="pf_mode" class="small muted">Mode (phone / online / in-person …)</label><input id="pf_mode" type="text" style="width:100%"></div>
-          <div><label for="pf_weighting" class="small muted">Weighting / adjustments</label><input id="pf_weighting" type="text" style="width:100%"></div>
-          <div><label for="pf_response_rate" class="small muted">Response / completion rate</label><input id="pf_response_rate" type="text" style="width:100%"></div>
-        </div>
-        <div class="row" style="margin-top:8px">
-          <button class="secondary" onclick="pollTransparencyCheck()" title="Records, per standard methodological disclosure, only whether it was STATED — never whether the value is good. No composite score, no ranking, never calls a poll “useless”.">Check poll transparency</button>
-          <button class="secondary" onclick="pollTransparencyClear()">Clear the form</button>
-        </div>
-        <details style="margin-top:6px">
-          <summary class="small muted">Advanced: paste disclosed fields as JSON</summary>
-          <textarea id="poll-fields" rows="3" style="min-width:340px;width:100%;margin-top:4px" placeholder='{"pollster":"…","sponsor":"…","sample_size":1000,"question_wording":"…"}'></textarea>
-          <div class="hint">Any keys here override the fields above (and extra keys are allowed) — for a disclosure the form has no box for.</div>
-        </details>
-        <div id="poll-transparency-out" style="margin-top:8px"></div>
-      </div>
       <div class="row" style="margin-top:6px">
         <button onclick="cleanupKeywords(this)" title="Re-index every article with the current engine, then remove the keywords left with no mentions — the recommended order in one action.">Clean up keywords (re-index, then prune)</button>
-        <button class="secondary" onclick="reindexAllCorpus(this)">Re-index the whole corpus</button>
-        <button class="secondary" onclick="pruneKeywords(this)">Prune unused keywords</button>
         <span id="reindex-all-status" class="muted small"></span>
       </div>
       <div class="hint">Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs as a background job you can pause and resume from the task manager — it keeps going if you close this tab and continues where it left off (no more restarting from the beginning). Summaries and translations are left untouched.</div>
@@ -2020,28 +1857,6 @@
       <datalist id="sg-family-options"></datalist>
       <datalist id="sg-ring-options"></datalist>
       <div id="sgc-list" style="margin-top:12px"><div class="muted">Loading…</div></div>
-    </section>
-    </div>
-
-    <div class="set-view" id="set-leads" style="display:none">
-    <section class="panel">
-      <h2 style="margin-top:0;font-size:13px">Leads <span class="muted">— evidence &amp; ordering</span></h2>
-      <p class="hint" style="margin-top:0">The same leads Home surfaces, each shown with its REAL evidence as
-        chips (n · distinct independent sources · freshest-evidence age) and a DISCLOSED order — never a
-        composite score. This is a preview; Home keeps its current order until you graduate a mode here
-        (browser-unverified — needs a click-through).</p>
-      <div class="row" style="margin-top:6px;flex-wrap:wrap;gap:8px;align-items:end">
-        <label><input type="checkbox" id="leads-prominence" style="width:auto" onchange="leadsPrefsChanged()"> Order by prominence (sources → magnitude → recency; else as Home)</label>
-        <label>Major floor · min n
-          <input id="leads-min-n" type="number" min="0" step="1" value="50" style="width:80px" onchange="leadsPrefsChanged()">
-        </label>
-        <label>min sources
-          <input id="leads-min-sources" type="number" min="0" step="1" value="5" style="width:70px" onchange="leadsPrefsChanged()">
-        </label>
-        <label><input type="checkbox" id="leads-cluster" style="width:auto" onchange="leadsPrefsChanged()"> Stack overlapping stories</label>
-        <button class="secondary" onclick="loadLeadsView()">Preview</button>
-      </div>
-      <div id="leads-preview" style="margin-top:10px"><div class="muted">Loading…</div></div>
     </section>
     </div>
 
@@ -2393,21 +2208,6 @@
       </details>
 
       <hr>
-      <h3 style="margin-bottom:6px">Encrypted backup</h3>
-      <p class="muted" style="margin-top:0">An encrypted snapshot of the whole corpus
-        (AES-256-GCM + scrypt). A lost or wrong passphrase means the file cannot be opened —
-        there is no recovery. Keep the passphrase safe.</p>
-      <p class="hint" style="color:var(--warn)">This single-file download is capped at about 2 GiB. For a larger corpus use the Export / Back up… flow (Settings → Data &amp; backup), which streams to a folder with no size limit.</p>
-      <div class="row">
-        <div style="flex:2"><label for="enc-pass">Passphrase</label>
-          <input id="enc-pass" type="password" autocomplete="new-password"
-                 placeholder="a strong, memorable passphrase"></div>
-        <div style="flex:0 0 auto;align-self:end">
-          <button class="secondary" onclick="encryptedBackup()">Download encrypted backup (.ooenc)</button></div>
-      </div>
-      <div class="hint">Restore is additive-only — the destructive replace-restore was removed. Restore through the merge restore above (the signed backup artifact), which complements your corpus and never overwrites it.</div>
-
-      <hr>
       <h3 style="margin-bottom:6px">Database maintenance</h3>
       <p class="muted" style="margin-top:0">Compacting rebuilds the database file: it reclaims the
         space deletions leave behind and defragments the indexes. It takes time proportional to the
@@ -2497,7 +2297,7 @@
       </div>
       <div id="uninstall-preview" class="hint" style="margin:4px 0"></div>
       <div class="row" style="gap:8px;flex-wrap:wrap">
-        <button class="secondary" onclick="uninstallBackupFirst()">Download a backup first</button>
+        <button class="secondary" onclick="openUnifiedExport()">Download a backup first</button>
         <button class="danger" onclick="uninstallApp()">Uninstall &amp; stop the app</button>
       </div>
       <div id="uninstall-result" class="hint"></div>
@@ -2560,6 +2360,63 @@
        renderCorpus* JS are left in place UNREACHABLE (they null-guard on #corpus-* nodes),
        pending a browser-verified deletion pass (the Desk-lesson "made unreachable" bar).
        Enforced by tests/test_ui_corpus_win_retired.py. -->
+  <!-- Unified Export / Import dialogs. They live at TOP LEVEL, not inside
+       #set-data: a set-view is display:none when its subtab is inactive, and a
+       dialog element inside a display:none ancestor does not render even via
+       showModal(). Keeping them here is what lets Safety open the backup flow
+       without navigating away (2026-07-31 Settings review). -->
+    <dialog id="ux-import" style="max-width:560px;width:92%;border:none;border-radius:12px;padding:18px">
+      <h3 style="margin:0 0 4px">Import</h3>
+      <p class="muted" style="margin-top:0">Point at a folder and we'll find what's importable inside it — a backup to restore, large data (models&nbsp;/&nbsp;maps&nbsp;/&nbsp;dumps), or newsletters. Restore is always additive: nothing you already have is overwritten.</p>
+      <div><label for="ux-imp-src">Folder to import from</label>
+        <div class="row" style="gap:6px"><input id="ux-imp-src" type="text" placeholder="/mnt/backup  or  D:\oo-backup" style="flex:2">
+          <button class="secondary" type="button" onclick="ooFolderPicker('ux-imp-src', false)">Browse…</button>
+          <button class="secondary" type="button" onclick="_uxImScan(this)">Scan</button>
+          <button class="secondary" type="button" onclick="_uxImVerify(this)" title="Check the backup's manifest signature and every volume + parity checksum without restoring anything — the live corpus is untouched.">Verify</button></div></div>
+      <p class="muted" id="ux-imp-status" style="margin-top:8px"></p>
+      <div id="ux-imp-checklist" style="display:flex;flex-direction:column;gap:6px"></div>
+      <div id="ux-imp-pass-row" style="margin-top:6px;display:none"><label for="ux-imp-pass">Passphrase (to decrypt the corpus backup)</label>
+        <input id="ux-imp-pass" type="password" style="width:100%"></div>
+      <progress id="ux-imp-bar" style="width:100%;margin-top:8px;display:none"></progress>
+      <div id="ux-imp-progress" class="hint" style="margin-top:4px"></div>
+      <!-- The RUN: one row per item, each with its own identity, state and elapsed time.
+           A multi-backup folder is one import, so the collection-paused note and the Stop
+           belong to the run as a whole, not to any single item. -->
+      <div id="ux-imp-queue" style="display:none;margin-top:8px">
+        <div id="ux-imp-queue-note" class="hint"></div>
+        <div id="ux-imp-queue-rows" style="display:flex;flex-direction:column;gap:4px;margin-top:6px"></div>
+        <details id="ux-imp-details" style="margin-top:6px">
+          <summary class="muted" style="cursor:pointer">Show details</summary>
+          <div id="ux-imp-details-body" class="hint" style="margin-top:4px"></div>
+        </details>
+      </div>
+      <div id="ux-imp-summary" style="margin-top:8px"></div>
+      <div class="row" style="margin-top:12px;justify-content:flex-end;gap:8px">
+        <button id="ux-imp-stop" class="secondary" style="display:none" onclick="_uxImStop(this)" title="Stops the import now. Before a backup's atomic swap this is a complete abort — your corpus is untouched. After it, that backup has already merged and this stops the remaining work (the re-index resumes later from where it left off); it is not an undo.">Stop</button>
+        <button id="ux-imp-bg" class="secondary" style="display:none" onclick="_uxImBackground()">Continue in background</button>
+        <button class="secondary" onclick="document.getElementById('ux-import').close()">Close</button>
+        <button id="ux-imp-run" onclick="_uxImRun(this)" disabled>Import selected</button>
+      </div>
+    </dialog>
+    <dialog id="ux-export" style="max-width:560px;width:92%;border:none;border-radius:12px;padding:18px">
+      <h3 style="margin:0 0 4px">Export / Backup</h3>
+      <p class="muted" id="ux-inv-status" style="margin-top:0">Loading what's available…</p>
+      <div id="ux-checklist" style="display:flex;flex-direction:column;gap:6px"></div>
+      <div style="margin-top:10px"><label for="ux-dest">Destination folder (on this machine / a mounted drive)</label>
+        <div class="row" style="gap:6px"><input id="ux-dest" type="text" placeholder="/mnt/backup  or  D:\oo-backup" style="flex:2">
+          <button class="secondary" type="button" onclick="ooFolderPicker('ux-dest', true)">Browse…</button></div></div>
+      <div style="margin-top:6px"><label for="ux-pass">Passphrase — encrypts the corpus (no recovery for a lost passphrase)</label>
+        <input id="ux-pass" type="password" style="width:100%"></div>
+      <div class="hint" style="margin-top:6px">The corpus is written as encrypted volumes plus parity. Parity (corruption recovery) requires the analysis extra (numpy); otherwise the backup is volumes only.</div>
+      <progress id="ux-bar" style="width:100%;margin-top:8px;display:none"></progress>
+      <div id="ux-progress" class="hint" style="margin-top:4px"></div>
+      <div class="row" style="margin-top:12px;justify-content:flex-end;gap:8px">
+        <button class="secondary" onclick="document.getElementById('ux-export').close()">Close</button>
+        <button id="ux-pause" class="secondary" style="display:none" onclick="_uxPauseResume(this)">Pause</button>
+        <button id="ux-run" onclick="_uxRun(this)">Back up</button>
+      </div>
+    </dialog>
+
   <dialog id="corpus-win" style="width:min(760px,94vw);border:1px solid var(--line);border-radius:12px;background:var(--panel);color:var(--fg);padding:0">
     <div style="display:flex;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)">
       <b id="corpus-title" style="font-size:15px"></b>
