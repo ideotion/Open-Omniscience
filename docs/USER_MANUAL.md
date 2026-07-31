@@ -158,7 +158,7 @@ collapse toggle), and a **minimal top bar** above the content carries:
 **Settings** opens from the **Settings button at the bottom of the sidebar** (the
 command palette also jumps straight there); see [3.9 Settings](#39-settings).
 **Appearance** (**Settings → Graphics**) offers **17 colour themes + System**, accent,
-density, text size, a bundled-typeface picker, and sidebar collapse. Everything is
+density, a bundled-typeface picker, and sidebar collapse. Everything is
 stored locally; nothing is transmitted.
 
 ### Recent additions (0.0.8 live-test cycle, June 2026)
@@ -761,9 +761,15 @@ The extractor is high-precision: bare years and vague spans are not extracted, b
   verification-pending flag.
 - **Movable dates are marked as such** — the app never invents an exact day for an
   event whose date shifts each year.
-- **Calendars & feeds** (holiday / religious / astronomy iCal sources) are managed
-  in **Settings → Agenda**, not here — the tab shows the data, the plumbing lives
-  in Settings; subscriptions stay **off by default** so the grid is never flooded.
+- **Calendars** (holiday / religious / astronomy iCal sources) are subscribed to in
+  **Settings → Agenda**, not here — the tab shows the data, the plumbing lives in
+  Settings. They then keep themselves current: while collection is on, new events are
+  imported and each feed is re-checked in turn, a few per pass. A feed that fails is
+  re-checked after 1 month, then 2, 4 and 6 — **capped, so a feed is never written off
+  permanently** — and the per-pass tally is visible in the **task manager's Schedule
+  tab**. None of it runs at startup or offline. The ~500-feed **catalogue** itself
+  (verdicts, folders of duplicate providers, adding your own `.ics`) is plumbing and
+  lives in **Settings → Advanced → Calendar directory**.
 
 ### 3.7 Wikipedia *(in Settings → Wikipedia)*
 
@@ -916,23 +922,33 @@ bake in bias and silence small, foreign, new or dissident sources. Full guide:
 ### 3.9 Settings
 
 **What it's for:** preferences, the acquisition surfaces, and maintenance — organized
-into sections via a sub-nav: **Graphics · General · AI · Keywords · Collect · Sources ·
-Newsletters · Wikipedia · Statistics · Offline map · Agenda · Data & backup · Safety**.
+into sections via a sub-nav: **Graphics · General · AI · Wikipedia · OpenStreetMap ·
+Agenda · Data & backup · Safety · Advanced**.
 Open Settings from the **button at the bottom of the sidebar**; the command palette also
-jumps straight here. Everything is stored locally; no telemetry. **Collect**, **Sources**
-and **Wikipedia** are documented above
-([3.2](#32-collect-in-settings--collect), [3.3](#33-sources-in-settings--sources),
-[3.7](#37-wikipedia-in-settings--wikipedia)); **Agenda** calendars are managed here too.
+jumps straight here. Everything is stored locally; no telemetry.
 
-- **Graphics (Appearance):** themes, accent colour, density, **text size**, **typeface**,
-  and sidebar expanded/collapsed. This section also holds the **Alternative interfaces**
+Everyday use needs none of **Advanced**: collection plumbing, source management, keyword
+curation, the statistics-producer directory and the calendar-feed catalogue all live
+there, in **folded sections that only load their data once you open one** (the source
+catalogue alone can hold tens of thousands of rows). **Collect** and **Sources** are
+documented above ([3.2](#32-collect-in-settings--collect),
+[3.3](#33-sources-in-settings--sources)) and are reached through Advanced;
+**Wikipedia** ([3.7](#37-wikipedia-in-settings--wikipedia)) keeps its own section.
+Official **figures** are not here at all — they are data, so they live under
+**Governments → Statistics**.
+
+- **Graphics (Appearance):** themes, accent colour, density, **typeface**,
+  and sidebar expanded/collapsed. (There is no text-size slider: it only ever scaled the
+  root element, which almost nothing in the stylesheet inherited from, so it did nothing.
+  Use your browser's own zoom — it scales everything, including the parts a root-only
+  slider could never reach.) This section also holds the **Alternative interfaces**
   gallery (marked *Experimental*): eight opt-in skins — **Aurora, Atlas, Command, Field,
   Focus, Terminal, Canvas, Editorial** — over the same data and the same honesty
   guarantees; picking one reloads to apply it. (The former floating "Customize" drawer is
   now this first-class section.)
 - **Preferences (General):** **Theme** (System/Dark/Light), **language**, and **Default
   search results**.
-- **Keyword filtering:** "dumb" function words (the, you, not, …) are removed by a
+- **Keyword filtering (Advanced → Keywords):** "dumb" function words (the, you, not, …) are removed by a
   built-in multilingual stoplist. Tune it: set **minimum keyword length**, **drop
   purely numeric terms**, toggle the built-in stoplist, and maintain an **excluded
   keywords** list (one per line or comma-separated). Excluding hides a term
@@ -959,11 +975,15 @@ and **Wikipedia** are documented above
   the official install script, verifies it against GitHub's attested sha256 digest, shows
   a visible elevation step, and runs it — refusing on any digest mismatch. macOS/Windows
   get an honest pointer to ollama.com/download.
-- **Statistics (official figures):** a descriptive directory of government + international
-  statistical producers. Every producer carries the **same descriptive stanced-source
+- **Statistics — the producer directory (Advanced → Official statistics):** a
+  descriptive directory of government + international statistical producers. The
+  **figures** themselves are data, so they live under **Governments → Statistics**,
+  not in Settings. Every producer carries the **same descriptive stanced-source
   caveat** — an official figure states its producing agency and its stance — **never a
-  per-source "controversial" label, verdict or score**. You can **register** them as
-  disabled sources, and **fetch official figures** from documented machine endpoints
+  per-source "controversial" label, verdict or score**. You can **add them to your sources** — a producer whose
+  news/press section is known is enabled and collected from there, while one whose
+  address has not been researched yet is added disabled rather than crawled into its
+  dataset portal — and **fetch official figures** from documented machine endpoints
   (World Bank API / Eurostat SDMX), stored with their full provenance and a first-class
   **vintage** (a re-fetch is a new row, never an overwrite). Producers are shown **side by
   side, never averaged**, and a **Triangulate** view flags cells that mix incomparable
@@ -971,7 +991,7 @@ and **Wikipedia** are documented above
   retrospectively, a stored figure whose newest vintage moved a past value unusually far
   for that series' own revision history (no score). The fetch egresses over your configured
   transport and is refused under airplane mode.
-- **Offline map:** pick an OpenStreetMap region (with a dated `~GB` estimate) and download
+- **OpenStreetMap:** pick a map region (with a dated `~GB` estimate) and download
   it as a resumable, pausable task-manager job (gated by the one network-consent popup).
 - **Newsletters:** import newsletters as articles — **anonymised at ingest** (the
   recipient is never stored, recipient echoes are redacted, tracker tokens are stripped

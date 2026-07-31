@@ -28,7 +28,7 @@ def _dl_actions(state: str) -> list[str]:
     A 'cancel' on an already-paused download would re-call the owner's pause()
     and fail (it is not queued and has no live stop event), so paused/failed
     offer RESUME instead — permanent removal stays in the owning Settings tab
-    (Wikipedia / Offline map), as the pause/cancel detail messages already say.
+    (Wikipedia / OpenStreetMap), as the pause/cancel detail messages already say.
     """
     if state == "running":
         return ["pause", "cancel"]
@@ -604,7 +604,7 @@ def cancel_job(job_id: str) -> dict:
         ok = get_osm_manager().pause(key)
         if not ok:
             raise HTTPException(status_code=404, detail=f"unknown OSM download {key!r}")
-        return {"cancelled": job_id, "detail": "download paused (resumable; delete it in Settings → Offline map)"}
+        return {"cancelled": job_id, "detail": "download paused (resumable; delete it in Settings → OpenStreetMap)"}
     if job_id == "folder-backup":
         # Task-manager "cancel"/"pause" PAUSE the folder copy (resumable, like a dump);
         # a true abandon lives in the dedicated Settings → Data & backup controls.

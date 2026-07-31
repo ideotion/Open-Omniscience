@@ -49,6 +49,13 @@
          worst 4.61:1. */
       --lvl-group:color-mix(in srgb, var(--accent) 75%, var(--fg) 25%);
       --lvl-super:color-mix(in srgb, var(--accent) 35%, var(--fg) 65%);
+      /* --chip-off: the text colour of an UNSELECTED toggle chip (.ag-cal). Derived
+         from each theme's OWN --fg/--muted via color-mix — never a hardcoded hue
+         (the --caveat lesson: a fixed hue failed contrast on 8/17 themes). Verified
+         by contrast math on every theme's --panel: worst 5.70:1, clears AA 4.5:1
+         everywhere with headroom. Plain --muted would also pass, but only just
+         (worst 4.56:1) — too thin a margin for a token a future theme may retint. */
+      --chip-off:color-mix(in srgb, var(--fg) 50%, var(--muted) 50%);
       --border:#262d3a; --border-soft:#1d2331;
       --shadow:0 14px 38px -16px rgba(0,0,0,.62), 0 2px 6px -2px rgba(0,0,0,.4);
       --radius:12px; --radius-sm:8px;
@@ -594,10 +601,19 @@
     @media (max-width:900px) { .ag-cell { min-height:54px; } .ag-chip { display:none; }
       #agenda-week .ag-cell { min-height:64px; } #agenda-week .ag-chip { display:block; }
       .ag-cell.has::after { content:"•"; color:var(--accent); font-size:14px; line-height:.6; } }
+    /* calendar-chip-contrast (2026-07-31 field report: the unsubscribed calendar
+       chips are unreadable, in light AND dark themes). Cause: element `opacity:.6`
+       composites the WHOLE chip over the panel behind it, so the effective text
+       colour was 0.6*--muted + 0.4*--panel while the background stayed --panel --
+       i.e. the opacity ate 40% of an already-soft pair. Measured across all 17
+       themes: 16 FAILED WCAG AA 4.5:1 (worst 2.25 on Paper); only Contrast passed,
+       which is why it read as broken on every theme the maintainer tried.
+       Fix: drop the opacity (the ON state is carried by the accent background +
+       border, not by dimming the OFF one) and give the off state --chip-off. */
     .ag-cal { font-size:12px; padding:3px 10px; border:1px solid var(--border); border-radius:999px;
-      background:var(--panel); color:var(--muted); cursor:pointer; opacity:.6; }
+      background:var(--panel); color:var(--chip-off); cursor:pointer; }
     .ag-cal.on { color:var(--accent-fg,var(--fg)); background:color-mix(in srgb,var(--accent) 18%,transparent);
-      border-color:var(--accent); opacity:1; }
+      border-color:var(--accent); }
     .ag-tag { display:inline-block; font-size:11px; padding:0 6px; margin-right:3px; border-radius:10px;
       background:var(--panel2); border:1px solid var(--border); cursor:pointer; }
     .ag-tag:hover { border-color:var(--accent); color:var(--accent); }
