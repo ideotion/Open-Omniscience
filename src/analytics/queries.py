@@ -1331,9 +1331,27 @@ def trending(
     ``growth`` = recent_count / expected, where expected = (prior_count /
     baseline_days) * window_days. New terms (no prior) report growth as the recent
     count. This is a transparent ratio, not a significance test.
+
+    WINDOW WIDTH (fixed 2026-07-31): the recent window is exactly ``window_days``
+    days ENDING TODAY INCLUSIVE -- ``[today - (window_days - 1), today]`` -- and the
+    baseline is the ``baseline_days`` days immediately preceding it. Previously
+    ``w_start`` was ``today - window_days``, so the recent window spanned
+    ``window_days + 1`` days while ``expected`` normalised the prior rate to
+    ``window_days``, inflating every ``growth`` by (N+1)/N -- 2x on the shipped
+    ("24h", 1, 7) preset, and drifting through the day because today is partial.
+    The same ``+1`` shape in ``supergroup_rising``/``concentration`` CANCELS there
+    (both are same-window share tests, so it appears in numerator and denominator);
+    it does not cancel here, because ``expected`` is a rate scaled by a nominal
+    width. ``tests/test_trending_window_width.py`` pins the width so a future edit
+    cannot reintroduce the drift.
+
+    ``observed_on`` is a DATE, so the final day is whatever has been observed so far
+    today -- a partial bucket, not a rolling 24 hours.
     """
     today = date.today()
-    w_start = today - timedelta(days=window_days)
+    # N days ending today inclusive. The half-open live query below adds the +1 day
+    # to reach the end of today; the rollup path is inclusive and needs no +1.
+    w_start = today - timedelta(days=window_days - 1)
     b_start = w_start - timedelta(days=baseline_days)
 
     def _counts(lo, hi):
