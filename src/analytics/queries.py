@@ -286,8 +286,22 @@ def top_terms(
     limit: int = 20,
     group: bool = False,
     target_lang: str | None = None,
+    end: date | None = None,
 ) -> dict:
     """Most-mentioned keywords (optionally within a window / country / kind).
+
+    ``end`` (EXCLUSIVE upper bound, additive 2026-08-01) anchors ``days`` to a CLOSED
+    period rather than to today, so a result can be reproduced later: the window
+    becomes exactly ``[end - days, end)``, half-open, so consecutive periods tile
+    with no gap and no double-counted boundary day.
+
+    With ``end=None`` the legacy window is preserved BYTE-FOR-BYTE, including its
+    inclusive-of-today shape (``observed_on >= today - days``, which spans days + 1
+    calendar days). That width is deliberately NOT changed here: unlike ``trending``
+    -- where the extra day was normalised against a nominal width and so inflated a
+    published ratio -- ``top_terms`` is an ordering with no rate, so the extra day
+    costs no correctness, and narrowing it would silently change what Home and
+    Insights list. Making the two consistent is a separate, visible decision.
 
     ``target_lang`` makes the rows language-aware: each row whose concept has a
     verified ring translation into that language gains ``translation`` (see
@@ -324,17 +338,26 @@ def top_terms(
         # returns rows in the SAME shape/order this query would, so the honesty layers
         # below (hidden-word filter, families, rings, translations) are byte-identical.
         rows = []
-        if days and not country:
+        # The rollup serves a TRAILING day count only (windowed_rows takes days=), so an
+        # explicit `end` -- a closed period -- cannot be served from it and falls through
+        # to the live query rather than being answered for the wrong window.
+        if days and not country and end is None:
             from src.analytics import rollup_serve
 
             _rollup_rows = rollup_serve.windowed_rows(session, days=days, kind=kind, limit=limit * 4)
-        if _rollup_rows is None:  # not opted in / not built / per-country -> live query
+        if _rollup_rows is None:  # not opted in / not built / per-country / end -> live query
             q = session.query(
                 Keyword,
                 func.sum(KeywordMention.count).label("m"),
                 func.count(func.distinct(KeywordMention.article_id)).label("arts"),
             ).join(KeywordMention, KeywordMention.keyword_id == Keyword.id)
-            if days:
+            if days and end is not None:
+                # Exact half-open [end - days, end): a closed, reproducible period.
+                q = q.filter(
+                    KeywordMention.observed_on >= end - timedelta(days=days),
+                    KeywordMention.observed_on < end,
+                )
+            elif days:
                 q = q.filter(KeywordMention.observed_on >= date.today() - timedelta(days=days))
             if country:
                 q = q.filter(KeywordMention.country == country.lower())
@@ -1325,6 +1348,7 @@ def trending(
     limit: int = 20,
     min_recent: int = 3,
     target_lang: str | None = None,
+    end: date | None = None,
 ) -> dict:
     """Rising keywords: recent volume vs the prior-period rate (a defined ratio).
 
@@ -1347,11 +1371,26 @@ def trending(
 
     ``observed_on`` is a DATE, so the final day is whatever has been observed so far
     today -- a partial bucket, not a rolling 24 hours.
+
+    ``end`` (EXCLUSIVE upper bound, additive 2026-08-01) anchors the comparison to a
+    CLOSED period instead of to today, which is what makes a result reproducible: with
+    the default ``None`` the window ends after today, so re-running tomorrow answers a
+    different question, and a period that has already closed cannot be asked about at
+    all. The recent window is ``[end - window_days, end)`` and the baseline is the
+    ``baseline_days`` immediately before it, both half-open, so consecutive periods
+    tile with no gap and no double-counted boundary day.
+
+    Only ``end`` is offered, never a ``start``/``end`` pair: the width already lives in
+    ``window_days``, and a pair could disagree with it. That disagreement is exactly
+    the defect fixed on 2026-07-31 (a window one day wider than its own
+    normalisation), so the API is shaped to make it unrepresentable.
     """
-    today = date.today()
-    # N days ending today inclusive. The half-open live query below adds the +1 day
-    # to reach the end of today; the rollup path is inclusive and needs no +1.
-    w_start = today - timedelta(days=window_days - 1)
+    # The recent window's EXCLUSIVE upper bound. Default: the end of today, so the
+    # window is the N days ending today inclusive -- byte-identical to before ``end``
+    # existed (today + 1 - N == today - (N - 1)).
+    # (named w_end, not hi, so it cannot be confused with _counts's own `hi` parameter)
+    w_end = (date.today() + timedelta(days=1)) if end is None else end
+    w_start = w_end - timedelta(days=window_days)
     b_start = w_start - timedelta(days=baseline_days)
 
     def _counts(lo, hi):
@@ -1371,12 +1410,12 @@ def trending(
     if not country:
         from src.analytics import rollup_serve
 
-        _r = rollup_serve.windowed_counts(session, lo=w_start, hi=today)
+        _r = rollup_serve.windowed_counts(session, lo=w_start, hi=w_end - timedelta(days=1))
         _p = rollup_serve.windowed_counts(session, lo=b_start, hi=w_start - timedelta(days=1))
         if _r is not None and _p is not None:
             recent, prior, _served = _r, _p, True
     if not _served:
-        recent = _counts(w_start, today + timedelta(days=1))
+        recent = _counts(w_start, w_end)
         prior = _counts(b_start, w_start)
 
     scored = []
@@ -1523,6 +1562,8 @@ def trending_windows(
     limit: int = 10,
     series_top: int = 0,
     target_lang: str | None = None,
+    end: date | None = None,
+    window_presets: tuple[tuple[str, int, int], ...] | None = None,
 ) -> dict:
     """Rising keywords across THREE preset windows side by side (24h · 7d · 30d).
 
@@ -1531,6 +1572,13 @@ def trending_windows(
     ratio, never a composite score). Short windows are sparse on a young corpus, so
     each term carries its raw ``recent`` count (n) and the caller states the
     early-corpus honesty. No score; the ratio is a disclosed method.
+
+    ADDITIVE (2026-08-01): ``end`` (EXCLUSIVE upper bound) is passed through to each
+    preset's :func:`trending` call, anchoring all three to a CLOSED period instead of
+    to today so the set is reproducible. ``window_presets`` overrides the preset table for a
+    caller that needs a different cadence (a periodic document's daily / weekly /
+    monthly / longer editions) -- same ``(label, window_days, baseline_days)`` shape.
+    Both default to the shipped behaviour exactly.
 
     ADDITIVE: with ``series_top > 0``, the first ``series_top`` terms of each window
     gain a ``series`` list of ``{"date", "count"}`` daily points spanning that
@@ -1541,7 +1589,7 @@ def trending_windows(
     """
     windows = []
     served_basis = None  # the rollup disclosure (D3): stale/rebuilding/as_of, surfaced once
-    for label, wdays, bdays in _TREND_WINDOWS:
+    for label, wdays, bdays in (window_presets or _TREND_WINDOWS):
         res = trending(
             session,
             window_days=wdays,
@@ -1552,6 +1600,7 @@ def trending_windows(
             # 24h on a young corpus is thin — don't gate it out; show n + caveat.
             min_recent=1 if wdays == 1 else 2,
             target_lang=target_lang,
+            end=end,
         )
         if served_basis is None and res.get("basis"):
             served_basis = res["basis"]
