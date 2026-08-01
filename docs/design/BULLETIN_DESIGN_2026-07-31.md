@@ -542,19 +542,43 @@ gap the draft called "the gap that matters most" — `observe_producers`, which
 records `ok` / `no-signal` / `error` per producer instead of collapsing every
 empty result into an indistinguishable `[]`.
 
-**What is missing is the loop, and it is three small instruments:**
+**CORRECTION (2026-07-31, while building it).** This section previously said the
+loop needed three missing instruments. On re-reading the module, **two of the
+three were already built** — the same staleness this record was written to fix,
+recurring one section later:
 
-1. **Determinism check** — run the card pass twice and diff. `card_audit` does
-   not do this today, and the previous draft said determinism should be
-   default-ON. Without it, "this number changed" cannot be distinguished from
-   "this number is nondeterministic".
-2. **Persisted audit runs** — each audit stored as a comparable snapshot.
-3. **Audit-to-audit diff** — improved / regressed / unchanged / not-measurable.
-   **`scripts/kpi_diff.py` already has exactly this shape** (`classify(old, new)`,
-   `diff_snapshots`); it simply is not pointed at card audits.
+1. **Determinism check** — ALREADY BUILT. `card_audit._determinism_check`
+   (`card_audit.py:1599`) runs a second producer pass and diffs it, and it is
+   **ON BY DEFAULT** (`determinism: bool = True`, `:1300`). It is bounded by a
+   time budget rather than switched off, and a skip is reported as skipped:
+   `stable` is `None` when the check did not run, with the module's own note that
+   "an unrun check is never reported as a stable feed."
+2. **Persisted audit runs** — ALREADY BUILT. `_report_path` (`:1739`) writes one
+   `oo-card-audit-<stamp>.json` per deep run, so runs accumulate and stay
+   comparable. `last_card_audit_report()` reads only the newest, which is why the
+   accumulation was easy to miss.
+3. **Audit-to-audit diff** — this was the genuinely missing one. **SHIPPED
+   2026-07-31**: `src/briefing/card_audit_diff.py` projects a saved report onto a
+   comparable metrics snapshot (17 metrics, each with its own
+   direction-of-goodness) and classifies each across two runs as improved /
+   regressed / unchanged / not-measurable / not-comparable. CLI:
+   `python3 -m scripts.card_audit_diff OLD NEW` or `--latest`. Registered as
+   `card-audit-diff-selftest` in `src/monitoring/recursive_loop.py`.
 
-Register the loop as a harness in `src/monitoring/recursive_loop.py`, which
-already hosts this class of thing.
+**Why the classifier is not shared with `scripts/kpi_diff.py`**, despite the
+identical vocabulary: that script is deliberately stdlib-only and documented to
+run *without the app installed*, and `python3 scripts/kpi_diff.py` puts `scripts/`
+on `sys.path` rather than the repo root — so it cannot import from `src`, and
+moving its helpers into `src` would break that property. The card-audit classifier
+is also genuinely smaller (plain counts, no "exact/green-verdict" case). Recorded
+as a decision so it is not mistaken for accidental duplication.
+
+**Honesty rails carried into the diff:** a metric absent from a report is
+not-measurable, never assumed zero; a check that did not run is not-measurable,
+never "stable"; counts with no direction-of-goodness (how many cards surfaced)
+report changed/unchanged and are **never** called an improvement; and the report
+states that two audits of a live corpus differ for reasons that are not the fix,
+so a regression is a prompt to look rather than a defect by itself.
 
 **Sequence:** build the three instruments → run improve/audit cycles until the
 diff stops showing regressions → then the Bulletin consumes a card system whose
@@ -636,10 +660,11 @@ their own corpus — so descriptions can be honest without being personal.
 
 ## 21. Build order
 
-1. `trending()` off-by-one fix (§5.6) — independent, own reviewed slice.
-2. vLLM temperature mapping (§6.4) — independent, small.
-3. Continuous-improvement instruments (§15): determinism check, persisted audit
-   runs, audit-to-audit diff. Run cycles.
+1. ~~`trending()` off-by-one fix (§5.6)~~ — **SHIPPED** 2026-07-31.
+2. ~~vLLM temperature mapping (§6.4)~~ — **SHIPPED** 2026-07-31.
+3. Continuous-improvement instruments (§15) — the determinism check and per-run
+   persistence were already built; the **audit-to-audit diff SHIPPED** 2026-07-31.
+   What remains is *running the cycles*: an operator step, not a build.
 4. Explicit `start`/`end` windows on `top_terms` / `trending` / `trending_windows`,
    mirroring `associations`' existing `_window_filter` signature.
 5. Measure LLM per-call latency (§6.3) so the budget setting has real numbers.
