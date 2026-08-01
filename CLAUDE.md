@@ -1482,6 +1482,21 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   latency → Layer A → persistence/backup/ZIP → Layer B → UI. Steps 1–3 are worth doing whether or
   not the Bulletin is built. FIVE OPEN QUESTIONS remain in §20 (section list · introduction · mail
   sending · whether Layer A should be available below the hardware gate · review-screen UX).
+  **STATUS 2026-08-01: STEPS 1–6 SHIPPED** (PRs #819 trending off-by-one · #820 vLLM sampling
+  options · #822 audit-to-audit diff · #823 explicit period windows · #824 LLM latency bench ·
+  step 6 Layer A on `claude/weekly-synthesis-design-ey6ql8`) — per-step detail = the 2026-07-31
+  and 2026-08-01 `docs/ledger/shipped.csv` rows. Layer A lives in `src/bulletin/` (period
+  arithmetic + hardware gate + masthead + disclosures + `rising_concepts`) and is readable today
+  via `GET /api/diagnostics/bulletin-preview`, which also rides the all-diagnostics bundle as
+  `bulletin-weekly.json` — deliberate, so the output is judgeable on a real corpus before any
+  surface exists (§12's sandbox-phase instruction). **OPEN QUESTION 4 is now ONE CONSTANT with
+  exactly ONE read** (`src/bulletin/gate.py:LAYER_A_REQUIRES_CAPABLE_HARDWARE`, pinned by a test
+  that counts the reads): answering it is a one-line change, not an audit. REMAINING: the other
+  §11 sections (across channels · by topic tag · changes of record · alerts · `through_time`) as
+  further registered bundles, then steps 7–9. TWO OPERATOR STEPS carried forward: run
+  `/llm-bench` on the GPU machine and on a slow one so the §6.3 time budget rests on measurements
+  rather than a guess; and run the continuous-improvement cycles (§15's remaining half is
+  *running* them, not building them).
 - **SETTINGS-TAB REVIEW 2026-07-31 — 15 SUBTABS → 10, A NEW CARDS TAB, A NEW ADVANCED TAB
   (maintainer reviewed every Settings subtab and gave per-subtab remarks; 23 follow-up questions
   put and ANSWERED the same day; PLANNING ONLY this session, code-verified against `main`@b5bc6b6;

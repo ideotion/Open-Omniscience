@@ -665,10 +665,27 @@ their own corpus — so descriptions can be honest without being personal.
 3. Continuous-improvement instruments (§15) — the determinism check and per-run
    persistence were already built; the **audit-to-audit diff SHIPPED** 2026-07-31.
    What remains is *running the cycles*: an operator step, not a build.
-4. Explicit `start`/`end` windows on `top_terms` / `trending` / `trending_windows`,
-   mirroring `associations`' existing `_window_filter` signature.
-5. Measure LLM per-call latency (§6.3) so the budget setting has real numbers.
-6. Layer A: period-bounded article selector + fact bundles + quarantine exclusion.
+4. ~~Explicit `start`/`end` windows on `top_terms` / `trending` /
+   `trending_windows`~~ — **SHIPPED** 2026-07-31. Only an `end` is offered, never a
+   `start`/`end` pair: the width already lives in `window_days`, and a pair could
+   disagree with it — which is exactly the defect step 1 fixed, so it was made
+   unrepresentable rather than documented.
+5. ~~Measure LLM per-call latency (§6.3)~~ — **SHIPPED** 2026-07-31
+   (`GET /api/diagnostics/llm-bench`). The *measurement* is an operator step: run
+   it on the GPU machine and on a slow one, and the budget setting gets real
+   numbers instead of a guess.
+6. ~~Layer A: period-bounded article selector + fact bundles + quarantine
+   exclusion~~ — **SHIPPED** 2026-08-01 (`src/bulletin/`). Period arithmetic
+   (§5, cadences + half-open tiling + the baseline-coverage rail), the hardware
+   gate (§3, with open question 4 reduced to one constant), the masthead (§11),
+   the disclosures, and `rising_concepts` anchored to the period's own closed
+   window. Readable today via `GET /api/diagnostics/bulletin-preview`, which also
+   rides the all-diagnostics bundle as `bulletin-weekly.json` — so the output can
+   be judged on a real corpus before the surfaces are built (§12's sandbox-phase
+   instruction: classification falls out of what is observed).
+   Remaining §11 sections — across channels, by topic tag, changes of record,
+   alerts, `through_time` — are further registered bundles over the same period;
+   the registry is what makes them cheap, which was the point of registering them.
 7. Persistence, backup registration, ZIP export.
 8. Layer B: story clustering, narration, validator, per-sentence provenance.
 9. Settings section, review screen, renders.
