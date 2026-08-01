@@ -2259,5 +2259,18 @@
   "reachable": "يمكن الوصول إليها",
   "Calendar events imported": "أحداث التقويم المستوردة",
   "waiting on a re-check": "بانتظار إعادة الفحص",
-  "check failed — see the diagnostics log": "فشل الفحص — راجع سجل التشخيص"
+  "check failed — see the diagnostics log": "فشل الفحص — راجع سجل التشخيص",
+  "; sentences naming something absent from the sources were removed": "؛ حُذفت الجمل التي تذكر شيئًا غير موجود في المصادر",
+  "dropped; not in the evidence:": "مُستبعدة؛ غير موجودة في الأدلة:",
+  "No model text: ": "لا يوجد نص من النموذج: ",
+  "Published — the record itself is unchanged.": "نُشر — السجل نفسه لم يتغير.",
+  "Published. Nothing was sent anywhere; the document is yours to share.": "نُشر. لم يُرسل شيء إلى أي مكان؛ المستند لك لتشاركه.",
+  "Delete this edition? The corpus is untouched — only the document goes.": "حذف هذا الإصدار؟ لن يُمس المتن — المستند وحده هو ما يُحذف.",
+  "You can turn this on anyway in Settings → AI.": "يمكنك تفعيله على أي حال من الإعدادات ← الذكاء الاصطناعي.",
+  "This machine cannot build a bulletin.": "لا يمكن لهذا الجهاز إنشاء نشرة.",
+  " · one source only": " · مصدر واحد فقط",
+  "Daily": "يومي",
+  "Weekly": "أسبوعي",
+  "Monthly": "شهري",
+  "Yearly": "سنوي"
 }

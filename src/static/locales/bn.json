@@ -2259,5 +2259,18 @@
   "reachable": "পৌঁছানো যায়",
   "Calendar events imported": "আমদানি করা ক্যালেন্ডার ইভেন্ট",
   "waiting on a re-check": "পুনরায় যাচাইয়ের অপেক্ষায়",
-  "check failed — see the diagnostics log": "যাচাই ব্যর্থ — ডায়াগনস্টিক লগ দেখুন"
+  "check failed — see the diagnostics log": "যাচাই ব্যর্থ — ডায়াগনস্টিক লগ দেখুন",
+  "; sentences naming something absent from the sources were removed": "; উৎসে অনুপস্থিত কিছুর নাম উল্লেখ করা বাক্যগুলি সরানো হয়েছে",
+  "dropped; not in the evidence:": "বাদ দেওয়া হয়েছে; প্রমাণে নেই:",
+  "No model text: ": "কোনো মডেল টেক্সট নেই: ",
+  "Published — the record itself is unchanged.": "প্রকাশিত — রেকর্ডটি নিজে অপরিবর্তিত।",
+  "Published. Nothing was sent anywhere; the document is yours to share.": "প্রকাশিত। কোথাও কিছু পাঠানো হয়নি; নথিটি আপনার, আপনি ভাগ করে নিন।",
+  "Delete this edition? The corpus is untouched — only the document goes.": "এই সংস্করণটি মুছবেন? কর্পাস অক্ষত থাকে — কেবল নথিটি যায়।",
+  "You can turn this on anyway in Settings → AI.": "আপনি তবুও সেটিংস → AI-তে এটি চালু করতে পারেন।",
+  "This machine cannot build a bulletin.": "এই মেশিন বুলেটিন তৈরি করতে পারে না।",
+  " · one source only": " · কেবল একটি উৎস",
+  "Daily": "দৈনিক",
+  "Weekly": "সাপ্তাহিক",
+  "Monthly": "মাসিক",
+  "Yearly": "বার্ষিক"
 }

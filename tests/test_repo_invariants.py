@@ -7814,3 +7814,98 @@ def test_every_card_family_reaches_the_operator():
     assert FAMILY_ORDER == BUCKETS
     covered = {s.family for s in CARD_CATALOG}
     assert covered == set(BUCKETS), f"families with no producer surfaced: {set(BUCKETS) - covered}"
+
+
+def test_the_bulletin_is_the_last_folded_advanced_section_and_loads_on_expand():
+    """Bulletin design record §16 (placement — RULED).
+
+    A folded section at the VERY BOTTOM of Advanced, so it can be reached by
+    skipping to the end, and "folded must not mean fetched": the loader fires on
+    section EXPAND like every other Advanced section. That distinction is not
+    cosmetic — the availability probe and the edition list are real work, and a
+    subtab that ran every section's loader on select would make opening Advanced
+    the most expensive click in Settings.
+    """
+    html = _ui_source()
+    markup = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+
+    # 1. It exists, and it is LAST — "skip to the end" is the placement ruling.
+    order = re.findall(r'data-adv="([a-z]+)"', markup)
+    assert order, "Advanced must still have folded sections"
+    assert order[-1] == "bulletin", f"the Bulletin must be the last Advanced section, got {order}"
+
+    # 2. Folded by default: a <details> with no `open`.
+    block = markup.split('data-adv="bulletin"', 1)[0].rsplit("<details", 1)[1]
+    assert "open" not in block, "the Bulletin section must be folded by default"
+
+    # 3. Folded does not mean fetched — it loads through the expand-driven map.
+    assert "bulletin: () => { loadBulletin(); }" in html, (
+        "the Bulletin must load on section EXPAND, via the Advanced loader map"
+    )
+
+    # 4. A gate refusal states its REASON and points at the override. The hardware
+    #    gate is a default with a stated basis, never a hard block.
+    assert "/api/bulletin/availability" in html
+    assert "You can turn this on anyway in Settings" in html
+
+
+def test_the_bulletin_review_screen_shows_per_sentence_verdicts_and_never_edits_output():
+    """Design record §12 (per-producer toggles) and §13 (draft → review → publish).
+
+    The load-bearing mechanic is that a toggle RE-RENDERS from the persisted
+    record: exclusions ride the render URL and nothing is written back, so a
+    number in a published document is always a number the record contains.
+    """
+    html = _ui_source()
+
+    # 1. Per SENTENCE, not per paragraph — a sentence you can see was checked is a
+    #    different thing from a paragraph labelled "validated".
+    assert "s.sentences" in html and "x.unsupported" in html
+    assert "dropped; not in the evidence:" in html
+
+    # 2. A toggle re-renders; it never writes a trimmed copy. The exclusions are
+    #    query parameters on the render/publish calls and nowhere else.
+    assert "exclude_sections" in html and "exclude_stories" in html
+    assert "/render?" in html, "the preview must render from the persisted record"
+
+    # 3. Publishing is the operator's act (§13): automation reaches a draft.
+    assert "/publish?" in html
+    assert "Published — the record itself is unchanged." in html
+
+    # 4. A section's REAL window is visible during review (§12), so a 14-day
+    #    number in a 7-day edition is seen rather than discovered afterwards.
+    assert "matches_period === false" in html
+
+
+def test_the_bulletin_selection_is_exclusion_and_is_disclosed_in_the_document():
+    """§17 honesty rails: real totals, and a document that omits part of itself
+    must say so. Pinned in the BACKEND, since that is what a published file
+    carries — the operator chooses what to publish, but a reader is entitled to
+    know they are reading a selection."""
+    from src.bulletin.render import render_html, render_markdown
+    from src.bulletin.review import apply_selection
+
+    review = (_SRC / "bulletin" / "review.py").read_text(encoding="utf-8")
+
+    # Exclusion, never inclusion: a section added after a selection was saved is
+    # INCLUDED by default. The opposite convention makes "absent from the list"
+    # silently mean "rejected".
+    assert "exclude_sections" in review and "include_sections" not in review
+    assert "sections_shown" in review and "sections_total" in review
+
+    # The disclosure is asserted BEHAVIOURALLY: a source grep for the sentence
+    # would break the moment the line wraps, and it is the rendered document —
+    # not the source — that a reader actually holds.
+    edition = {
+        "period": {},
+        "masthead": {},
+        "sections": [{"section": "a", "terms": []}, {"section": "b", "terms": []}],
+    }
+    for text in (
+        render_markdown(apply_selection(edition, exclude_sections=["b"])),
+        render_html(apply_selection(edition, exclude_sections=["b"])),
+    ):
+        assert "1 of 2 sections" in text, "a document that omits part of itself must say so"
+    assert "1 of 2 sections" not in render_markdown(edition), (
+        "an unselected edition must not claim a selection it did not make"
+    )

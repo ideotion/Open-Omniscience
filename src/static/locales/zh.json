@@ -2259,5 +2259,18 @@
   "reachable": "可访问",
   "Calendar events imported": "已导入的日历事件",
   "waiting on a re-check": "等待重新检查",
-  "check failed — see the diagnostics log": "检查失败 — 请查看诊断日志"
+  "check failed — see the diagnostics log": "检查失败 — 请查看诊断日志",
+  "; sentences naming something absent from the sources were removed": "；提及来源中不存在内容的句子已被移除",
+  "dropped; not in the evidence:": "已丢弃；不在证据中：",
+  "No model text: ": "无模型文本：",
+  "Published — the record itself is unchanged.": "已发布 — 记录本身未更改。",
+  "Published. Nothing was sent anywhere; the document is yours to share.": "已发布。没有向任何地方发送内容；文档由您自行分享。",
+  "Delete this edition? The corpus is untouched — only the document goes.": "删除此期？语料库不受影响 — 只删除文档。",
+  "You can turn this on anyway in Settings → AI.": "您仍可在“设置 → AI”中启用。",
+  "This machine cannot build a bulletin.": "此机器无法构建公报。",
+  " · one source only": " · 仅一个来源",
+  "Daily": "每日",
+  "Weekly": "每周",
+  "Monthly": "每月",
+  "Yearly": "每年"
 }

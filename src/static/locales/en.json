@@ -2259,5 +2259,18 @@
   "reachable": "reachable",
   "Calendar events imported": "Calendar events imported",
   "waiting on a re-check": "waiting on a re-check",
-  "check failed — see the diagnostics log": "check failed — see the diagnostics log"
+  "check failed — see the diagnostics log": "check failed — see the diagnostics log",
+  "; sentences naming something absent from the sources were removed": "; sentences naming something absent from the sources were removed",
+  "dropped; not in the evidence:": "dropped; not in the evidence:",
+  "No model text: ": "No model text: ",
+  "Published — the record itself is unchanged.": "Published — the record itself is unchanged.",
+  "Published. Nothing was sent anywhere; the document is yours to share.": "Published. Nothing was sent anywhere; the document is yours to share.",
+  "Delete this edition? The corpus is untouched — only the document goes.": "Delete this edition? The corpus is untouched — only the document goes.",
+  "You can turn this on anyway in Settings → AI.": "You can turn this on anyway in Settings → AI.",
+  "This machine cannot build a bulletin.": "This machine cannot build a bulletin.",
+  " · one source only": " · one source only",
+  "Daily": "Daily",
+  "Weekly": "Weekly",
+  "Monthly": "Monthly",
+  "Yearly": "Yearly"
 }
