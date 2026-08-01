@@ -2366,6 +2366,42 @@ def rollup_benchmark(
     )
 
 
+@router.get("/llm-bench")
+def llm_bench(
+    repeats: int = Query(3, ge=1, le=10, description="Timed calls per prompt shape"),
+) -> JSONResponse:
+    """Per-call LLM latency on THIS machine, per prompt SHAPE.
+
+    Any feature that runs the local model over many articles needs an operator setting
+    for how much work to do, and the honest form of that setting is a TIME BUDGET, not
+    an article count — a count means nothing without knowing what a call costs here.
+    Nothing in this repo recorded per-call latency, so a budget could only be guessed.
+
+    Times the shapes the app actually sends (a small fact bundle, one article for
+    who/where/when, one article for a summary, and a 24,000-character excerpt set for a
+    synthesis), each after an excluded warmup, and translates the result into calls per
+    hour. Ollama reports its own durations; vLLM's OpenAI-compatible response carries
+    none, so those figures are wall-clock — stated per shape, never mixed.
+
+    LOOPBACK inference only: no egress, so it is airplane-safe and deliberately carries
+    no kill-switch refusal of its own. Runs on click only and is never transmitted.
+    See src/monitoring/llm_bench.py.
+    """
+    from src.monitoring.llm_bench import run_llm_bench
+
+    payload = run_llm_bench(repeats=repeats)
+    body = envelope(
+        kind="llm-bench",
+        query={"repeats": repeats},
+        count=len(payload.get("shapes", [])),
+        payload=payload,
+    )
+    fname = f"oo-llm-bench-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+    return JSONResponse(
+        body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+
 @router.get("/source-coverage-benchmark")
 def source_coverage_benchmark(
     repeats: int = Query(3, ge=1, le=10, description="Timing runs per read"),
@@ -3301,6 +3337,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
 _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/source-quality": "whole-corpus decrypt ZIP export — own button (manifest 'excluded')",
     "/rollup-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
+    "/llm-bench": "heavy operator-run benchmark, needs a live model (manifest 'excluded')",
     "/source-coverage-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
     "/ir-eval": "needs an operator-graded gold-set file (manifest 'excluded')",
     "/gold-builder/sample": "interactive grading sampler, not a report (manifest 'excluded')",
