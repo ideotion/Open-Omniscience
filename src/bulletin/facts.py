@@ -402,14 +402,11 @@ def layer_a(
     counted there is no record to publish, and a payload that quietly omits its own
     lens is worse than a loud failure.
     """
-    sections: list[dict] = []
-    try:
-        sections.append(rising_concepts(session, period, limit=rising_limit, target_lang=target_lang))
-    except Exception as exc:  # noqa: BLE001 - one failing section must not lose the edition
-        _LOG.warning("bulletin: rising_concepts failed", exc_info=True)
-        sections.append(
-            {"section": "rising_concepts", "error": f"{type(exc).__name__}: {exc}", "terms": []}
-        )
+    from src.bulletin.sections import build_sections
+
+    sections = build_sections(
+        session, period, rising_limit=rising_limit, target_lang=target_lang
+    )
 
     return {
         "schema": "oo-bulletin-layer-a-1",
