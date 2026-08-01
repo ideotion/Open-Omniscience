@@ -53,6 +53,7 @@ def availability() -> dict:
 def generate(
     cadence: str = Query("weekly", description="daily | weekly | monthly | trimester | semester | yearly"),
     persist: bool = Query(True, description="write the edition to disk"),
+    narrate: bool = Query(False, description="add the removable narration layer"),
     db: Session = Depends(get_db),
 ) -> dict:
     """Build one edition over a closed period and (by default) persist it.
@@ -60,11 +61,17 @@ def generate(
     The result is a DRAFT. Automation reaches a draft and stops: the operator is
     the byline, so nothing here publishes anything.
 
-    Layer A only for now — deterministic counts with their methods. The document
-    is regenerated FROM the persisted record rather than edited, which is what
-    makes re-rendering or toggling a producer unable to change a number.
+    Narration is OFF by default. With it off the edition is Layer A exactly —
+    deterministic counts with their methods. With it on the same document gains a
+    story block and a narration block, and nothing already there changes: that
+    asymmetry is what makes the layer removable in practice rather than in a
+    docstring.
+
+    The document is regenerated FROM the persisted record rather than edited,
+    which is what makes re-rendering or toggling a producer unable to change a
+    number.
     """
-    from src.bulletin.facts import layer_a
+    from src.bulletin.edition import build_edition
     from src.bulletin.period import resolve_period
     from src.bulletin.store import persist_edition
 
@@ -74,7 +81,7 @@ def generate(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    edition = layer_a(db, period)
+    edition = build_edition(db, period, narrate=narrate)
     edition["gate"] = gate
     if persist:
         try:
