@@ -1435,6 +1435,74 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     lifecycle needs a driver the UI does not own.
 
 ## Open queue (when maintainer says proceed)
+- **FIELD IMPRESSIONS 2026-08-01 — Home-alerts relevance/card system · Home overview subtabs ·
+  Library revamp + graph clarity · unified AI toggle + small-model comparative bench (maintainer;
+  INTAKE + INVESTIGATION this session, code-verified against `main`@d725f5b via a 5-agent
+  read-only fan-out with the load-bearing claims hand-re-verified; PLANNING for a future
+  autonomous Opus 5 session — numbered questions put to the maintainer, ANSWERS PENDING, record
+  them here when they arrive; NOTHING BUILT):** four remarks, each root-caused.
+  (1) **ALERTS — the 2026-07-24 A6/A9/A10 builds ARE shipped** (hazards-as-Articles +
+  `HazardEventDetail` + the HAZARD provenance class; the tiered Home strip with per-item 🗺
+  `openWorldMapAt` deep-links; the local-snapshot-only map layer; magnitude restored into
+  `compute_alerts`) — but the Session-A brief
+  (`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-24_A_FIELD_FIXES.md`) still carries a STALE
+  "Status: PENDING execution" banner (fix on the next docs touch). The residual defect is
+  SELECTION, not plumbing: `_hazard_tier` (src/analytics/alerts.py:59) promotes ONLY GDACS
+  green/orange/red, so EVERY USGS quake lands in "info" (magnitude deliberately never promoted
+  into urgency — that honesty rule STAYS), and `_renderHomeAlerts` (app.js:2551) renders each
+  tier UNCAPPED in snapshot order with no within-tier ordering — a M6.8 drowns among M4.5s
+  exactly as reported. USGS `_quake_band` (major/strong/moderate/minor, parse.py:24) is parsed
+  but drives nothing; GDACS records carry NO magnitude (level only); NO cross-provider
+  same-event dedup exists (one quake can appear via both USGS and GDACS); alerts ALSO surface a
+  second time via the `severity_alerts` producer (bucket=watch). Fix shape pending answers:
+  within-tier ordering + a display floor/cap by PROVIDER-DECLARED facts (magnitude BANDS
+  labelled as bands, never as urgency), "N more on the map →" overflow, per-major-event cards.
+  (2) **HOME — the long scroll is the "__all" default lens**: family subtabs exist (ooSubtabs,
+  8 buckets) but default to ALL cards of ALL buckets with NO total cap (37 producers × 1–10
+  cards); the carousel is top-8 FLATTENED across buckets (one bucket can fill it); the live
+  order IS the disclosed leads order (bucket priority → order_key = distinct sources →
+  magnitude tier → recency, service.py:161-189) BUT `explain_order` +
+  `/api/insights/leads-view` have ZERO frontend callers since the Settings restructure deleted
+  the Leads preview subtab — the ordering-transparency surface is currently GONE; no
+  top-card-per-family logic exists anywhere. Plan direction: an "Overview" default lens = top
+  card per family by the SAME disclosed order_key, each with a visible why-this-card explain
+  (restores the transparency surface), families as today, "All Leads" kept.
+  (3) **LIBRARY — 7 flat sections, NO subtabs**; the graph defects are mechanism-confirmed and
+  TOOLKIT-WIDE, not library-local: BOTH renderers fabricate ticks on flat integer series via
+  the `span=(max-min)||1` fallback (dashChartSvg app.js:9735/9757: a constant-23 series draws
+  gridlines 23 / "23.50" / 23 with the min+max labels OVERLAPPING at the plot bottom; ooChart
+  app.js:10354: 23 / 23.33 / 23.67 / 24 — a +1 top tick no data reaches); NO
+  integer-snap/nice-tick logic exists in either; dashChartSvg X labels are hard MONTH
+  granularity `slice(0,7)` with INDEX-only dedup → two same-month hourly snapshots both print
+  "2026-07"; `n=` renders unitless (it means DATAPOINTS — the maintainer's "23 docs or 2?"
+  confusion); library count bars anchor to window-MIN not zero (Item Y says count series →
+  zero base); the graphs-overflow-their-box vector = the qualification tile's ooChart FIXED-px
+  canvas (320 px hard floor; 680 px hidden-element fallback, app.js:10268) with NO overflow
+  clipping anywhere in the tile/row/panel chain. A5's hide-flat-zero / per-tile window switcher
+  / 4-line qualification tile ARE shipped. Fix = an app-wide AXIS-HONESTY pass on the one chart
+  toolkit (invariant #16 territory) + an ooSubtabs restructure; the maintainer OFFERS page
+  exports as the verification channel (saved HTML preferred over PDF — full DOM; feeds 0.3
+  gate row 8).
+  (4) **AI — NO master toggle exists**: the three progressive sweeps have separate toggle
+  buttons; langdetect auto-start (`ai_langdetect_auto`, default True) is the ONLY auto-start
+  setting and the ONLY hardware-gated sweep (`inference_capability` gates ONLY langdetect-auto
+  + the Bulletin — the sweeps/manual runs never consult it); qualification-assist has NO UI
+  trigger; `/api/ai/keywords/extract` has ZERO frontend callers. DEFAULT MODEL today =
+  `ministral-3:8b-instruct-2512-q4_K_M` on Ollama (since 2026-07-30; vLLM default
+  `mistralai/Ministral-3-3B-Instruct-2512` FP8) — the maintainer proposes CHALLENGING it with
+  tiny models (LiquidAI "LFM2.5-8B-A1B" named; the exact Ollama tag / HF repo MUST be verified
+  at execution and REFUSED if absent, never substituted — the roster rule; LFM2-class models
+  cover ~8 languages vs our 12 ⇒ the per-language tri-state gate is the honest activation
+  instrument). THE BENCH GAP: `triage.py` ships `verify_roster` + per-metric helpers
+  (anchor_accuracy · pairwise_agreement · format validity · canaries) but NO multi-model bench
+  RUNNER, no frozen-batch builder, no endpoint — the ruled 7-model bench is still an operator
+  PROTOCOL, not code; `llm_bench` (latency, per-shape) and
+  `run_perception_eval_against_model` already run per-model on EITHER backend. Plan direction:
+  a roster comparative runner (per model × per task × per language, every metric ALONE, no
+  composite, persisted side-by-side + downloadable logs for the
+  ai-proposed→claude-verified→maintainer-merged chain) + a coordinator-style master toggle
+  (enabled sweeps round-robin on the ONE backend so they never contend, per-feature toggles
+  kept).
 - **THE BULLETIN — PERIODIC CORPUS DOCUMENT (maintainer design conversation 2026-07-30/31; 16
   numbered decisions ANSWERED 2026-07-31; DESIGN ONLY, nothing built; record of record =
   [`docs/design/BULLETIN_DESIGN_2026-07-31.md`](docs/design/BULLETIN_DESIGN_2026-07-31.md),
