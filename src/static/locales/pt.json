@@ -2272,5 +2272,13 @@
   "Daily": "Diário",
   "Weekly": "Semanal",
   "Monthly": "Mensal",
-  "Yearly": "Anual"
+  "Yearly": "Anual",
+  "Step {i} of {n} — {label}": "Passo {i} de {n} — {label}",
+  "Lost contact with the job.": "Contacto perdido com a tarefa.",
+  "vLLM install failed:": "A instalação do vLLM falhou:",
+  "Model download failed:": "A transferência do modelo falhou:",
+  "Installing — this can take several minutes…": "A instalar — pode demorar vários minutos…",
+  "Install vLLM": "Instalar vLLM",
+  "Install Ollama": "Instalar Ollama",
+  "Download the default model": "Transferir o modelo predefinido"
 }

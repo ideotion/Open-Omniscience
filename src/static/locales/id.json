@@ -2272,5 +2272,13 @@
   "Daily": "Harian",
   "Weekly": "Mingguan",
   "Monthly": "Bulanan",
-  "Yearly": "Tahunan"
+  "Yearly": "Tahunan",
+  "Step {i} of {n} — {label}": "Langkah {i} dari {n} — {label}",
+  "Lost contact with the job.": "Kehilangan kontak dengan tugas.",
+  "vLLM install failed:": "Instalasi vLLM gagal:",
+  "Model download failed:": "Unduhan model gagal:",
+  "Installing — this can take several minutes…": "Memasang — ini bisa memakan waktu beberapa menit…",
+  "Install vLLM": "Pasang vLLM",
+  "Install Ollama": "Pasang Ollama",
+  "Download the default model": "Unduh model bawaan"
 }

@@ -2272,5 +2272,13 @@
   "Daily": "毎日",
   "Weekly": "毎週",
   "Monthly": "毎月",
-  "Yearly": "毎年"
+  "Yearly": "毎年",
+  "Step {i} of {n} — {label}": "ステップ {i}/{n} — {label}",
+  "Lost contact with the job.": "ジョブとの通信が途絶えました。",
+  "vLLM install failed:": "vLLM のインストールに失敗しました:",
+  "Model download failed:": "モデルのダウンロードに失敗しました:",
+  "Installing — this can take several minutes…": "インストール中 — 数分かかることがあります…",
+  "Install vLLM": "vLLM をインストール",
+  "Install Ollama": "Ollama をインストール",
+  "Download the default model": "デフォルトモデルをダウンロード"
 }

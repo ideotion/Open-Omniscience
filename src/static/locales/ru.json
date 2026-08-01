@@ -2272,5 +2272,13 @@
   "Daily": "Ежедневно",
   "Weekly": "Еженедельно",
   "Monthly": "Ежемесячно",
-  "Yearly": "Ежегодно"
+  "Yearly": "Ежегодно",
+  "Step {i} of {n} — {label}": "Шаг {i} из {n} — {label}",
+  "Lost contact with the job.": "Связь с задачей потеряна.",
+  "vLLM install failed:": "Не удалось установить vLLM:",
+  "Model download failed:": "Не удалось загрузить модель:",
+  "Installing — this can take several minutes…": "Установка — это может занять несколько минут…",
+  "Install vLLM": "Установить vLLM",
+  "Install Ollama": "Установить Ollama",
+  "Download the default model": "Загрузить модель по умолчанию"
 }
