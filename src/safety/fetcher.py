@@ -55,11 +55,39 @@ class GuardedSession(requests.Session):
     ``get``/``post``/``head`` funnels through, so it cannot be forgotten.
     """
 
+    #: The egress-window purpose this session is allowed to ride, or ``None``.
+    #:
+    #: OPT-IN, and per-session by construction: a session built without naming a
+    #: purpose keeps the OLD, absolute refusal, so an open window can never widen
+    #: the dumps / wiki / ORES / DuckDuckGo sessions by accident. Only the two
+    #: call sites that ARE the AI install (the Ollama installer's resolve + fetch)
+    #: pass one.
+    egress_purpose: str | None = None
+
     def request(self, method, url, *args, **kwargs) -> requests.Response:  # type: ignore[override]
+        # NOTE for anyone writing a test here: this reads the MODULE-LEVEL
+        # ``kill_switch_active`` imported at the top of this file, while
+        # ``egress_permitted`` re-imports it from ``src.ingest`` per call. Both
+        # read the same Event in production, so they never disagree -- but
+        # monkeypatching only THIS module's binding to fake airplane mode makes
+        # the two disagree, and the refusal below silently stops being tested.
+        # Engage the real switch (``activate_kill_switch()``) instead.
         if kill_switch_active():
-            raise NetworkBlocked(
-                "network kill switch is active -- collection stopped by operator"
-            )
+            from src.ingest.egress_window import egress_permitted, socket_exemption
+
+            if not egress_permitted(self.egress_purpose):
+                raise NetworkBlocked(
+                    "network kill switch is active -- collection stopped by operator"
+                )
+            # The kill switch is engaged and a live window covers this session's
+            # purpose, so THIS request is the consented egress -- and it is the
+            # only thing the socket-level airplane backstop should stand aside
+            # for. Lifting it HERE rather than at the call sites is what makes the
+            # two gates impossible to hold apart: a session cannot opt into the
+            # app-level exemption and forget the socket one, or vice versa, and no
+            # other thread is affected for even an instant.
+            with socket_exemption():
+                return super().request(method, url, *args, **kwargs)
         return super().request(method, url, *args, **kwargs)
 
 
@@ -124,7 +152,10 @@ def shard_host_to_proxy(host: str, proxies: list[str]) -> str:
 
 
 def guarded_session(
-    *, user_agent: str = DEFAULT_USER_AGENT, isolation_token: str | None = None
+    *,
+    user_agent: str = DEFAULT_USER_AGENT,
+    isolation_token: str | None = None,
+    egress_purpose: str | None = None,
 ) -> GuardedSession:
     """Build a kill-switch-aware session that honours the protected-mode proxy.
 
@@ -142,8 +173,13 @@ def guarded_session(
     single slow circuit. robots/politeness for these specific API/dump endpoints
     follows each service's own etiquette (handled at the call sites), not generic
     crawl robots -- blanket-applying it would wrongly block legitimate API use.
+
+    ``egress_purpose`` opts THIS session into an operator-consented egress window
+    (``src.ingest.egress_window``). Omitted -- the default, and every existing
+    caller -- the session refuses under the kill switch exactly as before.
     """
     s = GuardedSession()
+    s.egress_purpose = egress_purpose
     s.headers["User-Agent"] = user_agent
     settings = load_settings()
     proxy = settings.http_proxy if settings.is_protected else None

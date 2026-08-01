@@ -263,13 +263,20 @@ def manual_command(path: str) -> str:
 
 
 def _check_online() -> None:
-    """Refuse network steps while the kill switch (airplane mode) is engaged."""
-    from src.ingest import kill_switch_active
+    """Refuse network steps while the kill switch (airplane mode) is engaged.
 
-    if kill_switch_active():
+    An operator-consented EGRESS WINDOW is the one exemption: it lets the local AI
+    be installed without starting the collector, which is a materially narrower
+    exposure (a few infrastructure hosts, not every source in the catalogue). The
+    kill switch itself stays ENGAGED throughout, so every other fetch path in the
+    app keeps refusing itself -- see ``src.ingest.egress_window``.
+    """
+    from src.ingest.egress_window import PURPOSE_AI_INSTALL, egress_permitted
+
+    if not egress_permitted(PURPOSE_AI_INSTALL):
         raise InstallerUnavailable(
             "Network is OFF (airplane mode): refusing to download the Ollama installer. "
-            "Turn airplane mode off to install."
+            "Turn airplane mode off, or allow the AI install to go online on its own."
         )
 
 
@@ -288,9 +295,14 @@ def prepare_installer(
             + f" Download Ollama from {support['download_url']}."
         )
     _check_online()
-    data, version, sha, url = resolve_and_verify(
-        get_json or _default_get_json, get_bytes or _default_get_bytes
-    )
+    # Same reason as run_installer below: this is a synchronous endpoint, not a
+    # registered job, so hold the window open across the fetch (slow over Tor).
+    from src.ingest.egress_window import hold
+
+    with hold():
+        data, version, sha, url = resolve_and_verify(
+            get_json or _default_get_json, get_bytes or _default_get_bytes
+        )
     path = stage_installer(data, sha)
     return PreparedInstaller(version=version, sha256=sha, path=str(path), source_url=url)
 
@@ -329,38 +341,55 @@ def run_installer(path: str) -> Iterator[str]:
             "Elevated privileges are required to install Ollama and this app cannot prompt for "
             "a password. Run this in a terminal instead:\n  " + manual_command(path)
         )
-    proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell, verified script
-        cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        bufsize=1,
-    )
-    assert proc.stdout is not None
-    try:
-        for line in proc.stdout:
-            yield line.rstrip("\n")
-    finally:
-        proc.stdout.close()
-        code = proc.wait()
-    yield f"__exit__ {code}"
+    # Hold the egress window open for the whole run. This step is a streaming
+    # endpoint, not a registered BackgroundJob, so without an explicit hold the
+    # window's idle reap would see "no install job running" and close the window
+    # out from under the very install it was opened for. Released by the `with`
+    # on exhaustion, on an exception, and on GeneratorExit if the client
+    # disconnects -- so it cannot leak the window open either.
+    from src.ingest.egress_window import hold
+
+    with hold():
+        proc = subprocess.Popen(  # noqa: S603 - fixed argv, no shell, verified script
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+        )
+        assert proc.stdout is not None
+        try:
+            for line in proc.stdout:
+                yield line.rstrip("\n")
+        finally:
+            proc.stdout.close()
+            code = proc.wait()
+        yield f"__exit__ {code}"
 
 
 # -- real fetchers (through the guarded factory) ----------------------------- #
 
 
+# These two are the ONLY in-process network calls in the whole Ollama install
+# (everything after them happens in the installer's own child process), so they
+# are the only sessions that opt into the egress window. Every other
+# guarded_session in the app keeps refusing under the kill switch.
 def _default_get_json(url: str) -> dict:
+    from src.ingest.egress_window import PURPOSE_AI_INSTALL
     from src.safety.fetcher import guarded_session
 
-    resp = guarded_session(isolation_token=url).get(url, timeout=30)
+    session = guarded_session(isolation_token=url, egress_purpose=PURPOSE_AI_INSTALL)
+    resp = session.get(url, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
 
 def _default_get_bytes(url: str) -> bytes:
+    from src.ingest.egress_window import PURPOSE_AI_INSTALL
     from src.safety.fetcher import guarded_session
 
-    resp = guarded_session(isolation_token=url).get(url, timeout=120)
+    session = guarded_session(isolation_token=url, egress_purpose=PURPOSE_AI_INSTALL)
+    resp = session.get(url, timeout=120)
     resp.raise_for_status()
     return resp.content
 

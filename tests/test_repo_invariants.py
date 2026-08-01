@@ -1358,8 +1358,13 @@ def test_ollama_binary_installer():
     # never run something outside the verified staging area; elevation explicit
     assert "def _validate_staged(" in inst and "def can_run_unattended(" in inst
     assert "def run_installer(" in inst and "def manual_command(" in inst
-    # kill-switch gated (no socket under airplane)
-    assert "kill_switch_active" in inst
+    # Kill-switch gated (no socket under airplane). ANCHOR MOVED, property intact
+    # (2026-08-01): the gate is now `egress_permitted(PURPOSE_AI_INSTALL)`, whose
+    # FIRST question is still the kill switch -- it only additionally admits an
+    # operator-consented egress window (install the local AI without starting the
+    # collector). Behaviour pinned in tests/test_egress_window.py; the source anchor
+    # here just proves the gate was not deleted.
+    assert "egress_permitted" in inst and "_check_online()" in inst
     # endpoints
     assert '"/install/status"' in llm and '"/install/prepare"' in llm and '"/install/run"' in llm
     # UI: an install panel (only when Ollama is absent) wired to the endpoints
@@ -2558,8 +2563,17 @@ def test_ui_invariants():
     assert '"/api/settings", {method: "PUT"' in html or "llm_model" in html, (
         "set-active must persist the choice via PUT /api/settings {llm_model}"
     )
-    # the pull path is gated by the ONE consent popup (clearnet egress via Ollama)
-    assert "ensureOnline(" in html, "pulling a model must pass ensureOnline (invariant #14)"
+    # The pull path is gated by a consent popup (clearnet egress via Ollama).
+    # SCOPED to pullModel's own body: a bare whole-file search for "ensureOnline("
+    # passes on the dozens of unrelated call sites elsewhere in app.js, so it would
+    # keep reporting green even if this path lost its gate entirely.
+    # 2026-08-01: the accepted gate is now EITHER ensureOnline (go fully online) or
+    # ensureAiEgress (the AI-install egress window — consented, collector stays
+    # stopped). Both show a popup naming the action before any byte moves.
+    _pull_body = html.split("function pullModel(", 1)[1].split("\n    async function", 1)[0]
+    assert "await ensureAiEgress(" in _pull_body or "await ensureOnline(" in _pull_body, (
+        "pulling a model must pass a consent popup before egress (invariant #14)"
+    )
     # 29. Official-statistics producers (Group N): a descriptive directory over
     #     /api/stats/agencies + a one-click register action over
     #     /api/stats/sources/ingest. The directory is DESCRIPTIVE only (no figures, no
@@ -7908,4 +7922,132 @@ def test_the_bulletin_selection_is_exclusion_and_is_disclosed_in_the_document():
         assert "1 of 2 sections" in text, "a document that omits part of itself must say so"
     assert "1 of 2 sections" not in render_markdown(edition), (
         "an unselected edition must not claim a selection it did not make"
+    )
+
+
+def test_the_ai_install_egress_window_is_wired_and_states_its_limit():
+    """The AI-install egress window: consented, visible, honest about its limit.
+
+    Operator, 2026-08-01: install Ollama/vLLM without starting the collector --
+    "divulging your IP to ollama and vllm is not the same as divulging it to all
+    scrapped sources". The kill switch stays ENGAGED, so the collector's silence
+    is structural; only the AI-install gates are exempted.
+    """
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app_js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+
+    # 1. Its OWN consent dialog -- not #net-consent, because this is not going online.
+    assert 'id="ai-egress-consent"' in html, "the window needs its own consent dialog"
+    assert 'id="ai-egress-ok"' in html and 'id="ai-egress-cancel"' in html
+
+    # 2. The consent must state the LIMIT in the same breath as the reassurance.
+    #    Claiming a host restriction we do not enforce would be fabricated security:
+    #    nearly all install traffic runs in child processes this app cannot bound.
+    #    Whitespace-normalised: the prose is line-wrapped in the markup, so a raw
+    #    substring search would fail against perfectly correct copy after a reflow.
+    flat = " ".join(html.split())
+    assert "does not restrict which hosts the installer contacts" in flat, (
+        "the consent must say plainly that hosts are NOT restricted -- the install "
+        "runs in child processes this app cannot see or limit"
+    )
+    assert "not through your configured proxy or Tor" in flat, (
+        "the consent must disclose that these downloads bypass the proxy/Tor"
+    )
+    assert "Collection stays stopped" in flat, (
+        "the consent must state the guarantee it DOES enforce"
+    )
+
+    # 3. A persistent, visible indication while it is open, with a working close.
+    assert 'id="egress-window-bar"' in html, "an open window must be visible app-wide"
+    assert "_paintEgressWindow" in app_js and "closeEgressWindow" in app_js
+
+    # 4. It must never ride the online path. _postGoOnline stays the ONE place that
+    #    POSTs /api/system/network (invariant #14 + tests/test_network_consent.py).
+    assert app_js.count("JSON.stringify({online:true})") == 1, (
+        "_postGoOnline must remain the ONE place that flips the app online; the "
+        "egress window is a third state and must never POST /api/system/network"
+    )
+    assert '"/api/system/egress-window"' in app_js
+    for fn in ("_openEgressWindow", "closeEgressWindow", "ensureAiEgress"):
+        body = app_js.split(f"function {fn}(", 1)[1].split("\n    async function", 1)[0]
+        assert "/api/system/network" not in body or "method" not in body.split(
+            "/api/system/network", 1
+        )[1].split("\n", 1)[0], f"{fn} must not POST the network endpoint"
+
+    # 5. The AI install paths ask for a WINDOW, not full online.
+    assert "ensureAiEgress(" in app_js
+    for anchor in ("async function installVllm", "async function prepareOllamaInstall"):
+        assert anchor in app_js, anchor
+    # installVllm previously called ensureOnline and DISCARDED the result, so
+    # declining the consent did not stop the install. Pin the fix.
+    install_vllm = app_js.split("async function installVllm", 1)[1].split("\n    async function", 1)[0]
+    assert "if (!await ensureAiEgress(" in install_vllm, (
+        "installVllm must ACT on the consent result, not discard it"
+    )
+
+    # 6. The airplane button must not keep asserting "every new network request will
+    #    be refused" while a window is open -- that sentence is false during one.
+    assert "except the AI install you allowed" in app_js, (
+        "the airplane hover must tell the truth while a window is open"
+    )
+
+    # 7. EVERY AI entry point asks, including the second click of the two-step
+    #    Ollama install. runOllamaInstall was the one that did not: the window
+    #    closes itself once nothing is running, so an operator who reads the
+    #    checksum before pressing Install arrives with no window, the backend
+    #    refuses (run_installer calls _check_online too), and the panel offers no
+    #    way back except going fully online -- which starts the collector, the one
+    #    thing this whole feature exists to avoid. SCOPED to each function's own
+    #    body: a whole-file search for "ensureAiEgress(" passes on the other call
+    #    sites and would stay green with this gate deleted (this project's own S4.1
+    #    lesson -- a removal guard is only as strong as the scope it searches).
+    for fn in ("prepareOllamaInstall", "runOllamaInstall"):
+        body = app_js.split(f"async function {fn}(", 1)[1].split("\n    async function", 1)[0]
+        assert "if (!await ensureAiEgress(" in body, (
+            f"{fn} must ask for a window and act on the answer"
+        )
+
+    # 8. Closing must not claim more than closing does. A download already in
+    #    flight runs in a child process this app cannot stop -- exactly what the
+    #    consent dialog said when the window opened -- so "can no longer reach the
+    #    network" would contradict it three clicks later.
+    close_body = app_js.split("async function closeEgressWindow(", 1)[1].split(
+        "\n    // Render the bar", 1
+    )[0]
+    # Comment-STRIPPED: the comment explaining why the old wording is gone has to
+    # quote it, so a raw search fails against correct code -- on its own
+    # explanation. Dropping whole-line // comments leaves a URL inside a string
+    # literal untouched, which is why it is done this way rather than by regex.
+    close_code = "\n".join(
+        ln for ln in close_body.splitlines() if not ln.strip().startswith("//")
+    )
+    assert "can no longer reach the network" not in close_code, (
+        "the close toast must not claim it stops an in-flight download"
+    )
+    assert "finishes on its own" in close_body, (
+        "the close toast must say what closing actually does: new steps are refused"
+    )
+
+    # 9. The bar is an aria-live region, so a polite announcement fires on every
+    #    mutation. Rewriting identical markup each 5 s poll would read the whole
+    #    banner aloud for the length of a multi-GB download. Compared against what
+    #    was last WRITTEN, never bar.innerHTML (the browser normalises markup on
+    #    read-back, so that comparison never matches and the guard silently does
+    #    nothing).
+    paint = app_js.split("function _paintEgressWindow(", 1)[1].split(
+        "\n    // Poll only WHILE", 1
+    )[0]
+    assert "_egressBarHtml === html" in paint and "bar.innerHTML === html" not in paint, (
+        "the bar must be a no-op when unchanged, compared against the last write"
+    )
+
+    # 10. /tasks is where an operator watches a long install, so it must not be a
+    #     screen where their own exposure is invisible -- and its plain offline
+    #     hover is FALSE while a window is open. Same strings as the app, so this
+    #     costs no new translation.
+    tm = (_SRC / "static" / "taskmanager.html").read_text(encoding="utf-8")
+    assert '"/api/system/egress-window"' in tm, "/tasks must read the window state"
+    assert 'id="egress-window-bar"' in tm, "/tasks must show an open window"
+    assert "except the AI install you allowed" in tm, (
+        "/tasks must not keep asserting the plain offline hover during a window"
     )

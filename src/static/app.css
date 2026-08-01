@@ -187,6 +187,30 @@
       background:var(--bg2);
       border-bottom:1px solid var(--border); }
     .subtab-strip[hidden] { display:none; }
+    /* AI-install egress window banner. Colour is var(--caveat) on var(--panel):
+       that exact pair is the one already verified to clear WCAG AA 4.5:1 on every
+       panel of all 17 themes (the invariant-#23 fix), so this cannot repeat the
+       hardcoded-hue failures. NO opacity anywhere in this rule -- element opacity
+       composites the text over the parent and silently destroys the contrast the
+       declared colours promise (the .ag-cal lesson). */
+    .egress-bar { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+      padding:7px 18px; background:var(--panel); color:var(--caveat);
+      border-bottom:1px solid var(--border);
+      box-shadow:inset 3px 0 0 0 var(--caveat); font-size:12.5px; }
+    .egress-bar[hidden] { display:none; }
+    .egress-bar .egress-msg { flex:1 1 260px; }
+    /* Inherits --caveat from .egress-bar deliberately. This span carries the
+       HONEST LIMIT ("which hosts the installer contacts is not restricted"),
+       and var(--muted) rendered it FAINTER than the reassurance beside it --
+       exactly backwards for the half the operator most needs to read. --caveat
+       is the token already contrast-verified across all 17 themes for this
+       purpose (invariant #23, where a hardcoded muted tone failed AA on 8 of
+       them); --muted on --panel clears 4.5:1 only barely at 4.56. */
+    .egress-bar .egress-sub { opacity:1; }
+    /* Third state on the airplane button: a window is open, so "offline" is true
+       of the collector but NOT of every request. The plane's FILL still means the
+       kill switch (invariant #14) and is untouched -- this only adds a ring. */
+    #net-toggle.egress-open { border-color:var(--caveat); color:var(--caveat); }
     /* the relocated nav.tabs fills the strip; drop its own margin/under-border (the strip has one) */
     .subtab-strip > nav.tabs { margin:0 !important; border-bottom:0 !important; width:100%; }
     .icon-btn { background:transparent; border:1px solid transparent; color:var(--muted);

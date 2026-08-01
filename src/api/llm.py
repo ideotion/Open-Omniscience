@@ -756,7 +756,7 @@ def vllm_install(req: VllmInstallRequest | None = None) -> dict:
     never propagates back here). An already-in-flight install is reported
     409-free regardless of the current platform/GPU/airplane state (those
     conditions gate STARTING a new install, not an already-running one)."""
-    from src.ingest import kill_switch_active
+    from src.ingest.egress_window import PURPOSE_AI_INSTALL, egress_permitted
     from src.llm.backend import detect_gpu
     from src.llm.vllm_lifecycle import (
         VLLM_VERIFIED_VERSION,
@@ -773,11 +773,11 @@ def vllm_install(req: VllmInstallRequest | None = None) -> dict:
     support = platform_support()
     if not support["supported"]:
         raise HTTPException(status_code=409, detail=support["reason"])
-    if kill_switch_active():
+    if not egress_permitted(PURPOSE_AI_INSTALL):
         raise HTTPException(
             status_code=409,
             detail="Network is OFF (airplane mode): refusing to install vLLM. "
-            "Turn airplane mode off to install.",
+            "Turn airplane mode off, or allow the AI install to go online on its own.",
         )
     gpu = detect_gpu()
     if not gpu.get("available"):
@@ -992,15 +992,17 @@ def default_model_install() -> dict:
     through Tor, so both are refused under the kill switch rather than only the one that
     happens to route through our own client.
     """
-    from src.ingest import kill_switch_active
+    from src.ingest.egress_window import PURPOSE_AI_INSTALL, egress_permitted
 
-    if kill_switch_active():
+    if not egress_permitted(PURPOSE_AI_INSTALL):
         raise HTTPException(
             status_code=409,
             detail=(
                 "Airplane mode is engaged. Downloading a model is clearnet traffic "
                 "(the model registry / Hugging Face), so it is refused while offline. "
-                "Local inference with an already-installed model still works."
+                "Local inference with an already-installed model still works. "
+                "You can also allow the AI install to go online on its own, which "
+                "does not start collecting."
             ),
         )
     plan = _default_model_plan()

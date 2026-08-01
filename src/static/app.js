@@ -506,6 +506,12 @@
         toast(t("Back online — network requests allowed again."), "ok");
       } catch (e) { toast(e.message, "err"); }
     }
+    // AI-install egress-window state. Declared HERE, above _paintNetwork, because
+    // that function reads _egressState for its third-state title; the rest of the
+    // window's functions live further down beside ensureOnline.
+    let _egressState = null;      // last status payload, or null
+    let _egressTimer = 0;         // poll handle while a window is open
+    let _egressBarHtml = "";      // last markup WRITTEN to the bar (aria-live: no-op when unchanged)
     // Direction-aware transition flash (§3): go-on = live accent, go-off = calm/grounded.
     function _flashNet(online) {
       let f = document.getElementById("net-flash");
@@ -553,15 +559,27 @@
       // State-specific hover title (field test 2026-06-19 #5): name the ACTION the
       // click performs. The button is data-i18n-dyn so the i18n observer won't revert
       // this; the oo:langchange listener re-calls _paintNetwork to re-translate it.
+      // THIRD STATE. With an AI-install egress window open the plain offline
+      // title -- "every new network request will be refused" -- is simply FALSE,
+      // and a hover that lies about the operator's own exposure is exactly the
+      // fabricated assurance this project forbids. The plane's FILL still means
+      // the kill switch (invariant #14, untouched); only the words change.
+      const _egressOpen = !!(_egressState && _egressState.open);
       btn.title = online
         ? t("Online — click to go offline (airplane mode); every new network request will be refused.")
-        : t("Offline (airplane mode) — click to go online; you'll be asked to confirm first.");
+        : _egressOpen
+          ? t("Offline (airplane mode), except the AI install you allowed — collection stays stopped. Click to go fully online.")
+          : t("Offline (airplane mode) — click to go online; you'll be asked to confirm first.");
       btn.classList.toggle("off", !online);
+      btn.classList.toggle("egress-open", !online && _egressOpen);
       document.body.classList.toggle("net-offline", !online);
       // Onboarding coachmark: invite once when we first learn we're offline;
       // retire it for good once the user is online (they've learned the switch).
+      // An open window must NOT retire it (the operator has not gone online in the
+      // sense the coach teaches) and must not trigger it either (inviting someone
+      // to "go online" while a window is already open just muddles the two).
       if (online) { _coachChecked = true; dismissNetCoach(true); }
-      else if (!_coachChecked) { _coachChecked = true; maybeShowNetCoach(); }
+      else if (!_coachChecked && !_egressOpen) { _coachChecked = true; maybeShowNetCoach(); }
     }
     // -- Airplane-mode onboarding coachmark (maintainer-ruled 2026-06-13) ------
     // Teaches the ONE online/offline switch. INVITATION LAYER ONLY: the "Go
@@ -701,6 +719,168 @@
         dlg.showModal();
       });
     }
+
+    // ---- AI-install egress window ------------------------------------------
+    // Operator, 2026-08-01: install Ollama/vLLM without starting the collector --
+    // "divulging your IP to ollama and vllm is not the same as divulging it to all
+    // scrapped sources". This is a THIRD state, not a weakened online: the kill
+    // switch stays engaged, so the collector and every other gated download keep
+    // refusing themselves, and only the AI-install gates are exempted.
+    //
+    // Deliberately does NOT go through _postGoOnline(): that function remains the
+    // one and only place that POSTs /api/system/network (invariant #14 and
+    // tests/test_network_consent.py both key on it), and this path is not going
+    // online. Separate endpoint, separate dialog, nothing to regress.
+    // (_egressState / _egressTimer are declared above, beside _paintNetwork,
+    // which reads _egressState for its third-state title.)
+
+    // Ask for an egress window if one is needed. Returns true when the AI install
+    // may proceed: already fully online (nothing to ask), a window already open,
+    // or the operator consented just now.
+    async function ensureAiEgress(reason) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const nm = await api("/api/system/network");
+        _paintNetwork(nm.online);
+        if (nm.online) return true;   // no window needed; the app is simply online
+      } catch (_e) { /* fall through and ask -- never assume online */ }
+      try {
+        const st = await api("/api/system/egress-window");
+        _paintEgressWindow(st);
+        if (st.open) return true;     // already allowed, still running
+      } catch (_e) { /* fall through and ask */ }
+      const dlg = document.getElementById("ai-egress-consent");
+      if (!dlg) return false;         // no dialog -> never silently proceed
+      const slot = dlg.querySelector("#ai-egress-reason b");
+      if (slot) slot.textContent = reason || t("Install the local AI");
+      return new Promise((resolve) => {
+        const ok = document.getElementById("ai-egress-ok");
+        const cancel = document.getElementById("ai-egress-cancel");
+        const done = (val) => {
+          dlg.close();
+          ok.onclick = cancel.onclick = dlg.oncancel = null;
+          resolve(val);
+        };
+        ok.onclick = async () => done(await _openEgressWindow());
+        cancel.onclick = () => done(false);
+        dlg.oncancel = () => done(false);   // Esc = stay offline
+        dlg.showModal();
+      });
+    }
+
+    // The single place that opens a window (mirrors _postGoOnline's discipline).
+    async function _openEgressWindow() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const st = await api("/api/system/egress-window",
+          {method: "POST", body: JSON.stringify({open: true})});
+        _paintEgressWindow(st);
+        _startEgressPoll();
+        return !!st.open;
+      } catch (e) {
+        // api() has already normalised the payload into e.message via
+        // _apiErrorMessage, so a dict-valued FastAPI `detail` never renders as
+        // "[object Object]" here.
+        toast(e.message, "err");
+        return false;
+      }
+    }
+
+    async function closeEgressWindow() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      try {
+        const st = await api("/api/system/egress-window",
+          {method: "POST", body: JSON.stringify({open: false})});
+        _paintEgressWindow(st);
+        // NOT "the install can no longer reach the network": a download already
+        // in flight runs in a child process (pip / Hugging Face / Ollama's
+        // daemon) that this app cannot stop, exactly as the consent dialog said
+        // when it was opened. Closing revokes the GATES -- the next step is
+        // refused -- and claiming more than that here would contradict the
+        // dialog three clicks earlier.
+        toast(t("Closed. New install steps are refused again; a download already running finishes on its own."), "ok");
+      } catch (e) { toast(e.message, "err"); }
+    }
+
+    // Render the bar. A change in the operator's network exposure must never be
+    // silent, so a window CLOSING announces itself even when nothing asked --
+    // including when it closed because the install failed or was cancelled.
+    function _paintEgressWindow(st) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const bar = document.getElementById("egress-window-bar");
+      const was = _egressState && _egressState.open;
+      _egressState = st || null;
+      const open = !!(st && st.open);
+      // Re-derive the airplane button's hover title from its ONE source rather
+      // than duplicating the wording here: while a window is open the plain
+      // "every new network request will be refused" line is false, and a hover
+      // that lags the truth by a poll interval is still a hover that lies.
+      if (!!was !== open) _paintNetwork(_netOnline);
+      const netBtn = $("net-toggle");
+      if (netBtn) netBtn.classList.toggle("egress-open", open);
+      if (was && !open) {
+        toast(t("The AI install window closed — the network is refused again."), "ok");
+        _stopEgressPoll();
+      }
+      if (!bar) return;
+      if (!open) { bar.hidden = true; bar.innerHTML = ""; _egressBarHtml = ""; return; }
+      // "The collector is stopped" is a MEASURED read of the scheduler, not our
+      // own assumption -- null means we could not measure it and we say so rather
+      // than printing a reassuring "stopped" we did not check.
+      const coll = st.collector_running;
+      const collLine = coll === false
+        ? t("Collection is stopped — no source is being contacted.")
+        : coll === true
+          ? t("Warning: the collector is running.")
+          : t("The collector's state could not be read just now.");
+      bar.hidden = false;
+      const html =
+        `<span aria-hidden="true">⬤</span>` +
+        `<span class="egress-msg"><b>${esc(t("The AI install is allowed online."))}</b> ` +
+        `<span class="egress-sub">${esc(collLine)} ` +
+        `${esc(t("Which hosts the installer contacts is not restricted, and it does not use your proxy or Tor."))}` +
+        `</span></span>` +
+        `<button class="tiny secondary" id="egress-close-btn">${esc(t("Close now"))}</button>`;
+      // Assign ONLY on a real change. This is an aria-live region, and a polite
+      // region announces on every mutation -- rewriting identical markup each
+      // 5 s poll would read the whole banner aloud, over and over, for the length
+      // of a multi-GB download. Unchanged text must therefore be a no-op, not a
+      // re-render that happens to look the same. Compared against what we last
+      // WROTE, never against bar.innerHTML: the browser normalises markup on
+      // read-back, so that comparison would never match and the guard would
+      // silently do nothing.
+      if (_egressBarHtml === html) return;
+      _egressBarHtml = html;
+      bar.innerHTML = html;
+      const btn = document.getElementById("egress-close-btn");
+      if (btn) btn.addEventListener("click", closeEgressWindow);
+    }
+
+    // Poll only WHILE a window is open (it stops itself on close), so this adds
+    // no idle traffic. The GET also drives the server-side idle reap, which is
+    // what closes the window after the install succeeds, fails or is cancelled.
+    function _startEgressPoll() {
+      if (_egressTimer) return;
+      _egressTimer = setInterval(async () => {
+        try { _paintEgressWindow(await api("/api/system/egress-window")); }
+        catch (_e) { /* transient: keep the bar as-is, keep polling */ }
+      }, 5000);
+    }
+    function _stopEgressPoll() {
+      if (_egressTimer) { clearInterval(_egressTimer); _egressTimer = 0; }
+    }
+
+    // A window can outlive a page reload (it lives in the server process), so a
+    // freshly-loaded page must discover it -- otherwise the operator would have an
+    // open window with no visible indication and no way to close it.
+    async function initEgressWindow() {
+      try {
+        const st = await api("/api/system/egress-window");
+        _paintEgressWindow(st);
+        if (st.open) _startEgressPoll();
+      } catch (_e) { /* the bar simply stays hidden */ }
+    }
+
     // The 5 s background poll keeps the airplane state fresh as a FALLBACK (the
     // primary repaint rides scheduler responses). Vitals are no longer polled here
     // -- they live in the task-manager window's System tab, polled only while that
@@ -4899,7 +5079,10 @@
     async function prepareOllamaInstall() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const detail = $("llm-install-detail"); const btn = $("llm-install-prepare-btn");
-      if (!await ensureOnline(t("Download and verify the official Ollama installer (downloads over the clear internet)"))) return;
+      // The AI-install egress window, not full online: this needs a few
+      // infrastructure hosts, not the whole catalogue, and must not start the
+      // collector. Already-online installs skip the ask entirely.
+      if (!await ensureAiEgress(t("Download and verify the official Ollama installer (downloads over the clear internet)"))) return;
       if (btn) { btn.disabled = true; }
       if (detail) detail.textContent = t("Downloading and verifying…");
       let d;
@@ -4924,6 +5107,14 @@
     async function runOllamaInstall(path) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const log = $("llm-install-log"); if (!log) return;
+      // The prepare step opened a window, but this is a SEPARATE click and the
+      // window closes itself once nothing is running -- so an operator who reads
+      // the checksum before pressing Install arrives here with no window and the
+      // backend refuses (run_installer calls _check_online too). Re-ask rather
+      // than fail: it is the same consent, and skipping it here was the one AI
+      // entry point that could dead-end with no way back except going fully
+      // online, which starts the collector.
+      if (!await ensureAiEgress(t("Run the verified Ollama installer"))) return;
       _ollamaInstalling = true;
       log.style.display = ""; log.textContent = "";
       try {
@@ -5053,6 +5244,10 @@
         (p.caveats || []).join("\n")
       );
       if (!ok) return;
+      // Allow the install online WITHOUT starting the collector. A no-op when the
+      // app is already online or the setup chain already opened the window, so
+      // this never becomes a second ask for the same bytes.
+      if (!await ensureAiEgress(t("Download the default model (several GB over the clear internet)"))) return;
       const was = btn ? btn.textContent : "";
       if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
       try {
@@ -5163,7 +5358,7 @@
     async function pullModel(tag) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!tag) return;
-      if (!await ensureOnline(t("Pull a local model (downloads over the clear internet via Ollama)"))) return;
+      if (!await ensureAiEgress(t("Pull a local model (downloads over the clear internet via Ollama)"))) return;
       const prog = $("llm-pull-progress");
       if (prog) prog.textContent = t("Queued") + " " + tag + "…";  // instant feedback
       try {
@@ -18608,6 +18803,10 @@
         (modelStep && modelStep.caveats.length ? "\n\n" + modelStep.caveats.join("\n") : "")
       );
       if (!ok) return;
+      // ONE egress window for the WHOLE chain, taken here so the per-step calls
+      // below find it already open and never ask again. The collector is not
+      // started: this allows the install to reach the network, nothing else.
+      if (!await ensureAiEgress(t("Set up local AI (downloads several GB over the clear internet)"))) return;
       const status = $("ai-setup-status");
       const say = (msg) => { if (status) status.textContent = msg; };
       const was = btn ? btn.textContent : "";
@@ -18954,7 +19153,15 @@
       const prog = $("vllm-install-progress");
       const say = (m) => { const el = $("vllm-install-progress") || prog; if (el) el.textContent = m; };
       try {
-        await ensureOnline(t("install vLLM (downloads several GB)"));
+        // Was `await ensureOnline(...)` with the RESULT DISCARDED -- every sibling
+        // call site does `if (!await ...) return;`, so declining the consent here
+        // did not stop the install: it carried on to the backend, which refused,
+        // and the operator saw "I clicked Stay offline and it tried anyway".
+        // Fixed while switching to the egress window (collector stays stopped).
+        if (!await ensureAiEgress(t("Install vLLM (downloads several GB over the clear internet)"))) {
+          say(t("Install cancelled."));
+          return;
+        }
         const started = await _vllmInstallStart();
         if (started === null) {  // the operator declined the resource warning
           say(t("Install cancelled."));
@@ -19247,6 +19454,10 @@
       if (getUi().theme === "system") applyThemeAttr("system");
     });
     loadHealth(); loadLlmHealth(); loadSources(); checkEmptyCorpus(); loadRateMode();
+    // A window lives in the SERVER process, so it outlives a page reload. Discover
+    // it at boot or the operator could have an open window with no visible sign of
+    // it and no way to close it -- the exact failure mode the bar exists to prevent.
+    initEgressWindow();
     // Keep the background-activity chip live app-wide (e.g. a scheduled scrape that
     // the user didn't trigger from the current tab). Adaptive: fast while a scrape
     // is active, backing off when idle; paused while the tab is hidden (audit PR G).

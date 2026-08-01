@@ -329,15 +329,33 @@ class OllamaClient:
         not loopback, in which case this is defense in depth against a misconfigured
         or injected non-loopback client, and the call is refused like any other.
 
-        ``clearnet=True`` call sites (pull/remove) are refused UNCONDITIONALLY,
+        ``clearnet=True`` call sites (pull/remove) are refused while offline
         regardless of ``base_url``: a pull instructs the separate Ollama PROCESS to
         fetch model weights over clearnet (maintainer Q9, 2026-06-16) -- egress this
-        in-process socket guard cannot see, so that half of the gate must never
-        relax. Degrade LOUDLY — never a fabricated answer.
+        in-process socket guard cannot see. Degrade LOUDLY — never a fabricated answer.
+
+        The ONE exemption for that clearnet half is an operator-consented EGRESS
+        WINDOW (``src.ingest.egress_window``): pulling the default model IS the AI
+        install the window exists for, and the operator was told, in the same breath
+        as consenting, that Ollama fetches its weights itself and this app cannot
+        bound which hosts it contacts. The kill switch stays engaged throughout, so
+        the collector and every other gated fetch keep refusing.
+
+        The NON-LOOPBACK ``base_url`` half is NEVER exempted by a window: that check
+        is defense in depth against a misconfigured or injected client, which has
+        nothing to do with installing the local AI.
         """
         from src.ingest import kill_switch_active
+        from src.ingest.egress_window import PURPOSE_AI_INSTALL, egress_permitted
 
-        if (clearnet or not _is_loopback_url(self.base_url)) and kill_switch_active():
+        if not kill_switch_active():
+            return
+        if not _is_loopback_url(self.base_url):
+            raise LLMUnavailable(
+                "Network is OFF (airplane mode): refusing the Ollama request to a "
+                "non-loopback address. Turn airplane mode off to use the local LLM."
+            )
+        if clearnet and not egress_permitted(PURPOSE_AI_INSTALL):
             raise LLMUnavailable(
                 "Network is OFF (airplane mode): refusing the Ollama request. "
                 "Turn airplane mode off to use the local LLM."

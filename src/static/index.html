@@ -140,6 +140,13 @@
            relocated into this strip at runtime by _relocateSubtabs() in app.js, so they
            render JUST UNDER the status bar. Hidden on tabs that have no facet subtabs. -->
       <div id="subtab-strip" class="subtab-strip" hidden></div>
+      <!-- AI-install egress window banner. Present whenever the operator has
+           allowed the local-AI install to go online WITHOUT starting the
+           collector. It sits INSIDE the sticky chrome so the operator can never
+           be on a screen where their own network exposure is invisible, and it
+           states the honest limit (no host restriction) rather than only the
+           reassuring half. Populated + shown by _paintEgressWindow() in app.js. -->
+      <div id="egress-window-bar" class="egress-bar" hidden role="status" aria-live="polite"></div>
       </div><!-- /.chrome -->
 
       <div id="vitals-pop" class="vitals-pop taskmgr" hidden role="dialog" aria-modal="true" aria-label="Task manager" onkeydown="vitalsKey(event)">
@@ -2603,6 +2610,31 @@
     <div class="row" style="justify-content:flex-end;gap:8px">
       <button class="secondary" id="net-consent-cancel">Stay offline</button>
       <button id="net-consent-ok">Go online</button>
+    </div>
+  </dialog>
+
+  <!-- The AI-install egress window's own consent. Deliberately a SEPARATE dialog
+       from #net-consent: this is not going online. The kill switch stays engaged,
+       the collector stays stopped, and only the local-AI install is exempted.
+       Every claim below is one the code actually enforces; the last paragraph is
+       the limit, stated in the same breath rather than left to be inferred. -->
+  <dialog id="ai-egress-consent" style="max-width:460px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--fg);padding:18px">
+    <h3 style="margin:0 0 8px">Let the AI install go online, without collecting?</h3>
+    <div style="margin-bottom:8px"><span class="muted">This action needs the network:</span>
+      <div id="ai-egress-reason" style="margin-top:4px"><b></b></div></div>
+    <div class="hint" style="margin-bottom:8px">Collection stays stopped. The collector is not started, and every
+      other download in the app — sources, Wikipedia dumps, maps, statistics, discovery, mailbox — keeps
+      refusing while this is open.</div>
+    <div class="hint" style="margin-bottom:8px">This does not restrict which hosts the installer contacts. The
+      download runs as a separate program (pip, Hugging Face, Ollama's own installer and daemon), so this app
+      cannot see or limit where it connects, and cannot hide your address from it.</div>
+    <div class="hint" style="margin-bottom:8px">These downloads go over the clear internet — not through your
+      configured proxy or Tor.</div>
+    <div class="hint" style="margin-bottom:12px">It closes on its own once the install finishes, fails or is
+      cancelled, and you can close it at any time from the bar at the top.</div>
+    <div class="row" style="justify-content:flex-end;gap:8px">
+      <button class="secondary" id="ai-egress-cancel">Stay offline</button>
+      <button id="ai-egress-ok">Allow the install online</button>
     </div>
   </dialog>
 
