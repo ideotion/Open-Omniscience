@@ -147,6 +147,12 @@ def test_editions_are_collected_into_the_backup_artifact(tmp_path, monkeypatch):
     function that actually builds a backup."""
     from src.backup import artifact
 
+    # artifact.py does `from src.paths import data_dir` at MODULE level, so it holds
+    # its own binding: patching src.paths.data_dir does not reach it once the module
+    # has been imported. Patching only src.paths made this test pass when it ran
+    # first and fail inside a suite — pass-by-import-order, which is worse than a
+    # plain failure. Patch the binding the function actually calls.
+    monkeypatch.setattr(artifact, "data_dir", lambda: tmp_path)
     monkeypatch.setattr("src.backup.sqlite_backup.live_db_path", lambda: tmp_path / "live.db")
     monkeypatch.setattr(
         artifact, "snapshot_sqlite", lambda _src, dest: Path(dest).write_bytes(b"")
