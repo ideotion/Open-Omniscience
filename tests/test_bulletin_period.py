@@ -162,7 +162,7 @@ def test_the_gate_reads_inference_capability_not_detect_gpu():
     """Two predicates on purpose: detect_gpu() answers "can vLLM run HERE", and
     vLLM ships manylinux wheels only. Collapsing them routes every Mac to a
     backend that cannot run there."""
-    src = (__import__("pathlib").Path("src/bulletin/gate.py")).read_text()
+    src = (__import__("pathlib").Path("src/bulletin/gate.py")).read_text(encoding="utf-8")
     body = src.split('def bulletin_available', 1)[1]
     assert "inference_capability" in body
     assert "detect_gpu" not in body
@@ -206,7 +206,7 @@ def test_open_question_four_is_one_constant():
     GPU-less operator loses the model-free half too. Making that reversible in one
     place is the design record's own instruction."""
     assert LAYER_A_REQUIRES_CAPABLE_HARDWARE is True
-    src = (__import__("pathlib").Path("src/bulletin/gate.py")).read_text()
+    src = (__import__("pathlib").Path("src/bulletin/gate.py")).read_text(encoding="utf-8")
     assert src.count("LAYER_A_REQUIRES_CAPABLE_HARDWARE") == 2, (
         "the definition and exactly one read — a second read is a second place to flip"
     )

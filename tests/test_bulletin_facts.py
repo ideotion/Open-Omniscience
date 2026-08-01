@@ -418,5 +418,5 @@ def test_the_clock_expression_matches_the_index_definition_byte_for_byte():
     from src.database.maintenance import HOT_INDEXES
 
     assert "coalesce(published_at, created_at)" in HOT_INDEXES["ix_article_observed"]
-    src = Path("src/bulletin/facts.py").read_text()
+    src = Path("src/bulletin/facts.py").read_text(encoding="utf-8")
     assert "_CLOCK = func.coalesce(Article.published_at, Article.created_at)" in src
