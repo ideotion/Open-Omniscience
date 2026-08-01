@@ -249,11 +249,21 @@ def test_scheduler_loop_waits_while_engaged_and_resumes_on_recovery(monkeypatch)
     sched._mem_pause_poll_s = 0.02
     assert sched.start()
     try:
-        time.sleep(0.25)
-        # Paused loudly: no pass ran; the phase names the state; status carries
-        # the guard's numbers.
-        assert runs["n"] == 0
+        # WAIT for the loop thread to actually reach the paused phase rather than
+        # assuming a fixed 250 ms of wall time was enough for it to be scheduled.
+        # On a loaded CI runner it sometimes is not, and a bare sleep turns that
+        # into a flake that reads as a regression (`assert None == 'paused-low-
+        # memory'` — the phase simply had not been set yet). The recovery half of
+        # this same test already waits this way; this is the same shape.
+        deadline = time.monotonic() + 5.0
+        while runner.current_phase() != "paused-low-memory" and time.monotonic() < deadline:
+            time.sleep(0.02)
+        # Paused loudly: the phase names the state, no pass ran, and status carries
+        # the guard's numbers. Reaching the paused phase first makes the "no pass
+        # ran" check stronger, not weaker — a pass that slipped through before the
+        # pause would still leave runs["n"] non-zero here.
         assert runner.current_phase() == "paused-low-memory"
+        assert runs["n"] == 0
         st = sched.status()
         assert st["memory_guard"]["engaged"] is True
         # Memory recovers -> the loop resumes on its own (no restart needed).
