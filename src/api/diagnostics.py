@@ -2402,6 +2402,56 @@ def llm_bench(
     )
 
 
+@router.get("/bulletin-preview")
+def bulletin_preview(
+    cadence: str = Query("weekly", description="daily | weekly | monthly | trimester | semester | yearly"),
+    download: bool = Query(False),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """Layer A of the Bulletin for one closed period — the deterministic record.
+
+    The Bulletin is deterministic first: exact, uncapped counts over a half-open
+    period on ``coalesce(published_at, created_at)``, quarantined articles excluded
+    AND counted, with the masthead that states the lens (which sources actually
+    contributed, how concentrated they were, which languages and countries, how
+    many of the period's days had any ingest at all) and the disclosures that name
+    what the edition cannot see. No model is involved in any figure here.
+
+    This preview exists so the output can be READ on a real corpus before the
+    persistence, narration and review surfaces are built — the sandbox-phase
+    instruction that classification should fall out of observed content rather
+    than be guessed up front.
+
+    Read-only. The period ENDS at the start of today, so it covers whole days and
+    re-rendering it tomorrow answers the same question.
+
+    Gated on hardware that can practically run a local model (the feature is gated
+    as a whole, not merely its narration layer); the gate reports its reason and
+    the standing override reveals it. See src/bulletin/.
+    """
+    from src.bulletin.facts import layer_a
+    from src.bulletin.gate import bulletin_available
+    from src.bulletin.period import resolve_period
+
+    gate = bulletin_available()
+    if not gate["available"]:
+        payload: dict = {"available": False, "gate": gate}
+    else:
+        try:
+            period = resolve_period(cadence)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        payload = layer_a(db, period)
+        payload["available"] = True
+        payload["gate"] = gate
+
+    headers = {}
+    if download:
+        fname = f"oo-bulletin-{cadence}-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(payload, headers=headers)
+
+
 @router.get("/source-coverage-benchmark")
 def source_coverage_benchmark(
     repeats: int = Query(3, ge=1, le=10, description="Timing runs per read"),
@@ -3167,6 +3217,13 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # one. Bounded via audit_report_env_defaults(); the content-carrying
         # standard/full depths are the separate background job, never this member.
         ("card-audit.json", lambda: card_audit(depth="summary", download=False, db=db)),
+        # Bulletin Layer A (2026-08-01), weekly: the deterministic period record. It
+        # rides the bundle because its masthead IS corpus-health evidence — sources
+        # that actually contributed, days with any ingest, language and country
+        # spread, and the disclosures naming what no window can see. Weekly, so the
+        # scan stays bounded; a long-cadence edition is a deliberate operator run.
+        # On hardware below the gate this member is a stated refusal, not a figure.
+        ("bulletin-weekly.json", lambda: bulletin_preview(cadence="weekly", download=False, db=db)),
     ]
 
 
@@ -3320,6 +3377,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/law-coverage": "law-coverage.json",  # S5 of the law-vertical brief 2026-07-17
     "/leads-quality": "leads-quality.json",  # S6.1 of the Leads-calibration brief 2026-07-18
     "/card-audit": "card-audit.json",  # the DEEP card-system audit (summary depth)
+    "/bulletin-preview": "bulletin-weekly.json",  # Bulletin Layer A, weekly period
     "/keyword-triage/last": "keyword-triage-run.json",
     "/source-tags-selftest": "source-tags-selftest.json",
     "/source-tags/last": "source-tags-run.json",
