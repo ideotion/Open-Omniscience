@@ -2259,5 +2259,18 @@
   "reachable": "erreichbar",
   "Calendar events imported": "Importierte Kalendereinträge",
   "waiting on a re-check": "warten auf eine erneute Prüfung",
-  "check failed — see the diagnostics log": "Prüfung fehlgeschlagen — siehe das Diagnoseprotokoll"
+  "check failed — see the diagnostics log": "Prüfung fehlgeschlagen — siehe das Diagnoseprotokoll",
+  "; sentences naming something absent from the sources were removed": "; Sätze, die etwas nennen, das in den Quellen fehlt, wurden entfernt",
+  "dropped; not in the evidence:": "verworfen; nicht in den Belegen:",
+  "No model text: ": "Kein Modelltext: ",
+  "Published — the record itself is unchanged.": "Veröffentlicht – der Datensatz selbst ist unverändert.",
+  "Published. Nothing was sent anywhere; the document is yours to share.": "Veröffentlicht. Nichts wurde irgendwohin gesendet; das Dokument gehört Ihnen.",
+  "Delete this edition? The corpus is untouched — only the document goes.": "Diese Ausgabe löschen? Das Korpus bleibt unberührt – nur das Dokument verschwindet.",
+  "You can turn this on anyway in Settings → AI.": "Sie können es trotzdem unter Einstellungen → KI aktivieren.",
+  "This machine cannot build a bulletin.": "Dieser Rechner kann kein Bulletin erstellen.",
+  " · one source only": " · nur eine Quelle",
+  "Daily": "Täglich",
+  "Weekly": "Wöchentlich",
+  "Monthly": "Monatlich",
+  "Yearly": "Jährlich"
 }

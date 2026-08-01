@@ -2187,6 +2187,38 @@
       </div>
     </section>
     </details>
+
+    <!-- The Bulletin (design record §16): a folded section at the VERY BOTTOM of
+         Advanced, so it can be reached by skipping to the end. Folded by default
+         and discreet — and folded does not mean fetched: its loader fires on
+         EXPAND like every other section here. -->
+    <details class="adv-sec" data-adv="bulletin">
+      <summary><span class="adv-sec-t">Bulletin</span> <span class="muted">— a periodic document built from this corpus</span></summary>
+    <section class="panel" id="bulletin-panel">
+      <h2>Bulletin</h2>
+      <p class="hint" style="margin-top:0"><span>A document covering one closed period — what rose in <em>this corpus</em>, which sources carried it, and everything the period could not see. It is built from exact counts, so it is the record rather than a summary of it.</span>
+        <span>Nothing here touches the network. The document is a <strong>draft</strong> until you publish it, and publishing only stamps it: you are the byline, not the machine.</span></p>
+      <div id="bulletin-gate" class="hint" style="margin-top:8px">Checking whether this machine can build one…</div>
+      <div id="bulletin-controls" hidden>
+        <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px">
+          <div><label for="bul-cadence">Period</label><select id="bul-cadence">
+            <option value="daily">Daily</option>
+            <option value="weekly" selected>Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="trimester">Trimester</option>
+            <option value="semester">Semester</option>
+            <option value="yearly">Yearly</option>
+          </select></div>
+          <label class="row" style="gap:6px;align-items:center" title="Adds a paragraph per story, written by the local model and kept only where every figure and name in it appears in the articles the model was shown. Off by default; the document is complete without it.">
+            <input id="bul-narrate" type="checkbox"> <span>Add the narration layer</span></label>
+          <button id="bul-generate" onclick="bulletinGenerate(this)">Build a draft</button>
+          <div id="bulletin-status" class="hint" style="align-self:end"></div>
+        </div>
+        <div id="bulletin-list" style="margin-top:12px"><div class="muted">Loading editions…</div></div>
+        <div id="bulletin-review" style="margin-top:14px"></div>
+      </div>
+    </section>
+    </details>
 </div>
 
 

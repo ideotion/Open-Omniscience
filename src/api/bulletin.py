@@ -130,13 +130,52 @@ def edition(filename: str) -> dict:
         raise HTTPException(status_code=500, detail=f"edition unreadable: {exc}") from exc
 
 
+@router.get("/editions/{filename}/review")
+def review(filename: str) -> dict:
+    """The edition as a set of decisions, with the evidence for each.
+
+    Per §13 this shows, per sentence, whether it passed validation or fell back
+    to a template — a sentence the operator can SEE was checked is a different
+    thing from a paragraph labelled "validated".
+
+    Read-only. Deciding happens by re-rendering with exclusions, never by editing
+    the record.
+    """
+    from src.bulletin.review import review_view
+    from src.bulletin.store import read_edition
+
+    _require_gate()
+    try:
+        return review_view(read_edition(filename))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="no such edition") from exc
+
+
+def _selection(exclude_sections: str, exclude_stories: str) -> dict:
+    """Parse the operator's exclusions from two comma-separated query params."""
+    return {
+        "exclude_sections": [s for s in (exclude_sections or "").split(",") if s.strip()],
+        "exclude_stories": [s for s in (exclude_stories or "").split(",") if s.strip()],
+    }
+
+
 @router.get("/editions/{filename}/render")
-def render_edition(filename: str, fmt: str = Query("html", description="html | markdown")):
+def render_edition(
+    filename: str,
+    fmt: str = Query("html", description="html | markdown"),
+    exclude_sections: str = Query("", description="comma-separated section keys to leave out"),
+    exclude_stories: str = Query("", description="comma-separated story keys to leave out"),
+):
     """Render a persisted edition as a self-contained page or as Markdown.
 
     Rendering is PURE: the numbers come from the record, so re-rendering cannot
     change one. That is what makes toggling a producer a re-render rather than a
-    re-computation.
+    re-computation, and it is why exclusions are applied HERE rather than written
+    back — output is never hand-edited.
+
+    An exclusion is stated in the rendered document. The operator chooses what to
+    publish, but a reader of a document that silently omits three of its seven
+    sections has no way to know they are reading a selection.
 
     Published output carries EXTERNAL identity only — a local article id resolves
     to a different article on a recipient's install, so it never leaves here.
@@ -144,6 +183,7 @@ def render_edition(filename: str, fmt: str = Query("html", description="html | m
     from fastapi.responses import HTMLResponse, PlainTextResponse
 
     from src.bulletin.render import render
+    from src.bulletin.review import apply_selection
     from src.bulletin.store import read_edition
 
     _require_gate()
@@ -151,6 +191,8 @@ def render_edition(filename: str, fmt: str = Query("html", description="html | m
         edition = read_edition(filename)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="no such edition") from exc
+
+    edition = apply_selection(edition, **_selection(exclude_sections, exclude_stories))
 
     try:
         text = render(edition, fmt)
@@ -167,6 +209,49 @@ def render_edition(filename: str, fmt: str = Query("html", description="html | m
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{stem}.md"'},
     )
+
+
+@router.post("/editions/{filename}/publish")
+def publish(
+    filename: str,
+    exclude_sections: str = Query(""),
+    exclude_stories: str = Query(""),
+) -> dict:
+    """Mark an edition published, recording the operator's selection with it.
+
+    §13: automation reaches a DRAFT and stops. This route is the operator's act —
+    it is what makes them the byline rather than the machine.
+
+    The stamp APPENDS to the edition's state history rather than overwriting it,
+    so an edition published, revised and republished can still say what happened
+    and when. The selection is recorded alongside, because "what was published" is
+    not answerable from a document showing only what survived it.
+    """
+    from src.bulletin.review import apply_selection
+    from src.bulletin.store import mark_published, read_edition
+
+    _require_gate()
+    sel = _selection(exclude_sections, exclude_stories)
+    try:
+        edition = read_edition(filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="no such edition") from exc
+
+    recorded = (apply_selection(edition, **sel)).get("selection") or {}
+    recorded.update(sel)
+    try:
+        out = mark_published(filename, selection=recorded)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="no such edition") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"could not stamp the edition: {exc}") from exc
+    return {
+        "filename": filename,
+        "state": out.get("state"),
+        "published_at": out.get("published_at"),
+        "state_history": out.get("state_history") or [],
+        "selection": recorded,
+    }
 
 
 @router.post("/evidence/plan")

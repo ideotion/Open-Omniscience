@@ -2259,5 +2259,18 @@
   "reachable": "到達可能",
   "Calendar events imported": "取り込んだカレンダーの予定",
   "waiting on a re-check": "再確認待ち",
-  "check failed — see the diagnostics log": "確認に失敗しました — 診断ログを参照してください"
+  "check failed — see the diagnostics log": "確認に失敗しました — 診断ログを参照してください",
+  "; sentences naming something absent from the sources were removed": "。出典にない事物に言及した文は削除されました",
+  "dropped; not in the evidence:": "破棄。証拠にありません:",
+  "No model text: ": "モデルのテキストなし: ",
+  "Published — the record itself is unchanged.": "公開しました — 記録自体は変わっていません。",
+  "Published. Nothing was sent anywhere; the document is yours to share.": "公開しました。どこにも送信されていません。共有はあなたの判断です。",
+  "Delete this edition? The corpus is untouched — only the document goes.": "この号を削除しますか？コーパスはそのままで、消えるのは文書だけです。",
+  "You can turn this on anyway in Settings → AI.": "設定 → AI からいつでも有効にできます。",
+  "This machine cannot build a bulletin.": "このマシンではブレティンを作成できません。",
+  " · one source only": " · 出典は 1 件のみ",
+  "Daily": "毎日",
+  "Weekly": "毎週",
+  "Monthly": "毎月",
+  "Yearly": "毎年"
 }

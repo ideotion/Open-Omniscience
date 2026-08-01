@@ -1860,6 +1860,9 @@
       // The ~500-feed calendar catalogue: plumbing, so it moved out of the Agenda
       // subtab (invariant #8). It no longer loads with the agenda — only on expand.
       calendars: () => { loadFeedDir(); },   // loadFeedDir renders the user calendars too
+      // The Bulletin (§16): last section, folded, and its availability check +
+      // edition list run on EXPAND like the rest. Both are loopback.
+      bulletin: () => { loadBulletin(); },
     };
     // Deep-link into one Advanced section. The old showTab("ingest") / showTab("sources")
     // redirects pointed at subtabs that no longer exist, so every palette entry and
@@ -3417,6 +3420,207 @@
       // and loads only when that section is expanded. The agenda's own per-event
       // provenance pills do not depend on it: _agFeedById() self-loads the map on
       // first use when _feedDir is still null.
+    }
+
+    // -- The Bulletin (design record §13/§16) -------------------------------- //
+    // A periodic document built from the corpus. Everything here is LOOPBACK: the
+    // deterministic layer is SQL, the optional narration runs on the local model,
+    // and nothing in this panel touches the network -- so no consent gate.
+    //
+    // The load-bearing mechanic: a producer toggle RE-RENDERS from the persisted
+    // record. It recomputes nothing and edits nothing, so a number in a published
+    // document is always a number the record contains. Excluding is done by
+    // passing the exclusions to the render URL, never by writing a trimmed copy.
+    // `t` is per-function in this file, never global, so the bulletin block gets its
+    // own helper on the _gwT precedent -- a bare t() here passes node --check and
+    // throws a ReferenceError in the browser.
+    function _bulT(s) { return (window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s; }
+    let _bulExcludeSections = new Set();
+    let _bulExcludeStories = new Set();
+    let _bulFile = null;
+
+    function _bulQuery() {
+      const p = new URLSearchParams();
+      if (_bulExcludeSections.size) p.set("exclude_sections", [..._bulExcludeSections].join(","));
+      if (_bulExcludeStories.size) p.set("exclude_stories", [..._bulExcludeStories].join(","));
+      return p;
+    }
+
+    async function loadBulletin() {
+      const gate = $("bulletin-gate"), controls = $("bulletin-controls");
+      if (!gate) return;
+      let g = null;
+      try { g = await api("/api/bulletin/availability"); }
+      catch (e) { gate.textContent = _bulT("Could not check this machine: ") + e.message; return; }
+      if (!g.available) {
+        // A refusal states its REASON and points at the override, because the
+        // gate is never a hard block -- it is a default with a stated basis.
+        gate.innerHTML = `<span>${esc(g.reason || _bulT("This machine cannot build a bulletin."))}</span>` +
+          ` <span class="muted">${esc(_bulT("You can turn this on anyway in Settings → AI."))}</span>`;
+        controls.hidden = true;
+        return;
+      }
+      gate.hidden = true;
+      controls.hidden = false;
+      await loadBulletinEditions();
+    }
+
+    async function loadBulletinEditions() {
+      const box = $("bulletin-list");
+      if (!box) return;
+      let d = null;
+      try { d = await api("/api/bulletin/editions"); }
+      catch (e) { box.innerHTML = `<div class="muted">${esc(_bulT("Could not list editions: ") + e.message)}</div>`; return; }
+      const rows = d.editions || [];
+      if (!rows.length) {
+        box.innerHTML = `<div class="muted">${esc(_bulT("No editions yet. Build a draft above."))}</div>`;
+        return;
+      }
+      box.innerHTML = `<div style="overflow:auto"><table><tr>
+          <th>${esc(_bulT("Covers through"))}</th><th>${esc(_bulT("Period"))}</th><th></th></tr>` +
+        rows.map(r => `<tr>
+          <td>${esc(r.covers_through || r.filename)}</td>
+          <td>${esc(r.cadence || "—")}</td>
+          <td class="row" style="gap:6px;justify-content:flex-end">
+            <button class="secondary" onclick="bulletinReview('${esc(r.filename)}')">${esc(_bulT("Review"))}</button>
+            <button class="secondary" onclick="bulletinOpenFile('${esc(r.filename)}')">${esc(_bulT("Open"))}</button>
+            <button class="secondary" onclick="bulletinDelete('${esc(r.filename)}')">${esc(_bulT("Delete"))}</button>
+          </td></tr>`).join("") + "</table></div>";
+    }
+
+    async function bulletinGenerate(btn) {
+      const status = $("bulletin-status");
+      const cadence = ($("bul-cadence") || {}).value || "weekly";
+      const narrate = !!($("bul-narrate") || {}).checked;
+      btn.disabled = true;
+      status.textContent = _bulT("Building…");
+      try {
+        const out = await api(
+          `/api/bulletin/generate?cadence=${encodeURIComponent(cadence)}&persist=true&narrate=${narrate}`,
+          {method: "POST"});
+        status.textContent = out.persisted
+          ? _bulT("Draft built.")
+          : _bulT("Built, but not saved: ") + (out.persist_error || "");
+        await loadBulletinEditions();
+        if (out.filename) bulletinReview(out.filename);
+      } catch (e) {
+        status.textContent = _bulT("Could not build: ") + e.message;
+      } finally { btn.disabled = false; }
+    }
+
+    async function bulletinReview(filename) {
+      const box = $("bulletin-review");
+      if (!box) return;
+      _bulFile = filename;
+      _bulExcludeSections = new Set();
+      _bulExcludeStories = new Set();
+      box.innerHTML = `<div class="muted">${esc(_bulT("Loading…"))}</div>`;
+      let v = null;
+      try { v = await api(`/api/bulletin/editions/${encodeURIComponent(filename)}/review`); }
+      catch (e) { box.innerHTML = `<div class="muted">${esc(_bulT("Could not open this edition: ") + e.message)}</div>`; return; }
+      _bulRender(v);
+    }
+
+    function _bulRender(v) {
+      const box = $("bulletin-review");
+      const state = v.state === "published"
+        ? `<span class="pill">${esc(_bulT("published"))}</span>`
+        : `<span class="pill">${esc(_bulT("draft"))}</span>`;
+      const secs = (v.sections || []).map(s => {
+        const off = _bulExcludeSections.has(s.section);
+        // A section's REAL window is printed when it differs from the period --
+        // §12's whole point is that a 14-day number in a 7-day edition is visible
+        // during review rather than discovered afterwards.
+        const w = s.window || {};
+        const win = (w.days != null && w.matches_period === false)
+          ? ` <span class="warn">${esc(_bulT("window:"))} ${esc(w.days)} ${esc(_bulT("days"))}</span>` : "";
+        const why = s.error
+          ? ` <span class="warn">${esc(_bulT("failed:"))} ${esc(s.error)}</span>`
+          : (s.skipped ? ` <span class="muted">${esc(_bulT("skipped:"))} ${esc(s.skipped)}</span>` : "");
+        return `<label class="row" style="gap:8px;align-items:baseline">
+          <input type="checkbox" ${off ? "" : "checked"} onchange="bulletinToggleSection('${esc(s.section)}')">
+          <span><strong>${esc(String(s.section).replace(/_/g, " "))}</strong>
+            <span class="muted">${esc(s.rows)} ${esc(_bulT("row(s)"))}</span>${win}${why}</span></label>`;
+      }).join("");
+
+      const stories = (v.stories || []).map(s => {
+        const off = _bulExcludeStories.has(s.key);
+        // Per SENTENCE, per §13: a sentence you can see was checked is a different
+        // thing from a paragraph labelled "validated".
+        const sents = (s.sentences || []).map(x => x.kept
+          ? `<li>${esc(x.text)}</li>`
+          : `<li class="muted"><s>${esc(x.text)}</s> — ${esc(_bulT("dropped; not in the evidence:"))} ${esc((x.unsupported || []).join(", "))}</li>`
+        ).join("");
+        const label = s.narrated
+          ? `<div class="warn">${esc(_bulT("AI-derived — unreliable"))}${s.partial ? esc(_bulT("; sentences naming something absent from the sources were removed")) : ""}</div>`
+          : `<div class="muted">${esc(_bulT("No model text: "))}${esc(s.fallback_reason || "")}</div>`;
+        return `<div style="margin:8px 0">
+          <label class="row" style="gap:8px;align-items:baseline">
+            <input type="checkbox" ${off ? "" : "checked"} onchange="bulletinToggleStory('${esc(s.key)}')">
+            <span><strong>${esc((s.shared_terms || []).join(", ") || "—")}</strong>
+              <span class="muted">${esc(s.articles)} ${esc(_bulT("articles"))} · ${esc(s.distinct_sources)} ${esc(_bulT("sources"))}${s.single_source ? esc(_bulT(" · one source only")) : ""}</span></span></label>
+          ${label}${sents ? `<ul style="margin:4px 0 0 26px">${sents}</ul>` : ""}</div>`;
+      }).join("");
+
+      box.innerHTML = `<h3 style="margin:0 0 4px">${esc(_bulT("Review"))} ${state}</h3>
+        <p class="hint" style="margin-top:0">${esc(v.caveat || "")}</p>
+        <p class="hint">${esc(v.method || "")}</p>
+        <h4 style="margin:12px 0 4px">${esc(_bulT("Sections"))}</h4>${secs || `<div class="muted">${esc(_bulT("None."))}</div>`}
+        ${stories ? `<h4 style="margin:12px 0 4px">${esc(_bulT("Stories"))}</h4>${stories}` : ""}
+        <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
+          <button class="secondary" onclick="bulletinOpen('html')">${esc(_bulT("Preview"))}</button>
+          <button class="secondary" onclick="bulletinOpen('markdown')">${esc(_bulT("Download Markdown"))}</button>
+          <button onclick="bulletinPublish(this)">${esc(_bulT("Publish"))}</button>
+          <div id="bul-pub" class="hint" style="align-self:center"></div>
+        </div>`;
+    }
+
+    function bulletinToggleSection(key) {
+      if (_bulExcludeSections.has(key)) _bulExcludeSections.delete(key);
+      else _bulExcludeSections.add(key);
+    }
+    function bulletinToggleStory(key) {
+      if (_bulExcludeStories.has(key)) _bulExcludeStories.delete(key);
+      else _bulExcludeStories.add(key);
+    }
+
+    function bulletinOpen(fmt) {
+      if (!_bulFile) return;
+      const q = _bulQuery();
+      q.set("fmt", fmt);
+      window.open(`/api/bulletin/editions/${encodeURIComponent(_bulFile)}/render?${q}`, "_blank", "noopener");
+    }
+
+    // Opening from the LIST shows the whole edition. A selection belongs to the
+    // review screen, where you can see what you are excluding -- carrying one
+    // silently into a list click would hand you a document you did not choose.
+    function bulletinOpenFile(filename) {
+      window.open(
+        `/api/bulletin/editions/${encodeURIComponent(filename)}/render?fmt=html`, "_blank", "noopener");
+    }
+
+    async function bulletinPublish(btn) {
+      if (!_bulFile) return;
+      const out = $("bul-pub");
+      btn.disabled = true;
+      try {
+        const r = await api(
+          `/api/bulletin/editions/${encodeURIComponent(_bulFile)}/publish?${_bulQuery()}`,
+          {method: "POST"});
+        out.textContent = _bulT("Published — the record itself is unchanged.");
+        toast(_bulT("Published. Nothing was sent anywhere; the document is yours to share."));
+        if (r) await loadBulletinEditions();
+      } catch (e) { out.textContent = _bulT("Could not publish: ") + e.message; }
+      finally { btn.disabled = false; }
+    }
+
+    async function bulletinDelete(filename) {
+      if (!confirm(_bulT("Delete this edition? The corpus is untouched — only the document goes."))) return;
+      try {
+        await api(`/api/bulletin/editions/${encodeURIComponent(filename)}`, {method: "DELETE"});
+        if (_bulFile === filename) { _bulFile = null; $("bulletin-review").innerHTML = ""; }
+        await loadBulletinEditions();
+      } catch (e) { toast(_bulT("Could not delete: ") + e.message, "err"); }
     }
 
     // -- Calendar feed directory: candidates -> explicit verify/import ------- //

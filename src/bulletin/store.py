@@ -184,6 +184,48 @@ def read_edition(filename: str) -> dict[str, Any]:
     return json.loads(p.read_text(encoding="utf-8"))
 
 
+def mark_published(filename: str, *, selection: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Stamp an edition as published, appending to its state history.
+
+    Design record §13: automation reaches a DRAFT and stops — publishing is the
+    operator's act, because the operator is the byline. This records that act.
+
+    APPENDS, never overwrites (§17, vintages): the history keeps every transition
+    with its timestamp, so an edition that was published, revised and republished
+    can still say what happened and when. The operator's selection is recorded
+    alongside, because "what was published" is not answerable from a document
+    that shows only what survived it.
+
+    Re-publishing an already-published edition is not an error — it appends
+    another transition. Refusing would mean an operator who changed their
+    selection could never record the second decision.
+    """
+    p = safe_edition_path(filename)
+    if p is None or not p.is_file():
+        raise FileNotFoundError(filename)
+
+    payload = json.loads(p.read_text(encoding="utf-8"))
+    now = datetime.now(UTC).isoformat()
+    history = list(payload.get("state_history") or [])
+    entry: dict[str, Any] = {"state": "published", "at": now}
+    if selection:
+        entry["selection"] = selection
+    history.append(entry)
+    payload["state"] = "published"
+    payload["published_at"] = payload.get("published_at") or now
+    payload["state_history"] = history
+    if selection is not None:
+        payload["selection"] = selection
+
+    tmp = p.with_name(p.name + _TMP_SUFFIX)
+    try:
+        tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+        os.replace(tmp, p)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return payload
+
+
 def delete_edition(filename: str) -> bool:
     """Remove one edition. Returns False for an unknown or unsafe name."""
     p = safe_edition_path(filename)

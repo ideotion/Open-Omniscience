@@ -2259,5 +2259,18 @@
   "reachable": "पहुँच योग्य",
   "Calendar events imported": "आयातित कैलेंडर ईवेंट",
   "waiting on a re-check": "पुनः जाँच की प्रतीक्षा में",
-  "check failed — see the diagnostics log": "जाँच विफल — निदान लॉग देखें"
+  "check failed — see the diagnostics log": "जाँच विफल — निदान लॉग देखें",
+  "; sentences naming something absent from the sources were removed": "; स्रोतों में अनुपस्थित किसी चीज़ का नाम लेने वाले वाक्य हटा दिए गए",
+  "dropped; not in the evidence:": "हटाया गया; साक्ष्य में नहीं:",
+  "No model text: ": "कोई मॉडल पाठ नहीं: ",
+  "Published — the record itself is unchanged.": "प्रकाशित — रिकॉर्ड स्वयं अपरिवर्तित है।",
+  "Published. Nothing was sent anywhere; the document is yours to share.": "प्रकाशित। कहीं कुछ नहीं भेजा गया; दस्तावेज़ आपका है, आप इसे साझा करें।",
+  "Delete this edition? The corpus is untouched — only the document goes.": "यह संस्करण हटाएँ? कोष अछूता रहता है — केवल दस्तावेज़ जाता है।",
+  "You can turn this on anyway in Settings → AI.": "आप इसे सेटिंग्स → AI में फिर भी चालू कर सकते हैं।",
+  "This machine cannot build a bulletin.": "यह मशीन बुलेटिन नहीं बना सकती।",
+  " · one source only": " · केवल एक स्रोत",
+  "Daily": "दैनिक",
+  "Weekly": "साप्ताहिक",
+  "Monthly": "मासिक",
+  "Yearly": "वार्षिक"
 }

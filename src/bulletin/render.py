@@ -302,11 +302,41 @@ def _md_references(edition: dict) -> list[str]:
     return out
 
 
+def _selection_line(edition: dict) -> str | None:
+    """What the operator left out, if anything.
+
+    A document that silently omits three of its seven sections reads as complete.
+    The operator chooses what to publish — that is the ruling — but a reader is
+    entitled to know they are reading a selection, so the count travels with the
+    document.
+    """
+    sel = edition.get("selection") or {}
+    shown, total = sel.get("sections_shown"), sel.get("sections_total")
+    st_shown, st_total = sel.get("stories_shown"), sel.get("stories_total")
+    parts = []
+    if isinstance(shown, int) and isinstance(total, int) and shown < total:
+        parts.append(f"{shown} of {total} sections")
+    if isinstance(st_shown, int) and isinstance(st_total, int) and st_shown < st_total:
+        parts.append(f"{st_shown} of {st_total} stories")
+    if not parts:
+        return None
+    return (
+        f"This edition shows {' and '.join(parts)}; the rest were excluded by the "
+        "operator before publishing. The record it was rendered from is unchanged."
+    )
+
+
 def _md_disclosures(edition: dict) -> list[str]:
     d = edition.get("disclosures") or {}
-    if not d:
+    sel = _selection_line(edition)
+    # An operator's exclusion is a disclosure in its own right, so it prints even
+    # when the edition carries no other one — otherwise the one case where the
+    # document is least complete is the case where it says least about itself.
+    if not d and not sel:
         return []
     out = ["### What this edition cannot see", ""]
+    if sel:
+        out.append(f"- {sel}")
     q = d.get("quarantined_in_period")
     if q:
         out.append(f"- {_fmt(q)} article(s) in the period are quarantined and excluded throughout.")

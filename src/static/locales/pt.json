@@ -2259,5 +2259,18 @@
   "reachable": "acessíveis",
   "Calendar events imported": "Eventos de calendário importados",
   "waiting on a re-check": "aguardando nova verificação",
-  "check failed — see the diagnostics log": "a verificação falhou — consulte o registo de diagnóstico"
+  "check failed — see the diagnostics log": "a verificação falhou — consulte o registo de diagnóstico",
+  "; sentences naming something absent from the sources were removed": "; as frases que citavam algo ausente das fontes foram removidas",
+  "dropped; not in the evidence:": "descartada; não está nas evidências:",
+  "No model text: ": "Sem texto do modelo: ",
+  "Published — the record itself is unchanged.": "Publicado — o registo em si permanece inalterado.",
+  "Published. Nothing was sent anywhere; the document is yours to share.": "Publicado. Nada foi enviado para lado nenhum; o documento é seu para partilhar.",
+  "Delete this edition? The corpus is untouched — only the document goes.": "Eliminar esta edição? O corpus fica intacto — só o documento desaparece.",
+  "You can turn this on anyway in Settings → AI.": "Pode ativá-lo mesmo assim em Definições → IA.",
+  "This machine cannot build a bulletin.": "Esta máquina não consegue criar um boletim.",
+  " · one source only": " · uma só fonte",
+  "Daily": "Diário",
+  "Weekly": "Semanal",
+  "Monthly": "Mensal",
+  "Yearly": "Anual"
 }

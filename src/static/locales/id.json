@@ -2259,5 +2259,18 @@
   "reachable": "dapat dijangkau",
   "Calendar events imported": "Acara kalender yang diimpor",
   "waiting on a re-check": "menunggu pemeriksaan ulang",
-  "check failed — see the diagnostics log": "pemeriksaan gagal — lihat log diagnostik"
+  "check failed — see the diagnostics log": "pemeriksaan gagal — lihat log diagnostik",
+  "; sentences naming something absent from the sources were removed": "; kalimat yang menyebut sesuatu yang tidak ada di sumber telah dihapus",
+  "dropped; not in the evidence:": "dibuang; tidak ada dalam bukti:",
+  "No model text: ": "Tidak ada teks model: ",
+  "Published — the record itself is unchanged.": "Diterbitkan — catatannya sendiri tidak berubah.",
+  "Published. Nothing was sent anywhere; the document is yours to share.": "Diterbitkan. Tidak ada yang dikirim ke mana pun; dokumen ini milik Anda untuk dibagikan.",
+  "Delete this edition? The corpus is untouched — only the document goes.": "Hapus edisi ini? Korpus tidak tersentuh — hanya dokumennya yang hilang.",
+  "You can turn this on anyway in Settings → AI.": "Anda tetap dapat mengaktifkannya di Pengaturan → AI.",
+  "This machine cannot build a bulletin.": "Mesin ini tidak dapat membuat buletin.",
+  " · one source only": " · hanya satu sumber",
+  "Daily": "Harian",
+  "Weekly": "Mingguan",
+  "Monthly": "Bulanan",
+  "Yearly": "Tahunan"
 }

@@ -2259,5 +2259,18 @@
   "reachable": "доступны",
   "Calendar events imported": "Импортировано событий календаря",
   "waiting on a re-check": "ожидают повторной проверки",
-  "check failed — see the diagnostics log": "проверка не удалась — см. журнал диагностики"
+  "check failed — see the diagnostics log": "проверка не удалась — см. журнал диагностики",
+  "; sentences naming something absent from the sources were removed": "; предложения, называющие то, чего нет в источниках, удалены",
+  "dropped; not in the evidence:": "отброшено; нет в доказательствах:",
+  "No model text: ": "Нет текста модели: ",
+  "Published — the record itself is unchanged.": "Опубликовано — сама запись не изменилась.",
+  "Published. Nothing was sent anywhere; the document is yours to share.": "Опубликовано. Ничего никуда не отправлено; документ ваш — делитесь им сами.",
+  "Delete this edition? The corpus is untouched — only the document goes.": "Удалить этот выпуск? Корпус не затрагивается — исчезает только документ.",
+  "You can turn this on anyway in Settings → AI.": "Вы всё равно можете включить это в «Настройки → ИИ».",
+  "This machine cannot build a bulletin.": "Эта машина не может собрать бюллетень.",
+  " · one source only": " · только один источник",
+  "Daily": "Ежедневно",
+  "Weekly": "Еженедельно",
+  "Monthly": "Ежемесячно",
+  "Yearly": "Ежегодно"
 }
