@@ -123,6 +123,70 @@ def edition(filename: str) -> dict:
         raise HTTPException(status_code=500, detail=f"edition unreadable: {exc}") from exc
 
 
+@router.post("/evidence/plan")
+def evidence_plan_route(
+    cadence: str = Query("weekly"),
+    dest: str = Query("", description="destination directory on THIS machine"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """What an evidence archive for this period would contain — before writing it.
+
+    The article count is exact; the size is an estimate and says so. This step
+    exists because the archive holds the period's articles in full, which can be
+    large, and because it is PLAINTEXT leaving an encrypted store — a decision the
+    operator makes with the real numbers in front of them, not after the fact.
+    """
+    from src.bulletin.evidence import evidence_plan
+    from src.bulletin.period import resolve_period
+
+    _require_gate()
+    try:
+        period = resolve_period(cadence)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return evidence_plan(db, period, dest=dest or None)
+
+
+@router.post("/evidence/build")
+def evidence_build_route(
+    cadence: str = Query("weekly"),
+    dest: str = Query(..., description="destination directory on THIS machine"),
+    edition_file: str = Query("", description="an existing edition; omit to build a fresh one"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Write the evidence archive to a directory on this machine.
+
+    Server-side destination, never a browser download: the archive can be the size
+    of a period of the corpus, which is not something to push through a tab. Same
+    shape as the large-data folder backup, for the same reason.
+    """
+    from src.bulletin.evidence import build_evidence_archive
+    from src.bulletin.facts import layer_a
+    from src.bulletin.period import resolve_period
+    from src.bulletin.store import read_edition
+
+    _require_gate()
+    try:
+        period = resolve_period(cadence)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    if edition_file:
+        try:
+            edition = read_edition(edition_file)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="no such edition") from exc
+    else:
+        edition = layer_a(db, period)
+
+    try:
+        return build_evidence_archive(db, edition, period, dest)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"could not write the archive: {exc}") from exc
+
+
 @router.delete("/editions/{filename}")
 def remove_edition(filename: str) -> dict:
     """Delete one persisted edition.
