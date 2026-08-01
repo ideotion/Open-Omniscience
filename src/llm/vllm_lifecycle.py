@@ -925,12 +925,18 @@ def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
 #  so no separate attested-checksum step is added here.
 # --------------------------------------------------------------------------- #
 def _check_online() -> None:
-    from src.ingest import kill_switch_active
+    """Refuse the networked steps under airplane mode.
 
-    if kill_switch_active():
+    Exempt only by an operator-consented EGRESS WINDOW, which permits the AI
+    install WITHOUT starting the collector -- the kill switch stays engaged, so
+    every other fetch path keeps refusing (``src.ingest.egress_window``).
+    """
+    from src.ingest.egress_window import PURPOSE_AI_INSTALL, egress_permitted
+
+    if not egress_permitted(PURPOSE_AI_INSTALL):
         raise VllmLifecycleError(
             "Network is OFF (airplane mode): refusing to install vLLM. "
-            "Turn airplane mode off to install."
+            "Turn airplane mode off, or allow the AI install to go online on its own."
         )
 
 

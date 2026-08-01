@@ -111,10 +111,36 @@ def test_both_paths_are_refused_under_airplane_mode():
     """BOTH egress clearnet — Ollama's registry and Hugging Face — and neither goes
     through Tor. Gating only the path that happens to route through our own client
     would leave the other silently downloading while the user believes they are
-    offline."""
+    offline.
+
+    ANCHOR MOVED, property unchanged (2026-08-01): the gate is now
+    ``egress_permitted(PURPOSE_AI_INSTALL)`` rather than a bare
+    ``kill_switch_active()``. That is still "refused under airplane mode" — the
+    helper's FIRST question is the kill switch — but it additionally lets an
+    operator-CONSENTED egress window through, which is the whole point of the
+    window: installing the local AI without starting the collector. Asserted
+    BEHAVIOURALLY below rather than by the old literal, so this pins the property
+    instead of the spelling.
+    """
     body = _pyfn("default_model_install")
-    assert "kill_switch_active" in body
+    assert "egress_permitted" in body, "the endpoint must still gate its egress"
     assert "clearnet" in body.lower()
+
+    from src.ingest import activate_kill_switch, clear_kill_switch
+    from src.ingest import egress_window as ew
+
+    ew._reset_for_tests()
+    try:
+        activate_kill_switch()
+        # Airplane mode, no window: refused, exactly as before.
+        assert ew.egress_permitted(ew.PURPOSE_AI_INSTALL) is False
+        # A consented window permits THIS purpose and nothing else.
+        ew.open_window(ew.PURPOSE_AI_INSTALL)
+        assert ew.egress_permitted(ew.PURPOSE_AI_INSTALL) is True
+        assert ew.egress_permitted("collection") is False
+    finally:
+        ew._reset_for_tests()
+        clear_kill_switch()
 
 
 def test_the_confirm_names_the_real_artifact_and_that_it_is_not_tor():

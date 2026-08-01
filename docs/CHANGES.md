@@ -59,6 +59,26 @@ loop, and recalibrates the analytics against a real ~500k-article corpus. On the
   standing in for an unmeasurable one, no "crashed" where "killed, or its journal was
   muted" is all the file can support — and an interrupted run's report no longer
   headlines the article count it never merged.
+- **Installing the local AI without starting the collector** — a third network state
+  between "offline" and "online". Until now `POST /api/system/network` cleared the kill
+  switch *and* started the scheduler in one act, so "let me install vLLM" also meant
+  "and begin contacting every source I have" — while showing your address to PyPI or
+  Hugging Face is a bounded, chosen exposure to a handful of infrastructure hosts. A
+  consented **egress window** keeps the kill switch **engaged** — so all ~75 of its call
+  sites keep refusing unchanged and `POST /api/system/network` is untouched — and exempts
+  only the gates that name the AI-install purpose. It closes itself once no install work
+  has been running, driven by a thread this module owns rather than by a browser tab
+  polling it, and it always closes at its deadline. The socket-level airplane backstop
+  stays in force on **every thread but the one performing an install request**, and there
+  only for that request's duration: an early version lifted it process-wide on the
+  reasoning that every fetch path checks the kill switch itself, which turned out to be
+  false for the source-preflight sweep — it reaches the network through `EthicalFetcher`'s
+  side doors and a plain session, so the backstop had been its only protection, and a
+  window let it resolve and fetch scraped-source hosts. Both halves are fixed and pinned.
+  What is **not** claimed: the window does not restrict *which hosts* the installer
+  contacts — pip, Hugging Face and Ollama's daemon are child processes an in-process
+  socket patch cannot see — and those downloads do not use your proxy or Tor. The consent
+  dialog says exactly that, in the same breath as the guarantee.
 
 ## 0.2.0 — data safety at scale (the `0.1` cycle, version set 2026-07-10)
 

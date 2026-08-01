@@ -40,6 +40,29 @@ their own real-destination argument, before either negotiates anything.
 
 Disable with ``OO_AIRPLANE_SOCKET_GUARD=0`` (e.g. an exotic deployment that proxies
 loopback). The guard never blocks while the kill switch is OFF.
+
+ONE narrow exemption exists: an open EGRESS WINDOW (``src.ingest.egress_window``,
+the operator-consented "install the local AI without starting the collector"
+state). It is needed because the Ollama installer's resolve-and-verify step is an
+IN-PROCESS HTTPS fetch, which this guard would otherwise refuse before the
+installer's own gate ever ran.
+
+That exemption is scoped as narrowly as it can be: it applies only on the THREAD
+currently inside an exempted ``GuardedSession`` request, only for the duration of
+that request, and only while a window is live. It is NOT process-wide -- the first
+version was, on the reasoning that every real fetch path checks the kill switch
+itself, and that reasoning was wrong: ``src/monitoring/preflight.py`` reaches the
+network through ``EthicalFetcher``'s side doors and its plain ``requests.Session``,
+meeting neither gate, so this backstop was the only thing refusing it. A
+process-wide lift let an AI-install window resolve and fetch scraped-source hosts.
+Thread scoping keeps the backstop in force for every thread but the installing
+one.
+
+It is deliberately NOT a host allowlist either: nearly all install traffic happens
+in child processes this guard cannot see at all, so a host filter here would
+police two HTTP requests while multiple GB flowed past it -- a boundary that reads
+as protection without being one. See that module's docstring for the full ledger
+of what is guaranteed and what is not.
 """
 
 from __future__ import annotations
@@ -50,6 +73,7 @@ import os
 import socket
 
 from src.ingest import kill_switch_active
+from src.ingest.egress_window import any_window_open, socket_exempt_here
 
 try:
     import socks as _pysocks  # type: ignore[import-untyped]
@@ -96,10 +120,22 @@ def _is_local_host(host: object) -> bool:
 
 
 def _guard(host: object) -> None:
-    """Raise if the kill switch is engaged and ``host`` is non-loopback."""
+    """Raise if the kill switch is engaged and ``host`` is non-loopback.
+
+    The egress-window exemption (see the module docstring) is checked LAST and is
+    two conditions, not one: this THREAD must be inside an exempted install
+    request, AND a window must still be live. The thread-local read comes first
+    because it is the cheaper of the two and is false on every thread but one, so
+    the ordinary refusal path costs one attribute lookup and never touches the
+    window lock. Both checks are cheap by construction -- this runs on every
+    ``getaddrinfo`` and every ``connect`` in the process and must never do real
+    work or re-enter anything.
+    """
     if not kill_switch_active():
         return
     if _is_local_host(host):
+        return
+    if socket_exempt_here() and any_window_open():
         return
     raise AirplaneModeError(
         f"airplane mode is engaged: refusing a network connection to {host!r}. "

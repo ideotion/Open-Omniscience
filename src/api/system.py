@@ -38,6 +38,13 @@ class ShutdownBody(BaseModel):
     confirm: bool = False
 
 
+class EgressWindowBody(BaseModel):
+    """Open or close the AI-install egress window."""
+
+    open: bool = False
+    ttl_s: float | None = None
+
+
 @router.post("/shutdown")
 def system_shutdown(body: ShutdownBody) -> dict:
     """Stop the app from the GUI (a power button + confirm) — the equivalent of Ctrl-C.
@@ -221,3 +228,54 @@ def set_network_mode(payload: dict) -> dict:
                 "network toggle: scheduler %s failed", "start" if online else "stop", exc_info=True
             )
     return {"online": not kill_switch_active()}
+
+
+# --------------------------------------------------------------------------- #
+# The AI-install egress window: go online for the local-AI install WITHOUT
+# starting the collector.
+#
+# Operator, 2026-08-01: "divulging your IP to ollama and vllm is not the same as
+# divulging it to all scrapped sources". POST /api/system/network cannot express
+# that -- it clears the kill switch AND starts the collector in one ruled step
+# ("Online <=> collecting"). These two routes are a THIRD state instead: the kill
+# switch stays ENGAGED, so every other gated fetch keeps refusing itself, and only
+# the handful of AI-install gates are exempted.
+#
+# Deliberately NOT reusing /network: that endpoint stays byte-identical, so the
+# maintainer ruling it encodes is untouched and its consent popup, its invariant
+# and its tests cannot be regressed by this feature.
+# --------------------------------------------------------------------------- #
+@router.get("/egress-window")
+def egress_window_status() -> dict:
+    """Live state of the AI-install egress window.
+
+    Reaps first: this is the poll the UI runs while a window is open, so it is
+    also where a window whose install has finished (or failed, or been cancelled)
+    gets closed -- one rule covering all three outcomes, keyed on "nothing is
+    running any more" rather than on a hook per outcome.
+    """
+    from src.ingest import egress_window as ew
+
+    ew.reap_idle()
+    return ew.status(with_collector=True)
+
+
+@router.post("/egress-window")
+def set_egress_window(body: EgressWindowBody) -> dict:
+    """Open (the consented act) or close the AI-install egress window.
+
+    NEVER touches the scheduler -- that is the whole point, and the reason this
+    is not a variant of ``set_network_mode``. Opening starts, queues and schedules
+    nothing; it only stops the AI-install gates from refusing.
+    """
+    from src.ingest import egress_window as ew
+
+    if body.open:
+        try:
+            return ew.open_window(ew.PURPOSE_AI_INSTALL, ttl_s=body.ttl_s) | {
+                "collector_running": ew.collector_running()
+            }
+        except ew.EgressWindowError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    ew.close_window()
+    return ew.status(with_collector=True)

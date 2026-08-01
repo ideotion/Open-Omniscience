@@ -1403,6 +1403,36 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     COMMENT-STRIPPED source (drop whole-line `//`, which leaves a `https://` inside a string
     literal untouched), or be behavioural. Do not solve it by rewording the comment: the
     comment is the thing a future session reads before deciding the removal was a mistake.
+  - **A BACKSTOP MAY BE THE ONLY THING GUARDING A PATH — "every real path checks the gate
+    itself" IS AN ENUMERATION, AND ENUMERATIONS ARE WRONG (2026-08-01, the AI-install egress
+    window):** relaxing the socket-level airplane backstop process-wide was justified in
+    writing by "every real fetch path still refuses itself at its own gate — both gates are
+    chokepoints the whole app funnels through." Two modules were absent from both:
+    `src/monitoring/preflight.py` and `feed_preflight.py` call `EthicalFetcher._guard_target`
+    / `_guarded_redirect_get` **directly** instead of `fetch()` (so they never meet the
+    `_KILL` check, which lives only in `fetch`/`sitemaps_for`) and use the fetcher's plain
+    `requests.Session` rather than a `GuardedSession` (so they never meet that one either).
+    The backstop had been their sole protection since it was built — which is precisely what
+    a backstop is FOR, and precisely why its removal read as safe. Live-reproduced: an open
+    window let a preflight sweep DNS-resolve and HTTP-fetch scraped-source hosts. THREE
+    RULES. (a) Before relaxing a catch-all, do not audit the paths you can name — grep for
+    callers of the guarded thing's INTERNAL helpers, because a caller that reached past the
+    front door is exactly the one your enumeration omits. (b) Scope the relaxation to the
+    narrowest axis that still works: here THREAD + single request (`threading.local` entered
+    by `GuardedSession.request`), which left the backstop in force for every other thread —
+    verified by driving a bare `getaddrinfo` on a second thread. The narrow version was no
+    harder to write than the broad one; it was only harder to THINK of. (c) Bind the two
+    gates in ONE place — the exemption is entered by the same method that performs the
+    app-level check, so a call site cannot opt into one and forget the other. COROLLARY on
+    fixing it: also give the bypassed path its own gate (`_KILL` in the two side doors), so
+    the docstring's claim becomes true rather than merely re-enforced from above; a DNS
+    resolve is itself egress (it hands the resolver the list of sources the operator reads),
+    so a test must assert zero RESOLUTIONS, not merely zero HTTP requests. And the sibling
+    lesson the same review produced: **a self-closing resource whose only reaper is an HTTP
+    status endpoint closes when a browser happens to poll it** — `reap_idle` had exactly one
+    caller, so "it closes on its own once the install finishes" (a sentence in the consent
+    dialog) held only while a tab was open. If a UI string promises a lifecycle, the
+    lifecycle needs a driver the UI does not own.
 
 ## Open queue (when maintainer says proceed)
 - **THE BULLETIN — PERIODIC CORPUS DOCUMENT (maintainer design conversation 2026-07-30/31; 16

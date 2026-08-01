@@ -301,6 +301,17 @@ _KILL = threading.Event()
 
 def activate_kill_switch() -> None:
     _KILL.set()
+    # Going offline is a HARD close: an egress window (the consented "install the
+    # local AI without starting the collector" exemption) must never outlive the
+    # operator's decision to go offline, or the airplane button would stop meaning
+    # what it says. Imported lazily -- egress_window asks us for the kill-switch
+    # state, so a module-level import here would be circular.
+    try:
+        from src.ingest.egress_window import close_window
+
+        close_window()
+    except Exception:  # noqa: BLE001 - the kill switch must engage no matter what
+        pass
 
 
 def clear_kill_switch() -> None:
@@ -788,6 +799,17 @@ class EthicalFetcher:
     def _guard_target(self, host: str | None) -> None:
         """Refuse to fetch internal/non-public targets (SSRF, CWE-918).
 
+        Honours the kill switch FIRST. ``fetch()`` and ``sitemaps_for()`` check it
+        before calling here, so for them this is redundant -- but this method is
+        also a SIDE DOOR: ``src/monitoring/preflight.py`` and
+        ``feed_preflight.py`` call it (and ``_guarded_redirect_get``) directly
+        instead of going through ``fetch()``, and so never met that check. The
+        resolution below is itself egress -- it hands the operator's resolver the
+        list of sources they read -- so a path that skipped the check leaked DNS
+        for every enabled source. Checking here means the gate belongs to the
+        method that touches the network rather than to the callers who must
+        remember to ask.
+
         Applies only to the real requests session — an injected stub/double performs no
         real network I/O, so there is nothing to guard (and tests may legitimately use
         loopback stand-in hosts). For a real fetch, literal IPs are checked and hostnames
@@ -806,6 +828,8 @@ class EthicalFetcher:
         """
         if not self._real_session:
             return
+        if _KILL.is_set():
+            raise FetchFailed("network kill switch is active -- collection stopped by operator")
         if not host:
             raise FetchFailed("missing host")
         host = host.strip("[]")  # IPv6 literal brackets
@@ -937,7 +961,13 @@ class EthicalFetcher:
         rebinding hostname) is refused on the robots path exactly as on the page
         path -- closing the prior gap where robots used ``allow_redirects=True``
         and so let its redirect chain bypass the guard.
+
+        Also honours the kill switch, for the same reason ``_guard_target`` does:
+        the two preflight modules call this directly rather than through
+        ``fetch()``, so without it they had no kill-switch gate of their own.
         """
+        if self._real_session and _KILL.is_set():
+            raise FetchFailed("network kill switch is active -- collection stopped by operator")
         current = url
         for _ in range(self._max_redirects + 1):
             kwargs: dict[str, Any] = {"timeout": self.timeout, "allow_redirects": False}

@@ -142,6 +142,11 @@
   </header>
   <div id="lang-menu" role="menu" hidden
        style="position:fixed;z-index:300;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.35);max-height:70vh;overflow:auto"></div>
+  <!-- AI-install egress window banner, the same one the app shows. This page is
+       where an operator watches a long install, so the exposure must be visible
+       here too rather than only in the app's chrome. Same .egress-bar rule in the
+       shared app.css; populated by paintEgress() below. -->
+  <div id="egress-window-bar" class="egress-bar" hidden role="status" aria-live="polite"></div>
   <!-- Always-visible resource summary (state + CPU/RAM/↓/jobs) -->
   <div class="tm-summary" id="tm-summary"></div>
   <nav class="tm-tabs" id="tm-tabs" role="tablist">
@@ -628,12 +633,21 @@
   // State repainted by renderSummary from /api/scheduler/activity; the plane glyph
   // FILLS when offline (invariant #14), exactly like the app.
   var _tmOnline = null;
+  // AI-install egress window, mirrored from the app. This page is a first-class
+  // surface an operator sits on WHILE a long install runs, so it must not be a
+  // screen where their own network exposure is invisible -- and the plain offline
+  // hover below is simply FALSE while a window is open. Every string here is one
+  // the app already keys, so this costs no new translation.
+  var _tmEgress = null;
   function paintAir() {
     var b = $("net-toggle"), plane = $("net-plane"); if (!b) return;
+    var egressOpen = !!(_tmEgress && _tmEgress.open);
     if (_tmOnline === false) {
       if (plane) plane.setAttribute("fill", "currentColor");
       b.style.color = "var(--err)";
-      b.title = t("Offline (airplane mode) — click to go online in the app; you'll be asked to confirm first.");
+      b.title = egressOpen
+        ? t("Offline (airplane mode), except the AI install you allowed — collection stays stopped. Click to go fully online.")
+        : t("Offline (airplane mode) — click to go online in the app; you'll be asked to confirm first.");
     } else {
       if (plane) plane.setAttribute("fill", "none");
       b.style.color = "";
@@ -680,10 +694,44 @@
     } catch (e) { el.className = "pill"; el.textContent = "AI"; }
   }
 
+  // Mirror the app's egress bar. Read-only: "Close now" lives in the app, so this
+  // page states the exposure without duplicating the control. Rendered only on a
+  // real change, because an aria-live region announces on every mutation and this
+  // banner can be up for the length of a multi-GB download.
+  var _tmEgressHtml = "";
+  function paintEgress(st) {
+    _tmEgress = st || null;
+    var bar = $("egress-window-bar");
+    paintAir();  // the offline hover is false while a window is open
+    if (!bar) return;
+    if (!(st && st.open)) { bar.hidden = true; bar.innerHTML = ""; _tmEgressHtml = ""; return; }
+    // MEASURED collector state, never our own assumption; null means we could not
+    // read it and we say so.
+    var coll = st.collector_running;
+    var collLine = coll === false
+      ? t("Collection is stopped — no source is being contacted.")
+      : coll === true
+        ? t("Warning: the collector is running.")
+        : t("The collector's state could not be read just now.");
+    var html = '<span aria-hidden="true">⬤</span>' +
+      '<span class="egress-msg"><b>' + esc(t("The AI install is allowed online.")) + '</b> ' +
+      '<span class="egress-sub">' + esc(collLine) + ' ' +
+      esc(t("Which hosts the installer contacts is not restricted, and it does not use your proxy or Tor.")) +
+      '</span></span>';
+    bar.hidden = false;
+    if (_tmEgressHtml === html) return;
+    _tmEgressHtml = html;
+    bar.innerHTML = html;
+  }
+  async function loadEgress() {
+    try { paintEgress(await api("/api/system/egress-window")); }
+    catch (e) { /* transient: leave the bar as it is */ }
+  }
+
   applyLang();
   _paintLangButton();
-  loadHealth(); loadLlm();
-  setInterval(function () { loadHealth(); loadLlm(); }, 15000);  // health/LLM poll, low-frequency
+  loadHealth(); loadLlm(); loadEgress();
+  setInterval(function () { loadHealth(); loadLlm(); loadEgress(); }, 15000);  // health/LLM/egress poll, low-frequency
   selectPanel("processes");
   loop();
 })();
