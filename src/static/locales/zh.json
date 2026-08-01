@@ -2272,5 +2272,13 @@
   "Daily": "每日",
   "Weekly": "每周",
   "Monthly": "每月",
-  "Yearly": "每年"
+  "Yearly": "每年",
+  "Step {i} of {n} — {label}": "第 {i} 步，共 {n} 步 — {label}",
+  "Lost contact with the job.": "与任务失去联系。",
+  "vLLM install failed:": "vLLM 安装失败：",
+  "Model download failed:": "模型下载失败：",
+  "Installing — this can take several minutes…": "正在安装 — 这可能需要几分钟…",
+  "Install vLLM": "安装 vLLM",
+  "Install Ollama": "安装 Ollama",
+  "Download the default model": "下载默认模型"
 }

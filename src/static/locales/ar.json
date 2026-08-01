@@ -2272,5 +2272,13 @@
   "Daily": "يومي",
   "Weekly": "أسبوعي",
   "Monthly": "شهري",
-  "Yearly": "سنوي"
+  "Yearly": "سنوي",
+  "Step {i} of {n} — {label}": "الخطوة {i} من {n} — {label}",
+  "Lost contact with the job.": "انقطع الاتصال بالمهمة.",
+  "vLLM install failed:": "فشل تثبيت vLLM:",
+  "Model download failed:": "فشل تنزيل النموذج:",
+  "Installing — this can take several minutes…": "جارٍ التثبيت — قد يستغرق ذلك عدة دقائق…",
+  "Install vLLM": "تثبيت vLLM",
+  "Install Ollama": "تثبيت Ollama",
+  "Download the default model": "تنزيل النموذج الافتراضي"
 }

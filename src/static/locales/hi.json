@@ -2272,5 +2272,13 @@
   "Daily": "दैनिक",
   "Weekly": "साप्ताहिक",
   "Monthly": "मासिक",
-  "Yearly": "वार्षिक"
+  "Yearly": "वार्षिक",
+  "Step {i} of {n} — {label}": "चरण {i} / {n} — {label}",
+  "Lost contact with the job.": "कार्य से संपर्क टूट गया।",
+  "vLLM install failed:": "vLLM इंस्टॉल विफल:",
+  "Model download failed:": "मॉडल डाउनलोड विफल:",
+  "Installing — this can take several minutes…": "इंस्टॉल हो रहा है — इसमें कई मिनट लग सकते हैं…",
+  "Install vLLM": "vLLM इंस्टॉल करें",
+  "Install Ollama": "Ollama इंस्टॉल करें",
+  "Download the default model": "डिफ़ॉल्ट मॉडल डाउनलोड करें"
 }

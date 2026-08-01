@@ -1285,3 +1285,129 @@ def test_a_real_download_reports_the_cache_it_produced(monkeypatch, tmp_path):
     out = V.run_model_download_job(FakeCtx(), model="org/m", runner=_runner)
     assert out["downloaded"] is True and out["state"] == "downloaded"
     assert out["cached"] is True
+
+
+# --------------------------------------------------------------------------- #
+# Attempt-journal verifiability (2026-08-01). The uv switch was made because the
+# operator's own path was uv, but a SUCCESSFUL install told us nothing about
+# which resolver actually ran or how long it took -- so an exported bundle could
+# not confirm the fix was doing anything. These pin the three fields that turn
+# "it seems to work" into a checkable claim.
+# --------------------------------------------------------------------------- #
+def _last_attempt():
+    hist = V.install_history()
+    assert hist, "expected at least one journalled attempt"
+    return hist[-1]
+
+
+def test_journal_records_the_resolver_that_actually_ran(monkeypatch):
+    _allow_install(monkeypatch)
+    _fake_venv()
+    # Force pip, the one branch that needs no uv on disk.
+    monkeypatch.setenv("OO_VLLM_RESOLVER", "pip")
+
+    def fake_runner(argv, env=None, should_stop=None):
+        yield "Successfully installed vllm-0.26.0"
+        yield "__exit__ 0"
+
+    V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)
+    a = _last_attempt()
+    assert a["resolver"] == "pip"
+    # pip was ASKED for, so falling back to it is not a fallback.
+    assert a["fallback_fired"] is False
+
+
+def test_journal_flags_a_silent_uv_failure_rescued_by_pip(monkeypatch):
+    """The defect this field exists for: uv was wanted, uv failed, pip quietly
+    saved the install -- and the result is indistinguishable from 'uv worked'
+    unless something records it."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+    monkeypatch.delenv("OO_VLLM_RESOLVER", raising=False)
+    # uv install "succeeds" but never produces the binary, so _resolver_argv
+    # falls back -- exactly the silent case.
+    monkeypatch.setattr(V, "venv_bin", lambda name: V.venv_dir() / "bin" / name)
+
+    def fake_runner(argv, env=None, should_stop=None):
+        yield "__exit__ 0"
+
+    V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)
+    a = _last_attempt()
+    assert a["resolver"] == "pip"
+    assert a["fallback_fired"] is True, "a uv->pip fallback must be visible in the journal"
+
+
+def test_journal_records_a_real_duration_never_a_fabricated_zero(monkeypatch):
+    _allow_install(monkeypatch)
+    _fake_venv()
+    monkeypatch.setenv("OO_VLLM_RESOLVER", "pip")
+    # First read is the start stamp; every read after it is 7.5 s later. A plain
+    # iterator is fragile here -- it silently depends on how many times the code
+    # under test happens to call monotonic().
+    calls: list[int] = []
+
+    def _mono() -> float:
+        calls.append(1)
+        return 100.0 if len(calls) == 1 else 107.5
+
+    monkeypatch.setattr(V.time, "monotonic", _mono)
+
+    def fake_runner(argv, env=None, should_stop=None):
+        yield "__exit__ 0"
+
+    V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)
+    a = _last_attempt()
+    assert a["duration_s"] == pytest.approx(7.5, abs=0.01)
+    assert isinstance(a["started_at"], float)
+
+
+def test_a_failed_attempt_still_carries_its_timing(monkeypatch):
+    """A failure is the case an operator most needs timed -- 'it hung for an
+    hour' and 'it died instantly' are different diagnoses."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+    monkeypatch.setenv("OO_VLLM_RESOLVER", "pip")
+
+    def fake_runner(argv, env=None, should_stop=None):
+        yield "ERROR: could not resolve"
+        yield "__exit__ 1"
+
+    with pytest.raises(V.VllmLifecycleError):
+        V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)
+    a = _last_attempt()
+    assert a["outcome"] == "error"
+    assert a["duration_s"] is not None
+    assert a["resolver"] == "pip"
+
+
+def test_record_install_attempt_omits_unknowns_rather_than_guessing():
+    """A caller that did not time the attempt must yield None, never 0.0 -- a
+    zero duration reads as an instant install."""
+    V.record_install_attempt(version="0.26.0", phase="pip", outcome="installed")
+    a = _last_attempt()
+    assert a["duration_s"] is None
+    assert a["resolver"] is None
+    assert a["fallback_fired"] is None
+
+
+# --------------------------------------------------------------------------- #
+# status().package_present -- the marker and the venv can disagree, and that is
+# precisely the state a restart lands in.
+# --------------------------------------------------------------------------- #
+def test_status_distinguishes_a_written_marker_from_a_present_package(monkeypatch):
+    monkeypatch.setattr("src.llm.backend.detect_gpu", lambda: {"available": False})
+    _fake_venv()
+    V._write_marker("0.26.0")
+    st = V.status()
+    assert st["installed"] is True, "the marker was written"
+    # ...but nothing ever put vllm in site-packages.
+    assert st["package_present"] is not True, (
+        "a marker must not be reported as a present package -- that conflation is "
+        "exactly what makes a broken install look healthy after a restart"
+    )
+
+
+def test_package_present_is_none_when_the_layout_is_unreadable(monkeypatch):
+    monkeypatch.setattr("src.llm.backend.detect_gpu", lambda: {"available": False})
+    # No site-packages at all -> not measurable, and must NOT collapse to False.
+    assert V._package_present(V.venv_dir(), "vllm") is None

@@ -18614,14 +18614,36 @@
       _aiSetupRunning = true;
       if (btn) { btn.disabled = true; btn.textContent = t("Working…"); }
       try {
+        // The plan is a KNOWN, finite list, so "step i of N" is a real count, not
+        // an invented percentage. Within a step we show the job's own reported
+        // line and never synthesise a fraction: pip gives no reliable progress
+        // figure, and the installer is explicit about never faking one.
+        const total = plan.steps.length;
+        let idx = 0;
         for (const step of plan.steps) {
+          idx += 1;
+          const label = t(step.label || step.id);
+          const head = OOI18N && OOI18N.tf
+            ? OOI18N.tf("Step {i} of {n} — {label}", {i: idx, n: total, label})
+            : `Step ${idx} of ${total} — ${label}`;
+          const sayStep = (line) => say(line ? `${head} · ${line}` : head);
+          sayStep("");
           if (step.id === "install-vllm") {
-            say(t("Installing vLLM…"));
             // Reuses the existing installer, 409-acknowledgement path included --
             // a resource warning must still be answerable here, not only from the
             // vLLM section's own button.
             const r = await _vllmInstallStart();
             if (!r) { say(t("Cancelled.")); return; }   // the operator declined the warning
+            // AWAIT the install. Starting it is not finishing it: the POST returns
+            // the moment the worker thread is spawned, so the chain used to race
+            // straight on to downloading a model into a venv that did not exist
+            // yet and starting a server whose backend was still installing.
+            const done = await _followJob("/api/llm/vllm/install/status", sayStep);
+            if (done.state === "error") {
+              say(t("vLLM install failed:") + " " + (done.error || done.detail || ""));
+              return;   // never carry on into steps that need the backend
+            }
+            if (done.state === "cancelled") { say(t("Cancelled.")); return; }
           } else if (step.id === "install-ollama") {
             // Ends in the "Install Ollama" box below: elevation is explicit and
             // may need a password this app must never pretend to have.
@@ -18629,10 +18651,19 @@
             await prepareOllamaInstall();
             return;
           } else if (step.id === "model") {
-            say(t("Downloading the default model…"));
             // The chain already took ONE consent covering this download, so the
             // per-button confirm would be a second ask for the same bytes.
             await _installDefaultModel(null, {confirmed: true});
+            // Same defect as the vLLM step: this POST only STARTS a multi-GB
+            // Hugging Face fetch. Without following it, the chain reported "Done."
+            // while gigabytes were still arriving, and then tried to start a
+            // server against weights that were not there yet.
+            const done = await _followJob("/api/llm/default-model/status", sayStep);
+            if (done.state === "error") {
+              say(t("Model download failed:") + " " + (done.error || done.detail || ""));
+              return;
+            }
+            if (done.state === "cancelled") { say(t("Cancelled.")); return; }
           }
         }
         // Free, local, reversible -- so it just happens, per the pill's own rule.
@@ -18881,32 +18912,61 @@
       }
     }
 
+    // Follow a BackgroundJob to its END, reporting every progress line.
+    //
+    // WHY THIS EXISTS (field report 2026-08-01: "clicking install just changes the
+    // button colour, users are left with no information whether the install is
+    // really ongoing"): POST-ing a job endpoint only SPAWNS the worker thread and
+    // returns at once. A caller that awaits the POST has started the work, not
+    // finished it -- so it can neither show progress nor know the outcome. Both
+    // multi-GB steps in the setup chain did exactly that.
+    //
+    // Resolves to the terminal status. Never throws for a job that merely FAILED --
+    // the caller must be able to distinguish "failed" from "the poll itself broke",
+    // so a failed job returns its status and a broken poll rejects.
+    async function _followJob(statusUrl, onDetail) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      let misses = 0;
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 3000));
+        let st;
+        try {
+          st = await api(statusUrl);
+          misses = 0;
+        } catch (e) {
+          // A transient blip must not abandon a job that is still running and
+          // still costing the operator bandwidth. Give up only on a sustained
+          // outage, and say so rather than silently reporting success.
+          if (++misses >= 5) throw new Error(t("Lost contact with the job.") + " " + (e.message || e));
+          continue;
+        }
+        if (onDetail) {
+          const line = st.detail || st.state || "";
+          if (line) onDetail(line);
+        }
+        if (st.state && st.state !== "running") return st;
+      }
+    }
+
     async function installVllm(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (btn) { btn.disabled = true; btn.textContent = "Starting the install…"; }
       const prog = $("vllm-install-progress");
+      const say = (m) => { const el = $("vllm-install-progress") || prog; if (el) el.textContent = m; };
       try {
         await ensureOnline(t("install vLLM (downloads several GB)"));
         const started = await _vllmInstallStart();
         if (started === null) {  // the operator declined the resource warning
-          if (prog) prog.textContent = t("Install cancelled.");
+          say(t("Install cancelled."));
           if (btn) { btn.disabled = false; btn.textContent = t("Install vLLM"); }
           return;
         }
-        if (prog) prog.textContent = "Installing — this can take several minutes…";
-        const poll = setInterval(async () => {
-          try {
-            const st = await api("/api/llm/vllm/install/status");
-            if (prog) prog.textContent = st.detail || st.state || "";
-            if (st.state && st.state !== "running") {
-              clearInterval(poll);
-              loadVllmStatusPanel();
-              if (btn) { btn.disabled = false; btn.textContent = t("Install vLLM"); }
-            }
-          } catch (e) { clearInterval(poll); }
-        }, 3000);
+        say(t("Installing — this can take several minutes…"));
+        await _followJob("/api/llm/vllm/install/status", say);
+        loadVllmStatusPanel();
       } catch (e) {
-        if (prog) prog.textContent = "Install: " + e.message;
+        say("Install: " + e.message);
+      } finally {
         if (btn) { btn.disabled = false; btn.textContent = t("Install vLLM"); }
       }
     }
