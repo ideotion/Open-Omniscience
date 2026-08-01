@@ -1632,6 +1632,45 @@ def merge_side_files(staged: StagedArtifact) -> dict:
         logs[fname] = {"appended": len(fresh), "duplicate": len(incoming_lines) - len(fresh)}
     report["logs"] = logs
 
+    # Generated, non-reconstructable JSON documents: persisted Bulletin editions and
+    # the persisted import reports. Both are collected into the artifact by
+    # artifact._collect_members; until now only the collection side existed for
+    # import_reports, so every restore carried them and silently dropped them on the
+    # floor. A member exported with no handler is worse than one not exported: the
+    # manifest says it travelled, and nothing says it did not land.
+    #
+    # ADDITIVE, never overwrite. Both filenames embed a timestamp plus a random id,
+    # so a same-name collision means the same file; and a local document is the
+    # user's own record — a merge that replaced it would rewrite history to import
+    # history, which is the one thing an additive restore must never do.
+    docs: dict = {}
+    for role, subdir in (("bulletin", "bulletin/editions"), ("import_reports", "import_reports")):
+        restored = 0
+        kept_local = 0
+        refused: list[str] = []
+        for name, path in staged.member_paths(role):
+            # Member names become filesystem paths, so they are guarded here even
+            # though verify already checked them: EVERY name-to-path field runs
+            # through a guard, not only the ones that motivated the rule.
+            rel = Path(name)
+            if rel.is_absolute() or ".." in rel.parts or not str(rel).startswith(subdir):
+                refused.append(name)
+                continue
+            local = base / rel
+            if local.exists():
+                kept_local += 1
+                continue
+            try:
+                local.parent.mkdir(parents=True, exist_ok=True)
+                tmp = local.with_name(local.name + ".tmp")
+                tmp.write_bytes(path.read_bytes())
+                os.replace(tmp, local)
+                restored += 1
+            except OSError as exc:
+                refused.append(f"{name}: {exc}")
+        docs[role] = {"restored": restored, "kept_local": kept_local, "refused": refused}
+    report["documents"] = docs
+
     keys: dict = {"restored": [], "kept_local": []}
     for name, path in staged.member_paths("keys"):
         local = base / name

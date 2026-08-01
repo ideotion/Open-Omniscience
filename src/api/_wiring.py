@@ -35,6 +35,7 @@ def wire(app) -> None:
     from src.api.article_dates import router as article_dates_router
     from src.api.backup_v2 import router as backup_v2_router
     from src.api.briefing import router as briefing_router
+    from src.api.bulletin import router as bulletin_router
     from src.api.custody import router as custody_router
     from src.api.database import router as database_router
     from src.api.diagnostics import router as diagnostics_router
@@ -108,6 +109,7 @@ def wire(app) -> None:
         stats_router,
         governments_router,
         watches_router,
+        bulletin_router,
         weather_router,
         search_omni_router,
         personality_router,
