@@ -367,10 +367,33 @@ def record_install_attempt(
     output_tail: Sequence[str] | None = None,
     output_lines_total: int | None = None,
     preflight: dict | None = None,
+    resolver: str | None = None,
+    fallback_fired: bool | None = None,
+    started_at: float | None = None,
+    duration_s: float | None = None,
 ) -> None:
     """Append one attempt to the bounded journal. NEVER RAISES: on any failure it
     logs once and disables recording for this process (log + disable, never
-    raise), so the journal can never abort the install it exists to record."""
+    raise), so the journal can never abort the install it exists to record.
+
+    VERIFIABILITY (2026-08-01): ``resolver`` / ``fallback_fired`` / ``duration_s``
+    exist so an operator's exported bundle can ANSWER the questions the uv switch
+    raised, instead of leaving them to inference:
+
+    * ``resolver`` -- ``"uv"`` or ``"pip"``, recorded as its own field. The
+      resolver name is also folded into ``phase``, but reading it back out of a
+      phase string is parsing, and a diagnostic whose whole job is "which path
+      ran?" should not answer it by string-matching its own log.
+    * ``fallback_fired`` -- True when uv was wanted but pip actually ran. That is
+      the single fact distinguishing "uv worked" from "uv silently failed and pip
+      quietly saved us", which otherwise look identical from a successful install.
+    * ``duration_s`` -- wall time for the attempt. The uv switch was justified by
+      pip being slow on torch + the CUDA runtime; without a duration the journal
+      cannot measure the very thing the change was made for. ``None`` when the
+      caller did not time it -- never 0, which would read as an instant install.
+
+    All four are optional so existing callers (and every already-written journal
+    line) stay valid; a reader must treat a missing field as unknown, not false."""
     global _history_disabled, _history_disabled_reason
     if _history_disabled:
         return
@@ -384,6 +407,10 @@ def record_install_attempt(
             "outcome": str(outcome),
             "exit_code": exit_code,
             "error": (str(error)[:500] if error else None),
+            "resolver": (str(resolver) if resolver else None),
+            "fallback_fired": fallback_fired,
+            "started_at": (float(started_at) if started_at is not None else None),
+            "duration_s": (round(float(duration_s), 3) if duration_s is not None else None),
             "output_tail": kept,
             "output_lines_kept": len(kept),
             "output_lines_total": total,
@@ -849,6 +876,14 @@ def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
     return {
         "installed": is_installed(),
         "install_info": install_info(),
+        # `installed` reads the MARKER; this reads the venv. They disagree exactly
+        # when an install is broken -- a marker written by a past success while the
+        # venv was later damaged, moved, or built against a Python that is gone.
+        # That is the state a restart lands in, and until now the only symptom was a
+        # backend that reported installed and then failed to start, with nothing in
+        # the exported bundle able to tell the two apart. `None` = unrecognised
+        # layout, i.e. not measurable -- never collapsed into False.
+        "package_present": _package_present(venv_dir(), "vllm"),
         "running": is_running(),
         "process_tracked": process_alive(),
         "gpu": gpu,
@@ -1531,6 +1566,15 @@ def run_install_job(
     phase = "venv"
     tail: deque[str] = deque(maxlen=_OUTPUT_TAIL_LINES)
     lines_total = 0
+    # Wall clock for the attempt. `started_at` is epoch (a human-readable stamp for
+    # the exported bundle); the elapsed figure comes from `monotonic` so an NTP step
+    # mid-install cannot produce a negative or wildly wrong duration.
+    started_at = time.time()
+    started_mono = time.monotonic()
+    # Set once the resolver is chosen; stays None if we never got that far, so an
+    # attempt that died in the venv phase honestly reports "no resolver ran".
+    resolver_used: str | None = None
+    fallback_fired: bool | None = None
 
     def _journal(outcome: str, *, exit_code: int | None = None, error: str | None = None) -> None:
         record_install_attempt(
@@ -1542,6 +1586,10 @@ def run_install_job(
             output_tail=list(tail),
             output_lines_total=lines_total,
             preflight=preflight,
+            resolver=resolver_used,
+            fallback_fired=fallback_fired,
+            started_at=started_at,
+            duration_s=time.monotonic() - started_mono,
         )
 
     ctx.set_progress(detail="preparing the managed venv")
@@ -1614,7 +1662,17 @@ def run_install_job(
         phase = "uv"
         tail.clear()
         lines_total = 0
+        # Whether uv was WANTED, read the same way `_resolver_argv` reads it. Asking
+        # here (rather than widening that function's return arity, which every caller
+        # and test pins) keeps the change additive.
+        uv_wanted = os.environ.get("OO_VLLM_RESOLVER", "").lower() != "pip"
         resolver, argv = _resolver_argv(pip, version, run, env, stop, ctx, tail)
+        # A successful uv install and a silent uv failure rescued by pip look
+        # IDENTICAL from the outside -- both end in a working vLLM. This is the one
+        # bit that tells them apart, so a field report can say which path actually
+        # ran instead of assuming the intended one did.
+        resolver_used = resolver
+        fallback_fired = uv_wanted and resolver == "pip"
         phase = resolver
         tail.clear()
         lines_total = 0
