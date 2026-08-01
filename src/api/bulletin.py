@@ -130,6 +130,45 @@ def edition(filename: str) -> dict:
         raise HTTPException(status_code=500, detail=f"edition unreadable: {exc}") from exc
 
 
+@router.get("/editions/{filename}/render")
+def render_edition(filename: str, fmt: str = Query("html", description="html | markdown")):
+    """Render a persisted edition as a self-contained page or as Markdown.
+
+    Rendering is PURE: the numbers come from the record, so re-rendering cannot
+    change one. That is what makes toggling a producer a re-render rather than a
+    re-computation.
+
+    Published output carries EXTERNAL identity only — a local article id resolves
+    to a different article on a recipient's install, so it never leaves here.
+    """
+    from fastapi.responses import HTMLResponse, PlainTextResponse
+
+    from src.bulletin.render import render
+    from src.bulletin.store import read_edition
+
+    _require_gate()
+    try:
+        edition = read_edition(filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="no such edition") from exc
+
+    try:
+        text = render(edition, fmt)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    stem = filename.rsplit(".", 1)[0]
+    if (fmt or "").strip().lower() == "html":
+        return HTMLResponse(
+            text, headers={"Content-Disposition": f'inline; filename="{stem}.html"'}
+        )
+    return PlainTextResponse(
+        text,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{stem}.md"'},
+    )
+
+
 @router.post("/evidence/plan")
 def evidence_plan_route(
     cadence: str = Query("weekly"),
