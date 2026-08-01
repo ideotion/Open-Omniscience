@@ -70,6 +70,12 @@ _IMPORT_REPORTS_DIR = "import_reports"  # S3.5 (2026-07-23): persisted downloada
 # data (never large/re-downloadable, so it belongs HERE, not the large-data folder
 # backup's wiki/OSM/model categories) that must ride the encrypted export per the
 # field-feedback A1 ruling.
+_BULLETIN_EDITIONS_DIR = "bulletin/editions"  # persisted Bulletin editions
+# (src/bulletin/store.py). Same class as the import reports above -- small, private,
+# generated data that cannot be re-downloaded -- so it rides the encrypted export.
+# Unlike them it also has a RESTORE handler (merge.merge_side_files, role
+# "bulletin"): exporting a member with nothing on the other side means it is
+# carried and silently dropped, which is worse than not carrying it at all.
 _KEYS_DIR = "keys"
 _CUSTODY_DB = "custody_log.db"
 _WIKI_DUMPS_DIR = "wiki_dumps"
@@ -335,6 +341,10 @@ def _collect_members(
     if reports.is_dir():
         for p in sorted(reports.rglob("*.json")):
             members.append(Member(str(p.relative_to(base)), "import_reports", p))
+    editions = base / _BULLETIN_EDITIONS_DIR
+    if editions.is_dir():
+        for p in sorted(editions.rglob("*.json")):
+            members.append(Member(str(p.relative_to(base)), "bulletin", p))
     if include_keys:
         keys = base / _KEYS_DIR
         if keys.is_dir():
