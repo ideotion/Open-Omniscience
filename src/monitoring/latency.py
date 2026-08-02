@@ -216,13 +216,40 @@ def summary() -> dict[str, Any]:
     passing = [r for r in interactive if r["snappy"] == "pass"]
     failing = [r for r in interactive if r["snappy"] == "fail"]
     low_n = [r for r in interactive if r["snappy"] == "low-n"]
+    # THE BREACH SET, independent of window thickness (field bundle 2026-08-02).
+    #
+    # low-n withholds statistical CONFIDENCE, and that is right -- but it was being
+    # read as "nothing was measured", which is false: a low-n route has a REAL p95.
+    # Worse, window_n >= 20 is almost perfectly correlated with "is this a poller?",
+    # because a human clicks the article list a handful of times a session while the
+    # UI polls /api/system/network every 2 s. So the bar judged only pollers and
+    # reported all_interactive_pass:true over 3 of them while GET /api/articles sat
+    # at a measured p95 of 68,137 ms, /api/insights/trending-windows at 61,398 ms and
+    # /api/insights/latest at 60,042 ms -- all excluded as "low-n". A verdict must map
+    # to the bar it actually tested, so a blanket pass may not be claimed while ANY
+    # measured interactive route is over the bar. n travels with every breach, so a
+    # thin window stays visible rather than being silently promoted to a failure.
+    breaching = [r for r in interactive if float(r["p95_ms"] or 0.0) >= bar_ms]
+    breaching_low_n = [r for r in breaching if r["snappy"] == "low-n"]
     snappy = {
         "bar_ms": bar_ms,
         "interactive_routes": len(interactive),
         "passing": len(passing),
         "failing": len(failing),
         "low_n": len(low_n),
-        "all_interactive_pass": len(failing) == 0 and len(interactive) > 0,
+        "breaching": len(breaching),
+        "breaching_low_n": len(breaching_low_n),
+        "all_interactive_pass": len(breaching) == 0 and len(interactive) > 0,
+        "breaching_routes": [
+            {
+                "route": r["route"],
+                "p95_ms": r["p95_ms"],
+                "window_n": r["window_n"],
+                "verdict": r["snappy"],
+            }
+            for r in sorted(breaching, key=lambda x: -(x["p95_ms"] or 0.0))
+        ][:20],
+        # Kept for callers that read it; same shape, now a SUBSET of breaching_routes.
         "failing_routes": [
             {"route": r["route"], "p95_ms": r["p95_ms"], "window_n": r["window_n"]}
             for r in sorted(failing, key=lambda x: -x["p95_ms"])
@@ -231,6 +258,10 @@ def summary() -> dict[str, Any]:
             f"Each interactive route's measured p95 vs the {bar_ms:.0f} ms 'snappy' bar "
             "(ROADMAP/SCALE_ROADMAP): pass | fail | low-n (window < "
             f"{_SNAPPY_MIN_N}) | exempt (heavy/on-demand routes the bar does not cover). "
+            "low-n withholds statistical confidence, NOT the measurement: a low-n route "
+            "over the bar is counted in 'breaching' with its n shown, and "
+            "all_interactive_pass is false while any measured route breaches — the routes "
+            "a human actually waits on are exactly the ones with thin windows. "
             "Measurements only; no fabricated number, no score."
         ),
     }
