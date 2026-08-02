@@ -23,7 +23,6 @@ no operator decision still engages airplane unconditionally.
 
 from __future__ import annotations
 
-import os
 from unittest.mock import patch
 
 import pytest
@@ -94,11 +93,18 @@ def test_clearing_the_switch_is_NOT_by_itself_an_operator_decision():
 
 
 @_needs_main
-def test_the_boot_engage_is_skipped_once_the_operator_has_crossed_online():
+def test_the_boot_engage_is_skipped_once_the_operator_has_crossed_online(monkeypatch):
     """The exact interleaving from the field: unlock engages airplane, the upkeep
     thread starts, the operator crosses online, and only THEN does the thread reach
     its own airplane block."""
-    os.environ.pop("OO_NO_SCHEDULER", None)
+    # monkeypatch, NOT os.environ.pop: conftest sets OO_NO_SCHEDULER=1 for the whole
+    # session, and a bare pop deletes it for every LATER test too -- so every
+    # subsequent TestClient lifespan takes the production branch and engages airplane
+    # (and starts the scheduler). That leak was invisible while clear_kill_switch
+    # still set the crossed-online flag, because the engage was then skipped anyway;
+    # removing that mask surfaced it as eight unrelated "the kill switch is active"
+    # failures. monkeypatch restores the variable at teardown.
+    monkeypatch.delenv("OO_NO_SCHEDULER", raising=False)
     I.clear_kill_switch()             # the operator's click, mid-upkeep...
     I.note_operator_crossed_online()  # ...which the endpoint records as a decision
     assert I.kill_switch_active() is False
@@ -113,11 +119,11 @@ def test_the_boot_engage_is_skipped_once_the_operator_has_crossed_online():
 
 
 @_needs_main
-def test_a_boot_with_no_operator_decision_STILL_engages_airplane():
+def test_a_boot_with_no_operator_decision_STILL_engages_airplane(monkeypatch):
     """The negative-space twin, and the load-bearing one: zero-network boot is a
     non-negotiable. Skipping the engage whenever the switch happens to be clear would
     turn a first boot into an ONLINE boot."""
-    os.environ.pop("OO_NO_SCHEDULER", None)
+    monkeypatch.delenv("OO_NO_SCHEDULER", raising=False)  # restored at teardown
     I.clear_kill_switch()  # the STATE, with no decision recorded -- see below
     assert I.crossed_online_since_boot() is False
 

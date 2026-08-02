@@ -118,12 +118,27 @@ import pytest  # noqa: E402 - must follow the OO_DATA_DIR/plaintext env setup ab
 @pytest.fixture(autouse=True)
 def _clear_network_kill_switch():
     """The kill switch is process-global by design (a real kill switch); tests
-    that hit /api/scheduler/stop would otherwise poison every later fetch test."""
-    from src.ingest import clear_kill_switch
+    that hit /api/scheduler/stop would otherwise poison every later fetch test.
+
+    The crossed-online DECISION is the same kind of state and is reset with it. In
+    production it is per-PROCESS and therefore per-boot: one operator, one decision,
+    and a slow background upkeep must not revoke it. In a test process, many tests
+    act as the operator -- test_network_mode_toggle_endpoints POSTs the go-online
+    endpoint, scheduler tests POST start and run-now -- so without this reset the
+    first of them latches the flag for the whole session and the boot-engages-
+    airplane test can never see a FRESH boot, which is the only thing it asks about.
+
+    This resets a genuine operator action, not a mechanism: ``clear_kill_switch``
+    deliberately does not set the flag (see its docstring), so nothing here is
+    papering over a primitive that records decisions it should not.
+    """
+    from src.ingest import _reset_crossed_online_for_tests, clear_kill_switch
 
     clear_kill_switch()
+    _reset_crossed_online_for_tests()
     yield
     clear_kill_switch()
+    _reset_crossed_online_for_tests()
 
 
 @pytest.fixture(autouse=True)
