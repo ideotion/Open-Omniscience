@@ -2286,9 +2286,17 @@
       loadBriefing();
       loadHomeAlerts();
       loadHomeTrends();
-      loadHomeRecent();
-      loadHomeLatest();
-      loadHomeChannels();
+      // Each panel decides its OWN visibility (it hides when it has nothing), and the
+      // subtab list is built from the panels that actually have something to show. So
+      // the sync runs from HERE, once each loader has settled, rather than inside the
+      // loaders: their fail-safe hide statements are pinned verbatim by
+      // test_ui_channel_facet / test_ui_home_latest / test_ui_home_recent, and those
+      // guards protect a real honesty property (a panel with no data must hide) that
+      // this change has no business touching.
+      const pRecent = loadHomeRecent();
+      const pLatest = loadHomeLatest();
+      const pChannels = loadHomeChannels();
+      Promise.allSettled([pRecent, pLatest, pChannels]).then(_syncHomeSubtabs);
       refreshDraftCount();
     }
     // Home "Latest in your corpus" (wave 4 I / GET /api/insights/latest): a recency LENS
@@ -2325,9 +2333,9 @@
         // No recent articles in the corpus at all (not just "none pass the gates") ->
         // hide the panel entirely so Home is never blank-and-silent.
         if (!arts.length && !Object.keys(types).length && !tags.length) {
-          panel.hidden = true; _syncHomeSubtabs(); return;
+          panel.hidden = true; return;
         }
-        panel.hidden = false; _syncHomeSubtabs();
+        panel.hidden = false;
         _fillLatestFacet($("latest-channel"), t("All channels"),
           Object.keys(types).map(k => ({v: k, label: k, n: types[k]})));
         _fillLatestFacet($("latest-tag"), t("All tags"),
@@ -2359,7 +2367,7 @@
             + `<div class="muted small" style="margin-top:2px">${chan} ${facts}${also}</div></div>`;
         }).join("")
           + `<div class="hint muted" style="font-size:11px;margin-top:6px">${esc(d.caveat || "")}</div>`;
-      } catch (e) { panel.hidden = true; box.innerHTML = ""; _syncHomeSubtabs(); }
+      } catch (e) { panel.hidden = true; box.innerHTML = ""; }
     }
     // Populate a Latest facet <select> once (preserving the current selection), an "all"
     // default first then each option with its article count. Idempotent: repopulates so a
@@ -2387,12 +2395,12 @@
       try {
         const d = await api("/api/insights/source-types");
         const facets = (d.facets || []).filter(f => (f.articles || 0) > 0);
-        if (!facets.length) { panel.hidden = true; box.innerHTML = ""; _syncHomeSubtabs(); return; }
-        panel.hidden = false; _syncHomeSubtabs();
+        if (!facets.length) { panel.hidden = true; box.innerHTML = ""; return; }
+        panel.hidden = false;
         box.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap">` + facets.map(f =>
           `<button class="chip" onclick="openChannelCorpus(${esc(JSON.stringify(f.source_type))})" title="${esc(t("An asserted content channel (newsletter, web article, wiki, statistic, law, market, discovery), never a quality score. Click a channel to explore its corpus."))}">${esc(f.source_type)} <span class="muted">${esc(String(f.articles))}</span></button>`).join("")
           + `</div>`;
-      } catch (e) { panel.hidden = true; box.innerHTML = ""; _syncHomeSubtabs(); }
+      } catch (e) { panel.hidden = true; box.innerHTML = ""; }
     }
     // Open the analysis window over exactly one content channel's articles. Resolves the
     // channel to an explicit id set through /api/articles?source_type= (the endpoint that
@@ -2419,7 +2427,7 @@
       try {
         const f = await api("/api/sources/facets");
         const tags = (f.tags || []).filter(x => x && x.key).slice(0, 20);
-        if (!tags.length) { panel.hidden = true; _syncHomeSubtabs(); return; }
+        if (!tags.length) { panel.hidden = true; return; }
         const cur = sel.value;
         sel.innerHTML = tags.map(x => `<option value="${esc(x.key)}">${esc(x.key)} (${x.n})</option>`).join("");
         sel.value = (cur && tags.some(x => x.key === cur)) ? cur : tags[0].key;
@@ -2430,20 +2438,19 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const panel = $("home-recent-panel"), box = $("home-recent");
       if (!panel || !box) return;
-      if (!tag) { panel.hidden = true; _syncHomeSubtabs(); return; }
+      if (!tag) { panel.hidden = true; return; }
       box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
         const q = "/api/articles?tags=" + encodeURIComponent(tag) + "&sort_by=date&sort_dir=desc&limit=8";
         const d = await api(q);
         const rows = d.results || [];
-        if (!rows.length) { box.innerHTML = `<div class="muted">${esc(t("No articles for this tag yet."))}</div>`; panel.hidden = false; _syncHomeSubtabs(); return; }
+        if (!rows.length) { box.innerHTML = `<div class="muted">${esc(t("No articles for this tag yet."))}</div>`; panel.hidden = false; return; }
         box.innerHTML = rows.map(a => {
           const meta = [esc(a.source || ""), esc(String(a.published_at || "").slice(0, 10))].filter(Boolean).join(" · ");
           return `<div class="home-recent-row"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
             + (meta ? ` <span class="muted">— ${meta}</span>` : "") + `</div>`;
         }).join("");
         panel.hidden = false;
-        _syncHomeSubtabs();
       } catch (e) {
         // home-recent-panel-hidden-on-error (P1): both SUCCESS paths above clear
         // `hidden`, but this catch branch set an honest error message into the
@@ -2451,7 +2458,7 @@
         // written but never shown. The panel must render its error the same way it
         // renders any other outcome.
         box.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`;
-        panel.hidden = false; _syncHomeSubtabs();
+        panel.hidden = false;
       }
     }
     // Home "Trending now" glance (UI rethink, Home → helicopter view). Compact +
