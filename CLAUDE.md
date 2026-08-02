@@ -1604,6 +1604,35 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     evidence of absence — read the export site first. (Same pass: `ooDonut` DOES have
     a slice-count guard, falling back to theme-derived share bars past five, so that
     half of audit finding V-4 is spent too. Recorded so neither is "fixed" twice.)
+  - **A LOG TAIL IS THE WRONG HALF WHEN THE ROOT CAUSE COMES FROM A CHILD PROCESS
+    (2026-08-02, the vLLM start failure):** `server_log_tail` kept the last 8000 bytes
+    on the written assumption that "a CUDA OOM puts the actionable numbers at the END".
+    That is true when a RUNNING server dies and exactly false at STARTUP: vLLM's
+    EngineCore is a child, so it prints its traceback FIRST and the parent then dumps
+    ~20 KB of its own stack ending in the words **"See root cause above."** — the log
+    literally telling you the instrument is pointed the wrong way. The field bundle was
+    29,855 bytes with the last 8,000 kept, every one of them the parent's stack. GENERAL
+    FORM: before bounding a captured log, ask which PROCESS prints the reason and in what
+    order; a parent that re-raises a child's failure inverts the usual "the end is the
+    interesting part" rule. Keeping both ends is cheap; keeping only one is a bet on the
+    failure shape. And state the gap (`elided_bytes`) so two retained halves can never be
+    read as contiguous.
+  - **WHEN A COMPUTED VALUE IS CLAMPED, CHECK WHETHER THE CLAMP IS DOING ALL THE WORK —
+    and a test asserting `large >= small` passes for a constant (2026-08-02, same
+    session):** `compute_server_args` published `max_model_len` with a method string
+    saying it "scales with the remaining VRAM", and returned **32768 for every card from
+    6 GB to 80 GB**. A unit error (0.5 MB treated as the cost of a THOUSAND context
+    tokens when it is the cost of ONE for a 7B-class fp16 model, then multiplied by a
+    further 1000) put the estimate three orders of magnitude high, so the cap decided
+    every machine while the disclosure claimed a derivation — a fabricated method, which
+    is the honesty defect even before any crash. Its guard,
+    `test_compute_server_args_scales_with_vram`, asserted `large >= small` and had been
+    passing for years against a function that did not scale at all; the mutation check
+    prints the tell as `assert 32768 > 32768`. TWO RULES: a monotonicity assertion over a
+    clamped value must be STRICT, or it is satisfied by the constant it exists to catch;
+    and when correcting a wrong constant, prefer fixing its UNIT over inventing a new
+    number — the 0.5 MB figure was right, only its denominator was wrong, so the fix
+    needed no new estimate to defend.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD IMPRESSIONS 2026-08-01 — Home-alerts relevance/card system · Home overview subtabs ·
