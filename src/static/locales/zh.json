@@ -2276,6 +2276,7 @@
   "Lost contact with the job.": "与任务失去联系。",
   "vLLM install failed:": "vLLM 安装失败：",
   "Model download failed:": "模型下载失败：",
+  "The model download never started — see the message above.": "模型下载从未开始——请查看上面的消息。",
   "Installing — this can take several minutes…": "正在安装 — 这可能需要几分钟…",
   "Install vLLM": "安装 vLLM",
   "Install Ollama": "安装 Ollama",

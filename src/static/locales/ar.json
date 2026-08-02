@@ -2276,6 +2276,7 @@
   "Lost contact with the job.": "انقطع الاتصال بالمهمة.",
   "vLLM install failed:": "فشل تثبيت vLLM:",
   "Model download failed:": "فشل تنزيل النموذج:",
+  "The model download never started — see the message above.": "لم يبدأ تنزيل النموذج قط — راجع الرسالة أعلاه.",
   "Installing — this can take several minutes…": "جارٍ التثبيت — قد يستغرق ذلك عدة دقائق…",
   "Install vLLM": "تثبيت vLLM",
   "Install Ollama": "تثبيت Ollama",

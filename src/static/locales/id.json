@@ -2276,6 +2276,7 @@
   "Lost contact with the job.": "Kehilangan kontak dengan tugas.",
   "vLLM install failed:": "Instalasi vLLM gagal:",
   "Model download failed:": "Unduhan model gagal:",
+  "The model download never started — see the message above.": "Unduhan model tidak pernah dimulai — lihat pesan di atas.",
   "Installing — this can take several minutes…": "Memasang — ini bisa memakan waktu beberapa menit…",
   "Install vLLM": "Pasang vLLM",
   "Install Ollama": "Pasang Ollama",

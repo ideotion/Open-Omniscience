@@ -2276,6 +2276,7 @@
   "Lost contact with the job.": "कार्य से संपर्क टूट गया।",
   "vLLM install failed:": "vLLM इंस्टॉल विफल:",
   "Model download failed:": "मॉडल डाउनलोड विफल:",
+  "The model download never started — see the message above.": "मॉडल डाउनलोड कभी शुरू ही नहीं हुआ — ऊपर दिया संदेश देखें।",
   "Installing — this can take several minutes…": "इंस्टॉल हो रहा है — इसमें कई मिनट लग सकते हैं…",
   "Install vLLM": "vLLM इंस्टॉल करें",
   "Install Ollama": "Ollama इंस्टॉल करें",

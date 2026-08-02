@@ -2276,6 +2276,7 @@
   "Lost contact with the job.": "Связь с задачей потеряна.",
   "vLLM install failed:": "Не удалось установить vLLM:",
   "Model download failed:": "Не удалось загрузить модель:",
+  "The model download never started — see the message above.": "Загрузка модели так и не началась — см. сообщение выше.",
   "Installing — this can take several minutes…": "Установка — это может занять несколько минут…",
   "Install vLLM": "Установить vLLM",
   "Install Ollama": "Установить Ollama",

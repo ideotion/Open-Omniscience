@@ -19423,6 +19423,14 @@
               return;
             }
             if (done.state === "cancelled") { say(t("Cancelled.")); return; }
+            // "idle" means the queue was never asked for this artifact -- the install
+            // call refused (a missing prerequisite, say) and reported that itself.
+            // Carrying on would start a server against weights that are not coming and
+            // then print "Done.", which is the one outcome worse than a visible failure.
+            if (done.state === "idle") {
+              say(t("The model download never started — see the message above."));
+              return;
+            }
           }
         }
         // Free, local, reversible -- so it just happens, per the pill's own rule.
