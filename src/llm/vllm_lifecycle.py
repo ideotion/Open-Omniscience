@@ -622,6 +622,64 @@ def process_alive() -> bool:
     return _proc is not None and _proc.poll() is None
 
 
+def start_outcome() -> dict:
+    """What became of the last start THIS process spawned: a tri-state, not a boolean.
+
+    ``start()`` returns the moment ``Popen`` succeeds, because a model load takes tens
+    of seconds and blocking the request thread on it would be worse. That is correct,
+    and it left a hole: if the child then DIES during engine initialisation, nothing
+    said so. ``running`` stayed false and ``process_tracked`` stayed false -- exactly
+    the same pair a server that is still loading shows -- so a failed start and a slow
+    one were indistinguishable, and the caller's only recourse was to keep polling a
+    port that would never open (field report 2026-08-02: "local model hiccup (1/10) --
+    retrying in 5s", ten times, against a server that had already exited).
+
+    The same lesson the port collision taught: a boolean up/down probe cannot separate
+    "not started" from "started and gone", and it will confidently answer the wrong one.
+
+      * ``not-started``  nothing was spawned by this process
+      * ``starting``     the child is alive but not answering yet (the normal case)
+      * ``ready``        the child is alive and the API answers
+      * ``exited``       the child is GONE, with its returncode -- a failed start
+
+    ``exited`` carries ``log_hint`` pointing at the log's HEAD, because for a startup
+    failure that is where the reason is: EngineCore is a child of the API server, so it
+    prints its traceback first and the parent's stack follows it.
+    """
+    if _proc is None:
+        return {
+            "state": "not-started",
+            "detail": "no vLLM server was started by this process",
+        }
+    code = _proc.poll()
+    if code is None:
+        if is_running():
+            return {"state": "ready", "detail": "the server is answering", "pid": _proc.pid}
+        return {
+            "state": "starting",
+            "pid": _proc.pid,
+            "detail": (
+                "the server process is alive but not answering yet -- a model load takes "
+                "tens of seconds; this is the normal path, not a failure"
+            ),
+        }
+    return {
+        "state": "exited",
+        "returncode": code,
+        "detail": (
+            f"the server process exited with code {code} -- the start FAILED. It is not "
+            "still loading, and polling will never succeed; start it again after fixing "
+            "the cause below."
+        ),
+        "log_hint": (
+            "read the HEAD of the server log: vLLM's EngineCore is a child process, so a "
+            "startup failure prints its traceback FIRST and the parent's stack (ending in "
+            "'See root cause above') follows it"
+        ),
+        "log_path": str(server_log_path()),
+    }
+
+
 # --------------------------------------------------------------------------- #
 #  Context-size auto-tune (B2.5, ruled: disclosed auto-with-override)
 # --------------------------------------------------------------------------- #
@@ -1015,6 +1073,11 @@ def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
         # the actionable fact was that vLLM could never bind it.
         "port_occupant": port_occupant(),
         "process_tracked": process_alive(),
+        # WHAT BECAME of the last start, as a tri-state. `process_tracked: false` is
+        # shown by a server that is still loading AND by one that died during engine
+        # init; conflating them is what made a failed start read as a transient hiccup
+        # worth retrying ten times (field report 2026-08-02).
+        "start_outcome": start_outcome(),
         "gpu": gpu,
         "platform": platform_support(),
         "base_url": base_url(),

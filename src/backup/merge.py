@@ -2191,6 +2191,29 @@ def mark_reindex_complete(batch_id: int) -> None:
         _LOG.warning("could not stamp batch %s as re-indexed", batch_id, exc_info=True)
 
 
+#: The backlog read, shared by :func:`pending_reindex_batches` and
+#: :func:`reindex_backlog` so the two can never drift apart again.
+#:
+#: ``imported_at`` is MergeBatch's own timestamp column. It was written as
+#: ``created_at`` in both copies of this query until 2026-08-02, which made every
+#: call raise ``no such column: b.imported_at`` on every store that ever existed:
+#: ``reindex_backlog()`` degraded to ``available: false`` and
+#: ``pending_reindex_batches()`` swallowed it into ``[]`` -- i.e. the ONE instrument
+#: the option-(a) ruling calls its mandatory guard reported "nothing pending" while
+#: a real backlog sat behind it. Field bundle 2026-08-02: 686,317 of 785,481
+#: articles carried no keyword mentions and nothing said so.
+_BACKLOG_SQL = (
+    "SELECT b.id, b.imported_at, COUNT(m.row_id) AS n"
+    " FROM merge_batches b"
+    " LEFT JOIN merged_rows m"
+    "   ON m.batch_id = b.id AND m.table_name = 'articles'"
+    " WHERE b.status = :s"
+    " GROUP BY b.id, b.imported_at"
+    " HAVING COUNT(m.row_id) > 0"
+    " ORDER BY b.id"
+)
+
+
 def pending_reindex_batches() -> list[dict]:
     """Imports whose articles are merged but not confirmed re-indexed.
 
@@ -2210,19 +2233,7 @@ def pending_reindex_batches() -> list[dict]:
 
     try:
         with session_scope() as session:
-            rows = session.execute(
-                text(
-                    "SELECT b.id, b.created_at, COUNT(m.row_id) AS n"
-                    " FROM merge_batches b"
-                    " LEFT JOIN merged_rows m"
-                    "   ON m.batch_id = b.id AND m.table_name = 'articles'"
-                    " WHERE b.status = :s"
-                    " GROUP BY b.id, b.created_at"
-                    " HAVING COUNT(m.row_id) > 0"
-                    " ORDER BY b.id"
-                ),
-                {"s": _STATUS_MERGED},
-            ).fetchall()
+            rows = session.execute(text(_BACKLOG_SQL), {"s": _STATUS_MERGED}).fetchall()
         return [{"batch_id": int(r[0]), "created_at": r[1], "articles": int(r[2])} for r in rows]
     except Exception:  # noqa: BLE001
         _LOG.warning("could not read the re-index backlog", exc_info=True)
@@ -2248,19 +2259,7 @@ def reindex_backlog() -> dict:
 
     try:
         with session_scope() as session:
-            rows = session.execute(
-                text(
-                    "SELECT b.id, b.created_at, COUNT(m.row_id) AS n"
-                    " FROM merge_batches b"
-                    " LEFT JOIN merged_rows m"
-                    "   ON m.batch_id = b.id AND m.table_name = 'articles'"
-                    " WHERE b.status = :s"
-                    " GROUP BY b.id, b.created_at"
-                    " HAVING COUNT(m.row_id) > 0"
-                    " ORDER BY b.id"
-                ),
-                {"s": _STATUS_MERGED},
-            ).fetchall()
+            rows = session.execute(text(_BACKLOG_SQL), {"s": _STATUS_MERGED}).fetchall()
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never 500
         _LOG.warning("could not read the re-index backlog", exc_info=True)
         return {"available": False, "reason": str(exc)}

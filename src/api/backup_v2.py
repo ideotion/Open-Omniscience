@@ -25,6 +25,7 @@ from starlette.concurrency import run_in_threadpool
 
 from src.backup.artifact import ArtifactError, StagedArtifact, cleanup_staging, read_artifact
 from src.backup.merge import MergeError, run_restore
+from src.jobs.background import BackgroundJob, register_job
 from src.scheduler.runner import exclusive_window_open
 
 _LOG = logging.getLogger("api.backup_v2")
@@ -732,3 +733,98 @@ def reindex_backlog_status() -> dict:
     from src.backup.merge import reindex_backlog
 
     return reindex_backlog()
+
+
+def _reindex_resume_worker(ctx, **_kw) -> dict:
+    """Finish the re-index for every batch still stamped ``merged``.
+
+    Nothing new is computed here: :func:`reindex_imported_articles` already owns the
+    durable watermark, the batching and the parallel precompute, and is idempotent, so
+    this is only the CALLER the backlog never had. Before this, the re-index ran solely
+    inside the import; an import interrupted during it (a clean shutdown is enough --
+    field bundle 2026-08-02, ``died_in_stage: reindex`` after 6.5 h) left the batch
+    stamped ``merged`` forever with no way to pick it up again, and under the option-(a)
+    ruling those articles carry NO keywords at all.
+
+    Cooperative: it stops at the next BATCH boundary, and the watermark inside the batch
+    means a stop mid-batch is resumed exactly, never redone from the top.
+    """
+    from src.backup.merge import reindex_backlog, reindex_imported_articles
+
+    bk = reindex_backlog()
+    if not bk.get("available"):
+        # Never "0 pending" for a read we could not make -- the whole point of the guard.
+        raise RuntimeError(f"could not read the re-index backlog: {bk.get('reason')}")
+
+    batches = bk.get("batches") or []
+    ctx.set_progress(done=0, total=int(bk.get("articles_pending") or 0), detail="starting")
+    out: dict = {"batches": [], "articles_reindexed": 0, "articles_failed": 0, "stopped": False}
+    walked = 0
+    for b in batches:
+        if ctx.stopping:
+            out["stopped"] = True
+            break
+        bid = int(b["batch_id"])
+        ctx.set_progress(detail=f"import {bid} ({b['articles']} article(s))")
+
+        def _progress(done: int, _total: int, _base: int = walked) -> None:
+            ctx.set_progress(done=_base + done)
+
+        res = reindex_imported_articles(bid, progress_cb=_progress, should_stop=lambda: ctx.stopping)
+        walked += int(b["articles"])
+        out["batches"].append({"batch_id": bid, **res})
+        out["articles_reindexed"] += int(res.get("reindexed") or 0)
+        out["articles_failed"] += int(res.get("failed") or 0)
+    # A cancel during the LAST batch leaves the loop normally, so the top-of-loop check
+    # never sees it -- without this, a partial run would report stopped:false and read as
+    # a completed drain. reindex_imported_articles takes should_stop, so it genuinely can
+    # return early on the final batch.
+    if ctx.stopping:
+        out["stopped"] = True
+    # Re-read rather than infer: a batch only leaves the backlog when it was stamped
+    # complete, so this reports what is actually LEFT, not what we believe we did.
+    after = reindex_backlog()
+    out["remaining"] = after.get("articles_pending") if after.get("available") else None
+    out["remaining_unreadable_reason"] = None if after.get("available") else after.get("reason")
+    return out
+
+
+_REINDEX_RESUME_JOB = register_job(
+    BackgroundJob(
+        "reindex-resume",
+        "finishing the re-index of imported articles",
+        _reindex_resume_worker,
+        is_writer=True,
+        cancellable=True,
+    )
+)
+
+
+@router.post("/reindex-backlog/resume")
+def reindex_backlog_resume() -> dict:
+    """Finish the pending re-index as a visible, cancellable background job.
+
+    The half the guard was missing: the backlog was reported and then nobody could act
+    on it from the app. Idempotent and resumable -- safe to start, stop and start again.
+    An already-running job returns its status with ``started: false`` rather than 409,
+    so a double-click can never look like an error."""
+    try:
+        st = _REINDEX_RESUME_JOB.start()
+        st["started"] = True
+    except RuntimeError:
+        st = _REINDEX_RESUME_JOB.status()
+        st["started"] = False
+    return st
+
+
+@router.get("/reindex-backlog/resume/status")
+def reindex_backlog_resume_status() -> dict:
+    """Live status of the re-index resume job."""
+    return _REINDEX_RESUME_JOB.status()
+
+
+@router.post("/reindex-backlog/resume/cancel")
+def reindex_backlog_resume_cancel() -> dict:
+    """Stop at the next batch boundary. The durable watermark resumes exactly."""
+    _REINDEX_RESUME_JOB.cancel()
+    return _REINDEX_RESUME_JOB.status()

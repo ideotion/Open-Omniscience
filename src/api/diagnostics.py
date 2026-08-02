@@ -3054,11 +3054,47 @@ def debug_bundle(db: Session = Depends(read_only_db)) -> JSONResponse:
     )
 
 
+#: Marks a value the encoder could not serialise, IN PLACE, naming its type. Never a
+#: silent ``str()`` of the object (which would write "<Query object at 0x7f…>" into a
+#: report as if it were data) and never an exception that discards the whole member.
+_UNSERIALISABLE = "__oo_unserialisable__"
+
+
+def _member_default(obj: object) -> object:
+    """``json.dumps(default=)``: replace an unserialisable value with a STATED marker.
+
+    Field bundle 2026-08-02: ``card-audit.json`` ran for 2,396 s -- 40 minutes, 41% of
+    the entire bundle's wall time -- and then raised "Object of type Query is not JSON
+    serializable" at the encode step. Every byte of that work was discarded, and the
+    error named the type without saying where it sat, so the next run could only
+    reproduce it by spending the 40 minutes again.
+
+    Both halves of that are fixed here: the member is still WRITTEN (one bad leaf can no
+    longer destroy an expensive report), and the leaf says what it was, so the offending
+    producer is identifiable from the artefact instead of by re-running it.
+
+    Deliberately NOT ``default=str``: a stringified ORM object is indistinguishable from
+    a real string field, which is the fabrication this project forbids -- a reader must
+    be able to tell a value that could not be encoded from one that was.
+    """
+    return {
+        _UNSERIALISABLE: True,
+        "type": type(obj).__name__,
+        "module": type(obj).__module__,
+        "note": (
+            "this value could not be encoded as JSON and was replaced in place; the "
+            "surrounding keys locate the field that produced it"
+        ),
+    }
+
+
 def _member_bytes(value) -> bytes:
     """Encode any diagnostics endpoint return (a plain dict, a JSONResponse, or a
     StreamingResponse) into the bytes to write into the all-diagnostics ZIP."""
     if isinstance(value, (dict, list)):
-        return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        return json.dumps(
+            value, ensure_ascii=False, separators=(",", ":"), default=_member_default
+        ).encode("utf-8")
     body_iter = getattr(value, "body_iterator", None)
     if body_iter is not None:
         # A streamed response (the keyword log digest): drain it for real. This sync
@@ -3102,7 +3138,18 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("home-cards.json", lambda: home_card_diagnostics(download=False, db=db)),
         ("keyword-engine.json", lambda: keyword_engine(download=False, db=db)),
         ("keyword-selftest.json", lambda: keyword_selftest(download=False)),
-        ("keyword-log-digest.json", lambda: keyword_log(db=db, digest=True, fmt="json")),
+        # EVERY Query()-defaulted parameter passed EXPLICITLY: called directly (not
+        # through FastAPI) the default IS the Query sentinel object, and Query(False)
+        # is TRUTHY. `run_journal` proved it in the field -- limit reached a slice as a
+        # Query and the member died with "slice indices must be integers". The repo
+        # already had this lesson from `ai.json`; these three call sites had not
+        # applied it. Anything with a Query() default belongs in the call, always.
+        ("keyword-log-digest.json",
+         # per_lang/page are the route's OWN declared defaults, not numbers chosen
+         # here: passing anything else would silently change what this member exports.
+         lambda: keyword_log(
+             db=db, digest=True, fmt="json", per_lang=_MAX_KEYWORDS_PER_LANG, page=1
+         )),
         (
             "date-extraction.json",
             lambda: date_extraction_log(
@@ -3154,7 +3201,7 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # over minutes, for a 17 GB set -- so every such backup would carry a member
         # its own restore rejects as "sha256 mismatch (corrupted or altered)". The
         # bundle is a read-at-one-moment snapshot, with no hash to contradict.
-        ("run-journal.json", lambda: run_journal(download=False)),
+        ("run-journal.json", lambda: run_journal(download=False, limit=20)),
         # ...and the raw lines behind it. The summary is the answer; this is the
         # evidence, and a stall is a SHAPE across hundreds of beats (swap climbing
         # while CPU flatlines; the gate held with waiters piling up) that no summary
@@ -3225,7 +3272,8 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # producer crashing on every run stops being indistinguishable from a quiet
         # one. Bounded via audit_report_env_defaults(); the content-carrying
         # standard/full depths are the separate background job, never this member.
-        ("card-audit.json", lambda: card_audit(depth="summary", download=False, db=db)),
+        ("card-audit.json",
+         lambda: card_audit(depth="summary", determinism=True, download=False, db=db)),
         # Bulletin Layer A (2026-08-01), weekly: the deterministic period record. It
         # rides the bundle because its masthead IS corpus-health evidence — sources
         # that actually contributed, days with any ingest, language and country

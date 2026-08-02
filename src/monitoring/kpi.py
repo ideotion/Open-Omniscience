@@ -124,23 +124,45 @@ def _k2_latency(spec: dict) -> dict:
     # bar_ms field.
     snappy_bar = summ.get("snappy_bar") or {}
     bar = float(snappy_bar.get("bar_ms") or 500.0)
-    # Only routes with a real pass/fail verdict are interactive reads (exempt/low-n excluded).
-    interactive = [r for r in (summ.get("routes") or []) if r.get("snappy") in ("pass", "fail")]
+    # EVERY interactive route, low-n included (field bundle 2026-08-02). Restricting the
+    # selection to pass|fail excluded every route a human actually waits on, because a
+    # thin window is the SIGNATURE of an interactive read: the UI polls
+    # /api/system/network 275 times a session and a person opens the article list twice.
+    # K2 therefore reported green at 31.2 ms — the worst of three 2-second pollers —
+    # while GET /api/articles sat at a measured p95 of 68,137 ms in the same reservoir.
+    # The measurement is real; only its typicality is uncertain, so it is reported WITH
+    # its n rather than dropped. Exempt (heavy/on-demand) routes stay out: the bar
+    # genuinely does not cover them.
+    interactive = [
+        r for r in (summ.get("routes") or []) if r.get("snappy") in ("pass", "fail", "low-n")
+    ]
     if not interactive:
         return _entry(spec, method=(
             "no interactive-route latency samples on this process yet — make a few reads first "
             "(the reservoir is in-memory, per-process; empty is honest, not a gap)"))
     worst = max(interactive, key=lambda r: float(r.get("p95_ms") or 0.0))
-    n = sum(int(r.get("window_n") or 0) for r in interactive)
-    any_fail = any(r.get("snappy") == "fail" for r in interactive)
+    worst_p95 = round(float(worst.get("p95_ms") or 0.0), 1)
+    worst_n = int(worst.get("window_n") or 0)
+    thin = worst.get("snappy") == "low-n"
     return _entry(
         spec,
-        value=round(float(worst.get("p95_ms") or 0.0), 1),
-        n=n,
+        value=worst_p95,
+        # The worst route's OWN sample count, not the fleet sum: an n of 1,081 summed
+        # across pollers said nothing about the 2-sample route the value came from.
+        n=worst_n,
         as_of=_now(),
-        verdict="red" if any_fail else "green",
-        method=(f"worst interactive-route p95 over the recent window vs the {bar:.0f} ms bar "
-                f"({worst.get('route')}); measured, per-process reservoir, counts only, no score"),
+        verdict="red" if worst_p95 >= bar else "green",
+        method=(
+            f"worst interactive-route p95 over the recent window vs the {bar:.0f} ms bar "
+            f"({worst.get('route')}, n={worst_n}"
+            + (
+                "; thin window — a real measurement whose typicality is unproven, never "
+                "a reason to withhold it"
+                if thin
+                else ""
+            )
+            + "); measured, per-process reservoir, counts only, no score"
+        ),
     )
 
 
