@@ -2527,6 +2527,30 @@
       earthquake: "◉", cyclone: "🌀", flood: "≈", volcano: "🌋",
       drought: "☀", wildfire: "🔥", tsunami: "〰",
     };
+    // The hazard TYPE IN WORDS. A glyph alone is not deducible by someone seeing
+    // it for the first time — the maintainer's report (2026-08-01, ruling 4) was
+    // that opening an earthquake's detail never says it IS an earthquake. Every
+    // hazard render states the type in words, translated; an unlisted type falls
+    // back to the provider's own raw string rather than inventing a name.
+    const HAZARD_TYPE_KEYS = {
+      earthquake: "Earthquake", cyclone: "Cyclone", flood: "Flood", volcano: "Volcano",
+      drought: "Drought", wildfire: "Wildfire", tsunami: "Tsunami",
+    };
+    function hazardTypeLabel(type) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const raw = String(type || "").trim().toLowerCase();
+      if (!raw) return t("Hazard");
+      return HAZARD_TYPE_KEYS[raw] ? t(HAZARD_TYPE_KEYS[raw]) : String(type);
+    }
+    // The provider's magnitude, always labelled as the BAND it is. "M6.8 · strong"
+    // is a measurement of size, never a statement about consequences — which is
+    // exactly why a magnitude is never promoted into an urgency tier.
+    function hazardMagLabel(h) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (h.magnitude == null) return "";
+      const band = h.band ? ` <span class="muted">· ${esc(t(h.band))}</span>` : "";
+      return `<b>M${esc(fmtNum(h.magnitude, 1))}</b>${band} · `;
+    }
     // The compact hazard strip item: type glyph, real magnitude (never fabricated),
     // place, RELATIVE date (the stored "time" field, finally rendered -- it used to
     // be fetched and dropped), and TWO deep links: the World map (centred on the
@@ -2535,10 +2559,20 @@
     function _hazardStripItem(h) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const glyph = HAZARD_GLYPH[h.type] || "⚠";
-      const mag = (h.magnitude != null) ? `M${esc(fmtNum(h.magnitude, 1))} · ` : "";
+      const kind = `<span class="haz-kind">${esc(hazardTypeLabel(h.type))}</span> · `;
+      const mag = hazardMagLabel(h);
       const place = esc(h.place || h.title || h.type || "");
       const when = h.time ? esc(fmtAgo(h.time)) : "";
-      const prov = h.source ? ` <span class="muted">${esc(t("via {p}").replace("{p}", h.source))}</span>` : "";
+      // A grouped entry is ONE event two providers both reported — a deduction
+      // from coordinates and time, labelled as such, never presented as a
+      // provider statement. Both providers are named.
+      const provs = (h.providers && h.providers.length) ? h.providers : (h.source ? [h.source] : []);
+      const prov = provs.length
+        ? ` <span class="muted">${esc(t("via {p}").replace("{p}", provs.join(" + ")))}</span>`
+        : "";
+      const grouped = h.grouped
+        ? ` <span class="pill tiny" title="${esc(t("Same hazard type, within 0.5° and 2 hours — a deduced grouping of two providers' reports of one event, never a merge of the stored records."))}">${esc(t("grouped"))}</span>`
+        : "";
       const mapBtn = (typeof h.lat === "number" && typeof h.lon === "number")
         ? ` <button class="ghost tiny" onclick="openWorldMapAt(${h.lat}, ${h.lon}, ${esc(JSON.stringify(h.time || null))}, ${h.article_id != null ? h.article_id : "null"})" title="${esc(t("Open on the World map"))}">🗺</button>`
         : "";
@@ -2546,18 +2580,39 @@
         ? ` <a href="/api/articles/${h.article_id}/view" target="_blank" rel="noopener" class="ghost tiny" title="${esc(t("Open the local article"))}">📄</a>`
         : "";
       const srcLink = (h.url && /^https?:\/\//i.test(h.url)) ? " " + extLink(h.url, t("source ↗")) : "";
-      return `<li class="alert-hazard-item">${glyph} ${mag}${place}${when ? ` <span class="muted">· ${when}</span>` : ""}${prov}${mapBtn}${artLink}${srcLink}</li>`;
+      return `<li class="alert-hazard-item${h.major ? " haz-major" : ""}">${glyph} ${kind}${mag}${place}`
+        + `${when ? ` <span class="muted">· ${when}</span>` : ""}${prov}${grouped}${mapBtn}${artLink}${srcLink}</li>`;
     }
     function _renderHomeAlerts(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("home-alerts"); if (!box) return;
       const TIER_LABEL = { urgent: t("Urgent"), watch: t("Watch"), info: t("Info") };
       const TIER_CLASS = { urgent: "err", watch: "warn", info: "" };
+      // The DISPLAY floor (2026-08-01 rulings 1-2). The backend already ordered
+      // each tier by the provider's own facts and marked which entries clear the
+      // floor; the strip shows those first, capped, and collapses the rest into
+      // ONE line that opens the World map. Nothing is removed: every hazard is
+      // still in this payload, on the map, and behind "Open corpus" — which is
+      // what makes a floor honest rather than a silent exclusion.
+      const cap = Math.max(1, Number(d.strip_cap) || 5);
       const blocks = ["urgent", "watch", "info"].map(tier => {
         const T = (d.tiers || {})[tier];
         if (!T || !T.count) return "";
         const items = [];
-        (T.hazards || []).forEach(h => items.push(_hazardStripItem(h)));
+        const hz = T.hazards || [];
+        const major = hz.filter(h => h.major);
+        const shown = major.length ? major.slice(0, cap) : hz.slice(0, cap);
+        const hidden = hz.length - shown.length;
+        shown.forEach(h => items.push(_hazardStripItem(h)));
+        if (hidden > 0) {
+          const note = major.length
+            ? t("{n} more, below the M{m} display floor — open the World map")
+            : t("{n} more — open the World map");
+          items.push(`<li class="alert-more"><button class="ghost tiny" onclick="openWorldMapHazards()">`
+            + esc(note.replace("{n}", String(hidden))
+                     .replace("{m}", fmtNum(d.major_min_magnitude != null ? d.major_min_magnitude : 6, 1)))
+            + ` →</button></li>`);
+        }
         (T.watches || []).forEach(w => {
           const nm = esc(w.name || w.query || "");
           const n = (w.n_articles != null) ? ` <span class="muted">${esc(String(w.n_articles))} ${esc(t("articles"))}</span>` : "";
@@ -14845,6 +14900,20 @@
     // narrows the plotted signals to that story type. Client-side over already-fetched
     // signals (no new endpoint). Counts only, deduced — never a verdict.
     let _ooMapStoryKind = null;
+    // Hazard lens state (2026-08-01 ruling 4). "Major only" starts ON so the map
+    // opens on the events the strip is about; it is a DEFAULT LENS the user can
+    // clear in one click, never an exclusion — the bar states that in words.
+    let _ooMapHazMajorOnly = true, _ooMapHazType = null;
+    const OOMAP_HAZ_MIN_MAGNITUDE = 6.0;   // mirrors alerts.DEFAULT_MIN_MAGNITUDE
+    // A map signal is "major" on the SAME provider-declared facts the alert layer
+    // uses: the provider's own orange/red level, or its measured magnitude.
+    function _hazardSignalIsMajor(s) {
+      const sev = String(s.severity || "").toLowerCase();
+      if (sev === "watch" || sev === "urgent") return true;
+      const m = Number(s.magnitude);
+      if (isFinite(m) && s.magnitude != null && m >= OOMAP_HAZ_MIN_MAGNITUDE) return true;
+      return sev === "strong" || sev === "major";
+    }
     // Preset the map into a named lens: toggle the layer flags, lazily fetch that
     // lens's data (reusing the SAME endpoints the in-map toggles use — no new fetch),
     // then re-render. Fired by the ooSubtabs strip (incl. its {initial}).
@@ -14908,13 +14977,52 @@
       const allOn = _ooMapStoryKind == null;
       const chips = [chip("__all", t("All stories"), sig.length, allOn, null)]
         .concat(kinds.map(k => chip(k, kindLabel(k), counts[k], _ooMapStoryKind === k, kindColor(k))));
+      // Hazard row (ruling 4): a "Major only" default lens + a hazard-TYPE filter,
+      // shown only when there are hazard signals to filter. Every count is real,
+      // and the caveat states that the default hides nothing permanently.
+      const haz = sig.filter(s => (s.kind || "") === "hazard");
+      let hazRow = "";
+      if (haz.length) {
+        const majorN = haz.filter(_hazardSignalIsMajor).length;
+        const types = {};
+        haz.forEach(s => { const k = String(s.hazard_type || "").toLowerCase(); if (k) types[k] = (types[k] || 0) + 1; });
+        const tkeys = Object.keys(types).sort((a, b) => types[b] - types[a]);
+        const majorChip = `<button type="button" class="tiny secondary" id="oomap-haz-major"`
+          + ` aria-pressed="${_ooMapHazMajorOnly ? "true" : "false"}"`
+          + `${_ooMapHazMajorOnly ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>`
+          + `${esc(t("Major only"))} <span class="muted">${esc(fmtNum(majorN))}/${esc(fmtNum(haz.length))}</span></button>`;
+        const typeChips = [`<button type="button" class="tiny secondary" data-haz-type="__all"`
+          + ` aria-pressed="${_ooMapHazType == null ? "true" : "false"}"`
+          + `${_ooMapHazType == null ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>`
+          + `${esc(t("All hazard types"))}</button>`]
+          .concat(tkeys.map(k => `<button type="button" class="tiny secondary" data-haz-type="${esc(k)}"`
+            + ` aria-pressed="${_ooMapHazType === k ? "true" : "false"}"`
+            + `${_ooMapHazType === k ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>`
+            + `${esc(hazardTypeLabel(k))} <span class="muted">${esc(fmtNum(types[k]))}</span></button>`));
+        hazRow = `<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:5px">
+            <span class="muted" style="font-size:12px">${esc(t("Hazards"))}:</span>${majorChip}${typeChips.join("")}
+          </div>
+          <div class="card-caveat" style="margin-top:4px">${esc(t("“Major only” is a default lens, not an exclusion: it shows provider orange/red alerts and magnitude M6+ first. Click it off to see every hazard the snapshot holds. A magnitude is the provider's measurement of size, never a statement about consequences."))}</div>`;
+      }
       bar.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
           <span class="muted" style="font-size:12px">${esc(t("Story types"))}:</span>${chips.join("")}
         </div>
-        <div class="card-caveat" style="margin-top:5px">${esc(t("Story types are deduced from your corpus by event kind — counts only, never a verdict or ranking."))}</div>`;
+        <div class="card-caveat" style="margin-top:5px">${esc(t("Story types are deduced from your corpus by event kind — counts only, never a verdict or ranking."))}</div>${hazRow}`;
       bar.querySelectorAll("[data-story-kind]").forEach(b => b.addEventListener("click", () => {
         const k = b.dataset.storyKind;
         _ooMapStoryKind = (k === "__all") ? null : k;
+        _renderOoMapLensBar();
+        if (_ooMapPayload) _renderOoMapDim();
+      }));
+      const majorBtn = bar.querySelector("#oomap-haz-major");
+      if (majorBtn) majorBtn.addEventListener("click", () => {
+        _ooMapHazMajorOnly = !_ooMapHazMajorOnly;
+        _renderOoMapLensBar();
+        if (_ooMapPayload) _renderOoMapDim();
+      });
+      bar.querySelectorAll("[data-haz-type]").forEach(b => b.addEventListener("click", () => {
+        const k = b.dataset.hazType;
+        _ooMapHazType = (k === "__all") ? null : k;
         _renderOoMapLensBar();
         if (_ooMapPayload) _renderOoMapDim();
       }));
@@ -15014,6 +15122,17 @@
       // Story-lens (field-test Item 6): narrow the plotted signals to one story type
       // when a kind chip is selected. Client-side over the already-fetched signals.
       if (sig.length && _ooMapStoryKind) sig = sig.filter(s => (s.kind || "article") === _ooMapStoryKind);
+      // Hazard filters (2026-08-01 ruling 4). "Major only" is ON BY DEFAULT — a
+      // DEFAULT LENS, not an exclusion: one click restores full recall, and the
+      // bar says so. It narrows ONLY hazard signals; every other story kind is
+      // untouched. The hazard-TYPE filter is the same grammar one level down.
+      if (sig.length && _ooMapHazMajorOnly) {
+        sig = sig.filter(s => (s.kind || "") !== "hazard" || _hazardSignalIsMajor(s));
+      }
+      if (sig.length && _ooMapHazType) {
+        sig = sig.filter(s => (s.kind || "") !== "hazard"
+          || String(s.hazard_type || "").toLowerCase() === _ooMapHazType);
+      }
       let focusT = null, windowY = 0, focusSlider = _ooMapFocusSlider, focusLabel = "", focusTicks = [];
       if (sig.length) {
         const ts = sig.map(s => s.t);
@@ -15180,12 +15299,12 @@
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="width:11px;height:11px;border-radius:50%;background:${kindColor(s.kind)};display:inline-block"></span>
           <strong>${esc(s.title)}</strong>
-          <span class="pill">${esc(kindLabel(s.kind))}</span> ${conf} ${geo}
+          <span class="pill">${esc(s.kind === "hazard" ? hazardTypeLabel(s.hazard_type) : kindLabel(s.kind))}</span> ${conf} ${geo}
         </div>
         <div class="muted" style="margin-top:5px;font-size:13px">
           ${esc(fmtDate(s))}${s.place ? ` · ${esc(s.place)}` : ""}${s.country ? ` (${esc(String(s.country).toUpperCase())})` : ""}
           · ${(+s.lat).toFixed(2)}, ${(+s.lon).toFixed(2)} · <span title="data source">${esc(s.source)}</span>
-          ${s.magnitude != null ? ` · M${esc(fmtNum(s.magnitude, 1))}` : ""}
+          ${s.magnitude != null ? ` · <b>M${esc(fmtNum(s.magnitude, 1))}</b>` : ""}
         </div>
         ${s.note ? `<div class="hint" style="margin-top:5px">${esc(s.note)}</div>` : ""}
         <div class="row" style="margin-top:7px;gap:8px">
@@ -15231,8 +15350,32 @@
           .sort((a, b) => a.d - b.d)[0];
         if (near && near.d < 0.5) match = near.s;
       }
+      // The default "Major only" lens must never hide the very event the user
+      // clicked through to: a deep-linked below-floor event clears the filter so
+      // the point is actually on the map beside its detail panel.
+      if (match && _ooMapHazMajorOnly && !_hazardSignalIsMajor(match)) {
+        _ooMapHazMajorOnly = false;
+        _renderOoMapLensBar();
+        if (_ooMapPayload) _renderOoMapDim();
+      }
       if (match) _ooMapSignalDetail(match, sig, 25);
       else toast(t("This event is outside the map's current signal set."), "err");
+    }
+    // The Home strip's overflow line ("N more, below the M6 display floor →"):
+    // open the World map on the hazard layer with the major-only lens CLEARED,
+    // because the whole point of that line is to reach the events the floor did
+    // not show first. Full recall is one click away, exactly as the strip says.
+    async function openWorldMapHazards() {
+      showTab("timemap");
+      await new Promise(r => setTimeout(r, 60));
+      if (_ooMapLensTabs) _ooMapLensTabs.select("stories");
+      else await selectOoMapLens("stories");
+      for (let i = 0; i < 20 && _ooMapSignals == null; i++) await new Promise(r => setTimeout(r, 100));
+      _ooMapHazMajorOnly = false;
+      _ooMapHazType = null;
+      _ooMapStoryKind = "hazard";
+      _renderOoMapLensBar();
+      if (_ooMapPayload) _renderOoMapDim();
     }
     // Toggle the in-browser OSM offline-region overlay (THEME-2). On first enable
     // it finds a DOWNLOADED region, fetches a bounded byte PREFIX of its local

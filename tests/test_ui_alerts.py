@@ -44,3 +44,45 @@ def test_alerts_never_promote_a_magnitude_into_urgent():
     # The three provider tiers are rendered as-is; the frontend never invents a tier — the
     # 'urgent' class only ever paints whatever the backend already tiered.
     assert "urgent" in ui and "watch" in ui, "the provider tiers must be surfaced as given"
+
+
+def test_alert_strip_shows_the_hazard_type_in_words():
+    """Field impressions 2026-08-01, ruling 4: "clicking on an earthquake to see the
+    event description misses that [it is an earthquake], new users will not be able to
+    deduce that". A glyph is a scannability aid, never the label — every hazard render
+    states the type in words, translated, and an unlisted type falls back to the
+    provider's own string rather than inventing a name."""
+    ui = _ui_source()
+    assert "function hazardTypeLabel(" in ui, "a shared type-in-words helper must exist"
+    assert "HAZARD_TYPE_KEYS" in ui and '"Earthquake"' in ui, "hazard types must be keyed"
+    # the compact strip item and the MAP's own detail panel both use it (the report
+    # was specifically about the map detail)
+    assert "haz-kind" in ui, "the strip item must render the type in words"
+    assert 'hazardTypeLabel(s.hazard_type)' in ui, (
+        "the map signal detail must name the hazard type, not just the generic kind"
+    )
+
+
+def test_alert_strip_display_floor_never_removes_recall():
+    """Rulings 1-2: the strip shows the major events first and collapses the rest into
+    ONE line that opens the World map. A floor is honest only while everything stays
+    reachable — the payload, the map and 'Open corpus' are all unchanged."""
+    ui = _ui_source()
+    assert "h.major" in ui, "the strip must read the backend's display-floor flag"
+    assert "openWorldMapHazards()" in ui, "the overflow line must reach the full set on the map"
+    assert "display floor" in ui, "the overflow line must say WHY the rest are not listed"
+    # the floor is stated as a magnitude BAND, never as urgency
+    assert "hazardMagLabel" in ui, "a magnitude must render with its band label"
+
+
+def test_map_major_only_is_a_default_lens_not_an_exclusion():
+    """Ruling 4: 'Major only' is ON BY DEFAULT and one click restores full recall; the
+    UI says so in words. A deep-linked below-floor event clears the filter rather than
+    landing the user on a map that does not show the point they clicked."""
+    ui = _ui_source()
+    assert "_ooMapHazMajorOnly = true" in ui, "the major-only lens must default ON"
+    assert "default lens, not an exclusion" in ui, "the default must be stated as a lens"
+    assert "_ooMapHazType" in ui, "a hazard-TYPE filter must exist"
+    assert "function _hazardSignalIsMajor(" in ui, (
+        "the map must use the same provider-declared facts as the alert layer"
+    )
