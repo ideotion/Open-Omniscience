@@ -2397,8 +2397,31 @@
         const facets = (d.facets || []).filter(f => (f.articles || 0) > 0);
         if (!facets.length) { panel.hidden = true; box.innerHTML = ""; return; }
         panel.hidden = false;
-        box.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap">` + facets.map(f =>
-          `<button class="chip" onclick="openChannelCorpus(${esc(JSON.stringify(f.source_type))})" title="${esc(t("An asserted content channel (newsletter, web article, wiki, statistic, law, market, discovery), never a quality score. Click a channel to explore its corpus."))}">${esc(f.source_type)} <span class="muted">${esc(String(f.articles))}</span></button>`).join("")
+        // A bare count cannot answer "is this channel most of my corpus or a rounding
+        // error?", so each chip carries its SHARE and the denominator is stated once
+        // above them. Article.source_id is NOT NULL and the facet excludes quarantined
+        // articles exactly as the browse path does, so the facets really do sum to the
+        // corpus this share is a share OF -- an unstated denominator is the usual way a
+        // percentage lies. Shares are shown BESIDE the counts, never instead: the raw
+        // number is what the reader checks the percentage against.
+        //
+        // Deliberately NOT a waffle, and not a second bar view either. The project's own
+        // chart framework prescribes sorted bars for part-to-whole and never mentions a
+        // waffle at all; `_ooShareBars` already implements that form -- but its rows are
+        // not clickable, and these chips open the channel's corpus (openChannelCorpus).
+        // Replacing them would trade a working tool for a prettier read of the same
+        // numbers, so the shares come to the chips instead.
+        const total = facets.reduce((s, f) => s + (f.articles || 0), 0);
+        const pct = (n) => (total > 0 ? (n / total * 100) : 0);
+        // Below 0.5% a rounded share reads as "0%", which looks like nothing rather than
+        // like a little; "<1%" says small without claiming a precision the rounding lost.
+        const share = (n) => (pct(n) >= 0.5 ? Math.round(pct(n)) + "%" : "<1%");
+        const totalLine = (window.OOI18N && OOI18N.tf)
+          ? OOI18N.tf("{n} articles across {k} channels", {n: fmtNum(total), k: facets.length})
+          : `${fmtNum(total)} articles across ${facets.length} channels`;
+        box.innerHTML = `<div class="hint muted" style="margin-bottom:4px">${esc(totalLine)}</div>`
+          + `<div style="display:flex;gap:6px;flex-wrap:wrap">` + facets.map(f =>
+          `<button class="chip" onclick="openChannelCorpus(${esc(JSON.stringify(f.source_type))})" title="${esc(t("An asserted content channel (newsletter, web article, wiki, statistic, law, market, discovery), never a quality score. Click a channel to explore its corpus."))}">${esc(f.source_type)} <span class="muted">${esc(String(f.articles))} · ${esc(share(f.articles))}</span></button>`).join("")
           + `</div>`;
       } catch (e) { panel.hidden = true; box.innerHTML = ""; }
     }
@@ -10157,6 +10180,89 @@
       if (isFinite(days) && days <= 92) return iso.slice(0, 10);                   // YYYY-MM-DD
       return iso.slice(0, 7);                                                      // YYYY-MM
     }
+    // -- Honest gaps in the ONE chart toolkit (invariant #16) ---------------- //
+    // A hole in a time series must render as a HOLE. Both renderers here used to
+    // draw straight through one: dashChartSvg emitted a SINGLE <polyline> over
+    // every point, and ooChart dropped non-finite values and then lineTo'd from
+    // the point before the hole to the point after it. On a real time axis that
+    // is a fabricated measurement -- a smooth line across hours nothing was
+    // recorded -- and it is the one thing the project's own committed chart
+    // framework rejects outright ("Render gaps as gaps; mark 'no data'
+    // distinctly. Verdict: REJECT", docs/research/dataviz/chart_decision_framework.md).
+    // ooviz.js has shipped pathWithGaps + statSeriesPaths for exactly this since
+    // they were written, and neither had ever been wired to anything.
+    //
+    // Three live data families reach these renderers with real holes:
+    //   - Library metric history: snapshot rows exist only for hours that were
+    //     recorded, so any time the app was off is a genuine gap (app.js:8279);
+    //   - official-statistics indicators, where a published gap is a real null the
+    //     call site FILTERS OUT before drawing (app.js:4732);
+    //   - commodity prices on a shared time axis, where market closures are holes
+    //     (app.js:10532).
+    //
+    // WHAT COUNTS AS A GAP is an editorial choice, so it is a stated one. A run
+    // breaks at a missing value always, and -- only when the x-axis is a REAL time
+    // axis -- at a hole wider than _GAP_FACTOR x the series' OWN median cadence.
+    // Keying off the series' own cadence rather than a fixed duration is what lets
+    // one rule serve hourly counters and annual indicators alike. The factor is
+    // deliberately generous so ordinary jitter never breaks a line; a cadence is
+    // only trusted from >= 3 intervals, and below that nothing is ever split (a
+    // fabricated gap is exactly as dishonest as a fabricated line).
+    //
+    // BLAST RADIUS, deliberately bounded: on an INDEX axis the spacing claims
+    // observation order, not elapsed time, so bridging consecutive observations
+    // fabricates nothing and index-mode output stays byte-identical. Only a
+    // missing value breaks there.
+    // A JS TRAP that makes the naive check exactly backwards: isFinite(null) is
+    // TRUE and +null is 0, so a published gap coerces to a real, plotted ZERO --
+    // a fabricated measurement, which is worse than the bridged line this fix is
+    // about. ooViz.isMissing has encoded the right rule since it was written
+    // ("must render as a GAP, never as zero") and had no caller; it does now, with
+    // an inline fallback so a stale service-worker copy of ooviz.js degrades to the
+    // same semantics rather than silently reverting to zeros.
+    const _missing = (v) => (typeof ooViz !== "undefined" && ooViz.isMissing)
+      ? ooViz.isMissing(v) || !isFinite(v)
+      : (v === null || v === undefined || !isFinite(v));
+    const _GAP_FACTOR = 3;
+    function _seriesRuns(points, opts) {
+      opts = opts || {};
+      const factor = opts.gapFactor || _GAP_FACTOR;
+      const ok = (p) => p != null && !_missing(opts.value ? opts.value(p) : p.v);
+      const at = (p) => (opts.time ? opts.time(p) : p.t);
+      let cadence = 0;
+      if (opts.timed) {
+        const deltas = [];
+        for (let i = 1; i < points.length; i++) {
+          const a = at(points[i - 1]), b = at(points[i]);
+          if (ok(points[i - 1]) && ok(points[i]) && isFinite(a) && isFinite(b) && b > a) deltas.push(b - a);
+        }
+        // A cadence guessed from one or two intervals is not a cadence. Below the
+        // floor the series is left whole rather than split on a number we cannot
+        // stand behind.
+        if (deltas.length >= 3) {
+          deltas.sort((x, y) => x - y);
+          cadence = deltas[Math.floor(deltas.length / 2)];
+        }
+      }
+      const runs = [];
+      let cur = null;
+      for (let i = 0; i < points.length; i++) {
+        if (!ok(points[i])) { cur = null; continue; }          // a missing value is always a hole
+        // A caller that had to DROP a missing value (ooChart, so the scales and the
+        // sparse-bar threshold keep counting real observations only) marks the
+        // survivor after it. Without this the hole would have to be inferred from
+        // its width, and one dropped point is far too narrow to trip the cadence
+        // rule -- so the line would quietly close over it again.
+        if (points[i].gapBefore) cur = null;
+        if (cur && cadence > 0) {
+          const d = at(points[i]) - at(points[cur[cur.length - 1]]);
+          if (isFinite(d) && d > factor * cadence) cur = null;  // a hole wider than the cadence
+        }
+        if (!cur) { cur = []; runs.push(cur); }
+        cur.push(i);
+      }
+      return runs;
+    }
     function dashChartSvg(points, unit, opts) {
       opts = opts || {};
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -10239,10 +10345,21 @@
       const baseY = Y(minY);
       const slot = (w - padL - padR) / Math.max(n, 1);
       const bw = Math.max(3, Math.min(slot * 0.62, 22));
+      // ONE polyline PER RUN, never one across the whole series: a hole in the data
+      // leaves a hole in the line. `shared` is the real-time-axis mode, so a time
+      // gap only counts there (see _seriesRuns). A single-point run still gets a
+      // dot, or a measurement surrounded by holes would vanish entirely.
+      const _runs = _seriesRuns(points, {
+        timed: shared, value: (p) => p.price, time: (p) => _ms(p.observed_on),
+      });
+      const _gapped = _runs.length > 1;
       const body = lineMode
-        ? `<polyline fill="none" stroke="${col}" stroke-width="1.6" points="${
-            points.map((p, i) => `${Xp(p, i).toFixed(1)},${Y(p.price).toFixed(1)}`).join(" ")}"></polyline>
-           <circle cx="${Xp(points[n-1], n-1).toFixed(1)}" cy="${Y(points[n-1].price).toFixed(1)}" r="2.4" fill="${col}"></circle>`
+        ? _runs.map(run => (run.length > 1
+            ? `<polyline fill="none" stroke="${col}" stroke-width="1.6" points="${
+                run.map(i => `${Xp(points[i], i).toFixed(1)},${Y(points[i].price).toFixed(1)}`).join(" ")}"></polyline>`
+            : `<circle cx="${Xp(points[run[0]], run[0]).toFixed(1)}" cy="${Y(points[run[0]].price).toFixed(1)}" r="2" fill="${col}"></circle>`
+          )).join("")
+          + `<circle cx="${Xp(points[n-1], n-1).toFixed(1)}" cy="${Y(points[n-1].price).toFixed(1)}" r="2.4" fill="${col}"></circle>`
         : points.map((p, i) => {
             const cx = Xp(p, i), by = Y(p.price);
             const x0 = Math.max(padL, cx - bw / 2), x1 = Math.min(w - padR, cx + bw / 2);
@@ -10258,8 +10375,13 @@
         ? ((window.OOI18N && OOI18N.tf) ? OOI18N.tf("n={n} {unit}", {n: n, unit: opts.nUnit})
                                         : `n=${n} ${opts.nUnit}`)
         : `n=${n}`;
-      const caveat = lineMode ? "" :
-        `<div class="hint muted" style="margin-top:1px">${esc(nText)}</div>`;
+      // A break is only meaningful if the reader is told what it means, so the note
+      // appears exactly when one was actually drawn — never as standing boilerplate.
+      const gapNote = _gapped
+        ? `<div class="hint muted" style="margin-top:1px">${esc(t9("The line breaks where nothing was recorded — a gap is not a zero."))}</div>`
+        : "";
+      const caveat = (lineMode ? "" :
+        `<div class="hint muted" style="margin-top:1px">${esc(nText)}</div>`) + gapNote;
       // The legend reads the SHARED window when coherent (so every card states the
       // same span), else this series' own first→last dates.
       const range = shared ? `${xfmt(opts.t0)} → ${xfmt(opts.t1)}`
@@ -10781,8 +10903,25 @@
       const all = seriesList.map((s, i) => ({
         label: s.label || `#${i + 1}`, unit: s.unit || "",
         color: s.color || ["var(--accent)", "var(--ok)", "var(--warn)", "var(--err)"][i % 4],
-        pts: (s.points || []).map(p => ({t: toMs(p.t), v: +p.v})).filter(p => isFinite(p.t) && isFinite(p.v))
-              .sort((a, b) => a.t - b.t),
+        // `+p.v` alone made a MISSING value a plotted ZERO: +null is 0 and
+        // isFinite(0) is true, so a published gap survived the filter as a real
+        // measurement of nothing. No caller passes nulls today -- /api/stats/
+        // chart-series is built to preserve them ("A GAP IS A GAP",
+        // src/stats/series.py:17) and has no frontend consumer yet -- so this is a
+        // trap closed before it bites rather than a live defect. A missing value is
+        // now dropped AND marked, so the line breaks there instead of being drawn
+        // through a point that was never measured.
+        pts: (() => {
+          const out = [];
+          let hole = false;
+          for (const p of (s.points || [])) {
+            const t = toMs(p.t);
+            if (_missing(p.v) || !isFinite(t)) { hole = true; continue; }
+            out.push({t, v: +p.v, gapBefore: hole});
+            hole = false;
+          }
+          return out.sort((a, b) => a.t - b.t);
+        })(),
         hidden: false,
       })).filter(s => s.pts.length);
       if (!all.length) { el.innerHTML = `<div class="muted">${esc(t9("no data points yet"))}</div>`; return; }
@@ -10891,8 +11030,17 @@
               ctx.globalAlpha = 1;    ctx.fillRect(x - bw / 2, y - 1, bw, 2);
             }
           } else {
+            // One subpath PER RUN: the pen lifts across a hole instead of drawing a
+            // measurement nobody took. ooChart always has a REAL time axis, so a
+            // cadence gap counts here; the visible window is what is split, so
+            // zooming into a quiet stretch still shows it as quiet, not as a line.
             ctx.beginPath();
-            s.vis.forEach((p, i) => { const x = Xof(p.t), y = Yof(vt(pv(s, p))); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
+            for (const run of _seriesRuns(s.vis, {timed: true})) {
+              run.forEach((ix, i) => {
+                const p = s.vis[ix], x = Xof(p.t), y = Yof(vt(pv(s, p)));
+                i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+              });
+            }
             ctx.stroke();
             if (pxPer > 9) {                                 // honest dots on a roomy line
               for (const p of s.vis) { ctx.beginPath(); ctx.arc(Xof(p.t), Yof(vt(pv(s, p))), 2, 0, 7); ctx.fill(); }

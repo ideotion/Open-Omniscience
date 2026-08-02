@@ -2348,5 +2348,7 @@
   "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.",
   "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.": "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.",
   "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.",
-  "… {n} bytes not shown …": "… {n} bytes not shown …"
+  "… {n} bytes not shown …": "… {n} bytes not shown …",
+  "The line breaks where nothing was recorded — a gap is not a zero.": "The line breaks where nothing was recorded — a gap is not a zero.",
+  "{n} articles across {k} channels": "{n} articles across {k} channels"
 }

@@ -2348,5 +2348,7 @@
   "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "このマシンはローカル推論の実用ラインを下回っています（{r}）。ここではバックグラウンド AI は既定でオフです。手動で開始することはできます。",
   "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.": "{n} 部分にわたる階層的な要約——各部分を要約し、その要約をまとめて再度要約しました。",
   "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "{n} 部分に分けて翻訳——記事は段落の区切りで分割され、すべての部分が翻訳されました。",
-  "… {n} bytes not shown …": "… {n} バイトは表示されていません …"
+  "… {n} bytes not shown …": "… {n} バイトは表示されていません …",
+  "The line breaks where nothing was recorded — a gap is not a zero.": "記録がない期間では線が途切れます — 欠測はゼロではありません。",
+  "{n} articles across {k} channels": "{k} 個のチャネルにわたる {n} 件の記事"
 }

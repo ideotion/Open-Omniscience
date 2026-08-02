@@ -179,6 +179,43 @@ def test_untyped_bucket_facet_matches_filter():
 
 
 @pytest.mark.skipif(not _HAVE_MAIN, reason="src.api.main needs the crypto extra (runs in CI)")
+def test_a_quarantined_article_is_absent_from_the_facet_as_well_as_the_filter():
+    """The docstring's equality is a stated PROPERTY, so it has to hold once articles
+    start being quarantined -- and it did not.
+
+    ``_query_articles`` applies ``Article.quarantined.isnot(True)`` ALWAYS, never as an
+    optional filter, while the facet counted every article joined to its source. So the
+    facet promised more than clicking it delivered. Quiet in a chip label; a fabricated
+    total the moment anything encodes one article as one countable unit.
+    """
+    from src.analytics.queries import source_type_facets
+
+    engine = create_engine(
+        "sqlite:///:memory:", future=True,
+        connect_args={"check_same_thread": False}, poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    s.add(Source(id=1, name="BBC", domain="bbc.com", source_type="news"))
+    s.commit()
+    for i in range(4):
+        s.add(Article(
+            url=f"https://x/{i}", canonical_url=f"https://x/{i}", source_id=1,
+            title=f"t{i}", content="body", hash=f"h{i}".ljust(64, "0"), language="en",
+            quarantined=(i >= 2),          # two of the four are quarantined
+        ))
+    s.commit()
+
+    facets = {f["source_type"]: f["articles"] for f in source_type_facets(s)["facets"]}
+    kept, _ = _titles(s, source_type="news")
+    # The equality, asserted against the browse path itself rather than a constant --
+    # a hardcoded 2 would still pass if BOTH sides drifted together.
+    assert facets["news"] == len(kept), "the facet must equal what clicking it returns"
+    assert facets["news"] == 2, "and the quarantined pair must be in neither"
+    s.close()
+
+
+@pytest.mark.skipif(not _HAVE_MAIN, reason="src.api.main needs the crypto extra (runs in CI)")
 def test_article_row_exposes_raw_source_type(db):
     a = db.query(Article).filter_by(title="oil newsletter note").one()
     row = _article_row(a)

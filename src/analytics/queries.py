@@ -1969,6 +1969,15 @@ def source_type_facets(session) -> dict:
     for st, c in (
         session.query(Source.source_type, func.count(Article.id))
         .join(Article, Article.source_id == Source.id)
+        # QUARANTINED articles are excluded here for the same reason the docstring
+        # below gives: ``_query_articles`` applies this condition ALWAYS, not as an
+        # optional filter (src/api/main.py:1150, and again at :1269 for the
+        # explicit-id path), so without it the facet promised more articles than
+        # clicking it delivers -- and the equality was not a nicety, it was stated
+        # as a property. Found by an adversarial review of a proposed waffle chart:
+        # a discrepancy that is quiet in a chip label becomes COUNTABLE the moment
+        # one square means one article.
+        .filter(Article.quarantined.isnot(True))
         .group_by(Source.source_type)
     ):
         # Normalise identically to the filter (lowercase; NULL/blank -> untyped), so the
