@@ -360,6 +360,7 @@ def extract_perception_batch(
     tally: dict = {
         "attempted": 0, "skipped_existing": 0, "gated": 0, "gated_detail": {},
         "field_gated": {f: 0 for f in _FIELDS},
+        "truncated": 0,
         "stored": 0, "who": 0, "where": 0, "when": 0, "aborted": False, "reason": None,
     }
     if not work:
@@ -417,6 +418,11 @@ def extract_perception_batch(
                 continue
             tally["attempted"] += 1
             out = res.value or {}
+            if out.get("truncation"):
+                # A background sweep may truncate; it may not do so silently. Counted
+                # per run so a thin harvest is attributable to the window rather than
+                # being read as a thin corpus.
+                tally["truncated"] = tally.get("truncated", 0) + 1
             for fld in _FIELDS:
                 # PER-FIELD gate (E-S3): the three fields arrive from one call, so a
                 # field this language never cleared is DISCARDED here rather than

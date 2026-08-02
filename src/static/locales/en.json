@@ -2345,5 +2345,7 @@
   "Start background AI": "Start background AI",
   "Pause background AI": "Pause background AI",
   "paused — your batch is running": "paused — your batch is running",
-  "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it."
+  "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.",
+  "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.": "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.",
+  "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated."
 }

@@ -8288,3 +8288,46 @@ def test_the_two_gate_shapes_stay_opposite_on_unmeasured_input():
     assert re.search(r'"/api/diagnostics/model-bench/gates"', src), (
         "the gate view must be surfaced, not just computed"
     )
+
+
+def test_a_user_asked_summarize_or_translate_never_silently_truncates():
+    """E-S4 (2026-08-01, ruling 16). The old path cut the article at 6,000 characters
+    and stored the result as if it were a summary/translation of the whole thing —
+    which is indistinguishable, to the reader, from a complete one of a shorter
+    article. Both single-article endpoints and the bulk run now go through the
+    chunking path; background sweeps may still truncate, but must SAY so."""
+    src = (_SRC / "api" / "llm.py").read_text(encoding="utf-8")
+    for fn in ("summarize_article", "translate_article"):
+        body = src.split(f"def {fn}(", 1)[1].split("\ndef ", 1)[0]
+        assert "_run_over_long_text" in body, f"{fn} must not build a truncated prompt"
+        assert "_MAX_CHARS" not in body, f"{fn} still cuts the article"
+    # The bulk stream is a user-initiated batch too (ruling 13 names it one).
+    bulk = src.split("def bulk_llm(", 1)[1]
+    assert "_run_over_long_text" in bulk and "content[:_MAX_CHARS]" not in bulk
+
+    # A background sweep MAY truncate — and discloses it.
+    per = (_SRC / "ai_layer" / "perception.py").read_text(encoding="utf-8")
+    assert "head_truncate" in per and "truncation" in per
+
+    # The method is provenance: a hierarchical summary is a different artifact.
+    assert "_version_with_method" in src
+    # ...and the value-bearing prompt_version is parsed with the suffix stripped, or
+    # a chunked translation would report its target language as "French+chunked-3".
+    parse = src.split("def _parse_target_language(", 1)[1].split("\ndef ", 1)[0]
+    assert 'split("+", 1)[0]' in parse
+
+    ui = _ui_source()
+    assert "_llmMethodNote" in ui, "the method change must be visible to the reader"
+
+
+def test_the_ollama_context_auto_tune_exists_and_only_proposes():
+    """The documented B7 gap, closed — but a heuristic that silently resized the
+    operator's context window would be changing behaviour on an estimate."""
+    diag = (_SRC / "monitoring" / "ai_diagnostics.py").read_text(encoding="utf-8")
+    block = diag.split("def _context_settings(", 1)[1].split("\ndef ", 1)[0]
+    assert "recommend_num_ctx" in block and "configured_num_ctx" in block
+    assert "NO RAM-derived auto-tune" not in diag, "the stale 'gap' note must be gone"
+    # The corpus measurement is a full-table pass and must stay opt-in.
+    api = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    ai_fn = api.split("def ai_diagnostics(", 1)[1].split("\ndef ", 1)[0]
+    assert "measure_corpus" in ai_fn and "Query(False)" in ai_fn

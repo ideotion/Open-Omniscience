@@ -4686,16 +4686,51 @@ def perception_extract_download() -> Response:
     )
 
 
+# Language -> script, for sizing the context window in CHARACTERS. Only the
+# scripts src.ai_layer.context knows a chars-per-word estimate for appear here; a
+# language absent from this map falls back to "latin", which is the conservative
+# direction (it over-estimates characters per word, so the window is sized a little
+# large rather than a little short).
+_SCRIPT_OF_LANG = {
+    "ru": "cyrillic", "uk": "cyrillic", "bg": "cyrillic", "sr": "cyrillic", "mk": "cyrillic",
+    "el": "greek", "ar": "arabic", "fa": "arabic", "ur": "arabic", "he": "hebrew",
+    "hi": "devanagari", "mr": "devanagari", "ne": "devanagari", "bn": "bengali",
+    "th": "thai", "zh": "cjk", "ja": "cjk", "ko": "cjk",
+}
+
+
 @router.get("/ai")
-def ai_diagnostics() -> JSONResponse:
+def ai_diagnostics(
+    measure_corpus: bool = Query(False), db: Session = Depends(get_db)
+) -> JSONResponse:
     """B7.1 (2026-07-24 Session B): a secret-safe, read-only snapshot of the whole
     dual-backend AI stack -- which backend is active and why (hardware detection
     facts), the active model, context/concurrency settings, and the last saved
     summary of every AI-layer background job. Never runs anything; rides the
-    all-diagnostics bundle by default."""
+    all-diagnostics bundle by default.
+
+    ``measure_corpus`` (E-S4, 2026-08-01) additionally measures the article-length
+    distribution so the Ollama context auto-tune can size the window to the corpus
+    that actually exists. OFF by default and deliberately so: that measurement is a
+    full-table pass, and a bundle member that quietly ran one would make reading the
+    AI settings the most expensive click in diagnostics. Without it the auto-tune
+    reports UNMEASURED and names this flag, rather than proposing a number from
+    nothing."""
     from src.monitoring.ai_diagnostics import ai_diagnostics_report
 
-    return JSONResponse(ai_diagnostics_report())
+    corpus = None
+    if measure_corpus:
+        from src.analytics.article_length import article_length_report
+
+        report = article_length_report(db)
+        by_lang = report.get("word_count_by_language") or {}
+        # The dominant language's own p95, not the corpus-wide one: the window is
+        # spent on characters, and a corpus-wide word figure mixes scripts whose
+        # characters-per-word differ by more than the figure itself.
+        top = max(by_lang.items(), key=lambda kv: (kv[1] or {}).get("n") or 0, default=None)
+        if top and not (top[1] or {}).get("unsegmented"):
+            corpus = {"p95_words": (top[1] or {}).get("p95"), "script": _SCRIPT_OF_LANG.get(top[0], "latin")}
+    return JSONResponse(ai_diagnostics_report(corpus))
 
 
 # ---------------------------------------------------------------------------
