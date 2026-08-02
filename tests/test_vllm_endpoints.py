@@ -268,12 +268,26 @@ def test_vllm_status_endpoint_carries_the_preflight_and_the_attempt_history():
 # --------------------------------------------------------------------------- #
 def _vllm_backend(monkeypatch):
     """Stub only the RESOLVER -- the plan itself stays the production function, so
-    these exercise the real path rather than a double of it."""
+    these exercise the real path rather than a double of it.
+
+    The payload is built by ``backend._result``, the SAME one builder every real
+    branch uses, rather than hand-written (2026-08-02). A two-key literal passed
+    these tests for months while omitting every field a caller might read; when the
+    download plan began reading ``vllm``/``ollama``/``available`` -- to stop
+    provisioning for a backend that is not installed -- the double silently described
+    a machine with no GPU and nothing installed, and the tests failed against correct
+    code. A double of a payload should be built by the thing that builds the payload."""
     from src.llm import backend as B
 
-    monkeypatch.setattr(
-        B, "resolve_backend", lambda: {"backend": "vllm", "reason": "GPU + vLLM running"}
+    payload = B._result(
+        backend="vllm",
+        reason="GPU + vLLM running",
+        override=None,
+        gpu={"available": True, "name": "test-gpu", "vram_mb": 8188},
+        vllm={"installed": True, "running": True},
+        ollama_ok=False,
     )
+    monkeypatch.setattr(B, "resolve_backend", lambda: payload)
 
 
 def test_the_vllm_plan_is_a_real_download_with_a_real_cached_answer(monkeypatch, tmp_path):

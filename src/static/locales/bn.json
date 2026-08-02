@@ -2276,6 +2276,7 @@
   "Lost contact with the job.": "কাজটির সাথে যোগাযোগ বিচ্ছিন্ন হয়েছে।",
   "vLLM install failed:": "vLLM ইনস্টল ব্যর্থ হয়েছে:",
   "Model download failed:": "মডেল ডাউনলোড ব্যর্থ হয়েছে:",
+  "The model download never started — see the message above.": "মডেল ডাউনলোড কখনও শুরুই হয়নি — উপরের বার্তাটি দেখুন।",
   "Installing — this can take several minutes…": "ইনস্টল হচ্ছে — এতে কয়েক মিনিট লাগতে পারে…",
   "Install vLLM": "vLLM ইনস্টল করুন",
   "Install Ollama": "Ollama ইনস্টল করুন",

@@ -721,18 +721,75 @@ def _get_vllm_model_job():
     return _VLLM_MODEL_JOB
 
 
+def _pull_queue_state(artifact: str, queue: dict, installed: bool | None) -> dict:
+    """The pull queue's view of ONE artifact, in the job vocabulary its vLLM sibling
+    already speaks: ``state`` (running / done / error / cancelled / idle) + ``detail``.
+
+    Why this exists at all (field report 2026-08-02): the caller that follows this
+    endpoint waits for a ``state`` that is not ``"running"``, and NEITHER branch
+    published one at the top level. The vLLM branch nested a BackgroundJob (which has
+    a ``state``) under ``job``; the Ollama branch returned the raw queue, which has
+    ``active``/``queue``/``history`` and no ``state`` anywhere. So the follower polled
+    every three seconds forever and the setup chain hung on the download step on any
+    machine -- the endpoint and its only consumer never agreed on where the answer
+    lives. Both halves now answer in the follower's own vocabulary.
+
+    ``idle`` is deliberately its own answer rather than being folded into ``done``:
+    nothing was asked of the queue for this artifact, which is not the same as a
+    finished download, and the two must not be told apart only by a comment. The
+    already-installed case IS ``done``, because the goal state is reached -- with
+    ``installed`` unknown (``None``, the daemon being down) it stays ``idle``, never
+    a fabricated success."""
+    active = queue.get("active") or {}
+    if active.get("model") == artifact:
+        pct = active.get("percent")
+        detail = active.get("status") or "pulling"
+        return {"state": "running", "detail": f"{detail} {pct}%" if pct else detail}
+    if artifact in (queue.get("queue") or []):
+        return {"state": "running", "detail": "queued"}
+    for entry in reversed(queue.get("history") or []):
+        if entry.get("model") != artifact:
+            continue
+        status = entry.get("status") or ""
+        if status == "done":
+            return {"state": "done", "detail": "downloaded"}
+        if status == "cancelled":
+            return {"state": "cancelled", "detail": "cancelled"}
+        # Anything else the queue recorded is a failure, and the queue's own error
+        # text is the only honest detail -- never a generic "failed".
+        return {"state": "error", "detail": entry.get("error") or status or "failed"}
+    if installed:
+        return {"state": "done", "detail": "already installed"}
+    return {"state": "idle", "detail": "no download has been requested"}
+
+
+def _job_view(job: dict) -> dict:
+    """Lift a BackgroundJob's own ``state``/``detail`` to the top level, so the two
+    branches of ``/default-model/status`` are followed the same way. A projection
+    rather than a spread of the whole job: only the two fields the follower reads are
+    promoted, so a future job field can never shadow ``plan`` or ``backend``."""
+    return {"state": job.get("state"), "detail": job.get("detail") or job.get("error") or ""}
+
+
 @router.get("/default-model/status")
 def default_model_status() -> dict:
     """Live state of the default-model download, for whichever backend serves.
 
     The Ollama half already had a live surface (the pull queue); the vLLM half had
-    none, because there was no download to report on. There is now."""
+    none, because there was no download to report on. There is now.
+
+    BOTH halves now also report a top-level ``state``/``detail`` in the same
+    vocabulary (2026-08-02): a caller that follows this endpoint to completion must
+    not have to know which backend answered in order to recognise the end."""
     plan = _default_model_plan()
     if plan["backend"] != "vllm":
         from src.llm.pull_queue import get_pull_manager
 
-        return {"backend": "ollama", "plan": plan, "queue": get_pull_manager().status()}
-    return {"backend": "vllm", "plan": plan, "job": _get_vllm_model_job().status()}
+        queue = get_pull_manager().status()
+        view = _pull_queue_state(plan["artifact"], queue, plan.get("installed"))
+        return {"backend": "ollama", "plan": plan, "queue": queue, **view}
+    job = _get_vllm_model_job().status()
+    return {"backend": "vllm", "plan": plan, "job": job, **_job_view(job)}
 
 
 @router.post("/vllm/install")
@@ -901,6 +958,72 @@ def vllm_stop() -> dict:
     return stop()
 
 
+def _provisioning_backend(r: dict) -> dict:
+    """WHICH backend a DOWNLOAD should provision for -- which is not always the one
+    :func:`resolve_backend` would route an inference call to right now.
+
+    Field report 2026-08-02 ("the model does not download"), reproduced from the
+    bundle: a laptop with an RTX 4070, vLLM installed but its server never started,
+    and Ollama NOT installed at all. ``resolve_backend`` correctly answered
+    ``"ollama"`` -- Ollama is the ruled fallback and its own reason said outright
+    that NOTHING was reachable -- but reading that SELECTION as a download target
+    named an Ollama tag and queued a pull into a daemon that does not exist. The
+    setup panel meanwhile said "This machine will use vLLM", because the frontend
+    picks its target from the hardware. Two notions of "which backend" met in one
+    chain, and the honest one for provisioning is not the routing one:
+
+      * ROUTING asks who can serve THIS request, so an unreachable backend is
+        disqualified -- a stopped server would 503.
+      * PROVISIONING asks what this machine will serve with ONCE SET UP, so
+        "not running yet" is the normal state, and the answer must be what is
+        installed (or, failing that, what the hardware can actually use).
+
+    Precedence, and why: an explicit override wins (an operator's stated choice is
+    never second-guessed, here as everywhere else) -> a REACHABLE backend wins next
+    (something serves right now; feed that) -> otherwise installed-ness decides,
+    with the GPU preference breaking a tie exactly as ``resolve_backend``'s auto
+    branch does -> and when NEITHER is installed the hardware preference is
+    reported together with ``prerequisite``, so the caller states what must be
+    installed first instead of naming an artifact nothing here can fetch.
+
+    Derived entirely from fields ``resolve_backend`` already returns: no extra
+    probe, no second source of truth about what is installed."""
+    gpu_ok = bool((r.get("gpu") or {}).get("available"))
+    vllm_installed = bool((r.get("vllm") or {}).get("installed"))
+    ollama_installed = bool((r.get("ollama") or {}).get("installed"))
+    hardware_pick = "vllm" if gpu_ok else "ollama"
+
+    override = (r.get("override") or "").strip().lower()
+    if override in {"ollama", "vllm"}:
+        chosen, why = override, f"explicit override ({override})"
+    elif r.get("available"):
+        chosen, why = (r.get("backend") or hardware_pick), "the backend that is serving right now"
+    elif vllm_installed and ollama_installed:
+        chosen = hardware_pick
+        why = "both backends are installed; " + (
+            "a GPU is present, so vLLM is the one that can use it"
+            if gpu_ok
+            else "no GPU here, so Ollama is the one that can serve"
+        )
+    elif vllm_installed:
+        chosen, why = "vllm", "vLLM is installed here (its server is simply not running yet)"
+    elif ollama_installed:
+        chosen, why = "ollama", "Ollama is installed here (its daemon is simply not running yet)"
+    else:
+        chosen = hardware_pick
+        why = "neither backend is installed yet; this is the one this hardware can use"
+
+    installed = vllm_installed if chosen == "vllm" else ollama_installed
+    return {
+        "backend": chosen,
+        "chosen_because": why,
+        # None when the chosen backend is already installed. Otherwise it NAMES the
+        # missing prerequisite, so a caller refuses by name rather than starting a
+        # download that has nowhere to land.
+        "prerequisite": None if installed else chosen,
+    }
+
+
 def _default_model_plan() -> dict:
     """WHICH default-model artifact would be installed, for the backend that will
     actually serve, and by WHAT mechanism.
@@ -923,7 +1046,8 @@ def _default_model_plan() -> dict:
     from src.llm.ollama import MINISTRAL_SUGGESTION
 
     r = resolve_backend()
-    backend = r.get("backend") or "ollama"
+    pick = _provisioning_backend(r)
+    backend = pick["backend"]
     mini = MINISTRAL_SUGGESTION
     if backend == "vllm":
         from src.llm.vllm_lifecycle import model_cache_state
@@ -932,6 +1056,8 @@ def _default_model_plan() -> dict:
         return {
             "backend": "vllm",
             "reason": r.get("reason"),
+            "chosen_because": pick["chosen_because"],
+            "prerequisite": pick["prerequisite"],
             "artifact": mini["vllm_model"],
             "mechanism": "download",
             "mechanism_note": (
@@ -959,6 +1085,8 @@ def _default_model_plan() -> dict:
     return {
         "backend": "ollama",
         "reason": r.get("reason"),
+        "chosen_because": pick["chosen_because"],
+        "prerequisite": pick["prerequisite"],
         "artifact": mini["tag"],
         "mechanism": "pull",
         "mechanism_note": (
@@ -1033,6 +1161,20 @@ def default_model_install() -> dict:
             pass
         job.start(model=plan["artifact"])
         return {**plan, "action": "downloading", "result": job.status()}
+
+    # The symmetric prerequisite check to the vLLM branch above (field report
+    # 2026-08-02). The pull queue accepts any well-formed tag and only discovers the
+    # daemon is missing inside its pump thread, so without this an operator with no
+    # Ollama installed got a cheerful "queued" for a download that could never begin.
+    # A queue that accepts work for an absent worker reports success it cannot deliver.
+    if plan.get("prerequisite") == "ollama":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Ollama is not installed yet, and its pull queue is what downloads "
+                "this model. Install Ollama first, then download the model."
+            ),
+        )
 
     from src.llm.pull_queue import get_pull_manager
 

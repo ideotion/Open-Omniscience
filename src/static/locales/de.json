@@ -2276,6 +2276,7 @@
   "Lost contact with the job.": "Verbindung zur Aufgabe verloren.",
   "vLLM install failed:": "vLLM-Installation fehlgeschlagen:",
   "Model download failed:": "Modell-Download fehlgeschlagen:",
+  "The model download never started — see the message above.": "Der Download des Modells wurde nie gestartet — siehe die Meldung oben.",
   "Installing — this can take several minutes…": "Installation läuft — das kann mehrere Minuten dauern…",
   "Install vLLM": "vLLM installieren",
   "Install Ollama": "Ollama installieren",

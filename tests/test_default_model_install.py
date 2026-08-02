@@ -52,9 +52,21 @@ def _pyfn(name: str) -> str:
 # --------------------------------------------------------------------------- #
 def test_the_plan_uses_the_SAME_resolver_the_pill_and_inference_use():
     """A second copy of "which backend wins" could install for a backend that will not
-    serve — the one failure this feature exists to prevent."""
+    serve — the one failure this feature exists to prevent.
+
+    AMENDED 2026-08-02 (field report "the model does not download"). The plan still
+    reads the ONE resolver — there is no second probe and no second source of truth
+    about what is installed — but it no longer takes the resolver's SELECTION as the
+    download target. Selection answers "who can serve this request now", so it
+    disqualifies a stopped backend; provisioning asks "what will this machine serve
+    with once set up", where not-running-yet is the normal state. On the field machine
+    those differed, and reading selection as a download target queued a pull into a
+    daemon that was not installed. ``_provisioning_backend`` derives the answer from
+    fields ``resolve_backend`` already returns; the full matrix is pinned in
+    tests/test_default_model_backend_choice.py."""
     body = _pyfn("_default_model_plan")
     assert "resolve_backend" in body
+    assert "_provisioning_backend" in body
 
 
 def test_each_backend_gets_its_OWN_artifact():

@@ -2276,6 +2276,7 @@
   "Lost contact with the job.": "ジョブとの通信が途絶えました。",
   "vLLM install failed:": "vLLM のインストールに失敗しました:",
   "Model download failed:": "モデルのダウンロードに失敗しました:",
+  "The model download never started — see the message above.": "モデルのダウンロードは開始されませんでした — 上のメッセージをご確認ください。",
   "Installing — this can take several minutes…": "インストール中 — 数分かかることがあります…",
   "Install vLLM": "vLLM をインストール",
   "Install Ollama": "Ollama をインストール",
