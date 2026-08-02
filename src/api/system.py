@@ -199,11 +199,20 @@ def set_network_mode(payload: dict) -> dict:
     immediately; one already-in-flight HTTP request may still complete (an
     open socket cannot be honestly un-sent) — the UI says so.
     """
-    from src.ingest import activate_kill_switch, clear_kill_switch, kill_switch_active
+    from src.ingest import (
+        activate_kill_switch,
+        clear_kill_switch,
+        kill_switch_active,
+        note_operator_crossed_online,
+    )
 
     online = bool(payload.get("online"))
     if online:
         clear_kill_switch()
+        # THE decision, recorded here rather than inside clear_kill_switch: a slow
+        # background boot upkeep must not re-engage airplane over it (field report
+        # 2026-08-02, "sometimes the app remains in airplane mode with no explanation").
+        note_operator_crossed_online()
     else:
         activate_kill_switch()
     # Online ⟺ collecting (maintainer 2026-06-18): crossing online immediately

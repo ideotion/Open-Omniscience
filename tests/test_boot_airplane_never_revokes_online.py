@@ -65,11 +65,31 @@ def test_crossing_online_is_remembered_as_a_DECISION_not_a_state():
     boot step must not overwrite. If it merely mirrored the current state, an operator
     who went online and then deliberately offline would re-arm the clobber."""
     I.clear_kill_switch()
+    I.note_operator_crossed_online()
     assert I.crossed_online_since_boot() is True
     I.activate_kill_switch()
     assert I.kill_switch_active() is True
     assert I.crossed_online_since_boot() is True, (
         "the decision is remembered even after a later, deliberate go-offline"
+    )
+
+
+def test_clearing_the_switch_is_NOT_by_itself_an_operator_decision():
+    """THE SEPARATION, and the reason it exists. The first cut recorded the decision
+    inside clear_kill_switch(), on the theory that clearing the switch and going
+    online are the same event. They are not: clear_kill_switch is also how a caller
+    reaches a KNOWN STATE -- every kill-switch fixture in this suite starts that way,
+    and so does the boot-engages-airplane test, which called it and then asserted the
+    boot engaged. With the decision folded in, that assertion became unsatisfiable
+    and the whole test lane went red.
+
+    The direction of the failure is what matters: a mechanism that quietly counts as
+    a decision SUPPRESSES the boot airplane engage, which weakens zero-network boot --
+    the non-negotiable this feature was written to leave untouched."""
+    I.clear_kill_switch()
+    assert I.kill_switch_active() is False, "the mechanism still works"
+    assert I.crossed_online_since_boot() is False, (
+        "reaching a known state must never be mistaken for an operator going online"
     )
 
 
@@ -79,7 +99,8 @@ def test_the_boot_engage_is_skipped_once_the_operator_has_crossed_online():
     thread starts, the operator crosses online, and only THEN does the thread reach
     its own airplane block."""
     os.environ.pop("OO_NO_SCHEDULER", None)
-    I.clear_kill_switch()  # the operator's click, mid-upkeep
+    I.clear_kill_switch()             # the operator's click, mid-upkeep...
+    I.note_operator_crossed_online()  # ...which the endpoint records as a decision
     assert I.kill_switch_active() is False
 
     with patch("src.ingest.airplane.install_airplane_socket_guard"):
@@ -97,7 +118,7 @@ def test_a_boot_with_no_operator_decision_STILL_engages_airplane():
     non-negotiable. Skipping the engage whenever the switch happens to be clear would
     turn a first boot into an ONLINE boot."""
     os.environ.pop("OO_NO_SCHEDULER", None)
-    I._KILL.clear()  # clear the STATE without recording a decision
+    I.clear_kill_switch()  # the STATE, with no decision recorded -- see below
     assert I.crossed_online_since_boot() is False
 
     with patch("src.ingest.airplane.install_airplane_socket_guard"):
