@@ -2327,5 +2327,18 @@
   "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score. A magnitude BAND is the provider's own measurement of size, not a statement about consequences: a large quake far from people can matter less than a smaller one beneath a city, which is exactly why a magnitude is never promoted into an urgency tier. Grouping two providers' reports of one event is a deduction from coordinates and time, not a provider statement.": "此图层从不捏造紧急情况。只有当灾害数据提供方（GDACS）自身发布红色警报时才会显示“紧急”；当提供方发布橙色警报，或您保存的关注项超过您自己设定的阈值时，会显示“关注”；“信息”则表示提供方发布的绿色警报、转发的观测，或语料库中近期的时空重合——这只是一个共现提示，绝非因果关系的证据。灾害记录是对所监测信息源报告内容的缓存转发（可能已过时，且仅反映来源报告的内容，并非正在发生的一切）——沉默并不代表安全。仅为计数，没有评分。 震级档位是提供方自己对规模的测量，而非对后果的判断：远离人烟的大地震，可能不如城市之下的较小地震重要——这正是震级绝不会被提升为紧急等级的原因。将两个提供方对同一事件的报告归为一组，是依据坐标与时间的推断，而非提供方的声明。",
   "all {n}": "全部 {n} 条",
   "More in Insights": "更多见「洞察」",
-  "One Lead per family, chosen by the same disclosed order as the full feed — independent sources, then sample magnitude, then recency. Never a score, and nothing is hidden: “All Leads” has every card.": "每个家族一条线索，采用与完整信息流相同的公开排序：独立来源，其次样本量，再次时新性。绝非评分，也没有隐藏任何内容：「全部线索」包含每一张卡片。"
+  "One Lead per family, chosen by the same disclosed order as the full feed — independent sources, then sample magnitude, then recency. Never a score, and nothing is hidden: “All Leads” has every card.": "每个家族一条线索，采用与完整信息流相同的公开排序：独立来源，其次样本量，再次时新性。绝非评分，也没有隐藏任何内容：「全部线索」包含每一张卡片。",
+  "Ingest rhythm": "采集节奏",
+  "not observed yet": "尚未出现",
+  "{total} articles over {occ} occurrence(s), {avg} on average": "{occ} 次出现共 {total} 篇，平均 {avg}",
+  "Ingest rhythm: articles collected by weekday and hour of day (UTC).": "采集节奏：按星期与小时（UTC）统计的采集文章数。",
+  "Hatched = that hour has not come round yet in the recorded span — not a zero.": "斜纹 = 在已记录的时间跨度内该小时尚未再次出现 — 并非零。",
+  "Shading is the AVERAGE articles per occurrence of that weekday-hour (UTC), because slots recur a different number of times in a short window; the hover gives the real total and how many times the slot occurred. Counts only, never a score.": "色深表示该「星期—小时」（UTC）每次出现的平均文章数，因为在较短窗口内各时段出现次数并不相同；悬停会显示真实总数与出现次数。仅为计数，绝非评分。",
+  "Monday": "星期一",
+  "Tuesday": "星期二",
+  "Wednesday": "星期三",
+  "Thursday": "星期四",
+  "Friday": "星期五",
+  "Saturday": "星期六",
+  "Sunday": "星期日"
 }

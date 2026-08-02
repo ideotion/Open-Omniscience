@@ -1164,3 +1164,5 @@
     /* Five views over the same seven panels; visibility only, so every panel
        keeps its own markup, loaders and honest empty states. */
     .lib-view > .panel:first-child { margin-top:0; }
+    .lib-sub { font-size:13px; margin:14px 0 6px; }
+    .lib-rhythm svg { border:1px solid var(--border); border-radius:6px; padding:4px; background:var(--panel2); }

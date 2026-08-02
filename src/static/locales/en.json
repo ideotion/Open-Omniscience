@@ -2327,5 +2327,18 @@
   "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score. A magnitude BAND is the provider's own measurement of size, not a statement about consequences: a large quake far from people can matter less than a smaller one beneath a city, which is exactly why a magnitude is never promoted into an urgency tier. Grouping two providers' reports of one event is a deduction from coordinates and time, not a provider statement.": "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score. A magnitude BAND is the provider's own measurement of size, not a statement about consequences: a large quake far from people can matter less than a smaller one beneath a city, which is exactly why a magnitude is never promoted into an urgency tier. Grouping two providers' reports of one event is a deduction from coordinates and time, not a provider statement.",
   "all {n}": "all {n}",
   "More in Insights": "More in Insights",
-  "One Lead per family, chosen by the same disclosed order as the full feed — independent sources, then sample magnitude, then recency. Never a score, and nothing is hidden: “All Leads” has every card.": "One Lead per family, chosen by the same disclosed order as the full feed — independent sources, then sample magnitude, then recency. Never a score, and nothing is hidden: “All Leads” has every card."
+  "One Lead per family, chosen by the same disclosed order as the full feed — independent sources, then sample magnitude, then recency. Never a score, and nothing is hidden: “All Leads” has every card.": "One Lead per family, chosen by the same disclosed order as the full feed — independent sources, then sample magnitude, then recency. Never a score, and nothing is hidden: “All Leads” has every card.",
+  "Ingest rhythm": "Ingest rhythm",
+  "not observed yet": "not observed yet",
+  "{total} articles over {occ} occurrence(s), {avg} on average": "{total} articles over {occ} occurrence(s), {avg} on average",
+  "Ingest rhythm: articles collected by weekday and hour of day (UTC).": "Ingest rhythm: articles collected by weekday and hour of day (UTC).",
+  "Hatched = that hour has not come round yet in the recorded span — not a zero.": "Hatched = that hour has not come round yet in the recorded span — not a zero.",
+  "Shading is the AVERAGE articles per occurrence of that weekday-hour (UTC), because slots recur a different number of times in a short window; the hover gives the real total and how many times the slot occurred. Counts only, never a score.": "Shading is the AVERAGE articles per occurrence of that weekday-hour (UTC), because slots recur a different number of times in a short window; the hover gives the real total and how many times the slot occurred. Counts only, never a score.",
+  "Monday": "Monday",
+  "Tuesday": "Tuesday",
+  "Wednesday": "Wednesday",
+  "Thursday": "Thursday",
+  "Friday": "Friday",
+  "Saturday": "Saturday",
+  "Sunday": "Sunday"
 }

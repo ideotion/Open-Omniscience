@@ -2327,5 +2327,18 @@
   "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score. A magnitude BAND is the provider's own measurement of size, not a statement about consequences: a large quake far from people can matter less than a smaller one beneath a city, which is exactly why a magnitude is never promoted into an urgency tier. Grouping two providers' reports of one event is a deduction from coordinates and time, not a provider statement.": "यह परत कभी भी तात्कालिकता का आविष्कार नहीं करती। 'अत्यावश्यक' केवल तभी दिखाई देता है जब किसी खतरा-प्रदाता (GDACS) ने स्वयं एक लाल अलर्ट घोषित किया हो; 'निगरानी' तब दिखाई देती है जब प्रदाता का नारंगी अलर्ट हो या आपके द्वारा सहेजी गई कोई निगरानी आपकी अपनी सीमा को पार कर गई हो; 'जानकारी' प्रदाता का हरा अलर्ट, एक प्रसारित अवलोकन, या आपके कॉर्पस में हाल की स्थान-समय संयोग है — यह केवल एक सह-घटना संकेत है, कभी भी कारण का प्रमाण नहीं। खतरा रिकॉर्ड एक निगरानी किए गए फ़ीड द्वारा रिपोर्ट की गई जानकारी का संचित प्रसारण है (यह पुराना हो सकता है, और यह वही दिखाता है जो किसी स्रोत ने रिपोर्ट किया, न कि वह सब कुछ जो वास्तव में हो रहा है) — मौन का अर्थ सुरक्षा नहीं है। केवल गणना, कोई स्कोर नहीं। तीव्रता का बैंड प्रदाता द्वारा आकार का माप है, परिणामों का कथन नहीं: आबादी से दूर आया बड़ा भूकंप किसी शहर के नीचे आए छोटे भूकंप से कम महत्वपूर्ण हो सकता है — इसीलिए तीव्रता को कभी आपात स्तर में नहीं बदला जाता। एक ही घटना पर दो प्रदाताओं की रिपोर्टों को समूहित करना निर्देशांक और समय से निकाला गया अनुमान है, प्रदाता का कथन नहीं।",
   "all {n}": "सभी {n}",
   "More in Insights": "अंतर्दृष्टि में और",
-  "One Lead per family, chosen by the same disclosed order as the full feed — independent sources, then sample magnitude, then recency. Never a score, and nothing is hidden: “All Leads” has every card.": "प्रति परिवार एक सुराग, पूरी फ़ीड के समान प्रकट क्रम से चुना गया — स्वतंत्र स्रोत, फिर नमूना आकार, फिर नवीनता। यह कभी स्कोर नहीं है, और कुछ भी छिपा नहीं है: “सभी सुराग” में हर कार्ड है।"
+  "One Lead per family, chosen by the same disclosed order as the full feed — independent sources, then sample magnitude, then recency. Never a score, and nothing is hidden: “All Leads” has every card.": "प्रति परिवार एक सुराग, पूरी फ़ीड के समान प्रकट क्रम से चुना गया — स्वतंत्र स्रोत, फिर नमूना आकार, फिर नवीनता। यह कभी स्कोर नहीं है, और कुछ भी छिपा नहीं है: “सभी सुराग” में हर कार्ड है।",
+  "Ingest rhythm": "संग्रह लय",
+  "not observed yet": "अभी तक नहीं देखा गया",
+  "{total} articles over {occ} occurrence(s), {avg} on average": "{occ} बार में {total} लेख, औसतन {avg}",
+  "Ingest rhythm: articles collected by weekday and hour of day (UTC).": "संग्रह लय: सप्ताह के दिन और घंटे (UTC) के अनुसार एकत्रित लेख।",
+  "Hatched = that hour has not come round yet in the recorded span — not a zero.": "हैचिंग = दर्ज अवधि में वह घंटा अभी आया ही नहीं — यह शून्य नहीं है।",
+  "Shading is the AVERAGE articles per occurrence of that weekday-hour (UTC), because slots recur a different number of times in a short window; the hover gives the real total and how many times the slot occurred. Counts only, never a score.": "छाया उस सप्ताह-दिन/घंटे (UTC) की प्रत्येक पुनरावृत्ति पर औसत लेख है, क्योंकि छोटी अवधि में स्लॉट अलग-अलग बार आते हैं; होवर पर वास्तविक कुल और पुनरावृत्तियों की संख्या दिखती है। केवल गणनाएँ, कभी स्कोर नहीं।",
+  "Monday": "सोमवार",
+  "Tuesday": "मंगलवार",
+  "Wednesday": "बुधवार",
+  "Thursday": "गुरुवार",
+  "Friday": "शुक्रवार",
+  "Saturday": "शनिवार",
+  "Sunday": "रविवार"
 }

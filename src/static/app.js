@@ -8002,6 +8002,96 @@
     // layer). Honest counts + on-disk byte sizes only, no score; own stamp so the 16s poll
     // only repaints on a real change. The Database section below keeps the store detail.
     let _libOvStamp = "";
+    // -- Ingest rhythm heatmap (2026-08-01 ruling 10) ---------------------- //
+    // The maintainer asked to diversify the app's data-visualization vocabulary.
+    // This is the first activation: a weekday x hour-of-day density grid over the
+    // SAME articles_per_hour series the Activity tiles already fetch — no new
+    // backend, no new poll, and it answers a question a line chart cannot ("when
+    // does my collection actually run?").
+    //
+    // The honesty problem this had to solve: an empty cell is ambiguous. The
+    // backend returns a bucket only for hours that HAVE articles, so a missing
+    // hour inside the observed span is a true zero — but a slot that never
+    // occurred at all (a 3-day-old corpus has no second Tuesday) is NOT a zero,
+    // it is unobserved. Those two are rendered differently and never blended,
+    // the same rule ooMap's no-data hatch follows.
+    const _RHYTHM_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    function _ingestRhythm(series) {
+      const pts = (series || [])
+        .map(p => ({ms: Date.parse(String(p.t).length <= 19 ? p.t + "Z" : p.t), n: +p.n || 0}))
+        .filter(p => isFinite(p.ms));
+      if (!pts.length) return null;
+      const first = Math.min(...pts.map(p => p.ms)), last = Math.max(...pts.map(p => p.ms));
+      // slot = [weekday 0..6 (Mon-first)][hour 0..23]
+      const total = [], seen = [];
+      for (let d = 0; d < 7; d++) { total.push(new Array(24).fill(0)); seen.push(new Array(24).fill(0)); }
+      const slot = (ms) => {
+        const dt = new Date(ms);
+        return [(dt.getUTCDay() + 6) % 7, dt.getUTCHours()];
+      };
+      // Walk every hour of the OBSERVED span so a slot's occurrence count is real:
+      // an average over "times this hour actually came round" is comparable, an
+      // average over an assumed full week is not.
+      const HOUR = 36e5, MAX_HOURS = 24 * 400;   // bounded: a huge window can't hang the UI
+      let steps = 0;
+      for (let ms = first; ms <= last && steps < MAX_HOURS; ms += HOUR, steps++) {
+        const [d, h] = slot(ms); seen[d][h] += 1;
+      }
+      if (steps >= MAX_HOURS) return null;       // honestly render nothing rather than a partial grid
+      pts.forEach(p => { const [d, h] = slot(p.ms); total[d][h] += p.n; });
+      return {total, seen, first, last, n: pts.reduce((a, p) => a + p.n, 0)};
+    }
+    function ingestRhythmSvg(series) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const g = _ingestRhythm(series);
+      if (!g) return "";
+      // Colour by the AVERAGE per occurrence (comparable across slots seen a
+      // different number of times); the hover states both the total and the
+      // occurrences, so the reader can always recover the raw counts.
+      let peak = 0;
+      for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) {
+        if (g.seen[d][h] > 0) peak = Math.max(peak, g.total[d][h] / g.seen[d][h]);
+      }
+      const cw = 15, ch = 15, padL = 34, padT = 16;
+      const w = padL + 24 * cw + 4, hgt = padT + 7 * ch + 16;
+      let cells = "";
+      for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) {
+        const x = padL + h * cw, y = padT + d * ch;
+        const occ = g.seen[d][h];
+        if (!occ) {   // NEVER a zero: this slot did not occur in the observed span
+          cells += `<rect x="${x}" y="${y}" width="${cw - 1}" height="${ch - 1}" fill="url(#rhythm-none)"`
+            + `><title>${esc(t(_RHYTHM_DAYS[d]))} ${h}:00 — ${esc(t("not observed yet"))}</title></rect>`;
+          continue;
+        }
+        const avg = g.total[d][h] / occ;
+        const frac = peak > 0 ? avg / peak : 0;
+        const fill = frac <= 0 ? "var(--panel2)"
+          : `color-mix(in srgb, var(--accent) ${Math.round(12 + frac * 88)}%, var(--panel2))`;
+        const title = `${t(_RHYTHM_DAYS[d])} ${h}:00 — `
+          + t("{total} articles over {occ} occurrence(s), {avg} on average")
+              .replace("{total}", fmtNum(g.total[d][h])).replace("{occ}", String(occ))
+              .replace("{avg}", fmtNum(avg, 1));
+        cells += `<rect x="${x}" y="${y}" width="${cw - 1}" height="${ch - 1}" fill="${fill}"`
+          + ` stroke="var(--border)" stroke-width="0.4"><title>${esc(title)}</title></rect>`;
+      }
+      const dayLabels = _RHYTHM_DAYS.map((d, i) =>
+        `<text x="${padL - 4}" y="${padT + i * ch + 11}" text-anchor="end" font-size="8.5"
+           fill="var(--muted)">${esc(t(d).slice(0, 3))}</text>`).join("");
+      const hourLabels = [0, 6, 12, 18].map(h =>
+        `<text x="${padL + h * cw}" y="${padT - 5}" font-size="8.5" fill="var(--muted)">${h}:00</text>`).join("");
+      return `<div class="lib-rhythm">
+        <svg viewBox="0 0 ${w} ${hgt}" width="100%" style="display:block;max-width:${w}px" role="img"
+             aria-label="${esc(t("Ingest rhythm: articles collected by weekday and hour of day (UTC)."))}">
+          <defs><pattern id="rhythm-none" width="4" height="4" patternUnits="userSpaceOnUse"
+            patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4"
+            stroke="var(--border)" stroke-width="1"></line></pattern></defs>
+          ${dayLabels}${hourLabels}${cells}
+        </svg>
+        <div class="hint muted">${esc(t("Hatched = that hour has not come round yet in the recorded span — not a zero."))}</div>
+        <div class="card-caveat">${esc(t("Shading is the AVERAGE articles per occurrence of that weekday-hour (UTC), because slots recur a different number of times in a short window; the hover gives the real total and how many times the slot occurred. Counts only, never a score."))}</div>
+      </div>`;
+    }
+
     // -- Library subtabs (2026-08-01 ruling 9) ----------------------------- //
     // Seven stacked sections became five views through the ONE universal subtab
     // component (invariant #18). The panels are untouched — this is a regrouping,
@@ -8309,7 +8399,13 @@
           _libGraphTile("keywords", LIB_DEFAULT_DAYS),
           _libQualificationTile(LIB_DEFAULT_DAYS),
         ]);
-        host.innerHTML = `<div class="row" style="flex-wrap:wrap;gap:10px">${tiles.join("")}</div>`;
+        // The rhythm heatmap sits BESIDE the tiles, never instead of them (the
+        // chart-beside-table rule): it reuses the articles_per_hour series
+        // _libGraphTile has already fetched and stashed, so it costs no request.
+        const rhythmSeries = ((_libGraphData.articles_per_hour || {}).series) || [];
+        const rhythm = ingestRhythmSvg(rhythmSeries);
+        host.innerHTML = `<div class="row" style="flex-wrap:wrap;gap:10px">${tiles.join("")}</div>`
+          + (rhythm ? `<h3 class="lib-sub">${esc(t("Ingest rhythm"))}</h3>` + rhythm : "");
         _libRenderQualChart(host);
       } catch (e) {
         host.innerHTML = `<div class="note err">${esc(e.message || e)}</div>`;

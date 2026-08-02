@@ -2327,5 +2327,18 @@
   "This layer never invents urgency. 'Urgent' appears ONLY when a hazard provider (GDACS) itself declared a RED alert; 'watch' appears for a provider ORANGE alert or a watch YOU saved that crossed YOUR own threshold; 'info' is a provider GREEN alert, a relayed observation, or a recent space-time convergence in your corpus — a co-occurrence prompt, never proof of causation. Hazard records are a cached relay of what a watched feed reported (it may be stale, and it shows what a source reported, not everything that is happening) — silence is not safety. Counts only, no score. A magnitude BAND is the provider's own measurement of size, not a statement about consequences: a large quake far from people can matter less than a smaller one beneath a city, which is exactly why a magnitude is never promoted into an urgency tier. Grouping two providers' reports of one event is a deduction from coordinates and time, not a provider statement.": "この層は緊急性を捏造することはありません。「緊急」は、災害情報提供元（GDACS）自身が赤色警報を発した場合にのみ表示されます。「注意」は、提供元のオレンジ警報、またはあなた自身が保存したウォッチがあなた自身のしきい値を超えた場合に表示されます。「情報」は、提供元の緑色警報、転送された観測結果、またはコーパス内の最近の時空間的な一致を示すものであり——因果関係の証拠では決してなく、共起の手がかりに過ぎません。災害記録は、監視対象のフィードが報告した内容のキャッシュされた中継です（古くなっている可能性があり、情報源が報告した内容を示すだけで、実際に起きているすべてを示すものではありません）——沈黙は安全を意味しません。件数のみで、スコアはありません。 マグニチュードの区分は提供元による規模の測定であり、被害についての判断ではありません。人のいない場所での大きな地震は、都市の直下で起きたより小さな地震ほど重大でないこともあります。だからこそマグニチュードが緊急度の段階に格上げされることは決してありません。二つの提供元による一つの事象の報告をまとめるのは、座標と時刻からの推定であり、提供元の見解ではありません。",
   "all {n}": "すべて {n} 件",
   "More in Insights": "インサイトでさらに",
-  "One Lead per family, chosen by the same disclosed order as the full feed — independent sources, then sample magnitude, then recency. Never a score, and nothing is hidden: “All Leads” has every card.": "ファミリーごとに 1 件の手がかりを、フィード全体と同じ公開された順序（独立した情報源 → サンプル規模 → 新しさ）で選んでいます。スコアではなく、何も隠していません。「すべての手がかり」にすべてのカードがあります。"
+  "One Lead per family, chosen by the same disclosed order as the full feed — independent sources, then sample magnitude, then recency. Never a score, and nothing is hidden: “All Leads” has every card.": "ファミリーごとに 1 件の手がかりを、フィード全体と同じ公開された順序（独立した情報源 → サンプル規模 → 新しさ）で選んでいます。スコアではなく、何も隠していません。「すべての手がかり」にすべてのカードがあります。",
+  "Ingest rhythm": "収集リズム",
+  "not observed yet": "まだ観測されていません",
+  "{total} articles over {occ} occurrence(s), {avg} on average": "{occ} 回の出現で {total} 件、平均 {avg}",
+  "Ingest rhythm: articles collected by weekday and hour of day (UTC).": "収集リズム：曜日と時刻（UTC）ごとに収集した記事数。",
+  "Hatched = that hour has not come round yet in the recorded span — not a zero.": "斜線＝記録された期間内でその時刻がまだ巡ってきていません（ゼロではありません）。",
+  "Shading is the AVERAGE articles per occurrence of that weekday-hour (UTC), because slots recur a different number of times in a short window; the hover gives the real total and how many times the slot occurred. Counts only, never a score.": "濃淡はその曜日・時刻（UTC）の 1 回あたりの平均記事数です。短い期間では各スロットの出現回数が異なるためです。ホバーで実際の合計と出現回数を表示します。計数のみで、スコアではありません。",
+  "Monday": "月曜日",
+  "Tuesday": "火曜日",
+  "Wednesday": "水曜日",
+  "Thursday": "木曜日",
+  "Friday": "金曜日",
+  "Saturday": "土曜日",
+  "Sunday": "日曜日"
 }
