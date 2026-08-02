@@ -66,9 +66,20 @@ BENCH_BACKENDS: tuple[str, ...] = ("ollama", "vllm")
 #: exists: ``verify_roster`` matches each one EXACTLY against the backend's own
 #: installed list at run time and refuses what is absent. The maintainer's named
 #: LiquidAI candidate is deliberately NOT written in — see ``UNRESOLVED_CANDIDATES``.
+#: The incumbent is read from the app's OWN constants rather than retyped: the whole
+#: point of the bench is to challenge the current default, so a roster that named a
+#: stale tag would be challenging a model nobody runs.
+def _incumbents() -> tuple[str, ...]:
+    try:
+        from src.llm.ollama import DEFAULT_MODEL, MINISTRAL_TAG, MINISTRAL_VLLM_MODEL
+
+        return (DEFAULT_MODEL, MINISTRAL_TAG, MINISTRAL_VLLM_MODEL)
+    except Exception:  # noqa: BLE001 - a core install still gets a usable roster
+        return ()
+
+
 DEFAULT_ROSTER: tuple[str, ...] = (
-    "ministral-3:8b-instruct-2512-q4_K_M",  # the current Ollama default
-    "ministral-3:3b-instruct-2512-q4_K_M",
+    *_incumbents(),  # the Ollama default, the 3B sibling, and the vLLM repo id
     "mistral:7b",
     "gemma4:e4b",
     "qwen3.5:4b",
