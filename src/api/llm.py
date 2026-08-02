@@ -1740,6 +1740,7 @@ def bulk_llm(
     def _stream():
         import json as _json
 
+        from src.ai_layer.coordinator import user_batch_hold
         from src.llm.concurrency import concurrency_for, run_concurrent
 
         def emit(obj: dict) -> str:
@@ -1750,6 +1751,12 @@ def bulk_llm(
             "to_process": to_process, "already_done": len(already),
             "same_language": len(same_lang), "capped": capped, "model": model,
             "target_language": target if op == "translate" else None,
+            # PREEMPTION (2026-08-01 ruling 13): this is a USER-initiated batch, so
+            # it takes the exclusive hold below and the background-AI coordinator
+            # stands down for its duration (every sweep's cursor persists, and the
+            # lane resumes on its own afterwards). Announced in the start event so
+            # the UI can say so rather than leaving the pause invisible.
+            "pauses_background_ai": True,
         })
         stored = skipped = failed = 0
         from src.database.session import SessionLocal
@@ -1758,7 +1765,11 @@ def bulk_llm(
         # serial (max_workers<=1 is a plain for-loop, byte-identical to before).
         concurrency = concurrency_for(client_backend_name)
 
+        # The hold is released in the context manager's `finally`, so an aborted
+        # stream (a client disconnect, a model outage mid-run) can never strand the
+        # coordinator paused forever.
         try:
+         with user_batch_hold(f"bulk {op}"):
           with SessionLocal() as s:
             i = 0
             n = len(work)

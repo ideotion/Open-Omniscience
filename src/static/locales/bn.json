@@ -2341,5 +2341,9 @@
   "Thursday": "বৃহস্পতিবার",
   "Friday": "শুক্রবার",
   "Saturday": "শনিবার",
-  "Sunday": "রবিবার"
+  "Sunday": "রবিবার",
+  "Start background AI": "ব্যাকগ্রাউন্ড AI চালু করুন",
+  "Pause background AI": "ব্যাকগ্রাউন্ড AI বিরতি দিন",
+  "paused — your batch is running": "বিরতিতে — আপনার ব্যাচ চলছে",
+  "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "এই মেশিনটি স্থানীয় ইনফারেন্সের ব্যবহারযোগ্যতার সীমার নিচে ({r}) — এখানে ব্যাকগ্রাউন্ড AI ডিফল্টে বন্ধ। তবুও আপনি এটি চালু করতে পারেন।"
 }

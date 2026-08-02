@@ -2341,5 +2341,9 @@
   "Thursday": "星期四",
   "Friday": "星期五",
   "Saturday": "星期六",
-  "Sunday": "星期日"
+  "Sunday": "星期日",
+  "Start background AI": "启动后台 AI",
+  "Pause background AI": "暂停后台 AI",
+  "paused — your batch is running": "已暂停 — 你的批处理正在运行",
+  "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "本机低于本地推理的可行性门槛（{r}）— 此处后台 AI 默认关闭。你仍然可以手动启动。"
 }

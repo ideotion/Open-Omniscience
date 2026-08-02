@@ -2341,5 +2341,9 @@
   "Thursday": "Thursday",
   "Friday": "Friday",
   "Saturday": "Saturday",
-  "Sunday": "Sunday"
+  "Sunday": "Sunday",
+  "Start background AI": "Start background AI",
+  "Pause background AI": "Pause background AI",
+  "paused — your batch is running": "paused — your batch is running",
+  "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it."
 }

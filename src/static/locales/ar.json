@@ -2341,5 +2341,9 @@
   "Thursday": "الخميس",
   "Friday": "الجمعة",
   "Saturday": "السبت",
-  "Sunday": "الأحد"
+  "Sunday": "الأحد",
+  "Start background AI": "بدء الذكاء الاصطناعي في الخلفية",
+  "Pause background AI": "إيقاف الذكاء الاصطناعي في الخلفية مؤقتًا",
+  "paused — your batch is running": "متوقف مؤقتًا — دفعتك قيد التشغيل",
+  "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "هذا الجهاز دون حدّ الجدوى للاستدلال المحلي ({r}) — الذكاء الاصطناعي في الخلفية معطّل افتراضيًا هنا. لا يزال بإمكانك تشغيله."
 }

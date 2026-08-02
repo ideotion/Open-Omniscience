@@ -1730,6 +1730,27 @@
            painted via data-running, no multi-hour disabled state), and the description
            is a collapsed detail so the panel reads compactly. Un-keyed English (matches
            this diagnostics panel). Browser-unverified per fork-3. -->
+      <!-- THE BACKGROUND-AI MASTER TOGGLE (2026-08-01 ruling 12a). One coordinated lane
+           instead of three independent sweep toggles that would silently queue behind
+           each other on a backend serving one generation at a time. The per-sweep
+           checkboxes stay visible BELOW it: the master is a convenience, never a hider
+           (informed-consent layering). Un-keyed English, matching this diagnostics
+           panel. Browser-unverified per fork-3. -->
+      <div id="ai-coordinator-box" style="margin-top:10px;padding:8px;border:1px solid var(--border);border-radius:8px">
+        <div class="small" style="font-weight:600">Background AI — coordinated sweeps</div>
+        <div class="hint">Runs the sweeps you enable below one at a time, round-robin, through the active model (Settings → AI). Each sweep keeps its own saved position, so turning this off pauses rather than restarts. A batch YOU start — a bulk translate or summarize, or a manual sweep run — takes priority: this lane stands down for its duration and resumes on its own. Nothing here writes the trusted keyword index.</div>
+        <div class="row" style="margin-top:6px">
+          <button id="aic-toggle-btn" onclick="toggleAiCoordinator(this)" data-running="0" title="Start or pause the coordinated background-AI lane. Every included sweep resumes from its own saved position, so pausing loses no work.">Start background AI</button>
+          <span id="aic-status" class="small" style="margin-left:6px"></span>
+        </div>
+        <div class="row" style="margin-top:6px;gap:12px;flex-wrap:wrap">
+          <label class="small"><input type="checkbox" id="aic-m-keyword_triage" onchange="saveAiSweepMembership()"> Keyword triage</label>
+          <label class="small"><input type="checkbox" id="aic-m-source_tags" onchange="saveAiSweepMembership()"> Source tags</label>
+          <label class="small"><input type="checkbox" id="aic-m-perception_extract" onchange="saveAiSweepMembership()"> When / where / who</label>
+        </div>
+        <div id="aic-hw" class="hint" style="margin-top:4px"></div>
+      </div>
+
       <div id="keyword-triage-box" style="margin-top:10px">
         <div class="small" style="font-weight:600">Keyword triage -- progressive sweep (Section 8)</div>
         <details class="adv-collect" style="margin-top:4px">

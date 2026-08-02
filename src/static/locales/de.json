@@ -2341,5 +2341,9 @@
   "Thursday": "Donnerstag",
   "Friday": "Freitag",
   "Saturday": "Samstag",
-  "Sunday": "Sonntag"
+  "Sunday": "Sonntag",
+  "Start background AI": "Hintergrund-KI starten",
+  "Pause background AI": "Hintergrund-KI pausieren",
+  "paused — your batch is running": "pausiert — Ihr Stapel läuft",
+  "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "Dieser Rechner liegt unter der Praktikabilitätsgrenze für lokale Inferenz ({r}) — Hintergrund-KI ist hier standardmäßig aus. Sie können sie trotzdem starten."
 }

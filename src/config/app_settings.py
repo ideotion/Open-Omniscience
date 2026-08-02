@@ -101,6 +101,18 @@ class AppSettings:
     # verdict then reports overridden=True so the disclosure still shows. Env
     # equivalent: OO_LLM_ALLOW_IMPRACTICAL_HW=1.
     llm_allow_impractical_hw: bool = False
+    # BACKGROUND-AI COORDINATOR (2026-08-01 ruling 12a). ONE master switch runs the
+    # enabled sweeps round-robin through the single backend instead of each having
+    # its own toggle that would silently queue behind the others (Ollama serves one
+    # generation at a time). The per-sweep flags below stay, so the master is a
+    # convenience, never a hider: the operator can always see and set which sweeps
+    # are included. The master's DEFAULT is hardware-aware -- see
+    # coordinator.coordinator_default_enabled() -- and, like every other AI gate
+    # here, is a default rather than a block.
+    ai_background_enabled: bool = False
+    ai_sweep_keyword_triage: bool = True
+    ai_sweep_source_tags: bool = True
+    ai_sweep_perception_extract: bool = True
 
     def __post_init__(self) -> None:
         if self.recipes_disabled is None:
@@ -234,6 +246,22 @@ def load_settings() -> AppSettings:
     if not isinstance(llm_allow_impractical_hw, bool):
         llm_allow_impractical_hw = defaults.llm_allow_impractical_hw
 
+    # The coordinator's master switch + its per-sweep membership flags. Same
+    # read-then-type-check shape as every sibling boolean: a stored non-boolean is
+    # ignored in favour of the documented default rather than coerced into a
+    # meaning it never had.
+    _ai_flags = {}
+    for _name in (
+        "ai_background_enabled",
+        "ai_sweep_keyword_triage",
+        "ai_sweep_source_tags",
+        "ai_sweep_perception_extract",
+    ):
+        _val = raw.get(_name, getattr(defaults, _name))
+        if not isinstance(_val, bool):
+            _val = getattr(defaults, _name)
+        _ai_flags[_name] = _val
+
     llm_backend = raw.get("llm_backend", defaults.llm_backend)
     if llm_backend not in ("auto", "ollama", "vllm"):
         _LOG.warning("ignoring invalid stored llm_backend %r", llm_backend)
@@ -260,6 +288,7 @@ def load_settings() -> AppSettings:
         llm_backend=llm_backend,
         llm_model_vllm=str(llm_model_vllm) if llm_model_vllm else None,
         llm_allow_impractical_hw=llm_allow_impractical_hw,
+        **_ai_flags,
     )
 
 
@@ -356,6 +385,20 @@ def save_settings(updates: dict) -> AppSettings:
         if not isinstance(val, bool):
             raise AppSettingsError("llm_allow_impractical_hw must be a boolean")
         current.llm_allow_impractical_hw = val
+    # The coordinator flags: validated as booleans and REJECTED loudly otherwise
+    # (never silently coerced -- a truthy string must not be able to switch on
+    # hours of background inference the operator did not ask for).
+    for _name in (
+        "ai_background_enabled",
+        "ai_sweep_keyword_triage",
+        "ai_sweep_source_tags",
+        "ai_sweep_perception_extract",
+    ):
+        if _name in updates and updates[_name] is not None:
+            _val = updates[_name]
+            if not isinstance(_val, bool):
+                raise AppSettingsError(f"{_name} must be a boolean")
+            setattr(current, _name, _val)
     if "llm_backend" in updates and updates["llm_backend"] is not None:
         val = updates["llm_backend"]
         if val not in ("auto", "ollama", "vllm"):

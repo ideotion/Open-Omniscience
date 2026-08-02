@@ -4225,7 +4225,15 @@ class KeywordTriageRunBody(BaseModel):
 def _keyword_triage_worker(ctx, **kwargs) -> dict:
     from src.ai_layer.triage_job import run_progressive_triage_job
 
-    return run_progressive_triage_job(ctx, **kwargs)
+    # A MANUAL sweep run is a user-initiated batch (2026-08-01 ruling 13): it
+    # takes the exclusive hold so the coordinator stands down instead of
+    # competing with it for the same single-generation backend. When the
+    # COORDINATOR itself drives this sweep it calls the underlying function
+    # directly, so it never holds against itself.
+    from src.ai_layer.coordinator import user_batch_hold
+
+    with user_batch_hold("manual keyword triage run"):
+        return run_progressive_triage_job(ctx, **kwargs)
 
 
 _KEYWORD_TRIAGE_JOB = register_job(
@@ -4366,7 +4374,15 @@ class SourceTagsRunBody(BaseModel):
 def _source_tags_worker(ctx, **kwargs) -> dict:
     from src.ai_layer.source_tags_job import run_progressive_source_tags_job
 
-    return run_progressive_source_tags_job(ctx, **kwargs)
+    # A MANUAL sweep run is a user-initiated batch (2026-08-01 ruling 13): it
+    # takes the exclusive hold so the coordinator stands down instead of
+    # competing with it for the same single-generation backend. When the
+    # COORDINATOR itself drives this sweep it calls the underlying function
+    # directly, so it never holds against itself.
+    from src.ai_layer.coordinator import user_batch_hold
+
+    with user_batch_hold("manual source tags run"):
+        return run_progressive_source_tags_job(ctx, **kwargs)
 
 
 _SOURCE_TAGS_JOB = register_job(
@@ -4523,7 +4539,15 @@ class PerceptionExtractRunBody(BaseModel):
 def _perception_extract_worker(ctx, **kwargs) -> dict:
     from src.ai_layer.perception_extract_job import run_progressive_perception_extract_job
 
-    return run_progressive_perception_extract_job(ctx, **kwargs)
+    # A MANUAL sweep run is a user-initiated batch (2026-08-01 ruling 13): it
+    # takes the exclusive hold so the coordinator stands down instead of
+    # competing with it for the same single-generation backend. When the
+    # COORDINATOR itself drives this sweep it calls the underlying function
+    # directly, so it never holds against itself.
+    from src.ai_layer.coordinator import user_batch_hold
+
+    with user_batch_hold("manual perception extract run"):
+        return run_progressive_perception_extract_job(ctx, **kwargs)
 
 
 _PERCEPTION_EXTRACT_JOB = register_job(
@@ -4706,3 +4730,82 @@ def qualification_assist_selftest(download: bool = Query(False)) -> JSONResponse
         fname = f"oo-qualification-assist-selftest-{datetime.now().strftime('%Y%m%d')}.json"
         headers["Content-Disposition"] = f'attachment; filename="{fname}"'
     return JSONResponse(log, headers=headers)
+
+
+# --------------------------------------------------------------------------- #
+#  THE BACKGROUND-AI COORDINATOR (2026-08-01 field impressions, rulings 12-13)
+#
+#  One master switch instead of three independent sweep toggles that would
+#  silently queue behind each other on a backend that serves one generation at a
+#  time. The lane runs the ENABLED sweeps round-robin, each resuming from its own
+#  persisted cursor, and stands down while a user-initiated batch holds the model.
+# --------------------------------------------------------------------------- #
+def _ai_coordinator_worker(ctx, **kwargs) -> dict:
+    from src.ai_layer.coordinator import run_coordinator
+
+    return run_coordinator(ctx, **kwargs)
+
+
+_AI_COORDINATOR_JOB = register_job(
+    BackgroundJob(
+        "ai-coordinator", "Background AI (coordinated sweeps)", _ai_coordinator_worker,
+        is_writer=False, cancellable=True,
+    )
+)
+
+
+@router.post("/ai-coordinator/run")
+def ai_coordinator_run() -> JSONResponse:
+    """Start the coordinated background-AI lane (the master toggle's ON action).
+
+    Runs every sweep the operator has ENABLED in Settings, round-robin, one bounded
+    batch each per turn, through whichever backend ``resolve_backend`` selects. Each
+    sweep keeps its OWN persisted cursor, so this never re-does finished work and a
+    cancel loses nothing. Loopback inference is airplane-safe, so this runs offline.
+
+    Refuses (409) when no sweep is enabled -- an empty lane that reported "running"
+    would be a fabricated capability. Re-calling while it runs returns the live
+    status with ``started:false`` rather than erroring."""
+    from src.ai_layer.coordinator import enabled_members
+    from src.api.llm import active_model
+
+    members = enabled_members()
+    if not members:
+        raise HTTPException(
+            status_code=409,
+            detail="No background sweeps are enabled — switch at least one on in Settings → AI.",
+        )
+    try:
+        st = _AI_COORDINATOR_JOB.start(model=active_model())
+        st["started"] = True
+    except RuntimeError:
+        st = _AI_COORDINATOR_JOB.status()
+        st["started"] = False
+    st["members"] = [m.key for m in members]
+    return JSONResponse(st)
+
+
+@router.get("/ai-coordinator/status")
+def ai_coordinator_status() -> JSONResponse:
+    """Live status of the coordinated lane: state, turns taken, which sweeps are
+    included, whether a user batch is currently holding the model, and what the
+    hardware verdict says the master toggle's default should be. Counts only."""
+    from src.ai_layer.coordinator import (
+        coordinator_default_enabled,
+        enabled_members,
+        user_batch_active,
+    )
+
+    st = _AI_COORDINATOR_JOB.status()
+    st["members"] = [{"key": m.key, "label": m.label} for m in enabled_members()]
+    st["user_batch"] = user_batch_active()
+    st["hardware_default"] = coordinator_default_enabled()
+    return JSONResponse(st)
+
+
+@router.post("/ai-coordinator/cancel")
+def ai_coordinator_cancel() -> JSONResponse:
+    """Stop the lane at its next safe point. Every sweep's cursor persists, so
+    switching back on resumes rather than restarting."""
+    _AI_COORDINATOR_JOB.cancel()
+    return JSONResponse(_AI_COORDINATOR_JOB.status())

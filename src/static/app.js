@@ -2011,7 +2011,7 @@
       }
 
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
-      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); loadAiSetup(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
+      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); loadAiSetup(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); syncAiCoordinator(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
       if (cat === "advanced") _advWire();             // Collection / Sources / Keywords, lazily per section
       if (cat === "general") loadShortcuts();         // the shortcuts panel moved into General (2026-07-31)
       if (cat === "cards") loadCardCatalog();     // the Leads catalogue (PR-7): lazy, one loopback read
@@ -13117,6 +13117,87 @@
         }
         out.innerHTML = html;
       } catch (e) { out.textContent = ""; }
+    }
+
+    // ---- THE BACKGROUND-AI MASTER TOGGLE (2026-08-01 ruling 12a) ---------- //
+    // One coordinated lane over the sweeps the operator enables, instead of three
+    // toggles that would queue behind each other on a single-generation backend.
+    // Follows the langdetect/sweep chassis: NEVER holds btn.disabled across a
+    // multi-hour run (a disabled button cannot be clicked to stop it) — state is
+    // painted from data-running, and the poll is independent of the click.
+    let _aicPolling = false;
+    function _paintAiCoordinator(st) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const btn = $("aic-toggle-btn"), out = $("aic-status"), hw = $("aic-hw");
+      if (!btn) return;
+      const running = (st && st.state) === "running";
+      btn.dataset.running = running ? "1" : "0";
+      btn.textContent = running ? t("Pause background AI") : t("Start background AI");
+      if (out) {
+        const held = st && st.user_batch && st.user_batch.held;
+        const parts = [];
+        if (running) parts.push(esc(st.detail || t("running")));
+        else if (st && st.state && st.state !== "idle") parts.push(esc(st.state));
+        // The pause is stated, never left looking like a stall (ruling 13).
+        if (held) parts.push('<span class="pill warn">' + esc(t("paused — your batch is running")) + "</span>");
+        out.innerHTML = parts.join(" · ");
+      }
+      // The hardware verdict is a DEFAULT, never a block: it explains why the master
+      // starts where it does, and the operator's override still turns it on.
+      if (hw && st && st.hardware_default) {
+        hw.textContent = st.hardware_default.default_on
+          ? "" : t("This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.")
+                   .replace("{r}", String(st.hardware_default.reason || ""));
+      }
+    }
+    async function _pollAiCoordinator() {
+      if (_aicPolling) return;
+      _aicPolling = true;
+      try {
+        for (;;) {
+          const st = await api("/api/diagnostics/ai-coordinator/status");
+          _paintAiCoordinator(st);
+          if (st.state !== "running") break;
+          await new Promise(r => setTimeout(r, 4000));
+        }
+      } catch (e) { /* a poll failure must never wedge the button */ }
+      finally { _aicPolling = false; }
+    }
+    async function toggleAiCoordinator(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const on = btn && btn.dataset.running === "1";
+      try {
+        if (on) await api("/api/diagnostics/ai-coordinator/cancel", {method: "POST"});
+        else await api("/api/diagnostics/ai-coordinator/run", {method: "POST"});
+      } catch (e) {
+        toast(_apiErrorMessage ? _apiErrorMessage(e) : (e && e.message) || String(e), "err");
+      }
+      _pollAiCoordinator();
+    }
+    // The per-sweep membership checkboxes: the master coordinates them, it never
+    // hides them — the operator can always see and change which sweeps are included.
+    async function saveAiSweepMembership() {
+      const body = {};
+      ["keyword_triage", "source_tags", "perception_extract"].forEach(k => {
+        const el = $("aic-m-" + k);
+        if (el) body["ai_sweep_" + k] = !!el.checked;
+      });
+      try { await api("/api/settings", {method: "PUT", body: JSON.stringify(body)}); }
+      catch (e) { toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err"); }
+    }
+    async function syncAiCoordinator() {
+      try {
+        const st = await api("/api/diagnostics/ai-coordinator/status");
+        _paintAiCoordinator(st);
+        if (st.state === "running") _pollAiCoordinator();
+      } catch (e) { /* absent backend: leave the panel at its default text */ }
+      try {
+        const s = await api("/api/settings");
+        ["keyword_triage", "source_tags", "perception_extract"].forEach(k => {
+          const el = $("aic-m-" + k);
+          if (el) el.checked = !!s["ai_sweep_" + k];
+        });
+      } catch (e) { /* settings unavailable: the checkboxes stay as rendered */ }
     }
 
     async function togglePerceptionExtract(btn) {

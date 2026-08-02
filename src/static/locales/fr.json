@@ -2341,5 +2341,9 @@
   "Thursday": "jeudi",
   "Friday": "vendredi",
   "Saturday": "samedi",
-  "Sunday": "dimanche"
+  "Sunday": "dimanche",
+  "Start background AI": "Démarrer l'IA en arrière-plan",
+  "Pause background AI": "Suspendre l'IA en arrière-plan",
+  "paused — your batch is running": "en pause — votre lot est en cours",
+  "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "Cette machine est en deçà du seuil de praticabilité de l'inférence locale ({r}) — l'IA en arrière-plan est désactivée par défaut ici. Vous pouvez tout de même la démarrer."
 }

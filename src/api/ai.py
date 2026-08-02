@@ -669,6 +669,16 @@ def advance_langdetect_auto_start(session) -> dict:
 
     if not load_app_settings().ai_langdetect_auto:
         return {"enabled": False}
+    # PREEMPTION (2026-08-01 ruling 13): a user-initiated batch owns the model while
+    # it runs. This ride-along is a background-AI ENTRY POINT, so it checks the SAME
+    # hold the coordinator does -- the 2026-07-24 lesson is that a pause honoured by
+    # only the main loop is silently incomplete, because every other way of starting
+    # equivalent work walks straight past it.
+    from src.ai_layer.coordinator import user_batch_active
+
+    _hold = user_batch_active()
+    if _hold["held"]:
+        return {"enabled": True, "skipped": f"a user batch is running ({', '.join(_hold['holders'])})"}
     # Cheapest check first, and semantically the right one to lead with: if the job
     # is ALREADY running there is nothing to start, so no other probe is relevant.
     if _LANGDETECT_JOB.status().get("state") == "running":
