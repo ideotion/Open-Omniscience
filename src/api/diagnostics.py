@@ -3193,9 +3193,18 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # B6.2/B6.3: the last saved who/where/when EXTRACTION sweep summary (read-only;
         # never RUNS a sweep -- that is its own background job, /perception-extract/run).
         ("perception-extract-run.json", lambda: perception_extract_last()),
+        # E-S2 (2026-08-01): the newest COMPARATIVE model-bench artifact, summarised
+        # (every metric, without the hundreds of per-term answers per pair). Read-only
+        # -- running the bench is a heavy operator job, never a bundle member.
+        ("model-bench.json", lambda: model_bench_last(full=False)),
         # B7.1: the whole dual-backend AI stack snapshot -- backend/hardware facts,
         # active model, context settings, and every AI job's last saved summary.
-        ("ai.json", lambda: ai_diagnostics()),
+        # Called DIRECTLY, so both arguments are passed explicitly: a FastAPI default
+        # (Depends/Query) is only resolved when FastAPI itself calls the function, and
+        # Query(False) is a truthy object — a bare ai_diagnostics() here would take the
+        # measure_corpus branch and hand article_length_report a Depends sentinel. The
+        # file's own convention for a db-taking member (leads_quality below) is the fix.
+        ("ai.json", lambda: ai_diagnostics(measure_corpus=False, db=db)),
         # B7.2: the qualification-assist self-test + the newest saved proposals run
         # (across every source ever checked -- read-only, never runs a new check).
         ("qualification-assist-selftest.json", lambda: qualification_assist_selftest(download=False)),
@@ -3385,6 +3394,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/ai": "ai.json",
     "/qualification-assist-selftest": "qualification-assist-selftest.json",
     "/qualification-assist/last": "qualification-assist-run.json",
+    "/model-bench/last": "model-bench.json",
     # transversal audit 09 (2026-07-25), C2: /fixity is a genuine diagnostic-shaped
     # report (a local re-hash audit) that happened to live in the SIBLING
     # src/api/integrity.py router -- see _DIAG_SIBLING_FILES below, which is what
@@ -3408,6 +3418,24 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/source-tags/status": "job control", "/source-tags/download": "job control",
     "/perception-extract/status": "job control", "/perception-extract/download": "job control",
     "/perception-extract/gate": "job control — a live, cheap gate preview, not a static report",
+    "/ai-coordinator/status": "job control — the background-AI lane's live state",
+    "/model-bench/status": "job control", "/model-bench/download": "job control",
+    "/model-bench/batch": (
+        "the frozen bench INPUT's own summary — the RESULTS ride the bundle as "
+        "model-bench.json, and that member already states the batch digest it answered"
+    ),
+    "/model-bench/anchors": (
+        "the interactive grading sitting (and its sample), not a report — the anchors' "
+        "effect is reported inside model-bench.json as anchor accuracy"
+    ),
+    "/model-bench/gates": (
+        "a LIVE per-language gate view computed from the bench artifact, not a static "
+        "report — the artifact itself (model-bench.json) is the bundle member"
+    ),
+    "/model-bench/roster": (
+        "a LIVE per-backend installed-tag probe, not a static report — the bench artifact "
+        "already records which pairs ran and which were refused, and why"
+    ),
     "/card-audit/status": "job control", "/card-audit/download": "job control",
     "/card-audit/preflight": (
         "a live, cheap size ESTIMATE for a deep run, not a static report — the "
@@ -3704,6 +3732,12 @@ def _all_diagnostics_manifest(
             {
                 "endpoint": "/api/diagnostics/source-coverage-benchmark",
                 "reason": "same class: a heavy operator-run benchmark",
+            },
+            {
+                "endpoint": "/api/diagnostics/model-bench/run",
+                "reason": "the comparative model bench loads every roster model in turn "
+                "and can run for hours — operator-run from its own button on the machine "
+                "that hosts the models. Its RESULT rides the bundle as model-bench.json",
             },
             {
                 "endpoint": "/api/diagnostics/ir-eval",
@@ -4225,7 +4259,15 @@ class KeywordTriageRunBody(BaseModel):
 def _keyword_triage_worker(ctx, **kwargs) -> dict:
     from src.ai_layer.triage_job import run_progressive_triage_job
 
-    return run_progressive_triage_job(ctx, **kwargs)
+    # A MANUAL sweep run is a user-initiated batch (2026-08-01 ruling 13): it
+    # takes the exclusive hold so the coordinator stands down instead of
+    # competing with it for the same single-generation backend. When the
+    # COORDINATOR itself drives this sweep it calls the underlying function
+    # directly, so it never holds against itself.
+    from src.ai_layer.coordinator import user_batch_hold
+
+    with user_batch_hold("manual keyword triage run"):
+        return run_progressive_triage_job(ctx, **kwargs)
 
 
 _KEYWORD_TRIAGE_JOB = register_job(
@@ -4366,7 +4408,15 @@ class SourceTagsRunBody(BaseModel):
 def _source_tags_worker(ctx, **kwargs) -> dict:
     from src.ai_layer.source_tags_job import run_progressive_source_tags_job
 
-    return run_progressive_source_tags_job(ctx, **kwargs)
+    # A MANUAL sweep run is a user-initiated batch (2026-08-01 ruling 13): it
+    # takes the exclusive hold so the coordinator stands down instead of
+    # competing with it for the same single-generation backend. When the
+    # COORDINATOR itself drives this sweep it calls the underlying function
+    # directly, so it never holds against itself.
+    from src.ai_layer.coordinator import user_batch_hold
+
+    with user_batch_hold("manual source tags run"):
+        return run_progressive_source_tags_job(ctx, **kwargs)
 
 
 _SOURCE_TAGS_JOB = register_job(
@@ -4523,7 +4573,15 @@ class PerceptionExtractRunBody(BaseModel):
 def _perception_extract_worker(ctx, **kwargs) -> dict:
     from src.ai_layer.perception_extract_job import run_progressive_perception_extract_job
 
-    return run_progressive_perception_extract_job(ctx, **kwargs)
+    # A MANUAL sweep run is a user-initiated batch (2026-08-01 ruling 13): it
+    # takes the exclusive hold so the coordinator stands down instead of
+    # competing with it for the same single-generation backend. When the
+    # COORDINATOR itself drives this sweep it calls the underlying function
+    # directly, so it never holds against itself.
+    from src.ai_layer.coordinator import user_batch_hold
+
+    with user_batch_hold("manual perception extract run"):
+        return run_progressive_perception_extract_job(ctx, **kwargs)
 
 
 _PERCEPTION_EXTRACT_JOB = register_job(
@@ -4633,16 +4691,51 @@ def perception_extract_download() -> Response:
     )
 
 
+# Language -> script, for sizing the context window in CHARACTERS. Only the
+# scripts src.ai_layer.context knows a chars-per-word estimate for appear here; a
+# language absent from this map falls back to "latin", which is the conservative
+# direction (it over-estimates characters per word, so the window is sized a little
+# large rather than a little short).
+_SCRIPT_OF_LANG = {
+    "ru": "cyrillic", "uk": "cyrillic", "bg": "cyrillic", "sr": "cyrillic", "mk": "cyrillic",
+    "el": "greek", "ar": "arabic", "fa": "arabic", "ur": "arabic", "he": "hebrew",
+    "hi": "devanagari", "mr": "devanagari", "ne": "devanagari", "bn": "bengali",
+    "th": "thai", "zh": "cjk", "ja": "cjk", "ko": "cjk",
+}
+
+
 @router.get("/ai")
-def ai_diagnostics() -> JSONResponse:
+def ai_diagnostics(
+    measure_corpus: bool = Query(False), db: Session = Depends(get_db)
+) -> JSONResponse:
     """B7.1 (2026-07-24 Session B): a secret-safe, read-only snapshot of the whole
     dual-backend AI stack -- which backend is active and why (hardware detection
     facts), the active model, context/concurrency settings, and the last saved
     summary of every AI-layer background job. Never runs anything; rides the
-    all-diagnostics bundle by default."""
+    all-diagnostics bundle by default.
+
+    ``measure_corpus`` (E-S4, 2026-08-01) additionally measures the article-length
+    distribution so the Ollama context auto-tune can size the window to the corpus
+    that actually exists. OFF by default and deliberately so: that measurement is a
+    full-table pass, and a bundle member that quietly ran one would make reading the
+    AI settings the most expensive click in diagnostics. Without it the auto-tune
+    reports UNMEASURED and names this flag, rather than proposing a number from
+    nothing."""
     from src.monitoring.ai_diagnostics import ai_diagnostics_report
 
-    return JSONResponse(ai_diagnostics_report())
+    corpus = None
+    if measure_corpus:
+        from src.analytics.article_length import article_length_report
+
+        report = article_length_report(db)
+        by_lang = report.get("word_count_by_language") or {}
+        # The dominant language's own p95, not the corpus-wide one: the window is
+        # spent on characters, and a corpus-wide word figure mixes scripts whose
+        # characters-per-word differ by more than the figure itself.
+        top = max(by_lang.items(), key=lambda kv: (kv[1] or {}).get("n") or 0, default=None)
+        if top and not (top[1] or {}).get("unsegmented"):
+            corpus = {"p95_words": (top[1] or {}).get("p95"), "script": _SCRIPT_OF_LANG.get(top[0], "latin")}
+    return JSONResponse(ai_diagnostics_report(corpus))
 
 
 # ---------------------------------------------------------------------------
@@ -4706,3 +4799,407 @@ def qualification_assist_selftest(download: bool = Query(False)) -> JSONResponse
         fname = f"oo-qualification-assist-selftest-{datetime.now().strftime('%Y%m%d')}.json"
         headers["Content-Disposition"] = f'attachment; filename="{fname}"'
     return JSONResponse(log, headers=headers)
+
+
+# --------------------------------------------------------------------------- #
+#  THE BACKGROUND-AI COORDINATOR (2026-08-01 field impressions, rulings 12-13)
+#
+#  One master switch instead of three independent sweep toggles that would
+#  silently queue behind each other on a backend that serves one generation at a
+#  time. The lane runs the ENABLED sweeps round-robin, each resuming from its own
+#  persisted cursor, and stands down while a user-initiated batch holds the model.
+# --------------------------------------------------------------------------- #
+def _ai_coordinator_worker(ctx, **kwargs) -> dict:
+    from src.ai_layer.coordinator import run_coordinator
+
+    return run_coordinator(ctx, **kwargs)
+
+
+_AI_COORDINATOR_JOB = register_job(
+    BackgroundJob(
+        "ai-coordinator", "Background AI (coordinated sweeps)", _ai_coordinator_worker,
+        is_writer=False, cancellable=True,
+    )
+)
+
+
+@router.post("/ai-coordinator/run")
+def ai_coordinator_run() -> JSONResponse:
+    """Start the coordinated background-AI lane (the master toggle's ON action).
+
+    Runs every sweep the operator has ENABLED in Settings, round-robin, one bounded
+    batch each per turn, through whichever backend ``resolve_backend`` selects. Each
+    sweep keeps its OWN persisted cursor, so this never re-does finished work and a
+    cancel loses nothing. Loopback inference is airplane-safe, so this runs offline.
+
+    Refuses (409) when no sweep is enabled -- an empty lane that reported "running"
+    would be a fabricated capability. Re-calling while it runs returns the live
+    status with ``started:false`` rather than erroring."""
+    from src.ai_layer.coordinator import enabled_members
+    from src.api.llm import active_model
+
+    members = enabled_members()
+    if not members:
+        raise HTTPException(
+            status_code=409,
+            detail="No background sweeps are enabled — switch at least one on in Settings → AI.",
+        )
+    try:
+        st = _AI_COORDINATOR_JOB.start(model=active_model())
+        st["started"] = True
+    except RuntimeError:
+        st = _AI_COORDINATOR_JOB.status()
+        st["started"] = False
+    st["members"] = [m.key for m in members]
+    return JSONResponse(st)
+
+
+@router.get("/ai-coordinator/status")
+def ai_coordinator_status() -> JSONResponse:
+    """Live status of the coordinated lane: state, turns taken, which sweeps are
+    included, whether a user batch is currently holding the model, and what the
+    hardware verdict says the master toggle's default should be. Counts only."""
+    from src.ai_layer.coordinator import (
+        coordinator_default_enabled,
+        enabled_members,
+        user_batch_active,
+    )
+
+    st = _AI_COORDINATOR_JOB.status()
+    st["members"] = [{"key": m.key, "label": m.label} for m in enabled_members()]
+    st["user_batch"] = user_batch_active()
+    st["hardware_default"] = coordinator_default_enabled()
+    return JSONResponse(st)
+
+
+@router.post("/ai-coordinator/cancel")
+def ai_coordinator_cancel() -> JSONResponse:
+    """Stop the lane at its next safe point. Every sweep's cursor persists, so
+    switching back on resumes rather than restarting."""
+    _AI_COORDINATOR_JOB.cancel()
+    return JSONResponse(_AI_COORDINATOR_JOB.status())
+
+
+# --------------------------------------------------------------------------- #
+#  E-S2 (2026-08-01 rulings 14-16): the COMPARATIVE model bench.
+#
+#  The maintainer's question -- "does the ruled default model deserve to stay the
+#  default, and how do the small candidates compare?" -- is answered by a
+#  measurement, not an opinion. These endpoints build the FROZEN inputs once, take
+#  the ~50-keyword grading sitting once, and then run every roster model on every
+#  backend that serves it over exactly those inputs. Nothing here changes the
+#  active model: the bench MEASURES, the decision is the maintainer's, made on the
+#  verified logs (ai-proposed -> claude-verified -> maintainer-merged).
+# --------------------------------------------------------------------------- #
+class ModelBenchBatchBody(BaseModel):
+    target_size: int = Field(
+        default=450, ge=20, le=2000,
+        description="how many keywords the frozen batch carries (~400-500 is the ruled size)",
+    )
+    source_sample: int = Field(
+        default=20, ge=1, le=200,
+        description="how many sources carry the tag-assignment evidence",
+    )
+    scan_limit: int = Field(
+        default=20000, ge=100, le=200000,
+        description="how deep into the article-spread order the sample is drawn from",
+    )
+
+
+class ModelBenchAnchorsBody(BaseModel):
+    anchors: list[dict] = Field(
+        description=(
+            "the grading sitting: [{term, verdict: junk|content|unsure, kind?: "
+            "person|org|place|other}]. An unknown verdict/kind is REFUSED, not "
+            "snapped to a near value; a term graded twice is refused rather than "
+            "letting one grade silently win."
+        )
+    )
+
+
+class ModelBenchRunBody(BaseModel):
+    models: list[str] | None = Field(
+        default=None,
+        description=(
+            "the roster to bench; omitted uses the ruled default roster. Every tag is "
+            "matched EXACTLY against the backend's own installed list and REFUSED when "
+            "absent -- a close tag would benchmark a different model than the one named."
+        ),
+    )
+    extra_models: list[str] | None = Field(
+        default=None,
+        description=(
+            "additional verified tags -- this is where a candidate whose exact tag was "
+            "confirmed on the rig goes (e.g. the named LiquidAI LFM model)."
+        ),
+    )
+    backends: list[str] | None = Field(
+        default=None, description="ollama and/or vllm; omitted tries both"
+    )
+    repeats: int = Field(default=2, ge=1, le=10, description="timed calls per latency shape")
+    restart: bool = Field(
+        default=False, description="ignore the saved cursor and re-measure every pair"
+    )
+    allow_backend_switch: bool = Field(
+        default=False,
+        description=(
+            "let the bench RESTART the vLLM server between models. vLLM serves one model "
+            "per server, so without this only the currently-served model is benched there. "
+            "Never downloads weights -- a pull stays a consented job."
+        ),
+    )
+
+
+def _model_bench_worker(ctx, **kwargs) -> dict:
+    from src.ai_layer.model_bench import run_model_bench
+
+    return run_model_bench(ctx, **kwargs)
+
+
+_MODEL_BENCH_JOB = register_job(
+    BackgroundJob(
+        "model-bench", "Comparative model bench (every roster model, same frozen inputs)",
+        _model_bench_worker, is_writer=False, cancellable=True,
+    )
+)
+
+
+@router.post("/model-bench/batch")
+def model_bench_build_batch(
+    body: ModelBenchBatchBody, db: Session = Depends(get_db)
+) -> JSONResponse:
+    """Build and freeze the bench inputs: a stratified keyword sample (equal
+    per-language quotas, head and tail apart), the source evidence, and the corpus's
+    own closed tag vocabulary. Read-only on the corpus.
+
+    Building a fresh batch per model would make the numbers LOOK comparable while
+    measuring different work, so this is done once and every run reads it back --
+    each bench report carries the batch's digest, and a resume whose digest moved is
+    refused rather than blending two input sets."""
+    from src.ai_layer.bench_batch import collect_frozen_inputs, save_frozen_batch
+
+    payload = collect_frozen_inputs(
+        db,
+        scan_limit=body.scan_limit,
+        source_sample=body.source_sample,
+        target_size=body.target_size,
+    )
+    path = save_frozen_batch(payload)
+    out = {k: v for k, v in payload.items() if k not in ("keywords", "sources")}
+    out["path"] = str(path)
+    return JSONResponse(out)
+
+
+@router.get("/model-bench/batch")
+def model_bench_batch() -> JSONResponse:
+    """The frozen batch's summary (strata, digest, sizes) without its rows. Honest
+    ``{available:false}`` with the reason when none has been built."""
+    from src.ai_layer.bench_batch import BenchArtifactError, load_frozen_batch
+
+    try:
+        payload = load_frozen_batch()
+    except BenchArtifactError as exc:
+        return JSONResponse({"available": False, "reason": str(exc)})
+    out = {k: v for k, v in payload.items() if k not in ("keywords", "sources")}
+    out["available"] = True
+    return JSONResponse(out)
+
+
+@router.get("/model-bench/anchors")
+def model_bench_anchors(sample: int = Query(0, ge=0, le=500)) -> JSONResponse:
+    """The graded anchors, or -- with ``sample=N`` -- N terms drawn FROM the frozen
+    batch to put in front of the maintainer for grading.
+
+    The anchors are what turn "the models agree" into "the models are right", and
+    they are drawn from the batch precisely so every graded term is one the models
+    are actually asked about."""
+    from src.ai_layer.bench_batch import BenchArtifactError, anchor_candidates, load_anchors
+
+    if sample:
+        from src.ai_layer.bench_batch import load_frozen_batch
+
+        try:
+            batch = load_frozen_batch()
+        except BenchArtifactError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return JSONResponse({"candidates": anchor_candidates(batch, sample)})
+    existing = load_anchors()
+    if not existing:
+        return JSONResponse(
+            {
+                "available": False,
+                "note": (
+                    "no anchors have been graded yet -- anchor accuracy will report as "
+                    "UNMEASURED, which is what it is. Ask for ?sample=50 to start a sitting."
+                ),
+            }
+        )
+    existing["available"] = True
+    return JSONResponse(existing)
+
+
+@router.post("/model-bench/anchors")
+def model_bench_save_anchors(body: ModelBenchAnchorsBody) -> JSONResponse:
+    """Persist a grading sitting. Graded ONCE, reused across every model and every
+    future run. 400 (loudly) on a malformed grade rather than repairing it."""
+    from src.ai_layer.bench_batch import BenchArtifactError, build_anchors, save_anchors
+
+    try:
+        payload = build_anchors(body.anchors)
+    except BenchArtifactError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    payload["path"] = str(save_anchors(payload))
+    return JSONResponse(payload)
+
+
+@router.get("/model-bench/roster")
+def model_bench_roster() -> JSONResponse:
+    """The requested roster against what each backend ACTUALLY serves right now --
+    the live verification the bench itself performs, previewable before a run so an
+    absent tag is discovered before an evening of measurement, not during it."""
+    from src.ai_layer.model_bench import (
+        BENCH_BACKENDS,
+        DEFAULT_ROSTER,
+        UNRESOLVED_CANDIDATES,
+        _installed_by_backend,
+        resolve_pairs,
+    )
+
+    installed = _installed_by_backend(BENCH_BACKENDS)
+    runnable, skipped = resolve_pairs(models=list(DEFAULT_ROSTER), installed_by_backend=installed)
+    return JSONResponse(
+        {
+            "requested": list(DEFAULT_ROSTER),
+            "runnable": runnable,
+            "skipped": skipped,
+            "installed_by_backend": installed,
+            "unresolved_candidates": list(UNRESOLVED_CANDIDATES),
+            "method": (
+                "Each tag is matched EXACTLY against the backend's own installed list; "
+                "a missing tag is refused, never substituted."
+            ),
+        }
+    )
+
+
+@router.post("/model-bench/run")
+def model_bench_run(body: ModelBenchRunBody) -> JSONResponse:
+    """Start (or resume) the comparative bench as a cancellable background job.
+
+    Resumable PER PAIR: a cancelled or crashed run keeps the pairs it finished. It
+    never changes the active model and never downloads weights. 409 while the frozen
+    batch is missing -- the comparison has no meaning without it."""
+    from src.ai_layer.bench_batch import BenchArtifactError, load_frozen_batch
+    from src.ai_layer.model_bench import BENCH_BACKENDS
+
+    try:
+        load_frozen_batch()
+    except BenchArtifactError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    try:
+        st = _MODEL_BENCH_JOB.start(
+            models=body.models,
+            extra_models=body.extra_models,
+            backends=tuple(body.backends or BENCH_BACKENDS),
+            repeats=body.repeats,
+            restart=body.restart,
+            allow_backend_switch=body.allow_backend_switch,
+        )
+        st["started"] = True
+    except RuntimeError:
+        st = _MODEL_BENCH_JOB.status()
+        st["started"] = False
+    return JSONResponse(st)
+
+
+@router.get("/model-bench/status")
+def model_bench_status() -> JSONResponse:
+    """Progress: which (model, backend) pair is being measured, and on which task."""
+    return JSONResponse(_MODEL_BENCH_JOB.status())
+
+
+@router.post("/model-bench/cancel")
+def model_bench_cancel() -> JSONResponse:
+    """Stop at the next safe point. Finished pairs are kept; the next run resumes."""
+    _MODEL_BENCH_JOB.cancel()
+    return JSONResponse(_MODEL_BENCH_JOB.status())
+
+
+@router.get("/model-bench/last")
+def model_bench_last(full: bool = Query(False)) -> JSONResponse:
+    """The newest saved bench artifact, SUMMARISED by default (every metric, without
+    the hundreds of per-term answers per pair). ``full=1`` returns the raw artifact --
+    the per-term answers are what a verification session re-judges."""
+    from src.ai_layer.model_bench import last_model_bench_report
+
+    return JSONResponse(last_model_bench_report(summary=not full))
+
+
+@router.get("/model-bench/download")
+def model_bench_download() -> Response:
+    """Serve the newest bench artifact whole -- the ONE log the maintainer uploads
+    for the verification chain. 404 until a run has produced one."""
+    from src.ai_layer.bench_batch import bench_dir
+
+    files = sorted(bench_dir().glob("oo-model-bench-*.json"))
+    if not files:
+        raise HTTPException(
+            status_code=404,
+            detail="no model-bench artifact yet -- start one with "
+            "POST /api/diagnostics/model-bench/run",
+        )
+    return FileResponse(files[-1], media_type="application/json", filename=files[-1].name)
+
+
+@router.get("/model-bench/gates")
+def model_bench_gates(model: str | None = Query(None)) -> JSONResponse:
+    """The per-language task gates the newest bench artifact supports (read-only).
+
+    Two shapes, and the difference is the point rather than an implementation
+    detail. Triage and source tags know an item's language BEFORE the call, so their
+    gates LICENSE: an unmeasured language refuses, because running there would be
+    unmeasured work. Language detection does not know the language before the call --
+    that is the question -- so its gate is a VETO on the ANSWER: only a label the
+    bench measured this model getting wrong more often than right is refused, and a
+    label the gold set never covered is stored exactly as it always was. Refusing
+    those would disable detection for languages nobody tested rather than for
+    languages that failed.
+
+    WIRED TODAY: the langdetect veto (it STORES a label, so a measured-wrong answer
+    has to be stopped). The triage and source-tag gates are computed and shown but
+    not yet applied at selection -- both sweeps are EXPORT-ONLY JSONL reviewed by the
+    verification chain, so an unreliable verdict there is already caught by a human
+    before it becomes an artifact.
+    """
+    from src.ai_layer.task_gates import (
+        GATED_TASKS,
+        MIN_ANSWER_PRECISION,
+        MIN_FORMAT_VALIDITY,
+        MIN_OBSERVATIONS,
+        current_task_gate,
+    )
+
+    return JSONResponse(
+        {
+            "gates": {task: current_task_gate(task, model=model) for task in GATED_TASKS},
+            "wired": ["langdetect"],
+            "floors": {
+                "min_format_validity": MIN_FORMAT_VALIDITY,
+                "min_answer_precision": MIN_ANSWER_PRECISION,
+                "min_observations": MIN_OBSERVATIONS,
+            },
+            "method": (
+                "Read from the newest comparative-bench artifact. Triage/source-tag gates "
+                "license (unmeasured refuses); the langdetect gate vetoes (only a measured "
+                "failure refuses). Tri-state throughout: cleared / failed / unmeasured, "
+                "never collapsed into each other."
+            ),
+            "caveat": (
+                "The floors are JUDGEMENTS, written in src/ai_layer/task_gates.py so the "
+                "first real bench run can revise them on evidence. They are deliberately "
+                "low: the gold sets are small, and a stricter floor would be a number "
+                "nobody measured. Empty gates mean no bench has run — not that everything "
+                "passed."
+            ),
+        }
+    )

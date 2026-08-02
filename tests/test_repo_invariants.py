@@ -8188,3 +8188,146 @@ def test_library_is_five_subtab_views_with_lazy_loaders():
     assert '_libView === "coverage"' in poller and '_libView === "storage"' in poller, (
         "the live poller must not refresh a Library view nobody is looking at"
     )
+
+
+def test_background_ai_coordinator_is_wired_end_to_end():
+    """E-S1 (2026-08-01 rulings 12-13): ONE master toggle drives a coordinator lane,
+    and the per-sweep membership stays VISIBLE beneath it — the master is a
+    convenience, never a hider (informed-consent layering).
+
+    The composed-route check is the 1c lesson: assert the frontend's path against
+    prefix + decorator, never the two strings side by side."""
+    import re
+
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert 'prefix="/api/diagnostics"' in diag
+    backend = {
+        "/api/diagnostics" + m
+        for m in re.findall(r'@router\.(?:get|post)\("(/ai-coordinator/[a-z]+)"\)', diag)
+    }
+    src = _ui_source()
+    frontend = set(re.findall(r'"(/api/diagnostics/ai-coordinator/[a-z]+)"', src))
+    assert frontend, "the frontend calls no coordinator route"
+    assert not (frontend - backend), f"no backend route for: {frontend - backend}"
+    assert {"/api/diagnostics/ai-coordinator/" + a for a in ("run", "status", "cancel")} <= backend
+
+    # The per-sweep checkboxes are still there, and still writable.
+    for key in ("keyword_triage", "source_tags", "perception_extract"):
+        assert f'id="aic-m-{key}"' in src, f"the {key} membership checkbox must stay visible"
+    assert "saveAiSweepMembership" in src
+
+
+def test_model_bench_freezes_its_inputs_and_is_wired_end_to_end():
+    """E-S2 (2026-08-01 rulings 14-16): the comparative bench.
+
+    The property worth guarding is not that the buttons exist but that the INPUTS are
+    frozen: a bench that re-sampled between models would produce a table that looks
+    comparable and is not. So the batch is loaded (never rebuilt) by the runner, the
+    report carries the batch digest, and a resume across a changed digest is refused.
+    """
+    import re
+
+    mb = (_SRC / "ai_layer" / "model_bench.py").read_text(encoding="utf-8")
+    run = mb.split("def run_model_bench(", 1)[1].split("\ndef ", 1)[0]
+    assert "BB.load_frozen_batch()" in run, "the runner LOADS the frozen batch, never builds one"
+    assert "frozen-batch-changed" in run, "a resume across changed inputs must be refused"
+    assert "clear_cursor()" in run, "a completed run must not leave a cursor behind"
+
+    # The roster is a REQUEST list: nothing is substituted for a missing tag, and the
+    # unverified candidate is a note rather than an invented catalog entry.
+    assert "verify_roster" in mb
+    assert "lfm" not in " ".join(re.findall(r'DEFAULT_ROSTER[^)]+\)', mb)).lower()
+
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    backend = {
+        "/api/diagnostics" + m
+        for m in re.findall(r'@router\.(?:get|post)\("(/model-bench/[a-z-]+)"\)', diag)
+    }
+    src = _ui_source()
+    frontend = set(re.findall(r'"(/api/diagnostics/model-bench/[a-z-]+)[?"]', src + '"'))
+    assert frontend, "the frontend calls no model-bench route"
+    assert not (frontend - backend), f"no backend route for: {frontend - backend}"
+    assert {"/api/diagnostics/model-bench/" + a for a in ("batch", "anchors", "run", "status")} <= backend
+
+    # The bench is bundle-EXCLUDED as a heavy operator run, and says so; its RESULT
+    # rides the bundle read-only.
+    assert '"/model-bench/last": "model-bench.json"' in diag
+    excluded_block = diag.split('"excluded": [', 1)[1].split("\n        ],", 1)[0]
+    assert "/api/diagnostics/model-bench/run" in excluded_block
+
+
+def test_the_two_gate_shapes_stay_opposite_on_unmeasured_input():
+    """E-S3 (2026-08-01): a licensing gate and a veto look alike and behave oppositely
+    where it counts. Both directions are pinned in their own suites; this guards the
+    WIRING, because swapping them would be invisible in a diff and catastrophic in
+    the field: the perception gate would start licensing untested strata, and the
+    langdetect veto would silently disable every language the gold set never covered."""
+    import re
+
+    ld = (_SRC / "ai_layer" / "langdetect_llm.py").read_text(encoding="utf-8")
+    body = ld.split("def detect_for_articles(", 1)[1]
+    assert "answer_vetoed" in body and "task_gate(" not in body, (
+        "language detection must VETO its answer, never LICENSE by input language — "
+        "the language is the question, so an input gate there is incoherent"
+    )
+    pe = (_SRC / "ai_layer" / "perception_extract.py").read_text(encoding="utf-8")
+    batch = pe.split("def extract_perception_batch(", 1)[1]
+    assert "field_gate(" in batch, "extraction must decide STORAGE field by field"
+    assert "answer_vetoed" not in pe, "extraction licenses; it must not be turned into a veto"
+
+    # The bench records precision by ANSWER, which is what a veto needs; a recall
+    # figure applied to an answer would be a silent substitution of measures.
+    mb = (_SRC / "ai_layer" / "model_bench.py").read_text(encoding="utf-8")
+    ldt = mb.split("def _task_langdetect(", 1)[1].split("\ndef ", 1)[0]
+    assert '"by_answer"' in ldt and '"by_language"' in ldt
+
+    # The gates are reachable — a machine-readable verdict with no caller is a dead end.
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert '@router.get("/model-bench/gates")' in diag
+    src = _ui_source()
+    assert re.search(r'"/api/diagnostics/model-bench/gates"', src), (
+        "the gate view must be surfaced, not just computed"
+    )
+
+
+def test_a_user_asked_summarize_or_translate_never_silently_truncates():
+    """E-S4 (2026-08-01, ruling 16). The old path cut the article at 6,000 characters
+    and stored the result as if it were a summary/translation of the whole thing —
+    which is indistinguishable, to the reader, from a complete one of a shorter
+    article. Both single-article endpoints and the bulk run now go through the
+    chunking path; background sweeps may still truncate, but must SAY so."""
+    src = (_SRC / "api" / "llm.py").read_text(encoding="utf-8")
+    for fn in ("summarize_article", "translate_article"):
+        body = src.split(f"def {fn}(", 1)[1].split("\ndef ", 1)[0]
+        assert "_run_over_long_text" in body, f"{fn} must not build a truncated prompt"
+        assert "_MAX_CHARS" not in body, f"{fn} still cuts the article"
+    # The bulk stream is a user-initiated batch too (ruling 13 names it one).
+    bulk = src.split("def bulk_llm(", 1)[1]
+    assert "_run_over_long_text" in bulk and "content[:_MAX_CHARS]" not in bulk
+
+    # A background sweep MAY truncate — and discloses it.
+    per = (_SRC / "ai_layer" / "perception.py").read_text(encoding="utf-8")
+    assert "head_truncate" in per and "truncation" in per
+
+    # The method is provenance: a hierarchical summary is a different artifact.
+    assert "_version_with_method" in src
+    # ...and the value-bearing prompt_version is parsed with the suffix stripped, or
+    # a chunked translation would report its target language as "French+chunked-3".
+    parse = src.split("def _parse_target_language(", 1)[1].split("\ndef ", 1)[0]
+    assert 'split("+", 1)[0]' in parse
+
+    ui = _ui_source()
+    assert "_llmMethodNote" in ui, "the method change must be visible to the reader"
+
+
+def test_the_ollama_context_auto_tune_exists_and_only_proposes():
+    """The documented B7 gap, closed — but a heuristic that silently resized the
+    operator's context window would be changing behaviour on an estimate."""
+    diag = (_SRC / "monitoring" / "ai_diagnostics.py").read_text(encoding="utf-8")
+    block = diag.split("def _context_settings(", 1)[1].split("\ndef ", 1)[0]
+    assert "recommend_num_ctx" in block and "configured_num_ctx" in block
+    assert "NO RAM-derived auto-tune" not in diag, "the stale 'gap' note must be gone"
+    # The corpus measurement is a full-table pass and must stay opt-in.
+    api = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    ai_fn = api.split("def ai_diagnostics(", 1)[1].split("\ndef ", 1)[0]
+    assert "measure_corpus" in ai_fn and "Query(False)" in ai_fn

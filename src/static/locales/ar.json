@@ -2342,5 +2342,11 @@
   "Friday": "الجمعة",
   "Saturday": "السبت",
   "Sunday": "الأحد",
+  "Start background AI": "بدء الذكاء الاصطناعي في الخلفية",
+  "Pause background AI": "إيقاف الذكاء الاصطناعي في الخلفية مؤقتًا",
+  "paused — your batch is running": "متوقف مؤقتًا — دفعتك قيد التشغيل",
+  "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "هذا الجهاز دون حدّ الجدوى للاستدلال المحلي ({r}) — الذكاء الاصطناعي في الخلفية معطّل افتراضيًا هنا. لا يزال بإمكانك تشغيله.",
+  "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.": "ملخّص هرمي عبر {n} أجزاء — لُخِّص كل جزء، ثم لُخِّصت هذه الملخّصات معًا.",
+  "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "تُرجم في {n} أجزاء — قُسّم المقال عند حدود الفقرات وتُرجم كل جزء.",
   "… {n} bytes not shown …": "… {n} بايت غير معروضة …"
 }

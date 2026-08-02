@@ -2011,7 +2011,7 @@
       }
 
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
-      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); loadAiSetup(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
+      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); loadAiSetup(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); syncAiCoordinator(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
       if (cat === "advanced") _advWire();             // Collection / Sources / Keywords, lazily per section
       if (cat === "general") loadShortcuts();         // the shortcuts panel moved into General (2026-07-31)
       if (cat === "cards") loadCardCatalog();     // the Leads catalogue (PR-7): lazy, one loopback read
@@ -9001,9 +9001,44 @@
         <td><input type="checkbox" style="width:auto" ${s.enabled?"checked":""}
               onchange="updateSource(${s.id},{enabled:this.checked})"></td>
         <td><button class="tiny ghost" onclick="toggleSourceTrail(${s.id})" title="${esc(t("Discovery"))}">${esc(t("Trail"))}</button>
+        <button class="tiny ghost" onclick="qualifyAssist(${s.id}, this)" title="${esc(t("Ask the local model whether this source's stored articles read as articles or as navigation soup. A PROPOSAL to review beside the auditor's own evidence — it never changes this source's status or tags."))}">${esc(t("AI check"))}</button>
         <button class="tiny danger" onclick="deleteSource(${s.id}, ${esc(JSON.stringify(s.name))})">Delete</button></td>
       </tr>
       <tr id="src-trail-${s.id}" style="display:none"><td colspan="9"></td></tr>`;
+    }
+
+    // E-S5 (2026-08-01): the qualification ASSIST finally has a home. It has existed
+    // since B7.2 with no UI trigger at all — a propose-only classifier nobody could
+    // reach, which is a dead end rather than a feature. It stays propose-only: the
+    // verdict lands in a dated artifact for review BESIDE the auditor's own evidence,
+    // and Source.status / Source.tags are never touched by it.
+    async function qualifyAssist(sourceId, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const row = document.getElementById("src-trail-" + sourceId);
+      if (btn) { btn.disabled = true; btn.textContent = t("Checking…"); }
+      try {
+        const r = await api("/api/diagnostics/qualification-assist/run",
+          {method: "POST", body: JSON.stringify({source_id: sourceId})});
+        // Read against the module's REAL keys (article_count / junk_count /
+        // unparseable_count / canary), not an assumed {counts: …} shape.
+        const msg = `${t("AI check")}: ${r.checked != null ? r.checked : "?"} ${t("checked")} — `
+          + `${r.article_count != null ? r.article_count : "?"} ${t("read as articles")}, `
+          + `${r.junk_count != null ? r.junk_count : "?"} ${t("as navigation soup")}, `
+          + `${r.unparseable_count != null ? r.unparseable_count : "?"} ${t("unreadable")}`
+          + ` — ${t("a proposal only; nothing about this source was changed.")}`;
+        // A failed canary means the run itself is untrustworthy, which matters more
+        // than any of its numbers — so it is stated first, not buried.
+        const bad = r.canary && r.canary.ok === false;
+        if (row) {
+          row.style.display = "";
+          row.firstElementChild.innerHTML =
+            (bad ? `<div class="card-caveat">${esc(t("The canary check FAILED — treat this run's numbers as unreliable."))}</div>` : "")
+            + `<div class="small">${esc(msg)}</div>`;
+        } else if (typeof toast === "function") { toast(msg); }
+      } catch (e) {
+        if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
+      }
+      if (btn) { btn.disabled = false; btn.textContent = t("AI check"); }
     }
 
     // -- Discovery-trail / qualified-citations panel (2026-07-20 ruling, items 1+2) -- //
@@ -13103,7 +13138,21 @@
         const active = keys.filter((l) => g[l].active === true).sort();
         const disabled = keys.filter((l) => g[l].active === false).sort();
         const unmeasured = keys.filter((l) => g[l].active == null).sort();
-        const detail = (l) => esc(l) + " (" + esc(g[l].reason || "") + ")";
+        // PER-FIELD (E-S3, 2026-08-01): a language cleared for `where` alone is
+        // ACTIVE, but storing `who` there is still refused — so the field states are
+        // shown beside the language, or "active" over-reads as "active for everything".
+        const fieldBits = (l) => {
+          const f = g[l].fields; if (!f) return "";
+          const on = Object.keys(f).filter((k) => f[k] && f[k].active === true);
+          const off = Object.keys(f).filter((k) => f[k] && f[k].active === false);
+          const un = Object.keys(f).filter((k) => f[k] && f[k].active == null);
+          return " [" + [
+            on.length ? t("stores") + " " + on.join("/") : "",
+            off.length ? t("gated") + " " + off.join("/") : "",
+            un.length ? t("unmeasured") + " " + un.join("/") : "",
+          ].filter(Boolean).map(esc).join(" · ") + "]";
+        };
+        const detail = (l) => esc(l) + fieldBits(l) + " (" + esc(g[l].reason || "") + ")";
         // Active languages show their reason too — that is what makes "cleared on 1
         // synthetic case — low statistical power" visible rather than implied.
         let html = "<b>" + t("Active languages:") + "</b> "
@@ -13117,6 +13166,87 @@
         }
         out.innerHTML = html;
       } catch (e) { out.textContent = ""; }
+    }
+
+    // ---- THE BACKGROUND-AI MASTER TOGGLE (2026-08-01 ruling 12a) ---------- //
+    // One coordinated lane over the sweeps the operator enables, instead of three
+    // toggles that would queue behind each other on a single-generation backend.
+    // Follows the langdetect/sweep chassis: NEVER holds btn.disabled across a
+    // multi-hour run (a disabled button cannot be clicked to stop it) — state is
+    // painted from data-running, and the poll is independent of the click.
+    let _aicPolling = false;
+    function _paintAiCoordinator(st) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const btn = $("aic-toggle-btn"), out = $("aic-status"), hw = $("aic-hw");
+      if (!btn) return;
+      const running = (st && st.state) === "running";
+      btn.dataset.running = running ? "1" : "0";
+      btn.textContent = running ? t("Pause background AI") : t("Start background AI");
+      if (out) {
+        const held = st && st.user_batch && st.user_batch.held;
+        const parts = [];
+        if (running) parts.push(esc(st.detail || t("running")));
+        else if (st && st.state && st.state !== "idle") parts.push(esc(st.state));
+        // The pause is stated, never left looking like a stall (ruling 13).
+        if (held) parts.push('<span class="pill warn">' + esc(t("paused — your batch is running")) + "</span>");
+        out.innerHTML = parts.join(" · ");
+      }
+      // The hardware verdict is a DEFAULT, never a block: it explains why the master
+      // starts where it does, and the operator's override still turns it on.
+      if (hw && st && st.hardware_default) {
+        hw.textContent = st.hardware_default.default_on
+          ? "" : t("This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.")
+                   .replace("{r}", String(st.hardware_default.reason || ""));
+      }
+    }
+    async function _pollAiCoordinator() {
+      if (_aicPolling) return;
+      _aicPolling = true;
+      try {
+        for (;;) {
+          const st = await api("/api/diagnostics/ai-coordinator/status");
+          _paintAiCoordinator(st);
+          if (st.state !== "running") break;
+          await new Promise(r => setTimeout(r, 4000));
+        }
+      } catch (e) { /* a poll failure must never wedge the button */ }
+      finally { _aicPolling = false; }
+    }
+    async function toggleAiCoordinator(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const on = btn && btn.dataset.running === "1";
+      try {
+        if (on) await api("/api/diagnostics/ai-coordinator/cancel", {method: "POST"});
+        else await api("/api/diagnostics/ai-coordinator/run", {method: "POST"});
+      } catch (e) {
+        toast(_apiErrorMessage ? _apiErrorMessage(e) : (e && e.message) || String(e), "err");
+      }
+      _pollAiCoordinator();
+    }
+    // The per-sweep membership checkboxes: the master coordinates them, it never
+    // hides them — the operator can always see and change which sweeps are included.
+    async function saveAiSweepMembership() {
+      const body = {};
+      ["keyword_triage", "source_tags", "perception_extract"].forEach(k => {
+        const el = $("aic-m-" + k);
+        if (el) body["ai_sweep_" + k] = !!el.checked;
+      });
+      try { await api("/api/settings", {method: "PUT", body: JSON.stringify(body)}); }
+      catch (e) { toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err"); }
+    }
+    async function syncAiCoordinator() {
+      try {
+        const st = await api("/api/diagnostics/ai-coordinator/status");
+        _paintAiCoordinator(st);
+        if (st.state === "running") _pollAiCoordinator();
+      } catch (e) { /* absent backend: leave the panel at its default text */ }
+      try {
+        const s = await api("/api/settings");
+        ["keyword_triage", "source_tags", "perception_extract"].forEach(k => {
+          const el = $("aic-m-" + k);
+          if (el) el.checked = !!s["ai_sweep_" + k];
+        });
+      } catch (e) { /* settings unavailable: the checkboxes stay as rendered */ }
     }
 
     async function togglePerceptionExtract(btn) {
@@ -13270,6 +13400,222 @@
         if (el) el.textContent = `Saved to ${r.saved} — ${c.total_judgements || 0} judgements across ${JSON.stringify(c.by_language || {})}. Point the IR-eval run below at this path.`;
       } catch (e) { if (typeof toast === "function") toast(_failMsg("Save failed: {error}", e), "err"); }
       if (btn) btn.disabled = false;
+    }
+
+    // ---- E-S2 (2026-08-01, rulings 14-16): the COMPARATIVE model bench ---- //
+    // Freeze the inputs once, grade the anchors once, then measure every roster
+    // model over exactly those inputs. The panel deliberately shows the REFUSALS as
+    // prominently as the results: a model that is not installed, a backend that is
+    // unreachable and an ungraded anchor set are all facts the reader of the numbers
+    // needs, and hiding them would make a partial bench read as a complete one.
+    let _mbAnchors = null, _mbPolling = false;
+
+    async function mbBuildBatch(btn) {
+      const out = $("mb-batch"); if (btn) btn.disabled = true;
+      try {
+        const d = await api("/api/diagnostics/model-bench/batch", { method: "POST", body: JSON.stringify({}) });
+        _mbRenderBatch(d);
+      } catch (e) { if (out) out.innerHTML = `<div class="note err">${esc((e && e.message) || String(e))}</div>`; }
+      if (btn) btn.disabled = false;
+    }
+
+    function _mbRenderBatch(d) {
+      const out = $("mb-batch"); if (!out) return;
+      if (!d || d.available === false) {
+        out.innerHTML = `<span class="muted">${esc((d && d.reason) || "no frozen batch yet")}</span>`;
+        return;
+      }
+      const strata = (d.keyword_strata || []).map((s) =>
+        `${esc(s.language)} ${s.n} (${s.n_head} head · ${s.n_tail} tail)`).join(" · ");
+      out.innerHTML = `<b>${d.n_keywords || 0}</b> keywords · <b>${d.n_sources || 0}</b> sources · `
+        + `${(d.source_tag_vocabulary || []).length} tags · digest <code>${esc(d.digest || "?")}</code>`
+        + `<div class="hint muted">${esc(strata)}</div>`
+        + ((d.normalized_collisions || []).length
+          ? `<div class="hint muted">${d.normalized_collisions.length} term group(s) differ only by case or accents — matched by exact echo only.</div>` : "");
+    }
+
+    async function mbShowRoster(btn) {
+      const out = $("mb-result"); if (btn) btn.disabled = true;
+      try {
+        const d = await api("/api/diagnostics/model-bench/roster");
+        const run = (d.runnable || []).map((p) => esc(p.key)).join(", ") || "none";
+        const skip = (d.skipped || []).map((s) =>
+          `${esc(s.backend)}${s.model ? " · " + esc(s.model) : ""} — ${esc(s.reason)}`).join("<br>");
+        if (out) out.innerHTML = `<div>Runnable: ${run}</div>`
+          + (skip ? `<div class="hint muted" style="margin-top:4px">${skip}</div>` : "")
+          + (d.unresolved_candidates || []).map((c) =>
+            `<div class="hint muted" style="margin-top:4px">${esc(c.named)}: ${esc(c.note)}</div>`).join("");
+      } catch (e) { if (out) out.innerHTML = `<div class="note err">${esc((e && e.message) || String(e))}</div>`; }
+      if (btn) btn.disabled = false;
+    }
+
+    async function mbAnchorsLoad(btn) {
+      const body = $("mb-anchors-body"); if (!body) return;
+      if (btn) btn.disabled = true;
+      try {
+        const d = await api("/api/diagnostics/model-bench/anchors?sample=50");
+        _mbAnchors = (d.candidates || []).map((c) => ({ term: c.term, language: c.language, verdict: null, kind: null }));
+        _mbRenderAnchors();
+      } catch (e) { body.innerHTML = `<div class="note err">${esc((e && e.message) || String(e))}</div>`; }
+      if (btn) btn.disabled = false;
+    }
+
+    function _mbRenderAnchors() {
+      const body = $("mb-anchors-body"); if (!body) return;
+      const rows = (_mbAnchors || []).map((a, i) => {
+        const vb = ["junk", "content", "unsure"].map((v) =>
+          `<button class="tiny${a.verdict === v ? " active" : ""}" data-v="${v}" onclick="mbAnchorGrade(${i},'${v}')">${v[0].toUpperCase()}</button>`).join("");
+        const kb = ["person", "org", "place", "other"].map((k) =>
+          `<button class="tiny${a.kind === k ? " active" : ""}" data-k="${k}" onclick="mbAnchorKind(${i},'${k}')">${esc(k)}</button>`).join("");
+        return `<div class="mb-row" tabindex="0" data-i="${i}" onkeydown="mbAnchorKey(event,${i})" style="display:flex;gap:8px;align-items:center;padding:2px 0">`
+          + `<span style="min-width:78px">${vb}</span>`
+          + `<span style="min-width:170px">${esc(a.term)}</span>`
+          + `<span class="muted" style="font-size:11px;min-width:26px">${esc(a.language || "")}</span>`
+          + `<span>${kb}</span></div>`;
+      }).join("");
+      body.innerHTML = `<div class="hint muted">J = junk · C = content · U = unsure on a focused row. A kind is optional — leaving it blank costs one kind case, an invented kind costs the measurement.</div>` + rows;
+      _mbUpdateAnchorCov();
+    }
+
+    function mbAnchorGrade(i, v) {
+      const a = _mbAnchors && _mbAnchors[i]; if (!a) return;
+      a.verdict = v;   // in place, never a re-render — keeps keyboard focus
+      const row = document.querySelector(`.mb-row[data-i="${i}"]`);
+      if (row) row.querySelectorAll("button[data-v]").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
+      _mbUpdateAnchorCov();
+    }
+
+    function mbAnchorKind(i, k) {
+      const a = _mbAnchors && _mbAnchors[i]; if (!a) return;
+      a.kind = (a.kind === k) ? null : k;
+      const row = document.querySelector(`.mb-row[data-i="${i}"]`);
+      if (row) row.querySelectorAll("button[data-k]").forEach((b) => b.classList.toggle("active", b.dataset.k === a.kind));
+      _mbUpdateAnchorCov();
+    }
+
+    function mbAnchorKey(ev, i) {
+      const map = { j: "junk", c: "content", u: "unsure" };
+      const v = map[(ev.key || "").toLowerCase()];
+      if (v) { ev.preventDefault(); mbAnchorGrade(i, v); }
+    }
+
+    function _mbUpdateAnchorCov() {
+      const el = $("mb-anchors-cov"); if (!el) return;
+      const all = _mbAnchors || [];
+      const graded = all.filter((a) => a.verdict).length;
+      el.textContent = all.length ? `${graded}/${all.length} graded` : "";
+    }
+
+    async function mbAnchorsSave(btn) {
+      const rows = (_mbAnchors || []).filter((a) => a.verdict)
+        .map((a) => (a.kind ? { term: a.term, verdict: a.verdict, kind: a.kind } : { term: a.term, verdict: a.verdict }));
+      if (!rows.length) { if (typeof toast === "function") toast("Grade at least one anchor first.", "err"); return; }
+      if (btn) btn.disabled = true;
+      try {
+        const r = await api("/api/diagnostics/model-bench/anchors", { method: "POST", body: JSON.stringify({ anchors: rows }) });
+        if (typeof toast === "function") toast(`Saved ${r.n} anchors.`);
+      } catch (e) { if (typeof toast === "function") toast(_failMsg("Save failed: {error}", e), "err"); }
+      if (btn) btn.disabled = false;
+    }
+
+    function _mbPaint(st) {
+      const btn = $("mb-run-btn"), el = $("mb-status");
+      const running = st && st.state === "running";
+      if (btn) { btn.dataset.running = running ? "1" : "0"; btn.textContent = running ? "Stop the bench" : "Run the bench"; }
+      const p = (st && st.progress) || {};
+      if (el) {
+        el.textContent = running
+          ? `${p.done || 0}/${p.total || "?"} · ${p.detail || ""}`
+          : (st && st.state === "error" ? `failed: ${st.error || ""}` : "");
+      }
+      if (!running && st && st.result) _mbRenderResult(st.result);
+    }
+
+    function _mbRenderResult(res) {
+      const out = $("mb-result"); if (!out || !res) return;
+      if (res.status === "refused") {
+        out.innerHTML = `<div class="note err">${esc(res.detail || res.reason || "refused")}</div>`;
+        return;
+      }
+      const rows = Object.keys(res.results || {}).map((key) => {
+        const r = res.results[key], tk = r.tasks || {};
+        const bits = [];
+        const tri = tk.triage || {};
+        if (tri.format_validity != null) bits.push(`triage validity ${tri.format_validity}`);
+        if (tri.valid_verdicts_per_s != null) bits.push(`${tri.valid_verdicts_per_s}/s`);
+        if (tri.canary && tri.canary.ok === false) bits.push("canary FAILED");
+        const stg = tk.source_tags || {};
+        if (stg.format_validity != null) bits.push(`tags validity ${stg.format_validity}`);
+        const ld = tk.langdetect || {};
+        if (ld.accuracy_over_all != null) bits.push(`langdetect ${ld.accuracy_over_all} (n=${ld.n})`);
+        const errs = Object.keys(tk).filter((k) => tk[k] && tk[k].status === "error");
+        if (errs.length) bits.push(`errors: ${errs.join(", ")}`);
+        return `<div><b>${esc(key)}</b>${r.quantization ? ` <span class="muted">${esc(r.quantization)}</span>` : ""} — ${esc(bits.join(" · ") || "no metrics")}</div>`;
+      }).join("");
+      const skipped = (res.skipped || []).map((s) =>
+        `${esc(s.backend)}${s.model ? " · " + esc(s.model) : ""} — ${esc(s.reason)}`).join("<br>");
+      out.innerHTML = rows
+        + (res.pairs_pending && res.pairs_pending.length
+          ? `<div class="hint muted" style="margin-top:4px">Not yet measured: ${esc(res.pairs_pending.join(", "))}</div>` : "")
+        + (skipped ? `<div class="hint muted" style="margin-top:4px">${skipped}</div>` : "")
+        + (res.anchors && res.anchors.available === false
+          ? `<div class="card-caveat" style="margin-top:4px">No graded anchors: accuracy against a human grade is UNMEASURED. Models agreeing is not either being right.</div>` : "")
+        + `<div class="hint muted" style="margin-top:4px">${esc(res.caveat || "")}</div>`;
+      mbShowGates();
+    }
+
+    // E-S3: what the bench's per-language verdicts actually gate. Shown BESIDE the
+    // results, because a measurement nobody can act on is a dead end — and because
+    // the two gate shapes behave oppositely on unmeasured input, which the reader
+    // has to be told rather than left to infer.
+    async function mbShowGates() {
+      const out = $("mb-gates"); if (!out) return;
+      try {
+        const d = await api("/api/diagnostics/model-bench/gates");
+        const rows = Object.keys(d.gates || {}).map((task) => {
+          const g = d.gates[task] || {};
+          const keys = Object.keys(g);
+          if (!keys.length) return `<div><b>${esc(task)}</b> — no bench evidence</div>`;
+          const on = keys.filter((k) => g[k].active === true).sort();
+          const off = keys.filter((k) => g[k].active === false).sort();
+          const un = keys.filter((k) => g[k].active == null).sort();
+          const wired = (d.wired || []).includes(task) ? "" : " (computed, not yet applied)";
+          return `<div><b>${esc(task)}</b>${esc(wired)} — `
+            + `cleared: ${esc(on.join(", ") || "none")}`
+            + (off.length ? ` · refused: ${esc(off.join(", "))}` : "")
+            + (un.length ? ` · unmeasured: ${esc(un.join(", "))}` : "") + `</div>`;
+        }).join("");
+        out.innerHTML = rows + `<div class="hint muted" style="margin-top:4px">${esc(d.caveat || "")}</div>`;
+      } catch (e) { out.textContent = ""; }
+    }
+
+    async function _mbPoll() {
+      if (_mbPolling) return;
+      _mbPolling = true;
+      try {
+        for (;;) {
+          const st = await api("/api/diagnostics/model-bench/status");
+          _mbPaint(st);
+          if (st.state !== "running") break;
+          await new Promise((r) => setTimeout(r, 4000));
+        }
+      } catch (e) { /* a poll failure must never wedge the button */ }
+      finally { _mbPolling = false; }
+    }
+
+    async function mbRun(btn) {
+      const on = btn && btn.dataset.running === "1";
+      const sw = $("mb-switch");
+      try {
+        if (on) await api("/api/diagnostics/model-bench/cancel", { method: "POST" });
+        else await api("/api/diagnostics/model-bench/run", {
+          method: "POST",
+          body: JSON.stringify({ allow_backend_switch: !!(sw && sw.checked) }),
+        });
+      } catch (e) {
+        if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
+      }
+      _mbPoll();
     }
 
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
@@ -18891,12 +19237,14 @@
       catch (e) { toast(t("Could not load your extractors."), "err"); return; }
       const usable = prompts.filter((x) => x.enabled);
       mount.style.display = "";
-      if (!usable.length) {
-        mount.innerHTML = `<div class="card"><div class="hint">${esc(t("Define a custom extractor in Settings → Models first."))}</div></div>`;
-        return;
-      }
-      const opts = usable.map((x) =>
-        `<option value="${x.id}">${esc(x.label)} · ${esc(x.output_kind)}</option>`).join("");
+      // E-S5 (2026-08-01): the BUILT-IN AI-keyword extractor had an endpoint and no
+      // caller anywhere in the UI, so a user with no custom prompt could not reach it
+      // at all — the custom-prompt path absorbs the MECHANISM but not this prompt.
+      // Listing it here gives it a caller rather than retiring a capability nothing
+      // else provides.
+      const opts = `<option value="builtin">${esc(t("Built-in: AI keywords"))} · ai-keyword</option>`
+        + usable.map((x) =>
+          `<option value="${x.id}">${esc(x.label)} · ${esc(x.output_kind)}</option>`).join("");
       mount.innerHTML = `<div class="card">
         <div style="font-weight:600;margin-bottom:4px">${esc(t("Run a custom extractor"))}</div>
         <div class="hint" style="margin-bottom:8px">${esc(t("Runs your prompt with the local model over each matched article. Results are stored as AI-derived metadata of that type, labelled unreliable — the trusted keyword index is never affected; nothing leaves your machine."))}</div>
@@ -18932,7 +19280,9 @@
       _bulkAbort = ("AbortController" in window) ? new AbortController() : null;
       let done = 0, total = 0;
       try {
-        const resp = await fetch(`/api/ai/prompts/${id}/run`, {
+        const url = (id === "builtin")
+          ? "/api/ai/keywords/extract" : `/api/ai/prompts/${id}/run`;
+        const resp = await fetch(url, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body), signal: _bulkAbort ? _bulkAbort.signal : undefined,
         });
@@ -19786,6 +20136,22 @@
       finally { if (btn) btn.disabled = false; }
     }
 
+    // E-S4 (2026-08-01, ruling 16): a user-asked summarize/translate never silently
+    // truncates — an over-long article is split at paragraph boundaries and every part
+    // is run. That is a METHOD change, so it is stated: a reader who is not told cannot
+    // tell a two-step hierarchical summary from a single-pass one, and they are not the
+    // same artifact. Composite templates (the S4.5 tf() seam) so the frame translates
+    // x12 while the count stays data.
+    function _llmMethodNote(method) {
+      if (!method || !method.parts || method.parts < 2) return "";
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : null;
+      const key = method.mode === "hierarchical"
+        ? "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together."
+        : "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.";
+      const txt = tf ? tf(key, {n: method.parts}) : key.replace("{n}", method.parts);
+      return `<div class="card-caveat">${esc(txt)}</div>`;
+    }
+
     async function summarize(id, btn) {
       const cell = btn.parentElement.querySelector(".summary");
       cell.textContent = "Summarizing locally…";
@@ -19799,6 +20165,7 @@
         // constant verify-against-the-source note (B1 disclosure; auto-translated x12 by
         // the i18n observer). Data is esc()'d (innerHTML).
         cell.innerHTML = `“${esc(r.result)}” <span class="muted">— ${esc(r.model)}</span>`
+          + _llmMethodNote(r.method)
           + `<div class="hint muted">Generated by a local model — verify against the stored article.</div>`;
       } catch (e) { cell.textContent = ""; toast("Summarize: " + e.message, "err"); }
       loadLlmHealth();   // success or failure both tell us if Ollama is reachable now
@@ -19814,6 +20181,7 @@
           {method: "POST", body: JSON.stringify({target_language: _uiLangName()})});
         cell.innerHTML = `<span class="muted">[${esc(r.source_language ? ooLangName(r.source_language, r.source_language) : "?")}→${esc(ooLangName(r.target_language, r.target_language))}]</span> `
           + `${esc(r.result)} <span class="muted">— ${esc(r.model)}</span>`
+          + _llmMethodNote(r.method)
           + `<div class="hint muted">Generated by a local model — verify against the stored article.</div>`;
       } catch (e) { cell.textContent = ""; toast("Translate: " + e.message, "err"); }
       loadLlmHealth();

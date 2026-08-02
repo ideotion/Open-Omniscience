@@ -98,17 +98,35 @@ def parse_perception_reply(raw: str | None) -> dict:
 
 
 def llm_perception_extract(
-    client, text: str, *, model: str, language: str | None = None, keep_alive: str | None = None
+    client,
+    text: str,
+    *,
+    model: str,
+    language: str | None = None,
+    keep_alive: str | None = None,
+    budget_chars: int | None = None,
 ) -> dict:
     """Ask the active backend for who/where/when MENTIONED in ``text``. Raises
     the client's LLMUnavailable/LLMError up (the caller -- the eval harness or
     the extraction job -- decides how to handle a mid-run outage, mirroring
     ``triage.run_triage_batch``). Returns the parsed ``{"who","where","when"}``
-    dict; a garbage/unparseable reply yields empty lists, never invented data."""
-    result = client.generate(
-        text[:_MAX_CHARS], model=model, system=_SYSTEM_PROMPT, keep_alive=keep_alive
-    )
-    return parse_perception_reply(getattr(result, "text", None))
+    dict; a garbage/unparseable reply yields empty lists, never invented data.
+
+    E-S4 (2026-08-01): an over-budget article is HEAD-TRUNCATED and the result says
+    so under ``truncation`` -- this is a BACKGROUND sweep, where truncating is the
+    right trade, but a thin extraction from the first 6,000 characters of a long
+    article must never be readable as a thin article. (The user-driven summarize and
+    translate paths do NOT truncate at all; they chunk. Different asker, different
+    answer.)"""
+    from src.ai_layer.context import head_truncate
+
+    budget = budget_chars if budget_chars and budget_chars > 0 else _MAX_CHARS
+    sent, truncation = head_truncate(text, budget)
+    result = client.generate(sent, model=model, system=_SYSTEM_PROMPT, keep_alive=keep_alive)
+    out = parse_perception_reply(getattr(result, "text", None))
+    if truncation:
+        out["truncation"] = truncation
+    return out
 
 
 def run_perception_eval_against_model(

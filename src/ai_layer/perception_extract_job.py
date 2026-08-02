@@ -239,8 +239,13 @@ def run_progressive_perception_extract_job(
         or {
             "attempted": 0, "skipped_existing": 0, "gated": 0, "stored": 0,
             "who": 0, "where": 0, "when": 0,
+            # E-S3: how many articles had each FIELD discarded because that field's
+            # language never cleared the harness. Without it a zero `who` count reads
+            # as "the model found nobody" instead of "we refused to store it".
+            "field_gated": {"who": 0, "where": 0, "when": 0},
         }
     )
+    totals.setdefault("field_gated", {"who": 0, "where": 0, "when": 0})
     batches_completed = int(state.get("batches_completed", 0))
 
     with session_factory() as session:
@@ -288,6 +293,8 @@ def run_progressive_perception_extract_job(
         export_triage_jsonl(path, [detail_rec])
         for key in ("attempted", "skipped_existing", "gated", "stored", "who", "where", "when"):
             totals[key] += int(result.get(key) or 0)
+        for fld, n in (result.get("field_gated") or {}).items():
+            totals["field_gated"][fld] = totals["field_gated"].get(fld, 0) + int(n or 0)
         batches_completed += 1
         batches_this_call += 1
 

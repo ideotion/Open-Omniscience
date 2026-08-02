@@ -54,6 +54,12 @@ class SettingsUpdate(BaseModel):
     # Silicon unified-memory floor). Never a hard block -- this is the operator's
     # explicit "anyway", and the verdict then discloses overridden=True.
     llm_allow_impractical_hw: bool | None = None
+    # BACKGROUND-AI COORDINATOR (2026-08-01 ruling 12a): the master switch plus the
+    # per-sweep membership flags it coordinates (the master never hides them).
+    ai_background_enabled: bool | None = None
+    ai_sweep_keyword_triage: bool | None = None
+    ai_sweep_source_tags: bool | None = None
+    ai_sweep_perception_extract: bool | None = None
 
 
 def _payload() -> dict:

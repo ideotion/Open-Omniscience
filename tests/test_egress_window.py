@@ -51,6 +51,42 @@ def _clean_window():
     clear_kill_switch()
 
 
+class _Spy(list):
+    """The REAL socket calls reached ON THE TEST'S OWN THREAD.
+
+    Thread-scoped deliberately. The spies below are reached through a
+    PROCESS-GLOBAL patch point, so ANY background thread that happens to fetch
+    inside this fixture's window lands in the same list -- which is exactly how a
+    leaked ``oo-dump-en:pages-articles`` worker (fixed in
+    ``tests/test_dump_segmented_download.py``) made
+    ``test_with_no_window_loopback_still_passes_through`` fail intermittently,
+    thousands of tests downstream of the test that leaked it. Every assertion in
+    this file is a claim about the call THE TEST makes, so another thread's call
+    is noise here rather than evidence.
+
+    It is still recorded, in ``foreign``, and printed on failure: a guarded path
+    that itself moved a fetch onto a worker thread must stay visible instead of
+    quietly vanishing from a negative-space assertion.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._owner = threading.get_ident()
+        self.foreign: list[str] = []
+
+    def record(self, name: str) -> None:
+        if threading.get_ident() == self._owner:
+            self.append(name)
+        else:
+            self.foreign.append(name)
+
+    def __repr__(self) -> str:  # pragma: no cover - failure output only
+        base = super().__repr__()
+        if not self.foreign:
+            return base
+        return f"{base} (+{len(self.foreign)} on OTHER threads: {self.foreign})"
+
+
 @pytest.fixture
 def guard():
     """The guard installed over spies, so we can see whether the REAL call ran."""
@@ -62,33 +98,19 @@ def guard():
         ap._orig_tunnel,
         ap._orig_socks_connect,
     )
-    reached: list[str] = []
-    mine = threading.get_ident()
-
-    # THREAD-SCOPED, because the guard it spies on is PROCESS-wide (2026-08-02).
-    # These spies replace the real socket calls for every thread in the interpreter,
-    # so a background thread belonging to some other test's app -- a scheduler left
-    # running by a `TestClient(app)` lifespan, say -- lands its own loopback connect
-    # in this list and shifts every index. That is exactly what the macOS portability
-    # lane caught: `['connect', 'getaddrinfo', 'getaddrinfo', 'getaddrinfo']` where
-    # the test itself had made only the three getaddrinfo calls. Recording only the
-    # calling thread's calls makes the assertion measure what THIS test did, and
-    # keeps it strict -- a stray call from the test's own thread still shows up.
-    def _note(name):
-        if threading.get_ident() == mine:
-            reached.append(name)
+    reached = _Spy()
 
     def spy(name):
         def _f(*a, **k):
-            _note(name)
+            reached.record(name)
             raise _Reached(name)
 
         return _f
 
     ap._orig_getaddrinfo = spy("getaddrinfo")  # type: ignore[assignment]
     ap._orig_create_connection = spy("create_connection")  # type: ignore[assignment]
-    ap._orig_connect = lambda self, address: _note("connect")  # type: ignore[assignment]
-    ap._orig_connect_ex = lambda self, address: _note("connect_ex")  # type: ignore[assignment]
+    ap._orig_connect = lambda self, address: reached.record("connect")  # type: ignore[assignment]
+    ap._orig_connect_ex = lambda self, address: reached.record("connect_ex")  # type: ignore[assignment]
     ap._orig_tunnel = spy("tunnel")  # type: ignore[assignment]
     if ap._orig_socks_connect is not None:
         ap._orig_socks_connect = spy("socks_connect")  # type: ignore[assignment]
@@ -119,6 +141,22 @@ def test_with_no_window_airplane_still_refuses_before_any_real_socket_call(guard
     with pytest.raises(AirplaneModeError):
         socket.getaddrinfo("example.com", 443)
     assert guard == [], "the real getaddrinfo must never be reached under airplane mode"
+
+
+def test_a_foreign_threads_socket_call_never_lands_in_the_test_s_own_record(guard):
+    """The fixture's own contract, pinned so a "simplification" back to a plain
+    list cannot silently restore the intermittent failure it caused.
+
+    A background thread anywhere in the process reaches the same patched globals;
+    its call belongs to ``foreign``, never to the list the assertions compare.
+    """
+    t = threading.Thread(target=lambda: guard.record("connect"))
+    t.start()
+    t.join(5)
+    assert guard == [], "another thread's call must not enter the test's own record"
+    assert guard.foreign == ["connect"], "...but it must still be recorded, and visible"
+    assert "OTHER threads" in repr(guard), "a foreign call must show up on failure"
+    guard.foreign.clear()
 
 
 def test_with_no_window_loopback_still_passes_through(guard):
@@ -504,8 +542,6 @@ def test_a_bare_socket_on_another_thread_is_refused_while_a_window_is_open(guard
     calls the library's own client, consults no gate of ours, and was protected by
     the backstop alone. A window must not lift that for it.
     """
-    import threading
-
     activate_kill_switch()
     ew.open_window(ew.PURPOSE_AI_INSTALL)
 

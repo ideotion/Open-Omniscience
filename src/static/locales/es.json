@@ -2342,5 +2342,11 @@
   "Friday": "viernes",
   "Saturday": "sábado",
   "Sunday": "domingo",
+  "Start background AI": "Iniciar la IA en segundo plano",
+  "Pause background AI": "Pausar la IA en segundo plano",
+  "paused — your batch is running": "en pausa — tu lote está en curso",
+  "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "Esta máquina está por debajo del umbral de viabilidad de la inferencia local ({r}): la IA en segundo plano está desactivada por defecto aquí. Aun así puedes iniciarla.",
+  "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.": "Resumen jerárquico en {n} partes: cada parte se resumió y luego esos resúmenes se resumieron juntos.",
+  "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "Traducido en {n} partes: el artículo se dividió en los límites de los párrafos y se tradujo cada parte.",
   "… {n} bytes not shown …": "… {n} bytes no mostrados …"
 }

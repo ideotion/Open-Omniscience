@@ -576,6 +576,17 @@ def _langdetect_worker(
     bound = max(1, min(int(limit or _LANGDETECT_LIMIT), 5000))
     tally["ran"] = True
 
+    # E-S3 (2026-08-01): the comparative bench's per-LABEL verdict for THIS model.
+    # A VETO, never a licence -- it stops only labels the bench measured this model
+    # getting wrong more often than right, and leaves every label the gold set never
+    # covered exactly as it was. Absent bench => empty dict => byte-identical to before.
+    from src.ai_layer.task_gates import current_task_gate
+
+    answer_veto = current_task_gate("langdetect", model=mdl)
+    tally["veto_labels"] = sorted(
+        k for k, v in answer_veto.items() if (v or {}).get("active") is False
+    )
+
     attempted: set[int] = set()
     done = 0
     consecutive_failures = 0
@@ -594,7 +605,8 @@ def _langdetect_worker(
         tally["total"] += len(work)
         transient_reason: str | None = None
         for event in detect_for_articles(
-            work, client, model=mdl, should_stop=lambda: ctx.stopping, max_workers=workers
+            work, client, model=mdl, should_stop=lambda: ctx.stopping, max_workers=workers,
+            answer_veto=answer_veto,
         ):
             ev = event.get("event")
             if ev == "item":
@@ -603,6 +615,10 @@ def _langdetect_worker(
                 st = event.get("status")
                 if st in ("stored", "skipped", "failed", "none"):
                     tally[st] += 1
+                elif st == "vetoed":
+                    # Measured-and-wrong for this label: counted on its own, never
+                    # folded into "none" (which means the model said nothing usable).
+                    tally["vetoed"] = tally.get("vetoed", 0) + 1
                 ctx.set_progress(
                     done=done, total=max(estimate_total, done), detail=f"{tally['stored']} labelled"
                 )
@@ -669,6 +685,16 @@ def advance_langdetect_auto_start(session) -> dict:
 
     if not load_app_settings().ai_langdetect_auto:
         return {"enabled": False}
+    # PREEMPTION (2026-08-01 ruling 13): a user-initiated batch owns the model while
+    # it runs. This ride-along is a background-AI ENTRY POINT, so it checks the SAME
+    # hold the coordinator does -- the 2026-07-24 lesson is that a pause honoured by
+    # only the main loop is silently incomplete, because every other way of starting
+    # equivalent work walks straight past it.
+    from src.ai_layer.coordinator import user_batch_active
+
+    _hold = user_batch_active()
+    if _hold["held"]:
+        return {"enabled": True, "skipped": f"a user batch is running ({', '.join(_hold['holders'])})"}
     # Cheapest check first, and semantically the right one to lead with: if the job
     # is ALREADY running there is nothing to start, so no other probe is relevant.
     if _LANGDETECT_JOB.status().get("state") == "running":

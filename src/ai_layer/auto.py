@@ -79,6 +79,16 @@ def run_auto_on_ingest(
     there are no auto prompts (the default) or the local model is unavailable — in the
     latter case we do nothing rather than spam failed events. One prompt failing never
     stops the others."""
+    # PREEMPTION (2026-08-01 ruling 13): the SAME exclusive hold every other
+    # background-AI entry point checks. A user's own batch owns the model; these
+    # extractors are unattended work and can wait for the next pass.
+    from src.ai_layer.coordinator import user_batch_active
+
+    _hold = user_batch_active()
+    if _hold["held"]:
+        return {"prompts": 0, "ran": False, "stored": 0, "skipped": 0, "failed": 0,
+                "held_by": _hold["holders"]}
+
     out: dict = {"prompts": 0, "ran": False, "stored": 0, "skipped": 0, "failed": 0}
     try:
         prompts = due_auto_prompts(session)

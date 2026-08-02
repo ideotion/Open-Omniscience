@@ -1,7 +1,10 @@
 # Autonomous session brief — 2026-08-01 Session E: the Background-AI coordinator · the comparative model bench · context management
 
-**Status:** PENDING execution (an autonomous Opus 5 CLI session), runs AFTER Session D's PRs
-merge (ruled 17: two sessions, D then E).
+**Status:** EXECUTED 2026-08-02 (branch `claude/oos-optimization-planning-iawlbj`, rebased onto
+the merged vLLM download fix). S1–S5 all shipped; see the five 2026-08-02 `docs/ledger/shipped.csv`
+rows and the "SESSION E EXECUTED" block in CLAUDE.md for what remains — chiefly the bench's actual
+roster run and the ~50-anchor grading sitting, both OPERATOR steps on the model rig, and §3's
+per-task model selection with the VRAM co-fit check, which is not built.
 **Answers of record:** the "FIELD IMPRESSIONS 2026-08-01" entry in CLAUDE.md (rulings 12–16
 govern this session).
 **Base:** freshly-fetched `origin/main`; draft PR(s); nothing auto-merges.
