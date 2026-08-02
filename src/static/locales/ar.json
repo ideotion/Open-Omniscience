@@ -2341,5 +2341,6 @@
   "Thursday": "الخميس",
   "Friday": "الجمعة",
   "Saturday": "السبت",
-  "Sunday": "الأحد"
+  "Sunday": "الأحد",
+  "… {n} bytes not shown …": "… {n} بايت غير معروضة …"
 }

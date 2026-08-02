@@ -2341,5 +2341,6 @@
   "Thursday": "星期四",
   "Friday": "星期五",
   "Saturday": "星期六",
-  "Sunday": "星期日"
+  "Sunday": "星期日",
+  "… {n} bytes not shown …": "… 未显示 {n} 字节 …"
 }

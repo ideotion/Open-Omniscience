@@ -19609,12 +19609,25 @@
         // The last start's own output, shown exactly when it is needed: installed but
         // not running (field report 2026-07-29 — a start that failed on a bad model id
         // or a CUDA OOM previously died with its reason discarded, leaving only a
-        // permanent "not running"). A CUDA OOM puts the actionable numbers at the END,
-        // so the tail is the useful part.
+        // permanent "not running").
+        //
+        // BOTH ENDS are rendered, in reading order (field report 2026-08-02). Only the
+        // tail was shown, on the assumption that a CUDA OOM puts the numbers at the
+        // end — true when a running server dies, false for a startup failure, where
+        // vLLM's EngineCore child prints the reason FIRST and the parent then dumps
+        // ~20 KB ending in "See root cause above". The operator's log was 29,855 bytes
+        // and the reason sat in the 21,855 that were not shown.
         const lg = s.server_log || {};
-        const logBlock = (s.installed && !s.running && lg.available && (lg.tail || "").trim())
+        const gap = lg.elided_bytes > 0
+          ? `<p class="muted">${esc(OOI18N && OOI18N.tf
+              ? OOI18N.tf("… {n} bytes not shown …", {n: lg.elided_bytes.toLocaleString()})
+              : `… ${lg.elided_bytes} bytes not shown …`)}</p>`
+          : "";
+        const pre = (txt) => `<pre style="max-height:16em;overflow:auto;white-space:pre-wrap">${esc(txt)}</pre>`;
+        const logBlock = (s.installed && !s.running && lg.available && ((lg.head || "") + (lg.tail || "")).trim())
           ? `<details style="margin-top:6px"><summary>${esc(t("Why it is not running — last server output"))}</summary>` +
-            `<pre style="max-height:16em;overflow:auto;white-space:pre-wrap">${esc(lg.tail)}</pre>` +
+            (lg.head ? pre(lg.head) + gap : "") +
+            pre(lg.tail || "") +
             (lg.truncated ? `<p class="muted">${esc(t("Truncated — full log:"))} ${esc(lg.path || "")}</p>` : "") +
             `</details>`
           : "";

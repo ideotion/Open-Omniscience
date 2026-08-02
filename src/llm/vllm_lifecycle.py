@@ -145,32 +145,60 @@ def server_log_path() -> Path:
     return venv_dir() / "server.log"
 
 
-# How much of the server log the status payload carries. Enough to hold a Python
-# traceback's final frames and a CUDA OOM message (which is verbose and puts the
-# actionable numbers at the END), bounded so the Settings panel never has to render a
-# multi-megabyte field.
+# How much of the server log the status payload carries, from EACH END. Bounded so
+# the Settings panel never has to render a multi-megabyte field.
+#
+# BOTH ends, because the root cause can be at either (field report 2026-08-02). This
+# used to keep only the tail, on the stated assumption that "a CUDA OOM message puts
+# the actionable numbers at the END". That is true when a RUNNING server dies, and
+# exactly false for the failure that actually reached the field: vLLM's EngineCore is
+# a CHILD process, so it prints its own traceback FIRST and the parent APIServer then
+# dumps ~20 KB of its own stack ending in the words "See root cause above." The
+# retained tail was therefore guaranteed to hold the useless half. The operator's
+# bundle showed precisely that -- 29,855 bytes of log, the last 8,000 kept, and the
+# reason the server died sitting in the 21,855 that were thrown away.
+_LOG_HEAD_BYTES = 8000
 _LOG_TAIL_BYTES = 8000
 
 
-def server_log_tail(*, limit: int = _LOG_TAIL_BYTES) -> dict:
-    """The tail of the last server start's output, for the UI and the diagnostics
+def server_log_tail(*, limit: int = _LOG_TAIL_BYTES, head_limit: int = _LOG_HEAD_BYTES) -> dict:
+    """Both ends of the last server start's output, for the UI and the diagnostics
     bundle. Degrades to a stated absence -- never an empty string that would read as
-    "the server said nothing wrong"."""
+    "the server said nothing wrong".
+
+    ``tail`` keeps its meaning (the last bytes) so existing readers are unaffected;
+    ``head`` and ``elided_bytes`` are additive. When the whole file fits, ``head`` is
+    absent rather than a duplicate of ``tail`` -- a reader must never be shown the same
+    text twice and left to wonder whether the server said it twice."""
     p = server_log_path()
     try:
         if not p.is_file():
             return {"available": False, "reason": "no server log yet (never started here)"}
         size = p.stat().st_size
         with p.open("rb") as fh:
-            if size > limit:
-                fh.seek(size - limit)
-            data = fh.read()
+            if size <= limit:
+                return {
+                    "available": True,
+                    "path": str(p),
+                    "bytes": size,
+                    "truncated": False,
+                    "elided_bytes": 0,
+                    "tail": fh.read().decode("utf-8", errors="replace"),
+                }
+            head = fh.read(min(head_limit, max(0, size - limit)))
+            fh.seek(size - limit)
+            tail = fh.read()
+        elided = size - len(head) - limit
         return {
             "available": True,
             "path": str(p),
             "bytes": size,
-            "truncated": size > limit,
-            "tail": data.decode("utf-8", errors="replace"),
+            "truncated": True,
+            # Stated, never implied: a reader must be able to tell that the two halves
+            # are not contiguous, and by how much.
+            "elided_bytes": elided,
+            "head": head.decode("utf-8", errors="replace"),
+            "tail": tail.decode("utf-8", errors="replace"),
         }
     except OSError as exc:
         return {"available": False, "reason": f"could not read the server log: {exc}"}
@@ -597,6 +625,14 @@ def process_alive() -> bool:
 # --------------------------------------------------------------------------- #
 #  Context-size auto-tune (B2.5, ruled: disclosed auto-with-override)
 # --------------------------------------------------------------------------- #
+#: KV-cache cost of ONE context token, in MB -- the constant the context estimate
+#: divides by. Derived, not guessed: 2 (K and V) x 32 layers x 32 heads x 128 head
+#: dim x 2 bytes (fp16) = 512 KB for a 7B-class model with multi-head attention.
+#: A grouped-query model (what we actually ship) costs ~4x less, so this errs toward
+#: a SHORTER context, which is the survivable direction on a small card.
+_KV_MB_PER_TOKEN = 0.5
+
+
 def compute_server_args(
     vram_mb: int | None,
     *,
@@ -632,7 +668,9 @@ def compute_server_args(
     method = (
         f"reserve {weight_footprint_gb} GB for model weights, "
         f"{kv_cache_reserve_frac:.0%} of the remainder as headroom; the rest sets "
-        "gpu_memory_utilization; max_model_len scales with the remaining VRAM."
+        f"gpu_memory_utilization; max_model_len = the remaining KV budget divided by "
+        f"{_KV_MB_PER_TOKEN} MB/token (a 7B-class fp16 multi-head figure, deliberately "
+        f"conservative), floored at 2048 and capped at 32768."
     )
     caveat = (
         "A conservative, DISCLOSED heuristic — not a measured fact. Override "
@@ -662,11 +700,24 @@ def compute_server_args(
         gpu_util = round(min(0.95, max(0.5, (weight_footprint_gb + kv_gb) / vram_gb)), 2)
     max_len = max_model_len_override
     if max_len is None:
-        # ~0.5 MB of KV cache per 1K context tokens is a broad, model-family-
-        # dependent rule of thumb for a 7B-class model -- rounded to a sane power-
-        # of-two-ish bucket, capped to keep the server from claiming an implausibly
-        # long context on modest VRAM.
-        est_tokens = int((kv_gb * 1024) / 0.5) * 1000
+        # UNIT CORRECTED 2026-08-02. The 0.5 MB figure is per TOKEN, not per 1K
+        # tokens: a 7B-class model with plain multi-head attention at fp16 costs
+        # 2 (K+V) x 32 layers x 32 heads x 128 dim x 2 bytes = 512 KB per token.
+        # Written as "per 1K tokens" and then multiplied by 1000, it over-counted
+        # the affordable context by ~1000x, so `est_tokens` came out in the
+        # MILLIONS and the 32768 cap silently decided every machine: a 6 GB card
+        # with 0.85 GB of KV budget and an 80 GB card with 63.75 GB were both
+        # handed 32768. The method string published to the operator said the value
+        # "scales with the remaining VRAM" while it was a constant -- a fabricated
+        # disclosure, and the likely cause of the field's engine-init failure
+        # (32768 tokens asked of a 2.55 GB budget on an 8 GB laptop card).
+        #
+        # 0.5 MB/token stays DELIBERATELY conservative rather than being lowered to
+        # match the shipped 3B model's grouped-query attention (~0.125 MB/token):
+        # this function's own stated principle is that over-reserving costs context
+        # length while under-reserving costs an OOM at startup, and on a small card
+        # the second failure is much worse than the first.
+        est_tokens = int((kv_gb * 1024) / _KV_MB_PER_TOKEN)
         max_len = max(2048, min(32768, (est_tokens // 1024) * 1024 or 2048))
     return {
         "max_model_len": max_len,

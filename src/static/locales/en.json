@@ -2341,5 +2341,6 @@
   "Thursday": "Thursday",
   "Friday": "Friday",
   "Saturday": "Saturday",
-  "Sunday": "Sunday"
+  "Sunday": "Sunday",
+  "… {n} bytes not shown …": "… {n} bytes not shown …"
 }
