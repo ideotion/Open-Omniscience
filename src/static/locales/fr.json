@@ -2300,5 +2300,11 @@
   "Install vLLM (downloads several GB over the clear internet)": "Installer vLLM (télécharge plusieurs Go via l'internet en clair)",
   "Download the default model (several GB over the clear internet)": "Télécharger le modèle par défaut (plusieurs Go via l'internet en clair)",
   "Set up local AI (downloads several GB over the clear internet)": "Configurer l'IA locale (télécharge plusieurs Go via l'internet en clair)",
-  "Run the verified Ollama installer": "Exécuter le programme d'installation Ollama vérifié"
+  "Run the verified Ollama installer": "Exécuter le programme d'installation Ollama vérifié",
+  "n={n} {unit}": "n={n} {unit}",
+  "snapshots": "instantanés",
+  "hours": "heures",
+  "articles / hour": "articles / heure",
+  "revisions": "révisions",
+  "documents": "documents"
 }

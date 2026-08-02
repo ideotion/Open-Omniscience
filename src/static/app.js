@@ -7913,6 +7913,23 @@
       law_documents: "Law documents tracked",
       law_revisions: "Law revisions tracked",
     };
+    // The y-axis UNIT per metric — the tiles used to pass "" so the axis stated
+    // no unit at all, which is half of why a flat "23" beside a bare "n=2" read
+    // as "23 documents or 2?" (maintainer-reported 2026-08-01).
+    const LIB_METRIC_UNIT_KEYS = {
+      articles_per_hour: "articles / hour",
+      sources: "sources",
+      keywords: "keywords",
+      wiki_pages: "pages",
+      wiki_revisions: "revisions",
+      law_documents: "documents",
+      law_revisions: "revisions",
+    };
+    // What one DATAPOINT is, per metric: the counter metrics are hourly
+    // SNAPSHOTS of a running total, while articles_per_hour is a per-HOUR
+    // bucket derived from created_at. n= now says which.
+    const LIB_METRIC_N_UNIT_KEYS = {articles_per_hour: "hours"};
+    const LIB_DEFAULT_N_UNIT = "snapshots";
     // 2026-07-24 Session A §5: per-tile WINDOW SWITCHER (ruled) — every Library
     // graph tile, including the new qualification one, starts on the SAME
     // default window and can be independently switched without reloading the
@@ -7951,9 +7968,15 @@
       _libGraphData[metric] = d;
       const series = Array.isArray(d.series) ? d.series : [];
       const flat = _libAllZero(series.map(p => p.n));
+      // Library metrics are COUNTS: zero-based axis (Item Y), a NEUTRAL colour
+      // (a falling keyword count is not "bad" — market up=green semantics do not
+      // apply), the real unit on the axis, and an n= that says what it counts.
       const body = flat
         ? `<div class="muted" style="padding:14px 0;font-size:12px">${esc(t("No data yet."))}</div>`
-        : dashChartSvg(series.map(p => ({observed_on: p.t, price: p.n})), "");
+        : dashChartSvg(series.map(p => ({observed_on: p.t, price: p.n})),
+                       t(LIB_METRIC_UNIT_KEYS[metric] || ""),
+                       {zeroBase: true, neutral: true,
+                        nUnit: t(LIB_METRIC_N_UNIT_KEYS[metric] || LIB_DEFAULT_N_UNIT)});
       const began = d.recording_began_at
         ? `<div class="hint muted" style="font-size:11px">${esc(t("Recording began at {x}.").replace("{x}", d.recording_began_at))}</div>`
         : "";
@@ -8033,7 +8056,10 @@
       const host = scope.querySelector ? scope.querySelector(".lib-qual-chart") : null;
       const live = _libQualSeries.filter(s => s.points.length);
       if (!host || !live.length) return;   // defensive: a flat/errored tile has no chart host
-      ooChart(host, live, {height: 150, indexed: false, logY: _libQualSpread(_libQualSeries) > 50});
+      // zeroBase: these are source COUNTS, so the axis starts at a true zero
+      // (ignored under logY, where log(0) is undefined — stated in ooChart).
+      const logY = _libQualSpread(_libQualSeries) > 50;
+      ooChart(host, live, {height: 150, indexed: false, logY: logY, zeroBase: !logY});
     }
     function enlargeLibQualification() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -9724,6 +9750,59 @@
         + `<tbody>${body}${more}</tbody></table>`;
     }
 
+    // --- honest axes (2026-08-01 field impressions, ruling 10) ------------ //
+    // A tick must be a value the axis ACTUALLY spans, in the data's own units.
+    // Two fabrications this replaces, both born of the `(max - min) || 1` span
+    // fallback: (a) a FLAT series invented a span, so a constant 23 drew ticks
+    // at 23 / "23.50" / 23 with the min+max labels OVERLAPPING at the plot
+    // bottom (dashChartSvg) and 23 / 23.33 / 23.67 / 24 — a top tick no data
+    // reaches — in ooChart; (b) a COUNT axis drew FRACTIONAL ticks ("23.5 law
+    // documents"). Rules: flat -> exactly ONE tick at the real value; an
+    // all-integer series -> integer ticks only; the first and last tick are
+    // always the REAL extremes, so rounding can never invent a value outside
+    // the data's own range.
+    function _allInteger(vals) {
+      return vals.length > 0 && vals.every(v => Number.isInteger(v));
+    }
+    function honestTicks(minV, maxV, want, integerOnly) {
+      if (!isFinite(minV) || !isFinite(maxV)) return [];
+      if (maxV <= minV) return [minV];              // FLAT: one honest tick, never a fabricated span
+      const n = Math.max(2, want | 0);
+      const eps = (maxV - minV) * 1e-9;
+      const out = [];
+      for (let g = 0; g < n; g++) {
+        const raw = minV + (maxV - minV) * g / (n - 1);
+        // endpoints stay the REAL extremes; interior ticks snap to integers on a count axis
+        const v = (g === 0) ? minV : (g === n - 1) ? maxV : (integerOnly ? Math.round(raw) : raw);
+        if (v < minV - eps || v > maxV + eps) continue;
+        if (!out.some(o => Math.abs(o - v) <= eps)) out.push(v);
+      }
+      return out.sort((a, b) => a - b);
+    }
+    // X-label granularity derived from the ACTUAL plotted span. The old code
+    // hard-sliced every label to YYYY-MM and de-duplicated INDEXES rather than
+    // TEXT, so two hourly snapshots inside one month both printed "2026-07"
+    // (maintainer-reported). Returns a formatter; callers then drop duplicate
+    // label TEXT, so a window that genuinely sits inside one hour honestly
+    // shows one label instead of the same one repeated.
+    function _timeLabelFmt(firstIso, lastIso) {
+      const a = Date.parse(String(firstIso)), b = Date.parse(String(lastIso));
+      const days = (isFinite(a) && isFinite(b)) ? Math.abs(b - a) / 864e5 : NaN;
+      if (isFinite(days) && days <= 2)
+        return (s) => String(s).slice(5, 13).replace("T", " ");   // MM-DD HH
+      if (isFinite(days) && days <= 92)
+        return (s) => String(s).slice(0, 10);                     // YYYY-MM-DD
+      return (s) => String(s).slice(0, 7);                        // YYYY-MM
+    }
+    // The same rule for an epoch-ms axis (ooChart): granularity from the span
+    // being labelled, so an hourly window stops printing the same day repeatedly.
+    function _msLabel(ms, spanMs) {
+      const iso = new Date(ms).toISOString();
+      const days = spanMs / 864e5;
+      if (isFinite(days) && days <= 2) return iso.slice(5, 16).replace("T", " ");  // MM-DD HH:MM
+      if (isFinite(days) && days <= 92) return iso.slice(0, 10);                   // YYYY-MM-DD
+      return iso.slice(0, 7);                                                      // YYYY-MM
+    }
     function dashChartSvg(points, unit, opts) {
       opts = opts || {};
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -9732,7 +9811,19 @@
       }
       const w = 300, h = 120, padL = 44, padR = 8, padT = 8, padB = 18;
       const n = points.length, lineMode = n >= _SPARSE_BAR_MAX;
-      const ys = points.map(p => p.price), minY = Math.min(...ys), maxY = Math.max(...ys), span = (maxY - minY) || 1;
+      const ys = points.map(p => p.price);
+      const dataMin = Math.min(...ys), dataMax = Math.max(...ys);
+      // opts.zeroBase (Item Y, count series): the axis starts at a true ZERO, so a
+      // count difference is read against zero and never against a window-min that
+      // exaggerates it. Price LEVEL callers keep the window-min baseline (a
+      // fabricated zero would be the dishonest direction there).
+      const baseMin = opts.zeroBase ? Math.min(0, dataMin) : dataMin;
+      // A FLAT series is centred in the plot instead of fabricating a span: the
+      // old `(max-min)||1` fallback pinned a constant series to the very bottom
+      // AND invented the ticks above it.
+      const flat = dataMax <= baseMin;
+      const minY = flat ? baseMin - 0.5 : baseMin, maxY = flat ? dataMax + 0.5 : dataMax;
+      const span = (maxY - minY) || 1;
       const plotW = w - padL - padR;
       // Shared time axis (Slice 4 — maintainer "graph timescales should be coherent
       // between all sources"): when opts.t0/t1 (ISO dates) are given, every point is
@@ -9752,9 +9843,13 @@
       };
       const Y = v => padT + (h - padT - padB) * (1 - (v - minY)/span);
       const up = points[n-1].price >= points[0].price;
-      const col = up ? 'var(--ok)' : 'var(--err)';
-      // 3 discrete horizontal gridlines at min / mid / max, each labelled.
-      const grid = [minY, minY + span/2, maxY].map(v =>
+      // opts.neutral: a NEUTRAL metric (a corpus count) must not be painted in
+      // market up=green/down=red semantics — fewer keywords is not "bad". Price
+      // and market callers keep the directional colour.
+      const col = opts.neutral ? 'var(--accent)' : (up ? 'var(--ok)' : 'var(--err)');
+      // Discrete horizontal gridlines, each labelled — values from honestTicks
+      // (flat -> one tick at the real value; integer data -> integer ticks).
+      const grid = honestTicks(baseMin, dataMax, 3, _allInteger(ys) && Number.isInteger(baseMin)).map(v =>
         `<line x1="${padL}" y1="${Y(v).toFixed(1)}" x2="${w-padR}" y2="${Y(v).toFixed(1)}"
            stroke="var(--border)" stroke-dasharray="2 4" stroke-width="0.6"></line>
          <text x="${padL-4}" y="${(Y(v)+3).toFixed(1)}" text-anchor="end" font-size="8.5"
@@ -9762,14 +9857,26 @@
       // X ticks: in SHARED mode the ticks are the WINDOW endpoints (start/mid/end of
       // the plot at fixed positions) so every card reads the SAME coherent time
       // legend; otherwise first / middle / last point dates (YYYY-MM, de-duplicated).
-      const xticks = shared
+      // Granularity follows the plotted span (hour / day / month) and duplicate
+      // label TEXT is dropped — the old code sliced every label to YYYY-MM and
+      // de-duplicated INDEXES, so two hourly snapshots in one month both printed
+      // "2026-07" (maintainer-reported).
+      const xfmt = shared
+        ? _timeLabelFmt(opts.t0, opts.t1)
+        : _timeLabelFmt(points[0].observed_on, points[n-1].observed_on);
+      const xcand = shared
         ? [[padL, "start", opts.t0], [padL + plotW / 2, "middle", new Date((sa + sb) / 2).toISOString()],
-           [w - padR, "end", opts.t1]].map(([x, anc, lab]) =>
-            `<text x="${x.toFixed(1)}" y="${h-5}" text-anchor="${anc}"
-               font-size="8.5" fill="var(--muted)">${esc(String(lab).slice(0,7))}</text>`).join("")
+           [w - padR, "end", opts.t1]]
         : [...new Set([0, Math.floor((n-1)/2), n-1])].map(i =>
-            `<text x="${X(i).toFixed(1)}" y="${h-5}" text-anchor="${i===0?'start':i===n-1?'end':'middle'}"
-               font-size="8.5" fill="var(--muted)">${esc(points[i].observed_on.slice(0,7))}</text>`).join("");
+            [X(i), i === 0 ? "start" : i === n-1 ? "end" : "middle", points[i].observed_on]);
+      const xseen = new Set();
+      const xticks = xcand.map(([x, anc, lab]) => {
+        const text = xfmt(lab);
+        if (xseen.has(text)) return "";               // dedupe on TEXT, not index
+        xseen.add(text);
+        return `<text x="${x.toFixed(1)}" y="${h-5}" text-anchor="${anc}"
+               font-size="8.5" fill="var(--muted)">${esc(text)}</text>`;
+      }).join("");
       // The series itself: a line when dense (n>=10), otherwise honest BARS (Item Y).
       // Bars anchor to the window-MIN — which the gridlines above already LABEL — so a
       // price-LEVEL difference stays visible and honest (NEVER a fabricated zero
@@ -9790,16 +9897,24 @@
                  + `<rect x="${x0.toFixed(1)}" y="${(by - 0.5).toFixed(1)}" width="${bwc}" height="2" fill="${col}"></rect>`;
           }).join("");
       // Item Y: the sparse "dots shown / no curve interpolated" caveat is removed
-      // app-wide; only the datapoint count is kept.
+      // app-wide; only the datapoint count is kept — but it now carries its UNIT
+      // (opts.nUnit), because a bare "n=2" beside a value of 23 read as "23 or 2
+      // documents?" (maintainer-reported). n counts DATAPOINTS, never entities.
+      const nText = opts.nUnit
+        ? ((window.OOI18N && OOI18N.tf) ? OOI18N.tf("n={n} {unit}", {n: n, unit: opts.nUnit})
+                                        : `n=${n} ${opts.nUnit}`)
+        : `n=${n}`;
       const caveat = lineMode ? "" :
-        `<div class="hint muted" style="margin-top:1px">n=${n}</div>`;
+        `<div class="hint muted" style="margin-top:1px">${esc(nText)}</div>`;
       // The legend reads the SHARED window when coherent (so every card states the
       // same span), else this series' own first→last dates.
-      const range = shared ? `${opts.t0} → ${opts.t1}`
-        : (n >= 2 ? `${points[0].observed_on} → ${points[n-1].observed_on}` : points[0].observed_on);
+      const range = shared ? `${xfmt(opts.t0)} → ${xfmt(opts.t1)}`
+        : (n >= 2 ? `${xfmt(points[0].observed_on)} → ${xfmt(points[n-1].observed_on)}`
+                  : xfmt(points[0].observed_on));
       // a11y: a translated summary + a visually-hidden data table (audit PR G).
-      const aria = _chartAria(unit || "", n, points[0].observed_on.slice(0, 7),
-        points[n - 1].observed_on.slice(0, 7), fmtNum(minY), fmtNum(maxY));
+      // The stated lo/hi are the REAL data extremes, never the padded plot bounds.
+      const aria = _chartAria(unit || "", n, xfmt(points[0].observed_on),
+        xfmt(points[n - 1].observed_on), fmtNum(dataMin), fmtNum(dataMax));
       const srTable = _chartSrTable(
         points.map(p => ({date: p.observed_on, value: fmtNum(p.price)})), unit || "");
       return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block" role="img" aria-label="${esc(aria)}">
@@ -10265,7 +10380,27 @@
     function ooChart(el, seriesList, opts = {}) {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       el.innerHTML = "";
-      const W = Math.max(320, Math.min(el.clientWidth || 680, opts.maxWidth || 900));
+      // The canvas is sized in FIXED px, so it must never be wider than its host:
+      // a 320 px hard floor (and a 680 px fallback when the element was not laid
+      // out yet) made the chart overflow a narrower tile, with no overflow rule
+      // anywhere in the tile/row/panel chain to clip it (maintainer-reported
+      // "graphs do not fit their boxes"). Measure the real container; when it is
+      // not laid out yet (hidden tab), re-render ONCE when it gains a width
+      // instead of guessing a size that will overflow.
+      const avail = el.clientWidth || (el.parentElement ? el.parentElement.clientWidth : 0);
+      if (!avail) {
+        if (typeof ResizeObserver === "function" && !el._ooChartPending) {
+          el._ooChartPending = true;
+          const ro = new ResizeObserver(() => {
+            if (!el.clientWidth) return;
+            ro.disconnect(); el._ooChartPending = false;
+            ooChart(el, seriesList, opts);
+          });
+          ro.observe(el);
+        }
+        return;
+      }
+      const W = Math.max(120, Math.min(avail, opts.maxWidth || 900));
       const H = opts.height || 220, padL = 52, padR = 10, padT = 10, padB = 24;
       const wrap = document.createElement("div");
       const cv = document.createElement("canvas");
@@ -10303,7 +10438,7 @@
       const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr);
       const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n) || "#888";
       const fmtV = (v) => (typeof fmtNum === "function") ? fmtNum(v) : String(v);
-      const fmtT = (ms) => new Date(ms).toISOString().slice(0, 10);
+      const fmtT = (ms) => _msLabel(ms, Math.max(tMax - tMin, 1));
       // a11y (audit PR G): the canvas is opaque to screen readers — give it a
       // role + translated summary, and a visually-hidden per-series data table.
       const allV = all.flatMap(s => s.pts.map(p => p.v));
@@ -10350,20 +10485,38 @@
         const vs = visible();
         const ys = vs.flatMap(s => s.vis.map(p => vt(pv(s, p))));
         if (!ys.length) { readout.textContent = t9("no points in this window — zoom out (double-click)"); return; }
-        const yMin = (opts.zeroBase && !opts.logY) ? Math.min(0, ...ys) : Math.min(...ys);
-        const yMax = Math.max(...ys), ySpan = (yMax - yMin) || 1;
+        const dataLo = (opts.zeroBase && !opts.logY) ? Math.min(0, ...ys) : Math.min(...ys);
+        const dataHi = Math.max(...ys);
+        // A FLAT series is centred instead of fabricating a span: the old
+        // `(yMax-yMin)||1` fallback drew 23 / 23.33 / 23.67 / 24 for a constant
+        // 23 — three ticks the data never reaches (2026-08-01 ruling 10).
+        const flatY = dataHi <= dataLo;
+        const yMin = flatY ? dataLo - 0.5 : dataLo, yMax = flatY ? dataHi + 0.5 : dataHi;
+        const ySpan = (yMax - yMin) || 1;
         const Yof = (v) => padT + plotH * (1 - (v - yMin) / ySpan);
         ctx.font = "10px sans-serif"; ctx.fillStyle = cssVar("--muted"); ctx.strokeStyle = cssVar("--border");
-        for (let g = 0; g <= 3; g++) {                     // discrete gridlines, labelled
-          const v = yMin + ySpan * g / 3, y = Yof(v);
+        // Ticks in the data's own units: integer-only for a count axis (never a
+        // fractional count), exactly one tick for a flat series. Under logY the
+        // axis space is log10, so integer snapping applies to the LABEL values,
+        // not the axis positions — hence the vtInv round-trip stays as-is.
+        const tickInt = !opts.logY && !opts.indexed && _allInteger(ys);
+        for (const v of honestTicks(dataLo, dataHi, 4, tickInt)) {
+          const y = Yof(v);
           ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
           ctx.setLineDash([]); ctx.textAlign = "right"; ctx.fillText(fmtV(vtInv(v)), padL - 4, y + 3);
         }
         const nTicks = Math.max(2, Math.min(6, Math.floor(plotW / 110)));
         ctx.textAlign = "center";
+        // Granularity follows the VISIBLE window (zooming into a day stops
+        // printing the same date six times), and duplicate label TEXT is dropped.
+        const winFmt = (ms) => _msLabel(ms, Math.max(t1 - t0, 1));
+        const seenT = new Set();
         for (let g = 0; g <= nTicks; g++) {
           const ms = t0 + (t1 - t0) * g / nTicks;
-          ctx.fillText(fmtT(ms), Math.min(Math.max(Xof(ms), padL + 28), W - padR - 28), H - 8);
+          const lab = winFmt(ms);
+          if (seenT.has(lab)) continue;
+          seenT.add(lab);
+          ctx.fillText(lab, Math.min(Math.max(Xof(ms), padL + 28), W - padR - 28), H - 8);
         }
         for (const s of vs) {
           if (!s.vis.length) continue;

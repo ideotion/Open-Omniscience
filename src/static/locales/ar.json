@@ -2300,5 +2300,11 @@
   "Install vLLM (downloads several GB over the clear internet)": "تثبيت vLLM (ينزّل عدة غيغابايت عبر الإنترنت المكشوف)",
   "Download the default model (several GB over the clear internet)": "تنزيل النموذج الافتراضي (عدة غيغابايت عبر الإنترنت المكشوف)",
   "Set up local AI (downloads several GB over the clear internet)": "إعداد الذكاء الاصطناعي المحلي (ينزّل عدة غيغابايت عبر الإنترنت المكشوف)",
-  "Run the verified Ollama installer": "تشغيل مثبِّت Ollama الذي تم التحقق منه"
+  "Run the verified Ollama installer": "تشغيل مثبِّت Ollama الذي تم التحقق منه",
+  "n={n} {unit}": "n={n} {unit}",
+  "snapshots": "لقطات",
+  "hours": "ساعات",
+  "articles / hour": "مقالات / ساعة",
+  "revisions": "مراجعات",
+  "documents": "مستندات"
 }

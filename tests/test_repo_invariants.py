@@ -2098,6 +2098,41 @@ def test_ui_invariants():
     assert "dots shown, no curve interpolated through sparse points" not in html, (
         "the early-corpus sparse caveat must be removed app-wide (Item Y amends #16)"
     )
+    #     AMENDED AGAIN by the AXIS-HONESTY pass (field impressions 2026-08-01,
+    #     ruling 10): a tick must be a value the axis ACTUALLY spans. The
+    #     `(max - min) || 1` span fallback fabricated ticks for a FLAT series
+    #     (a constant 23 drew 23 / "23.50" / 23 in dashChartSvg and
+    #     23 / 23.33 / 23.67 / 24 in ooChart) and, with no integer snapping, a
+    #     COUNT axis printed fractional counts. The behavioural proof lives in
+    #     tests/axis_honesty_node_test.js (which extracts the real helpers); these
+    #     are the source-level guards that the fabrication vectors stay gone.
+    assert "function honestTicks(" in html, (
+        "the shared honest-tick generator must exist (axis-honesty pass, #16)"
+    )
+    assert "[minY, minY + span/2, maxY]" not in html, (
+        "dashChartSvg's fabricated min/mid/max gridline triple must stay gone"
+    )
+    assert "yMin + ySpan * g / 3" not in html, (
+        "ooChart's fabricated 4-tick loop must stay gone (it drew a top tick no data reached)"
+    )
+    #     The fixed-px ooChart canvas (320px floor, 680px hidden-element fallback)
+    #     was the one confirmed graphs-overflow-their-box vector: no overflow rule
+    #     exists anywhere in the tile/row/panel chain to clip it.
+    assert "Math.max(320, Math.min(el.clientWidth || 680" not in html, (
+        "the ooChart fixed 320px floor / 680px fallback must stay gone (overflow vector)"
+    )
+    #     X labels: granularity follows the plotted span and duplicates are dropped
+    #     by TEXT (two hourly snapshots in one month both printed "2026-07").
+    assert "function _timeLabelFmt(" in html and "function _msLabel(" in html, (
+        "both renderers need span-derived time-label granularity"
+    )
+    #     n= carries its unit (a bare "n=2" beside a value of 23 read as
+    #     "23 documents or 2?"), and COUNT tiles get a true zero base + a NEUTRAL
+    #     colour (market up=green/down=red is fabricated semantics on a corpus count).
+    assert "n={n} {unit}" in html, "the n= label must be a keyable composite template"
+    assert "opts.neutral" in html and "opts.zeroBase" in html, (
+        "count series need a neutral colour and a true zero base"
+    )
     for surface in (
         # P2-10: the commodity price detail moved into the shared fullscreen overlay
         # (chartSymbol -> chartEnlarge -> ooChart), so #mkt-chart-oo is no longer a
@@ -7364,7 +7399,20 @@ def test_library_qualification_tile_window_switcher_hide_flat_auto_log():
     assert "function _libQualSpread" in app
     assert "_libQualSpread(_libQualSeries) > 50" in app
     assert '"log scale"' in app
-    assert "logY: _libQualSpread" in app  # the real ooChart opts.logY toggle, not a fake label
+    # The real ooChart opts.logY toggle, not a fake label. Scoped to the RENDER
+    # function rather than pinned to one literal call shape: the axis-honesty pass
+    # (2026-08-01) legitimately hoisted the spread test into a local so the same
+    # verdict could also drive zeroBase, and a literal `logY: _libQualSpread`
+    # anchor failed against correct code (the recorded stale-anchor family).
+    _qual_render = app.split("function _libRenderQualChart", 1)[1].split("\n    function ", 1)[0]
+    assert "_libQualSpread(_libQualSeries) > 50" in _qual_render and "logY:" in _qual_render, (
+        "the qualification chart's logY must be driven by the measured spread"
+    )
+    # These are source COUNTS, so the linear axis starts at a true zero (Item Y);
+    # zeroBase is meaningless under logY (log(0) is undefined) and must not be set there.
+    assert "zeroBase: !logY" in _qual_render, (
+        "the qualification counts need a true zero base on the linear axis"
+    )
 
     # The 'slice-1c 404 lesson' (CLAUDE.md): the wiring test must COMPOSE the real
     # route (router prefix + decorator), never assert two literal strings side by

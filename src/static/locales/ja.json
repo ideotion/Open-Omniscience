@@ -2300,5 +2300,11 @@
   "Install vLLM (downloads several GB over the clear internet)": "vLLM をインストール（クリアネット経由で数 GB をダウンロード）",
   "Download the default model (several GB over the clear internet)": "既定のモデルをダウンロード（クリアネット経由で数 GB）",
   "Set up local AI (downloads several GB over the clear internet)": "ローカル AI をセットアップ（クリアネット経由で数 GB をダウンロード）",
-  "Run the verified Ollama installer": "検証済みの Ollama インストーラーを実行する"
+  "Run the verified Ollama installer": "検証済みの Ollama インストーラーを実行する",
+  "n={n} {unit}": "n={n} {unit}",
+  "snapshots": "スナップショット",
+  "hours": "時間",
+  "articles / hour": "記事 / 時間",
+  "revisions": "リビジョン",
+  "documents": "文書"
 }

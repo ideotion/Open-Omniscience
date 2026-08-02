@@ -2300,5 +2300,11 @@
   "Install vLLM (downloads several GB over the clear internet)": "Pasang vLLM (mengunduh beberapa GB lewat internet terbuka)",
   "Download the default model (several GB over the clear internet)": "Unduh model bawaan (beberapa GB lewat internet terbuka)",
   "Set up local AI (downloads several GB over the clear internet)": "Siapkan AI lokal (mengunduh beberapa GB lewat internet terbuka)",
-  "Run the verified Ollama installer": "Jalankan pemasang Ollama yang terverifikasi"
+  "Run the verified Ollama installer": "Jalankan pemasang Ollama yang terverifikasi",
+  "n={n} {unit}": "n={n} {unit}",
+  "snapshots": "snapshot",
+  "hours": "jam",
+  "articles / hour": "artikel / jam",
+  "revisions": "revisi",
+  "documents": "dokumen"
 }

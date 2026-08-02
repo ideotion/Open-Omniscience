@@ -2300,5 +2300,11 @@
   "Install vLLM (downloads several GB over the clear internet)": "vLLM इंस्टॉल करें (खुले इंटरनेट से कई GB डाउनलोड करता है)",
   "Download the default model (several GB over the clear internet)": "डिफ़ॉल्ट मॉडल डाउनलोड करें (खुले इंटरनेट से कई GB)",
   "Set up local AI (downloads several GB over the clear internet)": "स्थानीय AI सेट करें (खुले इंटरनेट से कई GB डाउनलोड करता है)",
-  "Run the verified Ollama installer": "सत्यापित Ollama इंस्टॉलर चलाएँ"
+  "Run the verified Ollama installer": "सत्यापित Ollama इंस्टॉलर चलाएँ",
+  "n={n} {unit}": "n={n} {unit}",
+  "snapshots": "स्नैपशॉट",
+  "hours": "घंटे",
+  "articles / hour": "लेख / घंटा",
+  "revisions": "संशोधन",
+  "documents": "दस्तावेज़"
 }

@@ -2300,5 +2300,11 @@
   "Install vLLM (downloads several GB over the clear internet)": "安装 vLLM（通过明网下载数 GB）",
   "Download the default model (several GB over the clear internet)": "下载默认模型（通过明网下载数 GB）",
   "Set up local AI (downloads several GB over the clear internet)": "设置本地 AI（通过明网下载数 GB）",
-  "Run the verified Ollama installer": "运行已验证的 Ollama 安装程序"
+  "Run the verified Ollama installer": "运行已验证的 Ollama 安装程序",
+  "n={n} {unit}": "n={n} {unit}",
+  "snapshots": "快照",
+  "hours": "小时",
+  "articles / hour": "篇 / 小时",
+  "revisions": "修订",
+  "documents": "文档"
 }
