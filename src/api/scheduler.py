@@ -158,10 +158,11 @@ def scheduler_equilibrium(db: Session = Depends(get_db)) -> dict:
 @router.post("/start")
 def scheduler_start() -> dict:
     """Start the background ingestion loop (the first run begins immediately)."""
-    from src.ingest import clear_kill_switch
+    from src.ingest import clear_kill_switch, note_operator_crossed_online
     from src.scheduler import memguard
 
     clear_kill_switch()
+    note_operator_crossed_online()  # an explicit start IS crossing online
     # An explicit start is a USER ACTION: release a paused-low-memory latch and
     # try again (the guard re-trips after fresh sustained samples if memory is
     # still genuinely low — a retry, never a permanent override).
@@ -184,10 +185,11 @@ def scheduler_stop() -> dict:
 
 @router.post("/run-now")
 def scheduler_run_now() -> dict:
-    from src.ingest import clear_kill_switch
+    from src.ingest import clear_kill_switch, note_operator_crossed_online
     from src.scheduler import memguard
 
     clear_kill_switch()
+    note_operator_crossed_online()  # a user-triggered run IS crossing online
     # A user-triggered run releases a paused-low-memory latch (see /start).
     memguard.memory_guard.reset(reason="operator ran collection now")
     """Trigger one immediate run. Returns started=False if a run is already active."""

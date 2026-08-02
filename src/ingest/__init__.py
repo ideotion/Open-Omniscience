@@ -315,17 +315,29 @@ def activate_kill_switch() -> None:
 
 
 def clear_kill_switch() -> None:
+    """Turn the switch off. A MECHANISM, and deliberately nothing more.
+
+    It does NOT record that an operator went online -- see
+    :func:`note_operator_crossed_online`. The first cut of the boot-race fix set
+    the decision flag here, on the theory that clearing the switch and going online
+    are the same event. They are not: this primitive is also how a caller reaches a
+    known state (every test fixture in the tree does exactly that), and folding the
+    decision in meant any such caller silently suppressed the boot airplane engage.
+    That is the wrong direction to be wrong in -- it weakens zero-network boot, the
+    non-negotiable the flag was written to leave untouched.
+    """
     _KILL.clear()
-    # An OPERATOR crossing online is a decision the boot sequence must not undo.
-    _CROSSED_ONLINE.set()
 
 
 def kill_switch_active() -> bool:
     return _KILL.is_set()
 
 
-#: Has anything in this process ever crossed ONLINE? Set by clear_kill_switch and
-#: never cleared, so it records "a decision was taken", not the current state.
+#: Has an OPERATOR crossed ONLINE in this process? Set by
+#: :func:`note_operator_crossed_online` and never cleared, so it records "a
+#: decision was taken", not the current state -- it must survive a later
+#: deliberate go-offline, because a flag mirroring the state would re-arm the
+#: clobber below the moment the operator toggled airplane back on.
 #:
 #: THE RACE IT CLOSES (field report 2026-08-02: "sometimes the app remains in
 #: airplane mode with no explanation" on a NEW instance). Airplane-at-boot is
@@ -344,6 +356,18 @@ def kill_switch_active() -> bool:
 #: unconditionally; it just may not RE-engage it over an explicit later decision,
 #: which was never "booting offline" in the first place.
 _CROSSED_ONLINE = threading.Event()
+
+
+def note_operator_crossed_online() -> None:
+    """Record that an OPERATOR deliberately took this process online.
+
+    Called from the three surfaces where that is what actually happened -- the
+    go-online endpoint, scheduler start, and run-now -- each of which is already
+    behind the ONE network-consent popup. Kept separate from
+    :func:`clear_kill_switch` so that reaching a known state, which is a different
+    act, can never be mistaken for a decision.
+    """
+    _CROSSED_ONLINE.set()
 
 
 def crossed_online_since_boot() -> bool:
