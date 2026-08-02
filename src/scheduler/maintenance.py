@@ -70,6 +70,25 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
     except Exception:  # noqa: BLE001 - a background safety net must never break
         _LOG.warning("off-peak pre-restore snapshot sweep failed", exc_info=True)
         out["pre_restore_snapshot_sweep"] = {"skipped": "error"}
+    # ...and the ORPHANED STAGING dirs beside them, for the same reason. The janitor
+    # (cleanup_stale_staging) runs at BOOT only, so on a long-lived instance -- which is
+    # the explicit goal, K4 asks for a 14-day continuous run -- a .restore-*/.bak-build-*
+    # dir orphaned in hour 1 survives every one of the remaining days. That matters more
+    # than the bytes: for an ENCRYPTED corpus the staging tree holds a PLAINTEXT copy, so
+    # an unswept one is an at-rest-encryption hole for as long as the app stays up.
+    #
+    # Field bundle 2026-08-02: .restore-5c81a74582890858, 809 MB, flagged
+    # plaintext_snapshot by the app's own forensics, left by an import killed the previous
+    # day. It was ~18 h old at boot, so the 24 h age guard correctly protected it then --
+    # and nothing would have looked again until the next restart. Same age + registry
+    # guards as the boot janitor; a live job's staging is never touched.
+    try:
+        from src.backup.artifact import cleanup_stale_staging
+
+        out["stale_staging_sweep"] = {"removed": cleanup_stale_staging()}
+    except Exception:  # noqa: BLE001 - a background safety net must never break
+        _LOG.warning("off-peak stale-staging sweep failed", exc_info=True)
+        out["stale_staging_sweep"] = {"skipped": "error"}
     from src.database.session import session_scope
 
     try:

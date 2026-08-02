@@ -166,6 +166,175 @@ def test_the_backlog_distinguishes_measured_empty_from_could_not_read(monkeypatc
     )
 
 
+def test_the_backlog_reads_a_REAL_pending_batch_off_the_REAL_schema(monkeypatch):
+    """The happy-path twin of the degrade test above -- and the one that was missing.
+
+    Both copies of this query named ``b.created_at``; MergeBatch's column is
+    ``imported_at``, so every call raised ``no such column`` and reported
+    ``available: false``. The suite stayed green because it only ever drove the SAD
+    path (the _Boom test above), so the honest degrade became a permanent hiding
+    place for the bug it was built to survive -- this project's own recorded lesson,
+    landed here verbatim. Field bundle 2026-08-02: 686,317 of 785,481 articles held
+    no keyword mentions and this instrument said nothing.
+
+    So: a real engine, the real tables, a real merged-but-not-re-indexed batch.
+    """
+    from contextlib import contextmanager
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from src.backup import merge as M
+    from src.database.models import Base, MergeBatch, MergedRow
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    session = Session(engine)
+    # one batch merged and awaiting re-index, one already re-indexed
+    session.add(MergeBatch(id=1, status=M._STATUS_MERGED))
+    session.add(MergeBatch(id=2, status=M._STATUS_REINDEXED))
+    for rid in (10, 11, 12):
+        session.add(MergedRow(batch_id=1, table_name="articles", row_id=rid))
+    session.add(MergedRow(batch_id=1, table_name="sources", row_id=99))  # not an article
+    session.add(MergedRow(batch_id=2, table_name="articles", row_id=20))
+    session.commit()
+
+    @contextmanager
+    def _scope():
+        yield session
+
+    monkeypatch.setattr("src.database.session.session_scope", _scope)
+
+    out = M.reindex_backlog()
+    assert out["available"] is True, out.get("reason")
+    assert out["articles_pending"] == 3, "the MEASURED article count, not an estimate"
+    assert out["batches_pending"] == 1, "only the un-re-indexed batch is pending"
+    assert out["batches"][0]["batch_id"] == 1
+
+    # the sibling accessor runs the same SQL; it must not swallow it into []
+    assert [b["batch_id"] for b in M.pending_reindex_batches()] == [1]
+
+
+# --------------------------------------------------------------------------- #
+#  the backlog must be ACTIONABLE, not only visible
+# --------------------------------------------------------------------------- #
+class _Ctx:
+    """The JobContext surface the resume worker uses."""
+
+    def __init__(self, stop_after: int | None = None) -> None:
+        self.stopping = False
+        self.progress: list[dict] = []
+        self._stop_after = stop_after
+
+    def set_progress(self, *, done=None, total=None, detail=None) -> None:
+        self.progress.append({"done": done, "total": total, "detail": detail})
+        if self._stop_after is not None and len(self.progress) > self._stop_after:
+            self.stopping = True
+
+
+def test_the_resume_worker_finishes_every_pending_batch(monkeypatch):
+    """The half the guard was missing. The backlog was reported and then nothing in the
+    app could act on it: the re-index ran only inside the import, so an import stopped
+    during it (a CLEAN shutdown is enough) left its batch stamped 'merged' forever."""
+    import src.api.backup_v2 as B
+
+    calls: list[int] = []
+
+    def _fake_backlog():
+        return {
+            "available": True,
+            "batches": [{"batch_id": 1, "articles": 2}, {"batch_id": 2, "articles": 3}],
+            "batches_pending": 2,
+            "articles_pending": 5,
+        }
+
+    def _fake_reindex(batch_id, *, progress_cb=None, should_stop=None, **_kw):
+        calls.append(batch_id)
+        if progress_cb:
+            progress_cb(1, 1)
+        return {"reindexed": 2 if batch_id == 1 else 3, "failed": 0}
+
+    import src.backup.merge as M
+
+    monkeypatch.setattr(M, "reindex_backlog", _fake_backlog)
+    monkeypatch.setattr(M, "reindex_imported_articles", _fake_reindex)
+
+    ctx = _Ctx()
+    out = B._reindex_resume_worker(ctx)
+    assert calls == [1, 2], "every pending batch is walked, in order"
+    assert out["articles_reindexed"] == 5
+    assert out["stopped"] is False
+    assert ctx.progress[0]["total"] == 5, "the real article count is the denominator"
+
+
+def test_the_resume_worker_stops_cooperatively_and_says_so(monkeypatch):
+    """A stop must be reported as a stop. Reporting a partial run as a finished one
+    would re-hide exactly the backlog this job exists to drain."""
+    import src.api.backup_v2 as B
+    import src.backup.merge as M
+
+    calls: list[int] = []
+    monkeypatch.setattr(
+        M,
+        "reindex_backlog",
+        lambda: {
+            "available": True,
+            "batches": [{"batch_id": 1, "articles": 1}, {"batch_id": 2, "articles": 1}],
+            "batches_pending": 2,
+            "articles_pending": 2,
+        },
+    )
+    monkeypatch.setattr(
+        M,
+        "reindex_imported_articles",
+        lambda bid, **kw: (calls.append(bid), {"reindexed": 1, "failed": 0})[1],
+    )
+
+    ctx = _Ctx(stop_after=1)  # trips after the first progress line
+    out = B._reindex_resume_worker(ctx)
+    assert out["stopped"] is True
+    assert calls == [1], "it stopped at the BATCH boundary, mid-backlog"
+
+
+def test_a_cancel_during_the_LAST_batch_is_still_reported_as_stopped(monkeypatch):
+    """The top-of-loop check never sees a cancel that lands on the final batch -- the
+    loop just ends. Without a check after it, a partial drain reports stopped:false and
+    reads as a completed one, which is the reassurance this whole guard exists to
+    prevent. reindex_imported_articles takes should_stop, so it genuinely can return
+    early there."""
+    import src.api.backup_v2 as B
+    import src.backup.merge as M
+
+    monkeypatch.setattr(M, "reindex_backlog", lambda: {
+        "available": True,
+        "batches": [{"batch_id": 1, "articles": 1}],
+        "batches_pending": 1,
+        "articles_pending": 1,
+    })
+
+    ctx = _Ctx()
+
+    def _reindex(bid, **kw):
+        ctx.stopping = True  # cancelled while the ONLY batch is in flight
+        return {"reindexed": 0, "failed": 0}
+
+    monkeypatch.setattr(M, "reindex_imported_articles", _reindex)
+    assert B._reindex_resume_worker(ctx)["stopped"] is True
+
+
+def test_an_unreadable_backlog_refuses_rather_than_reporting_nothing_to_do(monkeypatch):
+    """`available: false` means UNKNOWN. Treating it as an empty backlog here would
+    make the resume job silently no-op on exactly the store that most needs it."""
+    import src.api.backup_v2 as B
+    import src.backup.merge as M
+
+    monkeypatch.setattr(
+        M, "reindex_backlog", lambda: {"available": False, "reason": "database is locked"}
+    )
+    with pytest.raises(RuntimeError, match="locked"):
+        B._reindex_resume_worker(_Ctx())
+
+
 def test_the_boot_path_states_the_backlog_out_loud():
     """A backlog nobody can see is the failure mode option (a) trades for. Pinned at
     the boot call site, scoped to the upkeep function's own body."""

@@ -206,3 +206,50 @@ def test_a_failing_sweep_never_breaks_the_rest_of_the_idle_maintenance_cycle(mon
     # failing sweep rather than aborting the whole idle window.
     assert "cleanup" in out
     assert "country_rollup" in out
+
+
+# --------------------------------------------------------------------------- #
+#  the ORPHANED STAGING sweep rides the same off-peak window
+# --------------------------------------------------------------------------- #
+def test_run_idle_maintenance_also_sweeps_orphaned_staging(monkeypatch):
+    """The janitor that reclaims .restore-*/.bak-build-* dirs runs at BOOT only, so on a
+    long-lived instance -- which is the explicit goal, K4 asks for a 14-day continuous
+    run -- a dir orphaned in hour 1 survives every remaining day.
+
+    That matters more than the bytes: for an ENCRYPTED corpus the staging tree holds a
+    PLAINTEXT copy, so an unswept one is an at-rest-encryption hole for as long as the
+    app stays up. Field bundle 2026-08-02: .restore-5c81a74582890858, 809 MB, flagged
+    plaintext_snapshot by the app's own forensics, left by an import killed the previous
+    day and still there. It was ~18 h old at boot, so the 24 h age guard correctly
+    protected it THEN -- and nothing would have looked again until the next restart."""
+    from src.database.session import init_db
+    from src.scheduler import maintenance as maint_mod
+
+    init_db()
+    called = {}
+
+    def _fake(*a, **kw):
+        called["ran"] = True
+        return 2
+
+    monkeypatch.setattr("src.backup.artifact.cleanup_stale_staging", _fake)
+    out = maint_mod.run_idle_maintenance()
+    assert called.get("ran") is True, "the boot janitor must also run off-peak"
+    assert out["stale_staging_sweep"]["removed"] == 2
+
+
+def test_a_failing_staging_sweep_never_breaks_the_idle_cycle(monkeypatch):
+    """Same contract as its sibling: a background safety net that can abort the window
+    it runs in would cost more than it saves."""
+    from src.database.session import init_db
+    from src.scheduler import maintenance as maint_mod
+
+    init_db()
+
+    def _boom(*a, **kw):
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr("src.backup.artifact.cleanup_stale_staging", _boom)
+    out = maint_mod.run_idle_maintenance()  # must not raise
+    assert out["stale_staging_sweep"] == {"skipped": "error"}
+    assert "cleanup" in out and "country_rollup" in out, "the sibling steps still ran"

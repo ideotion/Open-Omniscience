@@ -47,6 +47,29 @@ TAIL_P = 90                # a per-source value beyond its cohort's p90/p10 fail
 # flag legitimate terse or atypical prose (the reframe forbids it).
 PATHOLOGY_ABS_FLOOR = 0.5
 
+# MINIMUM EVIDENCE for the extraction-failure criterion to fire from the COHORT TAIL.
+#
+# The tail test is `value > cohort p90`, and for pathology_rate a healthy cohort's p90 is
+# exactly 0.0 -- the overwhelming majority of sources have NO furniture-repetition at all.
+# So `> p90` reduces to `> 0`, and ANY single pathological article puts a source in the
+# "tail". Because this criterion is the extraction-failure signature, `derive_status` then
+# escalates it to degraded (alone) or failing (with any soft flag).
+#
+# Field bundle 2026-08-02: ALL 63 sources reported "failing" were flagged this way, every
+# one of them at a pathology_rate BELOW its own absolute floor -- aljazeera.net at 0.0010,
+# ladepeche.fr at 0.0023, nicematin.com at 0.0005 (ONE article in 1,992). The report's
+# headline was 63 failing / 71 degraded and not one was an extraction failure.
+#
+# This is the twin of the tail-blindness lesson that put PATHOLOGY_ABS_FLOOR here: that one
+# fixed the direction where a DEGRADED cohort hides a broken source; this is the direction
+# where a PERFECTLY CLEAN cohort (zero spread, p90 == mad == 0) turns noise into a verdict.
+# A rate cannot tell 1 bad article in 1,992 from 600 in 1,200, so the guard is on the raw
+# COUNT: below this many pathological articles there is no signature to see, only articles.
+#
+# Deliberately NOT applied to `abs_hit`: a source at or above the absolute floor is flagged
+# on its own evidence whatever its cohort does, which is the property that lesson bought.
+_MIN_PATHOLOGY_ARTICLES = 5
+
 # The criteria panel. Each is EXTRACTION-VALIDITY, corpus-relative, and marked whether it is a
 # high-confidence EXTRACTION-FAILURE signature (the only kind that can drive auto-demote — never
 # structural style). ``bad`` is the tail direction that indicates a problem.
@@ -158,6 +181,10 @@ def per_source_metrics(session: Session) -> dict[int, dict]:
             "article_count": n, "dominant_lang": dominant_lang or src_base or "unknown",
             "outlier_rate": round(d["outliers"] / nseg, 4) if nseg else 0.0,
             "pathology_rate": round(d["pathology"] / n, 4) if n else 0.0,
+            # The RAW count behind pathology_rate. A rate alone cannot tell 1 bad article
+            # in 1,992 from 600 in 1,200, and the cohort-tail test cannot either when the
+            # cohort's p90 is 0.0 -- see _MIN_PATHOLOGY_ARTICLES.
+            "pathology_articles": d["pathology"],
             "language_mismatch_rate": round(mism / n, 4) if (n and src_base) else 0.0,
             "short_article_rate": round(d["short"] / nseg, 4) if nseg else 0.0,
         }
@@ -232,6 +259,13 @@ def flag_criteria(per_source: dict[int, dict], *, cohort_floor: int = SOURCE_COH
             v = m[name]
             has_baseline = rs["n"] >= cohort_floor and rs["p90"] is not None
             tail_hit = has_baseline and ((v > rs["p90"]) if bad == "high" else (v < rs["p10"]))
+            # An extraction-failure verdict needs enough evidence to BE a signature. On a
+            # clean cohort (p90 == 0.0) the tail test degenerates to "> 0", so a single
+            # pathological article would otherwise read as a broken scrape. The absolute
+            # floor below is untouched by this.
+            if tail_hit and crit["extraction_failure"]:
+                if m.get("pathology_articles", 0) < _MIN_PATHOLOGY_ARTICLES:
+                    tail_hit = False
             # the absolute-floor escape fires ONLY for an extraction-failure criterion (pathology) —
             # it is what keeps a broken source visible when its cohort can't (see PATHOLOGY_ABS_FLOOR).
             abs_hit = crit["extraction_failure"] and v >= PATHOLOGY_ABS_FLOOR
@@ -245,6 +279,11 @@ def flag_criteria(per_source: dict[int, dict], *, cohort_floor: int = SOURCE_COH
                 "baseline": ({"median": rs["median"], "p10": rs["p10"], "p90": rs["p90"],
                               "mad": rs["mad"], "n": rs["n"]} if has_baseline else None),
                 "absolute_floor": PATHOLOGY_ABS_FLOOR if crit["extraction_failure"] else None,
+                # The raw evidence behind an extraction-failure flag, so a reader can see
+                # whether a rate rests on 6 articles or 600 without recomputing it.
+                **({"pathology_articles": m.get("pathology_articles"),
+                    "min_articles_for_tail": _MIN_PATHOLOGY_ARTICLES}
+                   if crit["extraction_failure"] else {}),
             })
         out[sid] = fails
     return out
@@ -409,9 +448,13 @@ def run_source_audit_selftest() -> dict:
     def check(name: str, ok: bool, detail: str = "") -> None:
         checks.append({"check": name, "passed": bool(ok), "detail": detail})
 
-    def m(sid, *, lang="en", region="gb", n=100, outlier=0.1, path=0.02, mism=0.0, short=0.1, furn=0.1):
+    def m(sid, *, lang="en", region="gb", n=100, outlier=0.1, path=0.02, mism=0.0, short=0.1,
+          furn=0.1, path_articles=None):
         return {"domain": f"s{sid}.example", "language": lang, "region": region, "article_count": n,
                 "dominant_lang": lang, "outlier_rate": outlier, "pathology_rate": path,
+                # Derived from the rate so the fixture stays self-consistent: the real
+                # per_source_metrics carries both, and the tail guard reads the COUNT.
+                "pathology_articles": round(path * n) if path_articles is None else path_articles,
                 "language_mismatch_rate": mism, "short_article_rate": short, "furniture_share": furn}
 
     # a healthy cohort (>= floor sources) + one clear EXTRACTION-FAILURE (high pathology + high short)
@@ -458,6 +501,27 @@ def run_source_audit_selftest() -> dict:
     check("degraded_cohort_worst_not_healthy",
           any(f["criterion"] == "pathology_rate" for f in dc.get(97, [])) and dc_status != "healthy",
           f"{dc_status}: {[f['criterion'] for f in dc.get(97, [])]}")
+
+    # The CLEAN-cohort direction (field bundle 2026-08-02). A healthy cohort's pathology
+    # p90 is exactly 0.0, so `> p90` degenerates to `> 0` and ONE bad article out of
+    # thousands read as an extraction failure. All 63 sources the field report called
+    # "failing" were this, every one below its own absolute floor.
+    clean = {i: m(i, path=0.0, path_articles=0) for i in range(10)}
+    clean[42] = m(42, n=1992, path=0.0005, path_articles=1)  # nicematin.com, verbatim
+    cf = flag_criteria(clean, cohort_floor=8, min_articles=20)
+    check("one_bad_article_in_thousands_is_not_an_extraction_failure",
+          derive_status(cf.get(42, [])) != "failing"
+          and not any(f["criterion"] == "pathology_rate" for f in cf.get(42, [])),
+          f"{derive_status(cf.get(42, []))}: {[f['criterion'] for f in cf.get(42, [])]}")
+
+    # ...and the NEGATIVE-SPACE TWIN: the guard must not blind the tail test. A source with
+    # REAL evidence, still well under the absolute floor, must remain visible on the cohort
+    # tail alone -- otherwise this fix would have traded false alarms for a real miss.
+    clean[43] = m(43, n=400, path=0.05, path_articles=20)
+    cf2 = flag_criteria(clean, cohort_floor=8, min_articles=20)
+    check("a_real_pathology_signature_below_the_absolute_floor_is_still_flagged",
+          any(f["criterion"] == "pathology_rate" for f in cf2.get(43, [])),
+          f"{[f['criterion'] for f in cf2.get(43, [])]}")
 
     # region self-audit + no score
     ra = region_self_audit([SourceAudit(1, "a", "en", "gb", 100, status="failing"),
