@@ -1459,6 +1459,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     caller, so "it closes on its own once the install finishes" (a sentence in the consent
     dialog) held only while a tab was open. If a UI string promises a lifecycle, the
     lifecycle needs a driver the UI does not own.
+  - **TWO COMPONENTS THAT EACH HARDCODE A DEFAULT PORT WILL EVENTUALLY WANT THE SAME ONE —
+    and the health probe then reports the WRONG DIAGNOSIS (2026-08-02, "installing vLLM on a
+    new machine fails"):** `vllm_lifecycle.DEFAULT_PORT = 8000` and `main.py`'s
+    `os.getenv("OO_PORT", "8000")` were written years apart and never read together, so
+    `vllm serve` could never bind on any machine that finished an install — `OSError(98)
+    Address already in use`, reproduced live. THE PART WORTH REMEMBERING IS THE MISREPORT:
+    `is_running()` probed `GET /v1/models` on that port, reached THE APP, got a 404 (the app
+    has no such route) and concluded "vLLM is down" — 270 of those 404s in one field session,
+    logged by the app's own error log as if an external service were flaky. A boolean
+    up/down probe cannot distinguish *not started* from *something else is here*, and it will
+    confidently answer the wrong one; give it a `port_occupant()`-style third state and let
+    `start()` refuse a doomed launch BY NAME instead of spawning a process that cannot bind.
+    Two corollaries: DERIVE the second port from the first (`OO_PORT` + 1) rather than
+    hardcoding the new value — a hardcoded 8001 re-collides the moment the operator moves the
+    app — and make a malformed override fall back to the DERIVATION, never to the old flat
+    constant, which would restore the exact bug through the error path. The test reads the
+    app's own default out of `main.py` by regex rather than duplicating it, so moving
+    `OO_PORT` reddens the test instead of silently passing. **PROCESS NOTE, the reason this
+    was diagnosable at all:** the fix that shipped days earlier (the install journal's
+    `resolver`/`fallback_fired`/`duration_s`/`package_present`) is what proved the install had
+    SUCCEEDED — without it the report "the install fails" would have been investigated as an
+    install bug. Instrumentation earns its keep on the first field report that contradicts its
+    own headline.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD IMPRESSIONS 2026-08-01 — Home-alerts relevance/card system · Home overview subtabs ·
