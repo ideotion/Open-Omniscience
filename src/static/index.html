@@ -226,12 +226,14 @@
            never a hidden score). Every face DEEP-LINKS to its real corpus (redundancy rule #8).
            Populated by renderLeadsCarousel() from the SAME briefing cards; hidden with <2 Leads
            so Home is never blank-and-silent (the full feed still renders below). -->
-      <section class="panel" id="home-carousel-panel" hidden>
-        <div class="phead"><h2>Leads to look at</h2><span class="sp"></span>
-          <a href="#home" class="hint" style="margin:0"
-             onclick="var f=document.getElementById('briefing-feed');if(f)f.scrollIntoView({behavior:'smooth'});return false">All Leads below ↓</a></div>
-        <div id="home-carousel"></div>
-      </section>
+      <!-- RETIRED (2026-08-01 ruling 8): the "Leads to look at" carousel was the
+           top 8 cards FLATTENED across buckets, so one bucket could fill every
+           face. The Overview subtab absorbs it with a better guarantee -- one
+           lead per family, in the same disclosed order, each stating why it
+           leads -- so the rotating widget is gone rather than duplicated.
+           renderLeadsCarousel() null-guards on these ids and is now inert;
+           the code stays until a browser-verified deletion pass (the
+           temporal-map retirement precedent). -->
 
       <!-- Home dashboard: a compact "Trending now" glance (UI rethink, Home →
            helicopter view). REDUNDANT by design — every term deep-links to its

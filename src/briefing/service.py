@@ -183,7 +183,22 @@ def _sorted(cards: list[dict]) -> list[dict]:
             sources, tier, recency = _leads_order_key(_wrap(c), now=now)
             return (_bucket_rank(c["bucket"]), -sources, -tier, -recency)
 
-        return sorted(cards, key=_key)
+        out = sorted(cards, key=_key)
+        # Attach the DISCLOSED reason each card sits where it does (2026-08-01
+        # ruling 5). The ordering was already honest, but explain_order had ZERO
+        # frontend callers after the Settings restructure removed the Leads
+        # preview — so the transparency surface existed and was invisible. It
+        # rides the payload the feed already fetches: no second request, and the
+        # explanation can never drift from the sort that produced it, because
+        # both come from the same order_key here.
+        try:
+            from src.briefing.leads import explain_order as _leads_explain
+
+            for c in out:
+                c["order_explain"] = _leads_explain(_wrap(c), now=now)
+        except Exception:  # noqa: BLE001 - an explanation is additive, never load-bearing
+            _LOG.warning("Leads-2.0 order explanation failed; cards keep their order", exc_info=True)
+        return out
     except Exception:  # noqa: BLE001 - a reorder problem must never break Home
         _LOG.warning("Leads-2.0 order_key sort failed; using the raw-magnitude fallback", exc_info=True)
         return sorted(cards, key=lambda c: (_bucket_rank(c["bucket"]), -_magnitude(c)))

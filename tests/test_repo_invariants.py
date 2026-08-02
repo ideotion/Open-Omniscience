@@ -3680,8 +3680,15 @@ def test_commodities_category_subtabs():
     # the filter callback + the categoriser map exist
     assert "function selectCommodityCat" in html, "category filter callback required"
     assert "const MKT_CATS" in html, "the deterministic category map must exist"
-    # "All" is the default lens (the ooSubtabs initial) and shows everything
-    assert '{initial: "__all"}' in html, "'All' (__all) must be the default lens"
+    # "All" is the default lens (the ooSubtabs initial) and shows everything.
+    # Scoped to the commodities tab-builder: the whole-file form of this assertion
+    # was silently satisfied by the HOME families call site instead (the commodities
+    # one passes the shorthand {initial}), so it never tested this board at all —
+    # the misscoped-anchor family. It now reads the function it names.
+    _cat_tabs = html.split("function _renderCommodityCatTabs", 1)[1].split("\n    function ", 1)[0]
+    assert '_mktCat : "__all"' in _cat_tabs and "ooSubtabs(catNav, selectCommodityCat, {initial})" in _cat_tabs, (
+        "'All' (__all) must be the commodities board's default lens"
+    )
     assert 'key === "__all"' in html, "the '__all' lens must show every category"
     # data-driven: built from the categories actually present (no empty tab)
     assert "byCat" in html and "MKT_CATS.filter" in html, (
@@ -6076,24 +6083,64 @@ def test_ring_translation_breakdown_rides_the_hover():
     assert 'title="' in kw  # rides the #oo-tip title (layered), not the visible row text
 
 
-def test_synthesized_leads_carousel_is_local_pausable_and_caveated():
-    """S4.3: the Home Leads carousel is LOCAL analytic synthesis (never LLM), PAUSABLE (WCAG 2.2
-    — hover/focus + a manual toggle + keyboard), and a timed rotation NEVER hides a caveat (the
-    caveat rides every rotated face, #23); every face DEEP-LINKS to its real corpus (#8); fed from
-    the SAME briefing cards (evidence-tier order, no hidden score)."""
+def test_home_overview_absorbs_the_retired_leads_carousel():
+    """RETIRED (2026-08-01 ruling 8), absorption-gated per the Desk lesson.
+
+    The "Leads to look at" carousel showed the top 8 cards FLATTENED across buckets, so a
+    single dominant bucket could fill every face. The Overview subtab absorbs that
+    capability with a STRONGER guarantee -- one Lead per family, in the same disclosed
+    order as the full feed, each stating WHY it leads -- so the rotating widget is gone
+    rather than duplicated. This test asserts the retirement AND that every capability it
+    carried survives; renderLeadsCarousel() itself stays in place, inert (it null-guards
+    on the removed ids), until a browser-verified deletion pass, exactly as the temporal
+    map was retired."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    assert 'id="home-carousel-panel"' in html and 'id="home-carousel"' in html
-    car = app[app.index("function renderLeadsCarousel(") : app.index("function _carRelease(") + 200]
-    # LOCAL: fed from the briefing cards; NO LLM call anywhere in the carousel
-    assert "renderLeadsCarousel(data.buckets.flatMap" in app
+    # RETIRED: the markup and the call sites are gone.
+    assert 'id="home-carousel-panel"' not in html and 'id="home-carousel"' not in html, (
+        "the carousel markup must be retired, not merely hidden"
+    )
+    assert "renderLeadsCarousel(data.buckets.flatMap" not in app, "the carousel must not be fed"
+    assert "renderLeadsCarousel([])" not in app
+    # ABSORBED: Overview is the default lens and offers top cards per family.
+    assert "function _overviewHtml(" in app, "Overview must exist to absorb the carousel"
+    assert 'data-tab="__ov"' in app and '{initial: _homeTabKey}' in app, (
+        "Overview must be the Home default subtab"
+    )
+    # scoped to the function body itself -- a slice that runs to the next top-level
+    # declaration would sweep in unrelated code and test nothing about Overview
+    ov = app.split("function _overviewHtml(", 1)[1].split("\n    // ", 1)[0]
+    # LOCAL analytic synthesis, never LLM (the retired widget's own guarantee).
     for llm in ("/api/llm", "synthesize", "bulkLlm"):
-        assert llm not in car, f"carousel must never call the LLM ({llm})"
-    # PAUSABLE (WCAG 2.2): hover/focus pause + a manual toggle + keyboard
-    assert "mouseenter" in car and "focusin" in car and "carouselToggle" in car
-    assert "aria-pressed" in car and "ArrowLeft" in car and "ArrowRight" in car
-    # the CAVEAT rides EVERY face + a deep-link on every face (#23 + #8)
-    assert "c.caveat" in car and "card-caveat" in car and "openCardCorpus" in car
+        assert llm not in ov, f"Overview must never call the LLM ({llm})"
+    # every face DEEP-LINKS (#8) and the caveat is VISIBLE (#23) -- both preserved,
+    # and no timed rotation can hide anything because there is no rotation.
+    assert "cardHtml(c)" in ov, "Overview must render the SAME card component (same actions)"
+    assert "card-caveat" in ov, "the Overview caveat must be visible by default (#23)"
+    # NEW, and the reason the ordering surface exists again: the disclosed reason.
+    assert "order_explain" in ov, "each Overview card must state why it leads its family"
+    svc = (_SRC / "briefing" / "service.py").read_text(encoding="utf-8")
+    assert "explain_order as _leads_explain" in svc, (
+        "the disclosed reason must ride the SAME payload the feed already fetches, so the "
+        "explanation can never drift from the sort that produced it"
+    )
+
+
+def test_home_panels_are_subtabs_not_a_stack():
+    """Ruling 7a: the long Home scroll was every block stacked at once. Most recent /
+    Latest / By channel become SUBTABS beside the families (their DOM, loaders and honest
+    empty states untouched -- only visibility moves), and Trending folds into Overview as
+    a compact row. A panel with nothing to show keeps its own `hidden`, so a tab is never
+    offered onto an empty room."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "_HOME_PANEL_TABS" in app and "function _syncHomeSubtabs(" in app
+    for pid in ("home-recent-panel", "home-latest-panel", "home-channels-panel"):
+        assert pid in app, f"{pid} must be wired as a subtab"
+    sel = app[app.index("function selectHomeFamily(") : app.index("function _syncHomeSubtabs(")]
+    assert 'el.style.display = (key === p.key) ? "" : "none"' in sel, (
+        "clearing the inline style must let a panel's own `hidden` still win"
+    )
+    assert "function _renderOverviewTrends(" in app, "Trending must fold into Overview"
 
 
 def test_omnibar_analysis_window_absorbs_the_insights_bar_capabilities():

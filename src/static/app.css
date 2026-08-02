@@ -1144,3 +1144,18 @@
     .carousel-dot { width: 8px; height: 8px; padding: 0; border-radius: 50%;
       border: 1px solid var(--line); background: transparent; cursor: pointer; }
     .carousel-dot.on { background: var(--accent); border-color: var(--accent); }
+
+    /* ---- Home Overview lens (2026-08-01 rulings 5-8) --------------------- */
+    /* The DEFAULT Home subtab: one Lead per family in the feed's own disclosed
+       order, each stating why it leads. This is what replaces the long scroll —
+       "All Leads" still holds every card, so the grid is a lens, never a wall. */
+    .ov-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:11px; }
+    .ov-item { border-inline-start:3px solid var(--fam, var(--accent)); padding-inline-start:8px; }
+    .ov-fam { display:flex; align-items:center; gap:6px; margin:0 0 5px; font-size:13px; }
+    .ov-more { margin-inline-start:auto; font-size:12px; }
+    /* The "why this card" line: the shipped explain_order text, VISIBLE rather
+       than only in a hover — it is the ordering-transparency surface that had no
+       caller at all after the Settings restructure removed the Leads preview. */
+    .ov-why { margin-top:5px; font-size:11.5px; color:var(--muted); line-height:1.45; }
+    /* The compact Trending row folded into Overview (ruling 7a). */
+    .ov-trend { display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin-bottom:9px; }

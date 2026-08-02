@@ -2325,9 +2325,9 @@
         // No recent articles in the corpus at all (not just "none pass the gates") ->
         // hide the panel entirely so Home is never blank-and-silent.
         if (!arts.length && !Object.keys(types).length && !tags.length) {
-          panel.hidden = true; return;
+          panel.hidden = true; _syncHomeSubtabs(); return;
         }
-        panel.hidden = false;
+        panel.hidden = false; _syncHomeSubtabs();
         _fillLatestFacet($("latest-channel"), t("All channels"),
           Object.keys(types).map(k => ({v: k, label: k, n: types[k]})));
         _fillLatestFacet($("latest-tag"), t("All tags"),
@@ -2359,7 +2359,7 @@
             + `<div class="muted small" style="margin-top:2px">${chan} ${facts}${also}</div></div>`;
         }).join("")
           + `<div class="hint muted" style="font-size:11px;margin-top:6px">${esc(d.caveat || "")}</div>`;
-      } catch (e) { panel.hidden = true; box.innerHTML = ""; }
+      } catch (e) { panel.hidden = true; box.innerHTML = ""; _syncHomeSubtabs(); }
     }
     // Populate a Latest facet <select> once (preserving the current selection), an "all"
     // default first then each option with its article count. Idempotent: repopulates so a
@@ -2387,12 +2387,12 @@
       try {
         const d = await api("/api/insights/source-types");
         const facets = (d.facets || []).filter(f => (f.articles || 0) > 0);
-        if (!facets.length) { panel.hidden = true; box.innerHTML = ""; return; }
-        panel.hidden = false;
+        if (!facets.length) { panel.hidden = true; box.innerHTML = ""; _syncHomeSubtabs(); return; }
+        panel.hidden = false; _syncHomeSubtabs();
         box.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap">` + facets.map(f =>
           `<button class="chip" onclick="openChannelCorpus(${esc(JSON.stringify(f.source_type))})" title="${esc(t("An asserted content channel (newsletter, web article, wiki, statistic, law, market, discovery), never a quality score. Click a channel to explore its corpus."))}">${esc(f.source_type)} <span class="muted">${esc(String(f.articles))}</span></button>`).join("")
           + `</div>`;
-      } catch (e) { panel.hidden = true; box.innerHTML = ""; }
+      } catch (e) { panel.hidden = true; box.innerHTML = ""; _syncHomeSubtabs(); }
     }
     // Open the analysis window over exactly one content channel's articles. Resolves the
     // channel to an explicit id set through /api/articles?source_type= (the endpoint that
@@ -2419,7 +2419,7 @@
       try {
         const f = await api("/api/sources/facets");
         const tags = (f.tags || []).filter(x => x && x.key).slice(0, 20);
-        if (!tags.length) { panel.hidden = true; return; }
+        if (!tags.length) { panel.hidden = true; _syncHomeSubtabs(); return; }
         const cur = sel.value;
         sel.innerHTML = tags.map(x => `<option value="${esc(x.key)}">${esc(x.key)} (${x.n})</option>`).join("");
         sel.value = (cur && tags.some(x => x.key === cur)) ? cur : tags[0].key;
@@ -2430,19 +2430,20 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const panel = $("home-recent-panel"), box = $("home-recent");
       if (!panel || !box) return;
-      if (!tag) { panel.hidden = true; return; }
+      if (!tag) { panel.hidden = true; _syncHomeSubtabs(); return; }
       box.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
         const q = "/api/articles?tags=" + encodeURIComponent(tag) + "&sort_by=date&sort_dir=desc&limit=8";
         const d = await api(q);
         const rows = d.results || [];
-        if (!rows.length) { box.innerHTML = `<div class="muted">${esc(t("No articles for this tag yet."))}</div>`; panel.hidden = false; return; }
+        if (!rows.length) { box.innerHTML = `<div class="muted">${esc(t("No articles for this tag yet."))}</div>`; panel.hidden = false; _syncHomeSubtabs(); return; }
         box.innerHTML = rows.map(a => {
           const meta = [esc(a.source || ""), esc(String(a.published_at || "").slice(0, 10))].filter(Boolean).join(" · ");
           return `<div class="home-recent-row"><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener" title="${esc(t("offline stored copy"))}">${esc(a.title || t("(untitled)"))}</a>`
             + (meta ? ` <span class="muted">— ${meta}</span>` : "") + `</div>`;
         }).join("");
         panel.hidden = false;
+        _syncHomeSubtabs();
       } catch (e) {
         // home-recent-panel-hidden-on-error (P1): both SUCCESS paths above clear
         // `hidden`, but this catch branch set an honest error message into the
@@ -2450,7 +2451,7 @@
         // written but never shown. The panel must render its error the same way it
         // renders any other outcome.
         box.innerHTML = `<div class="muted">${esc(e && e.message || e)}</div>`;
-        panel.hidden = false;
+        panel.hidden = false; _syncHomeSubtabs();
       }
     }
     // Home "Trending now" glance (UI rethink, Home → helicopter view). Compact +
@@ -2491,7 +2492,12 @@
         }).join("");
         box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>`
           + `<div class="hint muted" style="font-size:11px;margin-top:6px">${esc(d.caveat || "")}</div>`;
-      } catch (e) { if (panel) panel.hidden = true; box.innerHTML = ""; }
+        _renderOverviewTrends();   // the compact row folded into Overview (ruling 7a)
+        _syncHomeSubtabs();
+      } catch (e) {
+        if (panel) panel.hidden = true; box.innerHTML = "";
+        _renderOverviewTrends(); _syncHomeSubtabs();
+      }
     }
     // Enlarge a Home "Trending now" sparkline into the interactive ooChart (invariant
     // #16). The daily series is already in the stashed payload — no extra fetch.
@@ -2747,7 +2753,6 @@
       if (refreshing) _scheduleBriefRepoll(); else _cancelBriefRepoll();
       const banner = refreshing ? briefProgressHtml(data, t) : "";
       if (!data.buckets || !data.buckets.length) {
-        renderLeadsCarousel([]);  // hide the carousel when there are no Leads (never blank-and-silent)
         if (refreshing) { feed.innerHTML = banner; return; }
         feed.innerHTML = `<div class="card">
           <h4>No Leads yet — that's expected on a young corpus</h4>
@@ -2773,14 +2778,46 @@
           + `<h3>${esc(b.label)} <span class="ct">· ${b.cards.length}</span></h3>`
           + `<div class="cards">${cards}</div></div>`;
       }).join("");
-      const famTabs = `<button class="active" data-tab="__all">${esc(t("All Leads"))}</button>`
+      // OVERVIEW (2026-08-01 rulings 5-8): the DEFAULT lens is the top card of each
+      // family, taken from the feed's OWN already-sorted order — one ordering
+      // system, not a second selector. Each card carries the visible "why this
+      // card" (order_explain), which restores the transparency surface the
+      // Settings restructure removed when it deleted the Leads preview. "All
+      // Leads" keeps the full feed; nothing is lost, the wall is just no longer
+      // the first thing you meet.
+      const ovHtml = _overviewHtml(data, famHue, t);
+      const famTabs = `<button class="active" data-tab="__ov">${esc(t("Overview"))}</button>`
+        + `<button data-tab="__all">${esc(t("All Leads"))}</button>`
         + data.buckets.map((b, bi) =>
-            `<button data-tab="${bi}"><span class="fam-dot" style="background:${famHue(bi)}"></span>${esc(b.label)}</button>`).join("");
-      feed.innerHTML = banner + (data.buckets.length > 1
-        ? `<nav class="tabs home-fam" id="home-fam-subtabs">${famTabs}</nav>` : "") + html;
-      // "All" is the default; selecting a family shows only that bucket.
-      if (data.buckets.length > 1) ooSubtabs($("home-fam-subtabs"), selectHomeFamily, {initial: "__all"});
-      renderLeadsCarousel(data.buckets.flatMap(b => b.cards || []));
+            `<button data-tab="${bi}"><span class="fam-dot" style="background:${famHue(bi)}"></span>${esc(b.label)}</button>`).join("")
+        + _homePanelTabsHtml(t);
+      feed.innerHTML = banner
+        + `<nav class="tabs home-fam" id="home-fam-subtabs">${famTabs}</nav>`
+        + ovHtml + html;
+      ooSubtabs($("home-fam-subtabs"), selectHomeFamily, {initial: _homeTabKey});
+      selectHomeFamily(_homeTabKey);
+      _renderOverviewTrends();
+    }
+    // The Overview lens: TOP-1 card per family, in the feed's own disclosed order.
+    function _overviewHtml(data, famHue, t) {
+      const tops = data.buckets.map((b, bi) => {
+        const c = (b.cards || [])[0];
+        if (!c) return "";
+        // The card renders exactly as it does in its family (same component, same
+        // actions), plus the disclosed reason it leads its family.
+        const why = c.order_explain
+          ? `<div class="ov-why" title="${esc(c.order_explain)}">${esc(c.order_explain)}</div>` : "";
+        return `<div class="ov-item" style="--fam:${famHue(bi)}">`
+          + `<h4 class="ov-fam"><span class="fam-dot" style="background:${famHue(bi)}"></span>${esc(b.label)}`
+          + ` <a href="#" class="ov-more" onclick='selectHomeFamily(${esc(JSON.stringify(String(bi)))});return false'>`
+          + `${esc(t("all {n}").replace("{n}", String((b.cards || []).length)))} →</a></h4>`
+          + `<div class="cards">${cardHtml(c)}</div>${why}</div>`;
+      }).join("");
+      return `<div class="brief-bucket" data-fam="__ov">`
+        + `<div id="ov-trending"></div>`
+        + `<div class="ov-grid">${tops}</div>`
+        + `<div class="card-caveat">${esc(t("One Lead per family, chosen by the same disclosed order as the full feed — independent sources, then sample magnitude, then recency. Never a score, and nothing is hidden: “All Leads” has every card."))}</div>`
+        + `</div>`;
     }
 
     // -- S4.3: the synthesized-Leads carousel (Home dashboard) --------------------------- //
@@ -2897,10 +2934,90 @@
     function _cancelBriefRepoll() {
       if (_briefRepoll) { clearTimeout(_briefRepoll); _briefRepoll = null; }
     }
+    // The standalone Home panels become SUBTABS beside the families (ruling 7a):
+    // the long scroll was every block stacked at once. They keep their own DOM,
+    // their own loaders and their own honest empty states — only their visibility
+    // is driven from here, so nothing is lost and no listener is re-bound.
+    let _homeTabKey = "__ov";
+    const _HOME_PANEL_TABS = [
+      {key: "__recent", id: "home-recent-panel", label: "Most recent"},
+      {key: "__latest", id: "home-latest-panel", label: "Latest in your corpus"},
+      {key: "__channels", id: "home-channels-panel", label: "By channel"},
+    ];
+    // A panel tab appears only once its panel has something to show: these panels
+    // unhide themselves when loaded (and stay hidden when there is nothing), so
+    // offering a tab onto an empty panel would be offering an empty room.
+    function _homePanelTabsHtml(t) {
+      return _HOME_PANEL_TABS.filter(p => { const el = $(p.id); return el && !el.hidden; })
+        .map(p => `<button data-tab="${p.key}">${esc(t(p.label))}</button>`).join("");
+    }
     function selectHomeFamily(key) {
+      _homeTabKey = key;
+      const panelKeys = _HOME_PANEL_TABS.map(p => p.key);
+      const onPanel = panelKeys.indexOf(key) !== -1;
       document.querySelectorAll("#briefing-feed .brief-bucket").forEach(el => {
-        el.style.display = (key === "__all" || el.dataset.fam === key) ? "" : "none";
+        const fam = el.dataset.fam;
+        const show = onPanel ? false
+          : (key === "__ov") ? (fam === "__ov")
+          : (key === "__all") ? (fam !== "__ov")
+          : (fam === key);
+        el.style.display = show ? "" : "none";
       });
+      // Clearing the inline style (rather than forcing a display) lets each panel's
+      // own `hidden` still win — a panel with nothing to show stays hidden even
+      // while its tab is selected, instead of rendering an empty box.
+      _HOME_PANEL_TABS.forEach(p => {
+        const el = $(p.id);
+        if (el) el.style.display = (key === p.key) ? "" : "none";
+      });
+      // Trending is folded INTO Overview as a compact row, so its standalone panel
+      // no longer competes for the same screen (ruling 7a).
+      const tr = $("home-trends-panel");
+      if (tr) tr.style.display = "none";
+    }
+    // Re-sync after an async panel loader unhides its panel: the subtab list is
+    // built from what is actually available, so a panel that arrives late must be
+    // able to claim its tab (and must not stay force-hidden by a stale inline
+    // style set before it had content).
+    function _syncHomeSubtabs() {
+      const nav = $("home-fam-subtabs");
+      if (!nav) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const want = _HOME_PANEL_TABS.filter(p => { const el = $(p.id); return el && !el.hidden; })
+        .map(p => p.key).join(",");
+      const have = Array.prototype.slice.call(nav.querySelectorAll("button[data-tab]"))
+        .map(b => b.dataset.tab).filter(k => _HOME_PANEL_TABS.some(p => p.key === k)).join(",");
+      if (want === have) { selectHomeFamily(_homeTabKey); return; }
+      _HOME_PANEL_TABS.forEach(p => {
+        const btn = nav.querySelector(`button[data-tab="${p.key}"]`);
+        const el = $(p.id), avail = !!(el && !el.hidden);
+        if (avail && !btn) {
+          const b = document.createElement("button");
+          b.dataset.tab = p.key; b.textContent = t(p.label);
+          nav.appendChild(b);
+        } else if (!avail && btn) {
+          if (_homeTabKey === p.key) _homeTabKey = "__ov";
+          btn.remove();
+        }
+      });
+      ooSubtabs(nav, selectHomeFamily, {initial: _homeTabKey});
+      selectHomeFamily(_homeTabKey);
+    }
+    // The compact Trending row inside Overview (ruling 7a). Reuses the SAME stashed
+    // payload the standalone panel already fetched — no second request, no new poll.
+    function _renderOverviewTrends() {
+      const host = $("ov-trending");
+      if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const terms = _homeTrendTerms || [];
+      if (!terms.length) { host.innerHTML = ""; return; }
+      const chips = terms.slice(0, 6).map(x =>
+        `<a class="chip tiny" href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false'`
+        + ` title="${esc(t("Open this keyword's own analysis window"))}">${esc(x.term)}`
+        + ` <span class="muted">↑${esc(String(x.growth))}× · ${esc(String(x.recent))}</span></a>`).join("");
+      host.innerHTML = `<div class="ov-trend"><span class="muted">${esc(t("Trending now"))}:</span>${chips}`
+        + `<a class="ov-more" href="#" onclick="showTab('insights');return false">${esc(t("More in Insights"))} →</a></div>`
+        + (_homeTrendCaveat ? `<div class="hint muted" style="font-size:11px">${esc(_homeTrendCaveat)}</div>` : "");
     }
 
     // The query that reproduces a card's article selection in the analysis window
