@@ -295,6 +295,7 @@
   "⏸ Offline": "⏸ Sin conexión",
   "Back online — network requests allowed again.": "De nuevo en línea — las solicitudes de red vuelven a estar permitidas.",
   "Offline — every new network request is refused. One in-flight request may finish.": "Sin conexión — toda nueva solicitud de red se rechaza. Una solicitud ya en curso puede terminar.",
+  "Still offline — the request was accepted but airplane mode is still on. Try again.": "Sigue sin conexión — la solicitud se aceptó pero el modo avión sigue activado. Inténtalo de nuevo.",
   "Regional balance": "Equilibrio regional",
   "(floors are working targets from configs/catalog_targets.yml)": "(los umbrales son objetivos de trabajo de configs/catalog_targets.yml)",
   "Sources / floor": "Fuentes / umbral",

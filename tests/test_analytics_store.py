@@ -711,3 +711,85 @@ def test_reindex_articles_is_idempotent_across_batching_modes(db):
     reindex_articles(db, extractor=ex, article_ids=ids, commit_batch=3, workers=4)
     n2 = db.query(KeywordMention).count()
     assert n1 == n2
+
+
+# --- window loading: batched, but in the CALLER'S order -----------------------
+#
+# ``reindex_articles`` loads each precompute window with one ``IN (...)`` per chunk
+# instead of one ``session.get`` per article -- fewer statement round trips on the
+# one phase where every precompute worker is idle. An ``IN (...)`` result set has no
+# guaranteed order, and the caller's resume cursor maps a COUNT back onto the id list
+# (merge.py's `_tracked` stamps ``ids[done - 1]``, and the resume keeps only
+# ``i > watermark``), so a window staged out of order would stamp a watermark above
+# articles that were never re-indexed and the ascending resume would skip them for
+# good. Both properties are pinned here because neither was: reversing the load order
+# left the whole re-index suite green.
+
+
+def test_reindex_articles_stages_in_the_callers_order_not_the_query_plans(db, monkeypatch):
+    """THE CURSOR DEPENDS ON THIS. Articles must reach ``index_article`` in exactly
+    the order the caller listed them -- whatever that order is -- because the caller
+    turns a count of finalised articles back into an id by position."""
+    import src.analytics.store as S
+
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    ids = [
+        _article(db, f"ho{i}", "Drought and inflation reshaped the global economy.", title=f"T{i}").id
+        for i in range(8)
+    ]
+    # Deliberately NOT ascending: ascending happens to match what SQLite returns for
+    # an IN(...) on the primary key, so an ascending-only test would pass even if the
+    # caller's order were being ignored entirely.
+    scrambled = [ids[5], ids[0], ids[7], ids[2], ids[6], ids[1], ids[4], ids[3]]
+
+    seen: list[int] = []
+    real = S.index_article
+
+    def _spy(session, art, **kw):
+        seen.append(art.id)
+        return real(session, art, **kw)
+
+    monkeypatch.setattr(S, "index_article", _spy)
+    out = S.reindex_articles(db, extractor=BaselineExtractor(), article_ids=scrambled, workers=0)
+
+    assert out == {"reindexed": 8, "failed": 0}
+    assert seen == scrambled
+
+
+def test_reindex_articles_loads_a_window_in_chunks_under_the_variable_ceiling(db, monkeypatch):
+    """SQLite caps host parameters (999 by default), so a window is loaded in chunks.
+    Shrinking the chunk proves the loop really chunks -- and that raising
+    ``_PRECOMPUTE_WINDOW`` past the ceiling stays a perf change, not an
+    OperationalError."""
+    import src.analytics.store as S
+
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    ids = [
+        _article(db, f"hk{i}", "Drought and inflation reshaped the global economy.", title=f"T{i}").id
+        for i in range(7)
+    ]
+
+    # Observed at the SQL layer, because that is where the ceiling actually applies:
+    # count the bound parameters of every statement that selects articles by an IN.
+    from sqlalchemy import event
+
+    chunk_sizes: list[int] = []
+
+    def _on_exec(conn, cursor, statement, parameters, context, executemany):
+        flat = " ".join(statement.split()).lower()
+        if "from articles" in flat and "articles.id in" in flat:
+            chunk_sizes.append(len(parameters or ()))
+
+    event.listen(db.get_bind(), "before_cursor_execute", _on_exec)
+    try:
+        monkeypatch.setattr(S, "_ID_CHUNK", 3)
+        out = S.reindex_articles(db, extractor=BaselineExtractor(), article_ids=ids, workers=0)
+    finally:
+        event.remove(db.get_bind(), "before_cursor_execute", _on_exec)
+
+    assert out == {"reindexed": 7, "failed": 0}
+    # 7 ids at a chunk of 3 -> 3 + 3 + 1, and no chunk ever exceeds the limit.
+    assert chunk_sizes == [3, 3, 1]
+    assert max(chunk_sizes) <= 3

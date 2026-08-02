@@ -316,10 +316,46 @@ def activate_kill_switch() -> None:
 
 def clear_kill_switch() -> None:
     _KILL.clear()
+    # An OPERATOR crossing online is a decision the boot sequence must not undo.
+    _CROSSED_ONLINE.set()
 
 
 def kill_switch_active() -> bool:
     return _KILL.is_set()
+
+
+#: Has anything in this process ever crossed ONLINE? Set by clear_kill_switch and
+#: never cleared, so it records "a decision was taken", not the current state.
+#:
+#: THE RACE IT CLOSES (field report 2026-08-02: "sometimes the app remains in
+#: airplane mode with no explanation" on a NEW instance). Airplane-at-boot is
+#: engaged TWICE on the unlock path: synchronously in ``unlock.py`` (so there is no
+#: window where the corpus is open and the socket guard is not), and again at the
+#: tail of ``_run_startup_upkeep`` -- which on that path runs in a BACKGROUND
+#: THREAD. A new instance's upkeep is slow (catalog seed, ANALYZE, counts, cache
+#: warm), so the wizard is on screen throughout it. Cross online during that
+#: window and the upkeep thread's ``activate_kill_switch()`` lands AFTER the
+#: operator's ``clear_kill_switch()`` and silently puts the app back in airplane
+#: mode -- the POST had already returned ``online: true``, so nothing reported it,
+#: and the 5 s poll simply repainted the button. Intermittent by construction: it
+#: depends purely on whether the click beat the thread.
+#:
+#: The zero-network-boot non-negotiable is untouched. A boot still engages airplane
+#: unconditionally; it just may not RE-engage it over an explicit later decision,
+#: which was never "booting offline" in the first place.
+_CROSSED_ONLINE = threading.Event()
+
+
+def crossed_online_since_boot() -> bool:
+    """True once an operator has explicitly taken this process online.
+
+    Callers that engage airplane as part of BOOT consult this so a slow background
+    upkeep can never revoke a decision the operator already made."""
+    return _CROSSED_ONLINE.is_set()
+
+
+def _reset_crossed_online_for_tests() -> None:
+    _CROSSED_ONLINE.clear()
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:

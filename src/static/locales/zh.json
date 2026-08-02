@@ -295,6 +295,7 @@
   "⏸ Offline": "⏸ 离线",
   "Back online — network requests allowed again.": "已恢复在线 — 再次允许网络请求。",
   "Offline — every new network request is refused. One in-flight request may finish.": "离线 — 拒绝所有新的网络请求。已在途的一个请求可能会完成。",
+  "Still offline — the request was accepted but airplane mode is still on. Try again.": "仍处于离线状态 — 请求已被接受，但飞行模式仍然开启。请重试。",
   "Regional balance": "区域平衡",
   "(floors are working targets from configs/catalog_targets.yml)": "（下限为 configs/catalog_targets.yml 中的工作目标）",
   "Sources / floor": "来源 / 下限",

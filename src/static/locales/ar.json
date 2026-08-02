@@ -295,6 +295,7 @@
   "⏸ Offline": "⏸ غير متصل",
   "Back online — network requests allowed again.": "عاد الاتصال — طلبات الشبكة مسموحة من جديد.",
   "Offline — every new network request is refused. One in-flight request may finish.": "غير متصل — كل طلب شبكة جديد مرفوض. قد يكتمل طلب واحد جارٍ بالفعل.",
+  "Still offline — the request was accepted but airplane mode is still on. Try again.": "لا يزال غير متصل — تم قبول الطلب لكن وضع الطيران ما زال مفعّلاً. حاول مرة أخرى.",
   "Regional balance": "التوازن الإقليمي",
   "(floors are working targets from configs/catalog_targets.yml)": "(الحدود أهداف عمل من configs/catalog_targets.yml)",
   "Sources / floor": "المصادر / الحد",

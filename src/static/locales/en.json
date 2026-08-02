@@ -295,6 +295,7 @@
   "⏸ Offline": "⏸ Offline",
   "Back online — network requests allowed again.": "Back online — network requests allowed again.",
   "Offline — every new network request is refused. One in-flight request may finish.": "Offline — every new network request is refused. One in-flight request may finish.",
+  "Still offline — the request was accepted but airplane mode is still on. Try again.": "Still offline — the request was accepted but airplane mode is still on. Try again.",
   "Regional balance": "Regional balance",
   "(floors are working targets from configs/catalog_targets.yml)": "(floors are working targets from configs/catalog_targets.yml)",
   "Sources / floor": "Sources / floor",

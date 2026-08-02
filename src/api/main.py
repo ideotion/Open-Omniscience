@@ -259,16 +259,36 @@ def _run_startup_upkeep() -> None:
     # untouched.
     if os.getenv("OO_NO_SCHEDULER", "0") != "1":
         try:
-            from src.ingest import activate_kill_switch
+            from src.ingest import activate_kill_switch, crossed_online_since_boot
             from src.ingest.airplane import install_airplane_socket_guard
 
             # Socket-level backstop FIRST, then engage offline: while airplane mode
             # is on, no non-loopback packet can leave this process by ANY path
             # (a missed call site, a third-party lib, a DNS prefetch). The guard is
             # transparent while online, so it costs nothing during collection.
+            #
+            # The guard is installed UNCONDITIONALLY -- it is a no-op while online and
+            # is exactly what must already be in place if the operator goes offline
+            # later. Only the ENGAGE is conditional.
             install_airplane_socket_guard()
-            activate_kill_switch()
-            logger.info("Booted in airplane mode (offline); awaiting the online consent to collect.")
+            if crossed_online_since_boot():
+                # On the UNLOCK path this function runs in a background thread, and a
+                # new instance's upkeep (catalog seed, ANALYZE, counts, cache warm) is
+                # slow enough that the first-launch wizard sits on screen throughout
+                # it. unlock.py has ALREADY engaged airplane synchronously, so the only
+                # thing this line can still do is revoke a decision the operator took
+                # in between -- silently, because their POST had already returned
+                # online:true. That was the intermittent "stays in airplane mode with
+                # no explanation" (field report 2026-08-02).
+                logger.info(
+                    "Boot airplane engage SKIPPED: the operator crossed online during "
+                    "startup upkeep, and a boot step must not revoke that decision."
+                )
+            else:
+                activate_kill_switch()
+                logger.info(
+                    "Booted in airplane mode (offline); awaiting the online consent to collect."
+                )
         except Exception as exc:  # noqa: BLE001 - never block startup
             logger.warning(f"Could not engage airplane mode at boot: {exc}")
 

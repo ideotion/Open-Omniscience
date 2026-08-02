@@ -295,6 +295,7 @@
   "⏸ Offline": "⏸ オフライン",
   "Back online — network requests allowed again.": "オンラインに復帰 — ネットワーク要求が再び許可されました。",
   "Offline — every new network request is refused. One in-flight request may finish.": "オフライン — 新規のネットワーク要求はすべて拒否されます。実行中の1件は完了する場合があります。",
+  "Still offline — the request was accepted but airplane mode is still on. Try again.": "まだオフラインです — リクエストは受理されましたが、機内モードがまだ有効です。もう一度お試しください。",
   "Regional balance": "地域バランス",
   "(floors are working targets from configs/catalog_targets.yml)": "（下限は configs/catalog_targets.yml の作業目標です）",
   "Sources / floor": "ソース / 下限",

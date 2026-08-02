@@ -295,6 +295,7 @@
   "⏸ Offline": "⏸ অফলাইন",
   "Back online — network requests allowed again.": "আবার অনলাইন — নেটওয়ার্ক অনুরোধ আবার অনুমোদিত।",
   "Offline — every new network request is refused. One in-flight request may finish.": "অফলাইন — প্রতিটি নতুন নেটওয়ার্ক অনুরোধ প্রত্যাখ্যাত। চলমান একটি অনুরোধ শেষ হতে পারে।",
+  "Still offline — the request was accepted but airplane mode is still on. Try again.": "এখনও অফলাইন — অনুরোধটি গৃহীত হয়েছে কিন্তু বিমান মোড এখনও চালু। আবার চেষ্টা করুন।",
   "Regional balance": "আঞ্চলিক ভারসাম্য",
   "(floors are working targets from configs/catalog_targets.yml)": "(সীমাগুলি configs/catalog_targets.yml-এর কাজের লক্ষ্য)",
   "Sources / floor": "উৎস / সীমা",

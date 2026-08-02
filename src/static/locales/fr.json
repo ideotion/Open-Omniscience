@@ -295,6 +295,7 @@
   "⏸ Offline": "⏸ Hors ligne",
   "Back online — network requests allowed again.": "De retour en ligne — les requêtes réseau sont de nouveau autorisées.",
   "Offline — every new network request is refused. One in-flight request may finish.": "Hors ligne — toute nouvelle requête réseau est refusée. Une requête déjà en cours peut se terminer.",
+  "Still offline — the request was accepted but airplane mode is still on. Try again.": "Toujours hors ligne — la demande a été acceptée mais le mode avion est toujours actif. Réessayez.",
   "Regional balance": "Équilibre régional",
   "(floors are working targets from configs/catalog_targets.yml)": "(les seuils sont des objectifs de travail, définis dans configs/catalog_targets.yml)",
   "Sources / floor": "Sources / seuil",

@@ -295,6 +295,7 @@
   "⏸ Offline": "⏸ Luring",
   "Back online — network requests allowed again.": "Kembali daring — permintaan jaringan diizinkan lagi.",
   "Offline — every new network request is refused. One in-flight request may finish.": "Luring — setiap permintaan jaringan baru ditolak. Satu permintaan yang sedang berjalan bisa selesai.",
+  "Still offline — the request was accepted but airplane mode is still on. Try again.": "Masih offline — permintaan diterima tetapi mode pesawat masih aktif. Coba lagi.",
   "Regional balance": "Keseimbangan regional",
   "(floors are working targets from configs/catalog_targets.yml)": "(ambang adalah target kerja dari configs/catalog_targets.yml)",
   "Sources / floor": "Sumber / ambang",

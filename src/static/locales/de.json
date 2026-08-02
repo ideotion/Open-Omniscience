@@ -295,6 +295,7 @@
   "⏸ Offline": "⏸ Offline",
   "Back online — network requests allowed again.": "Wieder online — Netzwerkanfragen sind wieder erlaubt.",
   "Offline — every new network request is refused. One in-flight request may finish.": "Offline — jede neue Netzwerkanfrage wird verweigert. Eine bereits laufende Anfrage kann noch enden.",
+  "Still offline — the request was accepted but airplane mode is still on. Try again.": "Weiterhin offline — die Anfrage wurde angenommen, aber der Flugmodus ist noch aktiv. Bitte erneut versuchen.",
   "Regional balance": "Regionale Balance",
   "(floors are working targets from configs/catalog_targets.yml)": "(Schwellen sind Arbeitsziele aus configs/catalog_targets.yml)",
   "Sources / floor": "Quellen / Schwelle",
