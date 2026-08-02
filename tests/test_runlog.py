@@ -203,6 +203,68 @@ def test_an_unmeasurable_field_is_omitted_with_a_reason_never_zeroed(monkeypatch
     assert any("kids" in u for u in b["unmeasured"])
 
 
+def test_an_expensive_child_walk_backs_off_and_then_COMES_BACK(monkeypatch):
+    """THE FIELD BUG. This used to be a one-way latch, and it was tripped by the
+    WHOLE beat's cost -- so in a 19 h import a single 25.9 ms beat during `merging`
+    (0.9 ms over budget) blinded every one of the following 1,561 `reindexing`
+    beats. That inverts the instrument: the re-index is the phase child CPU exists
+    to measure, because a healthy process pool leaves the parent near-idle and
+    parent CPU alone cannot tell a working pool from a wedged one."""
+    rl = runlog.begin("import", label="x")
+    real = runlog._sample_children
+    slow = {"on": True}
+
+    def _slow(proc, limit=24):
+        if slow["on"]:
+            time.sleep((runlog._CHILD_WALK_BUDGET_MS + 10) / 1000.0)
+        return real(proc, limit)
+
+    monkeypatch.setattr(runlog, "_sample_children", _slow)
+
+    # The expensive walk still REPORTS -- it is stood down after paying, not instead.
+    b = rl._beat({})
+    assert b["kids_n"] >= 0 and b["child_walk"] == "backoff-cost"
+    assert b["kids_ms"] > runlog._CHILD_WALK_BUDGET_MS, "the cost is measured, not assumed"
+
+    # ...then skips a bounded number of beats, saying so rather than going quiet.
+    slow["on"] = False
+    for _ in range(runlog._CHILD_WALK_BACKOFF_BEATS):
+        skipped = rl._beat({})
+        assert "kids_n" not in skipped, "a backoff must not fabricate a zero"
+        assert skipped["child_walk"] == "backoff"
+        assert any("kids" in u for u in skipped["unmeasured"])
+
+    # ...and RESUMES. Without this the run is blind for every later phase.
+    back = rl._beat({})
+    assert "kids_n" in back and "kids_cpu_s" in back
+    assert back.get("child_walk") is None
+
+
+def test_the_walk_is_charged_for_ITS_cost_not_the_whole_beats(monkeypatch):
+    """A beat also reads /proc/meminfo, stats the destination filesystem and sizes
+    the WAL. Charging the child walk for a slow disk stat retires the one
+    measurement that answers "stuck or slow?" for a reason unrelated to it -- which
+    is exactly how the field run lost it during `merging`."""
+    rl = runlog.begin("import", label="x")
+
+    import psutil as _ps
+
+    _real_vm = _ps.virtual_memory
+
+    def _slow_unrelated():
+        time.sleep((runlog._CHILD_WALK_BUDGET_MS + 20) / 1000.0)
+        return _real_vm()
+
+    monkeypatch.setattr(_ps, "virtual_memory", _slow_unrelated)
+
+    b = rl._beat({})
+    assert b["bc_ms"] > runlog._CHILD_WALK_BUDGET_MS, "the beat really was slow"
+    # ...and the walk, which was cheap, is neither disabled nor backed off.
+    assert "kids_n" in b and b.get("child_walk") is None
+    b2 = rl._beat(b)
+    assert "kids_n" in b2, "an unrelated slow probe must not cost the child walk"
+
+
 def test_a_rate_needs_two_samples_and_a_nonzero_window():
     rl = runlog.begin("import", label="x")
     rl.end("ok")
