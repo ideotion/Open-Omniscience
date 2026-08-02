@@ -15,6 +15,7 @@ so most of what follows asserts what is still REFUSED while a window is open.
 from __future__ import annotations
 
 import socket
+import threading
 
 import pytest
 
@@ -62,18 +63,32 @@ def guard():
         ap._orig_socks_connect,
     )
     reached: list[str] = []
+    mine = threading.get_ident()
+
+    # THREAD-SCOPED, because the guard it spies on is PROCESS-wide (2026-08-02).
+    # These spies replace the real socket calls for every thread in the interpreter,
+    # so a background thread belonging to some other test's app -- a scheduler left
+    # running by a `TestClient(app)` lifespan, say -- lands its own loopback connect
+    # in this list and shifts every index. That is exactly what the macOS portability
+    # lane caught: `['connect', 'getaddrinfo', 'getaddrinfo', 'getaddrinfo']` where
+    # the test itself had made only the three getaddrinfo calls. Recording only the
+    # calling thread's calls makes the assertion measure what THIS test did, and
+    # keeps it strict -- a stray call from the test's own thread still shows up.
+    def _note(name):
+        if threading.get_ident() == mine:
+            reached.append(name)
 
     def spy(name):
         def _f(*a, **k):
-            reached.append(name)
+            _note(name)
             raise _Reached(name)
 
         return _f
 
     ap._orig_getaddrinfo = spy("getaddrinfo")  # type: ignore[assignment]
     ap._orig_create_connection = spy("create_connection")  # type: ignore[assignment]
-    ap._orig_connect = lambda self, address: reached.append("connect")  # type: ignore[assignment]
-    ap._orig_connect_ex = lambda self, address: reached.append("connect_ex")  # type: ignore[assignment]
+    ap._orig_connect = lambda self, address: _note("connect")  # type: ignore[assignment]
+    ap._orig_connect_ex = lambda self, address: _note("connect_ex")  # type: ignore[assignment]
     ap._orig_tunnel = spy("tunnel")  # type: ignore[assignment]
     if ap._orig_socks_connect is not None:
         ap._orig_socks_connect = spy("socks_connect")  # type: ignore[assignment]
