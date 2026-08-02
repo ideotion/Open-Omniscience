@@ -478,6 +478,13 @@ def backfill_corpus(session: Session, *, extractor, limit: int | None = 200) -> 
 # ``commit_batch`` chunks reindex_all_batch already established.
 _PRECOMPUTE_WINDOW = 500
 
+# Ids per ``IN (...)`` when loading a window (see reindex_articles). SQLite's default
+# host-parameter ceiling is 999, so a window is loaded in chunks rather than one
+# statement -- raising ``_PRECOMPUTE_WINDOW`` above that must not turn a perf change
+# into an OperationalError. A module constant, not a literal, so a test can shrink it
+# and prove the chunking on a small corpus instead of seeding a thousand articles.
+_ID_CHUNK = 900
+
 
 def reindex_articles(
     session: Session,
@@ -722,8 +729,29 @@ def reindex_articles(
         window_ids = article_ids[w_start : w_start + _PRECOMPUTE_WINDOW]
         articles: list[Article] = []
         _t0 = time.monotonic()
+        # ONE query per chunk instead of one per article. ``session.get`` is a PK
+        # lookup, so this reads exactly the same rows and drags exactly the same bytes
+        # through the SQLCipher codec -- what it removes is up to _PRECOMPUTE_WINDOW
+        # separate statement round trips per window, spent on the one phase where every
+        # precompute worker sits idle (the loop is strictly load -> precompute -> apply).
+        #
+        # THE RE-ORDER BELOW IS NOT COSMETIC. An ``IN (...)`` result set has NO
+        # guaranteed order, and the caller's resume cursor maps a COUNT back onto this
+        # list: merge.py's `_tracked` stamps `ids[done - 1]` as the last finalised
+        # article, and the resume then keeps only `i > watermark` ("every id at or below
+        # it is already re-indexed"). So if a window were staged in any order other than
+        # the caller's, the watermark would name an id that is NOT the last one
+        # finalised, and the ascending resume would skip every article between them --
+        # permanently, and silently. That is precisely the unbounded-invisibility the
+        # option-(a) ruling's durable cursor exists to prevent, so the order is restored
+        # here explicitly and pinned by a test rather than inherited from a query plan.
+        _by_id: dict[int, Article] = {}
+        for _c in range(0, len(window_ids), _ID_CHUNK):
+            _chunk = window_ids[_c : _c + _ID_CHUNK]
+            for _a in session.query(Article).filter(Article.id.in_(_chunk)).all():
+                _by_id[_a.id] = _a
         for aid in window_ids:
-            art = session.get(Article, aid)
+            art = _by_id.get(aid)
             if art is not None:
                 articles.append(art)
         _load_s += time.monotonic() - _t0
