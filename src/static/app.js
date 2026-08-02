@@ -9001,9 +9001,44 @@
         <td><input type="checkbox" style="width:auto" ${s.enabled?"checked":""}
               onchange="updateSource(${s.id},{enabled:this.checked})"></td>
         <td><button class="tiny ghost" onclick="toggleSourceTrail(${s.id})" title="${esc(t("Discovery"))}">${esc(t("Trail"))}</button>
+        <button class="tiny ghost" onclick="qualifyAssist(${s.id}, this)" title="${esc(t("Ask the local model whether this source's stored articles read as articles or as navigation soup. A PROPOSAL to review beside the auditor's own evidence — it never changes this source's status or tags."))}">${esc(t("AI check"))}</button>
         <button class="tiny danger" onclick="deleteSource(${s.id}, ${esc(JSON.stringify(s.name))})">Delete</button></td>
       </tr>
       <tr id="src-trail-${s.id}" style="display:none"><td colspan="9"></td></tr>`;
+    }
+
+    // E-S5 (2026-08-01): the qualification ASSIST finally has a home. It has existed
+    // since B7.2 with no UI trigger at all — a propose-only classifier nobody could
+    // reach, which is a dead end rather than a feature. It stays propose-only: the
+    // verdict lands in a dated artifact for review BESIDE the auditor's own evidence,
+    // and Source.status / Source.tags are never touched by it.
+    async function qualifyAssist(sourceId, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const row = document.getElementById("src-trail-" + sourceId);
+      if (btn) { btn.disabled = true; btn.textContent = t("Checking…"); }
+      try {
+        const r = await api("/api/diagnostics/qualification-assist/run",
+          {method: "POST", body: JSON.stringify({source_id: sourceId})});
+        // Read against the module's REAL keys (article_count / junk_count /
+        // unparseable_count / canary), not an assumed {counts: …} shape.
+        const msg = `${t("AI check")}: ${r.checked != null ? r.checked : "?"} ${t("checked")} — `
+          + `${r.article_count != null ? r.article_count : "?"} ${t("read as articles")}, `
+          + `${r.junk_count != null ? r.junk_count : "?"} ${t("as navigation soup")}, `
+          + `${r.unparseable_count != null ? r.unparseable_count : "?"} ${t("unreadable")}`
+          + ` — ${t("a proposal only; nothing about this source was changed.")}`;
+        // A failed canary means the run itself is untrustworthy, which matters more
+        // than any of its numbers — so it is stated first, not buried.
+        const bad = r.canary && r.canary.ok === false;
+        if (row) {
+          row.style.display = "";
+          row.firstElementChild.innerHTML =
+            (bad ? `<div class="card-caveat">${esc(t("The canary check FAILED — treat this run's numbers as unreliable."))}</div>` : "")
+            + `<div class="small">${esc(msg)}</div>`;
+        } else if (typeof toast === "function") { toast(msg); }
+      } catch (e) {
+        if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
+      }
+      if (btn) { btn.disabled = false; btn.textContent = t("AI check"); }
     }
 
     // -- Discovery-trail / qualified-citations panel (2026-07-20 ruling, items 1+2) -- //
@@ -19202,12 +19237,14 @@
       catch (e) { toast(t("Could not load your extractors."), "err"); return; }
       const usable = prompts.filter((x) => x.enabled);
       mount.style.display = "";
-      if (!usable.length) {
-        mount.innerHTML = `<div class="card"><div class="hint">${esc(t("Define a custom extractor in Settings → Models first."))}</div></div>`;
-        return;
-      }
-      const opts = usable.map((x) =>
-        `<option value="${x.id}">${esc(x.label)} · ${esc(x.output_kind)}</option>`).join("");
+      // E-S5 (2026-08-01): the BUILT-IN AI-keyword extractor had an endpoint and no
+      // caller anywhere in the UI, so a user with no custom prompt could not reach it
+      // at all — the custom-prompt path absorbs the MECHANISM but not this prompt.
+      // Listing it here gives it a caller rather than retiring a capability nothing
+      // else provides.
+      const opts = `<option value="builtin">${esc(t("Built-in: AI keywords"))} · ai-keyword</option>`
+        + usable.map((x) =>
+          `<option value="${x.id}">${esc(x.label)} · ${esc(x.output_kind)}</option>`).join("");
       mount.innerHTML = `<div class="card">
         <div style="font-weight:600;margin-bottom:4px">${esc(t("Run a custom extractor"))}</div>
         <div class="hint" style="margin-bottom:8px">${esc(t("Runs your prompt with the local model over each matched article. Results are stored as AI-derived metadata of that type, labelled unreliable — the trusted keyword index is never affected; nothing leaves your machine."))}</div>
@@ -19243,7 +19280,9 @@
       _bulkAbort = ("AbortController" in window) ? new AbortController() : null;
       let done = 0, total = 0;
       try {
-        const resp = await fetch(`/api/ai/prompts/${id}/run`, {
+        const url = (id === "builtin")
+          ? "/api/ai/keywords/extract" : `/api/ai/prompts/${id}/run`;
+        const resp = await fetch(url, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body), signal: _bulkAbort ? _bulkAbort.signal : undefined,
         });

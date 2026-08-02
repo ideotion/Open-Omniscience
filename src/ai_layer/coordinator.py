@@ -293,10 +293,13 @@ def coordinator_default_enabled(capability=None) -> dict:
     it, because this is a default, never a block. An unreadable verdict defaults OFF
     and says why: a machine we could not measure must not be volunteered.
     """
+    probe = capability
     try:
-        if capability is None:
-            from src.llm.backend import inference_capability as capability
-        cap = capability() or {}
+        if probe is None:
+            from src.llm.backend import inference_capability
+
+            probe = inference_capability
+        cap = probe() or {}
     except Exception as exc:  # noqa: BLE001
         return {"default_on": False, "reason": f"hardware not readable ({type(exc).__name__})"}
     practical = bool(cap.get("practical"))

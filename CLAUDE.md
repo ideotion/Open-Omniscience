@@ -1429,6 +1429,25 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     it under the new key. Adding the new key while leaving the old one orphans a translation and
     leaves the gate green. Before editing any long server-side constant, grep the locale files
     for its opening words.
+  - **`re.split` CONSUMES ITS SEPARATOR — only an EXACT-COVERAGE assertion catches what that
+    loses (2026-08-02, Session E S4):** the never-truncate chunker for user-asked summarize/
+    translate split sentences on `(?<=[.!?。！？])\s+`. The lookbehind keeps the punctuation, but
+    the `\s+` is consumed, so every inter-sentence space vanished and a translation reassembled
+    from the parts came back subtly wrong — plausible text, quietly damaged, and invisible to any
+    test that checks the parts "look right". Split at `m.end()` (the separator stays with the
+    piece before it) and assert the PROPERTY: `"".join(chunk_text(t, n)) == t`, over several
+    shapes (paragraphs, punctuation-dense, punctuation-free, CJK, mixed) × several budgets. The
+    general form: for any splitter whose output is meant to be reassembled, the test is exact
+    reconstruction, never per-piece plausibility.
+  - **PARSE A VALUE-BEARING PROVENANCE STRING DEFENSIVELY BEFORE EXTENDING IT (2026-08-02,
+    Session E S4):** `ArticleAnalysis.prompt_version` is `String(50)` and is NOT just a version —
+    the translation TARGET LANGUAGE lives inside it after a colon (`translate-v2:French`), read
+    back by `_parse_target_language`. Appending a method suffix (`+chunked-3`) to record that a
+    run was chunked would have made the displayed target "French+chunked-3", and a 50-character
+    truncation could have cut into the language itself. TWO fixes, both needed: the parser strips
+    the suffix, and the WRITER refuses to append when the result would overflow — losing a method
+    note is strictly better than corrupting a value. Same family as the i18n-key lesson above:
+    before extending any string, find out what already reads it and what else it carries.
   - **A BACKSTOP MAY BE THE ONLY THING GUARDING A PATH — "every real path checks the gate
     itself" IS AN ENUMERATION, AND ENUMERATIONS ARE WRONG (2026-08-01, the AI-install egress
     window):** relaxing the socket-level airplane backstop process-wide was justified in
@@ -1646,6 +1665,42 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   `ALERT_CAVEAT`), EXTENDING that string silently breaks its ×12 translation — re-key by
   preserving each locale's existing translation and appending the new sentences, never by adding a
   second key and orphaning the first.
+  **SESSION E EXECUTED 2026-08-02 (same branch, rebased onto the merged vLLM download fix; S1–S5
+  all shipped, five `docs/ledger/shipped.csv` rows; every frontend slice BROWSER-UNVERIFIED per
+  fork-3/Q6a):** S1 the Background-AI COORDINATOR (one lane, enabled sweeps round-robin, vLLM
+  turns may overlap / Ollama serial; a user batch takes an EXCLUSIVE HOLD checked by EVERY
+  background-AI entry point per the 2026-07-24 lesson; hardware-aware default OFF when the
+  verdict is unreadable) · S2 the COMPARATIVE BENCH over inputs frozen ONCE (batch digest on
+  every report; a resume across a changed digest REFUSED; five reused instruments; every metric
+  alone, no winner column; a missing roster tag reported not substituted; the LiquidAI candidate
+  a note, not an invented tag) · S3 the PER-FIELD perception gate + the per-LABEL langdetect gate
+  · S4 CONTEXT MANAGEMENT (the B7 Ollama `num_ctx` gap closed as a PROPOSAL; user-driven
+  summarize/translate chunked instead of silently cut) · S5 the two orphan capabilities wired.
+  **THE ASYMMETRY WORTH REMEMBERING (S3):** a gate that LICENSES must refuse the unmeasured
+  (running there would be unmeasured work); a gate that VETOES must NOT (langdetect has run
+  default-on over every language the model can name since B15, and the gold set covers thirteen —
+  refusing every unmeasured label would disable detection for languages nobody TESTED rather than
+  for languages that FAILED). Both are the conservative choice in their own context; swapping
+  them would be invisible in a diff, so both directions are pinned in both suites.
+  **REMAINING from Session E (honest board):** the bench's actual ROSTER RUN + the ~50-anchor
+  grading sitting are OPERATOR steps on the model rig (the machinery is here; the numbers are
+  not, and none are fabricated) — the LiquidAI tag must be verified LIVE there and REFUSED if
+  absent; the triage/source-tag per-language gates are computed and SHOWN but not applied at
+  selection (both sweeps are export-only JSONL a human reviews — a deliberate boundary, not an
+  omission); ruling 16's per-task MODEL SELECTION with the 7–8 GB VRAM co-fit check is NOT built
+  (the coordinator groups by model implicitly, one member at a time, but a several-models config
+  and its co-fit gate are a separate slice); and the maintainer click-through/HTML exports for
+  every frontend slice above.
+  **TWO REUSABLE LESSONS FROM SESSION E (also in the Session-rituals Lessons list):** (a)
+  `re.split` CONSUMES its separator, so splitting on `(?<=[.!?])\s+` silently drops the space
+  between every sentence — a translation reassembled from those pieces comes back subtly wrong
+  and NOTHING but an exact-coverage property test would find it; split at `m.end()` instead, and
+  assert `"".join(parts) == text` rather than merely that the parts look right; (b) a
+  VALUE-BEARING provenance string must be parsed defensively before it is extended —
+  `prompt_version` stores the translation target after a colon (`translate-v2:French`), so
+  appending a method suffix would have printed the target as "French+chunked-3"; the parser
+  strips the suffix AND the writer drops its own note rather than let a `String(50)` truncation
+  cut into the language (losing a method note beats corrupting a value).
 - **THE BULLETIN — PERIODIC CORPUS DOCUMENT (maintainer design conversation 2026-07-30/31; 16
   numbered decisions ANSWERED 2026-07-31; DESIGN ONLY, nothing built; record of record =
   [`docs/design/BULLETIN_DESIGN_2026-07-31.md`](docs/design/BULLETIN_DESIGN_2026-07-31.md),
