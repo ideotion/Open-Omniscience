@@ -852,3 +852,34 @@ def get_client(*, backend: str | None = None) -> LlmBackend:
 
 def _reset_clients_for_tests() -> None:
     _clients.clear()
+
+
+def outage_reason() -> str | None:
+    """WHY the local model is failing, in the resolver's own words -- or None if a
+    backend is reachable and the failure is something else.
+
+    Field report 2026-08-02: with vLLM installed but its server dead and Ollama not
+    running, Start background AI reported "local model hiccup (1/10) -- retrying in 5s"
+    and counted to ten. Every one of those words was wrong: it was not a hiccup, and
+    the app already knew exactly what it was -- ``resolve_backend()`` returns
+    ``no_backend: true`` with a precise reason. The honest sentence was one field away
+    while the operator read a misleading one.
+
+    THIS DELIBERATELY DOES NOT DECIDE WHETHER TO KEEP RETRYING, and the first cut of it
+    did. That was wrong: a health probe cannot tell a backend that is GONE from one that
+    is momentarily unreachable (a model reload, a restart, a busy server all answer the
+    same way), so ending a multi-hour sweep on that probe would break the transient-retry
+    guarantee the backoff exists to provide -- the repo's own progressive-sweep tests
+    caught it immediately. The retry budget is unchanged; only what the operator is TOLD
+    changes, which is the actual defect.
+
+    Never raises: a probe that cannot read returns None and the caller keeps its
+    existing wording.
+    """
+    try:
+        resolved = resolve_backend()
+    except Exception:  # noqa: BLE001 - a message-enrichment probe must never break a run
+        return None
+    if resolved.get("no_backend") or not resolved.get("available"):
+        return str(resolved.get("reason") or "no AI backend is reachable right now")
+    return None

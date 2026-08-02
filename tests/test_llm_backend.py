@@ -302,3 +302,53 @@ def test_the_capability_fields_add_no_new_probe(monkeypatch):
     monkeypatch.setattr(B, "_ollama_available", _count("ollama", False))
     B.resolve_backend()
     assert calls == {"gpu": 1, "vllm": 1, "ollama": 1}
+
+
+# --------------------------------------------------------------------------- #
+#  the operator is told WHY, in the resolver's own words
+# --------------------------------------------------------------------------- #
+def test_no_backend_at_all_yields_the_resolvers_own_reason(monkeypatch):
+    """Field report 2026-08-02: with vLLM installed but dead and Ollama not running,
+    Start background AI said "local model hiccup (1/10) - retrying in 5s" and counted
+    to ten. Not a hiccup, and the app already knew exactly what it was - the honest
+    sentence was one field away while the operator read a misleading one."""
+    _stub(monkeypatch, gpu={"available": True}, vllm_installed=True, vllm_running=False,
+          ollama_ok=False)
+    why = B.outage_reason()
+    assert why, "the reason must be available to the sweeps' progress line"
+    assert "not running" in why or "reachable" in why
+
+
+def test_a_reachable_backend_gives_no_reason_so_the_wording_is_unchanged(monkeypatch):
+    """None means "nothing to add" - the caller keeps its existing hiccup wording,
+    which is correct when a backend IS there and a single call merely failed."""
+    _stub(monkeypatch, gpu={"available": False}, vllm_installed=False, vllm_running=False,
+          ollama_ok=True)
+    assert B.outage_reason() is None
+
+
+def test_it_never_decides_whether_to_keep_retrying(monkeypatch):
+    """THE load-bearing property, and the first cut of this got it wrong.
+
+    A health probe cannot tell a backend that is GONE from one that is momentarily
+    unreachable - a model reload, a restart and a busy server all answer identically.
+    Ending a multi-hour sweep on that probe would break the transient-retry guarantee
+    the backoff exists to provide, so this returns a MESSAGE and nothing else: no
+    verdict, no budget, no control flow. The repo's own progressive-sweep tests caught
+    the earlier version immediately, which is why the contract is pinned here."""
+    assert not hasattr(B, "classify_outage"), (
+        "a helper that returns a retry VERDICT invites exactly the regression that was "
+        "caught: this one reports why, and the retry budget stays the caller's"
+    )
+    _stub(monkeypatch, gpu={"available": True}, vllm_installed=True, vllm_running=False,
+          ollama_ok=False)
+    assert isinstance(B.outage_reason(), str)
+
+
+def test_a_probe_that_cannot_read_says_nothing_rather_than_guessing(monkeypatch):
+    """A message-enrichment probe must never break the run it annotates."""
+    def _boom():
+        raise RuntimeError("probe exploded")
+
+    monkeypatch.setattr(B, "resolve_backend", _boom)
+    assert B.outage_reason() is None
