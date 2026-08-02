@@ -99,6 +99,13 @@ _POOL_TIMEOUT_S = 900.0
 # Starting ONE worker that returns True: short, because this is a liveness
 # question and not a workload. Generous enough for a cold interpreter start.
 _PROBE_TIMEOUT_S = 60.0
+# One article of SERIAL precompute above this is reported, by id and size. Well
+# above any legitimate article: the module's own measurements put a 50 KB body at
+# 373 ms, so ~160x the worst measured case. High enough that a healthy import is
+# silent, low enough that a multi-hour stall is named within the first minute.
+_SLOW_ARTICLE_WARN_S = 60.0
+# How often the watchdog looks. Only cost is a sleeping thread per serial window.
+_WATCHDOG_TICK_S = 15.0
 # Which start method actually works here, resolved once -- see _pool_context.
 _POOL_CTX_LOCK = threading.Lock()
 _POOL_CTX_RESOLVED = False
@@ -432,10 +439,63 @@ def _compute_one(
 
 
 def _serial(tasks: Sequence[Task], extractor) -> dict[int, ArticleDerivatives]:
-    return {
-        t[0]: _compute_one(extractor, t[0], t[1], t[2], t[3], t[4])
-        for t in tasks
-    }
+    """The reference implementation AND the universal fallback.
+
+    WATCHED, because it is the one unbounded stretch in the whole re-index. The
+    pool path carries ``_POOL_TIMEOUT_S`` -- "the only thing standing between a
+    deadlocked worker and an import that never finishes", as the fallback's own
+    comment puts it -- and then hands the window to THIS function, which had no
+    bound of any kind. Python cannot preempt a running C-level regex, so this
+    does not add a timeout it could not honour; it adds a NAME.
+
+    That is the missing half. Two field imports (2026-07-31 and 2026-08-01) each
+    stopped advancing at an exact window boundary -- one for 9.8 h before
+    recovering, one for 6 h until it was killed -- burning ~0.75 of a core with
+    the WAL byte-frozen and the write gate free. All three facts say "in-process
+    pure-CPU work", i.e. here; none of them says WHICH ARTICLE, so a 19 h import
+    left nothing to reproduce from. A watchdog turns the next one into a row.
+    """
+    total = len(tasks)
+    # ONE tuple, rebound as a whole: the watchdog reads a consistent snapshot
+    # under the GIL. Two separate fields could be read torn -- a new article's id
+    # against the previous one's start time -- which would invent a slow article.
+    cur: list = [None]  # [(aid, t0, chars, i)] or [None] between articles
+    stop = threading.Event()
+
+    def _watch() -> None:
+        while not stop.wait(_WATCHDOG_TICK_S):
+            snap = cur[0]
+            if snap is None:
+                continue
+            aid, t0, chars, i = snap
+            held = time.monotonic() - t0
+            if held >= _SLOW_ARTICLE_WARN_S:
+                _LOG.warning(
+                    "serial precompute still on article %s after %.0f s "
+                    "(%d chars, %d/%d in this window)",
+                    aid, held, chars, i, total,
+                )
+
+    # Daemon: a diagnostic must never be the reason a process refuses to exit.
+    threading.Thread(target=_watch, name="oo-precompute-watchdog", daemon=True).start()
+    try:
+        out: dict[int, ArticleDerivatives] = {}
+        for i, t in enumerate(tasks, 1):
+            t0 = time.monotonic()
+            cur[0] = (t[0], t0, len(t[1] or ""), i)
+            out[t[0]] = _compute_one(extractor, t[0], t[1], t[2], t[3], t[4])
+            cur[0] = None
+            took = time.monotonic() - t0
+            if took >= _SLOW_ARTICLE_WARN_S:
+                # It finished, so this is the RECOVERED case (the 9.8 h run):
+                # the article is now identified rather than merely survived.
+                _LOG.warning(
+                    "serial precompute of article %s took %.0f s (%d chars)",
+                    t[0], took, len(t[1] or ""),
+                )
+        return out
+    finally:
+        stop.set()
 
 
 def precompute_batch(
