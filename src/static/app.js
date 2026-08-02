@@ -19730,12 +19730,15 @@
           // instead. `=== false` on purpose: `null` means the probe could not
           // decide, which must fall through to the ordinary offline copy rather
           // than assert a hardware verdict nothing measured.
-          el.className = "pill warn";
+          // Still OFF to the eye (maintainer 2026-08-02: red + crossed when off),
+          // while `warn` keeps this state's own distinct meaning and its title says
+          // WHY it differs from a stopped backend — the layered-disclosure convention.
+          el.className = "pill warn ai-off";
           el.textContent = "AI";
           el.title = (h.hardware_reason ? h.hardware_reason + " — " : "")
             + t("AI features are off by default on this hardware — open AI settings to override");
         } else {
-          el.className = "pill warn";
+          el.className = "pill warn ai-off";
           el.textContent = "AI";
           // V4 (2026-07-29): the red pill must name the REAL situation.
           // `no_backend` means NOTHING is reachable (not merely that the selected
@@ -19747,6 +19750,9 @@
             + t("AI is offline — click to start it, or open AI settings to install one");
         }
       } catch (e) {
+        // The health probe itself failed, so a backend is certainly not serving:
+        // showing the neutral pill here would read as "fine" on no evidence.
+        el.className = "pill warn ai-off";
         el.textContent = "AI";
         el.title = t("AI — click to open AI settings");
       }
