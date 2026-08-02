@@ -66,12 +66,17 @@ def _hardware_facts(backend_facts: dict) -> dict:
     return inference_capability(gpu=gpu if isinstance(gpu, dict) else None)
 
 
-def _context_settings(backend_facts: dict) -> dict:
-    """Context/window sizing for whichever backend is active. vLLM's is a
-    COMPUTED, disclosed heuristic (``compute_server_args``, B2); Ollama's is
-    the STATIC configured setting -- there is NO RAM-derived auto-tune for
-    Ollama's ``num_ctx`` yet (a genuine gap from B2's own scope, carried over
-    honestly rather than silently omitted or fabricated here)."""
+def _context_settings(backend_facts: dict, corpus: dict | None = None) -> dict:
+    """Context/window sizing for whichever backend is active.
+
+    Both are now COMPUTED, disclosed heuristics: vLLM's ``compute_server_args``
+    (B2) and, since E-S4 (2026-08-01), Ollama's ``recommend_num_ctx`` -- the
+    RAM/VRAM-derived analog that was B2's own carried-over gap. Ollama's PROPOSES
+    only; ``configured_num_ctx`` still governs, because resizing an operator's
+    context window off an estimate would be changing behaviour on a guess.
+
+    ``corpus`` supplies the article-length half (``{"p95_words", "script"}``) and is
+    INJECTED rather than measured here -- see the note at the call site."""
     from src.config.app_settings import load_settings
 
     out: dict = {}
@@ -93,13 +98,39 @@ def _context_settings(backend_facts: dict) -> dict:
         out["vllm"] = {"available": False, "reason": "vLLM is not installed"}
 
     settings = load_settings()
+    configured = getattr(settings, "llm_max_context_length", None)
+    # E-S4 (2026-08-01): the RAM/VRAM-derived num_ctx analog vLLM has had since B2 --
+    # the documented B7 gap, now closed. It PROPOSES; the configured setting still
+    # governs, because a heuristic must not silently resize an operator's window.
+    from src.ai_layer.context import recommend_num_ctx
+
+    ram_gb = None
+    try:
+        from src.llm.ollama import total_ram_gb
+
+        ram_gb = total_ram_gb()
+    except Exception:  # noqa: BLE001 - psutil is an optional extra; unreadable is a state
+        ram_gb = None
+    # The corpus half is INJECTED, never scanned here: measuring the article-length
+    # distribution is a full-table pass, and a bundle member that quietly ran one
+    # would make "read the AI settings" the most expensive click in diagnostics.
+    # Absent, the auto-tune takes its own unmeasured branch and names the diagnostic
+    # that would supply it.
+    p95_words = (corpus or {}).get("p95_words")
+    script = (corpus or {}).get("script") or "latin"
     out["ollama"] = {
-        "configured_num_ctx": getattr(settings, "llm_max_context_length", None),
-        "method": "static configured setting -- NO RAM-derived auto-tune exists yet for Ollama",
-        "caveat": (
-            "B2 scoped a num_ctx-from-RAM analog for Ollama (mirroring vLLM's "
-            "compute_server_args); it was not built this cycle -- a known gap, "
-            "not a silent omission."
+        "configured_num_ctx": configured,
+        "auto_tune": recommend_num_ctx(
+            p95_words=p95_words,
+            script=script,
+            ram_gb=ram_gb,
+            vram_mb=gpu.get("vram_mb") if isinstance(gpu, dict) else None,
+            configured=configured,
+        ),
+        "note": (
+            "The auto-tune PROPOSES; `configured_num_ctx` governs. A heuristic that "
+            "silently resized the operator's context window would be changing behaviour "
+            "on an estimate."
         ),
     }
     return out
@@ -129,12 +160,14 @@ def _job_reports() -> dict:
     return out
 
 
-def ai_diagnostics_report() -> dict:
+def ai_diagnostics_report(corpus: dict | None = None) -> dict:
     """Assemble the whole `ai` diagnostics payload. Every section is wrapped so
     a single probe/report failure degrades that section only -- the bundle
     build never aborts over this member."""
     backend = _safe(_backend_facts)
-    context = _safe(lambda: _context_settings(backend if isinstance(backend, dict) else {}))
+    context = _safe(
+        lambda: _context_settings(backend if isinstance(backend, dict) else {}, corpus)
+    )
 
     def _active_model():
         from src.api.llm import active_model

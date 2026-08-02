@@ -11,12 +11,12 @@ rule-based extractors (``article_mentioned_dates``/``article_mentioned_places``/
 (``perception_extract_job.py``) -- every write here lands in ``ai_keyword`` only, via
 ``src.ai_layer.store.record_keywords``, labelled "AI-derived - unreliable".
 
-EVAL-GATED (the standing ruling's "harness first" requirement) and TRI-STATE. For each
-language the LAST live perception-eval run (``src.ai_layer.perception_job``) yields one
-of exactly three states, which are NEVER collapsed into each other:
+EVAL-GATED (the standing ruling's "harness first" requirement) and TRI-STATE. The LAST
+live perception-eval run (``src.ai_layer.perception_job``) yields one of exactly three
+states, which are NEVER collapsed into each other:
 
-  * ``active: True``  -- EVALUATED and cleared (every field that carried evidence passed
-    both floors). The reason states ``n_cases``, because clearing on one synthetic case
+  * ``active: True``  -- EVALUATED and cleared (the floors that applied were passed).
+    The reason states ``n_cases``, because clearing on one synthetic case
     is low statistical power and saying so is part of the measurement;
   * ``active: False`` -- EVALUATED and FAILED, on either floor:
       - hallucination above :data:`MAX_HALLUCINATION_RATE` on a field it predicted into, OR
@@ -39,6 +39,13 @@ None``, i.e. ``n_gold > 0``). Nine of the thirteen gold languages carry ONLY ``w
 gold, so failing them on ``who``/``when`` would be a FABRICATED FAIL -- as dishonest as
 the fabricated pass this fix removes. Absence from the report entirely is still "never
 evaluated" (:func:`language_gate`), never assumed safe.
+
+PER-FIELD SINCE 2026-08-01 (E-S3, ruling 16). Those three states are computed for EACH
+of who/where/when, on exactly that field's own evidence, and the language rolls them up:
+active when ANY field cleared (the article is worth one call, since the prompt asks for
+all three together), failed when every measured field failed, unmeasured when nothing was
+measured. :func:`field_gate` then decides what may be STORED, so a model that invents
+people but reads dates perfectly keeps its dates instead of extracting nothing anywhere.
 
 DELIBERATE KIND-NAMING DEVIATION from the brief's illustrative kind list (``ai-date`` /
 ``ai-place`` / ``ai-person`` / ``ai-org`` / ``ai-event``): the extraction adapter's
@@ -110,9 +117,20 @@ def gate_languages_from_report(report: dict | None) -> dict[str, dict]:
     as "never evaluated".
 
     Returns ``{language: {"active": True|False|None, "reason": str, "n_cases": int|None,
-    "checks": [str, ...]}}``. ``checks`` lists every floor that was ACTUALLY applied, so
-    a "cleared" verdict is auditable rather than asserted; an empty ``checks`` IS the
-    ``active: None`` (unmeasured) state.
+    "checks": [str, ...], "fields": {field: {"active", "reason", "checks"}}}}``.
+    ``checks`` lists every floor that was ACTUALLY applied, so a "cleared" verdict is
+    auditable rather than asserted; an empty ``checks`` IS the ``active: None``
+    (unmeasured) state.
+
+    PER-FIELD SINCE 2026-08-01 (E-S3, ruling 16's granularity ask). The floors were
+    always computed per field; only the VERDICT was collapsed, so one bad field
+    deactivated the language for all three -- a model that hallucinates people but
+    reads dates perfectly extracted nothing anywhere. Each field now carries its own
+    tri-state, on exactly the evidence that field had, and the language-level ``active``
+    becomes the honest rollup: True when ANY field cleared (that language is worth a
+    call), False when every measured field failed, None when nothing was measured at
+    all. The language-level ``reason`` names which fields are active and which are not,
+    so "active" never over-reads as "active for everything".
     """
     harness_report = (report or {}).get("report") or {}
     by_lang = harness_report.get("by_language") or {}
@@ -122,64 +140,97 @@ def gate_languages_from_report(report: dict | None) -> dict[str, dict]:
             continue
         n_cases = fields.get("n_cases")
         n_cases = n_cases if isinstance(n_cases, int) else None
-        failing: list[str] = []
-        checks: list[str] = []
+        power = f" on {n_cases} synthetic case(s)" if n_cases is not None else ""
+        low_power = " -- low statistical power" if (n_cases or 0) <= 1 else ""
+        per_field: dict[str, dict] = {}
+        all_checks: list[str] = []
+        all_failing: list[str] = []
         for fld in _FIELDS:
             metrics = fields.get(fld)
-            if not isinstance(metrics, dict):
-                continue
-            rate = metrics.get("hallucination_rate")
-            recall = metrics.get("recall")
-            # Floor 1 -- INVENTION. Applies only where the model actually predicted
-            # something (rate is None <=> n_pred == 0 <=> it stayed silent on this field).
-            if rate is not None:
-                checks.append(f"{fld} hallucination {rate}")
-                if rate > MAX_HALLUCINATION_RATE:
-                    failing.append(f"{fld} hallucination {rate} above {MAX_HALLUCINATION_RATE}")
-            # Floor 2 -- SILENCE. Applies only where the gold is NON-EMPTY (recall is
-            # None <=> n_gold == 0 <=> this field was never tested for this language).
-            # Failing a `where`-only language on who/when would be a fabricated FAIL.
-            if recall is not None:
-                gold = _gold_n(metrics)
-                checks.append(f"{fld} recall {recall} on {gold} gold item(s)")
-                if recall <= MIN_RECALL:
-                    failing.append(
-                        f"{fld} recall {recall} on {gold} gold item(s) -- recovered nothing"
-                    )
-        power = f" on {n_cases} synthetic case(s)" if n_cases is not None else ""
-        if not checks:
+            checks: list[str] = []
+            failing: list[str] = []
+            if isinstance(metrics, dict):
+                rate = metrics.get("hallucination_rate")
+                recall = metrics.get("recall")
+                # Floor 1 -- INVENTION. Applies only where the model actually predicted
+                # something (rate is None <=> n_pred == 0 <=> it stayed silent here).
+                if rate is not None:
+                    checks.append(f"{fld} hallucination {rate}")
+                    if rate > MAX_HALLUCINATION_RATE:
+                        failing.append(f"{fld} hallucination {rate} above {MAX_HALLUCINATION_RATE}")
+                # Floor 2 -- SILENCE. Applies only where the gold is NON-EMPTY (recall is
+                # None <=> n_gold == 0 <=> this field was never tested for this language).
+                # Failing a `where`-only language on who/when would be a fabricated FAIL.
+                if recall is not None:
+                    gold = _gold_n(metrics)
+                    checks.append(f"{fld} recall {recall} on {gold} gold item(s)")
+                    if recall <= MIN_RECALL:
+                        failing.append(
+                            f"{fld} recall {recall} on {gold} gold item(s) -- recovered nothing"
+                        )
+            all_checks.extend(checks)
+            all_failing.extend(failing)
+            if not checks:
+                per_field[fld] = {
+                    "active": None,
+                    "reason": (
+                        f"no harness evidence for {fld} in this language{power} -- "
+                        "UNMEASURED, never evaluated against gold"
+                    ),
+                    "checks": [],
+                }
+            elif failing:
+                per_field[fld] = {
+                    "active": False,
+                    "reason": f"{fld} failed the S6.5 harness{power}: " + "; ".join(failing),
+                    "checks": checks,
+                }
+            else:
+                per_field[fld] = {
+                    "active": True,
+                    "reason": (
+                        f"{fld} cleared the S6.5 harness{power}{low_power}; checked: "
+                        + "; ".join(checks)
+                    ),
+                    "checks": checks,
+                }
+        cleared = [f for f in _FIELDS if per_field[f]["active"] is True]
+        failed = [f for f in _FIELDS if per_field[f]["active"] is False]
+        unmeasured = [f for f in _FIELDS if per_field[f]["active"] is None]
+        held_back = (
+            (" -- gated for " + ", ".join(failed)) if failed else ""
+        ) + ((" -- unmeasured for " + ", ".join(unmeasured)) if unmeasured else "")
+        entry: dict = {}
+        if not all_checks:
             # NO evidence in any field: no gold to recall and nothing predicted. This is
             # NOT a pass. Never the word "cleared".
-            out[lang] = {
+            entry = {
                 "active": None,
                 "reason": (
                     "no harness evidence for this language"
                     f"{power} -- UNMEASURED, never evaluated against gold; "
                     "running extraction here would be unmeasured"
                 ),
-                "n_cases": n_cases,
                 "checks": [],
             }
-        elif failing:
-            out[lang] = {
-                "active": False,
-                "reason": "failed the S6.5 harness" + power + ": " + "; ".join(failing),
-                "n_cases": n_cases,
-                "checks": checks,
-            }
-        else:
-            out[lang] = {
+        elif cleared:
+            entry = {
                 "active": True,
                 "reason": (
-                    "cleared the S6.5 harness"
-                    + power
-                    + (" -- low statistical power" if (n_cases or 0) <= 1 else "")
-                    + "; checked: "
-                    + "; ".join(checks)
+                    "cleared the S6.5 harness for " + ", ".join(cleared)
+                    + power + low_power + held_back + "; checked: " + "; ".join(all_checks)
                 ),
-                "n_cases": n_cases,
-                "checks": checks,
+                "checks": all_checks,
             }
+        else:
+            entry = {
+                "active": False,
+                "reason": "failed the S6.5 harness" + power + ": " + "; ".join(all_failing),
+                "checks": all_checks,
+            }
+        entry["n_cases"] = n_cases
+        entry["fields"] = per_field
+        out[lang] = entry
     return out
 
 
@@ -193,7 +244,12 @@ def language_gate(language: str | None, gate: dict[str, dict]) -> tuple[bool, st
     to grant permission on an absence of measurement. Absence from the gate entirely is
     likewise honestly DISABLED -- "never evaluated" -- never assumed safe by omission (the
     standing absence-is-not-a-pass lesson: an aggregation that silently omits an untested
-    case reads as a pass)."""
+    case reads as a pass).
+
+    Since the per-field gate (E-S3), this answers "is this article worth a call at all?"
+    -- True when at least ONE field cleared. WHAT gets stored is then decided field by
+    field by :func:`field_gate`; a language active for `where` alone must never be read
+    as licensed for `who`."""
     if not language:
         return False, "article has no known language"
     entry = gate.get(language)
@@ -203,6 +259,37 @@ def language_gate(language: str | None, gate: dict[str, dict]) -> tuple[bool, st
     reason = str(entry.get("reason") or "")
     if active is None:
         return False, reason or "no harness evidence -- unmeasured"
+    return bool(active), reason
+
+
+def field_gate(language: str | None, field: str, gate: dict[str, dict]) -> tuple[bool, str]:
+    """Whether ``field`` may be STORED for ``language``.
+
+    The three fields come back from ONE model call (the prompt asks for who, where and
+    when together), so this is a storage gate, not a call gate: a gated field is
+    generated and then DISCARDED rather than written as a candidate. That costs nothing
+    extra -- the call was already being made for the field that cleared -- and it is the
+    only honest place to draw the line, because the evidence for each field is separate.
+
+    Same conservatism as :func:`language_gate`: only ``active is True`` stores. A field
+    with no harness evidence is UNMEASURED and refuses; a language missing from the gate
+    refuses for every field. A gate produced before per-field verdicts existed (an old
+    persisted report) has no ``fields`` key -- it falls back to the language verdict,
+    which is exactly the pre-E-S3 behaviour rather than an invented per-field one.
+    """
+    if not language:
+        return False, "article has no known language"
+    entry = gate.get(language)
+    if entry is None:
+        return False, "never evaluated"
+    fields = entry.get("fields")
+    if not isinstance(fields, dict) or field not in fields:
+        return language_gate(language, gate)
+    fld = fields[field] or {}
+    active = fld.get("active")
+    reason = str(fld.get("reason") or "")
+    if active is None:
+        return False, reason or f"no harness evidence for {field} -- unmeasured"
     return bool(active), reason
 
 
@@ -251,7 +338,11 @@ def extract_perception_batch(
     rule-based tables.
 
     Returns a tally: ``{"attempted", "skipped_existing", "gated", "gated_detail",
-    "stored", "who", "where", "when", "aborted", "reason"}``. An LLMUnavailable found
+    "field_gated", "stored", "who", "where", "when", "aborted", "reason"}``. Since the
+    per-field gate (E-S3), an article whose language cleared for SOME fields is run and
+    only its cleared fields are stored -- ``field_gated`` counts, per field, how many
+    articles had that field discarded, so a small ``who`` count beside a large ``where``
+    count reads as "gated", never as "the model found nothing". An LLMUnavailable found
     while walking a concurrent chunk's results IN ORDER stops the batch at that point
     (``aborted: True``) -- earlier articles in the SAME call are already committed and
     stay committed (never rolled back); the caller (the progressive job) turns
@@ -268,6 +359,8 @@ def extract_perception_batch(
 
     tally: dict = {
         "attempted": 0, "skipped_existing": 0, "gated": 0, "gated_detail": {},
+        "field_gated": {f: 0 for f in _FIELDS},
+        "truncated": 0,
         "stored": 0, "who": 0, "where": 0, "when": 0, "aborted": False, "reason": None,
     }
     if not work:
@@ -325,7 +418,20 @@ def extract_perception_batch(
                 continue
             tally["attempted"] += 1
             out = res.value or {}
+            if out.get("truncation"):
+                # A background sweep may truncate; it may not do so silently. Counted
+                # per run so a thin harvest is attributable to the window rather than
+                # being read as a thin corpus.
+                tally["truncated"] = tally.get("truncated", 0) + 1
             for fld in _FIELDS:
+                # PER-FIELD gate (E-S3): the three fields arrive from one call, so a
+                # field this language never cleared is DISCARDED here rather than
+                # stored. Counted, so a field's absence reads as gated and not as
+                # "the model found nothing".
+                field_ok, _why = field_gate(w.language, fld, gate)
+                if not field_ok:
+                    tally["field_gated"][fld] += 1
+                    continue
                 kind = _KIND_OF_FIELD[fld]
                 added = record_keywords(
                     session, w.article_id, out.get(fld) or [], model=model, kind=kind,
@@ -344,6 +450,7 @@ __all__ = [
     "MIN_RECALL",
     "PERCEPTION_KINDS",
     "extract_perception_batch",
+    "field_gate",
     "gate_languages_from_report",
     "language_gate",
     "select_perception_batch",

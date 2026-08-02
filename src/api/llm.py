@@ -58,7 +58,11 @@ _SUMMARY_SYSTEM = _PROMPTS["summary"]["en"]
 TRANSLATE_PROMPT_VERSION = "translate-v2"
 _TRANSLATE_SYSTEM = _PROMPTS["translate"]["en"]
 
-# Keep prompts within a small CPU model's context.
+# Keep prompts within a small CPU model's context. E-S4 (2026-08-01): no longer used
+# to CUT user-asked work -- `src.ai_layer.context` sizes the budget from the configured
+# window and the never-truncate paths chunk instead. Kept as the module's own default
+# and because the synthesis path (a deliberately bounded multi-article excerpt set,
+# not one article) still bounds its excerpts by it.
 _MAX_CHARS = 6000
 
 _ollama_client: OllamaClient | None = None
@@ -198,6 +202,119 @@ _NATIVE_DIRECTIVE = {
     "bn": "আপনার সম্পূর্ণ উত্তর বাংলায় লিখুন।",
     "id": "Tulis seluruh jawabanmu dalam bahasa Indonesia.",
 }
+
+
+def _version_with_method(prompt_version: str, method: dict) -> str:
+    """Record a CHUNKED run in the stored provenance.
+
+    ``prompt_version`` is String(50), and the suffix is short by design. A single-call
+    run is left untouched, so nothing about existing rows or the common path changes;
+    only a run whose METHOD differed says so."""
+    mode = (method or {}).get("mode")
+    parts = int((method or {}).get("parts") or 1)
+    if mode not in ("chunked", "hierarchical") or parts <= 1:
+        return prompt_version
+    combined = f"{prompt_version}+{mode}-{parts}"
+    # The column is String(50) and this string is ALSO value-bearing: the translation
+    # target language lives after the colon. Truncating into it would corrupt the
+    # target rather than merely lose the method note, so on overflow the method note
+    # is the thing dropped -- the response still carries it in full.
+    return combined if len(combined) <= 50 else prompt_version
+
+
+def _user_text_budget(text: str) -> tuple[int, str]:
+    """How much article text fits one call, and which script it is written in.
+
+    Reads the operator's configured context window; with none set this returns the
+    pre-E-S4 constant, so nothing about a default install changes."""
+    from src.ai_layer.context import dominant_script, text_budget_chars
+
+    script = dominant_script(text or "")
+    try:
+        s = _llm_settings()
+        num_ctx = getattr(s, "llm_max_context_length", None) if s else None
+    except Exception:  # noqa: BLE001 - settings are advisory here
+        num_ctx = None
+    return text_budget_chars(num_ctx, script), script
+
+
+def _run_over_long_text(
+    client,
+    *,
+    op: str,
+    title: str,
+    content: str,
+    model: str,
+    system: str,
+    keep_alive,
+) -> tuple[str, dict]:
+    """Run a USER-ASKED summarize/translate over text of any length.
+
+    RULING 16: a user-driven operation NEVER silently truncates. Cutting a
+    translation at 6,000 characters produces something indistinguishable from a
+    complete translation of a shorter article -- the reader cannot tell, and that is
+    exactly the kind of silence this project does not ship.
+
+    Fits in one call -> one call, byte-identical to before. Too long -> the text is
+    split at paragraph (then sentence) boundaries so that the parts CONCATENATE BACK
+    to the whole, and:
+
+      * translate  -- every part is translated and the results joined, because a
+        translation of the whole is the concatenation of translations of its parts;
+      * summary    -- every part is summarised, then those summaries are summarised
+        together. A summary is NOT concatenative, so pasting part-summaries would
+        produce a list, not a summary.
+
+    Returns ``(text, method)``; ``method`` carries ``parts`` so the caller can label
+    the result. The method change is disclosed, never hidden.
+    """
+    budget, script = _user_text_budget(content)
+    head = f"Article title: {title or '(untitled)'}" if op == "summary" else f"Title: {title or '(untitled)'}"
+    from src.ai_layer.context import chunk_text
+
+    chunks = chunk_text(content or "", budget)
+    if len(chunks) <= 1:
+        prompt = f"{head}\n\n{chunks[0] if chunks else ''}"
+        result = client.generate(prompt, model=model, system=system, keep_alive=keep_alive)
+        return result.text, {"parts": 1, "mode": "single", "script": script, "model": result.model}
+
+    parts: list[str] = []
+    used_model = model
+    for i, chunk in enumerate(chunks, 1):
+        prompt = f"{head} (part {i} of {len(chunks)})\n\n{chunk}"
+        r = client.generate(prompt, model=model, system=system, keep_alive=keep_alive)
+        parts.append(r.text or "")
+        used_model = r.model or used_model
+    if op == "translate":
+        return "\n\n".join(parts), {
+            "parts": len(chunks),
+            "mode": "chunked",
+            "script": script,
+            "model": used_model,
+            "note": (
+                f"Translated in {len(chunks)} parts, split at paragraph boundaries and "
+                "joined. Every character of the article was translated."
+            ),
+        }
+    combined = "\n\n".join(parts)
+    r = client.generate(
+        f"{head}\n\nThese are summaries of {len(chunks)} consecutive parts of one "
+        f"article. Write ONE summary of the whole article from them.\n\n{combined}",
+        model=model,
+        system=system,
+        keep_alive=keep_alive,
+    )
+    return (r.text or combined), {
+        "parts": len(chunks),
+        "mode": "hierarchical",
+        "script": script,
+        "model": r.model or used_model,
+        "note": (
+            f"A hierarchical summary over {len(chunks)} parts: each part was summarised, "
+            "then those summaries were summarised together. Every character of the "
+            "article was read, but only through that two-step reduction."
+        ),
+    }
 
 
 def _build_prompting(
@@ -1247,27 +1364,30 @@ def summarize_article(
     system, prompt_version, prompt_text = _build_prompting(
         "summary", output_language=req.output_language, output_lang_code=req.ui_lang
     )
-    prompt = f"Article title: {article.title or '(untitled)'}\n\n{article.content[:_MAX_CHARS]}"
     # Visible in the task manager while the model runs ("is an LLM working?").
     from src.monitoring.tasks import track
 
     _t = (article.title or "article")[:48]
     try:
         with track("llm", f"Summarizing “{_t}”", detail=f"model {model}"):
-            result = client.generate(
-                prompt, model=model, system=system, keep_alive=_effective_keep_alive()
+            text, method = _run_over_long_text(
+                client, op="summary", title=article.title or "", content=article.content,
+                model=model, system=system, keep_alive=_effective_keep_alive(),
             )
     except LLMUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    # The METHOD is provenance: a hierarchical summary over 4 parts is a different
+    # artifact from a single-call one, and the stored row has to be able to say which.
+    stored_version = _version_with_method(prompt_version, method)
     analysis = ArticleAnalysis(
         article_id=article.id,
         kind="summary",
-        result=result.text,
-        model=result.model,
-        prompt_version=prompt_version,
+        result=text,
+        model=method.get("model") or model,
+        prompt_version=stored_version,
         prompt_text=prompt_text,
         created_at=datetime.now(UTC),
     )
@@ -1277,9 +1397,10 @@ def summarize_article(
         "analysis_id": analysis.id,
         "article_id": article.id,
         "kind": "summary",
-        "model": result.model,
-        "prompt_version": prompt_version,
-        "result": result.text,
+        "model": analysis.model,
+        "prompt_version": stored_version,
+        "result": text,
+        "method": method,
         "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
     }
 
@@ -1307,26 +1428,27 @@ def translate_article(
     system, prompt_version, prompt_text = _build_prompting(
         "translate", target=req.target_language, output_lang_code=req.ui_lang
     )
-    prompt = f"Title: {article.title or '(untitled)'}\n\n{article.content[:_MAX_CHARS]}"
     from src.monitoring.tasks import track
 
     _t = (article.title or "article")[:48]
     try:
         with track("llm", f"Translating → {req.target_language}: “{_t}”", detail=f"model {model}"):
-            result = client.generate(
-                prompt, model=model, system=system, keep_alive=_effective_keep_alive()
+            text, method = _run_over_long_text(
+                client, op="translate", title=article.title or "", content=article.content,
+                model=model, system=system, keep_alive=_effective_keep_alive(),
             )
     except LLMUnavailable as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except LLMError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    stored_version = _version_with_method(prompt_version, method)
     analysis = ArticleAnalysis(
         article_id=article.id,
         kind="translation",
-        result=result.text,
-        model=result.model,
-        prompt_version=prompt_version,
+        result=text,
+        model=method.get("model") or model,
+        prompt_version=stored_version,
         prompt_text=prompt_text,
         created_at=datetime.now(UTC),
     )
@@ -1338,9 +1460,10 @@ def translate_article(
         "kind": "translation",
         "source_language": article.language,
         "target_language": req.target_language,
-        "model": result.model,
+        "model": analysis.model,
         "prompt_version": analysis.prompt_version,
-        "result": result.text,
+        "result": text,
+        "method": method,
         "created_at": analysis.created_at.isoformat() if analysis.created_at else None,
     }
 
@@ -1349,9 +1472,15 @@ def _parse_target_language(prompt_version: str | None) -> str | None:
     """The translation target language is stored INSIDE the prompt version as
     ``translate-v2:French`` (or ``translate-custom:French``, and ``translate-v1:…`` on
     older rows) — provenance with no extra column. Recover it for display, covering the
-    default, custom, and legacy prompt cases (any ``translate-*:lang``)."""
+    default, custom, and legacy prompt cases (any ``translate-*:lang``).
+
+    E-S4 (2026-08-01): a chunked run appends ``+chunked-3`` to the SAME string, so the
+    method suffix is stripped here. This field is value-bearing — a parser that read
+    the suffix as part of the language would print "French+chunked-3" as the target,
+    which is why ``_version_with_method`` refuses to append when it cannot do so
+    without also risking the 50-character truncation cutting into the language."""
     if prompt_version and prompt_version.startswith("translate-") and ":" in prompt_version:
-        return prompt_version.split(":", 1)[1] or None
+        return prompt_version.split(":", 1)[1].split("+", 1)[0] or None
     return None
 
 
@@ -1740,6 +1869,7 @@ def bulk_llm(
     def _stream():
         import json as _json
 
+        from src.ai_layer.coordinator import user_batch_hold
         from src.llm.concurrency import concurrency_for, run_concurrent
 
         def emit(obj: dict) -> str:
@@ -1750,6 +1880,12 @@ def bulk_llm(
             "to_process": to_process, "already_done": len(already),
             "same_language": len(same_lang), "capped": capped, "model": model,
             "target_language": target if op == "translate" else None,
+            # PREEMPTION (2026-08-01 ruling 13): this is a USER-initiated batch, so
+            # it takes the exclusive hold below and the background-AI coordinator
+            # stands down for its duration (every sweep's cursor persists, and the
+            # lane resumes on its own afterwards). Announced in the start event so
+            # the UI can say so rather than leaving the pause invisible.
+            "pauses_background_ai": True,
         })
         stored = skipped = failed = 0
         from src.database.session import SessionLocal
@@ -1758,7 +1894,11 @@ def bulk_llm(
         # serial (max_workers<=1 is a plain for-loop, byte-identical to before).
         concurrency = concurrency_for(client_backend_name)
 
+        # The hold is released in the context manager's `finally`, so an aborted
+        # stream (a client disconnect, a model outage mid-run) can never strand the
+        # coordinator paused forever.
         try:
+         with user_batch_hold(f"bulk {op}"):
           with SessionLocal() as s:
             i = 0
             n = len(work)
@@ -1782,18 +1922,23 @@ def bulk_llm(
                         yield emit({"event": "item", "i": pos, "total": total,
                                     "article_id": aid, "title": title, "status": "skipped"})
                         continue
-                    if op == "summarize":
-                        prompt = f"Article title: {title}\n\n{content[:_MAX_CHARS]}"
-                    else:
-                        prompt = f"Title: {title}\n\n{content[:_MAX_CHARS]}"
-                    batch.append((pos, aid, title, prompt))
+                    batch.append((pos, aid, title, content))
                 if not batch:
                     continue
 
+                # RULING 16: a bulk run is a USER-initiated batch, so it must not
+                # silently truncate either. Each item goes through the same
+                # never-truncate path as the single-article buttons; an item that
+                # fits is one call, byte-identical to before, and one that does not
+                # becomes several calls for THAT item only -- the concurrency seam
+                # is unchanged, it just holds a slot longer.
                 results = run_concurrent(
                     batch,
-                    lambda item: client.generate(
-                        item[3], model=model, system=system, keep_alive=keep_alive
+                    lambda item: _run_over_long_text(
+                        client,
+                        op=("summary" if op == "summarize" else "translate"),
+                        title=item[2], content=item[3], model=model, system=system,
+                        keep_alive=keep_alive,
                     ),
                     max_workers=concurrency,
                 )
@@ -1803,7 +1948,7 @@ def bulk_llm(
                 # walking in order still aborts the run exactly like the serial
                 # path did (results computed after it in wall-clock time but
                 # earlier in sequence are simply discarded, never stored).
-                for (pos, aid, title, _prompt), res in zip(batch, results, strict=True):
+                for (pos, aid, title, _content), res in zip(batch, results, strict=True):
                     if not res.ok:
                         if isinstance(res.error, LLMUnavailable):
                             # Ollama down / model missing / airplane mode — won't recover.
@@ -1816,17 +1961,19 @@ def bulk_llm(
                                     "article_id": aid, "title": title, "status": "failed",
                                     "error": str(res.error)[:200]})
                         continue
-                    result = res.value
+                    text, method = res.value
                     s.add(ArticleAnalysis(
-                        article_id=aid, kind=kind, result=result.text, model=result.model,
-                        prompt_version=prompt_version, prompt_text=prompt_text,
+                        article_id=aid, kind=kind, result=text,
+                        model=method.get("model") or model,
+                        prompt_version=_version_with_method(prompt_version, method),
+                        prompt_text=prompt_text,
                         created_at=datetime.now(UTC),
                     ))
                     s.commit()
                     stored += 1
                     yield emit({"event": "item", "i": pos, "total": total,
                                 "article_id": aid, "title": title, "status": "stored",
-                                "chars": len(result.text)})
+                                "chars": len(text), "parts": method.get("parts", 1)})
           yield emit({"event": "done", "total": total, "stored": stored,
                       "skipped": skipped, "failed": failed, "aborted": False})
         finally:

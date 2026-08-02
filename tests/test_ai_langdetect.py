@@ -243,3 +243,52 @@ def test_ollama_outage_aborts_loudly(db, monkeypatch):
     done = events[-1]
     assert done["event"] == "done" and done["aborted"] is True
     assert db.query(AiKeyword).count() == 0
+
+
+# --------------------------------------------------------------------------- #
+# E-S3 (2026-08-01): the comparative bench's per-LABEL VETO.
+#
+# Both directions, because the asymmetry is the whole design: a measured-wrong label
+# is refused, and an unmeasured one is stored exactly as it always was. Getting that
+# backwards would silently disable detection for every language the gold set was
+# never written to cover.
+# --------------------------------------------------------------------------- #
+def _veto(label, active):
+    return {label: {"active": active, "reason": f"the label {label!r} scored badly"}}
+
+
+def test_a_label_the_bench_measured_wrong_is_refused_and_counted(db, monkeypatch):
+    aid = _seed(db, language=None, detected=None)
+    work = ld.unknown_language_work(db, 10)
+    events = _run(db, monkeypatch, work, _FakeOllama("zh"), answer_veto=_veto("zh", False))
+    done = events[-1]
+    assert done["stored"] == 0 and done["vetoed"] == 1
+    # NOT folded into "none": the model DID answer, we refused to keep it.
+    assert done["none"] == 0
+    assert db.query(AiKeyword).filter_by(article_id=aid).count() == 0
+    item = next(e for e in events if e.get("event") == "item")
+    assert item["status"] == "vetoed" and item["language"] == "zh" and item["reason"]
+
+
+def test_an_unmeasured_label_is_stored_exactly_as_before(db, monkeypatch):
+    """The gold set covers thirteen languages; the detector names far more. A veto
+    built from it must not become a whitelist."""
+    aid = _seed(db, language=None, detected=None)
+    work = ld.unknown_language_work(db, 10)
+    events = _run(db, monkeypatch, work, _FakeOllama("vi"), answer_veto=_veto("zh", False))
+    assert events[-1]["stored"] == 1 and events[-1]["vetoed"] == 0
+    assert db.query(AiKeyword).filter_by(article_id=aid, term="vi").count() == 1
+
+
+def test_a_label_the_bench_cleared_is_stored(db, monkeypatch):
+    _seed(db, language=None, detected=None)
+    work = ld.unknown_language_work(db, 10)
+    events = _run(db, monkeypatch, work, _FakeOllama("zh"), answer_veto=_veto("zh", True))
+    assert events[-1]["stored"] == 1 and events[-1]["vetoed"] == 0
+
+
+def test_no_veto_at_all_is_byte_identical_to_before(db, monkeypatch):
+    _seed(db, language=None, detected=None)
+    work = ld.unknown_language_work(db, 10)
+    a = _run(db, monkeypatch, work, _FakeOllama("ko"))
+    assert a[-1]["stored"] == 1 and a[-1]["vetoed"] == 0

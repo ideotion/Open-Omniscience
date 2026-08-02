@@ -148,6 +148,7 @@ def detect_for_articles(
     skip_existing: bool = True,
     should_stop=None,
     max_workers: int = 1,
+    answer_veto: dict | None = None,
 ) -> Iterator[dict]:
     """Detect + persist a language label for each article, yielding progress events.
 
@@ -162,12 +163,23 @@ def detect_for_articles(
     default 1 — see ``src.llm.concurrency``). Results are still processed and
     stored STRICTLY IN INPUT ORDER within each concurrent chunk, so a label is
     never attributed to the wrong article and ``max_workers=1`` is byte-identical
-    to the pre-B3 serial loop."""
+    to the pre-B3 serial loop.
+
+    E-S3 (2026-08-01): ``answer_veto`` is the comparative bench's per-LABEL verdict
+    (``src.ai_layer.task_gates``). The language is unknown before the call — that is
+    the question — so this cannot gate the input; it gates the ANSWER, refusing to
+    store a label the bench measured this model getting wrong more often than right.
+    It is a VETO, not a licence: an unmeasured label is stored exactly as it was
+    before any bench existed, because the gold set covers thirteen languages and
+    refusing the rest would disable detection for languages nobody ever tested rather
+    than for languages that failed. ``None``/empty is byte-identical to the pre-E-S3
+    behaviour."""
+    from src.ai_layer.task_gates import answer_vetoed
     from src.llm.concurrency import run_concurrent
 
     total = len(work)
     yield {"event": "start", "total": total, "model": model, "kind": LANG_KIND}
-    stored = skipped = failed = none = 0
+    stored = skipped = failed = none = vetoed = 0
 
     with session_scope() as session:
         already: set[int] = set()
@@ -188,7 +200,8 @@ def detect_for_articles(
         while idx < n:
             if should_stop is not None and should_stop():
                 yield {"event": "done", "total": total, "stored": stored, "skipped": skipped,
-                       "failed": failed, "none": none, "aborted": True, "reason": "cancelled"}
+                       "failed": failed, "none": none, "vetoed": vetoed, "aborted": True,
+                       "reason": "cancelled"}
                 return
             batch: list[tuple[int, ArticleWork]] = []
             while idx < n and len(batch) < workers:
@@ -216,7 +229,7 @@ def detect_for_articles(
                     if isinstance(res.error, LLMUnavailable):
                         yield {"event": "done", "total": total, "stored": stored,
                                "skipped": skipped, "failed": failed, "none": none,
-                               "aborted": True, "reason": str(res.error)[:200]}
+                               "vetoed": vetoed, "aborted": True, "reason": str(res.error)[:200]}
                         return
                     failed += 1
                     yield {"event": "item", "i": pos, "total": total, "article_id": w.article_id,
@@ -228,6 +241,12 @@ def detect_for_articles(
                     yield {"event": "item", "i": pos, "total": total,
                            "article_id": w.article_id, "status": "none"}
                     continue
+                refused, why = answer_vetoed(code, answer_veto or {})
+                if refused:
+                    vetoed += 1
+                    yield {"event": "item", "i": pos, "total": total, "article_id": w.article_id,
+                           "status": "vetoed", "language": code, "reason": why}
+                    continue
                 ai_store.record_keywords(
                     session, w.article_id, [code], model=model, kind=LANG_KIND,
                     language=code, prompt_version=LANGDETECT_PROMPT_VERSION,
@@ -238,7 +257,7 @@ def detect_for_articles(
                        "article_id": w.article_id, "status": "stored", "language": code}
 
     yield {"event": "done", "total": total, "stored": stored, "skipped": skipped,
-           "failed": failed, "none": none, "aborted": False}
+           "failed": failed, "none": none, "vetoed": vetoed, "aborted": False}
 
 
 __all__ = [

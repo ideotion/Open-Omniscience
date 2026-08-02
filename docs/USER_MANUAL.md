@@ -1412,6 +1412,23 @@ sweep"). None is a bug; each shapes how to read a result.
   fluent and wrong. Every generated cell is labelled "verify against the stored
   article"; treat its output as a lead, and check it against the original text
   you collected.
+- **A long article is split, not cut.** A model's context window is finite. When
+  you ask for a summary or a translation of an article that does not fit, the
+  app splits it at paragraph boundaries and runs every part — a translation is
+  the parts joined, and a summary is the parts summarised and then summarised
+  together. Either way the result says so ("translated in N parts", "hierarchical
+  summary over N parts"), because a two-step summary is a different artifact from
+  a one-pass one and you should know which you are reading. It never quietly
+  stops partway: a truncated translation looks exactly like a complete one.
+  Background sweeps (the who/where/when extraction) DO truncate long articles, and
+  record that they did — "analyzed the first N of M characters" — so a thin
+  extraction is never mistaken for a thin article.
+- **Background AI is one lane, and your work comes first.** The sweeps you enable
+  run one at a time on the single local backend rather than competing for it.
+  Anything you ask for yourself — a bulk translate, a manual sweep run — pauses
+  that lane for its duration and it resumes on its own afterwards; nothing loses
+  its place. On a machine where local inference is impractical the lane is off by
+  default, with the reason stated, and you can still turn it on.
 - **The app is text-only.** It analyses article text. Images carry EXIF/metadata
   honesty only (no forensic/deepfake claims); there is no audio or video
   analysis. A claim that lives only in a video or image is outside what the tool
