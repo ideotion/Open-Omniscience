@@ -2347,5 +2347,6 @@
   "paused — your batch is running": "已暂停 — 你的批处理正在运行",
   "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "本机低于本地推理的可行性门槛（{r}）— 此处后台 AI 默认关闭。你仍然可以手动启动。",
   "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.": "分 {n} 部分的分层摘要——先分别摘要每一部分，再将这些摘要合并摘要。",
-  "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "分 {n} 部分翻译——文章按段落边界拆分，每一部分都已翻译。"
+  "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "分 {n} 部分翻译——文章按段落边界拆分，每一部分都已翻译。",
+  "The line breaks where nothing was recorded — a gap is not a zero.": "没有记录的时段线条会断开——空缺不等于零。"
 }

@@ -2347,5 +2347,6 @@
   "paused — your batch is running": "dijeda — batch Anda sedang berjalan",
   "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "Mesin ini di bawah ambang kepraktisan inferensi lokal ({r}) — AI latar belakang mati secara bawaan di sini. Anda tetap bisa memulainya.",
   "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.": "Ringkasan berjenjang atas {n} bagian — setiap bagian diringkas, lalu ringkasan-ringkasan itu diringkas bersama.",
-  "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "Diterjemahkan dalam {n} bagian — artikel dibagi pada batas paragraf dan setiap bagian diterjemahkan."
+  "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "Diterjemahkan dalam {n} bagian — artikel dibagi pada batas paragraf dan setiap bagian diterjemahkan.",
+  "The line breaks where nothing was recorded — a gap is not a zero.": "Garis terputus di tempat tidak ada yang tercatat — celah bukan berarti nol."
 }

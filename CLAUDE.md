@@ -1570,6 +1570,40 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     theorizing: the failing test's own stderr carried a `src.wiki.dumps _default_get`
     traceback — a completely different subsystem naming the culprit outright, while
     every plausible mechanism I could reason out from the failing file was wrong.
+  - **A LINE DRAWN ACROSS A HOLE IS A FABRICATED MEASUREMENT — AND THE OBVIOUS GUARD
+    AGAINST IT IS INVERTED BY `isFinite(null)` (2026-08-02, honest gaps in the chart
+    toolkit):** both renderers in the ONE toolkit bridged holes — `dashChartSvg`
+    emitted a single `<polyline>` over every point, `ooChart` coerced `+p.v` and
+    lineTo'd unconditionally — which the project's own committed chart framework
+    rejects outright ("Render gaps as gaps; mark 'no data' distinctly"), and which
+    `ooviz.pathWithGaps` had existed to prevent since it was written, with no caller.
+    THE TRAP, found by the test and not by reading: **`isFinite(null)` is `true` and
+    `+null` is `0`**, so the natural "keep the finite values" filter keeps a published
+    gap as a plotted **zero** — a fabricated measurement, strictly worse than the
+    bridged line it hides inside. `ooViz.isMissing` already encoded the right rule.
+    THREE general rules. (a) The opposite failure is equally dishonest — a fabricated
+    gap invents an outage — so every "it breaks here" test needs an "and it does NOT
+    break there" beside it, or an over-eager splitter ships looking conservative.
+    (b) Key the gap rule to the series' OWN median cadence rather than a fixed
+    duration (one rule then serves hourly counters and annual indicators alike),
+    refuse to guess a cadence from fewer than three intervals, and apply it ONLY
+    where the axis is a real time axis — on an INDEX axis the spacing claims
+    observation order, not elapsed time, so bridging fabricates nothing and the
+    output stays byte-identical, which is what bounds the blast radius of a change
+    that touches every chart. (c) Write a test's expectation with its OWN explicit
+    predicate, never by borrowing the implementation's helper: the first draft of the
+    exact-coverage assertion here wrote `isFinite(pts[i].v)` and failed against
+    correct code — the trap catching the test written to catch it — and comparing an
+    implementation against itself would have proved nothing either way.
+  - **A NAMESPACE'S CASING CAN MAKE A WHOLE SUBSYSTEM LOOK DEAD (2026-08-02, the same
+    pass):** the 2026-07-28 GUI audit recorded that `ooviz.js`'s primitives were
+    "BUILT + TESTED with ZERO call sites", and a first grep here agreed. Both were
+    wrong: the namespace is **`ooViz`**, not `ooviz`, and six primitives are wired,
+    with `slopeChartSvg`, `smallMultiplesSvg` and `ringDumbbellSvg` already shipping
+    on them. A case-sensitive grep for a name you did not read out of the file is not
+    evidence of absence — read the export site first. (Same pass: `ooDonut` DOES have
+    a slice-count guard, falling back to theme-derived share bars past five, so that
+    half of audit finding V-4 is spent too. Recorded so neither is "fixed" twice.)
 
 ## Open queue (when maintainer says proceed)
 - **FIELD IMPRESSIONS 2026-08-01 — Home-alerts relevance/card system · Home overview subtabs ·
@@ -1716,10 +1750,48 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   five-view restructure with select-time loaders + a view-aware poller · S5 the ingest-rhythm
   heatmap. Baseline-diffed at every slice: ZERO introduced failures (7 environmental failures both
   sides), i18n 100 % throughout (~38 new keys ×12), ruff clean.
-  **REMAINING from Session D (honest board):** the §5 dataviz list beyond the heatmap
-  (article-length/qualification histograms, the corpus-delta slope chart, per-language small
-  multiples, the waffle composition) — the shared honesty pattern is now set by the heatmap
-  (unobserved ≠ zero, method stated, chart beside table); the §1.9 sparse-rule reach DECISION for
+  **SESSION D §5 CONTINUED 2026-08-02 — the recon found a DEFECT worth more than another chart.**
+  SHIPPED: **honest gaps in the ONE chart toolkit** (shipped.csv row "ui/charts") — both renderers
+  bridged holes, so a period nothing was recorded rendered as a smooth line; live-reachable on
+  Library metric history (app off = a real gap), commodity prices on a shared axis, and
+  official-statistics indicators. Two lessons recorded above (the `isFinite(null)` trap; the
+  `ooViz` casing that made a wired subsystem look dead).
+  **THE OTHER FOUR §5 CANDIDATES NOW HAVE EVIDENCE, not a wish-list (6-agent read-only recon +
+  adversarial critique, every load-bearing claim hand-re-verified against the tree):**
+  • **article-length histogram — BUILD-WITH-CAVEATS, the only one clearly worth building.** The
+    data is real, exact and already binned (`article_length_report`), and is surfaced NOWHERE.
+    But: it needs a NEW fetch that is a full `articles` scan with no route guard, so it must sit
+    behind an explicit action, never a tab-select autoload; the corpus-wide summary and every
+    `by_content_type` summary silently POOL zh/ja/th with Latin text, so the primary chart must be
+    built from the `by_language` entries with `unsegmented === false` and state the excluded n;
+    the report applies NO quarantine filter, unlike every other analytics path; the buckets are
+    UNEQUAL width, so it is a categorical bar chart over labelled ranges, never a density
+    histogram; and an n==0 summary returns all-None percentiles with an all-zero histogram, which
+    renders as a fabricated spike unless branched on explicitly.
+  • **qualification histogram — BLOCKED-NO-DATA.** All four candidate distributions fail on their
+    own terms: age-since-qualified is dominated by a MIGRATION BACKFILL artifact (the backfill
+    writes no attempt row, which is also the discriminator if it is ever drawn);
+    attempts-before-verdict is right-censored and degenerate by construction; articles-per-source
+    is ~90 % a single zero bin; and the only genuinely histogram-shaped data (per-source
+    extraction-validity rates) comes from an endpoint MEASURED to time out at target scale.
+  • **per-language small multiples — the RENDERER ALREADY SHIPS** (`smallMultiplesSvg`, on
+    `ooViz.gridLayout`). The missing piece is a data feed: there is NO per-language series
+    anywhere, so this needs a new snapshot metric family (unbounded cardinality — a real design
+    decision), and pooling asserted with deduced language would publish a deduced value carrying
+    an asserted value's visual weight.
+  • **corpus-delta slope chart — the slope RENDERER ALREADY SHIPS** (`slopeChartSvg`). Three
+    defects were LIVE-REPRODUCED against the real primitive: a zero "before" yields `Infinity`,
+    which `isMissing` does not catch, and one affected dimension destroys the whole chart; raw
+    values on one shared axis falsify `slopeGeometry`'s own documented honesty premise, while
+    indexing to 100 MOVES the fabricated comparability rather than removing it; and the
+    framework's own prescription (a panel per dimension) renders every panel as an identical
+    diagonal, which makes a +5-on-40,000 look exactly like a doubling.
+  • **waffle composition — REFUSED as decoration.** The project's committed chart framework never
+    mentions a waffle; its part-to-whole default is sorted bars or a single stacked bar, with
+    pie/donut only at ≤5 slices — which is precisely what `ooDonut` already does (>5 falls back to
+    theme-derived share bars). Recorded as a FINDING, per the framework's own rule that a rejected
+    technique is a finding and not a gap.
+  **ALSO STILL REMAINING from Session D:** the §1.9 sparse-rule reach DECISION for
   `ringDumbbellSvg`/`commodityOverlaySvg` (flagged, not decided); and the maintainer click-through
   /HTML exports for every slice above.
   **THREE REUSABLE LESSONS FROM SESSION D (also in the Session-rituals Lessons list):** (a) a node
