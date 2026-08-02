@@ -2098,6 +2098,41 @@ def test_ui_invariants():
     assert "dots shown, no curve interpolated through sparse points" not in html, (
         "the early-corpus sparse caveat must be removed app-wide (Item Y amends #16)"
     )
+    #     AMENDED AGAIN by the AXIS-HONESTY pass (field impressions 2026-08-01,
+    #     ruling 10): a tick must be a value the axis ACTUALLY spans. The
+    #     `(max - min) || 1` span fallback fabricated ticks for a FLAT series
+    #     (a constant 23 drew 23 / "23.50" / 23 in dashChartSvg and
+    #     23 / 23.33 / 23.67 / 24 in ooChart) and, with no integer snapping, a
+    #     COUNT axis printed fractional counts. The behavioural proof lives in
+    #     tests/axis_honesty_node_test.js (which extracts the real helpers); these
+    #     are the source-level guards that the fabrication vectors stay gone.
+    assert "function honestTicks(" in html, (
+        "the shared honest-tick generator must exist (axis-honesty pass, #16)"
+    )
+    assert "[minY, minY + span/2, maxY]" not in html, (
+        "dashChartSvg's fabricated min/mid/max gridline triple must stay gone"
+    )
+    assert "yMin + ySpan * g / 3" not in html, (
+        "ooChart's fabricated 4-tick loop must stay gone (it drew a top tick no data reached)"
+    )
+    #     The fixed-px ooChart canvas (320px floor, 680px hidden-element fallback)
+    #     was the one confirmed graphs-overflow-their-box vector: no overflow rule
+    #     exists anywhere in the tile/row/panel chain to clip it.
+    assert "Math.max(320, Math.min(el.clientWidth || 680" not in html, (
+        "the ooChart fixed 320px floor / 680px fallback must stay gone (overflow vector)"
+    )
+    #     X labels: granularity follows the plotted span and duplicates are dropped
+    #     by TEXT (two hourly snapshots in one month both printed "2026-07").
+    assert "function _timeLabelFmt(" in html and "function _msLabel(" in html, (
+        "both renderers need span-derived time-label granularity"
+    )
+    #     n= carries its unit (a bare "n=2" beside a value of 23 read as
+    #     "23 documents or 2?"), and COUNT tiles get a true zero base + a NEUTRAL
+    #     colour (market up=green/down=red is fabricated semantics on a corpus count).
+    assert "n={n} {unit}" in html, "the n= label must be a keyable composite template"
+    assert "opts.neutral" in html and "opts.zeroBase" in html, (
+        "count series need a neutral colour and a true zero base"
+    )
     for surface in (
         # P2-10: the commodity price detail moved into the shared fullscreen overlay
         # (chartSymbol -> chartEnlarge -> ooChart), so #mkt-chart-oo is no longer a
@@ -3645,8 +3680,15 @@ def test_commodities_category_subtabs():
     # the filter callback + the categoriser map exist
     assert "function selectCommodityCat" in html, "category filter callback required"
     assert "const MKT_CATS" in html, "the deterministic category map must exist"
-    # "All" is the default lens (the ooSubtabs initial) and shows everything
-    assert '{initial: "__all"}' in html, "'All' (__all) must be the default lens"
+    # "All" is the default lens (the ooSubtabs initial) and shows everything.
+    # Scoped to the commodities tab-builder: the whole-file form of this assertion
+    # was silently satisfied by the HOME families call site instead (the commodities
+    # one passes the shorthand {initial}), so it never tested this board at all —
+    # the misscoped-anchor family. It now reads the function it names.
+    _cat_tabs = html.split("function _renderCommodityCatTabs", 1)[1].split("\n    function ", 1)[0]
+    assert '_mktCat : "__all"' in _cat_tabs and "ooSubtabs(catNav, selectCommodityCat, {initial})" in _cat_tabs, (
+        "'All' (__all) must be the commodities board's default lens"
+    )
     assert 'key === "__all"' in html, "the '__all' lens must show every category"
     # data-driven: built from the categories actually present (no empty tab)
     assert "byCat" in html and "MKT_CATS.filter" in html, (
@@ -6041,24 +6083,64 @@ def test_ring_translation_breakdown_rides_the_hover():
     assert 'title="' in kw  # rides the #oo-tip title (layered), not the visible row text
 
 
-def test_synthesized_leads_carousel_is_local_pausable_and_caveated():
-    """S4.3: the Home Leads carousel is LOCAL analytic synthesis (never LLM), PAUSABLE (WCAG 2.2
-    — hover/focus + a manual toggle + keyboard), and a timed rotation NEVER hides a caveat (the
-    caveat rides every rotated face, #23); every face DEEP-LINKS to its real corpus (#8); fed from
-    the SAME briefing cards (evidence-tier order, no hidden score)."""
+def test_home_overview_absorbs_the_retired_leads_carousel():
+    """RETIRED (2026-08-01 ruling 8), absorption-gated per the Desk lesson.
+
+    The "Leads to look at" carousel showed the top 8 cards FLATTENED across buckets, so a
+    single dominant bucket could fill every face. The Overview subtab absorbs that
+    capability with a STRONGER guarantee -- one Lead per family, in the same disclosed
+    order as the full feed, each stating WHY it leads -- so the rotating widget is gone
+    rather than duplicated. This test asserts the retirement AND that every capability it
+    carried survives; renderLeadsCarousel() itself stays in place, inert (it null-guards
+    on the removed ids), until a browser-verified deletion pass, exactly as the temporal
+    map was retired."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    assert 'id="home-carousel-panel"' in html and 'id="home-carousel"' in html
-    car = app[app.index("function renderLeadsCarousel(") : app.index("function _carRelease(") + 200]
-    # LOCAL: fed from the briefing cards; NO LLM call anywhere in the carousel
-    assert "renderLeadsCarousel(data.buckets.flatMap" in app
+    # RETIRED: the markup and the call sites are gone.
+    assert 'id="home-carousel-panel"' not in html and 'id="home-carousel"' not in html, (
+        "the carousel markup must be retired, not merely hidden"
+    )
+    assert "renderLeadsCarousel(data.buckets.flatMap" not in app, "the carousel must not be fed"
+    assert "renderLeadsCarousel([])" not in app
+    # ABSORBED: Overview is the default lens and offers top cards per family.
+    assert "function _overviewHtml(" in app, "Overview must exist to absorb the carousel"
+    assert 'data-tab="__ov"' in app and '{initial: _homeTabKey}' in app, (
+        "Overview must be the Home default subtab"
+    )
+    # scoped to the function body itself -- a slice that runs to the next top-level
+    # declaration would sweep in unrelated code and test nothing about Overview
+    ov = app.split("function _overviewHtml(", 1)[1].split("\n    // ", 1)[0]
+    # LOCAL analytic synthesis, never LLM (the retired widget's own guarantee).
     for llm in ("/api/llm", "synthesize", "bulkLlm"):
-        assert llm not in car, f"carousel must never call the LLM ({llm})"
-    # PAUSABLE (WCAG 2.2): hover/focus pause + a manual toggle + keyboard
-    assert "mouseenter" in car and "focusin" in car and "carouselToggle" in car
-    assert "aria-pressed" in car and "ArrowLeft" in car and "ArrowRight" in car
-    # the CAVEAT rides EVERY face + a deep-link on every face (#23 + #8)
-    assert "c.caveat" in car and "card-caveat" in car and "openCardCorpus" in car
+        assert llm not in ov, f"Overview must never call the LLM ({llm})"
+    # every face DEEP-LINKS (#8) and the caveat is VISIBLE (#23) -- both preserved,
+    # and no timed rotation can hide anything because there is no rotation.
+    assert "cardHtml(c)" in ov, "Overview must render the SAME card component (same actions)"
+    assert "card-caveat" in ov, "the Overview caveat must be visible by default (#23)"
+    # NEW, and the reason the ordering surface exists again: the disclosed reason.
+    assert "order_explain" in ov, "each Overview card must state why it leads its family"
+    svc = (_SRC / "briefing" / "service.py").read_text(encoding="utf-8")
+    assert "explain_order as _leads_explain" in svc, (
+        "the disclosed reason must ride the SAME payload the feed already fetches, so the "
+        "explanation can never drift from the sort that produced it"
+    )
+
+
+def test_home_panels_are_subtabs_not_a_stack():
+    """Ruling 7a: the long Home scroll was every block stacked at once. Most recent /
+    Latest / By channel become SUBTABS beside the families (their DOM, loaders and honest
+    empty states untouched -- only visibility moves), and Trending folds into Overview as
+    a compact row. A panel with nothing to show keeps its own `hidden`, so a tab is never
+    offered onto an empty room."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    assert "_HOME_PANEL_TABS" in app and "function _syncHomeSubtabs(" in app
+    for pid in ("home-recent-panel", "home-latest-panel", "home-channels-panel"):
+        assert pid in app, f"{pid} must be wired as a subtab"
+    sel = app[app.index("function selectHomeFamily(") : app.index("function _syncHomeSubtabs(")]
+    assert 'el.style.display = (key === p.key) ? "" : "none"' in sel, (
+        "clearing the inline style must let a panel's own `hidden` still win"
+    )
+    assert "function _renderOverviewTrends(" in app, "Trending must fold into Overview"
 
 
 def test_omnibar_analysis_window_absorbs_the_insights_bar_capabilities():
@@ -7307,9 +7389,15 @@ def test_library_graphs_wired_and_downloaded_section_compressed():
     for fn in ("renderLibraryActivityGraphs", "renderLibraryWikiGraphs", "renderLibraryLawGraphs",
                "enlargeLibMetric"):
         assert f"function {fn}" in app, f"missing {fn}"
-    assert "renderLibraryActivityGraphs(); renderLibraryWikiGraphs(); renderLibraryLawGraphs();" in app, (
-        "the Library tab's show-dispatcher must render all three graph sections"
-    )
+    # Since the Library became five subtab views (2026-08-01 ruling 9) the three
+    # graph sections are rendered by their OWN view's loader rather than all at
+    # once on tab open -- deliberately, so opening the Library no longer pays for
+    # every panel ("folded must not mean fetched"). The guarantee that matters is
+    # unchanged and is what this now asserts: each renderer is reachable from the
+    # view registry, so no graph section is orphaned.
+    _lib_loaders = app.split("_LIB_VIEW_LOADERS = {", 1)[1].split("};", 1)[0]
+    for fn in ("renderLibraryActivityGraphs", "renderLibraryWikiGraphs", "renderLibraryLawGraphs"):
+        assert f"{fn}()" in _lib_loaders, f"{fn} must be reachable from a Library view loader"
     assert "dashChartSvg(series.map(" in app, "the small tile must reuse dashChartSvg, not a new renderer"
     assert "chartEnlarge(label" in app, "click-to-enlarge must reuse the existing chartEnlarge modal"
     assert "/api/library/history?metric=" in app
@@ -7364,7 +7452,20 @@ def test_library_qualification_tile_window_switcher_hide_flat_auto_log():
     assert "function _libQualSpread" in app
     assert "_libQualSpread(_libQualSeries) > 50" in app
     assert '"log scale"' in app
-    assert "logY: _libQualSpread" in app  # the real ooChart opts.logY toggle, not a fake label
+    # The real ooChart opts.logY toggle, not a fake label. Scoped to the RENDER
+    # function rather than pinned to one literal call shape: the axis-honesty pass
+    # (2026-08-01) legitimately hoisted the spread test into a local so the same
+    # verdict could also drive zeroBase, and a literal `logY: _libQualSpread`
+    # anchor failed against correct code (the recorded stale-anchor family).
+    _qual_render = app.split("function _libRenderQualChart", 1)[1].split("\n    function ", 1)[0]
+    assert "_libQualSpread(_libQualSeries) > 50" in _qual_render and "logY:" in _qual_render, (
+        "the qualification chart's logY must be driven by the measured spread"
+    )
+    # These are source COUNTS, so the linear axis starts at a true zero (Item Y);
+    # zeroBase is meaningless under logY (log(0) is undefined) and must not be set there.
+    assert "zeroBase: !logY" in _qual_render, (
+        "the qualification counts need a true zero base on the linear axis"
+    )
 
     # The 'slice-1c 404 lesson' (CLAUDE.md): the wiring test must COMPOSE the real
     # route (router prefix + decorator), never assert two literal strings side by
@@ -8050,4 +8151,40 @@ def test_the_ai_install_egress_window_is_wired_and_states_its_limit():
     assert 'id="egress-window-bar"' in tm, "/tasks must show an open window"
     assert "except the AI install you allowed" in tm, (
         "/tasks must not keep asserting the plain offline hover during a window"
+    )
+
+
+def test_library_is_five_subtab_views_with_lazy_loaders():
+    """2026-08-01 ruling 9: the Library's seven stacked sections become five views
+    (Overview · Activity · Tracked · Database & storage · World coverage) through the
+    ONE universal subtab component (invariant #18). Two properties matter beyond the
+    regrouping: the panels themselves are UNTOUCHED (a regrouping, not a rewrite, so no
+    loader or empty state is lost), and a view's loaders fire on SELECT rather than on
+    tab open -- "folded must not mean fetched", so opening the Library no longer pays
+    for the recursive storage walk and the coverage map up front."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="library-views"' in html, "the Library subtab nav must exist"
+    for key in ("overview", "activity", "tracked", "storage", "coverage"):
+        assert f'id="lib-view-{key}"' in html, f"missing Library view {key}"
+        assert f'data-tab="{key}"' in html, f"missing Library subtab button {key}"
+    # every original panel survives the regrouping
+    for host in ("library-overview", "lib-activity-graphs", "lib-wiki-graphs",
+                 "lib-law-graphs", "db-stats", "library-storage", "coverage-map",
+                 "coverage-table"):
+        assert f'id="{host}"' in html, f"the Library restructure must not lose #{host}"
+    # the ONE universal subtab component, and the nav rides the top strip like the others
+    assert "ooSubtabs(nav, selectLibraryView" in app, "must reuse ooSubtabs (invariant #18)"
+    assert 'library: "library-views"' in app, "the nav must join the facet-subtab strip"
+    # LAZY: the tab dispatcher no longer calls every loader
+    lib_dispatch = app.split("library: () => {", 1)[1].split("},", 1)[0]
+    for eager in ("loadCoverage()", "renderStorageFootprint("):
+        assert eager not in lib_dispatch, (
+            f"{eager} must fire on subtab select, not on Library tab open"
+        )
+    # ...and the live poller only refreshes the view actually on screen
+    poller = app.split("library:  {ms: 4000", 1)[1].split("}},", 1)[0]
+    assert '_libView === "coverage"' in poller and '_libView === "storage"' in poller, (
+        "the live poller must not refresh a Library view nobody is looking at"
     )

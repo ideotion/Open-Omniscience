@@ -1703,8 +1703,7 @@
       timemap: loadOoMapCoverage,   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
       law: loadGovernments,   // Governments tab (Countries · Map · Law subtabs)
       agenda: loadAgenda,
-      library: () => { renderLibraryOverview(); loadCoverage(); renderStorageFootprint("library-storage");
-        renderLibraryActivityGraphs(); renderLibraryWikiGraphs(); renderLibraryLawGraphs(); },  // stats handled by the live poller (startLive); the footprint walk is lazy, once
+      library: () => { _wireLibraryViews(); },  // per-view lazy loaders (2026-08-01 ruling 9); stats ride the live poller (startLive)
       custody: loadCustody,
       integrity: loadIntegrity,
       settings: loadSettings,
@@ -1721,6 +1720,7 @@
       agenda: "agenda-views", indices: "indices-cats", markets: "commodities-cats",
       law: "gov-subtabs",   // Governments: Countries · Map · Law
       timemap: "oomap-lenses",   // World map: Coverage · Stories · Places · Server IPs (field-test Item 6)
+      library: "library-views",  // Library: Overview · Activity · Tracked · Database & storage · World coverage
     };
     function _relocateSubtabs(name) {
       const strip = $("subtab-strip"); if (!strip) return;
@@ -2286,9 +2286,17 @@
       loadBriefing();
       loadHomeAlerts();
       loadHomeTrends();
-      loadHomeRecent();
-      loadHomeLatest();
-      loadHomeChannels();
+      // Each panel decides its OWN visibility (it hides when it has nothing), and the
+      // subtab list is built from the panels that actually have something to show. So
+      // the sync runs from HERE, once each loader has settled, rather than inside the
+      // loaders: their fail-safe hide statements are pinned verbatim by
+      // test_ui_channel_facet / test_ui_home_latest / test_ui_home_recent, and those
+      // guards protect a real honesty property (a panel with no data must hide) that
+      // this change has no business touching.
+      const pRecent = loadHomeRecent();
+      const pLatest = loadHomeLatest();
+      const pChannels = loadHomeChannels();
+      Promise.allSettled([pRecent, pLatest, pChannels]).then(_syncHomeSubtabs);
       refreshDraftCount();
     }
     // Home "Latest in your corpus" (wave 4 I / GET /api/insights/latest): a recency LENS
@@ -2491,7 +2499,12 @@
         }).join("");
         box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>`
           + `<div class="hint muted" style="font-size:11px;margin-top:6px">${esc(d.caveat || "")}</div>`;
-      } catch (e) { if (panel) panel.hidden = true; box.innerHTML = ""; }
+        _renderOverviewTrends();   // the compact row folded into Overview (ruling 7a)
+        _syncHomeSubtabs();
+      } catch (e) {
+        if (panel) panel.hidden = true; box.innerHTML = "";
+        _renderOverviewTrends(); _syncHomeSubtabs();
+      }
     }
     // Enlarge a Home "Trending now" sparkline into the interactive ooChart (invariant
     // #16). The daily series is already in the stashed payload — no extra fetch.
@@ -2527,6 +2540,30 @@
       earthquake: "◉", cyclone: "🌀", flood: "≈", volcano: "🌋",
       drought: "☀", wildfire: "🔥", tsunami: "〰",
     };
+    // The hazard TYPE IN WORDS. A glyph alone is not deducible by someone seeing
+    // it for the first time — the maintainer's report (2026-08-01, ruling 4) was
+    // that opening an earthquake's detail never says it IS an earthquake. Every
+    // hazard render states the type in words, translated; an unlisted type falls
+    // back to the provider's own raw string rather than inventing a name.
+    const HAZARD_TYPE_KEYS = {
+      earthquake: "Earthquake", cyclone: "Cyclone", flood: "Flood", volcano: "Volcano",
+      drought: "Drought", wildfire: "Wildfire", tsunami: "Tsunami",
+    };
+    function hazardTypeLabel(type) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const raw = String(type || "").trim().toLowerCase();
+      if (!raw) return t("Hazard");
+      return HAZARD_TYPE_KEYS[raw] ? t(HAZARD_TYPE_KEYS[raw]) : String(type);
+    }
+    // The provider's magnitude, always labelled as the BAND it is. "M6.8 · strong"
+    // is a measurement of size, never a statement about consequences — which is
+    // exactly why a magnitude is never promoted into an urgency tier.
+    function hazardMagLabel(h) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (h.magnitude == null) return "";
+      const band = h.band ? ` <span class="muted">· ${esc(t(h.band))}</span>` : "";
+      return `<b>M${esc(fmtNum(h.magnitude, 1))}</b>${band} · `;
+    }
     // The compact hazard strip item: type glyph, real magnitude (never fabricated),
     // place, RELATIVE date (the stored "time" field, finally rendered -- it used to
     // be fetched and dropped), and TWO deep links: the World map (centred on the
@@ -2535,10 +2572,20 @@
     function _hazardStripItem(h) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const glyph = HAZARD_GLYPH[h.type] || "⚠";
-      const mag = (h.magnitude != null) ? `M${esc(fmtNum(h.magnitude, 1))} · ` : "";
+      const kind = `<span class="haz-kind">${esc(hazardTypeLabel(h.type))}</span> · `;
+      const mag = hazardMagLabel(h);
       const place = esc(h.place || h.title || h.type || "");
       const when = h.time ? esc(fmtAgo(h.time)) : "";
-      const prov = h.source ? ` <span class="muted">${esc(t("via {p}").replace("{p}", h.source))}</span>` : "";
+      // A grouped entry is ONE event two providers both reported — a deduction
+      // from coordinates and time, labelled as such, never presented as a
+      // provider statement. Both providers are named.
+      const provs = (h.providers && h.providers.length) ? h.providers : (h.source ? [h.source] : []);
+      const prov = provs.length
+        ? ` <span class="muted">${esc(t("via {p}").replace("{p}", provs.join(" + ")))}</span>`
+        : "";
+      const grouped = h.grouped
+        ? ` <span class="pill tiny" title="${esc(t("Same hazard type, within 0.5° and 2 hours — a deduced grouping of two providers' reports of one event, never a merge of the stored records."))}">${esc(t("grouped"))}</span>`
+        : "";
       const mapBtn = (typeof h.lat === "number" && typeof h.lon === "number")
         ? ` <button class="ghost tiny" onclick="openWorldMapAt(${h.lat}, ${h.lon}, ${esc(JSON.stringify(h.time || null))}, ${h.article_id != null ? h.article_id : "null"})" title="${esc(t("Open on the World map"))}">🗺</button>`
         : "";
@@ -2546,18 +2593,39 @@
         ? ` <a href="/api/articles/${h.article_id}/view" target="_blank" rel="noopener" class="ghost tiny" title="${esc(t("Open the local article"))}">📄</a>`
         : "";
       const srcLink = (h.url && /^https?:\/\//i.test(h.url)) ? " " + extLink(h.url, t("source ↗")) : "";
-      return `<li class="alert-hazard-item">${glyph} ${mag}${place}${when ? ` <span class="muted">· ${when}</span>` : ""}${prov}${mapBtn}${artLink}${srcLink}</li>`;
+      return `<li class="alert-hazard-item${h.major ? " haz-major" : ""}">${glyph} ${kind}${mag}${place}`
+        + `${when ? ` <span class="muted">· ${when}</span>` : ""}${prov}${grouped}${mapBtn}${artLink}${srcLink}</li>`;
     }
     function _renderHomeAlerts(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const box = $("home-alerts"); if (!box) return;
       const TIER_LABEL = { urgent: t("Urgent"), watch: t("Watch"), info: t("Info") };
       const TIER_CLASS = { urgent: "err", watch: "warn", info: "" };
+      // The DISPLAY floor (2026-08-01 rulings 1-2). The backend already ordered
+      // each tier by the provider's own facts and marked which entries clear the
+      // floor; the strip shows those first, capped, and collapses the rest into
+      // ONE line that opens the World map. Nothing is removed: every hazard is
+      // still in this payload, on the map, and behind "Open corpus" — which is
+      // what makes a floor honest rather than a silent exclusion.
+      const cap = Math.max(1, Number(d.strip_cap) || 5);
       const blocks = ["urgent", "watch", "info"].map(tier => {
         const T = (d.tiers || {})[tier];
         if (!T || !T.count) return "";
         const items = [];
-        (T.hazards || []).forEach(h => items.push(_hazardStripItem(h)));
+        const hz = T.hazards || [];
+        const major = hz.filter(h => h.major);
+        const shown = major.length ? major.slice(0, cap) : hz.slice(0, cap);
+        const hidden = hz.length - shown.length;
+        shown.forEach(h => items.push(_hazardStripItem(h)));
+        if (hidden > 0) {
+          const note = major.length
+            ? t("{n} more, below the M{m} display floor — open the World map")
+            : t("{n} more — open the World map");
+          items.push(`<li class="alert-more"><button class="ghost tiny" onclick="openWorldMapHazards()">`
+            + esc(note.replace("{n}", String(hidden))
+                     .replace("{m}", fmtNum(d.major_min_magnitude != null ? d.major_min_magnitude : 6, 1)))
+            + ` →</button></li>`);
+        }
         (T.watches || []).forEach(w => {
           const nm = esc(w.name || w.query || "");
           const n = (w.n_articles != null) ? ` <span class="muted">${esc(String(w.n_articles))} ${esc(t("articles"))}</span>` : "";
@@ -2692,7 +2760,6 @@
       if (refreshing) _scheduleBriefRepoll(); else _cancelBriefRepoll();
       const banner = refreshing ? briefProgressHtml(data, t) : "";
       if (!data.buckets || !data.buckets.length) {
-        renderLeadsCarousel([]);  // hide the carousel when there are no Leads (never blank-and-silent)
         if (refreshing) { feed.innerHTML = banner; return; }
         feed.innerHTML = `<div class="card">
           <h4>No Leads yet — that's expected on a young corpus</h4>
@@ -2718,14 +2785,46 @@
           + `<h3>${esc(b.label)} <span class="ct">· ${b.cards.length}</span></h3>`
           + `<div class="cards">${cards}</div></div>`;
       }).join("");
-      const famTabs = `<button class="active" data-tab="__all">${esc(t("All Leads"))}</button>`
+      // OVERVIEW (2026-08-01 rulings 5-8): the DEFAULT lens is the top card of each
+      // family, taken from the feed's OWN already-sorted order — one ordering
+      // system, not a second selector. Each card carries the visible "why this
+      // card" (order_explain), which restores the transparency surface the
+      // Settings restructure removed when it deleted the Leads preview. "All
+      // Leads" keeps the full feed; nothing is lost, the wall is just no longer
+      // the first thing you meet.
+      const ovHtml = _overviewHtml(data, famHue, t);
+      const famTabs = `<button class="active" data-tab="__ov">${esc(t("Overview"))}</button>`
+        + `<button data-tab="__all">${esc(t("All Leads"))}</button>`
         + data.buckets.map((b, bi) =>
-            `<button data-tab="${bi}"><span class="fam-dot" style="background:${famHue(bi)}"></span>${esc(b.label)}</button>`).join("");
-      feed.innerHTML = banner + (data.buckets.length > 1
-        ? `<nav class="tabs home-fam" id="home-fam-subtabs">${famTabs}</nav>` : "") + html;
-      // "All" is the default; selecting a family shows only that bucket.
-      if (data.buckets.length > 1) ooSubtabs($("home-fam-subtabs"), selectHomeFamily, {initial: "__all"});
-      renderLeadsCarousel(data.buckets.flatMap(b => b.cards || []));
+            `<button data-tab="${bi}"><span class="fam-dot" style="background:${famHue(bi)}"></span>${esc(b.label)}</button>`).join("")
+        + _homePanelTabsHtml(t);
+      feed.innerHTML = banner
+        + `<nav class="tabs home-fam" id="home-fam-subtabs">${famTabs}</nav>`
+        + ovHtml + html;
+      ooSubtabs($("home-fam-subtabs"), selectHomeFamily, {initial: _homeTabKey});
+      selectHomeFamily(_homeTabKey);
+      _renderOverviewTrends();
+    }
+    // The Overview lens: TOP-1 card per family, in the feed's own disclosed order.
+    function _overviewHtml(data, famHue, t) {
+      const tops = data.buckets.map((b, bi) => {
+        const c = (b.cards || [])[0];
+        if (!c) return "";
+        // The card renders exactly as it does in its family (same component, same
+        // actions), plus the disclosed reason it leads its family.
+        const why = c.order_explain
+          ? `<div class="ov-why" title="${esc(c.order_explain)}">${esc(c.order_explain)}</div>` : "";
+        return `<div class="ov-item" style="--fam:${famHue(bi)}">`
+          + `<h4 class="ov-fam"><span class="fam-dot" style="background:${famHue(bi)}"></span>${esc(b.label)}`
+          + ` <a href="#" class="ov-more" onclick='selectHomeFamily(${esc(JSON.stringify(String(bi)))});return false'>`
+          + `${esc(t("all {n}").replace("{n}", String((b.cards || []).length)))} →</a></h4>`
+          + `<div class="cards">${cardHtml(c)}</div>${why}</div>`;
+      }).join("");
+      return `<div class="brief-bucket" data-fam="__ov">`
+        + `<div id="ov-trending"></div>`
+        + `<div class="ov-grid">${tops}</div>`
+        + `<div class="card-caveat">${esc(t("One Lead per family, chosen by the same disclosed order as the full feed — independent sources, then sample magnitude, then recency. Never a score, and nothing is hidden: “All Leads” has every card."))}</div>`
+        + `</div>`;
     }
 
     // -- S4.3: the synthesized-Leads carousel (Home dashboard) --------------------------- //
@@ -2842,10 +2941,90 @@
     function _cancelBriefRepoll() {
       if (_briefRepoll) { clearTimeout(_briefRepoll); _briefRepoll = null; }
     }
+    // The standalone Home panels become SUBTABS beside the families (ruling 7a):
+    // the long scroll was every block stacked at once. They keep their own DOM,
+    // their own loaders and their own honest empty states — only their visibility
+    // is driven from here, so nothing is lost and no listener is re-bound.
+    let _homeTabKey = "__ov";
+    const _HOME_PANEL_TABS = [
+      {key: "__recent", id: "home-recent-panel", label: "Most recent"},
+      {key: "__latest", id: "home-latest-panel", label: "Latest in your corpus"},
+      {key: "__channels", id: "home-channels-panel", label: "By channel"},
+    ];
+    // A panel tab appears only once its panel has something to show: these panels
+    // unhide themselves when loaded (and stay hidden when there is nothing), so
+    // offering a tab onto an empty panel would be offering an empty room.
+    function _homePanelTabsHtml(t) {
+      return _HOME_PANEL_TABS.filter(p => { const el = $(p.id); return el && !el.hidden; })
+        .map(p => `<button data-tab="${p.key}">${esc(t(p.label))}</button>`).join("");
+    }
     function selectHomeFamily(key) {
+      _homeTabKey = key;
+      const panelKeys = _HOME_PANEL_TABS.map(p => p.key);
+      const onPanel = panelKeys.indexOf(key) !== -1;
       document.querySelectorAll("#briefing-feed .brief-bucket").forEach(el => {
-        el.style.display = (key === "__all" || el.dataset.fam === key) ? "" : "none";
+        const fam = el.dataset.fam;
+        const show = onPanel ? false
+          : (key === "__ov") ? (fam === "__ov")
+          : (key === "__all") ? (fam !== "__ov")
+          : (fam === key);
+        el.style.display = show ? "" : "none";
       });
+      // Clearing the inline style (rather than forcing a display) lets each panel's
+      // own `hidden` still win — a panel with nothing to show stays hidden even
+      // while its tab is selected, instead of rendering an empty box.
+      _HOME_PANEL_TABS.forEach(p => {
+        const el = $(p.id);
+        if (el) el.style.display = (key === p.key) ? "" : "none";
+      });
+      // Trending is folded INTO Overview as a compact row, so its standalone panel
+      // no longer competes for the same screen (ruling 7a).
+      const tr = $("home-trends-panel");
+      if (tr) tr.style.display = "none";
+    }
+    // Re-sync after an async panel loader unhides its panel: the subtab list is
+    // built from what is actually available, so a panel that arrives late must be
+    // able to claim its tab (and must not stay force-hidden by a stale inline
+    // style set before it had content).
+    function _syncHomeSubtabs() {
+      const nav = $("home-fam-subtabs");
+      if (!nav) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const want = _HOME_PANEL_TABS.filter(p => { const el = $(p.id); return el && !el.hidden; })
+        .map(p => p.key).join(",");
+      const have = Array.prototype.slice.call(nav.querySelectorAll("button[data-tab]"))
+        .map(b => b.dataset.tab).filter(k => _HOME_PANEL_TABS.some(p => p.key === k)).join(",");
+      if (want === have) { selectHomeFamily(_homeTabKey); return; }
+      _HOME_PANEL_TABS.forEach(p => {
+        const btn = nav.querySelector(`button[data-tab="${p.key}"]`);
+        const el = $(p.id), avail = !!(el && !el.hidden);
+        if (avail && !btn) {
+          const b = document.createElement("button");
+          b.dataset.tab = p.key; b.textContent = t(p.label);
+          nav.appendChild(b);
+        } else if (!avail && btn) {
+          if (_homeTabKey === p.key) _homeTabKey = "__ov";
+          btn.remove();
+        }
+      });
+      ooSubtabs(nav, selectHomeFamily, {initial: _homeTabKey});
+      selectHomeFamily(_homeTabKey);
+    }
+    // The compact Trending row inside Overview (ruling 7a). Reuses the SAME stashed
+    // payload the standalone panel already fetched — no second request, no new poll.
+    function _renderOverviewTrends() {
+      const host = $("ov-trending");
+      if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const terms = _homeTrendTerms || [];
+      if (!terms.length) { host.innerHTML = ""; return; }
+      const chips = terms.slice(0, 6).map(x =>
+        `<a class="chip tiny" href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false'`
+        + ` title="${esc(t("Open this keyword's own analysis window"))}">${esc(x.term)}`
+        + ` <span class="muted">↑${esc(String(x.growth))}× · ${esc(String(x.recent))}</span></a>`).join("");
+      host.innerHTML = `<div class="ov-trend"><span class="muted">${esc(t("Trending now"))}:</span>${chips}`
+        + `<a class="ov-more" href="#" onclick="showTab('insights');return false">${esc(t("More in Insights"))} →</a></div>`
+        + (_homeTrendCaveat ? `<div class="hint muted" style="font-size:11px">${esc(_homeTrendCaveat)}</div>` : "");
     }
 
     // The query that reproduces a card's article selection in the analysis window
@@ -7830,6 +8009,130 @@
     // layer). Honest counts + on-disk byte sizes only, no score; own stamp so the 16s poll
     // only repaints on a real change. The Database section below keeps the store detail.
     let _libOvStamp = "";
+    // -- Ingest rhythm heatmap (2026-08-01 ruling 10) ---------------------- //
+    // The maintainer asked to diversify the app's data-visualization vocabulary.
+    // This is the first activation: a weekday x hour-of-day density grid over the
+    // SAME articles_per_hour series the Activity tiles already fetch — no new
+    // backend, no new poll, and it answers a question a line chart cannot ("when
+    // does my collection actually run?").
+    //
+    // The honesty problem this had to solve: an empty cell is ambiguous. The
+    // backend returns a bucket only for hours that HAVE articles, so a missing
+    // hour inside the observed span is a true zero — but a slot that never
+    // occurred at all (a 3-day-old corpus has no second Tuesday) is NOT a zero,
+    // it is unobserved. Those two are rendered differently and never blended,
+    // the same rule ooMap's no-data hatch follows.
+    const _RHYTHM_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    function _ingestRhythm(series) {
+      const pts = (series || [])
+        .map(p => ({ms: Date.parse(String(p.t).length <= 19 ? p.t + "Z" : p.t), n: +p.n || 0}))
+        .filter(p => isFinite(p.ms));
+      if (!pts.length) return null;
+      const first = Math.min(...pts.map(p => p.ms)), last = Math.max(...pts.map(p => p.ms));
+      // slot = [weekday 0..6 (Mon-first)][hour 0..23]
+      const total = [], seen = [];
+      for (let d = 0; d < 7; d++) { total.push(new Array(24).fill(0)); seen.push(new Array(24).fill(0)); }
+      const slot = (ms) => {
+        const dt = new Date(ms);
+        return [(dt.getUTCDay() + 6) % 7, dt.getUTCHours()];
+      };
+      // Walk every hour of the OBSERVED span so a slot's occurrence count is real:
+      // an average over "times this hour actually came round" is comparable, an
+      // average over an assumed full week is not.
+      const HOUR = 36e5, MAX_HOURS = 24 * 400;   // bounded: a huge window can't hang the UI
+      let steps = 0;
+      for (let ms = first; ms <= last && steps < MAX_HOURS; ms += HOUR, steps++) {
+        const [d, h] = slot(ms); seen[d][h] += 1;
+      }
+      if (steps >= MAX_HOURS) return null;       // honestly render nothing rather than a partial grid
+      pts.forEach(p => { const [d, h] = slot(p.ms); total[d][h] += p.n; });
+      return {total, seen, first, last, n: pts.reduce((a, p) => a + p.n, 0)};
+    }
+    function ingestRhythmSvg(series) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const g = _ingestRhythm(series);
+      if (!g) return "";
+      // Colour by the AVERAGE per occurrence (comparable across slots seen a
+      // different number of times); the hover states both the total and the
+      // occurrences, so the reader can always recover the raw counts.
+      let peak = 0;
+      for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) {
+        if (g.seen[d][h] > 0) peak = Math.max(peak, g.total[d][h] / g.seen[d][h]);
+      }
+      const cw = 15, ch = 15, padL = 34, padT = 16;
+      const w = padL + 24 * cw + 4, hgt = padT + 7 * ch + 16;
+      let cells = "";
+      for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) {
+        const x = padL + h * cw, y = padT + d * ch;
+        const occ = g.seen[d][h];
+        if (!occ) {   // NEVER a zero: this slot did not occur in the observed span
+          cells += `<rect x="${x}" y="${y}" width="${cw - 1}" height="${ch - 1}" fill="url(#rhythm-none)"`
+            + `><title>${esc(t(_RHYTHM_DAYS[d]))} ${h}:00 — ${esc(t("not observed yet"))}</title></rect>`;
+          continue;
+        }
+        const avg = g.total[d][h] / occ;
+        const frac = peak > 0 ? avg / peak : 0;
+        const fill = frac <= 0 ? "var(--panel2)"
+          : `color-mix(in srgb, var(--accent) ${Math.round(12 + frac * 88)}%, var(--panel2))`;
+        const title = `${t(_RHYTHM_DAYS[d])} ${h}:00 — `
+          + t("{total} articles over {occ} occurrence(s), {avg} on average")
+              .replace("{total}", fmtNum(g.total[d][h])).replace("{occ}", String(occ))
+              .replace("{avg}", fmtNum(avg, 1));
+        cells += `<rect x="${x}" y="${y}" width="${cw - 1}" height="${ch - 1}" fill="${fill}"`
+          + ` stroke="var(--border)" stroke-width="0.4"><title>${esc(title)}</title></rect>`;
+      }
+      const dayLabels = _RHYTHM_DAYS.map((d, i) =>
+        `<text x="${padL - 4}" y="${padT + i * ch + 11}" text-anchor="end" font-size="8.5"
+           fill="var(--muted)">${esc(t(d).slice(0, 3))}</text>`).join("");
+      const hourLabels = [0, 6, 12, 18].map(h =>
+        `<text x="${padL + h * cw}" y="${padT - 5}" font-size="8.5" fill="var(--muted)">${h}:00</text>`).join("");
+      return `<div class="lib-rhythm">
+        <svg viewBox="0 0 ${w} ${hgt}" width="100%" style="display:block;max-width:${w}px" role="img"
+             aria-label="${esc(t("Ingest rhythm: articles collected by weekday and hour of day (UTC)."))}">
+          <defs><pattern id="rhythm-none" width="4" height="4" patternUnits="userSpaceOnUse"
+            patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="4"
+            stroke="var(--border)" stroke-width="1"></line></pattern></defs>
+          ${dayLabels}${hourLabels}${cells}
+        </svg>
+        <div class="hint muted">${esc(t("Hatched = that hour has not come round yet in the recorded span — not a zero."))}</div>
+        <div class="card-caveat">${esc(t("Shading is the AVERAGE articles per occurrence of that weekday-hour (UTC), because slots recur a different number of times in a short window; the hover gives the real total and how many times the slot occurred. Counts only, never a score."))}</div>
+      </div>`;
+    }
+
+    // -- Library subtabs (2026-08-01 ruling 9) ----------------------------- //
+    // Seven stacked sections became five views through the ONE universal subtab
+    // component (invariant #18). The panels are untouched — this is a regrouping,
+    // not a rewrite — and each view's loaders fire on SELECT, not on tab open, so
+    // opening the Library no longer pays for the recursive storage walk and the
+    // coverage map before you have asked for them ("folded must not mean
+    // fetched", the Advanced-tab precedent). Each view loads once per session.
+    let _libViewTabs = null, _libView = "overview";
+    const _libViewLoaded = new Set();
+    const _LIB_VIEW_LOADERS = {
+      overview: () => { renderLibraryOverview(); },
+      activity: () => { renderLibraryActivityGraphs(); },
+      tracked:  () => { renderLibraryWikiGraphs(); renderLibraryLawGraphs(); },
+      storage:  () => { renderStorageFootprint("library-storage"); },
+      coverage: () => { loadCoverage(); },
+    };
+    function selectLibraryView(key) {
+      if (!_LIB_VIEW_LOADERS[key]) key = "overview";
+      _libView = key;
+      document.querySelectorAll("#tab-library .lib-view").forEach(el => {
+        el.style.display = (el.id === "lib-view-" + key) ? "" : "none";
+      });
+      if (!_libViewLoaded.has(key)) {
+        _libViewLoaded.add(key);
+        try { _LIB_VIEW_LOADERS[key](); }
+        catch (e) { _libViewLoaded.delete(key); }   // a failed load must be retryable
+      }
+    }
+    function _wireLibraryViews() {
+      const nav = $("library-views");
+      if (!nav) { renderLibraryOverview(); return; }   // defensive: markup missing
+      if (!_libViewTabs) _libViewTabs = ooSubtabs(nav, selectLibraryView, {initial: _libView});
+      selectLibraryView(_libView);
+    }
     async function renderLibraryOverview() {
       const host = $("library-overview");
       if (!host) return;
@@ -7913,6 +8216,23 @@
       law_documents: "Law documents tracked",
       law_revisions: "Law revisions tracked",
     };
+    // The y-axis UNIT per metric — the tiles used to pass "" so the axis stated
+    // no unit at all, which is half of why a flat "23" beside a bare "n=2" read
+    // as "23 documents or 2?" (maintainer-reported 2026-08-01).
+    const LIB_METRIC_UNIT_KEYS = {
+      articles_per_hour: "articles / hour",
+      sources: "sources",
+      keywords: "keywords",
+      wiki_pages: "pages",
+      wiki_revisions: "revisions",
+      law_documents: "documents",
+      law_revisions: "revisions",
+    };
+    // What one DATAPOINT is, per metric: the counter metrics are hourly
+    // SNAPSHOTS of a running total, while articles_per_hour is a per-HOUR
+    // bucket derived from created_at. n= now says which.
+    const LIB_METRIC_N_UNIT_KEYS = {articles_per_hour: "hours"};
+    const LIB_DEFAULT_N_UNIT = "snapshots";
     // 2026-07-24 Session A §5: per-tile WINDOW SWITCHER (ruled) — every Library
     // graph tile, including the new qualification one, starts on the SAME
     // default window and can be independently switched without reloading the
@@ -7951,9 +8271,15 @@
       _libGraphData[metric] = d;
       const series = Array.isArray(d.series) ? d.series : [];
       const flat = _libAllZero(series.map(p => p.n));
+      // Library metrics are COUNTS: zero-based axis (Item Y), a NEUTRAL colour
+      // (a falling keyword count is not "bad" — market up=green semantics do not
+      // apply), the real unit on the axis, and an n= that says what it counts.
       const body = flat
         ? `<div class="muted" style="padding:14px 0;font-size:12px">${esc(t("No data yet."))}</div>`
-        : dashChartSvg(series.map(p => ({observed_on: p.t, price: p.n})), "");
+        : dashChartSvg(series.map(p => ({observed_on: p.t, price: p.n})),
+                       t(LIB_METRIC_UNIT_KEYS[metric] || ""),
+                       {zeroBase: true, neutral: true,
+                        nUnit: t(LIB_METRIC_N_UNIT_KEYS[metric] || LIB_DEFAULT_N_UNIT)});
       const began = d.recording_began_at
         ? `<div class="hint muted" style="font-size:11px">${esc(t("Recording began at {x}.").replace("{x}", d.recording_began_at))}</div>`
         : "";
@@ -8033,7 +8359,10 @@
       const host = scope.querySelector ? scope.querySelector(".lib-qual-chart") : null;
       const live = _libQualSeries.filter(s => s.points.length);
       if (!host || !live.length) return;   // defensive: a flat/errored tile has no chart host
-      ooChart(host, live, {height: 150, indexed: false, logY: _libQualSpread(_libQualSeries) > 50});
+      // zeroBase: these are source COUNTS, so the axis starts at a true zero
+      // (ignored under logY, where log(0) is undefined — stated in ooChart).
+      const logY = _libQualSpread(_libQualSeries) > 50;
+      ooChart(host, live, {height: 150, indexed: false, logY: logY, zeroBase: !logY});
     }
     function enlargeLibQualification() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -8077,7 +8406,13 @@
           _libGraphTile("keywords", LIB_DEFAULT_DAYS),
           _libQualificationTile(LIB_DEFAULT_DAYS),
         ]);
-        host.innerHTML = `<div class="row" style="flex-wrap:wrap;gap:10px">${tiles.join("")}</div>`;
+        // The rhythm heatmap sits BESIDE the tiles, never instead of them (the
+        // chart-beside-table rule): it reuses the articles_per_hour series
+        // _libGraphTile has already fetched and stashed, so it costs no request.
+        const rhythmSeries = ((_libGraphData.articles_per_hour || {}).series) || [];
+        const rhythm = ingestRhythmSvg(rhythmSeries);
+        host.innerHTML = `<div class="row" style="flex-wrap:wrap;gap:10px">${tiles.join("")}</div>`
+          + (rhythm ? `<h3 class="lib-sub">${esc(t("Ingest rhythm"))}</h3>` + rhythm : "");
         _libRenderQualChart(host);
       } catch (e) {
         host.innerHTML = `<div class="note err">${esc(e.message || e)}</div>`;
@@ -8145,7 +8480,17 @@
       home:     {ms: 15000, fn: () => refreshHomeLive()},
       // Stats every tick; the coverage panel every 4th (it groups all sources,
       // cheap but no need for 4s cadence) — live data, so no Refresh button.
-      library:  {ms: 4000, fn: () => { loadDbStats(); if ((++_covTick % 4) === 1) { loadCoverage(); renderLibraryOverview(); } }},
+      // Only the VISIBLE Library view is polled (2026-08-01 ruling 9): refreshing a
+      // subtab nobody is looking at would re-fetch the coverage map and re-walk the
+      // counters behind the user's back, defeating the point of loading a view on
+      // select. Each branch refreshes exactly the panels its own view shows.
+      library:  {ms: 4000, fn: () => {
+        if (_libView === "storage") loadDbStats();
+        if ((++_covTick % 4) === 1) {
+          if (_libView === "coverage") loadCoverage();
+          if (_libView === "overview") renderLibraryOverview();
+        }
+      }},
       ingest:   {ms: 5000, fn: () => refreshSchedulerLive()},
       insights: {ms: 6000, fn: () => loadInsights()},
       wiki:     {ms: 6000, fn: () => refreshWikiLive()},
@@ -9724,6 +10069,59 @@
         + `<tbody>${body}${more}</tbody></table>`;
     }
 
+    // --- honest axes (2026-08-01 field impressions, ruling 10) ------------ //
+    // A tick must be a value the axis ACTUALLY spans, in the data's own units.
+    // Two fabrications this replaces, both born of the `(max - min) || 1` span
+    // fallback: (a) a FLAT series invented a span, so a constant 23 drew ticks
+    // at 23 / "23.50" / 23 with the min+max labels OVERLAPPING at the plot
+    // bottom (dashChartSvg) and 23 / 23.33 / 23.67 / 24 — a top tick no data
+    // reaches — in ooChart; (b) a COUNT axis drew FRACTIONAL ticks ("23.5 law
+    // documents"). Rules: flat -> exactly ONE tick at the real value; an
+    // all-integer series -> integer ticks only; the first and last tick are
+    // always the REAL extremes, so rounding can never invent a value outside
+    // the data's own range.
+    function _allInteger(vals) {
+      return vals.length > 0 && vals.every(v => Number.isInteger(v));
+    }
+    function honestTicks(minV, maxV, want, integerOnly) {
+      if (!isFinite(minV) || !isFinite(maxV)) return [];
+      if (maxV <= minV) return [minV];              // FLAT: one honest tick, never a fabricated span
+      const n = Math.max(2, want | 0);
+      const eps = (maxV - minV) * 1e-9;
+      const out = [];
+      for (let g = 0; g < n; g++) {
+        const raw = minV + (maxV - minV) * g / (n - 1);
+        // endpoints stay the REAL extremes; interior ticks snap to integers on a count axis
+        const v = (g === 0) ? minV : (g === n - 1) ? maxV : (integerOnly ? Math.round(raw) : raw);
+        if (v < minV - eps || v > maxV + eps) continue;
+        if (!out.some(o => Math.abs(o - v) <= eps)) out.push(v);
+      }
+      return out.sort((a, b) => a - b);
+    }
+    // X-label granularity derived from the ACTUAL plotted span. The old code
+    // hard-sliced every label to YYYY-MM and de-duplicated INDEXES rather than
+    // TEXT, so two hourly snapshots inside one month both printed "2026-07"
+    // (maintainer-reported). Returns a formatter; callers then drop duplicate
+    // label TEXT, so a window that genuinely sits inside one hour honestly
+    // shows one label instead of the same one repeated.
+    function _timeLabelFmt(firstIso, lastIso) {
+      const a = Date.parse(String(firstIso)), b = Date.parse(String(lastIso));
+      const days = (isFinite(a) && isFinite(b)) ? Math.abs(b - a) / 864e5 : NaN;
+      if (isFinite(days) && days <= 2)
+        return (s) => String(s).slice(5, 13).replace("T", " ");   // MM-DD HH
+      if (isFinite(days) && days <= 92)
+        return (s) => String(s).slice(0, 10);                     // YYYY-MM-DD
+      return (s) => String(s).slice(0, 7);                        // YYYY-MM
+    }
+    // The same rule for an epoch-ms axis (ooChart): granularity from the span
+    // being labelled, so an hourly window stops printing the same day repeatedly.
+    function _msLabel(ms, spanMs) {
+      const iso = new Date(ms).toISOString();
+      const days = spanMs / 864e5;
+      if (isFinite(days) && days <= 2) return iso.slice(5, 16).replace("T", " ");  // MM-DD HH:MM
+      if (isFinite(days) && days <= 92) return iso.slice(0, 10);                   // YYYY-MM-DD
+      return iso.slice(0, 7);                                                      // YYYY-MM
+    }
     function dashChartSvg(points, unit, opts) {
       opts = opts || {};
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -9732,7 +10130,19 @@
       }
       const w = 300, h = 120, padL = 44, padR = 8, padT = 8, padB = 18;
       const n = points.length, lineMode = n >= _SPARSE_BAR_MAX;
-      const ys = points.map(p => p.price), minY = Math.min(...ys), maxY = Math.max(...ys), span = (maxY - minY) || 1;
+      const ys = points.map(p => p.price);
+      const dataMin = Math.min(...ys), dataMax = Math.max(...ys);
+      // opts.zeroBase (Item Y, count series): the axis starts at a true ZERO, so a
+      // count difference is read against zero and never against a window-min that
+      // exaggerates it. Price LEVEL callers keep the window-min baseline (a
+      // fabricated zero would be the dishonest direction there).
+      const baseMin = opts.zeroBase ? Math.min(0, dataMin) : dataMin;
+      // A FLAT series is centred in the plot instead of fabricating a span: the
+      // old `(max-min)||1` fallback pinned a constant series to the very bottom
+      // AND invented the ticks above it.
+      const flat = dataMax <= baseMin;
+      const minY = flat ? baseMin - 0.5 : baseMin, maxY = flat ? dataMax + 0.5 : dataMax;
+      const span = (maxY - minY) || 1;
       const plotW = w - padL - padR;
       // Shared time axis (Slice 4 — maintainer "graph timescales should be coherent
       // between all sources"): when opts.t0/t1 (ISO dates) are given, every point is
@@ -9752,9 +10162,13 @@
       };
       const Y = v => padT + (h - padT - padB) * (1 - (v - minY)/span);
       const up = points[n-1].price >= points[0].price;
-      const col = up ? 'var(--ok)' : 'var(--err)';
-      // 3 discrete horizontal gridlines at min / mid / max, each labelled.
-      const grid = [minY, minY + span/2, maxY].map(v =>
+      // opts.neutral: a NEUTRAL metric (a corpus count) must not be painted in
+      // market up=green/down=red semantics — fewer keywords is not "bad". Price
+      // and market callers keep the directional colour.
+      const col = opts.neutral ? 'var(--accent)' : (up ? 'var(--ok)' : 'var(--err)');
+      // Discrete horizontal gridlines, each labelled — values from honestTicks
+      // (flat -> one tick at the real value; integer data -> integer ticks).
+      const grid = honestTicks(baseMin, dataMax, 3, _allInteger(ys) && Number.isInteger(baseMin)).map(v =>
         `<line x1="${padL}" y1="${Y(v).toFixed(1)}" x2="${w-padR}" y2="${Y(v).toFixed(1)}"
            stroke="var(--border)" stroke-dasharray="2 4" stroke-width="0.6"></line>
          <text x="${padL-4}" y="${(Y(v)+3).toFixed(1)}" text-anchor="end" font-size="8.5"
@@ -9762,14 +10176,26 @@
       // X ticks: in SHARED mode the ticks are the WINDOW endpoints (start/mid/end of
       // the plot at fixed positions) so every card reads the SAME coherent time
       // legend; otherwise first / middle / last point dates (YYYY-MM, de-duplicated).
-      const xticks = shared
+      // Granularity follows the plotted span (hour / day / month) and duplicate
+      // label TEXT is dropped — the old code sliced every label to YYYY-MM and
+      // de-duplicated INDEXES, so two hourly snapshots in one month both printed
+      // "2026-07" (maintainer-reported).
+      const xfmt = shared
+        ? _timeLabelFmt(opts.t0, opts.t1)
+        : _timeLabelFmt(points[0].observed_on, points[n-1].observed_on);
+      const xcand = shared
         ? [[padL, "start", opts.t0], [padL + plotW / 2, "middle", new Date((sa + sb) / 2).toISOString()],
-           [w - padR, "end", opts.t1]].map(([x, anc, lab]) =>
-            `<text x="${x.toFixed(1)}" y="${h-5}" text-anchor="${anc}"
-               font-size="8.5" fill="var(--muted)">${esc(String(lab).slice(0,7))}</text>`).join("")
+           [w - padR, "end", opts.t1]]
         : [...new Set([0, Math.floor((n-1)/2), n-1])].map(i =>
-            `<text x="${X(i).toFixed(1)}" y="${h-5}" text-anchor="${i===0?'start':i===n-1?'end':'middle'}"
-               font-size="8.5" fill="var(--muted)">${esc(points[i].observed_on.slice(0,7))}</text>`).join("");
+            [X(i), i === 0 ? "start" : i === n-1 ? "end" : "middle", points[i].observed_on]);
+      const xseen = new Set();
+      const xticks = xcand.map(([x, anc, lab]) => {
+        const text = xfmt(lab);
+        if (xseen.has(text)) return "";               // dedupe on TEXT, not index
+        xseen.add(text);
+        return `<text x="${x.toFixed(1)}" y="${h-5}" text-anchor="${anc}"
+               font-size="8.5" fill="var(--muted)">${esc(text)}</text>`;
+      }).join("");
       // The series itself: a line when dense (n>=10), otherwise honest BARS (Item Y).
       // Bars anchor to the window-MIN — which the gridlines above already LABEL — so a
       // price-LEVEL difference stays visible and honest (NEVER a fabricated zero
@@ -9790,16 +10216,24 @@
                  + `<rect x="${x0.toFixed(1)}" y="${(by - 0.5).toFixed(1)}" width="${bwc}" height="2" fill="${col}"></rect>`;
           }).join("");
       // Item Y: the sparse "dots shown / no curve interpolated" caveat is removed
-      // app-wide; only the datapoint count is kept.
+      // app-wide; only the datapoint count is kept — but it now carries its UNIT
+      // (opts.nUnit), because a bare "n=2" beside a value of 23 read as "23 or 2
+      // documents?" (maintainer-reported). n counts DATAPOINTS, never entities.
+      const nText = opts.nUnit
+        ? ((window.OOI18N && OOI18N.tf) ? OOI18N.tf("n={n} {unit}", {n: n, unit: opts.nUnit})
+                                        : `n=${n} ${opts.nUnit}`)
+        : `n=${n}`;
       const caveat = lineMode ? "" :
-        `<div class="hint muted" style="margin-top:1px">n=${n}</div>`;
+        `<div class="hint muted" style="margin-top:1px">${esc(nText)}</div>`;
       // The legend reads the SHARED window when coherent (so every card states the
       // same span), else this series' own first→last dates.
-      const range = shared ? `${opts.t0} → ${opts.t1}`
-        : (n >= 2 ? `${points[0].observed_on} → ${points[n-1].observed_on}` : points[0].observed_on);
+      const range = shared ? `${xfmt(opts.t0)} → ${xfmt(opts.t1)}`
+        : (n >= 2 ? `${xfmt(points[0].observed_on)} → ${xfmt(points[n-1].observed_on)}`
+                  : xfmt(points[0].observed_on));
       // a11y: a translated summary + a visually-hidden data table (audit PR G).
-      const aria = _chartAria(unit || "", n, points[0].observed_on.slice(0, 7),
-        points[n - 1].observed_on.slice(0, 7), fmtNum(minY), fmtNum(maxY));
+      // The stated lo/hi are the REAL data extremes, never the padded plot bounds.
+      const aria = _chartAria(unit || "", n, xfmt(points[0].observed_on),
+        xfmt(points[n - 1].observed_on), fmtNum(dataMin), fmtNum(dataMax));
       const srTable = _chartSrTable(
         points.map(p => ({date: p.observed_on, value: fmtNum(p.price)})), unit || "");
       return `<svg viewBox="0 0 ${w} ${h}" width="100%" style="display:block" role="img" aria-label="${esc(aria)}">
@@ -10265,7 +10699,27 @@
     function ooChart(el, seriesList, opts = {}) {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       el.innerHTML = "";
-      const W = Math.max(320, Math.min(el.clientWidth || 680, opts.maxWidth || 900));
+      // The canvas is sized in FIXED px, so it must never be wider than its host:
+      // a 320 px hard floor (and a 680 px fallback when the element was not laid
+      // out yet) made the chart overflow a narrower tile, with no overflow rule
+      // anywhere in the tile/row/panel chain to clip it (maintainer-reported
+      // "graphs do not fit their boxes"). Measure the real container; when it is
+      // not laid out yet (hidden tab), re-render ONCE when it gains a width
+      // instead of guessing a size that will overflow.
+      const avail = el.clientWidth || (el.parentElement ? el.parentElement.clientWidth : 0);
+      if (!avail) {
+        if (typeof ResizeObserver === "function" && !el._ooChartPending) {
+          el._ooChartPending = true;
+          const ro = new ResizeObserver(() => {
+            if (!el.clientWidth) return;
+            ro.disconnect(); el._ooChartPending = false;
+            ooChart(el, seriesList, opts);
+          });
+          ro.observe(el);
+        }
+        return;
+      }
+      const W = Math.max(120, Math.min(avail, opts.maxWidth || 900));
       const H = opts.height || 220, padL = 52, padR = 10, padT = 10, padB = 24;
       const wrap = document.createElement("div");
       const cv = document.createElement("canvas");
@@ -10303,7 +10757,7 @@
       const ctx = cv.getContext("2d"); ctx.scale(dpr, dpr);
       const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n) || "#888";
       const fmtV = (v) => (typeof fmtNum === "function") ? fmtNum(v) : String(v);
-      const fmtT = (ms) => new Date(ms).toISOString().slice(0, 10);
+      const fmtT = (ms) => _msLabel(ms, Math.max(tMax - tMin, 1));
       // a11y (audit PR G): the canvas is opaque to screen readers — give it a
       // role + translated summary, and a visually-hidden per-series data table.
       const allV = all.flatMap(s => s.pts.map(p => p.v));
@@ -10350,20 +10804,38 @@
         const vs = visible();
         const ys = vs.flatMap(s => s.vis.map(p => vt(pv(s, p))));
         if (!ys.length) { readout.textContent = t9("no points in this window — zoom out (double-click)"); return; }
-        const yMin = (opts.zeroBase && !opts.logY) ? Math.min(0, ...ys) : Math.min(...ys);
-        const yMax = Math.max(...ys), ySpan = (yMax - yMin) || 1;
+        const dataLo = (opts.zeroBase && !opts.logY) ? Math.min(0, ...ys) : Math.min(...ys);
+        const dataHi = Math.max(...ys);
+        // A FLAT series is centred instead of fabricating a span: the old
+        // `(yMax-yMin)||1` fallback drew 23 / 23.33 / 23.67 / 24 for a constant
+        // 23 — three ticks the data never reaches (2026-08-01 ruling 10).
+        const flatY = dataHi <= dataLo;
+        const yMin = flatY ? dataLo - 0.5 : dataLo, yMax = flatY ? dataHi + 0.5 : dataHi;
+        const ySpan = (yMax - yMin) || 1;
         const Yof = (v) => padT + plotH * (1 - (v - yMin) / ySpan);
         ctx.font = "10px sans-serif"; ctx.fillStyle = cssVar("--muted"); ctx.strokeStyle = cssVar("--border");
-        for (let g = 0; g <= 3; g++) {                     // discrete gridlines, labelled
-          const v = yMin + ySpan * g / 3, y = Yof(v);
+        // Ticks in the data's own units: integer-only for a count axis (never a
+        // fractional count), exactly one tick for a flat series. Under logY the
+        // axis space is log10, so integer snapping applies to the LABEL values,
+        // not the axis positions — hence the vtInv round-trip stays as-is.
+        const tickInt = !opts.logY && !opts.indexed && _allInteger(ys);
+        for (const v of honestTicks(dataLo, dataHi, 4, tickInt)) {
+          const y = Yof(v);
           ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
           ctx.setLineDash([]); ctx.textAlign = "right"; ctx.fillText(fmtV(vtInv(v)), padL - 4, y + 3);
         }
         const nTicks = Math.max(2, Math.min(6, Math.floor(plotW / 110)));
         ctx.textAlign = "center";
+        // Granularity follows the VISIBLE window (zooming into a day stops
+        // printing the same date six times), and duplicate label TEXT is dropped.
+        const winFmt = (ms) => _msLabel(ms, Math.max(t1 - t0, 1));
+        const seenT = new Set();
         for (let g = 0; g <= nTicks; g++) {
           const ms = t0 + (t1 - t0) * g / nTicks;
-          ctx.fillText(fmtT(ms), Math.min(Math.max(Xof(ms), padL + 28), W - padR - 28), H - 8);
+          const lab = winFmt(ms);
+          if (seenT.has(lab)) continue;
+          seenT.add(lab);
+          ctx.fillText(lab, Math.min(Math.max(Xof(ms), padL + 28), W - padR - 28), H - 8);
         }
         for (const s of vs) {
           if (!s.vis.length) continue;
@@ -14692,6 +15164,20 @@
     // narrows the plotted signals to that story type. Client-side over already-fetched
     // signals (no new endpoint). Counts only, deduced — never a verdict.
     let _ooMapStoryKind = null;
+    // Hazard lens state (2026-08-01 ruling 4). "Major only" starts ON so the map
+    // opens on the events the strip is about; it is a DEFAULT LENS the user can
+    // clear in one click, never an exclusion — the bar states that in words.
+    let _ooMapHazMajorOnly = true, _ooMapHazType = null;
+    const OOMAP_HAZ_MIN_MAGNITUDE = 6.0;   // mirrors alerts.DEFAULT_MIN_MAGNITUDE
+    // A map signal is "major" on the SAME provider-declared facts the alert layer
+    // uses: the provider's own orange/red level, or its measured magnitude.
+    function _hazardSignalIsMajor(s) {
+      const sev = String(s.severity || "").toLowerCase();
+      if (sev === "watch" || sev === "urgent") return true;
+      const m = Number(s.magnitude);
+      if (isFinite(m) && s.magnitude != null && m >= OOMAP_HAZ_MIN_MAGNITUDE) return true;
+      return sev === "strong" || sev === "major";
+    }
     // Preset the map into a named lens: toggle the layer flags, lazily fetch that
     // lens's data (reusing the SAME endpoints the in-map toggles use — no new fetch),
     // then re-render. Fired by the ooSubtabs strip (incl. its {initial}).
@@ -14755,13 +15241,52 @@
       const allOn = _ooMapStoryKind == null;
       const chips = [chip("__all", t("All stories"), sig.length, allOn, null)]
         .concat(kinds.map(k => chip(k, kindLabel(k), counts[k], _ooMapStoryKind === k, kindColor(k))));
+      // Hazard row (ruling 4): a "Major only" default lens + a hazard-TYPE filter,
+      // shown only when there are hazard signals to filter. Every count is real,
+      // and the caveat states that the default hides nothing permanently.
+      const haz = sig.filter(s => (s.kind || "") === "hazard");
+      let hazRow = "";
+      if (haz.length) {
+        const majorN = haz.filter(_hazardSignalIsMajor).length;
+        const types = {};
+        haz.forEach(s => { const k = String(s.hazard_type || "").toLowerCase(); if (k) types[k] = (types[k] || 0) + 1; });
+        const tkeys = Object.keys(types).sort((a, b) => types[b] - types[a]);
+        const majorChip = `<button type="button" class="tiny secondary" id="oomap-haz-major"`
+          + ` aria-pressed="${_ooMapHazMajorOnly ? "true" : "false"}"`
+          + `${_ooMapHazMajorOnly ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>`
+          + `${esc(t("Major only"))} <span class="muted">${esc(fmtNum(majorN))}/${esc(fmtNum(haz.length))}</span></button>`;
+        const typeChips = [`<button type="button" class="tiny secondary" data-haz-type="__all"`
+          + ` aria-pressed="${_ooMapHazType == null ? "true" : "false"}"`
+          + `${_ooMapHazType == null ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>`
+          + `${esc(t("All hazard types"))}</button>`]
+          .concat(tkeys.map(k => `<button type="button" class="tiny secondary" data-haz-type="${esc(k)}"`
+            + ` aria-pressed="${_ooMapHazType === k ? "true" : "false"}"`
+            + `${_ooMapHazType === k ? ' style="border-color:var(--accent);color:var(--accent)"' : ""}>`
+            + `${esc(hazardTypeLabel(k))} <span class="muted">${esc(fmtNum(types[k]))}</span></button>`));
+        hazRow = `<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin-top:5px">
+            <span class="muted" style="font-size:12px">${esc(t("Hazards"))}:</span>${majorChip}${typeChips.join("")}
+          </div>
+          <div class="card-caveat" style="margin-top:4px">${esc(t("“Major only” is a default lens, not an exclusion: it shows provider orange/red alerts and magnitude M6+ first. Click it off to see every hazard the snapshot holds. A magnitude is the provider's measurement of size, never a statement about consequences."))}</div>`;
+      }
       bar.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
           <span class="muted" style="font-size:12px">${esc(t("Story types"))}:</span>${chips.join("")}
         </div>
-        <div class="card-caveat" style="margin-top:5px">${esc(t("Story types are deduced from your corpus by event kind — counts only, never a verdict or ranking."))}</div>`;
+        <div class="card-caveat" style="margin-top:5px">${esc(t("Story types are deduced from your corpus by event kind — counts only, never a verdict or ranking."))}</div>${hazRow}`;
       bar.querySelectorAll("[data-story-kind]").forEach(b => b.addEventListener("click", () => {
         const k = b.dataset.storyKind;
         _ooMapStoryKind = (k === "__all") ? null : k;
+        _renderOoMapLensBar();
+        if (_ooMapPayload) _renderOoMapDim();
+      }));
+      const majorBtn = bar.querySelector("#oomap-haz-major");
+      if (majorBtn) majorBtn.addEventListener("click", () => {
+        _ooMapHazMajorOnly = !_ooMapHazMajorOnly;
+        _renderOoMapLensBar();
+        if (_ooMapPayload) _renderOoMapDim();
+      });
+      bar.querySelectorAll("[data-haz-type]").forEach(b => b.addEventListener("click", () => {
+        const k = b.dataset.hazType;
+        _ooMapHazType = (k === "__all") ? null : k;
         _renderOoMapLensBar();
         if (_ooMapPayload) _renderOoMapDim();
       }));
@@ -14861,6 +15386,17 @@
       // Story-lens (field-test Item 6): narrow the plotted signals to one story type
       // when a kind chip is selected. Client-side over the already-fetched signals.
       if (sig.length && _ooMapStoryKind) sig = sig.filter(s => (s.kind || "article") === _ooMapStoryKind);
+      // Hazard filters (2026-08-01 ruling 4). "Major only" is ON BY DEFAULT — a
+      // DEFAULT LENS, not an exclusion: one click restores full recall, and the
+      // bar says so. It narrows ONLY hazard signals; every other story kind is
+      // untouched. The hazard-TYPE filter is the same grammar one level down.
+      if (sig.length && _ooMapHazMajorOnly) {
+        sig = sig.filter(s => (s.kind || "") !== "hazard" || _hazardSignalIsMajor(s));
+      }
+      if (sig.length && _ooMapHazType) {
+        sig = sig.filter(s => (s.kind || "") !== "hazard"
+          || String(s.hazard_type || "").toLowerCase() === _ooMapHazType);
+      }
       let focusT = null, windowY = 0, focusSlider = _ooMapFocusSlider, focusLabel = "", focusTicks = [];
       if (sig.length) {
         const ts = sig.map(s => s.t);
@@ -15027,12 +15563,12 @@
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <span style="width:11px;height:11px;border-radius:50%;background:${kindColor(s.kind)};display:inline-block"></span>
           <strong>${esc(s.title)}</strong>
-          <span class="pill">${esc(kindLabel(s.kind))}</span> ${conf} ${geo}
+          <span class="pill">${esc(s.kind === "hazard" ? hazardTypeLabel(s.hazard_type) : kindLabel(s.kind))}</span> ${conf} ${geo}
         </div>
         <div class="muted" style="margin-top:5px;font-size:13px">
           ${esc(fmtDate(s))}${s.place ? ` · ${esc(s.place)}` : ""}${s.country ? ` (${esc(String(s.country).toUpperCase())})` : ""}
           · ${(+s.lat).toFixed(2)}, ${(+s.lon).toFixed(2)} · <span title="data source">${esc(s.source)}</span>
-          ${s.magnitude != null ? ` · M${esc(fmtNum(s.magnitude, 1))}` : ""}
+          ${s.magnitude != null ? ` · <b>M${esc(fmtNum(s.magnitude, 1))}</b>` : ""}
         </div>
         ${s.note ? `<div class="hint" style="margin-top:5px">${esc(s.note)}</div>` : ""}
         <div class="row" style="margin-top:7px;gap:8px">
@@ -15078,8 +15614,32 @@
           .sort((a, b) => a.d - b.d)[0];
         if (near && near.d < 0.5) match = near.s;
       }
+      // The default "Major only" lens must never hide the very event the user
+      // clicked through to: a deep-linked below-floor event clears the filter so
+      // the point is actually on the map beside its detail panel.
+      if (match && _ooMapHazMajorOnly && !_hazardSignalIsMajor(match)) {
+        _ooMapHazMajorOnly = false;
+        _renderOoMapLensBar();
+        if (_ooMapPayload) _renderOoMapDim();
+      }
       if (match) _ooMapSignalDetail(match, sig, 25);
       else toast(t("This event is outside the map's current signal set."), "err");
+    }
+    // The Home strip's overflow line ("N more, below the M6 display floor →"):
+    // open the World map on the hazard layer with the major-only lens CLEARED,
+    // because the whole point of that line is to reach the events the floor did
+    // not show first. Full recall is one click away, exactly as the strip says.
+    async function openWorldMapHazards() {
+      showTab("timemap");
+      await new Promise(r => setTimeout(r, 60));
+      if (_ooMapLensTabs) _ooMapLensTabs.select("stories");
+      else await selectOoMapLens("stories");
+      for (let i = 0; i < 20 && _ooMapSignals == null; i++) await new Promise(r => setTimeout(r, 100));
+      _ooMapHazMajorOnly = false;
+      _ooMapHazType = null;
+      _ooMapStoryKind = "hazard";
+      _renderOoMapLensBar();
+      if (_ooMapPayload) _renderOoMapDim();
     }
     // Toggle the in-browser OSM offline-region overlay (THEME-2). On first enable
     // it finds a DOWNLOADED region, fetches a bounded byte PREFIX of its local

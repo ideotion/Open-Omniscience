@@ -370,8 +370,49 @@ _OTHERS: tuple[ProducerSpec, ...] = (
        "A condition you saved has been met by newly collected articles."),
     _p("recycled_claim", "watch", "A recycled claim",
        "A claim resurfacing after a long dormancy."),
-    _p("severity_alerts", "watch", "A provider-declared hazard",
-       "A hazard a provider itself declared severe — never our own judgement."),
+    ProducerSpec(
+        name="severity_alerts",
+        family="watch",
+        label="A provider-declared hazard",
+        description=(
+            "A hazard a provider itself declared severe — never our own judgement. "
+            "The same two settings also decide which hazards the Home alert strip "
+            "shows first; nothing is ever removed from the World map or the corpus."
+        ),
+        tunables=(
+            Tunable(
+                key="min_magnitude",
+                label="Show first at magnitude",
+                default=6.0,
+                lo=4.5,
+                hi=8.0,
+                kind="float",
+                unit="M",
+                impact=(
+                    "Which earthquakes reach the compact strip first. Lower = a longer "
+                    "list; higher = only the largest. Every event stays on the World map "
+                    "and in your corpus either way."
+                ),
+                floor_reason=(
+                    "6.0 is the lower bound of the USGS 'strong' band, so the number and "
+                    "the band label agree. A provider ORANGE or RED alert always clears "
+                    "the floor whatever its magnitude — and a magnitude never becomes an "
+                    "urgency tier the provider did not declare."
+                ),
+            ),
+            Tunable(
+                key="strip_cap",
+                label="Most hazards in the strip",
+                default=5,
+                lo=1,
+                hi=20,
+                impact=(
+                    "How many hazards the Home strip lists before collapsing the rest "
+                    "into one 'N more on the map' line."
+                ),
+            ),
+        ),
+    ),
     _p("on_the_horizon", "watch", "On the horizon",
        "An upcoming agenda date whose subject is trending in your corpus right now."),
     _p("supergroup_rising", "watch", "A theme rising",

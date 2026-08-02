@@ -922,6 +922,18 @@
     /* The compact hazard strip item (field-feedback A6, ruled): the type glyph is
        its own marker, so drop the bullet; keep everything on one flexible line. */
     .home-alerts .alert-tier li.alert-hazard-item { list-style:none; display:flex; align-items:center; gap:3px; flex-wrap:wrap; }
+    /* The hazard TYPE in words (2026-08-01 ruling 4): a glyph alone is not
+       deducible on first sight, so the type is spelled out and given the weight
+       of a label. NOT a severity encoding — every hazard carries it. */
+    .home-alerts .haz-kind { font-weight:600; }
+    /* An entry above the display floor. Emphasis is a left accent rule, never
+       colour alone (state must not depend on hue), and the floor is a display
+       ordering — it says "shown first", not "more urgent". */
+    .home-alerts .alert-tier li.haz-major {
+      border-inline-start:2px solid var(--accent); padding-inline-start:6px;
+    }
+    /* The overflow line that reaches the rest on the World map. */
+    .home-alerts .alert-tier li.alert-more { list-style:none; margin-top:3px; }
     /* Corpus maturity tier — a descriptive STAGE chip beside the glance numbers.
        Subtle per-stage accent only; never a score bar, never fake precision. */
     .corpus-tier { display:inline-flex; align-items:baseline; gap:7px; white-space:nowrap; }
@@ -1132,3 +1144,25 @@
     .carousel-dot { width: 8px; height: 8px; padding: 0; border-radius: 50%;
       border: 1px solid var(--line); background: transparent; cursor: pointer; }
     .carousel-dot.on { background: var(--accent); border-color: var(--accent); }
+
+    /* ---- Home Overview lens (2026-08-01 rulings 5-8) --------------------- */
+    /* The DEFAULT Home subtab: one Lead per family in the feed's own disclosed
+       order, each stating why it leads. This is what replaces the long scroll —
+       "All Leads" still holds every card, so the grid is a lens, never a wall. */
+    .ov-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(280px, 1fr)); gap:11px; }
+    .ov-item { border-inline-start:3px solid var(--fam, var(--accent)); padding-inline-start:8px; }
+    .ov-fam { display:flex; align-items:center; gap:6px; margin:0 0 5px; font-size:13px; }
+    .ov-more { margin-inline-start:auto; font-size:12px; }
+    /* The "why this card" line: the shipped explain_order text, VISIBLE rather
+       than only in a hover — it is the ordering-transparency surface that had no
+       caller at all after the Settings restructure removed the Leads preview. */
+    .ov-why { margin-top:5px; font-size:11.5px; color:var(--muted); line-height:1.45; }
+    /* The compact Trending row folded into Overview (ruling 7a). */
+    .ov-trend { display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin-bottom:9px; }
+
+    /* ---- Library subtab views (2026-08-01 ruling 9) ---------------------- */
+    /* Five views over the same seven panels; visibility only, so every panel
+       keeps its own markup, loaders and honest empty states. */
+    .lib-view > .panel:first-child { margin-top:0; }
+    .lib-sub { font-size:13px; margin:14px 0 6px; }
+    .lib-rhythm svg { border:1px solid var(--border); border-radius:6px; padding:4px; background:var(--panel2); }

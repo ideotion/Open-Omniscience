@@ -1,6 +1,10 @@
 # Autonomous session brief — 2026-07-24 Session A: field-feedback fixes (items 1–7 + the airplane-gate split)
 
-**Status:** PENDING execution (an autonomous Sonnet-5 CLI session).
+**Status:** ✅ EXECUTED 2026-07-24 (branch `claude/session-a-work-80mgr3`). All seven slices
+A1–A7 shipped — see the seven `docs/ledger/shipped.csv` rows dated 2026-07-24. This banner said
+"PENDING" until 2026-08-01, which cost a later session real time re-verifying work that was
+already in the tree; a brief's status is part of the ledger, so it is updated when the work
+lands, not left for the next reader to discover.
 **Rulings of record:** the CLAUDE.md Open-queue entry "FIELD FEEDBACK 2026-07-24" (intake +
 investigation + the ANSWERS RECEIVED block). This brief is the operating manual; the ledger is
 binding where they differ.

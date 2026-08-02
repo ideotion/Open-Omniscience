@@ -1403,6 +1403,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     COMMENT-STRIPPED source (drop whole-line `//`, which leaves a `https://` inside a string
     literal untouched), or be behavioural. Do not solve it by rewording the comment: the
     comment is the thing a future session reads before deciding the removal was a mistake.
+  - **A SOURCE-EXTRACTING TEST MUST START BRACE-MATCHING AT THE *BODY* BRACE, OR ITS GUARDS
+    PASS VACUOUSLY (2026-08-01, Session D S1):** the house pattern for testing `app.js` logic
+    is to EXTRACT the function from the real file by name (a re-typed copy would pass while the
+    shipped code was broken). The naive extractor takes the first `{` after the function name —
+    but `function ooChart(el, seriesList, opts = {})` carries a `{}` in a DEFAULT PARAMETER, so
+    depth goes 1→0 immediately and the "body" is the signature alone. Every source-level
+    assertion over that empty slice then passes for free. Scan forward until the PARENTHESES
+    balance, then take the next `{`. Two sibling forms of the same trap appeared in the same
+    session: a slice that runs from a function to the next top-level declaration sweeps in
+    unrelated code (an Overview guard asserting "never calls the LLM" was reading 150 lines of
+    other functions), and — the expensive one — **`test_commodities_category_subtabs` was
+    passing by ACCIDENT for months**: its whole-file `'{initial: "__all"}'` assertion matched
+    the HOME families call site, while the commodities code it names passes the shorthand
+    `{initial}`. GENERAL FORM: a whole-file substring assertion is only as meaningful as that
+    string's UNIQUENESS; a test scoped to one surface must slice to that surface, and when a
+    guard fails against code you believe is correct, check whether it was ever testing what it
+    claimed before "fixing" the code.
+  - **EXTENDING A SERVER-EMITTED STRING THAT IS ITSELF AN i18n KEY SILENTLY UN-TRANSLATES IT
+    (2026-08-01, Session D S2):** `ALERT_CAVEAT` is injected into the DOM and translated by the
+    i18n walker's EXACT-key lookup, so appending two sentences to it changed the key and every
+    non-English locale fell back to English — caught only because a dedicated test pins that key
+    across all 12 files. The fix is a RE-KEY, not a new key: pop the old entry, append the
+    translated new sentences to each locale's EXISTING (already-reviewed) translation, and write
+    it under the new key. Adding the new key while leaving the old one orphans a translation and
+    leaves the gate green. Before editing any long server-side constant, grep the locale files
+    for its opening words.
   - **A BACKSTOP MAY BE THE ONLY THING GUARDING A PATH — "every real path checks the gate
     itself" IS AN ENUMERATION, AND ENUMERATIONS ARE WRONG (2026-08-01, the AI-install egress
     window):** relaxing the socket-level airplane backstop process-wide was justified in
@@ -1569,6 +1595,34 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     parts"; summary = hierarchical chunk-then-combine, labelled) with the method VISIBLE ×12.
   • (17) TWO sessions RULED: D (Home alerts + Overview + Library + the axis-honesty pass) then
     E (AI coordinator + bench + context management).
+  **SESSION D EXECUTED 2026-08-01 (branch `claude/oos-optimization-planning-iawlbj`; S1–S5 all
+  shipped, five `docs/ledger/shipped.csv` rows; every frontend slice BROWSER-UNVERIFIED per
+  fork-3/Q6a — the maintainer's full-DOM HTML exports (ruling 11) are the verification channel):**
+  S1 the toolkit-wide axis-honesty pass (`honestTicks` replaces the `(max−min)||1` span fallback in
+  BOTH renderers) · S2 the alert selection layer (ordering + display floor + cross-provider
+  grouping + type-in-words; `_hazard_tier` byte-untouched) · S3 Home Overview as the default lens
+  with `explain_order` finally rendered, panels as subtabs, carousel retired · S4 the Library
+  five-view restructure with select-time loaders + a view-aware poller · S5 the ingest-rhythm
+  heatmap. Baseline-diffed at every slice: ZERO introduced failures (7 environmental failures both
+  sides), i18n 100 % throughout (~38 new keys ×12), ruff clean.
+  **REMAINING from Session D (honest board):** the §5 dataviz list beyond the heatmap
+  (article-length/qualification histograms, the corpus-delta slope chart, per-language small
+  multiples, the waffle composition) — the shared honesty pattern is now set by the heatmap
+  (unobserved ≠ zero, method stated, chart beside table); the §1.9 sparse-rule reach DECISION for
+  `ringDumbbellSvg`/`commodityOverlaySvg` (flagged, not decided); and the maintainer click-through
+  /HTML exports for every slice above.
+  **THREE REUSABLE LESSONS FROM SESSION D (also in the Session-rituals Lessons list):** (a) a node
+  test that EXTRACTS a function from `app.js` must start brace-matching at the BODY brace, not the
+  first brace — `function ooChart(el, seriesList, opts = {})` carries a `{}` in a default
+  parameter, so naive matching truncates the body to nothing and every source-level guard over it
+  passes VACUOUSLY; (b) `test_commodities_category_subtabs` was passing by ACCIDENT — its
+  whole-file `'{initial: "__all"}'` assertion matched the HOME families call site, never the
+  commodities one, so a test named for one surface asserted nothing about it: a whole-file
+  substring assertion is only as meaningful as that string's uniqueness, and a test scoped to a
+  surface must slice to it; (c) when a payload string is itself an i18n KEY (the server-emitted
+  `ALERT_CAVEAT`), EXTENDING that string silently breaks its ×12 translation — re-key by
+  preserving each locale's existing translation and appending the new sentences, never by adding a
+  second key and orphaning the first.
 - **THE BULLETIN — PERIODIC CORPUS DOCUMENT (maintainer design conversation 2026-07-30/31; 16
   numbered decisions ANSWERED 2026-07-31; DESIGN ONLY, nothing built; record of record =
   [`docs/design/BULLETIN_DESIGN_2026-07-31.md`](docs/design/BULLETIN_DESIGN_2026-07-31.md),
