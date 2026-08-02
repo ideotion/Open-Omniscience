@@ -201,6 +201,7 @@ def _task_triage(
         )
         for k in batch.get("keywords", [])
     ]
+    lang_of = {k["term"]: (k.get("language") or "unknown") for k in batch.get("keywords", [])}
     verdicts: dict[str, dict] = {}
     keywords_in = verdicts_out = parse_failures = unsure = 0
     wall = 0.0
@@ -227,6 +228,22 @@ def _task_triage(
         wall += float(out.get("wall_s") or 0.0)
         verdicts.update(pb.verdicts)
         canary_failed.extend(out["canary"].get("failed") or [])
+    # PER-LANGUAGE (E-S3): the batch is stratified by language precisely so a
+    # multilingual roster can be read per language — reporting only a pooled number
+    # would hide the thing the stratification exists to expose, and it is the
+    # evidence the per-language task gates read.
+    by_language: dict[str, dict] = {}
+    for term, lang in lang_of.items():
+        b = by_language.setdefault(lang, {"asked": 0, "valid": 0, "unsure": 0})
+        b["asked"] += 1
+        v = verdicts.get(term)
+        if v:
+            b["valid"] += 1
+            if v["verdict"] == "unsure":
+                b["unsure"] += 1
+    for b in by_language.values():
+        b["format_validity"] = round(b["valid"] / b["asked"], 4) if b["asked"] else None
+        b["pct_unsure"] = round(b["unsure"] / b["valid"], 4) if b["valid"] else None
     return {
         "status": "ok",
         "batches": batches,
@@ -238,6 +255,7 @@ def _task_triage(
         "format_validity": T.format_validity_rate(keywords_in, verdicts_out),
         "pct_unsure": T.pct_unsure(unsure, verdicts_out),
         "valid_verdicts_per_s": T.valid_verdicts_per_sec(verdicts_out, wall),
+        "by_language": by_language,
         "canary": {"ok": not canary_failed, "failed": canary_failed},
         "anchor_accuracy": (
             T.anchor_accuracy(verdicts, anchors["anchors"]) if anchors and anchors.get("anchors")
@@ -289,6 +307,19 @@ def _task_source_tags(client, *, model: str, batch: dict, keep_alive: str | None
     )
     pb = out["parsed"]
     validity = round(pb.tagged_out / pb.sources_in, 4) if pb.sources_in else None
+    lang_of = {r["domain"]: (r.get("language") or "unknown") for r in rows}
+    # `pb.tags` keys the domains that came back with a VALID line — an empty tuple
+    # there is the explicit "none" answer, which is an answer; `missing` is the
+    # absence of one. The two must not be folded together.
+    answered = set(pb.tags)
+    by_language: dict[str, dict] = {}
+    for domain, lang in lang_of.items():
+        b = by_language.setdefault(lang, {"asked": 0, "answered": 0})
+        b["asked"] += 1
+        if domain in answered:
+            b["answered"] += 1
+    for b in by_language.values():
+        b["format_validity"] = round(b["answered"] / b["asked"], 4) if b["asked"] else None
     return {
         "status": "ok",
         "vocabulary_size": len(vocabulary),
@@ -299,6 +330,7 @@ def _task_source_tags(client, *, model: str, batch: dict, keep_alive: str | None
         "parse_failures": pb.parse_failures,
         "missing": len(pb.missing),
         "format_validity": validity,
+        "by_language": by_language,
         "canary": {
             "ok": bool(out["canary"].get("ok", True)),
             "failed": out["canary"].get("failed") or [],
@@ -326,6 +358,7 @@ def _task_langdetect(client, *, model: str, keep_alive: str | None) -> dict:
     from src.analytics.perception_eval import PERCEPTION_GOLD
 
     per_lang: dict[str, dict] = {}
+    per_answer: dict[str, dict] = {}
     correct = wrong = refused = 0
     t0 = time.monotonic()
     for case in PERCEPTION_GOLD:
@@ -341,6 +374,18 @@ def _task_langdetect(client, *, model: str, keep_alive: str | None) -> dict:
         else:
             wrong += 1
             bucket["wrong"] += 1
+        if got is not None:
+            # Keyed by the model's own ANSWER, not by the gold language. This is
+            # PRECISION, and it is the only measure a gate on the answer can honestly
+            # use: recall per true language says nothing about whether the label the
+            # model just emitted can be trusted. Free to compute here, and applying a
+            # recall figure to an answer would be a silent substitution.
+            a = per_answer.setdefault(got, {"answered": 0, "correct": 0})
+            a["answered"] += 1
+            if got == case.language:
+                a["correct"] += 1
+    for a in per_answer.values():
+        a["precision"] = round(a["correct"] / a["answered"], 4) if a["answered"] else None
     answered = correct + wrong
     total = correct + wrong + refused
     return {
@@ -352,12 +397,16 @@ def _task_langdetect(client, *, model: str, keep_alive: str | None) -> dict:
         "accuracy_over_answered": round(correct / answered, 4) if answered else None,
         "accuracy_over_all": round(correct / total, 4) if total else None,
         "by_language": per_lang,
+        "by_answer": per_answer,
         "wall_s": round(time.monotonic() - t0, 3),
         "method": (
             "One call per gold case; the reply must BE a known ISO 639-1 code. Two "
             "denominators are reported apart and never blended: accuracy over the cases the "
             "model ANSWERED, and accuracy over ALL cases (a refusal counts against the "
-            "second, not the first — refusing is a different behaviour from being wrong)."
+            "second, not the first — refusing is a different behaviour from being wrong). "
+            "'by_language' is keyed by the TRUE language (recall); 'by_answer' by the "
+            "model's own label (precision). They answer different questions and are never "
+            "read as each other."
         ),
         "caveat": (
             "The gold texts are single sentences, shorter than the article leads the "

@@ -8254,3 +8254,37 @@ def test_model_bench_freezes_its_inputs_and_is_wired_end_to_end():
     assert '"/model-bench/last": "model-bench.json"' in diag
     excluded_block = diag.split('"excluded": [', 1)[1].split("\n        ],", 1)[0]
     assert "/api/diagnostics/model-bench/run" in excluded_block
+
+
+def test_the_two_gate_shapes_stay_opposite_on_unmeasured_input():
+    """E-S3 (2026-08-01): a licensing gate and a veto look alike and behave oppositely
+    where it counts. Both directions are pinned in their own suites; this guards the
+    WIRING, because swapping them would be invisible in a diff and catastrophic in
+    the field: the perception gate would start licensing untested strata, and the
+    langdetect veto would silently disable every language the gold set never covered."""
+    import re
+
+    ld = (_SRC / "ai_layer" / "langdetect_llm.py").read_text(encoding="utf-8")
+    body = ld.split("def detect_for_articles(", 1)[1]
+    assert "answer_vetoed" in body and "task_gate(" not in body, (
+        "language detection must VETO its answer, never LICENSE by input language — "
+        "the language is the question, so an input gate there is incoherent"
+    )
+    pe = (_SRC / "ai_layer" / "perception_extract.py").read_text(encoding="utf-8")
+    batch = pe.split("def extract_perception_batch(", 1)[1]
+    assert "field_gate(" in batch, "extraction must decide STORAGE field by field"
+    assert "answer_vetoed" not in pe, "extraction licenses; it must not be turned into a veto"
+
+    # The bench records precision by ANSWER, which is what a veto needs; a recall
+    # figure applied to an answer would be a silent substitution of measures.
+    mb = (_SRC / "ai_layer" / "model_bench.py").read_text(encoding="utf-8")
+    ldt = mb.split("def _task_langdetect(", 1)[1].split("\ndef ", 1)[0]
+    assert '"by_answer"' in ldt and '"by_language"' in ldt
+
+    # The gates are reachable — a machine-readable verdict with no caller is a dead end.
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert '@router.get("/model-bench/gates")' in diag
+    src = _ui_source()
+    assert re.search(r'"/api/diagnostics/model-bench/gates"', src), (
+        "the gate view must be surfaced, not just computed"
+    )

@@ -49,7 +49,14 @@ def test_gate_marks_a_clean_language_active():
     assert gate["en"]["active"] is True
 
 
-def test_gate_disables_a_language_that_hallucinates_above_the_floor():
+def test_a_hallucinating_field_is_gated_without_taking_the_language_with_it():
+    """AMENDED 2026-08-01 (E-S3, ruling 16's granularity ask -- the assertion, not the
+    scenario). This used to read ``active is False`` for the whole language, which
+    encoded the collapse the ruling removes: a model that invents people but reads
+    dates perfectly extracted NOTHING, anywhere. The floors were always per field; only
+    the verdict was collapsed. Now `who` is gated on its own evidence and its siblings
+    keep theirs, and the language reason says which is which so "active" cannot
+    over-read as "active for everything"."""
     report = {
         "status": "ok",
         "report": {
@@ -63,8 +70,16 @@ def test_gate_disables_a_language_that_hallucinates_above_the_floor():
         },
     }
     gate = PE.gate_languages_from_report(report)
-    assert gate["ar"]["active"] is False
-    assert "who hallucination 0.9" in gate["ar"]["reason"]
+    fields = gate["ar"]["fields"]
+    assert fields["who"]["active"] is False
+    assert "who hallucination 0.9" in fields["who"]["reason"]
+    assert fields["where"]["active"] is True and fields["when"]["active"] is True
+    # The language is worth a call (two fields cleared) but says what is held back.
+    assert gate["ar"]["active"] is True
+    assert "gated for who" in gate["ar"]["reason"]
+    # ...and the STORAGE decision follows the field, not the language.
+    assert PE.field_gate("ar", "who", gate)[0] is False
+    assert PE.field_gate("ar", "where", gate)[0] is True
 
 
 def test_a_none_hallucination_rate_alone_never_disqualifies():
@@ -489,10 +504,26 @@ def test_negative_space_a_where_only_language_is_never_failed_on_who_or_when():
     )
     for lang in ("pt", "nl", "ru", "id", "ar", "zh", "ja", "hi", "bn"):
         assert gate[lang]["active"] is True, (lang, gate[lang])
-        # and it must not even MENTION who/when -- they were never checked.
-        assert "who" not in gate[lang]["reason"] and "when" not in gate[lang]["reason"]
+        # AMENDED 2026-08-01 (E-S3): this used to assert the reason did not even
+        # CONTAIN the words who/when. Under the per-field gate it does -- as
+        # "unmeasured for who, when", which the reader needs, because those fields
+        # will not be stored. So the assertion moves to the property the test is
+        # actually named for: never FAILED, and never described as failed.
+        assert gate[lang]["fields"]["who"]["active"] is None
+        assert gate[lang]["fields"]["when"]["active"] is None
+        assert "failed" not in gate[lang]["reason"], gate[lang]["reason"]
+        assert "unmeasured for who, when" in gate[lang]["reason"]
     for lang in ("en", "de", "es", "fr"):
-        assert gate[lang]["active"] is False, (lang, gate[lang])
+        # These four DO carry who/when gold, and the extractor recovered none of it.
+        # AMENDED 2026-08-01 (E-S3): the floor still has to bite -- but on the FIELDS
+        # that were tested and failed, not on `where`, which this extractor got right.
+        # Asserting the whole language off would now re-encode the collapse the ruling
+        # removed, and would silently discard a `where` extraction that measurably works.
+        assert gate[lang]["fields"]["who"]["active"] is False, (lang, gate[lang])
+        assert gate[lang]["fields"]["when"]["active"] is False, (lang, gate[lang])
+        assert gate[lang]["fields"]["where"]["active"] is True, (lang, gate[lang])
+        assert PE.field_gate(lang, "who", gate)[0] is False
+        assert PE.field_gate(lang, "where", gate)[0] is True
 
 
 def test_a_perfect_extractor_clears_every_language_and_states_its_power():
@@ -540,3 +571,86 @@ def test_gate_entries_carry_no_score_shaped_keys():
                 walk(x)
 
     walk(gate)
+
+
+# --------------------------------------------------------------------------- #
+# E-S3 (2026-08-01, ruling 16's granularity ask): the PER-FIELD gate.
+#
+# Both directions, because a gate is only honest if it can be shown to bite AND to
+# let through: an over-tight gate reads as conservative while quietly deleting a
+# measurement that works, and only the second direction catches that.
+# --------------------------------------------------------------------------- #
+def _mixed_gate():
+    """`where` cleared, `who` failed on hallucination, `when` never tested."""
+    return PE.gate_languages_from_report(
+        {
+            "status": "ok",
+            "report": {
+                "by_language": {
+                    "en": {
+                        "n_cases": 3,
+                        "who": {"hallucination_rate": 0.9, "recall": 1.0, "n_gold": 2},
+                        "where": {"hallucination_rate": 0.0, "recall": 1.0, "n_gold": 2},
+                        "when": {"hallucination_rate": None, "recall": None, "n_gold": 0},
+                    }
+                }
+            },
+        }
+    )
+
+
+def test_a_failing_field_stays_gated_while_its_passing_sibling_activates():
+    gate = _mixed_gate()
+    assert PE.field_gate("en", "who", gate)[0] is False
+    assert PE.field_gate("en", "where", gate)[0] is True
+
+
+def test_an_untested_field_refuses_and_says_unmeasured_not_failed():
+    """The tri-state runs one level down too: 'we never looked' is not 'it failed',
+    and it is certainly not 'it passed'."""
+    gate = _mixed_gate()
+    ok, reason = PE.field_gate("en", "when", gate)
+    assert ok is False
+    assert "UNMEASURED" in reason and "failed" not in reason
+
+
+def test_a_gate_without_per_field_verdicts_falls_back_to_the_language_verdict():
+    """An artifact persisted before per-field verdicts existed must keep working —
+    at the OLD behaviour, never at an invented per-field one."""
+    legacy = {"en": {"active": True, "reason": "cleared the S6.5 harness"}}
+    assert PE.field_gate("en", "who", legacy)[0] is True
+    legacy_off = {"en": {"active": False, "reason": "failed"}}
+    assert PE.field_gate("en", "who", legacy_off)[0] is False
+
+
+def test_extraction_stores_only_the_cleared_fields_and_counts_the_rest(db):
+    """The three fields come from ONE call, so a gated field is generated and then
+    DISCARDED. The tally must say so: a zero `who` count beside a real `where` count
+    has to read as gated, not as 'the model found nothing'."""
+    src = Source(name="Src", domain="src.test", tags="news")
+    db.add(src)
+    db.flush()
+    _mk_article(db, src, 1, content="Acme met in Springfield on 1 January 2024.")
+    db.commit()
+
+    work = PE.select_perception_batch(db, 0, 10)
+    tally = PE.extract_perception_batch(
+        db, work, _FakeClient(), model="m", gate=_mixed_gate()
+    )
+    assert tally["where"] >= 1, "the cleared field is stored"
+    assert tally["who"] == 0 and tally["when"] == 0
+    assert tally["field_gated"]["who"] == 1 and tally["field_gated"]["when"] == 1
+    kinds = {k.kind for k in db.query(AiKeyword).all()}
+    assert kinds == {"ai-place"}, kinds
+    # ...and the trusted rule-based tables are untouched, as ever.
+    assert _row_counts(db) == (0, 0, 0)
+
+
+def test_a_language_active_for_one_field_is_still_worth_a_call(db):
+    """The article-level gate answers 'is this worth a call at all?'. Refusing the
+    whole article because one field is gated would throw away the field that works —
+    the exact collapse this change removes."""
+    gate = _mixed_gate()
+    active, reason = PE.language_gate("en", gate)
+    assert active is True
+    assert "gated for who" in reason and "unmeasured for when" in reason

@@ -13103,7 +13103,21 @@
         const active = keys.filter((l) => g[l].active === true).sort();
         const disabled = keys.filter((l) => g[l].active === false).sort();
         const unmeasured = keys.filter((l) => g[l].active == null).sort();
-        const detail = (l) => esc(l) + " (" + esc(g[l].reason || "") + ")";
+        // PER-FIELD (E-S3, 2026-08-01): a language cleared for `where` alone is
+        // ACTIVE, but storing `who` there is still refused — so the field states are
+        // shown beside the language, or "active" over-reads as "active for everything".
+        const fieldBits = (l) => {
+          const f = g[l].fields; if (!f) return "";
+          const on = Object.keys(f).filter((k) => f[k] && f[k].active === true);
+          const off = Object.keys(f).filter((k) => f[k] && f[k].active === false);
+          const un = Object.keys(f).filter((k) => f[k] && f[k].active == null);
+          return " [" + [
+            on.length ? t("stores") + " " + on.join("/") : "",
+            off.length ? t("gated") + " " + off.join("/") : "",
+            un.length ? t("unmeasured") + " " + un.join("/") : "",
+          ].filter(Boolean).map(esc).join(" · ") + "]";
+        };
+        const detail = (l) => esc(l) + fieldBits(l) + " (" + esc(g[l].reason || "") + ")";
         // Active languages show their reason too — that is what makes "cleared on 1
         // synthetic case — low statistical power" visible rather than implied.
         let html = "<b>" + t("Active languages:") + "</b> "
@@ -13512,6 +13526,32 @@
         + (res.anchors && res.anchors.available === false
           ? `<div class="card-caveat" style="margin-top:4px">No graded anchors: accuracy against a human grade is UNMEASURED. Models agreeing is not either being right.</div>` : "")
         + `<div class="hint muted" style="margin-top:4px">${esc(res.caveat || "")}</div>`;
+      mbShowGates();
+    }
+
+    // E-S3: what the bench's per-language verdicts actually gate. Shown BESIDE the
+    // results, because a measurement nobody can act on is a dead end — and because
+    // the two gate shapes behave oppositely on unmeasured input, which the reader
+    // has to be told rather than left to infer.
+    async function mbShowGates() {
+      const out = $("mb-gates"); if (!out) return;
+      try {
+        const d = await api("/api/diagnostics/model-bench/gates");
+        const rows = Object.keys(d.gates || {}).map((task) => {
+          const g = d.gates[task] || {};
+          const keys = Object.keys(g);
+          if (!keys.length) return `<div><b>${esc(task)}</b> — no bench evidence</div>`;
+          const on = keys.filter((k) => g[k].active === true).sort();
+          const off = keys.filter((k) => g[k].active === false).sort();
+          const un = keys.filter((k) => g[k].active == null).sort();
+          const wired = (d.wired || []).includes(task) ? "" : " (computed, not yet applied)";
+          return `<div><b>${esc(task)}</b>${esc(wired)} — `
+            + `cleared: ${esc(on.join(", ") || "none")}`
+            + (off.length ? ` · refused: ${esc(off.join(", "))}` : "")
+            + (un.length ? ` · unmeasured: ${esc(un.join(", "))}` : "") + `</div>`;
+        }).join("");
+        out.innerHTML = rows + `<div class="hint muted" style="margin-top:4px">${esc(d.caveat || "")}</div>`;
+      } catch (e) { out.textContent = ""; }
     }
 
     async function _mbPoll() {

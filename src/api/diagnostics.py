@@ -3423,6 +3423,10 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
         "the interactive grading sitting (and its sample), not a report — the anchors' "
         "effect is reported inside model-bench.json as anchor accuracy"
     ),
+    "/model-bench/gates": (
+        "a LIVE per-language gate view computed from the bench artifact, not a static "
+        "report — the artifact itself (model-bench.json) is the bundle member"
+    ),
     "/model-bench/roster": (
         "a LIVE per-backend installed-tag probe, not a static report — the bench artifact "
         "already records which pairs ran and which were refused, and why"
@@ -5105,3 +5109,57 @@ def model_bench_download() -> Response:
             "POST /api/diagnostics/model-bench/run",
         )
     return FileResponse(files[-1], media_type="application/json", filename=files[-1].name)
+
+
+@router.get("/model-bench/gates")
+def model_bench_gates(model: str | None = Query(None)) -> JSONResponse:
+    """The per-language task gates the newest bench artifact supports (read-only).
+
+    Two shapes, and the difference is the point rather than an implementation
+    detail. Triage and source tags know an item's language BEFORE the call, so their
+    gates LICENSE: an unmeasured language refuses, because running there would be
+    unmeasured work. Language detection does not know the language before the call --
+    that is the question -- so its gate is a VETO on the ANSWER: only a label the
+    bench measured this model getting wrong more often than right is refused, and a
+    label the gold set never covered is stored exactly as it always was. Refusing
+    those would disable detection for languages nobody tested rather than for
+    languages that failed.
+
+    WIRED TODAY: the langdetect veto (it STORES a label, so a measured-wrong answer
+    has to be stopped). The triage and source-tag gates are computed and shown but
+    not yet applied at selection -- both sweeps are EXPORT-ONLY JSONL reviewed by the
+    verification chain, so an unreliable verdict there is already caught by a human
+    before it becomes an artifact.
+    """
+    from src.ai_layer.task_gates import (
+        GATED_TASKS,
+        MIN_ANSWER_PRECISION,
+        MIN_FORMAT_VALIDITY,
+        MIN_OBSERVATIONS,
+        current_task_gate,
+    )
+
+    return JSONResponse(
+        {
+            "gates": {task: current_task_gate(task, model=model) for task in GATED_TASKS},
+            "wired": ["langdetect"],
+            "floors": {
+                "min_format_validity": MIN_FORMAT_VALIDITY,
+                "min_answer_precision": MIN_ANSWER_PRECISION,
+                "min_observations": MIN_OBSERVATIONS,
+            },
+            "method": (
+                "Read from the newest comparative-bench artifact. Triage/source-tag gates "
+                "license (unmeasured refuses); the langdetect gate vetoes (only a measured "
+                "failure refuses). Tri-state throughout: cleared / failed / unmeasured, "
+                "never collapsed into each other."
+            ),
+            "caveat": (
+                "The floors are JUDGEMENTS, written in src/ai_layer/task_gates.py so the "
+                "first real bench run can revise them on evidence. They are deliberately "
+                "low: the gold sets are small, and a stricter floor would be a number "
+                "nobody measured. Empty gates mean no bench has run — not that everything "
+                "passed."
+            ),
+        }
+    )
