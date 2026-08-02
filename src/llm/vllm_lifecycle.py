@@ -64,7 +64,6 @@ _LOG = logging.getLogger(__name__)
 VLLM_VERIFIED_VERSION = "0.26.0"
 VLLM_VERIFIED_AS_OF = "2026-07-25"
 
-DEFAULT_PORT = 8000
 DEFAULT_HOST = "127.0.0.1"
 
 # A disclosed ESTIMATE, never a precise fabricated figure: vLLM pulls torch + CUDA
@@ -536,6 +535,58 @@ def is_running(*, timeout: float = 2.0) -> bool:
         return False
 
 
+def port_occupant(*, timeout: float = 2.0) -> dict:
+    """WHO is on vLLM's port -- ``{"state": ..., "port": int, "detail": str}``.
+
+    ``is_running()`` collapses every failure to False, which is right for "is it
+    up?" and WRONG as an explanation. In the field (2026-08-02) vLLM's port was
+    the app's own, so the probe reached the APP, got a 404 for ``/v1/models``,
+    and reported "vLLM is down" 270 times while the real answer was "vLLM cannot
+    live here". Those need different words, because they need different actions.
+
+    ``state`` is one of:
+      ``vllm``     -- a vLLM server answered; it is up.
+      ``foreign``  -- SOMETHING answered but it is not vLLM. Occupied port.
+      ``free``     -- nothing is listening. vLLM is simply not started.
+      ``unknown``  -- the probe itself failed; never guessed as one of the above.
+    """
+    import socket as _socket
+    from urllib.parse import urlparse
+
+    from src.llm.vllm_client import VllmClient
+
+    url = base_url()
+    parsed = urlparse(url)
+    port = parsed.port or 0
+    try:
+        if VllmClient(timeout=timeout).is_available():
+            return {"state": "vllm", "port": port, "detail": f"a vLLM server is answering at {url}."}
+    except Exception:  # noqa: BLE001 - a probe must never raise
+        pass
+    # Nothing vLLM-shaped answered. Is ANYTHING listening?
+    try:
+        with _socket.socket() as s:
+            s.settimeout(timeout)
+            connected = s.connect_ex((parsed.hostname or "127.0.0.1", port)) == 0
+    except OSError:
+        return {"state": "unknown", "port": port, "detail": f"could not probe {url}."}
+    if not connected:
+        return {
+            "state": "free",
+            "port": port,
+            "detail": f"nothing is listening on port {port} -- vLLM is installed but not started.",
+        }
+    return {
+        "state": "foreign",
+        "port": port,
+        "detail": (
+            f"port {port} is already taken by another server, which is not vLLM. "
+            "vLLM cannot bind it, so starting the server will fail until the port "
+            "is free or OO_VLLM_PORT points somewhere else."
+        ),
+    }
+
+
 def process_alive() -> bool:
     """True if THIS process is tracking a live subprocess (distinct from
     ``is_running()`` -- a server started by another means, or one still loading
@@ -632,7 +683,7 @@ def server_argv(
     model: str,
     *,
     host: str = DEFAULT_HOST,
-    port: int = DEFAULT_PORT,
+    port: int | None = None,
     max_model_len: int | None = None,
     gpu_memory_utilization: float | None = None,
 ) -> list[str]:
@@ -646,6 +697,13 @@ def server_argv(
         argv = [str(console), "serve", model]
     else:
         argv = [str(venv_python()), "-m", "vllm.entrypoints.openai.api_server", "--model", model]
+    # Resolved here, not defaulted in the signature: a signature default binds at
+    # import and would freeze whatever OO_PORT was then -- the same staleness that
+    # let the server and the client disagree about the address.
+    if port is None:
+        from src.llm.vllm_client import default_vllm_port
+
+        port = default_vllm_port()
     argv += ["--host", host, "--port", str(port)]
     if max_model_len is not None:
         argv += ["--max-model-len", str(max_model_len)]
@@ -799,6 +857,21 @@ def start(
         max_model_len_override=max_model_len,
         gpu_memory_utilization_override=gpu_memory_utilization,
     )
+    # Refuse a start that CANNOT succeed, before spawning anything (field report
+    # 2026-08-02). vLLM's port was the app's own, so `vllm serve` hit
+    # OSError(98) Address already in use and died instantly; the only symptom
+    # anywhere was "running: false". A doomed launch should be an honest,
+    # actionable refusal, not a subprocess that disappears -- the same principle
+    # platform_support() already applies to a doomed install.
+    occupant = port_occupant()
+    if occupant["state"] == "foreign":
+        raise VllmLifecycleError(
+            occupant["detail"]
+            + " (If this is the Open Omniscience app itself, the two are meant to"
+            " differ -- vLLM's port is derived from OO_PORT, so check whether"
+            " OO_VLLM_PORT or OO_VLLM_URL has been set to the app's port.)"
+        )
+
     argv = server_argv(
         model,
         max_model_len=args["max_model_len"],
@@ -885,6 +958,11 @@ def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
         # layout, i.e. not measurable -- never collapsed into False.
         "package_present": _package_present(venv_dir(), "vllm"),
         "running": is_running(),
+        # WHO is on the port, not merely whether vLLM answered. "running: false"
+        # alone sent a field report down the wrong path entirely (2026-08-02):
+        # the port was the app's own, so "not running" was true and useless --
+        # the actionable fact was that vLLM could never bind it.
+        "port_occupant": port_occupant(),
         "process_tracked": process_alive(),
         "gpu": gpu,
         "platform": platform_support(),

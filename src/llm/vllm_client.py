@@ -43,8 +43,61 @@ from src.llm.ollama import (
 
 _LOG = logging.getLogger(__name__)
 
-# Default OpenAI-compatible port `vllm serve` binds to.
-DEFAULT_VLLM_URL = "http://127.0.0.1:8000"
+#: The app's own listening port (``main.py`` reads ``OO_PORT``, default 8000).
+#: Duplicated as a literal rather than imported so this module keeps no import
+#: edge into the API layer; the invariant test pins the two together.
+_APP_PORT_ENV = "OO_PORT"
+_APP_PORT_FALLBACK = 8000
+
+
+def default_vllm_port() -> int:
+    """The port ``vllm serve`` should bind — DERIVED so it can never be the app's.
+
+    FIELD REPORT 2026-08-02 ("installing vLLM on a new machine fails"). This was
+    a flat ``8000`` — the SAME port the app itself serves on. The consequences,
+    both reproduced:
+
+    * ``vllm serve`` could never bind it: ``OSError(98) Address already in use``.
+      The server therefore never started on ANY machine that got as far as a
+      successful install. It stayed latent only because no machine had one.
+    * The health probe then asked *the app* whether it was vLLM. The app has no
+      ``/v1/models`` route, so it answered **404** — 270 of them in one session
+      in the field bundle — and ``is_running()`` read that as "vLLM is down"
+      rather than "something else owns this port".
+
+    Deriving from ``OO_PORT`` rather than hardcoding 8001 keeps the two apart
+    even when the operator moves the app: a collision cannot be reintroduced by
+    configuration. ``OO_VLLM_PORT`` still overrides explicitly."""
+    explicit = os.getenv("OO_VLLM_PORT")
+    if explicit:
+        try:
+            port = int(explicit)
+        except ValueError:
+            port = 0
+        if 1 <= port <= 65535:
+            return port
+        # A malformed override must not silently reinstate the collision.
+        _LOG.warning("ignoring malformed OO_VLLM_PORT=%r; deriving instead", explicit)
+    try:
+        app_port = int(os.getenv(_APP_PORT_ENV, str(_APP_PORT_FALLBACK)))
+    except ValueError:
+        app_port = _APP_PORT_FALLBACK
+    if not (1 <= app_port <= 65534):
+        app_port = _APP_PORT_FALLBACK
+    return app_port + 1
+
+
+def default_vllm_url() -> str:
+    """Base URL for the local vLLM server. Computed per call, never frozen at
+    import: a module constant captured whatever ``OO_PORT`` happened to be when
+    this module was first imported, which is exactly how the client and the
+    server can end up disagreeing about where vLLM lives."""
+    return f"http://127.0.0.1:{default_vllm_port()}"
+
+
+#: Back-compat alias. Prefer :func:`default_vllm_url` — this is evaluated at
+#: import time and so cannot see a later ``OO_PORT``/``OO_VLLM_PORT`` change.
+DEFAULT_VLLM_URL = default_vllm_url()
 
 # -- sampling-option mapping ----------------------------------------------- #
 #
@@ -152,7 +205,10 @@ class VllmClient:
         timeout: float = 180.0,
         client: httpx.Client | None = None,
     ):
-        resolved_url: str = base_url or os.getenv("OO_VLLM_URL") or DEFAULT_VLLM_URL
+        # default_vllm_url() per call, not the import-time constant: the port is
+        # derived from OO_PORT, and freezing it at import is how the client ends
+        # up probing a different address than the one the server was told to bind.
+        resolved_url: str = base_url or os.getenv("OO_VLLM_URL") or default_vllm_url()
         self.base_url = resolved_url.rstrip("/")
         self.timeout = timeout
         # Enforce loopback only when WE open the socket (mirrors OllamaClient) — an
