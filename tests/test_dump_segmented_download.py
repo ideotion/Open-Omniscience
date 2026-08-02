@@ -48,6 +48,20 @@ def _no_probe(url: str) -> dict:
     return {"ok": True, "latency_ms": 10.0}
 
 
+class _CompleteResp:
+    """A body that finishes immediately, so a worker started by ``start()`` ENDS
+    inside its own test instead of outliving it as a daemon thread."""
+
+    status_code = 200
+    headers = {"Content-Length": str(len(PAYLOAD))}
+
+    def raise_for_status(self):
+        return None
+
+    def iter_content(self, _chunk):
+        yield PAYLOAD
+
+
 def test_fresh_download_with_a_checksum_uses_the_segmented_path(tmp_path):
     calls: list = []
     m = DumpDownloadManager(
@@ -178,14 +192,41 @@ def test_a_corrupt_segmented_download_is_recorded_as_a_genuine_error(tmp_path):
 
 
 def test_start_seeds_mirrors_and_checksum_only_on_a_new_entry(tmp_path):
-    m = DumpDownloadManager(base_dir=tmp_path)
-    m.start("en", "pages-articles", mirrors=["https://m.example/a.bz2"], expected_sha256="abc123")
+    # ``start()`` is the one entry point here that LAUNCHES a real worker thread
+    # (every sibling test drives ``_download`` directly), so every seam it can
+    # reach is injected. With the real defaults this test fetched
+    # ``https://m.example/a.bz2`` for real AND left ``oo-dump-en:pages-articles``
+    # running as a daemon for the rest of the pytest process -- where it retried
+    # inside any later test that briefly cleared the kill switch. That is how it
+    # made ``test_egress_window.py::test_with_no_window_loopback_still_passes_through``
+    # -- which asserts an exact list against a PROCESS-GLOBAL socket spy -- fail
+    # intermittently on the Core-only lane, ~6000 tests downstream of here (the
+    # same commit passed in a sibling run; the failing run's captured teardown
+    # carried this manager's own ``_default_get`` traceback).
+    m = DumpDownloadManager(
+        base_dir=tmp_path,
+        http_get=lambda url, headers: _CompleteResp(),
+        http_head=lambda url: _HeadResp(len(PAYLOAD)),
+        fetch_segment=_fetch_segment(PAYLOAD),
+        mirror_probe=_no_probe,
+        segment_min_bytes=100,
+    )
+    m.start("en", "pages-articles", mirrors=["https://m.example/a.bz2"],
+            expected_sha256=PAYLOAD_SHA256)
+
+    # Join before asserting: the worker is what this test must not leak, and a
+    # download that has ENDED cannot race the reads below either.
+    worker = m._threads.get("en:pages-articles")
+    assert worker is not None, "start() must launch the download"
+    worker.join(timeout=10)
+    assert not worker.is_alive(), "the download worker must not outlive this test"
+
     e = m._entries["en:pages-articles"]
     assert e.mirrors == ["https://m.example/a.bz2"]
-    assert e.expected_sha256 == "abc123"
+    assert e.expected_sha256 == PAYLOAD_SHA256
     # A later call (e.g. a resume-style re-start) must NOT overwrite the
     # already-seeded values with the caller's (possibly default/empty) ones.
     m._entry_for("en", "pages-articles", mirrors=[], expected_sha256="")
     e2 = m._entries["en:pages-articles"]
     assert e2.mirrors == ["https://m.example/a.bz2"]
-    assert e2.expected_sha256 == "abc123"
+    assert e2.expected_sha256 == PAYLOAD_SHA256
