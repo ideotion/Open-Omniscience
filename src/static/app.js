@@ -2397,8 +2397,31 @@
         const facets = (d.facets || []).filter(f => (f.articles || 0) > 0);
         if (!facets.length) { panel.hidden = true; box.innerHTML = ""; return; }
         panel.hidden = false;
-        box.innerHTML = `<div style="display:flex;gap:6px;flex-wrap:wrap">` + facets.map(f =>
-          `<button class="chip" onclick="openChannelCorpus(${esc(JSON.stringify(f.source_type))})" title="${esc(t("An asserted content channel (newsletter, web article, wiki, statistic, law, market, discovery), never a quality score. Click a channel to explore its corpus."))}">${esc(f.source_type)} <span class="muted">${esc(String(f.articles))}</span></button>`).join("")
+        // A bare count cannot answer "is this channel most of my corpus or a rounding
+        // error?", so each chip carries its SHARE and the denominator is stated once
+        // above them. Article.source_id is NOT NULL and the facet excludes quarantined
+        // articles exactly as the browse path does, so the facets really do sum to the
+        // corpus this share is a share OF -- an unstated denominator is the usual way a
+        // percentage lies. Shares are shown BESIDE the counts, never instead: the raw
+        // number is what the reader checks the percentage against.
+        //
+        // Deliberately NOT a waffle, and not a second bar view either. The project's own
+        // chart framework prescribes sorted bars for part-to-whole and never mentions a
+        // waffle at all; `_ooShareBars` already implements that form -- but its rows are
+        // not clickable, and these chips open the channel's corpus (openChannelCorpus).
+        // Replacing them would trade a working tool for a prettier read of the same
+        // numbers, so the shares come to the chips instead.
+        const total = facets.reduce((s, f) => s + (f.articles || 0), 0);
+        const pct = (n) => (total > 0 ? (n / total * 100) : 0);
+        // Below 0.5% a rounded share reads as "0%", which looks like nothing rather than
+        // like a little; "<1%" says small without claiming a precision the rounding lost.
+        const share = (n) => (pct(n) >= 0.5 ? Math.round(pct(n)) + "%" : "<1%");
+        const totalLine = (window.OOI18N && OOI18N.tf)
+          ? OOI18N.tf("{n} articles across {k} channels", {n: fmtNum(total), k: facets.length})
+          : `${fmtNum(total)} articles across ${facets.length} channels`;
+        box.innerHTML = `<div class="hint muted" style="margin-bottom:4px">${esc(totalLine)}</div>`
+          + `<div style="display:flex;gap:6px;flex-wrap:wrap">` + facets.map(f =>
+          `<button class="chip" onclick="openChannelCorpus(${esc(JSON.stringify(f.source_type))})" title="${esc(t("An asserted content channel (newsletter, web article, wiki, statistic, law, market, discovery), never a quality score. Click a channel to explore its corpus."))}">${esc(f.source_type)} <span class="muted">${esc(String(f.articles))} · ${esc(share(f.articles))}</span></button>`).join("")
           + `</div>`;
       } catch (e) { panel.hidden = true; box.innerHTML = ""; }
     }

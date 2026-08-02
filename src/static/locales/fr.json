@@ -2349,5 +2349,6 @@
   "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.": "Résumé hiérarchique en {n} parties — chaque partie a été résumée, puis ces résumés ont été résumés ensemble.",
   "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "Traduit en {n} parties — l’article a été découpé aux limites des paragraphes et chaque partie a été traduite.",
   "… {n} bytes not shown …": "… {n} octets non affichés …",
-  "The line breaks where nothing was recorded — a gap is not a zero.": "La courbe s'interrompt là où rien n'a été enregistré — une absence n'est pas un zéro."
+  "The line breaks where nothing was recorded — a gap is not a zero.": "La courbe s'interrompt là où rien n'a été enregistré — une absence n'est pas un zéro.",
+  "{n} articles across {k} channels": "{n} articles répartis sur {k} canaux"
 }

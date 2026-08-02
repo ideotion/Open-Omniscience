@@ -2349,5 +2349,6 @@
   "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.": "{n} অংশ জুড়ে স্তরভিত্তিক সারসংক্ষেপ — প্রতিটি অংশের সারসংক্ষেপ করা হয়েছে, তারপর সেই সারসংক্ষেপগুলি একসাথে সারসংক্ষেপ করা হয়েছে।",
   "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "{n} অংশে অনূদিত — নিবন্ধটি অনুচ্ছেদের সীমানায় ভাগ করা হয়েছে এবং প্রতিটি অংশ অনুবাদ করা হয়েছে।",
   "… {n} bytes not shown …": "… {n} বাইট দেখানো হয়নি …",
-  "The line breaks where nothing was recorded — a gap is not a zero.": "যেখানে কিছুই রেকর্ড হয়নি সেখানে রেখাটি ভেঙে যায় — ফাঁক মানে শূন্য নয়।"
+  "The line breaks where nothing was recorded — a gap is not a zero.": "যেখানে কিছুই রেকর্ড হয়নি সেখানে রেখাটি ভেঙে যায় — ফাঁক মানে শূন্য নয়।",
+  "{n} articles across {k} channels": "{k}টি চ্যানেল জুড়ে {n}টি নিবন্ধ"
 }

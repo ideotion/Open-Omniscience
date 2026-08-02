@@ -1803,7 +1803,8 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     shares, and the framework-preferred form is **already shipped** as `_ooShareBars`
     (`app.js:8564`, currently ooDonut's own >5-slice fallback) — so it is one line of wiring, with
     none of a waffle's apportionment, largest-remainder tie-breaking or vanishing-sub-one-cell
-    problems. **AND THE DEFECT, found by the adversarial honesty pass and hand-verified, FIXED in
+    problems. RESOLVED DIFFERENTLY AND SHIPPED in the same PR: the shares went to the CHIPS (which are clickable, and `_ooShareBars` rows are not — replacing them would have lost the
+    open-the-corpus tool), with the denominator stated and a sub-0.5% channel reading "<1%". **AND THE DEFECT, found by the adversarial honesty pass and hand-verified, FIXED in
     the same PR:** `source_type_facets` applied NO quarantine filter while `_query_articles`
     applies `Article.quarantined.isnot(True)` ALWAYS — yet the facet's own docstring stated "the
     facet count for a channel EQUALS what clicking it in /api/articles returns". That equality was

@@ -2349,5 +2349,6 @@
   "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.": "分 {n} 部分的分层摘要——先分别摘要每一部分，再将这些摘要合并摘要。",
   "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "分 {n} 部分翻译——文章按段落边界拆分，每一部分都已翻译。",
   "… {n} bytes not shown …": "… 未显示 {n} 字节 …",
-  "The line breaks where nothing was recorded — a gap is not a zero.": "没有记录的时段线条会断开——空缺不等于零。"
+  "The line breaks where nothing was recorded — a gap is not a zero.": "没有记录的时段线条会断开——空缺不等于零。",
+  "{n} articles across {k} channels": "{n} 篇文章，分布于 {k} 个渠道"
 }
