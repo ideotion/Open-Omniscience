@@ -1633,6 +1633,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     and when correcting a wrong constant, prefer fixing its UNIT over inventing a new
     number — the 0.5 MB figure was right, only its denominator was wrong, so the fix
     needed no new estimate to defend.
+  - **A MUTATION TEST MUST REVERT EVERY MECHANISM THE FIX SHIPPED — reverting one of two
+    proves nothing and reads as "the guard is dead" (2026-08-02, the WAL-starvation
+    recalibration):** checking that `test_wal_reader_starvation`'s discriminating
+    assertion still bites, I removed PR-D's between-producer `session.commit()` and the
+    test still PASSED. The tempting conclusion — that the guard had silently stopped
+    discriminating, which the file's own comments warn is a thing that happened before —
+    was WRONG. PR-D shipped TWO independent WAL-releasing mechanisms
+    (`_release_transaction` *and* `_WalGuardResult.fetchmany`'s periodic in-scan close),
+    and either alone lets a checkpoint through, so a single-mechanism mutation changes
+    nothing. Reverting both fails loudly and by name. RULE: before concluding a guard is
+    vacuous, grep the fix for every path that satisfies it and neuter ALL of them —
+    otherwise the mutation is testing your model of the fix, not the fix. Corollary worth
+    keeping about the RECALIBRATION itself: the test was tuned so tightly (macOS measured
+    2,006,504 bytes against a 2,097,152 bar — 96% of the way) that ordinary platform
+    variance tipped it, and the honest lever was the one the file's own failure messages
+    already named (`_TARGET_WRITES`, which raises WAL PRESSURE) rather than the assertion
+    threshold. Raising the input a guard is fed strengthens a reproduction; lowering the
+    bar it must clear weakens it, and only one of those is a legitimate response to a red
+    lane. Calibrate against the WEAKEST platform observed, not the strongest, and record
+    the per-platform measurement beside the constant so the next session does not
+    re-derive it.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD IMPRESSIONS 2026-08-01 — Home-alerts relevance/card system · Home overview subtabs ·
