@@ -2347,5 +2347,6 @@
   "paused — your batch is running": "रुका हुआ — आपका बैच चल रहा है",
   "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "यह मशीन स्थानीय अनुमान की व्यावहारिकता रेखा से नीचे है ({r}) — यहाँ पृष्ठभूमि AI डिफ़ॉल्ट रूप से बंद है। आप फिर भी इसे शुरू कर सकते हैं।",
   "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.": "{n} भागों पर पदानुक्रमित सारांश — प्रत्येक भाग का सारांश बनाया गया, फिर उन सारांशों का एक साथ सारांश बनाया गया।",
-  "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "{n} भागों में अनुवादित — लेख को अनुच्छेद सीमाओं पर विभाजित किया गया और हर भाग का अनुवाद किया गया।"
+  "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "{n} भागों में अनुवादित — लेख को अनुच्छेद सीमाओं पर विभाजित किया गया और हर भाग का अनुवाद किया गया।",
+  "… {n} bytes not shown …": "… {n} बाइट नहीं दिखाए गए …"
 }

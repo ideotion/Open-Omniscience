@@ -2347,5 +2347,6 @@
   "paused — your batch is running": "pausiert — Ihr Stapel läuft",
   "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "Dieser Rechner liegt unter der Praktikabilitätsgrenze für lokale Inferenz ({r}) — Hintergrund-KI ist hier standardmäßig aus. Sie können sie trotzdem starten.",
   "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.": "Hierarchische Zusammenfassung über {n} Teile — jeder Teil wurde zusammengefasst, dann wurden diese Zusammenfassungen gemeinsam zusammengefasst.",
-  "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "In {n} Teilen übersetzt — der Artikel wurde an Absatzgrenzen geteilt und jeder Teil wurde übersetzt."
+  "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "In {n} Teilen übersetzt — der Artikel wurde an Absatzgrenzen geteilt und jeder Teil wurde übersetzt.",
+  "… {n} bytes not shown …": "… {n} Bytes nicht angezeigt …"
 }

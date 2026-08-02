@@ -152,9 +152,17 @@ def test_compute_server_args_no_vram_reading_is_a_conservative_default():
 
 
 def test_compute_server_args_scales_with_vram():
+    """AMENDED 2026-08-02. This asserted ``large >= small``, which a CONSTANT
+    satisfies -- and the value was a constant: every card from 6 GB to 80 GB got
+    max_model_len 32768, because the token estimate was ~1000x too generous and the
+    cap decided every machine. The test passed for years while the function did not
+    scale at all and its published method string said it did. Strict inequality is
+    the whole point."""
     small = V.compute_server_args(8192)   # 8 GB
     large = V.compute_server_args(24576)  # 24 GB
-    assert large["max_model_len"] >= small["max_model_len"]
+    assert large["max_model_len"] > small["max_model_len"], (
+        "a bigger card must buy more context -- equality means the cap is deciding"
+    )
     assert 0 < small["gpu_memory_utilization"] <= 0.95
     assert 0 < large["gpu_memory_utilization"] <= 0.95
 
