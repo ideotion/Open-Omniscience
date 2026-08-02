@@ -1774,11 +1774,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     attempts-before-verdict is right-censored and degenerate by construction; articles-per-source
     is ~90 % a single zero bin; and the only genuinely histogram-shaped data (per-source
     extraction-validity rates) comes from an endpoint MEASURED to time out at target scale.
-  • **per-language small multiples — the RENDERER ALREADY SHIPS** (`smallMultiplesSvg`, on
-    `ooViz.gridLayout`). The missing piece is a data feed: there is NO per-language series
-    anywhere, so this needs a new snapshot metric family (unbounded cardinality — a real design
-    decision), and pooling asserted with deduced language would publish a deduced value carrying
-    an asserted value's visual weight.
+  • **per-language small multiples — BLOCKED-NO-DATA as a frontend slice, but the highest-value
+    candidate IF the feed is built.** The RENDERER already ships (`smallMultiplesSvg`, on
+    `ooViz.gridLayout`); what is missing is data. There is NO per-language series anywhere —
+    every per-language `group_by` in the tree is a single point-in-time snapshot and
+    `KeywordMention` has no language column, so the cheap mention-side trend path is closed too.
+    Labelling it "build-with-caveats" on the strength of a feed that does not exist invites
+    someone to start drawing, so the verdict maps to the bar actually tested. WHY IT IS STILL
+    the one worth building next: `language_equilibrium` is a LIVE scheduler lever on a strongly
+    non-Anglophone corpus, and an operator tuning it has ZERO feedback surface — "which languages
+    is my corpus actually growing in" is mission-central and currently unanswerable. Building it
+    means a new snapshot metric family (unbounded cardinality — a real design decision), and
+    asserted vs deduced language must not be pooled, or a deduced value carries an asserted
+    one's visual weight.
   • **corpus-delta slope chart — the slope RENDERER ALREADY SHIPS** (`slopeChartSvg`). Three
     defects were LIVE-REPRODUCED against the real primitive: a zero "before" yields `Infinity`,
     which `isMissing` does not catch, and one affected dimension destroys the whole chart; raw
@@ -1786,11 +1794,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     indexing to 100 MOVES the fabricated comparability rather than removing it; and the
     framework's own prescription (a panel per dimension) renders every panel as an identical
     diagonal, which makes a +5-on-40,000 look exactly like a doubling.
-  • **waffle composition — REFUSED as decoration.** The project's committed chart framework never
-    mentions a waffle; its part-to-whole default is sorted bars or a single stacked bar, with
-    pie/donut only at ≤5 slices — which is precisely what `ooDonut` already does (>5 falls back to
-    theme-derived share bars). Recorded as a FINDING, per the framework's own rule that a rejected
-    technique is a finding and not a gap.
+  • **waffle composition — REFUSED as decoration, but it surfaced a REAL gap and a REAL defect.**
+    The framework never mentions a waffle (zero occurrences of waffle/isotype/pictogram/unit-chart
+    across all five files); its part-to-whole prescription is sorted bars or a single stacked bar,
+    pie/donut only at ≤5 slices — which is exactly what `ooDonut` already does. Recorded as a
+    FINDING, per the framework's own rule that a rejected technique is a finding, not a gap.
+    THE GAP UNDERNEATH IS REAL though: the channel chip row shows count with no total and no
+    shares, and the framework-preferred form is **already shipped** as `_ooShareBars`
+    (`app.js:8564`, currently ooDonut's own >5-slice fallback) — so it is one line of wiring, with
+    none of a waffle's apportionment, largest-remainder tie-breaking or vanishing-sub-one-cell
+    problems. **AND THE DEFECT, found by the adversarial honesty pass and hand-verified, FIXED in
+    the same PR:** `source_type_facets` applied NO quarantine filter while `_query_articles`
+    applies `Article.quarantined.isnot(True)` ALWAYS — yet the facet's own docstring stated "the
+    facet count for a channel EQUALS what clicking it in /api/articles returns". That equality was
+    a stated PROPERTY and it was false on any corpus with quarantined articles. Quiet in a chip
+    label; a fabricated total the moment anything encodes one article as one countable unit —
+    which is precisely how the waffle proposal exposed it. (Same family as the standing quarantine
+    remainder: omnibar/watches/reporting/framing are still ungated.)
   **ALSO STILL REMAINING from Session D:** the §1.9 sparse-rule reach DECISION for
   `ringDumbbellSvg`/`commodityOverlaySvg` (flagged, not decided); and the maintainer click-through
   /HTML exports for every slice above.
