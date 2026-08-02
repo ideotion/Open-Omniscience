@@ -775,6 +775,12 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         out["batches"].append({"batch_id": bid, **res})
         out["articles_reindexed"] += int(res.get("reindexed") or 0)
         out["articles_failed"] += int(res.get("failed") or 0)
+    # A cancel during the LAST batch leaves the loop normally, so the top-of-loop check
+    # never sees it -- without this, a partial run would report stopped:false and read as
+    # a completed drain. reindex_imported_articles takes should_stop, so it genuinely can
+    # return early on the final batch.
+    if ctx.stopping:
+        out["stopped"] = True
     # Re-read rather than infer: a batch only leaves the backlog when it was stamped
     # complete, so this reports what is actually LEFT, not what we believe we did.
     after = reindex_backlog()

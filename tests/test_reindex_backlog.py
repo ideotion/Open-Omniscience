@@ -296,6 +296,32 @@ def test_the_resume_worker_stops_cooperatively_and_says_so(monkeypatch):
     assert calls == [1], "it stopped at the BATCH boundary, mid-backlog"
 
 
+def test_a_cancel_during_the_LAST_batch_is_still_reported_as_stopped(monkeypatch):
+    """The top-of-loop check never sees a cancel that lands on the final batch -- the
+    loop just ends. Without a check after it, a partial drain reports stopped:false and
+    reads as a completed one, which is the reassurance this whole guard exists to
+    prevent. reindex_imported_articles takes should_stop, so it genuinely can return
+    early there."""
+    import src.api.backup_v2 as B
+    import src.backup.merge as M
+
+    monkeypatch.setattr(M, "reindex_backlog", lambda: {
+        "available": True,
+        "batches": [{"batch_id": 1, "articles": 1}],
+        "batches_pending": 1,
+        "articles_pending": 1,
+    })
+
+    ctx = _Ctx()
+
+    def _reindex(bid, **kw):
+        ctx.stopping = True  # cancelled while the ONLY batch is in flight
+        return {"reindexed": 0, "failed": 0}
+
+    monkeypatch.setattr(M, "reindex_imported_articles", _reindex)
+    assert B._reindex_resume_worker(ctx)["stopped"] is True
+
+
 def test_an_unreadable_backlog_refuses_rather_than_reporting_nothing_to_do(monkeypatch):
     """`available: false` means UNKNOWN. Treating it as an empty backlog here would
     make the resume job silently no-op on exactly the store that most needs it."""
