@@ -460,3 +460,99 @@ def test_corpus_counters_available_branch_counts_real_rows(tmp_path):
     assert counters == {
         "available": True, "articles": 1, "keywords": 2, "mentions": 2,
     }
+
+
+# --------------------------------------------------------------------------- #
+#  a member call site must pass every FastAPI-defaulted argument EXPLICITLY
+# --------------------------------------------------------------------------- #
+def test_no_member_call_site_leaves_a_Query_default_unpassed():
+    """Field bundle 2026-08-02: `run-journal.json` died with "slice indices must be
+    integers or None" -- `_all_diagnostics_members` called `run_journal(download=False)`
+    without `limit`, so the Query(20) SENTINEL OBJECT reached `list_runs()[:limit]`.
+
+    The repo already carried this lesson from `ai.json` (an unresolved Depends is a
+    sentinel, and Query(False) is TRUTHY), but the guard written then was specific to
+    that one member. Two further call sites were wrong at the same moment and nothing
+    said so. This is the general form: EVERY route called directly from the member list
+    must be handed every argument FastAPI would otherwise resolve.
+
+    Structural on purpose -- it compares each CALL against the callee's real SIGNATURE,
+    which is the composition the "a wiring test must compose the actual route" lesson
+    asks for. Checking a signature alone would pass while the call was broken, which is
+    exactly how this shipped.
+    """
+    import ast
+    import inspect
+    import re
+
+    src = inspect.getsource(d)
+    tree = ast.parse(src)
+
+    fastapi_defaults: dict[str, list[str]] = {}
+    for node in tree.body:
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        a = node.args
+        names = a.args + a.kwonlyargs
+        defaults = (
+            [None] * (len(a.args) - len(a.defaults)) + list(a.defaults) + list(a.kw_defaults)
+        )
+        sentinels = [
+            arg.arg
+            for arg, dflt in zip(names, defaults)
+            if isinstance(dflt, ast.Call)
+            and getattr(getattr(dflt, "func", None), "id", None)
+            in ("Query", "Body", "Form", "File", "Depends")
+        ]
+        if sentinels:
+            fastapi_defaults[node.name] = sentinels
+
+    block = src.split("def _all_diagnostics_members", 1)[1].split("\ndef ", 1)[0]
+    offenders = []
+    for m in re.finditer(r'\("([^"]+)",\s*lambda:\s*([\w_]+)\(([^)]*)\)', block):
+        member, fn, argstr = m.group(1), m.group(2), m.group(3)
+        if fn not in fastapi_defaults:
+            continue
+        passed = set(re.findall(r"(\w+)\s*=", argstr))
+        missing = [p for p in fastapi_defaults[fn] if p not in passed]
+        if missing:
+            offenders.append(f"{member} -> {fn}() missing {', '.join(missing)}")
+
+    assert not offenders, (
+        "these bundle members call a route directly without passing an argument FastAPI "
+        "would have resolved; the unresolved default is a sentinel OBJECT, not its "
+        "apparent value:\n  " + "\n  ".join(offenders)
+    )
+
+
+def test_an_unserialisable_leaf_is_marked_in_place_not_thrown_away():
+    """`card-audit.json` ran 2,396 s -- 41% of the whole bundle -- and then raised
+    "Object of type Query is not JSON serializable" at the ENCODE step, discarding all
+    40 minutes of it. One bad leaf must never destroy an expensive report, and the
+    marker has to NAME the type so the offending producer is identifiable from the
+    artefact instead of by spending the 40 minutes again."""
+
+    class _Weird:
+        pass
+
+    payload = {"ok": 1, "nested": {"bad": _Weird(), "fine": "text"}}
+    out = json.loads(d._member_bytes(payload))
+    assert out["ok"] == 1, "the rest of the report survives"
+    assert out["nested"]["fine"] == "text"
+    bad = out["nested"]["bad"]
+    assert bad[d._UNSERIALISABLE] is True
+    assert bad["type"] == "_Weird", "the type is named, so the leak is locatable"
+
+
+def test_an_unserialisable_leaf_is_never_silently_stringified():
+    """`default=str` would have written "<Query object at 0x7f...>" into the report as
+    if it were a string field -- a reader could not tell it from real data. A value that
+    could not be encoded must be distinguishable from one that was."""
+
+    class _Weird:
+        def __str__(self) -> str:
+            return "totally normal text"
+
+    out = json.loads(d._member_bytes({"x": _Weird()}))
+    assert out["x"] != "totally normal text"
+    assert isinstance(out["x"], dict) and out["x"][d._UNSERIALISABLE] is True
