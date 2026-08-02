@@ -2371,5 +2371,8 @@
   "Nothing to download — every ticked model was refused.": "Nichts herunterzuladen — jedes angehakte Modell wurde abgelehnt.",
   "A model download is already running.": "Ein Modell-Download läuft bereits.",
   "Downloading:": "Wird heruntergeladen:",
-  "Download failed:": "Download fehlgeschlagen:"
+  "Download failed:": "Download fehlgeschlagen:",
+  "Unresolved — this would settle it:": "Ungeklärt — das würde es entscheiden:",
+  "search-verified": "per Suche belegt",
+  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "Der Beschaffungslauf hat diese Kennung genannt, aber kein Seitenabruf wurde dafür festgehalten. Sie kann falsch sein; dann schlägt der Download schlicht fehl."
 }

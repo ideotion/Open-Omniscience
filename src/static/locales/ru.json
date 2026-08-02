@@ -2371,5 +2371,8 @@
   "Nothing to download — every ticked model was refused.": "Загружать нечего — все отмеченные модели отклонены.",
   "A model download is already running.": "Загрузка модели уже выполняется.",
   "Downloading:": "Загрузка:",
-  "Download failed:": "Сбой загрузки:"
+  "Download failed:": "Сбой загрузки:",
+  "Unresolved — this would settle it:": "Не решено — это внесёт ясность:",
+  "search-verified": "подтверждено поиском",
+  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "Сессия сбора назвала этот идентификатор, но обращение к странице не зафиксировано. Он может быть неверным; тогда загрузка просто не удастся."
 }

@@ -1,11 +1,12 @@
-"""The bench roster tells the truth about six models, including where it has none.
+"""The bench roster tells the truth about its models, including where it has none.
 
 Maintainer ask 2026-08-02: buttons that install a chosen set of bench models on
 whichever backend serves. The identifiers came from an internet-connected session,
 because the build sandbox cannot reach huggingface.co or ollama.com (the gateway 403s
 both) -- the exact condition under which this project has shipped invented model tags
 before, and the reason ``src/llm/ollama.py`` still carries the line "(The previous
-catalog -- gemma4:e2b, llama4, qwen3.5 -- was hallucinated.)".
+catalog -- gemma4:e2b, llama4, qwen3.5 -- was hallucinated.)". One row is at the weaker
+``search-verified`` tier and says so; the tests below make that impossible to omit.
 
 So what is pinned here is not "these strings are correct" -- no test in this repo can
 establish that. It is the SHAPE of the honesty around them: a model absent from a
@@ -52,12 +53,12 @@ def test_an_absent_model_names_what_was_searched(backend):
 
 
 def test_selecting_an_unavailable_model_is_refused_not_dropped():
-    """Asking for six and receiving four downloads with no explanation is the silence
+    """Asking for every model and receiving a subset with no explanation is the silence
     the whole roster exists to prevent."""
     keys = [e["key"] for e in R.BENCH_ROSTER]
     ok, refused = R.identifiers_for("ollama", keys)
     assert len(ok) + len(refused) == len(keys), "every requested key is accounted for"
-    assert refused, "two of the six are genuinely not on Ollama"
+    assert refused, "several rows genuinely have no Ollama tag"
     for r in refused:
         assert r["reason"]
 
@@ -166,7 +167,7 @@ def test_something_is_pre_ticked_so_the_button_is_not_a_no_op(backend):
 #  Agreement with what this repo already verified
 # --------------------------------------------------------------------------- #
 def test_the_calibration_rows_agree_with_the_shipped_catalog():
-    """Two of the six were already verified in-tree, and the acquisition run confirmed
+    """Two rows were already verified in-tree, and the acquisition run confirmed
     both independently. Pinning the agreement means a later edit to EITHER side that
     breaks it reddens here, instead of the two quietly drifting apart."""
     from src.llm.ollama import MINISTRAL_SUGGESTION, MODEL_CATALOG
@@ -465,7 +466,7 @@ def test_an_absent_model_is_rendered_disabled_rather_than_hidden():
 
 
 def test_the_install_reports_refusals_and_needs_consent():
-    """Ticking six and getting four downloads with no explanation is exactly the silence
+    """Ticking several and getting a subset with no explanation is exactly the silence
     the roster exists to prevent; and the download is clearnet, so it passes the AI
     egress consent like every sibling."""
     js = _app_js()
@@ -488,3 +489,111 @@ def test_the_bench_strings_are_translated():
         assert "Comparative-bench models" in data
         assert "Download the ticked models" in data
         assert data["Comparative-bench models"], f"{lang}: empty translation"
+
+
+# --------------------------------------------------------------------------- #
+#  Every identifier states its own provenance tier
+# --------------------------------------------------------------------------- #
+def test_no_identifier_can_be_added_without_saying_how_it_was_verified():
+    """The field only works if absence is impossible.
+
+    A default would silently claim the STRONGER tier for whoever forgot to think about
+    it, which inverts the point: this file exists because the project once shipped model
+    tags nobody had checked."""
+    for entry in R.BENCH_ROSTER:
+        for channel in ("hf", "ollama"):
+            block = entry.get(channel)
+            if block is None:
+                continue
+            assert "verification" in block, f"{entry['key']}.{channel}: no verification tier"
+            assert block["verification"] in {"fetched", "search-verified"}, entry["key"]
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_the_tier_reaches_the_panel(backend):
+    """Recorded but not rendered is the same as not recorded, for the operator."""
+    for row in R.roster_for(backend)["models"]:
+        if row["installable"]:
+            assert row["verification"], f"{row['key']}: tier lost in the projection"
+
+
+def test_exactly_the_rows_that_were_fetched_claim_to_have_been():
+    """The docstring says "almost every" precisely because one is not. If a later
+    session verifies it, this test is the place that notices the claim changed."""
+    weaker = {
+        e["key"] for e in R.BENCH_ROSTER
+        if (e.get("hf") or {}).get("verification") == "search-verified"
+    }
+    assert weaker == {"lfm25-1-2b-instruct"}, (
+        "a row moved provenance tier -- update the module docstring in the same commit"
+    )
+
+
+# --------------------------------------------------------------------------- #
+#  The LFM2.5 decision (maintainer, 2026-08-02): ADD the Instruct row, keep Base
+# --------------------------------------------------------------------------- #
+def test_the_base_row_survives_the_instruct_row_being_added():
+    """The regression guard for the decision itself. Base is what was ASKED for; the
+    Instruct row exists because the bench cannot measure a base checkpoint, not because
+    Base was wrong. A later tidy-up that collapses the two would be the substitution
+    this whole module refuses."""
+    keys = [e["key"] for e in R.BENCH_ROSTER]
+    assert "lfm25-1-2b-base" in keys
+    assert "lfm25-1-2b-instruct" in keys
+    base = next(e for e in R.BENCH_ROSTER if e["key"] == "lfm25-1-2b-base")
+    inst = next(e for e in R.BENCH_ROSTER if e["key"] == "lfm25-1-2b-instruct")
+    assert base["hf"]["repo"] != inst["hf"]["repo"]
+    assert "base_model" in base["flags"], "Base must keep saying what it is"
+    assert "base_model" not in inst["flags"]
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_neither_liquidai_row_is_pre_ticked(backend):
+    """Nobody has read the licence on either. An unread licence is not a default."""
+    rows = {r["key"]: r for r in R.roster_for(backend)["models"]}
+    for key in ("lfm25-1-2b-base", "lfm25-1-2b-instruct"):
+        assert rows[key]["default_on"] is False
+        assert "licence_unverified" in rows[key]["flags"]
+
+
+def test_the_instruct_row_does_not_borrow_facts_from_its_sibling():
+    """Two repos, one of which was read. Copying the Base card's parameter split or
+    licence badge across would invent agreement between pages -- the same move as
+    substituting a near-match, one field down."""
+    inst = next(e for e in R.BENCH_ROSTER if e["key"] == "lfm25-1-2b-instruct")["hf"]
+    assert inst["params"] is None and inst["context_length"] is None
+    assert "unconfirmed" in inst["licence"]
+
+
+def test_an_unresolved_absence_says_what_would_settle_it():
+    """`LiquidAI/lfm2.5-1.2b-instruct` is the right variant at the right size; the only
+    question is whether that Ollama account is the publisher's. That is one lookup, and
+    a panel that renders it identically to a settled absence hides the cheap fix."""
+    row = next(r for r in R.roster_for("ollama")["models"] if r["key"] == "lfm25-1-2b-instruct")
+    assert row["installable"] is False
+    assert row["open_question"] and "first-party" in row["open_question"]
+    ok, refused = R.identifiers_for("ollama", ["lfm25-1-2b-instruct"])
+    assert ok == [], "an open question is not permission to install the guess"
+    assert refused[0]["reason"]
+
+
+def test_the_thinking_variant_is_not_offered_under_the_instruct_name():
+    """library/lfm2.5-thinking is first-party and the right size -- and emits reasoning
+    traces that fail format validity on three of the four constrained-output tasks. That
+    is a finding about reasoning models, not a LiquidAI capability measurement."""
+    entry = next(e for e in R.BENCH_ROSTER if e["key"] == "lfm25-1-2b-instruct")
+    assert entry["ollama"] is None
+    absent = entry["ollama_absent"]
+    assert "thinking" in absent["searched"].lower()
+    assert absent["passthrough_tag"] is None
+    for alt in R.ALTERNATIVES:
+        assert "thinking" not in alt["tag"].lower()
+
+
+def test_the_panel_renders_the_weaker_tier_and_the_open_question():
+    """Recorded but not rendered is, for the operator, the same as not recorded --
+    and both of these exist precisely to reach a human before a multi-GB click."""
+    body = _fn_body(_app_js(), "loadBenchRoster")
+    assert 'm.verification === "fetched"' in body, "the weaker tier must be marked"
+    assert "search-verified" in body
+    assert "m.open_question" in body, "an absence somebody can close must say so"

@@ -1882,6 +1882,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   (the coordinator groups by model implicitly, one member at a time, but a several-models config
   and its co-fit gate are a separate slice); and the maintainer click-through/HTML exports for
   every frontend slice above.
+  **BENCH-ROSTER INSTALL BUTTONS SHIPPED 2026-08-02 (maintainer ask; PR #844, shipped.csv rows
+  "llm/bench"): a tickbox panel beside BOTH install controls**, each naming and posting the
+  backend it renders (a click under the vLLM heading can never install Ollama tags — the
+  routing-vs-provisioning confusion that shipped a field bug two days earlier). Identifiers came
+  from a live acquisition run; `BENCH_ROSTER_AS_OF` is registered. **THE LFM2.5 RULING
+  (maintainer, same day, after the recommendation): ADD the Instruct row, KEEP Base, never
+  substitute.** Rationale worth preserving: four of the bench's five tasks
+  (`model_bench.BENCH_TASKS` — perception · triage · source_tags · langdetect) are
+  CONSTRAINED-OUTPUT instruct tasks, so a base checkpoint yields one usable metric (latency) out
+  of five plus four near-zeros that mean "wrong tool", not "bad model" — and a near-zero with no
+  memory of why is the number that gets misread later. Base stays as the row that was asked for,
+  unticked behind `base_model`; Instruct is an ADDITION, not a replacement (both pinned by a
+  regression test against a future tidy-up that would collapse them). **NEW SCHEMA RULE, worth
+  reusing:** every identifier block carries `verification: "fetched" | "search-verified"` with
+  **NO DEFAULT** — a missing tier raises, because a default would silently claim the STRONGER
+  tier for whoever forgot to think about it, which inverts the point of an honesty field. Exactly
+  one row is `search-verified` today (the Instruct repo id — the run NAMED it, no page fetch was
+  recorded), and a test pins that set so the module docstring's "almost every" can never drift
+  from the data. **STILL OPERATOR-GATED (one lookup, recorded as an `open_question` in the row and
+  rendered in the panel): is the Ollama account `LiquidAI` the publisher's own?** If yes,
+  `LiquidAI/lfm2.5-1.2b-instruct` is a FIRST-PARTY tag and that absence disappears; if somebody
+  took the name, it stands. Deliberately NOT resolved by guessing — and note this is a different
+  provenance claim from the SmolLM3 community re-uploads rejected for having no known builder.
+  `library/lfm2.5-thinking` is first-party and the right size but is NOT offered under the
+  Instruct name: a Thinking variant's reasoning traces fail format validity on three of the four
+  constrained-output tasks, which is a finding about reasoning models, not a LiquidAI measurement.
   **TWO REUSABLE LESSONS FROM SESSION E (also in the Session-rituals Lessons list):** (a)
   `re.split` CONSUMES its separator, so splitting on `(?<=[.!?])\s+` silently drops the space
   between every sentence — a translation reassembled from those pieces comes back subtly wrong

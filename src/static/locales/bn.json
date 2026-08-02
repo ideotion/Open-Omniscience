@@ -2371,5 +2371,8 @@
   "Nothing to download — every ticked model was refused.": "নামানোর কিছু নেই — টিক দেওয়া প্রতিটি মডেল প্রত্যাখ্যাত হয়েছে।",
   "A model download is already running.": "একটি মডেল ইতিমধ্যেই নামানো হচ্ছে।",
   "Downloading:": "নামানো হচ্ছে:",
-  "Download failed:": "নামানো ব্যর্থ:"
+  "Download failed:": "নামানো ব্যর্থ:",
+  "Unresolved — this would settle it:": "অমীমাংসিত — এটি নিষ্পত্তি করবে:",
+  "search-verified": "অনুসন্ধানে যাচাই করা",
+  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "সংগ্রহ-সেশন এই শনাক্তকারীটির নাম বলেছে, কিন্তু এর জন্য কোনো পৃষ্ঠা আনার নথি নেই। এটি ভুল হতে পারে; তখন নামানো কেবল ব্যর্থ হবে।"
 }

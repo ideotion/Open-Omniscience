@@ -2371,5 +2371,8 @@
   "Nothing to download — every ticked model was refused.": "Tidak ada yang diunduh — semua model yang dicentang ditolak.",
   "A model download is already running.": "Unduhan model sudah berjalan.",
   "Downloading:": "Mengunduh:",
-  "Download failed:": "Unduhan gagal:"
+  "Download failed:": "Unduhan gagal:",
+  "Unresolved — this would settle it:": "Belum terjawab — ini yang akan memastikannya:",
+  "search-verified": "diverifikasi lewat pencarian",
+  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "Sesi akuisisi menyebut pengidentifikasi ini, tetapi tidak ada catatan pengambilan halaman untuknya. Bisa saja keliru; kalau begitu unduhan hanya akan gagal."
 }

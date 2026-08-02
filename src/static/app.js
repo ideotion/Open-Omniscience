@@ -20331,14 +20331,24 @@
             `<div><strong>${esc(m.label)}</strong> ${flags}` +
             `<div class="muted">${esc(t("Not available here:"))} ${esc(m.absent_reason || "")}</div>` +
             (m.searched ? `<div class="hint">${esc(t("Searched:"))} ${esc(m.searched)}</div>` : "") +
+            // An absence somebody can close in one lookup must not read like a dead end.
+            (m.open_question
+              ? `<div class="card-caveat">${esc(t("Unresolved — this would settle it:"))} ${esc(m.open_question)}</div>`
+              : "") +
             (m.caveat ? `<div class="card-caveat">${esc(m.caveat)}</div>` : "") +
             `</div></div>`;
         }
         const on = picked ? picked.includes(m.key) : m.default_on;
+        // A weaker provenance tier is stated ON the identifier it qualifies. "fetched"
+        // is the norm and says nothing extra; "search-verified" means the acquisition
+        // run named the string but no page fetch was recorded for it, and an operator
+        // about to download several GB is owed that distinction.
+        const prov = m.verification === "fetched" ? "" :
+          ` <span class="pill" title="${esc(t("The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is."))}">${esc(t("search-verified"))}</span>`;
         return `<div class="row" style="align-items:start;gap:8px;margin-top:6px">` +
           `<input type="checkbox" class="bench-pick" data-backend="${esc(backend)}" data-key="${esc(m.key)}"${on ? " checked" : ""}>` +
           `<div><strong>${esc(m.label)}</strong> ${flags}` +
-          `<div class="hint"><code>${esc(m.identifier)}</code>${facts ? " · " + facts : ""}</div>` +
+          `<div class="hint"><code>${esc(m.identifier)}</code>${prov}${facts ? " · " + facts : ""}</div>` +
           (m.quant_note ? `<div class="hint">${esc(m.quant_note)}</div>` : "") +
           (m.note ? `<div class="muted">${esc(m.note)}</div>` : "") +
           `</div></div>`;

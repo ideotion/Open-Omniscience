@@ -2371,5 +2371,8 @@
   "Nothing to download — every ticked model was refused.": "没有可下载的内容——所有勾选的模型都被拒绝。",
   "A model download is already running.": "已有一个模型下载在进行中。",
   "Downloading:": "正在下载：",
-  "Download failed:": "下载失败："
+  "Download failed:": "下载失败：",
+  "Unresolved — this would settle it:": "尚未确定——以下这一点能给出答案：",
+  "search-verified": "经检索确认",
+  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "采集会话提到了这个标识符，但没有记录到实际访问过该页面。它可能是错的；若真如此，下载会直接失败。"
 }

@@ -2371,5 +2371,8 @@
   "Nothing to download — every ticked model was refused.": "لا شيء للتنزيل — رُفض كل نموذج محدّد.",
   "A model download is already running.": "هناك تنزيل نموذج قيد التشغيل بالفعل.",
   "Downloading:": "جارٍ التنزيل:",
-  "Download failed:": "فشل التنزيل:"
+  "Download failed:": "فشل التنزيل:",
+  "Unresolved — this would settle it:": "غير محسوم — هذا ما سيحسمه:",
+  "search-verified": "مُتحقَّق منه بالبحث",
+  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "ذكرت جلسة جمع البيانات هذا المعرّف، لكن لم يُسجَّل أي جلب للصفحة. قد يكون خاطئاً؛ وعندها سيفشل التنزيل ببساطة."
 }

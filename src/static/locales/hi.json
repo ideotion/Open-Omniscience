@@ -2371,5 +2371,8 @@
   "Nothing to download — every ticked model was refused.": "डाउनलोड करने को कुछ नहीं — हर चुना गया मॉडल अस्वीकृत हुआ।",
   "A model download is already running.": "एक मॉडल डाउनलोड पहले से चल रहा है।",
   "Downloading:": "डाउनलोड हो रहा है:",
-  "Download failed:": "डाउनलोड विफल:"
+  "Download failed:": "डाउनलोड विफल:",
+  "Unresolved — this would settle it:": "अनसुलझा — इससे तय हो जाएगा:",
+  "search-verified": "खोज से सत्यापित",
+  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "अधिग्रहण सत्र ने यह पहचानकर्ता बताया, पर इसके लिए कोई पृष्ठ-फ़ेच दर्ज नहीं है। यह ग़लत हो सकता है; तब डाउनलोड बस विफल हो जाएगा।"
 }
