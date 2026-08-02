@@ -1482,6 +1482,36 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     SUCCEEDED — without it the report "the install fails" would have been investigated as an
     install bug. Instrumentation earns its keep on the first field report that contradicts its
     own headline.
+  - **A SELECTION FUNCTION ANSWERS THE QUESTION IT WAS WRITTEN FOR — reading its
+    answer for a DIFFERENT question is where the fabrication enters (2026-08-02,
+    "the model does not download"):** `resolve_backend()` answers ROUTING — who can
+    serve a request right now — so an unreachable backend is correctly disqualified
+    and Ollama is the ruled fallback. The default-model plan read that answer as a
+    DOWNLOAD target, and on a GPU machine with vLLM installed-but-stopped and Ollama
+    absent it named an Ollama tag and queued a pull into a daemon that does not
+    exist — while the panel directly above said "This machine will use vLLM",
+    because the frontend picked its target from the hardware. The resolver was not
+    wrong; the *reuse* was. PROVISIONING asks what the machine will serve with ONCE
+    SET UP, where not-running-yet is the normal state, so it must decide from what
+    is INSTALLED and fall back to the same hardware rule the other consumer already
+    uses — otherwise two notions of "which backend" meet inside one chain and
+    disagree. When you reach for an existing decision function, name the question it
+    was built to answer and check it is yours; if it is not, derive the second answer
+    from the same facts rather than adding a second probe. **SECOND DEFECT, and the
+    reason the first was silent:** the endpoint and its ONLY consumer never agreed
+    where the answer lives. `_followJob` returns when it sees a top-level `state` that
+    is not `"running"`; `/default-model/status` published none on EITHER branch (one
+    nested a job under `job`, the other returned a raw queue with no state at all), so
+    it polled every three seconds forever and the chain hung — and a poller with no
+    terminal condition is indistinguishable from slow work. When a payload feeds a
+    follower, the terminal condition is part of the contract; keep a third state
+    (`idle` = nothing was ever asked) distinct from success, or a never-started job
+    reads as a finished one. **THIRD, cheap and recurring:** a hand-written test
+    double of a payload drifts — a two-key resolver stub passed for months while
+    omitting every field a caller might read, then failed against *correct* code the
+    moment a new field was consulted. Build the double with the payload's own builder
+    (`backend._result` here), so a double can never describe a machine that could not
+    exist.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD IMPRESSIONS 2026-08-01 — Home-alerts relevance/card system · Home overview subtabs ·
