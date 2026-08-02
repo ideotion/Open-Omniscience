@@ -1159,3 +1159,8 @@
     .ov-why { margin-top:5px; font-size:11.5px; color:var(--muted); line-height:1.45; }
     /* The compact Trending row folded into Overview (ruling 7a). */
     .ov-trend { display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin-bottom:9px; }
+
+    /* ---- Library subtab views (2026-08-01 ruling 9) ---------------------- */
+    /* Five views over the same seven panels; visibility only, so every panel
+       keeps its own markup, loaders and honest empty states. */
+    .lib-view > .panel:first-child { margin-top:0; }

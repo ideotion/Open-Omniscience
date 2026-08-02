@@ -1703,8 +1703,7 @@
       timemap: loadOoMapCoverage,   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
       law: loadGovernments,   // Governments tab (Countries · Map · Law subtabs)
       agenda: loadAgenda,
-      library: () => { renderLibraryOverview(); loadCoverage(); renderStorageFootprint("library-storage");
-        renderLibraryActivityGraphs(); renderLibraryWikiGraphs(); renderLibraryLawGraphs(); },  // stats handled by the live poller (startLive); the footprint walk is lazy, once
+      library: () => { _wireLibraryViews(); },  // per-view lazy loaders (2026-08-01 ruling 9); stats ride the live poller (startLive)
       custody: loadCustody,
       integrity: loadIntegrity,
       settings: loadSettings,
@@ -1721,6 +1720,7 @@
       agenda: "agenda-views", indices: "indices-cats", markets: "commodities-cats",
       law: "gov-subtabs",   // Governments: Countries · Map · Law
       timemap: "oomap-lenses",   // World map: Coverage · Stories · Places · Server IPs (field-test Item 6)
+      library: "library-views",  // Library: Overview · Activity · Tracked · Database & storage · World coverage
     };
     function _relocateSubtabs(name) {
       const strip = $("subtab-strip"); if (!strip) return;
@@ -8002,6 +8002,40 @@
     // layer). Honest counts + on-disk byte sizes only, no score; own stamp so the 16s poll
     // only repaints on a real change. The Database section below keeps the store detail.
     let _libOvStamp = "";
+    // -- Library subtabs (2026-08-01 ruling 9) ----------------------------- //
+    // Seven stacked sections became five views through the ONE universal subtab
+    // component (invariant #18). The panels are untouched — this is a regrouping,
+    // not a rewrite — and each view's loaders fire on SELECT, not on tab open, so
+    // opening the Library no longer pays for the recursive storage walk and the
+    // coverage map before you have asked for them ("folded must not mean
+    // fetched", the Advanced-tab precedent). Each view loads once per session.
+    let _libViewTabs = null, _libView = "overview";
+    const _libViewLoaded = new Set();
+    const _LIB_VIEW_LOADERS = {
+      overview: () => { renderLibraryOverview(); },
+      activity: () => { renderLibraryActivityGraphs(); },
+      tracked:  () => { renderLibraryWikiGraphs(); renderLibraryLawGraphs(); },
+      storage:  () => { renderStorageFootprint("library-storage"); },
+      coverage: () => { loadCoverage(); },
+    };
+    function selectLibraryView(key) {
+      if (!_LIB_VIEW_LOADERS[key]) key = "overview";
+      _libView = key;
+      document.querySelectorAll("#tab-library .lib-view").forEach(el => {
+        el.style.display = (el.id === "lib-view-" + key) ? "" : "none";
+      });
+      if (!_libViewLoaded.has(key)) {
+        _libViewLoaded.add(key);
+        try { _LIB_VIEW_LOADERS[key](); }
+        catch (e) { _libViewLoaded.delete(key); }   // a failed load must be retryable
+      }
+    }
+    function _wireLibraryViews() {
+      const nav = $("library-views");
+      if (!nav) { renderLibraryOverview(); return; }   // defensive: markup missing
+      if (!_libViewTabs) _libViewTabs = ooSubtabs(nav, selectLibraryView, {initial: _libView});
+      selectLibraryView(_libView);
+    }
     async function renderLibraryOverview() {
       const host = $("library-overview");
       if (!host) return;
@@ -8343,7 +8377,17 @@
       home:     {ms: 15000, fn: () => refreshHomeLive()},
       // Stats every tick; the coverage panel every 4th (it groups all sources,
       // cheap but no need for 4s cadence) — live data, so no Refresh button.
-      library:  {ms: 4000, fn: () => { loadDbStats(); if ((++_covTick % 4) === 1) { loadCoverage(); renderLibraryOverview(); } }},
+      // Only the VISIBLE Library view is polled (2026-08-01 ruling 9): refreshing a
+      // subtab nobody is looking at would re-fetch the coverage map and re-walk the
+      // counters behind the user's back, defeating the point of loading a view on
+      // select. Each branch refreshes exactly the panels its own view shows.
+      library:  {ms: 4000, fn: () => {
+        if (_libView === "storage") loadDbStats();
+        if ((++_covTick % 4) === 1) {
+          if (_libView === "coverage") loadCoverage();
+          if (_libView === "overview") renderLibraryOverview();
+        }
+      }},
       ingest:   {ms: 5000, fn: () => refreshSchedulerLive()},
       insights: {ms: 6000, fn: () => loadInsights()},
       wiki:     {ms: 6000, fn: () => refreshWikiLive()},

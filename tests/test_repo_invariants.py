@@ -7389,9 +7389,15 @@ def test_library_graphs_wired_and_downloaded_section_compressed():
     for fn in ("renderLibraryActivityGraphs", "renderLibraryWikiGraphs", "renderLibraryLawGraphs",
                "enlargeLibMetric"):
         assert f"function {fn}" in app, f"missing {fn}"
-    assert "renderLibraryActivityGraphs(); renderLibraryWikiGraphs(); renderLibraryLawGraphs();" in app, (
-        "the Library tab's show-dispatcher must render all three graph sections"
-    )
+    # Since the Library became five subtab views (2026-08-01 ruling 9) the three
+    # graph sections are rendered by their OWN view's loader rather than all at
+    # once on tab open -- deliberately, so opening the Library no longer pays for
+    # every panel ("folded must not mean fetched"). The guarantee that matters is
+    # unchanged and is what this now asserts: each renderer is reachable from the
+    # view registry, so no graph section is orphaned.
+    _lib_loaders = app.split("_LIB_VIEW_LOADERS = {", 1)[1].split("};", 1)[0]
+    for fn in ("renderLibraryActivityGraphs", "renderLibraryWikiGraphs", "renderLibraryLawGraphs"):
+        assert f"{fn}()" in _lib_loaders, f"{fn} must be reachable from a Library view loader"
     assert "dashChartSvg(series.map(" in app, "the small tile must reuse dashChartSvg, not a new renderer"
     assert "chartEnlarge(label" in app, "click-to-enlarge must reuse the existing chartEnlarge modal"
     assert "/api/library/history?metric=" in app
@@ -8145,4 +8151,40 @@ def test_the_ai_install_egress_window_is_wired_and_states_its_limit():
     assert 'id="egress-window-bar"' in tm, "/tasks must show an open window"
     assert "except the AI install you allowed" in tm, (
         "/tasks must not keep asserting the plain offline hover during a window"
+    )
+
+
+def test_library_is_five_subtab_views_with_lazy_loaders():
+    """2026-08-01 ruling 9: the Library's seven stacked sections become five views
+    (Overview · Activity · Tracked · Database & storage · World coverage) through the
+    ONE universal subtab component (invariant #18). Two properties matter beyond the
+    regrouping: the panels themselves are UNTOUCHED (a regrouping, not a rewrite, so no
+    loader or empty state is lost), and a view's loaders fire on SELECT rather than on
+    tab open -- "folded must not mean fetched", so opening the Library no longer pays
+    for the recursive storage walk and the coverage map up front."""
+    html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+
+    assert 'id="library-views"' in html, "the Library subtab nav must exist"
+    for key in ("overview", "activity", "tracked", "storage", "coverage"):
+        assert f'id="lib-view-{key}"' in html, f"missing Library view {key}"
+        assert f'data-tab="{key}"' in html, f"missing Library subtab button {key}"
+    # every original panel survives the regrouping
+    for host in ("library-overview", "lib-activity-graphs", "lib-wiki-graphs",
+                 "lib-law-graphs", "db-stats", "library-storage", "coverage-map",
+                 "coverage-table"):
+        assert f'id="{host}"' in html, f"the Library restructure must not lose #{host}"
+    # the ONE universal subtab component, and the nav rides the top strip like the others
+    assert "ooSubtabs(nav, selectLibraryView" in app, "must reuse ooSubtabs (invariant #18)"
+    assert 'library: "library-views"' in app, "the nav must join the facet-subtab strip"
+    # LAZY: the tab dispatcher no longer calls every loader
+    lib_dispatch = app.split("library: () => {", 1)[1].split("},", 1)[0]
+    for eager in ("loadCoverage()", "renderStorageFootprint("):
+        assert eager not in lib_dispatch, (
+            f"{eager} must fire on subtab select, not on Library tab open"
+        )
+    # ...and the live poller only refreshes the view actually on screen
+    poller = app.split("library:  {ms: 4000", 1)[1].split("}},", 1)[0]
+    assert '_libView === "coverage"' in poller and '_libView === "storage"' in poller, (
+        "the live poller must not refresh a Library view nobody is looking at"
     )

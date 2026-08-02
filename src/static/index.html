@@ -455,20 +455,38 @@
 
     <!-- ============================ INGEST ============================ -->
     <div class="tab-page" id="tab-library">
+    <!-- Library subtabs (2026-08-01 ruling 9): seven stacked sections became five
+         views via the ONE universal subtab component (invariant #18). The panels
+         themselves are untouched -- this is a regrouping, not a rewrite -- and the
+         heavy loaders (the recursive storage walk, the coverage map) fire on subtab
+         SELECT rather than on tab open, so opening the Library no longer pays for
+         every panel at once. -->
+    <nav class="tabs" id="library-views">
+      <button class="active" data-tab="overview">Overview</button>
+      <button data-tab="activity">Activity</button>
+      <button data-tab="tracked">Tracked</button>
+      <button data-tab="storage">Database &amp; storage</button>
+      <button data-tab="coverage">World coverage</button>
+    </nav>
+    <div class="lib-view" id="lib-view-overview">
     <section class="panel">
       <h2>Library</h2>
       <div class="hint" style="margin-bottom:10px">Everything you've DOWNLOADED and everything the app has
         EXTRAPOLATED from it — real counts and on-disk sizes, never an estimate.</div>
       <div id="library-overview"><div class="muted">Loading…</div></div>
     </section>
+    </div>
 
+    <div class="lib-view" id="lib-view-activity">
     <section class="panel">
       <h2>Activity</h2>
       <div class="hint" style="margin-bottom:10px">Small evolution graphs instead of bare live figures
         (2026-07-23 field feedback) — hourly snapshots, real history, click a chart to enlarge.</div>
       <div id="lib-activity-graphs"><div class="muted">Loading…</div></div>
     </section>
+    </div>
 
+    <div class="lib-view" id="lib-view-tracked">
     <section class="panel">
       <h2>Wikipedia tracked</h2>
       <div class="hint" style="margin-bottom:10px">Pages and revisions tracked over time (an hourly count,
@@ -482,7 +500,9 @@
         count, recorded from when this feature shipped).</div>
       <div id="lib-law-graphs"><div class="muted">Loading…</div></div>
     </section>
+    </div>
 
+    <div class="lib-view" id="lib-view-storage">
     <section class="panel">
       <h2>Database</h2>
       <div class="hint" style="margin-bottom:10px">Live counts from the unified store. Every figure is a real
@@ -499,7 +519,9 @@
         irreplaceable; the rest is re-downloadable. A recursive size measurement, so it runs on demand.</div>
       <div id="library-storage"><div class="muted">Loading…</div></div>
     </section>
+    </div>
 
+    <div class="lib-view" id="lib-view-coverage">
     <section class="panel">
       <h2>World coverage</h2>
       <div class="hint" style="margin-bottom:10px">A world map of how many ARTICLES you have collected per
@@ -518,6 +540,8 @@
       <div style="overflow:auto; margin-top:10px; max-height:420px"><table id="coverage-table"></table></div>
       <div id="coverage-gaps" class="hint" style="margin-top:10px"></div>
     </section>
+    </div>
+
     </div>
 
     <!-- ========================= CHAIN OF CUSTODY ==================== -->
