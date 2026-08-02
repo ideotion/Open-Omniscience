@@ -13353,6 +13353,196 @@
       if (btn) btn.disabled = false;
     }
 
+    // ---- E-S2 (2026-08-01, rulings 14-16): the COMPARATIVE model bench ---- //
+    // Freeze the inputs once, grade the anchors once, then measure every roster
+    // model over exactly those inputs. The panel deliberately shows the REFUSALS as
+    // prominently as the results: a model that is not installed, a backend that is
+    // unreachable and an ungraded anchor set are all facts the reader of the numbers
+    // needs, and hiding them would make a partial bench read as a complete one.
+    let _mbAnchors = null, _mbPolling = false;
+
+    async function mbBuildBatch(btn) {
+      const out = $("mb-batch"); if (btn) btn.disabled = true;
+      try {
+        const d = await api("/api/diagnostics/model-bench/batch", { method: "POST", body: JSON.stringify({}) });
+        _mbRenderBatch(d);
+      } catch (e) { if (out) out.innerHTML = `<div class="note err">${esc((e && e.message) || String(e))}</div>`; }
+      if (btn) btn.disabled = false;
+    }
+
+    function _mbRenderBatch(d) {
+      const out = $("mb-batch"); if (!out) return;
+      if (!d || d.available === false) {
+        out.innerHTML = `<span class="muted">${esc((d && d.reason) || "no frozen batch yet")}</span>`;
+        return;
+      }
+      const strata = (d.keyword_strata || []).map((s) =>
+        `${esc(s.language)} ${s.n} (${s.n_head} head · ${s.n_tail} tail)`).join(" · ");
+      out.innerHTML = `<b>${d.n_keywords || 0}</b> keywords · <b>${d.n_sources || 0}</b> sources · `
+        + `${(d.source_tag_vocabulary || []).length} tags · digest <code>${esc(d.digest || "?")}</code>`
+        + `<div class="hint muted">${esc(strata)}</div>`
+        + ((d.normalized_collisions || []).length
+          ? `<div class="hint muted">${d.normalized_collisions.length} term group(s) differ only by case or accents — matched by exact echo only.</div>` : "");
+    }
+
+    async function mbShowRoster(btn) {
+      const out = $("mb-result"); if (btn) btn.disabled = true;
+      try {
+        const d = await api("/api/diagnostics/model-bench/roster");
+        const run = (d.runnable || []).map((p) => esc(p.key)).join(", ") || "none";
+        const skip = (d.skipped || []).map((s) =>
+          `${esc(s.backend)}${s.model ? " · " + esc(s.model) : ""} — ${esc(s.reason)}`).join("<br>");
+        if (out) out.innerHTML = `<div>Runnable: ${run}</div>`
+          + (skip ? `<div class="hint muted" style="margin-top:4px">${skip}</div>` : "")
+          + (d.unresolved_candidates || []).map((c) =>
+            `<div class="hint muted" style="margin-top:4px">${esc(c.named)}: ${esc(c.note)}</div>`).join("");
+      } catch (e) { if (out) out.innerHTML = `<div class="note err">${esc((e && e.message) || String(e))}</div>`; }
+      if (btn) btn.disabled = false;
+    }
+
+    async function mbAnchorsLoad(btn) {
+      const body = $("mb-anchors-body"); if (!body) return;
+      if (btn) btn.disabled = true;
+      try {
+        const d = await api("/api/diagnostics/model-bench/anchors?sample=50");
+        _mbAnchors = (d.candidates || []).map((c) => ({ term: c.term, language: c.language, verdict: null, kind: null }));
+        _mbRenderAnchors();
+      } catch (e) { body.innerHTML = `<div class="note err">${esc((e && e.message) || String(e))}</div>`; }
+      if (btn) btn.disabled = false;
+    }
+
+    function _mbRenderAnchors() {
+      const body = $("mb-anchors-body"); if (!body) return;
+      const rows = (_mbAnchors || []).map((a, i) => {
+        const vb = ["junk", "content", "unsure"].map((v) =>
+          `<button class="tiny${a.verdict === v ? " active" : ""}" data-v="${v}" onclick="mbAnchorGrade(${i},'${v}')">${v[0].toUpperCase()}</button>`).join("");
+        const kb = ["person", "org", "place", "other"].map((k) =>
+          `<button class="tiny${a.kind === k ? " active" : ""}" data-k="${k}" onclick="mbAnchorKind(${i},'${k}')">${esc(k)}</button>`).join("");
+        return `<div class="mb-row" tabindex="0" data-i="${i}" onkeydown="mbAnchorKey(event,${i})" style="display:flex;gap:8px;align-items:center;padding:2px 0">`
+          + `<span style="min-width:78px">${vb}</span>`
+          + `<span style="min-width:170px">${esc(a.term)}</span>`
+          + `<span class="muted" style="font-size:11px;min-width:26px">${esc(a.language || "")}</span>`
+          + `<span>${kb}</span></div>`;
+      }).join("");
+      body.innerHTML = `<div class="hint muted">J = junk · C = content · U = unsure on a focused row. A kind is optional — leaving it blank costs one kind case, an invented kind costs the measurement.</div>` + rows;
+      _mbUpdateAnchorCov();
+    }
+
+    function mbAnchorGrade(i, v) {
+      const a = _mbAnchors && _mbAnchors[i]; if (!a) return;
+      a.verdict = v;   // in place, never a re-render — keeps keyboard focus
+      const row = document.querySelector(`.mb-row[data-i="${i}"]`);
+      if (row) row.querySelectorAll("button[data-v]").forEach((b) => b.classList.toggle("active", b.dataset.v === v));
+      _mbUpdateAnchorCov();
+    }
+
+    function mbAnchorKind(i, k) {
+      const a = _mbAnchors && _mbAnchors[i]; if (!a) return;
+      a.kind = (a.kind === k) ? null : k;
+      const row = document.querySelector(`.mb-row[data-i="${i}"]`);
+      if (row) row.querySelectorAll("button[data-k]").forEach((b) => b.classList.toggle("active", b.dataset.k === a.kind));
+      _mbUpdateAnchorCov();
+    }
+
+    function mbAnchorKey(ev, i) {
+      const map = { j: "junk", c: "content", u: "unsure" };
+      const v = map[(ev.key || "").toLowerCase()];
+      if (v) { ev.preventDefault(); mbAnchorGrade(i, v); }
+    }
+
+    function _mbUpdateAnchorCov() {
+      const el = $("mb-anchors-cov"); if (!el) return;
+      const all = _mbAnchors || [];
+      const graded = all.filter((a) => a.verdict).length;
+      el.textContent = all.length ? `${graded}/${all.length} graded` : "";
+    }
+
+    async function mbAnchorsSave(btn) {
+      const rows = (_mbAnchors || []).filter((a) => a.verdict)
+        .map((a) => (a.kind ? { term: a.term, verdict: a.verdict, kind: a.kind } : { term: a.term, verdict: a.verdict }));
+      if (!rows.length) { if (typeof toast === "function") toast("Grade at least one anchor first.", "err"); return; }
+      if (btn) btn.disabled = true;
+      try {
+        const r = await api("/api/diagnostics/model-bench/anchors", { method: "POST", body: JSON.stringify({ anchors: rows }) });
+        if (typeof toast === "function") toast(`Saved ${r.n} anchors.`);
+      } catch (e) { if (typeof toast === "function") toast(_failMsg("Save failed: {error}", e), "err"); }
+      if (btn) btn.disabled = false;
+    }
+
+    function _mbPaint(st) {
+      const btn = $("mb-run-btn"), el = $("mb-status");
+      const running = st && st.state === "running";
+      if (btn) { btn.dataset.running = running ? "1" : "0"; btn.textContent = running ? "Stop the bench" : "Run the bench"; }
+      const p = (st && st.progress) || {};
+      if (el) {
+        el.textContent = running
+          ? `${p.done || 0}/${p.total || "?"} · ${p.detail || ""}`
+          : (st && st.state === "error" ? `failed: ${st.error || ""}` : "");
+      }
+      if (!running && st && st.result) _mbRenderResult(st.result);
+    }
+
+    function _mbRenderResult(res) {
+      const out = $("mb-result"); if (!out || !res) return;
+      if (res.status === "refused") {
+        out.innerHTML = `<div class="note err">${esc(res.detail || res.reason || "refused")}</div>`;
+        return;
+      }
+      const rows = Object.keys(res.results || {}).map((key) => {
+        const r = res.results[key], tk = r.tasks || {};
+        const bits = [];
+        const tri = tk.triage || {};
+        if (tri.format_validity != null) bits.push(`triage validity ${tri.format_validity}`);
+        if (tri.valid_verdicts_per_s != null) bits.push(`${tri.valid_verdicts_per_s}/s`);
+        if (tri.canary && tri.canary.ok === false) bits.push("canary FAILED");
+        const stg = tk.source_tags || {};
+        if (stg.format_validity != null) bits.push(`tags validity ${stg.format_validity}`);
+        const ld = tk.langdetect || {};
+        if (ld.accuracy_over_all != null) bits.push(`langdetect ${ld.accuracy_over_all} (n=${ld.n})`);
+        const errs = Object.keys(tk).filter((k) => tk[k] && tk[k].status === "error");
+        if (errs.length) bits.push(`errors: ${errs.join(", ")}`);
+        return `<div><b>${esc(key)}</b>${r.quantization ? ` <span class="muted">${esc(r.quantization)}</span>` : ""} — ${esc(bits.join(" · ") || "no metrics")}</div>`;
+      }).join("");
+      const skipped = (res.skipped || []).map((s) =>
+        `${esc(s.backend)}${s.model ? " · " + esc(s.model) : ""} — ${esc(s.reason)}`).join("<br>");
+      out.innerHTML = rows
+        + (res.pairs_pending && res.pairs_pending.length
+          ? `<div class="hint muted" style="margin-top:4px">Not yet measured: ${esc(res.pairs_pending.join(", "))}</div>` : "")
+        + (skipped ? `<div class="hint muted" style="margin-top:4px">${skipped}</div>` : "")
+        + (res.anchors && res.anchors.available === false
+          ? `<div class="card-caveat" style="margin-top:4px">No graded anchors: accuracy against a human grade is UNMEASURED. Models agreeing is not either being right.</div>` : "")
+        + `<div class="hint muted" style="margin-top:4px">${esc(res.caveat || "")}</div>`;
+    }
+
+    async function _mbPoll() {
+      if (_mbPolling) return;
+      _mbPolling = true;
+      try {
+        for (;;) {
+          const st = await api("/api/diagnostics/model-bench/status");
+          _mbPaint(st);
+          if (st.state !== "running") break;
+          await new Promise((r) => setTimeout(r, 4000));
+        }
+      } catch (e) { /* a poll failure must never wedge the button */ }
+      finally { _mbPolling = false; }
+    }
+
+    async function mbRun(btn) {
+      const on = btn && btn.dataset.running === "1";
+      const sw = $("mb-switch");
+      try {
+        if (on) await api("/api/diagnostics/model-bench/cancel", { method: "POST" });
+        else await api("/api/diagnostics/model-bench/run", {
+          method: "POST",
+          body: JSON.stringify({ allow_backend_switch: !!(sw && sw.checked) }),
+        });
+      } catch (e) {
+        if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
+      }
+      _mbPoll();
+    }
+
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //
     let _corpusTerm = null, _corpusTab = "trend";
     // openCorpus is RETIRED here (THEME-3, 2026-06-19): the legacy #corpus-win keyword

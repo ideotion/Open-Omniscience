@@ -8188,3 +8188,69 @@ def test_library_is_five_subtab_views_with_lazy_loaders():
     assert '_libView === "coverage"' in poller and '_libView === "storage"' in poller, (
         "the live poller must not refresh a Library view nobody is looking at"
     )
+
+
+def test_background_ai_coordinator_is_wired_end_to_end():
+    """E-S1 (2026-08-01 rulings 12-13): ONE master toggle drives a coordinator lane,
+    and the per-sweep membership stays VISIBLE beneath it — the master is a
+    convenience, never a hider (informed-consent layering).
+
+    The composed-route check is the 1c lesson: assert the frontend's path against
+    prefix + decorator, never the two strings side by side."""
+    import re
+
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    assert 'prefix="/api/diagnostics"' in diag
+    backend = {
+        "/api/diagnostics" + m
+        for m in re.findall(r'@router\.(?:get|post)\("(/ai-coordinator/[a-z]+)"\)', diag)
+    }
+    src = _ui_source()
+    frontend = set(re.findall(r'"(/api/diagnostics/ai-coordinator/[a-z]+)"', src))
+    assert frontend, "the frontend calls no coordinator route"
+    assert not (frontend - backend), f"no backend route for: {frontend - backend}"
+    assert {"/api/diagnostics/ai-coordinator/" + a for a in ("run", "status", "cancel")} <= backend
+
+    # The per-sweep checkboxes are still there, and still writable.
+    for key in ("keyword_triage", "source_tags", "perception_extract"):
+        assert f'id="aic-m-{key}"' in src, f"the {key} membership checkbox must stay visible"
+    assert "saveAiSweepMembership" in src
+
+
+def test_model_bench_freezes_its_inputs_and_is_wired_end_to_end():
+    """E-S2 (2026-08-01 rulings 14-16): the comparative bench.
+
+    The property worth guarding is not that the buttons exist but that the INPUTS are
+    frozen: a bench that re-sampled between models would produce a table that looks
+    comparable and is not. So the batch is loaded (never rebuilt) by the runner, the
+    report carries the batch digest, and a resume across a changed digest is refused.
+    """
+    import re
+
+    mb = (_SRC / "ai_layer" / "model_bench.py").read_text(encoding="utf-8")
+    run = mb.split("def run_model_bench(", 1)[1].split("\ndef ", 1)[0]
+    assert "BB.load_frozen_batch()" in run, "the runner LOADS the frozen batch, never builds one"
+    assert "frozen-batch-changed" in run, "a resume across changed inputs must be refused"
+    assert "clear_cursor()" in run, "a completed run must not leave a cursor behind"
+
+    # The roster is a REQUEST list: nothing is substituted for a missing tag, and the
+    # unverified candidate is a note rather than an invented catalog entry.
+    assert "verify_roster" in mb
+    assert "lfm" not in " ".join(re.findall(r'DEFAULT_ROSTER[^)]+\)', mb)).lower()
+
+    diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
+    backend = {
+        "/api/diagnostics" + m
+        for m in re.findall(r'@router\.(?:get|post)\("(/model-bench/[a-z-]+)"\)', diag)
+    }
+    src = _ui_source()
+    frontend = set(re.findall(r'"(/api/diagnostics/model-bench/[a-z-]+)[?"]', src + '"'))
+    assert frontend, "the frontend calls no model-bench route"
+    assert not (frontend - backend), f"no backend route for: {frontend - backend}"
+    assert {"/api/diagnostics/model-bench/" + a for a in ("batch", "anchors", "run", "status")} <= backend
+
+    # The bench is bundle-EXCLUDED as a heavy operator run, and says so; its RESULT
+    # rides the bundle read-only.
+    assert '"/model-bench/last": "model-bench.json"' in diag
+    excluded_block = diag.split('"excluded": [', 1)[1].split("\n        ],", 1)[0]
+    assert "/api/diagnostics/model-bench/run" in excluded_block

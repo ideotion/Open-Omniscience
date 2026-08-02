@@ -1812,6 +1812,37 @@
         </div>
         <div id="pe-result" class="small" style="margin-top:6px"></div>
       </div>
+      <!-- E-S2 (2026-08-01, rulings 14-16): the COMPARATIVE model bench. Answers
+           "does the ruled default model deserve to stay the default?" with a
+           measurement rather than an opinion: every roster model, on every backend
+           that actually serves it, over the SAME frozen inputs, every metric
+           reported ALONE. It never changes the active model and never downloads
+           weights -- the decision is the maintainer's, made on the verified log.
+           Un-keyed English (matches this diagnostics panel). Browser-unverified
+           per fork-3. -->
+      <div id="model-bench-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">Comparative model bench</div>
+        <details class="adv-collect" style="margin-top:4px">
+          <summary class="muted" style="cursor:pointer">What this does</summary>
+          <div class="hint" style="margin-top:4px">Runs every roster model over the SAME frozen inputs — a stratified keyword sample, your own closed tag vocabulary, and the reviewed who/where/when gold set — on every backend that actually serves it, and reports five task measurements per model: who/where/when accuracy and hallucination, keyword-triage format validity and throughput, closed-vocabulary tag validity, language detection, and per-shape latency. Every metric stands ALONE: there is no composite, no ranking and no winner column, because the tasks measure different things and a blend would hide which one moved. The inputs are frozen ONCE so that every model answers the same questions — a fresh sample per model would look comparable and measure different work. Nothing here changes your active model.</div>
+        </details>
+        <div class="row" style="margin-top:6px">
+          <button class="secondary" onclick="mbBuildBatch(this)" title="Build and freeze the bench inputs from your corpus: a stratified keyword sample (equal per-language quotas, half from the highest article spread and half from the tail), the top sources' keyword evidence, and your corpus's own closed tag vocabulary. Read-only. Rebuild it and the bench asks a different question, so a run in progress will refuse to resume across the change rather than blend two input sets.">Freeze the bench inputs</button>
+          <button class="secondary" onclick="mbShowRoster(this)" title="Check the requested roster against what each backend actually serves right now. Every tag is matched EXACTLY: an absent tag is refused, never substituted with a close one, because a close tag would report numbers under a model name that never ran.">Check the roster</button>
+          <button class="secondary" onclick="mbAnchorsLoad(this)" title="Start the grading sitting: ~50 keywords drawn FROM the frozen batch, graded junk / content / unsure (press J, C or U on a focused row) with an optional kind. Graded once, reused across every model and every future run — this is what turns 'the models agree' into 'the models are right'.">Grade anchors (~50)</button>
+          <button class="secondary" onclick="mbAnchorsSave(this)" title="Persist the grading sitting. A grade outside junk/content/unsure — or a term graded twice — is refused loudly rather than repaired.">Save anchors</button>
+        </div>
+        <div id="mb-batch" class="small" style="margin-top:6px"></div>
+        <div id="mb-anchors-cov" class="hint muted"></div>
+        <div id="mb-anchors-body"></div>
+        <div class="row" style="margin-top:6px">
+          <button id="mb-run-btn" onclick="mbRun(this)" data-running="0" title="Run the bench as a background job. Resumable PER MODEL: cancelling, a crash or a restart keeps the pairs already measured and continues with the rest. On vLLM only the currently-served model is benched unless you allow the bench to restart the server between models — restarting your server is not a benchmark's decision to make.">Run the bench</button>
+          <span id="mb-status" class="small" style="margin-left:6px"></span>
+          <label class="small" style="margin-left:6px"><input id="mb-switch" type="checkbox"> restart vLLM per model</label>
+          <button class="secondary" onclick="window.open('/api/diagnostics/model-bench/download','_blank')" title="The whole artifact, including every model's per-term answers — the one log to upload for verification (the answers are what a verification session re-judges).">Download the bench log (.json)</button>
+        </div>
+        <div id="mb-result" class="small" style="margin-top:6px"></div>
+      </div>
       <div class="row" style="margin-top:6px">
         <button id="all-diag-btn" onclick="runAllDiagnostics(this)" title="Every diagnostics log in one archive — one click instead of nine. Runs as a BACKGROUND job (so it never freezes the app on a large corpus, unlike the old synchronous build), shows live progress, and downloads when ready. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).">All diagnostics (.zip)</button>
         <span id="all-diag-status" class="small" style="margin-left:6px"></span>
