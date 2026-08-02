@@ -202,3 +202,123 @@ def test_the_roster_date_is_registered_in_the_external_artifact_registry():
     text = reg.read_text(encoding="utf-8")
     assert "BENCH_ROSTER_AS_OF" in text
     assert "bench-model-roster" in text
+
+
+# --------------------------------------------------------------------------- #
+#  The endpoints: what they install, and what they refuse
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def machine(monkeypatch):
+    """Drive the REAL resolver from a machine's facts, so these exercise the production
+    path rather than a hand-written payload that could drift from it."""
+    import src.llm.backend as B
+
+    def _make(*, gpu, vllm_installed, ollama_installed, ollama_running=False):
+        monkeypatch.setattr(
+            B, "detect_gpu",
+            lambda: {"available": True, "vram_mb": 8188} if gpu else {"available": False},
+        )
+        monkeypatch.setattr(B, "_vllm_status", lambda: {"installed": vllm_installed, "running": False})
+        monkeypatch.setattr(B, "_ollama_available", lambda: ollama_running)
+        monkeypatch.setattr(B, "_ollama_installed", lambda: ollama_installed)
+        monkeypatch.setenv("OO_LLM_BACKEND", "")
+
+    return _make
+
+
+def test_the_panel_gets_the_roster_for_the_backend_it_is_showing(machine):
+    """The vLLM section must not be handed Ollama tags because the machine happens to
+    prefer Ollama today -- it would install what it did not show."""
+    import src.api.llm as L
+
+    machine(gpu=True, vllm_installed=True, ollama_installed=False)
+    assert L.bench_roster("vllm")["backend"] == "vllm"
+    assert L.bench_roster("ollama")["backend"] == "ollama"
+    # And asking for a backend that is not installed says so rather than offering a
+    # download with nowhere to land.
+    assert L.bench_roster("ollama")["prerequisite"] == "ollama"
+
+
+def test_installing_returns_every_refusal_alongside_what_was_queued(monkeypatch, machine):
+    """The operator asked for four and is owed an account of four."""
+    import src.api.llm as L
+    from src.ingest import egress_window as ew
+
+    machine(gpu=False, vllm_installed=False, ollama_installed=True, ollama_running=True)
+    sent: list[str] = []
+
+    class _Mgr:
+        def enqueue(self, tag):
+            sent.append(tag)
+            return {}
+
+        def status(self):
+            return {"active": None, "queue": list(sent), "history": []}
+
+    monkeypatch.setattr("src.llm.pull_queue.get_pull_manager", lambda: _Mgr())
+    ew._reset_for_tests()
+    out = L.bench_roster_install(
+        L.BenchRosterInstallRequest(
+            keys=["phi-4-mini-instruct", "smollm3-3b", "lfm25-1-2b-base"], backend="ollama"
+        )
+    )
+    assert out["queued"] == ["phi4-mini:3.8b-q4_K_M"]
+    assert {r["key"] for r in out["refused"]} == {"smollm3-3b", "lfm25-1-2b-base"}
+    assert all(r["reason"] for r in out["refused"])
+    assert "smollm3" not in " ".join(sent).lower(), "an absent model must never be substituted"
+
+
+def test_the_install_is_refused_under_airplane_mode(monkeypatch, machine):
+    """Both paths egress clearnet, so both are refused -- gating only one would leave
+    the other downloading while the operator believes they are offline."""
+    from fastapi import HTTPException
+
+    import src.api.llm as L
+    from src.ingest import activate_kill_switch, clear_kill_switch
+    from src.ingest import egress_window as ew
+
+    machine(gpu=False, vllm_installed=False, ollama_installed=True, ollama_running=True)
+    ew._reset_for_tests()
+    activate_kill_switch()
+    try:
+        with pytest.raises(HTTPException) as exc:
+            L.bench_roster_install(L.BenchRosterInstallRequest(keys=["phi-4-mini-instruct"]))
+        assert exc.value.status_code == 409
+        assert "airplane" in str(exc.value.detail).lower()
+    finally:
+        clear_kill_switch()
+        ew._reset_for_tests()
+
+
+def test_a_batch_survives_one_model_failing():
+    """Gemma-3n is gated and WILL fail without a token, which the panel says before the
+    click. If that aborted the run, ticking it would silently cost the other five."""
+    from src.llm.vllm_lifecycle import VllmLifecycleError, run_models_download_job
+
+    class _Ctx:
+        stopping = False
+
+        def set_progress(self, **kw):
+            pass
+
+    calls: list[str] = []
+
+    def _fake(ctx, *, model, runner=None):
+        calls.append(model)
+        if "gemma" in model:
+            raise VllmLifecycleError("401 gated repo")
+        return {"downloaded": True, "state": "downloaded"}
+
+    import src.llm.vllm_lifecycle as V
+
+    orig = V.run_model_download_job
+    V.run_model_download_job = _fake
+    try:
+        out = run_models_download_job(_Ctx(), models=["a/one", "google/gemma-x", "b/two"])
+    finally:
+        V.run_model_download_job = orig
+
+    assert calls == ["a/one", "google/gemma-x", "b/two"], "the batch continued past the failure"
+    assert out["downloaded"] == 2 and out["failed"] == 1
+    assert out["partial"] is True, "a partial batch must never read as a clean one"
+    assert "gated" in next(r["error"] for r in out["results"] if r["state"] == "error")

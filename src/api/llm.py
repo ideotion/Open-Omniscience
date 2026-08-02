@@ -826,8 +826,16 @@ def _get_vllm_model_job():
         from src.jobs.background import BackgroundJob, register_job
 
         def _worker(ctx, **kwargs):
-            from src.llm.vllm_lifecycle import run_model_download_job
+            # ONE job serves both the single default-model download and a bench-roster
+            # batch, so they can never run at once against the same cache and the task
+            # manager shows one honest "downloading" entry rather than two.
+            from src.llm.vllm_lifecycle import (
+                run_model_download_job,
+                run_models_download_job,
+            )
 
+            if "models" in kwargs:
+                return run_models_download_job(ctx, **kwargs)
             return run_model_download_job(ctx, **kwargs)
 
         _VLLM_MODEL_JOB = register_job(
@@ -1306,6 +1314,135 @@ def default_model_install() -> dict:
     except Exception:  # noqa: BLE001 - the download is the load-bearing half
         pass
     return {**plan, "action": "queued", "result": queued}
+
+
+class BenchRosterInstallRequest(BaseModel):
+    """Which roster models to install. ``keys`` are roster keys, never raw identifiers:
+    a caller cannot smuggle an arbitrary repo through this endpoint, and every string
+    that reaches a download came from the dated roster."""
+
+    keys: list[str] = []
+    #: Which backend to install for. Omitted means "whichever this machine will serve
+    #: with" -- the same provisioning question the default-model button asks. Named
+    #: explicitly by the panels, because the vLLM section and the Ollama section each
+    #: show THEIR OWN roster and must install what they showed.
+    backend: str | None = None
+
+
+def _roster_backend(explicit: str | None) -> dict:
+    """The backend a roster view or install is about, and why.
+
+    An explicit choice from a panel wins: the vLLM section showing Hugging Face repos
+    must not install Ollama tags because the machine happens to prefer Ollama today."""
+    from src.llm.backend import resolve_backend
+
+    r = resolve_backend()
+    pick = _provisioning_backend(r)
+    if explicit in {"vllm", "ollama"} and explicit != pick["backend"]:
+        installed = bool((r.get(explicit) or {}).get("installed"))
+        return {
+            "backend": explicit,
+            "chosen_because": "explicitly requested by the panel",
+            "prerequisite": None if installed else explicit,
+        }
+    return pick
+
+
+@router.get("/bench-roster")
+def bench_roster(backend: str | None = None) -> dict:
+    """The comparative-bench roster for whichever backend this machine will serve with.
+
+    Read-only and network-free: it reports what WOULD be installed, including the rows
+    it cannot install, so the panel can be truthful before the operator clicks rather
+    than after. Uses the same provisioning question as the default-model button --
+    what will this machine serve with once set up -- not the routing question, which
+    disqualifies a backend that is merely stopped."""
+    from src.llm.bench_roster import roster_for
+
+    pick = _roster_backend(backend)
+    out = roster_for(pick["backend"])
+    out["chosen_because"] = pick["chosen_because"]
+    out["prerequisite"] = pick["prerequisite"]
+    return out
+
+
+@router.post("/bench-roster/install")
+def bench_roster_install(req: BenchRosterInstallRequest | None = None) -> dict:
+    """Install the selected roster models on the backend that will serve.
+
+    Both paths egress CLEARNET (Hugging Face / the Ollama registry), neither goes
+    through Tor, so both are refused under the kill switch exactly as the single
+    default-model download is.
+
+    REFUSALS TRAVEL WITH THE RESULT. Two of the six models are not published for
+    Ollama, and selecting one returns it in ``refused`` with the reason rather than
+    quietly downloading the four that do exist -- the operator asked for six and is
+    owed an account of six."""
+    from src.ingest.egress_window import PURPOSE_AI_INSTALL, egress_permitted
+    from src.llm.bench_roster import identifiers_for
+
+    if not egress_permitted(PURPOSE_AI_INSTALL):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Airplane mode is engaged. Downloading models is clearnet traffic "
+                "(Hugging Face / the model registry), so it is refused while offline. "
+                "You can allow the AI install to go online on its own, which does not "
+                "start collecting."
+            ),
+        )
+    body = req or BenchRosterInstallRequest()
+    pick = _roster_backend(body.backend)
+    backend = pick["backend"]
+    if pick["prerequisite"]:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{'vLLM' if backend == 'vllm' else 'Ollama'} is not installed yet, and "
+                "it is what downloads these models. Install it first."
+            ),
+        )
+    ok, refused = identifiers_for(backend, body.keys)
+    if not ok:
+        return {"backend": backend, "action": "nothing_to_do", "queued": [], "refused": refused}
+
+    if backend == "vllm":
+        job = _get_vllm_model_job()
+        if job.status().get("running"):
+            return {
+                "backend": backend,
+                "action": "busy",
+                "detail": "a model download is already running",
+                "refused": refused,
+                "result": job.status(),
+            }
+        job.start(models=[m["identifier"] for m in ok])
+        return {
+            "backend": backend,
+            "action": "downloading",
+            "queued": [m["identifier"] for m in ok],
+            "refused": refused,
+            "result": job.status(),
+        }
+
+    from src.llm.pull_queue import get_pull_manager
+
+    manager = get_pull_manager()
+    queued: list[str] = []
+    for m in ok:
+        try:
+            manager.enqueue(m["identifier"])
+            queued.append(m["identifier"])
+        except ValueError as exc:
+            # A malformed tag is one model's problem, not the batch's.
+            refused.append({"key": m["key"], "label": m["label"], "reason": str(exc)})
+    return {
+        "backend": backend,
+        "action": "queued",
+        "queued": queued,
+        "refused": refused,
+        "result": manager.status(),
+    }
 
 
 @router.get("/ollama/state")
