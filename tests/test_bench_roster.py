@@ -1,11 +1,12 @@
-"""The bench roster tells the truth about six models, including where it has none.
+"""The bench roster tells the truth about its models, including where it has none.
 
 Maintainer ask 2026-08-02: buttons that install a chosen set of bench models on
 whichever backend serves. The identifiers came from an internet-connected session,
 because the build sandbox cannot reach huggingface.co or ollama.com (the gateway 403s
 both) -- the exact condition under which this project has shipped invented model tags
 before, and the reason ``src/llm/ollama.py`` still carries the line "(The previous
-catalog -- gemma4:e2b, llama4, qwen3.5 -- was hallucinated.)".
+catalog -- gemma4:e2b, llama4, qwen3.5 -- was hallucinated.)". One row is at the weaker
+``search-verified`` tier and says so; the tests below make that impossible to omit.
 
 So what is pinned here is not "these strings are correct" -- no test in this repo can
 establish that. It is the SHAPE of the honesty around them: a model absent from a
@@ -52,12 +53,12 @@ def test_an_absent_model_names_what_was_searched(backend):
 
 
 def test_selecting_an_unavailable_model_is_refused_not_dropped():
-    """Asking for six and receiving four downloads with no explanation is the silence
+    """Asking for every model and receiving a subset with no explanation is the silence
     the whole roster exists to prevent."""
     keys = [e["key"] for e in R.BENCH_ROSTER]
     ok, refused = R.identifiers_for("ollama", keys)
     assert len(ok) + len(refused) == len(keys), "every requested key is accounted for"
-    assert refused, "two of the six are genuinely not on Ollama"
+    assert refused, "several rows genuinely have no Ollama tag"
     for r in refused:
         assert r["reason"]
 
@@ -166,7 +167,7 @@ def test_something_is_pre_ticked_so_the_button_is_not_a_no_op(backend):
 #  Agreement with what this repo already verified
 # --------------------------------------------------------------------------- #
 def test_the_calibration_rows_agree_with_the_shipped_catalog():
-    """Two of the six were already verified in-tree, and the acquisition run confirmed
+    """Two rows were already verified in-tree, and the acquisition run confirmed
     both independently. Pinning the agreement means a later edit to EITHER side that
     breaks it reddens here, instead of the two quietly drifting apart."""
     from src.llm.ollama import MINISTRAL_SUGGESTION, MODEL_CATALOG
@@ -202,3 +203,397 @@ def test_the_roster_date_is_registered_in_the_external_artifact_registry():
     text = reg.read_text(encoding="utf-8")
     assert "BENCH_ROSTER_AS_OF" in text
     assert "bench-model-roster" in text
+
+
+# --------------------------------------------------------------------------- #
+#  The endpoints: what they install, and what they refuse
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def machine(monkeypatch):
+    """Drive the REAL resolver from a machine's facts, so these exercise the production
+    path rather than a hand-written payload that could drift from it."""
+    import src.llm.backend as B
+
+    def _make(*, gpu, vllm_installed, ollama_installed, ollama_running=False):
+        monkeypatch.setattr(
+            B, "detect_gpu",
+            lambda: {"available": True, "vram_mb": 8188} if gpu else {"available": False},
+        )
+        monkeypatch.setattr(B, "_vllm_status", lambda: {"installed": vllm_installed, "running": False})
+        monkeypatch.setattr(B, "_ollama_available", lambda: ollama_running)
+        monkeypatch.setattr(B, "_ollama_installed", lambda: ollama_installed)
+        monkeypatch.setenv("OO_LLM_BACKEND", "")
+
+    return _make
+
+
+def test_the_panel_gets_the_roster_for_the_backend_it_is_showing(machine):
+    """The vLLM section must not be handed Ollama tags because the machine happens to
+    prefer Ollama today -- it would install what it did not show."""
+    import src.api.llm as L
+
+    machine(gpu=True, vllm_installed=True, ollama_installed=False)
+    assert L.bench_roster("vllm")["backend"] == "vllm"
+    assert L.bench_roster("ollama")["backend"] == "ollama"
+    # And asking for a backend that is not installed says so rather than offering a
+    # download with nowhere to land.
+    assert L.bench_roster("ollama")["prerequisite"] == "ollama"
+
+
+def test_installing_returns_every_refusal_alongside_what_was_queued(monkeypatch, machine):
+    """The operator asked for four and is owed an account of four."""
+    import src.api.llm as L
+    from src.ingest import egress_window as ew
+
+    machine(gpu=False, vllm_installed=False, ollama_installed=True, ollama_running=True)
+    sent: list[str] = []
+
+    class _Mgr:
+        def enqueue(self, tag):
+            sent.append(tag)
+            return {}
+
+        def status(self):
+            return {"active": None, "queue": list(sent), "history": []}
+
+    monkeypatch.setattr("src.llm.pull_queue.get_pull_manager", lambda: _Mgr())
+    ew._reset_for_tests()
+    out = L.bench_roster_install(
+        L.BenchRosterInstallRequest(
+            keys=["phi-4-mini-instruct", "smollm3-3b", "lfm25-1-2b-base"], backend="ollama"
+        )
+    )
+    assert out["queued"] == ["phi4-mini:3.8b-q4_K_M"]
+    assert {r["key"] for r in out["refused"]} == {"smollm3-3b", "lfm25-1-2b-base"}
+    assert all(r["reason"] for r in out["refused"])
+    assert "smollm3" not in " ".join(sent).lower(), "an absent model must never be substituted"
+
+
+def test_the_install_is_refused_under_airplane_mode(monkeypatch, machine):
+    """Both paths egress clearnet, so both are refused -- gating only one would leave
+    the other downloading while the operator believes they are offline."""
+    from fastapi import HTTPException
+
+    import src.api.llm as L
+    from src.ingest import activate_kill_switch, clear_kill_switch
+    from src.ingest import egress_window as ew
+
+    machine(gpu=False, vllm_installed=False, ollama_installed=True, ollama_running=True)
+    ew._reset_for_tests()
+    activate_kill_switch()
+    try:
+        with pytest.raises(HTTPException) as exc:
+            L.bench_roster_install(L.BenchRosterInstallRequest(keys=["phi-4-mini-instruct"]))
+        assert exc.value.status_code == 409
+        assert "airplane" in str(exc.value.detail).lower()
+    finally:
+        clear_kill_switch()
+        ew._reset_for_tests()
+
+
+def test_a_batch_survives_one_model_failing():
+    """Gemma-3n is gated and WILL fail without a token, which the panel says before the
+    click. If that aborted the run, ticking it would silently cost the other five."""
+    from src.llm.vllm_lifecycle import VllmLifecycleError, run_models_download_job
+
+    class _Ctx:
+        stopping = False
+
+        def set_progress(self, **kw):
+            pass
+
+    calls: list[str] = []
+
+    def _fake(ctx, *, model, runner=None):
+        calls.append(model)
+        if "gemma" in model:
+            raise VllmLifecycleError("401 gated repo")
+        return {"downloaded": True, "state": "downloaded"}
+
+    import src.llm.vllm_lifecycle as V
+
+    orig = V.run_model_download_job
+    V.run_model_download_job = _fake
+    try:
+        out = run_models_download_job(_Ctx(), models=["a/one", "google/gemma-x", "b/two"])
+    finally:
+        V.run_model_download_job = orig
+
+    assert calls == ["a/one", "google/gemma-x", "b/two"], "the batch continued past the failure"
+    assert out["downloaded"] == 2 and out["failed"] == 1
+    assert out["partial"] is True, "a partial batch must never read as a clean one"
+    assert "gated" in next(r["error"] for r in out["results"] if r["state"] == "error")
+
+
+# --------------------------------------------------------------------------- #
+#  Following the install: the panel must read its OWN backend's progress
+# --------------------------------------------------------------------------- #
+def test_the_follower_reads_the_job_the_install_started(monkeypatch, machine):
+    """A vLLM panel installing on a machine that would otherwise provision Ollama must
+    not follow the Ollama queue and report a stranger's progress as its own.
+
+    This is the routing-vs-provisioning confusion that shipped a real field bug, one
+    level down: there, a download was PLANNED for a backend that was not there; here, it
+    would be WATCHED on one."""
+    import src.api.llm as L
+
+    machine(gpu=True, vllm_installed=True, ollama_installed=True, ollama_running=True)
+
+    class _Job:
+        def status(self):
+            return {"state": "running", "detail": "downloading 2 of 3"}
+
+    monkeypatch.setattr(L, "_get_vllm_model_job", lambda: _Job())
+    out = L.bench_roster_status("vllm")
+    assert out["backend"] == "vllm"
+    assert out["state"] == "running" and out["detail"] == "downloading 2 of 3"
+    # Its scope is exact, and it says so: this job is only ever this batch.
+    assert out["queue_is_shared"] is False
+
+
+def test_the_ollama_follower_admits_the_queue_is_shared(monkeypatch, machine):
+    """The Ollama path enqueues into the one pull queue, which may already be carrying
+    somebody else's pull. Reporting that as "your batch" would be a small lie that makes
+    a progress line untrustworthy; the flag lets a caller know which it is reading."""
+    import src.api.llm as L
+
+    machine(gpu=False, vllm_installed=False, ollama_installed=True, ollama_running=True)
+
+    class _Mgr:
+        def status(self):
+            return {"active": {"model": "phi4-mini:3.8b-q4_K_M", "percent": 41}, "queue": ["x"]}
+
+    monkeypatch.setattr("src.llm.pull_queue.get_pull_manager", lambda: _Mgr())
+    out = L.bench_roster_status("ollama")
+    assert out["queue_is_shared"] is True
+    assert out["state"] == "running"
+    assert "phi4-mini" in out["detail"] and "41" in out["detail"]
+
+
+def test_an_idle_queue_terminates_the_follower(monkeypatch, machine):
+    """A poller with no terminal state is indistinguishable from work that never ends --
+    the exact defect that hung the default-model chain (field report 2026-08-02)."""
+    import src.api.llm as L
+
+    machine(gpu=False, vllm_installed=False, ollama_installed=True, ollama_running=True)
+
+    class _Mgr:
+        def status(self):
+            return {"active": None, "queue": []}
+
+    monkeypatch.setattr("src.llm.pull_queue.get_pull_manager", lambda: _Mgr())
+    out = L.bench_roster_status("ollama")
+    assert out["state"] != "running", "the follower must be able to stop"
+
+
+# --------------------------------------------------------------------------- #
+#  The panel (source-level, browser-unverified per fork-3)
+# --------------------------------------------------------------------------- #
+def _app_js() -> str:
+    import pathlib
+
+    return (pathlib.Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_text(
+        encoding="utf-8"
+    )
+
+
+def _fn_body(js: str, name: str) -> str:
+    """One function's body, brace-matched from the BODY brace.
+
+    Two ways to get this wrong, both of which make every assertion over the result
+    worthless while looking fine (Session D, 2026-08-01): taking the first ``{`` after
+    the name lands in a DEFAULT PARAMETER and yields an empty body, so guards pass
+    vacuously; splitting on "the next declaration" over-runs when the delimiter guessed
+    is not the one that follows, sweeping in unrelated code so an assertion can match
+    something else entirely. So: balance the parentheses first, then brace-match."""
+    i = js.index(f"function {name}(") + len(f"function {name}")
+    depth = 0
+    while True:  # walk the parameter list to its close
+        if js[i] == "(":
+            depth += 1
+        elif js[i] == ")":
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+    start = js.index("{", i)
+    depth = 0
+    for j in range(start, len(js)):
+        if js[j] == "{":
+            depth += 1
+        elif js[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return js[start : j + 1]
+    raise AssertionError(f"unbalanced braces in {name}")
+
+
+def test_the_body_extractor_is_not_vacuous():
+    """The guard on the guards. A body that came back empty -- or swallowed the rest of
+    the file -- would make every source assertion below pass for free."""
+    js = _app_js()
+    for name in ("loadBenchRoster", "installBenchModels"):
+        body = _fn_body(js, name)
+        assert 10 < body.count("\n") < 120, f"{name}: implausible body ({body.count(chr(10))} lines)"
+        assert body.startswith("{") and body.rstrip().endswith("}")
+    # And the two are genuinely different slices, not the same over-broad one twice.
+    assert _fn_body(js, "loadBenchRoster") != _fn_body(js, "installBenchModels")
+    assert "installBenchModels" not in _fn_body(js, "loadBenchRoster").replace(
+        "installBenchModels('", "X"
+    ).replace('installBenchModels("', "X")
+
+
+def test_each_panel_asks_for_its_own_backend():
+    """Both sections render from ONE function, so the guard that matters is that each
+    call names its backend -- otherwise a click under the vLLM heading downloads
+    whatever the machine happens to prefer."""
+    js = _app_js()
+    assert 'loadBenchRoster("vllm")' in js
+    assert 'loadBenchRoster("ollama")' in js
+    assert "bench-roster?backend=" in js, "the roster is fetched for a named backend"
+    # And the install posts the backend it rendered, never an implicit one.
+    assert "JSON.stringify({keys, backend})" in js
+
+
+def test_an_absent_model_is_rendered_disabled_rather_than_hidden():
+    """A row with nothing to install is a finding, not clutter. Hiding it would make the
+    table look complete and leave the operator wondering where the model went."""
+    js = _app_js()
+    body = _fn_body(js, "loadBenchRoster")
+    assert "if (!m.installable)" in body
+    assert 'type="checkbox" disabled' in body
+    assert "absent_reason" in body and "Searched:" in body
+
+
+def test_the_install_reports_refusals_and_needs_consent():
+    """Ticking several and getting a subset with no explanation is exactly the silence
+    the roster exists to prevent; and the download is clearnet, so it passes the AI
+    egress consent like every sibling."""
+    js = _app_js()
+    body = _fn_body(js, "installBenchModels")
+    assert "ensureAiEgress(" in body
+    assert "if (!await ensureAiEgress" in body, "a declined consent must stop the install"
+    assert "r.refused" in body
+    assert "nothing_to_do" in body
+
+
+def test_the_bench_strings_are_translated():
+    """Server-side notes travel with the data, but the panel's own chrome is keyed x12
+    like every operator-facing surface."""
+    import json
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[1] / "src" / "static" / "locales"
+    for lang in ("en", "fr", "ar", "zh"):
+        data = json.loads((root / f"{lang}.json").read_text(encoding="utf-8"))
+        assert "Comparative-bench models" in data
+        assert "Download the ticked models" in data
+        assert data["Comparative-bench models"], f"{lang}: empty translation"
+
+
+# --------------------------------------------------------------------------- #
+#  Every identifier states its own provenance tier
+# --------------------------------------------------------------------------- #
+def test_no_identifier_can_be_added_without_saying_how_it_was_verified():
+    """The field only works if absence is impossible.
+
+    A default would silently claim the STRONGER tier for whoever forgot to think about
+    it, which inverts the point: this file exists because the project once shipped model
+    tags nobody had checked."""
+    for entry in R.BENCH_ROSTER:
+        for channel in ("hf", "ollama"):
+            block = entry.get(channel)
+            if block is None:
+                continue
+            assert "verification" in block, f"{entry['key']}.{channel}: no verification tier"
+            assert block["verification"] in {"fetched", "search-verified"}, entry["key"]
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_the_tier_reaches_the_panel(backend):
+    """Recorded but not rendered is the same as not recorded, for the operator."""
+    for row in R.roster_for(backend)["models"]:
+        if row["installable"]:
+            assert row["verification"], f"{row['key']}: tier lost in the projection"
+
+
+def test_exactly_the_rows_that_were_fetched_claim_to_have_been():
+    """The docstring says "almost every" precisely because one is not. If a later
+    session verifies it, this test is the place that notices the claim changed."""
+    weaker = {
+        e["key"] for e in R.BENCH_ROSTER
+        if (e.get("hf") or {}).get("verification") == "search-verified"
+    }
+    assert weaker == {"lfm25-1-2b-instruct"}, (
+        "a row moved provenance tier -- update the module docstring in the same commit"
+    )
+
+
+# --------------------------------------------------------------------------- #
+#  The LFM2.5 decision (maintainer, 2026-08-02): ADD the Instruct row, keep Base
+# --------------------------------------------------------------------------- #
+def test_the_base_row_survives_the_instruct_row_being_added():
+    """The regression guard for the decision itself. Base is what was ASKED for; the
+    Instruct row exists because the bench cannot measure a base checkpoint, not because
+    Base was wrong. A later tidy-up that collapses the two would be the substitution
+    this whole module refuses."""
+    keys = [e["key"] for e in R.BENCH_ROSTER]
+    assert "lfm25-1-2b-base" in keys
+    assert "lfm25-1-2b-instruct" in keys
+    base = next(e for e in R.BENCH_ROSTER if e["key"] == "lfm25-1-2b-base")
+    inst = next(e for e in R.BENCH_ROSTER if e["key"] == "lfm25-1-2b-instruct")
+    assert base["hf"]["repo"] != inst["hf"]["repo"]
+    assert "base_model" in base["flags"], "Base must keep saying what it is"
+    assert "base_model" not in inst["flags"]
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_neither_liquidai_row_is_pre_ticked(backend):
+    """Nobody has read the licence on either. An unread licence is not a default."""
+    rows = {r["key"]: r for r in R.roster_for(backend)["models"]}
+    for key in ("lfm25-1-2b-base", "lfm25-1-2b-instruct"):
+        assert rows[key]["default_on"] is False
+        assert "licence_unverified" in rows[key]["flags"]
+
+
+def test_the_instruct_row_does_not_borrow_facts_from_its_sibling():
+    """Two repos, one of which was read. Copying the Base card's parameter split or
+    licence badge across would invent agreement between pages -- the same move as
+    substituting a near-match, one field down."""
+    inst = next(e for e in R.BENCH_ROSTER if e["key"] == "lfm25-1-2b-instruct")["hf"]
+    assert inst["params"] is None and inst["context_length"] is None
+    assert "unconfirmed" in inst["licence"]
+
+
+def test_an_unresolved_absence_says_what_would_settle_it():
+    """`LiquidAI/lfm2.5-1.2b-instruct` is the right variant at the right size; the only
+    question is whether that Ollama account is the publisher's. That is one lookup, and
+    a panel that renders it identically to a settled absence hides the cheap fix."""
+    row = next(r for r in R.roster_for("ollama")["models"] if r["key"] == "lfm25-1-2b-instruct")
+    assert row["installable"] is False
+    assert row["open_question"] and "first-party" in row["open_question"]
+    ok, refused = R.identifiers_for("ollama", ["lfm25-1-2b-instruct"])
+    assert ok == [], "an open question is not permission to install the guess"
+    assert refused[0]["reason"]
+
+
+def test_the_thinking_variant_is_not_offered_under_the_instruct_name():
+    """library/lfm2.5-thinking is first-party and the right size -- and emits reasoning
+    traces that fail format validity on three of the four constrained-output tasks. That
+    is a finding about reasoning models, not a LiquidAI capability measurement."""
+    entry = next(e for e in R.BENCH_ROSTER if e["key"] == "lfm25-1-2b-instruct")
+    assert entry["ollama"] is None
+    absent = entry["ollama_absent"]
+    assert "thinking" in absent["searched"].lower()
+    assert absent["passthrough_tag"] is None
+    for alt in R.ALTERNATIVES:
+        assert "thinking" not in alt["tag"].lower()
+
+
+def test_the_panel_renders_the_weaker_tier_and_the_open_question():
+    """Recorded but not rendered is, for the operator, the same as not recorded --
+    and both of these exist precisely to reach a human before a multi-GB click."""
+    body = _fn_body(_app_js(), "loadBenchRoster")
+    assert 'm.verification === "fetched"' in body, "the weaker tier must be marked"
+    assert "search-verified" in body
+    assert "m.open_question" in body, "an absence somebody can close must say so"

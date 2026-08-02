@@ -1685,6 +1685,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     one is an at-rest-encryption hole for as long as the app stays up. GENERAL FORM: any
     cleanup with an AGE GUARD needs a RECURRING trigger, because the guard guarantees the
     first look will be too early.
+  - **A MUTATION TEST MUST REVERT EVERY MECHANISM THE FIX SHIPPED — reverting one of two
+    proves nothing and reads as "the guard is dead" (2026-08-02, the WAL-starvation
+    recalibration):** checking that `test_wal_reader_starvation`'s discriminating
+    assertion still bites, I removed PR-D's between-producer `session.commit()` and the
+    test still PASSED. The tempting conclusion — that the guard had silently stopped
+    discriminating, which the file's own comments warn is a thing that happened before —
+    was WRONG. PR-D shipped TWO independent WAL-releasing mechanisms
+    (`_release_transaction` *and* `_WalGuardResult.fetchmany`'s periodic in-scan close),
+    and either alone lets a checkpoint through, so a single-mechanism mutation changes
+    nothing. Reverting both fails loudly and by name. RULE: before concluding a guard is
+    vacuous, grep the fix for every path that satisfies it and neuter ALL of them —
+    otherwise the mutation is testing your model of the fix, not the fix. Corollary worth
+    keeping about the RECALIBRATION itself: the test was tuned so tightly (macOS measured
+    2,006,504 bytes against a 2,097,152 bar — 96% of the way) that ordinary platform
+    variance tipped it, and the honest lever was the one the file's own failure messages
+    already named (`_TARGET_WRITES`, which raises WAL PRESSURE) rather than the assertion
+    threshold. Raising the input a guard is fed strengthens a reproduction; lowering the
+    bar it must clear weakens it, and only one of those is a legitimate response to a red
+    lane. Calibrate against the WEAKEST platform observed, not the strongest, and record
+    the per-platform measurement beside the constant so the next session does not
+    re-derive it.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD IMPRESSIONS 2026-08-01 — Home-alerts relevance/card system · Home overview subtabs ·
@@ -1934,6 +1955,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   (the coordinator groups by model implicitly, one member at a time, but a several-models config
   and its co-fit gate are a separate slice); and the maintainer click-through/HTML exports for
   every frontend slice above.
+  **BENCH-ROSTER INSTALL BUTTONS SHIPPED 2026-08-02 (maintainer ask; PR #844, shipped.csv rows
+  "llm/bench"): a tickbox panel beside BOTH install controls**, each naming and posting the
+  backend it renders (a click under the vLLM heading can never install Ollama tags — the
+  routing-vs-provisioning confusion that shipped a field bug two days earlier). Identifiers came
+  from a live acquisition run; `BENCH_ROSTER_AS_OF` is registered. **THE LFM2.5 RULING
+  (maintainer, same day, after the recommendation): ADD the Instruct row, KEEP Base, never
+  substitute.** Rationale worth preserving: four of the bench's five tasks
+  (`model_bench.BENCH_TASKS` — perception · triage · source_tags · langdetect) are
+  CONSTRAINED-OUTPUT instruct tasks, so a base checkpoint yields one usable metric (latency) out
+  of five plus four near-zeros that mean "wrong tool", not "bad model" — and a near-zero with no
+  memory of why is the number that gets misread later. Base stays as the row that was asked for,
+  unticked behind `base_model`; Instruct is an ADDITION, not a replacement (both pinned by a
+  regression test against a future tidy-up that would collapse them). **NEW SCHEMA RULE, worth
+  reusing:** every identifier block carries `verification: "fetched" | "search-verified"` with
+  **NO DEFAULT** — a missing tier raises, because a default would silently claim the STRONGER
+  tier for whoever forgot to think about it, which inverts the point of an honesty field. Exactly
+  one row is `search-verified` today (the Instruct repo id — the run NAMED it, no page fetch was
+  recorded), and a test pins that set so the module docstring's "almost every" can never drift
+  from the data. **STILL OPERATOR-GATED (one lookup, recorded as an `open_question` in the row and
+  rendered in the panel): is the Ollama account `LiquidAI` the publisher's own?** If yes,
+  `LiquidAI/lfm2.5-1.2b-instruct` is a FIRST-PARTY tag and that absence disappears; if somebody
+  took the name, it stands. Deliberately NOT resolved by guessing — and note this is a different
+  provenance claim from the SmolLM3 community re-uploads rejected for having no known builder.
+  `library/lfm2.5-thinking` is first-party and the right size but is NOT offered under the
+  Instruct name: a Thinking variant's reasoning traces fail format validity on three of the four
+  constrained-output tasks, which is a finding about reasoning models, not a LiquidAI measurement.
   **TWO REUSABLE LESSONS FROM SESSION E (also in the Session-rituals Lessons list):** (a)
   `re.split` CONSUMES its separator, so splitting on `(?<=[.!?])\s+` silently drops the space
   between every sentence — a translation reassembled from those pieces comes back subtly wrong

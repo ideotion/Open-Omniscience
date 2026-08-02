@@ -77,15 +77,37 @@ from src.scheduler.hygiene import checkpoint_wal
 
 _JOURNAL_SIZE_LIMIT_MB = 1
 _JOURNAL_SIZE_LIMIT_BYTES = _JOURNAL_SIZE_LIMIT_MB * 1024 * 1024
-_WRITER_BLOB_BYTES = 1024 * 1024  # per-write payload; contributes ~1.005 MB of
-# WAL per commit, so _TARGET_WRITES of them clear the 2 MiB bar with ~2.5x
-# margin. 2 MiB was tried and REJECTED: it clears (a) more easily but starves
-# the checkpointer (measured 0/8 successful attempts at one speed), which would
-# break assertion (b) -- the discriminating one. 1 MiB satisfies both.
-_TARGET_WRITES = 4  # the reader's window closes once the writer has committed
+_WRITER_BLOB_BYTES = 1024 * 1024  # per-write payload. 2 MiB was tried and
+# REJECTED: it clears (a) more easily but starves the checkpointer (measured
+# 0/8 successful attempts at one speed), which would break assertion (b) -- the
+# discriminating one. 1 MiB satisfies both, so this is NOT the lever to reach
+# for when (a) comes up short; _TARGET_WRITES below is.
+_TARGET_WRITES = 12  # the reader's window closes once the writer has committed
 # this many times -- NOT after a fixed wall-clock duration. This is what makes
 # assertion (a) runner-speed-INDEPENDENT; see the "why the window is
 # write-gated" section of the module docstring.
+#
+# WHY 12 AND NOT 4 (macOS observation lane, 2026-08-02). At 4 this test failed
+# on macOS with 2,006,504 bytes against a 2,097,152 bar -- 96% of the way there,
+# i.e. calibrated so tightly that a platform yielding slightly less measured
+# growth per commit tips it over. It is not runner SPEED (the window is
+# write-gated precisely so speed cannot matter); macOS simply accounts ~45% of
+# the cumulative growth per commit that the Linux runners do. Measured here,
+# same box, same commit:
+#
+#     writes:   4        8        12        16
+#     growth:   4.46 MB  9.33 MB  13.06 MB  16.91 MB   (Linux)
+#     ratio:    2.13x    4.45x    6.23x     8.06x      (of the 2 MiB bar)
+#     window:   0.22s    0.55s    0.85s     1.05s
+#
+# Scaling macOS's observed 0.50 MB/commit, 12 writes puts it at ~2.8x -- back to
+# the ~2.5x margin this file was designed around, on the WEAKEST platform seen
+# rather than the strongest. The assertion THRESHOLD is deliberately untouched:
+# more writes is more WAL pressure, so this strengthens the reproduction rather
+# than lowering the bar it has to clear. It also helps assertion (b), whose own
+# failure message names raising _TARGET_WRITES as the remedy for a window too
+# short to observe a checkpoint attempt in. Cost is under a second either way,
+# nowhere near _WINDOW_CAP_S.
 _WINDOW_CAP_S = 30.0  # safety cap so a hung/failing writer can never hang the
 # suite. Exceeding it fails LOUDLY below rather than silently measuring less.
 _SEED_ROWS = 200  # empirically: enough that the fetchmany() scan below never

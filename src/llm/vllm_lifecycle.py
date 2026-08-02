@@ -1620,6 +1620,59 @@ def run_model_download_job(
     return {"downloaded": True, "state": "downloaded", **model_cache_state(model)}
 
 
+def run_models_download_job(
+    ctx,
+    *,
+    models: Sequence[str],
+    runner: Callable[..., Iterator[str]] | None = None,
+) -> dict:
+    """Download SEVERAL models, one after another, reporting each on its own.
+
+    Maintainer ask 2026-08-02: a button that installs a chosen bench roster. Sequential
+    rather than parallel because they share one network link and one disk, and because
+    the per-model output is only legible when one model is talking at a time.
+
+    ONE FAILURE DOES NOT END THE BATCH, and that is the load-bearing decision. The
+    roster's own Gemma-3n row is GATED on Hugging Face -- it will fail without an
+    accepted licence and a token, which is stated in the UI before the click. If a
+    failure aborted the run, ticking the one model that is expected to need a token
+    would silently cost the operator the other five. So each model's outcome is
+    recorded and the loop continues; the job succeeds if ANY model arrived, and the
+    per-model verdicts travel in the result either way.
+
+    Cancellation is honoured BETWEEN models and inside each one (the single-model
+    worker already returns ``cancelled`` when ``ctx.stopping``), so a stop during a
+    multi-gigabyte fetch does not have to wait for the whole batch."""
+    results: list[dict] = []
+    total = len(models)
+    for i, model in enumerate(models, start=1):
+        if ctx.stopping:
+            results.append({"model": model, "state": "cancelled"})
+            continue
+        ctx.set_progress(detail=f"model {i} of {total}: {model}")
+        try:
+            one = run_model_download_job(ctx, model=model, runner=runner)
+            results.append({"model": model, **one})
+        except (VllmLifecycleError, VllmUnsupportedError) as exc:
+            # Recorded with its own reason -- a gated repo and a typo look identical
+            # from a bare "failed", and only one of them is the operator's to fix.
+            results.append({"model": model, "state": "error", "error": str(exc)})
+        except Exception as exc:  # noqa: BLE001 - one model's surprise is not the batch's
+            results.append({"model": model, "state": "error", "error": repr(exc)})
+    downloaded = [r for r in results if r.get("state") in {"downloaded", "already_cached"}]
+    failed = [r for r in results if r.get("state") == "error"]
+    return {
+        "requested": total,
+        "downloaded": len(downloaded),
+        "failed": len(failed),
+        "cancelled": sum(1 for r in results if r.get("state") == "cancelled"),
+        "results": results,
+        # Stated rather than inferred from the counts, so a caller cannot read a
+        # partial batch as a clean one.
+        "partial": bool(downloaded and failed),
+    }
+
+
 #: pip's own flags for a very large download. ``--retries``/``--timeout`` mirror
 #: ``install.sh:pip_install``: pip's 15 s default turns a dropped link into a
 #: MISLEADING "ResolutionImpossible / no matching distribution", and 5-10 GB is exposed

@@ -5352,6 +5352,9 @@
       // The fused setup box's plan is now stale by construction -- a backend that
       // just appeared removes a step from it.
       if (typeof loadAiSetup === "function") loadAiSetup();
+      // Same reason: the roster's install button is blocked while its backend is
+      // absent, and Ollama just stopped being absent.
+      if (typeof loadBenchRoster === "function") loadBenchRoster("ollama");
     }
 
     // The default-model install block. Shared so it renders in BOTH panel states --
@@ -19947,6 +19950,9 @@
     function refreshAiPanels() {
       loadAiSetup(); loadAiBackendPanel(); loadVllmStatusPanel();
       loadOllamaInstall(); loadLlmModels(); loadLlmHealth();
+      // Each panel asks for ITS OWN backend's roster, so the section heading and the
+      // identifiers under it can never disagree.
+      loadBenchRoster("vllm"); loadBenchRoster("ollama");
     }
 
     async function loadAiBackendPanel() {
@@ -20250,6 +20256,7 @@
         say(t("Installing — this can take several minutes…"));
         await _followJob("/api/llm/vllm/install/status", say);
         loadVllmStatusPanel();
+        loadBenchRoster("vllm");  // the roster's install button unblocks once vLLM exists
       } catch (e) {
         say("Install: " + e.message);
       } finally {
@@ -20282,6 +20289,133 @@
         loadLlmHealth();
       } catch (e) { toast("Stop: " + e.message, "err"); }
       finally { if (btn) btn.disabled = false; }
+    }
+
+    // --- The comparative-bench roster (maintainer ask 2026-08-02) --------------- //
+    //
+    // One renderer, both panels: the vLLM section shows Hugging Face repos, the Ollama
+    // section shows library tags, and each install button names the backend it is
+    // showing. The alternative -- one shared control that installs "whatever the
+    // machine prefers" -- would let a click under the vLLM heading download Ollama
+    // tags, which is the same routing-vs-provisioning confusion that shipped a real
+    // field bug three days ago.
+    //
+    // EVERY ROW IS RENDERED, including the two with nothing to install for a given
+    // backend. A model absent from a backend is a finding the operator should see,
+    // with what was searched, not a row quietly dropped so the table looks complete.
+    // The tickbox for such a row is disabled, not hidden: the reason is the point.
+    const _BENCH_HOSTS = {vllm: "vllm-bench-box", ollama: "ollama-bench-box"};
+    const _benchTicked = {vllm: null, ollama: null};  // null = "use the roster defaults"
+
+    async function loadBenchRoster(backend) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $(_BENCH_HOSTS[backend]);
+      if (!host) return;
+      let r;
+      try { r = await api("/api/llm/bench-roster?backend=" + encodeURIComponent(backend)); }
+      catch (e) { host.innerHTML = `<p class="muted">${esc(t("Could not read the bench roster."))}</p>`; return; }
+      const meanings = r.flag_meanings || {};
+      const picked = _benchTicked[backend];
+      const rows = (r.models || []).map((m) => {
+        // The hover carries each flag's full meaning (invariant #17), so the visible
+        // chip stays short without the warning becoming a bare unexplained word.
+        const flags = (m.flags || []).map((f) =>
+          `<span class="pill" title="${esc(meanings[f] || f)}">${esc(f.replace(/_/g, " "))}</span>`).join(" ");
+        const facts = [m.size, m.licence, m.context_length ? `${Number(m.context_length).toLocaleString()} ctx` : null]
+          .filter(Boolean).map(esc).join(" · ");
+        if (!m.installable) {
+          // Never a near-match offered in its place: the searched list is what makes
+          // the absence checkable rather than a shrug.
+          return `<div class="row" style="align-items:start;gap:8px;margin-top:6px;opacity:.85">` +
+            `<input type="checkbox" disabled title="${esc(t("Not published for this backend."))}">` +
+            `<div><strong>${esc(m.label)}</strong> ${flags}` +
+            `<div class="muted">${esc(t("Not available here:"))} ${esc(m.absent_reason || "")}</div>` +
+            (m.searched ? `<div class="hint">${esc(t("Searched:"))} ${esc(m.searched)}</div>` : "") +
+            // An absence somebody can close in one lookup must not read like a dead end.
+            (m.open_question
+              ? `<div class="card-caveat">${esc(t("Unresolved — this would settle it:"))} ${esc(m.open_question)}</div>`
+              : "") +
+            (m.caveat ? `<div class="card-caveat">${esc(m.caveat)}</div>` : "") +
+            `</div></div>`;
+        }
+        const on = picked ? picked.includes(m.key) : m.default_on;
+        // A weaker provenance tier is stated ON the identifier it qualifies. "fetched"
+        // is the norm and says nothing extra; "search-verified" means the acquisition
+        // run named the string but no page fetch was recorded for it, and an operator
+        // about to download several GB is owed that distinction.
+        const prov = m.verification === "fetched" ? "" :
+          ` <span class="pill" title="${esc(t("The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is."))}">${esc(t("search-verified"))}</span>`;
+        return `<div class="row" style="align-items:start;gap:8px;margin-top:6px">` +
+          `<input type="checkbox" class="bench-pick" data-backend="${esc(backend)}" data-key="${esc(m.key)}"${on ? " checked" : ""}>` +
+          `<div><strong>${esc(m.label)}</strong> ${flags}` +
+          `<div class="hint"><code>${esc(m.identifier)}</code>${prov}${facts ? " · " + facts : ""}</div>` +
+          (m.quant_note ? `<div class="hint">${esc(m.quant_note)}</div>` : "") +
+          (m.note ? `<div class="muted">${esc(m.note)}</div>` : "") +
+          `</div></div>`;
+      }).join("");
+      // Alternatives are listed, never pre-ticked and never folded into a row: a
+      // third-party GGUF is a different artefact from the publisher's own model, and
+      // an operator who reaches for one should know that is what they reached for.
+      const alts = (r.alternatives || []).map((a) =>
+        `<div class="hint" style="margin-top:6px">${esc(t("Another way to get"))} <strong>${esc(a.substitutes)}</strong>: ` +
+        `<code>${esc(a.tag)}</code>${a.size ? " · " + esc(a.size) : ""}` +
+        `<div class="card-caveat">${esc(a.caveat || "")}</div>` +
+        `<div class="muted">${esc(t("Paste it into “Pull any model tag” above — it is not ticked for you."))}</div></div>`).join("");
+      const blocked = r.prerequisite
+        ? `<p class="muted">${esc(r.prerequisite === "vllm"
+            ? t("vLLM is not installed yet, and it is what downloads these models. Install it first.")
+            : t("Ollama is not installed yet, and it is what downloads these models. Install it first."))}</p>`
+        : "";
+      host.innerHTML =
+        `<h3 style="margin:0 0 4px">${esc(t("Comparative-bench models"))}</h3>` +
+        `<p class="muted" style="margin:0 0 6px">${esc(t("The model set used to compare backends and sizes on your own corpus. Tick what you want and download them in one go — each is fetched by the backend named below, over the clear internet, never through Tor."))}</p>` +
+        `<p class="hint" style="margin:0 0 6px">${esc(t("For:"))} <strong>${esc(backend === "vllm" ? "vLLM (Hugging Face)" : "Ollama")}</strong>` +
+        ` · ${esc(t("verified"))} ${esc(r.as_of || "")}</p>` +
+        rows + alts +
+        `<div style="margin-top:10px">` +
+        `<button onclick="installBenchModels('${esc(backend)}', this)"${r.prerequisite ? " disabled" : ""}>` +
+        `${esc(t("Download the ticked models"))}</button>` +
+        `<span id="bench-status-${esc(backend)}" class="hint" style="margin-left:8px"></span></div>` +
+        blocked +
+        `<div class="card-caveat" style="margin-top:8px">${esc(r.caveat || "")}</div>` +
+        `<div class="muted">${esc(r.method || "")}</div>`;
+    }
+
+    async function installBenchModels(backend, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const say = (m) => { const el = $("bench-status-" + backend); if (el) el.textContent = m; };
+      const keys = Array.from(document.querySelectorAll(
+        `.bench-pick[data-backend="${backend}"]:checked`)).map((el) => el.dataset.key);
+      // Remembered across the re-render the install triggers, so a deliberate
+      // un-ticking is not silently undone by the panel refreshing under the operator.
+      _benchTicked[backend] = keys;
+      if (!keys.length) { say(t("Tick at least one model first.")); return; }
+      if (!await ensureAiEgress(t("Download bench models (over the clear internet, not through Tor)"))) {
+        say(t("Download cancelled.")); return;
+      }
+      const was = btn ? btn.textContent : "";
+      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
+      try {
+        const r = await api("/api/llm/bench-roster/install",
+          {method: "POST", body: JSON.stringify({keys, backend})});
+        // Refusals are shown BEFORE the progress line, not after the batch: an
+        // operator who ticked six and gets four downloads is owed an account of six.
+        for (const ref of (r.refused || [])) {
+          toast(`${ref.label || ref.key}: ${ref.reason || t("refused")}`, "err");
+        }
+        if (r.action === "nothing_to_do") { say(t("Nothing to download — every ticked model was refused.")); return; }
+        if (r.action === "busy") { say(t("A model download is already running.")); return; }
+        say(t("Downloading:") + " " + (r.queued || []).join(", "));
+        if (backend === "ollama") _llmPullStartPoll();  // the Downloads section owns the per-model bars
+        const st = await _followJob(
+          "/api/llm/bench-roster/status?backend=" + encodeURIComponent(backend), say);
+        say(st.state === "error" ? (t("Download failed:") + " " + (st.detail || "")) : (st.detail || t("Done.")));
+        loadLlmModels();
+      } catch (e) {
+        say(t("Download failed:") + " " + (e.message || e));
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = was || t("Download the ticked models"); }
+      }
     }
 
     // E-S4 (2026-08-01, ruling 16): a user-asked summarize/translate never silently

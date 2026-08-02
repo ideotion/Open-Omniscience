@@ -5,12 +5,12 @@ chosen set of bench models, so the model-comparison work has the same models on
 whichever backend a machine serves with.
 
 WHERE THESE IDENTIFIERS COME FROM, and why that is the whole point of this module.
-Every string below was read off a live model page on 2026-08-02 by an
-internet-connected session, and each entry carries where it was read and when. The
-build sandbox cannot reach huggingface.co, ollama.com or registry.ollama.ai (the
-gateway 403s all three), so nothing here could be checked by the session that wrote
-the file -- which is exactly the condition under which this project has fabricated
-model tags before. ``src/llm/ollama.py``'s catalog still carries the scar:
+Almost every string below was read off a live model page on 2026-08-02 by an
+internet-connected session. The build sandbox cannot reach huggingface.co, ollama.com
+or registry.ollama.ai (the gateway 403s all three), so nothing here could be checked by
+the session that wrote the file -- which is exactly the condition under which this
+project has fabricated model tags before. ``src/llm/ollama.py``'s catalog still carries
+the scar:
 
     "(The previous catalog -- gemma4:e2b, llama4, qwen3.5 -- was hallucinated.)"
 
@@ -19,10 +19,22 @@ Two corrections from that same acquisition run, recorded because they cut both w
 fictional), and so is ``gemma4``. A name being invented once does not make it invented
 forever, and a name being real today does not excuse having written it before it was.
 
-WHAT THIS FILE REFUSES TO DO. Two of the six are not on Ollama at all. Neither gets a
-near-match: ``library/smollm`` is a different, older model and ``lfm2.5-thinking`` is a
-different variant. They are reported ABSENT for that backend, with what was searched,
-because a substitution presented as the requested model is worse than a gap.
+"ALMOST" IS LOAD-BEARING, so every identifier states its own tier rather than inheriting
+a blanket claim from this docstring. ``verification: "fetched"`` means a page was loaded;
+``"search-verified"`` means the acquisition run NAMED the string but no fetch was
+recorded for it. Exactly one row is at the weaker tier today
+(``lfm25-1-2b-instruct``, added on the maintainer's 2026-08-02 decision because four of
+the bench's five tasks are constrained-output instruct tasks that its Base sibling cannot
+answer). The field has NO default: a row added without one raises, because a silent
+default would claim the stronger tier for whoever forgot to think about it.
+
+WHAT THIS FILE REFUSES TO DO. Three rows have no Ollama tag at all. None gets a
+near-match: ``library/smollm`` is a different, older model, ``lfm2.5-thinking`` is a
+different variant, and a user-namespace upload is not a first-party tag until somebody
+confirms whose namespace it is. They are reported ABSENT for that backend, with what was
+searched, because a substitution presented as the requested model is worse than a gap.
+An absence that is merely UNRESOLVED carries an ``open_question`` saying what would
+settle it -- a gap somebody can close in one lookup should not read like a dead end.
 
 FLAGS ARE SHOWN BEFORE THE BYTES, not discovered through a failed download. A gated
 repo, a base (non-instruct) checkpoint, an unread licence and a third-party GGUF are
@@ -120,6 +132,7 @@ BENCH_ROSTER: list[dict] = [
         "flags": ["vision_capable", "sources_disagree"],
         "hf": {
             "repo": "Qwen/Qwen3.5-0.8B",
+            "verification": "fetched",
             "gated": False,
             "licence": "Apache-2.0",
             "use_restrictions": False,
@@ -130,6 +143,7 @@ BENCH_ROSTER: list[dict] = [
         },
         "ollama": {
             "tag": "qwen3.5:0.8b-q8_0",
+            "verification": "fetched",
             "source": "library",
             "size": "1.0 GB",
             "context_length": 262144,
@@ -149,6 +163,7 @@ BENCH_ROSTER: list[dict] = [
         "hf": {
             # CASE MATTERS: the requested spelling (…-E2B-IT) 404s. This is the repo.
             "repo": "google/gemma-3n-E2B-it",
+            "verification": "fetched",
             "gated": True,
             "licence": "Gemma Terms of Use",
             "use_restrictions": True,
@@ -160,6 +175,7 @@ BENCH_ROSTER: list[dict] = [
         },
         "ollama": {
             "tag": "gemma3n:e2b-it-q4_K_M",
+            "verification": "fetched",
             "source": "library",
             "size": "5.6 GB",
             "context_length": 32768,
@@ -175,6 +191,7 @@ BENCH_ROSTER: list[dict] = [
         "flags": ["context_varies_by_quant", "sources_disagree"],
         "hf": {
             "repo": "microsoft/Phi-4-mini-instruct",
+            "verification": "fetched",
             "gated": False,
             "licence": "MIT",
             "use_restrictions": False,
@@ -185,6 +202,7 @@ BENCH_ROSTER: list[dict] = [
         },
         "ollama": {
             "tag": "phi4-mini:3.8b-q4_K_M",
+            "verification": "fetched",
             "source": "library",
             "size": "2.5 GB",
             "context_length": 131072,
@@ -201,6 +219,7 @@ BENCH_ROSTER: list[dict] = [
         "flags": [],
         "hf": {
             "repo": "HuggingFaceTB/SmolLM3-3B",
+            "verification": "fetched",
             "gated": False,
             "licence": "Apache-2.0",
             "use_restrictions": False,
@@ -232,6 +251,7 @@ BENCH_ROSTER: list[dict] = [
         "flags": ["vision_capable"],
         "hf": {
             "repo": "mistralai/Ministral-3-3B-Instruct-2512",
+            "verification": "fetched",
             "gated": False,
             # Apache-2.0, but the card adds a third-party-rights rider. Recorded so the
             # catalog's permissive-first ordering stays honest about what it is ordering.
@@ -245,6 +265,7 @@ BENCH_ROSTER: list[dict] = [
         },
         "ollama": {
             "tag": "ministral-3:3b-instruct-2512-q4_K_M",
+            "verification": "fetched",
             "source": "library",
             "size": "3.0 GB",
             "context_length": 262144,
@@ -261,6 +282,7 @@ BENCH_ROSTER: list[dict] = [
         "flags": ["base_model", "licence_unverified"],
         "hf": {
             "repo": "LiquidAI/LFM2.5-1.2B-Base",
+            "verification": "fetched",
             "gated": False,
             "licence": "other (badge only; called 'LFM Open License v1.0' on mirrors, unread)",
             "use_restrictions": None,  # genuinely unknown, not assumed either way
@@ -287,7 +309,80 @@ BENCH_ROSTER: list[dict] = [
         },
         "note": (
             "The instruct sibling is LiquidAI/LFM2.5-1.2B-Instruct. It was NOT substituted: "
-            "Base is what was asked for, and the difference is stated instead."
+            "Base is what was asked for, and the difference is stated instead. It is offered "
+            "ADDITIONALLY as its own row below, so the bench has a LiquidAI datapoint that "
+            "measures something."
+        ),
+    },
+    {
+        # ADDED, NOT SUBSTITUTED (maintainer decision 2026-08-02). The row above is the
+        # one that was asked for and it stays exactly as it was.
+        #
+        # WHY A SECOND ROW EARNS ITS PLACE. Four of the bench's five tasks
+        # (``model_bench.BENCH_TASKS``: perception, triage, source_tags, langdetect) are
+        # CONSTRAINED-OUTPUT instruct tasks -- extract fields, echo a term back exactly,
+        # pick from a closed vocabulary, emit a language code. A base checkpoint answers
+        # none of them; only ``latency`` would produce a real number. So ticking Base
+        # yields one usable metric out of five plus four near-zeros that mean "wrong
+        # tool", not "bad model" -- and a near-zero with no memory of why is exactly the
+        # number that gets misread later. The Instruct sibling is what can actually
+        # answer the question the roster exists to ask.
+        "key": "lfm25-1-2b-instruct",
+        "label": "LFM2.5-1.2B-Instruct",
+        # Unticked for the same reason as its Base sibling: nobody has read the licence.
+        "default_on": False,
+        "flags": ["licence_unverified"],
+        "hf": {
+            "repo": "LiquidAI/LFM2.5-1.2B-Instruct",
+            # THE ONE ROW IN THIS FILE THAT WAS NOT READ OFF A LIVE PAGE. The id comes
+            # from the acquisition run's own prose (the Base card names its sibling), so
+            # it is the run's string rather than an invention -- but no page fetch was
+            # recorded for it, and the difference between "someone loaded this URL" and
+            # "someone mentioned this name" is the whole distance between a verified
+            # identifier and a plausible one. Filed at the weaker tier and shown as such.
+            "verification": "search-verified",
+            "gated": False,
+            # Deliberately not copied from the Base row. The Base card's licence badge
+            # and parameter split are facts about THAT repo; asserting them here would be
+            # inventing agreement between two pages only one of which was read.
+            "licence": "other (unread — assumed to match the Base sibling's badge, unconfirmed)",
+            "use_restrictions": None,
+            "params": None,
+            "context_length": None,
+            "card_url": "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct",
+            "size": None,
+        },
+        "ollama": None,
+        "ollama_absent": {
+            "reason": "no first-party Ollama tag confirmed for the Instruct variant",
+            "searched": (
+                "library/lfm2.5 (the 8B-A1B model only); library/lfm2.5-thinking (1.2b, "
+                "first-party, but the Thinking variant); LiquidAI/lfm2.5-1.2b-instruct "
+                "(the right variant and size, in a user namespace)"
+            ),
+            # THE OPEN QUESTION, recorded so the next connected session can close it in
+            # one lookup. `LiquidAI/lfm2.5-1.2b-instruct` was set aside as "a user
+            # namespace" -- but if that Ollama account IS LiquidAI, it is FIRST-PARTY
+            # publishing and this absence disappears. That is a different provenance
+            # claim entirely from the community re-uploads rejected for SmolLM3
+            # (alibayram, yasserrmd, ...), where the objection was that nobody knew who
+            # built the file. Not resolved here, and not guessed either way.
+            "open_question": (
+                "is the Ollama account 'LiquidAI' the publisher's own? If yes, "
+                "LiquidAI/lfm2.5-1.2b-instruct is a first-party tag and this row installs "
+                "on Ollama too; if it is somebody who took the name, the absence stands"
+            ),
+            "passthrough_tag": None,
+            "passthrough_caveat": (
+                "library/lfm2.5-thinking is first-party and the right size, but a Thinking "
+                "variant emits reasoning traces that fail format validity on three of the "
+                "four constrained-output tasks -- a finding about reasoning models, not a "
+                "LiquidAI capability measurement, so it is not offered under this name"
+            ),
+        },
+        "note": (
+            "Added so the bench can measure a LiquidAI model on instruct tasks. Its Base "
+            "sibling above is unchanged and still the row that was requested."
         ),
     },
 ]
@@ -311,6 +406,7 @@ ALTERNATIVES: list[dict] = [
         "backend": "ollama",
         "flags": ["third_party_passthrough"],
         "tag": "hf.co/ggml-org/SmolLM3-3B-GGUF:Q4_K_M",
+            "verification": "fetched",
         "source": "hf_passthrough",
         "first_party": False,
         "size": "1.92 GB",
@@ -373,6 +469,10 @@ def _entry_for_backend(entry: dict, backend: str) -> dict:
             "context_length": hf.get("context_length"),
             "gated": bool(hf.get("gated")),
             "source": "huggingface",
+            # NO DEFAULT. An absent value would silently claim the STRONGER tier, which
+            # is the wrong direction for a field whose whole job is to be honest about
+            # provenance; the registry test below makes absence impossible instead.
+            "verification": hf["verification"],
         }
 
     oll = entry.get("ollama")
@@ -387,6 +487,7 @@ def _entry_for_backend(entry: dict, backend: str) -> dict:
             "source": oll.get("source", "library"),
             "quant_note": oll.get("quant_note"),
             "min_ollama_version": oll.get("min_ollama_version"),
+            "verification": oll["verification"],
         }
 
     absent = entry.get("ollama_absent") or {}
@@ -399,6 +500,9 @@ def _entry_for_backend(entry: dict, backend: str) -> dict:
         "searched": absent.get("searched"),
         "caveat": absent.get("passthrough_caveat"),
         "alternative_key": absent.get("alternative_key"),
+        # An absence that is merely UNRESOLVED is not the same as one that is settled,
+        # and a panel that renders them identically buries the cheaper of the two.
+        "open_question": absent.get("open_question"),
     }
 
 
