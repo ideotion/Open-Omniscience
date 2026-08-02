@@ -1445,6 +1445,45 @@ def bench_roster_install(req: BenchRosterInstallRequest | None = None) -> dict:
     }
 
 
+@router.get("/bench-roster/status")
+def bench_roster_status(backend: str | None = None) -> dict:
+    """Live state of a roster install, resolved by the SAME question as the install.
+
+    Not a reuse of ``/default-model/status``: that one resolves the backend from the
+    default-model plan, so a vLLM panel installing on a machine that would otherwise
+    provision Ollama would follow the wrong job and report a stranger's progress as its
+    own. The follower must read the job the install actually started.
+
+    HONEST SCOPE, because the two backends differ in kind. The vLLM path owns a single
+    job, so its state IS this batch's state. The Ollama path enqueues into the shared
+    pull queue, so what is reported is THE QUEUE -- which may carry pulls this batch did
+    not ask for. ``queue_is_shared`` says which of the two you are reading rather than
+    letting a caller assume."""
+    pick = _roster_backend(backend)
+    if pick["backend"] == "vllm":
+        job = _get_vllm_model_job().status()
+        return {"backend": "vllm", "queue_is_shared": False, "job": job, **_job_view(job)}
+
+    from src.llm.pull_queue import get_pull_manager
+
+    queue = get_pull_manager().status()
+    active = queue.get("active")
+    pending = queue.get("queue") or []
+    if active:
+        detail = f"downloading {active.get('model', '')} — {active.get('percent', 0)}%"
+    elif pending:
+        detail = f"{len(pending)} waiting"
+    else:
+        detail = "nothing downloading"
+    return {
+        "backend": "ollama",
+        "queue_is_shared": True,
+        "queue": queue,
+        "state": "running" if (active or pending) else "done",
+        "detail": detail,
+    }
+
+
 @router.get("/ollama/state")
 def ollama_state() -> dict:
     """INSTALLED and RUNNING as two independent facts (field report 2026-07-29).

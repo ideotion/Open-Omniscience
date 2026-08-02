@@ -322,3 +322,169 @@ def test_a_batch_survives_one_model_failing():
     assert out["downloaded"] == 2 and out["failed"] == 1
     assert out["partial"] is True, "a partial batch must never read as a clean one"
     assert "gated" in next(r["error"] for r in out["results"] if r["state"] == "error")
+
+
+# --------------------------------------------------------------------------- #
+#  Following the install: the panel must read its OWN backend's progress
+# --------------------------------------------------------------------------- #
+def test_the_follower_reads_the_job_the_install_started(monkeypatch, machine):
+    """A vLLM panel installing on a machine that would otherwise provision Ollama must
+    not follow the Ollama queue and report a stranger's progress as its own.
+
+    This is the routing-vs-provisioning confusion that shipped a real field bug, one
+    level down: there, a download was PLANNED for a backend that was not there; here, it
+    would be WATCHED on one."""
+    import src.api.llm as L
+
+    machine(gpu=True, vllm_installed=True, ollama_installed=True, ollama_running=True)
+
+    class _Job:
+        def status(self):
+            return {"state": "running", "detail": "downloading 2 of 3"}
+
+    monkeypatch.setattr(L, "_get_vllm_model_job", lambda: _Job())
+    out = L.bench_roster_status("vllm")
+    assert out["backend"] == "vllm"
+    assert out["state"] == "running" and out["detail"] == "downloading 2 of 3"
+    # Its scope is exact, and it says so: this job is only ever this batch.
+    assert out["queue_is_shared"] is False
+
+
+def test_the_ollama_follower_admits_the_queue_is_shared(monkeypatch, machine):
+    """The Ollama path enqueues into the one pull queue, which may already be carrying
+    somebody else's pull. Reporting that as "your batch" would be a small lie that makes
+    a progress line untrustworthy; the flag lets a caller know which it is reading."""
+    import src.api.llm as L
+
+    machine(gpu=False, vllm_installed=False, ollama_installed=True, ollama_running=True)
+
+    class _Mgr:
+        def status(self):
+            return {"active": {"model": "phi4-mini:3.8b-q4_K_M", "percent": 41}, "queue": ["x"]}
+
+    monkeypatch.setattr("src.llm.pull_queue.get_pull_manager", lambda: _Mgr())
+    out = L.bench_roster_status("ollama")
+    assert out["queue_is_shared"] is True
+    assert out["state"] == "running"
+    assert "phi4-mini" in out["detail"] and "41" in out["detail"]
+
+
+def test_an_idle_queue_terminates_the_follower(monkeypatch, machine):
+    """A poller with no terminal state is indistinguishable from work that never ends --
+    the exact defect that hung the default-model chain (field report 2026-08-02)."""
+    import src.api.llm as L
+
+    machine(gpu=False, vllm_installed=False, ollama_installed=True, ollama_running=True)
+
+    class _Mgr:
+        def status(self):
+            return {"active": None, "queue": []}
+
+    monkeypatch.setattr("src.llm.pull_queue.get_pull_manager", lambda: _Mgr())
+    out = L.bench_roster_status("ollama")
+    assert out["state"] != "running", "the follower must be able to stop"
+
+
+# --------------------------------------------------------------------------- #
+#  The panel (source-level, browser-unverified per fork-3)
+# --------------------------------------------------------------------------- #
+def _app_js() -> str:
+    import pathlib
+
+    return (pathlib.Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_text(
+        encoding="utf-8"
+    )
+
+
+def _fn_body(js: str, name: str) -> str:
+    """One function's body, brace-matched from the BODY brace.
+
+    Two ways to get this wrong, both of which make every assertion over the result
+    worthless while looking fine (Session D, 2026-08-01): taking the first ``{`` after
+    the name lands in a DEFAULT PARAMETER and yields an empty body, so guards pass
+    vacuously; splitting on "the next declaration" over-runs when the delimiter guessed
+    is not the one that follows, sweeping in unrelated code so an assertion can match
+    something else entirely. So: balance the parentheses first, then brace-match."""
+    i = js.index(f"function {name}(") + len(f"function {name}")
+    depth = 0
+    while True:  # walk the parameter list to its close
+        if js[i] == "(":
+            depth += 1
+        elif js[i] == ")":
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+    start = js.index("{", i)
+    depth = 0
+    for j in range(start, len(js)):
+        if js[j] == "{":
+            depth += 1
+        elif js[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return js[start : j + 1]
+    raise AssertionError(f"unbalanced braces in {name}")
+
+
+def test_the_body_extractor_is_not_vacuous():
+    """The guard on the guards. A body that came back empty -- or swallowed the rest of
+    the file -- would make every source assertion below pass for free."""
+    js = _app_js()
+    for name in ("loadBenchRoster", "installBenchModels"):
+        body = _fn_body(js, name)
+        assert 10 < body.count("\n") < 120, f"{name}: implausible body ({body.count(chr(10))} lines)"
+        assert body.startswith("{") and body.rstrip().endswith("}")
+    # And the two are genuinely different slices, not the same over-broad one twice.
+    assert _fn_body(js, "loadBenchRoster") != _fn_body(js, "installBenchModels")
+    assert "installBenchModels" not in _fn_body(js, "loadBenchRoster").replace(
+        "installBenchModels('", "X"
+    ).replace('installBenchModels("', "X")
+
+
+def test_each_panel_asks_for_its_own_backend():
+    """Both sections render from ONE function, so the guard that matters is that each
+    call names its backend -- otherwise a click under the vLLM heading downloads
+    whatever the machine happens to prefer."""
+    js = _app_js()
+    assert 'loadBenchRoster("vllm")' in js
+    assert 'loadBenchRoster("ollama")' in js
+    assert "bench-roster?backend=" in js, "the roster is fetched for a named backend"
+    # And the install posts the backend it rendered, never an implicit one.
+    assert "JSON.stringify({keys, backend})" in js
+
+
+def test_an_absent_model_is_rendered_disabled_rather_than_hidden():
+    """A row with nothing to install is a finding, not clutter. Hiding it would make the
+    table look complete and leave the operator wondering where the model went."""
+    js = _app_js()
+    body = _fn_body(js, "loadBenchRoster")
+    assert "if (!m.installable)" in body
+    assert 'type="checkbox" disabled' in body
+    assert "absent_reason" in body and "Searched:" in body
+
+
+def test_the_install_reports_refusals_and_needs_consent():
+    """Ticking six and getting four downloads with no explanation is exactly the silence
+    the roster exists to prevent; and the download is clearnet, so it passes the AI
+    egress consent like every sibling."""
+    js = _app_js()
+    body = _fn_body(js, "installBenchModels")
+    assert "ensureAiEgress(" in body
+    assert "if (!await ensureAiEgress" in body, "a declined consent must stop the install"
+    assert "r.refused" in body
+    assert "nothing_to_do" in body
+
+
+def test_the_bench_strings_are_translated():
+    """Server-side notes travel with the data, but the panel's own chrome is keyed x12
+    like every operator-facing surface."""
+    import json
+    import pathlib
+
+    root = pathlib.Path(__file__).resolve().parents[1] / "src" / "static" / "locales"
+    for lang in ("en", "fr", "ar", "zh"):
+        data = json.loads((root / f"{lang}.json").read_text(encoding="utf-8"))
+        assert "Comparative-bench models" in data
+        assert "Download the ticked models" in data
+        assert data["Comparative-bench models"], f"{lang}: empty translation"
