@@ -2348,5 +2348,7 @@
   "This machine is below the local-inference practicality line ({r}) — background AI is off by default here. You can still start it.": "Эта машина ниже порога практичности локального вывода ({r}) — фоновый ИИ здесь выключен по умолчанию. Вы всё равно можете его запустить.",
   "Hierarchical summary over {n} parts — each part was summarised, then those summaries were summarised together.": "Иерархическое резюме из {n} частей — каждая часть была изложена кратко, затем эти изложения были сведены вместе.",
   "Translated in {n} parts — the article was split at paragraph boundaries and every part was translated.": "Переведено в {n} частях — статья была разделена по границам абзацев, и каждая часть была переведена.",
-  "… {n} bytes not shown …": "… {n} байт не показано …"
+  "… {n} bytes not shown …": "… {n} байт не показано …",
+  "The line breaks where nothing was recorded — a gap is not a zero.": "Линия прерывается там, где ничего не записано — пропуск это не ноль.",
+  "{n} articles across {k} channels": "{n} статей по {k} каналам"
 }

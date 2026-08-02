@@ -64,3 +64,37 @@ def test_strings_translated_x12():
         data = json.loads((_STATIC / "locales" / f"{loc}.json").read_text(encoding="utf-8"))
         assert "By channel" in data
         assert "Channel: {c}" in data
+
+
+def test_a_share_is_always_shown_against_a_stated_denominator():
+    """A bare count cannot answer "is this channel most of my corpus or a rounding
+    error?", so each chip carries its share -- and the denominator is stated, because an
+    unstated one is the usual way a percentage lies.
+
+    The denominator is honest by construction on both sides: ``Article.source_id`` is NOT
+    NULL, so every article lands in exactly one channel, and ``source_type_facets``
+    excludes quarantined articles exactly as the browse path does (it did not, until the
+    fix in this same change), so the facets really do sum to the corpus the share is a
+    share OF.
+    """
+    body = _JS[_JS.index("async function loadHomeChannels("):]
+    body = body[:body.index("async function openChannelCorpus(")]
+    assert "facets.reduce(" in body, "the denominator must be computed, not assumed"
+    assert "{n} articles across {k} channels" in body, "and stated to the reader"
+    # The raw count stays BESIDE the share: the number is what the reader checks the
+    # percentage against, so this adds to the chip rather than replacing its contents.
+    assert "f.articles" in body and "share(f.articles)" in body
+    # A sub-0.5% channel must not round to a bare "0%", which reads as nothing at all.
+    assert '"<1%"' in body
+
+
+def test_the_chips_keep_their_click_rather_than_becoming_bars():
+    """The project's chart framework prescribes sorted bars for part-to-whole, and
+    ``_ooShareBars`` already implements exactly that -- but its rows are not clickable and
+    these chips open the channel's corpus. Swapping them would trade a working tool for a
+    prettier read of the same numbers (the standing "never lose a tool" rule), so the
+    shares came to the chips instead."""
+    body = _JS[_JS.index("async function loadHomeChannels("):]
+    body = body[:body.index("async function openChannelCorpus(")]
+    assert "openChannelCorpus(" in body, "every chip must still open its corpus"
+    assert "_ooShareBars(" not in body, "the clickable chips are not replaced by bars"
