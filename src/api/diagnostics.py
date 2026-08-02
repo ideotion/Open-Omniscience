@@ -3199,7 +3199,12 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("model-bench.json", lambda: model_bench_last(full=False)),
         # B7.1: the whole dual-backend AI stack snapshot -- backend/hardware facts,
         # active model, context settings, and every AI job's last saved summary.
-        ("ai.json", lambda: ai_diagnostics()),
+        # Called DIRECTLY, so both arguments are passed explicitly: a FastAPI default
+        # (Depends/Query) is only resolved when FastAPI itself calls the function, and
+        # Query(False) is a truthy object — a bare ai_diagnostics() here would take the
+        # measure_corpus branch and hand article_length_report a Depends sentinel. The
+        # file's own convention for a db-taking member (leads_quality below) is the fix.
+        ("ai.json", lambda: ai_diagnostics(measure_corpus=False, db=db)),
         # B7.2: the qualification-assist self-test + the newest saved proposals run
         # (across every source ever checked -- read-only, never runs a new check).
         ("qualification-assist-selftest.json", lambda: qualification_assist_selftest(download=False)),

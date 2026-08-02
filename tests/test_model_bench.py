@@ -197,9 +197,9 @@ def test_an_edited_batch_file_is_refused_on_load(tmp_path, monkeypatch) -> None:
     payload = BB.build_frozen_batch(keywords=_rows(4), target_size=6)
     BB.save_frozen_batch(payload)
     p = tmp_path / "frozen-batch.json"
-    data = json.loads(p.read_text())
+    data = json.loads(p.read_text(encoding="utf-8"))
     data["keywords"].append({"term": "smuggled-in", "language": "en"})
-    p.write_text(json.dumps(data))
+    p.write_text(json.dumps(data), encoding="utf-8")
     with pytest.raises(BB.BenchArtifactError, match="edited"):
         BB.load_frozen_batch()
 

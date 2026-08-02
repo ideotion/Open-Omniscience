@@ -1439,6 +1439,20 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     shapes (paragraphs, punctuation-dense, punctuation-free, CJK, mixed) × several budgets. The
     general form: for any splitter whose output is meant to be reassembled, the test is exact
     reconstruction, never per-piece plausibility.
+  - **A FastAPI DEFAULT IS A SENTINEL OBJECT WHEN THE FUNCTION IS CALLED DIRECTLY — AND
+    `Query(False)` IS TRUTHY (2026-08-02, Session E S4, caught by CI not by the local run):**
+    `Depends(...)`/`Query(...)` defaults are resolved by FASTAPI, so any other caller gets the
+    sentinel itself. `_all_diagnostics_members` builds `ai.json` by calling the route
+    DIRECTLY, so adding `measure_corpus: bool = Query(False), db: Session = Depends(get_db)`
+    to it meant the bundle took the `if measure_corpus:` branch (a `Query` object is truthy!)
+    and handed a `Depends` object to a function expecting a Session. The bundle's own
+    `_safe()` would have swallowed that into `{"section_ok": False}`, so EVERY bundle would
+    have shipped a degraded `ai.json` and nothing would have said so — the degrade wrapper
+    becoming the hiding place for the bug, the K2 lesson again. THE RULE: a route that is also
+    called directly must have its arguments passed EXPLICITLY at every such call site (the
+    file's own `leads_quality(download=False, db=db)` convention), and the guard must be
+    BEHAVIOURAL — drive the real member generator and assert the payload is a real report, not
+    a sentinel section. A source-level check of the route signature would have passed.
   - **PARSE A VALUE-BEARING PROVENANCE STRING DEFENSIVELY BEFORE EXTENDING IT (2026-08-02,
     Session E S4):** `ArticleAnalysis.prompt_version` is `String(50)` and is NOT just a version —
     the translation TARGET LANGUAGE lives inside it after a colon (`translate-v2:French`), read
