@@ -685,9 +685,19 @@
     // "ok" button AND a skipDialog caller, so there is exactly ONE place in the app
     // that performs this request (never duplicated inline per-caller).
     async function _postGoOnline() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const r = await api("/api/system/network", {method:"POST", body: JSON.stringify({online:true})});
         _paintNetwork(r.online);
+        // The endpoint re-READS the kill switch rather than echoing the request (it is
+        // honest about the state it actually reached), so a 200 can still carry
+        // online:false. That path used to return quietly: the button repainted to
+        // airplane and the operator was told nothing -- the silent half of the field
+        // report "sometimes the app remains in airplane mode with no explanation"
+        // (2026-08-02). A refusal must be as loud as a failure.
+        if (!r.online) {
+          toast(t("Still offline — the request was accepted but airplane mode is still on. Try again."), "err");
+        }
         return r.online;
       } catch (e) { toast(e.message, "err"); return false; }
     }
