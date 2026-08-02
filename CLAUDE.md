@@ -1633,6 +1633,58 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     and when correcting a wrong constant, prefer fixing its UNIT over inventing a new
     number — the 0.5 MB figure was right, only its denominator was wrong, so the fix
     needed no new estimate to defend.
+  - **A THICK MEASUREMENT WINDOW IS THE SIGNATURE OF A POLLER, SO SELECTING ON IT SELECTS
+    AWAY EVERY INTERACTIVE ROUTE (2026-08-02, the snappy bar):** `all_interactive_pass`
+    and K2 judged only routes with `window_n >= 20` and reported GREEN at 31.2 ms while
+    `GET /api/articles` sat at a measured p95 of **68,137 ms** in the same reservoir. The
+    three routes that qualified were all 2-second pollers — and that is structural, not
+    bad luck: the UI polls `/api/system/network` 275 times a session while a person opens
+    the article list twice, so an n-threshold is a near-perfect *anti*-filter for the
+    thing being measured. The deeper error was reading `low-n` as "no measurement exists"
+    when it means "the measurement's TYPICALITY is unproven" — 68 seconds was really
+    observed. Report the breach with its n rather than dropping it, and never let a
+    confidence label double as an existence label. NEGATIVE-SPACE TWIN, mandatory here: a
+    thin-but-FAST route must NOT break the pass, or the fix trades a fabricated green for
+    a fabricated red that fires on every freshly-booted process.
+  - **A HEALTH PROBE CANNOT TELL "GONE" FROM "MOMENTARILY UNREACHABLE" — so it may
+    enrich a message but must never decide a retry (2026-08-02, the AI-sweep outage
+    reason):** the sweeps' "local model hiccup (1/10) — retrying in 5s" was wrong in
+    every part (`resolve_backend()` already knew `no_backend: true` with a precise
+    reason), and the obvious fix — have the probe classify the outage as terminal and
+    short-circuit the retry budget — was WRONG in a way the repo's own progressive-sweep
+    tests caught within one run: a model reload, a restart and a busy server all answer a
+    health probe identically, so that would end a multi-hour sweep on the first blip,
+    destroying the exact guarantee the backoff exists to provide. Split the two concerns:
+    the probe supplies WORDS (beside, never instead of, the raw error), the caller keeps
+    the CONTROL FLOW. Pin it with a test that the helper exposes no verdict at all, since
+    the tempting version is one refactor away. Same family as the port-collision lesson —
+    a boolean up/down probe will confidently answer a question it cannot see.
+  - **AN ABSOLUTE FLOOR FIXES THE BLIND DIRECTION AND LEAVES THE NOISY ONE OPEN — a
+    zero-spread cohort makes `v > p90` mean `v > 0` (2026-08-02, source-audit):** the
+    recorded tail-blindness lesson added `PATHOLOGY_ABS_FLOOR` so a DEGRADED cohort could
+    not hide a broken source. The mirror case went unexamined: on a PERFECTLY CLEAN cohort
+    the robust p90 and MAD are both exactly 0.0, so the tail test degenerates to
+    "greater than zero" and ONE pathological article out of 1,992 became an
+    extraction-failure verdict — all 63 sources the field called "failing" were this, each
+    100–1000× below its own floor, Al Jazeera and Le Dépêche among them. A RATE cannot
+    carry this weight (1-in-1,992 and 600-in-1,200 are the same number to a threshold), so
+    guard the high-confidence criterion on the raw COUNT — which `per_source_metrics`
+    already computed and discarded. GENERAL FORM: whenever a robust-statistic outlier test
+    can meet a degenerate distribution, ask what the test *reduces to* there; and when a
+    fix adds a floor for one failure direction, write the twin test for the other before
+    assuming the criterion is now sound.
+  - **A BOOT-ONLY JANITOR IS A JANITOR THAT NEVER RUNS, ON EXACTLY THE INSTANCE THAT NEEDS
+    IT (2026-08-02, the orphaned restore staging):** `cleanup_stale_staging` reclaims
+    `.restore-*` dirs at boot, guarded at 24 h so a live job is never swept. Both halves
+    are correct and they compose into a hole: a dir orphaned in hour 1 is too YOUNG at the
+    next boot check and is never looked at again, so it survives the entire uptime — and
+    the longer the instance runs, the more certain that is, on the very machines the
+    14-day-continuous KPI is asking for. Its sibling (the pre-restore snapshot sweep)
+    already ran both at boot AND off-peak, which is the shape to copy. The cost is not the
+    bytes: for an encrypted corpus a staging tree holds a PLAINTEXT copy, so an unswept
+    one is an at-rest-encryption hole for as long as the app stays up. GENERAL FORM: any
+    cleanup with an AGE GUARD needs a RECURRING trigger, because the guard guarantees the
+    first look will be too early.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD IMPRESSIONS 2026-08-01 — Home-alerts relevance/card system · Home overview subtabs ·

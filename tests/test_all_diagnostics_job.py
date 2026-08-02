@@ -499,7 +499,7 @@ def test_no_member_call_site_leaves_a_Query_default_unpassed():
         )
         sentinels = [
             arg.arg
-            for arg, dflt in zip(names, defaults)
+            for arg, dflt in zip(names, defaults, strict=False)
             if isinstance(dflt, ast.Call)
             and getattr(getattr(dflt, "func", None), "id", None)
             in ("Query", "Body", "Form", "File", "Depends")
