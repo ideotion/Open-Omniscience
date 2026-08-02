@@ -1545,6 +1545,31 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     moment a new field was consulted. Build the double with the payload's own builder
     (`backend._result` here), so a double can never describe a machine that could not
     exist.
+  - **A TEST THAT STARTS A REAL WORKER AND NEVER JOINS IT POISONS THE WHOLE PYTEST
+    PROCESS — and the bill arrives in a different file thousands of tests later
+    (2026-08-02, the Core-only egress-window flake):**
+    `test_start_seeds_mirrors_and_checksum_only_on_a_new_entry` was the only test in
+    its file that called `start()` — every sibling drives `_download` directly, which
+    launches nothing — so it alone needed injected seams, and it had none. It fetched
+    for real and left `oo-dump-en:pages-articles` running as a DAEMON for the rest of
+    the run (live-reproduced: still alive when the test body ends). The
+    egress-window `guard` fixture clears the kill switch during setup, so whenever
+    that worker's retry landed in the window it reached a real `socket.connect` —
+    and the fixture records into a **process-global** spy and asserts an exact list
+    against it. FOUR general rules. (a) Before trusting "the sibling tests are safe,"
+    check which API actually LAUNCHES something: `start()` and `_download` are not
+    interchangeable, and only one of them needs joining. (b) A test asserting an
+    exact list against a process-global patch point is making a claim about the whole
+    PROCESS, not about itself — thread-scope the record, but keep foreign calls in a
+    `.foreign` list that prints on failure, or a guarded path that genuinely moved a
+    fetch onto a worker thread vanishes from the negative-space assertion that exists
+    to catch it. (c) When a lane fails intermittently, look for a second workflow run
+    on the SAME sha — this repo runs push and pull_request lanes concurrently, which
+    is a free A/B that separates a flake from a regression in one lookup (here: one
+    pass, one fail, identical commit). (d) READ THE CAPTURED TEARDOWN before
+    theorizing: the failing test's own stderr carried a `src.wiki.dumps _default_get`
+    traceback — a completely different subsystem naming the culprit outright, while
+    every plausible mechanism I could reason out from the failing file was wrong.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD IMPRESSIONS 2026-08-01 — Home-alerts relevance/card system · Home overview subtabs ·
