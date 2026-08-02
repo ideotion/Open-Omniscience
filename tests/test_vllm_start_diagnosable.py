@@ -163,12 +163,64 @@ def test_the_server_output_is_captured_not_sent_to_devnull(gpu8):
 
 
 def test_the_log_tail_is_readable_and_bounded(gpu8):
+    """A running server that dies puts its reason at the END -- still true, still kept.
+    AMENDED 2026-08-02: that is no longer the ONLY end retained; see the sibling test."""
     V.server_log_path().write_bytes(b"x" * 50_000 + b"CUDA out of memory\n")
     tail = V.server_log_tail()
     assert tail["available"] is True
-    assert "CUDA out of memory" in tail["tail"], "the END is the actionable part"
+    assert "CUDA out of memory" in tail["tail"], "the END is actionable when a live server dies"
     assert tail["truncated"] is True
     assert len(tail["tail"]) <= V._LOG_TAIL_BYTES + 16
+
+
+def test_a_root_cause_at_the_START_survives_too(gpu8):
+    """Field report 2026-08-02: the install and the model download both worked, the
+    weights loaded (~5 GB of VRAM appeared) and the server then died. The bundle held
+    29,855 bytes of log, of which the last 8,000 were kept -- and those 8,000 were the
+    parent APIServer's own stack, ending in the words "See root cause above". The
+    reason was in the 21,855 bytes thrown away.
+
+    That is not bad luck, it is the SHAPE of this failure: vLLM's EngineCore is a child
+    process, so it prints its traceback FIRST and the parent dumps ~20 KB after it. A
+    tail-only instrument is guaranteed to keep the useless half of a startup failure."""
+    root = b"ValueError: To serve at least one request, KV cache is 4.00 GiB > 2.55 GiB\n"
+    V.server_log_path().write_bytes(root + b"x" * 40_000 + b"See root cause above.\n")
+    out = V.server_log_tail()
+    assert out["truncated"] is True
+    assert "KV cache" in out["head"], "the reason the server died must survive"
+    assert "See root cause above" in out["tail"], "and so must the end"
+    # The gap between the two halves is STATED, so nobody reads them as contiguous.
+    assert out["elided_bytes"] > 0
+    assert out["elided_bytes"] == out["bytes"] - len(out["head"]) - len(out["tail"])
+    assert len(out["head"]) <= V._LOG_HEAD_BYTES
+
+
+def test_the_panel_renders_the_head_and_not_only_the_tail():
+    """Keeping both ends in the payload is worth nothing if the UI still shows one.
+    Scoped to the vLLM status panel's own renderer so an unrelated `lg.tail` elsewhere
+    cannot satisfy it."""
+    from pathlib import Path
+
+    app = (Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    at = app.index("const lg = s.server_log || {};")
+    block = app[at : app.index("box.innerHTML =", at)]
+    assert "lg.head" in block, "the root cause of a startup failure lives in the head"
+    assert "lg.elided_bytes" in block, "the gap between the halves must be stated"
+    # And the two halves must be rendered in reading order, head first.
+    assert block.index("lg.head") < block.index("lg.tail || \"\"")
+
+
+def test_a_short_log_is_not_shown_twice(gpu8):
+    """head+tail on a file that fits would repeat the same text and leave a reader
+    wondering whether the server really said it twice."""
+    V.server_log_path().write_bytes(b"CUDA out of memory\n")
+    out = V.server_log_tail()
+    assert out["truncated"] is False
+    assert out["elided_bytes"] == 0
+    assert "head" not in out
+    assert out["tail"] == "CUDA out of memory\n"
 
 
 def test_a_missing_log_is_a_stated_absence_not_an_empty_string(gpu8):
