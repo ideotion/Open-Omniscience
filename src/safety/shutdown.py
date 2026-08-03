@@ -33,11 +33,34 @@ def _close_db_quietly() -> None:
         _LOG.debug("shutdown: engine dispose failed", exc_info=True)
 
 
+def _reap_worker_processes() -> None:
+    """Kill any precompute worker PROCESSES before this process dies.
+
+    SIGTERM goes to ourselves, and a pool worker is a separate OS process -- not a
+    thread -- so nothing else in this path reaps them. A worker still running when
+    the parent exits is reparented to init and keeps burning CPU with no UI left to
+    stop it.
+
+    Field-reported 2026-08-03: an operator stopped an import whose workers were
+    measurably BUSY (four live children at 0.57 cores in the run journal), so the
+    parent never unwound through the module's own teardown, and a Python process
+    outlived the app until the environment was restarted.
+    """
+    try:
+        from src.analytics.reindex_parallel import terminate_live_pools
+
+        terminate_live_pools()
+    except Exception:  # noqa: BLE001 - best-effort; never block the shutdown
+        _LOG.debug("shutdown: reaping worker processes failed", exc_info=True)
+
+
 def _default_arm(delay: float) -> None:
     """Stop the server after a short delay so the HTTP response is flushed first."""
 
     def _stop() -> None:
         time.sleep(delay)
+        # Children first: once we SIGTERM ourselves there is nobody left to do it.
+        _reap_worker_processes()
         _close_db_quietly()
         _LOG.warning("shutdown: stopping the server (SIGTERM to self)")
         os.kill(os.getpid(), signal.SIGTERM)

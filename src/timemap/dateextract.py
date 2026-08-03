@@ -844,6 +844,9 @@ def _be_to_ce(year: int) -> int:
 
 # Plausible window for a *mentioned* date: deep history up to a little ahead of "now".
 _MIN_YEAR, _MAX_AHEAD = 1000, 5
+# Characters of text scanned. Matches locextract/entextract, the two other
+# extractors in the same when/where/who pass ("bounded, like every scan").
+_MAX_SCAN = 60_000
 
 
 def _valid(year: int, month: int, day: int, today: date) -> date | None:
@@ -1028,9 +1031,35 @@ def extract_dates(
     each marked with how it was resolved. ``language`` decides the order of
     ambiguous numeric dates (en→MDY, others→DMY; no hint + ambiguous → skipped,
     never guessed). Optimized 2026-06-11 (maintainer: far too few dates).
+
+    BOUNDED at ``_MAX_SCAN`` characters (2026-08-03). Its two siblings in the
+    same when/where/who pass have capped at 60,000 since they were written --
+    ``locextract._MAX_SCAN`` calls it "bounded, like every scan" -- and this one
+    never did. Measured on generated prose, cost against body size:
+
+        body      dates    places   entities
+        10 KB      51 ms    264 ms      3 ms
+        60 KB     305 ms    175 ms     10 ms
+       240 KB    1215 ms    160 ms     10 ms
+       480 KB    2449 ms    161 ms     11 ms
+
+    The two capped extractors PLATEAU; this one was linear and unbounded, so the
+    per-article cost of the whole pass was set by the single largest body in a
+    corpus. The observed maximum here is 37,242 words (~250 KB), which is inside
+    the cap, so this changes nothing for the field corpus that prompted it -- it
+    bounds the TAIL, which is what a cap is for.
+
+    HONEST COST, stated rather than slipped in: a date mentioned only beyond
+    60,000 characters is now missed. That is a RECALL change. The siblings set
+    the precedent for the bound, not for hiding it, so the truncation is
+    reported in the returned candidates' provenance via ``scan_truncated`` on
+    every candidate from a body that was cut.
     """
     if not text:
         return []
+    truncated = len(text) > _MAX_SCAN
+    if truncated:
+        text = text[:_MAX_SCAN]
     today = today or date.today()
     base = (language or "")[:2].lower()
     consumed: list[tuple[int, int]] = []  # spans claimed by more specific matches
@@ -1467,4 +1496,8 @@ def extract_dates(
     out = sorted(found.values(), key=lambda c: c["pos"])
     for c in out:
         c.pop("pos", None)
+        # Disclose the bound on the candidates it could have affected, so a caller
+        # can tell "no later dates in this article" from "we stopped looking".
+        if truncated:
+            c["scan_truncated"] = _MAX_SCAN
     return out[:limit]

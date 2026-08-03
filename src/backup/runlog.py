@@ -922,9 +922,33 @@ def summarise(run_id: str) -> dict:
                 rate["counter"] = last.get("counter")
                 rate["items_per_s"] = round((last["done"] - first["done"]) / d_wall, 3)
             cpu = sum(b.get("d_cpu_s", 0) or 0 for b in window[1:])
-            kcpu = sum(b.get("d_kids_cpu_s", 0) or 0 for b in window[1:])
             rate["cpu_s_per_wall_s"] = round(cpu / d_wall, 3)
-            rate["kids_cpu_s_per_wall_s"] = round(kcpu / d_wall, 3)
+            # ``d_kids_cpu_s`` is OMITTED, not zeroed, whenever the child walk stood
+            # down -- the beats say so in ``unmeasured``. Summing with a default of 0
+            # invents the measurement the omission exists to withhold, and it invents
+            # the WORST possible reading: "the workers were idle". That is the exact
+            # trap the beat-level omission was built to avoid, reproduced one layer up
+            # in the aggregate.
+            #
+            # It is not hypothetical. In the 2026-08-03 field import this line printed
+            # ``kids_cpu_s_per_wall_s: 0.0`` for a window in which the child walk had
+            # simply backed off -- while other beats in the same freeze measured FOUR
+            # live children burning 0.57 cores. Read literally, the summary said the
+            # pool was doing nothing; the truth was the opposite, and that is the one
+            # fact separating a wedged pool from a busy one.
+            #
+            # So: average over the beats that actually MEASURED it, and when none did,
+            # omit the key and say why.
+            kid_samples = [b["d_kids_cpu_s"] for b in window[1:] if b.get("d_kids_cpu_s") is not None]
+            if kid_samples:
+                rate["kids_cpu_s_per_wall_s"] = round(sum(kid_samples) / d_wall, 3)
+                rate["kids_samples"] = len(kid_samples)
+                if len(kid_samples) < len(window) - 1:
+                    # A partial denominator understates the rate; say so rather than
+                    # letting it read as a full-window measurement.
+                    rate["kids_partial"] = f"{len(kid_samples)}/{len(window) - 1} beats measured children"
+            else:
+                rate["kids_unmeasured"] = "the child walk stood down for this whole window"
             out["recent"] = rate
         else:
             out["recent_unavailable"] = "the last samples span no wall time"

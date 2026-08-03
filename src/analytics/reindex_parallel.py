@@ -104,12 +104,20 @@ _PROBE_TIMEOUT_S = 60.0
 # 373 ms, so ~160x the worst measured case. High enough that a healthy import is
 # silent, low enough that a multi-hour stall is named within the first minute.
 _SLOW_ARTICLE_WARN_S = 60.0
-# How often the watchdog looks. Only cost is a sleeping thread per serial window.
+# How often the watchdog looks. Only cost is a sleeping thread per window.
 _WATCHDOG_TICK_S = 15.0
+# One POOL window in flight above this is reported, with how many of its results
+# have arrived. A window is 500 articles and the field's own healthy rate put that
+# at roughly two minutes, so this is comfortably above normal while still naming a
+# stall long before the 900 s pool timeout would end it.
+_SLOW_WINDOW_WARN_S = 300.0
 # Which start method actually works here, resolved once -- see _pool_context.
 _POOL_CTX_LOCK = threading.Lock()
 _POOL_CTX_RESOLVED = False
 _POOL_CTX: Any = None
+# Every pool this process currently has workers for. See terminate_live_pools.
+_LIVE_POOLS_LOCK = threading.Lock()
+_LIVE_POOLS: set[ProcessPoolExecutor] = set()
 # A hard cap independent of core count: on a huge box, dozens of worker
 # processes buy little beyond a handful (the DB-writing main process stays the
 # other half of the pipeline) and cost more idle memory per worker.
@@ -240,7 +248,9 @@ def _probe_context(method: str) -> Any:
     probe: ProcessPoolExecutor | None = None
     try:
         probe = ProcessPoolExecutor(max_workers=1, mp_context=ctx)
+        _register_pool(probe)
         if probe.submit(_noop_probe).result(timeout=_PROBE_TIMEOUT_S) is True:
+            _unregister_pool(probe)
             probe.shutdown(wait=True)
             probe = None
             return ctx
@@ -302,6 +312,58 @@ def _pool_context() -> Any:
         return _POOL_CTX
 
 
+def _register_pool(pool: ProcessPoolExecutor) -> None:
+    with _LIVE_POOLS_LOCK:
+        _LIVE_POOLS.add(pool)
+
+
+def _unregister_pool(pool: ProcessPoolExecutor) -> None:
+    with _LIVE_POOLS_LOCK:
+        _LIVE_POOLS.discard(pool)
+
+
+def terminate_live_pools() -> int:
+    """Kill every worker process this module currently owns. Returns how many died.
+
+    WHY THIS IS NOT ALREADY COVERED. ``_abandon_pool`` terminates workers, but only
+    from inside this module's own except/finally paths -- i.e. only when the PARENT
+    notices something and unwinds. The app's shutdown does none of that: it disposes
+    the engine and sends SIGTERM to ITSELF (``safety.shutdown``). Pool workers are
+    separate OS processes, not threads, so nothing in that path reaps them. A worker
+    still running when the parent dies is reparented to init and keeps burning CPU
+    with no UI left to stop it.
+
+    Field-reported 2026-08-03, and the mechanism is worth stating exactly because it
+    is the one where the leak is guaranteed rather than possible: the operator killed
+    an import whose pool workers were measurably BUSY -- four live children at 0.57
+    cores in the run journal -- so the parent never reached an except path, never
+    called ``_abandon_pool``, and the children outlived the app. The operator had to
+    restart the environment to clear them.
+
+    Best-effort and never raises: shutdown must not be blocked by a stuck worker,
+    which is the same reasoning ``_abandon_pool`` already applies one level down.
+    """
+    with _LIVE_POOLS_LOCK:
+        pools = list(_LIVE_POOLS)
+        _LIVE_POOLS.clear()
+    killed = 0
+    for pool in pools:
+        for worker in list((getattr(pool, "_processes", None) or {}).values()):
+            try:
+                if worker.is_alive():
+                    worker.terminate()
+                    killed += 1
+            except Exception:  # noqa: BLE001 - best effort, per pool worker
+                _LOG.debug("could not terminate a pool worker at shutdown", exc_info=True)
+        try:
+            pool.shutdown(wait=False, cancel_futures=True)
+        except Exception:  # noqa: BLE001 - teardown must never block a shutdown
+            _LOG.debug("pool shutdown raised at app shutdown", exc_info=True)
+    if killed:
+        _LOG.warning("shutdown: terminated %d live precompute worker(s)", killed)
+    return killed
+
+
 def _abandon_pool(pool: ProcessPoolExecutor) -> None:
     """Tear a pool down WITHOUT waiting for its workers.
 
@@ -311,6 +373,7 @@ def _abandon_pool(pool: ProcessPoolExecutor) -> None:
     is cleaning up after. Hence: never join, and forcibly terminate whatever is
     still alive. A leaked worker is strictly better than a hung import.
     """
+    _unregister_pool(pool)
     try:
         pool.shutdown(wait=False, cancel_futures=True)
     except Exception:  # noqa: BLE001 - teardown must never mask the original failure
@@ -563,6 +626,7 @@ def precompute_batch(
             initargs=(extractor_name, gazetteer),
             **({"mp_context": ctx} if ctx is not None else {}),
         )
+        _register_pool(pool)
         # Tolerate BOTH task shapes (5-tuple, or 6-tuple with the WWW context)
         # in the same batch: zip(*tasks) would raise on a ragged mix, and a
         # caller that supplies context for some articles and not others is a
@@ -573,16 +637,52 @@ def precompute_batch(
         languages = [t[3] for t in tasks]
         slangs = [t[4] for t in tasks]
         ctxs = [t[5] if len(t) > 5 else None for t in tasks]
-        for aid, terms, score, label, err, www in pool.map(
-            _worker_compute, ids, contents, titles, languages, slangs, ctxs,
-            chunksize=chunksize,
-            timeout=_pool_timeout_s(),
-        ):
-            out[aid] = ArticleDerivatives(aid, terms, score, label, error=err, www=www)
-            if stats is not None and isinstance(www, dict) and "__www_error__" in www:
-                stats["www_errors"] = stats.get("www_errors", 0) + 1
-            elif stats is not None and www:
-                stats["www_precomputed"] = stats.get("www_precomputed", 0) + 1
+
+        # WATCH THE POOL WINDOW, not just the serial one. `_serial` has named its
+        # slow article since 2026-08-02; the POOL path had nothing, so a window that
+        # never came back left only "done stopped at a multiple of the window size".
+        #
+        # That is exactly what the 2026-08-03 field import produced: frozen 2 h 20 m
+        # at article 9000 (= 18 x 500) with four workers measurably BUSY at 0.57
+        # cores. Busy workers and no results is a completely different diagnosis from
+        # a deadlock -- and nothing in the log could tell them apart, because nothing
+        # reported how many of the window's results had arrived.
+        #
+        # `received` is rebound as a whole int (atomic under the GIL), so the watchdog
+        # never reads a torn value. Cost is one sleeping thread per pool window.
+        received = [0]
+        w_stop = threading.Event()
+        _lo, _hi = (min(ids), max(ids)) if ids else (None, None)
+        _chars = sum(len(c or "") for c in contents)
+
+        def _watch_window() -> None:
+            while not w_stop.wait(_WATCHDOG_TICK_S):
+                held = time.monotonic() - _t0
+                if held >= _SLOW_WINDOW_WARN_S:
+                    _LOG.warning(
+                        "pool precompute window still running after %.0f s: "
+                        "%d/%d results, articles %s..%s, %d chars, %d worker(s)",
+                        held, received[0], len(tasks), _lo, _hi, _chars, n_workers,
+                    )
+
+        threading.Thread(
+            target=_watch_window, name="oo-precompute-window-watchdog", daemon=True
+        ).start()
+        try:
+            for aid, terms, score, label, err, www in pool.map(
+                _worker_compute, ids, contents, titles, languages, slangs, ctxs,
+                chunksize=chunksize,
+                timeout=_pool_timeout_s(),
+            ):
+                out[aid] = ArticleDerivatives(aid, terms, score, label, error=err, www=www)
+                received[0] += 1
+                if stats is not None and isinstance(www, dict) and "__www_error__" in www:
+                    stats["www_errors"] = stats.get("www_errors", 0) + 1
+                elif stats is not None and www:
+                    stats["www_precomputed"] = stats.get("www_precomputed", 0) + 1
+        finally:
+            w_stop.set()
+        _unregister_pool(pool)
         pool.shutdown(wait=True)
         pool = None
         _note("pool", time.monotonic() - _t0)
