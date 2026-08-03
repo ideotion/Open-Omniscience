@@ -27,9 +27,9 @@ def test_deferral_is_the_default_and_is_revertible(monkeypatch):
     from src.backup import volume_job
 
     monkeypatch.delenv("OO_IMPORT_DEFER_REINDEX", raising=False)
-    assert volume_job._defer_reindex() is True, "the ruling says defer; that is the default"
+    assert volume_job.defer_reindex() is True, "the ruling says defer; that is the default"
     monkeypatch.setenv("OO_IMPORT_DEFER_REINDEX", "0")
-    assert volume_job._defer_reindex() is False, "the old blocking behaviour stays reachable"
+    assert volume_job.defer_reindex() is False, "the old blocking behaviour stays reachable"
 
 
 def test_the_restore_plan_drops_the_reindex_stage_when_deferred():
@@ -62,7 +62,7 @@ def test_the_import_passes_the_flag_through_consistently():
     def _args(after: str) -> str:
         """The argument text of the call opened by ``after``, paren-balanced.
 
-        Splitting on the first ``)`` truncates at ``_defer_reindex()``'s OWN closing
+        Splitting on the first ``)`` truncates at ``defer_reindex()``'s OWN closing
         paren and yields a slice that can never contain what is being asserted -- it
         failed against correct code. Balance instead.
         """
@@ -74,12 +74,12 @@ def test_the_import_passes_the_flag_through_consistently():
         return src[i : j - 1]
 
     call = _args("report = run_restore(")
-    assert "reindex_imported=not _defer_reindex()" in call, (
+    assert "reindex_imported=not defer_reindex()" in call, (
         "run_restore must be told the same thing the phase plan was, or every phase "
         "index after the divergence is silently wrong"
     )
     plan = _args("_restore_plan = restore_stage_plan(")
-    assert "reindex_imported=not _defer_reindex()" in plan
+    assert "reindex_imported=not defer_reindex()" in plan
 
 
 def test_the_report_states_the_deferral_and_the_pending_count(monkeypatch):
@@ -97,13 +97,110 @@ def test_the_report_states_the_deferral_and_the_pending_count(monkeypatch):
         type("J", (), {"start": staticmethod(lambda **_k: {"state": "running"})})(),
     )
     report: dict = {}
-    volume_job._hand_off_reindex(report)
+    volume_job.hand_off_reindex(report)
 
     rx = report["reindex_deferred"]
     assert rx["deferred"] is True
     assert rx["articles_pending"] == 12778, "the real backlog, not a guess"
     assert rx["started"] is True
     assert "analytics" in rx["why"], "it must say WHAT is incomplete, not merely that something is"
+
+
+def test_every_committing_restore_path_defers_it_the_same_way():
+    """One operator action, one behaviour.
+
+    Fixing only the volume path left "import my backup" returning in two minutes down
+    one route and blocking for hours down another, with nothing naming the difference
+    -- and BOTH are reachable from a single queued run, so a folder of mixed volume and
+    legacy backups would have done both inside one import. Legacy single-file imports
+    being slated for removal is a reason not to invest in them, not a reason to leave a
+    trap in one.
+
+    Scoped to each ``run_restore(`` CALL, paren-balanced: a whole-module substring
+    search is satisfied by any one site and would pass with the others reverted.
+    """
+    import inspect
+
+    from src.api import backup_v2
+
+    for fn in (backup_v2._commit_sync, backup_v2.restore_legacy_path):
+        src = inspect.getsource(fn)
+        i = src.index("run_restore(") + len("run_restore(")
+        depth, j = 1, i
+        while depth:
+            depth += {"(": 1, ")": -1}.get(src[j], 0)
+            j += 1
+        call = src[i : j - 1]
+        assert "reindex_imported=not defer_reindex()" in call, (
+            f"{fn.__name__} still blocks on the re-index while the volume path does not"
+        )
+        assert "hand_off_reindex(report)" in src, (
+            f"{fn.__name__} defers the work but never states it or starts the drain"
+        )
+
+
+def test_it_does_not_start_the_drain_inside_a_queued_run(monkeypatch):
+    """A queue takes ONE exclusive window across every item so the machine belongs to
+    the import. Starting a CPU-heavy parallel drain after item 1 puts competing work
+    back on it for items 2..n -- the 2026-07-24 exclusive-hold finding pointing the
+    other way. The backlog is still recorded; only the START waits."""
+    from src.backup import volume_job
+
+    monkeypatch.setattr(
+        "src.backup.merge.reindex_backlog",
+        lambda: {"available": True, "articles_pending": 900, "batches": []},
+    )
+    monkeypatch.setattr("src.scheduler.runner.exclusive_window_open", lambda: True)
+
+    started_calls = []
+    monkeypatch.setattr(
+        "src.api.backup_v2._REINDEX_RESUME_JOB",
+        type("J", (), {"start": staticmethod(lambda **_k: started_calls.append(1))})(),
+    )
+    report: dict = {}
+    volume_job.hand_off_reindex(report)
+
+    rx = report["reindex_deferred"]
+    assert rx["started"] is False
+    assert not started_calls, "nothing may be started while the import owns the machine"
+    assert "run ends" in rx["start_detail"], "and it must say WHEN it will start"
+    assert rx["articles_pending"] == 900, "the backlog is recorded either way"
+
+
+def test_the_queue_drains_once_after_its_window_closes():
+    """Something has to start what every item declined to start.
+
+    Without this a multi-backup import ends with the whole backlog untouched until
+    somebody reads the caveat and clicks -- "deferred but lost" wearing a different hat.
+    Scoped to _run and asserted to sit AFTER the window's `with` block, since starting
+    it inside would be the very contention the per-item decline exists to avoid.
+    """
+    import inspect
+
+    from src.backup.import_queue import ImportQueueManager
+
+    src = inspect.getsource(ImportQueueManager._run)
+    assert "start_reindex_drain" in src, "the queue must drain the backlog it created"
+    assert src.index("with exclusive_window()") < src.index("start_reindex_drain"), (
+        "the drain must start AFTER the exclusive window closes, never inside it"
+    )
+
+
+def test_the_drain_starter_never_raises(monkeypatch):
+    """Two callers, both in a committed import's epilogue. A raise here would turn a
+    successful import into a reported failure over a job that could not start."""
+    from src.backup import volume_job
+
+    def _boom(**_kw):
+        raise RuntimeError("already running")
+
+    monkeypatch.setattr(
+        "src.api.backup_v2._REINDEX_RESUME_JOB",
+        type("J", (), {"start": staticmethod(_boom)})(),
+    )
+    started, detail = volume_job.start_reindex_drain()
+    assert started is False
+    assert "already running" in (detail or "")
 
 
 def test_an_unreadable_backlog_is_not_reported_as_zero_pending(monkeypatch):
@@ -120,7 +217,7 @@ def test_an_unreadable_backlog_is_not_reported_as_zero_pending(monkeypatch):
         type("J", (), {"start": staticmethod(lambda **_k: {})})(),
     )
     report: dict = {}
-    volume_job._hand_off_reindex(report)
+    volume_job.hand_off_reindex(report)
 
     rx = report["reindex_deferred"]
     assert rx["articles_pending"] is None, "an unreadable count must NOT be 0"
@@ -146,7 +243,7 @@ def test_a_drain_that_cannot_start_still_records_the_backlog(monkeypatch):
         type("J", (), {"start": staticmethod(_busy)})(),
     )
     report: dict = {}
-    volume_job._hand_off_reindex(report)
+    volume_job.hand_off_reindex(report)
 
     rx = report["reindex_deferred"]
     assert rx["started"] is False
@@ -168,7 +265,7 @@ def test_the_epilogue_never_fails_a_committed_import(monkeypatch):
         type("J", (), {"start": staticmethod(lambda **_k: {})})(),
     )
     report: dict = {}
-    volume_job._hand_off_reindex(report)  # must not raise
+    volume_job.hand_off_reindex(report)  # must not raise
     assert report["reindex_deferred"]["articles_pending"] is None
 
 

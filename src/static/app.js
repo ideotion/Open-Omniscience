@@ -7258,6 +7258,14 @@
         reindexed: r.reindexed || null,      // {reindexed, failed} post-merge re-index
         events_added: (cal && cal.added) || 0,
         timings: r.timings || null,          // {stages, wall_s} -- Session A §4, "instrument first"
+        // THE PRODUCER for the "still indexing" caveat below. The renderer read this
+        // key from the moment the deferral shipped and NOTHING ever wrote it, so the
+        // caveat could not render on any path -- a reader with no producer, which is
+        // the honesty defect the deferral's own rationale calls "strictly worse" than
+        // the wait it replaced. It belongs HERE rather than at the three push sites
+        // precisely because this helper exists so every one of them feeds the same
+        // shape; adding it at a call site would have fixed one path and left the others.
+        reindex_deferred: r.reindex_deferred || null,
       };
     }
 
