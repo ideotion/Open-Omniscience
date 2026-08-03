@@ -1880,8 +1880,105 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     both sides and assert same keys, same values, only the ordering differs — rather than
     reverting on faith. No repository script does this, so there was nothing in the tree
     to fix; the fix is the habit.
+  - **AN EXPLICIT COLUMN ALLOWLIST FAILS ONE GRANULARITY BELOW THE TABLE-LEVEL GUARD YOU
+    JUST BUILT (2026-08-03, the fourteen dropped merge columns):** the 2026-07-24 lesson
+    named the defect for a whole TABLE and the completeness registry closed that; the same
+    `INSERT INTO t (cols) SELECT` allowlist drops every COLUMN added to the model after the
+    INSERT was written, and that is the worse half — a missing table is at least COUNTED in
+    the restore report, whereas a dropped column produces a row that arrives, a column that
+    is nullable, and a value that is a plausible NULL. Fourteen had gone that way. THE TOOL:
+    parse the INSERTs with the **AST**, never a grep — inline `# nosec` comments sit between
+    the adjacent string literals the parser folds, so a line-oriented scan reports columns as
+    missing that are present. THREE SCOPING TRAPS the guard hit, each of which would have made
+    it cry wolf or pass vacuously: (a) not every INSERT is a merge-copy — `merge_batches` gets
+    the app's OWN record via `INSERT..VALUES` and its `counts_json`/`report_json` are filled by
+    later UPDATEs, so scope the guard to the tables that are actually copied (`_MERGE_HANDLED`);
+    (b) a column can be carried ELSEWHERE — `keyword_categories.parent_id` is a self-FK
+    remapped by a dedicated UPDATE, so it must be declared as handled or the next reader
+    "fixes" what already works; (c) an f-string table name is INVISIBLE to the parser, so
+    enumerate those blind spots explicitly, pin the set so it cannot grow silently, and cover
+    the ones carrying data behaviourally instead. DIRECTIONAL POINT, as with the qualification
+    stamp: ask what the dropped value MEANS, not just that it is gone —
+    `keyword_supergroup_members.ring_id` is not data about a member but WHICH KIND of member
+    it is, and its own migration records NULL as "a plain family member", so it arrived as a
+    different, entirely legal kind and the super-group silently stopped spanning languages.
+  - **A "THIS WOULD FLAG NOTHING" REJECTION IS WORTH MEASURING, BECAUSE THE MECHANISM MAY BE
+    STRONGER THAN THE OBSERVATION (2026-08-03, the furniture detector):** the brief offered
+    (a) retire a DF-ubiquity detector that had never fired, or (b) require corroboration from
+    the closed-class publishing-boilerplate stoplist, and predicted (b) "may flag nothing
+    either". Measuring it produced a better reason to reject it: every term in
+    `PLATFORM_STOPWORDS` / `PUBLISHING_BOILERPLATE_SCOPED` is ALREADY a stopword, so none can
+    ever be extracted as a keyword, so none can ever reach a per-source top-12 fingerprint —
+    (b) flags nothing **by construction**, not merely in practice. That distinction decides the
+    ruling: an empirically-quiet detector might wake up on another corpus, whereas an inert one
+    that still LOOKS like a working detector is worse than no detector at all. GENERAL FORM:
+    when a design option is expected to be useless, check whether it is *structurally* useless
+    — the answer changes whether you ship it as a dormant safeguard or refuse it outright. And
+    when you retire a signal, retire the VERDICT and keep the numbers: the DF counts are real
+    evidence an analyst can read, and the honest artifact says which of the two it is publishing.
+  - **A "MUST BE ABSENT" GUARD ALSO TRIPS ON ITS OWN EXPLANATION IN JS, AND THE FIX IS TO
+    STRIP COMMENTS, NEVER TO REWORD THEM (2026-08-03, re-hit while adding the settings panel):**
+    the recorded 2026-07-31 lesson says this for `app.js` source guards, and it recurred
+    immediately: a guard asserting `ensureOnline` is absent from a loopback settings write
+    failed on the comment saying *why* it is absent. Rewording the comment is the wrong repair
+    — that comment is exactly what a future session reads before deciding the absence was a
+    mistake. Strip whole-line `//` before asserting (which leaves a `https://` inside a string
+    literal untouched), or make the guard behavioural. Worth re-recording because the lesson
+    existed and was still not reached for until the test went red.
+  - **THE REPO'S OWN INVARIANTS CATCH FRONTEND BUGS A NON-BROWSER SESSION CANNOT (2026-08-03):**
+    two real defects in one panel, neither visible to `node --check`. `t()` was called in four
+    new `app.js` functions without binding a local `t` — it is not a global, so opening the
+    panel would have thrown "t is not defined" — caught by
+    `test_no_app_function_calls_i18n_t_without_binding_it`. And a live-count read `total` from
+    an endpoint whose payload calls it `matched`, which fails silently to an empty string; that
+    one was caught by reading the endpoint rather than assuming its shape. So on a
+    browser-unverified slice, run the FULL invariant suite rather than the tests you wrote, and
+    read every endpoint payload you consume — those two guards are most of what stands between a
+    conservative frontend slice and a broken one.
 
 ## Open queue (when maintainer says proceed)
+- **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;
+  five `docs/ledger/shipped.csv` rows). MAINTAINER RULINGS RECEIVED + BUILT the same day.**
+  **MERGE_TABLES:** Part 0's fourteen silently-dropped columns are carried and the class is
+  closed by an AST guard at column granularity; the five unmerged tables have handlers on the
+  ruled identities — `watches`=NAME · `watch_matches`=(watch, fired_at) ·
+  `ai_custom_prompt`=**(output_kind, prompt_text)** · `ai_keyword`=(article, kind, term, model) ·
+  `law_revision_summaries`=(revision, model). **THE ONE OVERRIDE worth carrying forward:** the
+  maintainer chose the prompt TEXT over the recommended LABEL, and the reason generalises — with
+  label-identity plus the standing local-wins policy, a prompt improved on a secondary machine
+  could never travel home; keying on the text makes the improvement arrive as a row the user can
+  see and choose between. `_MERGE_NOT_CARRIED`'s owed section is now EMPTY and kept as the place
+  the next such table goes (an unanswerable identity is a reason to state the question, never to
+  guess). **SOURCE_QUALIFICATION:** slices 1–5 + the §1b/§1c panel all shipped — the report now
+  headlines the CONJUNCTION rather than a percentile definition, prints each threshold's observed
+  range beside it, exempts non-scrape provenance classes from the ratio cohorts, excludes
+  quarantined articles from every collector, RETIRES the furniture verdict (option (a), with a
+  mechanism-level reason: option (b)'s corroboration set is entirely already-stoplisted, so it
+  could never fire BY CONSTRUCTION), adds the measured-cheap `cheap_signal` selector plus
+  per-selector enrichment-over-control, and gives both gates one Advanced panel with units, hover
+  explanations and the two scraping-scope toggles.
+  **⚠ SLICE 5 IS A MAINTAINER DECISION AND IS DELIBERATELY NOT MADE — the measurement shipped, the
+  threshold did NOT.** `PATHOLOGY_ABS_FLOOR` is still 0.5 and **no source in the field corpus can
+  reach it** (the strongest observed signal was `bisnow.com` at 0.211, less than half the floor),
+  so the admission gate currently cannot disqualify anything — not because the sources are good but
+  because its one decisive criterion is calibrated above the observable range. Lowering it to make
+  the gate fire would be tuning a data-safety threshold to make a number move (the inverse of the
+  recorded WAL-recalibration lesson). THE THREE OPTIONS, unchanged and awaiting a ruling: (a) keep
+  0.5 and accept that this criterion is a rare-catastrophe detector, saying so in the panel;
+  (b) lower it WITH a stated new meaning; (c) add a second, differently-shaped extraction-failure
+  criterion — and `high_link_density` is the obvious candidate, since it is the strongest measured
+  discriminator in the whole corpus (415 of 675 label hits) and is currently only a review hint.
+  The export now carries the full per-source `pathology_rate` distribution, so the next run
+  measures the choice rather than re-arguing it.
+  **ALSO DELIBERATELY NOT DONE, with the reason:** the provenance exemption was NOT extended to
+  `source_audit.per_source_metrics`. A source missing from that dict means "no evidence to judge",
+  so exempting the synthetic `hazard.*`/`law.*` sources would make them permanently unqualifiable —
+  and `select_sources` admits only qualified sources, so that is a collection-eligibility change
+  arising from a finding about a distorted BASELINE. Their verdicts were never at risk either way.
+  **REMAINING:** a maintainer CLICK-THROUGH of the new Quality-gates panel (browser-unverified per
+  fork-3/Q6a — `node --check` + 251 invariants pass, but no browser ran); and the standing
+  operator step of re-running the source-quality export so the new `observed` /
+  `selector_enrichment` blocks can be read on the live corpus.
 - **FIELD IMPRESSIONS 2026-08-01 — Home-alerts relevance/card system · Home overview subtabs ·
   Library revamp + graph clarity · unified AI toggle + small-model comparative bench (maintainer;
   INTAKE + INVESTIGATION this session, code-verified against `main`@d725f5b via a 5-agent

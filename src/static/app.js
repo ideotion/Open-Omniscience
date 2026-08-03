@@ -2041,7 +2041,10 @@
     // would make opening Advanced the most expensive click in Settings.
     const _ADV_LOADERS = {
       collect:  () => { loadScheduler(); },
-      sources:  () => { loadSrcFacets(); loadManagedSources(); loadCandidates(); loadQualifyBulk(); },
+      sources:  () => { loadSrcFacets(); loadManagedSources(); loadCandidates(); },
+      // Both quality gates + the scope toggles + the bulk catch-up (absorbed from the
+      // Sources section, which now points here — never two homes for one control).
+      qualification: () => { loadQualificationGates(); loadQualifyBulk(); },
       // The official-statistics producer DIRECTORY is source management, so it lives here;
       // the FIGURES surface moved to Governments → Statistics (2026-07-31).
       stats:    () => { loadStatAgencies(); },
@@ -19755,6 +19758,134 @@
     // Wikidata-discovery-scale backlog). Networked (each judgment trial-fetches a few
     // articles) -> the one consent popup; cancel lives in the task manager (kind
     // "qualify-sources-bulk"), same grammar as discoverWorld.
+    // ---- The quality-gates panel (maintainer amendment 2026-08-03) ------------------
+    // Renders ENTIRELY from GET /api/sources/qualification/config. The panel deliberately
+    // holds no copy of the criteria or the bounds: a threshold described in two places
+    // drifts, and then the UI explains a gate the engine no longer applies.
+    //
+    // Units and the hover explanation are NOT built here either. Invariant #17 already
+    // marks any element carrying a translated `title` and opens the ONE shared #oo-tip
+    // bubble on hover, keyboard focus or touch long-press. So each row just carries a
+    // title; the shipped convention does the rest.
+    let _qualCfg = null;
+
+    function _qualShare(row) {
+      // A share must never be printed as a bare 0.5 (the units principle). The unit string
+      // already says "share ... (0-1)", so this adds the reading in percent beside it.
+      const v = Number(row.value);
+      return (row.unit || "").includes("(0–1)") && v >= 0 && v <= 1
+        ? `${v} (${Math.round(v * 100)}% )`.replace(" )", ")")
+        : String(row.value);
+    }
+
+    function _qualTunableHtml(row) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      // The hover carries the long form (impact + why the bound is where it is); the
+      // visible surface keeps the value, the unit and the range present.
+      const why = [row.impact, row.floor_reason].filter(Boolean).join(" — ");
+      return `<div class="row" style="gap:8px;align-items:baseline;flex-wrap:wrap;margin:4px 0">
+        <span title="${esc(why)}"><b>${esc(row.label)}</b></span>
+        <span>${esc(_qualShare(row))}</span>
+        <span class="muted">${esc(row.unit || "")}</span>
+        <span class="hint" title="${esc(t("The safe range. Outside it the value is corrected AND reported — never silently."))}">${t("safe range")} ${row.lo}–${row.hi}</span>
+      </div>`;
+    }
+
+    async function loadQualificationGates() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const host = $("qual-gates"), state = $("qual-state"), crit = $("qual-criteria");
+      if (!host) return;
+      try {
+        const cfg = await api("/api/sources/qualification/config");
+        _qualCfg = cfg;
+        const c = cfg.counts || {};
+        // "How many could the current floor actually disqualify" is worth more than any
+        // control on the page: on the field corpus that number is zero.
+        state.innerHTML = `${t("Judged so far")}: <b>${c.qualified || 0}</b> ${t("qualified")}
+          · <b>${c.disqualified || 0}</b> ${t("disqualified")}
+          · <b>${c.unqualified || 0}</b> ${t("not yet judged")}`;
+
+        const en = $("qual-enabled");
+        const perPass = (cfg.gates || []).flatMap(g => g.tunables || [])
+          .find(r => r.key === "qualification_per_pass");
+        if (en) en.checked = !!(perPass && Number(perPass.value) > 0);
+        const hint = $("qual-enabled-hint");
+        if (hint) {
+          hint.textContent = (perPass && Number(perPass.value) > 0)
+            ? `${perPass.value} ${t("sources per collection pass")}`
+            : t("off — candidates stay unjudged; nothing is deleted and no verdict changes");
+        }
+
+        crit.innerHTML = `<h3 style="margin:0 0 6px">${t("What the source gate looks at")}</h3>` +
+          (cfg.criteria || []).map(x => `<div style="margin:6px 0">
+            <span title="${esc(x.desc)}"><b>${esc(x.name)}</b></span>
+            ${x.can_disqualify
+              ? `<span class="warn" title="${esc(t("The ONLY criterion that can disqualify a source. The others are style-ambiguous, so they can never exceed a watch flag — that cap is deliberate and is not adjustable."))}">${t("can disqualify")}</span>`
+              : `<span class="muted">${t("watch only")}</span>`}
+          </div>`).join("");
+
+        host.innerHTML = (cfg.gates || []).map(g => `<div class="panel" style="margin:10px 0">
+          <h3 style="margin:0">${esc(g.question)}</h3>
+          <p class="hint" style="margin:4px 0">${esc(g.note)} <span class="muted">${t("Verdict")}: ${esc(g.verdict)}</span></p>
+          ${(g.tunables || []).map(_qualTunableHtml).join("")}
+        </div>`).join("");
+
+        const scope = cfg.scope || {};
+        const u = $("qual-scope-unqualified"), sh = $("qual-scope-shipped");
+        if (u) u.checked = !!scope.scrape_unqualified;
+        if (sh) sh.checked = !!scope.scrape_app_provided_only;
+        _qualScopeCount();
+      } catch (e) {
+        state.textContent = _apiErrorMessage(e);
+      }
+    }
+
+    // The live count for the current 2x2, so the toggles are concrete without a paragraph
+    // of explanation. Loopback only.
+    async function _qualScopeCount() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const out = $("qual-scope-count");
+      if (!out) return;
+      try {
+        // `matched` is this endpoint's own name for "sources the current selection picks";
+        // it runs select_sources, so it already reflects both scope toggles.
+        const r = await api("/api/scheduler/targets");
+        const n = r && r.matched;
+        out.textContent = (n === undefined || n === null)
+          ? "" : `${t("This will scrape")} ${n} ${t("sources")} (${t("of")} ${r.total_enabled} ${t("enabled")}).`;
+      } catch (e) { out.textContent = ""; }
+    }
+
+    async function qualSaveToggle(el) {
+      // Off is 0; on restores the last non-zero value, defaulting to the shipped 5.
+      const per = el.checked ? (_qualLastPerPass || 5) : 0;
+      if (el.checked === false) {
+        const rows = (_qualCfg && _qualCfg.gates || []).flatMap(g => g.tunables || []);
+        const cur = rows.find(r => r.key === "qualification_per_pass");
+        if (cur && Number(cur.value) > 0) _qualLastPerPass = Number(cur.value);
+      }
+      await _qualPut({qualification_per_pass: per});
+    }
+    let _qualLastPerPass = 5;
+
+    async function qualSaveScope() {
+      await _qualPut({
+        scrape_unqualified: !!($("qual-scope-unqualified") || {}).checked,
+        scrape_app_provided_only: !!($("qual-scope-shipped") || {}).checked,
+      });
+    }
+
+    async function _qualPut(body) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      // Loopback settings write with no egress side effect (save_settings only), so it is
+      // never ensureOnline-gated -- same reasoning as the collection-speed knob.
+      try {
+        await api("/api/scheduler/config", {method: "PUT", body: JSON.stringify(body)});
+        toast(t("Saved."), "ok");
+        loadQualificationGates();
+      } catch (e) { toast(_apiErrorMessage(e), "err"); }
+    }
+
     async function loadQualifyBulk() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const out = $("qualify-bulk-status");

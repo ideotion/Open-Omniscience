@@ -120,7 +120,22 @@ def per_source_metrics(session: Session) -> dict[int, dict]:
     """Count-only per-source extraction-validity metrics, derived from the shipped source_quality
     collectors (no article-content decrypt). Returns ``{source_id: {metrics..., language, region,
     article_count, dominant_lang}}``. UNSEGMENTED articles are excluded from the word-count and
-    keyword-ratio criteria (script-aware) but still counted in article_count + language_mismatch."""
+    keyword-ratio criteria (script-aware) but still counted in article_count + language_mismatch.
+
+    QUARANTINED ARTICLES ARE EXCLUDED, inherited from ``collect_article_stats`` (F4,
+    2026-08-03): an article the article gate already condemned as a non-article must not count
+    toward its SOURCE's extraction verdict. Two gates sharing an input and disagreeing about it
+    is precisely what a single settings panel makes visible and two panels hide.
+
+    The PROVENANCE exemption that the quality REPORT applies is deliberately NOT applied here.
+    It would be a different and much larger change than it looks: a source missing from this
+    dict is "no evidence to judge" (the 2026-07-23 zero-evidence rule), so exempting the
+    synthetic ``hazard.*``/``law.*`` sources would make them permanently unqualifiable, and
+    ``select_sources`` admits only qualified sources -- a collection-eligibility change, from a
+    finding that was about a distorted BASELINE and a misleading report. Their verdicts were
+    never at risk either way (they carry zero pathological articles, and auto-demote is
+    default-off), so there is nothing here to fix in a hurry and a real way to get it wrong.
+    """
     stats = sq.collect_article_stats(session)
     baselines = sq.build_baselines(stats, floor=COHORT_ARTICLE_FLOOR)
     outliers = sq.flag_outliers(stats, baselines, floor=COHORT_ARTICLE_FLOOR)

@@ -8331,3 +8331,91 @@ def test_the_ollama_context_auto_tune_exists_and_only_proposes():
     api = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
     ai_fn = api.split("def ai_diagnostics(", 1)[1].split("\ndef ", 1)[0]
     assert "measure_corpus" in ai_fn and "Query(False)" in ai_fn
+
+
+def test_the_quality_gates_section_shows_both_gates_with_units_and_scope_toggles():
+    """The maintainer's 2026-08-03 amendment: ONE Advanced section covering BOTH gates,
+    every tunable labelled with its unit, a discreet hover explanation, and the two
+    scraping-scope toggles.
+
+    The premise was checked before building: the gates are NOT fused today (the source-side
+    modules hold no ``quarantined`` reference and the article-side modules hold no
+    ``Source.status`` reference). They belong in one panel anyway because the source gate's
+    inputs ARE article-level measurements -- two gates sharing an input and disagreeing
+    about it is what one panel makes visible and two panels hide.
+    """
+    html = _ui_source()
+    markup = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
+
+    # 1. Its own Advanced section, loading on EXPAND (the standing rule -- this reads
+    #    source-scale data, so a subtab-select load would be the expensive click).
+    assert 'data-adv="qualification"' in markup, "Quality gates must be an Advanced section"
+    assert "qualification: () => { loadQualificationGates(); loadQualifyBulk(); }" in html, (
+        "the section must load through the expand-driven Advanced loader map"
+    )
+
+    # 2. ABSORBED, never duplicated (the Desk lesson): the bulk button moved here, and the
+    #    old Sources section points at it rather than keeping a second copy.
+    assert markup.count('id="qualify-bulk-btn"') == 1, "two homes for the backlog button"
+    qual_i = markup.index('data-adv="qualification"')
+    assert markup.index('id="qualify-bulk-btn"') > qual_i, (
+        "the backlog button must live in the Quality gates section"
+    )
+
+    # 3. The panel renders from the BACKEND's declarations. A criterion or a bound
+    #    described in two places drifts, and then the UI explains a gate the engine no
+    #    longer applies -- so the vocabulary must not be restated in HTML.
+    assert "/api/sources/qualification/config" in html
+    for restated in ("pathology_rate", "outlier_rate", "language_mismatch_rate"):
+        assert restated not in markup, (
+            f"{restated} is restated in HTML; it must be rendered from CRITERIA"
+        )
+
+    # 4. Both gates, and both scope toggles.
+    assert 'id="qual-scope-unqualified"' in markup and 'id="qual-scope-shipped"' in markup
+    assert 'id="qual-enabled"' in markup, "the on/off switch must be present and first"
+
+    # 5. Units and the hover explanation ride the SHIPPED convention (invariant #17): a
+    #    translated `title` is auto-marked and opens the ONE #oo-tip bubble. No bespoke
+    #    tooltip may be introduced here.
+    assert "row.unit" in html and "floor_reason" in html, (
+        "each tunable row must render its unit and the reason its bound is where it is"
+    )
+    assert "oo-tip" not in html.split("loadQualificationGates", 1)[1][:4000], (
+        "the panel must not build its own tooltip -- invariant #17 already does it"
+    )
+
+
+def test_the_scope_toggles_never_widen_what_the_engine_may_claim():
+    """The two hard fences, asserted at the source level because they are the whole
+    reason these toggles are safe to expose.
+
+    A scope toggle changes WHICH sources are scraped. It must never touch a VERDICT, and
+    it must never let a disqualified source back in -- the re-qualification ladder is the
+    only way back, by design.
+    """
+    runner = (_SRC / "scheduler" / "runner.py").read_text(encoding="utf-8")
+    body = runner.split("def select_sources", 1)[1].split("\ndef ", 1)[0]
+    assert "STATUS_DISQUALIFIED" in body, (
+        "the unqualified toggle must exclude the DISQUALIFIED verdict explicitly"
+    )
+    assert "app_provided_filter" in body, (
+        "the app-provided scope must use the shared exact-tag filter, never an inline "
+        "substring test -- via:wikidata and via:wikidata-discovery differ by a suffix"
+    )
+    # The panel writes settings through the ONE loopback settings path, which has no
+    # egress side effect, so it is correctly not gated behind the network consent popup.
+    app = _ui_source()
+    panel = app.split("async function _qualPut", 1)[1][:1200]
+    assert "/api/scheduler/config" in panel
+    # COMMENT-STRIPPED (recorded 2026-07-31): a "must be gone" guard is always written
+    # beside a comment explaining WHY the thing is absent, and that comment necessarily
+    # quotes it. Rewording the comment is the wrong fix -- it is exactly what a future
+    # session reads before deciding the absence was a mistake. Whole-line // only, so a
+    # `https://` inside a string literal is untouched.
+    code = "\n".join(
+        line for line in panel.splitlines() if not line.lstrip().startswith("//")
+    )
+    assert "ensureOnline" not in code, (
+        "a loopback settings write must not demand the network-consent popup"
+    )

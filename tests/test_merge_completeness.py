@@ -79,20 +79,20 @@ def test_every_not_carried_entry_states_a_reason() -> None:
 
 
 def test_the_owed_handlers_are_named_and_do_not_grow_silently() -> None:
-    """The four kinds of data a fresh-install restore would drop today.
+    """The backlog of data a fresh-install restore would drop. It is now EMPTY.
 
-    Pinned by name so the backlog can only SHRINK without a deliberate edit: adding a new
-    OWED table here is a conscious act, and removing one means a handler was built.
+    Pinned by name so it can only shrink without a deliberate edit: adding a new OWED
+    table is a conscious act, and removing one means a handler was built.
+
+    All five remaining entries were cleared on 2026-08-03, when the maintainer ruled the
+    cross-corpus identity each one needed (their handlers record which, and why). An empty
+    list here is the point of the whole exercise, not an inert assertion -- a table added
+    later with an unanswerable identity belongs BACK in this list with its question
+    stated, exactly as these five were, rather than merged on a guessed key.
     """
     _, _, not_carried = _registries()
     owed = sorted(t for t, reason in not_carried.items() if reason.startswith("OWED:"))
-    assert owed == [
-        "ai_custom_prompt",
-        "ai_keyword",
-        "law_revision_summaries",
-        "watch_matches",
-        "watches",
-    ], f"the owed-handler backlog changed: {owed}"
+    assert owed == [], f"the owed-handler backlog changed: {owed}"
 
 
 def test_every_owed_table_states_the_question_that_blocks_it() -> None:
