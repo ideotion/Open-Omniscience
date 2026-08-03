@@ -2375,5 +2375,10 @@
   "Download failed:": "Download fehlgeschlagen:",
   "Unresolved — this would settle it:": "Ungeklärt — das würde es entscheiden:",
   "search-verified": "per Suche belegt",
-  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "Der Beschaffungslauf hat diese Kennung genannt, aber kein Seitenabruf wurde dafür festgehalten. Sie kann falsch sein; dann schlägt der Download schlicht fehl."
+  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "Der Beschaffungslauf hat diese Kennung genannt, aber kein Seitenabruf wurde dafür festgehalten. Sie kann falsch sein; dann schlägt der Download schlicht fehl.",
+  "Shared max:": "Gemeinsames Maximum:",
+  "Periods with no data are drawn as gaps, never as zero.": "Zeiträume ohne Daten werden als Lücke gezeichnet, nie als Null.",
+  "No series to show yet.": "Noch keine Reihe zum Anzeigen.",
+  "Panels with no data, not shown: {n}": "Felder ohne Daten, nicht angezeigt: {n}",
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "Alle Felder teilen sich eine vertikale Skala und sind so vergleichbar — eine Linie bei dichten Daten, Balken bei spärlichen (n angegeben), niemals eine interpolierte Kurve; nur Zählungen, kein Score."
 }

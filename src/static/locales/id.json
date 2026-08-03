@@ -2375,5 +2375,10 @@
   "Download failed:": "Unduhan gagal:",
   "Unresolved — this would settle it:": "Belum terjawab — ini yang akan memastikannya:",
   "search-verified": "diverifikasi lewat pencarian",
-  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "Sesi akuisisi menyebut pengidentifikasi ini, tetapi tidak ada catatan pengambilan halaman untuknya. Bisa saja keliru; kalau begitu unduhan hanya akan gagal."
+  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "Sesi akuisisi menyebut pengidentifikasi ini, tetapi tidak ada catatan pengambilan halaman untuknya. Bisa saja keliru; kalau begitu unduhan hanya akan gagal.",
+  "Shared max:": "Maksimum bersama:",
+  "Periods with no data are drawn as gaps, never as zero.": "Periode tanpa data digambar sebagai jeda, tidak pernah sebagai nol.",
+  "No series to show yet.": "Belum ada seri untuk ditampilkan.",
+  "Panels with no data, not shown: {n}": "Panel tanpa data, tidak ditampilkan: {n}",
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "Semua panel memakai satu skala vertikal yang sama sehingga bisa dibandingkan — garis saat data rapat, batang saat jarang (n ditampilkan), tidak pernah kurva hasil interpolasi; hanya hitungan, tanpa skor."
 }

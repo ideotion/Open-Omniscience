@@ -2375,5 +2375,10 @@
   "Download failed:": "डाउनलोड विफल:",
   "Unresolved — this would settle it:": "अनसुलझा — इससे तय हो जाएगा:",
   "search-verified": "खोज से सत्यापित",
-  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "अधिग्रहण सत्र ने यह पहचानकर्ता बताया, पर इसके लिए कोई पृष्ठ-फ़ेच दर्ज नहीं है। यह ग़लत हो सकता है; तब डाउनलोड बस विफल हो जाएगा।"
+  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "अधिग्रहण सत्र ने यह पहचानकर्ता बताया, पर इसके लिए कोई पृष्ठ-फ़ेच दर्ज नहीं है। यह ग़लत हो सकता है; तब डाउनलोड बस विफल हो जाएगा।",
+  "Shared max:": "साझा अधिकतम:",
+  "Periods with no data are drawn as gaps, never as zero.": "आँकड़ों रहित अवधियाँ रिक्ति के रूप में खींची जाती हैं, शून्य के रूप में कभी नहीं।",
+  "No series to show yet.": "अभी दिखाने के लिए कोई शृंखला नहीं है।",
+  "Panels with no data, not shown: {n}": "आँकड़ों रहित पैनल, नहीं दिखाए गए: {n}",
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "सभी पैनल एक ही ऊर्ध्वाधर पैमाना साझा करते हैं ताकि उनकी तुलना की जा सके — घने आँकड़ों पर रेखा, विरल पर पट्टियाँ (n दिखाया गया), कभी कोई प्रक्षेपित वक्र नहीं; केवल गणनाएँ, कोई अंक नहीं।"
 }

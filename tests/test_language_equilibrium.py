@@ -186,3 +186,154 @@ def test_lever_is_opt_in_non_exclusionary_and_wired():
     assert "/api/scheduler/equilibrium" in app_js and "_renderEquilibrium(" in app_js, (
         "the Coverage subtab must surface the equilibrium state (read-only)"
     )
+
+
+# --- ONE bucket key on both sides of the comparison -------------------------- #
+#
+# Article.language is stored RAW from trafilatura's <html lang> read, so most
+# major outlets arrive region-tagged. Bucketing on .strip().lower() split English
+# across en / en-us / en_us and compared a FRAGMENT of it against the whole
+# target, silently under-correcting the lever.
+
+def test_region_subtags_are_one_language_not_three(db):
+    """The bug, at the corpus end: en / en-US / EN_us are English."""
+    src = Source(name="s", domain="s.example", enabled=True)
+    db.add(src)
+    db.flush()
+    for i, lang in enumerate(["en", "en-US", "EN_us", "en-GB", "fr", "fr-CA"]):
+        _article(db, src.id, i, lang)
+    db.commit()
+    shares = EQ.corpus_language_shares(db)
+    assert set(shares) == {"en", "fr"}, "region subtags must not become languages"
+    assert shares["en"] == pytest.approx(4 / 6)
+    assert shares["fr"] == pytest.approx(2 / 6)
+
+
+def test_the_lever_paces_against_all_of_a_language_not_one_spelling(db):
+    """The bug's CONSEQUENCE, which is what actually cost the operator.
+
+    A corpus 60% English arriving as en/en-US/en_us, targeted at 30%: before this
+    the lever saw only the 35% 'en' bucket and deferred English on 14.3% of passes
+    where 50.0% is correct -- a 3.5x under-correction that grows with how
+    region-tagged the corpus is."""
+    src = Source(name="s", domain="s.example", enabled=True)
+    db.add(src)
+    db.flush()
+    i = 0
+    for lang, n in [("en", 35), ("en-US", 20), ("en_us", 5), ("fr", 25), ("de", 15)]:
+        for _ in range(n):
+            _article(db, src.id, i, lang)
+            i += 1
+    db.commit()
+    shares = EQ.corpus_language_shares(db)
+    assert shares["en"] == pytest.approx(0.60), "all three spellings are English"
+    pace = EQ.language_pace(shares, {"en": 0.30, "fr": 0.35, "de": 0.35})
+    assert pace["en"] == pytest.approx(0.50, abs=0.01), (
+        "pace must be target/actual over the WHOLE language; 0.857 is the "
+        "pre-fix figure computed against the 'en' spelling alone"
+    )
+
+
+def test_a_target_written_with_a_region_subtag_matches():
+    """The other side of the comparison. Normalising only the corpus would leave an
+    operator who writes 'en-US' targeting a bucket that can never exist -- and the
+    bundled PRESETS are keyed on bare codes, so they could never match either."""
+    assert EQ.normalize_target({"en-US": 1}) == {"en": 1.0}
+    assert EQ.normalize_target({"en": 1, "en-GB": 1}) == {"en": 1.0}, "same language, summed"
+    pace = EQ.language_pace({"en": 0.8}, {"en-US": 0.5, "fr": 0.5})
+    assert pace["en"] == pytest.approx(0.5 / 0.8, abs=0.01)
+
+
+def test_genuinely_different_languages_are_never_merged(db):
+    """The negative-space twin. An over-eager key would collapse distinct languages,
+    which is the same class of defect pointing the other way -- and unlike the
+    original bug it would be invisible, because the shares would still sum to 1."""
+    src = Source(name="s", domain="s.example", enabled=True)
+    db.add(src)
+    db.flush()
+    # en/eo/es share a first letter; zh-Hans/zh-Hant share a language; pt/pt-BR too.
+    for i, lang in enumerate(["en", "eo", "es", "et", "zh-Hans", "zh-Hant", "pt", "pt-BR"]):
+        _article(db, src.id, i, lang)
+    db.commit()
+    shares = EQ.corpus_language_shares(db)
+    assert {"en", "eo", "es", "et"} <= set(shares), "distinct languages stay distinct"
+    for lang in ("en", "eo", "es", "et"):
+        assert shares[lang] == pytest.approx(1 / 8)
+    # ...while script subtags of ONE language merge, like region subtags do.
+    assert shares["zh"] == pytest.approx(2 / 8)
+    assert shares["pt"] == pytest.approx(2 / 8)
+
+
+def test_unknown_stays_the_sentinel_for_absent_language(db):
+    """normalize_lang returns "" for NULL/blank, which must not become a bucket
+    named "" -- 'unknown' is a real, countable category the operator sees."""
+    src = Source(name="s", domain="s.example", enabled=True)
+    db.add(src)
+    db.flush()
+    for i, lang in enumerate([None, "", "   ", "en"]):
+        _article(db, src.id, i, lang)
+    db.commit()
+    shares = EQ.corpus_language_shares(db)
+    assert shares["unknown"] == pytest.approx(3 / 4)
+    assert "" not in shares
+
+
+def test_the_pace_actually_reaches_a_region_tagged_source(db):
+    """THE THIRD KEY SPACE, and the reason a half-fix was worse than none.
+
+    Normalising only the two sides of the SHARE comparison left equilibrium_filter --
+    which is what applies the pace -- keying sources on the old `.strip().lower()`.
+    A region-tagged source therefore missed pace["en"] and stayed 100% exempt, while
+    the bare-spelled sources of the same language absorbed a correction that had just
+    become 3.5x larger on their behalf. Measured over 20,000 passes before this was
+    fixed: source "en" deferred 49.5%, source "en-US" deferred 0.0%."""
+    import random
+    from datetime import UTC, datetime, timedelta
+
+    class _St:
+        last_checked_at = datetime.now(UTC) - timedelta(minutes=5)   # fresh: pace applies
+
+    class _S:
+        def __init__(self, sid, lang):
+            self.id, self.language = sid, lang
+
+    sources = [_S(1, "en"), _S(2, "en-US"), _S(3, "EN_us"), _S(4, "en-GB")]
+    state = {s.id: _St() for s in sources}
+    kept_by_lang: dict[str, int] = {}
+    passes = 4000
+    rng = random.Random(1234)
+    for _ in range(passes):
+        kept, _deferred = EQ.equilibrium_filter(
+            sources, pace={"en": 0.5}, fetch_state=state, rng=rng
+        )
+        for s in kept:
+            kept_by_lang[s.language] = kept_by_lang.get(s.language, 0) + 1
+    for lang in ("en", "en-US", "EN_us", "en-GB"):
+        rate = kept_by_lang.get(lang, 0) / passes
+        assert 0.44 < rate < 0.56, (
+            f"{lang!r} kept {rate:.1%} of passes; pace 0.5 must reach EVERY spelling of "
+            "English, or the bare-spelled sources carry the whole correction alone"
+        )
+
+
+def test_an_untargeted_language_is_still_never_paced(db):
+    """The twin. Normalising the source key must not sweep an unrelated language into
+    a target it was never in -- that would be the same defect pointing outward."""
+    import random
+    from datetime import UTC, datetime, timedelta
+
+    class _St:
+        last_checked_at = datetime.now(UTC) - timedelta(minutes=5)
+
+    class _S:
+        def __init__(self, sid, lang):
+            self.id, self.language = sid, lang
+
+    sources = [_S(1, "fr-CA"), _S(2, "de"), _S(3, None)]
+    state = {s.id: _St() for s in sources}
+    rng = random.Random(7)
+    for _ in range(500):
+        kept, deferred = EQ.equilibrium_filter(
+            sources, pace={"en": 0.1}, fetch_state=state, rng=rng
+        )
+        assert deferred == 0 and len(kept) == 3, "only the targeted language may be paced"
