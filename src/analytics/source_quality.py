@@ -75,6 +75,13 @@ _IN_CHUNK = 800                  # chunk size for id IN(...) queries (stay under
 FURNITURE_UBIQUITY_FRAC = 0.30
 FURNITURE_MIN_SOURCES = 5        # ...but never below this absolute count (small corpus guard).
 FURNITURE_SHARE_THRESHOLD = 0.34  # a source is flagged if >= this share of its top-12 is furniture
+# The metadata-only pre-label thresholds, named ONCE so `_pre_label` and the `cheap_signal`
+# selector cannot drift apart (F3, 2026-08-03 — the selector exists precisely because these two
+# signals out-measured the expensive machinery, so a selector picking on a different bar than the
+# label reports would make the enrichment figure meaningless).
+_HIGH_LINK_DENSITY = 0.05        # external links per word
+_VERY_SHORT_WORDS = 40
+CHEAP_SIGNAL_CAP_PER_SOURCE = 3  # so one link-heavy source cannot flood the sample
 
 # The 4 count-only dimensions and which tail is the suspicious one (for the "Share Now" pathology).
 # high mention_density + low type_token + high single_kw_dominance TOGETHER = furniture repetition.
@@ -304,11 +311,16 @@ def build_observed(
             "n_terms": df_stats["n"],
             "threshold": furniture_ubiquity_cut,
             "reachable": bool(df_values) and df_max >= furniture_ubiquity_cut,
+            "source_flag": "retired",
             "note": (
-                "the furniture detector fires on a term topping >= `threshold` sources. If "
-                "`reachable` is false NO term in this corpus can be classified furniture, so "
-                "`furniture_flagged_sources: 0` means the detector never ran, not that the "
-                "corpus is clean."
+                "the DF-ubiquity SOURCE FLAG is RETIRED (2026-08-03): it cannot discriminate at "
+                "this corpus shape. The cut sat above every observation in both field exports, "
+                "and lowering it does not find more broken sources -- at a cut of 20-25 the "
+                "'furniture' set becomes world/data/public/state/government/media, i.e. ordinary "
+                "journalism, because DF-ubiquity cannot separate publishing furniture from "
+                "generic content words. The DF numbers below are still real evidence an analyst "
+                "can read; what is withdrawn is the verdict drawn from them. `reachable` says "
+                "whether the cut was inside the observed range at all."
             ),
         },
         "pathology_rate_per_source": {
@@ -465,10 +477,95 @@ def select_source_fingerprint(
     return chosen
 
 
+def select_cheap_signals(
+    session: Session, audited_ids: set[int], *, cap_per_source: int = CHEAP_SIGNAL_CAP_PER_SOURCE,
+) -> set[int]:
+    """Articles picked by the METADATA-ONLY signals, promoted to a first-class selector.
+
+    F3, 2026-08-03. Measured against the unbiased ``random_per_source`` control that ships in
+    the same export:
+
+        keyword_outlier     3,276 sampled   562 with a pre-label   17.2%
+        random_per_source     457 sampled    48 with a pre-label   10.5%
+
+    1.64x enrichment for 90% of the human review budget. And the pre-labels doing the
+    discriminating -- ``high_link_density`` (415 of 675 label hits) and ``very_short`` (138) --
+    are computed from ``external_link_count / word_count`` and ``word_count`` ALONE: no content
+    decrypt, no keyword join. They are nearly free and they out-perform the machinery that costs
+    the most.
+
+    So this selects on them DIRECTLY rather than hoping the expensive selector happens to
+    surface them. It ADDS a selector; ``keyword_outlier`` is kept (it is the sampling frame for
+    the ratios and it does beat chance).
+
+    Thresholds mirror ``_pre_label`` exactly so the selector and the label can never disagree.
+    Capped per source so one link-heavy source cannot flood the sample.
+    """
+    counts: dict[int, int] = {}
+    for aid, cnt in (
+        session.query(ArticleLink.article_id, func.count())
+        .filter(ArticleLink.link_type == "external")
+        .group_by(ArticleLink.article_id)
+    ):
+        counts[int(aid)] = int(cnt)
+
+    per_source: dict[int, list[int]] = {}
+    for aid, wc, sid, quarantined in session.query(
+        Article.id, Article.word_count, Article.source_id, Article.quarantined
+    ).filter(Article.quarantined.isnot(True)):
+        if quarantined or sid is None or int(sid) not in audited_ids:
+            continue
+        wc_i = int(wc) if wc is not None else None
+        links = counts.get(int(aid), 0)
+        short = wc_i is not None and wc_i < _VERY_SHORT_WORDS
+        dense = wc_i is not None and wc_i > 0 and (links / wc_i) >= _HIGH_LINK_DENSITY
+        if short or dense:
+            per_source.setdefault(int(sid), []).append(int(aid))
+
+    chosen: set[int] = set()
+    for sid in sorted(per_source):
+        chosen.update(sorted(per_source[sid])[:cap_per_source])
+    return chosen
+
+
+def selector_enrichment(
+    sample_records: Sequence[dict], control: str = "random_per_source",
+) -> dict[str, dict]:
+    """Each selector's own hit-rate against the unbiased control, computed from the export
+    the selectors produced.
+
+    The point is that the next export MEASURES its selectors instead of assuming them: a
+    selector that costs most of the review budget and barely beats chance should have to say so
+    in the artifact that ships it. "Hit" = the article carried at least one heuristic pre-label,
+    which is a cheap proxy for "worth a human's attention", never a verdict.
+
+    A selector with no sampled articles reports ``rate: None`` and ``enrichment: None`` -- an
+    unmeasured selector must not read as one that scored zero, and dividing by a control that
+    sampled nothing would fabricate a ratio.
+    """
+    per: dict[str, dict] = {}
+    for rec in sample_records:
+        hit = bool(rec.get("pre_label"))
+        for method in rec.get("selection_method", []):
+            d = per.setdefault(method, {"n": 0, "with_pre_label": 0})
+            d["n"] += 1
+            d["with_pre_label"] += int(hit)
+    for d in per.values():
+        d["rate"] = round(d["with_pre_label"] / d["n"], 4) if d["n"] else None
+    base = per.get(control, {}).get("rate")
+    for name, d in per.items():
+        d["enrichment_over_control"] = (
+            None if (name == control or not base or d["rate"] is None)
+            else round(d["rate"] / base, 3)
+        )
+    return per
+
+
 def build_sample_union(
     random_pick: dict[int, int], outlier_ids: set[int], fingerprint_ids: set[int],
+    cheap_ids: set[int] | None = None,
 ) -> dict[int, list[str]]:
-    """Union of the three selectors → ``{article_id: [selection_method, ...]}`` (an article can be
+    """Union of the selectors → ``{article_id: [selection_method, ...]}`` (an article can be
     picked by more than one selector — the whole point of independent selectors)."""
     methods: dict[int, list[str]] = {}
     for aid in random_pick.values():
@@ -477,6 +574,8 @@ def build_sample_union(
         methods.setdefault(aid, []).append("keyword_outlier")
     for aid in fingerprint_ids:
         methods.setdefault(aid, []).append("source_fingerprint")
+    for aid in sorted(cheap_ids or ()):
+        methods.setdefault(aid, []).append("cheap_signal")
     return methods
 
 
@@ -489,9 +588,10 @@ def _pre_label(text_head: str | None, *, word_count: int | None, external_links:
         hits = [p for p in _BOILERPLATE_PHRASES if p in low]
         if hits:
             labels.append("boilerplate_phrase:" + "|".join(sorted(set(hits))[:5]))
-    if word_count is not None and word_count > 0 and (external_links / word_count) >= 0.05:
+    if (word_count is not None and word_count > 0
+            and (external_links / word_count) >= _HIGH_LINK_DENSITY):
         labels.append(f"high_link_density:{round(external_links / word_count, 3)}")
-    if word_count is not None and word_count < 40:
+    if word_count is not None and word_count < _VERY_SHORT_WORDS:
         labels.append(f"very_short:{word_count}")
     return labels
 
@@ -565,23 +665,48 @@ def flag_furniture_sources(
     ubiquity_frac: float = FURNITURE_UBIQUITY_FRAC, min_sources: int = FURNITURE_MIN_SOURCES,
     share_threshold: float = FURNITURE_SHARE_THRESHOLD,
 ) -> tuple[set[int], dict[int, float]]:
-    """A keyword is FURNITURE (cross-source ubiquitous) when its DF ≥ max(min_sources,
-    ubiquity_frac·n_sources). A source is flagged when the FURNITURE SHARE of its top keywords ≥
-    share_threshold. Descriptive, propose-don't-auto-apply, no score. Returns (flagged_source_ids,
-    furniture_share_per_source)."""
+    """The cross-source DF-ubiquity share per source. THE SOURCE FLAG IS RETIRED (F2, 2026-08-03)
+    — the share is still computed and reported as descriptive evidence, but it no longer flags.
+
+    WHY, and why lowering the cut was the wrong fix. The detector never fired: the cut is
+    ``max(min_sources, ubiquity_frac·n_sources)`` = 137 / 142 on the two field corpora, against a
+    maximum observed ``cross_source_df`` of 71 / 80 over ~5,500 fingerprint entries. So
+    ``furniture_flagged_sources`` was 0 in both runs and this selector had never once selected.
+
+    The tempting fix is to lower the cut. Here is the actual top of the DF distribution::
+
+        71 world   64 data   54 public   48 state   44 government   39 media
+        38 company 31 president 31 research 30 down  28 trump      26 global
+
+    At a cut of 20–25 the "furniture" set becomes *world, data, public, state, government, media,
+    company, president, research* — ordinary journalism. That is the recorded open-class lesson
+    (2026-07-01 #530): DF-ubiquity cannot separate publishing furniture from generic content
+    words, because BOTH are ubiquitous. A lower cut would not find more broken sources, it would
+    manufacture a furniture verdict over normal reporting.
+
+    The obvious alternative — require corroboration from the closed-class publishing-boilerplate
+    channel — was MEASURED before being rejected, and it fails harder than expected: every term in
+    ``PLATFORM_STOPWORDS`` and ``PUBLISHING_BOILERPLATE_SCOPED`` is ALREADY a stopword, so none of
+    them can ever be extracted as a keyword, so none can ever appear in a source's top-12
+    fingerprint. That variant would flag nothing BY CONSTRUCTION rather than merely in practice —
+    an inert mechanism that still looks like a working detector, which is worse than no detector.
+
+    So the honest reading is that this signal cannot discriminate at this corpus shape, and the
+    report says so (``observed.cross_source_df.reachable``) instead of publishing a zero that
+    reads like a clean bill of health. The DF numbers stay in the export because they are real and
+    an analyst can use them; what is withdrawn is the verdict drawn from them.
+
+    Returns ``(flagged_source_ids, furniture_share_per_source)`` — the first is always empty.
+    """
     ubiquity_cut = max(min_sources, int(round(ubiquity_frac * n_sources)))
     furniture_terms = {t for t, dfc in cross_source_df.items() if dfc >= ubiquity_cut}
-    flagged: set[int] = set()
     shares: dict[int, float] = {}
     for sid, terms in per_source_top.items():
         if not terms:
             shares[sid] = 0.0
             continue
-        share = sum(1 for t in terms if t in furniture_terms) / len(terms)
-        shares[sid] = round(share, 4)
-        if share >= share_threshold:
-            flagged.add(sid)
-    return flagged, shares
+        shares[sid] = round(sum(1 for t in terms if t in furniture_terms) / len(terms), 4)
+    return set(), shares
 
 
 def source_metric_distributions(stats_by_source: dict[int, list[ArticleStat]]) -> dict[int, dict]:
@@ -642,10 +767,19 @@ def _readme() -> bytes:
         "flagged dimension(s) with value + baseline + n.\n"
         "- `sample_articles.jsonl` — the Layer-B UNION: metadata + heuristic pre-label + text_head "
         "(newsletter bodies gated) + selection_method LIST.\n\n"
-        "## The three selectors (their blind spots don't overlap)\n"
+        "## The selectors (their blind spots don't overlap)\n"
         "1. `random_per_source` — one fixed-seed random article per source = the unbiased CONTROL.\n"
         "2. `keyword_outlier` — the Layer-A stat outliers (finds only what its stats measure).\n"
-        "3. `source_fingerprint` — articles from Layer-C furniture-flagged sources.\n\n"
+        "3. `cheap_signal` — high outbound-link density or a very short body. METADATA ONLY: no "
+        "content decrypt, no keyword join. On the 2026-08-03 field corpus these signals carried "
+        "most of the discriminating power (`high_link_density` 415 of 675 label hits) while the "
+        "expensive selector returned 17.2% against the control's 10.5%.\n"
+        "4. `source_fingerprint` — RETIRED (see `observed.cross_source_df.source_flag`). It "
+        "selected nothing in either field run because the DF cut sat above every observation, and "
+        "lowering it would classify `government`/`world`/`data` as furniture. Left in the "
+        "vocabulary so its n=0 stays visible in `selector_enrichment` rather than disappearing.\n\n"
+        "`selector_enrichment` reports each selector's hit-rate against the control, so a "
+        "selector that costs the review budget and barely beats chance has to say so here.\n\n"
         "## The analysis this enables\n"
         "- **Base rate**: read the `random_per_source` articles — what fraction are non-articles? "
         "That is the corpus's true bad-item rate (unbiased).\n"
@@ -746,8 +880,13 @@ def build_quality_report_files(
     # Layer B — the three selectors + the union + the text sample
     random_pick, skipped = select_random_per_source(source_to_articles, seed=seed)
     outlier_ids = select_keyword_outliers(outliers)
+    # `flagged_sources` is now always empty (the DF source flag is retired, F2), so this
+    # contributes nothing. It is kept rather than deleted so the retirement is visible in the
+    # sample's own vocabulary: `source_fingerprint` appearing with n=0 in the enrichment table
+    # is the honest record of a selector that never selected.
     fingerprint_ids = select_source_fingerprint(flagged_sources, source_to_articles, seed=seed)
-    sample_methods = build_sample_union(random_pick, outlier_ids, fingerprint_ids)
+    cheap_ids = select_cheap_signals(session, audited_ids)
+    sample_methods = build_sample_union(random_pick, outlier_ids, fingerprint_ids, cheap_ids)
     sample_records = build_sample_records(
         session, sample_methods, newsletter_ids, include_newsletter_text=include_newsletter_text
     )
@@ -904,6 +1043,11 @@ def build_quality_report_files(
         # so in the artifact that reports it -- that is what turns the next export into a
         # measurement rather than a re-run.
         "observed": observed,
+        # F3: each selector's own hit-rate against the unbiased control, so the next export
+        # MEASURES its selectors instead of assuming them. `keyword_outlier` costs ~90% of the
+        # review budget for 1.64x chance on the field corpus; `cheap_signal` selects on the
+        # metadata that measurably out-performed it, at no decrypt cost.
+        "selector_enrichment": selector_enrichment(sample_records),
         "config": {
             "seed": seed, "cohort_floor": floor, "tail_high_p": TAIL_HIGH_P, "tail_low_p": TAIL_LOW_P,
             "text_head_chars": TEXT_HEAD_CHARS, "top_keywords": TOP_KEYWORDS,

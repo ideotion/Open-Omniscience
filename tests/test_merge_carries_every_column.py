@@ -269,7 +269,7 @@ def _insert_columns() -> dict[str, set[str]]:
     the way Python itself does, which is the only reading that matches what executes.
     """
     src = Path(__file__).resolve().parents[1] / "src" / "backup" / "merge.py"
-    tree = ast.parse(src.read_text())
+    tree = ast.parse(src.read_text(encoding="utf-8"))
     out: dict[str, set[str]] = {}
     for node in ast.walk(tree):
         if isinstance(node, ast.Constant) and isinstance(node.value, str):

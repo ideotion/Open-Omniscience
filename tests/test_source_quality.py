@@ -190,7 +190,9 @@ def test_sample_union_labels_every_selector_that_fired():
 # Layer C — cross-source DF furniture detection
 # --------------------------------------------------------------------------- #
 
-def test_furniture_is_high_cross_source_df_no_denylist():
+def test_cross_source_df_still_measures_ubiquity():
+    """The DF numbers themselves are real evidence and stay in the export — it is the VERDICT
+    drawn from them that was retired (F2, 2026-08-03)."""
     top = {
         1: ["election", "court", "share now"],
         2: ["inflation", "share now", "read more"],
@@ -201,9 +203,58 @@ def test_furniture_is_high_cross_source_df_no_denylist():
     }
     df = compute_cross_source_df(top)
     assert df["share now"] == 5 and df["senate"] == 1  # furniture is ubiquitous, topic is rare
-    flagged, shares = flag_furniture_sources(top, df, n_sources=6, min_sources=3, share_threshold=0.6)
-    assert 6 not in flagged and shares[6] == 0.0  # the healthy topical source is NOT flagged
-    assert {3, 4, 5} <= flagged  # the furniture-dominated sources are flagged
+    _flagged, shares = flag_furniture_sources(
+        top, df, n_sources=6, min_sources=3, share_threshold=0.6
+    )
+    assert shares[6] == 0.0 and shares[3] == 1.0, "the descriptive share must still be computed"
+
+
+def test_the_furniture_source_flag_is_retired():
+    """It never fired in either field export (the cut sat above every observation), and the
+    fix was NOT to lower the cut — see the negative-space test below for why."""
+    top = {i: ["share now", "read more", "cookie"] for i in range(1, 6)}
+    df = compute_cross_source_df(top)
+    flagged, shares = flag_furniture_sources(
+        top, df, n_sources=5, min_sources=1, share_threshold=0.0
+    )
+    assert flagged == set(), (
+        "the DF source flag is retired; even a corpus that is nothing but furniture, at the "
+        "most permissive settings the signature allows, must not produce a verdict"
+    )
+    assert shares[1] == 1.0, "...while the share it is retired from still reports honestly"
+
+
+def test_ordinary_journalism_can_never_be_classified_furniture():
+    """THE negative-space case, and the reason option (b) was rejected too.
+
+    On the field corpus the top of the DF distribution is world(71) data(64) public(54)
+    state(48) government(44) media(39) — so ANY cut low enough to fire would classify ordinary
+    reporting vocabulary as furniture. That is the recorded open-class lesson: DF-ubiquity
+    cannot separate publishing furniture from generic content words, because both are
+    ubiquitous.
+
+    This asserts the guarantee STRUCTURALLY rather than at one chosen cut: there is no
+    combination of `min_sources` / `ubiquity_frac` / `share_threshold` the code accepts under
+    which a source whose keywords are real topics gets a furniture verdict.
+    """
+    top = {
+        1: ["world", "data", "government"],
+        2: ["world", "data", "public"],
+        3: ["world", "state", "government"],
+    }
+    df = compute_cross_source_df(top)
+    assert df["world"] == 3, "the fixture really is DF-ubiquitous vocabulary"
+    for min_sources in (1, 2, 3):
+        for frac in (0.0, 0.1, 0.3, 1.0):
+            for share in (0.0, 0.34, 1.0):
+                flagged, _ = flag_furniture_sources(
+                    top, df, n_sources=3, ubiquity_frac=frac,
+                    min_sources=min_sources, share_threshold=share,
+                )
+                assert flagged == set(), (
+                    f"a source was called furniture for publishing about government/world/data "
+                    f"at min_sources={min_sources} frac={frac} share={share}"
+                )
 
 
 # --------------------------------------------------------------------------- #

@@ -198,3 +198,91 @@ def test_quarantined_articles_do_not_count_toward_their_sources_verdict(tmp_path
 
     stats = collect_article_stats(s)
     assert len(stats) == 1, "a quarantined article still counted toward its source's audit"
+
+
+# --------------------------------------------------------------------------- #
+#  F3 -- measure the selectors instead of assuming them
+# --------------------------------------------------------------------------- #
+def test_each_selector_reports_its_own_hit_rate_against_the_control() -> None:
+    """The expensive selector cost ~90% of the human review budget for 1.64x chance on the
+    field corpus, and nothing in the export said so. Now it has to."""
+    from src.analytics.source_quality import selector_enrichment
+
+    records = [
+        {"selection_method": ["random_per_source"], "pre_label": []},
+        {"selection_method": ["random_per_source"], "pre_label": ["very_short:12"]},
+        {"selection_method": ["keyword_outlier"], "pre_label": ["very_short:8"]},
+        {"selection_method": ["keyword_outlier"], "pre_label": ["high_link_density:0.4"]},
+        {"selection_method": ["keyword_outlier"], "pre_label": []},
+        {"selection_method": ["keyword_outlier"], "pre_label": []},
+    ]
+    per = selector_enrichment(records)
+    assert per["random_per_source"]["rate"] == pytest.approx(0.5)
+    assert per["keyword_outlier"]["rate"] == pytest.approx(0.5)
+    assert per["keyword_outlier"]["enrichment_over_control"] == pytest.approx(1.0)
+    assert per["random_per_source"]["enrichment_over_control"] is None, (
+        "the control cannot be enriched over itself"
+    )
+
+
+def test_a_selector_that_sampled_nothing_reports_null_not_zero() -> None:
+    """The retired `source_fingerprint` selector is exactly this case. A selector that never
+    ran must not report a 0% hit-rate, which reads as "it looked and found nothing"."""
+    from src.analytics.source_quality import selector_enrichment
+
+    per = selector_enrichment([{"selection_method": ["random_per_source"], "pre_label": []}])
+    assert per["random_per_source"]["rate"] is None or per["random_per_source"]["rate"] == 0.0
+    assert "source_fingerprint" not in per
+
+
+def test_enrichment_is_not_fabricated_when_the_control_found_nothing() -> None:
+    """NEGATIVE SPACE, and the one the brief names: the enrichment figure is meaningless
+    unless the control is genuinely unbiased and genuinely measured. A control that hit zero
+    would make every other selector look infinitely good if the ratio were computed anyway."""
+    from src.analytics.source_quality import selector_enrichment
+
+    per = selector_enrichment([
+        {"selection_method": ["random_per_source"], "pre_label": []},
+        {"selection_method": ["keyword_outlier"], "pre_label": ["very_short:3"]},
+    ])
+    assert per["random_per_source"]["rate"] == 0.0
+    assert per["keyword_outlier"]["enrichment_over_control"] is None, (
+        "an enrichment ratio was fabricated against a control that found nothing"
+    )
+
+
+def test_the_cheap_signal_selector_and_the_pre_label_agree(tmp_path) -> None:
+    """They must fire on the same articles, or the enrichment figure compares a selector
+    against a label that means something else. Shared constants, pinned behaviourally."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from src.analytics.source_quality import _pre_label, select_cheap_signals
+    from src.database.models import Article, ArticleLink, Base, Source
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'c.db'}", future=True)
+    Base.metadata.create_all(engine)
+    s = Session(engine, future=True)
+    src = Source(name="S", domain="s.example")
+    s.add(src)
+    s.flush()
+    # 1: very short.  2: link-dense.  3: an ordinary article (must NOT be selected).
+    for i, wc in ((1, 10), (2, 100), (3, 400)):
+        s.add(Article(url=f"https://s.example/{i}", canonical_url=f"https://s.example/{i}",
+                      source_id=src.id, title="T", content="body", hash=f"h{i}",
+                      word_count=wc, language="en"))
+    s.flush()
+    for _ in range(20):
+        s.add(ArticleLink(article_id=2, url="https://x.example",
+                          normalized_url="x.example", link_type="external"))
+    s.add(ArticleLink(article_id=3, url="https://x.example",
+                      normalized_url="x.example", link_type="external"))
+    s.commit()
+
+    chosen = select_cheap_signals(s, {int(src.id)})
+    assert chosen == {1, 2}, "the cheap selector picked the wrong articles"
+    assert 3 not in chosen, "an ordinary article was selected as a cheap signal"
+    # and the label agrees on each, using the same thresholds
+    assert _pre_label(None, word_count=10, external_links=0), "very_short must label"
+    assert _pre_label(None, word_count=100, external_links=20), "link density must label"
+    assert not _pre_label(None, word_count=400, external_links=1), "ordinary must not label"
