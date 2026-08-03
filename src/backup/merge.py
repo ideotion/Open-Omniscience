@@ -404,24 +404,7 @@ def merge_corpus(
         )
         batch_id = int(cur.lastrowid or 0)
 
-        # Ordered, FK-safe merge steps. Named so a caller can report which step is
-        # running; the order is UNCHANGED from the previous explicit sequence.
-        steps = (
-            ("keyword categories", _merge_keyword_categories),
-            ("sources", _merge_sources),
-            ("articles", _merge_articles),
-            ("keywords", _merge_keywords),
-            ("article-keyword links", _merge_article_keyword_links),
-            ("keyword mentions", _merge_keyword_mentions),
-            ("curation", _merge_curation),
-            ("link graph", _merge_external_link_graph),
-            ("article derivations", _merge_article_derivations),
-            ("wiki", _merge_wiki),
-            ("law", _merge_law),
-            ("markets", _merge_markets),
-            ("rule tables", _merge_rule_tables),
-            ("source candidates", _merge_source_candidates),
-        )
+        steps = _merge_steps()
         total = len(steps)
         for i, (name, fn) in enumerate(steps, 1):
             if should_stop is not None and should_stop():
@@ -473,6 +456,11 @@ _MERGE_HANDLED = {
     "law_documents", "law_revisions", "commodity_prices", "market_extraction_rules",
     "link_classification_rules", "source_credibility_rules", "source_candidates",
     "source_qualification_attempts",
+    # 2026-08-03, from the P0 validation on the operator's 16.5 GB corpus: these rode
+    # inside every artifact and no handler copied them, so a FRESH-INSTALL restore
+    # dropped them. Each has a unique constraint the schema itself defines, so its
+    # cross-corpus identity is the schema's answer rather than one we invented.
+    "stat_figures", "stat_subscriptions", "hazard_event_details", "keyword_tags",
 }
 # Deliberately not merged: the other corpus's OWN import history + schema/FTS internals,
 # plus ``app_state`` — per-machine settings/UI prefs (DB-reliability D1 / T10: local wins
@@ -515,29 +503,92 @@ _MERGE_IGNORED = {"merge_batches", "merged_rows", "alembic_version", "app_state"
 _MERGE_NOT_CARRIED: dict[str, str] = {
     # (a) REBUILT by the post-swap re-index from the article text, exactly like
     # keyword_mentions (maintainer ruling 2026-07-29). Nothing is lost; these are only
-    # here rather than in _MERGE_IGNORED because the report should say so. NOTE the
-    # inconsistency worth settling: their sibling ``article_mentioned_dates`` IS merged,
-    # though all three are written by the same index_article pass.
-    "article_mentioned_places": "rebuilt by the post-swap re-index (index_article)",
-    "article_entities": "rebuilt by the post-swap re-index (index_article)",
+    # here rather than in _MERGE_IGNORED because the report should say so.
+    #
+    # WHY THEIR SIBLING ``article_mentioned_dates`` IS MERGED AND THESE ARE NOT -- this
+    # looked like an inconsistency (all three are written by the same index_article
+    # pass) and it is NOT. ``article_mentioned_dates`` carries a ``status`` column:
+    # datestore.set_status() is a human confirm/reject, and reads filter
+    # ``status != 'rejected'``. A re-index recreates every date as a fresh
+    # ``candidate``, so NOT merging dates would silently discard the operator's own
+    # judgements. These two tables have no such column -- purely derived, so a rebuild
+    # is lossless. THE RULE, for whoever adds the next one: a derived table may be left
+    # to the re-index only while it carries no human decision.
+    "article_mentioned_places": "purely derived, no human channel; rebuilt by index_article",
+    "article_entities": "purely derived, no human channel; rebuilt by index_article",
     # (b) PER-MACHINE or self-healing: losing them costs nothing durable.
     "derived_meta": "corpus epoch + derived bookkeeping, rebuilt on demand",
     "feed_fetch_state": "per-feed ETag/Last-Modified + backoff, re-learned on the next pass",
     "stat_snapshots": "local hourly counters; recording resumes, history is machine-local",
-    # (c) GENUINELY OWED A HANDLER: not recomputable from the corpus, and not per-machine.
-    # These ride INSIDE the artifact but no handler copies them, so a fresh-install restore
-    # silently drops them. Building the handlers is a data-safety slice of its own (the full
-    # skeptic matrix), deliberately not rushed in beside a release gate.
-    "stat_figures": "OWED: networked official-statistics observations with vintages",
-    "stat_subscriptions": "OWED: the user's tracked series for auto-refresh",
-    "hazard_event_details": "OWED: provider-asserted hazard metadata from ephemeral feeds",
-    "keyword_tags": "OWED: curated per-keyword tag assignments",
-    "watches": "OWED: the user's saved watch conditions",
-    "watch_matches": "OWED: watch match history",
-    "ai_custom_prompt": "OWED: the user's custom AI extractors",
-    "ai_keyword": "OWED: the AI-derived metadata layer",
-    "law_revision_summaries": "OWED: AI summaries of tracked law changes",
+    # (c) GENUINELY OWED A HANDLER: not recomputable from the corpus, not per-machine, and
+    # dropped by a fresh-install restore today. The four with a unique constraint the SCHEMA
+    # defines were built 2026-08-03 (stat_figures, stat_subscriptions, hazard_event_details,
+    # keyword_tags) -- their cross-corpus identity is the schema's answer, not one we made up.
+    #
+    # These five have NO unique constraint, so "the same row in another corpus" is a DESIGN
+    # DECISION, and inventing one silently is how a merge starts duplicating or dropping. Each
+    # needs its identity ruled before a handler can be written; the question is stated with it
+    # so the answer is a decision and not an archaeology exercise.
+    "watches": (
+        "OWED: the user's saved watch conditions. IDENTITY UNRULED -- is a watch the same "
+        "watch across corpora by its name, or by its query+window+threshold? Name collides "
+        "across machines; the condition tuple makes a renamed watch a second row."
+    ),
+    "watch_matches": (
+        "OWED: watch match history. IDENTITY UNRULED and BLOCKED ON watches -- a match "
+        "cannot be remapped until a watch has a stable cross-corpus id."
+    ),
+    "ai_custom_prompt": (
+        "OWED: the user's custom AI extractors. IDENTITY UNRULED -- label, or "
+        "output_kind+prompt_text? Two machines may hold the same label over edited text."
+    ),
+    "ai_keyword": (
+        "OWED: the AI-derived metadata layer. IDENTITY UNRULED -- (article, kind, term) "
+        "would collapse two models' answers into one; adding prompt_version keeps them "
+        "apart but then a re-run under a new version duplicates. Also the largest of the "
+        "five, so the choice has a cost as well as a meaning."
+    ),
+    "law_revision_summaries": (
+        "OWED: AI summaries of tracked law changes. IDENTITY UNRULED -- one summary per "
+        "revision, or one per (revision, model/prompt)? The answer decides whether a "
+        "second model's reading replaces the first or sits beside it."
+    ),
 }
+
+
+def _merge_steps() -> tuple[tuple[str, Callable[..., None]], ...]:
+    """The ordered, FK-safe merge steps, named so a caller can report which is running.
+
+    Hoisted out of ``merge_corpus`` 2026-08-03 so there is ONE source of truth: the
+    per-step timing test used to hardcode "14", which meant adding a step reddened a test
+    about instrumentation for a reason that had nothing to do with instrumentation. It now
+    reads this tuple, so the guard is the PROPERTY (every declared step gets a named
+    timing) rather than a number somebody has to remember to bump.
+
+    The order is load-bearing and unchanged: parents before children, because the child
+    handlers join the ``temp.map_*`` tables their parents build.
+    """
+    return (
+        ("keyword categories", _merge_keyword_categories),
+        ("sources", _merge_sources),
+        ("articles", _merge_articles),
+        ("keywords", _merge_keywords),
+        ("article-keyword links", _merge_article_keyword_links),
+        ("keyword mentions", _merge_keyword_mentions),
+        ("curation", _merge_curation),
+        ("link graph", _merge_external_link_graph),
+        ("article derivations", _merge_article_derivations),
+        ("wiki", _merge_wiki),
+        ("law", _merge_law),
+        ("markets", _merge_markets),
+        ("rule tables", _merge_rule_tables),
+        ("source candidates", _merge_source_candidates),
+        # 2026-08-03: the tables the P0 validation caught riding inside every artifact
+        # with no handler. After their parents, whose id maps they join.
+        ("official statistics", _merge_statistics),
+        ("hazard details", _merge_hazard_details),
+        ("keyword tags", _merge_keyword_tags),
+    )
 
 
 def _unmerged_tables(con: sqlite3.Connection) -> tuple[dict[str, int], list[str]]:
@@ -1276,6 +1327,135 @@ def _merge_law(con, batch_id, results) -> None:
     )
     results["law_documents"] = r
     results["law_revisions"] = rev
+
+
+def _merge_statistics(con, batch_id, results) -> None:
+    """Official-statistics figures + the user's auto-refresh subscriptions.
+
+    These rode inside every artifact and no handler copied them, so a FRESH-INSTALL
+    restore silently dropped them (P0 validation 2026-08-03: 35,000 figures on the
+    operator's own corpus). A self-restore could never reveal it -- every row reads as
+    a duplicate -- which is why it survived the field run that found it.
+
+    A figure is NOT recomputable: it is a networked observation from a documented
+    endpoint, and its VINTAGES are the point (a re-fetch at a later ``extracted_at`` is
+    a NEW row, never an overwrite -- revisions are evidence). So the dedup key is the
+    table's own unique constraint INCLUDING ``extracted_at``: two vintages of the same
+    (agency, series, area, period) are two rows here exactly as they are in the live
+    store, and merging must not collapse them into one.
+    """
+    fig = DomainResult()
+    fig_key = (
+        "t.agency = i.agency AND t.series_id = i.series_id AND t.ref_area = i.ref_area"
+        " AND t.time_period = i.time_period AND t.extracted_at = i.extracted_at"
+    )
+    fig.duplicate = _count(
+        con,
+        "SELECT COUNT(*) FROM inc.stat_figures i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        f" WHERE EXISTS (SELECT 1 FROM stat_figures t WHERE {fig_key})",
+    )
+    fig.new = _insert_tracked(
+        con, batch_id, "stat_figures",
+        "INSERT OR IGNORE INTO stat_figures (agency, series_id, ref_area, time_period,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        " value, unit, methodology_ref, adjustment, base_year, extracted_at, created_at)"
+        " SELECT i.agency, i.series_id, i.ref_area, i.time_period, i.value, i.unit,"
+        " i.methodology_ref, i.adjustment, i.base_year, i.extracted_at, i.created_at"
+        " FROM inc.stat_figures i"
+        f" WHERE NOT EXISTS (SELECT 1 FROM stat_figures t WHERE {fig_key})",
+    )
+    results["stat_figures"] = fig
+
+    # A subscription is the user's own tracking choice. Local wins on collision: the
+    # local ``enabled`` / ``interval_days`` / ``last_fetched_at`` describe THIS machine's
+    # schedule, and adopting an incoming corpus's cadence would silently retune it.
+    sub = DomainResult()
+    sub_key = (
+        "t.source = i.source AND t.indicator = i.indicator"
+        " AND COALESCE(t.country,'') = COALESCE(i.country,'')"
+        " AND COALESCE(t.dataset,'') = COALESCE(i.dataset,'')"
+        " AND COALESCE(t.params_json,'') = COALESCE(i.params_json,'')"
+        " AND COALESCE(t.agency,'') = COALESCE(i.agency,'')"
+    )
+    sub.duplicate = _count(
+        con,
+        "SELECT COUNT(*) FROM inc.stat_subscriptions i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        f" WHERE EXISTS (SELECT 1 FROM stat_subscriptions t WHERE {sub_key})",
+    )
+    sub.new = _insert_tracked(
+        con, batch_id, "stat_subscriptions",
+        "INSERT OR IGNORE INTO stat_subscriptions (source, indicator, country, dataset,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        " params_json, agency, interval_days, enabled, created_at, last_fetched_at, last_status)"
+        " SELECT i.source, i.indicator, i.country, i.dataset, i.params_json, i.agency,"
+        " i.interval_days, i.enabled, i.created_at, i.last_fetched_at, i.last_status"
+        " FROM inc.stat_subscriptions i"
+        f" WHERE NOT EXISTS (SELECT 1 FROM stat_subscriptions t WHERE {sub_key})",
+    )
+    results["stat_subscriptions"] = sub
+
+
+def _merge_hazard_details(con, batch_id, results) -> None:
+    """Provider-asserted hazard metadata (magnitude / coords / event time).
+
+    NOT recomputable: it is a snapshot of an ephemeral GDACS/USGS feed, so once the
+    provider drops the event the only copy is the one in the corpus.
+
+    Two unique constraints have to be honoured at once -- ``(provider, event_id)`` and
+    ``(article_id)`` -- so the guard tests BOTH. Skipping the article_id check would let
+    a row whose provider/event_id is new but whose mapped article already carries a
+    detail pass the NOT-EXISTS and then violate the constraint on insert, which is the
+    exact failure the article_mentioned_dates key bug caused in the field (2026-06-22).
+    """
+    r = DomainResult()
+    key = (
+        "(t.provider = i.provider AND t.event_id = i.event_id) OR t.article_id = ma.new"
+    )
+    r.duplicate = _count(
+        con,
+        "SELECT COUNT(*) FROM inc.hazard_event_details i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        " JOIN temp.map_articles ma ON ma.old = i.article_id"
+        f" WHERE EXISTS (SELECT 1 FROM hazard_event_details t WHERE {key})",
+    )
+    r.new = _insert_tracked(
+        con, batch_id, "hazard_event_details",
+        "INSERT OR IGNORE INTO hazard_event_details (article_id, provider, event_id,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        " event_type, severity, magnitude, lat, lon, place, event_time, source_url,"
+        " created_at, updated_at)"
+        " SELECT ma.new, i.provider, i.event_id, i.event_type, i.severity, i.magnitude,"
+        " i.lat, i.lon, i.place, i.event_time, i.source_url, i.created_at, i.updated_at"
+        " FROM inc.hazard_event_details i JOIN temp.map_articles ma ON ma.old = i.article_id"
+        f" WHERE NOT EXISTS (SELECT 1 FROM hazard_event_details t WHERE {key})",
+    )
+    results["hazard_event_details"] = r
+
+
+def _merge_keyword_tags(con, batch_id, results) -> None:
+    """Per-keyword tag assignments (the Item-AC two-axis taxonomy).
+
+    Partly config-seeded and partly grown by the analyzer + the operator's own review,
+    and the reviewed half is not reconstructable -- re-seeding restores the baseline and
+    nothing else. Keyed on the table's own unique constraint, with ``source`` in the key
+    so a curated assignment and an analyzer-proposed one for the same tag stay distinct
+    rows rather than one silently standing in for the other.
+    """
+    r = DomainResult()
+    key = (
+        "t.keyword_id = mk.new AND t.axis = i.axis AND t.tag = i.tag"
+        " AND COALESCE(t.source,'') = COALESCE(i.source,'')"
+    )
+    r.duplicate = _count(
+        con,
+        "SELECT COUNT(*) FROM inc.keyword_tags i"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        " JOIN temp.map_keywords mk ON mk.old = i.keyword_id"
+        f" WHERE EXISTS (SELECT 1 FROM keyword_tags t WHERE {key})",
+    )
+    r.new = _insert_tracked(
+        con, batch_id, "keyword_tags",
+        "INSERT OR IGNORE INTO keyword_tags (keyword_id, axis, tag, source, created_at)"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        " SELECT mk.new, i.axis, i.tag, i.source, i.created_at"
+        " FROM inc.keyword_tags i JOIN temp.map_keywords mk ON mk.old = i.keyword_id"
+        f" WHERE NOT EXISTS (SELECT 1 FROM keyword_tags t WHERE {key})",
+    )
+    results["keyword_tags"] = r
 
 
 def _merge_markets(con, batch_id, results) -> None:

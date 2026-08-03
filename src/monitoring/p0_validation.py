@@ -5,7 +5,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 WHY: the v0.2.0 tag is HELD on the maintainer's LIVE-corpus validation of the P0
 data-safety set (backup/restore at scale · unlock-at-scale · collector RSS). No
-sandbox can run a 100 GB corpus, so this module makes that acceptance run
+sandbox can run the operator's real corpus, so this module makes that acceptance run
 PUSH-BUTTON: one cancellable background job drives the real backup engine against
 the operator's own live corpus, verifies it, probes a staged restore WITHOUT
 touching the live corpus, reads the merged unlock + collector instrumentation, and
@@ -94,12 +94,25 @@ def backup_engine_format() -> str:
 #  docs/product/SCALE_ROADMAP.md so the report never drifts from the doc silently)
 # --------------------------------------------------------------------------- #
 def _acceptance_bars() -> dict[str, str]:
+    """The bar each check is judged against, stated as a PROPERTY rather than a size.
+
+    These said "the maintainer's real 100 GB corpus" until 2026-08-03. No run has ever
+    been at 100 GB: the v0.2.0 validation was 2,522 MiB and the 0.3 one was 15,699 MiB
+    (794,333 articles). A bar naming a scale no run reaches makes every verdict read as
+    though it cleared that scale — the recorded rule is that a verdict must map to the
+    bar it actually tested, so the bar is now the property being tested (RAM does not
+    scale with the corpus) and the report's own ``measurements`` carry the size the run
+    was at. The 5M-article framing was withdrawn to ~1M by the 2026-07-30 ruling for the
+    same reason: the bar was never the number, it was real field data at whatever scale
+    the app genuinely reaches.
+    """
     return {
         "p0_1_backup": (
             "The oo-volumes-2 streaming backup completes with BOUNDED RAM end to "
             "end (no plaintext corpus snapshot, no zip, banded parity) — RAM must "
-            "not scale with the corpus. Acceptance: the maintainer's real 100 GB "
-            "corpus backs up without OOM; RSS stays flat."
+            "not scale with the corpus. Acceptance: the maintainer's real corpus "
+            "backs up without OOM and the RSS delta stays flat as the corpus grows "
+            "(compare the delta against corpus_bytes across runs, never a fixed MB)."
         ),
         "p0_1_verify": (
             "The backup VERIFIES: the Ed25519-signed volume manifest plus every "
@@ -110,9 +123,12 @@ def _acceptance_bars() -> dict[str, str]:
         "p0_2_restore": (
             "Restore streams member-by-member (bounded RAM), disk-preflights "
             "staging, and hands the artifact to the UNCHANGED additive merge. "
-            "Acceptance: the maintainer's real 100 GB backup imports on a fresh "
-            "install. Here: a staged round-trip + a dry-run merge PREVIEW proves "
-            "the machinery end to end, with the live corpus only ever read."
+            "Acceptance: the maintainer's real backup imports on a FRESH INSTALL — "
+            "which is the only case that exercises what the merge carries, because "
+            "a self-restore reads every row as a duplicate. Here: a staged "
+            "round-trip + a dry-run merge PREVIEW proves the machinery end to end, "
+            "with the live corpus only ever read; the fresh-install half is the "
+            "committed import, still owed."
         ),
         "p0_3_collector": (
             "Flat RSS across recycled collection passes; the memory guard pauses "
@@ -120,9 +136,10 @@ def _acceptance_bars() -> dict[str, str]:
             "soak shows flat RSS and no OOM."
         ),
         "p0_4_unlock": (
-            "Steady-state unlock < 2 s at 100 GB; any long phase visible and "
-            "honest. Acceptance: a cold boot on the full corpus unlocks under the "
-            "2 s bar."
+            "Steady-state unlock < 2 s on the operator's full corpus; any long "
+            "phase visible and honest. Acceptance: a COLD boot on the full corpus "
+            "unlocks under the 2 s bar — a warm re-unlock does not test WAL "
+            "recovery, which is the phase that grows with the corpus."
         ),
     }
 
@@ -391,8 +408,8 @@ def _check_backup(
         backup_check = _verdict(
             "not-measurable",
             "the streaming backup completed and the volumes were written (verification is "
-            "the separate P0.1-verify check), but the P0.1 scale bar — bounded RAM at "
-            "100 GB — is not measurable here: " + ram_note,
+            "the separate P0.1-verify check), but the P0.1 scale bar — RAM that does not "
+            "scale with the corpus — is not measurable at this size: " + ram_note,
             backup_measurements,
             bars["p0_1_backup"],
         )
@@ -766,7 +783,7 @@ def build_p0_report(
     passphrase is used but never stored in the report."""
     from src.utils.export_envelope import app_version
 
-    # The restore probe stages under the dest drive (which has the room a 100 GB
+    # The restore probe stages under the dest drive (which has the room a full-corpus
     # conversion + working copy needs), so it lives OUTSIDE data_dir's janitor scope.
     # Name it with the swept ``.restore-`` prefix so a crash leftover (which for an
     # ENCRYPTED live corpus contains a PLAINTEXT staged copy — an at-rest concern) is

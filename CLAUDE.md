@@ -7942,17 +7942,41 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   only NINE because `_unmerged_tables` skips EMPTY tables, so the field evidence under-states the
   gap by five and would under-state it differently on a corpus that had used watches or the AI
   layer. Triaged: `article_mentioned_places` (91,061) + `article_entities` (361,505) are REBUILT
-  by the post-swap re-index, so nothing is lost (though their sibling `article_mentioned_dates`
-  IS merged, from the same `index_article` pass — an inconsistency worth settling);
-  `derived_meta` / `feed_fetch_state` / `stat_snapshots` are per-machine or self-healing; and
-  **nine are genuinely owed a handler** — `stat_figures` (35,000 networked official-statistics
-  observations with vintages), `stat_subscriptions`, `hazard_event_details`, `keyword_tags`,
-  `watches` + `watch_matches`, `ai_custom_prompt`, `ai_keyword`, `law_revision_summaries`. They
-  ride INSIDE the artifact and no handler copies them, so a FRESH-INSTALL restore drops them
-  silently. SHIPPED same day: the completeness check itself (`_MERGE_NOT_CARRIED` with a reason
-  per table + `tests/test_merge_completeness.py`) — no merge-behaviour change, it just makes the
-  debt nameable so a new table cannot join it silently. The HANDLERS are a data-safety slice of
-  their own (full skeptic matrix), deliberately not rushed beside a release gate.
+  by the post-swap re-index, so nothing is lost; `derived_meta` / `feed_fetch_state` /
+  `stat_snapshots` are per-machine or self-healing; and **nine were genuinely owed a handler** —
+  `stat_figures` (35,000 networked official-statistics observations with vintages),
+  `stat_subscriptions`, `hazard_event_details`, `keyword_tags`, `watches` + `watch_matches`,
+  `ai_custom_prompt`, `ai_keyword`, `law_revision_summaries`. They ride INSIDE the artifact and
+  no handler copied them, so a FRESH-INSTALL restore dropped them silently.
+  **⚠ A CLAIM OF MINE THAT WAS WRONG, corrected the same day before acting on it:** the first
+  write-up called it "an inconsistency worth settling" that `article_mentioned_dates` IS merged
+  while its two siblings are not, all three being written by the same `index_article` pass. It is
+  NOT an inconsistency. `article_mentioned_dates` carries a `status` column —
+  `datestore.set_status()` is a human confirm/reject and reads filter `status != 'rejected'` — so
+  a re-index recreates every date as a fresh `candidate` and NOT merging dates would silently
+  discard the operator's own judgements. Places and entities have no such column. **THE RULE, now
+  in the code:** a derived table may be left to the re-index only while it carries no human
+  decision. (The lesson underneath: re-derive a defect's mechanism from the code before patching
+  what a report names — this one would have "fixed" a correct design.)
+  **SHIPPED 2026-08-03:** the completeness check (`_MERGE_NOT_CARRIED` with a reason per table +
+  `tests/test_merge_completeness.py`), then **FOUR of the nine handlers** — `stat_figures`,
+  `stat_subscriptions`, `hazard_event_details`, `keyword_tags` — chosen precisely because each has
+  a UNIQUE CONSTRAINT THE SCHEMA ITSELF DEFINES, so its cross-corpus identity is the schema's
+  answer and not one we invented. Behaviour-tested against the REAL `merge_corpus` over two real
+  corpora (a self-restore can never exercise this: every row reads as a duplicate), including the
+  vintage rule (two `extracted_at` vintages both survive — revisions are evidence), local-wins on
+  a subscription's cadence, the article-id remap, and the DUAL unique constraint on hazard details.
+  Stash-verified: 5 of the 8 fail with the handlers unregistered; the other 3 are local-wins/
+  duplicate directions that cannot discriminate when nothing is copied at all — stated rather than
+  counted as coverage.
+  **THE REMAINING FIVE ARE BLOCKED ON A RULING, not on effort:** `watches`, `watch_matches`,
+  `ai_custom_prompt`, `ai_keyword`, `law_revision_summaries` have **no unique constraint**, so
+  "the same row in another corpus" is a DESIGN DECISION — and inventing one silently is how a
+  merge starts duplicating or dropping. Each now carries its own question in
+  `_MERGE_NOT_CARRIED` (is a watch identified by name or by its condition tuple? does a second
+  model's law summary replace the first or sit beside it? does `ai_keyword` key on
+  (article, kind, term) — collapsing two models' answers — or add prompt_version, which then
+  duplicates on a re-run?), pinned by a test so an entry cannot say merely "owed".
   **SO, FOR FINALISATION:** the data-safety trio (backup · verify · restore machinery) is DONE
   at real scale and is the strongest evidence this cycle has produced. Rows 4 and 7 are NOT
   closed by this report — row 4 wants a COMMITTED full import (this was `committed=false`), row 7

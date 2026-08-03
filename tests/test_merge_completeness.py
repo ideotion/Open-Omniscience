@@ -89,14 +89,37 @@ def test_the_owed_handlers_are_named_and_do_not_grow_silently() -> None:
     assert owed == [
         "ai_custom_prompt",
         "ai_keyword",
-        "hazard_event_details",
-        "keyword_tags",
         "law_revision_summaries",
-        "stat_figures",
-        "stat_subscriptions",
         "watch_matches",
         "watches",
     ], f"the owed-handler backlog changed: {owed}"
+
+
+def test_every_owed_table_states_the_question_that_blocks_it() -> None:
+    """The five that remain have NO unique constraint, so their cross-corpus identity is a
+    decision. An entry that just says "owed" invites the next person to invent one silently,
+    which is how a merge starts duplicating or dropping -- so each names its own question."""
+    _, _, not_carried = _registries()
+    for table, reason in not_carried.items():
+        if not reason.startswith("OWED:"):
+            continue
+        assert "IDENTITY UNRULED" in reason, f"{table} does not say what decision it needs"
+
+
+def test_the_built_handlers_key_on_a_constraint_the_schema_defines() -> None:
+    """The four built on 2026-08-03 were chosen precisely because the schema answers
+    "same row?" for them. If one ever loses its unique constraint, the handler is keying on
+    something the database no longer enforces -- and its dedup guard silently weakens."""
+    from src.database.models import Base
+
+    handled, _, _ = _registries()
+    tables = {t.name: t for t in Base.metadata.sorted_tables}
+    for name in ("stat_figures", "stat_subscriptions", "hazard_event_details", "keyword_tags"):
+        assert name in handled, f"{name} must be merged, not merely reported"
+        tb = tables[name]
+        uniques = [c for c in tb.constraints if c.__class__.__name__ == "UniqueConstraint"]
+        uniques += [ix for ix in tb.indexes if ix.unique]
+        assert uniques, f"{name}'s handler keys on a uniqueness the schema no longer enforces"
 
 
 def test_the_registries_only_name_tables_that_exist() -> None:
