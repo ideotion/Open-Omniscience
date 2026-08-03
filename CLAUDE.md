@@ -7659,6 +7659,61 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   The CHANGES.md 0.3.0 board + this entry are the live gate list; stand up a
   `RELEASE_0.3_GATE.md` checkable inventory (the RC-gate precedent) when the cycle
   approaches closure.
+  **P0 VALIDATION RUN ON THE BIG CORPUS — MAINTAINER, 2026-08-03 (report
+  `oo-p0-validation-20260803000812.json`, app 0.3.0, engine `oo-volumes-2`): 5 pass · 0 fail ·
+  0 not-measurable.** REAL SCALE, stated as measured rather than as the bar's own wording:
+  **16.5 GB / 794,333 articles**, i.e. **6.2× the 2,522 MB corpus v0.2.0 was validated at** —
+  NOT the "100 GB" three acceptance-bar strings still say, and in the ~1M band the 2026-07-30
+  ruling withdrew row 3 to. (Row 4's earlier "roughly 2×" estimate was low; the real multiple
+  is 6.2×. Fix the stale "100 GB" bar strings on the next touch of `p0_validation.py`.)
+  • **P0.1 backup — a genuinely strong pass.** Peak RSS grew **53.9 MB over a 15,699 MiB
+    corpus (0.34 %)**, against v0.2.0's +440 MB over 2,522 MiB (17.45 %): RAM did not merely
+    stay under a bar, it stopped tracking corpus size. 47 volumes / 18.2 GB in 1,040 s, parity
+    available, gate held 279 s. Honest disclosure carried in the report: a long reader kept the
+    live WAL from fully checkpointing, so the residual WAL rides as a member and folds back in
+    at restore.
+  • **P0.1 verify — clean.** Manifest signature + every data and parity volume checksum, every
+    volume stream-decrypted, member checksums cross-checked; 0 bad, 0 missing, parity tolerance
+    5/5 intact.
+  • **P0.2 restore — pass FOR WHAT IT TESTED.** Staged round-trip + dry-run merge preview,
+    `committed=false`, live corpus only ever read; quick_check ok, 0 FK violations, FTS 794,333
+    = articles, 0 sampled content mismatches. RSS delta 637 MB — 12× the backup's, still flat
+    against a 16.5 GB corpus. NOTE the bar's own wording is "imports on a **fresh install**",
+    which a self-restore cannot demonstrate (every row reads as a duplicate) — see the finding
+    below, and row 4, which is the row that actually closes it.
+  • **P0.4 unlock — 776.6 ms vs the 2,000 ms bar**, init_db dominating (773 ms). The check's OWN
+    reason still says "Confirm at full scale with a cold boot", nothing records whether that
+    boot was cold, and `wal_bytes_before_open` is null on a run that separately reported an
+    un-checkpointed WAL — so the WAL-recovery component is uncharacterised. **Row 7 stays open**;
+    closing it is one clean shutdown + restart + re-run.
+  • **P0.3 collector — no climb** (first pass 1,730 MB → peak 2,056 MB = +327 MB, under the
+    512 MB floor) across 61 passes. But the passes span 2026-07-29T08:10 → 07-30T06:24 (~22 h)
+    and are **4 days stale** relative to the report, and the bar names a MULTI-DAY soak. **Row 7
+    stays open** on this half too; the report itself says "Confirm over a multi-day live soak."
+  **A REAL FINDING THE RUN SURFACED (verified against the tree, not inferred from the report):
+  fourteen tables are in the restore-merge's "reported-but-not-merged" middle state** — in
+  neither `_MERGE_HANDLED` nor `_MERGE_IGNORED`, so `_unmerged_tables` COUNTS them in every
+  restore report and nothing COPIES them. This is the 2026-07-24 `source_qualification_attempts`
+  bug's exact shape, whose recorded lesson asked for "a completeness check that a new table must
+  join one set or the other" — **that check had never been built**. The operator's report shows
+  only NINE because `_unmerged_tables` skips EMPTY tables, so the field evidence under-states the
+  gap by five and would under-state it differently on a corpus that had used watches or the AI
+  layer. Triaged: `article_mentioned_places` (91,061) + `article_entities` (361,505) are REBUILT
+  by the post-swap re-index, so nothing is lost (though their sibling `article_mentioned_dates`
+  IS merged, from the same `index_article` pass — an inconsistency worth settling);
+  `derived_meta` / `feed_fetch_state` / `stat_snapshots` are per-machine or self-healing; and
+  **nine are genuinely owed a handler** — `stat_figures` (35,000 networked official-statistics
+  observations with vintages), `stat_subscriptions`, `hazard_event_details`, `keyword_tags`,
+  `watches` + `watch_matches`, `ai_custom_prompt`, `ai_keyword`, `law_revision_summaries`. They
+  ride INSIDE the artifact and no handler copies them, so a FRESH-INSTALL restore drops them
+  silently. SHIPPED same day: the completeness check itself (`_MERGE_NOT_CARRIED` with a reason
+  per table + `tests/test_merge_completeness.py`) — no merge-behaviour change, it just makes the
+  debt nameable so a new table cannot join it silently. The HANDLERS are a data-safety slice of
+  their own (full skeptic matrix), deliberately not rushed beside a release gate.
+  **SO, FOR FINALISATION:** the data-safety trio (backup · verify · restore machinery) is DONE
+  at real scale and is the strongest evidence this cycle has produced. Rows 4 and 7 are NOT
+  closed by this report — row 4 wants a COMMITTED full import (this was `committed=false`), row 7
+  wants a cold boot and a multi-day soak, and the report's own reason strings say so for both.
 - **DIAGNOSE-THE-DIAGNOSTICS — the all-diagnostics RUN JOURNAL (maintainer asked 2026-07-20:
   one-click-and-wait must hold at 5M scale, completeness "should be ensured", and each
   member needs begin/end timing — "the police of the police"; INVESTIGATED same turn, build

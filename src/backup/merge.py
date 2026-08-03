@@ -498,6 +498,47 @@ _MERGE_HANDLED = {
 # correctness is sacred — honest deferral beats a double-count bug.
 _MERGE_IGNORED = {"merge_batches", "merged_rows", "alembic_version", "app_state", "event_imports"}
 
+# THE THIRD STATE, made explicit (P0 validation on the 16.5 GB / 794k-article live corpus,
+# 2026-08-03). A table in neither registry above falls through to ``_unmerged_tables``, where
+# it is COUNTED in the restore report and COPIED BY NOTHING -- the "reported-but-not-merged"
+# middle state that reads as intentional. That is the exact shape of the 2026-07-24
+# ``source_qualification_attempts`` bug, whose recorded lesson asked for "a completeness check
+# that a new table must join one set or the other". This registry IS that check's third set:
+# it does not change merge behaviour at all, it just makes the debt nameable, so a NEWLY added
+# table cannot land here silently (tests/test_merge_completeness.py fails until it is triaged).
+#
+# The live report showed only NINE of these, because ``_unmerged_tables`` skips empty tables --
+# so the operator's own evidence UNDER-STATES the gap by five, and would under-state it
+# differently on a corpus that used watches or the AI layer. Split by what a FRESH-INSTALL
+# restore would actually lose (the P0.2 acceptance bar), which is the only case where any of
+# this bites: a self-restore sees every row as a duplicate and hides the whole question.
+_MERGE_NOT_CARRIED: dict[str, str] = {
+    # (a) REBUILT by the post-swap re-index from the article text, exactly like
+    # keyword_mentions (maintainer ruling 2026-07-29). Nothing is lost; these are only
+    # here rather than in _MERGE_IGNORED because the report should say so. NOTE the
+    # inconsistency worth settling: their sibling ``article_mentioned_dates`` IS merged,
+    # though all three are written by the same index_article pass.
+    "article_mentioned_places": "rebuilt by the post-swap re-index (index_article)",
+    "article_entities": "rebuilt by the post-swap re-index (index_article)",
+    # (b) PER-MACHINE or self-healing: losing them costs nothing durable.
+    "derived_meta": "corpus epoch + derived bookkeeping, rebuilt on demand",
+    "feed_fetch_state": "per-feed ETag/Last-Modified + backoff, re-learned on the next pass",
+    "stat_snapshots": "local hourly counters; recording resumes, history is machine-local",
+    # (c) GENUINELY OWED A HANDLER: not recomputable from the corpus, and not per-machine.
+    # These ride INSIDE the artifact but no handler copies them, so a fresh-install restore
+    # silently drops them. Building the handlers is a data-safety slice of its own (the full
+    # skeptic matrix), deliberately not rushed in beside a release gate.
+    "stat_figures": "OWED: networked official-statistics observations with vintages",
+    "stat_subscriptions": "OWED: the user's tracked series for auto-refresh",
+    "hazard_event_details": "OWED: provider-asserted hazard metadata from ephemeral feeds",
+    "keyword_tags": "OWED: curated per-keyword tag assignments",
+    "watches": "OWED: the user's saved watch conditions",
+    "watch_matches": "OWED: watch match history",
+    "ai_custom_prompt": "OWED: the user's custom AI extractors",
+    "ai_keyword": "OWED: the AI-derived metadata layer",
+    "law_revision_summaries": "OWED: AI summaries of tracked law changes",
+}
+
 
 def _unmerged_tables(con: sqlite3.Connection) -> tuple[dict[str, int], list[str]]:
     """Tables present in the incoming corpus that no handler covered.
