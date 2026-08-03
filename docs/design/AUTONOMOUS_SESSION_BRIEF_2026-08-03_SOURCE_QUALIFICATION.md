@@ -277,6 +277,136 @@ panel render entirely from the backend's own declarations — no duplicated voca
 
 ---
 
+## 1c. Amendment (maintainer, 2026-08-03): one qualification panel for BOTH gates, transparent
+## units, and two scraping-scope toggles
+
+> "If the source qualification engine is fused to the article qualification, we should revamp this
+> tweaking interface to incorporate both source and article qualification criteria. And we should
+> have units be transparent to help user understand their tweaking, with a tiny but clear
+> explanation (through mouse overlap text to make it discrete). In addition: limit the scraping to
+> the initially provided list of (~3,600) sources, or extend the scraping to the unqualified list
+> of sources."
+
+### First, the premise — they are NOT fused today, and that is itself a finding
+
+Verified by grep, both directions, zero hits either way:
+
+- `source_quality.py`, `source_audit.py` and `qualification.py` contain **no** `quarantined`
+  reference.
+- `quarantine_job.py`, `non_article.py` and `prose_gate.py` contain **no** `Source.status`
+  reference.
+
+They are two independent gates over the same articles:
+
+| | Article gate | Source gate |
+|---|---|---|
+| Question | is this ITEM an article at all? | is this SOURCE's extraction valid? |
+| Where | `non_article.classify_non_article` + `prose_gate` | `source_audit.flag_criteria` + `derive_status` |
+| Verdict | `Article.quarantined` (reversible stamp) | `Source.status` (categorical stamp) |
+| Thresholds | `_ARTICLE_MIN_WORDS=100`, `_WALL_MAX_WORDS=40`, `_DENSITY_LOW=0.12`, `_PUNCT_LOW=0.01`, `_MIN_TOKENS=20`, `_UNSEGMENTED_SCRIPT_SHARE=0.3` | the eight in §1b |
+
+**They belong in one panel anyway** — and the reason is stronger than tidiness. The source gate's
+inputs ARE article-level measurements, so §1 F4's finding (`source_quality` applies no quarantine
+filter) means **articles the article gate already condemned still count toward their source's
+verdict**. Two gates that share an input and disagree about it is exactly the kind of thing a single
+panel makes visible and two panels hide. Fixing that filter (§2 slice 2) and showing both gates
+together are the same piece of work.
+
+So the panel gets two clearly-labelled groups — **"Is this an article?"** and **"Is this source's
+extraction valid?"** — with a sentence stating that the first feeds the second, and that a
+quarantined article is excluded from its source's verdict.
+
+### Units and the hover explanation — reuse, do not build
+
+The "tiny but clear explanation, discrete, on hover" is **already a shipped app-wide convention**:
+invariant #17. Any element carrying a translated `title` is marked automatically (dotted accent
+underline / corner dot) and opens the ONE shared `#oo-tip` bubble on hover, keyboard focus or touch
+long-press, via a single delegated listener plus a MutationObserver. **Add a `title`; the convention
+does the rest.** Do not write a tooltip.
+
+Units are likewise already modelled: `Tunable` (`src/briefing/catalog.py:53`) carries `unit` and
+`impact`. Every row must fill BOTH, and the units are only honest if they name what is actually
+being counted:
+
+| Tunable | Unit shown | The hover says |
+|---|---|---|
+| `_ARTICLE_MIN_WORDS` | words | above this an item is kept as an article whatever its URL looks like |
+| `_DENSITY_LOW` | share of tokens that are function words (0–1) | real prose ~0.40; nav soup ~0.05 |
+| `_PUNCT_LOW` | sentence marks per token | a list of headlines has almost none |
+| `pathology_abs_floor` | share of the source's articles (0–1) | the ONLY criterion that can disqualify a source |
+| `min_pathology_articles` | articles | a rate can't tell 1-in-1,992 from 600-in-1,200 |
+| `source_cohort_floor` | sources in the same language | below this there is no baseline, so the soft criteria stay unflaggable |
+| `tail_p` | percentile | **lowering this widens the tail mechanically — it does not find more bad sources** |
+| `ladder_cap_months` | months | the cap is what guarantees a disqualified source is re-checked |
+
+A share must never be printed as a bare `0.5`. Show `0.5 (50% of the source's articles)` — the
+shared smart formatter, and the standing units principle.
+
+### The two scraping-scope toggles
+
+Both are real and implementable. Both need their true meaning stated, because neither is the simple
+checkbox it looks like.
+
+**Toggle A — "Also scrape sources that have not been qualified yet."**
+
+`select_sources` (`runner.py:361`) currently filters `enabled=True, status=STATUS_QUALIFIED`
+**unconditionally**, and its docstring cites the 0.3 close-gate ruling by name: *"only QUALIFIED
+sources are scraped."* So this toggle **relaxes a maintainer ruling**, and the executing session
+must treat it as your amendment to that ruling rather than as a settings row — record it in the
+ledger, and default it **off** so an existing install's behaviour is byte-identical.
+
+Two facts that make it much safer than it first sounds, both worth putting in the UI:
+- It reaches only **enabled** sources. The ~42,600 discovered candidates are DISABLED, so they stay
+  out either way; this affects the enabled-but-not-yet-judged set, which is small and shrinking as
+  the ride-along works through it.
+- Per §0, the gate currently cannot disqualify anything, so today the practical difference is
+  "scrape a source now vs. after its trial fetch." That will change the moment the §2 slice-5
+  calibration lands — which is precisely why the toggle must say what it will mean *then*, not only
+  what it means now.
+
+The toggle must **never** admit `disqualified`. Unqualified means not-yet-judged; disqualified is a
+verdict, and the re-qualification ladder is how a disqualified source comes back. Pin that as a test.
+
+**Toggle B — "Only scrape the sources that came with the app."**
+
+Implementable exactly, no new column: every seeded source carries a provenance tag from
+`seed_sources.py:97` (`via:curated`, `via:markets`, `via:spectrum`, `via:wikidata`, `via:legal`),
+while runtime-discovered ones carry `via:wikidata-discovery` (`discover.py:100`),
+`via:legal-generated`, or `cited`.
+
+**⚠ The trap, flagged so nobody trips it:** `via:wikidata` and `via:wikidata-discovery` are
+*different things*. The first is the committed `world_news_sources.yml` that ships with the app; the
+second is what the running app found for itself. A prefix match on `via:wikidata` silently captures
+both and defeats the toggle. Match the exact set, and pin it with a test that a
+`via:wikidata-discovery` source is excluded while a `via:wikidata` one is included.
+
+Prefer a single shared `is_app_provided(source)` helper over an inline tag test, so the definition
+lives in one place when the catalog gains a provenance later.
+
+**The 2×2, which the panel should state rather than leave the operator to infer:**
+
+| | B off (all sources) | B on (app-provided only) |
+|---|---|---|
+| **A off** | today's behaviour — qualified sources only | the ~3,600 shipped list, qualified only |
+| **A on** | every enabled source, judged or not | the shipped list, without waiting for trials |
+
+Show the **live count for the current combination** ("this will scrape N sources"). `select_sources`
+already backs a targets-preview endpoint, so the number is one query and it makes the whole 2×2
+concrete without a word of explanation.
+
+### Acceptance for 1c
+
+- Both toggles default to today's behaviour; a test asserts an untouched install's
+  `select_sources` query is unchanged.
+- A test that toggle A admits `unqualified` and still refuses `disqualified`.
+- A test that toggle B includes `via:wikidata` and excludes `via:wikidata-discovery`.
+- A test that every article-gate AND source-gate tunable reaches the config payload with a non-empty
+  `unit` and `impact` — an unlabelled number is the thing this amendment exists to remove.
+- The i18n gate covers the new strings; note the checker only scans `index.html`, so anything built
+  in `app.js` needs its key added deliberately.
+
+---
+
 ## 2. The work, ordered
 
 Each slice its own commit; the whole set may be one PR. `⚠` = mandatory adversarial skeptic pass
@@ -308,9 +438,12 @@ with the negative-space lens before push.
      currently only a review hint, never a criterion).
    Ship the measurement, not the new threshold.
 
-6. **⚠ The Advanced-settings section (§1b).** Backend settings first, then the panel. Negative
-   space: turning qualification OFF must not change a single existing stamp, and a clamped value
-   must be reported rather than silently applied — both pinned as tests.
+6. **⚠ The Advanced-settings section (§1b + §1c).** One panel, both gates, units and hover
+   explanations on every row, and the two scraping-scope toggles. Backend settings first, then the panel. Negative
+   Backend settings first, then the panel. Negative space: turning qualification OFF must not
+   change a single existing stamp; a clamped value must be reported rather than silently applied;
+   toggle A must never admit a *disqualified* source; toggle B must not capture
+   `via:wikidata-discovery` — all four pinned as tests.
 
 **Explicitly out of scope:** the retroactive quarantine execution (still gated on the maintainer's
 review of the calibration report); the stoplist additions F2 hints at (`read`/`home`/`added` are

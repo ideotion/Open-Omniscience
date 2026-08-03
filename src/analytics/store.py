@@ -550,6 +550,14 @@ def reindex_articles(
     total = len(article_ids)
     reindexed = 0
     failed = 0
+    # Bound HERE, above the nested helpers that declare them ``nonlocal``, not beside
+    # the other timers further down. Python resolves a ``nonlocal`` to a binding
+    # anywhere in the enclosing scope regardless of order, but mypy only walks
+    # bindings that TEXTUALLY PRECEDE the nested def, so an initialisation below the
+    # helpers reads to it as "no binding for nonlocal" and fails the ratchet on code
+    # that runs correctly. Keep these two beside ``reindexed``/``failed``, which are
+    # accumulators of the same kind and already had to live up here for that reason.
+    _apply_index_s = _apply_commit_s = 0.0
     commit_batch = max(1, commit_batch)
 
     # Re-index is delete-then-reinsert, so the disposable columnar rollup must FULL-rebuild
@@ -711,7 +719,8 @@ def reindex_articles(
     # codec). Which dominates decides whether the next fix is a query change or a
     # durability one -- and a measured 1.9x on the keyword lookup turned out to be
     # 0.2% of apply, so guessing here has already been tried and was wrong.
-    _apply_index_s = _apply_commit_s = 0.0
+    # (``_apply_index_s``/``_apply_commit_s`` are initialised at the top of this
+    # function, beside ``reindexed``/``failed`` — see the note there.)
     _t_all = time.monotonic()
 
     for w_start in range(0, len(article_ids), _PRECOMPUTE_WINDOW):
