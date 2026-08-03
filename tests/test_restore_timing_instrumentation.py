@@ -253,14 +253,25 @@ def test_committed_restore_report_carries_every_stage(client):
     assert timings["wall_s"] >= max(timings["stages"].values())
 
 
-def test_the_14_merge_steps_each_get_their_own_named_timing(client):
+def test_every_merge_step_gets_its_own_named_timing(client):
+    """Reads merge_corpus's OWN step tuple rather than a hardcoded count.
+
+    This asserted `== 14` until 2026-08-03, so adding a merge step reddened a test about
+    instrumentation for a reason that had nothing to do with instrumentation -- and the
+    honest fix for that failure ("bump it to 17") is indistinguishable from the dishonest
+    one ("bump it until green"). Against the real tuple the guard states the property:
+    every declared step is timed, however many there are.
+    """
+    from src.backup.merge import _merge_steps
+
     blob = _build_backup()
     report = _preview(client, blob).json()
     step_keys = [k for k in report["timings"]["stages"] if k.startswith("merge_step:")]
-    # The exact 14 step names merge_corpus's own `steps` tuple defines
-    # (src/backup/merge.py) -- proves per-step timing rides the EXISTING
-    # progress_cb wrapping, with zero change to merge_corpus's internals.
-    assert len(step_keys) == 14
+    declared = [name for name, _fn in _merge_steps()]
+    assert len(step_keys) == len(declared)
+    assert {k.removeprefix("merge_step:") for k in step_keys} == set(declared), (
+        "a declared merge step produced no timing (or an unnamed one appeared)"
+    )
     for k in step_keys:
         assert report["timings"]["stages"][k] >= 0
 

@@ -410,3 +410,49 @@ def test_p0_scrub_redacts_secret_keyed_values_recursively():
     assert "leak-me" not in blob and "also" not in blob
     assert scrubbed["state"] == "done"  # non-secret fields preserved
     assert scrubbed["result"]["report"]["nested"][1]["ok"] == 1
+
+
+def test_no_acceptance_bar_claims_a_corpus_SIZE_no_run_has_reached():
+    """A bar naming a scale makes every verdict read as though it cleared that scale.
+
+    These said "the maintainer's real 100 GB corpus" until 2026-08-03, and no run has
+    ever been at 100 GB: v0.2.0 measured 2,522 MiB and the 0.3 validation 15,699 MiB
+    (794,333 articles). The house rule is that a verdict must map to the bar it actually
+    tested, so a bar states the PROPERTY under test (RAM does not scale with the corpus)
+    and the report's own measurements carry the size the run happened at.
+
+    Sizes are matched with a unit-aware pattern rather than the literal "100 GB", so
+    swapping in "500 GB" or "5 TB" fails here too -- a guard is only as strong as the
+    generality of what it searches for.
+    """
+    import re
+
+    bars = p0._acceptance_bars()
+    size = re.compile(r"\b\d+(?:\.\d+)?\s*(?:GB|TB|GiB|TiB)\b", re.IGNORECASE)
+    for check, bar in bars.items():
+        found = size.findall(bar)
+        assert not found, (
+            f"{check}'s acceptance bar names a corpus size {found}; state the property "
+            "under test instead and let measurements carry the scale of the run"
+        )
+
+
+def test_the_restore_bar_says_what_a_self_restore_cannot_show():
+    """The P0.2 bar is "imports on a FRESH INSTALL", and the probe is a self-restore.
+
+    That distinction is load-bearing: on a self-restore every row reads as a duplicate,
+    which is exactly why fourteen never-merged tables stayed invisible in the field
+    report. The bar must keep saying so rather than letting a staged round-trip read as
+    the fresh-install acceptance.
+    """
+    bar = p0._acceptance_bars()["p0_2_restore"]
+    assert "FRESH INSTALL" in bar
+    assert "duplicate" in bar, "the bar must say WHY a self-restore cannot show this"
+
+
+def test_the_unlock_bar_requires_a_COLD_boot():
+    """A warm re-unlock skips WAL recovery -- the phase that grows with the corpus, and
+    the one the 0.3 gate's row 7 is still open on."""
+    bar = p0._acceptance_bars()["p0_4_unlock"]
+    assert "COLD" in bar
+    assert "WAL" in bar, "the bar must name what a warm unlock fails to exercise"
