@@ -2380,5 +2380,7 @@
   "Periods with no data are drawn as gaps, never as zero.": "आँकड़ों रहित अवधियाँ रिक्ति के रूप में खींची जाती हैं, शून्य के रूप में कभी नहीं।",
   "No series to show yet.": "अभी दिखाने के लिए कोई शृंखला नहीं है।",
   "Panels with no data, not shown: {n}": "आँकड़ों रहित पैनल, नहीं दिखाए गए: {n}",
-  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "सभी पैनल एक ही ऊर्ध्वाधर पैमाना साझा करते हैं ताकि उनकी तुलना की जा सके — घने आँकड़ों पर रेखा, विरल पर पट्टियाँ (n दिखाया गया), कभी कोई प्रक्षेपित वक्र नहीं; केवल गणनाएँ, कोई अंक नहीं।"
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "सभी पैनल एक ही ऊर्ध्वाधर पैमाना साझा करते हैं ताकि उनकी तुलना की जा सके — घने आँकड़ों पर रेखा, विरल पर पट्टियाँ (n दिखाया गया), कभी कोई प्रक्षेपित वक्र नहीं; केवल गणनाएँ, कोई अंक नहीं।",
+  "Indexing continues in the background. The number still to index could not be read.": "अनुक्रमणीकरण पृष्ठभूमि में जारी है। शेष लेखों की संख्या पढ़ी नहीं जा सकी।",
+  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "अनुक्रमणीकरण पृष्ठभूमि में जारी है: {n} लेख शेष। पूरा होने तक उनमें कोई कीवर्ड नहीं होगा और वे विश्लेषण में शामिल नहीं होंगे।"
 }

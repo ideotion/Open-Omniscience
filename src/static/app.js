@@ -7628,11 +7628,35 @@
           + `</div>`
         : "";
 
+      // STILL INDEXING (2026-08-03). The import no longer blocks on the re-index, so
+      // "import finished" no longer means "fully indexed" -- those articles carry no
+      // keywords yet and are absent from analytics. Deferring it SILENTLY would trade a
+      // visible three-hour wait for an invisible incomplete corpus, which is strictly
+      // worse, so the deferral is stated here with its real count. An unreadable backlog
+      // says so rather than showing 0: "could not read" and "nothing pending" must never
+      // look alike.
+      let indexingLine = "";
+      const _rxd = summaries.map((s2) => (s2 && s2.report && s2.report.reindex_deferred) || s2.reindex_deferred)
+        .filter(Boolean);
+      if (_rxd.length) {
+        let pend = 0, unreadable = false;
+        for (const r of _rxd) {
+          if (typeof r.articles_pending === "number") pend += r.articles_pending;
+          else unreadable = true;
+        }
+        const body = unreadable && !pend
+          ? t("Indexing continues in the background. The number still to index could not be read.")
+          : tf("Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.",
+               { n: pend.toLocaleString() });
+        indexingLine =
+          `<div class="card-caveat" style="margin-top:6px">${esc(body)}</div>`;
+      }
+
       host.innerHTML =
         `<div class="card" style="margin-top:8px;padding:12px;border-left:3px solid ${head.col}">`
         + `<div style="font-weight:700;font-size:15px">${esc(head.icon)} ${esc(head.text)}</div>`
         + countLine + excludedNote
-        + growLine + headline + bar + typeBlock + extraLine + queueBlock
+        + growLine + headline + bar + typeBlock + extraLine + indexingLine + queueBlock
         + _uxPerItemView(perItem, t, tf)
         + deltaView
         + `<div class="muted" style="font-size:12px;margin-top:6px">${esc(t("Additive restore: nothing in your corpus was replaced or deleted. Duplicates were skipped."))}</div>`

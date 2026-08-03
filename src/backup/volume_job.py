@@ -12,6 +12,7 @@ State is IN-MEMORY; a module-level singleton makes it visible across requests + 
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from collections.abc import Callable
 from pathlib import Path
@@ -39,7 +40,97 @@ _STAGE_TO_PHASE = {"merge": "merging", "reindex": "reindexing"}
 # phase count must be visible, and it must be REAL -- a restore's true phase total
 # is these plus run_restore's own plan, which itself varies with commit /
 # reindex_imported).
+
 _RESTORE_MANAGER_PHASES: tuple[str, ...] = ("verifying", "reassembling")
+
+# THE IMPORT DOES NOT BLOCK ON THE RE-INDEX (2026-08-03, implementing the standing
+# 2026-07-29 ruling 1/2: "defer the re-index off the blocking import path -- YES",
+# "the re-index is AUTONOMOUS + VISIBLE").
+#
+# THE FIELD RUN THAT FORCED IT. A 650 MB import: all eighteen stages -- verify,
+# reassemble, merge, SWAP -- finished in 118.6 s and the corpus was committed and
+# safe. The post-swap re-index then ran 3.02 HOURS, reached 41%, and the operator
+# killed it. So the import a user waited three and a half hours for had actually
+# been complete, on disk, after two minutes. It was wearing the re-index's clock.
+#
+# Nothing here makes the re-index faster. It stops being the IMPORT's problem: the
+# restore ends at the swap, and the already-existing, already-resumable
+# ``reindex-resume`` background job drains the backlog with its own progress, its
+# own Stop, and its own durable per-article watermark.
+#
+# SAFE BY CONSTRUCTION, not by luck -- run_restore already anticipated this flag:
+#   * the corpus-epoch bump has an explicit branch for reindex_imported=False;
+#   * keyword_counter_reconcile is deliberately UNCONDITIONAL, "outside the
+#     reindex_imported branch", because the drift comes from the MERGE;
+#   * quarantine_scan works off the batch's merged_rows ids, not off keywords.
+# And under the option-(a) ruling a not-yet-re-indexed article simply has no
+# mentions, which every analytics path already honours structurally -- so deferring
+# shows an incomplete corpus, never a WRONG one.
+#
+# The honesty cost is that "import finished" no longer means "fully indexed", so the
+# report says so and carries the pending count. OO_IMPORT_DEFER_REINDEX=0 restores
+# the old blocking behaviour.
+def _defer_reindex() -> bool:
+    return (os.getenv("OO_IMPORT_DEFER_REINDEX", "1").strip() or "1") != "0"
+
+
+def _hand_off_reindex(report: dict) -> None:
+    """State the deferral in the report, and start the drain.
+
+    TWO THINGS, and the first is the one that must never be dropped. "Import
+    finished" no longer means "fully indexed", so the report SAYS so and carries the
+    real pending count -- otherwise deferring would trade a visible three-hour wait
+    for an invisible incomplete corpus, which is strictly worse. ``reindex_backlog``
+    keeps "could not read" distinct from "nothing pending", so an unreadable backlog
+    is reported as unreadable rather than as zero.
+
+    Then it starts the existing ``reindex-resume`` job. That job already owns the
+    durable watermark, the batching, the parallel precompute, the progress and the
+    Stop -- this is only the caller. Best-effort by design: if it cannot start (one
+    is already running, which is the common case in an import QUEUE), the backlog is
+    still recorded and the job remains startable from the UI, so the work is deferred
+    but never lost.
+    """
+    try:
+        from src.backup.merge import reindex_backlog
+
+        bk = reindex_backlog()
+    except Exception:  # noqa: BLE001 - a committed import must never fail on its own epilogue
+        _LOG.warning("could not read the re-index backlog after import", exc_info=True)
+        bk = {"available": False, "reason": "see server log"}
+
+    report["reindex_deferred"] = {
+        "deferred": True,
+        "why": (
+            "The import is complete and committed. Re-indexing the imported articles "
+            "runs in the background so it never blocks the import; until it finishes "
+            "those articles carry no keywords and are absent from analytics."
+        ),
+        "articles_pending": bk.get("articles_pending") if bk.get("available") else None,
+        "pending_unreadable_reason": None if bk.get("available") else bk.get("reason"),
+        "job": "reindex-resume",
+    }
+
+    pending = report["reindex_deferred"]["articles_pending"]
+    if not pending:
+        # Nothing to drain, or nothing we could READ. Starting a job in either case is
+        # pointless work whose only visible effect is a failure in the log -- and on the
+        # unreadable branch it would also imply we knew there was work, which we do not.
+        report["reindex_deferred"]["started"] = False
+        report["reindex_deferred"]["start_detail"] = (
+            "nothing pending" if pending == 0 else "the backlog could not be read"
+        )
+        return
+
+    try:
+        from src.api.backup_v2 import _REINDEX_RESUME_JOB
+
+        _REINDEX_RESUME_JOB.start()
+        report["reindex_deferred"]["started"] = True
+    except Exception as exc:  # noqa: BLE001 - already-running is normal in a queue
+        report["reindex_deferred"]["started"] = False
+        report["reindex_deferred"]["start_detail"] = str(exc)
+        _LOG.info("re-index drain not started now (%s); the backlog stays visible", exc)
 
 
 def _stage_phase_name(stage_name: str) -> str:
@@ -331,7 +422,9 @@ class VolumeBackupManager:
             # plus run_restore's own plan for these exact flags. Computed, never a
             # constant -- run_restore's plan legitimately differs by commit /
             # reindex_imported (field ruling 2026-07-29 item 17).
-            _restore_plan = restore_stage_plan(commit=True, reindex_imported=True)
+            _restore_plan = restore_stage_plan(
+                commit=True, reindex_imported=not _defer_reindex()
+            )
             _phase_total = len(_RESTORE_MANAGER_PHASES) + len(_restore_plan)
 
             def _phase_of(stage_name: str) -> int:
@@ -483,6 +576,7 @@ class VolumeBackupManager:
                         progress_cb=_merge_prog,
                         reindex_progress_cb=_reindex_prog,
                         stage_progress_cb=_stage_prog,
+                        reindex_imported=not _defer_reindex(),
                         reindex_workers=_reindex_workers,
                         reindex_commit_batch=_reindex_batch,
                         merge_cache_mb=_merge_cache_mb,
@@ -504,6 +598,8 @@ class VolumeBackupManager:
                     with self._lock:
                         self._state, self._summary = "done", {"report": report}
                         self._progress = {"phase": "done"}
+                    if _defer_reindex():
+                        _hand_off_reindex(report)
                     runlog.end("ok", **{
                         k: report.get(k) for k in ("batch_id", "reindexed", "articles_merged")
                         if report.get(k) is not None

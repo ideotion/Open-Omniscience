@@ -2380,5 +2380,7 @@
   "Periods with no data are drawn as gaps, never as zero.": "Periods with no data are drawn as gaps, never as zero.",
   "No series to show yet.": "No series to show yet.",
   "Panels with no data, not shown: {n}": "Panels with no data, not shown: {n}",
-  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score."
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.",
+  "Indexing continues in the background. The number still to index could not be read.": "Indexing continues in the background. The number still to index could not be read.",
+  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics."
 }

@@ -2380,5 +2380,7 @@
   "Periods with no data are drawn as gaps, never as zero.": "データのない期間は欠落として描き、ゼロとしては描きません。",
   "No series to show yet.": "表示できる系列がまだありません。",
   "Panels with no data, not shown: {n}": "データのないパネル（非表示）: {n}",
-  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "すべてのパネルは同じ縦軸スケールを共有し、そのまま比較できます — データが密なら線、疎なら棒（n を表示）、補間した曲線は描きません。件数のみで、スコアはありません。"
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "すべてのパネルは同じ縦軸スケールを共有し、そのまま比較できます — データが密なら線、疎なら棒（n を表示）、補間した曲線は描きません。件数のみで、スコアはありません。",
+  "Indexing continues in the background. The number still to index could not be read.": "インデックス作成はバックグラウンドで続行中です。未インデックスの記事数は読み取れませんでした。",
+  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "インデックス作成はバックグラウンドで続行中です: 残り {n} 件。完了するまでキーワードは付かず、分析にも含まれません。"
 }

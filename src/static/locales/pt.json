@@ -2380,5 +2380,7 @@
   "Periods with no data are drawn as gaps, never as zero.": "Os períodos sem dados são desenhados como lacunas, nunca como zeros.",
   "No series to show yet.": "Ainda não há nenhuma série para mostrar.",
   "Panels with no data, not shown: {n}": "Painéis sem dados, não mostrados: {n}",
-  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "Todos os painéis partilham uma mesma escala vertical para serem comparáveis — uma linha quando os dados são densos, barras quando são escassos (n indicado), nunca uma curva interpolada; apenas contagens, sem pontuação."
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "Todos os painéis partilham uma mesma escala vertical para serem comparáveis — uma linha quando os dados são densos, barras quando são escassos (n indicado), nunca uma curva interpolada; apenas contagens, sem pontuação.",
+  "Indexing continues in the background. The number still to index could not be read.": "A indexação continua em segundo plano. Não foi possível ler o número de artigos ainda por indexar.",
+  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "A indexação continua em segundo plano: {n} artigo(s) ainda por indexar. Até terminar, não têm palavras-chave e estão ausentes das análises."
 }

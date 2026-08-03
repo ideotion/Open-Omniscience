@@ -80,7 +80,13 @@ def test_restore_stage_pings_carry_their_position_offset_by_the_manager_phases(
 
     from src.backup.merge import restore_stage_plan
 
-    plan = restore_stage_plan(commit=True, reindex_imported=True)
+    # The import DEFERS the re-index (2026-08-03), so the plan it walks is one stage
+    # shorter. Read the manager's own switch rather than hardcoding either answer:
+    # this test is about the phase POSITIONS agreeing with the plan, not about which
+    # plan is in force, and it must stay true under OO_IMPORT_DEFER_REINDEX either way.
+    from src.backup.volume_job import _defer_reindex
+
+    plan = restore_stage_plan(commit=True, reindex_imported=not _defer_reindex())
     offset = len(_RESTORE_MANAGER_PHASES)
     swap = [p for p in seen if p.get("phase") == "swap"]
     assert swap, "the swap stage must ping with its position"
@@ -92,7 +98,16 @@ def test_restore_stage_pings_carry_their_position_offset_by_the_manager_phases(
 def test_the_position_survives_the_two_longest_phases(tmp_path, monkeypatch):
     """The merge and the re-index are exactly the phases a user waits on. Their
     fine-grained pings must carry the position too, or the counter blanks out for
-    the whole of them — which is when it matters most."""
+    the whole of them — which is when it matters most.
+
+    Pinned in BLOCKING mode. Since 2026-08-03 the import defers the re-index, so on
+    the default path ``run_restore`` never runs that stage and never calls
+    ``reindex_progress_cb`` at all -- ``_phase_of("reindex")`` then correctly returns
+    0, "not in this restore's plan". This test is about the contract that a long
+    phase carries its position, which still applies whenever that phase runs, so it
+    asserts it where the phase exists. The deferred side is pinned by the companion
+    test below."""
+    monkeypatch.setenv("OO_IMPORT_DEFER_REINDEX", "0")
     import src.backup.artifact as artifact_mod
     import src.backup.merge as merge_mod
     import src.scheduler.runner as sched_mod
@@ -192,3 +207,47 @@ def test_the_phase_template_is_keyed_in_every_locale():
         assert "{n}" in val and "{total}" in val, (
             f"{f.name} dropped a placeholder — it would render a literal brace"
         )
+
+
+def test_a_deferred_import_never_pings_a_reindex_phase(tmp_path, monkeypatch):
+    """The other side of the contract. With the re-index deferred it is not one of the
+    restore's phases, so the restore must not emit a phase position for it -- a ping
+    naming a phase absent from the plan is precisely the "wrong phase N of M" the
+    computed plan exists to prevent."""
+    import src.backup.artifact as artifact_mod
+    import src.backup.merge as merge_mod
+    import src.scheduler.runner as sched_mod
+    from src.backup.merge import restore_stage_plan
+
+    monkeypatch.setenv("OO_IMPORT_DEFER_REINDEX", "1")
+
+    seen_flag: dict = {}
+
+    def fake_run_restore(staged, *, commit, allow_unverified, progress_cb=None, **kw):
+        seen_flag["reindex_imported"] = kw.get("reindex_imported")
+        progress_cb(7, 14, "curation")
+        return {"committed": True}
+
+    monkeypatch.setattr(sched_mod, "pause_for_exclusive_operation", lambda timeout=10.0: True)
+    monkeypatch.setattr(sched_mod, "resume_after_exclusive_operation", lambda was_paused: None)
+    monkeypatch.setattr(merge_mod, "run_restore", fake_run_restore)
+    monkeypatch.setattr(artifact_mod, "read_volume_backup", lambda *a, **k: object())
+    monkeypatch.setattr(artifact_mod, "cleanup_staging", lambda staged: None)
+
+    src = tmp_path / "src"
+    src.mkdir()
+    mgr = VolumeBackupManager()
+    seen: list[dict] = []
+    real = mgr._on_prog
+    mgr._on_prog = lambda p: (seen.append(dict(p)), real(p))
+    mgr.start_restore(str(src), "pw")
+    assert _wait(mgr)["state"] == "done"
+
+    assert seen_flag["reindex_imported"] is False, "the import must ask run_restore to skip it"
+    assert not [p for p in seen if p.get("phase") == "reindexing"], (
+        "a deferred re-index is not one of this restore's phases"
+    )
+    plan = restore_stage_plan(commit=True, reindex_imported=False)
+    for p in seen:
+        if p.get("phase_total"):
+            assert p["phase_total"] == len(_RESTORE_MANAGER_PHASES) + len(plan)
