@@ -1245,6 +1245,27 @@ def _run_journal_raw() -> dict:
     return raw_runs()
 
 
+@router.get("/run-timeline")
+def run_timeline(max_runs: int = Query(4, ge=1, le=20)) -> dict:
+    """WHERE THE TIME WENT in each recent run -- stages, unaccounted time, and stalls.
+
+    The run journal already recorded everything needed to explain the 2026-08-03 field
+    import; extracting it took an afternoon of hand-arithmetic. That import read as
+    "3h30 for 650 MB, aborted". The journal's own numbers say otherwise: eighteen
+    stages in 118.6 s with the corpus committed and safe, then 2 h 20 m frozen at
+    exactly article 9,000 with four worker processes measurably BUSY. Slow and hung
+    are different faults needing opposite responses, and nobody should have to do
+    arithmetic to tell them apart.
+
+    Read-only over the journal files. Says "a counter did not advance", never "stuck":
+    a phase that publishes no counter is not examined at all, because "not moving"
+    cannot honestly be said of it.
+    """
+    from src.monitoring.run_timeline import latest_run_timeline
+
+    return latest_run_timeline(max_runs=max_runs)
+
+
 @router.get("/run-journal")
 def run_journal(download: bool = Query(False), limit: int = Query(20, ge=1, le=200)) -> JSONResponse:
     """Import/export RUN JOURNALS — the crash-surviving record of what each run was
@@ -3207,6 +3228,7 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # while CPU flatlines; the gate held with waiters piling up) that no summary
         # substitutes for. Bounded, with what was dropped stated.
         ("run-journal-raw.json", lambda: _run_journal_raw()),
+        ("run-timeline.json", lambda: run_timeline(max_runs=4)),
         # 2026-07-17 completeness fix (maintainer: "all diagnostics should comprise ALL
         # diagnostics"): the read-only reports + cheap deterministic selftests that had
         # accumulated OUTSIDE the bundle since the #645 membership pass. Deliberate
@@ -3402,6 +3424,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/kpi": "kpi.json",
     "/search-timing": "search-timing.json",
     "/run-journal": "run-journal.json",
+    "/run-timeline": "run-timeline.json",
     "/search-timing-selftest": "search-timing-selftest.json",
     "/lemma-preview": "lemma-preview.json",
     "/home-cards": "home-cards.json",
