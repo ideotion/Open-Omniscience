@@ -225,6 +225,51 @@ def test_each_selector_reports_its_own_hit_rate_against_the_control() -> None:
     )
 
 
+def test_a_selector_that_selects_on_the_hit_criterion_reports_no_enrichment() -> None:
+    """⚠ FOUND ON THE OPERATOR'S OWN EXPORTS (five runs, 2026-08-03), and it was mine.
+
+    ``cheap_signal`` picks articles BECAUSE they are very_short or high_link_density, and
+    ``_pre_label`` labels exactly those -- so its rate came back 1.0 in all five runs and its
+    "enrichment" read 7.8x-20x over the control. That is the selector's own definition
+    restated as a score: the same defect as the percentile headline this report was cleaned
+    up to remove, except this one FLATTERS, which makes it likelier to be believed.
+
+    The rate itself is a true fact about the sample and stays. The ratio does not.
+    """
+    from src.analytics.source_quality import selector_enrichment
+
+    per = selector_enrichment([
+        {"selection_method": ["random_per_source"], "pre_label": []},
+        {"selection_method": ["random_per_source"], "pre_label": ["very_short:9"]},
+        # exactly what the real export looked like: every cheap_signal pick is labelled
+        {"selection_method": ["cheap_signal"], "pre_label": ["high_link_density:0.4"]},
+        {"selection_method": ["cheap_signal"], "pre_label": ["very_short:8"]},
+    ])
+    assert per["cheap_signal"]["rate"] == 1.0, "the rate is a real fact and must still be shown"
+    assert per["cheap_signal"]["enrichment_over_control"] is None, (
+        "a selector measured against its own selection criterion reported an enrichment"
+    )
+    assert per["cheap_signal"]["no_enrichment_reason"], "the refusal must say why"
+
+
+def test_an_independent_selector_still_gets_its_real_enrichment() -> None:
+    """The negative-space twin. Refusing the circular ratio must not suppress the honest one:
+    ``keyword_outlier`` selects on keyword-stat ratios, independently of the pre-labels, so
+    its comparison against the control is a genuine measurement and has to survive."""
+    from src.analytics.source_quality import selector_enrichment
+
+    per = selector_enrichment([
+        {"selection_method": ["random_per_source"], "pre_label": []},
+        {"selection_method": ["random_per_source"], "pre_label": []},
+        {"selection_method": ["random_per_source"], "pre_label": ["very_short:9"]},
+        {"selection_method": ["random_per_source"], "pre_label": []},
+        {"selection_method": ["keyword_outlier"], "pre_label": ["very_short:8"]},
+        {"selection_method": ["keyword_outlier"], "pre_label": []},
+    ])
+    assert per["keyword_outlier"]["enrichment_over_control"] == 2.0
+    assert "no_enrichment_reason" not in per["keyword_outlier"]
+
+
 def test_a_selector_that_sampled_nothing_reports_null_not_zero() -> None:
     """The retired `source_fingerprint` selector is exactly this case. A selector that never
     ran must not report a 0% hit-rate, which reads as "it looked and found nothing"."""
