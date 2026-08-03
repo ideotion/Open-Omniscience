@@ -2376,9 +2376,9 @@
   "Unresolved — this would settle it:": "未解決 — 次の点で決まります:",
   "search-verified": "検索で確認",
   "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "取得セッションはこの識別子を挙げましたが、ページを実際に取得した記録はありません。誤っている可能性があり、その場合は取得が失敗するだけです。",
-  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; a period with no data is drawn as a gap, never as zero; counts only, no score.": "すべてのパネルは同じ縦軸スケールを共有し、そのまま比較できます — データが密なら線、疎なら棒（n を表示）、補間した曲線は描きません。データのない期間は欠落として描き、ゼロとしては描きません。件数のみで、スコアはありません。",
   "Shared max:": "共通の最大値:",
   "Periods with no data are drawn as gaps, never as zero.": "データのない期間は欠落として描き、ゼロとしては描きません。",
-  "{n} panels had no data and are not shown.": "データのないパネル {n} 件は表示していません。",
-  "No series to show yet.": "表示できる系列がまだありません。"
+  "No series to show yet.": "表示できる系列がまだありません。",
+  "Panels with no data, not shown: {n}": "データのないパネル（非表示）: {n}",
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "すべてのパネルは同じ縦軸スケールを共有し、そのまま比較できます — データが密なら線、疎なら棒（n を表示）、補間した曲線は描きません。件数のみで、スコアはありません。"
 }

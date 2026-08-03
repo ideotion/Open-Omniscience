@@ -2376,9 +2376,9 @@
   "Unresolved — this would settle it:": "尚未确定——以下这一点能给出答案：",
   "search-verified": "经检索确认",
   "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "采集会话提到了这个标识符，但没有记录到实际访问过该页面。它可能是错的；若真如此，下载会直接失败。",
-  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; a period with no data is drawn as a gap, never as zero; counts only, no score.": "所有面板共用同一条纵轴刻度，因此可以直接对比——数据密集时画线，稀疏时画柱（并标出 n），绝不插值成曲线；没有数据的时段画成空缺，而不是零；只有计数，没有评分。",
   "Shared max:": "共用最大值：",
   "Periods with no data are drawn as gaps, never as zero.": "没有数据的时段画成空缺，而不是零。",
-  "{n} panels had no data and are not shown.": "{n} 个面板没有数据，未予显示。",
-  "No series to show yet.": "暂无可显示的序列。"
+  "No series to show yet.": "暂无可显示的序列。",
+  "Panels with no data, not shown: {n}": "无数据、未显示的面板：{n}",
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "所有面板共用同一条纵轴刻度，因此可以直接对比——数据密集时画线，稀疏时画柱（并标出 n），绝不插值成曲线；只有计数，没有评分。"
 }

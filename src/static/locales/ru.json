@@ -2376,9 +2376,9 @@
   "Unresolved — this would settle it:": "Не решено — это внесёт ясность:",
   "search-verified": "подтверждено поиском",
   "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "Сессия сбора назвала этот идентификатор, но обращение к странице не зафиксировано. Он может быть неверным; тогда загрузка просто не удастся.",
-  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; a period with no data is drawn as a gap, never as zero; counts only, no score.": "Все панели используют одну вертикальную шкалу, поэтому их можно сравнивать — линия при плотных данных, столбцы при разреженных (n указано), никогда интерполированная кривая; период без данных рисуется как пробел, а не как ноль; только подсчёты, без оценок.",
   "Shared max:": "Общий максимум:",
   "Periods with no data are drawn as gaps, never as zero.": "Периоды без данных рисуются как пробелы, а не как нули.",
-  "{n} panels had no data and are not shown.": "{n} панелей без данных не показаны.",
-  "No series to show yet.": "Пока нет рядов для отображения."
+  "No series to show yet.": "Пока нет рядов для отображения.",
+  "Panels with no data, not shown: {n}": "Панели без данных, не показаны: {n}",
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "Все панели используют одну вертикальную шкалу, поэтому их можно сравнивать — линия при плотных данных, столбцы при разреженных (n указано), никогда интерполированная кривая; только подсчёты, без оценок."
 }

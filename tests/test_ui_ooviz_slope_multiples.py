@@ -23,6 +23,40 @@ _JS = (_STATIC / "app.js").read_text(encoding="utf-8")
 _OOVIZ = (_STATIC / "ooviz.js").read_text(encoding="utf-8")
 
 
+def _fn_body(name: str) -> str:
+    """One function's body from the real app.js, brace-matched from the BODY brace.
+
+    Whole-file assertions are only as meaningful as the searched string's UNIQUENESS,
+    and this file learned that the expensive way: when smallMultiplesSvg's sparse
+    threshold was renamed n -> nReal, ``"n >= _SPARSE_BAR_MAX" in _JS`` kept passing
+    on dashChartSvg's copy of the same expression, so a test named for small
+    multiples was asserting a property of a different renderer. Scope to the body.
+    """
+    at = _JS.index(f"function {name}(")
+    depth = 0
+    i = _JS.index("(", at)
+    while True:  # walk the parameter list, so a default `{}` cannot be mistaken for the body
+        if _JS[i] == "(":
+            depth += 1
+        elif _JS[i] == ")":
+            depth -= 1
+            if depth == 0:
+                break
+        i += 1
+    start = _JS.index("{", i)
+    depth = 0
+    for j in range(start, len(_JS)):
+        if _JS[j] == "{":
+            depth += 1
+        elif _JS[j] == "}":
+            depth -= 1
+            if depth == 0:
+                body = _JS[start:j + 1]
+                assert 10 < body.count("\n") < 200, f"{name}: implausible body"
+                return body
+    raise AssertionError(f"unbalanced braces in {name}")
+
+
 def test_ooviz_exposes_the_two_new_pure_primitives():
     assert "function slopeGeometry(" in _OOVIZ
     assert "function gridLayout(" in _OOVIZ
@@ -52,13 +86,19 @@ def test_slope_renderer_uses_primitive_and_never_bridges_a_gap():
 
 def test_small_multiples_shares_one_scale_and_is_honest_16():
     assert "function smallMultiplesSvg(" in _JS
-    assert "ooViz.gridLayout" in _JS
+    body = _fn_body("smallMultiplesSvg")
+    assert "ooViz.gridLayout" in body
     # ONE shared vertical scale across every panel (the small-multiples honesty win)
-    assert "// SHARED 0..maxV" in _JS
-    # invariant #16: line when dense, bars when sparse — never an interpolated curve
-    assert "n >= _SPARSE_BAR_MAX" in _JS
-    # n is shown per panel
-    assert 'n=" + n' in _JS or 'n=${n}' in _JS
+    assert "// SHARED 0..maxV" in body
+    # invariant #16: line when dense, bars when sparse — never an interpolated curve.
+    # Scoped to THIS body: the identical expression lives in dashChartSvg, and a
+    # whole-file search silently accepted that one instead.
+    assert "_SPARSE_BAR_MAX" in body
+    # ...and the threshold counts REAL observations, not array slots — "n=30" over a
+    # series with 25 gaps claims evidence that was never collected.
+    assert "nReal >= _SPARSE_BAR_MAX" in body
+    # n is shown per panel, and it is the real count
+    assert "n=${nReal}" in body
 
 
 def test_slope_from_trending_windows_uses_rate_not_raw_counts():
@@ -81,3 +121,23 @@ def test_trends_lens_toggle_is_wired_additively():
     assert "function setTrendLens(" in _JS
     # default lens stays "windows" (no regression to the shipped view)
     assert '_trdLens = "windows"' in _JS
+
+
+def test_the_node_suite_for_small_multiples_actually_runs():
+    """A test that never executes is not a test.
+
+    tests/small_multiples_gaps_node_test.js had no pytest wrapper, so its twelve
+    assertions ran only when someone invoked node by hand -- while the sibling
+    suite whose doctrine it cites (tests/test_chart_gaps.py) has had one all along.
+    """
+    import shutil
+    import subprocess
+
+    if shutil.which("node") is None:
+        import pytest
+
+        pytest.skip("node not available")
+    js = Path(__file__).resolve().parents[1] / "tests" / "small_multiples_gaps_node_test.js"
+    proc = subprocess.run(["node", str(js)], capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "passed" in proc.stdout

@@ -169,7 +169,14 @@ def equilibrium_filter(
     kept: list = []
     deferred = 0
     for s in sources:
-        lang = (getattr(s, "language", None) or "unknown").strip().lower() or "unknown"
+        # THE THIRD KEY SPACE. Normalising only the two sides of the SHARE
+        # comparison made things WORSE, not better: this lookup is what actually
+        # applies the pace, so a region-tagged source missed `pace["en"]` entirely
+        # and stayed 100% exempt while the bare-spelled sources of the same
+        # language absorbed a correction that was now 3.5x larger on their behalf.
+        # Measured over 20,000 passes before this line was fixed: source "en"
+        # deferred 49.5%, source "en-US" deferred 0.0%.
+        lang = normalize_lang(getattr(s, "language", None)) or "unknown"
         p = pace.get(lang, 1.0)
         if p >= 1.0:
             kept.append(s)

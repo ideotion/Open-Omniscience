@@ -276,3 +276,64 @@ def test_unknown_stays_the_sentinel_for_absent_language(db):
     shares = EQ.corpus_language_shares(db)
     assert shares["unknown"] == pytest.approx(3 / 4)
     assert "" not in shares
+
+
+def test_the_pace_actually_reaches_a_region_tagged_source(db):
+    """THE THIRD KEY SPACE, and the reason a half-fix was worse than none.
+
+    Normalising only the two sides of the SHARE comparison left equilibrium_filter --
+    which is what applies the pace -- keying sources on the old `.strip().lower()`.
+    A region-tagged source therefore missed pace["en"] and stayed 100% exempt, while
+    the bare-spelled sources of the same language absorbed a correction that had just
+    become 3.5x larger on their behalf. Measured over 20,000 passes before this was
+    fixed: source "en" deferred 49.5%, source "en-US" deferred 0.0%."""
+    import random
+    from datetime import UTC, datetime, timedelta
+
+    class _St:
+        last_checked_at = datetime.now(UTC) - timedelta(minutes=5)   # fresh: pace applies
+
+    class _S:
+        def __init__(self, sid, lang):
+            self.id, self.language = sid, lang
+
+    sources = [_S(1, "en"), _S(2, "en-US"), _S(3, "EN_us"), _S(4, "en-GB")]
+    state = {s.id: _St() for s in sources}
+    kept_by_lang: dict[str, int] = {}
+    passes = 4000
+    rng = random.Random(1234)
+    for _ in range(passes):
+        kept, _deferred = EQ.equilibrium_filter(
+            sources, pace={"en": 0.5}, fetch_state=state, rng=rng
+        )
+        for s in kept:
+            kept_by_lang[s.language] = kept_by_lang.get(s.language, 0) + 1
+    for lang in ("en", "en-US", "EN_us", "en-GB"):
+        rate = kept_by_lang.get(lang, 0) / passes
+        assert 0.44 < rate < 0.56, (
+            f"{lang!r} kept {rate:.1%} of passes; pace 0.5 must reach EVERY spelling of "
+            "English, or the bare-spelled sources carry the whole correction alone"
+        )
+
+
+def test_an_untargeted_language_is_still_never_paced(db):
+    """The twin. Normalising the source key must not sweep an unrelated language into
+    a target it was never in -- that would be the same defect pointing outward."""
+    import random
+    from datetime import UTC, datetime, timedelta
+
+    class _St:
+        last_checked_at = datetime.now(UTC) - timedelta(minutes=5)
+
+    class _S:
+        def __init__(self, sid, lang):
+            self.id, self.language = sid, lang
+
+    sources = [_S(1, "fr-CA"), _S(2, "de"), _S(3, None)]
+    state = {s.id: _St() for s in sources}
+    rng = random.Random(7)
+    for _ in range(500):
+        kept, deferred = EQ.equilibrium_filter(
+            sources, pace={"en": 0.1}, fetch_state=state, rng=rng
+        )
+        assert deferred == 0 and len(kept) == 3, "only the targeted language may be paced"

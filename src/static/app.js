@@ -15043,8 +15043,13 @@
       const emptied = all.length - live.length;
       if (!live.length) return `<div class="muted">${esc(t("No series to show yet."))}</div>`;
       let maxV = 0;
-      // NOT isFinite(pt.count): isFinite(null) is TRUE, so the old filter admitted a
-      // published gap as a real 0 into the shared scale (the recorded +null trap).
+      // _missing rather than isFinite, for ONE predicate across the function --
+      // NOT because the old scan was wrong. isFinite(null) is true, but the guard
+      // was `isFinite(pt.count) && pt.count > maxV`, and `null > maxV` coerces to
+      // `0 > maxV`, which cannot raise a scale that starts at 0. The shared max was
+      // never corrupted; an earlier draft of this comment claimed it was, which an
+      // adversarial pass correctly refuted. The real damage was downstream, where
+      // Y(null) lands on the baseline.
       live.forEach(p => p.points.forEach(pt => {
         if (!_missing(pt.count) && pt.count > maxV) maxV = pt.count;
       }));
@@ -15089,7 +15094,15 @@
               if (_missing(pt.count)) return "";   // no bar for a gap, never a zero-height one
               const cx = X(i), by = Y(pt.count), x0 = Math.max(padL, cx - bw / 2);
               const bwc = Math.max(1, Math.min(w - padR, cx + bw / 2) - x0).toFixed(1);
-              return `<rect x="${x0.toFixed(1)}" y="${by.toFixed(1)}" width="${bwc}" height="${Math.max(0, baseY - by).toFixed(1)}" fill="${col}" opacity="0.72"/>`;
+              const hgt = Math.max(0, baseY - by);
+              // A MEASURED ZERO IS NOT NOTHING. Without this cap a real 0 renders as
+              // height="0.0" -- pixel-identical to the gap that emits no rect at all,
+              // so the distinction the line above insists on would be invisible in the
+              // only mode this renderer actually reaches. Same 2px value-cap
+              // dashChartSvg uses to keep a flush-minimum bar visible; it marks the
+              // true value and never invents height.
+              return `<rect x="${x0.toFixed(1)}" y="${by.toFixed(1)}" width="${bwc}" height="${hgt.toFixed(1)}" fill="${col}" opacity="0.72"/>`
+                + (hgt < 2 ? `<rect x="${x0.toFixed(1)}" y="${(by - 1).toFixed(1)}" width="${bwc}" height="2" fill="${col}"/>` : "");
             }).join("");
         const gr = `<line x1="${padL}" x2="${w - padR}" y1="${Y(maxV).toFixed(1)}" y2="${Y(maxV).toFixed(1)}" stroke="var(--border)" stroke-dasharray="2 3" stroke-width="0.5"/>`
           + `<line x1="${padL}" x2="${w - padR}" y1="${baseY.toFixed(1)}" y2="${baseY.toFixed(1)}" stroke="var(--border)" stroke-width="0.5"/>`;
@@ -15100,7 +15113,18 @@
           + `<span class="muted" style="font-size:10px"${nReal < n ? ` title="${esc(t("Periods with no data are drawn as gaps, never as zero."))}"` : ""}>n=${nReal}${nReal < n ? " · " + (n - nReal) + "\u00a0◦" : ""}</span></div>`;
         return `<div style="border:1px solid var(--border);border-radius:6px;padding:5px">${head}${svg}</div>`;
       };
-      const cav = `<div class="card-caveat" style="margin-top:5px">${esc(opts.caveat || t("All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; a period with no data is drawn as a gap, never as zero; counts only, no score."))} ${esc(t("Shared max:"))} ${esc(fmtNum(maxV))}${emptied ? " · " + esc(t("{n} panels had no data and are not shown.").replace("{n}", emptied)) : ""}</div>`;
+      // Asserted ONLY when a gap is actually present. The single shipped caller
+      // (renderTrendMultiples) feeds _window_daily_series, which OMITS zero-count
+      // days rather than publishing them as null, so no hole ever reaches this
+      // renderer from it -- and a caveat that advertises gap handling on data that
+      // cannot contain a gap is a fabricated assurance, the exact class of claim
+      // this function was just fixed to stop making. The handling below is real and
+      // tested; it is simply not exercised by today's caller, so it is not claimed.
+      const anyGap = live.some(p => p.points.some(pt => _missing(pt && pt.count)));
+      const cav = `<div class="card-caveat" style="margin-top:5px">${esc(opts.caveat || t("All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score."))}`
+        + `${anyGap ? " " + esc(t("Periods with no data are drawn as gaps, never as zero.")) : ""}`
+        + ` ${esc(t("Shared max:"))} ${esc(fmtNum(maxV))}`
+        + `${emptied ? " · " + esc(t("Panels with no data, not shown: {n}").replace("{n}", emptied)) : ""}</div>`;
       return `<div style="display:grid;grid-template-columns:repeat(${lay.cols},minmax(0,1fr));gap:8px">${live.map(cell).join("")}</div>${cav}`;
     }
 

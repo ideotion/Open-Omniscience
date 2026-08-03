@@ -1729,13 +1729,26 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     comment "break at gaps, never bridge". Proximity to a correct implementation is not
     coverage. The miss was also the worse half of the defect: a bridged line invents a
     CONNECTION, but `Y(null)` = `padT+(h-padT-padB)*(1-null/maxV)` lands on the zero BASELINE, so
-    a published gap became an invented OBSERVATION — and the scale scan used `isFinite(pt.count)`,
-    which is `true` for null. GENERAL FORM: when fixing a property across a "toolkit", grep for
+    a published gap became an invented OBSERVATION. (An earlier draft of this entry ALSO blamed the
+    scale scan's `isFinite(pt.count)`; an adversarial pass refuted it — `isFinite(null)` is true, but
+    the guard was `isFinite(pt.count) && pt.count > maxV` and `null > maxV` coerces to `0 > maxV`,
+    which cannot raise a scale starting at 0. Corrected here because a fabricated claim inside an
+    honesty fix is the same defect the fix is about.) GENERAL FORM: when fixing a property across a "toolkit", grep for
     every function that emits the primitive (here `<polyline`/`<rect`), not for the renderers you
     can name; and check the ones whose neighbours already comply, since a reviewer's eye reads
     the correct sibling and moves on. COROLLARY worth reusing: geometry must span every SLOT
     while the sparse threshold and the displayed `n` count only real OBSERVATIONS — one number
     keeps the hole's width, the other refuses to claim evidence that was never collected.
+    THIRD COROLLARY, from the same review: A CAVEAT MAY CLAIM ONLY WHAT THE DATA CAN EXHIBIT. The
+    fixed renderer's one live caller feeds `_window_daily_series`, which OMITS zero-count days
+    instead of publishing them as null — so no gap can ever reach it, while the caveat advertising
+    gap handling rendered unconditionally. The handling is real and tested; it is simply not
+    exercised there, so the sentence is now emitted only when a gap is actually present. A promise
+    the shipped data cannot keep is a fabricated assurance even when the code behind it is correct.
+    (The omission itself compresses the index axis — day 1 and day 5 render adjacent — which is a
+    separate, pre-existing defect affecting the trending sparklines too; recorded, not fixed here,
+    because for keyword mentions an absent day is a REAL zero and zero-filling is the right repair,
+    not null-filling, and it changes a second shipped surface.)
   - **A MECHANISM THAT QUIETLY RECORDS A DECISION SUPPRESSES THE SAFETY DEFAULT THAT
     DECISION OVERRIDES (2026-08-02, the boot-airplane race, PR #846 merged RED then
     #847):** a field report — "on a new instance the app sometimes stays in airplane

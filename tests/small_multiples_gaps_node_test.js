@@ -162,7 +162,7 @@ test("a panel with nothing to plot is disclosed, not silently dropped", () => {
     {label: "fr", points: dense([null, null, null])},
     {label: "de", points: []},
   ]);
-  assert(/2 panels had no data/.test(svg), `the two empty panels must be disclosed: ${svg.slice(-300)}`);
+  assert(/not shown: 2/.test(svg), `the two empty panels must be disclosed: ${svg.slice(-300)}`);
 });
 
 test("...and nothing is disclosed when nothing was dropped (the twin)", () => {
@@ -170,7 +170,7 @@ test("...and nothing is disclosed when nothing was dropped (the twin)", () => {
     {label: "en", points: dense(run(12, 5))},
     {label: "fr", points: dense(run(12, 3))},
   ]);
-  assert(!/panels had no data/.test(svg), "an over-eager disclosure invents missing data");
+  assert(!/not shown:/.test(svg), "an over-eager disclosure invents missing data");
 });
 
 test("an all-empty grid says so rather than rendering an empty box", () => {
@@ -179,3 +179,31 @@ test("an all-empty grid says so rather than rendering an empty box", () => {
 });
 
 console.log(`\n${passed} passed`);
+
+
+// --------------------------------------------------------------------------- //
+//  The caveat may claim only what the data can exhibit
+// --------------------------------------------------------------------------- //
+test("the gap sentence appears ONLY when the data actually contains a gap", () => {
+  // The one shipped caller feeds _window_daily_series, which OMITS zero-count days
+  // rather than publishing them as null -- so no hole ever reaches this renderer
+  // from it. A caveat advertising gap handling on data that cannot contain a gap is
+  // a fabricated assurance, which is the class of claim this function was just
+  // fixed to stop making.
+  const withGap = smallMultiplesSvg([{label: "en", points: dense([...run(6, 4), null, ...run(6, 4)])}]);
+  assert(/drawn as gaps, never as zero/.test(withGap), "a real gap must be disclosed");
+  const noGap = smallMultiplesSvg([{label: "en", points: dense(run(13, 4))}]);
+  assert(!/drawn as gaps, never as zero/.test(noGap),
+    "claiming gap handling on gapless data promises the user something unverifiable");
+});
+
+test("a MEASURED zero stays visible and is not mistaken for a gap", () => {
+  // In bar mode -- the only mode the shipped caller reaches -- a true 0 renders as
+  // height="0.0", pixel-identical to the gap that emits no rect at all. The 2px
+  // value-cap marks the real value without inventing height, the same device
+  // dashChartSvg uses for a flush minimum.
+  const zeroed = smallMultiplesSvg([{label: "en", points: dense([0, 5, 3])}]);
+  const gapped = smallMultiplesSvg([{label: "en", points: dense([null, 5, 3])}]);
+  assert(rects(zeroed) > rects(gapped),
+    "a measured zero must draw something a gap does not");
+});
