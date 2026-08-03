@@ -2069,13 +2069,7 @@
       <p class="muted" style="margin-top:0">Found offline by the citation and catalog channels under your scheduler budget. Each row shows its evidence. Promote creates a disabled source you still have to enable; Dismiss is remembered and never re-suggested.</p>
       <div id="candidates-list"></div>
     </section>
-    <section class="panel">
-      <h2>Source qualification</h2>
-      <p class="muted" style="margin-top:0">Every source is judged for extraction validity — real prose vs a broken/junk scrape — before it joins regular collection: a categorical stamp (qualified · disqualified · not yet judged), never a quality score. A few candidates are judged automatically per online collection round; this runs the SAME judging in bulk to catch up a large backlog. Networked (each judgment is a small trial fetch through your transport) — asks for consent first, refused in airplane mode.</p>
-      <div id="qualify-bulk-status" class="hint">Loading…</div>
-      <button id="qualify-bulk-btn" onclick="qualifyBulkStart(this)">Qualify the backlog</button>
-      <button class="secondary" id="qualify-bulk-cancel-btn" style="display:none" onclick="qualifyBulkCancel()">Cancel</button>
-    </section>
+    <p class="hint">Source qualification moved to its own Quality gates section below.</p>
     <section class="panel">
       <h2>Add a source</h2>
       <div class="row">
@@ -2144,6 +2138,42 @@
       <input type="file" id="imp-file" accept=".csv,text/csv">
       <button onclick="importSources()">Import CSV</button>
       <div id="imp-result" class="hint"></div>
+    </section>
+    </details>
+
+    <details class="adv-sec" data-adv="qualification">
+      <summary><span class="adv-sec-t">Quality gates</span> <span class="muted">— what counts as an article, what counts as a working source, and what gets scraped</span></summary>
+    <section class="panel" id="qualification-panel">
+      <h2>Quality gates</h2>
+      <p class="hint" style="margin-top:0"><span>Two gates run over the same articles: the first asks whether this is an article at all — a nav page, a consent wall or a list of headlines is not one — and the second asks whether a source's extraction is valid, meaning whether what we pull from that site looks like articles.</span>
+        <span>Both judge EXTRACTION, never editorial merit: the verdict is a category, never a quality score, and never an opinion about what a source publishes. The first gate feeds the second — an article the first one quarantines is left out of its source's verdict.</span>
+        <span>Nothing here is deleted. A quarantined article is kept and excluded from search and analytics; a disqualified source is re-checked on a ladder.</span></p>
+
+      <div id="qual-toggle-row" class="row" style="gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">
+        <label class="row" style="gap:6px;align-items:center" title="When off, candidate sources simply stay unqualified and are never auto-admitted to collection. Nothing is deleted, and no verdict already reached is changed or reconsidered.">
+          <input id="qual-enabled" type="checkbox" onchange="qualSaveToggle(this)"> <span>Judge sources automatically</span></label>
+        <span id="qual-enabled-hint" class="hint"></span>
+      </div>
+
+      <div id="qual-state" class="hint" style="margin-top:10px">Loading…</div>
+      <div id="qual-criteria" style="margin-top:14px"></div>
+      <div id="qual-gates" style="margin-top:14px"></div>
+
+      <h3 style="margin-top:18px">What gets scraped</h3>
+      <p class="hint" style="margin-top:0">Both of these start at what the app does today, so leaving them alone changes nothing.</p>
+      <div class="row" style="gap:10px;flex-direction:column;align-items:flex-start">
+        <label class="row" style="gap:6px;align-items:center" title="Reaches only sources you have ENABLED — discovered candidates are disabled and stay out either way. A source that was judged and DISQUALIFIED is never admitted by this: the re-qualification ladder is how one comes back.">
+          <input id="qual-scope-unqualified" type="checkbox" onchange="qualSaveScope()"> <span>Also scrape sources not yet judged</span></label>
+        <label class="row" style="gap:6px;align-items:center" title="The catalogues committed to the app — the curated list, the markets and diversification batches, the world news catalogue and the legal portals. Excludes every source the running app discovered for itself.">
+          <input id="qual-scope-shipped" type="checkbox" onchange="qualSaveScope()"> <span>Only scrape the sources that came with the app</span></label>
+        <div id="qual-scope-count" class="hint"></div>
+      </div>
+
+      <h3 style="margin-top:18px">Catch up the backlog</h3>
+      <p class="muted" style="margin-top:0">A few candidates are judged automatically per online collection round; this runs the SAME judging in bulk. Networked (each judgment is a small trial fetch through your transport) — asks for consent first, refused in airplane mode.</p>
+      <div id="qualify-bulk-status" class="hint">Loading…</div>
+      <button id="qualify-bulk-btn" onclick="qualifyBulkStart(this)">Qualify the backlog</button>
+      <button class="secondary" id="qualify-bulk-cancel-btn" style="display:none" onclick="qualifyBulkCancel()">Cancel</button>
     </section>
     </details>
 

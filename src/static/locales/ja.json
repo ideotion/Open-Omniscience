@@ -2382,5 +2382,21 @@
   "Panels with no data, not shown: {n}": "データのないパネル（非表示）: {n}",
   "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "すべてのパネルは同じ縦軸スケールを共有し、そのまま比較できます — データが密なら線、疎なら棒（n を表示）、補間した曲線は描きません。件数のみで、スコアはありません。",
   "Indexing continues in the background. The number still to index could not be read.": "インデックス作成はバックグラウンドで続行中です。未インデックスの記事数は読み取れませんでした。",
-  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "インデックス作成はバックグラウンドで続行中です: 残り {n} 件。完了するまでキーワードは付かず、分析にも含まれません。"
+  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "インデックス作成はバックグラウンドで続行中です: 残り {n} 件。完了するまでキーワードは付かず、分析にも含まれません。",
+  "Quality gates": "品質ゲート",
+  "— what counts as an article, what counts as a working source, and what gets scraped": "— 何が記事とみなされ、何が有効なソースとみなされ、何を収集するか",
+  "Two gates run over the same articles: the first asks whether this is an article at all — a nav page, a consent wall or a list of headlines is not one — and the second asks whether a source's extraction is valid, meaning whether what we pull from that site looks like articles.": "同じ記事に対して二つのゲートが働きます。一つ目はそもそも記事なのかを問い（ナビゲーションページ、同意画面、見出しの一覧は記事ではありません）、二つ目はソースの抽出が妥当か、つまりそのサイトから取得したものが記事らしいかを問います。",
+  "Both judge EXTRACTION, never editorial merit: the verdict is a category, never a quality score, and never an opinion about what a source publishes. The first gate feeds the second — an article the first one quarantines is left out of its source's verdict.": "どちらも判断するのは抽出であって編集上の価値ではありません。判定はカテゴリであり、品質スコアでも、ソースが何を公開するかについての意見でもありません。一つ目のゲートは二つ目に入力を与えます — 一つ目が隔離した記事は、そのソースの判定から除かれます。",
+  "Nothing here is deleted. A quarantined article is kept and excluded from search and analytics; a disqualified source is re-checked on a ladder.": "ここでは何も削除されません。隔離された記事は保持され、検索と分析から除外されるだけです。資格を失ったソースは段階的な間隔で再確認されます。",
+  "Judge sources automatically": "ソースを自動的に判定する",
+  "When off, candidate sources simply stay unqualified and are never auto-admitted to collection. Nothing is deleted, and no verdict already reached is changed or reconsidered.": "オフにすると、候補ソースは未判定のまま残り、収集に自動的に組み入れられることはありません。何も削除されず、すでに下された判定が変更されたり見直されたりすることもありません。",
+  "What gets scraped": "何を収集するか",
+  "Both of these start at what the app does today, so leaving them alone changes nothing.": "どちらもアプリの現在の動作から始まります。触らなければ何も変わりません。",
+  "Also scrape sources not yet judged": "まだ判定していないソースも収集する",
+  "Reaches only sources you have ENABLED — discovered candidates are disabled and stay out either way. A source that was judged and DISQUALIFIED is never admitted by this: the re-qualification ladder is how one comes back.": "有効にしたソースのみが対象です — 発見された候補は無効のままで、いずれにせよ対象外です。判定のうえ資格を失ったソースがこれで許可されることはありません。戻る道は再判定の段階的スケジュールです。",
+  "Only scrape the sources that came with the app": "アプリに付属するソースのみ収集する",
+  "The catalogues committed to the app — the curated list, the markets and diversification batches, the world news catalogue and the legal portals. Excludes every source the running app discovered for itself.": "アプリに同梱されたカタログ — 厳選リスト、市場および多様化バッチ、世界ニュースカタログ、法務ポータル。稼働中のアプリが自ら発見したソースはすべて除外します。",
+  "Catch up the backlog": "未処理分に追いつく",
+  "A few candidates are judged automatically per online collection round; this runs the SAME judging in bulk. Networked (each judgment is a small trial fetch through your transport) — asks for consent first, refused in airplane mode.": "オンライン収集の各ラウンドでいくつかの候補が自動的に判定されます。ここでは同じ判定を一括で実行します。ネットワークが必要です（各判定はあなたの通信経路を通じた小さな試験取得です） — 先に同意を求め、機内モードでは拒否されます。",
+  "Source qualification moved to its own Quality gates section below.": "ソースの判定は、下の「品質ゲート」セクションに移動しました。"
 }

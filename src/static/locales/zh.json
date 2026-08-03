@@ -2382,5 +2382,21 @@
   "Panels with no data, not shown: {n}": "无数据、未显示的面板：{n}",
   "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "所有面板共用同一条纵轴刻度，因此可以直接对比——数据密集时画线，稀疏时画柱（并标出 n），绝不插值成曲线；只有计数，没有评分。",
   "Indexing continues in the background. The number still to index could not be read.": "索引在后台继续进行。无法读取仍需索引的文章数量。",
-  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "索引在后台继续进行：仍有 {n} 篇文章待索引。在完成之前，它们没有关键词，也不会出现在分析中。"
+  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "索引在后台继续进行：仍有 {n} 篇文章待索引。在完成之前，它们没有关键词，也不会出现在分析中。",
+  "Quality gates": "质量关卡",
+  "— what counts as an article, what counts as a working source, and what gets scraped": "— 什么算文章，什么算可用来源，以及抓取什么",
+  "Two gates run over the same articles: the first asks whether this is an article at all — a nav page, a consent wall or a list of headlines is not one — and the second asks whether a source's extraction is valid, meaning whether what we pull from that site looks like articles.": "两道关卡作用于同一批文章：第一道判断这是否算一篇文章——导航页、同意墙或标题列表都不算——第二道判断某个来源的提取是否有效，也就是我们从该站点取回的内容是否像文章。",
+  "Both judge EXTRACTION, never editorial merit: the verdict is a category, never a quality score, and never an opinion about what a source publishes. The first gate feeds the second — an article the first one quarantines is left out of its source's verdict.": "两者判断的都是提取，而非编辑价值：结论是一个类别，不是质量评分，也不是对来源所发布内容的意见。第一道关卡为第二道提供输入——被第一道隔离的文章不计入其来源的结论。",
+  "Nothing here is deleted. A quarantined article is kept and excluded from search and analytics; a disqualified source is re-checked on a ladder.": "这里不会删除任何东西。被隔离的文章会保留，只是排除在搜索和分析之外；被取消资格的来源会按递增的时间阶梯重新检查。",
+  "Judge sources automatically": "自动判定来源",
+  "When off, candidate sources simply stay unqualified and are never auto-admitted to collection. Nothing is deleted, and no verdict already reached is changed or reconsidered.": "关闭时，候选来源只是保持未判定状态，永远不会被自动纳入采集。不会删除任何东西，已作出的结论也不会被更改或重新考虑。",
+  "What gets scraped": "抓取什么",
+  "Both of these start at what the app does today, so leaving them alone changes nothing.": "这两项都以应用当前的行为为起点，因此保持不动不会有任何改变。",
+  "Also scrape sources not yet judged": "同时抓取尚未判定的来源",
+  "Reaches only sources you have ENABLED — discovered candidates are disabled and stay out either way. A source that was judged and DISQUALIFIED is never admitted by this: the re-qualification ladder is how one comes back.": "只涉及你已启用的来源——发现的候选来源处于停用状态，无论如何都不在其中。已判定并被取消资格的来源永远不会因此被纳入：重新判定的时间阶梯才是它回来的途径。",
+  "Only scrape the sources that came with the app": "只抓取随应用附带的来源",
+  "The catalogues committed to the app — the curated list, the markets and diversification batches, the world news catalogue and the legal portals. Excludes every source the running app discovered for itself.": "随应用提交的目录——精选列表、市场与多样化批次、世界新闻目录和法律门户。不包括运行中的应用自行发现的任何来源。",
+  "Catch up the backlog": "处理积压",
+  "A few candidates are judged automatically per online collection round; this runs the SAME judging in bulk. Networked (each judgment is a small trial fetch through your transport) — asks for consent first, refused in airplane mode.": "每一轮在线采集会自动判定少量候选来源；此处以批量方式执行同样的判定。需要联网（每次判定都是通过你的传输方式进行的一次小规模试抓）——会先征求同意，在飞行模式下被拒绝。",
+  "Source qualification moved to its own Quality gates section below.": "来源判定已移至下方独立的「质量关卡」部分。"
 }

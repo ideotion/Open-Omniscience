@@ -102,6 +102,22 @@ class SchedulerSettings:
     # (candidates then simply stay unqualified/disqualified -- never auto-admitted).
     qualification_per_pass: int = 5
 
+    # SCRAPING SCOPE (maintainer amendment 2026-08-03). Both default to TODAY'S behaviour,
+    # so an untouched install's `select_sources` query is byte-identical.
+    #
+    # `scrape_unqualified` RELAXES a maintainer ruling ("only QUALIFIED sources are
+    # scraped", 0.3 close gate) and is recorded as an amendment to it rather than as an
+    # ordinary settings row. Two facts make it much safer than it first sounds: it reaches
+    # only ENABLED sources -- the ~42,600 discovered candidates are DISABLED and stay out
+    # either way -- and it NEVER admits a `disqualified` source. Unqualified means
+    # not-yet-judged; disqualified is a verdict, and the re-qualification ladder is how a
+    # disqualified source comes back.
+    scrape_unqualified: bool = False
+    # `scrape_app_provided_only` narrows collection to the sources that SHIPPED with the
+    # app, by their seed-time provenance tag. See catalog.provenance_scope.is_app_provided
+    # for why this is an exact-set match and not a prefix one.
+    scrape_app_provided_only: bool = False
+
     # Optional per-language cadence lever (default OFF). ``language_equilibrium``
     # is a {lang: weight} TARGET the operator opts into; when set, over-
     # represented languages are re-checked LESS often (never excluded — a hard
@@ -306,6 +322,10 @@ def load_settings() -> SchedulerSettings:
         ),
         qualification_per_pass=_coerce_int(
             raw.get("qualification_per_pass"), d.qualification_per_pass, 0, 100
+        ),
+        scrape_unqualified=_coerce_bool(raw.get("scrape_unqualified"), d.scrape_unqualified),
+        scrape_app_provided_only=_coerce_bool(
+            raw.get("scrape_app_provided_only"), d.scrape_app_provided_only
         ),
         language_equilibrium=_coerce_target(raw.get("language_equilibrium")),
         equilibrium_floor=_coerce_float(raw.get("equilibrium_floor"), d.equilibrium_floor, 0.0, 1.0),

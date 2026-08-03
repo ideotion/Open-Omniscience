@@ -32,6 +32,7 @@ from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 # Import database models and SourceManager
@@ -1480,3 +1481,123 @@ async def search_sources(
             "count": len(formatted_results),
             "total": len(results),
         }
+
+
+# --------------------------------------------------------------------------- #
+#  The qualification engine's own configuration surface
+# --------------------------------------------------------------------------- #
+@router.get("/qualification/config")
+def qualification_config(db: Session = Depends(get_db)) -> dict:
+    """Everything the Advanced -> Qualification panel needs, declared by the BACKEND.
+
+    The panel renders this rather than restating the vocabulary in HTML. That is not a
+    style preference: a criterion described in two places drifts, and then the UI explains
+    a gate the engine no longer applies. So the criteria come from ``source_audit.CRITERIA``
+    and the tunables from ``catalog.gates``, each carrying its own unit, impact and
+    floor_reason.
+
+    Read-only. Writing happens through ``PUT /api/scheduler/config`` (one settings path),
+    so this endpoint cannot change a verdict or a setting by being called.
+    """
+    from src.analytics.source_audit import (
+        CRITERIA,
+        MIN_SOURCE_ARTICLES,
+        PATHOLOGY_ABS_FLOOR,
+        SOURCE_COHORT_FLOOR,
+        TAIL_P,
+        _MIN_PATHOLOGY_ARTICLES,
+    )
+    from src.catalog.gates import (
+        ARTICLE_GATE_TUNABLES,
+        SOURCE_GATE_TUNABLES,
+        tunable_payload,
+    )
+    from src.catalog.qualification import (
+        STATUS_DISQUALIFIED,
+        STATUS_QUALIFIED,
+        STATUS_UNQUALIFIED,
+    )
+    from src.database.models import Source
+    from src.scheduler.settings import load_settings
+
+    settings = load_settings()
+    current = {
+        "qualification_per_pass": settings.qualification_per_pass,
+        "min_source_articles": MIN_SOURCE_ARTICLES,
+        "source_cohort_floor": SOURCE_COHORT_FLOOR,
+        "tail_p": TAIL_P,
+        "pathology_abs_floor": PATHOLOGY_ABS_FLOOR,
+        "min_pathology_articles": _MIN_PATHOLOGY_ARTICLES,
+    }
+
+    counts = {"qualified": 0, "disqualified": 0, "unqualified": 0, "enabled": 0}
+    for status, enabled, n in (
+        db.query(Source.status, Source.enabled, func.count())
+        .group_by(Source.status, Source.enabled)
+        .all()
+    ):
+        key = str(status or STATUS_UNQUALIFIED)
+        if key in counts:
+            counts[key] += int(n)
+        if enabled:
+            counts["enabled"] += int(n)
+
+    return {
+        "gates": [
+            {
+                "id": "article",
+                "question": "Is this an article?",
+                "verdict": "quarantined (reversible)",
+                "note": (
+                    "Screens each ITEM at ingest: a nav/index page, a consent wall or a "
+                    "list of headlines is not an article. A quarantined article is kept "
+                    "and excluded from search and analytics, never deleted."
+                ),
+                "tunables": tunable_payload(ARTICLE_GATE_TUNABLES, current),
+            },
+            {
+                "id": "source",
+                "question": "Is this source's extraction valid?",
+                "verdict": "qualified / disqualified (categorical, never a score)",
+                "note": (
+                    "Judges a SOURCE on whether what we extract from it looks like "
+                    "articles at all — never on editorial merit. Its inputs are "
+                    "article-level measurements, so the first gate feeds this one: an "
+                    "article the first gate quarantined is excluded from its source's "
+                    "verdict."
+                ),
+                "tunables": tunable_payload(SOURCE_GATE_TUNABLES, current),
+            },
+        ],
+        # Straight from source_audit.CRITERIA so the panel can never describe a criterion
+        # the engine does not apply. `extraction_failure` marks the ONLY one that can
+        # disqualify -- a reader cannot tell that from the list otherwise.
+        "criteria": [
+            {
+                "name": c["name"],
+                "bad_direction": c["bad"],
+                "can_disqualify": bool(c["extraction_failure"]),
+                "desc": c["desc"],
+            }
+            for c in CRITERIA
+        ],
+        "scope": {
+            "scrape_unqualified": bool(settings.scrape_unqualified),
+            "scrape_app_provided_only": bool(settings.scrape_app_provided_only),
+            "note": (
+                "Both default to today's behaviour. 'Also scrape unqualified' reaches only "
+                "ENABLED sources and NEVER admits a disqualified one — unqualified means "
+                "not-yet-judged, and the re-qualification ladder is how a disqualified "
+                "source comes back."
+            ),
+        },
+        "ladder": {
+            "months": [1, 2, 4, 6],
+            "note": (
+                "A disqualified source is re-checked on a lengthening ladder, reset by a "
+                "qualified verdict. The cap is what guarantees the re-check happens at all."
+            ),
+        },
+        "counts": counts,
+        "statuses": [STATUS_QUALIFIED, STATUS_DISQUALIFIED, STATUS_UNQUALIFIED],
+    }

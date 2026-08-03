@@ -361,20 +361,46 @@ def _filter_due_feeds(session, sources: list) -> tuple[list, int]:
 def select_sources(session, settings: SchedulerSettings):
     """Query of enabled, QUALIFIED sources matching the scheduler's selection criteria.
 
-    Always enabled-only; ALWAYS qualified-only (the admission gate, 0.3 CLOSE GATE
+    Always enabled-only; qualified-only BY DEFAULT (the admission gate, 0.3 CLOSE GATE
     ruling: "only QUALIFIED sources are scraped" -- a not-yet-qualified or disqualified
     source never joins regular collection; it is picked up instead by the qualification
     ride-along, see src.catalog.qualification.advance_qualification). Optionally narrowed
     by language / source_type (exact) and tags (match ANY, substring). Ordered highest-
     priority first. Used by rss/crawl runs and by the targets-preview endpoint so "what
     will be scraped" is explicit.
+
+    TWO SCOPE TOGGLES (maintainer amendment 2026-08-03), both defaulting to the behaviour
+    above so an untouched install's query is byte-identical:
+
+    ``scrape_unqualified`` also admits sources that have not been judged YET. It is an
+    amendment to the close-gate ruling rather than an ordinary setting, and it is narrower
+    than it sounds: it reaches only ENABLED sources (the ~42,600 discovered candidates are
+    disabled and stay out either way), and it NEVER admits a ``disqualified`` source --
+    unqualified means not-yet-judged, disqualified is a verdict, and the re-qualification
+    ladder is how a disqualified source comes back.
+
+    ``scrape_app_provided_only`` narrows to the sources that shipped with the app, by their
+    seed-time provenance tag. The definition lives in ``catalog.provenance_scope`` because
+    the obvious version of it is wrong: ``via:wikidata`` (the committed catalogue) and
+    ``via:wikidata-discovery`` (what the running app found) differ by a suffix, so a
+    substring match silently captures both and defeats the toggle.
     """
     from sqlalchemy import or_
 
-    from src.catalog.qualification import STATUS_QUALIFIED
+    from src.catalog.provenance_scope import app_provided_filter
+    from src.catalog.qualification import STATUS_DISQUALIFIED, STATUS_QUALIFIED
     from src.database.models import Source
 
-    q = session.query(Source).filter_by(enabled=True, status=STATUS_QUALIFIED)
+    q = session.query(Source).filter_by(enabled=True)
+    if getattr(settings, "scrape_unqualified", False):
+        # Everything except a source that was JUDGED and found wanting. Stated as an
+        # explicit exclusion of the verdict rather than an inclusion list, so a status
+        # added later cannot silently become scrapeable.
+        q = q.filter(Source.status != STATUS_DISQUALIFIED)
+    else:
+        q = q.filter(Source.status == STATUS_QUALIFIED)
+    if getattr(settings, "scrape_app_provided_only", False):
+        q = q.filter(app_provided_filter(Source.tags))
     if settings.select_languages:
         q = q.filter(Source.language.in_(settings.select_languages))
     if settings.select_source_types:
