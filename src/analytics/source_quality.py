@@ -82,6 +82,9 @@ FURNITURE_SHARE_THRESHOLD = 0.34  # a source is flagged if >= this share of its 
 _HIGH_LINK_DENSITY = 0.05        # external links per word
 _VERY_SHORT_WORDS = 40
 CHEAP_SIGNAL_CAP_PER_SOURCE = 3  # so one link-heavy source cannot flood the sample
+# Selectors that pick articles BY the pre-label signals. Their hit rate against a pre-label
+# proxy is circular, so `selector_enrichment` publishes the rate and refuses the ratio.
+_SELF_SELECTING_ON_PRE_LABEL = frozenset({"cheap_signal"})
 
 # The 4 count-only dimensions and which tail is the suspicious one (for the "Share Now" pathology).
 # high mention_density + low type_token + high single_kw_dominance TOGETHER = furniture repetition.
@@ -539,9 +542,19 @@ def selector_enrichment(
     in the artifact that ships it. "Hit" = the article carried at least one heuristic pre-label,
     which is a cheap proxy for "worth a human's attention", never a verdict.
 
-    A selector with no sampled articles reports ``rate: None`` and ``enrichment: None`` -- an
-    unmeasured selector must not read as one that scored zero, and dividing by a control that
-    sampled nothing would fabricate a ratio.
+    ⚠ A SELECTOR THAT SELECTS ON THE HIT CRITERION HAS NO ENRICHMENT TO REPORT, and reporting
+    one anyway is the same defect this whole report was cleaned up to remove. Caught on the
+    operator's five 2026-08-03 exports: ``cheap_signal`` picks articles BECAUSE they are
+    ``very_short`` or ``high_link_density``, and ``_pre_label`` labels exactly those, so its
+    rate came back 1.0 in all five runs and its "enrichment" read 7.8x-20x over the control.
+    That is not a measurement of anything -- it is the selector's own definition restated as a
+    score, and unlike the percentile finding it FLATTERS, which makes it likelier to be
+    believed. So a self-selecting selector reports its rate (still a true fact about the sample)
+    with ``enrichment_over_control: None`` and the reason beside it, exactly as the control
+    itself already did.
+
+    A selector with no sampled articles is ABSENT from this map rather than present at 0% --
+    an unmeasured selector must not read as one that looked and found nothing.
     """
     per: dict[str, dict] = {}
     for rec in sample_records:
@@ -554,10 +567,21 @@ def selector_enrichment(
         d["rate"] = round(d["with_pre_label"] / d["n"], 4) if d["n"] else None
     base = per.get(control, {}).get("rate")
     for name, d in per.items():
-        d["enrichment_over_control"] = (
-            None if (name == control or not base or d["rate"] is None)
-            else round(d["rate"] / base, 3)
-        )
+        if name == control:
+            d["enrichment_over_control"] = None
+            d["no_enrichment_reason"] = "this is the control; it cannot be enriched over itself"
+        elif name in _SELF_SELECTING_ON_PRE_LABEL:
+            d["enrichment_over_control"] = None
+            d["no_enrichment_reason"] = (
+                "this selector picks articles BY the pre-label signals, so its hit rate is its "
+                "own definition rather than a measurement -- an enrichment ratio here would "
+                "flatter it without evidence"
+            )
+        elif not base or d["rate"] is None:
+            d["enrichment_over_control"] = None
+            d["no_enrichment_reason"] = "the control found nothing, so a ratio would be fabricated"
+        else:
+            d["enrichment_over_control"] = round(d["rate"] / base, 3)
     return per
 
 
@@ -775,11 +799,15 @@ def _readme() -> bytes:
         "most of the discriminating power (`high_link_density` 415 of 675 label hits) while the "
         "expensive selector returned 17.2% against the control's 10.5%.\n"
         "4. `source_fingerprint` — RETIRED (see `observed.cross_source_df.source_flag`). It "
-        "selected nothing in either field run because the DF cut sat above every observation, and "
-        "lowering it would classify `government`/`world`/`data` as furniture. Left in the "
-        "vocabulary so its n=0 stays visible in `selector_enrichment` rather than disappearing.\n\n"
+        "selected nothing in the field runs because the DF cut sat above every observation, and "
+        "lowering it would classify `government`/`world`/`state` as furniture. Because it selects "
+        "nothing it is ABSENT from `selector_enrichment` rather than present at 0% — absent means "
+        "'never ran', which is the honest reading; `observed.cross_source_df` is where its "
+        "retirement is recorded.\n\n"
         "`selector_enrichment` reports each selector's hit-rate against the control, so a "
-        "selector that costs the review budget and barely beats chance has to say so here.\n\n"
+        "selector that costs the review budget and barely beats chance has to say so here. "
+        "`cheap_signal` reports a rate but NO enrichment: it selects on the very signals the "
+        "pre-label records, so a ratio would restate its own definition as a score.\n\n"
         "## The analysis this enables\n"
         "- **Base rate**: read the `random_per_source` articles — what fraction are non-articles? "
         "That is the corpus's true bad-item rate (unbiased).\n"
