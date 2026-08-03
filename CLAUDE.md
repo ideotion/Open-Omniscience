@@ -472,6 +472,22 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     type-checks CHANGED FILES via their real import closure even without project
     deps. The ratchet is a BLOCKING gate; `py_compile` + `ruff F,B` do NOT catch
     type errors. Run `python3 -m mypy <changed.py>` on every Python change.
+    **USE THE PINNED VERSION, AND CHECK THAT IT ACTUALLY CHECKED (2026-08-03, the
+    #853 ratchet breach):** the ambient `/root/.local/bin/mypy` is 1.19, which hits
+    `src/database/write.py:147: Expected '('` on this tree's py3.13 syntax and then
+    prints **"errors prevented further checking"** — it reports 3 stub/syntax errors,
+    says nothing about your files, and exits. That reads exactly like a clean run of a
+    file with no type errors, so a pre-push check can pass while checking NOTHING; two
+    real errors in a brand-new module reached `main` that way, and because the
+    maintainer fast-merges, they breached the ratchet on the default branch and
+    reddened the next PR rather than their own. Install the pyproject-pinned
+    `mypy==2.3.0` into the project venv (`TMPDIR=<repo>/.tmp-pip .venv/bin/python3.13
+    -m pip install mypy==2.3.0 types-PyYAML` — TMPDIR per the recorded pip lesson) and
+    reproduce the CI command verbatim: `python -m mypy src/ | grep -c " error: "`.
+    THE TELL is the count: it must be a number near the baseline, not 3 — a
+    two-digit-smaller count means the run aborted, not that the tree got cleaner.
+    And when the count IS above baseline, diff against a worktree at the merge-base
+    rather than assuming it is yours; the errors may already be on `main`.
   - **CI-only tests + the standalone-repro pattern:** the guarded fetch factory pulls
     in `cryptography` (pyo3 PANIC in the bare sandbox) and the ORM pulls `bleach`
     (often absent) — so endpoint/ORM/fetch tests are CI-only. Prove the ALGORITHM

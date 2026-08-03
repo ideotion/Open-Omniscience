@@ -112,9 +112,11 @@ def _stall_windows(beats: list[dict]) -> list[dict]:
                     f"{len(kid)}/{len(run) - 1} beats measured children; the rate is over "
                     "those beats only, never diluted across the ones that did not"
                 )
-            entry["children_seen"] = max(
-                (b.get("kids_n") for b in run if isinstance(b.get("kids_n"), int)), default=None
-            )
+            # Narrowed into a local first: the isinstance in a generator's `if` does not
+            # reach the value the generator yields, so the old one-liner both called
+            # .get twice and left `int | None` flowing into max().
+            seen = [n for n in (b.get("kids_n") for b in run) if isinstance(n, int)]
+            entry["children_seen"] = max(seen) if seen else None
             # THE distinction the field run turned on. Both readings are "no progress";
             # only one of them is a deadlock, and they need opposite fixes.
             entry["reading"] = (
@@ -178,10 +180,13 @@ def analyse_run(summary: dict, beats: list[dict] | None = None) -> dict:
         "outcome": summary.get("outcome") or ("complete" if summary.get("complete") else "incomplete"),
         "died_in_stage": summary.get("died_in_stage"),
         "stages_top_level_s": accounted,
-        "slowest_stages": sorted(
-            ({"stage": k, "seconds": round(v, 1)} for k, v in top.items()),
-            key=lambda r: -r["seconds"],
-        )[:5],
+        # Sort the (name, seconds) pairs and build the rows after, rather than sorting
+        # built rows on a dict value: `top` is dict[str, float] so the key is a real
+        # float, while a row is dict[str, object] and negating one is unsound.
+        "slowest_stages": [
+            {"stage": k, "seconds": round(v, 1)}
+            for k, v in sorted(top.items(), key=lambda kv: -kv[1])[:5]
+        ],
     }
 
     if isinstance(elapsed, int | float) and elapsed > 0:
