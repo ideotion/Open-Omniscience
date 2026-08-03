@@ -43,8 +43,17 @@ from sqlalchemy.orm import Session
 
 from src.analytics import queries as q
 from src.analytics.managed import UNSEGMENTED
+from src.catalog.provenance import HAZARD, LAW, NEWSLETTER, STATISTICS, WIKIPEDIA, provenance_of
 from src.database.models import Article, ArticleLink, KeywordMention, Source
 from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS
+
+# Provenance classes a keyword-RATIO audit cannot meaningfully judge (F4, 2026-08-03). These are
+# not scrapes: a hazard record is a provider's own event line, a law document is a statute, a wiki
+# page is an encyclopedia article, a newsletter is an email. Their ratios are legitimately unlike
+# journalism, so measuring them against a news cohort describes the channel, not the extraction.
+# Reused from PROVENANCE_CLASSES rather than re-listed, so a new class must be triaged here.
+# `cited` and `web` are deliberately absent -- both ARE scraped web articles.
+_AUDIT_EXEMPT_CLASSES = frozenset({HAZARD, LAW, WIKIPEDIA, NEWSLETTER, STATISTICS})
 
 SCHEMA = "oo-source-quality-2"  # v2: unsegmented languages are NOT-ASSESSED (all 4 metrics N/A)
 
@@ -134,12 +143,57 @@ def compute_metrics(
     }
 
 
-def collect_article_stats(session: Session) -> list[ArticleStat]:
+def audited_source_ids(sources: dict[int, Source]) -> tuple[set[int], dict[str, int]]:
+    """Split sources into the ones a keyword-ratio audit can meaningfully judge, and the ones
+    it cannot. Returns ``(audited_ids, excluded_counts_by_class)``.
+
+    F4, 2026-08-03. The 100%-outlier-rate cohort in both field exports was led by the app's
+    OWN synthetic sources: 194 articles from ``hazard.usgs.local`` (a hazard "article" is
+    "M 5.0 - Kermadec Islands region" -- word_count None, language unknown), plus the
+    ``law.*.local`` documents. Nothing here is a scrape at all, so "does this source's
+    extraction look valid?" is not a question the ratios can answer about them.
+
+    The cost was never a wrong verdict -- those sources carry ZERO pathological articles, so
+    nothing would have auto-demoted them, and this fix does not change any status. The cost is
+    that 194 non-prose records sat inside the ``unknown`` language cohort (n=3,698) shaping
+    everyone ELSE's p10/p90 baseline, and that the report described them as pathological-looking
+    sources.
+
+    The exemption is BY PROVENANCE CLASS -- an asserted fact about the ingest channel -- never
+    by "looks unusual". A legitimately terse real news source stays fully audited, which is the
+    property that keeps this from becoming a way to excuse bad scrapes.
+    """
+    audited: set[int] = set()
+    excluded: dict[str, int] = {}
+    for sid, src in sources.items():
+        cls = provenance_of(src.domain if src else None, src.source_type if src else None)
+        if cls in _AUDIT_EXEMPT_CLASSES:
+            excluded[cls] = excluded.get(cls, 0) + 1
+        else:
+            audited.add(int(sid))
+    return audited, excluded
+
+
+def collect_article_stats(
+    session: Session, *, audited_ids: set[int] | None = None,
+) -> list[ArticleStat]:
     """Whole-corpus, COUNT-ONLY. One pass over the small article columns (word_count, language,
     source_id — the article_length_report pattern; the codec decrypts each page once, the
     documented diagnostic cost) joined in Python with per-article keyword aggregates from the
     mention tables (SUM(count), COUNT distinct keywords, MAX(count)) — Article.content is NEVER
-    read here."""
+    read here.
+
+    QUARANTINED ARTICLES ARE EXCLUDED (F4, 2026-08-03). The article gate and the source gate
+    were two independent passes over the same articles, and this one applied no quarantine
+    filter at all -- so an article the article gate had already condemned as a non-article
+    still counted toward its SOURCE's verdict, and toward the cohort baseline every other
+    source is judged against. ``_query_articles`` has always applied this filter; the auditor
+    simply never did.
+
+    ``audited_ids``, when given, restricts the pass to sources a ratio audit can judge (see
+    ``audited_source_ids``). ``None`` keeps every source, so a caller that has not resolved
+    provenance still gets the old behaviour rather than an empty report.
+    """
     # per-article keyword aggregates (one indexed group-by over keyword_mentions; no content).
     agg: dict[int, tuple[int, int, int]] = {}
     for aid, total, distinct, mx in (
@@ -155,7 +209,9 @@ def collect_article_stats(session: Session) -> list[ArticleStat]:
     stats: list[ArticleStat] = []
     for aid, wc, lang, sid in session.query(
         Article.id, Article.word_count, Article.language, Article.source_id
-    ):
+    ).filter(Article.quarantined.isnot(True)):
+        if audited_ids is not None and (sid is None or int(sid) not in audited_ids):
+            continue
         total, distinct, mx = agg.get(int(aid), (0, 0, 0))
         base = _base_lang(lang)
         unseg = base in UNSEGMENTED
@@ -195,6 +251,79 @@ def robust_stats(values: Sequence[float | None]) -> dict:
     devs = sorted(abs(v - median) for v in vals)
     mad = round(devs[len(devs) // 2] if len(devs) % 2 else (devs[len(devs) // 2 - 1] + devs[len(devs) // 2]) / 2.0, 5)
     return {"n": n, "median": median, "mad": mad, "p10": _pct(10), "p50": median, "p90": _pct(90), "p99": _pct(99)}
+
+
+def pathology_rate_by_source(
+    outliers: Sequence[dict], source_to_articles: dict[int, list[int]],
+) -> dict[int, float]:
+    """Per source, the fraction of its articles carrying the furniture-repetition conjunction.
+
+    The export emitted only the per-ARTICLE boolean, so the quantity the admission gate
+    actually decides on could not be read off the report at all -- you could see that 24
+    articles were pathological without being able to see whether any SOURCE was anywhere
+    near the floor that would disqualify it. This is that distribution.
+
+    A source with no pathological article is included at 0.0 on purpose: the shape of the
+    distribution is the finding, and dropping the zeros would make a corpus where nothing
+    is wrong look identical to one that was never measured.
+    """
+    counts: dict[int, int] = {}
+    for rec in outliers:
+        if rec["pathology_furniture_repetition"] and rec["source_id"] is not None:
+            sid = int(rec["source_id"])
+            counts[sid] = counts.get(sid, 0) + 1
+    return {
+        sid: round(counts.get(sid, 0) / len(ids), 6)
+        for sid, ids in source_to_articles.items() if ids
+    }
+
+
+def build_observed(
+    *, cross_df: dict[str, int], furniture_ubiquity_cut: int, outliers: Sequence[dict],
+    source_to_articles: dict[int, list[int]],
+) -> dict:
+    """The range each threshold was meant to cut, printed beside the threshold.
+
+    Pure and injected-input only, so it is testable without a corpus. Every entry answers
+    one question a reader of the old report could not answer: is this threshold reachable
+    by anything in this corpus at all?
+    """
+    df_values = sorted(cross_df.values())
+    df_stats = robust_stats([float(v) for v in df_values])
+    df_max = float(df_values[-1]) if df_values else 0.0
+
+    rates = pathology_rate_by_source(outliers, source_to_articles)
+    rate_values = sorted(rates.values())
+    rate_stats = robust_stats(rate_values)
+    rate_max = rate_values[-1] if rate_values else 0.0
+    worst = sorted(rates.items(), key=lambda kv: (-kv[1], kv[0]))[:10]
+
+    return {
+        "cross_source_df": {
+            "max": df_max, "p90": df_stats["p90"], "p99": df_stats["p99"],
+            "n_terms": df_stats["n"],
+            "threshold": furniture_ubiquity_cut,
+            "reachable": bool(df_values) and df_max >= furniture_ubiquity_cut,
+            "note": (
+                "the furniture detector fires on a term topping >= `threshold` sources. If "
+                "`reachable` is false NO term in this corpus can be classified furniture, so "
+                "`furniture_flagged_sources: 0` means the detector never ran, not that the "
+                "corpus is clean."
+            ),
+        },
+        "pathology_rate_per_source": {
+            "max": rate_max, "p90": rate_stats["p90"], "p99": rate_stats["p99"],
+            "n_sources": rate_stats["n"],
+            "worst_sources": [{"source_id": sid, "pathology_rate": v} for sid, v in worst if v > 0],
+            "note": (
+                "the per-source fraction of articles with the furniture-repetition conjunction. "
+                "This is the ONLY quantity that can disqualify a source, so its observed range "
+                "against the audit's absolute floor is what says whether the admission gate can "
+                "act on this corpus at all. Zeros are included -- an all-zero distribution is a "
+                "finding, not an absence of data."
+            ),
+        },
+    }
 
 
 def build_baselines(stats: list[ArticleStat], *, floor: int = COHORT_FLOOR) -> dict:
@@ -484,7 +613,21 @@ def _readme() -> bytes:
         "only for the sampled subset.\n\n"
         "## Files\n"
         "- `manifest.json` — generated_at, corpus totals, sources sampled vs skipped, config flags, "
-        "method per metric, provenance (deduced · not a verdict).\n"
+        "method per metric, provenance (deduced · not a verdict), and `observed`.\n\n"
+        "### Read `pathological_articles`, not `outlier_sampling_frame`\n"
+        "`pathological_articles` is the finding: the CONJUNCTION (high mention_density AND low "
+        "type_token AND high single_kw_dominance) — the nav-DOM 'Share Now ×30' signature, and the "
+        "only article-level quantity that feeds an extraction-failure verdict.\n\n"
+        "`outlier_sampling_frame` counts articles in the tail of at least ONE of the 4 ratios at "
+        "p10/p90. That is ~10% of the corpus per tail BY THE DEFINITION OF A PERCENTILE, so it lands "
+        "near the same fraction in every language regardless of quality — it cannot vary with the "
+        "data, and it is not a measurement of anything. It is the FRAME the review sample is drawn "
+        "from, which is a real and useful job. It was called `flagged_articles` until 2026-08-03, "
+        "which read as a finding.\n\n"
+        "`observed` prints the range each threshold was meant to cut, beside the threshold: if "
+        "`cross_source_df.reachable` is false, no term in this corpus can be classified furniture, "
+        "so a zero furniture count means the detector never ran rather than that nothing is wrong. "
+        "`pathology_rate_per_source` is the distribution the admission gate actually decides on.\n"
         "- `per_language_health.json` — per language: n, the 4 metric distributions, % flagged, and "
         "whether the language was `assessed`. UNSEGMENTED languages (zh/ja/th) are NOT ASSESSED "
         "(`pct_flagged: null`) — all four keyword-stat metrics are unreliable without a segmenter, "
@@ -534,14 +677,35 @@ def build_quality_report_files(
             Source.domain.in_(NEWSLETTER_SOURCE_DOMAINS)
         )
     }
-    # article ids per source (count-only group-by, no content)
+    # F4 (2026-08-03): the audit's scope, resolved once and applied to EVERY collector below,
+    # so the exemption and the quarantine filter cannot drift between layers.
+    audited_ids, excluded_by_class = audited_source_ids(sources)
+
+    # article ids per source (count-only group-by, no content). Quarantined articles are
+    # excluded for the same reason as in collect_article_stats: an article the article gate
+    # condemned must not count toward its source's verdict, nor seed the review sample.
+    #
+    # Exempt-class sources STAY in this map on purpose. The exemption is from the RATIO
+    # COHORTS -- the thing that was measurably distorted -- not from the bundle: the review
+    # sample is how an analyst sees what each channel actually looks like, and the random
+    # control is only a control if it can reach everything. What changes is that these
+    # sources are no longer JUDGED by ratios built for journalism.
     source_to_articles: dict[int, list[int]] = {}
-    for aid, sid in session.query(Article.id, Article.source_id):
+    quarantined_excluded = 0
+    for aid, sid, quarantined in session.query(
+        Article.id, Article.source_id, Article.quarantined
+    ):
+        if quarantined:
+            quarantined_excluded += 1
+            continue
         if sid is not None:
             source_to_articles.setdefault(int(sid), []).append(int(aid))
+    audited_to_articles = {
+        sid: ids for sid, ids in source_to_articles.items() if sid in audited_ids
+    }
 
-    # Layer A
-    stats = collect_article_stats(session)
+    # Layer A — the ratio cohorts, over audited sources only.
+    stats = collect_article_stats(session, audited_ids=audited_ids)
     baselines = build_baselines(stats, floor=floor)
     outliers = flag_outliers(stats, baselines, floor=floor)
     stats_by_source: dict[int, list[ArticleStat]] = {}
@@ -556,7 +720,10 @@ def build_quality_report_files(
     per_source_top: dict[int, list[str]] = {}
     per_source_top_full: dict[int, list[dict]] = {}
     fingerprint_sampled: dict[int, bool] = {}
-    for sid, ids in source_to_articles.items():
+    # Audited sources only: a hazard feed's top keywords are legitimately "earthquake,
+    # magnitude, region" every time, so letting it into the cross-source DF would teach the
+    # furniture detector that real vocabulary is furniture.
+    for sid, ids in audited_to_articles.items():
         if len(ids) > FINGERPRINT_SAMPLE_CAP:
             fp_ids = sorted(random.Random(seed + sid).sample(ids, FINGERPRINT_SAMPLE_CAP))
             fingerprint_sampled[sid] = True
@@ -589,6 +756,16 @@ def build_quality_report_files(
     outliers_by_source: dict[int | None, list[dict]] = {}
     for rec in outliers:
         outliers_by_source.setdefault(rec["source_id"], []).append(rec)
+
+    n_pathological = sum(1 for r in outliers if r["pathology_furniture_repetition"])
+    observed = build_observed(
+        cross_df=cross_df,
+        furniture_ubiquity_cut=furniture_ubiquity_cut,
+        outliers=outliers,
+        # The rate distribution is over AUDITED sources: an exempt source's 0.0 would pad the
+        # distribution with sources that were never eligible to score anything else.
+        source_to_articles=audited_to_articles,
+    )
 
     per_source_keywords: list[dict] = []
     per_source_summary: list[dict] = []
@@ -625,8 +802,18 @@ def build_quality_report_files(
             "enabled": bool(src.enabled) if src and src.enabled is not None else None,
             "is_newsletter": sid in newsletter_ids,
             "article_count": len(ids),
-            "outlier_count": len(src_outliers),
-            "outlier_rate": round(len(src_outliers) / len(ids), 4) if ids else 0.0,
+            # F4: an exempt source is REPORTED but not ratio-judged, and says which it is.
+            # A zero outlier_rate that means "not measured" must not read like a clean bill
+            # of health -- that is the same missing-vs-zero confusion the exemption exists to
+            # end, so the counts are null rather than 0 when nothing was assessed.
+            "ratio_audited": sid in audited_ids,
+            "provenance_class": provenance_of(
+                src.domain if src else None, src.source_type if src else None
+            ),
+            "outlier_count": len(src_outliers) if sid in audited_ids else None,
+            "outlier_rate": (
+                round(len(src_outliers) / len(ids), 4) if (ids and sid in audited_ids) else None
+            ),
             "dominant_outlier_kind": dominant,
             "sampled_articles": [
                 {"article_id": r["article_id"], "selection_method": r["selection_method"]}
@@ -669,11 +856,54 @@ def build_quality_report_files(
             "sources_with_articles": len(source_to_articles),
             "sources_sampled_random": len(random_pick),
             "sources_skipped_zero_articles": skipped,
-            "articles": len(stats),
-            "flagged_articles": len(outliers),
+            # `articles` stays the corpus total a reader expects; the ratio audit's own
+            # denominator is reported beside it rather than substituted for it. Printing only
+            # the audited count under the name "articles" would be the same missing-vs-zero
+            # confusion the exemption exists to end -- the reader could not tell a smaller
+            # corpus from a narrower audit.
+            "articles": sum(len(ids) for ids in source_to_articles.values()),
+            "articles_ratio_audited": len(stats),
+            # THE FINDING. The conjunction (high mention_density AND low type_token AND high
+            # single_kw_dominance) is the actual nav-DOM "Share Now x30" signature, and it is
+            # the ONLY article-level quantity that feeds an extraction-failure verdict. On the
+            # operator's 2026-08-03 corpus it was 24 of 34,263 -- and it was buried inside the
+            # number below rather than reported.
+            "pathological_articles": n_pathological,
+            # RENAMED 2026-08-03 from `flagged_articles`, which read as a finding and is not one.
+            # It counts articles in the tail of at least one of 4 ratios, at p10/p90 -- so ~10%
+            # of the corpus per tail BY THE DEFINITION OF A PERCENTILE. Measured across both
+            # field exports, all eight buckets landed within 2% of each other and the rate was
+            # ~42% in EVERY language from n=270 to n=21,343. A real quality signal varies with
+            # the data; this cannot, because it is a restatement of "10% of things are in the
+            # top decile". The number is not wrong, it is EMPTY -- and it is genuinely useful
+            # as what it actually is: the frame the review sample is drawn from.
+            "outlier_sampling_frame": len(outliers),
             "furniture_flagged_sources": len(flagged_sources),
             "sampled_articles": len(sample_records),
         },
+        # WHAT THIS AUDIT DELIBERATELY DID NOT JUDGE (F4, 2026-08-03). Counted rather than
+        # silently dropped: an exemption nobody can see is indistinguishable from a gap.
+        "excluded_from_audit": {
+            "sources_by_provenance_class": excluded_by_class,
+            "quarantined_articles": quarantined_excluded,
+            "note": (
+                "sources whose provenance class is not a scraped web article (hazard, law, "
+                "wikipedia, newsletter, statistics) are exempt from the keyword-ratio cohorts: "
+                "their ratios are legitimately unlike journalism, so measuring them against a "
+                "news cohort describes the CHANNEL rather than the extraction, and it distorts "
+                "the baseline every other source is judged against. Quarantined articles are "
+                "excluded because the article gate already condemned them -- counting them "
+                "toward their source's verdict would let one gate's finding bias the other's. "
+                "Neither exclusion changes any source's status."
+            ),
+        },
+        # WHAT THE DATA ACTUALLY RANGED OVER (2026-08-03). Every threshold in `config` was
+        # printed without the distribution it was meant to cut, so a reader could not tell that
+        # `furniture_ubiquity_cut: 137` sits above every observation in the corpus without
+        # recomputing it from a 5,484-line file. A threshold no observation can reach should say
+        # so in the artifact that reports it -- that is what turns the next export into a
+        # measurement rather than a re-run.
+        "observed": observed,
         "config": {
             "seed": seed, "cohort_floor": floor, "tail_high_p": TAIL_HIGH_P, "tail_low_p": TAIL_LOW_P,
             "text_head_chars": TEXT_HEAD_CHARS, "top_keywords": TOP_KEYWORDS,
