@@ -2380,5 +2380,7 @@
   "Periods with no data are drawn as gaps, never as zero.": "没有数据的时段画成空缺，而不是零。",
   "No series to show yet.": "暂无可显示的序列。",
   "Panels with no data, not shown: {n}": "无数据、未显示的面板：{n}",
-  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "所有面板共用同一条纵轴刻度，因此可以直接对比——数据密集时画线，稀疏时画柱（并标出 n），绝不插值成曲线；只有计数，没有评分。"
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "所有面板共用同一条纵轴刻度，因此可以直接对比——数据密集时画线，稀疏时画柱（并标出 n），绝不插值成曲线；只有计数，没有评分。",
+  "Indexing continues in the background. The number still to index could not be read.": "索引在后台继续进行。无法读取仍需索引的文章数量。",
+  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "索引在后台继续进行：仍有 {n} 篇文章待索引。在完成之前，它们没有关键词，也不会出现在分析中。"
 }

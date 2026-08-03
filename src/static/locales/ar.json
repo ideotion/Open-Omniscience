@@ -2380,5 +2380,7 @@
   "Periods with no data are drawn as gaps, never as zero.": "تُرسم الفترات الخالية من البيانات فجوات، لا أصفاراً.",
   "No series to show yet.": "لا توجد سلاسل لعرضها بعد.",
   "Panels with no data, not shown: {n}": "لوحات بلا بيانات، غير معروضة: {n}",
-  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "تتشارك جميع اللوحات مقياساً رأسياً واحداً حتى تكون قابلة للمقارنة — خط عند كثافة البيانات، وأعمدة عند ندرتها (مع بيان n)، ولا منحنى مُستكمَل أبداً؛ أعداد فقط، بلا أي تقييم."
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "تتشارك جميع اللوحات مقياساً رأسياً واحداً حتى تكون قابلة للمقارنة — خط عند كثافة البيانات، وأعمدة عند ندرتها (مع بيان n)، ولا منحنى مُستكمَل أبداً؛ أعداد فقط، بلا أي تقييم.",
+  "Indexing continues in the background. The number still to index could not be read.": "تستمر الفهرسة في الخلفية. تعذّرت قراءة عدد المقالات المتبقية للفهرسة.",
+  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "تستمر الفهرسة في الخلفية: {n} مقال(ات) متبقية للفهرسة. حتى تنتهي، لا تحمل كلمات مفتاحية وتغيب عن التحليلات."
 }

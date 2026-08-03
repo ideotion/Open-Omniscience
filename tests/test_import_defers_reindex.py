@@ -198,3 +198,45 @@ def test_the_stages_after_the_reindex_do_not_depend_on_it(stage):
     assert f'\n        with timings.stage("{stage}")' in body, (
         f"{stage} must run whether or not the re-index did"
     )
+
+
+def test_the_deferral_is_VISIBLE_in_the_import_summary():
+    """The ruling says the re-index is "AUTONOMOUS + VISIBLE". Autonomous shipped with
+    the hand-off; visible is this.
+
+    Without it, deferring would trade a visible three-hour wait for an INVISIBLE
+    incomplete corpus -- the report would be honest and nobody would read it. The
+    summary states it, with the real count, and says an unreadable backlog is
+    unreadable rather than showing 0.
+    """
+    from pathlib import Path
+
+    app = Path("src/static/app.js").read_text(encoding="utf-8")
+    fn = app.split("function _renderImportSummary", 1)[1].split("\n    function ", 1)[0]
+
+    assert "reindex_deferred" in fn, "the summary must read the report's own deferral block"
+    assert "indexingLine" in fn and "+ indexingLine +" in fn, "…and actually render it"
+    assert "card-caveat" in fn, "it is a caveat about corpus completeness, styled as one"
+    # The unreadable branch must exist and must NOT fall through to a zero.
+    assert "could not be read" in fn, (
+        "'could not read the backlog' and 'nothing pending' must not look alike"
+    )
+
+
+def test_both_visible_strings_ship_in_every_locale():
+    """A caveat that only exists in English is not a caveat for most of the app's
+    users. Every consent/caveat string ships x12."""
+    import json
+    from pathlib import Path
+
+    needed = [
+        "Indexing continues in the background. The number still to index could not be read.",
+        "Indexing continues in the background: {n} article(s) still to index. Until it "
+        "finishes they carry no keywords and are absent from analytics.",
+    ]
+    files = sorted(Path("src/static/locales").glob("*.json"))
+    assert len(files) == 12, f"expected 12 locales, found {len(files)}"
+    for lf in files:
+        data = json.loads(lf.read_text(encoding="utf-8"))
+        for key in needed:
+            assert key in data, f"{lf.name} is missing: {key[:50]}…"

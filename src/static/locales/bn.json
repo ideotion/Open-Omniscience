@@ -2380,5 +2380,7 @@
   "Periods with no data are drawn as gaps, never as zero.": "তথ্যহীন সময়কাল ফাঁক হিসেবে আঁকা হয়, শূন্য হিসেবে কখনও নয়।",
   "No series to show yet.": "দেখানোর মতো কোনো সিরিজ এখনও নেই।",
   "Panels with no data, not shown: {n}": "তথ্যহীন প্যানেল, দেখানো হয়নি: {n}",
-  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "সব প্যানেল একই উল্লম্ব স্কেল ব্যবহার করে, তাই সেগুলো সরাসরি তুলনীয় — ঘন তথ্যে রেখা, বিরল তথ্যে দণ্ড (n দেখানো হয়), কখনও অন্তর্বেশিত বক্ররেখা নয়; কেবল গণনা, কোনো স্কোর নেই।"
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "সব প্যানেল একই উল্লম্ব স্কেল ব্যবহার করে, তাই সেগুলো সরাসরি তুলনীয় — ঘন তথ্যে রেখা, বিরল তথ্যে দণ্ড (n দেখানো হয়), কখনও অন্তর্বেশিত বক্ররেখা নয়; কেবল গণনা, কোনো স্কোর নেই।",
+  "Indexing continues in the background. The number still to index could not be read.": "ইনডেক্সিং পটভূমিতে চলছে। এখনও ইনডেক্স করার বাকি নিবন্ধের সংখ্যা পড়া যায়নি।",
+  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "ইনডেক্সিং পটভূমিতে চলছে: {n}টি নিবন্ধ বাকি। শেষ না হওয়া পর্যন্ত সেগুলিতে কোনও কীওয়ার্ড থাকবে না এবং বিশ্লেষণে অনুপস্থিত থাকবে।"
 }

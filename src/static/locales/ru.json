@@ -2380,5 +2380,7 @@
   "Periods with no data are drawn as gaps, never as zero.": "Периоды без данных рисуются как пробелы, а не как нули.",
   "No series to show yet.": "Пока нет рядов для отображения.",
   "Panels with no data, not shown: {n}": "Панели без данных, не показаны: {n}",
-  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "Все панели используют одну вертикальную шкалу, поэтому их можно сравнивать — линия при плотных данных, столбцы при разреженных (n указано), никогда интерполированная кривая; только подсчёты, без оценок."
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score.": "Все панели используют одну вертикальную шкалу, поэтому их можно сравнивать — линия при плотных данных, столбцы при разреженных (n указано), никогда интерполированная кривая; только подсчёты, без оценок.",
+  "Indexing continues in the background. The number still to index could not be read.": "Индексация продолжается в фоновом режиме. Не удалось прочитать количество статей, ожидающих индексации.",
+  "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "Индексация продолжается в фоновом режиме: осталось проиндексировать {n} статей. До её завершения они не имеют ключевых слов и отсутствуют в аналитике."
 }
