@@ -166,6 +166,117 @@ re-run.
 
 ---
 
+## 1b. The qualification engine gets its own Advanced-settings section (maintainer, 2026-08-03)
+
+> "The qualification engine should have a dedicated section in the advanced settings, and users
+> should be able to see and tweak how sources are qualified, and to toggle the source qualification
+> process on or off."
+
+### What exists today (verified against the tree, do not re-derive)
+
+- **The on/off switch already exists in the backend and has no UI.**
+  `SchedulerSettings.qualification_per_pass` (`src/scheduler/settings.py:103`, default `5`, coerced
+  to `0..100` at `:307`) — its own comment says "0 disables the ride-along". It is writable through
+  `PUT /api/scheduler/config` (`src/api/scheduler.py:60`) and is read at `runner.py:1054`/`:1180`.
+  Nothing in `index.html` or `app.js` exposes it. So the toggle is a WIRING job, not a new mechanism.
+- **The criteria are module constants and are invisible.** `source_audit.py`:
+  `MIN_SOURCE_ARTICLES=20` (:37), `SOURCE_COHORT_FLOOR=8` (:38), `TAIL_P=90` (:40),
+  `PATHOLOGY_ABS_FLOOR=0.5` (:48), `_MIN_PATHOLOGY_ARTICLES=5` (:71). `qualification.py`:
+  `TRIAL_MAX_ITEMS=5` (:74), `TRIAL_MIN_ARTICLES=1` (:77), `_LADDER_CAP_MONTHS=6` (:86).
+  None is a setting; none is displayed anywhere.
+- **The five criteria are already declared, with descriptions.** `source_audit.CRITERIA` (:76)
+  carries `name` / `bad` direction / `extraction_failure` flag / a plain-language `desc` for
+  `outlier_rate`, `pathology_rate`, `furniture_share`, `language_mismatch_rate`,
+  `short_article_rate`. **The panel renders this list — it does not restate it in HTML**, or the two
+  drift and the UI starts describing criteria the engine no longer applies.
+- **There is a small existing panel to absorb**, not duplicate: Advanced → Sources currently holds a
+  "Source qualification" section (`index.html:2072`) with a status line and the
+  "Qualify the backlog" button. Move it into the new section; never leave two.
+
+### The grammar to reuse (do NOT invent a second one)
+
+`src/briefing/catalog.py` already shipped exactly this for Leads under the same maintainer ruling
+("every tunable carries a documented min/max SAFE RANGE stated visibly — never a silent clamp"):
+a frozen `Tunable(key, label, default, lo, hi, impact, kind, unit, floor_reason)` plus
+`clamp_settings()` which **returns the adjustments it made** so the caller can show them. Add a
+`QUALIFICATION_TUNABLES` registry in the same shape and reuse `clamp_settings`; the Cards panel is
+the rendering reference.
+
+`floor_reason` is the load-bearing field here. Several of these bounds are not taste, and the panel
+must say so beside the control:
+
+| Tunable | Default | Suggested range | `floor_reason` |
+|---|---|---|---|
+| `qualification_per_pass` | 5 | 0–100, **0 = off** | none — a genuine off switch |
+| `min_source_articles` | 20 | 5–200 | below ~5 a rate is one article, not a signature |
+| `source_cohort_floor` | 8 | 5–50 | a cohort this thin gives no usable baseline, so the soft criteria stay honestly unflaggable |
+| `tail_p` | 90 | 80–99 | **lowering it widens the tail mechanically** — see §1 F1; this control must state that the flag count is a percentile definition, not a quality measure |
+| `pathology_abs_floor` | 0.5 | 0.05–1.0 | the only criterion that can DISQUALIFY. §0 measures the whole corpus below it; changing it changes what "broken" means, so the label says that outright |
+| `min_pathology_articles` | 5 | 2–50 | a rate cannot tell 1-in-1,992 from 600-in-1,200; this is the raw-count guard |
+| `trial_max_items` | 5 | 1–20 | each item is a real network fetch |
+| `ladder_cap_months` | 6 | 1–24 | the cap **guarantees** a disqualified source is re-checked; it may be shortened, never removed |
+
+**Two hard fences on the tuning surface:**
+
+1. **A tunable may make the gate STRICTER without limit; it may never let the gate claim more than
+   the evidence supports.** Same rule the Leads catalog states in its own module docstring. Concretely:
+   `min_pathology_articles` has no "0", and `ladder_cap_months` has no "never".
+2. **No tunable may turn a soft criterion into a disqualifier.** `derive_status`'s cap — style-ambiguous
+   signals never exceed `watch` — is load-bearing and is NOT exposed. If a future session wants that
+   configurable it is a maintainer ruling, not a settings row.
+
+### What the section shows
+
+`<details class="adv-sec" data-adv="qualification">` in `index.html` (the sixth such section;
+the five existing ones are at :1936/:2065/:2150/:2173/:2283). **Loaders fire on section EXPAND, not
+on subtab select** — the established Advanced-tab rule, because this reads source-scale data.
+
+1. **The toggle**, first and unmissable: qualification on/off, writing `qualification_per_pass`
+   (0 ⇄ the last non-zero value, defaulting to 5). State plainly what OFF means — candidates stay
+   unqualified and are never auto-admitted; **nothing is deleted and no existing stamp changes**.
+2. **What qualification is**, in two sentences: a categorical stamp for extraction validity, never a
+   quality score, and never an editorial judgement.
+3. **The criteria**, rendered from `CRITERIA`: each with its `desc`, its bad-tail direction, and a
+   visible badge for the one that carries `extraction_failure: True` — because that is the *only*
+   criterion that can disqualify, and a reader cannot tell that from the list today.
+4. **The tunables**, each with its value, safe range, `impact` line, and `floor_reason` where set.
+   A clamp reports what it changed (`clamp_settings` already returns the notes) — never silently.
+5. **The re-qualification ladder** stated as the fact it is: 1 → 2 → 4 → 6 months, reset on a
+   qualified verdict, and the cap is what guarantees a second chance.
+6. **The current state**, read-only: how many sources are qualified / disqualified / not yet judged,
+   and — per §0 — **how many the current `pathology_abs_floor` could actually disqualify**. On this
+   corpus that number is zero, and the panel saying so is worth more than any control on the page.
+7. The absorbed "Qualify the backlog" button and its status line.
+
+### Backend shape
+
+The tunables need to become real settings before a panel can write them. `qualification_per_pass`
+already is; the other seven are constants. **Thread them as optional parameters with the constant as
+the default** (`flag_criteria` already takes `cohort_floor` / `min_articles` / `tail_p` this way —
+extend that pattern rather than reading settings inside the pure functions). Keep `source_audit`'s
+functions PURE; resolve settings at the call sites (`qualification.evaluate_and_stamp`,
+`qualify_job`, the diagnostics endpoints) so the same code stays testable with explicit values.
+
+Persist in `SchedulerSettings` beside `qualification_per_pass` (one `save_settings` path, one
+`PUT /api/scheduler/config`, `exclude_unset=True` semantics already correct). A new
+`GET /api/sources/qualification/config` returning `{criteria, tunables, current, counts}` lets the
+panel render entirely from the backend's own declarations — no duplicated vocabulary in JS.
+
+### Acceptance
+
+- A source-level test that `qualification_per_pass=0` makes the ride-along a **named skip**, and
+  that no stamp anywhere changes as a result (off is not a re-judgement).
+- A test that every `CRITERIA` entry reaches the config payload, so a criterion added later cannot
+  be silently absent from the panel.
+- A test that the clamp REPORTS (the Cards precedent) — feed an out-of-range value, assert the note.
+- `node --check`, an invariant guard for the new `data-adv="qualification"` section and the absorbed
+  button, and — since this adds visible chrome — every new string keyed ×12 with
+  `scripts/i18n_report.py --min 100` green. Note the gate only scans `index.html`, so any string
+  built in `app.js` needs its key added deliberately (recorded 2026-07-28 finding).
+- BROWSER-UNVERIFIED per fork-3/Q6a: say so in the PR and leave the click-through to the maintainer.
+
+---
+
 ## 2. The work, ordered
 
 Each slice its own commit; the whole set may be one PR. `⚠` = mandatory adversarial skeptic pass
@@ -196,6 +307,10 @@ with the negative-space lens before push.
      candidate — it is the strongest measured discriminator in the whole corpus and it is
      currently only a review hint, never a criterion).
    Ship the measurement, not the new threshold.
+
+6. **⚠ The Advanced-settings section (§1b).** Backend settings first, then the panel. Negative
+   space: turning qualification OFF must not change a single existing stamp, and a clamped value
+   must be reported rather than silently applied — both pinned as tests.
 
 **Explicitly out of scope:** the retroactive quarantine execution (still gated on the maintainer's
 review of the calibration report); the stoplist additions F2 hints at (`read`/`home`/`added` are
