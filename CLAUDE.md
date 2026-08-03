@@ -1706,6 +1706,121 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     lane. Calibrate against the WEAKEST platform observed, not the strongest, and record
     the per-platform measurement beside the constant so the next session does not
     re-derive it.
+  - **A MECHANISM THAT QUIETLY RECORDS A DECISION SUPPRESSES THE SAFETY DEFAULT THAT
+    DECISION OVERRIDES (2026-08-02, the boot-airplane race, PR #846 merged RED then
+    #847):** a field report — "on a new instance the app sometimes stays in airplane
+    mode with no explanation" — was a real race: `_run_startup_upkeep` engages airplane
+    at its tail, on the unlock path in a BACKGROUND THREAD, and a new instance's upkeep
+    is slow enough that the wizard sits on screen throughout it, so an operator who
+    crosses online mid-upkeep has the thread's `activate_kill_switch()` land after their
+    `clear_kill_switch()`. The FIX was right; where it was recorded was not. Setting the
+    crossed-online flag INSIDE `clear_kill_switch()` looked equivalent — clearing the
+    switch *is* going online, surely — but that primitive is ALSO how a caller reaches a
+    KNOWN STATE: `conftest` calls it around every test, and `test_app_boots_in_airplane_
+    mode` calls it itself immediately before booting, precisely to start clean. The boot
+    then declined to engage, and the whole test lane went red. **THE DIRECTION IS THE
+    LESSON:** a mechanism that quietly counts as a decision SUPPRESSES the boot airplane
+    engage — it weakens zero-network boot, the non-negotiable the feature was written to
+    leave untouched — so the tempting repair (reset the flag in `conftest`) would have
+    kept the weakening and hidden the evidence. Separate the two instead:
+    `clear_kill_switch()` records nothing; `note_operator_crossed_online()` records the
+    decision, called from the three surfaces where that is what happened (go-online
+    endpoint, scheduler start, run-now), which were already its only production callers.
+    GENERAL FORM: before folding a state-recording side effect into a primitive, list
+    every caller and ask which of them is making a DECISION and which is merely reaching
+    a STATE; if both exist, the primitive is the wrong home. COROLLARY that is a separate
+    trap: a process-global "has an operator ever done X" flag is correct per-process in
+    production (one boot, one operator) and wrong across a shared test session, where
+    many tests legitimately act as the operator — it needs a per-test reset beside
+    whatever other process-global state the suite already resets.
+  - **`os.environ.pop` IN A TEST IS A SESSION-WIDE EDIT, AND ITS FAILURE SURFACES FAR
+    FROM ITS CAUSE (2026-08-02, the same fix-forward):** `conftest` sets
+    `OO_NO_SCHEDULER=1` once for the whole session; a test that needs production
+    behaviour must borrow it with `monkeypatch.delenv(..., raising=False)`. A bare
+    `os.environ.pop` deletes it for every LATER test too, so every subsequent
+    `TestClient` lifespan takes the production branch — engaging airplane and starting
+    the background scheduler. It presented as EIGHT unrelated "the network kill switch is
+    active" failures in `csv_feeds`, `jobs`, `llm_ollama` and `markets`, none of which
+    had anything to do with the change. WORSE, AND THE PART WORTH KEEPING: the leak had
+    shipped one PR earlier and was INVISIBLE, because the very defect above (the flag set
+    by `clear_kill_switch`) made the boot engage skip anyway — fixing one bug UNMASKED
+    the other, so CI got worse before it got better and the second failure looked like a
+    regression from the fix. When a fix makes a lane fail differently rather than less,
+    suspect an unmasked pre-existing bug before assuming the fix is wrong. A `conftest`
+    guard to fail whichever test leaks the variable was written and DELETED: its teardown
+    races `monkeypatch`'s, so it fired on correct code — a gate that reddens on correct
+    usage is worse than the leak it catches.
+  - **A SELF-LIMITING INSTRUMENT MUST SELF-RECOVER, AND MUST BE CHARGED FOR ITS OWN COST
+    (2026-08-02, the run journal's child-CPU walk):** the beat's per-child CPU sample is
+    the ONLY thing that separates a healthy process pool (parent near-idle) from a wedged
+    one — the module's own docstring says so, and the standing lesson above says it too.
+    It was OFF for the entire phase it exists for. Two independent defects, both in the
+    shape of a reasonable-looking guard: (a) the cost budget was charged against the
+    WHOLE beat, which also reads `/proc/meminfo`, stats the destination filesystem and
+    sizes the WAL — so a slow disk stat retired the child walk for a reason that had
+    nothing to do with it; (b) the stand-down was a ONE-WAY LATCH. In a 19 h field import
+    the walk died at beat 24, during `merging`, because one beat measured 25.9 ms against
+    a 25 ms budget — 0.9 ms over — and all 1,561 following `reindexing` beats carried no
+    child data at all. The constant's own docstring already said "sampled at a reduced
+    cadence"; the code implemented "never again", and nobody had read the two together.
+    RULES: time the expensive part ITSELF and report that time (so the cost is measured,
+    never assumed), and make the stand-down bounded and recovering. Corollary that held
+    up: a backed-off beat must still OMIT the field rather than zero it — `kids_n: 0`
+    reads as "no worker processes", the inverse of what it stands in for.
+  - **`.get(key, 0)` ON A DELIBERATELY-OMITTED FIELD FABRICATES THE MEASUREMENT THE
+    OMISSION EXISTS TO PREVENT (2026-08-02, same investigation, caught before it reached
+    the user):** reading the field bundle, I reported that the process pool had "never
+    spawned a single worker — 0 children across 5,531 beats" and was one step from
+    filing it as the root cause of a 19-hour import. It was my own bug: `kids_n` is
+    ABSENT in those beats and my `.get("kids_n", 0)` invented the zero. The instrument
+    was honest by construction (it omits with a reason rather than zeroing, exactly as
+    its docstring promises) and my reader defeated that honesty in one keystroke. GENERAL
+    FORM: when a payload's contract is "an unmeasurable field is omitted", every consumer
+    must distinguish missing from zero — count key MEMBERSHIP before aggregating, and be
+    suspicious of a striking result that rests on a default argument. The tell here was
+    the strength of the finding: 0 children in 5,531 consecutive samples is too clean for
+    a real system, and that implausibility is what prompted the re-check.
+  - **A BACKSTOP ON ONE PATH IS NOT A BACKSTOP IF THAT PATH HANDS OFF TO AN UNBOUNDED ONE
+    (2026-08-02, the re-index precompute stall):** `precompute_batch`'s fallback comment
+    calls `_POOL_TIMEOUT_S` "the only thing standing between a deadlocked worker and an
+    import that never finishes" — and then, on timeout, hands the whole window to
+    `_serial`, a bare dict comprehension with no bound of any kind, which is also the
+    deliberate small-batch path. Two field imports each stopped advancing at an exact
+    window boundary (9.8 h before recovering; 6 h until killed), burning ~0.75 of a core
+    with the WAL byte-frozen and the write gate free — all three facts saying in-process
+    pure-CPU work — and nothing in 19 h of journal said WHICH ARTICLE, so there was
+    nothing to reproduce from. Python cannot preempt a running C-level regex, so the
+    honest fix is not a timeout it could not honour but a NAME: a watchdog thread that
+    reports the article id, size and position WHILE IT IS STILL RUNNING, plus an
+    after-the-fact line for the recovered case — the two are separate because a killed
+    run never reaches the second and a recovered run is invisible to anything else.
+    GENERAL FORM: when a guarded path degrades to an unguarded one, the guard's stated
+    guarantee is false for the degraded case; check what the fallback inherits.
+  - **A WINDOW'S ORDER CAN BE LOAD-BEARING FOR A RESUME CURSOR THAT COUNTS (2026-08-02,
+    batching the re-index window load):** replacing a per-article `session.get` loop with
+    one `IN (...)` per chunk is a pure perf change — same rows, same bytes through the
+    codec — EXCEPT that an `IN (...)` result set has no guaranteed order, and the caller
+    turns a COUNT back into an id by POSITION: `merge.py`'s `_tracked` stamps
+    `ids[done - 1]` as the last finalised article, and the resume then keeps only
+    `i > watermark`. A window staged in any other order would stamp a watermark ABOVE
+    articles that were never re-indexed, and the ascending resume would skip them
+    permanently — the unbounded invisibility the durable cursor exists to prevent.
+    Nothing pinned it: reversing the load order left all 67 tests in the re-index suites
+    green. GENERAL FORM: before changing how a collection is fetched, find out whether
+    anything downstream indexes into it by position rather than by key — a count-to-id
+    mapping is the signature.
+  - **NEVER RE-SERIALISE A CURATED FILE TO EDIT ONE ENTRY (2026-08-02):** adding a single
+    key to the 12 locale files rewrote all 12 — 27,000 lines changed to carry 12 lines of
+    real content — because they were written back with `json.dump(sort_keys=True)`. The
+    order is not incidental: the files are grouped BY UI SECTION (nav, then home, then
+    settings), which is how they are navigated and reviewed, so the sort destroyed that
+    grouping permanently, buried the one real change, and guaranteed a conflict with any
+    parallel locale work. The maintainer spotted it as "27K lines of code... this seems
+    awkward" before review did. Edit in place (textual insert next to the sibling entry),
+    and when a rewrite has already happened, verify EQUIVALENCE before restoring — parse
+    both sides and assert same keys, same values, only the ordering differs — rather than
+    reverting on faith. No repository script does this, so there was nothing in the tree
+    to fix; the fix is the habit.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD IMPRESSIONS 2026-08-01 — Home-alerts relevance/card system · Home overview subtabs ·
