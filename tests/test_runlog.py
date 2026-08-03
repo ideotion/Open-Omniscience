@@ -39,6 +39,39 @@ def _lines(p):
     return [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines() if x.strip()]
 
 
+def _begin_unsampled(**kw):
+    """Begin a run with the background sampler stopped, for tests that drive
+    ``_beat()`` by hand and assert on beat-COUNTED state.
+
+    ``begin()`` starts a daemon thread looping ``_beat()`` every
+    ``_BEAT_INTERVAL_S``, which the autouse fixture above sets to **0.02 s** --
+    so the sampler fires ~50x/second throughout every test here. Its beats
+    mutate the SAME per-run state, and ``_child_walk_skip`` is a COUNTER
+    decremented once per beat. A test that counts its own explicit beats is
+    therefore racing the sampler for that counter: it wins whenever its loop
+    finishes inside one 20 ms tick, and loses when a tick lands mid-loop --
+    the backoff then appears to end early, or a sampler beat that legitimately
+    exceeds the 25 ms budget trips a backoff the test never asked for.
+
+    Observed as a macOS "Portability observation" failure at
+    ``test_an_expensive_child_walk_backs_off_and_then_COMES_BACK`` on a run
+    whose suite took 878 s, GREEN in the sibling lane on the identical SHA --
+    and live-reproduced by letting the sampler tick between the explicit
+    beats, which ended the backoff at explicit beat 4 of 8.
+
+    Stopping the sampler removes the race; it weakens no assertion. Tests that
+    are ABOUT the sampler (see ``test_the_sampler_keeps_writing_...``) keep
+    using ``runlog.begin`` directly.
+    """
+    rl = runlog.begin(**kw)
+    if rl is not None:
+        rl._stop.set()
+        if rl._sampler is not None:
+            rl._sampler.join(timeout=5)
+            assert not rl._sampler.is_alive(), "the sampler must not outlive this call"
+    return rl
+
+
 # --------------------------------------------------------------------------- #
 #  The forensic contract
 # --------------------------------------------------------------------------- #
@@ -210,7 +243,7 @@ def test_an_expensive_child_walk_backs_off_and_then_COMES_BACK(monkeypatch):
     beats. That inverts the instrument: the re-index is the phase child CPU exists
     to measure, because a healthy process pool leaves the parent near-idle and
     parent CPU alone cannot tell a working pool from a wedged one."""
-    rl = runlog.begin("import", label="x")
+    rl = _begin_unsampled(kind="import", label="x")
     real = runlog._sample_children
     slow = {"on": True}
 
@@ -245,7 +278,7 @@ def test_the_walk_is_charged_for_ITS_cost_not_the_whole_beats(monkeypatch):
     the WAL. Charging the child walk for a slow disk stat retires the one
     measurement that answers "stuck or slow?" for a reason unrelated to it -- which
     is exactly how the field run lost it during `merging`."""
-    rl = runlog.begin("import", label="x")
+    rl = _begin_unsampled(kind="import", label="x")
 
     import psutil as _ps
 
