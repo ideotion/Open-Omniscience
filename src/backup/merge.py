@@ -556,6 +556,47 @@ _MERGE_NOT_CARRIED: dict[str, str] = {
 }
 
 
+# THE SAME COMPLETENESS CHECK, ONE GRANULARITY DOWN (2026-08-03).
+#
+# ``_MERGE_NOT_CARRIED`` above closed the TABLE-level hole. The identical defect exists per
+# COLUMN and was still open: an ``INSERT INTO t (cols) SELECT ...`` allowlist silently drops
+# every column added to the model AFTER the INSERT was written. Fourteen columns across
+# seven tables had gone that way -- the deduced-language channel, the socket-observed source
+# IPs, both versioned-source payloads, the law's own language, two provenance fields and the
+# super-group RING marker -- each confirmed behaviourally through a real ``merge_corpus``.
+#
+# It is a worse failure mode than a missing table: a missing table is at least COUNTED in the
+# restore report, whereas a dropped column produces a row that arrives, a column that is
+# nullable, and a value that is a plausible NULL. Nothing errors and nothing is reported.
+#
+# So every model column of a merged table must now be either IN its INSERT or named here with
+# the reason it must not be carried (tests/test_merge_carries_every_column.py enforces it).
+# Anything else is an oversight by definition.
+_MERGE_COLUMN_INTENTIONALLY_OMITTED: dict[str, str] = {
+    # (a) DENORMALISED COUNTERS, reconciled after the merge from the rows themselves.
+    # Copying an incoming count would ADD it to a local count over the same underlying rows
+    # and double it; `_reconcile_source_counters` / `backfill_keyword_counters` recompute
+    # them from truth instead. The reconciliation is the merge's own final step, so this is
+    # a handover, not a gap.
+    "sources.article_count": "denormalised counter; recomputed post-merge (copying it would double-count)",
+    "sources.counter_reconciled_at": "the reconciliation's own stamp; set by the reconcile, never copied",
+    "keywords.article_count": "denormalised counter; recomputed post-merge (copying it would double-count)",
+    "keywords.mention_count": "denormalised counter; recomputed post-merge (copying it would double-count)",
+    "keywords.last_reconciled_at": "the reconciliation's own stamp; set by the reconcile, never copied",
+    # (b) PER-MACHINE state. Meaningful only for the instance that observed it: the other
+    # machine's crawl clock says nothing about when THIS one last crawled, and adopting it
+    # would defer a crawl that is genuinely due.
+    "sources.last_crawled_at": "per-machine crawl clock; the other instance's value is not a fact about this one",
+    # (c) CARRIED ELSEWHERE, not by the INSERT -- so an AST reading of the INSERT alone
+    # under-reports coverage here. `parent_id` is a SELF-referential FK, so it cannot be
+    # resolved in the same statement that creates the rows it points at; `_merge_keyword_
+    # categories` runs a dedicated remap UPDATE through temp.map_kwcat immediately after.
+    # Listed rather than left undeclared precisely so the next reader does not "fix" a
+    # column that is already handled.
+    "keyword_categories.parent_id": "self-FK; remapped by a dedicated UPDATE after map_kwcat is built",
+}
+
+
 def _merge_steps() -> tuple[tuple[str, Callable[..., None]], ...]:
     """The ordered, FK-safe merge steps, named so a caller can report which is running.
 
@@ -844,6 +885,20 @@ def _merge_articles(con, batch_id, results) -> None:
         "INSERT INTO articles (url, canonical_url, source_id, title, content,"
         " compressed_content, published_at, language, hash, created_at, updated_at, region,"
         " country, author, word_count, reading_time, sentiment_score, sentiment_label,"
+        # 2026-08-03 (the AST column diff): three groups added to the model AFTER this
+        # INSERT was written, and therefore dropped by every merge since. Each arrived
+        # as a plausible NULL, which is why no restore report ever showed it.
+        #   * detected_language -- the ENTIRE deduced-language channel. It is a distinct,
+        #     labelled class beside the source-asserted `language` (never overwriting it),
+        #     so dropping it resets every merged article to "never detected" and the
+        #     langdetect ride-along re-runs at model cost over work already done.
+        #   * server_ip / ip_observed_at / server_ip_reason -- a SOCKET-TIME observation.
+        #     The connection is gone: no re-index can rebuild it and no re-fetch can
+        #     recover it (a later fetch observes a later CDN edge). Unrecoverable is the
+        #     reason this one is not merely untidy.
+        #   * content_multihash / canon_version -- the K1/K2 identity seams.
+        " detected_language, server_ip, ip_observed_at, server_ip_reason,"
+        " content_multihash, canon_version,"
         # S3.2 (2026-07-23 field-feedback workflow): the quarantine stamp is a
         # DEDUCED extraction-validity fact about this exact article -- it rides
         # additive-restore exactly like sentiment_score/sentiment_label above (a
@@ -854,6 +909,8 @@ def _merge_articles(con, batch_id, results) -> None:
         " i.compressed_content, i.published_at, i.language, i.hash, i.created_at,"
         " i.updated_at, i.region, i.country, i.author, i.word_count, i.reading_time,"
         " i.sentiment_score, i.sentiment_label,"
+        " i.detected_language, i.server_ip, i.ip_observed_at, i.server_ip_reason,"
+        " i.content_multihash, i.canon_version,"
         " i.quarantined, i.quarantine_reason, i.quarantine_criteria_version, i.quarantined_at"
         " FROM inc.articles i JOIN temp.map_sources ms ON ms.old = i.source_id"
         " WHERE NOT EXISTS (SELECT 1 FROM articles m WHERE m.hash = i.hash)",
@@ -1040,8 +1097,16 @@ def _merge_curation(con, batch_id, results) -> None:
     )
     s.new += _insert_tracked(
         con, batch_id, "keyword_supergroup_members",
-        "INSERT INTO keyword_supergroup_members (supergroup_id, normalized_term, created_at)"
-        " SELECT mg.new, i.normalized_term, i.created_at"
+        # `ring_id` added 2026-08-03 (the AST column diff), and it is the subtlest of the
+        # fourteen: it is not data ABOUT the member, it is the marker of WHICH KIND of
+        # member this is. Its own migration records "NULL ring_id = a plain family member"
+        # as the pre-existing meaning, so a dropped ring id does not arrive as missing --
+        # it arrives as a different, entirely legal member kind. `_supergroup_totals` then
+        # takes the family branch and the super-group silently stops spanning languages,
+        # which is the one capability the super-ring model exists to provide.
+        "INSERT INTO keyword_supergroup_members (supergroup_id, normalized_term, ring_id,"
+        " created_at)"
+        " SELECT mg.new, i.normalized_term, i.ring_id, i.created_at"
         " FROM inc.keyword_supergroup_members i JOIN temp.map_sg mg ON mg.old = i.supergroup_id"
         " WHERE NOT EXISTS (SELECT 1 FROM keyword_supergroup_members m"
         "  WHERE m.supergroup_id = mg.new AND m.normalized_term = i.normalized_term)",
@@ -1060,11 +1125,15 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
         con, batch_id, "external_sources",
         "INSERT INTO external_sources (domain, name, url, source_type, credibility_score,"
         " political_bias, country, language, description, founded_year, alexa_rank,"
-        " social_media_followers, is_verified, last_verified_at, created_at, updated_at)"
+        " social_media_followers, is_verified, last_verified_at, created_at, updated_at,"
+        # 2026-08-03 (the AST column diff): `discovered_via` IS the Q4a ruling -- which
+        # channel found this domain. It ended the table's dormancy, and a merged row with
+        # it NULL is indistinguishable from one nothing ever discovered.
+        " discovered_via)"
         " SELECT i.domain, i.name, i.url, i.source_type, i.credibility_score,"
         " i.political_bias, i.country, i.language, i.description, i.founded_year,"
         " i.alexa_rank, i.social_media_followers, i.is_verified, i.last_verified_at,"
-        " i.created_at, i.updated_at FROM inc.external_sources i"
+        " i.created_at, i.updated_at, i.discovered_via FROM inc.external_sources i"
         " WHERE NOT EXISTS (SELECT 1 FROM external_sources m WHERE m.domain = i.domain)",
     )
     _build_map(
@@ -1189,8 +1258,13 @@ def _merge_article_derivations(con, batch_id, results) -> None:
     )
     an.new = _insert_tracked(
         con, batch_id, "article_analyses",
-        "INSERT INTO article_analyses (article_id, kind, result, model, prompt_version, created_at)"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
-        " SELECT ma.new, i.kind, i.result, i.model, i.prompt_version, i.created_at"
+        # `prompt_text` added 2026-08-03 (the AST column diff): the verbatim prompt is the
+        # provenance of an AI output. `prompt_version` alone is a label -- it says which
+        # revision, not what was actually asked -- so no AI text should be shown without it.
+        "INSERT INTO article_analyses (article_id, kind, result, model, prompt_version,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+        " prompt_text, created_at)"
+        " SELECT ma.new, i.kind, i.result, i.model, i.prompt_version, i.prompt_text,"
+        " i.created_at"
         " FROM inc.article_analyses i JOIN temp.map_articles ma ON ma.old = i.article_id"
         f" WHERE NOT EXISTS (SELECT 1 FROM article_analyses t WHERE {an_key})",
     )
@@ -1241,10 +1315,15 @@ def _merge_wiki(con, batch_id, results) -> None:
     r.new = _insert_tracked(
         con, batch_id, "wiki_pages",
         "INSERT INTO wiki_pages (wiki, title, pageid, watched, category, baseline_revid,"
-        " baseline_text, last_revid, last_checked_at, missing, wiki_categories, created_at)"
+        " baseline_text, last_revid, last_checked_at, missing, wiki_categories, created_at,"
+        # 2026-08-03 (the AST column diff): the living-source payload. `baseline_text` is
+        # the FIRST version seen; `latest_text` is the one the reader actually shows (the
+        # maintainer's "the article shown is ALWAYS the LATEST version" ruling). Dropping
+        # it silently reverted every merged page to its baseline.
+        " latest_text, latest_text_revid)"
         " SELECT i.wiki, i.title, i.pageid, i.watched, i.category, i.baseline_revid,"
         " i.baseline_text, i.last_revid, i.last_checked_at, i.missing, i.wiki_categories,"
-        " i.created_at FROM inc.wiki_pages i"
+        " i.created_at, i.latest_text, i.latest_text_revid FROM inc.wiki_pages i"
         " WHERE NOT EXISTS (SELECT 1 FROM wiki_pages m WHERE m.wiki = i.wiki AND m.title = i.title)",
     )
     for row in _q(
@@ -1271,11 +1350,16 @@ def _merge_wiki(con, batch_id, results) -> None:
         con, batch_id, "wiki_revisions",
         "INSERT INTO wiki_revisions (page_id, revid, parent_revid, timestamp, editor,"
         " editor_anon, comment, size, delta_bytes, tags, minor, bot, diff, ores_damaging,"
-        " ores_goodfaith, ores_provenance, flagged, flag_reasons, created_at)"
+        " ores_goodfaith, ores_provenance, flagged, flag_reasons, created_at,"
+        # 2026-08-03 (the AST column diff): the maintainer ruled per-revision FULL TEXT
+        # stored (2026-06-12) precisely BECAUSE the truncated `diff` summary cannot
+        # materialise a past version locally. Dropping it on merge reinstated the exact
+        # gap that ruling closed, leaving the tracked-changes history unreadable.
+        " full_text)"
         " SELECT mw.new, i.revid, i.parent_revid, i.timestamp, i.editor,"
         " i.editor_anon, i.comment, i.size, i.delta_bytes, i.tags, i.minor, i.bot, i.diff,"
         " i.ores_damaging, i.ores_goodfaith, i.ores_provenance, i.flagged, i.flag_reasons,"
-        " i.created_at"
+        " i.created_at, i.full_text"
         " FROM inc.wiki_revisions i JOIN temp.map_wiki mw ON mw.old = i.page_id"
         " WHERE NOT EXISTS (SELECT 1 FROM wiki_revisions t"
         "  WHERE t.page_id = mw.new AND t.revid = i.revid)",
@@ -1295,10 +1379,18 @@ def _merge_law(con, batch_id, results) -> None:
         con, batch_id, "law_documents",
         "INSERT INTO law_documents (jurisdiction, title, url, official_url, category,"
         " consolidated, watched, baseline_text, baseline_hash, last_hash, last_size,"
-        " last_checked_at, last_status, created_at)"
+        " last_checked_at, last_status, created_at,"
+        # 2026-08-03 (the AST column diff). `language` is the LANGUAGE OF THE LAW, which
+        # is not the country's spoken language -- Cambodian law published in French is
+        # the case the law-sources acquisition contract was written around. It reaches
+        # `index_article`, so dropping it hands French text to the keyword engine as
+        # unknown-language and the stoplist/segmenter path degrades with no error.
+        # `latest_text` is the law side of the same living-source payload as wiki above.
+        " country, language, latest_text, latest_text_revid)"
         " SELECT i.jurisdiction, i.title, i.url, i.official_url, i.category,"
         " i.consolidated, i.watched, i.baseline_text, i.baseline_hash, i.last_hash,"
-        " i.last_size, i.last_checked_at, i.last_status, i.created_at"
+        " i.last_size, i.last_checked_at, i.last_status, i.created_at,"
+        " i.country, i.language, i.latest_text, i.latest_text_revid"
         " FROM inc.law_documents i"
         " WHERE NOT EXISTS (SELECT 1 FROM law_documents m"
         "  WHERE m.jurisdiction = i.jurisdiction AND m.url = i.url)",
@@ -1318,9 +1410,12 @@ def _merge_law(con, batch_id, results) -> None:
     rev.new = _insert_tracked(
         con, batch_id, "law_revisions",
         "INSERT INTO law_revisions (document_id, observed_at, content_hash, size, delta_bytes,"
-        " diff, flagged, flag_reasons, created_at)"
+        " diff, flagged, flag_reasons, created_at,"
+        # 2026-08-03 (the AST column diff): as wiki_revisions above -- the stored full
+        # text is what makes a past version of a law readable at all.
+        " full_text)"
         " SELECT ml.new, i.observed_at, i.content_hash, i.size, i.delta_bytes, i.diff,"
-        " i.flagged, i.flag_reasons, i.created_at"
+        " i.flagged, i.flag_reasons, i.created_at, i.full_text"
         " FROM inc.law_revisions i JOIN temp.map_law ml ON ml.old = i.document_id"
         " WHERE NOT EXISTS (SELECT 1 FROM law_revisions t"
         "  WHERE t.document_id = ml.new AND t.content_hash = i.content_hash)",
