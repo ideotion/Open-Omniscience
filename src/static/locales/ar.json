@@ -2375,5 +2375,10 @@
   "Download failed:": "فشل التنزيل:",
   "Unresolved — this would settle it:": "غير محسوم — هذا ما سيحسمه:",
   "search-verified": "مُتحقَّق منه بالبحث",
-  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "ذكرت جلسة جمع البيانات هذا المعرّف، لكن لم يُسجَّل أي جلب للصفحة. قد يكون خاطئاً؛ وعندها سيفشل التنزيل ببساطة."
+  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "ذكرت جلسة جمع البيانات هذا المعرّف، لكن لم يُسجَّل أي جلب للصفحة. قد يكون خاطئاً؛ وعندها سيفشل التنزيل ببساطة.",
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; a period with no data is drawn as a gap, never as zero; counts only, no score.": "تتشارك جميع اللوحات مقياساً رأسياً واحداً حتى تكون قابلة للمقارنة — خط عند كثافة البيانات، وأعمدة عند ندرتها (مع بيان n)، ولا منحنى مُستكمَل أبداً؛ وتُرسم الفترة الخالية من البيانات فجوةً لا صفراً؛ أعداد فقط، بلا أي تقييم.",
+  "Shared max:": "الحد الأقصى المشترك:",
+  "Periods with no data are drawn as gaps, never as zero.": "تُرسم الفترات الخالية من البيانات فجوات، لا أصفاراً.",
+  "{n} panels had no data and are not shown.": "{n} لوحات بلا بيانات غير معروضة.",
+  "No series to show yet.": "لا توجد سلاسل لعرضها بعد."
 }

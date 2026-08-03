@@ -2375,5 +2375,10 @@
   "Download failed:": "নামানো ব্যর্থ:",
   "Unresolved — this would settle it:": "অমীমাংসিত — এটি নিষ্পত্তি করবে:",
   "search-verified": "অনুসন্ধানে যাচাই করা",
-  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "সংগ্রহ-সেশন এই শনাক্তকারীটির নাম বলেছে, কিন্তু এর জন্য কোনো পৃষ্ঠা আনার নথি নেই। এটি ভুল হতে পারে; তখন নামানো কেবল ব্যর্থ হবে।"
+  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "সংগ্রহ-সেশন এই শনাক্তকারীটির নাম বলেছে, কিন্তু এর জন্য কোনো পৃষ্ঠা আনার নথি নেই। এটি ভুল হতে পারে; তখন নামানো কেবল ব্যর্থ হবে।",
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; a period with no data is drawn as a gap, never as zero; counts only, no score.": "সব প্যানেল একই উল্লম্ব স্কেল ব্যবহার করে, তাই সেগুলো সরাসরি তুলনীয় — ঘন তথ্যে রেখা, বিরল তথ্যে দণ্ড (n দেখানো হয়), কখনও অন্তর্বেশিত বক্ররেখা নয়; যে সময়ে তথ্য নেই তা ফাঁক হিসেবে আঁকা হয়, শূন্য হিসেবে কখনও নয়; কেবল গণনা, কোনো স্কোর নেই।",
+  "Shared max:": "সাধারণ সর্বোচ্চ:",
+  "Periods with no data are drawn as gaps, never as zero.": "তথ্যহীন সময়কাল ফাঁক হিসেবে আঁকা হয়, শূন্য হিসেবে কখনও নয়।",
+  "{n} panels had no data and are not shown.": "{n}টি প্যানেলে তথ্য নেই, সেগুলো দেখানো হয়নি।",
+  "No series to show yet.": "দেখানোর মতো কোনো সিরিজ এখনও নেই।"
 }

@@ -1706,6 +1706,36 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     lane. Calibrate against the WEAKEST platform observed, not the strongest, and record
     the per-platform measurement beside the constant so the next session does not
     re-derive it.
+  - **AGREEING ON THE GATE IS NOT ENOUGH — TWO MODULES PUBLISHING ONE QUANTITY MUST AGREE
+    ON THE BUCKET KEY (2026-08-03, the language-equilibrium lever):** the recorded framing-tone
+    lesson says modules publishing the same quantity must agree on the *gate*. A weaker
+    disagreement is just as costly and much harder to see: `corpus_language_shares` bucketed
+    languages on `.strip().lower()` while the house `normalize_lang` strips the region subtag,
+    and `Article.language` is stored RAW from `<html lang>` — so `en` / `en-US` / `en_us` were
+    three languages to the lever, which then compared ONE SPELLING'S share against the whole
+    target. Measured: English deferred on 14.3% of passes where 50.0% is correct, a 3.5x
+    under-correction that grows with how region-tagged the corpus is, and the bundled PRESETS
+    (keyed on bare codes) could never match at all. FOUR modules in the tree hand-roll a
+    per-language bucket key at THREE different normalisation depths, so this is a family, not an
+    instance. TWO RULES: normalise on BOTH sides of any comparison — normalising only the corpus
+    leaves an operator who writes `en-US` targeting a bucket that cannot exist; and when a fix
+    turns a wrong bucket into a right one, write the NEGATIVE-SPACE TWIN (genuinely distinct
+    languages must never merge), because an over-eager key is the same defect pointing the other
+    way and is INVISIBLE — the shares still sum to 1.
+  - **A TOOLKIT-WIDE FIX MUST ENUMERATE EVERY RENDERER, INCLUDING THE ONE WHOSE SIBLING GOT IT
+    RIGHT (2026-08-03, smallMultiplesSvg):** the 2026-08-02 honest-gaps pass fixed `dashChartSvg`
+    and `ooChart` and missed `smallMultiplesSvg` — which sits thirty lines BELOW `slopeChartSvg`
+    in the same file, was written in the same batch, and whose sibling already carried the
+    comment "break at gaps, never bridge". Proximity to a correct implementation is not
+    coverage. The miss was also the worse half of the defect: a bridged line invents a
+    CONNECTION, but `Y(null)` = `padT+(h-padT-padB)*(1-null/maxV)` lands on the zero BASELINE, so
+    a published gap became an invented OBSERVATION — and the scale scan used `isFinite(pt.count)`,
+    which is `true` for null. GENERAL FORM: when fixing a property across a "toolkit", grep for
+    every function that emits the primitive (here `<polyline`/`<rect`), not for the renderers you
+    can name; and check the ones whose neighbours already comply, since a reviewer's eye reads
+    the correct sibling and moves on. COROLLARY worth reusing: geometry must span every SLOT
+    while the sparse threshold and the displayed `n` count only real OBSERVATIONS — one number
+    keeps the hole's width, the other refuses to claim evidence that was never collected.
   - **A MECHANISM THAT QUIETLY RECORDS A DECISION SUPPRESSES THE SAFETY DEFAULT THAT
     DECISION OVERRIDES (2026-08-02, the boot-airplane race, PR #846 merged RED then
     #847):** a field report — "on a new instance the app sometimes stays in airplane

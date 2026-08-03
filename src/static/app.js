@@ -15035,40 +15035,72 @@
       opts = opts || {};
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (typeof ooViz === "undefined" || !ooViz.gridLayout) return "";
-      const live = (panels || []).filter(p => (p.points || []).length);
+      const all = panels || [];
+      const live = all.filter(p => (p.points || []).some(pt => !_missing(pt && pt.count)));
+      // Panels with nothing to plot were dropped SILENTLY, so a grid of 4 out of 9
+      // read as "these are the nine". Its sibling slopeChartSvg already discloses
+      // what it left out; this now does too.
+      const emptied = all.length - live.length;
       if (!live.length) return `<div class="muted">${esc(t("No series to show yet."))}</div>`;
       let maxV = 0;
-      live.forEach(p => p.points.forEach(pt => { if (isFinite(pt.count) && pt.count > maxV) maxV = pt.count; }));
+      // NOT isFinite(pt.count): isFinite(null) is TRUE, so the old filter admitted a
+      // published gap as a real 0 into the shared scale (the recorded +null trap).
+      live.forEach(p => p.points.forEach(pt => {
+        if (!_missing(pt.count) && pt.count > maxV) maxV = pt.count;
+      }));
       maxV = Math.max(1, maxV);
       const lay = ooViz.gridLayout(live.length, {maxCols: opts.maxCols || 4});
       const w = 200, h = 84, padL = 6, padR = 6, padT = 8, padB = 16;
       const cell = (p) => {
         const pts = p.points, n = pts.length;
-        const lineMode = n >= _SPARSE_BAR_MAX;
+        // TWO counts, deliberately. Geometry spans every SLOT so a hole keeps its
+        // width instead of closing up; the sparse threshold and the displayed n
+        // count only REAL observations, because "n=30" over a series with 25 gaps
+        // claims evidence that was never collected.
+        const nReal = pts.filter(pt => !_missing(pt.count)).length;
+        const lineMode = nReal >= _SPARSE_BAR_MAX;
         const plotW = w - padL - padR;
         const X = i => padL + plotW * (n < 2 ? 0.5 : i / (n - 1));
         const Y = v => padT + (h - padT - padB) * (1 - v / maxV);   // SHARED 0..maxV
         const baseY = Y(0);
-        const up = pts[n - 1].count >= pts[0].count;
-        const col = up ? "var(--ok)" : "var(--err)";
+        // Direction is read from the first and last REAL observations. `null >= x`
+        // coerces to 0, so a gap at either end used to decide the colour.
+        const real = pts.filter(pt => !_missing(pt.count));
+        const up = real.length ? real[real.length - 1].count >= real[0].count : true;
+        // A corpus count is NEUTRAL: fewer articles in a language is not "bad", so
+        // it must not be painted in market up=green/down=red. Same rule and same
+        // opt-in as dashChartSvg's; the trending caller keeps the directional colour.
+        const col = opts.neutral ? "var(--accent)" : (up ? "var(--ok)" : "var(--err)");
         const slot = plotW / Math.max(n, 1), bw = Math.max(2, Math.min(slot * 0.6, 14));
         const body = lineMode
-          ? `<polyline fill="none" stroke="${col}" stroke-width="1.4" points="${pts.map((pt, i) => `${X(i).toFixed(1)},${Y(pt.count).toFixed(1)}`).join(" ")}"/>`
+          // A HOLE IS DRAWN AS A HOLE. This renderer was missed by the honest-gaps
+          // pass that fixed dashChartSvg and ooChart: one unbroken <polyline> over
+          // every point bridged any gap, and Y(null) evaluates to the zero baseline,
+          // so a period with no data was published as a measured zero. Index axis,
+          // so a run breaks only on a missing VALUE (there is no cadence to compare).
+          ? _seriesRuns(pts, {value: pt => pt.count}).map(run =>
+              run.length === 1
+                // A single surviving point between two holes has no line to draw;
+                // a dot keeps it visible instead of vanishing.
+                ? `<circle cx="${X(run[0]).toFixed(1)}" cy="${Y(pts[run[0]].count).toFixed(1)}" r="1.6" fill="${col}"/>`
+                : `<polyline fill="none" stroke="${col}" stroke-width="1.4" points="${run.map(i => `${X(i).toFixed(1)},${Y(pts[i].count).toFixed(1)}`).join(" ")}"/>`
+            ).join("")
           : pts.map((pt, i) => {
+              if (_missing(pt.count)) return "";   // no bar for a gap, never a zero-height one
               const cx = X(i), by = Y(pt.count), x0 = Math.max(padL, cx - bw / 2);
               const bwc = Math.max(1, Math.min(w - padR, cx + bw / 2) - x0).toFixed(1);
               return `<rect x="${x0.toFixed(1)}" y="${by.toFixed(1)}" width="${bwc}" height="${Math.max(0, baseY - by).toFixed(1)}" fill="${col}" opacity="0.72"/>`;
             }).join("");
         const gr = `<line x1="${padL}" x2="${w - padR}" y1="${Y(maxV).toFixed(1)}" y2="${Y(maxV).toFixed(1)}" stroke="var(--border)" stroke-dasharray="2 3" stroke-width="0.5"/>`
           + `<line x1="${padL}" x2="${w - padR}" y1="${baseY.toFixed(1)}" y2="${baseY.toFixed(1)}" stroke="var(--border)" stroke-width="0.5"/>`;
-        const svg = `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="${esc((p.label || "") + " — n=" + n)}" style="display:block">${gr}${body}</svg>`;
+        const svg = `<svg viewBox="0 0 ${w} ${h}" width="100%" role="img" aria-label="${esc((p.label || "") + " — n=" + nReal + (nReal < n ? " (" + (n - nReal) + " gaps)" : ""))}" style="display:block">${gr}${body}</svg>`;
         const oc = p.term != null ? `onclick='openAnalysisFor(${esc(JSON.stringify(p.term))});return false'` : "";
         const head = `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px">`
           + `<a href="#" ${oc} title="${esc(t("Open this keyword's own analysis window"))}" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.label || "")}</a>`
-          + `<span class="muted" style="font-size:10px">n=${n}</span></div>`;
+          + `<span class="muted" style="font-size:10px"${nReal < n ? ` title="${esc(t("Periods with no data are drawn as gaps, never as zero."))}"` : ""}>n=${nReal}${nReal < n ? " · " + (n - nReal) + "\u00a0◦" : ""}</span></div>`;
         return `<div style="border:1px solid var(--border);border-radius:6px;padding:5px">${head}${svg}</div>`;
       };
-      const cav = `<div class="card-caveat" style="margin-top:5px">${esc(opts.caveat || t("All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; counts only, no score."))} ${esc(t("Shared max:"))} ${esc(fmtNum(maxV))}</div>`;
+      const cav = `<div class="card-caveat" style="margin-top:5px">${esc(opts.caveat || t("All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; a period with no data is drawn as a gap, never as zero; counts only, no score."))} ${esc(t("Shared max:"))} ${esc(fmtNum(maxV))}${emptied ? " · " + esc(t("{n} panels had no data and are not shown.").replace("{n}", emptied)) : ""}</div>`;
       return `<div style="display:grid;grid-template-columns:repeat(${lay.cols},minmax(0,1fr));gap:8px">${live.map(cell).join("")}</div>${cav}`;
     }
 

@@ -2375,5 +2375,10 @@
   "Download failed:": "Error de descarga:",
   "Unresolved — this would settle it:": "Sin resolver — esto lo decidiría:",
   "search-verified": "verificado por búsqueda",
-  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "La sesión de adquisición nombró este identificador, pero no se registró ninguna consulta de la página. Puede ser incorrecto; si lo es, la descarga sencillamente fallará."
+  "The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is.": "La sesión de adquisición nombró este identificador, pero no se registró ninguna consulta de la página. Puede ser incorrecto; si lo es, la descarga sencillamente fallará.",
+  "All panels share one vertical scale so they are comparable — a line when dense, bars when sparse (n shown), never an interpolated curve; a period with no data is drawn as a gap, never as zero; counts only, no score.": "Todos los paneles comparten una misma escala vertical para poder compararse — una línea cuando los datos son densos, barras cuando son escasos (n indicado), nunca una curva interpolada; un periodo sin datos se dibuja como un hueco, nunca como un cero; solo recuentos, sin puntuación.",
+  "Shared max:": "Máximo compartido:",
+  "Periods with no data are drawn as gaps, never as zero.": "Los periodos sin datos se dibujan como huecos, nunca como ceros.",
+  "{n} panels had no data and are not shown.": "{n} paneles sin datos no se muestran.",
+  "No series to show yet.": "Todavía no hay ninguna serie que mostrar."
 }

@@ -30,6 +30,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from src.analytics.managed import normalize_lang
 from src.database.models import Article
 
 DEFAULT_FLOOR = 0.2
@@ -63,6 +64,11 @@ PRESETS: dict[str, dict[str, float]] = {
 def normalize_target(target: dict[str, float] | None) -> dict[str, float]:
     """A {lang: weight} map (weights need not sum to 1) → {lang: share} over the
     positive weights, summing to 1. Returns {} (= OFF) when nothing is positive.
+
+    Keys go through ``normalize_lang`` for the same reason ``corpus_language_shares``
+    does, and it has to be BOTH: a target normalised against a raw corpus (or the
+    reverse) still compares two different key spaces. An operator who writes
+    ``en-US`` now targets English rather than a bucket that matches nothing.
     """
     clean: dict[str, float] = {}
     for k, v in (target or {}).items():
@@ -70,7 +76,7 @@ def normalize_target(target: dict[str, float] | None) -> dict[str, float]:
             w = float(v)
         except (TypeError, ValueError):
             continue
-        key = str(k).strip().lower()
+        key = normalize_lang(str(k))
         if key and w > 0:
             clean[key] = clean.get(key, 0.0) + w
     total = sum(clean.values())
@@ -106,7 +112,23 @@ def language_pace(
 
 
 def corpus_language_shares(session: Session) -> dict[str, float]:
-    """{lang: fraction} of stored articles by language (NULL → 'unknown')."""
+    """{lang: fraction} of stored articles by BARE language code (NULL → 'unknown').
+
+    Buckets through ``normalize_lang``, so ``en`` / ``en-US`` / ``EN_us`` are ONE
+    language. This is not tidying: ``Article.language`` is stored RAW from
+    trafilatura's ``<html lang>`` read, and most major outlets send a region
+    subtag, so the previous ``.strip().lower()`` key split English across several
+    buckets and the lever compared a FRAGMENT of English against the whole target.
+
+    Measured on a corpus that is 60% English arriving as en 35% / en-US 20% /
+    en_us 5%, against a target of en 0.30: the lever deferred English on 14.3% of
+    passes where the correct figure is 50.0% — a 3.5x under-correction, silent,
+    and worse the more region-tagged the corpus is. ``PRESETS`` above are keyed on
+    bare codes, so a preset could never match a region-tagged corpus at all.
+
+    The same key must be used on BOTH sides of the comparison; see
+    ``normalize_target``. Two modules publishing the same quantity under different
+    bucket keys is the defect this pair now forecloses."""
     rows = (
         session.query(Article.language, func.count(Article.id))
         .group_by(Article.language)
@@ -117,7 +139,7 @@ def corpus_language_shares(session: Session) -> dict[str, float]:
         return {}
     out: dict[str, float] = {}
     for lang, n in rows:
-        key = (lang or "unknown").strip().lower() or "unknown"
+        key = normalize_lang(lang) or "unknown"
         out[key] = out.get(key, 0.0) + n / total
     return out
 
