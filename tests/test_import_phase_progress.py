@@ -84,9 +84,9 @@ def test_restore_stage_pings_carry_their_position_offset_by_the_manager_phases(
     # shorter. Read the manager's own switch rather than hardcoding either answer:
     # this test is about the phase POSITIONS agreeing with the plan, not about which
     # plan is in force, and it must stay true under OO_IMPORT_DEFER_REINDEX either way.
-    from src.backup.volume_job import _defer_reindex
+    from src.backup.volume_job import defer_reindex
 
-    plan = restore_stage_plan(commit=True, reindex_imported=not _defer_reindex())
+    plan = restore_stage_plan(commit=True, reindex_imported=not defer_reindex())
     offset = len(_RESTORE_MANAGER_PHASES)
     swap = [p for p in seen if p.get("phase") == "swap"]
     assert swap, "the swap stage must ping with its position"

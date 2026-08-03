@@ -70,11 +70,11 @@ _RESTORE_MANAGER_PHASES: tuple[str, ...] = ("verifying", "reassembling")
 # The honesty cost is that "import finished" no longer means "fully indexed", so the
 # report says so and carries the pending count. OO_IMPORT_DEFER_REINDEX=0 restores
 # the old blocking behaviour.
-def _defer_reindex() -> bool:
+def defer_reindex() -> bool:
     return (os.getenv("OO_IMPORT_DEFER_REINDEX", "1").strip() or "1") != "0"
 
 
-def _hand_off_reindex(report: dict) -> None:
+def hand_off_reindex(report: dict) -> None:
     """State the deferral in the report, and start the drain.
 
     TWO THINGS, and the first is the one that must never be dropped. "Import
@@ -122,15 +122,49 @@ def _hand_off_reindex(report: dict) -> None:
         )
         return
 
+    # NOT INSIDE AN IMPORT RUN'S EXCLUSIVE WINDOW. The queue takes ONE window across
+    # every item precisely so the machine belongs to the import; starting a
+    # CPU-heavy parallel drain after item 1 would put competing work back on it for
+    # the remaining items -- the same mistake, in the opposite direction, as the
+    # 2026-07-24 finding that a pause must gate every entry point starting equivalent
+    # work. So this follows the shape ``resume_after_exclusive_operation`` already
+    # uses: nested calls record and return, and the window itself drains once at the
+    # end (:meth:`ImportQueueManager._run`).
+    try:
+        from src.scheduler.runner import exclusive_window_open
+
+        nested = exclusive_window_open()
+    except Exception:  # noqa: BLE001 - never let a courtesy check fail a committed import
+        nested = False
+    if nested:
+        report["reindex_deferred"]["started"] = False
+        report["reindex_deferred"]["start_detail"] = (
+            "this import is one item of a run; the drain starts once the whole run ends"
+        )
+        return
+
+    started, detail = start_reindex_drain()
+    report["reindex_deferred"]["started"] = started
+    if detail:
+        report["reindex_deferred"]["start_detail"] = detail
+
+
+def start_reindex_drain() -> tuple[bool, str | None]:
+    """Start the background re-index drain. ``(started, detail)``; never raises.
+
+    Its own function because there are now two callers: the per-import hand-off
+    above, and the import QUEUE at the end of its exclusive window -- where it is the
+    ONLY thing that starts the drain for a multi-item run, since every item's own
+    hand-off correctly declined to.
+    """
     try:
         from src.api.backup_v2 import _REINDEX_RESUME_JOB
 
         _REINDEX_RESUME_JOB.start()
-        report["reindex_deferred"]["started"] = True
+        return True, None
     except Exception as exc:  # noqa: BLE001 - already-running is normal in a queue
-        report["reindex_deferred"]["started"] = False
-        report["reindex_deferred"]["start_detail"] = str(exc)
         _LOG.info("re-index drain not started now (%s); the backlog stays visible", exc)
+        return False, str(exc)
 
 
 def _stage_phase_name(stage_name: str) -> str:
@@ -423,7 +457,7 @@ class VolumeBackupManager:
             # constant -- run_restore's plan legitimately differs by commit /
             # reindex_imported (field ruling 2026-07-29 item 17).
             _restore_plan = restore_stage_plan(
-                commit=True, reindex_imported=not _defer_reindex()
+                commit=True, reindex_imported=not defer_reindex()
             )
             _phase_total = len(_RESTORE_MANAGER_PHASES) + len(_restore_plan)
 
@@ -576,7 +610,7 @@ class VolumeBackupManager:
                         progress_cb=_merge_prog,
                         reindex_progress_cb=_reindex_prog,
                         stage_progress_cb=_stage_prog,
-                        reindex_imported=not _defer_reindex(),
+                        reindex_imported=not defer_reindex(),
                         reindex_workers=_reindex_workers,
                         reindex_commit_batch=_reindex_batch,
                         merge_cache_mb=_merge_cache_mb,
@@ -598,8 +632,8 @@ class VolumeBackupManager:
                     with self._lock:
                         self._state, self._summary = "done", {"report": report}
                         self._progress = {"phase": "done"}
-                    if _defer_reindex():
-                        _hand_off_reindex(report)
+                    if defer_reindex():
+                        hand_off_reindex(report)
                     runlog.end("ok", **{
                         k: report.get(k) for k in ("batch_id", "reindexed", "articles_merged")
                         if report.get(k) is not None

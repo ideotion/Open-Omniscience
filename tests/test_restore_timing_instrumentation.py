@@ -247,7 +247,26 @@ def test_committed_restore_report_carries_every_stage(client):
     timings = report["timings"]
     got = set(timings["stages"])
     assert _EXPECTED_PREVIEW_STAGES <= got  # the preview-side stages ran too
-    assert _EXPECTED_COMMIT_ONLY_STAGES <= got
+
+    # DEFERRAL-AWARE (2026-08-03). The re-index no longer runs inside the import, so
+    # there is no `reindex` stage to time -- a restore that still carried one would
+    # mean the deferral had silently stopped working. Read from the switch rather than
+    # hardcoded, so OO_IMPORT_DEFER_REINDEX=0 keeps asserting the old shape.
+    #
+    # The absence is paired with a POSITIVE assertion below: on its own, "the stage is
+    # gone" is equally satisfied by a version that simply dropped the work, which is
+    # the outcome this whole feature exists to avoid.
+    from src.backup.volume_job import defer_reindex
+
+    expected = _EXPECTED_COMMIT_ONLY_STAGES - ({"reindex"} if defer_reindex() else set())
+    assert expected <= got
+    if defer_reindex():
+        assert "reindex" not in got, "the import must not be timing work it deferred"
+        rx = report.get("reindex_deferred")
+        assert rx and rx.get("deferred") is True, (
+            "the stage is gone AND nothing says where the work went -- that is the "
+            "invisible-incomplete-corpus outcome, not the deferral"
+        )
     assert timings["wall_s"] > 0
     # honest total: never LESS than any single recorded stage.
     assert timings["wall_s"] >= max(timings["stages"].values())

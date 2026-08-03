@@ -232,6 +232,25 @@ class ImportQueueManager:
             # that refused to stop must not cost the user their import.
             self._drive()
 
+        # THE ONLY THING THAT STARTS THE DRAIN FOR A QUEUED RUN. Each item's own
+        # hand-off correctly declines while the window is open -- a parallel re-index
+        # after item 1 would compete with items 2..n for the machine the window exists
+        # to reserve. Something therefore has to start it once the window is gone, or
+        # a multi-backup import would end with the whole backlog sitting untouched
+        # until somebody noticed the caveat and clicked, which is "deferred but lost"
+        # wearing a different hat. Best-effort: it must never turn a completed import
+        # into a reported failure.
+        try:
+            from src.backup.volume_job import start_reindex_drain
+
+            started, detail = start_reindex_drain()
+            _LOG.info(
+                "post-import re-index drain %s",
+                "started" if started else f"not started ({detail})",
+            )
+        except Exception:  # noqa: BLE001
+            _LOG.warning("could not start the post-import re-index drain", exc_info=True)
+
     def _drive(self) -> None:
         """Walk the queue. Separated from :meth:`_run` so the exclusive window is a
         plain ``with`` block -- the courtesy pause must never be able to skip the

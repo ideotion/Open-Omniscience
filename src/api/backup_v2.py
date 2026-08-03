@@ -214,13 +214,30 @@ def _commit_sync(staged: StagedArtifact, *, allow_unverified: bool) -> dict:
     """The blocking body of restore_commit (full merge + atomic swap). Runs OFF the
     event loop for the same reason preview does (see _preview_sync)."""
     from src.backup import runlog
+    from src.backup.volume_job import defer_reindex, hand_off_reindex
 
     # The single-shot REST commit. It wires no progress callbacks at all, so
     # before this it was the LEAST observable import path in the app -- and it
     # is the one a scripted or legacy restore takes.
+    #
+    # The re-index is deferred here for the same reason as on the volume path, and
+    # from the SAME switch. Fixing only the volume path left the identical operator
+    # action ("import my backup") returning in two minutes down one route and blocking
+    # for hours down another, with nothing anywhere naming the difference -- and both
+    # routes are reachable from one queued run, so a mixed folder would have done both
+    # in the same import. That legacy single-file imports are slated for removal is a
+    # reason not to INVEST in them, not a reason to leave a trap in one.
     try:
         with runlog.run("import", label="rest-commit", path="/api/backup/v2/restore/commit"):
-            return run_restore(staged, commit=True, allow_unverified=allow_unverified)
+            report = run_restore(
+                staged,
+                commit=True,
+                allow_unverified=allow_unverified,
+                reindex_imported=not defer_reindex(),
+            )
+            if defer_reindex():
+                hand_off_reindex(report)
+            return report
     except MergeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except HTTPException:
@@ -318,10 +335,11 @@ def restore_legacy_path(
     staged = _stage_upload(data, passphrase or None)
     _apply_restore_selection(staged, include_newsletters=include_newsletters)
     from src.backup import runlog
+    from src.backup.volume_job import defer_reindex, hand_off_reindex
 
     try:
         with runlog.run("import", label=p.name, dest=str(p), legacy_single_file=True):
-            return run_restore(
+            report = run_restore(
                 staged,
                 commit=True,
                 allow_unverified=allow_unverified,
@@ -333,7 +351,15 @@ def restore_legacy_path(
                 # wrapper (a user-facing request that must NOT stall the app) keeps the
                 # default.
                 exclusive=exclusive_window_open(),
+                # Deferred from the same switch as every other committing path -- this
+                # one is queue-driven, so a folder of mixed volume and legacy backups
+                # would otherwise defer for some items and block for hours on others
+                # inside a single run.
+                reindex_imported=not defer_reindex(),
             )
+            if defer_reindex():
+                hand_off_reindex(report)
+            return report
     except MergeError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except HTTPException:

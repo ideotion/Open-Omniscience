@@ -63,11 +63,12 @@ const src = [
   extract("function _uxStageLabel("),
   extract("function _uxFmtS("),
   extract("function _uxTimingsView("),
+  extract("function _uxPlanExtras("),
   extract("function _renderImportSummary("),
   // Collaborators the renderer calls that are not what is under test.
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}",
   "function _v2PlanTable(p){return '<table data-plan></table>';}",
-  "return { _renderImportSummary, _uxPerItemView, _uxFmtDur, _uxOutcome };",
+  "return { _renderImportSummary, _uxPerItemView, _uxFmtDur, _uxOutcome, _uxPlanExtras };",
 ].join("\n");
 
 const mod = new Function("window", src)({});   // no OOI18N: t()/tf() take their fallbacks
@@ -149,6 +150,69 @@ test("an absent per-item state is treated as counted, not demoted", () => {
   const html = render([{ title: "recovered", plan: plan(500, 5) }], undefined);
   assert(html.includes("Import successful"), "a stateless summary must not read as failed");
   assert(html.includes("500"), "its numbers must still be counted");
+});
+
+// --------------------------------------------------------------------------- //
+// The "still indexing" caveat, driven END TO END: a real run_restore() report goes
+// through the REAL producer (_uxPlanExtras) into the REAL renderer, exactly as the
+// three push sites do it.
+//
+// THE DEFECT this pins shut, which shipped: the renderer read `reindex_deferred`
+// from the day the deferral landed and NOTHING ever wrote it -- _uxPlanExtras is the
+// one helper all three call sites spread, and it did not carry the key. So the
+// caveat could not render on any path. The test that accompanied the change asserted
+// only that the RENDERER reads the key; a reader with no producer satisfies that
+// perfectly. Assert the chain, not one end of it.
+//
+// It matters more than a cosmetic line: deferring the re-index means "import
+// finished" no longer means "fully indexed", and the change's own rationale says
+// deferring SILENTLY is strictly worse than the three-hour wait it replaced.
+const restoreReport = (rx) => ({
+  plan: { articles: { new: 12778, duplicate: 3, conflict: 0 } },
+  corpus_delta: null, reindexed: null, timings: null,
+  reindex_deferred: rx,
+});
+const viaProducer = (rep, title) =>
+  ({ title: title || "backup-a", state: "done", elapsed_s: 118.6,
+     plan: rep.plan || {}, ...mod._uxPlanExtras(rep) });
+
+test("a deferred re-index reaches the screen, with its real pending count", () => {
+  const html = render([viaProducer(restoreReport({
+    deferred: true, articles_pending: 12778, pending_unreadable_reason: null,
+    started: true, job: "reindex-resume",
+  }))], { state: "done", elapsed_s: 118.6, items_done: 1, items_total: 1 });
+
+  assert(html.includes("Indexing continues in the background"), "the deferral must be stated");
+  assert(html.includes("12,778"), "with the REAL backlog, thousands-separated");
+  assert(html.includes("absent from analytics"), "and with what being un-indexed actually costs");
+  assert(html.includes("card-caveat"), "it is a caveat about corpus completeness, styled as one");
+});
+
+test("an import with nothing deferred grows NO indexing caveat", () => {
+  // The negative-space twin. A caveat that fires on every import is noise, and an
+  // over-eager one reads as conservative while telling users their complete corpus
+  // is incomplete -- a fabricated warning is as dishonest as a missing one.
+  const html = render([viaProducer(restoreReport(null))],
+                      { state: "done", elapsed_s: 60, items_done: 1, items_total: 1 });
+  assert(html.includes("Import successful"), "still a clean success");
+  assert(!html.includes("Indexing continues"), "no fabricated incompleteness");
+});
+
+test("an unreadable backlog says so and never renders as zero pending", () => {
+  const html = render([viaProducer(restoreReport({
+    deferred: true, articles_pending: null,
+    pending_unreadable_reason: "database is locked", started: false,
+  }))], { state: "done", elapsed_s: 90, items_done: 1, items_total: 1 });
+  assert(html.includes("could not be read"), "'could not read' must not look like 'nothing pending'");
+  assert(!html.includes("0 article"), "an unreadable count is not a measured zero");
+});
+
+test("several backups' backlogs are summed, not silently taken from the last", () => {
+  const html = render([
+    viaProducer(restoreReport({ deferred: true, articles_pending: 1000, started: true }), "a"),
+    viaProducer(restoreReport({ deferred: true, articles_pending: 250, started: false }), "b"),
+  ], { state: "done", elapsed_s: 400, items_done: 2, items_total: 2 });
+  assert(html.includes("1,250"), "a queued run's total backlog is the sum of its items'");
 });
 
 test("_uxFmtDur refuses to invent a duration it does not have", () => {
