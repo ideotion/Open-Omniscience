@@ -333,6 +333,7 @@ def run_progressive_triage_job(
     becomes ``error`` -- never a benign-looking ``done``). A genuine user cancel
     (``ctx.stopping``) still stops immediately, no retry."""
     from src.database.session import session_scope
+    from src.llm.backend import outage_reason
     from src.llm.ollama import LLMError  # LLMUnavailable IS-A LLMError; catching the base catches both
 
     if session_factory is None:
@@ -434,11 +435,19 @@ def run_progressive_triage_job(
             # _langdetect_worker). The cursor is untouched on a failure, so a retry
             # naturally re-attempts the exact same batch.
             consecutive_failures += 1
+            # WHY it failed, in the resolver's own words -- the budget is untouched
+            # (a probe cannot tell a gone backend from a momentarily unreachable one),
+            # only what the operator is told (field report 2026-08-02).
+            _why = outage_reason()
             if consecutive_failures >= _TRIAGE_MAX_CONSECUTIVE_FAILURES:
                 err = (
                     f"stopped after {consecutive_failures} consecutive local-model "
                     f"failures ({batches_completed} batches completed, "
                     f"{totals['verdicts_out']} verdicts so far): {str(exc)[:200]}"
+                    # The backend's own reason BESIDE the raw error, not instead of it:
+                    # "connection refused" says what happened, "vLLM installed but its
+                    # server is not running" says what to DO about it.
+                    + (f" [{_why}]" if _why else "")
                 )
                 footer = {
                     "schema": KEYWORD_TRIAGE_RUN_SUMMARY_SCHEMA,
@@ -468,8 +477,15 @@ def run_progressive_triage_job(
             )
             ctx.set_progress(
                 detail=(
-                    f"local model hiccup ({consecutive_failures}/"
-                    f"{_TRIAGE_MAX_CONSECUTIVE_FAILURES}) — retrying in {backoff:.0f}s"
+                    (
+                        f"{_why} — retrying in {backoff:.0f}s in case it comes back "
+                        f"({consecutive_failures}/{_TRIAGE_MAX_CONSECUTIVE_FAILURES})"
+                    )
+                    if _why
+                    else (
+                        f"local model hiccup ({consecutive_failures}/"
+                        f"{_TRIAGE_MAX_CONSECUTIVE_FAILURES}) — retrying in {backoff:.0f}s"
+                    )
                 )
             )
             _triage_sleep_interruptible(backoff, ctx)

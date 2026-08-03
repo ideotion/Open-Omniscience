@@ -104,11 +104,28 @@ _BEAT_CAP_LINES = 5760
 #: Rewrite (trim) the ring every N appends rather than on every one.
 _BEAT_TRIM_EVERY = 512
 
-#: Above this measured per-beat cost the child-process walk is sampled at a
-#: reduced cadence. `children(recursive=True)` enumerates /proc and builds a
-#: Process object per pid; on a loaded box that is not free, and the beat must
-#: never become a load source on the machine it is diagnosing.
+#: Above this measured cost the child-process walk is sampled at a reduced
+#: cadence. `children(recursive=True)` enumerates /proc and builds a Process
+#: object per pid; on a loaded box that is not free, and the beat must never
+#: become a load source on the machine it is diagnosing.
+#:
+#: MEASURED AGAINST THE WALK ITSELF, not the whole beat. A beat also reads
+#: /proc/meminfo, stats the destination filesystem and sizes the WAL; charging
+#: the walk for a slow disk stat retires the one measurement that answers
+#: "stuck or slow?" for a reason that has nothing to do with it.
 _CHILD_WALK_BUDGET_MS = 25.0
+
+#: Beats to skip after an over-budget walk before trying again. THE POINT IS
+#: THAT IT COMES BACK. This used to be a one-way latch, and the field evidence
+#: for why that is wrong is unambiguous: in a 19 h import the walk tripped once,
+#: during `merging`, at 25.9 ms -- 0.9 ms over -- and every one of the following
+#: 1,561 `reindexing` beats then carried no child data at all. That is precisely
+#: inverted: the re-index is the phase the child sampler exists for, because a
+#: healthy process pool leaves the PARENT near-idle and parent CPU alone cannot
+#: tell a working pool from a wedged one. At this cadence the walk costs well
+#: under a tenth of a percent of a beat interval even when it is slow, and the
+#: run stays diagnosable to the end.
+_CHILD_WALK_BACKOFF_BEATS = 8
 
 #: The progress dicts published by VolumeBackupManager, by the EXACT key names
 #: they actually use (src/backup/volume_job.py:304-335). There is no generic
@@ -262,7 +279,8 @@ class RunLog:
         self._sampler: threading.Thread | None = None
         self._stop = threading.Event()
         self._ended = False
-        self._child_walk_ok = True
+        #: Beats still to skip before retrying the child walk. 0 == sampling.
+        self._child_walk_skip = 0
         self._beats_written = 0
 
     # -- files ------------------------------------------------------------- #
@@ -394,17 +412,34 @@ class RunLog:
             except Exception as exc:  # noqa: BLE001
                 unmeasured.append(f"rss_mb: {type(exc).__name__}")
 
-            if self._child_walk_ok:
+            if self._child_walk_skip > 0:
+                # Backing off, not blind: say which, and for how much longer.
+                self._child_walk_skip -= 1
+                rec["child_walk"] = "backoff"
+                unmeasured.append("kids: backoff")
+            else:
                 try:
+                    _t_kids = time.monotonic()
                     kids, kcpu, krss = _sample_children(proc)
+                    kids_ms = (time.monotonic() - _t_kids) * 1000.0
                     rec["kids_n"] = len(kids)
                     rec["kids"] = kids
                     rec["kids_cpu_s"] = kcpu
                     # Sum of resident sets: an UPPER BOUND, since a forked
                     # worker shares most of its pages with the parent.
                     rec["kids_rss_mb_upper"] = krss
+                    rec["kids_ms"] = round(kids_ms, 1)
                     if isinstance(prev.get("_kcpu"), (int, float)):
                         rec["d_kids_cpu_s"] = round(kcpu - prev["_kcpu"], 3)
+                    if kids_ms > _CHILD_WALK_BUDGET_MS:
+                        # Self-limiting, and self-recovering: the walk measured
+                        # ITSELF as expensive on this machine, so it stands down
+                        # for a few beats and says so. The cost is never assumed
+                        # -- kids_ms is why -- and it is never permanent, so a
+                        # momentarily loaded box cannot cost the run every later
+                        # phase's child data.
+                        self._child_walk_skip = _CHILD_WALK_BACKOFF_BEATS
+                        rec["child_walk"] = "backoff-cost"
                 except Exception as exc:  # noqa: BLE001
                     # NOT kids_n: 0 -- that reads as "no worker processes",
                     # which is the opposite of what an AccessDenied means.
@@ -452,12 +487,6 @@ class RunLog:
 
         bc = (time.monotonic() - t_beat0) * 1000.0
         rec["bc_ms"] = round(bc, 1)
-        if self._child_walk_ok and bc > _CHILD_WALK_BUDGET_MS:
-            # Self-limiting: the beat measured itself as expensive on THIS
-            # machine, so it stops doing the expensive part and says so. The
-            # cost was never assumed -- bc_ms is why.
-            self._child_walk_ok = False
-            rec["child_walk"] = "disabled-cost"
 
         # Carry-forward state for the next beat's deltas (underscore keys are
         # stripped before the line is written).

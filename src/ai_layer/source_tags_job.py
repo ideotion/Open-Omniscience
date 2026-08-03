@@ -451,6 +451,7 @@ def run_progressive_source_tags_job(
     state genuinely becomes ``error`` -- never a benign-looking ``done``). A
     genuine user cancel (``ctx.stopping``) still stops immediately, no retry."""
     from src.database.session import session_scope
+    from src.llm.backend import outage_reason
     from src.llm.ollama import LLMError
 
     if session_factory is None:
@@ -592,12 +593,18 @@ def run_progressive_source_tags_job(
                 # tag vocabulary embedded in the prompt). Retry with backoff first,
                 # same shape as triage_job.py's identical fix.
                 consecutive_failures += 1
+                # WHY it failed, in the resolver's own words; the budget is untouched
+                # (field report 2026-08-02).
+                _why = outage_reason()
                 if consecutive_failures >= _SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES:
                     err = (
                         f"stopped after {consecutive_failures} consecutive "
                         f"local-model failures ({batches_completed} batches "
                         f"completed, {totals['assigned_count']} tagged so far): "
                         f"{str(exc)[:200]}"
+                        # The backend's own reason BESIDE the raw error, not instead of
+                        # it: one says what happened, the other says what to do about it.
+                        + (f" [{_why}]" if _why else "")
                     )
                     footer = {
                         "schema": SOURCE_TAGS_RUN_SUMMARY_SCHEMA,
@@ -626,8 +633,16 @@ def run_progressive_source_tags_job(
                 )
                 ctx.set_progress(
                     detail=(
-                        f"local model hiccup ({consecutive_failures}/"
-                        f"{_SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES}) — retrying in {backoff:.0f}s"
+                        (
+                            f"{_why} — retrying in {backoff:.0f}s in case it comes back "
+                            f"({consecutive_failures}/{_SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES})"
+                        )
+                        if _why
+                        else (
+                            f"local model hiccup ({consecutive_failures}/"
+                            f"{_SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES}) — retrying in "
+                            f"{backoff:.0f}s"
+                        )
                     )
                 )
                 _source_tags_sleep_interruptible(backoff, ctx)

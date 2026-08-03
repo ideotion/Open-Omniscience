@@ -313,6 +313,11 @@ def run_progressive_perception_extract_job(
             # triage_job.py/source_tags_job.py's identical fix, rather than
             # pausing on the very first hiccup.
             consecutive_failures += 1
+            # WHY it failed, in the resolver's own words; the budget is untouched
+            # (field report 2026-08-02).
+            from src.llm.backend import outage_reason
+
+            _why = outage_reason()
             state.update({
                 "totals": totals,
                 "batches_completed": batches_completed,
@@ -325,6 +330,7 @@ def run_progressive_perception_extract_job(
                     f"failures ({batches_completed} batches completed, "
                     f"{totals['stored']} articles extracted so far): "
                     f"{result.get('reason') or ''}"
+                    + (f" [{_why}]" if _why else "")
                 )
                 footer = {
                     "schema": PERCEPTION_EXTRACT_RUN_SUMMARY_SCHEMA,

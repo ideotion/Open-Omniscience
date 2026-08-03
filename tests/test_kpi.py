@@ -71,6 +71,62 @@ def test_k2_resolver_reads_the_nested_snappy_bar_shape(monkeypatch):
     assert "not-measurable" not in k2["method"] and "resolver error" not in k2["method"]
 
 
+def test_k2_selects_over_the_routes_a_human_waits_on(monkeypatch):
+    """The field shape, 2026-08-02: K2 published GREEN at 31.2 ms — the worst of three
+    2-second pollers — while GET /api/articles sat at a measured p95 of 68,137 ms in the
+    SAME reservoir, excluded because its window was thin.
+
+    Restricting the selection to pass|fail could never see an interactive route, because
+    a thin window IS the signature of one: the UI polls, a person clicks. So the value
+    must come from every measured interactive route, carrying its own n."""
+    import src.monitoring.latency as latency
+
+    def _fake_summary():
+        return {
+            "snappy_bar": {"bar_ms": 500.0, "interactive_routes": 4, "passing": 3,
+                           "failing": 0, "breaching": 1, "all_interactive_pass": False},
+            "routes": [
+                {"route": "GET /api/system/network", "p95_ms": 30.4,
+                 "window_n": 275, "snappy": "pass"},
+                {"route": "GET /api/system/egress-window", "p95_ms": 29.3,
+                 "window_n": 512, "snappy": "pass"},
+                {"route": "GET /api/scheduler/status", "p95_ms": 28.5,
+                 "window_n": 274, "snappy": "pass"},
+                {"route": "GET /api/articles", "p95_ms": 68137.5,
+                 "window_n": 2, "snappy": "low-n"},
+                # exempt stays out: the bar genuinely does not cover heavy exports
+                {"route": "GET /api/diagnostics/keywords", "p95_ms": 900000.0,
+                 "window_n": 3, "snappy": "exempt"},
+            ],
+        }
+
+    monkeypatch.setattr(latency, "summary", _fake_summary)
+    k2 = next(m for m in kpi_snapshot()["metrics"] if m["id"] == "K2")
+    assert k2["value"] == 68137.5, "the worst MEASURED interactive route, not the worst poller"
+    assert k2["verdict"] == "red"
+    assert k2["n"] == 2, "the worst route's OWN n, never a sum that hides how thin it is"
+    assert "/api/articles" in k2["method"]
+    assert "thin window" in k2["method"], "the uncertainty is disclosed, not the reason to drop it"
+    assert "900000" not in str(k2["value"]), "an exempt route never sets the value"
+
+
+def test_k2_stays_green_when_only_fast_routes_were_measured(monkeypatch):
+    """Negative-space twin: widening the selection must not make a thin-but-fast route
+    read as a breach. A fabricated red is exactly as dishonest as the fabricated green."""
+    import src.monitoring.latency as latency
+
+    monkeypatch.setattr(latency, "summary", lambda: {
+        "snappy_bar": {"bar_ms": 500.0},
+        "routes": [
+            {"route": "GET /api/insights/top", "p95_ms": 40.0, "window_n": 30, "snappy": "pass"},
+            {"route": "GET /api/articles", "p95_ms": 120.0, "window_n": 2, "snappy": "low-n"},
+        ],
+    })
+    k2 = next(m for m in kpi_snapshot()["metrics"] if m["id"] == "K2")
+    assert k2["verdict"] == "green"
+    assert k2["value"] == 120.0
+
+
 def test_k2_resolver_never_raises_on_the_live_shape():
     """Negative-space companion: the REAL (unmocked) latency.summary() call must
     round-trip through the resolver without ever hitting the try/except fallback —

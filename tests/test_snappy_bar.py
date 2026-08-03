@@ -69,3 +69,52 @@ def test_all_interactive_pass_is_true_only_when_there_are_passing_interactive_ro
     bar = latency.summary()["snappy_bar"]
     assert bar["all_interactive_pass"] is True
     assert bar["failing"] == 0 and bar["passing"] == 1
+
+
+def test_a_thin_window_over_the_bar_still_breaks_the_blanket_pass():
+    """The field shape, 2026-08-02, reproduced exactly.
+
+    Every route with a thick window was a 2-second POLLER, because that is what a thick
+    window MEANS on an interactive surface: the UI polls /api/system/network 275 times
+    while a person opens the article list twice. The bar judged the three pollers,
+    excluded everything else as low-n, and published all_interactive_pass:true while
+    GET /api/articles sat at a measured p95 of 68,137 ms in the same reservoir.
+
+    low-n must withhold CONFIDENCE, never the measurement.
+    """
+    _record("GET /api/system/network", 30.0, 275)          # poller, thick, fast
+    _record("GET /api/system/egress-window", 29.0, 512)    # poller, thick, fast
+    _record("GET /api/scheduler/status", 28.0, 274)        # poller, thick, fast
+    _record("GET /api/articles", 68137.5, 2)               # what a human waits on
+
+    s = latency.summary()
+    by_route = {r["route"]: r for r in s["routes"]}
+    assert by_route["GET /api/articles"]["snappy"] == "low-n", (
+        "the confidence label is unchanged — two samples cannot prove a typical p95"
+    )
+
+    bar = s["snappy_bar"]
+    assert bar["passing"] == 3, "the pollers still pass, and are still counted"
+    assert bar["failing"] == 0, "a thin window is never promoted to a proven failure"
+    assert bar["breaching"] == 1, "but the 68-second measurement is REAL and is counted"
+    assert bar["breaching_low_n"] == 1
+    assert bar["all_interactive_pass"] is False, (
+        "the whole defect: a blanket pass claimed over three pollers while the "
+        "flagship article list took 68 seconds"
+    )
+    breach = bar["breaching_routes"][0]
+    assert breach["route"] == "GET /api/articles"
+    assert breach["window_n"] == 2, "n travels with the breach, so the thin window shows"
+    assert breach["verdict"] == "low-n"
+
+
+def test_a_fast_thin_route_does_not_break_the_pass():
+    """The negative-space twin. If a thin window alone were enough to break the blanket
+    pass, the verdict would be a fabricated FAILURE — exactly as dishonest as the
+    fabricated pass, and it would fire on every freshly-booted process."""
+    _record("GET /api/insights/top", 40.0, 30)
+    _record("GET /api/insights/latest", 20.0, 2)  # thin, but genuinely fast
+    bar = latency.summary()["snappy_bar"]
+    assert bar["low_n"] == 1
+    assert bar["breaching"] == 0
+    assert bar["all_interactive_pass"] is True

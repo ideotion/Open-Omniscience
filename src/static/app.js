@@ -685,9 +685,19 @@
     // "ok" button AND a skipDialog caller, so there is exactly ONE place in the app
     // that performs this request (never duplicated inline per-caller).
     async function _postGoOnline() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const r = await api("/api/system/network", {method:"POST", body: JSON.stringify({online:true})});
         _paintNetwork(r.online);
+        // The endpoint re-READS the kill switch rather than echoing the request (it is
+        // honest about the state it actually reached), so a 200 can still carry
+        // online:false. That path used to return quietly: the button repainted to
+        // airplane and the operator was told nothing -- the silent half of the field
+        // report "sometimes the app remains in airplane mode with no explanation"
+        // (2026-08-02). A refusal must be as loud as a failure.
+        if (!r.online) {
+          toast(t("Still offline — the request was accepted but airplane mode is still on. Try again."), "err");
+        }
         return r.online;
       } catch (e) { toast(e.message, "err"); return false; }
     }
@@ -5352,6 +5362,9 @@
       // The fused setup box's plan is now stale by construction -- a backend that
       // just appeared removes a step from it.
       if (typeof loadAiSetup === "function") loadAiSetup();
+      // Same reason: the roster's install button is blocked while its backend is
+      // absent, and Ollama just stopped being absent.
+      if (typeof loadBenchRoster === "function") loadBenchRoster("ollama");
     }
 
     // The default-model install block. Shared so it renders in BOTH panel states --
@@ -7081,20 +7094,32 @@
       const summaries = [];
       for (const it of (st.items || [])) {
         const sm = it.summary || {};
+        // Every item's OWN outcome travels with its numbers. Without this an item
+        // that failed, was cancelled or was skipped still produced a summary object
+        // ({} is truthy, so `rep.plan || {}` sailed straight into the plan branch)
+        // and landed in the aggregate as a silent zero -- under a header that read
+        // "Import successful". A six-backup run with two failures looked identical
+        // to one with none.
+        const base = { title: it.label, state: it.state, error: it.error, elapsed_s: it.elapsed_s, kind: it.kind };
         if (it.kind === "corpus" || it.kind === "legacy") {
           const rep = sm.report || sm || {};
-          summaries.push({ title: it.label, plan: rep.plan || {}, ..._uxPlanExtras(rep) });
+          summaries.push({ ...base, plan: rep.plan || {}, ..._uxPlanExtras(rep) });
         } else if (it.kind === "blobs") {
-          summaries.push({ title: it.label, tally: { restored: sm.restored || 0, skipped: sm.skipped || 0 },
+          summaries.push({ ...base, tally: { restored: sm.restored || 0, skipped: sm.skipped || 0 },
             lines: [`${sm.restored || 0} ${t("restored")}`, `${sm.skipped || 0} ${t("skipped")}`] });
         } else if (it.kind === "newsletters") {
           const tl = sm.tally || {};
-          summaries.push({ title: it.label, tally: { stored: tl.stored || 0, duplicate: tl.duplicate || 0, empty: tl.empty || 0, errors: tl.errors || 0 },
+          summaries.push({ ...base, tally: { stored: tl.stored || 0, duplicate: tl.duplicate || 0, empty: tl.empty || 0, errors: tl.errors || 0 },
             lines: [`${tl.stored || 0} ${t("stored")}`, `${tl.duplicate || 0} ${t("already present")}`,
                     `${tl.empty || 0} ${t("empty")}`, `${tl.errors || 0} ${t("errors")}`] });
         }
       }
-      if (summaries.length) _renderImportSummary(document.getElementById("ux-imp-summary"), summaries);
+      if (summaries.length) {
+        _renderImportSummary(document.getElementById("ux-imp-summary"), summaries, {
+          state: st.state, elapsed_s: st.elapsed_s,
+          items_done: st.items_done, items_total: st.items_total,
+        });
+      }
       const dlg = document.getElementById("ux-import");
       if (dlg && !dlg.open) {
         if (st.state === "done") toast(t("Import complete."));
@@ -7253,6 +7278,80 @@
       const n = Number(s) || 0;
       return n < 1 ? `${Math.round(n * 1000)} ms` : `${n.toFixed(1)} s`;
     }
+    // A whole-run/whole-item duration, which for a real import is hours. _uxFmtS is
+    // for STAGE times (sub-second to minutes) and prints "61585.0 s" here, which is a
+    // number nobody can read. Kept separate rather than widened: the stage table's
+    // format is load-bearing for comparing stages against each other.
+    function _uxFmtDur(s) {
+      // null/undefined FIRST and explicitly: Number(null) is 0 and isFinite(0) is
+      // true, so the natural "keep the finite ones" guard turns a missing
+      // measurement into a confident "0.0 s" -- a fabricated number exactly where
+      // the payload was honest enough to send nothing (status() sets elapsed_s to
+      // null for an item that never started). The recorded house trap.
+      if (s === null || s === undefined || s === "") return "—";
+      const n = Number(s);
+      if (!isFinite(n) || n < 0) return "—";      // no measurement, never a fake 0
+      if (n < 60) return `${n.toFixed(n < 10 ? 1 : 0)} s`;
+      if (n < 3600) return `${Math.floor(n / 60)} min ${Math.round(n % 60)} s`;
+      return `${Math.floor(n / 3600)} h ${Math.round((n % 3600) / 60)} min`;
+    }
+
+    // Per-item outcome, kept in ONE place so the badge, the aggregate filter and the
+    // run headline can never disagree about what "counted".
+    const _UX_OUTCOME = {
+      done:        { ok: true,  icon: "✓", label: "Imported",   col: "var(--ok, #4caf50)" },
+      error:       { ok: false, icon: "✗", label: "Failed",     col: "var(--err, #d9534f)" },
+      cancelled:   { ok: false, icon: "■", label: "Cancelled",  col: "var(--muted, #888)" },
+      stopped:     { ok: false, icon: "■", label: "Stopped",    col: "var(--muted, #888)" },
+      skipped:     { ok: false, icon: "–", label: "Skipped",    col: "var(--muted, #888)" },
+      interrupted: { ok: false, icon: "!", label: "Interrupted", col: "var(--warn, #e0a800)" },
+    };
+    function _uxOutcome(state) {
+      // An ABSENT state is treated as counted: the recovered-last-run path
+      // (_uxShowLastCompletedSummary) only ever reads a job whose own status was
+      // already "done", so it carries no per-item state and must not be demoted.
+      return state === undefined || state === null
+        ? _UX_OUTCOME.done
+        : (_UX_OUTCOME[state] || { ok: false, icon: "?", label: String(state), col: "var(--muted, #888)" });
+    }
+
+    // "Which backup brought what" — the multi-backup ask. One row per queued item,
+    // in RUN ORDER (so it lines up with the progress list the user just watched),
+    // each with its own article split, its own measured elapsed time and its own
+    // outcome. Bars are scaled to the LARGEST item in the run, so the comparison is
+    // between the backups actually present; the numbers are printed beside every bar,
+    // so nothing rests on reading a width. An item that produced nothing gets no bar
+    // rather than a minimum-width one -- a visible sliver would claim a contribution
+    // it did not make.
+    function _uxPerItemView(rows, t, tf) {
+      if (rows.length < 2) return "";   // one item: the headline already IS its story
+      const num = (n) => Number(n || 0).toLocaleString();
+      const max = rows.reduce((m, r) => Math.max(m, r.total), 0);
+      const body = rows.map((r) => {
+        const oc = _uxOutcome(r.state);
+        const pct = max > 0 ? (r.total / max) * 100 : 0;
+        const seg = (v, col) => v > 0 ? `<span style="flex:${v};background:${col}"></span>` : "";
+        const bar = r.total > 0
+          ? `<div style="width:${pct.toFixed(1)}%;min-width:2px;display:flex;height:10px;border-radius:5px;overflow:hidden">`
+            + seg(r.new, "var(--accent, #4a90d9)") + seg(r.dup, "var(--muted-bg, #888)")
+            + seg(r.conf, "var(--err, #d9534f)") + `</div>`
+          : `<div class="muted" style="font-size:11px">${esc(r.error ? String(r.error).slice(0, 120) : t("nothing imported"))}</div>`;
+        const counts = r.total > 0
+          ? `${num(r.new)} ${t("imported")} · ${num(r.dup)} ${t("deduplicated")}`
+            + (r.conf ? ` · ${num(r.conf)} ${t("conflicts (your version kept)")}` : "")
+          : "";
+        return `<tr>`
+          + `<td style="padding:3px 8px 3px 0;white-space:nowrap"><span style="color:${oc.col}">${esc(oc.icon)}</span> ${esc(r.title)}</td>`
+          + `<td style="padding:3px 8px;width:40%">${bar}</td>`
+          + `<td style="padding:3px 8px;font-size:12px" class="muted">${esc(counts)}</td>`
+          + `<td style="padding:3px 0;text-align:right;font-size:12px;white-space:nowrap" class="muted">${esc(_uxFmtDur(r.elapsed_s))}</td>`
+          + `</tr>`;
+      }).join("");
+      return `<div style="margin-top:10px">`
+        + `<div class="muted" style="font-size:12px;margin-bottom:2px">`
+        + `${esc(t("What each backup brought"))} <span style="opacity:.7">${esc(tf("(bars are relative to the largest of the {n} items)", { n: rows.length }))}</span></div>`
+        + `<table style="width:100%;border-collapse:collapse">${body}</table></div>`;
+    }
     function _uxTimingsView(timings, t, tf) {
       if (!timings || !timings.stages) return "";
       const entries = Object.entries(timings.stages);
@@ -7325,7 +7424,7 @@
     // tally-only run (newsletters/large-data — no per-table plan) keeps its ORIGINAL
     // generic imported/deduplicated headline unchanged. Every count is a real backend
     // number; nothing here is fabricated.
-    function _renderImportSummary(host, summaries) {
+    function _renderImportSummary(host, summaries, run) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, vars) => {
         let out = s;
@@ -7360,7 +7459,34 @@
       const extra = [];  // empty/errored newsletters, surfaced honestly
       const detail = [];
       let sawPlan = false;
+      // One row per queued item, in run order, for the per-backup view -- built for
+      // EVERY item including the ones that contributed nothing, because "this backup
+      // failed" is the single most important thing a multi-backup conclusion can say.
+      const perItem = [];
       for (const sm of summaries) {
+        const counted = _uxOutcome(sm.state).ok;
+        if (sm.plan) {
+          const a = sm.plan.articles || {};
+          perItem.push({
+            title: sm.title, state: sm.state, error: sm.error, elapsed_s: sm.elapsed_s,
+            new: counted ? (a.new || 0) : 0, dup: counted ? (a.duplicate || 0) : 0,
+            conf: counted ? (a.conflict || 0) : 0,
+            total: counted ? ((a.new || 0) + (a.duplicate || 0) + (a.conflict || 0)) : 0,
+          });
+        } else {
+          const tl0 = sm.tally || {};
+          const nNew = counted ? ((tl0.stored || 0) + (tl0.restored || 0)) : 0;
+          const nDup = counted ? ((tl0.duplicate || 0) + (tl0.skipped || 0)) : 0;
+          perItem.push({
+            title: sm.title, state: sm.state, error: sm.error, elapsed_s: sm.elapsed_s,
+            new: nNew, dup: nDup, conf: 0, total: nNew + nDup,
+          });
+        }
+        // An item that failed, was cancelled, skipped or interrupted contributes
+        // NOTHING to the aggregate. Its numbers are absent or partial by definition,
+        // and folding them in would put a half-finished merge behind a "successful"
+        // headline -- the defect this whole block exists to close.
+        if (!counted) continue;
         if (sm.plan) {
           sawPlan = true;
           const p = sm.plan;
@@ -7473,10 +7599,41 @@
         ? `<div class="muted" style="font-size:12px;margin-top:4px">${esc(extra.join(" · "))}</div>` : "";
       const detailBlocks = detail.map((d) =>
         `<details style="margin-top:6px"><summary class="muted">${esc(d.title)}</summary>${d.body}</details>`).join("");
+
+      // OUTCOME-AWARE HEADER. This was hardcoded "✓ Import successful", so a run in
+      // which two of six backups failed announced itself exactly like a clean one.
+      // The verdict is derived from the ITEMS (the run state agrees, but the items
+      // are what the numbers came from, so they are the honest source), and the
+      // n-of-m line is stated whenever more than one thing was queued.
+      const failed = perItem.filter((r) => !_uxOutcome(r.state).ok);
+      const okCount = perItem.length - failed.length;
+      const allOk = failed.length === 0;
+      const stoppedOnly = !allOk && failed.every((r) => r.state === "cancelled" || r.state === "stopped" || r.state === "skipped");
+      const head = allOk
+        ? { icon: "✓", text: t("Import successful"), col: "var(--ok, #4caf50)" }
+        : (stoppedOnly
+            ? { icon: "■", text: t("Import stopped — not everything was imported"), col: "var(--muted, #888)" }
+            : { icon: "⚠", text: t("Import finished with errors"), col: "var(--warn, #e0a800)" });
+      const countLine = perItem.length > 1
+        ? `<div class="muted" style="font-size:12px;margin-top:2px">`
+          + esc(tf("{done} of {total} backups imported", { done: okCount, total: perItem.length }))
+          + (run && run.elapsed_s != null ? ` · ${esc(tf("{d} in total", { d: _uxFmtDur(run.elapsed_s) }))}` : "")
+          + `</div>`
+        : "";
+      // Only the counted items are behind the aggregate, so say so rather than
+      // letting the totals imply the whole queue succeeded.
+      const excludedNote = failed.length
+        ? `<div class="muted" style="font-size:12px;margin-top:4px">`
+          + esc(tf("The totals below cover the {n} that completed; the rest are listed with their outcome.", { n: okCount }))
+          + `</div>`
+        : "";
+
       host.innerHTML =
-        `<div class="card" style="margin-top:8px;padding:12px;border-left:3px solid var(--ok, #4caf50)">`
-        + `<div style="font-weight:700;font-size:15px">✓ ${esc(t("Import successful"))}</div>`
+        `<div class="card" style="margin-top:8px;padding:12px;border-left:3px solid ${head.col}">`
+        + `<div style="font-weight:700;font-size:15px">${esc(head.icon)} ${esc(head.text)}</div>`
+        + countLine + excludedNote
         + growLine + headline + bar + typeBlock + extraLine + queueBlock
+        + _uxPerItemView(perItem, t, tf)
         + deltaView
         + `<div class="muted" style="font-size:12px;margin-top:6px">${esc(t("Additive restore: nothing in your corpus was replaced or deleted. Duplicates were skipped."))}</div>`
         + `<div style="margin-top:8px"><div class="muted" style="font-size:12px;margin-bottom:2px">${esc(t("Details by source"))}</div>${detailBlocks}</div>`
@@ -19720,12 +19877,15 @@
           // instead. `=== false` on purpose: `null` means the probe could not
           // decide, which must fall through to the ordinary offline copy rather
           // than assert a hardware verdict nothing measured.
-          el.className = "pill warn";
+          // Still OFF to the eye (maintainer 2026-08-02: red + crossed when off),
+          // while `warn` keeps this state's own distinct meaning and its title says
+          // WHY it differs from a stopped backend — the layered-disclosure convention.
+          el.className = "pill warn ai-off";
           el.textContent = "AI";
           el.title = (h.hardware_reason ? h.hardware_reason + " — " : "")
             + t("AI features are off by default on this hardware — open AI settings to override");
         } else {
-          el.className = "pill warn";
+          el.className = "pill warn ai-off";
           el.textContent = "AI";
           // V4 (2026-07-29): the red pill must name the REAL situation.
           // `no_backend` means NOTHING is reachable (not merely that the selected
@@ -19737,6 +19897,9 @@
             + t("AI is offline — click to start it, or open AI settings to install one");
         }
       } catch (e) {
+        // The health probe itself failed, so a backend is certainly not serving:
+        // showing the neutral pill here would read as "fine" on no evidence.
+        el.className = "pill warn ai-off";
         el.textContent = "AI";
         el.title = t("AI — click to open AI settings");
       }
@@ -19947,6 +20110,9 @@
     function refreshAiPanels() {
       loadAiSetup(); loadAiBackendPanel(); loadVllmStatusPanel();
       loadOllamaInstall(); loadLlmModels(); loadLlmHealth();
+      // Each panel asks for ITS OWN backend's roster, so the section heading and the
+      // identifiers under it can never disagree.
+      loadBenchRoster("vllm"); loadBenchRoster("ollama");
     }
 
     async function loadAiBackendPanel() {
@@ -20250,6 +20416,7 @@
         say(t("Installing — this can take several minutes…"));
         await _followJob("/api/llm/vllm/install/status", say);
         loadVllmStatusPanel();
+        loadBenchRoster("vllm");  // the roster's install button unblocks once vLLM exists
       } catch (e) {
         say("Install: " + e.message);
       } finally {
@@ -20282,6 +20449,133 @@
         loadLlmHealth();
       } catch (e) { toast("Stop: " + e.message, "err"); }
       finally { if (btn) btn.disabled = false; }
+    }
+
+    // --- The comparative-bench roster (maintainer ask 2026-08-02) --------------- //
+    //
+    // One renderer, both panels: the vLLM section shows Hugging Face repos, the Ollama
+    // section shows library tags, and each install button names the backend it is
+    // showing. The alternative -- one shared control that installs "whatever the
+    // machine prefers" -- would let a click under the vLLM heading download Ollama
+    // tags, which is the same routing-vs-provisioning confusion that shipped a real
+    // field bug three days ago.
+    //
+    // EVERY ROW IS RENDERED, including the two with nothing to install for a given
+    // backend. A model absent from a backend is a finding the operator should see,
+    // with what was searched, not a row quietly dropped so the table looks complete.
+    // The tickbox for such a row is disabled, not hidden: the reason is the point.
+    const _BENCH_HOSTS = {vllm: "vllm-bench-box", ollama: "ollama-bench-box"};
+    const _benchTicked = {vllm: null, ollama: null};  // null = "use the roster defaults"
+
+    async function loadBenchRoster(backend) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $(_BENCH_HOSTS[backend]);
+      if (!host) return;
+      let r;
+      try { r = await api("/api/llm/bench-roster?backend=" + encodeURIComponent(backend)); }
+      catch (e) { host.innerHTML = `<p class="muted">${esc(t("Could not read the bench roster."))}</p>`; return; }
+      const meanings = r.flag_meanings || {};
+      const picked = _benchTicked[backend];
+      const rows = (r.models || []).map((m) => {
+        // The hover carries each flag's full meaning (invariant #17), so the visible
+        // chip stays short without the warning becoming a bare unexplained word.
+        const flags = (m.flags || []).map((f) =>
+          `<span class="pill" title="${esc(meanings[f] || f)}">${esc(f.replace(/_/g, " "))}</span>`).join(" ");
+        const facts = [m.size, m.licence, m.context_length ? `${Number(m.context_length).toLocaleString()} ctx` : null]
+          .filter(Boolean).map(esc).join(" · ");
+        if (!m.installable) {
+          // Never a near-match offered in its place: the searched list is what makes
+          // the absence checkable rather than a shrug.
+          return `<div class="row" style="align-items:start;gap:8px;margin-top:6px;opacity:.85">` +
+            `<input type="checkbox" disabled title="${esc(t("Not published for this backend."))}">` +
+            `<div><strong>${esc(m.label)}</strong> ${flags}` +
+            `<div class="muted">${esc(t("Not available here:"))} ${esc(m.absent_reason || "")}</div>` +
+            (m.searched ? `<div class="hint">${esc(t("Searched:"))} ${esc(m.searched)}</div>` : "") +
+            // An absence somebody can close in one lookup must not read like a dead end.
+            (m.open_question
+              ? `<div class="card-caveat">${esc(t("Unresolved — this would settle it:"))} ${esc(m.open_question)}</div>`
+              : "") +
+            (m.caveat ? `<div class="card-caveat">${esc(m.caveat)}</div>` : "") +
+            `</div></div>`;
+        }
+        const on = picked ? picked.includes(m.key) : m.default_on;
+        // A weaker provenance tier is stated ON the identifier it qualifies. "fetched"
+        // is the norm and says nothing extra; "search-verified" means the acquisition
+        // run named the string but no page fetch was recorded for it, and an operator
+        // about to download several GB is owed that distinction.
+        const prov = m.verification === "fetched" ? "" :
+          ` <span class="pill" title="${esc(t("The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is."))}">${esc(t("search-verified"))}</span>`;
+        return `<div class="row" style="align-items:start;gap:8px;margin-top:6px">` +
+          `<input type="checkbox" class="bench-pick" data-backend="${esc(backend)}" data-key="${esc(m.key)}"${on ? " checked" : ""}>` +
+          `<div><strong>${esc(m.label)}</strong> ${flags}` +
+          `<div class="hint"><code>${esc(m.identifier)}</code>${prov}${facts ? " · " + facts : ""}</div>` +
+          (m.quant_note ? `<div class="hint">${esc(m.quant_note)}</div>` : "") +
+          (m.note ? `<div class="muted">${esc(m.note)}</div>` : "") +
+          `</div></div>`;
+      }).join("");
+      // Alternatives are listed, never pre-ticked and never folded into a row: a
+      // third-party GGUF is a different artefact from the publisher's own model, and
+      // an operator who reaches for one should know that is what they reached for.
+      const alts = (r.alternatives || []).map((a) =>
+        `<div class="hint" style="margin-top:6px">${esc(t("Another way to get"))} <strong>${esc(a.substitutes)}</strong>: ` +
+        `<code>${esc(a.tag)}</code>${a.size ? " · " + esc(a.size) : ""}` +
+        `<div class="card-caveat">${esc(a.caveat || "")}</div>` +
+        `<div class="muted">${esc(t("Paste it into “Pull any model tag” above — it is not ticked for you."))}</div></div>`).join("");
+      const blocked = r.prerequisite
+        ? `<p class="muted">${esc(r.prerequisite === "vllm"
+            ? t("vLLM is not installed yet, and it is what downloads these models. Install it first.")
+            : t("Ollama is not installed yet, and it is what downloads these models. Install it first."))}</p>`
+        : "";
+      host.innerHTML =
+        `<h3 style="margin:0 0 4px">${esc(t("Comparative-bench models"))}</h3>` +
+        `<p class="muted" style="margin:0 0 6px">${esc(t("The model set used to compare backends and sizes on your own corpus. Tick what you want and download them in one go — each is fetched by the backend named below, over the clear internet, never through Tor."))}</p>` +
+        `<p class="hint" style="margin:0 0 6px">${esc(t("For:"))} <strong>${esc(backend === "vllm" ? "vLLM (Hugging Face)" : "Ollama")}</strong>` +
+        ` · ${esc(t("verified"))} ${esc(r.as_of || "")}</p>` +
+        rows + alts +
+        `<div style="margin-top:10px">` +
+        `<button onclick="installBenchModels('${esc(backend)}', this)"${r.prerequisite ? " disabled" : ""}>` +
+        `${esc(t("Download the ticked models"))}</button>` +
+        `<span id="bench-status-${esc(backend)}" class="hint" style="margin-left:8px"></span></div>` +
+        blocked +
+        `<div class="card-caveat" style="margin-top:8px">${esc(r.caveat || "")}</div>` +
+        `<div class="muted">${esc(r.method || "")}</div>`;
+    }
+
+    async function installBenchModels(backend, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const say = (m) => { const el = $("bench-status-" + backend); if (el) el.textContent = m; };
+      const keys = Array.from(document.querySelectorAll(
+        `.bench-pick[data-backend="${backend}"]:checked`)).map((el) => el.dataset.key);
+      // Remembered across the re-render the install triggers, so a deliberate
+      // un-ticking is not silently undone by the panel refreshing under the operator.
+      _benchTicked[backend] = keys;
+      if (!keys.length) { say(t("Tick at least one model first.")); return; }
+      if (!await ensureAiEgress(t("Download bench models (over the clear internet, not through Tor)"))) {
+        say(t("Download cancelled.")); return;
+      }
+      const was = btn ? btn.textContent : "";
+      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
+      try {
+        const r = await api("/api/llm/bench-roster/install",
+          {method: "POST", body: JSON.stringify({keys, backend})});
+        // Refusals are shown BEFORE the progress line, not after the batch: an
+        // operator who ticked six and gets four downloads is owed an account of six.
+        for (const ref of (r.refused || [])) {
+          toast(`${ref.label || ref.key}: ${ref.reason || t("refused")}`, "err");
+        }
+        if (r.action === "nothing_to_do") { say(t("Nothing to download — every ticked model was refused.")); return; }
+        if (r.action === "busy") { say(t("A model download is already running.")); return; }
+        say(t("Downloading:") + " " + (r.queued || []).join(", "));
+        if (backend === "ollama") _llmPullStartPoll();  // the Downloads section owns the per-model bars
+        const st = await _followJob(
+          "/api/llm/bench-roster/status?backend=" + encodeURIComponent(backend), say);
+        say(st.state === "error" ? (t("Download failed:") + " " + (st.detail || "")) : (st.detail || t("Done.")));
+        loadLlmModels();
+      } catch (e) {
+        say(t("Download failed:") + " " + (e.message || e));
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = was || t("Download the ticked models"); }
+      }
     }
 
     // E-S4 (2026-08-01, ruling 16): a user-asked summarize/translate never silently

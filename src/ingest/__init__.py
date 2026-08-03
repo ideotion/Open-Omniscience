@@ -315,11 +315,71 @@ def activate_kill_switch() -> None:
 
 
 def clear_kill_switch() -> None:
+    """Turn the switch off. A MECHANISM, and deliberately nothing more.
+
+    It does NOT record that an operator went online -- see
+    :func:`note_operator_crossed_online`. The first cut of the boot-race fix set
+    the decision flag here, on the theory that clearing the switch and going online
+    are the same event. They are not: this primitive is also how a caller reaches a
+    known state (every test fixture in the tree does exactly that), and folding the
+    decision in meant any such caller silently suppressed the boot airplane engage.
+    That is the wrong direction to be wrong in -- it weakens zero-network boot, the
+    non-negotiable the flag was written to leave untouched.
+    """
     _KILL.clear()
 
 
 def kill_switch_active() -> bool:
     return _KILL.is_set()
+
+
+#: Has an OPERATOR crossed ONLINE in this process? Set by
+#: :func:`note_operator_crossed_online` and never cleared, so it records "a
+#: decision was taken", not the current state -- it must survive a later
+#: deliberate go-offline, because a flag mirroring the state would re-arm the
+#: clobber below the moment the operator toggled airplane back on.
+#:
+#: THE RACE IT CLOSES (field report 2026-08-02: "sometimes the app remains in
+#: airplane mode with no explanation" on a NEW instance). Airplane-at-boot is
+#: engaged TWICE on the unlock path: synchronously in ``unlock.py`` (so there is no
+#: window where the corpus is open and the socket guard is not), and again at the
+#: tail of ``_run_startup_upkeep`` -- which on that path runs in a BACKGROUND
+#: THREAD. A new instance's upkeep is slow (catalog seed, ANALYZE, counts, cache
+#: warm), so the wizard is on screen throughout it. Cross online during that
+#: window and the upkeep thread's ``activate_kill_switch()`` lands AFTER the
+#: operator's ``clear_kill_switch()`` and silently puts the app back in airplane
+#: mode -- the POST had already returned ``online: true``, so nothing reported it,
+#: and the 5 s poll simply repainted the button. Intermittent by construction: it
+#: depends purely on whether the click beat the thread.
+#:
+#: The zero-network-boot non-negotiable is untouched. A boot still engages airplane
+#: unconditionally; it just may not RE-engage it over an explicit later decision,
+#: which was never "booting offline" in the first place.
+_CROSSED_ONLINE = threading.Event()
+
+
+def note_operator_crossed_online() -> None:
+    """Record that an OPERATOR deliberately took this process online.
+
+    Called from the three surfaces where that is what actually happened -- the
+    go-online endpoint, scheduler start, and run-now -- each of which is already
+    behind the ONE network-consent popup. Kept separate from
+    :func:`clear_kill_switch` so that reaching a known state, which is a different
+    act, can never be mistaken for a decision.
+    """
+    _CROSSED_ONLINE.set()
+
+
+def crossed_online_since_boot() -> bool:
+    """True once an operator has explicitly taken this process online.
+
+    Callers that engage airplane as part of BOOT consult this so a slow background
+    upkeep can never revoke a decision the operator already made."""
+    return _CROSSED_ONLINE.is_set()
+
+
+def _reset_crossed_online_for_tests() -> None:
+    _CROSSED_ONLINE.clear()
 
 
 def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:

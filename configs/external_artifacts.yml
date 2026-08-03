@@ -66,6 +66,29 @@ artifacts:
     freshness: {max_age_months: 12}
     last_verified: "2026-06-17"
 
+  - id: bench-model-roster
+    title: Comparative-bench model roster
+    kind: catalog
+    description: >
+      Six models the model-comparison work installs on either backend, with a
+      Hugging Face repo and/or an Ollama tag each, plus the per-entry facts an
+      operator needs BEFORE downloading: gated, base-vs-instruct, licence class,
+      vision-capable, and which quants actually exist. Two of the six are absent
+      from Ollama and are reported absent rather than substituted.
+    upstream: https://huggingface.co + https://ollama.com/library
+    check_upstream: >
+      Re-run the acquisition prompt in an internet-connected session. Both hosts
+      403 from the build sandbox, so this roster can NEVER be re-verified by the
+      session that edits it — which is exactly why it is dated and registered.
+    license: per-model (the roster is our metadata; LFM2.5's own licence is UNREAD)
+    pin: {file: src/llm/bench_roster.py, const: BENCH_ROSTER_AS_OF}
+    refresh: >
+      Verify every repo/tag on a live page, then update BENCH_ROSTER +
+      BENCH_ROSTER_AS_OF. Never substitute a near-match for a model that has moved
+      or vanished; report it absent.
+    freshness: {max_age_months: 6}
+    last_verified: "2026-08-02"
+
   - id: wiki-dump-sizes
     title: Wikipedia dump size estimates
     kind: dated-data

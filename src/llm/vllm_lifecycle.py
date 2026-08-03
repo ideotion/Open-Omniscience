@@ -622,6 +622,64 @@ def process_alive() -> bool:
     return _proc is not None and _proc.poll() is None
 
 
+def start_outcome() -> dict:
+    """What became of the last start THIS process spawned: a tri-state, not a boolean.
+
+    ``start()`` returns the moment ``Popen`` succeeds, because a model load takes tens
+    of seconds and blocking the request thread on it would be worse. That is correct,
+    and it left a hole: if the child then DIES during engine initialisation, nothing
+    said so. ``running`` stayed false and ``process_tracked`` stayed false -- exactly
+    the same pair a server that is still loading shows -- so a failed start and a slow
+    one were indistinguishable, and the caller's only recourse was to keep polling a
+    port that would never open (field report 2026-08-02: "local model hiccup (1/10) --
+    retrying in 5s", ten times, against a server that had already exited).
+
+    The same lesson the port collision taught: a boolean up/down probe cannot separate
+    "not started" from "started and gone", and it will confidently answer the wrong one.
+
+      * ``not-started``  nothing was spawned by this process
+      * ``starting``     the child is alive but not answering yet (the normal case)
+      * ``ready``        the child is alive and the API answers
+      * ``exited``       the child is GONE, with its returncode -- a failed start
+
+    ``exited`` carries ``log_hint`` pointing at the log's HEAD, because for a startup
+    failure that is where the reason is: EngineCore is a child of the API server, so it
+    prints its traceback first and the parent's stack follows it.
+    """
+    if _proc is None:
+        return {
+            "state": "not-started",
+            "detail": "no vLLM server was started by this process",
+        }
+    code = _proc.poll()
+    if code is None:
+        if is_running():
+            return {"state": "ready", "detail": "the server is answering", "pid": _proc.pid}
+        return {
+            "state": "starting",
+            "pid": _proc.pid,
+            "detail": (
+                "the server process is alive but not answering yet -- a model load takes "
+                "tens of seconds; this is the normal path, not a failure"
+            ),
+        }
+    return {
+        "state": "exited",
+        "returncode": code,
+        "detail": (
+            f"the server process exited with code {code} -- the start FAILED. It is not "
+            "still loading, and polling will never succeed; start it again after fixing "
+            "the cause below."
+        ),
+        "log_hint": (
+            "read the HEAD of the server log: vLLM's EngineCore is a child process, so a "
+            "startup failure prints its traceback FIRST and the parent's stack (ending in "
+            "'See root cause above') follows it"
+        ),
+        "log_path": str(server_log_path()),
+    }
+
+
 # --------------------------------------------------------------------------- #
 #  Context-size auto-tune (B2.5, ruled: disclosed auto-with-override)
 # --------------------------------------------------------------------------- #
@@ -1015,6 +1073,11 @@ def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
         # the actionable fact was that vLLM could never bind it.
         "port_occupant": port_occupant(),
         "process_tracked": process_alive(),
+        # WHAT BECAME of the last start, as a tri-state. `process_tracked: false` is
+        # shown by a server that is still loading AND by one that died during engine
+        # init; conflating them is what made a failed start read as a transient hiccup
+        # worth retrying ten times (field report 2026-08-02).
+        "start_outcome": start_outcome(),
         "gpu": gpu,
         "platform": platform_support(),
         "base_url": base_url(),
@@ -1555,6 +1618,59 @@ def run_model_download_job(
             + (": " + " | ".join(list(tail)[-3:]) if tail else "")
         )
     return {"downloaded": True, "state": "downloaded", **model_cache_state(model)}
+
+
+def run_models_download_job(
+    ctx,
+    *,
+    models: Sequence[str],
+    runner: Callable[..., Iterator[str]] | None = None,
+) -> dict:
+    """Download SEVERAL models, one after another, reporting each on its own.
+
+    Maintainer ask 2026-08-02: a button that installs a chosen bench roster. Sequential
+    rather than parallel because they share one network link and one disk, and because
+    the per-model output is only legible when one model is talking at a time.
+
+    ONE FAILURE DOES NOT END THE BATCH, and that is the load-bearing decision. The
+    roster's own Gemma-3n row is GATED on Hugging Face -- it will fail without an
+    accepted licence and a token, which is stated in the UI before the click. If a
+    failure aborted the run, ticking the one model that is expected to need a token
+    would silently cost the operator the other five. So each model's outcome is
+    recorded and the loop continues; the job succeeds if ANY model arrived, and the
+    per-model verdicts travel in the result either way.
+
+    Cancellation is honoured BETWEEN models and inside each one (the single-model
+    worker already returns ``cancelled`` when ``ctx.stopping``), so a stop during a
+    multi-gigabyte fetch does not have to wait for the whole batch."""
+    results: list[dict] = []
+    total = len(models)
+    for i, model in enumerate(models, start=1):
+        if ctx.stopping:
+            results.append({"model": model, "state": "cancelled"})
+            continue
+        ctx.set_progress(detail=f"model {i} of {total}: {model}")
+        try:
+            one = run_model_download_job(ctx, model=model, runner=runner)
+            results.append({"model": model, **one})
+        except (VllmLifecycleError, VllmUnsupportedError) as exc:
+            # Recorded with its own reason -- a gated repo and a typo look identical
+            # from a bare "failed", and only one of them is the operator's to fix.
+            results.append({"model": model, "state": "error", "error": str(exc)})
+        except Exception as exc:  # noqa: BLE001 - one model's surprise is not the batch's
+            results.append({"model": model, "state": "error", "error": repr(exc)})
+    downloaded = [r for r in results if r.get("state") in {"downloaded", "already_cached"}]
+    failed = [r for r in results if r.get("state") == "error"]
+    return {
+        "requested": total,
+        "downloaded": len(downloaded),
+        "failed": len(failed),
+        "cancelled": sum(1 for r in results if r.get("state") == "cancelled"),
+        "results": results,
+        # Stated rather than inferred from the counts, so a caller cannot read a
+        # partial batch as a clean one.
+        "partial": bool(downloaded and failed),
+    }
 
 
 #: pip's own flags for a very large download. ``--retries``/``--timeout`` mirror

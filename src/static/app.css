@@ -370,7 +370,31 @@
     .act-host:empty { visibility:hidden; }
     /* Top-bar status chips keep a CONSTANT footprint (maintainer feedback):
        text changes (LLM — / LLM ✓ N) must not reflow their neighbours. */
-    #llm { min-width:96px; text-align:center; }
+    /* The AI pill (maintainer 2026-08-02): smaller, and two READABLE states — green
+       when a backend is serving, red WITH A DIAGONAL BAR when it is not. Still a fixed
+       footprint (invariant #3): the label is a constant "AI", so the width never moves
+       between states and nothing to its right shifts. 96px was sized for the old
+       "<N> LLM" text and has been oversized since the count was dropped. */
+    #llm { min-width:46px; text-align:center; }
+    /* OFF. Colour is never the only signal (the bar is the shape cue, the #oo-tip title
+       carries the reason), and every colour is theme-DERIVED — a hardcoded hue failed
+       8/17 themes when --caveat was introduced, so --err is used through color-mix
+       exactly as .pill.err does. */
+    #llm.ai-off {
+      position:relative; overflow:hidden;
+      color:var(--err);
+      border-color:color-mix(in srgb, var(--err) 55%, var(--border));
+      background:color-mix(in srgb, var(--err) 8%, var(--panel2));
+    }
+    #llm.ai-off::after {
+      content:""; position:absolute; inset:0; pointer-events:none;
+      /* One diagonal bar corner-to-corner. A gradient rather than a rotated element so
+         the pill's rounded clip cuts it cleanly and no layout box is added. */
+      background:linear-gradient(to top right, transparent calc(50% - 0.9px),
+        color-mix(in srgb, var(--err) 85%, transparent) calc(50% - 0.9px),
+        color-mix(in srgb, var(--err) 85%, transparent) calc(50% + 0.9px),
+        transparent calc(50% + 0.9px));
+    }
     #health { min-width:110px; }
     @keyframes oo-spin { to { transform:rotate(360deg); } }
     /* Activity & vitals popover (opened from the chip). */

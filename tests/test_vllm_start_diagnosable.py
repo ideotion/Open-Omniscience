@@ -248,3 +248,63 @@ def test_losing_the_log_never_blocks_the_start(gpu8, monkeypatch):
     out = V.start("someorg/tiny-1b", popen=lambda *a, **k: None)
     assert out["started"] is True
     assert out["log_path"] is None, "and it says the log is unavailable rather than lying"
+
+
+# --------------------------------------------------------------------------- #
+#  a start that DIED must not be reported as one still loading
+# --------------------------------------------------------------------------- #
+class _Proc:
+    """The subprocess.Popen surface start_outcome() reads."""
+
+    def __init__(self, code=None, pid=4242):
+        self._code = code
+        self.pid = pid
+
+    def poll(self):
+        return self._code
+
+
+def test_a_never_started_server_says_so(gpu8, monkeypatch):
+    monkeypatch.setattr(V, "_proc", None)
+    assert V.start_outcome()["state"] == "not-started"
+
+
+def test_a_live_but_silent_process_is_STARTING_not_a_failure(gpu8, monkeypatch):
+    """The normal path: a model load takes tens of seconds. Calling that a failure
+    would make every healthy start look broken for its first minute."""
+    monkeypatch.setattr(V, "_proc", _Proc(code=None))
+    monkeypatch.setattr(V, "is_running", lambda **k: False)
+    out = V.start_outcome()
+    assert out["state"] == "starting"
+    assert out["pid"] == 4242
+
+
+def test_a_process_that_EXITED_is_a_failed_start_with_its_code(gpu8, monkeypatch):
+    """The field defect, 2026-08-02. start() returns the moment Popen succeeds -- right,
+    because blocking on a model load would be worse -- so when the child then died during
+    engine init, `running: false` and `process_tracked: false` were the ONLY symptoms,
+    and a server still loading shows exactly the same pair. The caller could not tell a
+    dead start from a slow one, so it polled a port that would never open and reported
+    'local model hiccup (1/10) -- retrying in 5s'."""
+    monkeypatch.setattr(V, "_proc", _Proc(code=1))
+    out = V.start_outcome()
+    assert out["state"] == "exited"
+    assert out["returncode"] == 1
+    assert "FAILED" in out["detail"]
+    assert "never succeed" in out["detail"], "polling must be named as futile, not implied"
+    # For a STARTUP failure the reason is at the log's head: EngineCore is a child, so
+    # it prints its traceback first and the parent's stack follows it.
+    assert "HEAD" in out["log_hint"]
+    assert out["log_path"].endswith("server.log")
+
+
+def test_a_ready_server_is_ready(gpu8, monkeypatch):
+    monkeypatch.setattr(V, "_proc", _Proc(code=None))
+    monkeypatch.setattr(V, "is_running", lambda **k: True)
+    assert V.start_outcome()["state"] == "ready"
+
+
+def test_the_status_payload_carries_the_outcome(gpu8, monkeypatch):
+    """It has to reach the operator and the bundle, not just exist as a function."""
+    monkeypatch.setattr(V, "_proc", _Proc(code=3))
+    assert V.status()["start_outcome"]["state"] == "exited"
