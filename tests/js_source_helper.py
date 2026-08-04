@@ -143,6 +143,46 @@ def css_rule(css: str, selector: str) -> str:
     raise AssertionError(f"unbalanced braces while slicing {selector!r}")
 
 
+def array_literal(js: str, name: str) -> str:
+    """One ``const NAME = [ … ]`` array literal, BRACKET-matched from its opening ``[``.
+
+    The fourth shape of the same failure. A test that wanted the ``_FIG_STYLES``
+    series table sliced it as::
+
+        src = APP[APP.index("const _FIG_STYLES = ["):]
+        src = src[: src.index("];") + 2]
+
+    which is correct only while no element of the array happens to contain ``];``
+    before the array's own close — a nested array, or that pair inside a string
+    literal, silently truncates the slice and every assertion over it then passes
+    against a fragment. Bracket-matching cannot truncate.
+
+    Raises rather than returning empty, for the reason ``function_body`` does: a
+    slice that comes back empty is how a guard passes vacuously.
+    """
+    for decl in (f"const {name} = [", f"const {name}=[",
+                 f"let {name} = [", f"var {name} = ["):
+        at = js.find(decl)
+        if at != -1:
+            break
+    else:
+        raise AssertionError(f"no array literal named {name!r} found in the source")
+
+    open_at = js.index("[", at)
+    depth = 0
+    for j in range(open_at, len(js)):
+        if js[j] == "[":
+            depth += 1
+        elif js[j] == "]":
+            depth -= 1
+            if depth == 0:
+                out = js[open_at : j + 1]
+                if len(out) < 3:
+                    raise AssertionError(f"{name!r} sliced to an empty array: {out!r}")
+                return out
+    raise AssertionError(f"unbalanced brackets while slicing {name!r}")
+
+
 _LINE_COMMENT = re.compile(r"^\s*//.*$", re.MULTILINE)
 
 

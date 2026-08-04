@@ -25,7 +25,13 @@ from __future__ import annotations
 
 import re
 
-from tests.js_source_helper import css_rule, function_body, read_static, strip_comments
+from tests.js_source_helper import (
+    array_literal,
+    css_rule,
+    function_body,
+    read_static,
+    strip_comments,
+)
 
 APP = read_static("app.js")
 # CSS comments are stripped before any token assertion. The token block's own comment
@@ -39,8 +45,7 @@ CSS = re.sub(r"/\*.*?\*/", "", read_static("app.css"), flags=re.S)
 def test_six_series_styles_each_pair_a_colour_with_a_dash_and_a_marker():
     """Six slots, not four: at i == 4 the old cycle made series 5 identical to
     series 1 in every channel it had."""
-    src = APP[APP.index("const _FIG_STYLES = ["):]
-    src = src[: src.index("];") + 2]
+    src = array_literal(APP, "_FIG_STYLES")
     entries = re.findall(r"\{color:\s*\"var\((--fig-\d)\)\",\s*dash:\s*\[([^\]]*)\],"
                          r"\s*marker:\s*\"(\w+)\"\}", src)
     assert len(entries) == 6, f"expected six series slots, parsed {len(entries)}"
@@ -65,8 +70,7 @@ def test_no_two_dash_patterns_are_the_same_rhythm():
     The signature is the ORDERED sequence of mark-length classes (dot / short / long),
     which is what the eye actually reads. Two patterns sharing it are the same family.
     """
-    src = APP[APP.index("const _FIG_STYLES = ["):]
-    src = src[: src.index("];") + 2]
+    src = array_literal(APP, "_FIG_STYLES")
     dashes = [tuple(float(x) for x in m.split(",") if x.strip())
               for m in re.findall(r"dash:\s*\[([^\]]*)\]", src)]
     def cls(mark: float) -> str:
