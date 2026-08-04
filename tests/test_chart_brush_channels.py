@@ -98,10 +98,17 @@ def test_the_live_readout_states_the_same_span_the_brush_will_emit():
         "one definition only: two copies could drift and the readout would silently stop "
         "describing the selection"
     )
-    assert re.search(r"readout\.textContent = dayOf\(", body), (
-        "the live readout must use the SAME day formatter as the emit, never fmtT"
+    # The readout previews the SNAPPED span, because the server widens a brush to whole
+    # chart buckets: previewing the raw drag showed 2026-05-10 -> 06-26 while the result
+    # reported 05-04 -> 06-28, two spans for one gesture. Asserted on the VALUES rendered
+    # rather than the expression's shape, which is what made this guard stale twice.
+    assert re.search(r"\{from: dayOf\(_snap\(lo, false\)\), to: dayOf\(_snap\(hi, true\)\)", body), (
+        "the live readout must preview the bucket-snapped span through the same day "
+        "formatter as the emit -- never fmtT, whose granularity follows the whole axis, "
+        "and never the raw drag, which is not the span the server will use"
     )
     assert re.search(r"onSelectRange\(dayOf\(", body), "and the emit must use it too"
+    assert "readout.textContent = fmtT(" not in body, "the old, coarser formatter is gone"
 
 
 def test_the_toggle_is_a_real_button_with_state_not_an_inline_handler():
@@ -166,7 +173,9 @@ def test_every_new_string_is_keyed_in_all_twelve_locales():
     needed = [
         "Select a period",
         "No articles in {from} → {to}.",
-        "{articles} articles · {mentions} mentions · {from} → {to}",
+        "{term} · {articles} articles · {mentions} mentions · {from} → {to}",
+        "Selected {from} → {to} · {n} of {total} points",
+        "n counts the datapoints plotted here, not articles.",
         "{n} quarantined, not included",
         "showing the first 5000",
         "{term}: {from} → {to}",
@@ -190,7 +199,9 @@ def test_the_templates_keep_their_placeholders_in_every_locale():
     ph = re.compile(r"\{(\w+)\}")
     templates = [
         "No articles in {from} → {to}.",
-        "{articles} articles · {mentions} mentions · {from} → {to}",
+        "{term} · {articles} articles · {mentions} mentions · {from} → {to}",
+        "Selected {from} → {to} · {n} of {total} points",
+        "n counts the datapoints plotted here, not articles.",
         "{n} quarantined, not included",
         "{term}: {from} → {to}",
     ]
@@ -200,3 +211,56 @@ def test_the_templates_keep_their_placeholders_in_every_locale():
             assert set(ph.findall(d[k])) == set(ph.findall(k)), (
                 f"{f.stem}: placeholders differ for {k!r} -> {d[k]!r}"
             )
+
+
+def test_the_superseded_toast_key_is_gone_not_orphaned_beside_its_replacement():
+    """The toast template gained a {term} slot so it says WHAT was counted. Adding the new
+    key while leaving the old one would orphan a reviewed translation and leave the i18n
+    gate green -- the recorded ALERT_CAVEAT failure. Each locale's existing wording was
+    reused by prefixing the term slot, so nothing was re-invented either."""
+    import json
+    from pathlib import Path
+
+    loc = Path(__file__).resolve().parent.parent / "src" / "static" / "locales"
+    superseded = "{articles} articles · {mentions} mentions · {from} → {to}"
+    for f in sorted(loc.glob("*.json")):
+        d = json.loads(f.read_text(encoding="utf-8"))
+        assert superseded not in d, (
+            f"{f.stem}: the superseded template is still present -- a re-key must replace "
+            f"the old entry, not sit beside it"
+        )
+
+
+def test_the_readout_states_how_many_points_the_span_covers():
+    """A critic reading the screenshot estimated four bars inside the band when three were,
+    because two lookalike bars sat either side of the edge. Stating the count settles it
+    ADDITIVELY -- nothing is dimmed, since element opacity makes a contrast pair lie."""
+    body = strip_comments(CHART)
+    assert "of {total} points" in body, "the readout must state the count, not only the dates"
+    assert re.search(r"if \(pt\.t >= lo && pt\.t <= hi\) inside\+\+", body), (
+        "the count must be computed from the points actually inside the span"
+    )
+    assert "globalAlpha = 0.15" in body, (
+        "the band stays a light overlay; if this became a dimming pass over the excluded "
+        "data, re-read the .ag-cal lesson about opacity and measured contrast"
+    )
+
+
+def test_the_brush_snaps_to_whole_chart_buckets():
+    """A brush over a weekly chart can only honestly select whole weeks. Measured before
+    this: four visible bars summing to 65 were reported as 50, because a week bar drawn at
+    its Monday (2026-06-22) whose every mention fell on 06-28 sat inside a span ending
+    06-26. The bucket travels with the request and the span widens to its edges."""
+    body = strip_comments(CHART)
+    assert "const _snap" in body, "the preview must snap client-side"
+    assert 'opts.bucket || "day"' in body, (
+        'the default must be "day" -- the identity case, so a chart that declares no '
+        "bucket behaves exactly as before"
+    )
+    brush = strip_comments(BRUSH)
+    assert "bucket=${encodeURIComponent(bucket" in brush, (
+        "the chart's own bucket must reach the resolver, or it widens by the wrong unit"
+    )
+    assert re.search(r"r\.start \|\| from", brush) and re.search(r"r\.end \|\| to", brush), (
+        "the result must report the EFFECTIVE span the server used, not the raw drag"
+    )

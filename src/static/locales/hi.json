@@ -2696,9 +2696,11 @@
   "Select a period": "अवधि चुनें",
   "Drag across the chart to open the articles in that period. Hold Shift to drag without switching mode.": "उस अवधि के लेख खोलने के लिए ग्राफ़ पर खींचें। मोड बदले बिना खींचने के लिए Shift दबाए रखें।",
   "No articles in {from} → {to}.": "{from} से {to} तक कोई लेख नहीं।",
-  "{articles} articles · {mentions} mentions · {from} → {to}": "{articles} लेख · {mentions} उल्लेख · {from} → {to}",
+  "{term} · {articles} articles · {mentions} mentions · {from} → {to}": "{term} · {articles} लेख · {mentions} उल्लेख · {from} → {to}",
   "{n} quarantined, not included": "{n} क्वारंटाईन में, शामिल नहीं",
   "showing the first 5000": "पहले 5000 दिखाए जा रहे हैं",
   "{term}: {from} → {to}": "{term}: {from} → {to}",
-  "Could not open that period": "वह अवधि नहीं खोली जा सकी"
+  "Could not open that period": "वह अवधि नहीं खोली जा सकी",
+  "Selected {from} → {to} · {n} of {total} points": "चयनित {from} → {to} · {total} में से {n} बिंदु",
+  "n counts the datapoints plotted here, not articles.": "n यहाँ बनाए गए डेटा बिंदुओं की गिनती करता है, लेखों की नहीं।"
 }

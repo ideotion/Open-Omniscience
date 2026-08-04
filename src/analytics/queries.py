@@ -246,6 +246,28 @@ def _bucket_key(d: date, bucket: str) -> str:
     return d.strftime("%G-W%V")  # ISO week
 
 
+def _bucket_span(d: date, bucket: str) -> tuple[date, date]:
+    """The first and last day of the bucket ``d`` falls in — ``_bucket_key``'s inverse.
+
+    A brush drawn over a bucketed chart can only honestly select WHOLE buckets. The
+    reader is looking at one bar per week or per month; a day-precise span can cut one in
+    half, and then the bar they see inside the band contributes only part of its height —
+    or, as measured on the demo corpus, NONE of it: a week bar drawn at its Monday
+    (2026-06-22) whose every mention fell on 2026-06-28 sat inside a span ending 06-26,
+    so four visible bars summing to 65 were reported as 50. Expanding to bucket edges is
+    what makes the number agree with the bars.
+    """
+    if bucket == "day":
+        return d, d
+    if bucket == "month":
+        first = d.replace(day=1)
+        nxt = (first.replace(year=first.year + 1, month=1) if first.month == 12
+               else first.replace(month=first.month + 1))
+        return first, nxt - timedelta(days=1)
+    monday = d - timedelta(days=d.weekday())        # ISO week, Monday-based
+    return monday, monday + timedelta(days=6)
+
+
 def trend(session, term: str, *, bucket: str = "week", country: str | None = None) -> dict:
     """Mention volume over time for one keyword, bucketed by day/week/month."""
     kw = resolve_keyword(session, term)
@@ -289,6 +311,7 @@ def trend_range_article_ids(
     *,
     start: date,
     end: date,
+    bucket: str = "day",
     cap: int = _BRUSH_ID_CAP,
 ) -> dict:
     """The articles behind a brushed span of a keyword trend chart.
@@ -332,6 +355,7 @@ def trend_range_article_ids(
         return {
             "term": term,
             "resolved": None,
+            "bucket": bucket,
             "article_ids": [],
             "articles": 0,
             "mentions": 0,
@@ -343,6 +367,14 @@ def trend_range_article_ids(
             "caveat": _BRUSH_CAVEAT,
         }
 
+    # WHOLE BUCKETS. A brush over a chart drawn in weeks or months can only honestly
+    # select what that chart can distinguish, so the span is widened to the edges of the
+    # buckets it touches. Without this a bar sitting inside the band could contribute part
+    # of its height, or none of it, and the reported total would disagree with the bars the
+    # reader just selected -- measured at 65 drawn vs 50 reported on the demo corpus.
+    # bucket="day" is the identity case, so a day-resolution caller is unchanged.
+    start, _ = _bucket_span(start, bucket)
+    _, end = _bucket_span(end, bucket)
     in_range = (
         KeywordMention.keyword_id == kw.id,
         KeywordMention.observed_on >= start,
@@ -379,6 +411,9 @@ def trend_range_article_ids(
         "mentions": mentions,
         "quarantined_excluded": excluded,
         "capped": capped,
+        "bucket": bucket,
+        # the EFFECTIVE span after bucket expansion -- what was actually selected, which a
+        # caller must display instead of the raw drag, or it reports a span it did not use
         "start": start.isoformat(),
         "end": end.isoformat(),
         "method": _BRUSH_METHOD,
@@ -390,7 +425,8 @@ def trend_range_article_ids(
 # would make the key vary per corpus and no locale entry could ever match it.
 _BRUSH_METHOD = (
     "Articles whose mentions of this keyword fall in the selected span, matched on the "
-    "same article date the chart plots. Quarantined articles are excluded."
+    "same article date the chart plots and widened to whole chart buckets so the count "
+    "agrees with the bars. Quarantined articles are excluded."
 )
 _BRUSH_CAVEAT = (
     "A bar's height counts mentions, not articles: one article mentioning the term "
