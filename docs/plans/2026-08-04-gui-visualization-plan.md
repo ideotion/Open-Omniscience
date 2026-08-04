@@ -818,8 +818,13 @@ anything requiring a networked machine or an Ollama rig.
   URL in the repo resolves.
 - **Runtime behaviour of the app.** I did not start the server, unlock a corpus, or execute
   any endpoint. All endpoint behaviour is read from source.
-- **The full test suite.** Not run. The repo requires Python 3.13; I did not check this
-  sandbox's interpreter against it, so I make no claim about whether the suite passes here.
+- **The full test suite.** Not run, and **not runnable here**: this sandbox is Python 3.11.15
+  against a repo that requires 3.13, and `pytest` is not installed (installing it was out of
+  scope for a read-only pass). Where a guard mattered I reproduced its exact logic in plain
+  Python instead — that is how `test_docs_index_covers_live_docs`
+  (`tests/test_repo_invariants.py:7482`) was found to redden on this plan's own new
+  `docs/plans/` directory, and fixed, before CI reported it. **A later session must treat
+  every test claim in this plan as unexecuted** and run `make check` on 3.13.
 - **Whether `docs/SECURITY.md`'s remaining findings (S-001 residual, S-002, S-005, S-007,
   S-011, S-012) are still open.** I verified only S-003, S-004 and S-006 against the code.
 - **Real-corpus scale behaviour.** Every cost statement is inferred from indexes and code
