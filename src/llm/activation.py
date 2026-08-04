@@ -84,9 +84,10 @@ BACKENDS = ("vllm", "ollama")
 _VLLM_CONFIRM_S = 3.0
 _VLLM_CONFIRM_STEP_S = 0.25
 
-#: How much of the server log an exited start carries back. The HEAD, deliberately:
-#: vLLM's EngineCore is a CHILD of the API server, so a startup failure prints its
-#: traceback FIRST and the parent's stack (ending "See root cause above") follows it.
+#: How much of the server log an exited start carries back. NOT an end of the file --
+#: :func:`vllm_lifecycle.failure_excerpt` searches for the failure and returns a window
+#: around it, because in the operator's real log the cause sat between the kept head and
+#: the kept tail and neither end contained it.
 _LOG_EXCERPT_CHARS = 700
 
 
@@ -225,8 +226,13 @@ def _last_start_failure() -> dict | None:
         "log_hint": str(outcome.get("log_hint") or ""),
         "log_path": outcome.get("log_path"),
     }
-    if head := _server_log_head():
+    head, advice = _server_log_head()
+    if head:
         out["server_log_head"] = head
+    if advice:
+        # Named, not just quoted: a traceback tells the operator WHAT happened, this
+        # tells them what to do about it.
+        out["advice"] = advice
     return out
 
 
@@ -341,23 +347,30 @@ def _confirm_vllm_start(
     return out
 
 
-def _server_log_head(limit: int = _LOG_EXCERPT_CHARS) -> str:
-    """The FIRST bytes of the last vLLM server log, or "" if there is nothing to read.
+def _server_log_head(limit: int = _LOG_EXCERPT_CHARS) -> tuple[str, str]:
+    """The part of the last vLLM server log that EXPLAINS the failure, plus any advice.
 
-    ``server_log_tail`` keeps both ends: ``head`` when the file was truncated, and a
-    whole ``tail`` when it fits -- whose start IS the head. Either way the beginning of
-    the file is what a startup failure needs (see :data:`_LOG_EXCERPT_CHARS`).
+    THIS FUNCTION'S PREVIOUS ANSWER WAS WRONG, and the operator's own log is what
+    refuted it. It kept the FIRST bytes, reasoning that "EngineCore is a child process,
+    so its traceback prints before the parent's stack" -- which is true, and still not
+    where the reason is. In the real 46,867-byte log the cause (``CUDA error: out of
+    memory``) sits at byte 27,405: past the 8,000-byte head, before the 8,000-byte tail.
+    The head held vLLM's banner and a config dump; the tail held "See root cause above."
+
+    Keeping the tail was a guess about WHERE; keeping the head was a better guess about
+    WHERE. Both were guesses, so :func:`vllm_lifecycle.failure_excerpt` stops guessing
+    and SEARCHES for a known fatal signature instead.
     """
     try:
-        from src.llm.vllm_lifecycle import server_log_tail
+        from src.llm.vllm_lifecycle import failure_excerpt
 
-        log = server_log_tail()
+        log = failure_excerpt(limit=limit)
         if not log.get("available"):
-            return ""
-        return str(log.get("head") or log.get("tail") or "").strip()[:limit]
+            return "", ""
+        return str(log.get("excerpt") or "").strip(), str(log.get("advice") or "")
     except Exception as exc:  # noqa: BLE001 - an unreadable log must not mask the exit
         _LOG.info("could not read the vLLM server log: %s", exc)
-        return ""
+        return "", ""
 
 
 def ensure_running(
@@ -473,13 +486,16 @@ def _vllm_exited(
     the very "honest and useless" outcome that lesson names.
     """
     code = outcome.get("returncode")
-    head = _server_log_head()
+    head, advice = _server_log_head()
     why = (
         f"vLLM's server process exited immediately (code {code}) while loading "
         f"{plan['model']} — the start FAILED; it is not still loading, so waiting "
         "will not help."
     )
-    hint = str(outcome.get("log_hint") or "")
+    # ADVICE beats the generic log hint: "the GPU ran out of memory -- lower
+    # gpu_memory_utilization" is actionable, "read the head of the server log" is a
+    # chore. The hint stays as the fallback for a failure we do not recognise.
+    hint = advice or str(outcome.get("log_hint") or "")
     path = outcome.get("log_path") or out.get("log_path")
     upd: dict = {
         "started": False,

@@ -4977,7 +4977,12 @@ def ai_coordinator_run() -> JSONResponse:
                 ),
             )
     try:
-        st = _AI_COORDINATOR_JOB.start(model=active_model())
+        # The backend `ensure_running` ACTUALLY brought up -- not a second, independent
+        # resolution. Those two can differ (a fallback, or vLLM dying between the calls),
+        # and when they do the sweep is handed the other backend's identifier: the field
+        # saw an HF repo id sent to Ollama, which then correctly said it had no such
+        # model while the right one was installed all along.
+        st = _AI_COORDINATOR_JOB.start(model=active_model(act.get("backend")))
         st["started"] = True
     except RuntimeError:
         st = _AI_COORDINATOR_JOB.status()

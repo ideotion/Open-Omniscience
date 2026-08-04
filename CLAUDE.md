@@ -2348,6 +2348,61 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     not in the index, the only real options are a composite covering index (a migration) or
     not referencing the column in that query at all; grouping on it is a non-fix that looks
     like one.
+  - **A GUESS ABOUT *WHERE* THE REASON IS WILL BE WRONG TWICE BEFORE IT IS RIGHT — SEARCH
+    INSTEAD (2026-08-04, the vLLM server log):** this repo fixed the same instrument twice
+    on reasoning rather than evidence. First it kept the log's TAIL; then it kept both
+    ends, on the correct observation that "EngineCore is a CHILD process, so a startup
+    failure prints its traceback FIRST". In the operator's real 46,455-byte log the cause
+    — `CUDA error: out of memory` — sat at byte 26,914: past the 8,000-byte head, before
+    the 8,000-byte tail. The head was vLLM's banner and a config dump; the tail was the
+    sentence "See root cause above." Both fixes reasoned about WHERE a reason lives in a
+    file whose shape belongs to someone else's program. The fix is to SEARCH for known
+    fatal signatures, MOST SPECIFIC FIRST — the wrapper that says "see the root cause
+    above" matches too, and matching it first hands back the sentence whose entire content
+    is that the answer is elsewhere — and to fall back to the head only when nothing
+    matches, since a fabricated diagnosis is worse than an honest excerpt.
+  - **A HEADROOM EXPRESSED AS A FRACTION OF A RESOURCE GIVES THE LEAST TO WHOEVER HAS THE
+    LEAST (2026-08-04, the vLLM CUDA OOM):** `compute_server_args` derived
+    `gpu_memory_utilization` from weights + KV, adding the fixed weight reserve back at
+    full value while discounting only the remainder. The algebra came out as
+    `0.85 + 0.75/vram`, i.e. utilization RISING as the card shrank — 0.95 on a 6 GiB card,
+    0.86 on an 80 GiB one, and 0.94 on the 8 GiB card the app is designed around, leaving
+    0.48 GiB free. CUDA-graph capture then died at 86% of 51 graphs. THE RULE: a reserve
+    for something whose cost does NOT scale with the resource (a graph pool scales with
+    the model and the graph count; fragmentation scales with neither) must be ABSOLUTE,
+    with the fraction as a floor above it, and capped at the upstream default — being
+    bolder than upstream on the smallest hardware is the wrong direction to be bold in.
+    TWO COROLLARIES. Pin it as a MONOTONICITY, strictly, and additionally assert the
+    series actually VARIES: the recorded lesson that a clamped value satisfies `>=` with a
+    constant applies here too. And a first mutation attempt PASSED — because the mutant I
+    wrote was not the old formula, only something else that happened to stay monotone; a
+    mutation test is only evidence when the mutant genuinely reproduces the defect, so
+    derive it from the real prior code rather than from memory of its shape.
+  - **DO NOT REGRESS A NUMBER THE MEASUREMENT SAYS WORKS, EVEN TOWARD SAFETY (same fix):**
+    the obvious tidy-up was to re-derive `max_model_len` from the new, lower utilization so
+    both values came from one budget. That would have dropped it 5120 → 2048 on the field
+    card — and the field run had served 5120 with 24,960 tokens of KV (4.88x concurrency),
+    so that value was demonstrably not what failed. Internal consistency is a reason to
+    rewrite a METHOD STRING, never a reason to tighten a figure the evidence exonerates;
+    conservatism applied where the measurement already answered is just a worse answer with
+    a better motive.
+  - **WHEN TWO FUNCTIONS ANSWER ONE QUESTION FROM DIFFERENT SOURCES, THE MISMATCH SHIPS AS
+    A CONFIDENT WRONG SENTENCE (2026-08-04, "Model 'mistralai/Ministral-3-3B-Instruct-2512'
+    is not installed. Run: ollama pull mistralai/Ministral-3-3B-Instruct-2512"):** that is
+    an HF repo id handed to OLLAMA, on a machine where the Ollama model was installed all
+    along — and Ollama's message was perfectly correct about the question it was asked.
+    `active_model()` resolved the backend from the STORED `llm_backend` setting; the sweeps
+    called `get_client_with_name()` with no argument, and `resolve_backend()` read only
+    `OO_LLM_BACKEND`. With the setting on "vllm" and its server not running, the MODEL came
+    from one answer and the CLIENT from the other. THE FIX IS NOT TO BRIDGE THE CALL SITES
+    — that is an enumeration, and the recorded backstop lesson says enumerations are wrong.
+    Read the setting in the ONE place the decision is made, so the operator's choice is
+    authoritative by construction; and where a caller ALREADY knows the answer (the
+    coordinator knows which backend `ensure_running` actually brought up), let it pass that
+    in rather than re-resolving, because the two calls can also disagree across a race or a
+    fallback. GENERAL FORM: a value that is only meaningful beside another value (a model
+    id beside its backend, a unit beside its number) must travel WITH it, never be looked
+    up twice.
   - **A CAPABILITY ON A SURFACE WITH NO CALLERS IS A GUARD THAT PASSES WHILE PROVING
     NOTHING — and three more ways a locally-correct UI change claims something false
     (2026-08-04, the chart brush):** four defects from one slice, none visible in a diff.
