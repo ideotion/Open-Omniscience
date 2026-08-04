@@ -1769,6 +1769,35 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     lane. Calibrate against the WEAKEST platform observed, not the strongest, and record
     the per-platform measurement beside the constant so the next session does not
     re-derive it.
+  - **A TEST THAT COMPRESSES TIME MUST COMPRESS THE THROTTLES TOO, OR IT SILENTLY MODELS A
+    CASE THAT CANNOT OCCUR (2026-08-04, the same WAL soak test going red on CI two days
+    later):** `test_wal_starvation_soak` shrinks a "scan that can run for MINUTES" — the
+    production case its own comment cites — down to 0.8 s, but left
+    `_WAL_GUARD_MIN_RELEASE_INTERVAL_S` at its production **30 s**. So every release after
+    the unconditional first one was throttled out and the scan offered the checkpointer
+    exactly **ONE** window, measured at **t=0.009 s**, before the checkpointer had finished
+    its first 50 ms sleep. The whole assertion turned on whether a thread happened to fire
+    inside nine milliseconds — luck that held locally (a deterministic 9 attempts, byte-identical
+    4,902,832-byte WAL, run after run) and stopped holding on a cold shared runner. THE TELL
+    THAT IT WAS NEVER ABOUT LOAD: CPU contention (12 spinners on 4 cores) reproduced nothing,
+    8/8 green; and my first reproducer — widening the checkpointer's *inter-attempt* sleep —
+    also reproduced nothing (6/6 at every width, even at fewer attempts than CI's failing
+    round), because it never delayed the FIRST attempt, which is the only one that can catch a
+    9 ms window. Delaying the first attempt by 0.15 / 0.30 / 0.60 s reproduces it exactly:
+    1/6, 0/6, 0/6. **BOTH assertions rested on that one accident** — the WAL bound moved with
+    it, 82% of ceiling → 110% → 132% → 158%, so "fixing" the checkpoint assertion by any
+    route that lengthened the window would have traded it for the other one. Compressing the
+    throttle to match the compressed scan fixes both (6/6 at every delay; WAL 4–13% of
+    ceiling) and CANNOT weaken discrimination, because an unpatched build releases ZERO times
+    at ANY interval — pinned by re-running the mutation matrix above at the new setting:
+    in-scan release removed → **0/5**, between-producer commit removed → 5/5 (the recorded
+    trap, reproduced), both removed → 0/5. GENERAL FORM: when a test scales one dimension of
+    a mechanism down for runtime, list every *other* constant that dimension is compared
+    against; any left at production scale silently converts the test into a different, usually
+    degenerate, case. And add the anti-vacuity assertion one level below the property — here,
+    that the scan actually OFFERED several windows (`wal_releases >= 4`; it is 2 without the
+    compression) — because the fix is one deleted monkeypatch away from reverting to
+    coin-flip, and it would revert as an intermittent CI red that reproduces nowhere.
   - **AGREEING ON THE GATE IS NOT ENOUGH — TWO MODULES PUBLISHING ONE QUANTITY MUST AGREE
     ON THE BUCKET KEY (2026-08-03, the language-equilibrium lever):** the recorded framing-tone
     lesson says modules publishing the same quantity must agree on the *gate*. A weaker
