@@ -110,7 +110,7 @@ def test_a_comment_mentioning_a_call_does_not_satisfy_assert_present():
 #: the same blind detector, which makes the pair a tautology rather than a check.
 #: That is the exact failure mode this module exists to document, committed into the
 #: module documenting it. The detector below tests the PROPERTY instead.
-_ADHOC_SLICER_BUDGET = 234
+_ADHOC_SLICER_BUDGET = 233
 
 #: A string literal that anchors into SOURCE CODE rather than into data. A
 #: `.index`/`.split`/`.find` taking one of these is slicing a program, which is the

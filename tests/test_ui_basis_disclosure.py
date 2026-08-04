@@ -15,6 +15,7 @@ a score. Pure string-assertion wiring guard (browser-unverified per fork-3).
 from __future__ import annotations
 
 from pathlib import Path
+from tests.js_source_helper import css_rule
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 _HTML = (_STATIC / "index.html").read_text(encoding="utf-8")
@@ -46,7 +47,9 @@ def test_chip_wired_into_trends_and_groups():
 def test_estimated_is_flagged_with_the_caveat_colour():
     # 'estimated' is the honest staleness signal -> it wears the theme caveat colour.
     assert ".basis-chip" in _CSS
-    assert ".basis-chip.est" in _CSS and "var(--caveat)" in _CSS
+    # Scoped to the rule: `var(--caveat)` is used by nine other rules, so whole-file
+    # the chip could have stopped using it entirely.
+    assert "var(--caveat)" in css_rule(_CSS, ".basis-chip.est")
 
 
 def test_labels_translated_and_hover_carries_the_method():

@@ -14,6 +14,7 @@ string-assertion wiring guard (browser-unverified per fork-3).
 from __future__ import annotations
 
 from pathlib import Path
+from tests.js_source_helper import function_body
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 _JS = (_STATIC / "app.js").read_text(encoding="utf-8")
@@ -29,7 +30,10 @@ def test_dumbbell_uses_ooviz_primitives():
 def test_dumbbell_plots_real_counts_not_a_curve():
     # two real measured dots per country (articles = accent, mentions = muted) + a segment
     assert 'x(r.articles || 0)' in _JS and 'x(r.mentions || 0)' in _JS
-    assert 'fill="var(--accent)"' in _JS and 'fill="var(--muted)"' in _JS
+    # Scoped to the renderer: both fills are generic and appear across nine and
+    # twenty-three unrelated call sites app-wide.
+    dumbbell = function_body(_JS, "ringDumbbellSvg")
+    assert 'fill="var(--accent)"' in dumbbell and 'fill="var(--muted)"' in dumbbell
     # no interpolated path / fake curve — it is <line>/<circle> at exact values
     assert "dumbbellScore" not in _JS
 

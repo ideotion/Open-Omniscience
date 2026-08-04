@@ -14,6 +14,7 @@ wiring guards over the static assets (browser-unverified per fork-3).
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 _HTML = (_STATIC / "index.html").read_text(encoding="utf-8")
@@ -68,7 +69,11 @@ def test_dead_ctrl_k_hint_css_removed():
     assert ".omni .kbd" not in _CSS
     assert ".omni span.ph" not in _CSS
     # and no visible 'Ctrl K' / Command+K hint text remains in the markup
-    assert "Control+K" not in _HTML or 'aria-keyshortcuts="Control+K"' in _HTML  # aria hint may stay
+    # `A or B` where B is satisfied by the aria attribute itself, so the guard could
+    # never fail while that attribute exists -- and the attribute is exactly what the
+    # comment says may stay. Assert the real claim: no VISIBLE Control+K text.
+    visible = re.sub(r'aria-keyshortcuts="[^"]*"', "", _HTML)
+    assert "Control+K" not in visible, "no visible Ctrl K hint text may remain in the markup"
 
 
 def test_shortcut_labels_are_translated():

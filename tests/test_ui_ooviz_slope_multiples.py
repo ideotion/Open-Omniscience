@@ -82,7 +82,12 @@ def test_slope_from_trending_windows_uses_rate_not_raw_counts():
 
 def test_panels_and_slope_deeplink_to_analysis_window():
     # a term panel / slope endpoint opens its own analysis window (redundant by design)
-    assert "openAnalysisFor(" in _JS  # already present app-wide; ensure the new code uses it
+    # The inline comment on the old whole-file form ("already present app-wide; ensure
+    # the new code uses it") conceded it could not check what the test name claims --
+    # the needle has sixteen unrelated call sites. Both renderers really do deep-link;
+    # assert it where it lives.
+    for fn in ("slopeChartSvg", "smallMultiplesSvg"):
+        assert "openAnalysisFor(" in _slice(_JS, fn), f"{fn} must deep-link"
     assert "renderTrendSlope" in _JS and "renderTrendMultiples" in _JS
 
 

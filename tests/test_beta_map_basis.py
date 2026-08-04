@@ -13,6 +13,7 @@ staleness. Pure file-reads; no app import.
 from __future__ import annotations
 
 from pathlib import Path
+from tests.js_source_helper import function_body, strip_comments
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 _APP = (_STATIC / "app.js").read_text(encoding="utf-8")
@@ -50,4 +51,12 @@ def test_wired_into_the_map_loader_and_langchange():
 def test_basis_is_a_disclosure_not_a_score():
     """The disclosure never introduces a numeric grade — it is the standard basisChip
     (a documented DISCLOSURE, not a score). Guard the comment intent is present."""
+    # This used to be the test's ONLY assertion, and its one match in app.js is a `//`
+    # comment -- so a numeric grade could have been added to the chip with the test
+    # named for the no-score property still green. Keep the comment check (the intent
+    # is worth pinning) and add the behavioural half.
     assert "A DISCLOSURE, never a score." in _APP
+    chip = function_body(_APP, "_renderMapBasis")
+    assert "score" not in strip_comments(chip).lower(), (
+        "the basis chip must not introduce a numeric grade"
+    )

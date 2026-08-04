@@ -11,6 +11,7 @@ in-app doc the API offers actually exists on disk. If any regresses, CI fails.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -88,7 +89,8 @@ def test_revision_anomalies_statistics_surface():
     assert "function loadRevisionAnomalies" in ui, "the handler must be defined"
     assert "/api/stats/revision-anomalies" in ui, "it must call the merged endpoint"
     # The honesty envelope (method + innocent-twin caveat) must be rendered, never dropped.
-    assert "d.caveat" in ui and "d.method" in ui, "the method + caveat must render"
+    _rev = _js_function_body(ui, "loadRevisionAnomalies")
+    assert "d.caveat" in _rev and "d.method" in _rev, "the method + caveat must render"
 
 
 def test_stat_time_series_chart_surface():
@@ -111,7 +113,9 @@ def test_stat_time_series_chart_surface():
     assert "function renderStatChart" in app, "the handler must be defined"
     assert "/api/stats/figures/series" in app, "it must fetch the chart-series feed"
     assert "ooViz.statChartGeometry" in app, "it must draw via the node-tested geometry helper"
-    assert "d.caveat" in app, "the honesty caveat must render"
+    assert "d.caveat" in _js_function_body(app, "renderStatChart"), (
+        "the honesty caveat must render"
+    )
     # The geometry helper is exported by ooViz (node-tested separately).
     assert "function statChartGeometry" in ooviz, "statChartGeometry must be defined"
     assert "statChartGeometry: statChartGeometry" in ooviz, "it must be exported in the API"
@@ -1265,7 +1269,11 @@ def test_offline_map_merged_list_state_and_planet_skips_downloaded():
     for tok in ['t("Downloading")', 't("Downloaded")', 't("Queued")', "<progress"]:
         assert tok in rl, f"missing state token {tok}"
     # instant feedback on click
-    assert 't("Starting…")' in app, "download click gives instant feedback"
+    _assert_js_present(
+        _js_function_body(app, "startOsmDownload"),
+        't("Starting…")',
+        why="download click gives instant feedback",
+    )
     # 'Whole planet' = download only the MISSING continents (skip done/downloading/queued)
     pd = app[app.index("async function startPlanetDownload("):]
     pd = pd[: pd.index("\n    }")]
@@ -2632,8 +2640,13 @@ def test_ui_invariants():
     assert "/api/geo/regions" in html and "/api/geo/downloads" in html, (
         "the offline-map view must read the region catalogue + the download jobs"
     )
-    assert "function startOsmDownload(" in html and "ensureOnline(" in html, (
-        "starting an OSM download must pass the ONE consent popup (ensureOnline, invariant #14)"
+    # SCOPED, for the reason the comment 20 lines below already gives for pullModel:
+    # `"ensureOnline(" in html` matched 30 call sites, so this stayed green however
+    # the OSM path was gated.
+    _assert_js_present(
+        _js_function_body(html, "startOsmDownload"),
+        "ensureOnline(",
+        why="starting an OSM download must pass the ONE consent popup (invariant #14)",
     )
     # 28. LLM model management is a DEDICATED Settings subtab (Q6=A) with explicit
     #     actions over the existing endpoints — pull (NDJSON stream), remove, and the
@@ -3503,7 +3516,11 @@ def test_library_central_dashboard():
     assert 'id="library-overview"' in html
     assert "async function renderLibraryOverview" in html
     assert "/api/library/overview" in html
-    assert "renderLibraryOverview()" in html, "must be wired into the tab onShow + poller"
+    # A zero-argument function's own declaration contains `name()`, so the whole-file
+    # form could not tell "wired" from "defined". Count the CALL sites instead.
+    assert html.count("renderLibraryOverview()") >= 3, (
+        "must be wired into the tab onShow + poller, not merely defined"
+    )
     # the two layers are labelled + the AI-derived layer is disclosed unreliable.
     assert "Downloaded — the raw" in html and "Extrapolated — AI-derived" in html
     # representative downloaded + extrapolated tiles.
@@ -4078,7 +4095,9 @@ def test_ootimescope_range_control():
     assert "ts-bar" in html and "ts-handle" in html, (
         "the control must render a draggable range bar (ts-bar + ts-handle)"
     )
-    assert 'addEventListener("pointerdown"' in html or 'pointerdown' in html, (
+    # `A or B` where B is a strict superset of A collapses to B -- "the token appears
+    # somewhere in 21k lines". Assert the specific form the drag wiring needs.
+    assert 'addEventListener("pointerdown"' in html, (
         "the handles must be pointer-draggable (mouse + touch)"
     )
     # (c) quick presets as one-click shortcuts
@@ -4717,9 +4736,22 @@ def test_corpus_window_competitive_subtab():
     assert "credibility" in cfn.lower(), "the 'not a credibility judgement' framing must be present"
     assert "VADER" in cfn, "the VADER tone disclosure must be reachable (tone is shown)"
     # honesty by construction: the comparison is ordered, never scored/ranked-as-quality.
-    assert "composite score" not in cfn or "no composite score" in cfn.lower() or (
-        "never a" in cfn.lower()
-    ), "the Competitive tab must not compute a composite score"
+    # The old form was `"composite score" not in cfn or "no composite score" in
+    # cfn.lower() or "never a" in cfn.lower()`, and its third arm is guaranteed by the
+    # `assert "never a ranking" in cfn.lower()` four lines above -- so the disjunction
+    # was true whatever the renderer computed. Assert the property instead: every
+    # occurrence of the word is inside a disclosure that NEGATES it, and no field is
+    # named for one. (`re` is imported at module level.)
+    _stripped = _strip_js_comments(cfn)
+    assert not re.search(r"\bscore\s*[:=]", _stripped) and "Score" not in _stripped, (
+        "the Competitive tab must not compute or emit a composite score"
+    )
+    for _m in re.finditer(r"score", _stripped):
+        _before = _stripped[max(0, _m.start() - 30) : _m.start()].lower()
+        assert any(neg in _before for neg in ("no ", "never a", "not a")), (
+            "every mention of a score here must be a disclosure that there is none: "
+            + _stripped[max(0, _m.start() - 60) : _m.start() + 10]
+        )
 
 
 def test_keyword_explorer_subtab():
@@ -4809,7 +4841,12 @@ def test_family_curation_relocated_to_settings_and_single_member_guarded():
     assert 'dataset.single === "1"' in split_fn, "a single-member family's ✕ must be a guarded no-op"
     assert "Nothing to split" in split_fn
 
-    assert "loadFamilyCuration()" in app, "showSetCat must wire the curation loader on the Keywords subtab"
+    # Same zero-argument-declaration trap. And the message named a stale home: the
+    # loader moved into the _ADV_LOADERS expand-map when Advanced sections became
+    # load-on-expand, so scope to that entry, which is unique.
+    assert "keywords: () => { loadKeywordExplorer(); loadFamilyCuration();" in app, (
+        "_ADV_LOADERS must wire the curation loader on the Keywords section"
+    )
 
 
 def test_super_ring_ui():
@@ -5359,7 +5396,11 @@ def test_sources_have_multi_select_dropdown_filters():
     assert "loadSrcFacets" in app and "/api/sources/facets" in app
     assert "mselValues" in app and 'p.set("tag_mode", "all")' in app
     # Localized full names on the language/country option labels (#19).
-    assert "ooLangName" in app and "ooRegionName" in app
+    # Scoped to loadSrcFacets, which builds those option labels. Whole-file, the
+    # needles matched the helpers' OWN declarations plus ~25 unrelated call sites, so
+    # the labelers could have been dropped from the facet dropdowns entirely.
+    _facets = _js_function_body(app, "loadSrcFacets")
+    assert "ooLangName(" in _facets and "ooRegionName(" in _facets
     # Backends: the facets endpoint + multi-value filtering on both list endpoints.
     sm = (_SRC / "api" / "source_management.py").read_text(encoding="utf-8")
     assert '@router.get("/facets"' in sm, "a /api/sources/facets endpoint must exist"
@@ -6693,7 +6734,7 @@ def test_saving_unrelated_settings_never_silently_overwrites_a_named_theme():
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
     assert "_lastSyncedThemeBucket" in app, "the last-synced-bucket tracker must exist"
 
-    sync_fn = app.split("function syncThemeSelect() {", 1)[1].split("\n    }\n", 1)[0]
+    sync_fn = _js_function_body(app, "syncThemeSelect")
     assert "_lastSyncedThemeBucket = bucket" in sync_fn, \
         "syncThemeSelect() must record the bucket it just assigned"
 
@@ -6762,8 +6803,16 @@ def test_popstate_closes_every_open_dialog():
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     dialog_ids = re.findall(r'<dialog id="([\w-]+)"', html)
     assert len(dialog_ids) >= 8, "sanity: expected several <dialog> elements in the markup"
-    for did in dialog_ids:
-        assert f'<dialog id="{did}"' in html, did
+    # The loop that used to be here re-asserted the exact regex it had just derived the
+    # ids from -- true by construction. What the comment above actually claims is that
+    # the enumeration is COMPLETE: a <dialog> written with any other attribute order is
+    # silently skipped by that regex rather than reported.
+    every_dialog = re.findall(r"<dialog\b[^>]*>", html)
+    assert len(dialog_ids) == len(every_dialog), (
+        "every <dialog> must be written `<dialog id=\"...\">` so this enumeration sees "
+        "all of them: "
+        + str([d for d in every_dialog if not re.match(r'<dialog id="[\w-]+"', d)])
+    )
 
 
 def test_api_error_handles_a_pydantic_validation_array_detail():
@@ -7503,7 +7552,9 @@ def test_library_qualification_tile_window_switcher_hide_flat_auto_log():
         assert f'"{m}"' in app
     assert "_libQualificationTile(LIB_DEFAULT_DAYS)" in app, "the Activity section must render the qualification tile"
     # never a quality score — the enlarge caveat states counts-only explicitly.
-    assert "never a quality score" in app
+    # Scoped: whole-file, this matched the channel-chip title on an unrelated surface
+    # and a `//` comment, so the tile's own caveat could have been deleted.
+    _assert_js_present(_js_function_body(app, "enlargeLibQualification"), "never a quality score")
 
     # window switcher: one shared default, per-tile in-place re-render on click.
     assert "const LIB_WINDOWS = [[7," in app
@@ -8309,7 +8360,24 @@ def test_model_bench_freezes_its_inputs_and_is_wired_end_to_end():
     # The roster is a REQUEST list: nothing is substituted for a missing tag, and the
     # unverified candidate is a note rather than an invented catalog entry.
     assert "verify_roster" in mb
-    assert "lfm" not in " ".join(re.findall(r'DEFAULT_ROSTER[^)]+\)', mb)).lower()
+    # `DEFAULT_ROSTER[^)]+\)` stops at the FIRST ")" -- which is `*_incumbents()`, 54
+    # characters in -- so the fragment held none of the roster's tags and an `lfm` entry
+    # would not have been caught. A byte window is no good either: UNRESOLVED_CANDIDATES
+    # sits immediately below and is exactly where the LiquidAI note is SUPPOSED to be.
+    # Take the assignment from the parser.
+    _roster = next(
+        ast.get_source_segment(mb, n)
+        for n in ast.walk(ast.parse(mb))
+        if isinstance(n, ast.AnnAssign | ast.Assign)
+        and isinstance(
+            (n.target if isinstance(n, ast.AnnAssign) else n.targets[0]), ast.Name
+        )
+        and (n.target if isinstance(n, ast.AnnAssign) else n.targets[0]).id == "DEFAULT_ROSTER"
+    )
+    assert "lfm" not in _roster.lower(), (
+        "an unverified LiquidAI tag must stay a note, never a roster entry"
+    )
+    assert "LFM2.5" in mb, "the candidate must still travel as a note"
 
     diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
     backend = {
@@ -8454,8 +8522,13 @@ def test_the_quality_gates_section_shows_both_gates_with_units_and_scope_toggles
     assert "row.unit" in html and "floor_reason" in html, (
         "each tunable row must render its unit and the reason its bound is where it is"
     )
-    assert "oo-tip" not in html.split("loadQualificationGates", 1)[1][:4000], (
-        "the panel must not build its own tooltip -- invariant #17 already does it"
+    # Scoped to the renderer. Splitting on the bare name took its FIRST occurrence --
+    # the Advanced loader-map entry at the top of app.js -- so the 4,000-character
+    # window sat ~17,700 lines away from the function the assertion names.
+    _assert_js_absent(
+        _js_function_body(html, "loadQualificationGates"),
+        "oo-tip",
+        why="the panel must not build its own tooltip -- invariant #17 already does it",
     )
 
 

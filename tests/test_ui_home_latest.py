@@ -18,6 +18,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tests.test_repo_invariants import _ui_source
+from tests.js_source_helper import assert_absent
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 _HTML = (_STATIC / "index.html").read_text(encoding="utf-8")
@@ -69,7 +70,13 @@ def test_rows_show_real_word_and_cited_source_counts_never_a_score():
     # OTHER outlets (the backend's deduped also_reported_by), NEVER the raw collapse count
     # (which includes the survivor's own outlet re-posting and would overstate spread).
     assert "a.also_reported_by || []).length" in _JS
-    assert "a.duplicates_collapsed" not in _JS, "must not use the raw near-dup count for the spread claim"
+    # Comment-stripped, and on the bare identifier: the old form searched for
+    # `a.duplicates_collapsed` and passed only because the comment three lines above
+    # names the field WITHOUT the `a.` prefix -- a guard that survives on a spelling
+    # accident, and one that would fail against correct code the moment the comment
+    # was reworded.
+    assert_absent(_JS, "duplicates_collapsed",
+                  why="must not use the raw near-dup count for the spread claim")
 
 
 def test_recency_by_collection_time_and_reader_link_invariant6():
