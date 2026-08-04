@@ -73,20 +73,60 @@ class CardSchemaError(TypeError):
     """Raised when a dataclass declares a field that implies a forbidden score."""
 
 
+def _is_banned_name(name: str) -> bool:
+    low = name.lower()
+    return low in _BANNED_FIELD_NAMES or any(frag in low for frag in _BANNED_FIELD_FRAGMENTS)
+
+
 def assert_no_score_fields(cls: type) -> None:
     """Fail loudly if ``cls`` declares any composite-score field (§6 honesty guard).
 
     Called at import time on :class:`Card`; also reusable for the future Source
     profile so the ban is enforced everywhere a contributor might add one by reflex.
+
+    NOTE ON REACH: this checks DECLARED field names only. It cannot see what a
+    producer puts INSIDE ``signal`` at runtime -- that is
+    :func:`assert_no_score_keys`, called from ``Card.__post_init__``. The pair is
+    what makes "no composite scores" a property of the object rather than a
+    convention plus a scatter of per-module test walkers.
     """
     for f in dataclasses.fields(cls):
-        name = f.name.lower()
-        if name in _BANNED_FIELD_NAMES or any(frag in name for frag in _BANNED_FIELD_FRAGMENTS):
+        if _is_banned_name(f.name):
             raise CardSchemaError(
                 f"{cls.__name__}.{f.name}: a composite trust/quality 'score' field is "
                 f"forbidden (FUTURE_DEVELOPMENTS §6 — B is banned in code, not just prose). "
                 f"Surface a single measured quantity in `signal` with its method instead."
             )
+
+
+def assert_no_score_keys(payload: object, *, where: str) -> None:
+    """Fail loudly if a nested mapping KEY implies a composite score.
+
+    ``signal`` is a free-form dict, so until this existed the ban was enforced on
+    the container's name and never on its contents: ``signal={"trust_score": 0.87}``
+    passed the declared-field check and reached the user. The docstring above said
+    "fail loudly if cls declares any composite-score field", which was true and
+    much narrower than "honesty by construction" implies.
+
+    Deliberately KEY-based, matching the sibling check: a legitimate measured
+    quantity still lives in ``signal`` under its own name (``metric``/``value``),
+    and the values are never inspected. Measured against every producer before
+    landing: 108 distinct signal keys ship today and none is rejected here, so
+    this tightens the guarantee without narrowing what producers may say.
+    """
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if isinstance(key, str) and _is_banned_name(key):
+                raise CardSchemaError(
+                    f"{where}[{key!r}]: a composite trust/quality 'score' key is forbidden "
+                    f"(FUTURE_DEVELOPMENTS §6). Name the measured quantity and state its "
+                    f"method instead — a blend presented as a measurement is the one thing "
+                    f"this schema exists to prevent."
+                )
+            assert_no_score_keys(value, where=f"{where}[{key!r}]")
+    elif isinstance(payload, (list, tuple)):
+        for i, item in enumerate(payload):
+            assert_no_score_keys(item, where=f"{where}[{i}]")
 
 
 @dataclass
@@ -159,6 +199,11 @@ class Card:
     def __post_init__(self) -> None:
         if self.bucket not in BUCKETS:
             raise ValueError(f"unknown bucket {self.bucket!r}; use one of {BUCKETS}")
+        # The runtime half of the no-score ban. assert_no_score_fields (import time)
+        # covers the DECLARED fields; these are the free-form payloads a producer
+        # fills, which is where a blended number would actually arrive.
+        assert_no_score_keys(self.signal, where="signal")
+        assert_no_score_keys(self.trigger, where="trigger")
         if self.recipe is not None:
             self._validate_recipe(self.recipe)
         if self.title_i18n:
