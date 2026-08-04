@@ -19639,13 +19639,37 @@
         anRunAdvanced();   // a query-seeded corpus already refines correctly
       }
     }
+    // /api/articles names an explicit id set `ids`; the analysis params name it
+    // `article_ids`, which is what the INSIGHTS endpoints accept. FastAPI silently DROPS
+    // an unrecognised query key, so sending `article_ids` to /api/articles did not error
+    // -- the id set simply never arrived and the query fell into its browse-by-recency
+    // branch, returning the WHOLE corpus. The tab labelled "the matched articles" showed
+    // 180 unrelated articles for a 3-article selection, and the CSV/JSON export wrote all
+    // of them. Verified against the running app: `article_ids=82,5,164` -> total 180,
+    // `ids=82,5,164` -> total 3.
+    //
+    // It failed OPEN, with plausible data, which is why it survived: every insights
+    // subtab beside it was correct, so the counts agreed and only the article LIST lied.
+    // Pre-existing and not specific to the brush -- it hit every id-seeded corpus,
+    // including every Home card that seeds an exact set (the 2026-06-16 exact-set
+    // ruling) and every "Branch into a new corpus".
+    //
+    // ONE translation, used by every /api/articles caller, so the next one cannot forget.
+    // synthesizeResults already carried this fix inline; it now shares this.
+    function _articleQuery(p) {
+      const q = new URLSearchParams(p);
+      const seeded = q.get("article_ids");
+      if (seeded) { q.set("ids", seeded); q.delete("article_ids"); }
+      return q;
+    }
+
     async function _anLoadArticles(p, page) {
       const arts = $("an-articles"); if (!arts) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _anArtParams = p; _anArtPage = Math.max(0, page | 0);
       arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
-        const q = new URLSearchParams(p);
+        const q = _articleQuery(p);
         q.set("limit", String(_AN_ART_PAGE));
         q.set("offset", String(_anArtPage * _AN_ART_PAGE));
         if (_anProvenance) q.set("provenance", _anProvenance);
@@ -19905,7 +19929,11 @@
     }
 
     async function doSearch() {
-      const p = searchParams(); p.set("limit", String(DEFAULT_LIMIT));
+      // Through _articleQuery like every other /api/articles caller. The Search tab never
+      // carries an id-seeded corpus, so this is a no-op here -- but making the rule
+      // uniform means there is no exception to remember, which is what let the analysis
+      // tab drift in the first place.
+      const p = _articleQuery(searchParams()); p.set("limit", String(DEFAULT_LIMIT));
       try {
         const data = await api("/api/articles?" + p.toString());
         $("search-meta").textContent = `${data.total} result(s)` + (data.total > data.results.length ?
@@ -19930,7 +19958,11 @@
     }
 
     function exportResults(fmt, p) {
-      const params = p || searchParams(); params.set("format", fmt);
+      // Through _articleQuery, so an id-seeded corpus exports THAT corpus. Without it the
+      // export dropped the selection and wrote every article the reader holds -- a
+      // "download the matched articles" button that quietly handed over the whole corpus.
+      const params = _articleQuery(p || searchParams());
+      params.set("format", fmt);
       window.open("/api/articles/export?" + params.toString(), "_blank");
     }
 
@@ -19966,8 +19998,7 @@
       if (!dlg.open) dlg.showModal();
       // Fetch a candidate pool a bit larger than the synthesis bound so the user has a
       // real choice; /api/articles uses `ids` for an explicit set, else the query.
-      const cp = new URLSearchParams(p);
-      if (cp.get("article_ids")) { cp.set("ids", cp.get("article_ids")); cp.delete("article_ids"); }
+      const cp = _articleQuery(p);
       cp.set("limit", "60");
       try {
         const data = await api("/api/articles?" + cp.toString());
