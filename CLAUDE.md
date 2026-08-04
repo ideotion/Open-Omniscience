@@ -2374,6 +2374,34 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     means the edges were load-bearing rather than decorative. Mid-interaction states need
     mid-interaction capture, and an existing screenshot is not evidence that the thing you
     care about was in it.
+  - **APPLYING HALF A RECORDED LESSON IS HOW A DEFECT SURVIVES REVIEW — and a fixture that
+    differs from production in the one dimension the lesson is about turns the guard into
+    an accomplice (2026-08-04, the brush bucket snap):** the note I had just written said a
+    chart selection must inherit the chart's OWN definition of time, and I got the column
+    right (resolve on `observed_on`, never through the `published_at` filter) and the
+    GRANULARITY wrong (resolve by day against a chart drawn in weeks). A week bar is drawn
+    at its Monday, so a day-precise span cuts one in half or misses it while it still looks
+    inside the band: four visible bars summing to 65 mentions were reported as 50, because a
+    bar drawn at 2026-06-22 whose every mention fell on 06-28 sat inside a span ending 06-26.
+    **THE PROCESS FAILURE IS WORTH MORE THAN THE FIX.** An adversarial critic read the
+    screenshot, estimated ~65 against the reported 50 and suspected an off-by-one; I
+    re-measured, got 50, and told the user its arithmetic was refuted — having measured with
+    `bucket=day` while the shipped chart uses `bucket=week`. The critic was reading the bars
+    actually on screen and was closer to right than my measurement. So: when a
+    pixel-reading critic's arithmetic disagrees with your query, the first suspect is the
+    PARAMETERS of your query, not their eyes. And SIXTEEN tests over the resolver passed,
+    including one that pins exactly this property — every fixture used the default `day`
+    bucket, so the invariant was held and the defect was invisible. This is the recorded "a
+    probe's data distribution is part of the lookalike" lesson one level up: it is not only
+    row density that makes a fixture a lookalike, it is any parameter the production caller
+    sets and the fixture leaves at its default. Parametrise the guard over every value the
+    shipped call sites actually pass (`day`/`week`/`month` here), and check what the call
+    site passes rather than what the function defaults to. The fix's own shape generalises:
+    a selection over a bucketed axis can only honestly return whole buckets, the bucket
+    travels with the request, the response reports the EFFECTIVE span rather than the raw
+    input, and the client preview snaps through the same widening — a preview that shows the
+    raw gesture while the result reports a widened one is two answers to one action, the
+    same divergence the shared day formatter had already fixed once in this very component.
 
 ## Open queue (when maintainer says proceed)
 - **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;

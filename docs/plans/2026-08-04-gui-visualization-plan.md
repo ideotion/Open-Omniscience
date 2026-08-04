@@ -844,6 +844,16 @@ one source, you get "undefined", not 0.
 > 3. **A bar is a mention total, not an article count**, so the emit and its readout must
 >    state both numbers; letting one stand for the other is the conflation this project
 >    otherwise refuses.
+> 4. **A brush can only honestly select whole BUCKETS** (found by an adversarial critic
+>    reading the screenshot, after the first pass had shipped). Fact 1 above is only half
+>    the rule: resolving on the right COLUMN at the wrong GRANULARITY is still wrong. A
+>    weekly bar is drawn at its Monday, so a day-precise span cuts one in half while it
+>    still looks inside the band — four visible bars summing to 65 mentions were reported
+>    as 50. The span now widens to the edges of the buckets it touches, the bucket travels
+>    with the request, the response reports the EFFECTIVE span rather than the raw drag,
+>    and the client preview snaps through the same widening so one gesture never has two
+>    answers. `bucket="day"` is the identity case. Any future chart that opts in must pass
+>    its own `bucket`.
 >
 > Also note **plain drag is already pan** and `pointerup` treats a <4px drag as
 > click-to-pin (`app.js:11867-11890`), so brushing needs its own gesture *plus* a visible
