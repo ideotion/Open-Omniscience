@@ -429,3 +429,73 @@ def test_every_sweep_loop_actually_calls_it():
     ):
         src = pathlib.Path(rel).read_text(encoding="utf-8")
         assert "outage_detail(" in src, f"{rel} no longer reports the real failure"
+
+
+# --------------------------------------------------------------------------- #
+#  ONE answer to "which backend", not one per caller
+# --------------------------------------------------------------------------- #
+def _stored(monkeypatch, backend="auto", model="ollama-tag:3b", vllm_model="org/Repo-3B"):
+    class S:
+        llm_backend = backend
+        llm_model = model
+        llm_model_vllm = vllm_model
+
+    monkeypatch.setattr("src.config.app_settings.load_settings", lambda: S())
+    return S
+
+
+def test_the_stored_backend_choice_reaches_resolution(monkeypatch):
+    """Field report 2026-08-04: "Model 'mistralai/Ministral-3-3B-Instruct-2512' is not
+    installed. Run: ollama pull mistralai/Ministral-3-3B-Instruct-2512" — an HF repo id
+    handed to OLLAMA, on a machine where the Ollama model was installed all along.
+
+    Two functions answered "which backend" from different sources. ``active_model()``
+    passed the stored setting and got vLLM's identifier; the sweeps called
+    ``get_client_with_name()`` with nothing, which read only the environment, and with
+    vLLM installed-but-not-running resolved to Ollama. The model came from one answer
+    and the client from the other."""
+    _stored(monkeypatch, backend="vllm")
+    _stub(monkeypatch, gpu={"available": True}, vllm_installed=True, vllm_running=False)
+    assert B.resolve_backend()["backend"] == "vllm", (
+        "an operator who chose vLLM in Settings must not be silently routed to Ollama"
+    )
+
+
+def test_an_explicit_argument_still_beats_the_stored_setting(monkeypatch):
+    """Precedence, in both directions — a stored preference is a default, not a lock."""
+    _stored(monkeypatch, backend="vllm")
+    _stub(monkeypatch, gpu={"available": True}, vllm_installed=True, vllm_running=True)
+    assert B.resolve_backend(override="ollama")["backend"] == "ollama"
+    monkeypatch.setenv("OO_LLM_BACKEND", "ollama")
+    assert B.resolve_backend()["backend"] == "ollama", "the env var outranks the setting"
+
+
+def test_auto_stays_auto(monkeypatch):
+    """The twin. Reading the setting must not turn every machine into an override —
+    "auto" is the default and has to keep meaning "decide from the hardware"."""
+    _stored(monkeypatch, backend="auto")
+    _stub(monkeypatch, gpu={"available": True}, vllm_installed=True, vllm_running=False)
+    r = B.resolve_backend()
+    assert r["backend"] == "ollama", "vLLM is never auto-selected while its server is down"
+    assert r["override"] is None
+
+
+def test_an_unreadable_setting_never_breaks_resolution(monkeypatch):
+    def _boom():
+        raise RuntimeError("settings file is corrupt")
+
+    monkeypatch.setattr("src.config.app_settings.load_settings", _boom)
+    _stub(monkeypatch, gpu={"available": False}, vllm_installed=False, vllm_running=False)
+    assert B.resolve_backend()["backend"] == "ollama"
+
+
+def test_the_model_id_follows_the_backend_it_was_chosen_for(monkeypatch):
+    """The two backends consume DIFFERENT artifacts — a GGUF tag and an HF repo id —
+    so a model name only means anything beside its backend. A caller that already knows
+    which backend it brought up passes it, rather than letting this re-resolve and
+    possibly disagree."""
+    from src.api.llm import active_model
+
+    _stored(monkeypatch, backend="auto")
+    assert active_model("ollama") == "ollama-tag:3b"
+    assert active_model("vllm") == "org/Repo-3B"

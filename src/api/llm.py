@@ -117,18 +117,30 @@ def get_llm_client_with_name() -> tuple[str, "LlmBackend"]:
     return get_client_with_name(backend=_stored_backend_override())
 
 
-def active_model() -> str:
+def active_model(backend: str | None = None) -> str:
     """The operator's chosen default model for the ACTIVE backend — the STORED
     UI setting (Ollama: maintainer Q10; vLLM: B1.4) if set, else a backend-aware
     fallback. A per-request ``model`` still overrides it. Never fatal: any
-    settings/resolution hiccup falls back to the Ollama DEFAULT_MODEL."""
+    settings/resolution hiccup falls back to the Ollama DEFAULT_MODEL.
+
+    PASS ``backend`` WHEN THE CALLER ALREADY KNOWS IT. The two backends consume
+    different artifacts — an Ollama GGUF tag and a Hugging Face safetensors repo id —
+    so a model name is only meaningful next to the backend it was chosen for. Letting
+    this re-resolve independently means the model and the client are two answers to one
+    question, and they can differ: by a stale setting, or simply because vLLM died
+    between the two calls. The field saw the result as *"Model
+    'mistralai/Ministral-3-3B-Instruct-2512' is not installed. Run: ollama pull
+    mistralai/Ministral-3-3B-Instruct-2512"* — an HF repo id handed to Ollama, which
+    then correctly reported it had no such model while the right one sat installed.
+    """
     try:
         from src.llm.backend import resolve_backend
+
+        if backend is None:
+            backend = resolve_backend()["backend"]
         from src.config.app_settings import load_settings
 
         s = load_settings()
-        override = s.llm_backend if s.llm_backend != "auto" else None
-        backend = resolve_backend(override=override)["backend"]
         if backend == "vllm":
             if s.llm_model_vllm:
                 return s.llm_model_vllm
