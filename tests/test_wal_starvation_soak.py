@@ -29,6 +29,19 @@ re-runs during development; this file specifically adds the REPEATABILITY
 claim on top of that -- and bounds the peak WAL growth observed across every
 round, so a fix that degrades or leaks state after repeated use would be
 caught here even though it would pass a single-shot test.)
+
+WHY THE ROUND COMPRESSES THE RELEASE INTERVAL (added 2026-08-04, after this
+test went red on CI while the SAME commit passed in a sibling run of the same
+workflow): the property above needs the scan to OFFER release windows for a
+checkpoint to land in. Under production's 30 s throttle a 0.8 s scan offers
+exactly ONE -- measured at t=0.009 s -- because every release after the
+unconditional first one is throttled out. The round then turns on whether a
+checkpointer thread happened to fire inside a nine-millisecond window, which
+is luck, and it stopped being lucky on a cold shared runner. Delaying the
+checkpointer's first attempt by 0.15 / 0.30 / 0.60 s reproduces the CI failure
+at 1/6, 0/6, 0/6 -- and takes the WAL bound with it, from 82% of the ceiling
+to 110%, 132%, 158%. See _TEST_RELEASE_INTERVAL_S. Both assertions were
+resting on the same accident.
 """
 from __future__ import annotations
 
@@ -55,7 +68,39 @@ _ROUNDS = 3
 # rounds, but far below what an actually-broken (never-releasing) fix would
 # show, which grows for as long as the process keeps running with no ceiling
 # at all.
+#
+# MEASURED HEADROOM (this sandbox, 4 cores, 2026-08-04) with the compressed
+# release interval below: a round peaks at 4-13% of this bound. Before that
+# compression it peaked at 82% with an idle box and blew straight through it
+# -- 110%, 132%, 158% -- as the checkpointer's first attempt was delayed by
+# 0.15 s, 0.30 s, 0.60 s. The bound is unchanged; it simply stopped being the
+# thing under strain.
 _MAX_DURING_WINDOW_MULTIPLE = 6
+
+# The scan in this test lasts ~0.8 s. Production's release throttle
+# (registry._WAL_GUARD_MIN_RELEASE_INTERVAL_S) is 30 s, and its own comment
+# explains the sizing in terms of a scan that "can run for MINUTES", which
+# "comfortably gives such a scan several release windows".
+#
+# A 0.8 s scan gets NO such thing. Every release after the unconditional
+# first one is throttled out, so the whole round hangs on ONE momentary
+# window -- MEASURED at t=0.009 s, nine milliseconds in, before the
+# checkpointer has finished its first sleep. Whether a checkpoint lands
+# inside it is thread-scheduling luck, which is why this test went red on CI
+# (run 30889481666) while the SAME commit passed in the sibling run.
+#
+# So the round compresses the release interval exactly as it already
+# compresses the scan itself: several in-scan windows, which is the shape the
+# production constant was sized to produce. This does not weaken the
+# assertion -- an unpatched build releases ZERO times at ANY interval, and
+# the mutation check pinned below fails at 0/5 the moment the in-scan release
+# is removed. Production's 30 s is untouched.
+_TEST_RELEASE_INTERVAL_S = 0.05
+# ...which yields 8 in-scan releases + 1 from run_all's own between-producer
+# commit. Asserted (not assumed) per round: without the compression it is 1
+# in-scan release, so this floor is what stops a silent regression to the
+# single-window shape if the monkeypatch below is ever dropped.
+_MIN_RELEASES_PER_ROUND = 4
 
 
 def _wal_engine(db_path: Path, *, seed_rows: int):
@@ -88,6 +133,23 @@ def _run_one_round(tmp_path: Path, round_i: int, monkeypatch) -> dict:
     """
     monkeypatch.setattr(hygiene, "_LAST_CKPT_MONO", None)
     monkeypatch.setattr(registry, "_REGISTRY", [])
+    # See _TEST_RELEASE_INTERVAL_S: give this 0.8 s scan the several in-scan
+    # release windows a real minutes-long scan gets, instead of the single
+    # 9 ms one a sub-second scan gets under the production 30 s throttle.
+    monkeypatch.setattr(
+        registry, "_WAL_GUARD_MIN_RELEASE_INTERVAL_S", _TEST_RELEASE_INTERVAL_S
+    )
+    # Count the releases rather than trusting that the patch above took effect
+    # (a module-global lookup at call time -- if the wrapper is ever changed to
+    # bind the constant at import, this counter is what notices).
+    releases: list[float] = []
+    _real_release = registry._release_transaction
+
+    def _counting_release(session):
+        releases.append(time.monotonic())
+        return _real_release(session)
+
+    monkeypatch.setattr(registry, "_release_transaction", _counting_release)
     registry.register("slow_scan", _slow_scan_producer)
 
     db_path = tmp_path / f"wal_soak_round_{round_i}.db"
@@ -140,6 +202,7 @@ def _run_one_round(tmp_path: Path, round_i: int, monkeypatch) -> dict:
         "wal_bytes_during_window": wal_bytes_during_window,
         "any_checkpoint_succeeded": any(rec["busy"] == 0 for rec in ckpt_results),
         "checkpoint_attempts": len(ckpt_results),
+        "wal_releases": len(releases),
         "write_error_count": len(write_errors),
     }
 
@@ -187,4 +250,25 @@ def test_the_checkpoint_progress_guarantee_holds_reliably_across_repeated_rounds
         f"round(s) {starved_attempts} recorded ZERO checkpoint attempts at all -- "
         "the background checkpointer thread must have actually run: "
         f"{per_round}"
+    )
+
+    # ...and the same anti-vacuity argument one level down: the property above
+    # is only meaningfully tested if the scan actually OFFERED several release
+    # windows to hit. Under the production 30 s throttle a 0.8 s scan offers
+    # exactly ONE (measured: t=0.009 s), and "did a checkpoint happen to land
+    # in a 9 ms window" is a coin flip, not a guarantee -- which is what made
+    # this test flaky on CI. If the monkeypatch in _run_one_round is ever
+    # dropped, this is the assertion that says so instead of the suite going
+    # intermittently red for a reason nobody can reproduce locally.
+    single_window_rounds = [
+        (i, r["wal_releases"])
+        for i, r in enumerate(per_round)
+        if r["wal_releases"] < _MIN_RELEASES_PER_ROUND
+    ]
+    assert not single_window_rounds, (
+        f"round(s) (index, releases) {single_window_rounds} saw fewer than "
+        f"{_MIN_RELEASES_PER_ROUND} WAL releases -- the scan was not given the "
+        "several in-scan release windows a real long scan gets, so the "
+        "checkpoint-progress assertion above was decided by thread-scheduling "
+        f"luck rather than by the fix: {per_round}"
     )
