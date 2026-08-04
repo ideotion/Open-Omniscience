@@ -204,6 +204,87 @@ def server_log_tail(*, limit: int = _LOG_TAIL_BYTES, head_limit: int = _LOG_HEAD
         return {"available": False, "reason": f"could not read the server log: {exc}"}
 
 
+#: Fatal signatures, MOST SPECIFIC FIRST -- the cause, then the generic wrappers around
+#: it. Order is the whole design: "Engine core initialization failed. See root cause
+#: above." matches too, and matching it first would hand back the sentence that says the
+#: answer is somewhere else.
+_FATAL_SIGNATURES: tuple[tuple[str, str, str], ...] = (
+    (
+        "cuda-oom",
+        "CUDA error: out of memory",
+        "The GPU ran out of memory while starting. It is not a driver or model problem: "
+        "the weights loaded and the KV cache was allocated, and the card then had nothing "
+        "left for CUDA-graph capture. A smaller model, a shorter max_model_len, or a lower "
+        "gpu_memory_utilization all fix it.",
+    ),
+    ("cuda-oom", "torch.AcceleratorError", ""),
+    (
+        "port-taken",
+        "Address already in use",
+        "Something is already listening on vLLM's port.",
+    ),
+    (
+        "gated-repo",
+        "gated repo",
+        "The model repository requires accepting its licence on Hugging Face first.",
+    ),
+    ("engine-init", "EngineCore failed to start", ""),
+    ("traceback", "Traceback (most recent call last)", ""),
+)
+
+#: Lines of context kept BEFORE a matched signature -- enough to show the call site
+#: (which function was allocating) without pasting a whole stack.
+_EXCERPT_LEAD_LINES = 6
+
+
+def failure_excerpt(*, limit: int = 900) -> dict:
+    """The part of the server log that EXPLAINS a failed start.
+
+    Field report 2026-08-04, and it refutes this module's own previous answer. A start
+    was fixed once by keeping the log's tail, then again by keeping both ends on the
+    reasoning that "EngineCore is a child, so its traceback prints FIRST". In the real
+    46,867-byte log the actual cause -- ``CUDA error: out of memory`` -- sits at byte
+    27,405: outside the 8,000-byte head AND outside the 8,000-byte tail. The head was
+    vLLM's banner and a config dump; the tail was "See root cause above."
+
+    Both fixes were guesses about WHERE. So stop guessing and SEARCH: find the first
+    known fatal signature and return a window around it, most specific signature first.
+    Falls back to the head when nothing matches -- with no recognised signature the
+    beginning is as good a guess as any, and it at least shows what was launched.
+
+    Never raises: an unreadable log returns ``{"available": False, "reason": ...}``.
+    """
+    p = server_log_path()
+    try:
+        if not p.is_file():
+            return {"available": False, "reason": "no server log yet (never started here)"}
+        # The log is rewritten "wb" per start, so this is ONE attempt's output. Bounded
+        # anyway: a runaway progress bar must not pull megabytes into a UI poll.
+        with p.open("rb") as fh:
+            raw = fh.read(4_000_000)
+    except OSError as exc:
+        return {"available": False, "reason": f"could not read the server log: {exc}"}
+
+    text = raw.decode("utf-8", errors="replace")
+    lines = text.splitlines()
+    for kind, needle, advice in _FATAL_SIGNATURES:
+        idx = next((i for i, ln in enumerate(lines) if needle in ln), None)
+        if idx is None:
+            continue
+        start = max(0, idx - _EXCERPT_LEAD_LINES)
+        excerpt = "\n".join(lines[start:])[:limit].strip()
+        out = {"available": True, "path": str(p), "signature": kind, "excerpt": excerpt}
+        if advice:
+            out["advice"] = advice
+        return out
+    return {
+        "available": True,
+        "path": str(p),
+        "signature": None,
+        "excerpt": text[:limit].strip(),
+    }
+
+
 def venv_python() -> Path:
     """The venv's own Python interpreter (POSIX layout; Windows is out of scope
     per the standing Debian-first V1 pathway ruling)."""
@@ -690,6 +771,28 @@ def start_outcome() -> dict:
 #: a SHORTER context, which is the survivable direction on a small card.
 _KV_MB_PER_TOKEN = 0.5
 
+#: Memory left FREE on the card, outside vLLM's own budget, for the CUDA-graph capture
+#: pool and allocator fragmentation.
+#:
+#: ABSOLUTE, not a fraction, and that is the whole point (field report 2026-08-04). The
+#: previous derivation set ``gpu_memory_utilization`` from weights + KV, which made the
+#: reserve a SHRINKING fraction of a shrinking card -- it handed 0.95 to a 6 GB card and
+#: 0.86 to an 80 GB one, the exact inverse of what the hardware wants. The graph pool
+#: scales with the model and the number of captured graph sizes, NOT with the card, so a
+#: small card needs at least the same absolute headroom, never less.
+#:
+#: THE NUMBER is anchored on one field measurement and is a judgement, not a benchmark:
+#: on an 8 GiB card the old formula left 0.48 GiB free, and CUDA-graph capture died with
+#: ``cudaErrorMemoryAllocation`` at 86% of 51 PIECEWISE graphs for a 3B model. 1.5 GiB is
+#: ~3x that, which is margin rather than a fitted value. If it proves too generous the
+#: cost is context length; if it proves too tight the cost is a failed start, and the
+#: second is much worse -- the same asymmetry ``weight_footprint_gb`` already reasons from.
+_GRAPH_POOL_RESERVE_GB = 1.5
+
+#: Never exceed vLLM's OWN documented default. Being more aggressive than upstream on
+#: the smallest cards -- which is what shipped -- is the wrong direction to be bold in.
+_MAX_GPU_UTILIZATION = 0.90
+
 
 def compute_server_args(
     vram_mb: int | None,
@@ -699,36 +802,41 @@ def compute_server_args(
     max_model_len_override: int | None = None,
     gpu_memory_utilization_override: float | None = None,
 ) -> dict:
-    """Compute ``--max-model-len`` and ``--gpu-memory-utilization`` from detected
-    VRAM (pure, testable). METHOD (disclosed, not asserted as exact): reserve
-    ``weight_footprint_gb`` for the model's own weights (a stated ESTIMATE -- see
-    the note below on why the default is 5.0); of the remainder,
-    ``kv_cache_reserve_frac`` is kept
-    as headroom (activation memory / fragmentation), and ``gpu_memory_utilization``
-    is set to use the rest. ``max_model_len`` scales with the remaining VRAM at a
-    rough ~1 MB/token/layer-class budget (a conservative, DISCLOSED heuristic --
-    never a measured fact; the operator override always wins).
+    """Compute ``--max-model-len`` and ``--gpu-memory-utilization`` from detected VRAM
+    (pure, testable). Returns ``{"max_model_len", "gpu_memory_utilization", "method",
+    "caveat"}``; an explicit override for either field is honoured verbatim.
 
-    Returns ``{"max_model_len", "gpu_memory_utilization", "method", "caveat"}``.
-    An explicit override for either field is honoured verbatim (no re-derivation).
+    THE TWO VALUES ARE DERIVED SEPARATELY, and saying so is the correction here. They
+    answer different questions and scale differently:
 
-    ON THE 5.0 GB DEFAULT (corrected 2026-07-30): this used to be documented as
-    matching "a 4-bit-quantized Mistral-7B-class model, the RULED default model".
-    That description is stale -- ``DEFAULT_VLLM_MODEL`` is Ministral 3 **3B** served
-    in FP8 (~3.5 GB), because the 8B does not fit 8 GB of VRAM in any published vLLM
-    build. The NUMBER is deliberately left at 5.0 rather than lowered to match:
-    over-reserving costs context length, while under-reserving costs an OOM at
-    startup, and on a small card the second failure is much worse than the first.
-    So 5.0 is now an explicit conservative MARGIN over the real footprint, not a
-    match to it. An operator who wants the extra context sets
-    ``weight_footprint_gb`` (or ``max_model_len`` directly) and the override wins.
+      * ``gpu_memory_utilization`` is how much of the CARD vLLM may claim, and what is
+        left over has to hold the CUDA-graph capture pool plus fragmentation -- a cost
+        that tracks the model and the graph count, not the card. So it is set from an
+        ABSOLUTE reserve (:data:`_GRAPH_POOL_RESERVE_GB`), capped at vLLM's own 0.90.
+      * ``max_model_len`` is how long one sequence may be, which the KV budget bounds --
+        and that IS what is left after the weights, so it keeps the post-weights
+        derivation.
+
+    Deriving BOTH from weights + KV, as this used to, produced a utilization that ROSE
+    as the card shrank (0.95 at 6 GB, 0.86 at 80 GB): the fixed weight reserve was added
+    back at full value while only the remainder was discounted, so the smaller the card
+    the more that undiscounted term dominated. On the 8 GB card this app is designed
+    around it published 0.94, left 0.48 GiB free, and the engine died in graph capture.
+
+    ON THE 5.0 GB WEIGHT DEFAULT (corrected 2026-07-30): ``DEFAULT_VLLM_MODEL`` is
+    Ministral 3 **3B** in FP8, measured at 4.47 GiB loaded. The number stays at 5.0 as an
+    explicit conservative MARGIN over the real footprint, not a match to it: over-
+    reserving costs context length, under-reserving costs an OOM at startup, and on a
+    small card the second failure is much worse. An operator who wants the context back
+    sets ``weight_footprint_gb`` or ``max_model_len`` directly, and the override wins.
     """
     method = (
-        f"reserve {weight_footprint_gb} GB for model weights, "
-        f"{kv_cache_reserve_frac:.0%} of the remainder as headroom; the rest sets "
-        f"gpu_memory_utilization; max_model_len = the remaining KV budget divided by "
-        f"{_KV_MB_PER_TOKEN} MB/token (a 7B-class fp16 multi-head figure, deliberately "
-        f"conservative), floored at 2048 and capped at 32768."
+        f"gpu_memory_utilization = 1 − max({_GRAPH_POOL_RESERVE_GB} GB, 10% of VRAM) / VRAM, "
+        f"capped at {_MAX_GPU_UTILIZATION} (vLLM's own default) — the reserve is what CUDA-graph "
+        f"capture and fragmentation need, which does not shrink with the card. "
+        f"max_model_len = (VRAM − {weight_footprint_gb} GB for weights, less "
+        f"{kv_cache_reserve_frac:.0%} headroom) ÷ {_KV_MB_PER_TOKEN} MB/token (a 7B-class "
+        f"fp16 multi-head figure, deliberately conservative), floored at 2048, capped at 32768."
     )
     caveat = (
         "A conservative, DISCLOSED heuristic — not a measured fact. Override "
@@ -742,20 +850,20 @@ def compute_server_args(
             "caveat": caveat,
         }
     if not vram_mb or vram_mb <= 0:
-        # No measured VRAM to derive from -- an honest, conservative default rather
-        # than a guess scaled off nothing.
+        # No measured VRAM to derive from. Deliberately BELOW the 0.85 this used to
+        # return: an unreadable card could be a small one, and the small card is the
+        # case that fails to start.
         return {
             "max_model_len": max_model_len_override or 4096,
-            "gpu_memory_utilization": gpu_memory_utilization_override or 0.85,
+            "gpu_memory_utilization": gpu_memory_utilization_override or 0.80,
             "method": "no VRAM reading available -- a conservative fixed default",
             "caveat": caveat,
         }
     vram_gb = vram_mb / 1024.0
-    usable_gb = max(0.5, vram_gb - weight_footprint_gb)
-    kv_gb = usable_gb * (1.0 - kv_cache_reserve_frac)
     gpu_util = gpu_memory_utilization_override
     if gpu_util is None:
-        gpu_util = round(min(0.95, max(0.5, (weight_footprint_gb + kv_gb) / vram_gb)), 2)
+        reserve_gb = max(_GRAPH_POOL_RESERVE_GB, vram_gb * 0.10)
+        gpu_util = round(min(_MAX_GPU_UTILIZATION, max(0.50, 1.0 - reserve_gb / vram_gb)), 2)
     max_len = max_model_len_override
     if max_len is None:
         # UNIT CORRECTED 2026-08-02. The 0.5 MB figure is per TOKEN, not per 1K
@@ -763,18 +871,19 @@ def compute_server_args(
         # 2 (K+V) x 32 layers x 32 heads x 128 dim x 2 bytes = 512 KB per token.
         # Written as "per 1K tokens" and then multiplied by 1000, it over-counted
         # the affordable context by ~1000x, so `est_tokens` came out in the
-        # MILLIONS and the 32768 cap silently decided every machine: a 6 GB card
-        # with 0.85 GB of KV budget and an 80 GB card with 63.75 GB were both
-        # handed 32768. The method string published to the operator said the value
-        # "scales with the remaining VRAM" while it was a constant -- a fabricated
-        # disclosure, and the likely cause of the field's engine-init failure
-        # (32768 tokens asked of a 2.55 GB budget on an 8 GB laptop card).
+        # MILLIONS and the 32768 cap silently decided every machine.
         #
         # 0.5 MB/token stays DELIBERATELY conservative rather than being lowered to
         # match the shipped 3B model's grouped-query attention (~0.125 MB/token):
-        # this function's own stated principle is that over-reserving costs context
-        # length while under-reserving costs an OOM at startup, and on a small card
-        # the second failure is much worse than the first.
+        # over-reserving costs context length while under-reserving costs an OOM at
+        # startup, and on a small card the second failure is much worse.
+        #
+        # KEPT on the post-weights budget rather than re-derived from the new, lower
+        # utilization: the field run served 5120 with 24,960 tokens of KV (4.88x
+        # concurrency), so this value was demonstrably NOT the thing that failed, and
+        # tightening it would regress a number the measurement says works.
+        usable_gb = max(0.5, vram_gb - weight_footprint_gb)
+        kv_gb = usable_gb * (1.0 - kv_cache_reserve_frac)
         est_tokens = int((kv_gb * 1024) / _KV_MB_PER_TOKEN)
         max_len = max(2048, min(32768, (est_tokens // 1024) * 1024 or 2048))
     return {

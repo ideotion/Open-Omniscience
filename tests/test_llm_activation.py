@@ -260,7 +260,7 @@ def _spawns_vllm(monkeypatch, *outcomes, log=None):
     monkeypatch.setattr(vl, "start", lambda m, **k: {"started": True, "log_path": "/tmp/x"})
     seq = list(outcomes)
     monkeypatch.setattr(vl, "start_outcome", lambda: seq.pop(0) if len(seq) > 1 else seq[0])
-    monkeypatch.setattr(vl, "server_log_tail", lambda **k: log or {"available": False})
+    monkeypatch.setattr(vl, "failure_excerpt", lambda **k: log or {"available": False})
     return {"confirm": {"grace": 1.0, "step": 0.25, "sleep": lambda _s: None}}
 
 
@@ -321,14 +321,14 @@ def test_the_exit_carries_the_servers_own_first_words(monkeypatch):
         {"state": "exited", "returncode": 1, "log_path": "/v/server.log"},
         log={
             "available": True,
-            "truncated": True,
-            "head": "ValueError: gated repo org/Model-3B — accept the licence first",
-            "tail": "See root cause above.",
+            "signature": "gated-repo",
+            "excerpt": "ValueError: gated repo org/Model-3B — accept the licence first",
+            "advice": "The model repository requires accepting its licence first.",
         },
     )
     out = activation.ensure_running(**kw)
     assert "gated repo" in out["server_log_head"]
-    assert "root cause above" not in out["server_log_head"], "the TAIL is the wrong end"
+    assert "licence" in out["detail"], "the ADVICE leads, not a chore about reading a log"
     assert out["log_path"] == "/v/server.log"
 
 
@@ -489,7 +489,9 @@ def _coordinator(monkeypatch, act, *, installed=("a-model",)):
         "src.ai_layer.coordinator.enabled_members",
         lambda: [type("M", (), {"key": "keyword_triage"})()],
     )
-    monkeypatch.setattr("src.api.llm.active_model", lambda: "a-model")
+    # Takes the backend the coordinator actually brought up -- the whole point of the
+    # 2026-08-04 identifier fix, so the double has to accept it.
+    monkeypatch.setattr("src.api.llm.active_model", lambda backend=None: "a-model")
     monkeypatch.setattr(
         "src.llm.backend.get_client",
         lambda *a, **k: type("C", (), {"list_installed": lambda self: list(installed)})(),
@@ -622,7 +624,9 @@ def test_the_plan_reports_a_dead_start_on_every_read_not_only_at_click_time(monk
         "start_outcome",
         lambda: {"state": "exited", "returncode": 2, "detail": "…", "log_path": "/v/s.log"},
     )
-    monkeypatch.setattr(vl, "server_log_tail", lambda **k: {"available": True, "tail": "CUDA OOM"})
+    monkeypatch.setattr(
+        vl, "failure_excerpt", lambda **k: {"available": True, "excerpt": "CUDA OOM"}
+    )
     plan = activation.activation_plan()
     assert plan["last_start"]["returncode"] == 2
     assert plan["last_start"]["server_log_head"] == "CUDA OOM"
@@ -636,7 +640,7 @@ def test_but_a_dead_start_never_becomes_a_blocker(monkeypatch):
     import src.llm.vllm_lifecycle as vl
 
     monkeypatch.setattr(vl, "start_outcome", lambda: {"state": "exited", "returncode": 1})
-    monkeypatch.setattr(vl, "server_log_tail", lambda **k: {"available": False})
+    monkeypatch.setattr(vl, "failure_excerpt", lambda **k: {"available": False})
     plan = activation.activation_plan()
     assert plan["can_start"] is True and plan["blocker"] is None
 
@@ -650,3 +654,140 @@ def test_and_nothing_is_reported_for_any_other_state(monkeypatch, state):
 
     monkeypatch.setattr(vl, "start_outcome", lambda: {"state": state})
     assert "last_start" not in activation.activation_plan()
+
+
+# --------------------------------------------------------------------------- #
+#  Finding the reason, instead of guessing which end of the log holds it
+# --------------------------------------------------------------------------- #
+def _server_log(tmp_path, monkeypatch, body: str):
+    import src.llm.vllm_lifecycle as vl
+
+    p = tmp_path / "server.log"
+    p.write_text(body, encoding="utf-8")
+    monkeypatch.setattr(vl, "server_log_path", lambda: p)
+    return vl
+
+
+def _real_shaped_log(cause: str) -> str:
+    """The operator's 2026-08-04 log, in shape: ~27 KB of banner and engine config,
+    the cause, then ~19 KB of the parent re-raising it. Neither end holds the answer."""
+    banner = "\n".join(f"(APIServer pid=1) INFO [config.py:{i}] non-default args ..." for i in range(400))
+    tail = "\n".join(f"(APIServer pid=1)   File \"vllm/entrypoints/x.py\", line {i}" for i in range(300))
+    # The real log puts ~25 lines of EngineCore stack between the config dump and the
+    # cause, which is what the excerpt's lead-in is FOR (it names the call site).
+    stack = "\n".join(
+        f"(EngineCore pid=2) ERROR   File \"vllm/v1/worker/gpu/x.py\", line {i}, in capture"
+        for i in range(25)
+    )
+    return (
+        f"{banner}\n"
+        "(EngineCore pid=2) ERROR EngineCore failed to start.\n"
+        f"{stack}\n"
+        "(EngineCore pid=2) ERROR     super().capture_end()\n"
+        f"(EngineCore pid=2) ERROR {cause}\n"
+        "(EngineCore pid=2) ERROR Search for `cudaErrorMemoryAllocation' in the CUDA docs.\n"
+        f"{tail}\n"
+        "(APIServer pid=1) RuntimeError: Engine core initialization failed. "
+        "See root cause above. Failed core proc(s): {}\n"
+    )
+
+
+def test_the_reason_is_found_even_when_it_is_in_neither_end_of_the_log(tmp_path, monkeypatch):
+    """This module got the log's shape wrong TWICE, and the operator's own 46,455-byte
+    log is what refuted the second answer.
+
+    The first fix kept the TAIL. The second kept both ends, reasoning that "EngineCore
+    is a child process, so its traceback prints FIRST". True, and still wrong: the real
+    cause sat 26,914 bytes in — past the 8,000-byte head, before the 8,000-byte tail.
+    The head was a banner and a config dump; the tail was "See root cause above."
+
+    Both were guesses about WHERE. So this searches instead."""
+    vl = _server_log(tmp_path, monkeypatch, _real_shaped_log("torch.AcceleratorError: CUDA error: out of memory"))
+    r = vl.failure_excerpt()
+    assert r["available"] is True
+    assert "out of memory" in r["excerpt"], "the cause, not an end of the file"
+    assert "non-default args" not in r["excerpt"], "the banner is not the reason"
+    assert "See root cause above" not in r["excerpt"], "nor is the pointer to it"
+
+
+def test_a_recognised_failure_is_named_with_what_to_do(tmp_path, monkeypatch):
+    """A traceback says what happened; this says what to do about it. The operator's
+    card should not have to be read as CUDA documentation."""
+    vl = _server_log(tmp_path, monkeypatch, _real_shaped_log("torch.AcceleratorError: CUDA error: out of memory"))
+    r = vl.failure_excerpt()
+    assert r["signature"] == "cuda-oom"
+    assert "ran out of memory" in r["advice"]
+    assert "gpu_memory_utilization" in r["advice"], "name the knob that fixes it"
+
+
+def test_the_cause_beats_the_wrapper_that_points_at_it(tmp_path, monkeypatch):
+    """Ordering is the whole design. "Engine core initialization failed. See root cause
+    above." matches too, and matching it first would hand back the sentence whose entire
+    content is that the answer is somewhere else."""
+    vl = _server_log(tmp_path, monkeypatch, _real_shaped_log("torch.AcceleratorError: CUDA error: out of memory"))
+    assert vl.failure_excerpt()["signature"] == "cuda-oom"
+
+
+def test_an_unrecognised_failure_falls_back_rather_than_inventing_one(tmp_path, monkeypatch):
+    """The twin. A log with no known signature must not be labelled with the nearest
+    one — a fabricated diagnosis is worse than an honest excerpt."""
+    vl = _server_log(tmp_path, monkeypatch, "something went wrong in a way we have never seen\n")
+    r = vl.failure_excerpt()
+    assert r["signature"] is None
+    assert "advice" not in r
+    assert "never seen" in r["excerpt"]
+
+
+def test_no_log_at_all_is_an_absence_not_an_empty_string(tmp_path, monkeypatch):
+    import src.llm.vllm_lifecycle as vl
+
+    monkeypatch.setattr(vl, "server_log_path", lambda: tmp_path / "nope.log")
+    assert vl.failure_excerpt()["available"] is False
+
+
+# --------------------------------------------------------------------------- #
+#  The utilization that caused the OOM in the first place
+# --------------------------------------------------------------------------- #
+def test_utilization_never_gets_more_aggressive_as_the_card_gets_smaller():
+    """THE defect, and it is visible as a monotonicity: the old formula published 0.95
+    on a 6 GiB card and 0.86 on an 80 GiB one, because the fixed weight reserve was
+    added back at full value while only the remainder was discounted. The smallest cards
+    — the ones this app is designed around — got the least headroom.
+
+    STRICT direction, per the recorded lesson that a monotonicity assertion over a
+    clamped value is satisfied by the constant it exists to catch."""
+    from src.llm.vllm_lifecycle import compute_server_args
+
+    seen = [compute_server_args(mb)["gpu_memory_utilization"]
+            for mb in (4096, 6144, 8192, 12288, 16384, 24576, 81920)]
+    assert seen == sorted(seen), f"utilization must not rise as VRAM falls: {seen}"
+    assert seen[0] < seen[-1], "and it must actually VARY, not be a constant"
+
+
+def test_the_field_card_gets_real_headroom_now():
+    """The measurement: on this 8 GiB card the old rule left 0.48 GiB free and CUDA-graph
+    capture died at 86% of 51 graphs. The reserve is absolute because the graph pool
+    scales with the model and the graph count, not with the card."""
+    from src.llm.vllm_lifecycle import compute_server_args
+
+    a = compute_server_args(8192)
+    free_gb = 8.0 * (1.0 - a["gpu_memory_utilization"])
+    assert free_gb > 1.0, f"only {free_gb:.2f} GiB left for graph capture"
+    assert a["gpu_memory_utilization"] <= 0.90, "never more aggressive than vLLM's own default"
+
+
+def test_but_the_context_length_the_field_proved_works_is_not_regressed():
+    """The negative-space twin, and the reason max_model_len keeps its own derivation:
+    the field run served 5120 with 24,960 tokens of KV (4.88x concurrency), so this value
+    was demonstrably NOT what failed. Tightening it would regress a number the
+    measurement says works — conservatism in the wrong place is still a wrong answer."""
+    from src.llm.vllm_lifecycle import compute_server_args
+
+    assert compute_server_args(8192)["max_model_len"] == 5120
+
+
+def test_an_operator_override_is_still_honoured_verbatim():
+    from src.llm.vllm_lifecycle import compute_server_args
+
+    a = compute_server_args(8192, gpu_memory_utilization_override=0.97)
+    assert a["gpu_memory_utilization"] == 0.97, "an explicit choice is never second-guessed"

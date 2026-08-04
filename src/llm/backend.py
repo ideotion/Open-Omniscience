@@ -672,6 +672,22 @@ def _result(
     }
 
 
+def _stored_backend_override() -> str | None:
+    """The operator's stored ``llm_backend`` choice, or None for "auto"/unreadable.
+
+    Lazily imported: ``src.config.app_settings`` holds no ``src.llm`` import (only two
+    comments naming it), so there is no cycle -- but the import stays inside the call
+    so a settings problem can never make this module unimportable.
+    """
+    try:
+        from src.config.app_settings import load_settings
+
+        stored = (load_settings().llm_backend or "").strip().lower()
+    except Exception:  # noqa: BLE001 - a settings hiccup must never break resolution
+        return None
+    return stored if stored in ("ollama", "vllm") else None
+
+
 def resolve_backend(*, override: str | None = None) -> dict:
     """The ONE decision point: which backend should serve inference right now,
     and why. Returns::
@@ -707,17 +723,29 @@ def resolve_backend(*, override: str | None = None) -> dict:
     misconfigured non-loopback ``OO_OLLAMA_URL``, and ``_vllm_status()``'s
     ImportError fallback reports ``running: False`` without probing.
 
-    Precedence: an explicit ``override`` (or ``OO_LLM_BACKEND``) of "ollama"/"vllm"
-    always wins (an operator's explicit choice is never second-guessed) -- but an
-    override that selects an unreachable backend now SAYS SO rather than reading
-    as a working choice; "auto" (the default) prefers vLLM ONLY when a GPU is
-    present AND vLLM is installed AND its server is currently running -- vLLM is
-    never auto-selected merely because it is installed (a stopped server would
-    silently 503 every call); the caller-facing "start vLLM" flow (B2/B4) is what
-    brings it up. Ollama is the default and fallback in every other case (RULED
-    A12 -- never dropped)."""
+    Precedence: an explicit ``override``, then ``OO_LLM_BACKEND``, then the operator's
+    STORED ``llm_backend`` setting -- any of them naming "ollama"/"vllm" wins (an
+    explicit choice is never second-guessed), but an override that selects an
+    unreachable backend now SAYS SO rather than reading as a working choice; "auto"
+    (the default) prefers vLLM ONLY when a GPU is present AND vLLM is installed AND its
+    server is currently running -- vLLM is never auto-selected merely because it is
+    installed (a stopped server would silently 503 every call); the caller-facing
+    "start vLLM" flow (B2/B4) is what brings it up. Ollama is the default and fallback
+    in every other case (RULED A12 -- never dropped).
+
+    THE STORED SETTING IS READ HERE, not left to call sites (field report 2026-08-04:
+    "Model 'mistralai/Ministral-3-3B-Instruct-2512' is not installed. Run: ollama pull
+    mistralai/Ministral-3-3B-Instruct-2512"). That is an HF repo id being handed to
+    OLLAMA, and it happened because two functions answered "which backend" from
+    different sources: ``active_model()`` passed the stored setting and got vLLM's
+    identifier, while the sweeps' ``get_client_with_name()`` passed nothing and resolved
+    from the env alone -- so with the setting on "vllm" and its server not running, the
+    model came from one answer and the client from the other. Bridging it at every call
+    site is an enumeration, and enumerations are wrong; reading it in the ONE place the
+    decision is made makes the operator's choice authoritative by construction."""
     env_override = os.getenv("OO_LLM_BACKEND", "").strip().lower()
-    chosen_override = (override or env_override or "auto").strip().lower()
+    chosen_override = (override or env_override or _stored_backend_override() or "auto")
+    chosen_override = chosen_override.strip().lower()
     if chosen_override not in _VALID_OVERRIDES:
         chosen_override = "auto"
 
@@ -732,7 +760,8 @@ def resolve_backend(*, override: str | None = None) -> dict:
         elif vllm_running:
             reason = (
                 "explicit override (ollama), but Ollama is NOT reachable "
-                "-- vLLM's server IS running; clear the override or start Ollama"
+                "-- vLLM's server IS running; start Ollama, or clear the override "
+                "to use the vLLM that is already up"
             )
         else:
             reason = (
@@ -753,7 +782,8 @@ def resolve_backend(*, override: str | None = None) -> dict:
         elif ollama_ok:
             reason = (
                 "explicit override (vllm), but its server is NOT running "
-                "-- Ollama IS reachable; clear the override to use it"
+                "-- start it from Settings -> AI (Ollama IS reachable if you would "
+                "rather clear the override and use that instead)"
             )
         else:
             reason = (
@@ -951,8 +981,45 @@ def outage_reason() -> str | None:
     except Exception:  # noqa: BLE001 - a message-enrichment probe must never break a run
         return None
     if resolved.get("no_backend") or not resolved.get("available"):
+        # A vLLM that was STARTED and then DIED is not the same condition as one that
+        # was never started, and only the first has an actionable reason. Field report
+        # 2026-08-04: with the override on vLLM, the sweep read "its server is NOT
+        # running -- Ollama IS reachable; clear the override to use it" ten times over,
+        # while the real answer -- the engine had exited on a CUDA OOM about a minute
+        # after the start returned -- was already recorded and simply not consulted.
+        if resolved.get("backend") == "vllm" and (died := _vllm_start_failure()):
+            return died
         return str(resolved.get("reason") or "no AI backend is reachable right now")
     return None
+
+
+def _vllm_start_failure() -> str | None:
+    """Why the last vLLM start IN THIS PROCESS died, or None if none did.
+
+    ``start_outcome()`` already separates never-started from still-loading from
+    already-dead, and ``failure_excerpt()`` already searches the log for the cause. This
+    is the third place that pair needed to be read: a sweep's retry line is where an
+    operator actually SEES a failure, and it was showing them reachability instead.
+
+    Deliberately reports ONLY the ``exited`` state. "Still loading" must keep the
+    generic wording, because a model load takes tens of seconds and the backoff exists
+    precisely to wait it out -- naming it a failure would be the fabricated-failure twin
+    of the fabricated-success this fixes.
+    """
+    try:
+        from src.llm.vllm_lifecycle import failure_excerpt, start_outcome
+
+        outcome = start_outcome()
+        if outcome.get("state") != "exited":
+            return None
+        base = (
+            f"vLLM was started and its server process then exited "
+            f"(code {outcome.get('returncode')}), so it is not coming back on its own"
+        )
+        advice = str(failure_excerpt(limit=400).get("advice") or "")
+    except Exception:  # noqa: BLE001 - an enrichment probe must never break a run
+        return None
+    return f"{base} — {advice}" if advice else base
 
 
 #: Longest error text a retry line carries. Long enough for a Python exception's
