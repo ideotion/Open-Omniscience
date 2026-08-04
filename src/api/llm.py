@@ -1378,6 +1378,21 @@ def bench_roster_install(req: BenchRosterInstallRequest | None = None) -> dict:
             ),
         )
     ok, refused = identifiers_for(backend, body.keys)
+    return _queue_downloads(backend, ok, refused)
+
+
+def _queue_downloads(backend: str, ok: list[dict], refused: list[dict]) -> dict:
+    """Route resolved artifacts to whichever downloader the backend uses.
+
+    Extracted (2026-08-04) because the model-catalogue buttons and the bench roster
+    ask the SAME question with different lists, and two copies of this routing would
+    be two places for the egress posture and the refusal contract to drift. The bench
+    comparison UI is scheduled for removal; this routing is not, because it is what
+    every model download goes through.
+
+    ``refused`` is carried through untouched and added to, never replaced: an operator
+    who selected four models and can have two is owed an account of four.
+    """
     if not ok:
         return {"backend": backend, "action": "nothing_to_do", "queued": [], "refused": refused}
 
@@ -1495,6 +1510,102 @@ def ollama_start() -> dict:
         return start()
     except OllamaLifecycleError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/models/catalog")
+def llm_model_catalog(backend: str | None = None) -> dict:
+    """Every model the AI tab offers, resolved for the backend that will serve, with
+    live installed-state.
+
+    ONE list, either backend: a model is an Ollama image or a Hugging Face repo
+    depending on what is serving, and the operator presses one button either way. A
+    model with no verified build for this backend is listed as unavailable WITH the
+    reason -- hiding it would leave a shorter list and no explanation.
+
+    ``installed`` is probed here rather than in the catalogue module, which stays pure:
+    a probe belongs where it can fail without making the list unreadable. It is None,
+    never False, when the probe itself could not answer -- an Ollama daemon that is
+    down genuinely does not know what it has.
+    """
+    from src.llm.backend import resolve_backend
+    from src.llm.model_catalog import catalog_for
+
+    r = resolve_backend()
+    pick = _provisioning_backend(r)
+    chosen = (backend or "").strip().lower()
+    if chosen not in {"ollama", "vllm"}:
+        chosen = pick["backend"]
+    out = catalog_for(chosen)
+    out["chosen_because"] = pick["chosen_because"] if not backend else "explicitly requested"
+    out["prerequisite"] = pick["prerequisite"]
+
+    have: set[str] | None = None
+    if chosen == "ollama":
+        try:
+            have = {m.get("tag") for m in OllamaClient().list_installed_detailed()}
+        except LLMUnavailable:
+            have = None  # the daemon is down: unknown, NOT "none installed"
+    for m in out["models"]:
+        if not m["available"]:
+            m["installed"] = False
+            continue
+        if chosen == "vllm":
+            try:
+                from src.llm.vllm_lifecycle import model_cache_state
+
+                m["installed"] = model_cache_state(m["artifact"])["cached"]
+            except Exception:  # noqa: BLE001 - an unreadable cache is unknown, not absent
+                m["installed"] = None
+        else:
+            m["installed"] = None if have is None else (m["artifact"] in have)
+    return out
+
+
+class ModelInstallRequest(BaseModel):
+    """Which catalogue models to download. ``keys`` are catalogue keys, never raw
+    identifiers: a caller cannot smuggle an arbitrary repo or tag through this
+    endpoint, and every string that reaches a download came from a dated catalogue.
+    Same discipline as ``BenchRosterInstallRequest`` above."""
+
+    keys: list[str] = []
+    backend: str | None = None
+
+
+@router.post("/models/install")
+def llm_model_install(req: ModelInstallRequest | None = None) -> dict:
+    """Download the selected catalogue models for the backend that will serve.
+
+    The same egress posture as every other model download: this is CLEARNET traffic
+    (Hugging Face / the Ollama registry) through a process outside this app's Tor
+    routing, so it is refused under the kill switch and the operator can allow the AI
+    install online on its own.
+    """
+    from src.ingest.egress_window import PURPOSE_AI_INSTALL, egress_permitted
+    from src.llm.model_catalog import identifiers_for
+
+    if not egress_permitted(PURPOSE_AI_INSTALL):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Airplane mode is engaged. Downloading models is clearnet traffic "
+                "(Hugging Face / the model registry), so it is refused while offline. "
+                "You can allow the AI install to go online on its own, which does not "
+                "start collecting."
+            ),
+        )
+    body = req or ModelInstallRequest()
+    pick = _roster_backend(body.backend)
+    backend = pick["backend"]
+    if pick["prerequisite"]:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{'vLLM' if backend == 'vllm' else 'Ollama'} is not installed yet, and "
+                "it is what downloads these models. Set up the local AI first."
+            ),
+        )
+    ok, refused = identifiers_for(backend, body.keys)
+    return _queue_downloads(backend, ok, refused)
 
 
 @router.get("/activation")
