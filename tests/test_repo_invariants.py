@@ -1224,8 +1224,15 @@ def test_synthesis_opens_a_window_with_selection_metadata_and_export():
     # result step shows member metadata + export/copy
     assert "_synthRenderResult" in app and "r.members" in app
     assert "_synthExport" in app and "_synthAsMarkdown" in app and "_synthCopy" in app
-    # the candidate fetch uses the new /api/articles ids param for a seeded corpus
-    assert 'cp.set("ids"' in app
+    # The candidate fetch must reach /api/articles with the `ids` param for a seeded
+    # corpus. This asserted the inline `cp.set("ids"` that synthesizeResults used to
+    # carry; that translation moved into the shared _articleQuery helper on 2026-08-04,
+    # when the same mismatch was found UNFIXED in the analysis tab and the export (they
+    # sent `article_ids`, which FastAPI silently drops, so they returned the whole
+    # corpus). The property is unchanged and now stronger: synthesis goes through the one
+    # helper, and that helper sets the key the endpoint accepts.
+    assert "_articleQuery(p)" in app, "synthesis builds its candidate query via the helper"
+    assert 'q.set("ids"' in app, "and the helper translates to the param /api/articles takes"
 
 
 def test_bulk_translate_summary_runs_are_queued():

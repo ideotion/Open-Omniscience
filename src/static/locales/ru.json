@@ -2692,5 +2692,13 @@
   "unavailable (Tor/proxy)": "недоступно (Tor/прокси)",
   "unused keywords removed": "неиспользуемые ключевые слова удалены",
   "watch only": "только наблюдение",
-  "— create, add, remove, delete": "— создать, добавить, убрать, удалить"
+  "— create, add, remove, delete": "— создать, добавить, убрать, удалить",
+  "Select a period": "Выбрать период",
+  "Drag across the chart to open the articles in that period. Hold Shift to drag without switching mode.": "Проведите по графику, чтобы открыть статьи за этот период. Удерживайте Shift, чтобы выделять без смены режима.",
+  "No articles in {from} → {to}.": "Нет статей с {from} по {to}.",
+  "{articles} articles · {mentions} mentions · {from} → {to}": "статей: {articles} · упоминаний: {mentions} · {from} → {to}",
+  "{n} quarantined, not included": "{n} в карантине, не включены",
+  "showing the first 5000": "показаны первые 5000",
+  "{term}: {from} → {to}": "{term}: {from} → {to}",
+  "Could not open that period": "Не удалось открыть этот период"
 }

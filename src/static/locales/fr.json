@@ -2692,5 +2692,13 @@
   "unavailable (Tor/proxy)": "indisponible (Tor/proxy)",
   "unused keywords removed": "mots-clés inutilisés supprimés",
   "watch only": "surveillance seule",
-  "— create, add, remove, delete": "— créer, ajouter, retirer, supprimer"
+  "— create, add, remove, delete": "— créer, ajouter, retirer, supprimer",
+  "Select a period": "Sélectionner une période",
+  "Drag across the chart to open the articles in that period. Hold Shift to drag without switching mode.": "Faites glisser sur le graphique pour ouvrir les articles de cette période. Maintenez Maj pour glisser sans changer de mode.",
+  "No articles in {from} → {to}.": "Aucun article entre {from} et {to}.",
+  "{articles} articles · {mentions} mentions · {from} → {to}": "{articles} articles · {mentions} mentions · {from} → {to}",
+  "{n} quarantined, not included": "{n} en quarantaine, non inclus",
+  "showing the first 5000": "affichage des 5000 premiers",
+  "{term}: {from} → {to}": "{term} : {from} → {to}",
+  "Could not open that period": "Impossible d’ouvrir cette période"
 }

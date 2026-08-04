@@ -2692,5 +2692,13 @@
   "unavailable (Tor/proxy)": "অনুপলব্ধ (Tor/প্রক্সি)",
   "unused keywords removed": "অব্যবহৃত কীওয়ার্ড সরানো হয়েছে",
   "watch only": "কেবল ওয়াচ",
-  "— create, add, remove, delete": "— তৈরি, যোগ, সরানো, মুছে ফেলা"
+  "— create, add, remove, delete": "— তৈরি, যোগ, সরানো, মুছে ফেলা",
+  "Select a period": "সময়কাল বাছাই করুন",
+  "Drag across the chart to open the articles in that period. Hold Shift to drag without switching mode.": "ওই সময়কালের নিবন্ধ খুলতে চার্টে টানুন। মোড না বদলে টানতে Shift চেপে রাখুন।",
+  "No articles in {from} → {to}.": "{from} থেকে {to} পর্যন্ত কোনো নিবন্ধ নেই।",
+  "{articles} articles · {mentions} mentions · {from} → {to}": "{articles} নিবন্ধ · {mentions} উল্লেখ · {from} → {to}",
+  "{n} quarantined, not included": "{n} কোয়ারান্টাইনে, অন্তর্ভুক্ত নয়",
+  "showing the first 5000": "প্রথম 5000 দেখানো হচ্ছে",
+  "{term}: {from} → {to}": "{term}: {from} → {to}",
+  "Could not open that period": "ওই সময়কাল খোলা যায়নি"
 }

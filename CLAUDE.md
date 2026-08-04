@@ -2348,6 +2348,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     not in the index, the only real options are a composite covering index (a migration) or
     not referencing the column in that query at all; grouping on it is a non-fix that looks
     like one.
+  - **A CAPABILITY ON A SURFACE WITH NO CALLERS IS A GUARD THAT PASSES WHILE PROVING
+    NOTHING — and three more ways a locally-correct UI change claims something false
+    (2026-08-04, the chart brush):** four defects from one slice, none visible in a diff.
+    (a) **THE SHARPEST.** I wired brush-to-select onto `#corpus-chart` because it is a
+    single-keyword article-time chart and qualified on every stated criterion — but
+    `corpusTab` has **no callers** (the retired `#corpus-win` modal), so the capability was
+    unreachable, and my own guard asserting both wired charts passed while half of it
+    described something no reader can do. Before wiring a feature onto a surface, grep for
+    the surface's CALLERS, not just its correctness; and a guard that enumerates surfaces
+    must be checked against reachability or it certifies dead code. (b) **A CONTROL'S
+    PREVIEW AND ITS ACTION MUST SHARE ONE FORMATTER.** The live brush readout used `fmtT`,
+    which picks granularity from the whole axis span, so it rendered "2026-05" while the
+    brush selected `2026-05-10` — the reader was shown a month and handed a span starting
+    mid-month, with no way to tell before releasing. Two formatters for one quantity drift
+    by construction; hoist one and both agree. (c) **A COLOUR TOKEN CARRIES MEANING, so
+    reusing it for the opposite meaning gives one signal two readings** — the selection band
+    was painted with `--fig-gap`, the ABSENCE token, so a selection and a hole were the same
+    grey and a reader who had learned "grey means nothing recorded here" would read a
+    selection as missing data. Selection is an ACTIVE state and belongs to the accent.
+    (d) **A VISUAL CHECK CAPTURED AT THE WRONG MOMENT TESTS NOTHING** — greyscale was applied
+    after the click navigated away, so "the band is visible without colour" had never been
+    tested at all despite a greyscale screenshot existing. Captured mid-drag it does hold,
+    but through the explicit EDGES; the translucent fill is faint once desaturated, which
+    means the edges were load-bearing rather than decorative. Mid-interaction states need
+    mid-interaction capture, and an existing screenshot is not evidence that the thing you
+    care about was in it.
 
 ## Open queue (when maintainer says proceed)
 - **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;

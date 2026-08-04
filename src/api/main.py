@@ -1352,6 +1352,7 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
     end_date: str | None = None,
     language: str | None = None,
     tags: str | None = None,
+    ids: str | None = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -1365,6 +1366,11 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
     - end_date: Filter by end date (YYYY-MM-DD).
     - language: Filter by language code (e.g., "en", "fr").
     - tags: Filter by source tags (comma-separated).
+    - ids: An explicit comma-separated article-id set (a card-seeded or brushed corpus),
+      same meaning as on /api/articles. WITHOUT this the export ignored the selection and
+      wrote the WHOLE corpus: the id set never reached the query, so a reader exporting
+      "the matched articles" of a 3-article corpus received every article they hold.
+      Verified against the running app before the fix.
     """
     logger.info(f"Export request: format={format}, query={query}, source={source}")
 
@@ -1373,18 +1379,36 @@ def export_articles(  # plain def -> threadpool (S2.5): export uses limit=None, 
     _validate_date(start_date, "start_date")
     _validate_date(end_date, "end_date")
 
-    # limit=None -> export every matching row, faithful to the filter.
-    articles, _total = _query_articles(
-        db,
-        query=query,
-        source=source,
-        start_date=start_date,
-        end_date=end_date,
-        language=language,
-        tags=tags,
-        limit=None,
-        offset=0,
-    )
+    if ids:
+        # An explicit id set bypasses the filter query entirely, exactly as
+        # search_articles does, and excludes quarantined articles for the same reason: an
+        # explicit set must not resurface one. Order follows the request so an export
+        # matches the list the reader was looking at. Bounded at 1000, the same bound.
+        id_list = [int(x) for x in ids.split(",") if x.strip().lstrip("-").isdigit()][:1000]
+        by_id = {
+            a.id: a
+            for a in (
+                db.query(Article)
+                .filter(Article.id.in_(id_list), Article.quarantined.isnot(True))
+                .all()
+                if id_list
+                else []
+            )
+        }
+        articles = [by_id[i] for i in id_list if i in by_id]
+    else:
+        # limit=None -> export every matching row, faithful to the filter.
+        articles, _total = _query_articles(
+            db,
+            query=query,
+            source=source,
+            start_date=start_date,
+            end_date=end_date,
+            language=language,
+            tags=tags,
+            limit=None,
+            offset=0,
+        )
 
     if format == "csv":
         stream = io.StringIO()
