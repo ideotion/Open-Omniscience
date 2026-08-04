@@ -360,10 +360,35 @@ def _open_gate(monkeypatch) -> None:
     )
 
 
+def _freeze_today(monkeypatch) -> None:
+    """Pin the endpoint's clock to the fixture's window.
+
+    The endpoint takes no ``end``: ``resolve_period`` falls back to
+    ``date.today()`` (src/bulletin/period.py). Every other test here passes
+    ``end=_END`` through ``_period()``, so only this one read the REAL clock --
+    and once the calendar moved past the fixture's July dates the resolved
+    window stopped containing all three sources and the assertion below started
+    failing on an unchanged tree (observed 2026-08-04: the window resolved to
+    2026-07-28..2026-08-04, holding only Alpha's 08-01 and Gamma's 07-31, so
+    ``sources_contributing`` was 2). That is the standing "never compare a
+    hardcoded fixture against a real-now marker" lesson; freezing the clock
+    keeps the assertion meaningful instead of weakening it to match the drift.
+    """
+    import src.bulletin.period as period
+
+    class _FrozenDate(date):
+        @classmethod
+        def today(cls) -> date:
+            return _END
+
+    monkeypatch.setattr(period, "date", _FrozenDate)
+
+
 def test_the_preview_endpoint_returns_layer_a_for_a_closed_period(monkeypatch):
     import src.api.diagnostics as diag
 
     _open_gate(monkeypatch)
+    _freeze_today(monkeypatch)
     body = json.loads(diag.bulletin_preview(cadence="weekly", download=False, db=_corpus()).body)
     assert body["available"] is True
     assert body["layer"] == "A"
