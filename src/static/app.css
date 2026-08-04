@@ -56,6 +56,53 @@
          everywhere with headroom. Plain --muted would also pass, but only just
          (worst 4.56:1) — too thin a margin for a token a future theme may retint. */
       --chip-off:color-mix(in srgb, var(--fg) 50%, var(--muted) 50%);
+      /* --fig-1..--fig-6: the CATEGORICAL CHART SERIES set. Derived from each theme's
+         OWN --accent/--ok/--warn/--err/--muted pulled toward --fg via color-mix —
+         never a hardcoded hue (the --caveat lesson: a fixed hue failed contrast on
+         8/17 themes). Verified by contrast math against --panel AND --panel2 AND
+         --panel3 on all 17 themes (357 checks), because a chart host varies: the
+         ooChart canvas paints itself --panel2, an SVG figure inherits its card's
+         --panel, and a nested panel is --panel3. Bar: WCAG 1.4.11 non-text contrast
+         >=3:1, which is the one that applies to a plotted line rather than to text.
+         All six clear it everywhere; set worst 3.50:1 (--fig-2 on dawn/--panel3).
+
+         Two MEASURED reasons this replaced the raw ["--accent","--ok","--warn",
+         "--err"] cycle ooChart indexed with i % 4:
+
+         (a) On --panel2, the background the ooChart canvas actually paints, three of
+             those four slots were BELOW the 3:1 bar: --ok 2.86:1 (dawn), --warn
+             2.76:1 (solar), --err 2.41:1 (solar). Lines that faint are not a
+             styling preference, they are hard to see.
+         (b) The worst MUTUAL separation between two of the six new colours is
+             1.00:1 — luminance-IDENTICAL (cyber, --fig-2 vs --fig-5). Pulling each
+             hue toward --fg to clear the background bar necessarily converges them,
+             and that trade is taken deliberately: a line you cannot see is worse
+             than two lines you can see and must read the dash to tell apart. It is
+             also the arithmetic proof that colour ALONE cannot carry series
+             identity — in greyscale, to a colour-blind reader, or at i == 4 where
+             the old cycle wrapped series 5 onto series 1. Hence _FIG_STYLES in
+             app.js: the dash pattern and marker shape are the load-bearing
+             channels and colour is the redundant one. app.css's own rule, below:
+             "Colour is never the only signal."
+
+         The old --ok/--err slots also read good/bad on a NEUTRAL count series — the
+         same fabricated semantics dashChartSvg's opts.neutral exists to avoid. A
+         caller that deliberately wants semantic colour still passes s.color, which
+         wins over this default (and still receives a dash and a marker). */
+      --fig-1:color-mix(in srgb, var(--accent) 70%, var(--fg) 30%);
+      --fig-2:color-mix(in srgb, var(--ok) 60%, var(--fg) 40%);
+      --fig-3:color-mix(in srgb, var(--warn) 55%, var(--fg) 45%);
+      --fig-4:color-mix(in srgb, var(--err) 50%, var(--fg) 50%);
+      --fig-5:color-mix(in srgb, color-mix(in srgb, var(--err) 50%, var(--accent) 50%) 60%, var(--fg) 40%);
+      --fig-6:color-mix(in srgb, var(--muted) 45%, var(--fg) 55%);
+      /* --fig-gap: the stroke of the "no data here" hatch — the cue that makes an
+         ABSENCE visually distinct from a measured ZERO. A shape cue (texture), never
+         a colour one. The two hatch patterns already shipped (#oomap-nodata,
+         #rhythm-none) each hand-rolled their own <defs> and stroked with
+         var(--border), which measures 1.20:1 against --panel on garnet: the honesty
+         instrument itself was near-invisible on some themes. This clears 3:1 on all
+         17 themes at all three panel levels, worst 4.02:1 (solar/--panel3). */
+      --fig-gap:color-mix(in srgb, var(--muted) 75%, var(--fg) 25%);
       --border:#262d3a; --border-soft:#1d2331;
       --shadow:0 14px 38px -16px rgba(0,0,0,.62), 0 2px 6px -2px rgba(0,0,0,.4);
       --radius:12px; --radius-sm:8px;
@@ -973,6 +1020,63 @@
        mandate: caveats are never hidden behind a toggle). Only the verbose
        method/math stays in the toggled .mc block. var(--caveat) clears WCAG AA. */
     .card-caveat { margin:6px 0 0; font-size:11.5px; line-height:1.45; color:var(--caveat); }
+    /* --- figure furniture (F1/F2/F3) ---------------------------------------- */
+    /* A chart legend entry is a real <button>, not a clickable <span> with an inline
+       onclick: keyboard-reachable, aria-pressed announced, and off the
+       'unsafe-inline' script-src debt. Styled back down to look like the chip it
+       replaced — no default button chrome. */
+    .fig-leg {
+      /* gap, not whitespace: a flex container discards the whitespace between its
+         items, so the space in `${label} <span>n=…</span>` vanished and the legend
+         read "series 1n=40". */
+      display:inline-flex; align-items:center; gap:4px; cursor:pointer;
+      background:none; border:0; padding:0; margin:0; font:inherit; font-size:12px;
+      color:inherit; text-align:start; line-height:1.3;
+    }
+    .fig-leg:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:3px; }
+    .fig-leg[aria-pressed="false"] { opacity:.4; }
+    /* The method/caveat/n panel (F2). One component instead of 41 hand-built sites,
+       so "every figure carries its method, its caveat and its n" is cheap to honour
+       rather than a per-call-site act of discipline. Visible by DEFAULT — never
+       behind a toggle (the informed-consent non-negotiable). */
+    .fig-meta { margin:6px 0 0; font-size:11.5px; line-height:1.5; }
+    .fig-meta .fig-method { color:var(--muted); }
+    .fig-meta .fig-caveat { color:var(--caveat); }
+    .fig-meta .fig-n { color:var(--muted); font-variant-numeric:tabular-nums; }
+    .fig-meta .fig-basis { color:var(--muted); }
+    /* The honest empty state (F3): a sentence where a figure would be, never a blank
+       box and never an axis drawn through no data. */
+    .fig-empty {
+      margin:6px 0 0; padding:14px 12px; border:1px dashed var(--border);
+      border-radius:var(--radius-sm); color:var(--muted); font-size:12px; text-align:center;
+    }
+    /* Sorted horizontal bars: LENGTH is the quantity (the channel a reader judges
+       most accurately), the label is text, and an unmeasured row is a hatch — so
+       nothing here depends on telling two colours apart. */
+    .fig-block { margin:0 0 22px; }
+    .fig-block:last-child { margin-bottom:0; }
+    .fig-title { margin:0 0 8px; font-size:13px; font-weight:600; }
+    .fig-bars { display:flex; flex-direction:column; gap:3px; }
+    .fig-bar-row { display:flex; align-items:center; gap:8px; font-size:11.5px; min-height:18px; }
+    .fig-bar-label {
+      flex:0 0 auto; width:34%; max-width:240px; color:var(--fg-soft);
+      overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    }
+    .fig-bar-track { flex:1 1 auto; min-width:40px; display:block; }
+    .fig-bar-fill { display:block; height:12px; border-radius:2px; min-width:1px; }
+    .fig-bar-n { flex:0 0 auto; color:var(--muted); font-variant-numeric:tabular-nums; }
+    @media (max-width:640px) {
+      /* Stack rather than squeeze: a 34% label column on a phone leaves no bar. */
+      .fig-bar-row { flex-wrap:wrap; }
+      .fig-bar-label { width:100%; max-width:none; }
+    }
+    /* The legend entry for the "no data" hatch, so the texture is named in words as
+       well as shown. */
+    .fig-gap-key { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--muted); }
+    .fig-gap-key .fig-gap-swatch {
+      width:14px; height:11px; border:1px solid var(--border); border-radius:2px; flex:none;
+      background-image:repeating-linear-gradient(45deg, var(--fig-gap) 0 1px, transparent 1px 4px);
+    }
 
     /* ---- Command palette -------------------------------------------- */
     .overlay { position:fixed; inset:0; background:rgba(2,4,8,.55); backdrop-filter:blur(3px);

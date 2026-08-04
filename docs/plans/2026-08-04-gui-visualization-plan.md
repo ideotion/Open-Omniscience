@@ -1,5 +1,39 @@
 # GUI visualization plan — reconnaissance & action plan
 
+> ## ✅ EXECUTION STATUS (2026-08-04, the same day)
+>
+> **Shipped:** foundations **F1** (chart series channels + the `ooChart` colour-only fix),
+> **F2** (the one method/caveat/n panel), **F3** (the empty-vs-zero component), and
+> candidates **C1** (quarantine composition), **C2** (tone measurability by language),
+> **C4** (article-length distribution) and **C5** (Lorenz + Gini) — the last four as a new
+> **Library → Composition** subtab. Detail: five `docs/ledger/shipped.csv` rows dated
+> 2026-08-04 plus the `SHIPPED_LOG.md` entry; reusable lessons are in `CLAUDE.md`.
+>
+> **Three of this plan's own claims turned out to be wrong, and are corrected below at the
+> point they appear:**
+>
+> 1. **§12 understated the environment.** `/usr/bin/python3.13` exists (only the *default*
+>    `python3` is 3.11) and Chromium ships at `/opt/pw-browsers/chromium-1194/`. The full
+>    suite runs here and a real browser can drive the app — so every frontend slice in this
+>    plan was **browser-verified**, not conservative-and-flagged. That also means the standing
+>    "browser-unverified per fork-3/Q6a" caveat should be re-checked before it is repeated.
+> 2. **§2.8 item 6 / §10 Unit 6 said `ooChart`'s inline legend `onclick` was redundant**
+>    because "the same block attaches a proper listener four lines later". It does not:
+>    `elm._oo = …` only ASSIGNS a property, which the inline attribute was what invoked.
+>    Removing the attribute alone leaves the toggle dead. A real `addEventListener` was added.
+> 3. **§7 C4 said the word-count figure would be the first `ooViz.binCounts1D` activation.**
+>    It is not, and should not be: `binCounts1D` makes equal-width bins from raw values, and
+>    the values are already binned server-side into deliberately *unequal* buckets. Forcing it
+>    would mean shipping every raw word count to the browser to re-bin it worse. The twelve
+>    unwired primitives are down to eleven — `ooViz.linearScale` gained a caller (the Lorenz
+>    curve), and `binCounts1D`/`bin2D`/`fiveNumberSummary`/`sqrtAreaScale`/`symbolRadii`/
+>    `pathWithGaps` are still waiting for a surface that genuinely needs them.
+>
+> **Not built:** C3, C6 (**already shipped upstream** on 2026-08-04 as the Library
+> per-language small multiples — check before starting it), C7–C17, F4 (selection emission),
+> F5 (shared hover/zoom), F6/F7 (the rendering ruling and the figure export envelope).
+> §11's open questions Q1/Q3/Q4/Q6 were answered in the build and are annotated there.
+
 > ## ⚠ FLAG 1 — I am not on branch `0.2`, and `0.2` does not exist
 >
 > The prompt instructed me to confirm branch `0.2` and to report as the first line of this
@@ -305,6 +339,40 @@ condition every quarantine-aware reader uses (`models.py:668`), and
 **A new chart built on keyword aggregates will silently count articles the article gate
 already condemned.** Decide this explicitly (see §11, Q4) rather than inheriting it.
 
+### 3.5 A chart's time axis and the date filter do not mean the same thing
+
+> **FOUND 2026-08-04 while scoping F4**, not present in the original reconnaissance.
+> Reproduced against the real functions; pinned in `tests/test_chart_time_vs_filter_time.py`.
+
+Two surfaces publish "when an article is", by different rules:
+
+* `KeywordMention.observed_on` = `(published_at or created_at).date()`
+  (`src/analytics/store.py:284`) — a **coalesce**. This is the x-axis of every keyword
+  trend chart.
+* the date filter behind Advanced search and `_resolve_corpus` = `Article.published_at`
+  alone (`src/api/main.py:818-821`) — **no fallback**.
+
+So an article whose publish date could not be extracted is **plotted** on the chart at its
+ingest date and **excluded** by a filter over that same day. Measured: two articles, one
+chart day, one returned.
+
+**The filter is not simply wrong.** Coalescing it would be the mirror defect — an article
+ingested in June with no publish date may have been published in 2019, so folding
+`created_at` into a filter labelled "published between X and Y" fabricates an *inclusion*
+exactly as the present behaviour fabricates an *absence*. Restricting to `published_at` is
+the conservative reading. What is missing is (a) any **disclosure** of how many articles the
+filter dropped for want of a publish date — derivable with no new storage, pinned in the
+test — and (b) agreement between the two surfaces about which "June" is on screen.
+
+**This constrains F4 (Unit 6).** A brush must emit the article ids of the buckets the chart
+actually drew, supplied by the same aggregate that produced the bar heights. Resolving a
+brushed range through the date filter instead returns fewer articles than the bars implied,
+silently: the user selects what they can see and gets less. Carrying the ids makes the brush
+inherit the chart's own definition of time by construction, so the disagreement cannot reach
+it. It also forces a second honesty gain — a trend bar is a **mention** total, not an article
+count (`trend()` sums `KeywordMention.count`), so a brush readout must say both ("6 articles
+· 10 mentions") rather than letting one number stand for the other.
+
 ---
 
 ## 4. Constraints the implementation session must obey
@@ -572,6 +640,36 @@ Each entry: where method/caveat/n appear · how absence differs from zero.
   duplicates are rejected at ingest by the unique `hash` (`models.py:625, 684`), so this
   measures canonical-URL collisions **only** — otherwise the figure over-reads as "the
   corpus has no duplicates".
+  > **SCOPED + MEASURED 2026-08-04.** Preconditions verified: `canonical_url` is
+  > `String(1000) NOT NULL` with a NON-unique `idx_article_canonical_url`
+  > (`models.py:611, 686`), and it genuinely differs from `url` on the web path —
+  > `url` = the requested URL, `canonical_url` =
+  > `canonicalize_url(declared canonical or final redirect)` (`pipeline.py:194, 202-203`),
+  > which is what lets several URLs collapse onto one value. No `GROUP BY canonical_url`
+  > exists anywhere in the tree, so nothing is being duplicated.
+  >
+  > **C10 needs a MIGRATION — it is not the no-schema-change build it looks like.**
+  > `EXPLAIN QUERY PLAN` over the production-shaped queries (statements captured from a
+  > `before_cursor_execute` listener, `ANALYZE` run, engine disposed between checks):
+  > the bare aggregate is `SCAN articles USING COVERING INDEX idx_article_canonical_url`
+  > — index-only. Adding `Article.quarantined.isnot(True)`, which Q3 obliges every new
+  > figure to do, drops it to `USING INDEX` **not covering**: `quarantined` is not in that
+  > index, so each row is fetched to evaluate the predicate — a decrypt per row under
+  > SQLCipher, the trap `idx_article_source_sentiment` and `idx_article_created_lang` were
+  > both added to fix. A composite `(canonical_url, quarantined)` restores
+  > `USING COVERING INDEX`; that is the reliable fix and it is a schema change.
+  >
+  > **Two things that do NOT work, so they are not re-tried:** folding the predicate into
+  > the GROUP BY — the trick that fixed the per-language feed — does nothing here and adds
+  > a temp B-tree, because the problem is not which index the planner picks but that
+  > `quarantined` is absent from every candidate index. And a two-step design (covering
+  > aggregate to find collisions, then a bounded `IN (…)` for the quarantine check)
+  > measured as a **bare `SCAN articles`** on the probe — but that result is UNSAFE to
+  > rely on in either direction: the fixture had 32 collision groups out of 40, so the
+  > planner rightly scanned rather than index-seek 112 of 120 rows. A realistic collision
+  > rate may well plan differently. If the two-step is preferred over a migration, measure
+  > it against a realistic collision density first; the probe settles the composite-index
+  > question and settles nothing about this one.
 - **C11** — F2 panel; `n` articles plotted and `n` excluded for a missing `word_count`.
   **Mandatory caveat: neither axis is a quality measure**, and correlation is not causation.
   Absence: an article with a NULL `word_count` is excluded and counted in the panel, never
@@ -716,6 +814,31 @@ one source, you get "undefined", not 0.
 
 ### Unit 6 — F4 selection emission + F5 hover/zoom extraction
 
+> **SCOPED 2026-08-04, not built.** Three facts found while scoping it, each of which
+> changes the design the acceptance criteria below imply:
+>
+> 1. **§3.5 — a brush must carry the aggregate's own ids, not resolve a range through the
+>    date filter.** The chart axis coalesces `published_at`/`created_at`; the filter does
+>    not. Round-tripping under-selects silently.
+> 2. **`trend()` returns `{date, count}` only** (`src/analytics/queries.py:249-277`) — it
+>    groups on `observed_on` and sums `count`, so there are no ids to emit today. The
+>    honest source is an opt-in, bounded, disclosed per-bucket id list on the aggregate
+>    that drew the bars. The existing precedent for handing back *real* ids that narrow a
+>    corpus is `corpus_facet_article_ids` + `/corpus-facet-ids`
+>    (`queries.py:778-844`, `insights.py:696-728`), including the id-seeded INTERSECT case
+>    — a brush is that same drill grammar with a period as the value.
+> 3. **A bar is a mention total, not an article count**, so the emit and its readout must
+>    state both numbers; letting one stand for the other is the conflation this project
+>    otherwise refuses.
+>
+> Also note **plain drag is already pan** and `pointerup` treats a <4px drag as
+> click-to-pin (`app.js:11867-11890`), so brushing needs its own gesture *plus* a visible
+> affordance — a modifier alone is undiscoverable, and the house pattern is an in-chart
+> control (ooMap's own zoom/granularity/layer controls sit inside the map).
+>
+> Already done in PR #867: `ooChart`'s inline legend `onclick` is converted to a real
+> `addEventListener`, which this unit lists as its own requirement.
+
 Files: `src/static/app.js` (`_anIds` `17998-18006`, `openAnalysisForIds` `18116-18118`;
 `ooChart` interaction handlers `11268-11302` — wheel `11268`, pointerdown `11279`,
 pointermove `11280`, pointerup `11293`, dblclick `11302`; legend `11249-11256`); tests.
@@ -779,7 +902,15 @@ anything requiring a networked machine or an Ollama rig.
 
 ## 11. Open questions requiring a human decision
 
-1. **Do SVG charts mirror under RTL?** There are zero `[dir=rtl]` rules in `app.css` and
+> **ANSWERED IN THE BUILD (2026-08-04):** Q1, Q3, Q4 and Q6 were settled by shipping and
+> are annotated inline below. Q2, Q5 and Q7 remain open.
+
+1. **Do SVG charts mirror under RTL?** **ANSWERED: no, and the surrounding panel does.**
+   Verified in Chromium in Arabic: the bar rows mirror for free (flexbox honours `dir=rtl`,
+   so labels move right and values left) while the Lorenz `<svg>` stays LTR. That is the
+   right split *for these figures* — both Lorenz axes are cumulative shares, not a time
+   axis, so mirroring would be gratuitous. A figure whose x-axis IS time still needs its own
+   ruling. Original note follows. There are zero `[dir=rtl]` rules in `app.css` and
    `i18n.js:102` only sets the document `dir`. Mirroring a time axis in Arabic is genuinely
    contested practice. A ruling is needed before Unit 1; the default I would apply absent one
    is **do not mirror the plot area, do mirror the surrounding panel text**, stated in the
@@ -787,20 +918,32 @@ anything requiring a networked machine or an Ollama rig.
 2. **Non-Latin chart labels.** Bundled fonts are Latin-only and non-Latin falls through to
    system fonts (`src/static/fonts/README.md`). Accept the fallback, or bundle a subset CJK /
    Arabic face (large)? Affects label geometry in every candidate.
-3. **Do new charts exclude quarantined articles?** §3.4: keyword aggregates currently do not
+3. **Do new charts exclude quarantined articles?** **ANSWERED: yes, and the exclusion is
+   named in the method string** (`sentiment_measurability` and `source_concentration` both
+   filter `Article.quarantined.isnot(True)`, with a test pinning it). This settles the new
+   figures only; the standing disagreement among the *existing* keyword aggregates is
+   untouched. Original note follows. §3.4: keyword aggregates currently do not
    (`queries.py` 1 filter; `store.py`/`rollup_serve.py`/`columnar.py` 0), while
    `source_audit.per_source_metrics` does. **Two gates disagreeing about one input is exactly
    what one settings panel makes visible and two panels hide** — the repo's own words at
    `source_audit.py:127-128`. My recommendation: exclude, and disclose the exclusion in the
    method string.
-4. **Which surface owns the declarative path?** `/investigate` exists
+4. **Which surface owns the declarative path?** **DEFERRED BY BUILDING THE EXPLORATORY HALF
+   ONLY.** All four figures landed on Library → Composition, which is where "what is in my
+   corpus" already lives (beside Activity = how it grew and Database & storage = how many
+   bytes). No declarative/export home was invented, so F7 and the D-marked half of C2/C5/C8
+   still need this answer. Original note follows. `/investigate` exists
    (`src/api/main.py:2238`) but the export/report path is not clearly anyone's home today.
    C2, C5 and C8 are marked D and need an address.
 5. **The `article_length_report` full-scan cost.** It iterates every article row
    (`article_length.py:114`). At the ~1M-article scale the 0.3 gate targets, is an
    explicit-action-only fetch acceptable (my recommendation), or should it become a background
    job with a persisted result?
-6. **Is `'unsafe-inline'` removal a goal this work should serve?** I have assumed yes and
+6. **Is `'unsafe-inline'` removal a goal this work should serve?** **ANSWERED: treated as
+   yes.** Every new component uses `addEventListener` only, and `ooChart`'s legend became a
+   real `<button>` with a listener (see correction 2 at the top — the inline handler was NOT
+   redundant, so this required adding a listener rather than deleting an attribute). Net
+   inline handlers in `app.js` went down by one, not up. Original note follows. I have assumed yes and
    required `addEventListener` throughout. If the maintainer would rather not open that path,
    Unit 6's conversion of `ooChart`'s legend handler should be dropped.
 7. **Should C3 be built at all**, given it cannot answer the question §3.3 actually poses?
@@ -818,10 +961,12 @@ anything requiring a networked machine or an Ollama rig.
   URL in the repo resolves.
 - **Runtime behaviour of the app.** I did not start the server, unlock a corpus, or execute
   any endpoint. All endpoint behaviour is read from source.
-- **The full test suite.** Not run, and **not runnable here**: this sandbox is Python 3.11.15
-  against a repo that requires 3.13, and `pytest` is not installed (installing it was out of
-  scope for a read-only pass). Where a guard mattered I reproduced its exact logic in plain
-  Python instead — that is how `test_docs_index_covers_live_docs`
+- **The full test suite.** Not run during the reconnaissance pass, and I recorded it as "not
+  runnable here" — **which was wrong, and the execution session found out the same day.** The
+  DEFAULT `python3` is 3.11.15, but `/usr/bin/python3.13` exists, so a venv on the required
+  interpreter installs the project and runs the whole suite. (Chromium is present too, at
+  `/opt/pw-browsers/chromium-1194/` — see the correction at the top of this file.) During the
+  read-only pass, where a guard mattered I reproduced its exact logic in plain Python instead — that is how `test_docs_index_covers_live_docs`
   (`tests/test_repo_invariants.py:7482`) was found to redden on this plan's own new
   `docs/plans/` directory, and fixed, before CI reported it. **A later session must treat
   every test claim in this plan as unexecuted** and run `make check` on 3.13.
