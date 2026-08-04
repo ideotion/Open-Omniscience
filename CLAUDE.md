@@ -2504,6 +2504,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     `time.monotonic()`'s reference point is undefined and small on a fresh boot — a
     sentinel that is also a legal value, the `.get(key, 0)` family again, caught by an
     EXISTING ride-along test rather than by any of the eight I wrote for the change.
+    THIRD, and the one that would have escaped this box entirely: **adding an ACTION to
+    a production failure path makes it a side effect of every test that drives that
+    path.** Neither backend is installed in this sandbox, so the recovery is inert here
+    and the suite stayed green — proving nothing. A throwaway pytest plugin that faked
+    "both installed" and recorded every `start()` call found one real
+    `ollama_lifecycle.start()`, i.e. a suite run on any developer machine that HAS
+    Ollama would have left a daemon behind. The fix is not to patch the tests that
+    happen to reach it (the enumeration again) but a real operator opt-out
+    (`OO_LLM_AUTOSTART=0`) that `conftest` sets session-wide, exactly as it already does
+    for `OO_NO_SCHEDULER` and `OO_AUTOSEED` — and the tests that are ABOUT the start
+    turn it back on. GENERAL FORM: when a change makes a code path DO something rather
+    than merely report, ask what the test suite now does on a machine unlike this one,
+    and measure it with a plugin rather than reasoning about it.
 
 ## Open queue (when maintainer says proceed)
 - **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;
