@@ -322,3 +322,113 @@ def test_every_figure_states_its_method_and_caveat_and_n(db):
         assert out.get("method"), "a figure must state how it was computed"
         assert out.get("caveat"), "a figure must state what it does not mean"
         assert "n" in out, "a figure must state its n"
+
+
+# --- C4: article-length distribution --------------------------------------- //
+
+
+def test_unsegmented_languages_are_held_out_and_counted_separately(db):
+    """word_count is len(text.split()), which is meaningless for zh/ja/th — and the
+    underlying report's corpus-wide summary silently POOLS them with Latin text. A
+    chart over that pooled number measures two different things on one axis."""
+    from src.analytics.figures import article_length_distribution
+
+    s = _src(db, "s.example")
+    _art(db, s, 4, lang="en")
+    _art(db, s, 3, lang="zh")
+    for a in db.query(Article).all():
+        a.word_count = 150 if a.language == "en" else 900
+    db.flush()
+    out = article_length_distribution(db)
+    assert out["n"] == 4, "only the space-separated languages count toward the chart"
+    assert out["excluded_unsegmented"]["n"] == 3
+    assert "zh" in out["excluded_unsegmented"]["languages"]
+    assert [b["label"] for b in out["buckets"]], "the chart has labelled ranges"
+    assert sum(b["n"] for b in out["buckets"]) == 4, (
+        "the histogram must sum to the SEGMENTED n, not the whole corpus"
+    )
+    assert all(r["language"] != "zh" for r in out["languages"])
+
+
+def test_an_empty_set_is_not_measurable_rather_than_a_row_of_zeros(db):
+    """summarize([]) returns all-None percentiles with an all-ZERO histogram, which
+    draws as a flat row of empty bars — a fabricated "we measured, and found
+    nothing". The frontend branches on `measurable`."""
+    from src.analytics.figures import article_length_distribution
+
+    s = _src(db, "t.example")
+    _art(db, s, 3, lang="en")                      # stored with word_count = None
+    out = article_length_distribution(db)
+    assert out["measurable"] is False
+    assert out["n"] == 0
+    assert out["scanned"] == 3, "the scan still reports what it looked at"
+    assert out["with_word_count"] == 0
+
+
+def test_a_real_word_count_is_measurable(db):
+    """The negative-space twin: an over-eager `measurable` gate would hide a genuine
+    distribution, and only this direction catches it."""
+    from src.analytics.figures import article_length_distribution
+
+    s = _src(db, "u.example")
+    _art(db, s, 5, lang="en")
+    for a in db.query(Article).all():
+        a.word_count = 420
+    db.flush()
+    out = article_length_distribution(db)
+    assert out["measurable"] is True and out["n"] == 5
+    hit = [b for b in out["buckets"] if b["n"] > 0]
+    assert len(hit) == 1 and hit[0]["label"] == "300-599", hit
+
+
+# --- the durable i18n guard ------------------------------------------------ //
+
+
+def test_every_figure_method_and_caveat_is_keyed_in_all_twelve_locales(db):
+    """The honesty layer must be READABLE, not just present.
+
+    These strings are emitted by the server and translated client-side by the i18n DOM
+    walker, which matches a text node EXACTLY — so a fixed sentence is translatable and
+    a composed one never can be. A browser screenshot in Arabic caught two figures
+    rendering English method lines under correctly-translated Arabic caveats, and this
+    guard exists so the next figure cannot repeat it: adding a figure whose method or
+    caveat is not keyed fails here rather than shipping English into 11 locales.
+
+    It also catches the composed-string shape, because a sentence assembled per corpus
+    cannot appear in en.json as a literal.
+    """
+    import json
+    from pathlib import Path
+
+    from src.analytics import figures as F
+
+    loc_dir = Path(__file__).resolve().parent.parent / "src" / "static" / "locales"
+    locales = sorted(p.stem for p in loc_dir.glob("*.json"))
+    assert len(locales) == 12, f"expected 12 locales, found {locales}"
+    maps = {lc: json.loads((loc_dir / f"{lc}.json").read_text("utf-8")) for lc in locales}
+
+    s = _src(db, "z.example")
+    _art(db, s, 3, lang="en", tone=0.2)
+    _art(db, s, 1, lang="fr", quar="nav_soup", ver="v1")
+    for a in db.query(Article).all():
+        a.word_count = 250
+    db.flush()
+
+    payloads = {
+        "quarantine_composition": F.quarantine_composition(db),
+        "sentiment_measurability": F.sentiment_measurability(db),
+        "source_concentration": F.source_concentration(db),
+        "article_length_distribution": F.article_length_distribution(db),
+    }
+    missing: list[str] = []
+    for name, out in payloads.items():
+        for field in ("method", "caveat"):
+            text = out.get(field)
+            assert text, f"{name} must emit a {field}"
+            for lc in locales:
+                if text not in maps[lc]:
+                    missing.append(f"{name}.{field} not keyed in {lc}.json")
+    assert not missing, (
+        "server-emitted honesty text must be keyed in every locale, or it renders in "
+        "English for readers who cannot read English:\n  " + "\n  ".join(missing[:24])
+    )

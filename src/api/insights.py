@@ -2557,3 +2557,20 @@ def figures_source_concentration(
 
     key = _ckey("fig-source-concentration", limit=limit)
     return _deadlined(db, key, lambda: source_concentration(db, limit=limit))
+
+
+@router.get("/figures/article-length")
+def figures_article_length(
+    min_n: int = Query(1, ge=1, le=100000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """C4 — the article word-count distribution over labelled ranges, per language.
+
+    A FULL articles scan (src/analytics/article_length.py iterates every row), so the
+    frontend must put this behind an explicit action rather than a tab-select
+    autoload. Deadlined like every other whole-corpus read here.
+    """
+    from src.analytics.figures import article_length_distribution
+
+    key = _ckey("fig-article-length", min_n=min_n)
+    return _deadlined(db, key, lambda: article_length_distribution(db, min_n=min_n))

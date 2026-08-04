@@ -8859,7 +8859,53 @@
       host.innerHTML =
         block(t("Tone measurement by language"), sentHtml, sent) +
         block(t("Quarantine composition"), quarHtml, quar) +
-        block(t("How evenly the corpus draws on its sources"), concHtml, conc);
+        block(t("How evenly the corpus draws on its sources"), concHtml, conc) +
+        // C4 is a FULL articles scan, so it stays behind an explicit click — never
+        // loaded just because the subtab was opened.
+        `<div class="fig-block"><h3 class="fig-title">${esc(t("Article length"))}</h3>` +
+        `<div id="fig-length-host"><button class="secondary" id="fig-length-run">` +
+        `${esc(t("Measure article lengths"))}</button>` +
+        `<div class="hint muted">${esc(t("This reads every article row, so it runs only when you ask."))}</div>` +
+        `</div></div>`;
+      const runBtn = $("fig-length-run");
+      if (runBtn) runBtn.addEventListener("click", renderArticleLengthFigure);
+    }
+
+    // C4 — the word-count distribution. Its own function because it is the one figure
+    // here that costs a full scan, so it must be reachable only by a deliberate act.
+    async function renderArticleLengthFigure() {
+      const box = $("fig-length-host");
+      if (!box) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      box.innerHTML = `<div class="muted">${esc(t("Measuring…"))}</div>`;
+      let d;
+      try { d = await api("/api/insights/figures/article-length"); }
+      catch (e) { box.innerHTML = `<div class="fig-empty">${esc(t("Could not load this figure."))}</div>`; return; }
+      // measurable === false means the set was EMPTY. The underlying report returns
+      // all-None percentiles with an all-ZERO histogram for an empty set, which draws
+      // as a flat row of bars — a fabricated "we measured, and found nothing".
+      if (!d.measurable) {
+        box.innerHTML = figEmpty(t("No article carries a word count in a space-separated language yet.")) +
+          figMeta(d);
+        return;
+      }
+      const ex = d.excluded_unsegmented || {};
+      const rows = (d.buckets || []).map(b => ({label: b.label, n: b.n, color: "var(--fig-1)"}));
+      box.innerHTML =
+        _figBars(rows, {
+          title: t("Articles by word-count range"),
+          aria: t("Articles by word-count range"),
+        }) +
+        `<div class="hint muted">${esc(t("Ranges, not equal-width bins — compare one bar with another, not the shape."))}</div>` +
+        `<div class="hint">${esc(OOI18N && OOI18N.tf
+          ? OOI18N.tf("{scanned} articles scanned · {counted} had a word count · {excluded} excluded as not space-separated",
+                      {scanned: fmtNum(d.scanned), counted: fmtNum(d.with_word_count), excluded: fmtNum(ex.n || 0)})
+          : `${d.scanned} scanned · ${d.with_word_count} counted · ${ex.n || 0} excluded`)}</div>` +
+        ((ex.languages || []).length
+          ? `<div class="hint muted">${esc(t("Excluded languages"))}: ` +
+            (ex.languages || []).map(l => esc(ooLangName(l, l))).join(", ") + `</div>`
+          : "") +
+        figMeta(d);
     }
 
     async function renderLibraryActivityGraphs() {

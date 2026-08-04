@@ -278,3 +278,90 @@ def source_concentration(session: Session, *, limit: int = 400) -> dict:
             "follows what was collected, so it also reflects scraping reach."
         ),
     }
+
+
+def article_length_distribution(session: Session, *, min_n: int = 1) -> dict:
+    """Article word-count distribution over labelled ranges, per language.
+
+    A thin, chartable projection of :func:`src.analytics.article_length.article_length_report`
+    — which already bins the values and already flags the unsegmented languages —
+    plus the two things a figure needs and the report does not carry:
+
+    * **The unsegmented languages are held OUT of the headline chart.** ``word_count``
+      is ``len(text.split())``, which is meaningless for zh/ja/th, and the report's
+      own corpus-wide summary silently POOLS them with Latin text. A chart built on
+      that pooled summary would be measuring two different things on one axis. They
+      are returned separately with their n, so the exclusion is visible rather than
+      quiet.
+    * **An honest empty branch.** ``summarize([])`` returns all-``None`` percentiles
+      with an all-ZERO histogram, which draws as a flat row of empty bars — a
+      fabricated "we measured, and it was nothing". ``measurable`` says whether there
+      is anything to draw at all.
+
+    THE BINS ARE UNEQUAL IN WIDTH (0-99, 100-299, … 2000+), so this is a categorical
+    bar chart over labelled ranges and NOT a density histogram: bar length may be
+    read against bar length, but the shape is not a distribution's shape. The
+    frontend says so on the axis.
+
+    NOTE the deliberate difference from :func:`quarantine_composition`, which OMITS a
+    reason that condemned nothing while this KEEPS a range that holds nothing. It is
+    not an inconsistency. A word-count range is a defined interval over a continuous
+    quantity, so "no article was 600-999 words" is a real observation and drawing it
+    at zero is honest. A quarantine reason is a category that may not exist in this
+    corpus's criteria version at all, so a zero there would be an invented slot.
+
+    Cost: this is a full ``articles`` scan, so it belongs behind an explicit user
+    action, never a tab-select autoload.
+    """
+    from src.analytics.article_length import article_length_report
+
+    rep = article_length_report(session)
+    by_lang = rep.get("word_count_by_language", {}) or {}
+    segmented: dict[str, dict] = {}
+    unsegmented: dict[str, dict] = {}
+    for lang, s in by_lang.items():
+        (unsegmented if s.get("unsegmented") else segmented)[lang] = s
+    # Re-bin over the SEGMENTED languages only, by summing their per-language
+    # histograms — the report's bucket labels are the shared vocabulary, so this is
+    # addition, not a second binning pass with its own boundaries.
+    labels: list[str] = []
+    for s in segmented.values():
+        for lab in (s.get("histogram") or {}):
+            if lab not in labels:
+                labels.append(lab)
+    hist = {lab: 0 for lab in labels}
+    for s in segmented.values():
+        for lab, c in (s.get("histogram") or {}).items():
+            hist[lab] += int(c or 0)
+    seg_n = sum(int(s.get("n") or 0) for s in segmented.values())
+    unseg_n = sum(int(s.get("n") or 0) for s in unsegmented.values())
+    shown = [
+        {"language": lang, "n": int(s.get("n") or 0), "median": s.get("median"),
+         "p90": s.get("p90")}
+        for lang, s in sorted(segmented.items(), key=lambda kv: -int(kv[1].get("n") or 0))
+        if int(s.get("n") or 0) >= min_n
+    ]
+    return {
+        "buckets": [{"label": lab, "n": hist[lab]} for lab in labels],
+        "languages": shown,
+        "excluded_unsegmented": {
+            "languages": sorted(unsegmented),
+            "n": unseg_n,
+        },
+        "scanned": int(rep.get("scanned") or 0),
+        "with_word_count": int(rep.get("with_word_count") or 0),
+        "n": seg_n,
+        # The one field the frontend must branch on: an all-zero histogram over an
+        # empty set is not a measurement of zeros.
+        "measurable": seg_n > 0,
+        "method": (
+            "Word counts recorded at ingest, grouped into labelled ranges. Languages "
+            "whose text is not space-separated are excluded and counted separately, "
+            "because a word count is meaningless for them."
+        ),
+        "caveat": (
+            "The ranges are NOT equal in width, so read one bar against another but "
+            "not the shape as a distribution. Counts only, never a score — a long "
+            "article is not better and a short one is not click-bait."
+        ),
+    }

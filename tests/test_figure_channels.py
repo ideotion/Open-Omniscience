@@ -62,8 +62,8 @@ def test_no_two_dash_patterns_are_the_same_rhythm():
     1px difference in dot length is not perceptible — and [11,3,2,3] against
     [4,3,1,3], both dash-dot. Distinct NUMBERS are not distinct patterns.
 
-    The rhythm signature used here is (number of segments, whether the first mark is
-    long relative to its gap). Two patterns sharing it are the same family.
+    The signature is the ORDERED sequence of mark-length classes (dot / short / long),
+    which is what the eye actually reads. Two patterns sharing it are the same family.
     """
     src = APP[APP.index("const _FIG_STYLES = ["):]
     src = src[: src.index("];") + 2]
@@ -86,7 +86,7 @@ def test_no_two_dash_patterns_are_the_same_rhythm():
         sigs.append(tuple(cls(m) for m in d[::2]))
     assert len(set(sigs)) == len(sigs), (
         "two dash patterns share a rhythm family and will read as the same pattern: "
-        f"{list(zip(dashes, sigs))}"
+        f"{list(zip(dashes, sigs, strict=True))}"
     )
 
 
