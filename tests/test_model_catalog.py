@@ -189,6 +189,62 @@ def test_lfm_instruct_has_no_substituted_ollama_tag():
 
 
 # --------------------------------------------------------------------------- #
+#  WHERE a build exists, as a fact about the MODEL rather than the machine
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_every_model_says_which_backends_have_a_build(backend):
+    """"When a model only exists in one, mention it like 'ollama only'."
+
+    Distinct from ``available``, which is about the backend serving right now. A
+    reader needs both: "Ollama only" is a fact about the model, "not available for
+    vllm" is a fact about this machine, and collapsing them makes an Ollama-only
+    model look discontinued to someone running vLLM.
+    """
+    for m in model_catalog.catalog_for(backend)["models"]:
+        assert m["available_on"], f"{m['key']} has no build anywhere -- it should not be listed"
+        assert set(m["available_on"]) <= {"ollama", "vllm"}
+        if len(m["available_on"]) == 1:
+            assert m["only_label"] in {"Ollama only", "Hugging Face only"}
+        else:
+            assert m["only_label"] is None, "a model on both backends is not 'only' anything"
+
+
+def test_the_only_label_names_the_backend_that_HAS_it_not_the_active_one():
+    """The label must not flip with the active backend -- it describes the model.
+
+    Granite is Ollama-only whether or not you are running Ollama; a label computed
+    from the active backend would read "Hugging Face only" to a vLLM user, which is
+    exactly backwards.
+    """
+    for backend in BACKENDS:
+        by = {m["key"]: m for m in model_catalog.catalog_for(backend)["models"]}
+        assert by["granite-4-1-3b"]["only_label"] == "Ollama only"
+        assert by["lfm25-1-2b-instruct"]["only_label"] == "Hugging Face only"
+
+
+def test_an_unusable_row_still_names_the_identifier_that_does_exist():
+    """A refusal that also says what exists elsewhere is informative; one that only
+    says "no" sends the operator looking for a model that is right there."""
+    v = {m["key"]: m for m in model_catalog.catalog_for("vllm")["models"]}
+    assert v["granite-4-1-3b"]["available"] is False
+    assert v["granite-4-1-3b"]["other_artifact"] == "granite4.1:3b"
+
+    o = {m["key"]: m for m in model_catalog.catalog_for("ollama")["models"]}
+    assert o["lfm25-1-2b-instruct"]["available"] is False
+    assert o["lfm25-1-2b-instruct"]["other_artifact"] == "LiquidAI/LFM2.5-1.2B-Instruct"
+
+
+def test_a_dual_build_model_reports_the_other_side_too():
+    """The twin: ``other_artifact`` is not an unavailable-only field, so a row can
+    always say what the other backend would fetch."""
+    o = {m["key"]: m for m in model_catalog.catalog_for("ollama")["models"]}
+    mini = o[model_catalog.DEFAULT_KEY]
+    assert mini["available"] is True
+    assert mini["other_artifact"] == "mistralai/Ministral-3-3B-Instruct-2512"
+    assert mini["artifact"] != mini["other_artifact"]
+
+
+# --------------------------------------------------------------------------- #
 #  Resolving a selection
 # --------------------------------------------------------------------------- #
 def test_identifiers_for_resolves_what_it_can_and_accounts_for_the_rest():

@@ -1397,7 +1397,7 @@
           <label class="small"><input type="checkbox" id="aic-m-perception_extract" onchange="saveAiSweepMembership()"> When / where / who</label>
           <label class="small"><input type="checkbox" id="aic-m-source_tags" onchange="saveAiSweepMembership()"> Source topic tags</label>
           <label class="small"><input type="checkbox" id="aic-m-keyword_triage" onchange="saveAiSweepMembership()"> Keyword triage</label>
-          <label class="small"><input type="checkbox" id="aic-m-langdetect" onchange="saveAiSweepMembership()"> Unknown languages</label>
+          <label class="small"><input type="checkbox" id="aic-m-langdetect" onchange="saveAiSweepMembership()"> Unknown languages <span id="langdetect-status" class="muted"></span></label>
         </div>
         <div id="aic-hw" class="hint" style="margin-top:6px"></div>
       </div>
@@ -1468,14 +1468,6 @@
       <div class="row" style="align-items:center;gap:10px">
         <button onclick="saveLlmBehaviour(this)">Save prompts &amp; behaviour</button>
         <span id="llm-behaviour-status" class="hint"></span>
-      </div>
-    </section>
-    <section class="panel">
-      <h2>Detect unknown languages (AI)</h2>
-      <p class="muted" style="margin-top:0">Some articles arrive with no language tag, and the fast offline detector cannot always classify them (short text, low confidence, or a language it does not cover). This OPT-IN pass asks the local model to identify the language of those still-unknown articles. It is AI-derived and unreliable — a THIRD, clearly-labelled provenance class shown inline in the article view. It NEVER overwrites the source-asserted or offline-deduced language, and a garbage or unclear answer stores nothing. It runs as a cancellable background job (watch it in the task manager), never during scraping, and only on this machine's local model.</p>
-      <div class="row" style="align-items:center;gap:10px">
-        <button id="langdetect-btn" onclick="runLangDetect(this)">Detect languages</button>
-        <span id="langdetect-status" class="hint"></span>
       </div>
     </section>
     <section class="panel">

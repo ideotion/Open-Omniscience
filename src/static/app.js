@@ -5508,7 +5508,6 @@
         _paintDefaultModel();
         return;
       }
-      const FIT = {fits:["✓ fits","ok"], tight:["~ tight","warn"], too_large:["✗ too large","err"], unknown:["?","muted"]};
       const ram = d.total_ram_gb ? `${d.total_ram_gb} GB RAM detected` : t("RAM unknown");
       const active = d.active || d.default;   // the stored UI choice (Q10), else the default
       const installed = (d.installed || []).length
@@ -5522,29 +5521,20 @@
               `<td style="white-space:nowrap">${setBtn}<button class="tiny danger" onclick="removeModel(${esc(JSON.stringify(m.tag))})">${esc(t("Remove"))}</button></td></tr>`;
           }).join("") + "</table>"
         : `<p class="muted">${esc(t("No models installed yet — pull one below."))}</p>`;
-      const cat = (d.catalog || []).map(m => {
-        const [lbl, cls] = FIT[m.fit] || FIT.unknown;
-        // Embedding models are downloadable but the app's text features can't use
-        // them — label honestly (the #oo-tip hover carries the why, invariant #17).
-        const kindBadge = m.kind === "embedding"
-          ? ` <span class="pill warn" title="${esc(t("An embedding model — for semantic search/RAG, not used by summarize or translate."))}">${esc(t("embedding"))}</span>`
-          : "";
-        return `<tr><td><code>${esc(m.tag)}</code>${kindBadge}</td><td>${esc(m.size)}</td>` +
-          `<td class="${cls === 'ok' ? '' : cls}"><span class="pill ${cls === 'err' ? 'err' : (cls === 'warn' ? 'warn' : 'ok')}">${esc(lbl)}</span></td>` +
-          `<td class="muted">${esc(m.note)}</td>` +
-          `<td><button class="tiny" onclick="pullModel(${esc(JSON.stringify(m.tag))})">${esc(t("Pull"))}</button></td></tr>`;
-      }).join("");
-      // One-click Ministral (maintainer 2026-07-29), rendered SEPARATELY from the
-      // suggested-models table on purpose: that table is the dated, verified catalog,
-      // and this tag is explicitly NOT verified to the same standard. Its unconfirmed
-      // status is shown here rather than only in the confirm dialog, so the user reads
-      // it before clicking, not after (caveats visible by default).
-      const miniBlock = _miniBlockHtml(d, t);
-      box.innerHTML = `<p class="muted">${esc(ram)}.</p>` + installed +
-        `<h3 style="margin:14px 0 4px">${esc(t("Suggested models"))} <span class="muted" style="font-weight:400">(${esc(t("as of"))} ${esc(d.catalog_as_of)} — ${esc(t("newer likely exist"))})</span></h3>` +
-        `<table><tr><th>${esc(t("Model"))}</th><th>${esc(t("Size"))}</th><th>${esc(t("Your hardware"))}</th><th>${esc(t("Note"))}</th><th></th></tr>${cat}</table>` +
-        `<div class="hint">${esc(t("Hardware fit is advisory — it informs your choice, it doesn't decide. Pull any model from the full library below."))}</div>` +
-        miniBlock;
+      // THE "SUGGESTED MODELS" TABLE IS GONE (maintainer, 2026-08-04: "remove the
+      // list of suggested models"). It was Ollama-only, hardware-annotated and dated
+      // separately from the thing that replaced it -- the dual-backend catalogue
+      // below (#llm-catalog-box), which resolves each model to the build the ACTIVE
+      // backend can use and says which backends have one at all. Two lists of models
+      // on one panel, disagreeing about which backend they meant, was most of what
+      // made this tab hard to read.
+      //
+      // The one-click Ministral block goes with it: the catalogue marks the same
+      // model as the default, in the same list, with the same download button.
+      //
+      // What stays here is the half that only Ollama can answer: what is ACTUALLY
+      // installed right now, with set-active and remove.
+      box.innerHTML = `<p class="muted">${esc(ram)}.</p>` + installed;
       _paintDefaultModel();
     }
     async function setActiveModel(tag) {
@@ -5770,7 +5760,14 @@
         try {
           const d = await api("/api/ai/detect-language/candidates");
           const n = d.candidates || 0;
-          el.textContent = n
+          // Compact, because this now sits INSIDE the "Unknown languages" checkbox
+          // label rather than under its own panel heading (2026-08-04: the standalone
+          // section was redundant with the background-AI checkbox). The number is the
+          // useful half -- it says whether ticking the box has anything to do -- and a
+          // full sentence beside a checkbox reads as clutter. Empty when there is
+          // nothing to detect, rather than a reassurance nobody asked for.
+          el.textContent = n ? `(${n})` : "";
+          el.title = n
             ? `${n} ${t("article(s) still unknown after the offline detector.")}`
             : t("No articles are missing a language — nothing to detect.");
         } catch (e) { /* the count is a hint; leave it blank on error */ }
@@ -20557,10 +20554,23 @@
       try { c = await api("/api/llm/models/catalog"); } catch (e) { box.innerHTML = ""; return; }
       const rows = (c.models || []).map((m) => {
         const id = "mc-" + m.key;
+        // WHERE A BUILD EXISTS AT ALL, shown on every row. Distinct from whether it
+        // is usable on the backend running here: "Ollama only" is a fact about the
+        // model, "not available for vllm" is a fact about this machine, and a reader
+        // needs both to tell a model that was never published for their backend from
+        // one that is simply discontinued.
+        const only = m.only_label
+          ? ` <span class="pill" title="${esc(t("This model has a verified build for one backend only."))}">${esc(t(m.only_label))}</span>`
+          : "";
         if (!m.available) {
+          // It exists elsewhere -- name where, and the identifier -- so the row is
+          // informative rather than just a refusal.
+          const elsewhere = m.other_artifact
+            ? `<div class="hint"><code>${esc(m.other_artifact)}</code></div>` : "";
           return `<label class="row" style="gap:8px;align-items:flex-start;opacity:.65;margin:4px 0">` +
             `<input type="checkbox" disabled style="width:auto;margin-top:3px">` +
-            `<span><b>${esc(m.label)}</b> <span class="muted">— ${esc(_tf("not available for {backend}", {backend: c.backend}))}</span>` +
+            `<span><b>${esc(m.label)}</b>${only} <span class="muted">— ${esc(_tf("not available for {backend}", {backend: c.backend}))}</span>` +
+            elsewhere +
             `<div class="hint">${esc(m.absent_reason || "")}</div></span></label>`;
         }
         // installed === null means the probe could not answer (a stopped daemon
@@ -20572,12 +20582,12 @@
         return `<label class="row" style="gap:8px;align-items:flex-start;margin:4px 0">` +
           `<input type="checkbox" id="${esc(id)}" data-mckey="${esc(m.key)}" style="width:auto;margin-top:3px"` +
           `${m.installed === true ? "" : ""}>` +
-          `<span><b>${esc(m.label)}</b>${m.is_default ? ` <span class="pill">${esc(t("default"))}</span>` : ""} ${state}` +
+          `<span><b>${esc(m.label)}</b>${m.is_default ? ` <span class="pill">${esc(t("default"))}</span>` : ""}${only} ${state}` +
           `<div class="hint"><code>${esc(m.artifact)}</code>${bits ? " · " + bits : ""}</div>` +
           (m.summary ? `<div class="hint">${esc(m.summary)}</div>` : "") + `</span></label>`;
       }).join("");
       box.innerHTML =
-        `<div style="font-weight:600">${esc(_tf("Available models for {backend}", {backend: c.backend}))}</div>` +
+        `<div style="font-weight:600">${esc(t("Available models"))}</div>` +
         `<div class="hint" style="margin:2px 0 6px">${esc(c.method || "")}</div>` +
         rows +
         `<div class="row" style="gap:8px;margin-top:8px;align-items:center">` +
