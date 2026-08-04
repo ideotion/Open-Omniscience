@@ -854,6 +854,76 @@ def _reset_clients_for_tests() -> None:
     _clients.clear()
 
 
+def provisioning_backend(r: dict) -> dict:
+    """WHICH backend to SET UP for -- not always the one :func:`resolve_backend` would
+    route an inference call to right now.
+
+    Field report 2026-08-02 ("the model does not download"), reproduced from the
+    bundle: a laptop with an RTX 4070, vLLM installed but its server never started,
+    and Ollama NOT installed at all. ``resolve_backend`` correctly answered
+    ``"ollama"`` -- Ollama is the ruled fallback and its own reason said outright that
+    NOTHING was reachable -- but reading that SELECTION as a download target named an
+    Ollama tag and queued a pull into a daemon that does not exist. Two notions of
+    "which backend" met in one chain, and the honest one for setup is not the routing
+    one:
+
+      * ROUTING asks who can serve THIS request, so an unreachable backend is
+        disqualified -- a stopped server would 503.
+      * SETUP asks what this machine will serve with ONCE READY, so "not running yet"
+        is the normal state, and the answer must be what is installed (or, failing
+        that, what the hardware can actually use).
+
+    Precedence, and why: an explicit override wins (an operator's stated choice is
+    never second-guessed, here as everywhere else) -> a REACHABLE backend wins next
+    (something serves right now; feed that) -> otherwise installed-ness decides, with
+    the GPU preference breaking a tie exactly as the ``auto`` branch above does -> and
+    when NEITHER is installed the hardware preference is reported together with
+    ``prerequisite``, so the caller states what must be installed first instead of
+    naming an artifact nothing here can fetch.
+
+    LIVES HERE, not in the API layer, because it has TWO consumers with the same
+    question and different verbs: the default-model download (``api.llm``) and backend
+    ACTIVATION (``llm.activation``, "which one do I start"). One rule, one place --
+    a second copy is how two surfaces begin disagreeing about the same machine.
+
+    Derived entirely from fields ``resolve_backend`` already returns: no extra probe,
+    no second source of truth about what is installed."""
+    gpu_ok = bool((r.get("gpu") or {}).get("available"))
+    vllm_installed = bool((r.get("vllm") or {}).get("installed"))
+    ollama_installed = bool((r.get("ollama") or {}).get("installed"))
+    hardware_pick = "vllm" if gpu_ok else "ollama"
+
+    override = (r.get("override") or "").strip().lower()
+    if override in {"ollama", "vllm"}:
+        chosen, why = override, f"explicit override ({override})"
+    elif r.get("available"):
+        chosen, why = (r.get("backend") or hardware_pick), "the backend that is serving right now"
+    elif vllm_installed and ollama_installed:
+        chosen = hardware_pick
+        why = "both backends are installed; " + (
+            "a GPU is present, so vLLM is the one that can use it"
+            if gpu_ok
+            else "no GPU here, so Ollama is the one that can serve"
+        )
+    elif vllm_installed:
+        chosen, why = "vllm", "vLLM is installed here (its server is simply not running yet)"
+    elif ollama_installed:
+        chosen, why = "ollama", "Ollama is installed here (its daemon is simply not running yet)"
+    else:
+        chosen = hardware_pick
+        why = "neither backend is installed yet; this is the one this hardware can use"
+
+    installed = vllm_installed if chosen == "vllm" else ollama_installed
+    return {
+        "backend": chosen,
+        "chosen_because": why,
+        # None when the chosen backend is already installed. Otherwise it NAMES the
+        # missing prerequisite, so a caller refuses by name rather than starting a
+        # download that has nowhere to land.
+        "prerequisite": None if installed else chosen,
+    }
+
+
 def outage_reason() -> str | None:
     """WHY the local model is failing, in the resolver's own words -- or None if a
     backend is reachable and the failure is something else.

@@ -127,7 +127,16 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
     # Detached, output discarded. stdout/stderr go to DEVNULL rather than a pipe on
     # purpose: nothing reads them, and an unread pipe fills its buffer and wedges the
     # daemon -- the same reason vllm_lifecycle spawns with DEVNULL.
-    env = dict(os.environ)
+    #
+    # OLLAMA_MODELS points the daemon at the app's own model folder (2026-08-04
+    # maintainer ask), so a model pulled through a daemon WE started lands inside the
+    # app directory instead of ~/.ollama. It reaches only daemons we spawn -- a
+    # systemd/launchd one has its own environment and keeps its own store, which
+    # ``model_store.store_report()`` reports rather than papers over. An operator who
+    # set OLLAMA_MODELS themselves keeps their value untouched.
+    from src.llm.model_store import launch_env
+
+    env = launch_env()
     try:
         popen_kwargs: dict = {
             "stdin": subprocess.DEVNULL,

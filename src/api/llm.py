@@ -1087,6 +1087,12 @@ def _provisioning_backend(r: dict) -> dict:
     """WHICH backend a DOWNLOAD should provision for -- which is not always the one
     :func:`resolve_backend` would route an inference call to right now.
 
+    THE RULE ITSELF NOW LIVES IN ``src.llm.backend.provisioning_backend`` (2026-08-04),
+    because a THIRD caller appeared: backend ACTIVATION ("which backend do I start")
+    needs the same precedence, and a second copy of it is how two surfaces begin
+    disagreeing about the same machine. This wrapper stays so the call sites and the
+    tests that name it keep reading the same way; the body is one delegation.
+
     Field report 2026-08-02 ("the model does not download"), reproduced from the
     bundle: a laptop with an RTX 4070, vLLM installed but its server never started,
     and Ollama NOT installed at all. ``resolve_backend`` correctly answered
@@ -1113,40 +1119,9 @@ def _provisioning_backend(r: dict) -> dict:
 
     Derived entirely from fields ``resolve_backend`` already returns: no extra
     probe, no second source of truth about what is installed."""
-    gpu_ok = bool((r.get("gpu") or {}).get("available"))
-    vllm_installed = bool((r.get("vllm") or {}).get("installed"))
-    ollama_installed = bool((r.get("ollama") or {}).get("installed"))
-    hardware_pick = "vllm" if gpu_ok else "ollama"
+    from src.llm.backend import provisioning_backend
 
-    override = (r.get("override") or "").strip().lower()
-    if override in {"ollama", "vllm"}:
-        chosen, why = override, f"explicit override ({override})"
-    elif r.get("available"):
-        chosen, why = (r.get("backend") or hardware_pick), "the backend that is serving right now"
-    elif vllm_installed and ollama_installed:
-        chosen = hardware_pick
-        why = "both backends are installed; " + (
-            "a GPU is present, so vLLM is the one that can use it"
-            if gpu_ok
-            else "no GPU here, so Ollama is the one that can serve"
-        )
-    elif vllm_installed:
-        chosen, why = "vllm", "vLLM is installed here (its server is simply not running yet)"
-    elif ollama_installed:
-        chosen, why = "ollama", "Ollama is installed here (its daemon is simply not running yet)"
-    else:
-        chosen = hardware_pick
-        why = "neither backend is installed yet; this is the one this hardware can use"
-
-    installed = vllm_installed if chosen == "vllm" else ollama_installed
-    return {
-        "backend": chosen,
-        "chosen_because": why,
-        # None when the chosen backend is already installed. Otherwise it NAMES the
-        # missing prerequisite, so a caller refuses by name rather than starting a
-        # download that has nowhere to land.
-        "prerequisite": None if installed else chosen,
-    }
+    return provisioning_backend(r)
 
 
 def _default_model_plan() -> dict:
@@ -1520,6 +1495,45 @@ def ollama_start() -> dict:
         return start()
     except OllamaLifecycleError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/activation")
+def llm_activation_plan() -> dict:
+    """Which backend would be STARTED on this machine, and whether it can be.
+
+    Read-only. The third "which backend" question, distinct from routing
+    (``/backend``) and from provisioning (``/default-model``) -- see
+    ``src.llm.activation``.
+    """
+    from src.llm.activation import activation_plan
+
+    return activation_plan()
+
+
+@router.post("/activation/start")
+def llm_activation_start() -> dict:
+    """Bring a local backend up: vLLM where it can run, Ollama otherwise, and
+    whichever one the operator explicitly chose regardless.
+
+    This is what the AI control does when the operator switches local AI on. Before
+    it existed, "Start background AI" probed a backend that nothing had started,
+    found nothing, and spent its whole retry budget on a condition retrying cannot
+    change ("local model hiccup", ten times).
+
+    ALWAYS 200: an ordinary refusal (nothing installed, weights not downloaded) is a
+    sentence in the payload, not an exception -- the caller is a button, and a stack
+    trace is not an answer to "please start". ``ready`` is the only field that claims
+    the backend is answering; a vLLM start reports ``started: true, ready: false``
+    while the engine loads, which is the truth and not a failure.
+
+    Not airplane-gated, for the reason the Ollama launch endpoint above already
+    states: both servers bind loopback and this is what makes ruled offline inference
+    possible. The one start that WOULD egress -- vLLM fetching uncached weights from
+    Hugging Face inside its own subprocess -- is refused by name in the plan instead.
+    """
+    from src.llm.activation import ensure_running
+
+    return ensure_running()
 
 
 @router.post("/articles/{article_id}/summarize")
