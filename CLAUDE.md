@@ -2179,6 +2179,78 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     missed join by name as catalogue drift: honest, and the fastest possible signal that two
     catalogues have diverged. GENERAL FORM: when you join on a value rather than a surrogate
     key, the miss case is not "empty", it is "these two sources no longer agree".
+  - **⚠ THIS SANDBOX HAS A BROWSER AND PYTHON 3.13 — the standing "browser-unverified per
+    fork-3/Q6a" caveat is a HABIT, not a limit (2026-08-04, the GUI-visualization build):**
+    Chromium ships at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` with
+    `PLAYWRIGHT_BROWSERS_PATH` already set, and `/usr/bin/python3.13` exists even though the
+    default `python3` is 3.11. So a frontend slice CAN be driven and screenshotted in-session:
+    `python3.13 -m venv .venv` → `pip install -e ".[analysis]" pytest playwright` (with
+    `TMPDIR` inside the repo, per the recorded pip lesson) → seed a SYNTHETIC corpus through
+    the real `index_article` → `uvicorn` on a loopback port with `OO_DATA_DIR` +
+    `OO_DB_PLAINTEXT=1` + `OO_NO_SCHEDULER=1` → `pw.chromium.launch(executable_path=…)`. The
+    full suite runs too (no `--timeout` flag: pytest-timeout is absent). FOUR DEFECTS in this
+    slice were invisible to source reading and obvious in a screenshot: a flex container
+    DISCARDS the whitespace between its items (so `${label} <span>n=…</span>` rendered
+    "series 1n=40" — use `gap`), separate series' bars drawn at the same x read as a STACKED
+    total nobody computed, a clamp meant to stop an edge group being clipped instead collapsed
+    two members onto one pixel and hid a real measurement, and Arabic showed English method
+    text under translated caveats. Also: apply greyscale as a BROWSER filter
+    (`documentElement.style.filter = 'grayscale(1)'`) so what is judged is rendered pixels, and
+    hand the images to adversarial subagents — three critics reading PNGs found things numbers
+    could not, including one that correctly REFUSED to certify the gap-rendering path because
+    the test data contained no gaps ("an untested code path, not a pass").
+  - **THE i18n DOM WALKER MATCHES A TEXT NODE EXACTLY, so a label and its sentence must be
+    SEPARATE ELEMENTS — and a sentence the server COMPOSES can never be translated at all
+    (2026-08-04, the same slice, caught only in Arabic):** `figMeta` emitted
+    `` `${t("Method")}: ${env.method}` `` as one text node, so the node was
+    "Method: Articles grouped by…", which is not a key, and eleven locales showed English
+    honesty text under correctly-translated Arabic caveats. Two elements, two exact matches.
+    The sibling half is worse: `source_concentration` appended a basis-dependent clause to its
+    method, making the string DIFFERENT on every corpus, so no key could ever match — the
+    varying part must travel as a FIELD the frontend composes from its own keyed template (the
+    `OOI18N.tf` discipline). THIRD, and the reason it survived one round of fixing: a Library
+    view renders ONCE (`_libViewLoaded` is a `Set`), and an already-INTERPOLATED `tf()` string
+    is no longer a key, so it stays frozen in whatever locale first rendered it — the recorded
+    `home-lead-title-frozen-locale` bug class, which the `oo:langchange` handler exists to fix
+    and which every new render-once surface must register with. THE DURABLE FIX IS A GUARD, not
+    memory: a test drives every figure and fails if any `method`/`caveat` is absent from any of
+    the twelve locale files, naming the figure, the field and the locale. Mutation-checked.
+  - **COLOUR-ONLY SERIES IDENTITY IS REFUTABLE BY ARITHMETIC, AND THE REPLACEMENT CHANNELS MUST
+    DIFFER BY FAMILY (2026-08-04):** `ooChart` distinguished series by a 4-colour cycle and
+    nothing else. The decisive number is not the background contrast (though three of those
+    four were below the WCAG 1.4.11 3:1 non-text bar on `--panel2`, the background the canvas
+    actually paints) — it is that the worst MUTUAL contrast between two theme-derived series
+    colours is **1.00:1, luminance-identical**, because pulling each hue toward `--fg` to clear
+    the background bar necessarily converges them. That is a proof, not a preference: colour
+    cannot carry identity, so dash and marker are load-bearing. TWO WAYS THE REPLACEMENT
+    CHANNELS COLLIDE ANYWAY, both shipped for one iteration and both caught by a critic reading
+    pixels: distinct dash NUMBERS are not distinct dash PATTERNS (`[2,3]` vs `[1,3]` both read
+    as "the dotted one"; `[3,7]` is another pattern's rhythm at half the frequency — scaling
+    does not make a new one, so compare the ordered sequence of mark-length CLASSES), and a
+    marker must not be another marker ROTATED (a diamond IS a square at 45°, and at ~6px they
+    are a coin flip). Also: the legend swatch must show the pattern it teaches — a marker
+    centred on a 30px swatch covered exactly the stretch where a dash-dot cycle distinguishes
+    itself, so that key rendered as a solid line.
+  - **A FIX FOR A CLIPPED GROUP MEMBER MUST CLAMP THE GROUP, NOT EACH MEMBER (2026-08-04):**
+    grouped bars at the first/last time slot fell half outside the plot, so each series' own
+    left edge was clamped into the plot area. At the first slot that put series 0 and series 1
+    on the IDENTICAL pixel, the later drew over the earlier, and a real measurement became
+    invisible and un-hatched — the very failure the clamp was added to prevent, reached by
+    another route. Clamp the group's left edge once and offset members within it; then no two
+    sub-slots can coincide by construction. GENERAL FORM: when a fix bounds a POSITION, ask
+    what happens when two things are bounded to the same bound.
+  - **REUSING A MAINTAINED COUNTER MEANS INHERITING ITS DOCUMENTED FALLBACK (2026-08-04):**
+    a new figure filtered `Source.article_count > 0`. That column is NULLABLE and is NULL on any
+    corpus the bounded background reconcile has never touched, so the figure returned n=0
+    against 180 real articles across 10 sources — not a missing caveat but a false statement,
+    "no source holds any article". The fallback already existed at `src/api/source_io.py:163-177`
+    (counter when set, live `COUNT` otherwise) with its three-state basis vocabulary
+    `live`/`exact`/`estimated`, and was simply not reached for. COROLLARY on aggregating a
+    basis: ONE estimated or live member makes the WHOLE aggregate that basis — reporting
+    "exact" because most members were exact is the fabricated pass this project names
+    elsewhere. And a `None` that means UNDEFINED must never render as 0 when 0 is a real value
+    with the opposite meaning: `gini()` returns `None` below n=2, and a Gini of 0 is perfect
+    EQUALITY.
 
 ## Open queue (when maintainer says proceed)
 - **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;
