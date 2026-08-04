@@ -563,13 +563,17 @@ def search_ids(
         if exclude_quarantined
         else ""
     )
+    # `gate` is one of the two constant fragments chosen just above -- never a
+    # caller-supplied value, and every value is bound. bandit attributes B608 to the
+    # first line of the concatenation, so the marker belongs HERE and not on the
+    # enclosing text(...) call, where it silently does nothing.
+    sql = (
+        "SELECT rowid FROM article_fts WHERE article_fts MATCH :q"  # nosec B608 - only the constant `gate` fragment above is concatenated; every value is a bound :param
+        + gate
+        + " ORDER BY bm25(article_fts, :wt, :wb) LIMIT :lim"
+    )
     rows = session.execute(
-        text(  # nosec B608 - `gate` is one of two constant fragments chosen above; the
-            # query text is never built from a caller-supplied value (all values bound).
-            "SELECT rowid FROM article_fts WHERE article_fts MATCH :q"
-            + gate
-            + " ORDER BY bm25(article_fts, :wt, :wb) LIMIT :lim"
-        ),
+        text(sql),
         {"q": match, "wt": wt, "wb": wb, "lim": limit},
     ).fetchall()
     return [r[0] for r in rows]
