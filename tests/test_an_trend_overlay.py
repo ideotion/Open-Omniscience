@@ -16,6 +16,7 @@ static guard matters).
 from __future__ import annotations
 
 from pathlib import Path
+from tests.js_source_helper import function_body, strip_comments
 
 _ROOT = Path(__file__).resolve().parents[1]
 _HTML = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
@@ -76,6 +77,14 @@ def test_trend_caveats_are_visible_and_honest():
         "the graph causation caveat was removed everywhere (maintainer 2026-06-17)"
     )
     assert "relative movement, not absolute levels" in _JS, "indexed mode must disclose it is relative"
-    assert "card-caveat" in _JS, "the Trend caveats must render in the visible .card-caveat surface"
-    # No fabricated score anywhere in the new surface.
-    assert "score" not in "renderAnTrend drawAnTrend", "sanity"
+    # Scoped: `card-caveat` occurs 41 times in app.js, so whole-file it said nothing
+    # about the Trend overlay.
+    assert "card-caveat" in function_body(_JS, "drawAnTrend")
+    # No fabricated score anywhere in the new surface. This used to read
+    #     assert "score" not in "renderAnTrend drawAnTrend", "sanity"
+    # which compares a substring against a Python string literal holding two function
+    # NAMES -- a compile-time constant that can never fail, and never read app.js at all.
+    for fn in ("renderAnTrend", "drawAnTrend"):
+        assert "score" not in strip_comments(function_body(_JS, fn)).lower(), (
+            f"{fn} must not compute or name a score"
+        )

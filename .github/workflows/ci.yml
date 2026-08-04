@@ -121,7 +121,16 @@ jobs:
       # A RATCHET, not a target: it may only be lowered. Lower it in the same PR
       # that adds the keys -- the script prints the new floor when it can drop.
       - name: i18n untranslatable-string ratchet
-        run: python scripts/i18n_report.py --max-untranslatable 715
+        run: python scripts/i18n_report.py --max-untranslatable 588
+
+      # The tight half. The ratchet above counts strings that regexes INFER reach
+      # the DOM; this one counts only t("literal") call sites, where the code says
+      # so outright -- and t() is an exact map lookup, so every one of these renders
+      # verbatim English in all 11 other locales with no ambiguity. Kept separate so
+      # the certain class can be driven to zero on its own schedule instead of
+      # hiding inside a blended number. Also a ratchet: it may only be lowered.
+      - name: i18n unkeyed t() call sites
+        run: python scripts/i18n_report.py --max-unkeyed-t-calls 307
 
       - name: Migration drift (models vs Alembic baseline)
         # The CI database is a fresh throwaway file; since at-rest encryption

@@ -130,6 +130,43 @@ def _static_dir() -> Path:
     return _UI.parent
 
 
+# The t() CALL SITES, on their own.
+#
+# Every other shape in _JS_SHAPES is an INFERENCE that a literal reaches the DOM;
+# `t("...")` is the code saying so outright, and i18n.js's t() is an exact map
+# lookup with no normalisation -- so a t() literal with no en.json key renders
+# verbatim English in all 11 other locales, every time, with no ambiguity about
+# whether the string was user-facing. That makes this subset the highest-signal
+# slice of the untranslatable count and the one worth driving to zero on its own
+# schedule, rather than leaving it inside a blended number that also carries
+# regex guesses. Reported by --audit-chrome; gated by --max-unkeyed-t-calls.
+_T_CALL = (
+    re.compile(r'\bt\(\s*"((?:[^"\\{`$]|\\.){1,400})"'),
+    re.compile(r"\bt\(\s*'((?:[^'\\{`$]|\\.){1,400})'"),
+)
+
+
+def unkeyed_t_calls() -> dict:
+    """Every t("literal") in the JS whose literal has no en.json key."""
+    en_keys = _keys(_load(_LOCALES / "en.json"))
+    sites = 0
+    unkeyed: set[str] = set()
+    for name in _AUX_JS:
+        path = _static_dir() / name
+        if not path.exists():
+            continue
+        text = path.read_text(encoding="utf-8")
+        for rx in _T_CALL:
+            for m in rx.finditer(text):
+                k = re.sub(r"\s+", " ", m.group(1)).strip()
+                if not k:
+                    continue
+                sites += 1
+                if k not in en_keys:
+                    unkeyed.add(k)
+    return {"sites": sites, "unkeyed_count": len(unkeyed), "unkeyed": sorted(unkeyed)}
+
+
 def audit_chrome() -> dict:
     parser = _ChromeExtractor()
     parser.feed(_UI.read_text(encoding="utf-8"))
@@ -246,7 +283,42 @@ def main(argv: list[str] | None = None) -> int:
             "like MYPY_BASELINE: it may only be lowered."
         ),
     )
+    ap.add_argument(
+        "--max-unkeyed-t-calls",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "fail (exit 1) if MORE than N distinct t(\"...\") literals have no en.json "
+            "key. The tight half of the ratchet above: these are certainly user-facing."
+        ),
+    )
     args = ap.parse_args(argv)
+
+    if args.max_unkeyed_t_calls is not None:
+        tcalls = unkeyed_t_calls()
+        n = tcalls["unkeyed_count"]
+        print(
+            f'unkeyed t("...") literals: {n} of {tcalls["sites"]} call sites '
+            f"(ratchet {args.max_unkeyed_t_calls})",
+            file=sys.stderr,
+        )
+        if n > args.max_unkeyed_t_calls:
+            print(
+                f"\nFAIL: {n} t() literals have no en.json key, above the ratchet of "
+                f"{args.max_unkeyed_t_calls}. t() is an exact lookup, so each of these "
+                f"renders verbatim English in all 11 other locales. Add the key to all "
+                f"12 locale files. This number may only go down.",
+                file=sys.stderr,
+            )
+            for k in tcalls["unkeyed"][:20]:
+                print(f"    {k[:110]}", file=sys.stderr)
+            if n > 20:
+                print(f"    ... and {n - 20} more (--audit-chrome --json)", file=sys.stderr)
+            return 1
+        if n < args.max_unkeyed_t_calls:
+            print(f"  (the ratchet can now be lowered to {n})", file=sys.stderr)
+        return 0
 
     # The ratchet. --min compares the locale files against en.json, so it answers
     # "are the 12 locales mutually consistent?" and CANNOT see a UI string that was
@@ -278,12 +350,18 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.audit_chrome:
         audit = audit_chrome()
+        audit["t_calls"] = unkeyed_t_calls()
         if args.json:
             print(json.dumps(audit, ensure_ascii=False, indent=2))
         else:
             print(
                 f"chrome audit — {audit['ui_strings']} UI strings, "
                 f"{audit['keyed']} keyed, {audit['missing_from_en']} untranslatable\n"
+            )
+            tc = audit["t_calls"]
+            print(
+                f"  of which t(\"...\") literals (certainly user-facing): "
+                f"{tc['unkeyed_count']} unkeyed of {tc['sites']} call sites\n"
             )
             print("  scanned:")
             for name, count in sorted(audit.get("per_file", {}).items()):

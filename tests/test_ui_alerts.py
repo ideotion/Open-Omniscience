@@ -13,6 +13,7 @@ Browser-unverified per fork-3 — node-checked + grep-guarded here.
 
 from __future__ import annotations
 
+from tests.js_source_helper import assert_present, function_body, read_static
 from tests.test_repo_invariants import _ui_source
 
 
@@ -30,13 +31,23 @@ def test_alerts_load_on_home_and_on_live_refresh():
 
 
 def test_alerts_are_honest_local_and_layered():
-    ui = _ui_source()
+    """Each claim is scoped to the function that must satisfy it.
+
+    Whole-file, all four needles matched 14-47 times elsewhere in the concatenated UI
+    source, so the strip could have lost its caveat, its staleness disclosure and its
+    corpus link and every assertion here would still have passed.
+    """
+    app = read_static("app.js")
+    strip = function_body(app, "_renderHomeAlerts")
     # Staleness disclosed (silence is not safety); caveat visible; method in the hover.
-    assert "silence is not safety" in ui, "the no-snapshot state must disclose that silence is not safety"
-    assert "card-caveat" in ui, "the alert caveat must be visible by default (#23)"
-    # External hazard links pass the confirm popup (invariant #7); corpus opens local.
-    assert "extLink(" in ui, "hazard URLs must open via the external-link confirm"
-    assert "openAnalysisForIds(" in ui, "watch/convergence sets must open the exact corpus"
+    assert_present(strip, "silence is not safety",
+                   why="the no-snapshot state must disclose that silence is not safety")
+    assert_present(strip, "card-caveat", why="the alert caveat must be visible by default (#23)")
+    assert_present(strip, "openAnalysisForIds(",
+                   why="watch/convergence sets must open the exact corpus")
+    # External hazard links pass the confirm popup (invariant #7) -- rendered per hazard.
+    assert_present(function_body(app, "_hazardStripItem"), "extLink(",
+                   why="hazard URLs must open via the external-link confirm")
 
 
 def test_alerts_never_promote_a_magnitude_into_urgent():

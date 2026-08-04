@@ -11,11 +11,46 @@ in-app doc the API offers actually exists on disk. If any regresses, CI fails.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
+from tests.js_source_helper import assert_absent as _assert_js_absent
+from tests.js_source_helper import assert_present as _assert_js_present
+from tests.js_source_helper import function_body as _js_function_body
+from tests.js_source_helper import python_function_source as _py_function_source
+from tests.js_source_helper import strip_comments as _strip_js_comments
+
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"
+
+def _score_leak(js: str) -> str | None:
+    """The reason a surface fails "no composite score", or None if it holds.
+
+    Two conditions, because the honest surfaces here DO contain the word: they say
+    there is no score. So a field may not be NAMED for one, and every remaining
+    mention must sit inside a phrase that negates it.
+    """
+    stripped = _strip_js_comments(js)
+    if re.search(r"\bscore\s*[:=]", stripped) or "Score" in stripped:
+        return "a field is named for a score"
+    for m in re.finditer(r"score", stripped):
+        before = stripped[max(0, m.start() - 30) : m.start()].lower()
+        if not any(neg in before for neg in ("no ", "never a", "not a")):
+            return "a bare mention: " + stripped[max(0, m.start() - 40) : m.start() + 10]
+    return None
+
+
+# Thinning a series -- what invariant #16's "never downsampled" forbids. A WINDOW
+# filter is deliberately absent from this list: "the FULL series within the VISIBLE
+# WINDOW" permits dropping points outside the window and nothing else.
+_DECIMATION = (
+    r"\bi\s*\+=\s*(?:step|stride|every|skip)\b",
+    r"%\s*(?:step|stride|every|skip)\b",
+    r"\(\s*\w+\s*,\s*i\s*\)\s*=>\s*i\s*%",  # .filter((p, i) => i % n === 0)
+    r"\b(?:maxPoints|MAX_POINTS|max_points|POINT_CAP)\b",
+    r"Math\.(?:ceil|floor|round)\(\s*\w+\.length\s*/",
+)
 
 # Conservative: a secret-like NAME assigned a non-trivial STRING LITERAL. Env reads,
 # ORM Column defaults, descriptions and placeholders are excluded so this stays
@@ -71,7 +106,8 @@ def test_revision_anomalies_statistics_surface():
     assert "function loadRevisionAnomalies" in ui, "the handler must be defined"
     assert "/api/stats/revision-anomalies" in ui, "it must call the merged endpoint"
     # The honesty envelope (method + innocent-twin caveat) must be rendered, never dropped.
-    assert "d.caveat" in ui and "d.method" in ui, "the method + caveat must render"
+    _rev = _js_function_body(ui, "loadRevisionAnomalies")
+    assert "d.caveat" in _rev and "d.method" in _rev, "the method + caveat must render"
 
 
 def test_stat_time_series_chart_surface():
@@ -94,7 +130,9 @@ def test_stat_time_series_chart_surface():
     assert "function renderStatChart" in app, "the handler must be defined"
     assert "/api/stats/figures/series" in app, "it must fetch the chart-series feed"
     assert "ooViz.statChartGeometry" in app, "it must draw via the node-tested geometry helper"
-    assert "d.caveat" in app, "the honesty caveat must render"
+    assert "d.caveat" in _js_function_body(app, "renderStatChart"), (
+        "the honesty caveat must render"
+    )
     # The geometry helper is exported by ooViz (node-tested separately).
     assert "function statChartGeometry" in ooviz, "statChartGeometry must be defined"
     assert "statChartGeometry: statChartGeometry" in ooviz, "it must be exported in the API"
@@ -629,10 +667,19 @@ def test_world_map_near_time_capped_log_slider_and_no_download_confirm():
     assert "Math.min(win || _OOMAP_NEAR_YEARS, _OOMAP_NEAR_YEARS)" in app
     assert "Math.pow(_LOGB, 1 - frac)" in app, "the time slider is no longer logarithmic"
     # The OSM download keeps the network consent but dropped the redundant 'are you sure'.
-    osm = app.split("async function startOsmDownload(", 1)[1].split("\n    }", 1)[0]
-    assert 'ensureOnline("Download an offline map region")' not in osm or "ensureOnline" in osm
-    assert "confirm(t(\"Download this offline map region" not in osm, (
-        "the redundant map-download confirm should be gone (#15)"
+    #
+    # The first assertion here used to read
+    #     assert 'ensureOnline("Download an offline map region")' not in osm or "ensureOnline" in osm
+    # which is a TAUTOLOGY: the second needle is a substring of the first, so if the
+    # long form is present the short one necessarily is too, and if it is absent the
+    # first disjunct holds. True for every possible input; it could not fail even if
+    # the consent gate were deleted outright -- the one thing it is named for.
+    osm = _js_function_body(app, "startOsmDownload")
+    _assert_js_present(osm, "ensureOnline(", why="the ONE network consent must gate the map download")
+    _assert_js_absent(
+        osm,
+        'confirm(t("Download this offline map region',
+        why="the redundant map-download confirm should be gone (#15)",
     )
 
 
@@ -1239,7 +1286,11 @@ def test_offline_map_merged_list_state_and_planet_skips_downloaded():
     for tok in ['t("Downloading")', 't("Downloaded")', 't("Queued")', "<progress"]:
         assert tok in rl, f"missing state token {tok}"
     # instant feedback on click
-    assert 't("Starting…")' in app, "download click gives instant feedback"
+    _assert_js_present(
+        _js_function_body(app, "startOsmDownload"),
+        't("Starting…")',
+        why="download click gives instant feedback",
+    )
     # 'Whole planet' = download only the MISSING continents (skip done/downloading/queued)
     pd = app[app.index("async function startPlanetDownload("):]
     pd = pd[: pd.index("\n    }")]
@@ -1514,7 +1565,14 @@ def test_gui_shutdown_button_and_endpoint():
     sysapi = (_SRC / "api" / "system.py").read_text(encoding="utf-8")
     assert 'id="app-shutdown"' in html and 'onclick="appShutdown()"' in html
     assert "async function appShutdown(" in app and "/api/system/shutdown" in app
-    assert "confirm(" in app, "a confirmation prompt must precede shutdown"
+    # Scoped to appShutdown's own body. Whole-file, `"confirm(" in app` matched ~30
+    # unrelated call sites, so the confirmation could be deleted from the shutdown
+    # path with the guard still green -- the one thing this test is named for.
+    _assert_js_present(
+        _js_function_body(app, "appShutdown"),
+        "confirm(",
+        why="a confirmation prompt must precede shutdown",
+    )
     assert '@router.post("/shutdown")' in sysapi and "confirmation required" in sysapi
     # the shutdown helper must require confirm + must not be the uninstall/panic path
     sd = (_SRC / "safety" / "shutdown.py").read_text(encoding="utf-8")
@@ -1530,10 +1588,11 @@ def test_uninstall_and_shutdown_replace_ui_with_terminal_overlay():
     assert "function _terminalOverlay(" in app
     assert "window.close()" in app, "best-effort close (works only for script-opened tabs)"
     # both the shutdown button and the uninstall flow use it
-    ov = app[app.index("function _terminalOverlay("):]
-    ov = ov[: ov.index("\n    }")]
+    ov = _js_function_body(app, "_terminalOverlay")
     assert "position:fixed;inset:0" in ov and "z-index:99999" in ov, "must cover/disable the UI"
-    assert "_terminalOverlay(" in app[app.index("async function appShutdown("):]
+    # Scoped to appShutdown's own body: slicing "from appShutdown to the END OF FILE"
+    # was satisfied by the uninstallApp call site ~6,500 lines later, all on its own.
+    _assert_js_present(_js_function_body(app, "appShutdown"), "_terminalOverlay(")
     assert "_terminalOverlay(" in app[app.index("async function uninstallApp("):]
 
 
@@ -2087,8 +2146,28 @@ def test_ui_invariants():
     #     curve interpolated" caveat is REMOVED app-wide, only n=x is kept. Both
     #     renderers (ooChart + dashChartSvg) share the _SPARSE_BAR_MAX threshold.
     assert "function ooChart(" in html, "the one chart toolkit must exist (CLAUDE.md #16)"
+    # The rule has two halves and they need two guards. This assertion used to be
+    # `"never downsampled" in html` with the message "must state AND implement" --
+    # but all three occurrences of that phrase are on `//` comment lines, so the
+    # implementation could be deleted with the comment left behind and the guard
+    # stayed green. It certified the sentence, not the behaviour.
     assert "never downsampled" in html, (
-        "the toolkit must state and implement the full-resolution rule (CLAUDE.md #16)"
+        "the toolkit must STATE the full-resolution rule in its own comment (CLAUDE.md #16)"
+    )
+    # ...and the other half, behaviourally. Decimation is what the rule forbids:
+    # index-strided sampling, a non-unit loop step over the points, or a cap on how
+    # many points may be drawn. A WINDOW filter (`p.t >= t0 && p.t <= t1`) is not
+    # decimation -- invariant #16 is "the full series WITHIN THE VISIBLE WINDOW" --
+    # so it must not trip this, and the assertion below pins that it is present.
+    for _fn in ("ooChart", "dashChartSvg"):
+        _renderer = _strip_js_comments(_js_function_body(html, _fn))
+        for _pat in _DECIMATION:
+            assert not re.search(_pat, _renderer), (
+                f"{_fn} must not thin the series ({_pat!r} — CLAUDE.md #16: the FULL "
+                f"series renders within the visible window)"
+            )
+    assert re.search(r"p\.t\s*>=\s*t0\s*&&\s*p\.t\s*<=\s*t1", html), (
+        "ooChart must keep the visible-window filter -- the one permitted reduction"
     )
     # Item Y: the n<10->bar rule is shared by both renderers, and the old sparse
     # caveat string is gone from the rendered UI (only the count n=x remains).
@@ -2463,7 +2542,7 @@ def test_ui_invariants():
     #     .card-caveat line on the card BACK — an equal side revealed by ONE flip, never
     #     a hidden toggle/checkbox — right beside the action that opens its corpus. It is
     #     in the DOM by default (not behind [hidden]); only the FRONT is decluttered.
-    card_html = html.split("function cardHtml(", 1)[1].split("\n    function ", 1)[0]
+    card_html = _js_function_body(html, "cardHtml")
     assert "card-face card-front" in card_html and "card-face card-back" in card_html, (
         "Lead cards must have a flip FRONT + BACK (maintainer 2026-06-23)"
     )
@@ -2578,8 +2657,13 @@ def test_ui_invariants():
     assert "/api/geo/regions" in html and "/api/geo/downloads" in html, (
         "the offline-map view must read the region catalogue + the download jobs"
     )
-    assert "function startOsmDownload(" in html and "ensureOnline(" in html, (
-        "starting an OSM download must pass the ONE consent popup (ensureOnline, invariant #14)"
+    # SCOPED, for the reason the comment 20 lines below already gives for pullModel:
+    # `"ensureOnline(" in html` matched 30 call sites, so this stayed green however
+    # the OSM path was gated.
+    _assert_js_present(
+        _js_function_body(html, "startOsmDownload"),
+        "ensureOnline(",
+        why="starting an OSM download must pass the ONE consent popup (invariant #14)",
     )
     # 28. LLM model management is a DEDICATED Settings subtab (Q6=A) with explicit
     #     actions over the existing endpoints — pull (NDJSON stream), remove, and the
@@ -3449,7 +3533,11 @@ def test_library_central_dashboard():
     assert 'id="library-overview"' in html
     assert "async function renderLibraryOverview" in html
     assert "/api/library/overview" in html
-    assert "renderLibraryOverview()" in html, "must be wired into the tab onShow + poller"
+    # A zero-argument function's own declaration contains `name()`, so the whole-file
+    # form could not tell "wired" from "defined". Count the CALL sites instead.
+    assert html.count("renderLibraryOverview()") >= 3, (
+        "must be wired into the tab onShow + poller, not merely defined"
+    )
     # the two layers are labelled + the AI-derived layer is disclosed unreliable.
     assert "Downloaded — the raw" in html and "Extrapolated — AI-derived" in html
     # representative downloaded + extrapolated tiles.
@@ -3569,8 +3657,9 @@ def test_analysis_mindmap_subtab():
     assert 'id="ins-mindmap"' in html, "Insights #ins-mindmap host must remain (no regression)"
     # the analysis renderer must stay self-contained: its body must not touch the
     # Insights #ins-mindmap host nor share the _mm* force-canvas state.
-    an_start = html.index("function renderAnMindmap")
-    an_body = html[an_start:an_start + 2200]
+    # A fixed 2,200-character window covered ~57% of renderAnMindmap, so the two
+    # negative guards below did not cover the function they are written about.
+    an_body = _js_function_body(html, "renderAnMindmap")
     assert "ins-mindmap" not in an_body, "renderAnMindmap must not touch the Insights host"
     assert "_mm" not in an_body, "renderAnMindmap must not share the Insights _mm* state"
 
@@ -3685,7 +3774,7 @@ def test_commodities_category_subtabs():
     # was silently satisfied by the HOME families call site instead (the commodities
     # one passes the shorthand {initial}), so it never tested this board at all —
     # the misscoped-anchor family. It now reads the function it names.
-    _cat_tabs = html.split("function _renderCommodityCatTabs", 1)[1].split("\n    function ", 1)[0]
+    _cat_tabs = _js_function_body(html, "_renderCommodityCatTabs")
     assert '_mktCat : "__all"' in _cat_tabs and "ooSubtabs(catNav, selectCommodityCat, {initial})" in _cat_tabs, (
         "'All' (__all) must be the commodities board's default lens"
     )
@@ -3826,7 +3915,13 @@ def test_markets_family_stacked_graphs():
     assert "indexed: opts.indexed !== false" in html, (
         "family graphs must default to the indexed (cross-magnitude) scale"
     )
-    assert 'class="card-caveat"' in html, "the families view must carry a VISIBLE caveat"
+    # Scoped: whole-file, `class="card-caveat"` matched 40+ unrelated surfaces, so the
+    # families view could lose its caveat entirely with the guard still green.
+    _assert_js_present(
+        _js_function_body(html, "renderFamilyGraphs"),
+        'class="card-caveat"',
+        why="the families view must carry a VISIBLE caveat",
+    )
     # families-first: the view DEFAULTS to families; the toggle UI is dropped
     assert 'let _mktView = "families"' in html, "the board must DEFAULT to the families view (P2-10)"
     assert 'tog.innerHTML = ""; tog.style.display = "none"' in html, (
@@ -4017,7 +4112,9 @@ def test_ootimescope_range_control():
     assert "ts-bar" in html and "ts-handle" in html, (
         "the control must render a draggable range bar (ts-bar + ts-handle)"
     )
-    assert 'addEventListener("pointerdown"' in html or 'pointerdown' in html, (
+    # `A or B` where B is a strict superset of A collapses to B -- "the token appears
+    # somewhere in 21k lines". Assert the specific form the drag wiring needs.
+    assert 'addEventListener("pointerdown"' in html, (
         "the handles must be pointer-draggable (mouse + touch)"
     )
     # (c) quick presets as one-click shortcuts
@@ -4188,7 +4285,10 @@ def test_ooMap_choropleth():
     # SIGNED data (mean tone) rides a DIVERGING scale, never a one-sided ramp.
     assert "function _ooMapFillDiverging(t)" in html, "sentiment needs a diverging fill"
     assert 'opts.scale === "diverging"' in html, "the scale must branch to diverging for signed data"
-    assert "var(--err)" in html and "var(--ok)" in html, (
+    # Scoped to the ramp itself: whole-file, both tokens occur dozens of times across
+    # the UI, so the assertion said nothing about _ooMapFillDiverging.
+    _ramp = _js_function_body(html, "_ooMapFillDiverging")
+    assert "var(--err)" in _ramp and "var(--ok)" in _ramp, (
         "the diverging ramp must use the theme's err/ok hues"
     )
     # The sentiment dimension carries the VADER English-only caveat (B1), visible.
@@ -4374,7 +4474,7 @@ def test_corpus_window_mindmap_subtab():
     for sib in ('data-tab="trend"', 'data-tab="articles"', 'data-tab="links"'):
         assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
     # 2. corpusTab dispatches "mindmap" → the SHARED renderer for the window term.
-    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    body = _js_function_body(html, "corpusTab")
     assert 'which === "mindmap"' in body, "corpusTab must handle the mindmap sub-tab"
     assert "renderMindmap(_corpusTerm)" in body, (
         "the Mindmap sub-tab must render the EXISTING associations mind-map for "
@@ -4429,7 +4529,7 @@ def test_corpus_window_sentiment_subtab():
         "in its hover title"
     )
     # 2. corpusTab dispatches "sentiment" -> the SHARED framing renderer, term-keyed.
-    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    body = _js_function_body(html, "corpusTab")
     assert 'which === "sentiment"' in body, "corpusTab must handle the sentiment sub-tab"
     assert "loadFraming(_corpusTerm" in body, (
         "the Sentiment sub-tab must render the EXISTING Insights framing surface "
@@ -4480,7 +4580,7 @@ def test_corpus_window_keywords_subtab():
     ):
         assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
     # 2. corpusTab dispatches "keywords" -> the ranked-table renderer for _corpusTerm.
-    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    body = _js_function_body(html, "corpusTab")
     assert 'which === "keywords"' in body, "corpusTab must handle the keywords sub-tab"
     assert "renderCorpusKeywords(_corpusTerm" in body, (
         "the Keywords sub-tab must render the ranked table for THIS window's corpus term"
@@ -4544,7 +4644,7 @@ def test_corpus_window_sources_subtab():
     ):
         assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
     # 2. corpusTab dispatches "sources" -> the source-description renderer for _corpusTerm.
-    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    body = _js_function_body(html, "corpusTab")
     assert 'which === "sources"' in body, "corpusTab must handle the sources sub-tab"
     assert "renderCorpusSources(_corpusTerm" in body, (
         "the Sources sub-tab must render for THIS window's corpus term into a fresh host"
@@ -4619,7 +4719,7 @@ def test_corpus_window_competitive_subtab():
     ):
         assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
     # 2. corpusTab dispatches "competitive" -> the renderer for _corpusTerm.
-    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    body = _js_function_body(html, "corpusTab")
     assert 'which === "competitive"' in body, "corpusTab must handle the competitive sub-tab"
     assert "renderCorpusCompetitive(_corpusTerm" in body, (
         "the Competitive sub-tab must render for THIS window's corpus term into a fresh host"
@@ -4653,9 +4753,16 @@ def test_corpus_window_competitive_subtab():
     assert "credibility" in cfn.lower(), "the 'not a credibility judgement' framing must be present"
     assert "VADER" in cfn, "the VADER tone disclosure must be reachable (tone is shown)"
     # honesty by construction: the comparison is ordered, never scored/ranked-as-quality.
-    assert "composite score" not in cfn or "no composite score" in cfn.lower() or (
-        "never a" in cfn.lower()
-    ), "the Competitive tab must not compute a composite score"
+    # The old form was `"composite score" not in cfn or "no composite score" in
+    # cfn.lower() or "never a" in cfn.lower()`, and its third arm is guaranteed by the
+    # `assert "never a ranking" in cfn.lower()` four lines above -- so the disjunction
+    # was true whatever the renderer computed. Assert the property instead: every
+    # occurrence of the word is inside a disclosure that NEGATES it, and no field is
+    # named for one -- see _score_leak, whose own bite is pinned by
+    # test_the_no_score_guard_actually_bites.
+    assert _score_leak(cfn) is None, (
+        f"the Competitive tab must not compute a composite score: {_score_leak(cfn)}"
+    )
 
 
 def test_keyword_explorer_subtab():
@@ -4745,7 +4852,12 @@ def test_family_curation_relocated_to_settings_and_single_member_guarded():
     assert 'dataset.single === "1"' in split_fn, "a single-member family's ✕ must be a guarded no-op"
     assert "Nothing to split" in split_fn
 
-    assert "loadFamilyCuration()" in app, "showSetCat must wire the curation loader on the Keywords subtab"
+    # Same zero-argument-declaration trap. And the message named a stale home: the
+    # loader moved into the _ADV_LOADERS expand-map when Advanced sections became
+    # load-on-expand, so scope to that entry, which is unique.
+    assert "keywords: () => { loadKeywordExplorer(); loadFamilyCuration();" in app, (
+        "_ADV_LOADERS must wire the curation loader on the Keywords section"
+    )
 
 
 def test_super_ring_ui():
@@ -5248,7 +5360,14 @@ def test_world_law_renamed_governments_with_subtabs():
     # JS wiring: subtabs + the three loaders + the consented load + the map reuses ooMap.
     assert "function loadGovernments" in app and "function showGovView" in app
     assert "function loadGovCountry" in app and "function loadGovMap" in app
-    assert "govLoadStandard" in app and "ensureOnline" in app  # the ONE consent on the fetch
+    # Scoped to govLoadStandard's own body: `"ensureOnline" in app` matched the
+    # helper's own definition and ~50 other call sites, so it established nothing
+    # about the Governments fetch it is commented for.
+    _assert_js_present(
+        _js_function_body(app, "govLoadStandard"),
+        "ensureOnline(",
+        why="the ONE network consent must gate the standard-indicator fetch",
+    )
     assert "/api/governments/" in app and "await ooMap(" in app  # the map reuses ooMap
     # The label is keyed x12 (gate stays 100%).
     en = _json.loads((_ROOT / "src" / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
@@ -5288,7 +5407,11 @@ def test_sources_have_multi_select_dropdown_filters():
     assert "loadSrcFacets" in app and "/api/sources/facets" in app
     assert "mselValues" in app and 'p.set("tag_mode", "all")' in app
     # Localized full names on the language/country option labels (#19).
-    assert "ooLangName" in app and "ooRegionName" in app
+    # Scoped to loadSrcFacets, which builds those option labels. Whole-file, the
+    # needles matched the helpers' OWN declarations plus ~25 unrelated call sites, so
+    # the labelers could have been dropped from the facet dropdowns entirely.
+    _facets = _js_function_body(app, "loadSrcFacets")
+    assert "ooLangName(" in _facets and "ooRegionName(" in _facets
     # Backends: the facets endpoint + multi-value filtering on both list endpoints.
     sm = (_SRC / "api" / "source_management.py").read_text(encoding="utf-8")
     assert '@router.get("/facets"' in sm, "a /api/sources/facets endpoint must exist"
@@ -5385,7 +5508,13 @@ def test_startup_seeds_the_source_catalog_at_unlock():
     main_src = (_ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
     # run_deferred_startup now delegates the post-init upkeep to _run_startup_upkeep
     # (so the web-unlock path can background it); the seed lives there. Read both.
-    deferred = main_src.split("def run_deferred_startup", 1)[1].split("\ndef test_", 1)[0]
+    # Bounded by the parser, to the two functions this test is actually about.
+    # It used to slice `split("\ndef test_", 1)[0]` -- a delimiter that does not
+    # occur anywhere in main.py, so the "body" was the whole remaining 108,272
+    # characters of the module. seed_default_sources also appears in main(), which
+    # this docstring says does NOT reach an encrypted catalog, so the guard was
+    # satisfied by the very code path it was written to rule out.
+    deferred = _py_function_source(main_src, "run_deferred_startup", "_run_startup_upkeep")
     assert "_run_startup_upkeep" in deferred, "run_deferred_startup must call the upkeep"
     assert "seed_default_sources" in deferred, (
         "run_deferred_startup must seed the source catalog (encrypted stores seed at "
@@ -6616,7 +6745,7 @@ def test_saving_unrelated_settings_never_silently_overwrites_a_named_theme():
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
     assert "_lastSyncedThemeBucket" in app, "the last-synced-bucket tracker must exist"
 
-    sync_fn = app.split("function syncThemeSelect() {", 1)[1].split("\n    }\n", 1)[0]
+    sync_fn = _js_function_body(app, "syncThemeSelect")
     assert "_lastSyncedThemeBucket = bucket" in sync_fn, \
         "syncThemeSelect() must record the bucket it just assigned"
 
@@ -6685,8 +6814,16 @@ def test_popstate_closes_every_open_dialog():
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     dialog_ids = re.findall(r'<dialog id="([\w-]+)"', html)
     assert len(dialog_ids) >= 8, "sanity: expected several <dialog> elements in the markup"
-    for did in dialog_ids:
-        assert f'<dialog id="{did}"' in html, did
+    # The loop that used to be here re-asserted the exact regex it had just derived the
+    # ids from -- true by construction. What the comment above actually claims is that
+    # the enumeration is COMPLETE: a <dialog> written with any other attribute order is
+    # silently skipped by that regex rather than reported.
+    every_dialog = re.findall(r"<dialog\b[^>]*>", html)
+    assert len(dialog_ids) == len(every_dialog), (
+        "every <dialog> must be written `<dialog id=\"...\">` so this enumeration sees "
+        "all of them: "
+        + str([d for d in every_dialog if not re.match(r'<dialog id="[\w-]+"', d)])
+    )
 
 
 def test_api_error_handles_a_pydantic_validation_array_detail():
@@ -7032,7 +7169,7 @@ def test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role():
     explicitly-scoped <button> instead of relying on the whole (button/link-hosting)
     back face being itself a button."""
     js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    card_html = js.split("function cardHtml(", 1)[1].split("\n    function ", 1)[0]
+    card_html = _js_function_body(js, "cardHtml")
 
     # The outer container is a plain, non-interactive group wrapper -- exact-string
     # match so no tabindex/onclick/role="button" can sneak back onto it.
@@ -7245,7 +7382,7 @@ def test_worldmap_fullscreen_targets_host_so_legend_and_caveat_stay_visible():
     #oo-coverage-map) already wraps .oomap-wrap AND .oomap-legend AND the method/
     caveat and nothing unrelated, so fullscreen now targets `host` instead."""
     js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    fn = js.split("function _wireOoMap(host, opts) {", 1)[1].split("\n    function ", 1)[0]
+    fn = _js_function_body(js, "_wireOoMap")
 
     # The three fullscreen call sites must all resolve against `host` directly,
     # never re-query .oomap-wrap as a narrower fullscreen target.
@@ -7280,7 +7417,7 @@ def test_markdown_bold_span_survives_a_source_line_break():
     running inline() lets the regex see the whole span regardless of which
     source line it was wrapped on."""
     js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    fn = js.split("function mdToHtml(md) {", 1)[1].split("\n    function humanBytes", 1)[0]
+    fn = _js_function_body(js, "mdToHtml")
 
     # Paragraphs: inline() must run on the WHOLE joined string, never per-line.
     assert "inline(buf.join(" in fn, (
@@ -7426,7 +7563,9 @@ def test_library_qualification_tile_window_switcher_hide_flat_auto_log():
         assert f'"{m}"' in app
     assert "_libQualificationTile(LIB_DEFAULT_DAYS)" in app, "the Activity section must render the qualification tile"
     # never a quality score — the enlarge caveat states counts-only explicitly.
-    assert "never a quality score" in app
+    # Scoped: whole-file, this matched the channel-chip title on an unrelated surface
+    # and a `//` comment, so the tile's own caveat could have been deleted.
+    _assert_js_present(_js_function_body(app, "enlargeLibQualification"), "never a quality score")
 
     # window switcher: one shared default, per-tile in-place re-render on click.
     assert "const LIB_WINDOWS = [[7," in app
@@ -7457,7 +7596,7 @@ def test_library_qualification_tile_window_switcher_hide_flat_auto_log():
     # (2026-08-01) legitimately hoisted the spread test into a local so the same
     # verdict could also drive zeroBase, and a literal `logY: _libQualSpread`
     # anchor failed against correct code (the recorded stale-anchor family).
-    _qual_render = app.split("function _libRenderQualChart", 1)[1].split("\n    function ", 1)[0]
+    _qual_render = _js_function_body(app, "_libRenderQualChart")
     assert "_libQualSpread(_libQualSeries) > 50" in _qual_render and "logY:" in _qual_render, (
         "the qualification chart's logY must be driven by the measured spread"
     )
@@ -7557,16 +7696,14 @@ def test_briefing_refresh_runs_in_a_background_thread_not_inline():
     # skipped, never stacked/queued) and tracked in the task manager like the
     # other ride-alongs (world-discovery, qualification), not as a scheduler
     # phase — it can now genuinely overlap the next pass's own phase.
-    async_body = runner.split("def _refresh_briefing_async(self)", 1)[1].split(
-        "\n    def _default_run_once", 1
-    )[0]
+    async_body = _py_function_source(runner, "_refresh_briefing_async")
     assert "acquire(blocking=False)" in async_body
     assert 'tasks.register("briefing"' in async_body
     assert "threading.Thread(" in async_body and ".start()" in async_body
 
     # _default_run_once's OWN body: it calls the async kickoff, and never calls
     # refresh_briefing directly (the old synchronous inline call site is gone).
-    pass_body = runner.split("def _default_run_once", 1)[1]
+    pass_body = _py_function_source(runner, "_default_run_once")
     assert "self._refresh_briefing_async()" in pass_body
     assert "refresh_briefing(" not in pass_body
     assert '_phase_set("briefing")' not in pass_body
@@ -7605,7 +7742,7 @@ def test_housekeeping_lane_runs_in_a_background_thread_not_inline():
     # are gone -- they now live ONLY inside the _lane_step_* functions, which
     # are defined BEFORE _default_run_once in this module, so this slice
     # excludes them by construction, not by accident).
-    pass_body = runner.split("def _default_run_once", 1)[1]
+    pass_body = _py_function_source(runner, "_default_run_once")
     assert "self._kick_housekeeping_lane()" in pass_body
     for gone in (
         "auto_import_due_feeds(fetcher)",
@@ -8103,7 +8240,7 @@ def test_the_ai_install_egress_window_is_wired_and_states_its_limit():
     #    sites and would stay green with this gate deleted (this project's own S4.1
     #    lesson -- a removal guard is only as strong as the scope it searches).
     for fn in ("prepareOllamaInstall", "runOllamaInstall"):
-        body = app_js.split(f"async function {fn}(", 1)[1].split("\n    async function", 1)[0]
+        body = _js_function_body(app_js, fn)
         assert "if (!await ensureAiEgress(" in body, (
             f"{fn} must ask for a window and act on the answer"
         )
@@ -8112,9 +8249,7 @@ def test_the_ai_install_egress_window_is_wired_and_states_its_limit():
     #    flight runs in a child process this app cannot stop -- exactly what the
     #    consent dialog said when the window opened -- so "can no longer reach the
     #    network" would contradict it three clicks later.
-    close_body = app_js.split("async function closeEgressWindow(", 1)[1].split(
-        "\n    // Render the bar", 1
-    )[0]
+    close_body = _js_function_body(app_js, "closeEgressWindow")
     # Comment-STRIPPED: the comment explaining why the old wording is gone has to
     # quote it, so a raw search fails against correct code -- on its own
     # explanation. Dropping whole-line // comments leaves a URL inside a string
@@ -8236,7 +8371,24 @@ def test_model_bench_freezes_its_inputs_and_is_wired_end_to_end():
     # The roster is a REQUEST list: nothing is substituted for a missing tag, and the
     # unverified candidate is a note rather than an invented catalog entry.
     assert "verify_roster" in mb
-    assert "lfm" not in " ".join(re.findall(r'DEFAULT_ROSTER[^)]+\)', mb)).lower()
+    # `DEFAULT_ROSTER[^)]+\)` stops at the FIRST ")" -- which is `*_incumbents()`, 54
+    # characters in -- so the fragment held none of the roster's tags and an `lfm` entry
+    # would not have been caught. A byte window is no good either: UNRESOLVED_CANDIDATES
+    # sits immediately below and is exactly where the LiquidAI note is SUPPOSED to be.
+    # Take the assignment from the parser.
+    _roster = next(
+        ast.get_source_segment(mb, n)
+        for n in ast.walk(ast.parse(mb))
+        if isinstance(n, ast.AnnAssign | ast.Assign)
+        and isinstance(
+            (n.target if isinstance(n, ast.AnnAssign) else n.targets[0]), ast.Name
+        )
+        and (n.target if isinstance(n, ast.AnnAssign) else n.targets[0]).id == "DEFAULT_ROSTER"
+    )
+    assert "lfm" not in _roster.lower(), (
+        "an unverified LiquidAI tag must stay a note, never a roster entry"
+    )
+    assert "LFM2.5" in mb, "the candidate must still travel as a note"
 
     diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
     backend = {
@@ -8381,8 +8533,13 @@ def test_the_quality_gates_section_shows_both_gates_with_units_and_scope_toggles
     assert "row.unit" in html and "floor_reason" in html, (
         "each tunable row must render its unit and the reason its bound is where it is"
     )
-    assert "oo-tip" not in html.split("loadQualificationGates", 1)[1][:4000], (
-        "the panel must not build its own tooltip -- invariant #17 already does it"
+    # Scoped to the renderer. Splitting on the bare name took its FIRST occurrence --
+    # the Advanced loader-map entry at the top of app.js -- so the 4,000-character
+    # window sat ~17,700 lines away from the function the assertion names.
+    _assert_js_absent(
+        _js_function_body(html, "loadQualificationGates"),
+        "oo-tip",
+        why="the panel must not build its own tooltip -- invariant #17 already does it",
     )
 
 
@@ -8419,3 +8576,47 @@ def test_the_scope_toggles_never_widen_what_the_engine_may_claim():
     assert "ensureOnline" not in code, (
         "a loopback settings write must not demand the network-consent popup"
     )
+
+
+def test_the_downsampling_guard_actually_bites():
+    """The mutation check on invariant #16's new behavioural half.
+
+    Its predecessor (``"never downsampled" in html``) passed against any tree that
+    kept the comment, so it never had to be true of the code. This proves the
+    replacement fires on the four shapes a real decimation takes -- and, in the
+    other direction, that a plain visible-window filter does NOT trip it, because a
+    guard that forbade windowing would forbid the invariant's own wording.
+    """
+    thinned = (
+        "for (let i = 0; i < pts.length; i += step) { draw(pts[i]); }",
+        "const shown = pts.filter((p, i) => i % stride === 0);",
+        "if (pts.length > maxPoints) pts = sample(pts);",
+        "const step = Math.ceil(pts.length / 400);",
+    )
+    for js in thinned:
+        assert any(re.search(p, js) for p in _DECIMATION), f"not detected: {js}"
+
+    windowed = "const vis = s.pts.filter(p => p.t >= t0 && p.t <= t1);"
+    assert not any(re.search(p, windowed) for p in _DECIMATION), (
+        "the visible-window filter is the one permitted reduction and must not trip"
+    )
+
+
+def test_the_no_score_guard_actually_bites():
+    """The mutation check on the Competitive no-score guard.
+
+    Its predecessor was a three-way disjunction whose third arm was guaranteed by an
+    assertion four lines above, so it held whatever the renderer computed. These four
+    are the ways a score really enters a surface; the fifth is the shape the honest
+    surfaces already use, and must NOT trip it -- a guard that forbade the disclosure
+    would forbid the very sentence the honesty rule requires.
+    """
+    for js in (
+        "const trust_score = a / b; html += `${trust_score}`;",
+        "const o = {score: 0.8};",
+        'html += `<td>${esc(t("overall score"))}</td>`;',
+        "const compositeScore = x;",
+    ):
+        assert _score_leak(js) is not None, f"not detected: {js}"
+    assert _score_leak('t("there is no winner and no composite score.")') is None
+    assert _score_leak('t("an exact count, never a score.")') is None
