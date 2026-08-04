@@ -151,7 +151,13 @@ def _trigger(plain: str, math_rows: list[tuple[str, str]]) -> dict:
 
 
 def _articles_for_term(session, keyword_id: int, *, days: int, limit: int):
-    """Recent ``(Article, source_name)`` rows mentioning a keyword, newest first."""
+    """Recent ``(Article, source_name)`` rows mentioning a keyword, newest first.
+
+    Quarantined articles are excluded. Every caller of this helper turns the rows into
+    a surfaced Lead card or its evidence list, so a page the screening judged
+    not-an-article would otherwise become published evidence -- and a card's evidence
+    is the one thing a reader clicks through to check.
+    """
     cutoff = date.today() - timedelta(days=days)
     rows = (
         session.query(Article, Source.name)
@@ -159,6 +165,7 @@ def _articles_for_term(session, keyword_id: int, *, days: int, limit: int):
         .outerjoin(Source, Source.id == Article.source_id)
         .filter(KeywordMention.keyword_id == keyword_id)
         .filter(KeywordMention.observed_on >= cutoff)
+        .filter(Article.quarantined.isnot(True))
         .order_by(KeywordMention.observed_on.desc(), Article.id.desc())
         .limit(limit)
         .all()

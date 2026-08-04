@@ -1762,7 +1762,10 @@ def synthesize_articles(
         total_matched = len(req.article_ids)
     elif req.query:
         try:
-            ids = search_ids(db, req.query) or []
+            # Quarantined out: a bulk run spends real model time per member, and a
+            # summary/translation of a link list is a wasted call whose output then
+            # sits in the corpus looking like analysis of an article.
+            ids = search_ids(db, req.query, exclude_quarantined=True) or []
         except SearchQueryError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
         # How the members are chosen (maintainer asked): the query path takes the

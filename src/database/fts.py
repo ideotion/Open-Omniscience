@@ -526,6 +526,7 @@ def search_ids(
     limit: int = _MAX_CANDIDATES,
     *,
     weights: tuple[float, float] | None = None,
+    exclude_quarantined: bool = False,
 ) -> list[int] | None:
     """Return article ids matching ``query``, ranked best-first (BM25F).
 
@@ -537,15 +538,37 @@ def search_ids(
     ``weights`` (title, body) OVERRIDES the env-configured default for one call — a
     thread-safe seam to A/B a weight set over a gold set (``ir_eval.bm25f_weight_ab``)
     without mutating the process-wide env. ``None`` uses the configured default.
+
+    ``exclude_quarantined`` drops articles the app itself judged not-an-article
+    (S3.2 nav-soup screening) IN SQL, so the caller's count and its rows describe
+    the SAME set -- the property ``source_type_facets`` once claimed and did not
+    keep. It is OPT-IN rather than the default because ``search_ids`` also backs
+    non-user-facing callers (eval harnesses, parity checks) that must see the raw
+    match set; user-facing search surfaces pass ``True``.
+
+    The filter is a correlated ``EXISTS`` on the articles PK rather than an
+    ``id IN (...)`` list: it costs one index probe per matched row, needs no
+    chunking around SQLite's ~999-variable ceiling, and — verified against a real
+    FTS5 table — leaves the bm25 ordering byte-identical. ``IS NOT 1`` keeps a
+    NULL (never judged) row, exactly like ``Article.quarantined.isnot(True)``
+    everywhere else.
     """
     match = build_match(query)
     if match is None:
         return None
     wt, wb = weights if weights is not None else _bm25_weights()
+    gate = (
+        " AND EXISTS (SELECT 1 FROM articles a WHERE a.id = article_fts.rowid"
+        " AND a.quarantined IS NOT 1)"
+        if exclude_quarantined
+        else ""
+    )
     rows = session.execute(
-        text(
-            "SELECT rowid FROM article_fts WHERE article_fts MATCH :q "
-            "ORDER BY bm25(article_fts, :wt, :wb) LIMIT :lim"
+        text(  # nosec B608 - `gate` is one of two constant fragments chosen above; the
+            # query text is never built from a caller-supplied value (all values bound).
+            "SELECT rowid FROM article_fts WHERE article_fts MATCH :q"
+            + gate
+            + " ORDER BY bm25(article_fts, :wt, :wb) LIMIT :lim"
         ),
         {"q": match, "wt": wt, "wb": wb, "lim": limit},
     ).fetchall()

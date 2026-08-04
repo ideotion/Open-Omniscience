@@ -30,7 +30,13 @@ def _run(monkeypatch, cards, fts):
     import src.database.fts as fts_mod
 
     monkeypatch.setattr(service, "get_briefing", lambda *a, **k: {"cards": cards})
-    monkeypatch.setattr(fts_mod, "search_ids", lambda session, q: list(range(fts.get(q, 0))))
+    # **k so the double tracks the real signature: search_ids grew an
+    # `exclude_quarantined` keyword (the diagnostic passes it, so that clicking a card
+    # and this count measure the SAME set). A positional-only double silently
+    # TypeErrors on the next such parameter instead of exercising it.
+    monkeypatch.setattr(
+        fts_mod, "search_ids", lambda session, q, **k: list(range(fts.get(q, 0)))
+    )
     return cd.card_click_diagnostics(session=None)
 
 

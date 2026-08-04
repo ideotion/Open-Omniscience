@@ -90,6 +90,47 @@ def test_omni_federates_with_disclosed_totals(client, omni_seed):
     assert "index-backed" in d["method"]
 
 
+def test_omni_excludes_quarantined_articles_from_both_items_and_total(client, omni_seed):
+    """A quarantined article is the app's OWN "this is a list, not an article" verdict.
+
+    Two properties, and the second is the one that regressed elsewhere: the row must
+    not surface, AND the disclosed ``total`` must count the same set the items come
+    from. /api/articles applies this condition always, so an omnibar total that still
+    counted quarantined rows would state a number the user cannot reach by opening the
+    full search -- the exact property ``source_type_facets`` once claimed and did not
+    keep (ledger, 2026-08-02).
+    """
+    from src.database.models import Article
+    from src.database.session import session_scope
+
+    before = client.get("/api/search/omni", params={"q": "quokkafloss"}).json()
+    assert _group(before, "articles")["total"] == 4
+
+    with session_scope() as s:
+        s.get(Article, omni_seed["arts"][0]).quarantined = True
+
+    after = _group(client.get("/api/search/omni", params={"q": "quokkafloss"}).json(), "articles")
+    assert after["total"] == 3, "the quarantined article must leave the disclosed total"
+    shown = {int(i["url"].rsplit("/", 2)[-2]) for i in after["items"]}
+    assert omni_seed["arts"][0] not in shown, "a quarantined article must not be listed"
+
+
+def test_watch_matcher_excludes_quarantined_articles(client, omni_seed):
+    """A watch does not merely display a result -- it raises a Lead card. Alerting on
+    content the app judged not-an-article manufactures a signal out of nav soup."""
+    from src.analytics.watches import _fts_matcher
+    from src.database.models import Article
+    from src.database.session import session_scope
+
+    with session_scope() as s:
+        assert len(_fts_matcher(s, "quokkafloss")) == 4
+        s.get(Article, omni_seed["arts"][0]).quarantined = True
+    with session_scope() as s:
+        ids = _fts_matcher(s, "quokkafloss")
+    assert omni_seed["arts"][0] not in ids
+    assert len(ids) == 3
+
+
 def test_omni_wiki_group_searches_wikipedia_article_content(client):
     """Maintainer 2026-06-21: the unified search must also search Wikipedia ARTICLES.
     A wiki-edition corpus article (source xx.wikipedia.org) is found by CONTENT (FTS),

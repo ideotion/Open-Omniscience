@@ -50,10 +50,18 @@ _IN_CHUNK = 900
 
 
 def _fts_matcher(session: Session, query: str) -> list[int] | None:
-    """The production matcher: FTS5 ids for ``query`` (None = no positive constraint)."""
+    """The production matcher: FTS5 ids for ``query`` (None = no positive constraint).
+
+    Quarantined articles are excluded. A watch does not merely display a result --
+    it INTERRUPTS the user with a Lead card, so raising an alert from content the
+    app itself judged not-an-article is worse than returning it in a search list:
+    it manufactures a signal out of nav soup. This also keeps the matcher's docstring
+    promise that a watch "reuses the SAME search the user sees" true, since
+    /api/articles and the omnibar both apply this condition.
+    """
     from src.database.fts import search_ids
 
-    return search_ids(session, query)
+    return search_ids(session, query, exclude_quarantined=True)
 
 
 def _id_list(blob: str | None) -> list[int]:

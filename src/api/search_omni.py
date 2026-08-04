@@ -41,12 +41,16 @@ def _like_escape(q: str) -> str:
 
 def _articles_group(db: Session, q: str) -> dict:
     note = "FTS5 Boolean match, relevance-ordered"
+    # Quarantined articles (the app's own "this is a list, not an article" verdict) are
+    # excluded IN SQL, so `total` below counts exactly the rows a user reaches by opening
+    # the full search -- /api/articles applies the same always-on condition. Filtering
+    # after the fact would have left the count describing a different set than the items.
     try:
-        ids = search_ids(db, q)
+        ids = search_ids(db, q, exclude_quarantined=True)
     except SearchQueryError:
         # Half-typed operators mid-keystroke: fall back to a phrase, never 400.
         try:
-            ids = search_ids(db, '"' + q.replace('"', " ") + '"')
+            ids = search_ids(db, '"' + q.replace('"', " ") + '"', exclude_quarantined=True)
             note = "FTS5 phrase match (the raw query was not a valid Boolean expression)"
         except SearchQueryError:
             return {"kind": "articles", "items": [], "total": 0,
@@ -185,11 +189,14 @@ def _wiki_group(db: Session, q: str) -> dict:
     behaviour). Downloaded offline DUMP bodies are ALSO searched (via the dump FTS index,
     when built) and returned as a labelled ``dump_items`` sub-list."""
     # 1) content hits among Wikipedia-edition articles, in FTS rank order (bounded).
+    #    Quarantine is excluded here for the same reason as the articles group: a wiki
+    #    article the screening judged not-an-article must not come back through a
+    #    different group of the same omnibar.
     try:
-        ids = search_ids(db, q)
+        ids = search_ids(db, q, exclude_quarantined=True)
     except SearchQueryError:
         try:
-            ids = search_ids(db, '"' + q.replace('"', " ") + '"')
+            ids = search_ids(db, '"' + q.replace('"', " ") + '"', exclude_quarantined=True)
         except SearchQueryError:
             ids = []
     window = ids[:_WIKI_SCAN_CAP]

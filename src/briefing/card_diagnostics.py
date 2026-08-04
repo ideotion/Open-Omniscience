@@ -76,7 +76,12 @@ def card_click_diagnostics(session) -> dict:
             search_n: int | None = None
             err: str | None = None
             try:
-                search_n = len(search_ids(session, seed)) if seed else 0
+                # Must match what clicking the card actually loads: the producers'
+                # own article selection excludes quarantined rows, so counting them
+                # here would report a MISMATCH the user never sees.
+                search_n = (
+                    len(search_ids(session, seed, exclude_quarantined=True)) if seed else 0
+                )
             except SearchQueryError as exc:
                 err = str(exc)
             # MISMATCH = the fuzzy search loads a wildly different count than the card's n
