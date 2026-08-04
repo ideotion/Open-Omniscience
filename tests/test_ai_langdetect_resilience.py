@@ -328,6 +328,9 @@ def test_advance_langdetect_auto_start_skips_when_model_unavailable(db, monkeypa
     # finds a backend that is up.
     import src.llm.activation as _activation
 
+    # conftest switches automatic starts off suite-wide (a suite must not spawn a
+    # daemon); this test is ABOUT the start, so it turns the behaviour back on.
+    monkeypatch.setenv("OO_LLM_AUTOSTART", "1")
     _activation._recovery_last_at = None
     monkeypatch.setattr(llm_backend, "outage_reason", lambda: "Ollama is not reachable")
     started: list[dict] = []

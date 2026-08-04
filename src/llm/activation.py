@@ -60,6 +60,7 @@ unusable exactly when it matters. The cache refusal above is what keeps that tru
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 
@@ -520,12 +521,20 @@ def recover_backend(reason: str | None) -> dict:
     hand: ``None`` means the backend is REACHABLE, so there is nothing to recover and
     this returns without probing anything.
 
+    ``OO_LLM_AUTOSTART=0`` turns it off for an operator who wants background runs to
+    report an outage and never act on it -- and the test suite sets it, because a suite
+    on a machine that HAS a backend installed would otherwise spawn a real daemon as a
+    side effect of driving a sweep's failure path. (Measured, not assumed: a plugin that
+    faked "installed" and recorded start calls caught exactly one such spawn.)
+
     Returns ``{"attempted", "started", "ready", "detail", "skipped"}``; never raises.
     """
     global _recovery_last_at
 
     if not reason:
         return {"attempted": False, "skipped": "the backend is reachable"}
+    if os.getenv("OO_LLM_AUTOSTART", "1").strip().lower() in ("0", "false", "no"):
+        return {"attempted": False, "skipped": "automatic starts are switched off"}
     now = time.monotonic()
     with _recovery_lock:
         last = _recovery_last_at

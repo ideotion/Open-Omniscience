@@ -803,9 +803,14 @@ def test_an_operator_override_is_still_honoured_verbatim():
 #  whole budget waiting for a click that a running app has no way to ask for.
 # --------------------------------------------------------------------------- #
 @pytest.fixture(autouse=True)
-def _no_recovery_rate_limit_leak():
-    """The recovery window is a module global, and a shared pytest session is exactly
-    where one test's timestamp silently disables the next test's attempt."""
+def _recovery_isolation(monkeypatch):
+    """Two process-globals, both of which a shared pytest session gets wrong by default.
+
+    The window is a module global, so one test's timestamp silently disables the next
+    test's attempt. And ``conftest`` switches automatic starts OFF for the whole suite
+    (a suite must not spawn a daemon on a machine that has one) -- so every test that
+    is ABOUT the recovery has to turn the thing it tests back on, explicitly."""
+    monkeypatch.setenv("OO_LLM_AUTOSTART", "1")
     activation._recovery_last_at = None
     yield
     activation._recovery_last_at = None
@@ -953,3 +958,13 @@ def test_the_very_first_attempt_on_a_fresh_boot_is_not_rate_limited(monkeypatch)
     monkeypatch.setattr(activation.time, "monotonic", lambda: 3.9)  # 3.9s of uptime
     assert activation.recover_backend("down")["attempted"] is True
     assert len(calls) == 1
+
+
+def test_the_suite_wide_switch_turns_automatic_starts_off(monkeypatch):
+    """The opt-out itself, in both directions: an operator who wants a background run to
+    report an outage and never act on it gets exactly that, and nothing is probed."""
+    calls = _records_ensure_running(monkeypatch, started=True)
+    monkeypatch.setenv("OO_LLM_AUTOSTART", "0")
+    out = activation.recover_backend("down")
+    assert out == {"attempted": False, "skipped": "automatic starts are switched off"}
+    assert calls == []
