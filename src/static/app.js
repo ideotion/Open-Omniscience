@@ -11553,6 +11553,75 @@
     // Interactions: wheel = time zoom (cursor-anchored), drag = pan,
     // hover = crosshair readout, click = pin exact X/Y, dblclick = reset,
     // legend chips toggle series.
+    // Turn a brushed span on a single-keyword trend chart into an analysis corpus.
+    //
+    // Only for charts whose x-axis IS article time. The range is resolved SERVER-side
+    // against KeywordMention.observed_on -- the column the chart is drawn from -- and not
+    // through the published_at date filter, which means a different thing: an article
+    // whose publish date could not be extracted is plotted on the chart and invisible to
+    // that filter, so the filter route would return fewer articles than the bars the
+    // reader just selected (pinned in tests/test_chart_time_vs_filter_time.py).
+    //
+    // Both numbers are reported because they are different quantities: a bar's height is
+    // a MENTION total, the selection is a set of ARTICLES, and one article mentioning a
+    // term three times raises the bar by three and the set by one.
+    function _brushToCorpus(term, bucket) {
+      return async (from, to, ctl) => {
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+        const tf = (window.OOI18N && OOI18N.tf)
+          ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
+        try {
+          // The chart's OWN bucket travels with the span: a brush over a weekly chart can
+          // only honestly select whole weeks, so the server widens the range to bucket
+          // edges. Without it a bar sitting inside the band could contribute none of its
+          // height and the reported total would disagree with the bars just selected --
+          // measured 65 drawn against 50 reported before this.
+          const r = await api(`/api/insights/trend-articles?term=${encodeURIComponent(term)}`
+            + `&start=${encodeURIComponent(from)}&end=${encodeURIComponent(to)}`
+            + `&bucket=${encodeURIComponent(bucket || "day")}`);
+          const ids = (r && r.article_ids) || [];
+          if (!ids.length) {
+            // An honest empty, never a silent no-op: the span really held nothing that
+            // can be opened, and saying so is the difference between "no articles" and
+            // "the button is broken".
+            toast(tf("No articles in {from} → {to}.", {from, to}), "err");
+            if (ctl && ctl.clear) ctl.clear();
+            return;
+          }
+          // The term is named so the toast is self-contained: "3 articles \u00b7 50
+          // mentions" alone does not say WHAT was counted, and the reader would have to
+          // notice the search chip elsewhere on the page to recover it.
+          // r.start/r.end are the EFFECTIVE span after bucket expansion. Showing the raw
+          // drag instead would report a period that was not the one queried.
+          const eff = {from: r.start || from, to: r.end || to};
+          let note = tf("{term} \u00b7 {articles} articles \u00b7 {mentions} mentions \u00b7 {from} \u2192 {to}",
+                        {term, articles: r.articles, mentions: r.mentions,
+                         from: eff.from, to: eff.to});
+          if (r.quarantined_excluded) {
+            note += " · " + tf("{n} quarantined, not included",
+                                   {n: r.quarantined_excluded});
+          }
+          if (r.capped) note += " · " + t("showing the first 5000");
+          toast(note);
+          openAnalysisForIds(ids, tf("{term}: {from} → {to}", {term, from, to}));
+          if (ctl && ctl.clear) ctl.clear();
+        } catch (e) {
+          // api() already threw an Error whose message _apiErrorMessage composed, so the
+          // message is used directly. Passing the Error BACK through _apiErrorMessage
+          // would read e.detail (undefined) and then res.status on a string, rendering
+          // the "undefined undefined" that helper exists to prevent.
+          toast((e && e.message) || t("Could not open that period"), "err");
+        }
+      };
+    }
+
+    // Composite lookup for chart chrome: the KEY is a fixed template so it is keyable
+    // x12, the VALUES are data interpolated after translation (the OOI18N.tf discipline).
+    function _figTf(tpl, vars) {
+      if (window.OOI18N && OOI18N.tf) return OOI18N.tf(tpl, vars);
+      return tpl.replace(/\{(\w+)\}/g, (_m, k) => vars[k]);
+    }
+
     function ooChart(el, seriesList, opts = {}) {
       const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       el.innerHTML = "";
@@ -11651,6 +11720,78 @@
       wrap.appendChild(srWrap);
       const plotW = W - padL - padR, plotH = H - padT - padB;
       const Xof = (ms) => padL + plotW * ((ms - t0) / Math.max(t1 - t0, 1));
+      // The inverse, for turning a pointer position back into a moment. Clamped to the
+      // plot so a drag that leaves the canvas selects the visible edge rather than a
+      // time outside the window the reader can see.
+      const msAt = (clientX) => {
+        const r = cv.getBoundingClientRect();
+        const f = Math.max(0, Math.min(1, ((clientX - r.left) - padL) / plotW));
+        return t0 + (t1 - t0) * f;
+      };
+      // BRUSH-TO-SELECT (plan F4). Opt-in per chart via opts.onSelectRange, and the
+      // opt-in is a correctness rule, not a convenience: only a chart whose x-axis IS
+      // article time can honestly answer "which articles are under this span". A
+      // commodity price chart's axis is price time and an official-statistics chart's is
+      // the observation period — brushing either and calling the result "the articles
+      // behind this" would be a category error, so those callers pass nothing and get no
+      // affordance at all. With opts.onSelectRange absent every line below is inert and
+      // this component behaves exactly as before.
+      // The calendar day a moment falls on, in LOCAL time. Shared by the live readout
+      // and the emitted span so the two AGREE BY CONSTRUCTION: fmtT picks its
+      // granularity from the whole axis span, so on a multi-month chart it renders
+      // "2026-05" while the brush selects 2026-05-10 -- the reader was shown a month and
+      // given a span starting mid-month, with no way to tell before releasing. Local,
+      // not UTC, because toISOString() on a local midnight lands on the previous day.
+      const dayOf = (ms) => {
+        const d = new Date(ms);
+        return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
+      };
+      // Bucket edges, so the live readout previews the span the SERVER will use. Without
+      // this the preview showed the raw drag (2026-05-10 -> 06-26) and the result reported
+      // the widened weeks (05-04 -> 06-28): two different spans for one gesture, which is
+      // the same preview-vs-action divergence the shared day formatter already fixed once.
+      const _snap = (ms, end) => {
+        const d = new Date(ms);
+        const b = opts.bucket || "day";
+        if (b === "week") {
+          const dow = (d.getDay() + 6) % 7;              // Monday-based, matching ISO weeks
+          d.setDate(d.getDate() - dow + (end ? 6 : 0));
+        } else if (b === "month") {
+          if (end) { d.setMonth(d.getMonth() + 1, 0); } else { d.setDate(1); }
+        }
+        return d.getTime();
+      };
+      const canBrush = typeof opts.onSelectRange === "function";
+      let brushMode = false, bFrom = null, bTo = null;
+      // The affordance sits INSIDE the chart, the same convention ooMap's zoom and layer
+      // controls follow: a reader should not have to know a modifier exists. A <button>
+      // with a real listener, never an inline onclick, so this stays off the
+      // 'unsafe-inline' script-src debt; aria-pressed carries the state for a reader who
+      // cannot see the accent, and the translated title inherits the #oo-tip hover.
+      let brushBtn = null;
+      if (canBrush) {
+        const bar = document.createElement("div");
+        bar.style.cssText = "display:flex;gap:6px;align-items:center;margin-top:4px";
+        brushBtn = document.createElement("button");
+        brushBtn.type = "button";
+        brushBtn.className = "chip";
+        brushBtn.textContent = t9("Select a period");
+        brushBtn.title = t9("Drag across the chart to open the articles in that period. Hold Shift to drag without switching mode.");
+        brushBtn.setAttribute("aria-pressed", "false");
+        brushBtn.addEventListener("click", () => {
+          brushMode = !brushMode;
+          brushBtn.setAttribute("aria-pressed", brushMode ? "true" : "false");
+          brushBtn.classList.toggle("on", brushMode);
+          cv.style.cursor = brushMode ? "ew-resize" : "crosshair";
+          if (!brushMode) { bFrom = bTo = null; }
+          draw();
+        });
+        bar.appendChild(brushBtn);
+        // After the LEGEND but before the readout. Between canvas and legend (the first
+        // placement) wedged a control between the chart and the caption describing it;
+        // appended at the end it would land after the .sr-only table.
+        wrap.insertBefore(bar, readout);
+      }
       // Indexed mode (opts.indexed, maintainer-ruled 2026-06-17): each series is
       // rebased to 100 at its first value in the VISIBLE window, so series of
       // DIFFERENT units (e.g. article coverage + a commodity price) co-move on ONE
@@ -11809,6 +11950,28 @@
             }
           }
         }
+        // The brush band. Drawn AFTER the series so the selection reads as an overlay
+        // on the data rather than as a layer the data sits on, and with an explicit
+        // edge on each side because a translucent fill alone is ambiguous about where
+        // the span actually stops.
+        if (bFrom != null && bTo != null) {
+          const xa = Math.min(Xof(bFrom), Xof(bTo)), xb = Math.max(Xof(bFrom), Xof(bTo));
+          // --accent, NOT --fig-gap. The first draft used the gap token and that was a
+          // semantic error: --fig-gap means ABSENCE ("no data was recorded here"), so
+          // painting a SELECTION with it gives one colour two opposite meanings, and a
+          // reader who has learned the grey means missing would read a selection as a
+          // hole. Selection is an active user state, which this app expresses with the
+          // accent -- the same accent the pressed toggle uses.
+          ctx.fillStyle = cssVar("--accent");
+          ctx.globalAlpha = 0.15;
+          ctx.fillRect(xa, padT, Math.max(1, xb - xa), plotH);
+          ctx.globalAlpha = 1;
+          ctx.strokeStyle = cssVar("--accent");
+          ctx.beginPath();
+          ctx.moveTo(xa, padT); ctx.lineTo(xa, H - padB);
+          ctx.moveTo(xb, padT); ctx.lineTo(xb, H - padB);
+          ctx.stroke();
+        }
         if (pinned) {
           const x = Xof(pinned.t), y = Yof(vt(opts.indexed && pinnedS ? pv(pinnedS, pinned) : pinned.v));
           ctx.strokeStyle = cssVar("--muted"); ctx.setLineDash([3, 3]);
@@ -11833,7 +11996,7 @@
           return `<button type="button" class="fig-leg" data-oo-leg="${i}"` +
             ` aria-pressed="${s.hidden ? "false" : "true"}"${s.hidden ? ' style="opacity:.4"' : ""}>` +
             _figGlyph(Object.assign({}, st, {color: s.color})) +
-            `${esc(s.label)} <span class="muted">n=${s.vis.length}${s.unit ? " \u00b7 " + esc(s.unit) : ""}</span></button>`;
+            `${esc(s.label)} <span class="muted" title="${esc(t9("n counts the datapoints plotted here, not articles."))}">n=${s.vis.length}${s.unit ? " \u00b7 " + esc(s.unit) : ""}</span></button>`;
         }).join("");
         legend.querySelectorAll("[data-oo-leg]").forEach(elm => {
           elm._oo = () => { all[+elm.dataset.ooLeg].hidden = !all[+elm.dataset.ooLeg].hidden; draw(); };
@@ -11861,9 +12024,37 @@
         draw();
       }, {passive: false});
       let dragX = null, dragT = null;
-      cv.addEventListener("pointerdown", (ev) => { dragX = ev.clientX; dragT = [t0, t1]; cv.setPointerCapture(ev.pointerId); });
+      // A drag is a PAN by default and a BRUSH when the chart offers selection and the
+      // reader asks for it -- either by pressing the toolbar toggle or by holding Shift.
+      // Both exist deliberately: a modifier alone is undiscoverable (nothing on screen
+      // says it is there), while a mode toggle alone makes a one-off selection cost two
+      // round trips. Neither path changes what a CLICK does, so click-to-pin still works
+      // in brush mode, and a brush shorter than the click threshold is treated as the
+      // click it almost certainly was rather than as an empty selection.
+      const brushing = (ev) => canBrush && (brushMode || ev.shiftKey);
+      cv.addEventListener("pointerdown", (ev) => {
+        cv.setPointerCapture(ev.pointerId);
+        if (brushing(ev)) {
+          bFrom = msAt(ev.clientX); bTo = bFrom;
+          dragX = ev.clientX; dragT = null;   // dragT null is what marks this a brush
+          draw(); return;
+        }
+        dragX = ev.clientX; dragT = [t0, t1];
+      });
       cv.addEventListener("pointermove", (ev) => {
-        if (dragX != null) {
+        if (dragX != null && dragT == null && bFrom != null) {
+          bTo = msAt(ev.clientX);
+          const lo = Math.min(bFrom, bTo), hi = Math.max(bFrom, bTo);
+          let inside = 0, tot = 0;
+          for (const sr of visible()) for (const pt of sr.vis) {
+            tot++; if (pt.t >= lo && pt.t <= hi) inside++;
+          }
+          readout.textContent = _figTf("Selected {from} \u2192 {to} \u00b7 {n} of {total} points",
+            {from: dayOf(_snap(lo, false)), to: dayOf(_snap(hi, true)),
+             n: inside, total: tot});
+          draw(); return;
+        }
+        if (dragX != null && dragT) {
           const dt = (dragX - ev.clientX) / plotW * (dragT[1] - dragT[0]);
           const span = dragT[1] - dragT[0];
           t0 = Math.max(tMin, Math.min(dragT[0] + dt, tMax - span));
@@ -11876,7 +12067,16 @@
         }
       });
       cv.addEventListener("pointerup", (ev) => {
-        if (dragX != null && Math.abs(ev.clientX - dragX) < 4) {
+        const wasBrush = dragX != null && dragT == null && bFrom != null;
+        const moved = dragX != null && Math.abs(ev.clientX - dragX) >= 4;
+        if (wasBrush && moved) {
+          dragX = null;
+          opts.onSelectRange(dayOf(Math.min(bFrom, bTo)), dayOf(Math.max(bFrom, bTo)),
+                             {clear: () => { bFrom = bTo = null; draw(); }});
+          return;
+        }
+        if (wasBrush) { bFrom = bTo = null; }   // too short to be a span: it was a click
+        if (dragX != null && !moved) {
           const b = nearest(ev);
           pinned = b ? b.p : null; pinnedS = b ? b.s : null;
           if (b) readout.innerHTML = `<b>${esc(b.s.label)}: ${fmtV(b.p.v)}${b.s.unit ? " " + esc(b.s.unit) : ""} \u00b7 ${fmtT(b.p.t)}</b> <span class="muted">${esc(t9("(pinned — click empty space or re-click to move)"))}</span>`;
@@ -14587,6 +14787,11 @@
             <div id="corpus-timescope"></div></div><div id="corpus-chart"></div>`;
           const allPts = tr.points || [];
           const label = tr.resolved.term;
+          // DELIBERATELY NOT brushable, though it is a single-keyword article-time chart
+          // and would qualify: corpusTab has NO callers -- it is the retired #corpus-win
+          // modal (THEME-3, 2026-06-19). Wiring a selection here would add a capability
+          // no reader can reach, and a guard asserting it would pass while proving
+          // nothing. Wire it if this surface is ever revived.
           const draw = (pts) => ooChart($("corpus-chart"), [{label, unit: "mentions",
             points: pts.map(pt => ({t: pt.date, v: pt.count}))}], {height: 200, zeroBase: true});
           const def = _buildTrendScope($("corpus-timescope"), allPts, draw);
@@ -15181,7 +15386,8 @@
         const allPts = tr.points || [];
         const insDraw = (pts) => ooChart($("ins-trend-oo"), [{label: r.term, unit: "mentions",
           points: pts.map(pt => ({t: pt.date, v: pt.count}))}],
-          {height: 180, zeroBase: true, lineMin: 8});
+          {height: 180, zeroBase: true, lineMin: 8, bucket: "week",
+           onSelectRange: _brushToCorpus(r.term, "week")});
         const insDef = _buildTrendScope($("ins-trend-scope"), allPts, insDraw);
         insDraw(_windowTrendPoints(allPts, insDef.from, insDef.to));
         renderMindmap(r.term, assoc.pairs);
@@ -19477,13 +19683,37 @@
         anRunAdvanced();   // a query-seeded corpus already refines correctly
       }
     }
+    // /api/articles names an explicit id set `ids`; the analysis params name it
+    // `article_ids`, which is what the INSIGHTS endpoints accept. FastAPI silently DROPS
+    // an unrecognised query key, so sending `article_ids` to /api/articles did not error
+    // -- the id set simply never arrived and the query fell into its browse-by-recency
+    // branch, returning the WHOLE corpus. The tab labelled "the matched articles" showed
+    // 180 unrelated articles for a 3-article selection, and the CSV/JSON export wrote all
+    // of them. Verified against the running app: `article_ids=82,5,164` -> total 180,
+    // `ids=82,5,164` -> total 3.
+    //
+    // It failed OPEN, with plausible data, which is why it survived: every insights
+    // subtab beside it was correct, so the counts agreed and only the article LIST lied.
+    // Pre-existing and not specific to the brush -- it hit every id-seeded corpus,
+    // including every Home card that seeds an exact set (the 2026-06-16 exact-set
+    // ruling) and every "Branch into a new corpus".
+    //
+    // ONE translation, used by every /api/articles caller, so the next one cannot forget.
+    // synthesizeResults already carried this fix inline; it now shares this.
+    function _articleQuery(p) {
+      const q = new URLSearchParams(p);
+      const seeded = q.get("article_ids");
+      if (seeded) { q.set("ids", seeded); q.delete("article_ids"); }
+      return q;
+    }
+
     async function _anLoadArticles(p, page) {
       const arts = $("an-articles"); if (!arts) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _anArtParams = p; _anArtPage = Math.max(0, page | 0);
       arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       try {
-        const q = new URLSearchParams(p);
+        const q = _articleQuery(p);
         q.set("limit", String(_AN_ART_PAGE));
         q.set("offset", String(_anArtPage * _AN_ART_PAGE));
         if (_anProvenance) q.set("provenance", _anProvenance);
@@ -19743,7 +19973,11 @@
     }
 
     async function doSearch() {
-      const p = searchParams(); p.set("limit", String(DEFAULT_LIMIT));
+      // Through _articleQuery like every other /api/articles caller. The Search tab never
+      // carries an id-seeded corpus, so this is a no-op here -- but making the rule
+      // uniform means there is no exception to remember, which is what let the analysis
+      // tab drift in the first place.
+      const p = _articleQuery(searchParams()); p.set("limit", String(DEFAULT_LIMIT));
       try {
         const data = await api("/api/articles?" + p.toString());
         $("search-meta").textContent = `${data.total} result(s)` + (data.total > data.results.length ?
@@ -19768,7 +20002,11 @@
     }
 
     function exportResults(fmt, p) {
-      const params = p || searchParams(); params.set("format", fmt);
+      // Through _articleQuery, so an id-seeded corpus exports THAT corpus. Without it the
+      // export dropped the selection and wrote every article the reader holds -- a
+      // "download the matched articles" button that quietly handed over the whole corpus.
+      const params = _articleQuery(p || searchParams());
+      params.set("format", fmt);
       window.open("/api/articles/export?" + params.toString(), "_blank");
     }
 
@@ -19804,8 +20042,7 @@
       if (!dlg.open) dlg.showModal();
       // Fetch a candidate pool a bit larger than the synthesis bound so the user has a
       // real choice; /api/articles uses `ids` for an explicit set, else the query.
-      const cp = new URLSearchParams(p);
-      if (cp.get("article_ids")) { cp.set("ids", cp.get("article_ids")); cp.delete("article_ids"); }
+      const cp = _articleQuery(p);
       cp.set("limit", "60");
       try {
         const data = await api("/api/articles?" + cp.toString());

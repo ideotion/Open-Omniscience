@@ -2692,5 +2692,15 @@
   "unavailable (Tor/proxy)": "不可用（Tor/代理）",
   "unused keywords removed": "已移除未使用的关键词",
   "watch only": "仅监视",
-  "— create, add, remove, delete": "—— 创建、添加、移除、删除"
+  "— create, add, remove, delete": "—— 创建、添加、移除、删除",
+  "Select a period": "选择时段",
+  "Drag across the chart to open the articles in that period. Hold Shift to drag without switching mode.": "在图表上拖动以打开该时段的文章。按住 Shift 可在不切换模式的情况下拖动。",
+  "No articles in {from} → {to}.": "{from} 至 {to} 无文章。",
+  "{term} · {articles} articles · {mentions} mentions · {from} → {to}": "{term} · {articles} 篇文章 · {mentions} 次提及 · {from} → {to}",
+  "{n} quarantined, not included": "{n} 已隔离，未包含",
+  "showing the first 5000": "仅显示前 5000 条",
+  "{term}: {from} → {to}": "{term}：{from} → {to}",
+  "Could not open that period": "无法打开该时段",
+  "Selected {from} → {to} · {n} of {total} points": "已选 {from} → {to} · {total} 个点中的 {n} 个",
+  "n counts the datapoints plotted here, not articles.": "n 统计此处绘制的数据点，而非文章数。"
 }

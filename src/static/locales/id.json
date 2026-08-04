@@ -2692,5 +2692,15 @@
   "unavailable (Tor/proxy)": "tidak tersedia (Tor/proksi)",
   "unused keywords removed": "kata kunci tak terpakai dihapus",
   "watch only": "hanya pantau",
-  "— create, add, remove, delete": "— buat, tambah, singkirkan, hapus"
+  "— create, add, remove, delete": "— buat, tambah, singkirkan, hapus",
+  "Select a period": "Pilih periode",
+  "Drag across the chart to open the articles in that period. Hold Shift to drag without switching mode.": "Seret pada grafik untuk membuka artikel pada periode tersebut. Tahan Shift untuk menyeret tanpa mengganti mode.",
+  "No articles in {from} → {to}.": "Tidak ada artikel antara {from} dan {to}.",
+  "{term} · {articles} articles · {mentions} mentions · {from} → {to}": "{term} · {articles} artikel · {mentions} penyebutan · {from} → {to}",
+  "{n} quarantined, not included": "{n} dikarantina, tidak disertakan",
+  "showing the first 5000": "menampilkan 5000 pertama",
+  "{term}: {from} → {to}": "{term}: {from} → {to}",
+  "Could not open that period": "Tidak dapat membuka periode tersebut",
+  "Selected {from} → {to} · {n} of {total} points": "Dipilih {from} → {to} · {n} dari {total} titik",
+  "n counts the datapoints plotted here, not articles.": "n menghitung titik data yang digambar di sini, bukan artikel."
 }

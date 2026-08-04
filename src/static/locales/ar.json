@@ -2692,5 +2692,15 @@
   "unavailable (Tor/proxy)": "غير متاح (Tor/وكيل)",
   "unused keywords removed": "أُزيلت الكلمات المفتاحية غير المستخدمة",
   "watch only": "مراقبة فقط",
-  "— create, add, remove, delete": "— إنشاء، إضافة، إزالة، حذف"
+  "— create, add, remove, delete": "— إنشاء، إضافة، إزالة، حذف",
+  "Select a period": "حدد فترة",
+  "Drag across the chart to open the articles in that period. Hold Shift to drag without switching mode.": "اسحب على المخطط لفتح مقالات تلك الفترة. اضغط مع الاستمرار على Shift للسحب دون تغيير الوضع.",
+  "No articles in {from} → {to}.": "لا توجد مقالات بين {from} و {to}.",
+  "{term} · {articles} articles · {mentions} mentions · {from} → {to}": "{term} · {articles} مقالات · {mentions} إشارات · {from} → {to}",
+  "{n} quarantined, not included": "{n} في الحجر، غير مدرجة",
+  "showing the first 5000": "عرض أول 5000",
+  "{term}: {from} → {to}": "{term}: {from} → {to}",
+  "Could not open that period": "تعذر فتح هذه الفترة",
+  "Selected {from} → {to} · {n} of {total} points": "المحدد {from} → {to} · {n} من {total} نقطة",
+  "n counts the datapoints plotted here, not articles.": "يعدّ n نقاط البيانات المرسومة هنا، لا المقالات."
 }

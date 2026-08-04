@@ -17,7 +17,7 @@ import itertools
 import logging
 import os as _os
 import threading as _threading
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -1068,6 +1068,42 @@ def insights_trend(
 ) -> dict:
     """Mention volume over time for one keyword."""
     return q.trend(db, term, bucket=bucket, country=country)
+
+
+@router.get("/trend-articles")
+def insights_trend_articles(
+    term: str,
+    start: str = Query(..., description="ISO date, inclusive — the brushed span's left edge"),
+    end: str = Query(..., description="ISO date, inclusive — the brushed span's right edge"),
+    bucket: str = Query("day", pattern="^(day|week|month)$"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """The articles behind a brushed span of a keyword trend chart (plan F4).
+
+    Resolves against ``KeywordMention.observed_on`` — the column the chart's x-axis is
+    actually drawn from — rather than through the ``published_at`` date filter, which
+    means a different thing and would return fewer articles than the selected bars were
+    counting. ``bucket`` must be the bucket the CHART was drawn with: the span is widened
+    to whole buckets, because a brush over a weekly chart can only honestly select whole
+    weeks. Without it a bar inside the band could contribute none of its height and the
+    total would disagree with the bars (measured 65 drawn vs 50 reported). Returns both the article count and the mention total, because a bar's height
+    is the latter. Quarantined articles are removed here so the number reported is the
+    number that opens in the analysis window.
+    """
+    try:
+        lo = date.fromisoformat(start)
+        hi = date.fromisoformat(end)
+    except ValueError:
+        raise HTTPException(
+            status_code=400, detail="start and end must be ISO dates (YYYY-MM-DD)"
+        ) from None
+    if lo > hi:
+        raise HTTPException(status_code=400, detail="start must not be after end")
+    key = _ckey("trend-articles", term=term, start=start, end=end, bucket=bucket)
+    return _deadlined(
+        db, key,
+        lambda: q.trend_range_article_ids(db, term, start=lo, end=hi, bucket=bucket),
+    )
 
 
 @router.get("/associations")

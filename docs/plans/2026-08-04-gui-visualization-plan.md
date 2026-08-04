@@ -814,8 +814,22 @@ one source, you get "undefined", not 0.
 
 ### Unit 6 — F4 selection emission + F5 hover/zoom extraction
 
-> **SCOPED 2026-08-04, not built.** Three facts found while scoping it, each of which
-> changes the design the acceptance criteria below imply:
+> **F4 SHIPPED 2026-08-04 (browser-verified); F5 NOT BUILT.** The selection half is done:
+> `trend_range_article_ids` + `GET /api/insights/trend-articles` resolve a brushed span to
+> real ids on the chart's own clock, and `ooChart` gained the gesture, an in-chart toggle,
+> a band and a live readout. Exactly ONE chart opts in — `#ins-trend-oo`. `#an-trend-chart`
+> is excluded because it plots the analysed term alongside related keywords, so "which
+> series" needs a per-series control first; `#corpus-chart` is excluded because `corpusTab`
+> has **no callers** (the retired `#corpus-win` modal), so a capability there would be
+> unreachable and a guard asserting it would pass while proving nothing.
+>
+> **Still open in this unit:** F5 (extract hover/zoom as shared utilities so `dashChartSvg`
+> inherits overview→detail) — which is what C3 and C9 are waiting on. C7 and C11 wanted F4
+> and are now unblocked. A per-series selection control for the multi-series analysis-window
+> trend is the natural next slice.
+>
+> Three facts found while scoping it, each of which changed the design the acceptance
+> criteria below imply:
 >
 > 1. **§3.5 — a brush must carry the aggregate's own ids, not resolve a range through the
 >    date filter.** The chart axis coalesces `published_at`/`created_at`; the filter does
@@ -830,6 +844,16 @@ one source, you get "undefined", not 0.
 > 3. **A bar is a mention total, not an article count**, so the emit and its readout must
 >    state both numbers; letting one stand for the other is the conflation this project
 >    otherwise refuses.
+> 4. **A brush can only honestly select whole BUCKETS** (found by an adversarial critic
+>    reading the screenshot, after the first pass had shipped). Fact 1 above is only half
+>    the rule: resolving on the right COLUMN at the wrong GRANULARITY is still wrong. A
+>    weekly bar is drawn at its Monday, so a day-precise span cuts one in half while it
+>    still looks inside the band — four visible bars summing to 65 mentions were reported
+>    as 50. The span now widens to the edges of the buckets it touches, the bucket travels
+>    with the request, the response reports the EFFECTIVE span rather than the raw drag,
+>    and the client preview snaps through the same widening so one gesture never has two
+>    answers. `bucket="day"` is the identity case. Any future chart that opts in must pass
+>    its own `bucket`.
 >
 > Also note **plain drag is already pan** and `pointerup` treats a <4px drag as
 > click-to-pin (`app.js:11867-11890`), so brushing needs its own gesture *plus* a visible
