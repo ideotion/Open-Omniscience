@@ -252,6 +252,21 @@ def catalog_for(backend: str) -> dict:
         if not e:
             continue
         side = e.get(backend) or {}
+        # WHICH BACKENDS HAVE A BUILD AT ALL -- reported for every model, not just
+        # the active one (maintainer, 2026-08-04: "when a model only exists in one,
+        # mention it like 'ollama only' or 'HuggingFace only'").
+        #
+        # This is a different question from ``available``, which is about the backend
+        # serving right now, and both belong in the payload. A reader looking at a
+        # model that is unavailable HERE should be able to tell "this build does not
+        # exist anywhere we verified" from "it exists, just not for your backend" --
+        # the first is a fact about the model, the second is a fact about the machine,
+        # and collapsing them would make an Ollama-only model look discontinued to
+        # someone running vLLM.
+        available_on = [b for b in ("ollama", "vllm") if (e.get(b) or {}).get("artifact")]
+        only_label = None
+        if len(available_on) == 1:
+            only_label = "Ollama only" if available_on[0] == "ollama" else "Hugging Face only"
         models.append(
             {
                 "key": e["key"],
@@ -267,6 +282,13 @@ def catalog_for(backend: str) -> dict:
                 "gated": side.get("gated"),
                 "absent_reason": side.get("absent_reason"),
                 "available": bool(side.get("artifact")),
+                "available_on": available_on,
+                "only_label": only_label,
+                # The identifier the OTHER backend would use, so the row can show what
+                # exists elsewhere instead of only what is missing here.
+                "other_artifact": (
+                    (e.get("vllm") if backend == "ollama" else e.get("ollama")) or {}
+                ).get("artifact"),
             }
         )
     return {

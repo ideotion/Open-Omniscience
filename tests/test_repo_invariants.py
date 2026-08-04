@@ -6133,7 +6133,21 @@ def test_llm_langdetect_is_optin_labelled_and_never_touches_trusted_channels():
     assert "should_stop=lambda: ctx.stopping" in api
     # the endpoints + the opt-in Settings button + candidate count
     assert '@router.post("/detect-language")' in api and '@router.get("/detect-language/candidates")' in api
-    assert "runLangDetect" in ui and 'id="langdetect-btn"' in ui and "loadLangDetectCount" in ui
+    # THE SURFACE MOVED, THE PROPERTY DID NOT (2026-08-04, maintainer: the standalone
+    # "Detect unknown languages (AI)" panel "became redundant with the one above in
+    # which detection of unknown languages can be checked"). Language detection is now
+    # one of the background-AI jobs, so its control is that checkbox and its candidate
+    # count rides beside it. What is still asserted is what mattered: a VISIBLE opt-in
+    # control exists, wired to the real setting, and the operator can see how much work
+    # is outstanding before switching it on.
+    #
+    # `runLangDetect` / `_paintLangDetectButton` remain in app.js, unwired: they are the
+    # manual bounded-run path, and the poll they belong to is what keeps the count live.
+    # Recorded here so a future reader does not read their absence-from-the-DOM as a
+    # capability that was lost.
+    assert 'id="aic-m-langdetect"' in ui, "the opt-in control must exist somewhere"
+    assert "ai_langdetect_auto" in ui, "and be wired to the real setting"
+    assert "loadLangDetectCount" in ui, "the outstanding-work count is still surfaced"
     # 2026-07-23 continuous-mode ask: an on/off switch chains internal batches until the
     # backlog is exhausted, instead of a fixed one-shot cap; a "none" result is excluded via
     # an in-run exclude_ids set (never persisted), so the unclassifiable residue can't starve
