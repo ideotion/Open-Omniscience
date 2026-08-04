@@ -35,9 +35,10 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 
-from src.database.models import Article, Source
-from src.database.session import SessionLocal, init_db
+from src.database.models import Article, Base, Source
 from src.database.snapshots import article_counts_by_language
 
 _NOW = datetime(2027, 5, 20, 12, 0, tzinfo=UTC)
@@ -45,11 +46,25 @@ _NOW = datetime(2027, 5, 20, 12, 0, tzinfo=UTC)
 
 @pytest.fixture()
 def db():
-    init_db()
-    s = SessionLocal()
+    """A private corpus, containing only what the test in front of you seeded.
+
+    The first version of this fixture used the shared session DB and scoped each
+    test to a window opening just after the newest stored row. That isolates
+    nothing, because the window runs BACKWARDS from ``now``: it swept back over a
+    whole day of every other test's articles. It passed when the file ran alone
+    and went red in CI with English and French panels no fixture here ever seeded
+    -- the recorded rule (never assert counts against the shared ``SessionLocal``)
+    wearing its other face, since the danger is being polluted as much as
+    polluting.
+    """
+    engine = create_engine(
+        "sqlite:///:memory:", future=True, connect_args={"check_same_thread": False}
+    )
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
     yield s
-    s.rollback()
     s.close()
+    engine.dispose()
 
 
 @pytest.fixture()
@@ -90,15 +105,6 @@ def _by_lang(out) -> dict[str, int]:
     return {s["language"]: s["total"] for s in out["series"]}
 
 
-def _isolated(db):
-    """Only this test's own articles: the session DB is shared, so every assertion
-    below is scoped to a window that starts after everything already stored."""
-    from sqlalchemy import func
-
-    last = db.query(func.max(Article.created_at)).scalar()
-    return (last.replace(tzinfo=UTC) if last and last.tzinfo is None else last) or _NOW
-
-
 # --------------------------------------------------------------------------- #
 #  One language, one key -- and not one key too many
 # --------------------------------------------------------------------------- #
@@ -107,7 +113,7 @@ def test_region_subtags_are_one_language(db):
     most major outlets arrive region-tagged. The equilibrium lever folds them; a
     feed that did not would show English split across three panels while the lever
     steered one."""
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     _articles(db, src, lang="en", at=base, n=3)
     _articles(db, src, lang="en-US", at=base + timedelta(minutes=5), n=2)
@@ -121,7 +127,7 @@ def test_region_subtags_are_one_language(db):
 def test_but_genuinely_distinct_languages_never_merge(db):
     """The twin. An over-eager key is the same defect pointing the other way and is
     INVISIBLE -- the totals still add up."""
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     for code in ("en", "eo", "es", "et"):
         _articles(db, src, lang=code, at=base, n=2)
@@ -138,7 +144,7 @@ def test_the_feed_and_the_lever_bucket_a_language_the_same_way(db):
     disagreement would make it worse than nothing."""
     from src.scheduler.equilibrium import corpus_language_shares
 
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     _articles(db, src, lang="fr", at=base, n=4)
     _articles(db, src, lang="fr-CA", at=base + timedelta(minutes=1), n=2)
@@ -156,7 +162,7 @@ def test_the_feed_and_the_lever_bucket_a_language_the_same_way(db):
 def test_a_deduced_language_is_never_pooled_into_the_series(db):
     """``coalesce(language, detected_language)`` would make this feed disagree with
     the lever AND give a deduced value an asserted one's visual weight."""
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     _articles(db, src, lang="de", at=base, n=2)
     _articles(db, src, lang=None, detected="de", at=base + timedelta(minutes=1), n=5)
@@ -169,7 +175,7 @@ def test_but_the_unassigned_are_counted_so_the_blind_spot_has_a_size(db):
     """The twin: excluded from the panels is not excluded from the payload. The
     number is load-bearing -- the equilibrium lever cannot see those articles
     either, so this IS the size of its blind spot."""
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     _articles(db, src, lang="de", at=base, n=2)
     _articles(db, src, lang=None, detected="de", at=base + timedelta(minutes=1), n=5)
@@ -187,7 +193,7 @@ def test_a_quiet_bucket_is_a_real_zero_and_keeps_the_axis_true(db):
     """An omit-the-empties series compresses the axis: hour 1 and hour 5 render
     adjacent, so a gap in coverage reads as continuous activity. Here the count is
     genuinely 0 -- the language was measured and got nothing -- so it is emitted."""
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     _articles(db, src, lang="it", at=base, n=1)
     _articles(db, src, lang="it", at=base + timedelta(hours=4), n=1)
@@ -204,7 +210,7 @@ def test_the_series_never_starts_before_the_corpus_did(db):
     """The counter-rule. Zero-filling back through a 30-day window on a corpus that
     is hours old would publish weeks of "we measured and got nothing" for a period
     in which nothing was measuring."""
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     _articles(db, src, lang="pt", at=base, n=1)
 
@@ -226,12 +232,12 @@ def test_a_window_inside_the_corpus_is_not_reported_as_clamped(db):
     """The twin: an unconditional "the corpus begins here" note would explain a
     late start that is not happening, on every ordinary short window.
 
-    Needs a corpus OLDER than the window, so it seeds one article well in the past
-    -- the shared session DB is only hours old, and every test before this one
-    seeds forward from the newest row, so a bare 1-day window really would begin
-    before the corpus and really would be clamped.
+    Needs a corpus OLDER than the window, hence the article seeded well in the
+    past: this fixture's corpus is born empty, so a 1-day window over articles
+    stored only at ``base`` really would begin before the corpus and really would
+    be clamped -- the assertion would pass for the wrong reason.
     """
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     _articles(db, src, lang="pt", at=base - timedelta(days=40), n=1)
     _articles(db, src, lang="pt", at=base, n=1)
@@ -248,7 +254,7 @@ def test_every_counted_article_has_a_slot_to_be_drawn_in(db):
     The article is counted (it is inside the window) and then has no bucket on the
     axis, so the panel silently claims more than its bars add up to.
     """
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     _articles(db, src, lang="fi", at=base, n=2)
     _articles(db, src, lang="fi", at=base + timedelta(hours=3), n=1)  # "ahead of the clock"
@@ -262,7 +268,7 @@ def test_the_bucket_is_named_so_a_point_can_be_read(db):
     """Binning is permitted when labelled; downsampling is not. Every article in
     the window is still counted, in one bin or another -- the payload just has to
     say which bin."""
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     _articles(db, src, lang="nl", at=base, n=1)
     assert article_counts_by_language(db, days=1, now=base)["bucket"] == "hour"
@@ -273,7 +279,7 @@ def test_the_bucket_is_named_so_a_point_can_be_read(db):
 #  Ranked out is not dropped
 # --------------------------------------------------------------------------- #
 def test_a_ranked_out_language_is_disclosed_never_silently_dropped(db):
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     # Six languages, descending volume, asking for the top two.
     for i, code in enumerate(["aa", "ab", "ae", "af", "ak", "am"]):
@@ -287,7 +293,7 @@ def test_a_ranked_out_language_is_disclosed_never_silently_dropped(db):
 
 def test_and_nothing_is_disclosed_when_nothing_was_ranked_out(db):
     """The twin: an over-eager disclosure invents missing data."""
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     _articles(db, src, lang="sv", at=base, n=2)
 
@@ -306,7 +312,7 @@ def test_every_article_in_the_window_lands_in_exactly_one_published_figure(db):
     """
     from sqlalchemy import func as sa_func
 
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     _articles(db, src, lang="en", at=base, n=5)
     _articles(db, src, lang="en-GB", at=base + timedelta(minutes=1), n=2)
@@ -345,13 +351,10 @@ def test_an_article_whose_date_will_not_parse_is_counted_not_dropped(db):
     matches the window (string comparison puts 'not-a-date' above a timestamp), so
     it is IN the count and must appear somewhere -- dropping it would make the
     conservation property above pass while an article quietly vanished.
-
-    The row is flushed, never committed, so the fixture's rollback removes it: a
-    malformed date left in the shared session DB would follow every later test.
     """
     from sqlalchemy import text
 
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     _articles(db, src, lang="cs", at=base, n=2)
     _articles(db, src, lang="cs", at=base + timedelta(minutes=1), n=1)
@@ -372,7 +375,7 @@ def test_panels_are_ordered_by_volume_then_deterministically(db):
     that removed the sort left it green). ``zz`` must lead because it is the
     busiest, and the two tied codes must still order deterministically.
     """
-    base = _isolated(db) + timedelta(hours=1)
+    base = _NOW
     src = _source(db)
     _articles(db, src, lang="aa", at=base, n=1)
     _articles(db, src, lang="zz", at=base + timedelta(minutes=1), n=9)
