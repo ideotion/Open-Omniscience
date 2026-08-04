@@ -136,3 +136,6 @@ logs/
 .pip-tmp/
 .testout/
 .tmp-pip/
+# The synthetic corpus a browser-verification run seeds on a loopback port. Always
+# synthetic: the maintainer's real corpus must never enter an agent session.
+.demo-data/

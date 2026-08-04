@@ -4222,3 +4222,49 @@ Three things worth keeping:
 Guard shape: assert the `opacity` is ABSENT from the rule and that the off-state colour
 is a `color-mix`-derived token. A re-added `opacity` silently restores the bug while
 every declared colour in the rule still looks perfectly fine on inspection.
+
+## 2026-08-04 — GUI visualization: chart channels, figure furniture, corpus composition
+
+Executes the read-only reconnaissance plan at
+[`docs/plans/2026-08-04-gui-visualization-plan.md`](../plans/2026-08-04-gui-visualization-plan.md)
+— foundations F1/F2/F3 and candidates C1/C2/C4/C5. Five `shipped.csv` rows carry the
+per-slice detail; this entry records only what is reusable.
+
+**The plan's own §12 was wrong about the environment, in the direction that mattered.**
+It recorded "no browser was run" and "pytest not runnable here: this sandbox is Python
+3.11.15 against a repo that requires 3.13". Both were true of a *read-only* pass and
+false of the sandbox: `/usr/bin/python3.13` exists (the default `python3` is 3.11), and
+Chromium ships at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` with
+`PLAYWRIGHT_BROWSERS_PATH` already set. So the standing "browser-unverified per
+fork-3/Q6a" caveat on every frontend slice is a habit rather than a limit. The full
+suite runs; a real browser drives the app; screenshots can be handed to adversarial
+subagents. **Check the interpreter and `/opt/pw-browsers` before repeating the caveat.**
+
+**Four defects in this slice were invisible to source reading and obvious on screen.**
+A flex container discards the whitespace between its items, so the legend read
+"series 1n=40". Bars from separate series drawn at the same x read as a stacked total
+nobody computed. A clamp added to stop an edge group being clipped instead collapsed
+two members onto one pixel, hiding a real measurement un-hatched. And in Arabic the
+method sentences rendered in English beneath correctly-translated caveats. Three of the
+four are the kind a reviewer reading a diff would call correct.
+
+**The greyscale test must be applied by the browser, not to the file.**
+`documentElement.style.filter = 'grayscale(1)'` before the screenshot means what is
+judged is rendered pixels. That is what makes "series identity survives without
+colour" a measurement rather than an assertion.
+
+**An adversarial critic that refuses to certify an untested path is doing its job.**
+One reported it could not confirm gap rendering because the synthetic data contained no
+gaps — "an untested code path, not a pass" — which is the same verdict-must-map-to-the-
+bar-it-tested discipline the ledger already records for the P0 kit, arriving from a
+subagent rather than from a human. A real 7-day hole was added; the two affected series
+break and the other four do not.
+
+**A mutation check is cheap and it repeatedly disagreed with me.** Re-introducing the
+`article_count > 0` filter reddens three tests. Un-keying one caveat sentence names the
+figure, the field and every locale. And two of the guards in
+`tests/test_figure_channels.py` failed on their first run against code I believed was
+correct — one because a CSS token block's own comment contains `--fig-6:` and a naive
+declaration regex matched the prose, the other because my dash-family signature
+classified a long dash and a fine dot as the same rhythm. Both were the test being
+precise and the input being wrong, which is the useful direction.
