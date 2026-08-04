@@ -339,6 +339,40 @@ condition every quarantine-aware reader uses (`models.py:668`), and
 **A new chart built on keyword aggregates will silently count articles the article gate
 already condemned.** Decide this explicitly (see §11, Q4) rather than inheriting it.
 
+### 3.5 A chart's time axis and the date filter do not mean the same thing
+
+> **FOUND 2026-08-04 while scoping F4**, not present in the original reconnaissance.
+> Reproduced against the real functions; pinned in `tests/test_chart_time_vs_filter_time.py`.
+
+Two surfaces publish "when an article is", by different rules:
+
+* `KeywordMention.observed_on` = `(published_at or created_at).date()`
+  (`src/analytics/store.py:284`) — a **coalesce**. This is the x-axis of every keyword
+  trend chart.
+* the date filter behind Advanced search and `_resolve_corpus` = `Article.published_at`
+  alone (`src/api/main.py:818-821`) — **no fallback**.
+
+So an article whose publish date could not be extracted is **plotted** on the chart at its
+ingest date and **excluded** by a filter over that same day. Measured: two articles, one
+chart day, one returned.
+
+**The filter is not simply wrong.** Coalescing it would be the mirror defect — an article
+ingested in June with no publish date may have been published in 2019, so folding
+`created_at` into a filter labelled "published between X and Y" fabricates an *inclusion*
+exactly as the present behaviour fabricates an *absence*. Restricting to `published_at` is
+the conservative reading. What is missing is (a) any **disclosure** of how many articles the
+filter dropped for want of a publish date — derivable with no new storage, pinned in the
+test — and (b) agreement between the two surfaces about which "June" is on screen.
+
+**This constrains F4 (Unit 6).** A brush must emit the article ids of the buckets the chart
+actually drew, supplied by the same aggregate that produced the bar heights. Resolving a
+brushed range through the date filter instead returns fewer articles than the bars implied,
+silently: the user selects what they can see and gets less. Carrying the ids makes the brush
+inherit the chart's own definition of time by construction, so the disagreement cannot reach
+it. It also forces a second honesty gain — a trend bar is a **mention** total, not an article
+count (`trend()` sums `KeywordMention.count`), so a brush readout must say both ("6 articles
+· 10 mentions") rather than letting one number stand for the other.
+
 ---
 
 ## 4. Constraints the implementation session must obey
@@ -749,6 +783,31 @@ equality line is drawn and labelled; the Gini number is printed with its `n`. On
 one source, you get "undefined", not 0.
 
 ### Unit 6 — F4 selection emission + F5 hover/zoom extraction
+
+> **SCOPED 2026-08-04, not built.** Three facts found while scoping it, each of which
+> changes the design the acceptance criteria below imply:
+>
+> 1. **§3.5 — a brush must carry the aggregate's own ids, not resolve a range through the
+>    date filter.** The chart axis coalesces `published_at`/`created_at`; the filter does
+>    not. Round-tripping under-selects silently.
+> 2. **`trend()` returns `{date, count}` only** (`src/analytics/queries.py:249-277`) — it
+>    groups on `observed_on` and sums `count`, so there are no ids to emit today. The
+>    honest source is an opt-in, bounded, disclosed per-bucket id list on the aggregate
+>    that drew the bars. The existing precedent for handing back *real* ids that narrow a
+>    corpus is `corpus_facet_article_ids` + `/corpus-facet-ids`
+>    (`queries.py:778-844`, `insights.py:696-728`), including the id-seeded INTERSECT case
+>    — a brush is that same drill grammar with a period as the value.
+> 3. **A bar is a mention total, not an article count**, so the emit and its readout must
+>    state both numbers; letting one stand for the other is the conflation this project
+>    otherwise refuses.
+>
+> Also note **plain drag is already pan** and `pointerup` treats a <4px drag as
+> click-to-pin (`app.js:11867-11890`), so brushing needs its own gesture *plus* a visible
+> affordance — a modifier alone is undiscoverable, and the house pattern is an in-chart
+> control (ooMap's own zoom/granularity/layer controls sit inside the map).
+>
+> Already done in PR #867: `ooChart`'s inline legend `onclick` is converted to a real
+> `addEventListener`, which this unit lists as its own requirement.
 
 Files: `src/static/app.js` (`_anIds` `17998-18006`, `openAnalysisForIds` `18116-18118`;
 `ooChart` interaction handlers `11268-11302` — wheel `11268`, pointerdown `11279`,

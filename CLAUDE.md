@@ -2258,6 +2258,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     elsewhere. And a `None` that means UNDEFINED must never render as 0 when 0 is a real value
     with the opposite meaning: `gini()` returns `None` below n=2, and a Gini of 0 is perfect
     EQUALITY.
+  - **TWO SURFACES CAN DISAGREE ABOUT WHAT "JUNE" MEANS, AND NEITHER IS WRONG — SO THE FIX IS
+    A DISCLOSURE, NOT A COLUMN CHANGE (2026-08-04, found while scoping the chart brush):**
+    `KeywordMention.observed_on` is `(published_at or created_at).date()` (`store.py:284`) —
+    a coalesce, and the x-axis of every keyword trend chart — while the date filter behind
+    Advanced search and `_resolve_corpus` is `Article.published_at` alone
+    (`main.py:818-821`). So an article whose publish date could not be extracted is PLOTTED
+    at its ingest date and EXCLUDED by a filter over that same day; live-reproduced, two
+    articles on one chart day, one returned. The reflex is to coalesce the filter, and that
+    is the MIRROR DEFECT: an article ingested in June with no publish date may have been
+    published in 2019, so folding `created_at` into a filter labelled "published between X
+    and Y" fabricates an INCLUSION exactly as the present behaviour fabricates an ABSENCE.
+    Both directions are dishonest and the conservative column is the defensible one, which
+    means the repair is (a) disclose the count dropped for want of a publish date — derivable
+    with no new storage — and (b) make the two surfaces agree about which window is on
+    screen. GENERAL FORM: when two surfaces compute the same-sounding quantity by different
+    rules, check whether EITHER rule is defensible before changing one to match the other;
+    if both are, the disagreement is a labelling and disclosure problem, and "make them the
+    same" silently picks a side. COROLLARY that decided a design: anything that turns a chart
+    selection into a corpus must carry the ids of the buckets the chart actually drew rather
+    than re-resolving the range through a filter — then it inherits the chart's own
+    definition of time by construction and the disagreement cannot reach it. Same pass: a
+    trend bar is a MENTION total, not an article count (`trend()` sums
+    `KeywordMention.count`), so such a readout owes both numbers.
 
 ## Open queue (when maintainer says proceed)
 - **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;
