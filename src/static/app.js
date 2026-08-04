@@ -20411,6 +20411,15 @@
     //  a third of the story. Every fact is read from the server; a failed read
     //  says so rather than rendering a confident blank.
     // ----------------------------------------------------------------- //
+    // The frame translates, the data does not: a fixed keyable template with
+    // {named} holes, interpolated after lookup. A concatenated fragment ("running
+    // on" + a name) cannot be keyed usefully -- word order and agreement differ per
+    // language -- which is what OOI18N.tf exists for.
+    function _tf(tpl, vars) {
+      if (window.OOI18N && OOI18N.tf) return OOI18N.tf(tpl, vars);
+      return String(tpl).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
+    }
+
     function _hwChips(gpu, cap) {
       const chip = (label, value, title) =>
         `<span class="pill" title="${esc(title || "")}"><span class="muted">${esc(label)}</span> ${esc(value)}</span>`;
@@ -20454,16 +20463,16 @@
       // it into "off" is what left the operator with nothing to press.
       let head, action = "";
       if (serving) {
-        head = `<span class="ok">●</span> ` + esc(t("Ready")) + ` — ` +
-               esc(t("running on")) + ` <b>${esc(name)}</b>` +
+        head = `<span class="ok">●</span> ` +
+               esc(_tf("Ready — running on {backend}", {backend: name})) +
                ((health.installed_models || []).length
                   ? ` <span class="muted">${esc(health.installed_models[0])}</span>` : "");
         if (act.backend === "vllm") {
           action = `<button class="ghost" onclick="stopVllm(this)">${esc(t("Stop"))}</button>`;
         }
       } else if (act.can_start) {
-        head = `<span class="warn">●</span> ` + esc(t("Installed but not running")) +
-               ` — <b>${esc(name)}</b>`;
+        head = `<span class="warn">●</span> ` +
+               esc(_tf("Installed but not running — {backend}", {backend: name}));
         action = `<button onclick="aiStartNow(this)">${esc(t("Start the local AI"))}</button>`;
       } else {
         head = `<span class="muted">●</span> ` + esc(t("Not set up on this machine yet"));
@@ -20551,7 +20560,7 @@
         if (!m.available) {
           return `<label class="row" style="gap:8px;align-items:flex-start;opacity:.65;margin:4px 0">` +
             `<input type="checkbox" disabled style="width:auto;margin-top:3px">` +
-            `<span><b>${esc(m.label)}</b> <span class="muted">— ${esc(t("not available for"))} ${esc(c.backend)}</span>` +
+            `<span><b>${esc(m.label)}</b> <span class="muted">— ${esc(_tf("not available for {backend}", {backend: c.backend}))}</span>` +
             `<div class="hint">${esc(m.absent_reason || "")}</div></span></label>`;
         }
         // installed === null means the probe could not answer (a stopped daemon
@@ -20568,8 +20577,7 @@
           (m.summary ? `<div class="hint">${esc(m.summary)}</div>` : "") + `</span></label>`;
       }).join("");
       box.innerHTML =
-        `<div style="font-weight:600">${esc(t("Available models"))} ` +
-        `<span class="muted" style="font-weight:400">— ${esc(t("for"))} ${esc(c.backend)}</span></div>` +
+        `<div style="font-weight:600">${esc(_tf("Available models for {backend}", {backend: c.backend}))}</div>` +
         `<div class="hint" style="margin:2px 0 6px">${esc(c.method || "")}</div>` +
         rows +
         `<div class="row" style="gap:8px;margin-top:8px;align-items:center">` +
