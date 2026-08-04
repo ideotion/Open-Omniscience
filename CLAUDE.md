@@ -1944,6 +1944,48 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     green. GENERAL FORM: before changing how a collection is fetched, find out whether
     anything downstream indexes into it by position rather than by key — a count-to-id
     mapping is the signature.
+  - **A STANDALONE SQL PROBE IS A LOOKALIKE, AND EXPLAIN QUERY PLAN CAN NAME AN INDEX
+    THAT NO LONGER EXISTS (2026-08-04, the per-language feed's covering index):** two
+    ways a plan assertion certifies nothing, both hit in one slice. (a) I confirmed the
+    new composite index covered both of the feed's queries by running the SQL by hand in
+    a scratch database — it did, there. Driving the REAL function showed SQLite serving
+    the second query from a NARROWER index instead (`language IS NULL` is an equality
+    seek; the composite's leading column is a range), then reading the heap for
+    `detected_language` — index-only for the series, straight back into the codec for
+    the tally, on exactly the rows that are most numerous when a corpus is under-tagged.
+    A hand-written lookalike differs from the shipped query in table stats, in ANALYZE
+    state, and in which other indexes exist, and all three move the planner. Capture the
+    statements the production path actually emits (a `before_cursor_execute` listener)
+    and EXPLAIN those. The FIX generalises past this case: when two queries want
+    different indexes, fold the second into the first as an extra GROUP BY dimension —
+    grouping on the predicate at most doubles the row count and leaves the planner no
+    escape. (b) The negative half — "with the index dropped the plan must change" — is
+    where it gets dangerous: **pysqlite caches compiled statements per connection and
+    the pool hands the same one back, so EXPLAIN keeps reporting the DROPPED index by
+    name** (verified: `sqlite_master` empty while the plan still cited it). Without
+    `engine.dispose()` that assertion passes whatever the planner would really do — a
+    guard that cannot fail, attached to the one claim that makes the positive half
+    meaningful. COROLLARY, cheap and recurring: an index over a column a legacy store
+    may lack collides with any fixture that simulates the missing column via
+    `DROP COLUMN` (SQLite refuses while an index references it). Drop the referencing
+    indexes BY REFLECTION rather than by name — the next index over that column then
+    cannot silently break a guard that is about something else entirely, and it is also
+    more faithful, since a store old enough to lack the column never had an index on it.
+  - **A SOURCE GUARD OVER A DISCLOSURE SURVIVES THE MUTATION THAT DELETES THE DISCLOSURE
+    (2026-08-04, same slice):** the tile's honesty rests on stating what it does NOT
+    draw — the ranked-out tail, the articles with no asserted language. Guarding that
+    with `assert "d.other" in body` felt like the house pattern and was worthless:
+    neutering `if (other.languages)` to `if (false)` left the identifier sitting in its
+    `const other = d.other || {}` binding, so the guard stayed green while the sentence
+    vanished. The identifier is not the sentence. Extract the disclosure builder as a
+    PURE function and test what it SAYS, in node, with the negative-space twin beside
+    each claim (an over-eager disclosure invents missing data as dishonestly as an
+    omission hides it) — four mutations that all passed the substring version all fail
+    the behavioural one. Same family as the recorded "a whole-file substring assertion
+    is only as meaningful as that string's uniqueness", one level sharper: even a
+    correctly-SCOPED substring proves only that a token appears somewhere in the slice.
+    And check the ratchet — `test_every_node_suite_has_a_driver` exists precisely
+    because an unrun node suite already cost a shipped defect.
   - **NEVER RE-SERIALISE A CURATED FILE TO EDIT ONE ENTRY (2026-08-02):** adding a single
     key to the 12 locale files rewrote all 12 — 27,000 lines changed to carry 12 lines of
     real content — because they were written back with `json.dump(sort_keys=True)`. The

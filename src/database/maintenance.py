@@ -101,6 +101,17 @@ HOT_INDEXES: dict[str, str] = {
         "CREATE INDEX IF NOT EXISTS idx_article_link_dedup "
         "ON article_links (article_id, url, position)"
     ),
+    # Per-language corpus-growth feed (snapshots.article_counts_by_language): a
+    # created_at range scan that reads `language` per row to GROUP BY it. Without
+    # this, idx_article_created_at finds the rows and then fetches each full article
+    # row for one 10-char column -- the same codec trap as the entries above.
+    # detected_language rides along only to keep the unassigned/deduced tally in the
+    # same call index-only. Mirrored on the model (fresh DBs) + migration
+    # 7b1e4a93c26d (alembic-managed); this covers installs that never migrate.
+    "idx_article_created_lang": (
+        "CREATE INDEX IF NOT EXISTS idx_article_created_lang "
+        "ON articles (created_at, language, detected_language)"
+    ),
 }
 
 

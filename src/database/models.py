@@ -728,6 +728,19 @@ class Article(Base):
         # DBs) and src/database/maintenance.py HOT_INDEXES (existing installs that don't
         # run `make migrate`).
         Index("idx_article_source_sentiment", "source_id", "sentiment_score"),
+        # Covering index for the per-language corpus-growth feed
+        # (snapshots.article_counts_by_language): a created_at range scan that reads
+        # `language` per row to GROUP BY it. idx_article_created_at alone finds the
+        # rows but then fetches each full article row to read one 10-char column --
+        # the same SQLCipher column-order trap ix_article_observed and
+        # idx_article_source_sentiment above already fixed for their own shapes
+        # (content sits before language in the row, so the codec decrypts ~35 KB to
+        # reach it). detected_language is carried as a third column ONLY so the
+        # unassigned/deduced tally in the same call stays index-only too; it is
+        # never read as a language for the series (an asserted value and a deduced
+        # one are never pooled). Mirrored in migration 7b1e4a93c26d and in
+        # src/database/maintenance.py HOT_INDEXES (installs that skip `make migrate`).
+        Index("idx_article_created_lang", "created_at", "language", "detected_language"),
     )
 
     @property

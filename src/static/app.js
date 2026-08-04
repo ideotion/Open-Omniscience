@@ -8588,14 +8588,90 @@
         {scales: true});
     }
 
+    // -- Per-language corpus growth (small multiples) --------------------------
+    // "Which languages is my corpus actually growing in" — the feedback surface
+    // the language-equilibrium lever never had. One panel per language on ONE
+    // shared scale, which is what makes the panels comparable at a glance.
+    //
+    // Every number the endpoint declines to plot is stated here rather than
+    // dropped: the ranked-out tail, the articles with no asserted language (the
+    // lever's own blind spot), and where the series starts if the corpus is
+    // younger than the window.
+    const LIB_LANG_TOP_N = 12;
+    let _libLangData = null;
+    // Pure, so the disclosures can be tested for what they SAY rather than for
+    // which identifiers appear in the source. A substring guard over the tile
+    // survives a mutation that leaves `d.other` in a variable binding and drops
+    // the sentence -- which is precisely the class of silent truncation these
+    // sentences exist to prevent.
+    function _libLangNotes(d, t, tf) {
+      const notes = [];
+      notes.push(d.bucket === "hour" ? t("Articles stored per hour.") : t("Articles stored per day."));
+      const other = d.other || {};
+      if (other.languages) {
+        notes.push(tf("{langs} more languages ({articles} articles) are counted but not drawn.",
+          {langs: other.languages, articles: other.articles}));
+      }
+      const un = d.unassigned || {};
+      if (un.articles) {
+        notes.push(tf("{n} articles have no asserted language and are not drawn — the equilibrium lever cannot see them either ({deduced} carry a deduced one).",
+          {n: un.articles, deduced: un.with_deduced_language}));
+      }
+      // Said only when the series is genuinely CLAMPED by the corpus's own start —
+      // the backend decides that, rather than the frontend re-deriving it from two
+      // timestamps and getting the bucket arithmetic subtly wrong.
+      if (d.clamped_to_corpus_start && d.corpus_began_at) {
+        notes.push(tf("The corpus itself begins at {x}, so the series starts there.", {x: d.corpus_began_at}));
+      }
+      return notes;
+    }
+    async function _libLanguageTile(days) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf : ((tpl, v) => String(tpl).replace(/\{(\w+)\}/g, (m, k) => (k in v ? v[k] : m)));
+      const cur = days || _libTileDays.__lang || LIB_DEFAULT_DAYS;
+      _libTileDays.__lang = cur;
+      const label = t("Growth by language");
+      let d;
+      try {
+        d = await api(`/api/library/languages?days=${cur}&top_n=${LIB_LANG_TOP_N}`);
+      } catch (e) {
+        return `<div id="lib-tile-__lang" style="flex:1 1 100%;padding:6px;border:1px solid var(--border);border-radius:8px">
+          <b style="font-size:12.5px">${esc(label)}</b>
+          <div class="note err" style="font-size:11px">${esc(e.message || e)}</div></div>`;
+      }
+      _libLangData = d;
+      // The panel label is the language NAME in the current UI locale, via the
+      // browser's own CLDR data (ooLangName) — the code is what the lever keys on,
+      // not what a reader should have to decode. Degrades to the code.
+      const panels = (d.series || []).map(s => ({
+        label: ooLangName(s.language, s.language),
+        points: (s.points || []).map(p => ({date: p.t, count: p.n})),
+      }));
+      // neutral: a language growing more slowly than another is not "bad", so the
+      // market up=green/down=red semantics must not be borrowed here.
+      const body = panels.length
+        ? smallMultiplesSvg(panels, {neutral: true})
+        : `<div class="muted" style="padding:14px 0;font-size:12px">${esc(t("No data yet."))}</div>`;
+
+      const notes = _libLangNotes(d, t, tf).map(esc);
+      return `<div id="lib-tile-__lang" style="flex:1 1 100%;padding:6px;border:1px solid var(--border);border-radius:8px">
+        <b style="font-size:12.5px">${esc(label)}</b>
+        ${body}
+        <div class="hint muted" style="font-size:11px">${notes.join(" ")}</div>
+        ${_libWindowChips("__lang", cur)}</div>`;
+    }
+
     // Re-render exactly ONE tile in place when its window chip is clicked —
     // never the whole panel (a switch on one metric must not disturb the
     // others' state or cause a visible flash across the row).
     async function _libSetWindow(key, days) {
-      const el = $(key === "__qual" ? "lib-tile-__qual" : "lib-tile-" + key);
+      const el = $(key === "__qual" ? "lib-tile-__qual"
+        : key === "__lang" ? "lib-tile-__lang" : "lib-tile-" + key);
       if (!el) return;
-      const html = key === "__qual"
-        ? await _libQualificationTile(days) : await _libGraphTile(key, days);
+      const html = key === "__qual" ? await _libQualificationTile(days)
+        : key === "__lang" ? await _libLanguageTile(days)
+        : await _libGraphTile(key, days);
       const tmp = document.createElement("div");
       tmp.innerHTML = html;
       const fresh = tmp.firstElementChild;
@@ -8626,7 +8702,12 @@
         // _libGraphTile has already fetched and stashed, so it costs no request.
         const rhythmSeries = ((_libGraphData.articles_per_hour || {}).series) || [];
         const rhythm = ingestRhythmSvg(rhythmSeries);
+        // Per-language growth sits BESIDE the counters, never instead of them.
+        // Its own fetch: it is the one series the /history metrics cannot express
+        // (a list of series, not a single [{t,n}]).
+        const lang = await _libLanguageTile(LIB_DEFAULT_DAYS);
         host.innerHTML = `<div class="row" style="flex-wrap:wrap;gap:10px">${tiles.join("")}</div>`
+          + `<div class="row" style="flex-wrap:wrap;gap:10px;margin-top:10px">${lang}</div>`
           + (rhythm ? `<h3 class="lib-sub">${esc(t("Ingest rhythm"))}</h3>` + rhythm : "");
         _libRenderQualChart(host);
       } catch (e) {
