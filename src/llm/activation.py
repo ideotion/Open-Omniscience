@@ -139,13 +139,46 @@ def activation_plan(*, override: str | None = None) -> dict:
 
     resolved = resolve_backend(override=chosen_override)
     pick = provisioning_backend(resolved)
-    backend = pick["backend"]
     cands = _candidates()
+    out = _plan_for(pick["backend"], pick["chosen_because"], cands, chosen_override)
+
+    # FALL BACK TO THE OTHER BACKEND WHEN THE PREFERRED ONE CANNOT START.
+    #
+    # An explicit choice is never second-guessed, so this only applies to "auto". But
+    # under auto, refusing outright when the OTHER backend would work is a real
+    # regression: a GPU machine with vLLM installed-but-weights-not-fetched and a
+    # perfectly good Ollama would get nothing at all, where it used to get Ollama.
+    # (The browser's old hand-rolled pill logic had this fallback; the property is
+    # pinned in tests/test_ai_pill_starts_the_backend.py, which is what caught its
+    # loss when the decision moved server-side.)
+    #
+    # The preferred backend's blocker is CARRIED, not discarded -- the operator should
+    # still learn that their vLLM needs weights, rather than silently getting the
+    # slower backend and wondering why.
+    if not chosen_override and not out["running"] and not out["can_start"]:
+        other = "ollama" if out["backend"] == "vllm" else "vllm"
+        alt = _plan_for(other, f"{out['backend']} cannot start here", cands, None)
+        if alt["running"] or alt["can_start"]:
+            alt["fell_back_from"] = {"backend": out["backend"], "blocker": out["blocker"]}
+            alt["chosen_because"] = (
+                f"{out['backend']} was preferred but cannot start ({out['blocker']}), "
+                f"so {other} serves instead"
+            )
+            return alt
+    return out
+
+
+def _plan_for(
+    backend: str, chosen_because: str, cands: dict, chosen_override: str | None
+) -> dict:
+    """Can THIS backend be started, and what stands in the way. The per-backend half of
+    :func:`activation_plan`, split out so the fallback path asks the same question of
+    the alternative instead of a looser version of it."""
     mine = cands.get(backend) or {"installed": False, "running": False}
 
     out: dict = {
         "backend": backend,
-        "chosen_because": pick["chosen_because"],
+        "chosen_because": chosen_because,
         "running": bool(mine.get("running")),
         "can_start": False,
         "blocker": None,

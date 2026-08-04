@@ -157,6 +157,73 @@ def test_a_blocker_names_the_alternative_when_there_is_one(monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
+#  Falling back rather than refusing outright
+# --------------------------------------------------------------------------- #
+def test_a_blocked_preferred_backend_falls_back_to_one_that_works(monkeypatch):
+    """A GPU machine whose vLLM has no weights yet, with a perfectly good Ollama
+    installed, must get Ollama -- not nothing.
+
+    The browser's old hand-rolled pill logic had this fallback; moving the decision
+    server-side lost it, and its own test is what caught the regression. Refusing
+    outright here would be honest and useless.
+    """
+    _machine(
+        monkeypatch,
+        gpu=True,
+        vllm_installed=True,
+        cached=False,
+        ollama_installed=True,
+        model="org/Uncached-8B",
+    )
+    plan = activation.activation_plan()
+    assert plan["backend"] == "ollama"
+    assert plan["can_start"] is True
+
+
+def test_and_the_preferred_backend_s_blocker_is_carried_not_discarded(monkeypatch):
+    """Silently getting the slower backend, with no word about why the faster one was
+    skipped, is how an operator ends up wondering why their GPU is idle."""
+    _machine(
+        monkeypatch,
+        gpu=True,
+        vllm_installed=True,
+        cached=False,
+        ollama_installed=True,
+        model="org/Uncached-8B",
+    )
+    plan = activation.activation_plan()
+    assert plan["fell_back_from"]["backend"] == "vllm"
+    assert "org/Uncached-8B" in plan["fell_back_from"]["blocker"]
+    assert "vllm was preferred" in plan["chosen_because"]
+
+
+def test_an_explicit_choice_never_falls_back(monkeypatch):
+    """The twin. An operator who said "vLLM only" and gets Ollama has been
+    second-guessed, which is the one thing an explicit choice must never be."""
+    _machine(
+        monkeypatch,
+        gpu=True,
+        vllm_installed=True,
+        cached=False,
+        ollama_installed=True,
+        override="vllm",
+    )
+    plan = activation.activation_plan(override="vllm")
+    assert plan["backend"] == "vllm"
+    assert plan["can_start"] is False
+    assert "fell_back_from" not in plan
+
+
+def test_nothing_to_fall_back_to_keeps_the_real_blocker(monkeypatch):
+    """With no alternative, the preferred backend's own reason must survive rather
+    than being replaced by a vaguer one about the alternative."""
+    _machine(monkeypatch, gpu=True, vllm_installed=True, cached=False, model="org/X")
+    plan = activation.activation_plan()
+    assert plan["backend"] == "vllm"
+    assert "org/X" in plan["blocker"]
+
+
+# --------------------------------------------------------------------------- #
 #  Already running
 # --------------------------------------------------------------------------- #
 def test_an_already_running_backend_is_never_started_again(monkeypatch):

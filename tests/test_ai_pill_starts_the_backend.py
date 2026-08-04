@@ -37,19 +37,44 @@ def _fn(name: str) -> str:
 
 def test_the_pill_can_start_ollama_not_only_vllm():
     """THE defect: the Ollama start endpoint had no caller, so the pill was inert on
-    every machine without a GPU."""
+    every machine without a GPU.
+
+    ANCHOR MOVED, PROPERTY UNCHANGED (2026-08-04). The pill no longer names either
+    start endpoint, because it no longer decides: it posts to ``/activation/start``
+    and the server picks. That removed a FOURTH copy of "which backend" from the
+    browser -- beside routing, provisioning and activation -- and the copy it removed
+    had a real hole, which the test below now pins where the decision actually lives.
+    Following the code rather than relaxing the assertion.
+    """
     body = _fn("aiPillStartOrInstall")
-    assert "/api/llm/ollama/start" in body
-    assert "/api/llm/vllm/start" in body
+    assert "/api/llm/activation/start" in body
+    assert "method: \"POST\"" in body
 
 
-def test_vllm_is_preferred_but_a_missing_model_falls_through_to_ollama():
-    """vLLM needs a model id up front. Treating a missing choice as fatal is what made
-    the old version give up instead of starting the backend that WAS available."""
+def test_the_pill_delegates_the_choice_instead_of_re_deriving_it():
+    """The browser must not hold its own precedence rule. It had one, and on a GPU
+    machine with vLLM installed but no stored model id it silently fell through to
+    Ollama -- a decision no other surface would have made."""
     body = _fn("aiPillStartOrInstall")
-    vllm_first = body.index("/api/llm/vllm/start") < body.index("/api/llm/ollama/start")
-    assert vllm_first, "the GPU path is tried first"
-    assert "fall through to Ollama" in body
+    assert "/api/llm/vllm/start" not in body, "the pill must not start a backend itself"
+    assert "/api/llm/ollama/start" not in body
+
+
+def test_the_preferred_backend_still_falls_back_to_one_that_works():
+    """The property the old browser logic protected, kept -- now server-side, where
+    every caller gets it rather than only the pill.
+
+    Behavioural coverage is in tests/test_llm_activation.py
+    (``test_a_blocked_preferred_backend_falls_back_to_one_that_works``); this only
+    pins that the fallback exists at all, since its absence would be invisible from
+    the frontend.
+    """
+    import inspect
+
+    from src.llm import activation
+
+    src = inspect.getsource(activation.activation_plan)
+    assert "fell_back_from" in src
 
 
 def test_a_missing_model_offers_the_default_rather_than_ending_red():

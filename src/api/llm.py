@@ -1512,6 +1512,34 @@ def ollama_start() -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.get("/model-store")
+def llm_model_store() -> dict:
+    """Where local model weights live -- configured AND actually in use.
+
+    Read-only, no network. The two differ exactly when a backend process was started
+    by something other than this app (a systemd-managed Ollama is the common case),
+    and saying so is the point: an operator whose models are still in ``~/.ollama``
+    needs to know it is because that daemon is not ours, not because a setting failed.
+    """
+    from src.llm.model_store import store_report
+
+    return store_report()
+
+
+@router.post("/model-store/migrate")
+def llm_model_store_migrate() -> dict:
+    """Copy an existing Ollama model store into the app folder.
+
+    A COPY. Ollama's store is content-addressed, so a name collision proves the
+    contents match and skipping an existing blob can never lose data; the source is
+    left untouched, and removing it is the operator's own separate step. Local
+    filesystem only -- no network, so no egress gate applies.
+    """
+    from src.llm.model_store import migrate_ollama_store
+
+    return migrate_ollama_store()
+
+
 @router.get("/models/catalog")
 def llm_model_catalog(backend: str | None = None) -> dict:
     """Every model the AI tab offers, resolved for the backend that will serve, with
