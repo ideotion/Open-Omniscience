@@ -2696,9 +2696,11 @@
   "Select a period": "期間を選択",
   "Drag across the chart to open the articles in that period. Hold Shift to drag without switching mode.": "チャート上をドラッグすると、その期間の記事を開きます。Shift を押しながらドラッグするとモードを切り替えずに選択できます。",
   "No articles in {from} → {to}.": "{from} ～ {to} に記事はありません。",
-  "{articles} articles · {mentions} mentions · {from} → {to}": "記事 {articles} 件 · 言及 {mentions} 件 · {from} → {to}",
+  "{term} · {articles} articles · {mentions} mentions · {from} → {to}": "{term} · 記事 {articles} 件 · 言及 {mentions} 件 · {from} → {to}",
   "{n} quarantined, not included": "{n} 件は隔離中のため含まれません",
   "showing the first 5000": "先頭 5000 件を表示",
   "{term}: {from} → {to}": "{term}：{from} → {to}",
-  "Could not open that period": "この期間を開けませんでした"
+  "Could not open that period": "この期間を開けませんでした",
+  "Selected {from} → {to} · {n} of {total} points": "選択 {from} → {to} · {total} 点中 {n} 点",
+  "n counts the datapoints plotted here, not articles.": "n はここに描画されたデータ点の数で、記事数ではありません。"
 }

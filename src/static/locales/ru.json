@@ -2696,9 +2696,11 @@
   "Select a period": "Выбрать период",
   "Drag across the chart to open the articles in that period. Hold Shift to drag without switching mode.": "Проведите по графику, чтобы открыть статьи за этот период. Удерживайте Shift, чтобы выделять без смены режима.",
   "No articles in {from} → {to}.": "Нет статей с {from} по {to}.",
-  "{articles} articles · {mentions} mentions · {from} → {to}": "статей: {articles} · упоминаний: {mentions} · {from} → {to}",
+  "{term} · {articles} articles · {mentions} mentions · {from} → {to}": "{term} · статей: {articles} · упоминаний: {mentions} · {from} → {to}",
   "{n} quarantined, not included": "{n} в карантине, не включены",
   "showing the first 5000": "показаны первые 5000",
   "{term}: {from} → {to}": "{term}: {from} → {to}",
-  "Could not open that period": "Не удалось открыть этот период"
+  "Could not open that period": "Не удалось открыть этот период",
+  "Selected {from} → {to} · {n} of {total} points": "Выбрано {from} → {to} · {n} из {total} точек",
+  "n counts the datapoints plotted here, not articles.": "n — это число построенных здесь точек данных, а не статей."
 }

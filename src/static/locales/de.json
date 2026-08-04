@@ -2696,9 +2696,11 @@
   "Select a period": "Zeitraum auswählen",
   "Drag across the chart to open the articles in that period. Hold Shift to drag without switching mode.": "Ziehen Sie über das Diagramm, um die Artikel dieses Zeitraums zu öffnen. Mit gedrückter Umschalttaste ziehen, ohne den Modus zu wechseln.",
   "No articles in {from} → {to}.": "Keine Artikel zwischen {from} und {to}.",
-  "{articles} articles · {mentions} mentions · {from} → {to}": "{articles} Artikel · {mentions} Nennungen · {from} → {to}",
+  "{term} · {articles} articles · {mentions} mentions · {from} → {to}": "{term} · {articles} Artikel · {mentions} Nennungen · {from} → {to}",
   "{n} quarantined, not included": "{n} in Quarantäne, nicht enthalten",
   "showing the first 5000": "die ersten 5000 werden angezeigt",
   "{term}: {from} → {to}": "{term}: {from} → {to}",
-  "Could not open that period": "Dieser Zeitraum konnte nicht geöffnet werden"
+  "Could not open that period": "Dieser Zeitraum konnte nicht geöffnet werden",
+  "Selected {from} → {to} · {n} of {total} points": "Auswahl {from} → {to} · {n} von {total} Punkten",
+  "n counts the datapoints plotted here, not articles.": "n zählt die hier gezeichneten Datenpunkte, nicht die Artikel."
 }

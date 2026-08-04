@@ -11565,14 +11565,20 @@
     // Both numbers are reported because they are different quantities: a bar's height is
     // a MENTION total, the selection is a set of ARTICLES, and one article mentioning a
     // term three times raises the bar by three and the set by one.
-    function _brushToCorpus(term) {
+    function _brushToCorpus(term, bucket) {
       return async (from, to, ctl) => {
         const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
         const tf = (window.OOI18N && OOI18N.tf)
           ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_m, k) => v[k]));
         try {
+          // The chart's OWN bucket travels with the span: a brush over a weekly chart can
+          // only honestly select whole weeks, so the server widens the range to bucket
+          // edges. Without it a bar sitting inside the band could contribute none of its
+          // height and the reported total would disagree with the bars just selected --
+          // measured 65 drawn against 50 reported before this.
           const r = await api(`/api/insights/trend-articles?term=${encodeURIComponent(term)}`
-            + `&start=${encodeURIComponent(from)}&end=${encodeURIComponent(to)}`);
+            + `&start=${encodeURIComponent(from)}&end=${encodeURIComponent(to)}`
+            + `&bucket=${encodeURIComponent(bucket || "day")}`);
           const ids = (r && r.article_ids) || [];
           if (!ids.length) {
             // An honest empty, never a silent no-op: the span really held nothing that
@@ -11582,8 +11588,15 @@
             if (ctl && ctl.clear) ctl.clear();
             return;
           }
-          let note = tf("{articles} articles · {mentions} mentions · {from} → {to}",
-                        {articles: r.articles, mentions: r.mentions, from, to});
+          // The term is named so the toast is self-contained: "3 articles \u00b7 50
+          // mentions" alone does not say WHAT was counted, and the reader would have to
+          // notice the search chip elsewhere on the page to recover it.
+          // r.start/r.end are the EFFECTIVE span after bucket expansion. Showing the raw
+          // drag instead would report a period that was not the one queried.
+          const eff = {from: r.start || from, to: r.end || to};
+          let note = tf("{term} \u00b7 {articles} articles \u00b7 {mentions} mentions \u00b7 {from} \u2192 {to}",
+                        {term, articles: r.articles, mentions: r.mentions,
+                         from: eff.from, to: eff.to});
           if (r.quarantined_excluded) {
             note += " · " + tf("{n} quarantined, not included",
                                    {n: r.quarantined_excluded});
@@ -11600,6 +11613,13 @@
           toast((e && e.message) || t("Could not open that period"), "err");
         }
       };
+    }
+
+    // Composite lookup for chart chrome: the KEY is a fixed template so it is keyable
+    // x12, the VALUES are data interpolated after translation (the OOI18N.tf discipline).
+    function _figTf(tpl, vars) {
+      if (window.OOI18N && OOI18N.tf) return OOI18N.tf(tpl, vars);
+      return tpl.replace(/\{(\w+)\}/g, (_m, k) => vars[k]);
     }
 
     function ooChart(el, seriesList, opts = {}) {
@@ -11726,6 +11746,21 @@
         const d = new Date(ms);
         return new Date(d.getTime() - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 10);
       };
+      // Bucket edges, so the live readout previews the span the SERVER will use. Without
+      // this the preview showed the raw drag (2026-05-10 -> 06-26) and the result reported
+      // the widened weeks (05-04 -> 06-28): two different spans for one gesture, which is
+      // the same preview-vs-action divergence the shared day formatter already fixed once.
+      const _snap = (ms, end) => {
+        const d = new Date(ms);
+        const b = opts.bucket || "day";
+        if (b === "week") {
+          const dow = (d.getDay() + 6) % 7;              // Monday-based, matching ISO weeks
+          d.setDate(d.getDate() - dow + (end ? 6 : 0));
+        } else if (b === "month") {
+          if (end) { d.setMonth(d.getMonth() + 1, 0); } else { d.setDate(1); }
+        }
+        return d.getTime();
+      };
       const canBrush = typeof opts.onSelectRange === "function";
       let brushMode = false, bFrom = null, bTo = null;
       // The affordance sits INSIDE the chart, the same convention ooMap's zoom and layer
@@ -11752,9 +11787,10 @@
           draw();
         });
         bar.appendChild(brushBtn);
-        // Directly under the canvas, not appended at the end: the control belongs beside
-        // the thing it acts on, and appending would put it after the .sr-only table.
-        wrap.insertBefore(bar, legend);
+        // After the LEGEND but before the readout. Between canvas and legend (the first
+        // placement) wedged a control between the chart and the caption describing it;
+        // appended at the end it would land after the .sr-only table.
+        wrap.insertBefore(bar, readout);
       }
       // Indexed mode (opts.indexed, maintainer-ruled 2026-06-17): each series is
       // rebased to 100 at its first value in the VISIBLE window, so series of
@@ -11960,7 +11996,7 @@
           return `<button type="button" class="fig-leg" data-oo-leg="${i}"` +
             ` aria-pressed="${s.hidden ? "false" : "true"}"${s.hidden ? ' style="opacity:.4"' : ""}>` +
             _figGlyph(Object.assign({}, st, {color: s.color})) +
-            `${esc(s.label)} <span class="muted">n=${s.vis.length}${s.unit ? " \u00b7 " + esc(s.unit) : ""}</span></button>`;
+            `${esc(s.label)} <span class="muted" title="${esc(t9("n counts the datapoints plotted here, not articles."))}">n=${s.vis.length}${s.unit ? " \u00b7 " + esc(s.unit) : ""}</span></button>`;
         }).join("");
         legend.querySelectorAll("[data-oo-leg]").forEach(elm => {
           elm._oo = () => { all[+elm.dataset.ooLeg].hidden = !all[+elm.dataset.ooLeg].hidden; draw(); };
@@ -12008,7 +12044,14 @@
       cv.addEventListener("pointermove", (ev) => {
         if (dragX != null && dragT == null && bFrom != null) {
           bTo = msAt(ev.clientX);
-          readout.textContent = dayOf(Math.min(bFrom, bTo)) + " \u2192 " + dayOf(Math.max(bFrom, bTo));
+          const lo = Math.min(bFrom, bTo), hi = Math.max(bFrom, bTo);
+          let inside = 0, tot = 0;
+          for (const sr of visible()) for (const pt of sr.vis) {
+            tot++; if (pt.t >= lo && pt.t <= hi) inside++;
+          }
+          readout.textContent = _figTf("Selected {from} \u2192 {to} \u00b7 {n} of {total} points",
+            {from: dayOf(_snap(lo, false)), to: dayOf(_snap(hi, true)),
+             n: inside, total: tot});
           draw(); return;
         }
         if (dragX != null && dragT) {
@@ -15343,7 +15386,8 @@
         const allPts = tr.points || [];
         const insDraw = (pts) => ooChart($("ins-trend-oo"), [{label: r.term, unit: "mentions",
           points: pts.map(pt => ({t: pt.date, v: pt.count}))}],
-          {height: 180, zeroBase: true, lineMin: 8, onSelectRange: _brushToCorpus(r.term)});
+          {height: 180, zeroBase: true, lineMin: 8, bucket: "week",
+           onSelectRange: _brushToCorpus(r.term, "week")});
         const insDef = _buildTrendScope($("ins-trend-scope"), allPts, insDraw);
         insDraw(_windowTrendPoints(allPts, insDef.from, insDef.to));
         renderMindmap(r.term, assoc.pairs);

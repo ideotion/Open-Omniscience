@@ -26,7 +26,7 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from src.analytics.queries import trend, trend_range_article_ids
+from src.analytics.queries import _bucket_span, trend, trend_range_article_ids
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
 
 BASE = datetime(2026, 4, 1, tzinfo=UTC)
@@ -250,3 +250,72 @@ def test_no_field_name_reads_as_a_score(db):
             for i, v in enumerate(node):
                 walk(v, f"{path}[{i}]")
     walk(out)
+
+
+# --- whole-bucket selection ------------------------------------------------------------
+# THE DEFECT THESE PIN, and why the day-bucket test above did not catch it: the shipped
+# Insights chart is drawn with bucket="week", not "day". A day-precise span can cut a week
+# bar in half -- or miss it entirely while it still LOOKS inside the band, because a week
+# bar is drawn at its Monday. Measured on the demo corpus: a bar drawn at 2026-06-22 whose
+# every mention fell on 2026-06-28 sat inside a span ending 06-26, so four visible bars
+# summing to 65 were reported as 50. A brush can only honestly select what the chart can
+# distinguish, so the span widens to whole buckets.
+
+
+def test_a_week_bucket_is_selected_whole_or_not_at_all(db):
+    """The regression. Mentions on the LAST day of a week whose Monday is inside the drag
+    must be included, because that bar is inside the band the reader drew."""
+    _seed(db, days=40, per_day=1)
+    # 2026-05-04 is a Monday; a drag ending mid-week must still cover that whole week.
+    out = trend_range_article_ids(
+        db, "flooding", start=date(2026, 5, 4), end=date(2026, 5, 6), bucket="week"
+    )
+    assert out["start"] == "2026-05-04" and out["end"] == "2026-05-10", (
+        "the span must widen to the bucket edges and REPORT the span it used"
+    )
+    day_only = trend_range_article_ids(
+        db, "flooding", start=date(2026, 5, 4), end=date(2026, 5, 6), bucket="day"
+    )
+    assert out["mentions"] > day_only["mentions"], (
+        "the widened week must cover more than the three days drawn, or the expansion is "
+        "not happening"
+    )
+
+
+def test_the_week_bars_and_the_brush_total_agree(db):
+    """The property that matters: what the chart drew and what the brush reports are the
+    same number. Sum the WEEK buckets whose own timestamp falls in the drag -- which is
+    what a reader sees inside the band -- and it must equal the reported mentions."""
+    _seed(db, days=40, per_day=2)
+    tr = trend(db, "flooding", bucket="week")
+    lo, hi = date(2026, 4, 20), date(2026, 5, 15)
+    inside = [p for p in tr["points"]
+              if lo <= date.fromisocalendar(int(p["date"][:4]), int(p["date"][6:]), 1) <= hi]
+    drawn = sum(p["count"] for p in inside)
+    out = trend_range_article_ids(db, "flooding", start=lo, end=hi, bucket="week")
+    assert drawn == out["mentions"], (
+        f"the reader sees {drawn} mentions of bars inside the band and is told "
+        f"{out['mentions']}"
+    )
+
+
+def test_day_bucket_is_the_identity_case(db):
+    """A day-resolution caller must be unchanged, or this expansion silently rewrites every
+    existing span."""
+    _seed(db, days=20, per_day=1)
+    a = trend_range_article_ids(db, "flooding", start=date(2026, 4, 5), end=date(2026, 4, 9))
+    b = trend_range_article_ids(db, "flooding", start=date(2026, 4, 5), end=date(2026, 4, 9),
+                                bucket="day")
+    assert a["start"] == b["start"] == "2026-04-05"
+    assert a["end"] == b["end"] == "2026-04-09"
+    assert a["mentions"] == b["mentions"]
+
+
+def test_bucket_span_edges_are_exact():
+    """Pure, so the arithmetic is checked directly rather than through a corpus."""
+    assert _bucket_span(date(2026, 6, 24), "week") == (date(2026, 6, 22), date(2026, 6, 28))
+    assert _bucket_span(date(2026, 6, 22), "week") == (date(2026, 6, 22), date(2026, 6, 28))
+    assert _bucket_span(date(2026, 6, 28), "week") == (date(2026, 6, 22), date(2026, 6, 28))
+    assert _bucket_span(date(2026, 2, 14), "month") == (date(2026, 2, 1), date(2026, 2, 28))
+    assert _bucket_span(date(2026, 12, 3), "month") == (date(2026, 12, 1), date(2026, 12, 31))
+    assert _bucket_span(date(2026, 6, 24), "day") == (date(2026, 6, 24), date(2026, 6, 24))
