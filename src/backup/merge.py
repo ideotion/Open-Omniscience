@@ -42,6 +42,7 @@ import re
 import sqlite3
 import threading
 import time
+from contextlib import contextmanager, suppress
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -189,6 +190,65 @@ class DomainResult:
 # --------------------------------------------------------------------------- #
 #  Stage preparation (schema floor + upgrade on the staged copy)
 # --------------------------------------------------------------------------- #
+#: An incoming corpus at least this many times the machine's RAM is reported as
+#: a scale note. Not a threshold with behaviour attached -- purely the point at
+#: which the ratio is worth stating out loud.
+_IMPORT_SCALE_NOTE_RATIO = 2.0
+
+
+def _report_import_scale(corpus_path: Path) -> dict:
+    """State the import's SCALE up front, in the run journal, before the first
+    expensive stage.
+
+    Field 2026-08-03: a ~35-42 GB corpus was merged into a 2.49 GB one on an
+    8.3 GB machine. Every number needed to see that coming was already on disk
+    when the run started -- the staged file's size, the machine's RAM, the free
+    space -- and none of them was ever recorded. The operator spent 46 minutes on
+    quick_check and then 15.9 hours in one merge step before there was anything
+    to look at.
+
+    REPORTS, NEVER REFUSES. A big import on a small machine is slow, not wrong,
+    and the operator may have every reason to run it anyway; blocking it would be
+    the app overruling a decision that is not its own. Every field degrades to
+    absent rather than to a guess.
+    """
+    facts: dict = {}
+    try:
+        facts["staged_bytes"] = corpus_path.stat().st_size
+    except OSError:
+        pass
+    try:
+        total = _total_ram_mb()
+        if total:
+            facts["ram_total_mb"] = total
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        import shutil as _shutil
+
+        facts["dest_free_bytes"] = int(_shutil.disk_usage(str(corpus_path.parent)).free)
+    except Exception:  # noqa: BLE001
+        pass
+    staged_mb = facts.get("staged_bytes", 0) / (1024 * 1024)
+    ram_mb = facts.get("ram_total_mb") or 0
+    if staged_mb and ram_mb:
+        ratio = staged_mb / ram_mb
+        facts["staged_to_ram_ratio"] = round(ratio, 1)
+        if ratio >= _IMPORT_SCALE_NOTE_RATIO:
+            facts["note"] = (
+                f"the incoming corpus is {ratio:.1f}x this machine's RAM; the merge "
+                "streams it once, so expect it to be disk-bound and long. Nothing is "
+                "wrong -- this is stated so a long run is not mistaken for a stall."
+            )
+    try:
+        from src.backup import runlog
+
+        runlog.milestone("import_scale", **facts)
+    except Exception:  # noqa: BLE001 - reporting never breaks an import
+        pass
+    return facts
+
+
 def prepare_staged_corpus(
     staged: StagedArtifact, *, allow_unverified: bool = False, timings: object = None
 ) -> str:
@@ -220,8 +280,6 @@ def prepare_staged_corpus(
             f"artifact manifest is {staged.signature_state}; pass "
             "allow_unverified to merge it anyway (its origin cannot be proven)"
         )
-
-    from contextlib import contextmanager
 
     # RECORD, never STAGE. timings.stage() also fires stage_progress_cb, which
     # drives the user-visible phase counter -- and that counter's honest
@@ -255,6 +313,8 @@ def prepare_staged_corpus(
             # In a finally: time spent before a failure is real time the operator
             # waited, and a validate that raises is exactly when knowing that helps.
             _record(name, time.monotonic() - _t0)
+
+    _report_import_scale(staged.corpus_path)
 
     try:
         with _sub("prepare_staged:validate"):
@@ -326,6 +386,114 @@ def _insert_tracked(
     return _count(con, f'SELECT COUNT(*) FROM "{table}" WHERE rowid > ?', (wm,))  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
 
 
+#: VDBE operations between progress-handler callbacks during a merge step.
+#: MEASURED on the merge's own INSERT..SELECT shape (encrypted, page_size 16384):
+#: 1,000 -> ~38 callbacks/s, 100 -> ~536/s. 1,000 gives a live signal several
+#: times a second with no measurable cost; smaller only adds Python calls.
+_STEP_WATCH_OPS = 1000
+
+#: How often the watcher publishes a tick and re-reads should_stop. A merge step
+#: that runs for hours needs to be observable, not chatty: this is a HEARTBEAT,
+#: never a percentage.
+_STEP_WATCH_INTERVAL_S = 2.0
+
+
+class MergeStepStopped(RestoreAborted):
+    """The operator's Stop, landed INSIDE a long merge step.
+
+    Subclasses :class:`RestoreAborted` deliberately: every existing handler
+    already treats that as a normal outcome rather than an error (the volume job
+    reports "stopped-by-operator"; the live corpus is byte-identical either way),
+    and a stop that arrives mid-statement is the same event as one that arrives
+    between steps -- only more responsive. Nothing downstream needs to learn a
+    new exception to keep behaving correctly."""
+
+
+@contextmanager
+def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb):
+    """Make a long merge step observable AND interruptible from inside.
+
+    SQLite's progress handler runs every ``_STEP_WATCH_OPS`` VDBE operations
+    during a statement, and **returning non-zero aborts that statement** --
+    verified directly, not assumed: the abort raises ``OperationalError:
+    interrupted`` and the enclosing ``BEGIN IMMEDIATE`` rolls back to zero rows.
+    That is the whole mechanism, and it buys two things the merge did not have:
+
+    STOP THAT WORKS. Ruling 2026-07-29 item 15 says a Stop is immediate. It was
+    not: ``should_stop`` was read only BETWEEN the 14 steps, so during the step
+    that actually takes the time the button did nothing. Now the operator's Stop
+    lands inside the statement.
+
+    A COUNTER THAT MOVES. The run journal reported ``merge_step 2/19`` unchanged
+    for sixteen hours because step 3 published nothing internally. The tick is a
+    LIVENESS signal -- elapsed seconds in this step -- and deliberately NOT a
+    percentage: the handler counts VM operations, which bear no honest relation
+    to rows remaining, and inventing a fraction from them would be exactly the
+    fabricated progress this project forbids.
+
+    Report-only in both directions: a raising ``step_cb`` can never break a merge,
+    and a raising ``should_stop`` is treated as "do not stop" (a broken stop
+    predicate must not abort an hours-long import by accident).
+    """
+    t0 = time.monotonic()
+    last = [t0]
+    stopped = [False]
+
+    def _tick() -> int:
+        # THE STOP CHECK IS NOT RATE-LIMITED. It is an Event.is_set() -- a lock
+        # read -- so at ~38 ticks/s it costs nothing, and rate-limiting it would
+        # add up to _STEP_WATCH_INTERVAL_S of latency to the one control the
+        # operator is actively waiting on. Only the REPORTING is throttled: that
+        # one crosses into the journal and the UI.
+        if should_stop is not None:
+            try:
+                if should_stop():
+                    stopped[0] = True
+                    return 1  # aborts the running statement
+            except Exception:  # noqa: BLE001 - a broken predicate never aborts a merge
+                pass
+        if step_cb is None:
+            return 0
+        now = time.monotonic()
+        if now - last[0] < _STEP_WATCH_INTERVAL_S:
+            return 0
+        last[0] = now
+        try:
+            step_cb(index, total, name, round(now - t0, 1))
+        except Exception:  # noqa: BLE001 - reporting never breaks a merge
+            pass
+        return 0
+
+    try:
+        con.set_progress_handler(_tick, _STEP_WATCH_OPS)
+    except Exception:  # noqa: BLE001 - an old/exotic driver simply gets the old behaviour
+        yield
+        return
+    try:
+        yield
+    except Exception as exc:
+        # Deliberately NOT `except sqlite3.OperationalError`. The merge connection
+        # comes from the raw connect() factory, so on an encrypted store it is a
+        # SQLCIPHER3 connection, and sqlcipher3 raises its OWN exception classes --
+        # `sqlcipher3.dbapi2.OperationalError` is not `sqlite3.OperationalError`.
+        # A class-based catch here would miss the interrupt on exactly the store
+        # every real corpus uses (the same cross-driver trap that made the
+        # "database is locked" retry net dead on encrypted stores, fixed 2026-07-14).
+        # Our own flag is the authority: if WE asked for the abort, this is it,
+        # whatever the driver called it.
+        if stopped[0]:
+            # The transaction rolls back in merge_corpus's except, leaving the
+            # working copy disposable and the live corpus untouched.
+            raise MergeStepStopped(
+                f"stopped during the merge (inside the '{name}' step) — "
+                "nothing was written to your corpus"
+            ) from exc
+        raise
+    finally:
+        with suppress(Exception):
+            con.set_progress_handler(None, 0)
+
+
 def _build_map(con: sqlite3.Connection, name: str, select_old_new: str) -> None:
     """Create temp mapping table ``name(old -> new)`` from a SELECT old, new."""
     con.execute(f'DROP TABLE IF EXISTS temp."{name}"')
@@ -339,6 +507,7 @@ def _build_map(con: sqlite3.Connection, name: str, select_old_new: str) -> None:
 def merge_corpus(
     staged_corpus: Path, working_copy: Path, batch_meta: dict, progress_cb=None,
     cache_mb: int | None = None, should_stop: Callable[[], bool] | None = None,
+    step_cb: Callable[[int, int, str, float], None] | None = None,
 ) -> tuple[dict, int]:
     """Merge the staged corpus into the working copy. Returns (per-domain counts,
     batch_id). The working copy is disposable; the live DB is never touched.
@@ -414,7 +583,13 @@ def merge_corpus(
                     f"stopped during the merge (before the '{name}' step) — "
                     "nothing was written to your corpus"
                 )
-            fn(con, batch_id, results)
+            # INSIDE the step, not just between steps. A single step can run for
+            # HOURS (field 2026-08-03: 15.9 h in 'articles' alone), and for that
+            # whole time the between-steps checks above are unreachable -- so a
+            # Stop was inert during the longest phase of an import, and the run
+            # journal's counter could not move. See _step_watch.
+            with _step_watch(con, i, total, name, should_stop, step_cb):
+                fn(con, batch_id, results)
             if progress_cb is not None:
                 try:
                     progress_cb(i, total, name)
@@ -437,9 +612,18 @@ def merge_corpus(
         con.execute("COMMIT")
         return counts, batch_id
     except Exception:
-        from contextlib import suppress
-
-        with suppress(sqlite3.Error):  # may already be rolled back
+        # suppress(Exception), NOT suppress(sqlite3.Error). On any real corpus this
+        # connection is SQLCIPHER3, and `sqlcipher3.Error` is NOT a subclass of
+        # `sqlite3.Error` (verified) -- so a class-scoped suppress does not catch
+        # the driver's own exception, and a failed ROLLBACK inside this handler
+        # would propagate and REPLACE the real failure the operator needs to see.
+        #
+        # And it does fail, routinely: an interrupted statement (the operator's
+        # Stop, see _step_watch) leaves SQLite having already rolled back, so this
+        # ROLLBACK raises "cannot rollback - no transaction is active". Before this
+        # fix, a Stop on an encrypted store surfaced as that message instead of as
+        # the abort. A best-effort cleanup must never outrank the cause.
+        with suppress(Exception):
             con.execute("ROLLBACK")
         raise
     finally:
@@ -2917,27 +3101,57 @@ def _total_ram_mb() -> int | None:
 _IMPORT_CACHE_RAM_SHARE = 0.25
 #: Share of TOTAL RAM it may claim, whatever happens to be free right now.
 #:
-#: THE AVAILABLE-ONLY VERSION OF THIS WAS WRONG, and the field caught it within
-#: hours (2026-07-30, a 12 GB box mid-merge: RSS 8.07 GB, 137 MiB free, 538 MiB
-#: of a 1 GiB swap consumed). Two reasons a fraction of MemAvailable is not a
-#: safe budget on its own:
+#: These two shares now only ever scale the budget DOWN on a small machine. The
+#: ceiling below is what actually decides it on anything bigger, and the reason
+#: is a measurement that refuted this comment's own previous reasoning.
 #:
-#:   * MemAvailable is a snapshot, and the cache OUTLIVES it. It is set once on
-#:     the merge connection and held for the whole merge, while everything the
-#:     import does afterwards -- the working-copy write path, the app's own
-#:     engine -- competes for what is left.
-#:   * The consumer is ONE transaction. The entire 14-step merge runs inside a
-#:     single ``BEGIN IMMEDIATE`` (see :func:`merge_corpus`), so pages dirtied
-#:     early cannot be evicted until the final COMMIT. A page cache handed to a
-#:     long single transaction is closer to a floor on residency than a ceiling.
+#: WHAT THE PREVIOUS VERSION CLAIMED, AND WHY IT WAS WRONG (field 2026-08-03):
+#: it argued that because the whole 14-step merge runs inside ONE
+#: ``BEGIN IMMEDIATE``, "pages dirtied early cannot be evicted until the final
+#: COMMIT", so a page cache handed to a long transaction is "closer to a floor
+#: on residency than a ceiling" -- and concluded that a bigger machine should
+#: therefore get a bigger cache.
 #:
-#: Bounding by TOTAL as well fixes both: an eighth of the machine is a budget
-#: that does not evaporate when something else allocates, and it degrades
-#: proportionally on exactly the small boxes this project targets. 12 GB -> 1.4
-#: GB (was up to 3 GB); 64 GB -> the 4 GB ceiling; 4 GB -> the 512 MiB floor.
+#: SQLite does not behave that way. It SPILLS dirty pages to the database file
+#: as the cache fills, keeping the transaction atomic via the rollback journal /
+#: WAL. Memory during an open transaction is bounded by ``cache_size``, NOT by
+#: transaction size. Measured directly (encrypted, WAL, page_size 16384, a 1 GB
+#: incoming corpus, the merge's own INSERT..SELECT-with-NOT-EXISTS shape):
+#:
+#:     cache_size    RSS held during the open transaction    spilled to the file
+#:      2048 MiB                  2042 MiB                        --
+#:       989 MiB                  2026 MiB                        96 MB
+#:       512 MiB                  1545 MiB                       ...
+#:       256 MiB                  1286 MiB                       765 MB
+#:        64 MiB                  1093 MiB                       941 MB
+#:        32 MiB                  1060 MiB                       984 MB
+#:
+#: So the cache was never a throughput lever here -- it was a residency dial,
+#: and the old rule turned it up on exactly the machines least able to pay. The
+#: field cost: a ~35-42 GB corpus merging into a 2.49 GB one on an 8.3 GB box
+#: got a 989 MiB cache, drove RSS to 6.4 GB, pinned all 1 GB of swap 55 minutes
+#: in, and spent 15.9 HOURS inside merge step 3 without finishing it. The same
+#: code merged 20k-45k-article backups in 17-91 SECONDS.
+#:
+#: WHY A BIGGER CACHE CANNOT HELP THIS WORKLOAD: the merge's dominant step is a
+#: bulk INSERT..SELECT over the whole incoming corpus. Its working set is the
+#: incoming corpus -- tens of GB, always vastly larger than any cache this would
+#: hand out -- so the hit rate is ~0 whatever the size. The pages are touched
+#: once. Cache exists to serve re-reads, and there are none.
+#:
+#: NOT CLAIMED: a specific speedup. The sandbox these numbers come from has too
+#: much I/O noise to state a factor, and the field scale is 35x the probe's. The
+#: RSS relationship above is monotonic and reproducible; the timing relationship
+#: is not, beyond "the largest cache was never the fastest".
 _IMPORT_CACHE_TOTAL_SHARE = 0.125
-_IMPORT_CACHE_FLOOR_MB = 512  # never below the fixed default this replaced
-_IMPORT_CACHE_CEIL_MB = 4096  # past this, SQLite's cache stops being the bottleneck
+#: Small enough that a merge cannot squeeze the OS out of the page cache it
+#: needs to stream a multi-GB staged corpus; large enough to stay well clear of
+#: the region where SQLite's own defaults start to hurt.
+_IMPORT_CACHE_FLOOR_MB = 32
+#: MEASURED (see the table above): past this the cache buys no throughput on the
+#: merge's dominant shape and only adds resident bytes. This is the bound that
+#: decides the budget on any machine with more than ~2 GB of RAM.
+_IMPORT_CACHE_CEIL_MB = 256
 
 
 def import_cache_mb() -> int:
@@ -2947,23 +3161,27 @@ def import_cache_mb() -> int:
     (``src/config/power_profiles.py``), which never reaches this connection
     (opened via the raw ``connect()`` factory, not the pooled app engine).
 
-    SCALED TO RAM (maintainer ask 2026-07-30): a fixed 512 MiB is simultaneously
-    too big for a 3 GB field machine and too small for a 12 GB one. The budget is
-    the SMALLER of a quarter of what is available right now and an eighth of the
-    machine's total, clamped to [512, 4096] MiB.
+    SCALES DOWN ONLY. The budget is the smaller of a quarter of what is
+    available right now and an eighth of the machine's total, clamped to
+    [32, 256] MiB -- so a small machine gets less, and no machine gets more.
 
-    BOTH BOUNDS ARE LOAD-BEARING, and shipping only the first was a real
-    regression the field caught the same day (see
-    :data:`_IMPORT_CACHE_TOTAL_SHARE` for the measurements): available-only lets
-    a momentarily-idle box hand a single, hours-long transaction more memory than
-    the machine can sustain once the rest of the import allocates. Taking the
-    minimum means a busy machine is respected AND a quiet one cannot be talked
-    into overcommitting.
+    THE CEILING IS THE POINT, and it replaces a rule that scaled UP with RAM.
+    That rule was built on the belief that an open transaction pins its dirty
+    pages in memory until COMMIT; SQLite actually spills them to the file as the
+    cache fills, so the cache is a residency dial and not a throughput lever for
+    this workload. :data:`_IMPORT_CACHE_TOTAL_SHARE` carries the measurements and
+    the field failure that produced them (15.9 hours in one merge step on an
+    8.3 GB box that had been handed a 989 MiB cache).
+
+    Because the merge's dominant step streams the whole incoming corpus exactly
+    once, its working set is always far larger than any cache worth handing out
+    and the hit rate is ~0 at every size. Bigger simply costs more resident bytes
+    that the OS then cannot use to buffer the staged file.
 
     ``OO_IMPORT_CACHE_MB`` still overrides absolutely -- an operator's explicit
     number is never second-guessed, in either direction, and it remains the
-    escape hatch for a box already under pressure. A machine whose RAM cannot be
-    read falls back to the fixed 512 MiB default, never to a guess.
+    escape hatch in both directions. A machine whose RAM cannot be read falls
+    back to the ceiling (the measured value), never to a guess.
 
     A resource-usage tuning knob only, never a behaviour change: the merge's
     results are byte-identical at any cache size."""
@@ -2982,7 +3200,10 @@ def import_cache_mb() -> int:
         if v and v > 0
     ]
     if not budgets:
-        return _IMPORT_CACHE_FLOOR_MB
+        # Unreadable RAM falls back to the MEASURED value, not to a guess and not
+        # to the floor: the ceiling is what the measurement endorses, and the
+        # shares exist only to come down from it on a small machine.
+        return _IMPORT_CACHE_CEIL_MB
     return max(_IMPORT_CACHE_FLOOR_MB, min(_IMPORT_CACHE_CEIL_MB, min(budgets)))
 
 
@@ -3252,13 +3473,31 @@ def run_restore(
         if progress_cb is not None:
             progress_cb(done, total, name)
 
+    def _step_tick(index: int, total: int, name: str, elapsed_s: float) -> None:
+        """Liveness from INSIDE a running merge step (see _step_watch).
+
+        Elapsed seconds only. NOT a percentage and NOT an ETA: the tick comes
+        from a VDBE operation counter, which bears no honest relation to rows
+        remaining, and a fraction derived from it would be invented. What it
+        proves is that the step is executing -- which is precisely the question
+        sixteen hours of an unchanging "2/19" could not answer.
+        """
+        from src.backup import runlog
+
+        runlog.milestone(
+            "merge_step_tick", durable=False,
+            step=index, steps=total, label=name, step_elapsed_s=elapsed_s,
+        )
+        if progress_cb is not None:
+            progress_cb(index - 1, total, f"{name} ({elapsed_s:.0f}s)")
+
     _abort_point("merge")
     with timings.stage("merge"):
         _step_clock["t"] = time.monotonic()
         counts, batch_id = merge_corpus(
             staged.corpus_path, working, meta,
             progress_cb=_timed_progress_cb, cache_mb=merge_cache_mb,
-            should_stop=should_stop,
+            should_stop=should_stop, step_cb=_step_tick,
         )
     _abort_point("verify")
     with timings.stage("verify"):

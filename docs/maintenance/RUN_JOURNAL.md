@@ -138,6 +138,36 @@ The journal must never break, block, or deadlock the run it observes.
   exists to diagnose, an `fsync` can block for seconds — and every other writer
   would feel it.
 
+## What it found, the first time out
+
+Field 2026-08-03, an import of a ~35–42 GB backup into a 2.49 GB corpus on an
+8.3 GB machine. Two runs died in **merge step 3 of 19 (`articles`)**; the long
+one ran 15.9 hours inside that one step. The journal answered it from the
+artefact alone, in minutes:
+
+- `died_in_stage: "merge"`, `merge_step 2/19`, unchanged for the whole run.
+- `cpu_s` accruing continuously to 33,925 s → **not deadlocked, just slow**.
+- `d_cpu_s` decaying from ~14 s to ~5 s per 15 s beat → and getting slower.
+- `rss_mb` 6.4 GB, `mem_avail_mb` down to 212 MB, `swap_used_mb` pinned at its
+  1024 MB ceiling from minute 55.
+
+The cause was the import's own page-cache budget, which scaled *up* with RAM on
+the belief that an open transaction pins its dirty pages. It does not — SQLite
+spills them as the cache fills — so the rule handed the most memory to the
+machines least able to pay. Fixed 2026-08-03; the journal is what made it
+findable.
+
+Three things came out of that run and are now recorded here:
+
+- `import_scale` — the staged size, the machine's RAM, the ratio and the free
+  disk, written **before** the 46-minute `quick_check`. Every number needed to
+  see the mismatch coming was on disk at run start and none of it was recorded.
+- `merge_step_tick` — elapsed seconds inside a running step. Liveness, never a
+  percentage: it comes from a VM-operation counter, which bears no honest
+  relation to rows remaining.
+- Stop now lands **inside** a step. It used to be read only between the 14 merge
+  steps, so during the step that takes the time the button did nothing.
+
 ## What it still cannot tell you
 
 - Whether a run with no `run_end` was killed or merely muted. Stated, not guessed.
@@ -147,3 +177,8 @@ The journal must never break, block, or deadlock the run it observes.
   that led there.
 - Per-child CPU on a machine that denies `/proc` access. The field is omitted
   with the reason rather than filled in.
+- Where roughly 3–4 GB of that 6.4 GB RSS actually went. The page cache and the
+  app's own baseline account for about half. The rest is **unexplained**, and is
+  recorded here as unexplained rather than attributed to a plausible story; the
+  `import_scale` facts now go into the journal up front so the next large run
+  localises it instead of inviting another guess.

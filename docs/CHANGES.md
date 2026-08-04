@@ -46,6 +46,22 @@ loop, and recalibrates the analytics against a real ~500k-article corpus. On the
 - **The Observatory** — the corpus-as-night-sky exploration tab (design of record:
   [`docs/design/OBSERVATORY_DESIGN.md`](design/OBSERVATORY_DESIGN.md)), gated on the
   group-statistics core and maintainer click-through.
+- **The import page-cache rule was the bug** — a large import on a small machine
+  spent 15.9 hours inside a single merge step without finishing, while the same
+  code merged smaller backups in seconds. The cause was this project's own
+  2026-07-30 change, which scaled the merge page cache *up* with RAM on the
+  stated belief that an open transaction pins its dirty pages until COMMIT.
+  SQLite spills them as the cache fills — memory tracks `cache_size`, not
+  transaction length — so the rule handed the most memory to the machines least
+  able to pay. The budget now only ever scales *down* from a measured ceiling,
+  and the refuted reasoning is kept in place as an explicitly-corrected premise
+  so it cannot be quietly restored. Two defects surfaced alongside it: **Stop is
+  now honoured inside a merge step** (it was read only between steps, so during
+  the step that takes the time the button was inert), and a failing cleanup
+  `ROLLBACK` no longer replaces the real error on an encrypted store
+  (`sqlcipher3.Error` is not a `sqlite3.Error`). An import now states its scale —
+  staged size against the machine's RAM and free disk — before the long stages
+  rather than after them.
 - **The import/export run journal** — a crash-surviving record of what each import and
   export was doing *while it ran*, on by default
   ([`docs/maintenance/RUN_JOURNAL.md`](maintenance/RUN_JOURNAL.md)). The import path was
