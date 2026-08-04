@@ -42,6 +42,9 @@ one that matches what you need.
 - **[ledger/shipped.csv](ledger/shipped.csv)** + **[ledger/SHIPPED_LOG.md](ledger/SHIPPED_LOG.md)**
   — the index and verbatim log of shipped work (with reusable lessons).
 - **[design/](design/)** — per-feature design-of-record specs.
+- **[plans/](plans/)** — action plans written by a read-only reconnaissance pass for a *later*
+  session to execute: verified current state with citations, scored candidates, and ordered
+  work units. Nothing here has been built (a plan states its own unverified claims).
 - **[process/](process/)** — the standing recursive-improvement-cycle protocol
   ([`IMPROVEMENT_CYCLE.md`](process/IMPROVEMENT_CYCLE.md)) plus sequencing drafts awaiting a
   maintainer decision (never executed on their own say-so).
