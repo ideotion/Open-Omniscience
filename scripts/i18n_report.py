@@ -99,6 +99,15 @@ _JS_SHAPES = (
     re.compile(r'aria-label="([A-Za-z][^"{`$]{2,90})"'),
     re.compile(r'\.textContent\s*=\s*"([^"{`$]{3,120})"'),
     re.compile(r'\btoast\(\s*"([^"{`$]{3,140})"'),
+    # The t() call site itself -- the HIGHEST-signal shape, and the one this list
+    # was missing. Every other pattern here is an inference that a literal reaches
+    # the DOM; `t("...")` is the code SAYING SO. i18n.js's t() is an exact map
+    # lookup with no normalisation (`map[s] == null ? s : map[s]`), so a literal
+    # with no en.json key renders verbatim English in all 11 other locales --
+    # including, before this landed, .card-caveat text and the additive-restore
+    # assurance, which the non-negotiables require to ship x12.
+    re.compile(r'\bt\(\s*"((?:[^"\\{`$]|\\.){3,200})"'),
+    re.compile(r"\bt\(\s*'((?:[^'\\{`$]|\\.){3,200})'"),
 )
 
 
@@ -227,7 +236,45 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="list UI chrome strings not yet keyed in en.json (untranslatable today)",
     )
+    ap.add_argument(
+        "--max-untranslatable",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "fail (exit 1) if MORE than N UI strings have no en.json key. A ratchet, "
+            "like MYPY_BASELINE: it may only be lowered."
+        ),
+    )
     args = ap.parse_args(argv)
+
+    # The ratchet. --min compares the locale files against en.json, so it answers
+    # "are the 12 locales mutually consistent?" and CANNOT see a UI string that was
+    # never keyed at all -- which is how it reported a green 2394/2394 x12 while
+    # hundreds of strings, .card-caveat text among them, rendered English in every
+    # locale. This gate closes exactly that gap and is the one that blocks.
+    if args.max_untranslatable is not None:
+        audit = audit_chrome()
+        n = audit["missing_from_en"]
+        print(
+            f"untranslatable UI strings: {n} (ratchet {args.max_untranslatable})",
+            file=sys.stderr,
+        )
+        if n > args.max_untranslatable:
+            print(
+                f"\nFAIL: {n} UI strings have no en.json key, above the ratchet of "
+                f"{args.max_untranslatable}. Add the keys (all 12 locales), or lower "
+                f"nothing -- this number may only go down. "
+                f"Run --audit-chrome to list them.",
+                file=sys.stderr,
+            )
+            return 1
+        if n < args.max_untranslatable:
+            print(
+                f"  (the ratchet can now be lowered to {n})",
+                file=sys.stderr,
+            )
+        return 0
 
     if args.audit_chrome:
         audit = audit_chrome()

@@ -53,10 +53,18 @@ def framing(
         with statement_deadline(db):
             # Eager-load the source: ``a.source.name`` below otherwise fires one extra
             # decrypt-query PER article (an N+1 that, at limit=1000, is a large cost).
-            q = db.query(Article).options(joinedload(Article.source))
+            # Quarantined articles are excluded from BOTH the rows and every count
+            # below. Framing feeds the `framing_split` Lead, so a nav-soup page
+            # (link lists, no prose) would otherwise contribute emphasised "terms"
+            # and a tone reading to a published cross-outlet comparison.
+            q = (
+                db.query(Article)
+                .options(joinedload(Article.source))
+                .filter(Article.quarantined.isnot(True))
+            )
             if query:
                 try:
-                    ids = search_ids(db, query)
+                    ids = search_ids(db, query, exclude_quarantined=True)
                 except SearchQueryError as exc:
                     raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
                 if not ids:
@@ -82,7 +90,12 @@ def framing(
                 # The no-query path compares the most recent ``limit`` articles; total_n is
                 # the whole-corpus count (an index-only aggregate, deadline-bounded) so the
                 # slice is DISCLOSED, never presented as the whole corpus.
-                total_n = int(db.query(func.count(Article.id)).scalar() or 0)
+                total_n = int(
+                    db.query(func.count(Article.id))
+                    .filter(Article.quarantined.isnot(True))
+                    .scalar()
+                    or 0
+                )
                 articles = q.order_by(Article.id.desc()).limit(limit).all()
 
             by_source: dict[str, list[dict]] = {}

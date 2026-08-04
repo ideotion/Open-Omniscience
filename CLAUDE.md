@@ -1880,6 +1880,21 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     both sides and assert same keys, same values, only the ordering differs — rather than
     reverting on faith. No repository script does this, so there was nothing in the tree
     to fix; the fix is the habit.
+  - **`cmd | tail` MAKES `$?` THE EXIT CODE OF `tail` — a pre-push gate checked that way
+    always reads green (2026-08-04, the #858 bandit red):** the local check was
+    `bandit -r src/ -ll -q 2>&1 | tail -5; echo "exit: $?"`, which printed 0 while bandit
+    was exiting 1 the whole time, so a real B608 shipped and reddened the `test` lane.
+    This is the same family as the recorded cwd-persistence and collection-error harness
+    bugs — a verification that reports success without testing what it claims — and it is
+    the cheapest of the three to avoid: redirect to a FILE, capture `$?` on its own line,
+    THEN read the file (`cmd > out 2>&1; rc=$?`), or set `pipefail`. The tell is that a
+    gate you expect to be interesting never says anything interesting.
+    **BANDIT-SPECIFIC, and the reason the first two fix attempts failed:** `# nosec` must
+    sit on the line bandit REPORTS, which for B608 over a concatenation is the first line
+    of the STRING EXPRESSION — not the enclosing `text(...)`/`execute(...)` call, and not
+    the `sql = (` assignment. A marker one line off is silently inert; the run then prints
+    `nosec encountered (B608), but no failed test` for the misplaced one while still
+    failing on the real one, which is the signal to move it rather than add another.
   - **AN EXPLICIT COLUMN ALLOWLIST FAILS ONE GRANULARITY BELOW THE TABLE-LEVEL GUARD YOU
     JUST BUILT (2026-08-03, the fourteen dropped merge columns):** the 2026-07-24 lesson
     named the defect for a whole TABLE and the completeness registry closed that; the same

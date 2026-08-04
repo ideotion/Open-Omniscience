@@ -19,24 +19,20 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 from pathlib import Path
+from tests.js_source_helper import function_body as _slice
 
 _ROOT = Path(__file__).resolve().parent.parent
 _APP_JS = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
 _STREAM = (_ROOT / "src" / "backup" / "stream_backup.py").read_text(encoding="utf-8")
 
 
-def _fn_body(src: str, start_marker: str) -> str:
-    """The text of a top-level IIFE function from its declaration to the next `\\n    function `
-    / `\\n    async function ` sibling — enough to scope assertions to one function."""
-    i = src.index(start_marker)
-    rest = src[i + len(start_marker):]
-    ends = [rest.find("\n    function "), rest.find("\n    async function ")]
-    ends = [e for e in ends if e != -1]
-    return rest[: min(ends)] if ends else rest
+def _fn_body(src: str, name: str) -> str:
+    """One function's body, brace-matched. Shared slicer."""
+    return _slice(src, name)
 
 
 def test_ux_run_gates_the_folder_phase_on_a_confirmed_corpus_backup():
-    run = _fn_body(_APP_JS, "async function _uxRun(")
+    run = _fn_body(_APP_JS, "_uxRun")
     # the load-bearing gate: the folder/blob phase is unreachable unless the volumes job is a
     # completed `backup` (state done + mode backup) of this dest.
     assert 's1.state !== "done"' in run and 's1.mode !== "backup"' in run, "the corpus-confirm gate is missing"
@@ -48,7 +44,7 @@ def test_ux_run_gates_the_folder_phase_on_a_confirmed_corpus_backup():
 
 
 def test_ux_start_then_poll_re_throws_an_unrelated_masked_job():
-    poll = _fn_body(_APP_JS, "async function _uxStartThenPoll(")
+    poll = _fn_body(_APP_JS, "_uxStartThenPoll")
     # a 409 masked-start must only be adopted when the live job is OURS (mode/dest match) — an
     # unrelated Verify/restore/other-dest job re-throws instead of being reported as our backup.
     assert "expect" in poll and "st.mode !== expect.mode" in poll, "the mode-match re-throw is missing"
@@ -72,7 +68,7 @@ def test_ux_show_last_completed_export_summary_restores_the_resume_control():
     to act on it. Fix: reuse _uxShowPaused — the SAME helper _uxRun already calls on a
     mid-run pause — and track which status endpoint (volumes vs folder) produced the shown
     paused state so _uxPhase targets the right one."""
-    fn = _fn_body(_APP_JS, "async function _uxShowLastCompletedExportSummary(")
+    fn = _fn_body(_APP_JS, "_uxShowLastCompletedExportSummary")
     assert "_uxShowPaused(prog, bar, pauseBtn, t)" in fn, (
         "a paused reopen must reuse the same _uxShowPaused helper _uxRun uses mid-run"
     )
@@ -87,6 +83,6 @@ def test_ux_show_last_completed_export_summary_restores_the_resume_control():
 def test_ux_show_paused_is_the_single_source_of_the_resume_button_state():
     """The helper the M8 fix reuses must actually do the unhide+relabel — pin its contract
     so a future refactor of _uxShowPaused can't silently regress the reopen fix above."""
-    fn = _fn_body(_APP_JS, "function _uxShowPaused(")
+    fn = _fn_body(_APP_JS, "_uxShowPaused")
     assert 'pauseBtn.style.display = ""' in fn
     assert 'pauseBtn.dataset.mode = "resume"' in fn

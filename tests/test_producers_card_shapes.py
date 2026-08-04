@@ -105,6 +105,38 @@ def test_card_dataclass_has_no_score_field():
     assert_no_score_fields(Card)  # raises CardSchemaError if a score field is added
 
 
+def test_a_score_hidden_inside_signal_is_refused_at_construction():
+    """The gap the declared-field check could not see.
+
+    `signal` is a free-form dict, so the import-time guard -- which walks
+    dataclasses.fields(Card) -- never inspected its contents. A producer could put
+    a blended number in it under any name and reach the user; the only thing
+    standing in the way was a scatter of per-module test walkers that the ledger
+    itself records as mutually inconsistent (one matching repr(), disagreeing on
+    'grade', tripping on the word 'degraded').
+    """
+    with pytest.raises(CardSchemaError, match="signal"):
+        _mk(signal={"trust_score": 0.87})
+    with pytest.raises(CardSchemaError):
+        _mk(signal={"metric": "x", "value": 1, "rank": 3})
+    # Nested, because a payload is a tree and a walker that stops at depth 1 is a
+    # walker that can be routed around.
+    with pytest.raises(CardSchemaError):
+        _mk(signal={"components": [{"credibility": 0.4}]})
+    with pytest.raises(CardSchemaError, match="trigger"):
+        _mk(trigger={"plain": "why", "math": [{"veracity": 1}]})
+
+
+def test_the_signal_keys_producers_actually_ship_are_still_allowed():
+    """The negative-space twin: an over-eager ban would read as conservative while
+    quietly deleting the honest measurements this schema exists to carry. These are
+    real key sets taken from the shipping producers."""
+    _mk(signal={"metric": "distinct_sources", "value": 4, "n_articles": 9})
+    _mk(signal={"metric": "rate_ratio", "value": 2.1, "recent": 8, "prior": 4})
+    _mk(signal={"metric": "share", "value": 0.31, "place": "Lyon", "lat": 45.7, "lon": 4.8})
+    _mk(trigger={"plain": "why", "math": [{"label": "n", "value": "9"}]})
+
+
 def _mk(**kw):
     base = dict(
         type="rising", title="x", summary="s", bucket="rising", method="m", caveat="c"

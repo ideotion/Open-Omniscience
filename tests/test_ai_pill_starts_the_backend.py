@@ -23,6 +23,7 @@ BROWSER-UNVERIFIED (fork-3): source guards + node --check, no click-through.
 from __future__ import annotations
 
 from pathlib import Path
+from tests.js_source_helper import function_body
 
 _APP = (Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_text(
     encoding="utf-8"
@@ -30,15 +31,8 @@ _APP = (Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_
 
 
 def _fn(name: str) -> str:
-    """One function's own body — never a whole-file search, which cannot tell the two
-    backend paths apart when both mention the same endpoints."""
-    marker = f"function {name}("
-    assert marker in _APP, name
-    tail = _APP.split(marker, 1)[1]
-    for stop in ("\n    function ", "\n    async function ", "\n    const _", "\n    let _"):
-        if stop in tail:
-            tail = tail.split(stop, 1)[0]
-    return tail
+    """One function's own body, brace-matched (tests.js_source_helper)."""
+    return function_body(_APP, name)
 
 
 def test_the_pill_can_start_ollama_not_only_vllm():

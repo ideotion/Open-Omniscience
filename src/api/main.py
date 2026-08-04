@@ -44,7 +44,6 @@ from fastapi.responses import (
     JSONResponse,
     PlainTextResponse,
     RedirectResponse,
-    Response,
     StreamingResponse,
 )
 from fastapi.staticfiles import StaticFiles
@@ -565,36 +564,24 @@ async def favicon() -> RedirectResponse:
     return RedirectResponse(url="/static/favicon.svg", status_code=308)
 
 
-@app.get("/sw.js", include_in_schema=False)
-async def service_worker() -> Response:
-    """Serve the app-shell service worker from the ROOT path so it can control
-    scope ``/`` (full offline navigation of the app), which the ``/static`` mount
-    cannot grant.
-
-    A service worker's maximum scope is its own URL path, so ``/static/sw.js`` is
-    capped at ``/static/``; only a script served at ``/`` (or one carrying the
-    ``Service-Worker-Allowed: /`` header) may claim the whole origin. This route
-    serves the SAME file as ``/static/sw.js`` with that header — the worker's own
-    ``fetch`` guard is unchanged, so it still only ever caches/replays the static
-    shell under ``/static/`` and NEVER an API/data response (see the file header).
-    ``text/javascript`` is required because the security-headers middleware sets
-    ``X-Content-Type-Options: nosniff`` (a wrong type would refuse to execute).
-    """
-    sw_path = Path(__file__).parent.parent / "static" / "sw.js"
-    if not sw_path.exists():
-        return Response(status_code=404)
-    return Response(
-        content=sw_path.read_text(encoding="utf-8"),
-        media_type="text/javascript",
-        headers={
-            # Grant the worker origin-wide scope (this is what /static cannot do).
-            "Service-Worker-Allowed": "/",
-            # Never pin a stale worker: always revalidate so shell updates land.
-            "Cache-Control": "no-cache",
-        },
-    )
-
-
+# REMOVED 2026-08-04: the root-scoped service-worker route.
+#
+# It served /static/sw.js at "/" with `Service-Worker-Allowed: /` to grant the
+# worker origin-wide scope, documented as enabling "full offline navigation of
+# the app". Three things made that untrue at once, and the tests around it were
+# green throughout:
+#
+#   * nothing ever registered it. sw-register.js registers "/static/sw.js" --
+#     the scope-capped path -- so the header was never fetched;
+#   * the worker declines "/" anyway. sw.js's fetch guard returns early for any
+#     path outside /static/, with the comment "never /api, /metrics, or '/'".
+#     So even registered at root it would not have served the document;
+#   * the app is served from loopback. If the backend is down there is no app,
+#     and a cached shell that renders while every API call fails is worse than
+#     an honest browser error.
+#
+# The remaining /static-scoped worker is self-consistent: it caches shell assets
+# and says so. Whether it earns its keep at all is a separate question.
 # Serve static files (HTML5 frontend). Register the JS/CSS MIME types explicitly so
 # the externalised /static/app.js + app.css are served as text/javascript & text/css
 # on EVERY platform: StaticFiles falls back to the OS registry otherwise, and Windows

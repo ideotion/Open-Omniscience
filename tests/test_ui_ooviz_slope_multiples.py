@@ -17,6 +17,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from tests.test_repo_invariants import _ui_source
+from tests.js_source_helper import function_body as _slice
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 _JS = (_STATIC / "app.js").read_text(encoding="utf-8")
@@ -24,37 +25,8 @@ _OOVIZ = (_STATIC / "ooviz.js").read_text(encoding="utf-8")
 
 
 def _fn_body(name: str) -> str:
-    """One function's body from the real app.js, brace-matched from the BODY brace.
-
-    Whole-file assertions are only as meaningful as the searched string's UNIQUENESS,
-    and this file learned that the expensive way: when smallMultiplesSvg's sparse
-    threshold was renamed n -> nReal, ``"n >= _SPARSE_BAR_MAX" in _JS`` kept passing
-    on dashChartSvg's copy of the same expression, so a test named for small
-    multiples was asserting a property of a different renderer. Scope to the body.
-    """
-    at = _JS.index(f"function {name}(")
-    depth = 0
-    i = _JS.index("(", at)
-    while True:  # walk the parameter list, so a default `{}` cannot be mistaken for the body
-        if _JS[i] == "(":
-            depth += 1
-        elif _JS[i] == ")":
-            depth -= 1
-            if depth == 0:
-                break
-        i += 1
-    start = _JS.index("{", i)
-    depth = 0
-    for j in range(start, len(_JS)):
-        if _JS[j] == "{":
-            depth += 1
-        elif _JS[j] == "}":
-            depth -= 1
-            if depth == 0:
-                body = _JS[start:j + 1]
-                assert 10 < body.count("\n") < 200, f"{name}: implausible body"
-                return body
-    raise AssertionError(f"unbalanced braces in {name}")
+    """One function's body, brace-matched. Shared slicer."""
+    return _slice(_JS, name)
 
 
 def test_ooviz_exposes_the_two_new_pure_primitives():

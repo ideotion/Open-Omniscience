@@ -135,3 +135,4 @@ logs/
 # Session-local pytest/pip TMPDIR + test-output scratch (S1)
 .pip-tmp/
 .testout/
+.tmp-pip/

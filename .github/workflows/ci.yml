@@ -111,6 +111,18 @@ jobs:
       - name: i18n locale completeness (x12)
         run: python scripts/i18n_report.py --min 100
 
+      # The gate above compares the locale files against en.json, so it answers
+      # "are the 12 locales mutually consistent?" -- it cannot see a UI string that
+      # was never keyed at all. That is how it reported a green 2394/2394 x12 while
+      # hundreds of strings rendered English in all 11 non-English locales,
+      # .card-caveat text and the additive-restore assurance among them, which the
+      # informed-consent mandate above requires to ship x12.
+      #
+      # A RATCHET, not a target: it may only be lowered. Lower it in the same PR
+      # that adds the keys -- the script prints the new floor when it can drop.
+      - name: i18n untranslatable-string ratchet
+        run: python scripts/i18n_report.py --max-untranslatable 715
+
       - name: Migration drift (models vs Alembic baseline)
         # The CI database is a fresh throwaway file; since at-rest encryption
         # became the default (PR-E), creating a store without a passphrase

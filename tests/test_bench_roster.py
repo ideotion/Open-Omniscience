@@ -23,6 +23,7 @@ from __future__ import annotations
 import pytest
 
 from src.llm import bench_roster as R
+from tests.js_source_helper import function_body as _slice
 
 BACKENDS = ("vllm", "ollama")
 
@@ -398,34 +399,8 @@ def _app_js() -> str:
 
 
 def _fn_body(js: str, name: str) -> str:
-    """One function's body, brace-matched from the BODY brace.
-
-    Two ways to get this wrong, both of which make every assertion over the result
-    worthless while looking fine (Session D, 2026-08-01): taking the first ``{`` after
-    the name lands in a DEFAULT PARAMETER and yields an empty body, so guards pass
-    vacuously; splitting on "the next declaration" over-runs when the delimiter guessed
-    is not the one that follows, sweeping in unrelated code so an assertion can match
-    something else entirely. So: balance the parentheses first, then brace-match."""
-    i = js.index(f"function {name}(") + len(f"function {name}")
-    depth = 0
-    while True:  # walk the parameter list to its close
-        if js[i] == "(":
-            depth += 1
-        elif js[i] == ")":
-            depth -= 1
-            if depth == 0:
-                break
-        i += 1
-    start = js.index("{", i)
-    depth = 0
-    for j in range(start, len(js)):
-        if js[j] == "{":
-            depth += 1
-        elif js[j] == "}":
-            depth -= 1
-            if depth == 0:
-                return js[start : j + 1]
-    raise AssertionError(f"unbalanced braces in {name}")
+    """One function's body, brace-matched. Shared slicer."""
+    return _slice(js, name)
 
 
 def test_the_body_extractor_is_not_vacuous():

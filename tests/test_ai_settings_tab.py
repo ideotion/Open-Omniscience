@@ -22,6 +22,7 @@ import re
 from pathlib import Path
 
 import pytest
+from tests.js_source_helper import function_body
 
 _ROOT = Path(__file__).resolve().parents[1] / "src" / "static"
 _APP = (_ROOT / "app.js").read_text(encoding="utf-8")
@@ -29,19 +30,8 @@ _HTML = (_ROOT / "index.html").read_text(encoding="utf-8")
 
 
 def _fn(name: str) -> str:
-    """The source of ONE top-level function.
-
-    Scoped deliberately: a whole-file substring search cannot distinguish "this
-    box stopped saying it" from "some other box still says it", which is the
-    exact distinction every assertion below turns on. (The lesson from the
-    duty-cycle guard that passed against both the code it meant to reject and
-    the code it meant to accept.)
-    """
-    m = re.search(rf"\n    (?:async )?function {re.escape(name)}\(", _APP)
-    assert m, f"{name} not found"
-    rest = _APP[m.end():]
-    nxt = re.search(r"\n    (?:async )?function ", rest)
-    return rest[: nxt.start()] if nxt else rest
+    """One function's own body, brace-matched (tests.js_source_helper)."""
+    return function_body(_APP, name)
 
 
 def _code(name: str) -> str:

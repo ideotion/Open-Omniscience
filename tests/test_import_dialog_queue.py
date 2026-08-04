@@ -15,6 +15,7 @@ BROWSER-UNVERIFIED (fork-3): node --check plus these source guards, no click-thr
 from __future__ import annotations
 
 from pathlib import Path
+from tests.js_source_helper import function_body
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 _APP = (_STATIC / "app.js").read_text(encoding="utf-8")
@@ -22,17 +23,8 @@ _HTML = (_STATIC / "index.html").read_text(encoding="utf-8")
 
 
 def _fn(name: str) -> str:
-    """One function's own body — never a whole-file substring search, which cannot
-    distinguish two things that legitimately share literal text."""
-    marker = f"function {name}("
-    assert marker in _APP, name
-    tail = _APP.split(marker, 1)[1]
-    # Functions here are indented 4; the next top-level-of-IIFE `function` or `const`
-    # at that indent ends this one.
-    for stop in ("\n    function ", "\n    async function ", "\n    const _UX", "\n    let _ux"):
-        if stop in tail:
-            tail = tail.split(stop, 1)[0]
-    return tail
+    """One function's own body, brace-matched (tests.js_source_helper)."""
+    return function_body(_APP, name)
 
 
 # --------------------------------------------------------------------------- #

@@ -291,6 +291,28 @@ created only once this project is mature. Tamper-evident/tamper-resistant archit
 anchoring), Node 0 = the maintainer's own machine. **User corpora never touch the mirror.**
 8 open maintainer questions recorded. 🎨
 
+### Structural debt — measured 2026-08-04, deferred by ruling
+
+Recorded, not scheduled. Measured during the 2026-08-04 critical review; none is a defect on
+its own, and all three are the kind of change this project's own rules say not to attempt
+without a browser and a runnable suite in the same session.
+
+| # | Item | Measurement | Why deferred | What would unblock it |
+|---|---|---|---|---|
+| S-1 | `src/api/diagnostics.py` holds **108 routes / 150 functions in 5,276 lines** — 18 % of the app's 607 endpoints in one module | 108 `@router.*` decorators; next-largest router is `insights.py` at 70 | A split touches the all-diagnostics bundle, its completeness ratchet, and the tests that slice this file by source anchors | `tests/js_source_helper.py` landing first (done 2026-08-04), so anchor-based tests survive a move |
+| S-2 | **1,865 function-level `from src.…` imports across 241 of 445 files (54 %)**; only 49 carry a circular-import comment | grep of imports indented ≥4 spaces | Cannot distinguish deliberate lazy-loading (deferring `duckdb` via `columnar` serves the lean-boot goal) from undocumented cycle-breaking without resolving each | An import-graph probe reporting true cycles, so the legitimate lazy imports can be annotated and the rest hoisted |
+| S-3 | `src/static/app.js` is **21,300 lines / 1,046 functions in a single indented global scope**; shell totals 1.72 MB | `wc -l`; `grep -cE '^\s*(async )?function'` | Served from loopback, so payload size is nearly free — the real cost is parse/compile on the 2-core field VMs. Splitting it browser-unverified is the interleaved-shared-helper hazard | A standing browser harness (R3 / `ui_walk`), which is also 0.3 gate row 8 |
+
+**Honest note on S-3:** the usual fix (`defer` on the script tags) buys little — they already sit
+at the end of `<body>`, so they do not block first paint. The measurable cost is JS
+parse/compile on weak CPUs, which only splitting or lazy-loading addresses. `guis/boot.js` in
+`<head>` *is* render-blocking, but it is 6 KB and exists to avoid a flash of the default skin —
+that trade is correct.
+
+**Related, and awaiting a ruling:** the ledger's own size is measured and proposed on in
+[`docs/design/LEDGER_RESTRUCTURE_PROPOSAL_2026-08-04.md`](design/LEDGER_RESTRUCTURE_PROPOSAL_2026-08-04.md)
+— `CLAUDE.md` is ~215k tokens and rule (1) requires reading it in full every session.
+
 ---
 
 ## 5. Maintainer rulings — outcome board (reconciled 2026-07-11)

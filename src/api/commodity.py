@@ -168,7 +168,10 @@ def correlation(
     )
     if query:
         try:
-            ids = search_ids(db, query)
+            # These ids become the article-count series drawn against the price
+            # curve, so a quarantined page would show up as coverage that never
+            # existed. Counts on a chart are figures, not a list of results.
+            ids = search_ids(db, query, exclude_quarantined=True)
         except SearchQueryError as exc:
             raise HTTPException(status_code=400, detail=f"Invalid query: {exc}") from exc
         if not ids:
