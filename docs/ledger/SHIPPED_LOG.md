@@ -4268,3 +4268,79 @@ correct — one because a CSS token block's own comment contains `--fig-6:` and 
 declaration regex matched the prose, the other because my dash-family signature
 classified a long dash and a fine dot as the same rhythm. Both were the test being
 precise and the input being wrong, which is the useful direction.
+
+## 2026-08-04 — Brush a trend chart to select its articles (plan F4, and its correction)
+
+Continues the same plan (`docs/plans/2026-08-04-gui-visualization-plan.md`) with candidate
+F4, shipped in two passes: the capability, then a defect the first pass shipped with. Three
+`shipped.csv` rows carry the per-slice detail; this entry records only what is reusable.
+
+**Two surfaces computing the same-sounding quantity by different rules is a DISCLOSURE
+problem, not a bug to normalise away.** `KeywordMention.observed_on` is
+`(published_at or created_at).date()` and is the x-axis of every keyword trend chart, while
+the date filter behind Advanced search and `_resolve_corpus` is `published_at` alone. So an
+article whose publish date could not be extracted is PLOTTED at its ingest date and EXCLUDED
+by a filter over that same day — live-reproduced, two articles on one chart day, one
+returned. The reflex is to coalesce the filter, and that is the MIRROR defect: an article
+ingested in June with no publish date may have been published in 2019, so folding
+`created_at` into a filter labelled "published between X and Y" fabricates an INCLUSION
+exactly as the present behaviour fabricates an ABSENCE. Both directions are dishonest, the
+conservative column is the defensible one, and the repair is therefore (a) disclose what the
+narrower rule drops and (b) make anything that turns a chart selection into a corpus carry
+the ids of the buckets the chart actually DREW, so it inherits the chart's own definition of
+time by construction and the disagreement cannot reach it.
+
+**The selection resolves on the chart's clock, and the guard is a mutation.** Rewriting
+`trend_range_article_ids` to filter on `published_at` reddens six tests. That is what makes
+"resolves on the same rows that drew the bars" a property rather than a comment.
+
+**A bar height and a selection size are different quantities, so both are reported.**
+`trend()` sums `KeywordMention.count`; the selection is a set of articles. The demo corpus
+produced 1 article / 30 mentions for one span, which is the case that makes showing one
+alone indefensible. Quarantined articles are removed from the ids and COUNTED; the mention
+total deliberately still includes them, so the readout cannot disagree with the bar directly
+above it, and the difference is stated.
+
+**The quarantine check is a bounded second query, never a join.** `EXPLAIN` shows the join
+variant as `SEARCH articles USING INTEGER PRIMARY KEY` — the documented SQLCipher codec
+trap, ~35 KB of article row dragged through the codec per id. Measured plans for all three
+queries are recorded in the resolver's docstring rather than in a commit message.
+
+**Opting in is a correctness rule, not a rollout strategy.** Only a chart whose x-axis is
+article time can answer "which articles are under this span"; a commodity chart's axis is
+price time and a statistics chart's is the observation period, so brushing either and
+calling the result "the articles behind this" is a category error. Exactly one chart passes
+`onSelectRange`, and the whole-file guard says so by name.
+
+**A capability on a surface with no callers is a guard that passes while proving nothing.**
+`#corpus-chart` qualified on every stated criterion and `corpusTab` has no callers (the
+retired `#corpus-win` modal), so the affordance was unreachable and my own enumeration guard
+certified it. Grep for a surface's CALLERS before wiring a feature onto it.
+
+**Then the correction, which is the part worth re-reading.** An adversarial critic read the
+screenshot, estimated ~65 mentions inside the band against a reported 50, and suspected an
+off-by-one. I re-measured against the chart's own points, got 50, and reported its arithmetic
+refuted — having measured with `bucket=day` while the shipped Insights chart is drawn with
+`bucket=week`. A week bar is drawn at its Monday, so a day-precise span cuts one in half or
+misses it entirely while it still looks inside the band: on the demo corpus a bar drawn at
+2026-06-22 whose every mention fell on 06-28 sat inside a span ending 06-26, so four visible
+bars summing to 65 were reported as 50. **The critic was reading the bars actually on screen
+and was closer to right than my measurement**; when a pixel-reading critic's arithmetic
+disagrees with your query, the first suspect is the parameters of the query.
+
+The deeper miss is the half-applied lesson. The note I had just written said a chart
+selection must inherit the chart's own definition of time; I got the COLUMN right and the
+GRANULARITY wrong. And sixteen resolver tests passed, one of them pinning exactly this
+property — every fixture used the default `day` bucket, so the invariant was held and the
+defect invisible. That is the recorded "a probe's data distribution is part of the lookalike"
+lesson one level up: it is not only row density that makes a fixture a lookalike, it is any
+parameter the production caller sets and the fixture leaves at its default.
+
+**The fix's shape generalises to any selection over a bucketed axis.** The span widens to the
+edges of the buckets it touches (`_bucket_span` is the inverse of the existing `_bucket_key`;
+ISO weeks are Monday-based per `%G-W%V`), the bucket travels with the request, the response
+reports the EFFECTIVE span rather than the raw input, and `bucket="day"` is the identity case
+so nothing that already resolved by day changes. The client preview snaps through the same
+widening, because previewing the raw gesture while the result reports a widened one is two
+answers to one action — the same preview-versus-action divergence the shared day formatter
+had already fixed once in this component, which is exactly why it should not have recurred.
