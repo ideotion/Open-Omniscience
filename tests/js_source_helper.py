@@ -143,6 +143,76 @@ def css_rule(css: str, selector: str) -> str:
     raise AssertionError(f"unbalanced braces while slicing {selector!r}")
 
 
+def _match_delimited(js: str, open_at: int, open_ch: str, close_ch: str, what: str) -> str:
+    """Balance ``open_ch``/``close_ch`` from ``open_at``, IGNORING string and comment text.
+
+    Counting raw characters is not enough, and the test that proves it caught this very
+    helper: ``const L = {a: "x}y", ...}`` truncates at the brace inside the string, so the
+    slice ends after one key and every assertion over it passes against a fragment -- the
+    same failure the whole module is about, one level down. Template literals need the same
+    treatment and additionally nest through ``${...}``.
+
+    HONEST LIMIT: a JS regex literal containing an unbalanced delimiter (``/[}]/``) is not
+    recognised, because telling a regex from a division needs the preceding token. No
+    declaration literal in this tree contains one; if one appears, this raises "unbalanced"
+    rather than silently truncating, which is the safe direction.
+    """
+    depth = 0
+    i, n = open_at, len(js)
+    tmpl: list[int] = []          # ${} nesting depth per open template literal
+    while i < n:
+        c = js[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c in "'\"":            # a plain string: skip to its unescaped close
+            q, i = c, i + 1
+            while i < n and js[i] != q:
+                i += 2 if js[i] == "\\" else 1
+            i += 1
+            continue
+        if c == "`":
+            tmpl.append(0)
+            i += 1
+            while i < n and tmpl:
+                d = js[i]
+                if d == "\\":
+                    i += 2
+                    continue
+                if d == "$" and js[i + 1 : i + 2] == "{":
+                    tmpl[-1] += 1
+                    i += 2
+                    continue
+                if d == "}" and tmpl[-1] > 0:
+                    tmpl[-1] -= 1
+                elif d == "`":
+                    tmpl.pop()
+                elif d == "{" and tmpl[-1] > 0:
+                    tmpl[-1] += 1
+                i += 1
+            continue
+        if js.startswith("//", i):
+            i = js.find("\n", i)
+            if i == -1:
+                break
+            continue
+        if js.startswith("/*", i):
+            end = js.find("*/", i)
+            i = n if end == -1 else end + 2
+            continue
+        if c == open_ch:
+            depth += 1
+        elif c == close_ch:
+            depth -= 1
+            if depth == 0:
+                out = js[open_at : i + 1]
+                if len(out) < 3:
+                    raise AssertionError(f"{what!r} sliced to an empty literal: {out!r}")
+                return out
+        i += 1
+    raise AssertionError(f"unbalanced {open_ch}{close_ch} while slicing {what!r}")
+
+
 def array_literal(js: str, name: str) -> str:
     """One ``const NAME = [ … ]`` array literal, BRACKET-matched from its opening ``[``.
 
@@ -168,19 +238,35 @@ def array_literal(js: str, name: str) -> str:
     else:
         raise AssertionError(f"no array literal named {name!r} found in the source")
 
-    open_at = js.index("[", at)
-    depth = 0
-    for j in range(open_at, len(js)):
-        if js[j] == "[":
-            depth += 1
-        elif js[j] == "]":
-            depth -= 1
-            if depth == 0:
-                out = js[open_at : j + 1]
-                if len(out) < 3:
-                    raise AssertionError(f"{name!r} sliced to an empty array: {out!r}")
-                return out
-    raise AssertionError(f"unbalanced brackets while slicing {name!r}")
+    return _match_delimited(js, js.index("[", at), "[", "]", name)
+
+
+def object_literal(js: str, name: str) -> str:
+    """One ``const NAME = { … }`` object literal, BRACE-matched from its opening ``{``.
+
+    The fifth shape, and the ratchet in ``test_source_slicing_discipline`` is what
+    produced it: a guard over the ``LIB_QUAL_LABELS`` table sliced it as::
+
+        at = app.index("const LIB_QUAL_LABELS")
+        table = app[at : app.index("}", at) + 1]
+
+    which is correct only while no value contains a ``}`` — a nested object, a template
+    literal, or that character inside a string silently truncates the slice, and every
+    assertion over the fragment then passes for free. Its sibling sliced from one
+    declaration to the NEXT one by name, which is correct only while the two stay
+    adjacent in that order. Brace-matching depends on neither.
+
+    Raises rather than returning empty, for the reason ``function_body`` does.
+    """
+    for decl in (f"const {name} = {{", f"const {name}={{",
+                 f"let {name} = {{", f"var {name} = {{"):
+        at = js.find(decl)
+        if at != -1:
+            break
+    else:
+        raise AssertionError(f"no object literal named {name!r} found in the source")
+
+    return _match_delimited(js, js.index("{", at), "{", "}", name)
 
 
 _LINE_COMMENT = re.compile(r"^\s*//.*$", re.MULTILINE)

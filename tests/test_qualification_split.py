@@ -165,12 +165,16 @@ def test_qual_split_node_suite() -> None:
 def test_the_false_label_is_gone_from_the_tile() -> None:
     """Scoped to the label table, not the whole file: a whole-file search for "Never
     judged" would also match the comment that RECORDS its removal, which is the comment a
-    future session reads before deciding the removal was a mistake."""
-    from tests.js_source_helper import read_static, strip_comments
+    future session reads before deciding the removal was a mistake.
 
-    app = strip_comments(read_static("app.js"))
-    at = app.index("const LIB_QUAL_LABELS")
-    table = app[at:app.index("}", at) + 1]
+    Brace-matched by the shared helper rather than sliced to the first ``}``. The ratchet
+    in test_source_slicing_discipline rejected the hand-rolled version, and writing the
+    shared shape it asked for immediately exposed that raw brace-counting truncates on a
+    ``}`` inside a string value -- so the helper now skips strings and comments.
+    """
+    from tests.js_source_helper import object_literal, read_static, strip_comments
+
+    table = strip_comments(object_literal(read_static("app.js"), "LIB_QUAL_LABELS"))
     assert "Never judged" not in table, (
         "the label claimed no attempt had been made about a count that includes sources "
         "tried repeatedly"
@@ -182,10 +186,17 @@ def test_the_split_metric_is_fetched_but_not_charted() -> None:
     """It is a SUBSET of the line above it, and it starts recording today while the others
     have months -- so as a fifth line it would read as a separate population that began at
     zero. Fetched for the note, kept out of the series."""
-    from tests.js_source_helper import function_body, read_static, strip_comments
+    from tests.js_source_helper import (
+        array_literal,
+        function_body,
+        read_static,
+        strip_comments,
+    )
 
     app = read_static("app.js")
-    metrics = app[app.index("const LIB_QUAL_METRICS"):app.index("const LIB_QUAL_LABELS")]
+    # Bracket-matched, not "from this declaration to the next one by name" -- which is
+    # correct only while those two stay adjacent, in that order.
+    metrics = array_literal(app, "LIB_QUAL_METRICS")
     assert "sources_never_attempted" not in metrics, (
         "LIB_QUAL_METRICS drives the charted series; the subset must not join it"
     )
