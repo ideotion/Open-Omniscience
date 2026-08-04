@@ -200,6 +200,7 @@
   "Could not read the local AI state.": "Не удалось прочитать состояние локального ИИ.",
   "Not set up on this machine yet": "Ещё не настроен на этом компьютере",
   "Start the local AI": "Запустить локальный ИИ",
+  "What the server printed": "Что вывел сервер",
   "Backend, hardware and storage details": "Сведения о движке, оборудовании и хранилище",
   "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.": "Автоматический режим предпочитает vLLM там, где он может работать — ему нужен выделенный GPU и он допускает параллельные запросы — а в остальных случаях использует Ollama. Ваш выбор всегда важнее этого предпочтения.",
   "Models are stored in": "Модели хранятся в",

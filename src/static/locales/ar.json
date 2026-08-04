@@ -200,6 +200,7 @@
   "Could not read the local AI state.": "تعذّرت قراءة حالة الذكاء الاصطناعي المحلي.",
   "Not set up on this machine yet": "لم يُعد إعداده على هذا الجهاز بعد",
   "Start the local AI": "تشغيل الذكاء الاصطناعي المحلي",
+  "What the server printed": "ما طبعه الخادم",
   "Backend, hardware and storage details": "تفاصيل الواجهة الخلفية والعتاد والتخزين",
   "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.": "يفضّل الوضع التلقائي vLLM حيثما أمكن تشغيله — فهو يتطلّب معالج رسومات مخصّصًا ويتيح طلبات متزامنة — ويستخدم Ollama فيما عدا ذلك. اختيارك يتقدّم دائمًا على هذا التفضيل.",
   "Models are stored in": "تُخزَّن النماذج في",

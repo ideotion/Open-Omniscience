@@ -2186,6 +2186,53 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     missed join by name as catalogue drift: honest, and the fastest possible signal that two
     catalogues have diverged. GENERAL FORM: when you join on a value rather than a surrogate
     key, the miss case is not "empty", it is "these two sources no longer agree".
+  - **A DIAGNOSTIC STATE WITH NO CALLER IN THE DECISION PATH IS A DEAD END — and a comment
+    naming it is not a caller (2026-08-04, "vLLM doesn't seem to start"):**
+    `vllm_lifecycle.start_outcome()` was built two days earlier precisely to separate a vLLM
+    that is still loading from one that has already died, after a field report of ten retries
+    against a dead server. It had exactly one caller: the status payload. `ensure_running`,
+    the one place whose decision depends on the difference, carried the comment *"its own
+    start_outcome() is the tri-state that tells ready from still-loading from already-dead;
+    do not guess here"* — and then guessed on the next line, taking `Popen` succeeding as the
+    start succeeding. A child that died during engine init reported `started: True`, the
+    coordinator's gate accepted it, and the sweep burned its whole retry budget. RULE: after
+    building a state that exists to expose a failure, grep for its consumers before calling
+    the fix shipped; if the only reader is a status endpoint, the failure is still invisible
+    where it matters. Same family as the machine-readable 409 whose `acknowledgeable` flag no
+    caller ever sent. COROLLARY on the fix: a watch window must be bounded by what the failure
+    ACTUALLY costs — the startup deaths that matter (port collision, CUDA init, gated repo,
+    import error) all land within a second or two, so six seconds separates them from a
+    genuine tens-of-seconds model load without making a button wait for one.
+  - **WHEN A NARROW HELPER CORRECTLY RETURNS None, LOOK AT WHAT THE CALLER PUTS IN ITS PLACE
+    (2026-08-04, the same report):** `outage_reason()` answers backend REACHABILITY and
+    returns None whenever a backend can be reached — which is right, and which is the COMMON
+    case for the failures that actually reach a sweep loop: a reachable Ollama with no model
+    pulled, a 500 from a context overflow, a vLLM whose port opened before its engine died.
+    All four loops then fell through to the words "local model hiccup", naming the symptom
+    while discarding the exception they were holding one variable away. So the enrichment
+    layer built to explain outages became the hiding place for the outages it could not
+    explain — the K2 shape again, one level up: not a crashing resolver, a *correct* one whose
+    silence was filled with a worse answer. The langdetect loop was the purest case, already
+    holding the aborting event's own reason and printing over it. RULE: a fallback branch is
+    part of the helper's contract; when the caller has real evidence, the evidence wins, and
+    the generic phrase is what you use when there is genuinely nothing else.
+  - **REDIRECTING WHERE NEW DATA LANDS MAKES EXISTING DATA INVISIBLE UNLESS THE PROBE LEARNS
+    BOTH LOCATIONS (2026-08-04, a regression from that same day's model-store move):** the
+    recorded env-var lesson said "count the call sites that DERIVE the same path", and all
+    three were made to agree. The half not thought through is that the OLD path had several GB
+    of real data behind it: pointing `HF_HOME` at the app folder made `model_cache_state()`
+    read one directory and answer "not downloaded" about the other, so the activation guard
+    refused a start for a model that was on the disk and told the operator they had never
+    downloaded it. The fix is not to silently prefer whichever location has content (a mixed
+    state that flips the moment one model lands in the new one) but to probe BOTH and say
+    WHICH answered — a legacy-only copy is still refused, because the server is spawned
+    pointed at the new path and would re-fetch the same weights over the clear internet, but
+    for the true reason and with the way out. RULE: any change to where an app looks for data
+    it did not create must enumerate what is already at the old location, and the honest
+    output of that enumeration is a NAMED difference, never a silent preference. Corollary on
+    not over-building: an HF cache symlinks into its own `blobs/`, so a copy that is not
+    symlink-aware doubles the size or breaks the links — naming the folder is honest, and a
+    move this app has not built and tested would not be.
   - **⚠ THIS SANDBOX HAS A BROWSER AND PYTHON 3.13 — the standing "browser-unverified per
     fork-3/Q6a" caveat is a HABIT, not a limit (2026-08-04, the GUI-visualization build):**
     Chromium ships at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome` with

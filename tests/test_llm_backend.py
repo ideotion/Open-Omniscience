@@ -319,9 +319,14 @@ def test_no_backend_at_all_yields_the_resolvers_own_reason(monkeypatch):
     assert "not running" in why or "reachable" in why
 
 
-def test_a_reachable_backend_gives_no_reason_so_the_wording_is_unchanged(monkeypatch):
-    """None means "nothing to add" - the caller keeps its existing hiccup wording,
-    which is correct when a backend IS there and a single call merely failed."""
+def test_a_reachable_backend_gives_no_reason(monkeypatch):
+    """None means "nothing to add": a backend IS there and a single call merely failed,
+    so this probe has nothing useful to say about it.
+
+    What the caller does with that None is the subject of ``outage_detail`` below --
+    and until 2026-08-04 it fell through to the words "local model hiccup", which is
+    how this correct, narrow answer became the hiding place for the failures that
+    actually reach a sweep loop."""
     _stub(monkeypatch, gpu={"available": False}, vllm_installed=False, vllm_running=False,
           ollama_ok=True)
     assert B.outage_reason() is None
@@ -352,3 +357,75 @@ def test_a_probe_that_cannot_read_says_nothing_rather_than_guessing(monkeypatch)
 
     monkeypatch.setattr(B, "resolve_backend", _boom)
     assert B.outage_reason() is None
+
+
+# --------------------------------------------------------------------------- #
+#  ...and when the resolver has nothing to add, the ERROR is not thrown away
+# --------------------------------------------------------------------------- #
+def test_the_resolvers_reason_wins_when_there_is_one():
+    """"Connection refused" says what happened; "vLLM is installed but its server is
+    not running" says what to DO. Where both exist, the actionable one leads."""
+    assert B.outage_detail("vLLM's server is not running", RuntimeError("conn refused")) == (
+        "vLLM's server is not running"
+    )
+
+
+def test_otherwise_the_actual_error_is_used_instead_of_a_symptom():
+    """Field report 2026-08-04: "I just reinstalled the app, and still get the 'local
+    model hiccup' error message."
+
+    ``outage_reason()`` answers REACHABILITY, so it correctly returns None for the
+    failures that most often reach a sweep loop -- a reachable Ollama with no model
+    pulled, a 500 from a context overflow, a vLLM whose port opened before its engine
+    died. The retry line then printed "local model hiccup", naming the symptom while
+    the identifying fact sat one variable away."""
+    said = B.outage_detail(None, RuntimeError("model 'ministral-3:3b' not found, try pulling it"))
+    assert "not found" in said
+    assert "hiccup" not in said
+
+
+def test_an_error_with_no_message_still_yields_its_type():
+    """A bare ``raise ReadTimeout`` has an empty str(). "ReadTimeout" is still a far
+    better clue than "hiccup", and an empty retry line would be worse than either."""
+
+    class ReadTimeout(Exception):
+        pass
+
+    assert B.outage_detail(None, ReadTimeout()) == "ReadTimeout"
+
+
+def test_a_plain_reason_string_is_carried_through():
+    """Two of the four sweep loops hold a reason STRING rather than an exception (the
+    aborting event's own words), which is why this normalises rather than assuming."""
+    assert B.outage_detail(None, "the local model is unavailable") == (
+        "the local model is unavailable"
+    )
+
+
+def test_nothing_at_all_still_produces_a_sentence():
+    """The last resort. Vague, but it does not pretend to know a cause, and it does
+    not claim the failure was transient."""
+    said = B.outage_detail(None, None)
+    assert said and "hiccup" not in said
+
+
+def test_a_runaway_error_body_cannot_run_away_with_the_progress_line():
+    """An HTML error page or a multi-kilobyte traceback in a one-line progress field
+    helps nobody."""
+    assert len(B.outage_detail(None, RuntimeError("x" * 5000))) <= 200
+
+
+def test_every_sweep_loop_actually_calls_it():
+    """Four loops had the same defect and it was fixed in four places, so the guard is
+    that each one still reaches for the shared helper. A bare import would not satisfy
+    this -- the parenthesis makes it a CALL."""
+    import pathlib
+
+    for rel in (
+        "src/ai_layer/triage_job.py",
+        "src/ai_layer/source_tags_job.py",
+        "src/ai_layer/perception_extract_job.py",
+        "src/api/ai.py",
+    ):
+        src = pathlib.Path(rel).read_text(encoding="utf-8")
+        assert "outage_detail(" in src, f"{rel} no longer reports the real failure"

@@ -200,6 +200,7 @@
   "Could not read the local AI state.": "Tidak dapat membaca status AI lokal.",
   "Not set up on this machine yet": "Belum disiapkan di mesin ini",
   "Start the local AI": "Mulai AI lokal",
+  "What the server printed": "Yang dicetak oleh server",
   "Backend, hardware and storage details": "Detail backend, perangkat keras, dan penyimpanan",
   "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.": "Mode otomatis mengutamakan vLLM di mesin yang dapat menjalankannya — vLLM memerlukan GPU khusus dan mendukung permintaan serentak — dan menggunakan Ollama selain itu. Pilihan Anda selalu mengalahkan preferensi tersebut.",
   "Models are stored in": "Model disimpan di",

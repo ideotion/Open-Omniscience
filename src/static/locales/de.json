@@ -200,6 +200,7 @@
   "Could not read the local AI state.": "Der Zustand der lokalen KI konnte nicht gelesen werden.",
   "Not set up on this machine yet": "Auf diesem Rechner noch nicht eingerichtet",
   "Start the local AI": "Lokale KI starten",
+  "What the server printed": "Was der Server ausgegeben hat",
   "Backend, hardware and storage details": "Details zu Backend, Hardware und Speicher",
   "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.": "Der Automatikmodus bevorzugt vLLM, wo es laufen kann — es benötigt eine dedizierte GPU und erlaubt gleichzeitige Anfragen — und nutzt sonst Ollama. Ihre Wahl hat immer Vorrang vor dieser Voreinstellung.",
   "Models are stored in": "Modelle werden gespeichert in",

@@ -1551,22 +1551,46 @@ def model_cache_state(model: str) -> dict:
     ``huggingface_hub`` creates the tree as soon as a download STARTS, so an interrupted
     fetch leaves a directory that a naive existence check would call cached -- reporting
     a half-downloaded model as ready is the fabrication to avoid here. ``bytes`` is the
-    real on-disk size, or None when it cannot be read (never a 0)."""
+    real on-disk size, or None when it cannot be read (never a 0).
+
+    BOTH LOCATIONS ARE PROBED, and ``location`` says which answered. Moving the cache
+    into the app folder (2026-08-04) changed where new weights land; reading only there
+    made every EARLIER download invisible, so a model sitting on the disk reported
+    "not downloaded" and the activation guard refused a start that would have worked.
+    ``location`` is ``"app"`` for the configured path and ``"legacy"`` for Hugging
+    Face's own default -- a real difference, because the server is spawned pointed at
+    the configured one, so a legacy-only copy is present but not yet usable.
+    """
     repo = "models--" + model.replace("/", "--")
-    root = hf_cache_dir() / repo
-    snaps = root / "snapshots"
-    try:
-        revisions = [d for d in snaps.iterdir() if d.is_dir()] if snaps.is_dir() else []
-        cached = any(any(rev.iterdir()) for rev in revisions)
-    except OSError:
-        return {"cached": None, "path": str(root), "bytes": None}
-    size: int | None = None
-    if cached:
+    from src.llm.model_store import legacy_hf_home
+
+    candidates: list[tuple[str, Path]] = [("app", hf_cache_dir() / repo)]
+    if (legacy := legacy_hf_home()) is not None:
+        candidates.append(("legacy", legacy / "hub" / repo))
+
+    unreadable = False
+    for where, root in candidates:
+        snaps = root / "snapshots"
         try:
-            size = sum(f.stat().st_size for f in root.rglob("*") if f.is_file())
+            revisions = [d for d in snaps.iterdir() if d.is_dir()] if snaps.is_dir() else []
+            cached = any(any(rev.iterdir()) for rev in revisions)
+        except OSError:
+            unreadable = True
+            continue
+        if not cached:
+            continue
+        try:
+            size: int | None = sum(f.stat().st_size for f in root.rglob("*") if f.is_file())
         except OSError:
             size = None
-    return {"cached": cached, "path": str(root), "bytes": size}
+        return {"cached": True, "path": str(root), "bytes": size, "location": where}
+
+    # Nothing found. An unreadable candidate makes that a "cannot tell", never a "no":
+    # refusing a start on a directory we could not stat is its own fabrication.
+    root = candidates[0][1]
+    if unreadable:
+        return {"cached": None, "path": str(root), "bytes": None, "location": None}
+    return {"cached": False, "path": str(root), "bytes": None, "location": None}
 
 
 #: Run INSIDE the managed venv (which has ``huggingface_hub`` -- vLLM depends on it).

@@ -253,3 +253,71 @@ def test_a_partial_copy_leaves_the_source_completely_intact(app_dir, monkeypatch
     assert out["ok"] is False and out["removed"] == 0
     assert (src / "blobs" / "sha256-aaa").is_file()
     assert (src / "blobs" / "sha256-bbb").is_file()
+
+
+# --------------------------------------------------------------------------- #
+#  Weights that were already on the disk must not become invisible
+# --------------------------------------------------------------------------- #
+def test_the_legacy_hf_cache_is_reported_when_it_holds_anything(app_dir, monkeypatch):
+    """Moving the store into the app folder changed where NEW weights land -- and, not
+    thought through at the time, made every EARLIER download invisible. Several GB of
+    real data, and the operator told they had never downloaded it."""
+    legacy = app_dir / "xdg" / "huggingface"
+    (legacy / "hub").mkdir(parents=True)
+    (legacy / "hub" / "blob").write_bytes(b"x" * 32)
+    monkeypatch.setenv("XDG_CACHE_HOME", str(app_dir / "xdg"))
+
+    hf = model_store.store_report()["huggingface"]
+    assert hf["legacy"] == str(legacy)
+    assert hf["legacy_bytes"] == 32
+    assert "still usable" in hf["note"]
+    assert "Nothing is moved or deleted for you" in hf["note"]
+
+
+def test_an_empty_legacy_cache_is_not_mentioned_at_all(app_dir, monkeypatch):
+    """The twin: a permanent note about an empty directory is noise, and noise is how
+    a real one gets ignored."""
+    monkeypatch.setenv("XDG_CACHE_HOME", str(app_dir / "xdg"))
+    hf = model_store.store_report()["huggingface"]
+    assert "legacy" not in hf and "note" not in hf
+
+
+def test_an_operator_set_hf_home_has_no_legacy_to_reconcile(app_dir, monkeypatch, tmp_path):
+    """Their choice IS the location. Announcing a "legacy" elsewhere would invent a
+    problem out of a deliberate decision."""
+    monkeypatch.setenv("HF_HOME", str(tmp_path / "mine"))
+    assert model_store.legacy_hf_home() is None
+
+
+def test_the_probe_finds_a_model_in_either_location(app_dir, monkeypatch):
+    """The activation guard is built on this probe, so a location it does not read is
+    a start it refuses for a reason that is not true."""
+    from src.llm.vllm_lifecycle import model_cache_state
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(app_dir / "xdg"))
+    repo = "models--org--Model-3B"
+
+    assert model_cache_state("org/Model-3B")["cached"] is False
+
+    legacy_snap = app_dir / "xdg" / "huggingface" / "hub" / repo / "snapshots" / "abc"
+    legacy_snap.mkdir(parents=True)
+    (legacy_snap / "config.json").write_text("{}", encoding="utf-8")
+    found = model_cache_state("org/Model-3B")
+    assert found["cached"] is True
+    assert found["location"] == "legacy", "and it must SAY which, since they are not equivalent"
+
+    app_snap = model_store.hf_home() / "hub" / repo / "snapshots" / "abc"
+    app_snap.mkdir(parents=True)
+    (app_snap / "config.json").write_text("{}", encoding="utf-8")
+    assert model_cache_state("org/Model-3B")["location"] == "app", "the configured one wins"
+
+
+def test_a_started_download_is_still_not_a_cached_model(app_dir, monkeypatch):
+    """The pre-existing rule, re-pinned across the new two-location walk: huggingface_hub
+    creates the tree as soon as a download STARTS, so an existence check would call a
+    half-downloaded model ready."""
+    from src.llm.vllm_lifecycle import model_cache_state
+
+    monkeypatch.setenv("XDG_CACHE_HOME", str(app_dir / "xdg"))
+    (app_dir / "xdg" / "huggingface" / "hub" / "models--org--M" / "snapshots").mkdir(parents=True)
+    assert model_cache_state("org/M")["cached"] is False

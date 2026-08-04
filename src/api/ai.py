@@ -647,10 +647,17 @@ def _langdetect_worker(
                 _LANGDETECT_BACKOFF_BASE_S * (2 ** (consecutive_failures - 1)),
                 _LANGDETECT_BACKOFF_CAP_S,
             )
+            # This loop had the reason in its hand all along -- ``transient_reason`` is
+            # the aborting event's own words -- and printed "local model hiccup" over
+            # the top of it. The resolver's sentence (what to DO) takes precedence when
+            # it has one; otherwise the event's own reason is far better than a symptom.
+            from src.llm.backend import outage_detail, outage_reason
+
             ctx.set_progress(
                 detail=(
-                    f"local model hiccup ({consecutive_failures}/"
-                    f"{_LANGDETECT_MAX_CONSECUTIVE_FAILURES}) — retrying in {backoff:.0f}s"
+                    f"{outage_detail(outage_reason(), transient_reason)} — retrying in "
+                    f"{backoff:.0f}s in case it comes back ({consecutive_failures}/"
+                    f"{_LANGDETECT_MAX_CONSECUTIVE_FAILURES})"
                 )
             )
             _langdetect_sleep_interruptible(backoff, ctx)
