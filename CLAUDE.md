@@ -2037,8 +2037,15 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     form and reading only `ast.Constant` misses every one). GENERAL FORM: for any
     read-the-source guard ask what ELSE in the file satisfies the needle, and whether the slice
     is bounded by something that provably occurs; the correct bound comes from a parser (`ast`
-    for Python, brace-matching from the BODY brace for JS and CSS — `tests/js_source_helper.py`
-    now carries all three, each with its failure mode pinned), never from a guessed delimiter.
+    for Python, brace-matching from the BODY brace for JS and CSS, BRACKET-matching for a JS
+    array literal — `tests/js_source_helper.py` now carries all four, each with its failure mode
+    pinned), never from a guessed delimiter. The `array_literal` shape is here because the
+    ratchet built by this very sweep caught its author reintroducing the class three days later:
+    two guards over `_FIG_STYLES` sliced it as `index("const _FIG_STYLES = [")` to
+    `index("];")`, which is correct only while no element contains that pair before the array's
+    own close — and the elements are themselves arrays. It reddened all three lanes rather than
+    shipping a fragment every assertion would have passed against, which is the ratchet earning
+    its keep: prefer being stopped by it over lowering its budget.
     And when you fix one, check whether its own failure MESSAGE claims more than the new check
     tests: "state and implement" needed splitting into two guards, one per half. COROLLARY on
     tightening: only ONE assertion in the sweep changed truth value, and that IS the finding —
