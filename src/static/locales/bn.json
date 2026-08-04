@@ -200,6 +200,7 @@
   "Could not read the local AI state.": "স্থানীয় AI-এর অবস্থা পড়া যায়নি।",
   "Not set up on this machine yet": "এই মেশিনে এখনও সেট আপ করা হয়নি",
   "Start the local AI": "স্থানীয় AI চালু করুন",
+  "What the server printed": "সার্ভার যা দেখিয়েছে",
   "Backend, hardware and storage details": "ব্যাকএন্ড, হার্ডওয়্যার ও সংরক্ষণের বিবরণ",
   "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.": "স্বয়ংক্রিয় মোড যেখানে vLLM চলতে পারে সেখানে সেটিকেই অগ্রাধিকার দেয় — এর জন্য ডেডিকেটেড GPU দরকার এবং এটি একসঙ্গে একাধিক অনুরোধ সামলায় — নইলে Ollama ব্যবহার করে। আপনার পছন্দ সবসময় এই অগ্রাধিকারের উপরে থাকে।",
   "Models are stored in": "মডেল সংরক্ষিত আছে",

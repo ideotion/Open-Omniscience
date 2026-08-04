@@ -4936,13 +4936,46 @@ def ai_coordinator_run() -> JSONResponse:
         )
     act = ensure_running()
     if not (act.get("ready") or act.get("started")):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                act.get("detail")
-                or "No local AI backend could be started, so there is nothing to sweep with."
-            ),
+        detail = str(
+            act.get("detail")
+            or "No local AI backend could be started, so there is nothing to sweep with."
         )
+        # The server's OWN first words, inline, when a vLLM start died on launch. A path
+        # to a log file is an instruction to go and find the answer; the answer itself
+        # is what turns "vLLM doesn't seem to start" into a fixable fact. Kept a STRING
+        # rather than a structured field because this is a `detail=` a button renders,
+        # and the frontend's error helper renders a dict as "[object Object]".
+        head = str(act.get("server_log_head") or "").strip()
+        if head:
+            detail = f"{detail}\n\n--- the server's own first output ---\n{head}"
+        raise HTTPException(status_code=409, detail=detail)
+
+    # A backend that is UP with NOTHING TO SERVE fails every batch, and it is a likely
+    # state right after a fresh install: the model store moved into the app's own
+    # folder (2026-08-04 ask), so a reinstall can leave a perfectly healthy daemon
+    # pointed at an empty directory. ``outage_reason()`` has nothing to say about it --
+    # the backend IS reachable -- which is exactly how this reached the operator as
+    # "local model hiccup", ten times over.
+    #
+    # Only when the probe SUCCEEDS and comes back empty. A probe that raises is not a
+    # "no": refusing on an unreadable answer would be its own fabrication, and the
+    # retry budget is the right instrument for a momentarily unhappy server.
+    if act.get("ready"):
+        try:
+            from src.llm.backend import get_client
+
+            installed = list(get_client().list_installed() or [])
+        except Exception:  # noqa: BLE001 - an unreadable probe never refuses
+            installed = None
+        if installed is not None and not installed:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"{act.get('backend')} is running but no model is downloaded yet, so "
+                    "there is nothing to sweep with. Download one in Settings → AI "
+                    "(retrying cannot make a model appear)."
+                ),
+            )
     try:
         st = _AI_COORDINATOR_JOB.start(model=active_model())
         st["started"] = True
@@ -4958,6 +4991,9 @@ def ai_coordinator_run() -> JSONResponse:
         "started": bool(act.get("started")),
         "ready": bool(act.get("ready")),
         "detail": act.get("detail"),
+        # Present only when the preferred backend failed and another one took over --
+        # so a GPU machine quietly serving from Ollama can still say why.
+        "fell_back_from": act.get("fell_back_from"),
     }
     return JSONResponse(st)
 

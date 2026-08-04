@@ -82,6 +82,31 @@ def hf_home() -> Path:
     return app_models_root() / "huggingface"
 
 
+def legacy_hf_home() -> Path | None:
+    """Hugging Face's OWN default cache home -- where weights downloaded before
+    2026-08-04 still are.
+
+    Pointing ``HF_HOME`` at the app folder moved where NEW weights land. It also, and
+    this was not thought through, made every EXISTING download invisible: the probe and
+    the activation guard both read the app folder, so a vLLM whose weights had been
+    fetched months ago reported "not in the local model cache" and refused to start --
+    several GB of real data on the disk, and an operator told they had never downloaded
+    it. The 2026-08-04 field report ("vLLM doesn't seem to start", on a machine that had
+    just been reinstalled) is exactly the shape this produces.
+
+    Returns None when the operator set ``HF_HOME``/``HF_HUB_CACHE`` themselves: their
+    choice IS the location, so there is no "legacy" elsewhere to reconcile with.
+    """
+    if (os.getenv("HF_HOME") or "").strip() or (os.getenv("HF_HUB_CACHE") or "").strip():
+        return None
+    xdg = (os.getenv("XDG_CACHE_HOME") or "").strip()
+    base = Path(xdg) if xdg else Path.home() / ".cache"
+    legacy = base / "huggingface"
+    # If the app folder IS the default (an OO_DATA_DIR pointed there), there is nothing
+    # to distinguish and reporting a "legacy" copy would be noise.
+    return None if str(legacy) == str(hf_home()) else legacy
+
+
 def launch_env(base: dict | None = None) -> dict:
     """The environment to spawn a backend with, pointing both stores at the app folder.
 
@@ -154,6 +179,20 @@ def store_report() -> dict:
             ),
         },
     }
+    # Weights downloaded before the store moved into the app folder are still on the
+    # disk, and until this was reported nothing said so -- the probe read one directory
+    # and answered "not downloaded" about the other.
+    legacy_hf = legacy_hf_home()
+    legacy_hf_bytes = _store_size(legacy_hf) if legacy_hf else 0
+    if legacy_hf and legacy_hf_bytes:
+        out["huggingface"]["legacy"] = str(legacy_hf)
+        out["huggingface"]["legacy_bytes"] = legacy_hf_bytes
+        out["huggingface"]["note"] = (
+            f"There are also model weights at {legacy_hf}, from before the store moved "
+            "into the app folder. They are still usable: move that folder to the "
+            "configured path above, or set HF_HOME to point back at it. Nothing is "
+            "moved or deleted for you."
+        )
     if not same:
         out["ollama"]["note"] = (
             f"Models are being read from {detected}, not the app folder. That happens when "

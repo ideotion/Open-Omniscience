@@ -451,7 +451,7 @@ def run_progressive_source_tags_job(
     state genuinely becomes ``error`` -- never a benign-looking ``done``). A
     genuine user cancel (``ctx.stopping``) still stops immediately, no retry."""
     from src.database.session import session_scope
-    from src.llm.backend import outage_reason
+    from src.llm.backend import outage_detail, outage_reason
     from src.llm.ollama import LLMError
 
     if session_factory is None:
@@ -633,16 +633,9 @@ def run_progressive_source_tags_job(
                 )
                 ctx.set_progress(
                     detail=(
-                        (
-                            f"{_why} — retrying in {backoff:.0f}s in case it comes back "
-                            f"({consecutive_failures}/{_SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES})"
-                        )
-                        if _why
-                        else (
-                            f"local model hiccup ({consecutive_failures}/"
-                            f"{_SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES}) — retrying in "
-                            f"{backoff:.0f}s"
-                        )
+                        f"{outage_detail(_why, exc)} — retrying in {backoff:.0f}s in case "
+                        f"it comes back ({consecutive_failures}/"
+                        f"{_SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES})"
                     )
                 )
                 _source_tags_sleep_interruptible(backoff, ctx)

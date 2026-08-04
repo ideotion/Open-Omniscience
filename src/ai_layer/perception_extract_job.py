@@ -315,7 +315,7 @@ def run_progressive_perception_extract_job(
             consecutive_failures += 1
             # WHY it failed, in the resolver's own words; the budget is untouched
             # (field report 2026-08-02).
-            from src.llm.backend import outage_reason
+            from src.llm.backend import outage_detail, outage_reason
 
             _why = outage_reason()
             state.update({
@@ -352,8 +352,9 @@ def run_progressive_perception_extract_job(
             )
             ctx.set_progress(
                 detail=(
-                    f"local model hiccup ({consecutive_failures}/"
-                    f"{_PERCEPTION_EXTRACT_MAX_CONSECUTIVE_FAILURES}) — retrying in {backoff:.0f}s"
+                    f"{outage_detail(_why, result.get('reason'))} — retrying in "
+                    f"{backoff:.0f}s in case it comes back ({consecutive_failures}/"
+                    f"{_PERCEPTION_EXTRACT_MAX_CONSECUTIVE_FAILURES})"
                 )
             )
             _perception_extract_sleep_interruptible(backoff, ctx)

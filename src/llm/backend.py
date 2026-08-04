@@ -953,3 +953,41 @@ def outage_reason() -> str | None:
     if resolved.get("no_backend") or not resolved.get("available"):
         return str(resolved.get("reason") or "no AI backend is reachable right now")
     return None
+
+
+#: Longest error text a retry line carries. Long enough for a Python exception's
+#: message and a short HTTP body; short enough that a progress line stays a line.
+_DETAIL_LIMIT = 200
+
+
+def outage_detail(resolver_reason: str | None, error: object) -> str:
+    """The sentence a RETRY line should carry when a local-model call fails.
+
+    Field report 2026-08-04, after ``outage_reason()`` shipped: "I just reinstalled
+    the app, and still get the 'local model hiccup' error message." Both halves of
+    that are informative. ``outage_reason()`` answers backend REACHABILITY, and it
+    correctly returns None whenever the resolver can reach a backend -- which is the
+    common case for the failures that actually arrive here: a reachable Ollama with
+    no model pulled, a 500 from a context overflow, a vLLM whose port opened before
+    its engine died. In every one of those the resolver has nothing to add, so the
+    line fell through to the words "local model hiccup", which name the symptom and
+    DISCARD the exception the caller is holding one variable away.
+
+    So the enrichment layer became the hiding place for the very failures it was
+    built to explain -- the same shape as the ``kpi_snapshot`` resolver whose crash
+    read as "no data yet" for months. The fix is not to make the probe cleverer (it
+    must not decide retries; that lesson stands) but to stop throwing the error away.
+
+    ``error`` is whatever the call site is holding -- an exception, a reason string,
+    or None -- because the four sweep loops do not agree on which, and normalising
+    here beats four near-identical conditionals that can drift apart.
+    """
+    if resolver_reason:
+        return str(resolver_reason)
+    if isinstance(error, BaseException):
+        text = str(error).strip()
+        # An exception whose str() is empty (a bare ``raise SomeError``) still has a
+        # TYPE, and "ReadTimeout" is a far better clue than "hiccup".
+        return text[:_DETAIL_LIMIT] if text else type(error).__name__
+    text = str(error or "").strip()
+    return text[:_DETAIL_LIMIT] if text else "the local model call failed"

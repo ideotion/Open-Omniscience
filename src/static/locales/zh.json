@@ -200,6 +200,7 @@
   "Could not read the local AI state.": "无法读取本地 AI 状态。",
   "Not set up on this machine yet": "尚未在此计算机上设置",
   "Start the local AI": "启动本地 AI",
+  "What the server printed": "服务器输出的内容",
   "Backend, hardware and storage details": "后端、硬件与存储详情",
   "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.": "自动模式会在可运行的机器上优先使用 vLLM（它需要独立 GPU，并支持并发请求），否则使用 Ollama。您的选择始终优先于该偏好。",
   "Models are stored in": "模型存储于",

@@ -60,11 +60,34 @@ unusable exactly when it matters. The cache refusal above is what keeps that tru
 from __future__ import annotations
 
 import logging
+import time
 
 _LOG = logging.getLogger("llm.activation")
 
 #: Backends this module knows how to bring up, in the order a payload lists them.
 BACKENDS = ("vllm", "ollama")
+
+#: How long :func:`ensure_running` WATCHES a freshly spawned vLLM before it is willing
+#: to call the start "under way".
+#:
+#: A model load takes tens of seconds and no button click may wait for that -- but the
+#: startup failures that matter here are FAST. A port collision, a CUDA/driver init
+#: error, a missing or gated repo and an import error all kill the child within a second
+#: or two, and every one of those used to be indistinguishable from a healthy load.
+#: So: watch briefly, report an exit as an exit, and report anything still alive at the
+#: end of the window as still loading -- which is the truth and not a hedge.
+#:
+#: Deliberately SHORT, because the window is not the only thing that catches a death:
+#: :func:`activation_plan` reports the same tri-state on every read, so the card's own
+#: re-polling catches a CUDA OOM forty seconds in, which no click-time watch could.
+#: This one exists so an INSTANT death is answered by the click that caused it.
+_VLLM_CONFIRM_S = 3.0
+_VLLM_CONFIRM_STEP_S = 0.25
+
+#: How much of the server log an exited start carries back. The HEAD, deliberately:
+#: vLLM's EngineCore is a CHILD of the API server, so a startup failure prints its
+#: traceback FIRST and the parent's stack (ending "See root cause above") follows it.
+_LOG_EXCERPT_CHARS = 700
 
 
 def _candidates() -> dict:
@@ -164,7 +187,46 @@ def activation_plan(*, override: str | None = None) -> dict:
                 f"{out['backend']} was preferred but cannot start ({out['blocker']}), "
                 f"so {other} serves instead"
             )
-            return alt
+            out = alt
+
+    # WHAT BECAME OF THE LAST START, on every read. The click-time watch can only see a
+    # death inside its own few seconds; a CUDA OOM forty seconds into a model load is
+    # just as fatal and used to leave the card saying "starting" forever. Reported as
+    # INFORMATION, never as a blocker: the operator must be able to fix the cause and
+    # press the button again, and a state that latched until the next successful start
+    # would make the button refuse the very retry that would work.
+    if not out["running"]:
+        last = _last_start_failure()
+        if last:
+            out["last_start"] = last
+    return out
+
+
+def _last_start_failure() -> dict | None:
+    """The last vLLM spawn IN THIS PROCESS, when it exited -- with the head of its log.
+
+    None for every other state (never started here, still loading, answering): only a
+    death has something to report, and reporting anything else would put a permanent
+    notice on a card that is working fine.
+    """
+    try:
+        from src.llm.vllm_lifecycle import start_outcome
+
+        outcome = start_outcome()
+    except Exception as exc:  # noqa: BLE001 - a probe must never break the plan
+        _LOG.info("vLLM start-outcome probe failed: %s", exc)
+        return None
+    if outcome.get("state") != "exited":
+        return None
+    out = {
+        "backend": "vllm",
+        "returncode": outcome.get("returncode"),
+        "detail": str(outcome.get("detail") or ""),
+        "log_hint": str(outcome.get("log_hint") or ""),
+        "log_path": outcome.get("log_path"),
+    }
+    if head := _server_log_head():
+        out["server_log_head"] = head
     return out
 
 
@@ -208,14 +270,28 @@ def _plan_for(
     if backend == "vllm":
         model = _vllm_model()
         out["model"] = model
-        cached = None
+        state: dict = {}
         try:
             from src.llm.vllm_lifecycle import model_cache_state
 
-            cached = model_cache_state(model).get("cached")
+            state = model_cache_state(model) or {}
         except Exception as exc:  # noqa: BLE001 - an unreadable cache is not a "no"
             _LOG.info("vLLM model cache probe failed: %s", exc)
-            cached = None
+        cached = state.get("cached")
+        if cached and state.get("location") == "legacy":
+            # PRESENT, but not where the server will look. Starting now would make vLLM
+            # re-download several GB it already has, which is the same egress the
+            # refusal below exists to prevent -- so it is refused for the same reason,
+            # and told apart from "you never downloaded it", which is what an operator
+            # in this state used to be told.
+            out["blocker"] = (
+                f"{model} IS downloaded — at {state.get('path')} — but the server is "
+                "started pointed at the app's own model folder, so it would fetch the "
+                "weights again over the clear internet. Move that cache to "
+                "Settings → AI's configured path (or set HF_HOME back to the old one), "
+                "and nothing has to be downloaded twice."
+            )
+            return out
         if cached is False:
             # NOT a start we are willing to make on one click: vLLM would fetch the
             # weights from Hugging Face itself, in a subprocess outside this app's
@@ -235,11 +311,61 @@ def _plan_for(
     return out
 
 
+def _confirm_vllm_start(
+    *,
+    grace: float = _VLLM_CONFIRM_S,
+    step: float = _VLLM_CONFIRM_STEP_S,
+    sleep=time.sleep,
+) -> dict:
+    """Watch a just-spawned vLLM long enough to tell a load from a death.
+
+    ``vllm_lifecycle.start_outcome()`` is the tri-state that already answers this --
+    ``starting`` / ``ready`` / ``exited`` -- and it was built for exactly this failure
+    (field report 2026-08-02: a server that had already exited, polled ten times). This
+    module's own comment said "do not guess here" and then guessed anyway: it took
+    ``Popen`` succeeding as the start succeeding, so a child that died two seconds later
+    was reported as ``started: True``, the coordinator's gate accepted it, and the sweep
+    spent its whole retry budget on a server that was never coming.
+
+    Returns as soon as the state is decided; only a still-``starting`` child runs the
+    window down. ``sleep`` is injected so tests never spend real seconds.
+    """
+    from src.llm.vllm_lifecycle import start_outcome
+
+    out = start_outcome()
+    waited = 0.0
+    while out.get("state") == "starting" and waited < grace:
+        sleep(step)
+        waited += step
+        out = start_outcome()
+    return out
+
+
+def _server_log_head(limit: int = _LOG_EXCERPT_CHARS) -> str:
+    """The FIRST bytes of the last vLLM server log, or "" if there is nothing to read.
+
+    ``server_log_tail`` keeps both ends: ``head`` when the file was truncated, and a
+    whole ``tail`` when it fits -- whose start IS the head. Either way the beginning of
+    the file is what a startup failure needs (see :data:`_LOG_EXCERPT_CHARS`).
+    """
+    try:
+        from src.llm.vllm_lifecycle import server_log_tail
+
+        log = server_log_tail()
+        if not log.get("available"):
+            return ""
+        return str(log.get("head") or log.get("tail") or "").strip()[:limit]
+    except Exception as exc:  # noqa: BLE001 - an unreadable log must not mask the exit
+        _LOG.info("could not read the vLLM server log: %s", exc)
+        return ""
+
+
 def ensure_running(
     *,
     override: str | None = None,
     wait: bool = True,
     timeout: float | None = None,
+    confirm: dict | None = None,
 ) -> dict:
     """Make a local backend serve, starting one if that is what it takes.
 
@@ -248,10 +374,14 @@ def ensure_running(
     payload with ``started: False`` and a reason, because the caller is a UI click and
     an exception there becomes a stack trace where a sentence belongs.
 
-    ``ready`` is the only field that claims the backend is actually answering. A start
-    that spawned but has not come up yet reports ``started: True, ready: False`` with
-    the lifecycle's own note -- a model load takes tens of seconds and calling that
-    "ready" is the fabrication both lifecycle modules already refuse to make.
+    ``ready`` is the only field that claims the backend is actually answering, and
+    ``started`` now claims only what it can: a process was spawned AND was still alive
+    when we last looked. A vLLM whose engine dies during initialisation comes back
+    ``started: False`` with its exit code and the head of its log, not as a start in
+    progress -- see :func:`_confirm_vllm_start`.
+
+    ``confirm`` is passed through to that watcher (``grace`` / ``step`` / ``sleep``) so
+    a test never spends real seconds; production leaves it None.
     """
     plan = activation_plan(override=override)
     backend = plan["backend"]
@@ -271,34 +401,33 @@ def ensure_running(
             from src.llm.vllm_lifecycle import start as vllm_start
 
             res = vllm_start(plan["model"])
-            # vLLM's start returns as soon as Popen succeeds -- the engine then loads
-            # for tens of seconds. Its own start_outcome() is the tri-state that tells
-            # ready from still-loading from already-dead; do not guess here.
-            out["started"] = bool(res.get("started"))
-            out["ready"] = False
-            out["detail"] = (
-                f"vLLM is starting on {plan['model']}. A model load takes tens of "
-                "seconds; the backend reports when it is answering."
-                if out["started"]
-                else str(res.get("reason") or "vLLM was not started")
-            )
-            if not out["started"] and res.get("reason") == "already running":
-                out["ready"] = True
             out["log_path"] = res.get("log_path")
+            if not res.get("started"):
+                out["detail"] = str(res.get("reason") or "vLLM was not started")
+                out["ready"] = res.get("reason") == "already running"
+                return out
+            # ``start()`` returns the moment Popen succeeds, so "started" so far means
+            # only "a process was spawned". Ask the lifecycle's own tri-state what
+            # became of it rather than assuming, which is what this branch used to do.
+            outcome = _confirm_vllm_start(**(confirm or {}))
+            out["start_outcome"] = outcome
+            state = str(outcome.get("state") or "")
+            if state == "ready":
+                out["started"] = True
+                out["ready"] = True
+                out["detail"] = f"vLLM is answering on {plan['model']}."
+            elif state == "exited":
+                out.update(_vllm_exited(out, plan, outcome, wait=wait, timeout=timeout))
+            else:
+                # Alive and not answering yet. The normal path for a model load, and
+                # the one case where "starting" is the honest word.
+                out["started"] = True
+                out["detail"] = (
+                    f"vLLM is starting on {plan['model']}. A model load takes tens of "
+                    "seconds; the backend reports when it is answering."
+                )
         else:
-            from src.llm.ollama_lifecycle import start as ollama_start
-
-            kw: dict = {"wait": wait}
-            if timeout is not None:
-                kw["timeout"] = timeout
-            res = ollama_start(**kw)
-            out["started"] = bool(res.get("started"))
-            out["ready"] = bool(res.get("ready")) or res.get("reason") == "already running"
-            out["detail"] = str(
-                res.get("note")
-                or res.get("reason")
-                or ("Ollama is running." if out["ready"] else "Ollama was launched.")
-            )
+            out.update(_start_ollama(wait=wait, timeout=timeout))
     except Exception as exc:  # noqa: BLE001 - a launch failure is a sentence, not a 500
         out["started"] = False
         out["ready"] = False
@@ -306,3 +435,86 @@ def ensure_running(
         out["error"] = True
         _LOG.info("activation of %s failed: %s", backend, exc)
     return out
+
+
+def _start_ollama(*, wait: bool, timeout: float | None) -> dict:
+    """Launch the Ollama daemon. Split out so the vLLM-exited path below can reach it
+    without a second copy of the "already running counts as ready" rule."""
+    from src.llm.ollama_lifecycle import start as ollama_start
+
+    kw: dict = {"wait": wait}
+    if timeout is not None:
+        kw["timeout"] = timeout
+    res = ollama_start(**kw)
+    ready = bool(res.get("ready")) or res.get("reason") == "already running"
+    return {
+        "started": bool(res.get("started")),
+        "ready": ready,
+        "detail": str(
+            res.get("note")
+            or res.get("reason")
+            or ("Ollama is running." if ready else "Ollama was launched.")
+        ),
+    }
+
+
+def _vllm_exited(
+    out: dict, plan: dict, outcome: dict, *, wait: bool, timeout: float | None
+) -> dict:
+    """A vLLM start that DIED during engine init: say so, name where the reason is, and
+    fall back to Ollama when the operator did not ask for vLLM by name.
+
+    The fallback is the same rule the plan already applies one step earlier -- an
+    explicit choice is never second-guessed, and the preferred backend's blocker is
+    CARRIED rather than discarded, so the operator still learns their GPU is idle and
+    why (the recorded pill-regression lesson). It is applied here too because a start
+    that exits is as structural as a start that was refused: the next click will fail
+    the same way, and refusing to serve at all when Ollama is right there installed is
+    the very "honest and useless" outcome that lesson names.
+    """
+    code = outcome.get("returncode")
+    head = _server_log_head()
+    why = (
+        f"vLLM's server process exited immediately (code {code}) while loading "
+        f"{plan['model']} — the start FAILED; it is not still loading, so waiting "
+        "will not help."
+    )
+    hint = str(outcome.get("log_hint") or "")
+    path = outcome.get("log_path") or out.get("log_path")
+    upd: dict = {
+        "started": False,
+        "ready": False,
+        "detail": why + (f" {hint}" if hint else ""),
+        "log_path": path,
+    }
+    if head:
+        # The reason itself, not just a path to it: an operator reading a toast should
+        # not have to go and find the file to learn that the repo was gated or the port
+        # was taken.
+        upd["server_log_head"] = head
+
+    if plan.get("override"):
+        upd["error"] = True
+        return upd
+
+    alt = _plan_for("ollama", "vLLM's server exited during startup", plan["candidates"], None)
+    if not (alt["running"] or alt["can_start"]):
+        upd["error"] = True
+        return upd
+    started = _start_ollama(wait=wait, timeout=timeout)
+    if not (started["started"] or started["ready"]):
+        upd["error"] = True
+        return upd
+    return {
+        **alt,
+        **started,
+        "log_path": path,
+        **({"server_log_head": head} if head else {}),
+        "start_outcome": outcome,
+        "fell_back_from": {"backend": "vllm", "blocker": upd["detail"]},
+        "chosen_because": (
+            f"vLLM was preferred but its server exited on startup ({why}), so Ollama "
+            "serves instead"
+        ),
+        "detail": f"{started['detail']} {why}",
+    }

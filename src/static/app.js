@@ -20480,11 +20480,38 @@
       // leaving a dead control and a spinner.
       const blocker = act.blocker
         ? `<div class="card-caveat" style="margin-top:6px">${esc(act.blocker)}</div>` : "";
+      // A start that FAILED stays on the card, with the server's own first words.
+      // Field report 2026-08-04: "vLLM doesn't seem to start" -- a toast is gone by
+      // the time the operator goes looking for the reason, and a path to a log file
+      // asks them to go and find it. The HEAD is the right end for a startup failure:
+      // vLLM's EngineCore is a CHILD process, so its traceback prints before the
+      // parent's stack.
+      //
+      // `act.last_start` is the SERVER's answer, so it survives a reload and catches a
+      // death that happened long after the click (a CUDA OOM well into a model load).
+      // The local one covers the moment before the next poll, and the backends whose
+      // failures the vLLM-only tri-state cannot see.
+      if (serving) _aiStartFailure = null;
+      const fail = act.last_start || (serving ? null : _aiStartFailure);
+      let failed = "";
+      if (fail) {
+        failed = `<div class="card-caveat" style="margin-top:6px">${esc(fail.detail || "")}`
+               + `${fail.log_hint ? " " + esc(fail.log_hint) : ""}</div>`;
+        if (fail.server_log_head) {
+          failed += `<details style="margin-top:6px"><summary>${esc(t("What the server printed"))}</summary>`
+                  + `<pre style="white-space:pre-wrap;overflow-x:auto;max-height:220px;font-size:12px">`
+                  + `${esc(fail.server_log_head)}</pre></details>`;
+        }
+      }
       box.innerHTML =
-        `<div style="font-size:15px">${head}</div>` + why + blocker +
+        `<div style="font-size:15px">${head}</div>` + why + blocker + failed +
         _hwChips(b.gpu || {}, b.hardware || null) +
         (action ? `<div class="row" style="gap:8px;margin-top:8px">${action}</div>` : "");
     }
+
+    //: The last start that did not take, kept until one does. Cleared by loadAiHero
+    //: the moment a backend actually serves, so a stale failure can never outlive it.
+    let _aiStartFailure = null;
 
     async function aiStartNow(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -20492,6 +20519,7 @@
       if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
       try {
         const r = await api("/api/llm/activation/start", {method: "POST"});
+        _aiStartFailure = (r.ready || r.started) ? null : r;
         if (r.detail) toast(r.detail, (r.ready || r.started) ? "" : "err");
       } catch (e) {
         toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
@@ -20521,6 +20549,16 @@
         html += `<div class="card-caveat" style="margin-top:4px">${esc(r.ollama.note)}</div>` +
                 `<div style="margin-top:4px"><button class="ghost tiny" onclick="migrateOllamaStore(this)">` +
                 esc(t("Move them into the app folder")) + `</button></div>`;
+      }
+      // Weights downloaded before the store moved here are still on the disk. Nothing
+      // said so, so a model an operator already had reported "not downloaded" and its
+      // start was refused -- which is what "vLLM doesn't seem to start" looked like.
+      // No button: an HF cache uses symlinks into its own blobs/, so a copy that is
+      // not symlink-aware would silently double the size or break the links. Naming
+      // the folder is honest; a move this app has not built and tested would not be.
+      if (r.huggingface.note) {
+        html += `<div class="card-caveat" style="margin-top:4px">${esc(r.huggingface.note)}`
+              + `${gb(r.huggingface.legacy_bytes)}</div>`;
       }
       box.innerHTML = html;
     }

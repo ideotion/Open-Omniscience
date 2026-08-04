@@ -200,6 +200,7 @@
   "Could not read the local AI state.": "ローカル AI の状態を読み取れませんでした。",
   "Not set up on this machine yet": "このマシンではまだ設定されていません",
   "Start the local AI": "ローカル AI を起動",
+  "What the server printed": "サーバーの出力内容",
   "Backend, hardware and storage details": "バックエンド・ハードウェア・保存先の詳細",
   "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.": "自動モードは、実行可能な環境では vLLM を優先します（専用 GPU が必要で、同時リクエストに対応します）。それ以外では Ollama を使います。あなたの選択は常にこの優先設定より優先されます。",
   "Models are stored in": "モデルの保存先",

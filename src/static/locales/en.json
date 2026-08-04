@@ -200,6 +200,7 @@
   "Could not read the local AI state.": "Could not read the local AI state.",
   "Not set up on this machine yet": "Not set up on this machine yet",
   "Start the local AI": "Start the local AI",
+  "What the server printed": "What the server printed",
   "Backend, hardware and storage details": "Backend, hardware and storage details",
   "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.": "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.",
   "Models are stored in": "Models are stored in",
