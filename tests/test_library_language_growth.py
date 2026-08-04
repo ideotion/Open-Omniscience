@@ -461,12 +461,15 @@ def test_the_real_query_plan_is_index_only(tmp_path):
 
     Drives the REAL function against an isolated engine and EXPLAINs the SQL it
     actually emitted -- a hand-written lookalike would pass while the shipped query
-    stayed on the heap. Without this index the plan is a plain ``SEARCH ... USING
+    stayed on the heap, which is not hypothetical: a standalone probe of this same
+    SQL reported the index covering BOTH the series and the deduced tally, and
+    driving the real function showed the tally served from idx_article_language and
+    reading the heap. Without this index the plan is a plain ``SEARCH ... USING
     INDEX idx_article_created_at``: SQLite finds the rows by date and then fetches
     each full article row to read one 10-char column, which under SQLCipher decrypts
     the whole ~35 KB row (content sits before language). Measured on a 60k-article
-    PLAINTEXT store: series 157 ms -> 66 ms, the unassigned tally 76 ms -> 2.8 ms;
-    an encrypted store wins proportionally more, per the documented codec cost.
+    PLAINTEXT store, with the shape that actually ships: 152 ms -> 71 ms. An
+    encrypted store wins proportionally more, per the documented codec cost.
     """
     from sqlalchemy import create_engine, event, text
     from sqlalchemy.orm import sessionmaker
