@@ -4905,15 +4905,43 @@ def ai_coordinator_run() -> JSONResponse:
 
     Refuses (409) when no sweep is enabled -- an empty lane that reported "running"
     would be a fabricated capability. Re-calling while it runs returns the live
-    status with ``started:false`` rather than erroring."""
+    status with ``started:false`` rather than erroring.
+
+    STARTS THE BACKEND FIRST (2026-08-04 field report: "Starting the local AI
+    produces 'local model hiccup'"). Nothing in this chain ever started a backend:
+    the lane came up, probed, found no server, and spent its whole retry budget on a
+    condition retrying cannot change. Now it asks ``activation`` to bring one up.
+
+    The refusal is deliberately narrow, because the recorded lesson is that a health
+    probe must NOT decide a retry -- a model reload, a restart and a busy server all
+    answer alike, so ending a sweep on a probe would destroy the transient-retry
+    guarantee. That lesson is about ENDING a run. Here we are STARTING one, and the
+    two conditions are different in kind:
+
+      * a STRUCTURAL blocker (no backend installed; weights not downloaded) is a
+        filesystem fact, it will not change while the lane retries, and it is
+        actionable -- so 409 with the reason, in words;
+      * a backend that is starting (vLLM loading its engine for tens of seconds)
+        gets the lane started anyway, which is exactly what the backoff is for.
+    """
     from src.ai_layer.coordinator import enabled_members
     from src.api.llm import active_model
+    from src.llm.activation import ensure_running
 
     members = enabled_members()
     if not members:
         raise HTTPException(
             status_code=409,
             detail="No background sweeps are enabled — switch at least one on in Settings → AI.",
+        )
+    act = ensure_running()
+    if not (act.get("ready") or act.get("started")):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                act.get("detail")
+                or "No local AI backend could be started, so there is nothing to sweep with."
+            ),
         )
     try:
         st = _AI_COORDINATOR_JOB.start(model=active_model())
@@ -4922,6 +4950,15 @@ def ai_coordinator_run() -> JSONResponse:
         st = _AI_COORDINATOR_JOB.status()
         st["started"] = False
     st["members"] = [m.key for m in members]
+    # What it took to get a backend serving, so the UI can say "starting vLLM on
+    # <model> — the engine takes a moment" instead of a bare spinner. `ready:false`
+    # here is the honest still-loading case, not a failure.
+    st["activation"] = {
+        "backend": act.get("backend"),
+        "started": bool(act.get("started")),
+        "ready": bool(act.get("ready")),
+        "detail": act.get("detail"),
+    }
     return JSONResponse(st)
 
 

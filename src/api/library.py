@@ -31,6 +31,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, inspect, select, table
 from sqlalchemy.orm import Session
 
+from src.api.heavy import guarded_read
 from src.database.session import engine, get_db
 from src.utils.cache import SimpleCache
 
@@ -44,6 +45,13 @@ router = APIRouter(prefix="/api/library", tags=["library"])
 # graphs default to a longer, still-bounded window.
 _HISTORY_DEFAULT_DAYS = 30
 _HISTORY_MAX_DAYS = 3650  # ~10 years — generous, never literally unbounded
+
+# How many language panels the growth feed draws. A corpus can carry fifty
+# languages, so the rest are RANKED OUT and counted in the payload's `other`
+# block — never silently truncated. The ceiling bounds the response, not the
+# measurement: every language is still counted, and `other` says how many.
+_LANGUAGES_TOP_N = 12
+_LANGUAGES_MAX_TOP_N = 60
 
 _CACHE_TTL_S = 30
 _cache = SimpleCache(max_size=4, default_ttl=_CACHE_TTL_S)
@@ -195,9 +203,45 @@ def library_history(metric: str, days: int = _HISTORY_DEFAULT_DAYS, db: Session 
     if metric not in ALL_METRICS:
         raise HTTPException(status_code=400, detail=f"unknown metric: {metric}")
     days = max(1, min(int(days), _HISTORY_MAX_DAYS))
-    if metric == "articles_per_hour":
-        series = hourly_article_counts(db, days=days)
-        return {"metric": metric, "series": series, "recording_began_at": None, "days": days}
-    out = metric_history(db, metric=metric, days=days)
-    out["days"] = days
-    return out
+
+    def _compute() -> dict:
+        if metric == "articles_per_hour":
+            series = hourly_article_counts(db, days=days)
+            return {"metric": metric, "series": series, "recording_began_at": None, "days": days}
+        out = metric_history(db, metric=metric, days=days)
+        out["days"] = days
+        return out
+
+    # Guarded like every other unbounded read: articles_per_hour scans a
+    # created_at range that a ten-year window makes arbitrarily large, and this
+    # endpoint has no TTL cache of its own to fall back on.
+    return guarded_read(db, f"library-history:{metric}:{days}", _compute)
+
+
+@router.get("/languages")
+def library_languages(
+    days: int = _HISTORY_DEFAULT_DAYS,
+    top_n: int = _LANGUAGES_TOP_N,
+    db: Session = Depends(get_db),
+) -> dict:
+    """Articles stored per language over time — "which languages is my corpus
+    actually growing in".
+
+    The operator tuning ``language_equilibrium`` has had no feedback surface at all:
+    the lever orders re-checks by how far a language is over its target, and nothing
+    showed whether it was working. This is that surface, and it is deliberately
+    computed the way the lever computes its own shares (same column, same bucket key)
+    so the two can never describe different corpora.
+
+    Its own shape, not a ``/history`` metric: this returns a LIST of series, one per
+    language, where that endpoint's contract is a single ``[{t, n}]``.
+    """
+    from src.database.snapshots import article_counts_by_language
+
+    days = max(1, min(int(days), _HISTORY_MAX_DAYS))
+    top_n = max(1, min(int(top_n), _LANGUAGES_MAX_TOP_N))
+    return guarded_read(
+        db,
+        f"library-languages:{days}:{top_n}",
+        lambda: article_counts_by_language(db, days=days, top_n=top_n),
+    )

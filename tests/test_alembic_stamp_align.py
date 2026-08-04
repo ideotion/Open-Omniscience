@@ -87,6 +87,20 @@ def test_genuinely_missing_column_is_not_stamped_forward(tmp_path):
     stamp (so a real migration adds the column)."""
     eng = _healed_engine(tmp_path, stamp=_AT_FLOOR)
     with eng.begin() as c:
+        # SQLite refuses DROP COLUMN while any index references the column, and
+        # idx_article_created_lang carries detected_language. Clear them by
+        # REFLECTION rather than by name, so the next index over this column does
+        # not silently break a guard that is about stamping, not about indexes.
+        # This also makes the fixture MORE faithful: a store old enough to lack the
+        # column never had an index on it either.
+        for (idx,) in c.execute(
+            text("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='articles'")
+        ).fetchall():
+            if not idx or idx.startswith("sqlite_autoindex"):
+                continue
+            info = c.execute(text(f"PRAGMA index_info({idx})")).fetchall()
+            if any(r[2] == "detected_language" for r in info):
+                c.execute(text(f"DROP INDEX {idx}"))
         c.execute(text("ALTER TABLE articles DROP COLUMN detected_language"))
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

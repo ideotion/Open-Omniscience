@@ -2021,7 +2021,7 @@
       }
 
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
-      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); loadAiSetup(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); syncAiCoordinator(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
+      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); loadAiSetup(); loadAiHero(); loadAiStore(); loadModelCatalog(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); syncAiCoordinator(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
       if (cat === "advanced") _advWire();             // Collection / Sources / Keywords, lazily per section
       if (cat === "general") loadShortcuts();         // the shortcuts panel moved into General (2026-07-31)
       if (cat === "cards") loadCardCatalog();     // the Leads catalogue (PR-7): lazy, one loopback read
@@ -8588,14 +8588,88 @@
         {scales: true});
     }
 
+    // -- Per-language corpus growth (small multiples) --------------------------
+    // "Which languages is my corpus actually growing in" — the feedback surface
+    // the language-equilibrium lever never had. One panel per language on ONE
+    // shared scale, which is what makes the panels comparable at a glance.
+    //
+    // Every number the endpoint declines to plot is stated here rather than
+    // dropped: the ranked-out tail, the articles with no asserted language (the
+    // lever's own blind spot), and where the series starts if the corpus is
+    // younger than the window.
+    const LIB_LANG_TOP_N = 12;
+    // Pure, so the disclosures can be tested for what they SAY rather than for
+    // which identifiers appear in the source. A substring guard over the tile
+    // survives a mutation that leaves `d.other` in a variable binding and drops
+    // the sentence -- which is precisely the class of silent truncation these
+    // sentences exist to prevent.
+    function _libLangNotes(d, t, tf) {
+      const notes = [];
+      notes.push(d.bucket === "hour" ? t("Articles stored per hour.") : t("Articles stored per day."));
+      const other = d.other || {};
+      if (other.languages) {
+        notes.push(tf("{langs} more languages ({articles} articles) are counted but not drawn.",
+          {langs: other.languages, articles: other.articles}));
+      }
+      const un = d.unassigned || {};
+      if (un.articles) {
+        notes.push(tf("{n} articles have no asserted language and are not drawn — the equilibrium lever cannot see them either ({deduced} carry a deduced one).",
+          {n: un.articles, deduced: un.with_deduced_language}));
+      }
+      // Said only when the series is genuinely CLAMPED by the corpus's own start —
+      // the backend decides that, rather than the frontend re-deriving it from two
+      // timestamps and getting the bucket arithmetic subtly wrong.
+      if (d.clamped_to_corpus_start && d.corpus_began_at) {
+        notes.push(tf("The corpus itself begins at {x}, so the series starts there.", {x: d.corpus_began_at}));
+      }
+      return notes;
+    }
+    async function _libLanguageTile(days) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf : ((tpl, v) => String(tpl).replace(/\{(\w+)\}/g, (m, k) => (k in v ? v[k] : m)));
+      const cur = days || _libTileDays.__lang || LIB_DEFAULT_DAYS;
+      _libTileDays.__lang = cur;
+      const label = t("Growth by language");
+      let d;
+      try {
+        d = await api(`/api/library/languages?days=${cur}&top_n=${LIB_LANG_TOP_N}`);
+      } catch (e) {
+        return `<div id="lib-tile-__lang" style="flex:1 1 100%;padding:6px;border:1px solid var(--border);border-radius:8px">
+          <b style="font-size:12.5px">${esc(label)}</b>
+          <div class="note err" style="font-size:11px">${esc(e.message || e)}</div></div>`;
+      }
+      // The panel label is the language NAME in the current UI locale, via the
+      // browser's own CLDR data (ooLangName) — the code is what the lever keys on,
+      // not what a reader should have to decode. Degrades to the code.
+      const panels = (d.series || []).map(s => ({
+        label: ooLangName(s.language, s.language),
+        points: (s.points || []).map(p => ({date: p.t, count: p.n})),
+      }));
+      // neutral: a language growing more slowly than another is not "bad", so the
+      // market up=green/down=red semantics must not be borrowed here.
+      const body = panels.length
+        ? smallMultiplesSvg(panels, {neutral: true})
+        : `<div class="muted" style="padding:14px 0;font-size:12px">${esc(t("No data yet."))}</div>`;
+
+      const notes = _libLangNotes(d, t, tf).map(esc);
+      return `<div id="lib-tile-__lang" style="flex:1 1 100%;padding:6px;border:1px solid var(--border);border-radius:8px">
+        <b style="font-size:12.5px">${esc(label)}</b>
+        ${body}
+        <div class="hint muted" style="font-size:11px">${notes.join(" ")}</div>
+        ${_libWindowChips("__lang", cur)}</div>`;
+    }
+
     // Re-render exactly ONE tile in place when its window chip is clicked —
     // never the whole panel (a switch on one metric must not disturb the
     // others' state or cause a visible flash across the row).
     async function _libSetWindow(key, days) {
-      const el = $(key === "__qual" ? "lib-tile-__qual" : "lib-tile-" + key);
+      const el = $(key === "__qual" ? "lib-tile-__qual"
+        : key === "__lang" ? "lib-tile-__lang" : "lib-tile-" + key);
       if (!el) return;
-      const html = key === "__qual"
-        ? await _libQualificationTile(days) : await _libGraphTile(key, days);
+      const html = key === "__qual" ? await _libQualificationTile(days)
+        : key === "__lang" ? await _libLanguageTile(days)
+        : await _libGraphTile(key, days);
       const tmp = document.createElement("div");
       tmp.innerHTML = html;
       const fresh = tmp.firstElementChild;
@@ -8626,7 +8700,12 @@
         // _libGraphTile has already fetched and stashed, so it costs no request.
         const rhythmSeries = ((_libGraphData.articles_per_hour || {}).series) || [];
         const rhythm = ingestRhythmSvg(rhythmSeries);
+        // Per-language growth sits BESIDE the counters, never instead of them.
+        // Its own fetch: it is the one series the /history metrics cannot express
+        // (a list of series, not a single [{t,n}]).
+        const lang = await _libLanguageTile(LIB_DEFAULT_DAYS);
         host.innerHTML = `<div class="row" style="flex-wrap:wrap;gap:10px">${tiles.join("")}</div>`
+          + `<div class="row" style="flex-wrap:wrap;gap:10px;margin-top:10px">${lang}</div>`
           + (rhythm ? `<h3 class="lib-sub">${esc(t("Ingest rhythm"))}</h3>` + rhythm : "");
         _libRenderQualChart(host);
       } catch (e) {
@@ -13565,12 +13644,21 @@
     }
     // The per-sweep membership checkboxes: the master coordinates them, it never
     // hides them — the operator can always see and change which sweeps are included.
+    // The three COORDINATED sweeps share one settings prefix; language detection is
+    // background AI too (the operator's own list says "tags, language...") but it is
+    // NOT a coordinator member -- it is its own ride-along with its own flag. Wiring
+    // its checkbox to a non-existent ai_sweep_langdetect would have produced a control
+    // that saves nothing and reads back unchecked forever, which is worse than not
+    // offering it.
+    const AI_SWEEP_KEYS = ["keyword_triage", "source_tags", "perception_extract"];
     async function saveAiSweepMembership() {
       const body = {};
-      ["keyword_triage", "source_tags", "perception_extract"].forEach(k => {
+      AI_SWEEP_KEYS.forEach(k => {
         const el = $("aic-m-" + k);
         if (el) body["ai_sweep_" + k] = !!el.checked;
       });
+      const ld = $("aic-m-langdetect");
+      if (ld) body.ai_langdetect_auto = !!ld.checked;
       try { await api("/api/settings", {method: "PUT", body: JSON.stringify(body)}); }
       catch (e) { toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err"); }
     }
@@ -13582,10 +13670,12 @@
       } catch (e) { /* absent backend: leave the panel at its default text */ }
       try {
         const s = await api("/api/settings");
-        ["keyword_triage", "source_tags", "perception_extract"].forEach(k => {
+        AI_SWEEP_KEYS.forEach(k => {
           const el = $("aic-m-" + k);
           if (el) el.checked = !!s["ai_sweep_" + k];
         });
+        const ld = $("aic-m-langdetect");
+        if (ld) ld.checked = !!s.ai_langdetect_auto;
       } catch (e) { /* settings unavailable: the checkboxes stay as rendered */ }
     }
 
@@ -20002,51 +20092,38 @@
     // the Ollama process (NOT through Tor) -- so it is offered, with its size, and
     // never begun by a single click on a status pill.
     async function aiPillStartOrInstall() {
+      // ONE server-side decision, not a fourth copy of it.
+      //
+      // This used to re-derive "which backend do I start" in the browser from
+      // vllm_can_launch / ollama.can_launch plus a settings read -- a fourth ordering
+      // beside routing, provisioning and activation, and one with a real hole: if
+      // llm_model_vllm was unset it fell through to Ollama even on a GPU machine whose
+      // vLLM was installed and whose default weights were already downloaded. The
+      // server now answers the question in one place (src/llm/activation.py), which is
+      // also what the maintainer asked for: clicking this starts whichever backend
+      // this machine should run, vLLM preferred where it can serve.
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      let b = null;
-      try { b = await api("/api/llm/backend"); }
-      catch (e) { openAiSettings(); return; }
-
-      // 1. vLLM first when it can actually serve: it is the GPU path and the only one
-      //    that gives concurrency. It needs a model id up front, so a missing choice
-      //    is a reason to fall through to Ollama, not to give up.
-      if (b.vllm_can_launch) {
-        try {
-          const settings = await api("/api/settings");
-          if (settings.llm_model_vllm) {
-            toast(t("Starting the local AI…"));
-            await api("/api/llm/vllm/start", {
-              method: "POST",
-              body: JSON.stringify({model: settings.llm_model_vllm}),
-            });
-            _aiPillSettle();
-            return;
-          }
-        } catch (e) { /* fall through to Ollama rather than stopping here */ }
+      let act = null;
+      try {
+        toast(t("Starting the local AI…"));
+        act = await api("/api/llm/activation/start", {method: "POST"});
+      } catch (e) {
+        toast(t("Could not start the local AI:") + " " + (e.message || e), "err");
+        openAiSettings();
+        return;
       }
-
-      // 2. Ollama otherwise -- the CPU path, and the case the old code never handled.
-      if (b.ollama && b.ollama.can_launch) {
-        try {
-          toast(t("Starting the local AI…"));
-          await api("/api/llm/ollama/start", {method: "POST"});
-          await _aiPillEnsureModel(t);
-          _aiPillSettle();
-          return;
-        } catch (e) {
-          toast(t("Could not start the local AI:") + " " + (e.message || e), "err");
-          openAiSettings();
-          return;
-        }
+      if (act.ready || act.started) {
+        // A vLLM engine load takes tens of seconds, so "started" is not "answering"
+        // and the detail says which -- never a bare spinner over an unknown wait.
+        if (act.detail) toast(act.detail);
+        if (act.backend === "ollama") await _aiPillEnsureModel(t);
+        _aiPillSettle();
+        return;
       }
-
-      // 3. Running already but still not usable -- almost always "no model installed".
-      if (b.ollama && b.ollama.running) {
-        if (await _aiPillEnsureModel(t)) { _aiPillSettle(); return; }
-      }
-
-      // 4. Nothing installed to start. Installing a BACKEND is a bigger, consented
-      //    flow that lives in Settings; sending the user there is the honest end.
+      // A blocker is structural (nothing installed, weights not downloaded). It is
+      // reported in words and the operator is sent to the flow that can fix it --
+      // installing a BACKEND is a bigger, consented chain that lives in Settings.
+      if (act.detail) toast(act.detail, "err");
       openAiSettings();
     }
 
@@ -20326,7 +20403,217 @@
       }
     }
 
+    // ----------------------------------------------------------------- //
+    //  THE ONE LOCAL-AI CARD (2026-08-04 rework)
+    //
+    //  State, the single action, and the hardware the choice was made from --
+    //  replacing a backend panel, a vLLM panel and an Ollama panel that each told
+    //  a third of the story. Every fact is read from the server; a failed read
+    //  says so rather than rendering a confident blank.
+    // ----------------------------------------------------------------- //
+    // The frame translates, the data does not: a fixed keyable template with
+    // {named} holes, interpolated after lookup. A concatenated fragment ("running
+    // on" + a name) cannot be keyed usefully -- word order and agreement differ per
+    // language -- which is what OOI18N.tf exists for.
+    function _tf(tpl, vars) {
+      if (window.OOI18N && OOI18N.tf) return OOI18N.tf(tpl, vars);
+      return String(tpl).replace(/\{(\w+)\}/g, (m, k) => (k in vars ? String(vars[k]) : m));
+    }
+
+    function _hwChips(gpu, cap) {
+      const chip = (label, value, title) =>
+        `<span class="pill" title="${esc(title || "")}"><span class="muted">${esc(label)}</span> ${esc(value)}</span>`;
+      const out = [];
+      if (gpu && gpu.available) {
+        out.push(chip("GPU", gpu.name || "detected", "A dedicated GPU was detected, so vLLM can serve here."));
+        if (gpu.vram_mb) out.push(chip("VRAM", Math.round(gpu.vram_mb / 1024) + " GB", ""));
+      } else {
+        out.push(chip("GPU", (window.OOI18N && OOI18N.t ? OOI18N.t("none detected") : "none detected"),
+          "No dedicated GPU was found. vLLM needs one; Ollama runs on the CPU."));
+      }
+      // Field names read from inference_capability()'s real payload, not assumed:
+      // total_ram_gb / cpu_cores / unified_ram_gb. A missing one is omitted rather
+      // than rendered as a blank chip.
+      if (cap) {
+        const ram = cap.total_ram_gb || cap.unified_ram_gb;
+        if (ram) out.push(chip("RAM", ram + " GB", cap.method || ""));
+        if (cap.cpu_cores) out.push(chip("Cores", String(cap.cpu_cores), ""));
+      }
+      return `<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:6px">${out.join("")}</div>`;
+    }
+
+    async function loadAiHero() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("ai-hero");
+      if (!box) return;
+      let act = null, b = null, health = null;
+      try {
+        act = await api("/api/llm/activation");
+        b = await api("/api/llm/backend");
+      } catch (e) {
+        box.innerHTML = `<p class="muted">${esc(t("Could not read the local AI state."))}</p>`;
+        return;
+      }
+      try { health = await api("/api/llm/health"); } catch (e) { health = null; }
+
+      const name = act.backend === "vllm" ? "vLLM" : "Ollama";
+      const serving = !!(health && health.available);
+      // THREE states, not two: serving / installed-but-stopped / not set up. The
+      // middle one is the whole reason "it won't start" was reported -- collapsing
+      // it into "off" is what left the operator with nothing to press.
+      let head, action = "";
+      if (serving) {
+        head = `<span class="ok">●</span> ` +
+               esc(_tf("Ready — running on {backend}", {backend: name})) +
+               ((health.installed_models || []).length
+                  ? ` <span class="muted">${esc(health.installed_models[0])}</span>` : "");
+        if (act.backend === "vllm") {
+          action = `<button class="ghost" onclick="stopVllm(this)">${esc(t("Stop"))}</button>`;
+        }
+      } else if (act.can_start) {
+        head = `<span class="warn">●</span> ` +
+               esc(_tf("Installed but not running — {backend}", {backend: name}));
+        action = `<button onclick="aiStartNow(this)">${esc(t("Start the local AI"))}</button>`;
+      } else {
+        head = `<span class="muted">●</span> ` + esc(t("Not set up on this machine yet"));
+      }
+
+      const why = act.chosen_because ? `<div class="hint" style="margin-top:4px">${esc(act.chosen_because)}</div>` : "";
+      // A blocker is the actionable half: it names what is missing instead of
+      // leaving a dead control and a spinner.
+      const blocker = act.blocker
+        ? `<div class="card-caveat" style="margin-top:6px">${esc(act.blocker)}</div>` : "";
+      box.innerHTML =
+        `<div style="font-size:15px">${head}</div>` + why + blocker +
+        _hwChips(b.gpu || {}, b.hardware || null) +
+        (action ? `<div class="row" style="gap:8px;margin-top:8px">${action}</div>` : "");
+    }
+
+    async function aiStartNow(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const was = btn ? btn.textContent : "";
+      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
+      try {
+        const r = await api("/api/llm/activation/start", {method: "POST"});
+        if (r.detail) toast(r.detail, (r.ready || r.started) ? "" : "err");
+      } catch (e) {
+        toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = was; }
+        // A vLLM engine takes tens of seconds, so re-read a few times rather than
+        // painting one snapshot that will be wrong in five seconds.
+        [1000, 4000, 12000].forEach(ms => setTimeout(() => { loadAiHero(); loadLlmHealth(); }, ms));
+      }
+    }
+
+    // Where the weights actually live. CONFIGURED and DETECTED are separate facts:
+    // an env var reaches processes this app spawns, so a systemd-managed Ollama keeps
+    // its own store, and saying "they are in the app folder" when they are not would
+    // leave the operator no way to understand why.
+    async function loadAiStore() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("ai-store-box");
+      if (!box) return;
+      let r = null;
+      try { r = await api("/api/llm/model-store"); } catch (e) { box.textContent = ""; return; }
+      const gb = (n) => (n === null || n === undefined) ? "" : ` <span class="muted">(${(n / 1e9).toFixed(1)} GB)</span>`;
+      let html = `<div>${esc(t("Models are stored in"))} <code>${esc(r.root)}</code></div>`;
+      html += `<div style="margin-top:2px">Ollama: <code>${esc(r.ollama.configured)}</code>${gb(r.ollama.bytes)}</div>`;
+      html += `<div>Hugging Face: <code>${esc(r.huggingface.configured)}</code>${gb(r.huggingface.bytes)}</div>`;
+      if (r.ollama.note) {
+        html += `<div class="card-caveat" style="margin-top:4px">${esc(r.ollama.note)}</div>` +
+                `<div style="margin-top:4px"><button class="ghost tiny" onclick="migrateOllamaStore(this)">` +
+                esc(t("Move them into the app folder")) + `</button></div>`;
+      }
+      box.innerHTML = html;
+    }
+
+    async function migrateOllamaStore(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!confirm(t("Copy the existing models into the app folder? Nothing is deleted — the originals stay where they are until you remove them yourself."))) return;
+      const was = btn ? btn.textContent : "";
+      if (btn) { btn.disabled = true; btn.textContent = t("Copying…"); }
+      try {
+        const r = await api("/api/llm/model-store/migrate", {method: "POST"});
+        toast(r.ok ? t("Copied.") + ` ${r.copied} copied, ${r.skipped} already there.`
+                   : (r.reason || t("Could not copy the models.")), r.ok ? "" : "err");
+      } catch (e) {
+        toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = was; }
+        loadAiStore();
+      }
+    }
+
+    // The dual-use model list. One button per model; the artifact behind it is
+    // whichever build the ACTIVE backend can use. A model with no verified build for
+    // that backend renders DISABLED with its reason rather than vanishing.
+    let _catalogSel = new Set();
+    async function loadModelCatalog() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("llm-catalog-box");
+      if (!box) return;
+      let c = null;
+      try { c = await api("/api/llm/models/catalog"); } catch (e) { box.innerHTML = ""; return; }
+      const rows = (c.models || []).map((m) => {
+        const id = "mc-" + m.key;
+        if (!m.available) {
+          return `<label class="row" style="gap:8px;align-items:flex-start;opacity:.65;margin:4px 0">` +
+            `<input type="checkbox" disabled style="width:auto;margin-top:3px">` +
+            `<span><b>${esc(m.label)}</b> <span class="muted">— ${esc(_tf("not available for {backend}", {backend: c.backend}))}</span>` +
+            `<div class="hint">${esc(m.absent_reason || "")}</div></span></label>`;
+        }
+        // installed === null means the probe could not answer (a stopped daemon
+        // genuinely does not know), which is not the same claim as "not installed".
+        const state = m.installed === true ? `<span class="ok">${esc(t("installed"))}</span>`
+                    : m.installed === null ? `<span class="muted">${esc(t("unknown"))}</span>` : "";
+        const bits = [m.size, m.licence, m.verification === "search-verified" ? t("identifier search-verified") : null]
+          .filter(Boolean).map(esc).join(" · ");
+        return `<label class="row" style="gap:8px;align-items:flex-start;margin:4px 0">` +
+          `<input type="checkbox" id="${esc(id)}" data-mckey="${esc(m.key)}" style="width:auto;margin-top:3px"` +
+          `${m.installed === true ? "" : ""}>` +
+          `<span><b>${esc(m.label)}</b>${m.is_default ? ` <span class="pill">${esc(t("default"))}</span>` : ""} ${state}` +
+          `<div class="hint"><code>${esc(m.artifact)}</code>${bits ? " · " + bits : ""}</div>` +
+          (m.summary ? `<div class="hint">${esc(m.summary)}</div>` : "") + `</span></label>`;
+      }).join("");
+      box.innerHTML =
+        `<div style="font-weight:600">${esc(_tf("Available models for {backend}", {backend: c.backend}))}</div>` +
+        `<div class="hint" style="margin:2px 0 6px">${esc(c.method || "")}</div>` +
+        rows +
+        `<div class="row" style="gap:8px;margin-top:8px;align-items:center">` +
+        `<button onclick="installSelectedModels(this)">${esc(t("Download selected"))}</button>` +
+        `<span id="mc-status" class="hint"></span></div>`;
+    }
+
+    async function installSelectedModels(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const keys = Array.from(document.querySelectorAll("#llm-catalog-box input[data-mckey]:checked"))
+        .map(el => el.getAttribute("data-mckey"));
+      const status = $("mc-status");
+      if (!keys.length) { if (status) status.textContent = t("Tick a model first."); return; }
+      if (!await ensureAiEgress(t("Download local models (over the clear internet)"))) return;
+      const was = btn ? btn.textContent : "";
+      if (btn) { btn.disabled = true; btn.textContent = t("Working…"); }
+      try {
+        const r = await api("/api/llm/models/install", {
+          method: "POST", body: JSON.stringify({keys}),
+        });
+        // Refusals travel WITH the result: an operator who ticked four and can have
+        // two is owed an account of four, not a silent download of two.
+        const parts = [];
+        if ((r.queued || []).length) parts.push(`${r.queued.length} ${t("queued")}`);
+        (r.refused || []).forEach(x => parts.push(`${x.label || x.key}: ${x.reason}`));
+        if (status) status.textContent = parts.join(" · ") || t("Nothing to do.");
+      } catch (e) {
+        if (status) status.textContent = _apiErrorMessage ? _apiErrorMessage(e) : String(e);
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = was; }
+        loadLlmModels(); loadModelCatalog();
+      }
+    }
+
     function refreshAiPanels() {
+      loadAiHero(); loadAiStore(); loadModelCatalog(); syncAiCoordinator();
       loadAiSetup(); loadAiBackendPanel(); loadVllmStatusPanel();
       loadOllamaInstall(); loadLlmModels(); loadLlmHealth();
       // Each panel asks for ITS OWN backend's roster, so the section heading and the

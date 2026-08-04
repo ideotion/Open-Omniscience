@@ -1350,48 +1350,91 @@
     </div>
 
     <div class="set-view" id="set-models" style="display:none">
+    <!-- LOCAL AI, ONE CARD (2026-08-04 maintainer rework: "much more simple and
+         intuitive ... vLLM and Ollama installers should be fused together and
+         automatically installed based on hardware"). The fusion already existed in
+         runAiSetup(); what it lacked was a presentation. This card is now the ONE
+         control: state, the single setup/start action, the backend choice, the
+         hardware it read that choice from, and where the weights live. -->
     <section class="panel">
-      <h2>AI backend</h2>
-      <p class="muted" style="margin-top:0">Open Omniscience runs local inference through Ollama or vLLM — vLLM is preferred automatically on a GPU-equipped machine (concurrent requests; a heavier install), Ollama is kept for CPU-only machines and is never dropped. The active backend and the reason are shown below, never a silent switch.</p>
+      <h2>Local AI</h2>
+      <div id="ai-hero"><p class="muted">Checking the local AI…</p></div>
       <div id="ai-setup-box" style="display:none"></div>
-      <div id="ai-backend-box"><p class="muted">Checking the active backend…</p></div>
-      <div class="row" style="align-items:end;gap:10px;margin-top:8px">
-        <div><label for="ai-backend-select">Backend</label>
-          <select id="ai-backend-select" onchange="setAiBackend(this.value)">
-            <option value="auto">Automatic (recommended)</option>
-            <option value="ollama">Ollama only</option>
-            <option value="vllm">vLLM only</option>
-          </select></div>
-      </div>
-      <div style="margin-top:14px;border-top:1px solid var(--line);padding-top:10px">
-        <h3 style="margin:0 0 6px">vLLM (GPU, concurrent requests)</h3>
-        <div id="vllm-status-box"><p class="muted">Checking vLLM…</p></div>
-        <div id="vllm-install-box" style="display:none;margin-top:8px"></div>
+      <details class="adv-collect" style="margin-top:10px">
+        <summary class="muted" style="cursor:pointer">Backend, hardware and storage details</summary>
         <div class="row" style="align-items:end;gap:10px;margin-top:8px">
-          <div style="flex:2"><label for="vllm-model-input">Model (a Hugging Face repo id)</label>
-            <input id="vllm-model-input" placeholder="e.g. an AWQ/GPTQ-quantized Mistral-7B-Instruct repo id"></div>
-          <div style="flex:0 0 auto"><button id="vllm-start-btn" onclick="startVllm(this)">Start</button></div>
-          <div style="flex:0 0 auto"><button class="ghost" id="vllm-stop-btn" onclick="stopVllm(this)">Stop</button></div>
+          <div><label for="ai-backend-select">Backend</label>
+            <select id="ai-backend-select" onchange="setAiBackend(this.value)">
+              <option value="auto">Automatic (recommended)</option>
+              <option value="ollama">Ollama only</option>
+              <option value="vllm">vLLM only</option>
+            </select></div>
+          <div class="hint" style="flex:1;align-self:center">Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.</div>
         </div>
+        <div id="ai-backend-box" style="margin-top:8px"></div>
+        <div id="ai-store-box" class="hint" style="margin-top:8px"></div>
         <div id="vllm-action-status" class="hint" style="margin-top:8px"></div>
-        <div id="vllm-bench-box" style="margin-top:12px"></div>
+      </details>
+    </section>
+
+    <!-- WHAT THE AI IS FOR, in two parts (maintainer: "divide it into two parts:
+         backend (diagnostics, metadata, etc.) and frontend (translations, summaries,
+         etc.)"). The BACKGROUND half carries its own activation toggle and one
+         checkbox per job -- moved here out of Settings -> Data & backup, where AI work
+         had no business being. -->
+    <section class="panel">
+      <h2>What the local AI is used for</h2>
+      <p class="muted" style="margin-top:0">Everything below runs on your own machine, through the model you chose above. Nothing is sent anywhere. AI output is always labelled AI-derived and unreliable, and never enters the trusted keyword index.</p>
+
+      <div style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:8px">
+        <div style="font-weight:600">In the background — enriching your corpus</div>
+        <p class="hint" style="margin:4px 0 8px">Work the app does on its own, a little at a time, while you are not asking for anything: reading what your articles are about and adding metadata the rule-based indexer cannot derive. Each job keeps its own saved position, so switching this off pauses rather than restarts, and anything you start yourself takes priority.</p>
+        <div class="row" style="align-items:center;gap:10px">
+          <button id="aic-toggle-btn" onclick="toggleAiCoordinator(this)" data-running="0">Turn on background AI</button>
+          <span id="aic-status" class="small"></span>
+        </div>
+        <div class="row" style="margin-top:8px;gap:14px;flex-wrap:wrap">
+          <label class="small"><input type="checkbox" id="aic-m-perception_extract" onchange="saveAiSweepMembership()"> When / where / who</label>
+          <label class="small"><input type="checkbox" id="aic-m-source_tags" onchange="saveAiSweepMembership()"> Source topic tags</label>
+          <label class="small"><input type="checkbox" id="aic-m-keyword_triage" onchange="saveAiSweepMembership()"> Keyword triage</label>
+          <label class="small"><input type="checkbox" id="aic-m-langdetect" onchange="saveAiSweepMembership()"> Unknown languages</label>
+        </div>
+        <div id="aic-hw" class="hint" style="margin-top:6px"></div>
+      </div>
+
+      <div style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:8px">
+        <div style="font-weight:600">When you ask — reading and writing for you</div>
+        <p class="hint" style="margin:4px 0 0">Summaries of one article or many, translation into your interface language, and synthesis across a set you choose. These only ever run when you press the button, from the reader, the search toolbar or an analysis window. A long article is split and reassembled rather than silently cut, and the method is recorded with the result.</p>
       </div>
     </section>
+
+    <!-- MODELS: one dual-use list (maintainer: "a list of dual use buttons for
+         additional models ... also dynamically choosing the proper version for either
+         ollama or vLLM. Let's remove the list of suggested models."). The catalogue
+         resolves each model to the artifact the ACTIVE backend can use; a model with
+         no verified build for it is shown disabled WITH the reason, never guessed and
+         never quietly dropped. -->
     <section class="panel">
-      <h2>Local models (Ollama)</h2>
-      <p class="muted" style="margin-top:0">The local language models power Summarize, Translate and Synthesize. This shows what you actually have installed (live from Ollama) and a small suggested list annotated for your hardware. Pick the active model, pull new ones, or remove them — all from here. Newer and better models appear constantly — pull any tag below, or browse <a href="https://ollama.com/library" target="_blank" rel="noopener">ollama.com/library</a>.</p>
-      <div class="hint" style="margin-bottom:8px">Pulling a model is a network action: it downloads through the Ollama process over the clear internet — not through this app's Tor proxy — so it is refused while airplane mode is on, and asks your consent the first time you go online. The download happens on your machine; the model then runs fully offline.</div>
-      <div id="llm-install-box" style="display:none;margin-bottom:10px"></div>
+      <h2>Models</h2>
+      <p class="muted" style="margin-top:0">One list for either backend: each model downloads as the build your backend can actually use. Downloads go over the clear internet — not through this app's Tor proxy — so they are refused while airplane mode is on; the model then runs fully offline.</p>
       <div id="llm-downloads" style="display:none;margin-bottom:10px"></div>
-      <div id="llm-models-box"><p class="muted">Checking Ollama…</p></div>
-      <div class="row" style="margin-top:12px;align-items:end">
-        <div style="flex:2"><label for="llm-pull-tag">Pull any model tag</label>
-          <input id="llm-pull-tag" placeholder="e.g. llama3.2:3b — any tag from ollama.com/library"
-                 onkeydown="if(event.key==='Enter')pullModelFromBox()"></div>
-        <div style="flex:0 0 auto"><button onclick="pullModelFromBox()">Pull</button></div>
-      </div>
-      <div id="llm-pull-progress" class="hint" style="margin-top:8px"></div>
+      <div id="llm-models-box"><p class="muted">Checking models…</p></div>
+      <div id="llm-catalog-box" style="margin-top:10px"></div>
+      <details class="adv-collect" style="margin-top:10px">
+        <summary class="muted" style="cursor:pointer">Pull any other model</summary>
+        <div class="row" style="margin-top:6px;align-items:end">
+          <div style="flex:2"><label for="llm-pull-tag">Model tag or repo id</label>
+            <input id="llm-pull-tag" placeholder="e.g. llama3.2:3b — any tag from ollama.com/library"
+                   onkeydown="if(event.key==='Enter')pullModelFromBox()"></div>
+          <div style="flex:0 0 auto"><button onclick="pullModelFromBox()">Pull</button></div>
+        </div>
+        <div id="llm-pull-progress" class="hint" style="margin-top:8px"></div>
+      </details>
+      <div id="llm-install-box" style="display:none;margin-top:10px"></div>
+      <div id="vllm-install-box" style="display:none;margin-top:10px"></div>
+      <div id="vllm-status-box" style="display:none"></div>
       <div id="ollama-bench-box" style="margin-top:12px"></div>
+      <div id="vllm-bench-box" style="margin-top:12px"></div>
     </section>
     <section class="panel">
       <h2>Behaviour &amp; prompts</h2>
@@ -1732,27 +1775,13 @@
            painted via data-running, no multi-hour disabled state), and the description
            is a collapsed detail so the panel reads compactly. Un-keyed English (matches
            this diagnostics panel). Browser-unverified per fork-3. -->
-      <!-- THE BACKGROUND-AI MASTER TOGGLE (2026-08-01 ruling 12a). One coordinated lane
-           instead of three independent sweep toggles that would silently queue behind
-           each other on a backend serving one generation at a time. The per-sweep
-           checkboxes stay visible BELOW it: the master is a convenience, never a hider
-           (informed-consent layering). Un-keyed English, matching this diagnostics
-           panel. Browser-unverified per fork-3. -->
-      <div id="ai-coordinator-box" style="margin-top:10px;padding:8px;border:1px solid var(--border);border-radius:8px">
-        <div class="small" style="font-weight:600">Background AI — coordinated sweeps</div>
-        <div class="hint">Runs the sweeps you enable below one at a time, round-robin, through the active model (Settings → AI). Each sweep keeps its own saved position, so turning this off pauses rather than restarts. A batch YOU start — a bulk translate or summarize, or a manual sweep run — takes priority: this lane stands down for its duration and resumes on its own. Nothing here writes the trusted keyword index.</div>
-        <div class="row" style="margin-top:6px">
-          <button id="aic-toggle-btn" onclick="toggleAiCoordinator(this)" data-running="0" title="Start or pause the coordinated background-AI lane. Every included sweep resumes from its own saved position, so pausing loses no work.">Start background AI</button>
-          <span id="aic-status" class="small" style="margin-left:6px"></span>
-        </div>
-        <div class="row" style="margin-top:6px;gap:12px;flex-wrap:wrap">
-          <label class="small"><input type="checkbox" id="aic-m-keyword_triage" onchange="saveAiSweepMembership()"> Keyword triage</label>
-          <label class="small"><input type="checkbox" id="aic-m-source_tags" onchange="saveAiSweepMembership()"> Source tags</label>
-          <label class="small"><input type="checkbox" id="aic-m-perception_extract" onchange="saveAiSweepMembership()"> When / where / who</label>
-        </div>
-        <div id="aic-hw" class="hint" style="margin-top:4px"></div>
-      </div>
-
+      <!-- THE BACKGROUND-AI TOGGLE MOVED to Settings -> AI (2026-08-04 maintainer
+           rework: "There should be a backend AI activation toggle with checkboxes of
+           all possible backend jobs ... and remove the corresponding things from the
+           settings Data & Backup section"). AI work never belonged in a data-safety
+           panel; it now sits beside the model that runs it. The per-sweep EXPORT logs
+           and their manual run buttons stay here, because those are diagnostics
+           artifacts an operator downloads, which is what this panel is for. -->
       <div id="keyword-triage-box" style="margin-top:10px">
         <div class="small" style="font-weight:600">Keyword triage -- progressive sweep (Section 8)</div>
         <details class="adv-collect" style="margin-top:4px">

@@ -1087,6 +1087,12 @@ def _provisioning_backend(r: dict) -> dict:
     """WHICH backend a DOWNLOAD should provision for -- which is not always the one
     :func:`resolve_backend` would route an inference call to right now.
 
+    THE RULE ITSELF NOW LIVES IN ``src.llm.backend.provisioning_backend`` (2026-08-04),
+    because a THIRD caller appeared: backend ACTIVATION ("which backend do I start")
+    needs the same precedence, and a second copy of it is how two surfaces begin
+    disagreeing about the same machine. This wrapper stays so the call sites and the
+    tests that name it keep reading the same way; the body is one delegation.
+
     Field report 2026-08-02 ("the model does not download"), reproduced from the
     bundle: a laptop with an RTX 4070, vLLM installed but its server never started,
     and Ollama NOT installed at all. ``resolve_backend`` correctly answered
@@ -1113,40 +1119,9 @@ def _provisioning_backend(r: dict) -> dict:
 
     Derived entirely from fields ``resolve_backend`` already returns: no extra
     probe, no second source of truth about what is installed."""
-    gpu_ok = bool((r.get("gpu") or {}).get("available"))
-    vllm_installed = bool((r.get("vllm") or {}).get("installed"))
-    ollama_installed = bool((r.get("ollama") or {}).get("installed"))
-    hardware_pick = "vllm" if gpu_ok else "ollama"
+    from src.llm.backend import provisioning_backend
 
-    override = (r.get("override") or "").strip().lower()
-    if override in {"ollama", "vllm"}:
-        chosen, why = override, f"explicit override ({override})"
-    elif r.get("available"):
-        chosen, why = (r.get("backend") or hardware_pick), "the backend that is serving right now"
-    elif vllm_installed and ollama_installed:
-        chosen = hardware_pick
-        why = "both backends are installed; " + (
-            "a GPU is present, so vLLM is the one that can use it"
-            if gpu_ok
-            else "no GPU here, so Ollama is the one that can serve"
-        )
-    elif vllm_installed:
-        chosen, why = "vllm", "vLLM is installed here (its server is simply not running yet)"
-    elif ollama_installed:
-        chosen, why = "ollama", "Ollama is installed here (its daemon is simply not running yet)"
-    else:
-        chosen = hardware_pick
-        why = "neither backend is installed yet; this is the one this hardware can use"
-
-    installed = vllm_installed if chosen == "vllm" else ollama_installed
-    return {
-        "backend": chosen,
-        "chosen_because": why,
-        # None when the chosen backend is already installed. Otherwise it NAMES the
-        # missing prerequisite, so a caller refuses by name rather than starting a
-        # download that has nowhere to land.
-        "prerequisite": None if installed else chosen,
-    }
+    return provisioning_backend(r)
 
 
 def _default_model_plan() -> dict:
@@ -1403,6 +1378,21 @@ def bench_roster_install(req: BenchRosterInstallRequest | None = None) -> dict:
             ),
         )
     ok, refused = identifiers_for(backend, body.keys)
+    return _queue_downloads(backend, ok, refused)
+
+
+def _queue_downloads(backend: str, ok: list[dict], refused: list[dict]) -> dict:
+    """Route resolved artifacts to whichever downloader the backend uses.
+
+    Extracted (2026-08-04) because the model-catalogue buttons and the bench roster
+    ask the SAME question with different lists, and two copies of this routing would
+    be two places for the egress posture and the refusal contract to drift. The bench
+    comparison UI is scheduled for removal; this routing is not, because it is what
+    every model download goes through.
+
+    ``refused`` is carried through untouched and added to, never replaced: an operator
+    who selected four models and can have two is owed an account of four.
+    """
     if not ok:
         return {"backend": backend, "action": "nothing_to_do", "queued": [], "refused": refused}
 
@@ -1520,6 +1510,169 @@ def ollama_start() -> dict:
         return start()
     except OllamaLifecycleError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/model-store")
+def llm_model_store() -> dict:
+    """Where local model weights live -- configured AND actually in use.
+
+    Read-only, no network. The two differ exactly when a backend process was started
+    by something other than this app (a systemd-managed Ollama is the common case),
+    and saying so is the point: an operator whose models are still in ``~/.ollama``
+    needs to know it is because that daemon is not ours, not because a setting failed.
+    """
+    from src.llm.model_store import store_report
+
+    return store_report()
+
+
+@router.post("/model-store/migrate")
+def llm_model_store_migrate() -> dict:
+    """Copy an existing Ollama model store into the app folder.
+
+    A COPY. Ollama's store is content-addressed, so a name collision proves the
+    contents match and skipping an existing blob can never lose data; the source is
+    left untouched, and removing it is the operator's own separate step. Local
+    filesystem only -- no network, so no egress gate applies.
+    """
+    from src.llm.model_store import migrate_ollama_store
+
+    return migrate_ollama_store()
+
+
+@router.get("/models/catalog")
+def llm_model_catalog(backend: str | None = None) -> dict:
+    """Every model the AI tab offers, resolved for the backend that will serve, with
+    live installed-state.
+
+    ONE list, either backend: a model is an Ollama image or a Hugging Face repo
+    depending on what is serving, and the operator presses one button either way. A
+    model with no verified build for this backend is listed as unavailable WITH the
+    reason -- hiding it would leave a shorter list and no explanation.
+
+    ``installed`` is probed here rather than in the catalogue module, which stays pure:
+    a probe belongs where it can fail without making the list unreadable. It is None,
+    never False, when the probe itself could not answer -- an Ollama daemon that is
+    down genuinely does not know what it has.
+    """
+    from src.llm.backend import resolve_backend
+    from src.llm.model_catalog import catalog_for
+
+    r = resolve_backend()
+    pick = _provisioning_backend(r)
+    chosen = (backend or "").strip().lower()
+    if chosen not in {"ollama", "vllm"}:
+        chosen = pick["backend"]
+    out = catalog_for(chosen)
+    out["chosen_because"] = pick["chosen_because"] if not backend else "explicitly requested"
+    out["prerequisite"] = pick["prerequisite"]
+
+    have: set[str] | None = None
+    if chosen == "ollama":
+        try:
+            have = {m.get("tag") for m in OllamaClient().list_installed_detailed()}
+        except LLMUnavailable:
+            have = None  # the daemon is down: unknown, NOT "none installed"
+    for m in out["models"]:
+        if not m["available"]:
+            m["installed"] = False
+            continue
+        if chosen == "vllm":
+            try:
+                from src.llm.vllm_lifecycle import model_cache_state
+
+                m["installed"] = model_cache_state(m["artifact"])["cached"]
+            except Exception:  # noqa: BLE001 - an unreadable cache is unknown, not absent
+                m["installed"] = None
+        else:
+            m["installed"] = None if have is None else (m["artifact"] in have)
+    return out
+
+
+class ModelInstallRequest(BaseModel):
+    """Which catalogue models to download. ``keys`` are catalogue keys, never raw
+    identifiers: a caller cannot smuggle an arbitrary repo or tag through this
+    endpoint, and every string that reaches a download came from a dated catalogue.
+    Same discipline as ``BenchRosterInstallRequest`` above."""
+
+    keys: list[str] = []
+    backend: str | None = None
+
+
+@router.post("/models/install")
+def llm_model_install(req: ModelInstallRequest | None = None) -> dict:
+    """Download the selected catalogue models for the backend that will serve.
+
+    The same egress posture as every other model download: this is CLEARNET traffic
+    (Hugging Face / the Ollama registry) through a process outside this app's Tor
+    routing, so it is refused under the kill switch and the operator can allow the AI
+    install online on its own.
+    """
+    from src.ingest.egress_window import PURPOSE_AI_INSTALL, egress_permitted
+    from src.llm.model_catalog import identifiers_for
+
+    if not egress_permitted(PURPOSE_AI_INSTALL):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Airplane mode is engaged. Downloading models is clearnet traffic "
+                "(Hugging Face / the model registry), so it is refused while offline. "
+                "You can allow the AI install to go online on its own, which does not "
+                "start collecting."
+            ),
+        )
+    body = req or ModelInstallRequest()
+    pick = _roster_backend(body.backend)
+    backend = pick["backend"]
+    if pick["prerequisite"]:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{'vLLM' if backend == 'vllm' else 'Ollama'} is not installed yet, and "
+                "it is what downloads these models. Set up the local AI first."
+            ),
+        )
+    ok, refused = identifiers_for(backend, body.keys)
+    return _queue_downloads(backend, ok, refused)
+
+
+@router.get("/activation")
+def llm_activation_plan() -> dict:
+    """Which backend would be STARTED on this machine, and whether it can be.
+
+    Read-only. The third "which backend" question, distinct from routing
+    (``/backend``) and from provisioning (``/default-model``) -- see
+    ``src.llm.activation``.
+    """
+    from src.llm.activation import activation_plan
+
+    return activation_plan()
+
+
+@router.post("/activation/start")
+def llm_activation_start() -> dict:
+    """Bring a local backend up: vLLM where it can run, Ollama otherwise, and
+    whichever one the operator explicitly chose regardless.
+
+    This is what the AI control does when the operator switches local AI on. Before
+    it existed, "Start background AI" probed a backend that nothing had started,
+    found nothing, and spent its whole retry budget on a condition retrying cannot
+    change ("local model hiccup", ten times).
+
+    ALWAYS 200: an ordinary refusal (nothing installed, weights not downloaded) is a
+    sentence in the payload, not an exception -- the caller is a button, and a stack
+    trace is not an answer to "please start". ``ready`` is the only field that claims
+    the backend is answering; a vLLM start reports ``started: true, ready: false``
+    while the engine loads, which is the truth and not a failure.
+
+    Not airplane-gated, for the reason the Ollama launch endpoint above already
+    states: both servers bind loopback and this is what makes ruled offline inference
+    possible. The one start that WOULD egress -- vLLM fetching uncached weights from
+    Hugging Face inside its own subprocess -- is refused by name in the plan instead.
+    """
+    from src.llm.activation import ensure_running
+
+    return ensure_running()
 
 
 @router.post("/articles/{article_id}/summarize")

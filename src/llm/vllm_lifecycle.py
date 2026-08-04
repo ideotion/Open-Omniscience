@@ -999,7 +999,14 @@ def start(
     except OSError:  # noqa: BLE001 - losing the log must never block the start itself
         log_fh = None
     out = log_fh or subprocess.DEVNULL
-    proc = run(argv, stdout=out, stderr=subprocess.STDOUT)  # noqa: S603
+    # HF_HOME points the server's weight cache at the app's own model folder
+    # (2026-08-04 maintainer ask). vLLM downloads and reads weights through
+    # huggingface_hub, which honours it, so this is the whole mechanism -- and it must
+    # be the SAME answer ``hf_cache_dir()`` gives, or a probe and a download would
+    # disagree about where the weights are.
+    from src.llm.model_store import launch_env
+
+    proc = run(argv, stdout=out, stderr=subprocess.STDOUT, env=launch_env())  # noqa: S603
     _proc = proc
     return {
         "started": True,
@@ -1490,8 +1497,15 @@ def _install_env(tmpdir: Path) -> dict[str, str]:
     target is the property that makes the preflight's measured free-disk figure the one
     pip actually consumes, and the whole defect being fixed here is an inherited TMPDIR
     on a RAM-backed filesystem. The path used is not hidden -- ``install_preflight``
-    reports it as ``disk.path`` and the ENOSPC message names it."""
-    env = dict(os.environ)
+    reports it as ``disk.path`` and the ENOSPC message names it.
+
+    ``HF_HOME`` rides along (2026-08-04) so a weights download lands in the SAME place
+    the server will read from and ``hf_cache_dir()`` will probe. Three call sites have
+    to agree about that directory -- probe, download, serve -- and the way they stay
+    agreed is that all three resolve it through ``model_store``."""
+    from src.llm.model_store import launch_env
+
+    env = launch_env()
     env["TMPDIR"] = str(tmpdir)
     return env
 
@@ -1504,16 +1518,25 @@ def hf_cache_dir() -> Path:
     """Where Hugging Face keeps downloaded weights, by ITS OWN documented rules.
 
     Resolved the same way ``huggingface_hub`` resolves it -- ``HF_HUB_CACHE``, else
-    ``HF_HOME/hub``, else ``~/.cache/huggingface/hub`` -- so a probe here and a download
-    run inside the managed venv agree about the same directory. Read from the
-    environment rather than by importing the library, because the app's own interpreter
-    does not have ``huggingface_hub`` (it lives in the vLLM venv) and the answer must be
-    available before anything is installed."""
+    ``HF_HOME/hub`` -- so a probe here and a download run inside the managed venv agree
+    about the same directory. Read from the environment rather than by importing the
+    library, because the app's own interpreter does not have ``huggingface_hub`` (it
+    lives in the vLLM venv) and the answer must be available before anything is
+    installed.
+
+    THE FALLBACK IS THE APP'S OWN FOLDER (2026-08-04), not ``~/.cache``: the server is
+    spawned with ``HF_HOME`` pointed there, so a probe that still answered ``~/.cache``
+    would report "not downloaded" for weights that ARE present, and the activation
+    guard built on this would then refuse a start that would have worked. An
+    explicitly-set environment variable still wins, in HF's own precedence.
+    """
     if (explicit := os.environ.get("HF_HUB_CACHE")):
         return Path(explicit)
     if (home := os.environ.get("HF_HOME")):
         return Path(home) / "hub"
-    return Path.home() / ".cache" / "huggingface" / "hub"
+    from src.llm.model_store import hf_home
+
+    return hf_home() / "hub"
 
 
 def model_cache_state(model: str) -> dict:

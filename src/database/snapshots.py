@@ -286,6 +286,219 @@ def hourly_article_counts(session: Session, *, days: int, now: datetime | None =
     return out
 
 
+_BUCKETS = {"hour": timedelta(hours=1), "day": timedelta(days=1)}
+#: The per-language series defaults to a DAY bucket past a week, so a ten-year
+#: window stays a bounded number of points. This is BINNING, which the chart rules
+#: permit "when supported and always labeled" — never downsampling, which they
+#: forbid: every article in the window is counted, in one bin or another. The bin
+#: is named in the payload so the axis can say what a point means.
+_LANG_HOURLY_MAX_DAYS = 7
+_LANG_TOP_N = 12
+
+
+def _bucket_floor(dt: datetime, bucket: str) -> datetime:
+    dt = dt.astimezone(UTC).replace(tzinfo=None) if dt.tzinfo is not None else dt
+    if bucket == "day":
+        return dt.replace(hour=0, minute=0, second=0, microsecond=0)
+    return dt.replace(minute=0, second=0, microsecond=0)
+
+
+def _as_naive_dt(value) -> datetime | None:
+    """A GROUP BY bucket back to a naive datetime, whichever backend produced it.
+
+    SQLite's ``strftime`` yields a string and Postgres' ``date_trunc`` a datetime;
+    keying the fold on the parsed DATETIME rather than on either backend's string
+    means the zero-fill below never has to match two different text formats.
+    """
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo is not None else value
+    try:
+        return datetime.fromisoformat(str(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def article_counts_by_language(
+    session: Session,
+    *,
+    days: int,
+    top_n: int = _LANG_TOP_N,
+    now: datetime | None = None,
+) -> dict:
+    """Articles stored per language per bucket — the feed for "which languages is
+    my corpus actually growing in".
+
+    DERIVED live from ``Article.created_at`` exactly like :func:`hourly_article_counts`,
+    so it is retroactive: no snapshot table, no metric of unbounded cardinality, and
+    no gap before "recording began".
+
+    IT MUST PUBLISH THE SAME QUANTITY AS THE LEVER IT INFORMS. The reason to look at
+    this graph is to tune ``scheduler.equilibrium``, which reads ``Article.language``
+    and buckets it through ``normalize_lang``. So this does both the same way: the
+    same column (never ``coalesce(language, detected_language)``, which would pool an
+    asserted value with a deduced one) and the same key (so ``en`` / ``en-US`` / ``en_us``
+    are ONE language here for the same reason they are one language there). A feed
+    keyed differently from its lever describes a different corpus than the one the
+    lever is steering — the defect class both modules were fixed for.
+
+    Two honesty rules shape the response rather than the query:
+
+    * ZERO-FILL, NOT NULL-FILL, and only back to the corpus's own beginning. A bucket
+      where a language got nothing is a REAL ZERO — it was measured — so it is emitted
+      as 0 and the time axis stays true. But a bucket before the first article ever
+      stored was never measured at all, so the series simply starts later and
+      ``begins_at`` says where; filling zeros there would claim observations that
+      predate the corpus.
+    * TOP-N IS RANKED, NEVER TRUNCATED SILENTLY. A corpus can carry fifty languages;
+      the panels show the busiest ``top_n`` and ``other`` states exactly how many
+      languages and articles are not drawn.
+
+    ``unassigned`` counts the window's articles with NO asserted language. It is
+    reported apart from the series (an "unknown" panel would often dominate and says
+    nothing about growth) and it is load-bearing: the equilibrium lever cannot see
+    those articles either, so the number is the size of that blind spot.
+
+    QUARANTINE, deliberately: neither this nor ``corpus_language_shares`` excludes
+    quarantined articles. That is arguably wrong for BOTH — the lever would then be
+    steering partly on nav-soup — but it is the lever's own question, and the two must
+    move TOGETHER. Gate one and this graph starts describing a corpus the lever is not
+    steering, which is the entire failure the shared bucket key above was fixed for.
+    """
+    from src.analytics.managed import normalize_lang
+    from src.database.models import Article
+
+    now = now or datetime.now(UTC)
+    bucket = "hour" if days <= _LANG_HOURLY_MAX_DAYS else "day"
+    step = _BUCKETS[bucket]
+    since = _bucket_floor(now, bucket) - timedelta(days=days)
+
+    if engine.url.get_backend_name() == "sqlite":
+        fmt = "%Y-%m-%dT%H:00:00" if bucket == "hour" else "%Y-%m-%d"
+        bucket_expr = func.strftime(fmt, Article.created_at)
+    else:
+        bucket_expr = func.date_trunc(bucket, Article.created_at)
+
+    # idx_article_created_lang covers exactly this shape. Without it the GROUP BY
+    # reads `language` from the heap, dragging every ~35 KB article row through the
+    # SQLCipher codec — the recorded column-order perf trap.
+    #
+    # The deduced tally rides the SAME grouped scan as a third dimension rather than
+    # a second query, because a second query is where the planner escapes: asked
+    # separately for `language IS NULL AND detected_language IS NOT NULL`, SQLite
+    # prefers the narrower idx_article_language (an equality seek) and then reads the
+    # heap for detected_language — index-only for the series, straight back into the
+    # codec for the tally, on exactly the articles that are most numerous when a
+    # corpus is under-tagged. Grouping on the predicate at most doubles the row
+    # count and keeps one covered pass. (Found by the EXPLAIN test, not by reading:
+    # a standalone probe of the same SQL had chosen the composite index and looked
+    # fine.)
+    has_deduced = Article.detected_language.isnot(None)
+    rows = (
+        session.query(
+            bucket_expr.label("bucket"),
+            Article.language,
+            has_deduced.label("deduced"),
+            func.count().label("n"),
+        )
+        .filter(Article.created_at >= since)
+        .group_by("bucket", Article.language, "deduced")
+        .all()
+    )
+
+    per_lang: dict[str, dict[datetime, int]] = {}
+    totals: dict[str, int] = {}
+    unassigned = 0
+    deduced_only = 0
+    undated = 0
+    for raw_bucket, raw_lang, deduced, n in rows:
+        count = int(n or 0)
+        key = normalize_lang(raw_lang)
+        if not key:
+            unassigned += count
+            if deduced:
+                deduced_only += count
+            continue
+        at = _as_naive_dt(raw_bucket)
+        if at is None:
+            # A created_at that will not parse into a bucket (SQLite is dynamically
+            # typed, so a malformed value can be stored and strftime then yields
+            # NULL). Counted rather than dropped: this is a counting function, and
+            # the conservation property below — that every article in the window
+            # lands in exactly one published figure — is what lets a reader trust
+            # any single one of them.
+            undated += count
+            continue
+        slot = per_lang.setdefault(key, {})
+        slot[at] = slot.get(at, 0) + count
+        totals[key] = totals.get(key, 0) + count
+
+    # Rank by window total, tie-broken by code, so panel order is stable between
+    # calls: a view whose panels reshuffle on refresh cannot be read for change.
+    ranked = sorted(totals, key=lambda lang: (-totals[lang], lang))
+    shown, tail = ranked[: max(0, top_n)], ranked[max(0, top_n) :]
+
+    first_article = session.query(func.min(Article.created_at)).scalar()
+    corpus_began = _as_naive_dt(first_article)
+    corpus_floor = _bucket_floor(corpus_began, bucket) if corpus_began else None
+    begins = max(corpus_floor, since) if corpus_floor else since
+    # Whether the series starts late because the CORPUS is younger than the window,
+    # decided here rather than left to a caller re-deriving it from two timestamps
+    # and getting the bucket arithmetic subtly wrong.
+    clamped = bool(corpus_floor and corpus_floor > since)
+
+    # The axis runs to `now` OR to the newest bucket that actually holds data,
+    # whichever is later. They are normally the same; they diverge when a stored
+    # article carries a created_at ahead of the clock (skew, or a corpus restored
+    # from a machine that was ahead), and then a bucket counted in `total` would
+    # have no slot to be drawn in — a panel silently claiming more than its bars
+    # add up to.
+    axis: list[datetime] = []
+    newest = max((slot for slots in per_lang.values() for slot in slots), default=None)
+    last = _bucket_floor(now, bucket)
+    if newest and newest > last:
+        last = newest
+    at = begins
+    while at <= last:
+        axis.append(at)
+        at += step
+
+    series = [
+        {
+            "language": lang,
+            "total": totals[lang],
+            # Every bucket on the axis, so the x-position of a point is real elapsed
+            # time and not its ordinal — the compression an omit-empties series causes.
+            "points": [{"t": slot.isoformat(), "n": per_lang[lang].get(slot, 0)} for slot in axis],
+        }
+        for lang in shown
+    ]
+
+    return {
+        "bucket": bucket,
+        "days": days,
+        "top_n": top_n,
+        "series": series,
+        "begins_at": begins.isoformat() if begins else None,
+        "corpus_began_at": corpus_began.isoformat() if corpus_began else None,
+        "clamped_to_corpus_start": clamped,
+        "other": {"languages": len(tail), "articles": sum(totals[lang] for lang in tail)},
+        "unassigned": {"articles": unassigned, "with_deduced_language": deduced_only},
+        "undated": undated,
+        "method": (
+            f"Articles stored per {bucket}, counted by their asserted language "
+            "(Article.language, region subtags folded) — the same column and the same "
+            "bucket key the language-equilibrium lever reads. Deduced languages are "
+            "never pooled in. Counts only, no score."
+        ),
+        "caveat": (
+            "Articles with no asserted language are excluded from the panels and "
+            "reported separately; the equilibrium lever cannot see them either."
+        ),
+    }
+
+
 def metric_history(session: Session, *, metric: str, days: int) -> dict:
     """Bounded read of one recorded metric's snapshot series.
 
