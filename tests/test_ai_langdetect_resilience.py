@@ -320,8 +320,27 @@ def test_advance_langdetect_auto_start_skips_when_model_unavailable(db, monkeypa
     monkeypatch.setattr(
         llm_backend, "get_client_with_name", lambda *a, **kw: ("ollama", _Down())
     )
+    # AND TRIES TO FIX IT (field report 2026-08-04). Skipping was all this branch did,
+    # which made the ride-along a watchdog that could only watch: ``ensure_running``
+    # had two callers and both are a button, so an unattended machine whose operator
+    # had chosen a backend waited forever for a click. It still skips -- starting the
+    # job against a backend that cannot serve would be worse -- but the next pass now
+    # finds a backend that is up.
+    import src.llm.activation as _activation
+
+    _activation._recovery_last_at = None
+    monkeypatch.setattr(llm_backend, "outage_reason", lambda: "Ollama is not reachable")
+    started: list[dict] = []
+    monkeypatch.setattr(
+        _activation,
+        "ensure_running",
+        lambda **kw: started.append(kw) or {"backend": "ollama", "started": True, "detail": "Ollama was launched."},
+    )
     out = ai_api.advance_langdetect_auto_start(db)
-    assert out == {"enabled": True, "skipped": "the local model is unavailable"}
+    assert out["enabled"] is True
+    assert out["skipped"] == "Ollama was launched.", "the skip says what was DONE about it"
+    assert out["recovery"]["started"] is True
+    assert len(started) == 1, "one attempt, on the pass that found it down"
 
 
 def test_advance_langdetect_auto_start_skips_when_no_candidates(db, monkeypatch, tmp_path):

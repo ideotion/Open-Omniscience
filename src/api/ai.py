@@ -651,11 +651,16 @@ def _langdetect_worker(
             # the aborting event's own words -- and printed "local model hiccup" over
             # the top of it. The resolver's sentence (what to DO) takes precedence when
             # it has one; otherwise the event's own reason is far better than a symptom.
+            from src.llm.activation import recover_backend
             from src.llm.backend import outage_detail, outage_reason
+
+            _why = outage_reason()
+            # See triage_job.py: a background run may bring its own backend up.
+            _fix = recover_backend(_why)
 
             ctx.set_progress(
                 detail=(
-                    f"{outage_detail(outage_reason(), transient_reason)} — retrying in "
+                    f"{outage_detail(_why, transient_reason, recovery=_fix)} — retrying in "
                     f"{backoff:.0f}s in case it comes back ({consecutive_failures}/"
                     f"{_LANGDETECT_MAX_CONSECUTIVE_FAILURES})"
                 )
@@ -737,7 +742,22 @@ def advance_langdetect_auto_start(session) -> dict:
 
         _, _client = get_client_with_name()
         if not _client.is_available():
-            return {"enabled": True, "skipped": "the local model is unavailable"}
+            # AND TRY TO FIX IT. Skipping was the whole of this branch, which made the
+            # ride-along a watchdog that could only ever watch: on a machine whose
+            # operator had chosen a backend and left the app running, nothing else in
+            # the app starts one -- ``ensure_running`` had two callers and both are a
+            # button. So this pass brings it up and the next one finds it serving,
+            # instead of an unattended install waiting forever for a click.
+            from src.llm.activation import recover_backend
+            from src.llm.backend import outage_reason
+
+            fix = recover_backend(outage_reason())
+            note = str(fix.get("detail") or "").strip()
+            return {
+                "enabled": True,
+                "skipped": note or "the local model is unavailable",
+                "recovery": fix,
+            }
     except Exception:  # noqa: BLE001 - never fail the scrape on an AI-layer check
         return {"enabled": True, "skipped": "the local model is unavailable"}
     if _langdetect_candidate_count(session) <= 0:

@@ -451,6 +451,7 @@ def run_progressive_source_tags_job(
     state genuinely becomes ``error`` -- never a benign-looking ``done``). A
     genuine user cancel (``ctx.stopping``) still stops immediately, no retry."""
     from src.database.session import session_scope
+    from src.llm.activation import recover_backend
     from src.llm.backend import outage_detail, outage_reason
     from src.llm.ollama import LLMError
 
@@ -596,6 +597,9 @@ def run_progressive_source_tags_job(
                 # WHY it failed, in the resolver's own words; the budget is untouched
                 # (field report 2026-08-02).
                 _why = outage_reason()
+                # See triage_job.py: nothing in a background run used to start a
+                # backend that was down, so the budget burned on an unchanging state.
+                _fix = recover_backend(_why)
                 if consecutive_failures >= _SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES:
                     err = (
                         f"stopped after {consecutive_failures} consecutive "
@@ -633,8 +637,8 @@ def run_progressive_source_tags_job(
                 )
                 ctx.set_progress(
                     detail=(
-                        f"{outage_detail(_why, exc)} — retrying in {backoff:.0f}s in case "
-                        f"it comes back ({consecutive_failures}/"
+                        f"{outage_detail(_why, exc, recovery=_fix)} — retrying in "
+                        f"{backoff:.0f}s in case it comes back ({consecutive_failures}/"
                         f"{_SOURCE_TAGS_MAX_CONSECUTIVE_FAILURES})"
                     )
                 )
