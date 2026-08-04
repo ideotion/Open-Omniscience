@@ -2134,6 +2134,51 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     browser-unverified slice, run the FULL invariant suite rather than the tests you wrote, and
     read every endpoint payload you consume — those two guards are most of what stands between a
     conservative frontend slice and a broken one.
+  - **NAME THE QUESTION A DECISION FUNCTION ANSWERS, THEN COUNT THE COPIES (2026-08-04, "AI
+    backend won't start … local model hiccup"):** the recorded K2/routing lesson says a
+    selection function answers the question it was written for. The sequel is that the
+    question you need may have NO owner while looking answered. Here THREE existed —
+    `resolve_backend` (routing: who serves this request), `provisioning_backend` (setup: what
+    will this machine serve with), and a fourth hand-rolled copy in the browser's AI pill —
+    and the one nobody owned was ACTIVATION: which backend do I *start*. Both
+    `*_lifecycle.start()` functions existed and worked; no caller chose between them, so the
+    sweep probed a backend nothing had started and burned its whole retry budget on a
+    condition retrying cannot change. TWO COROLLARIES. (a) When a fourth copy lives in the
+    frontend, it will have drifted: this one silently fell through to Ollama on a GPU machine
+    whose vLLM was installed but whose model id was unset — a decision no other surface would
+    have made. (b) **MOVING A DECISION SERVER-SIDE CAN SILENTLY DROP A FALLBACK THE OLD COPY
+    HAD**, and that is the expensive half: consolidating the pill's logic lost its
+    "preferred backend blocked → try the other one", turning "starts Ollama" into "refuses and
+    starts nothing" on a real machine class. Honest and useless. Its own source-anchored test
+    caught it, which is the argument for keeping such tests and *following the anchor* rather
+    than relaxing them. Carry the preferred backend's blocker through the fallback (else the
+    operator never learns why their GPU is idle), and never fall back under an EXPLICIT
+    choice — being second-guessed is the one thing an explicit choice must not be.
+  - **AN ENV VAR REACHES ONLY THE PROCESSES YOU SPAWN — say so, and make every consumer of the
+    derived path agree (2026-08-04, moving model weights into the app folder):** `OLLAMA_MODELS`
+    and `HF_HOME` are the whole mechanism for relocating local model weights, which makes the
+    change look trivial. It is not, for two reasons. (a) A systemd/launchd-managed daemon has
+    its own environment, so the setting cannot reach it; reporting the CONFIGURED path as
+    though it were the live one is the fabrication here — an operator whose models are still in
+    `~/.ollama` would have no way to tell the setting from a failure. Report configured AND
+    detected as separate facts. (b) **COUNT THE CALL SITES THAT DERIVE THE SAME PATH.** Three
+    had to agree — the cache PROBE, the weights DOWNLOAD, and the server SPAWN — and pointing
+    only the spawn at the new directory would make the probe report "not downloaded" for
+    weights that are present, so a guard built on that probe refuses a start that would have
+    worked. Nothing about that failure looks like a path bug from outside. Route all of them
+    through one resolver and make the agreement a test. And an operator-set value is used
+    untouched: relocating several GB because an app preferred its own folder is a surprise,
+    not a default.
+  - **A JOIN KEY THAT IS ALSO THE PAYLOAD'S ONLY IDENTITY MUST FAIL LOUDLY WHEN IT DANGLES
+    (2026-08-04, the dual-backend model catalogue):** composing a view over a dated catalogue
+    is the right way to avoid re-typing identifiers that a freshness test governs — but the
+    rows had no identity except their tag, so the join is BY tag, so a rename upstream
+    (`granite4.1:3b` → `granite4.2:3b`) leaves the reference dangling. The first cut returned
+    an empty row, and the model then rendered unavailable **with no reason at all** — a silent
+    disappearance from the operator's list, which is strictly worse than the rename. Report a
+    missed join by name as catalogue drift: honest, and the fastest possible signal that two
+    catalogues have diverged. GENERAL FORM: when you join on a value rather than a surrogate
+    key, the miss case is not "empty", it is "these two sources no longer agree".
 
 ## Open queue (when maintainer says proceed)
 - **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;
