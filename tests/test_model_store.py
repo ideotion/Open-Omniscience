@@ -168,7 +168,8 @@ def _seed_store(root, *, ref=("registry.ollama.ai", "library", "mini"), tag="v1"
                 "config": {"digest": "sha256:aaa"},
                 "layers": [{"digest": "sha256:bbb"}],
             }
-        )
+        ),
+        encoding="utf-8",
     )
     bdir = root / "blobs"
     bdir.mkdir(parents=True, exist_ok=True)
