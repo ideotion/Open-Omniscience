@@ -24,6 +24,23 @@ from tests.js_source_helper import strip_comments as _strip_js_comments
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"
 
+def _score_leak(js: str) -> str | None:
+    """The reason a surface fails "no composite score", or None if it holds.
+
+    Two conditions, because the honest surfaces here DO contain the word: they say
+    there is no score. So a field may not be NAMED for one, and every remaining
+    mention must sit inside a phrase that negates it.
+    """
+    stripped = _strip_js_comments(js)
+    if re.search(r"\bscore\s*[:=]", stripped) or "Score" in stripped:
+        return "a field is named for a score"
+    for m in re.finditer(r"score", stripped):
+        before = stripped[max(0, m.start() - 30) : m.start()].lower()
+        if not any(neg in before for neg in ("no ", "never a", "not a")):
+            return "a bare mention: " + stripped[max(0, m.start() - 40) : m.start() + 10]
+    return None
+
+
 # Thinning a series -- what invariant #16's "never downsampled" forbids. A WINDOW
 # filter is deliberately absent from this list: "the FULL series within the VISIBLE
 # WINDOW" permits dropping points outside the window and nothing else.
@@ -4741,17 +4758,11 @@ def test_corpus_window_competitive_subtab():
     # `assert "never a ranking" in cfn.lower()` four lines above -- so the disjunction
     # was true whatever the renderer computed. Assert the property instead: every
     # occurrence of the word is inside a disclosure that NEGATES it, and no field is
-    # named for one. (`re` is imported at module level.)
-    _stripped = _strip_js_comments(cfn)
-    assert not re.search(r"\bscore\s*[:=]", _stripped) and "Score" not in _stripped, (
-        "the Competitive tab must not compute or emit a composite score"
+    # named for one -- see _score_leak, whose own bite is pinned by
+    # test_the_no_score_guard_actually_bites.
+    assert _score_leak(cfn) is None, (
+        f"the Competitive tab must not compute a composite score: {_score_leak(cfn)}"
     )
-    for _m in re.finditer(r"score", _stripped):
-        _before = _stripped[max(0, _m.start() - 30) : _m.start()].lower()
-        assert any(neg in _before for neg in ("no ", "never a", "not a")), (
-            "every mention of a score here must be a disclosure that there is none: "
-            + _stripped[max(0, _m.start() - 60) : _m.start() + 10]
-        )
 
 
 def test_keyword_explorer_subtab():
@@ -8589,3 +8600,23 @@ def test_the_downsampling_guard_actually_bites():
     assert not any(re.search(p, windowed) for p in _DECIMATION), (
         "the visible-window filter is the one permitted reduction and must not trip"
     )
+
+
+def test_the_no_score_guard_actually_bites():
+    """The mutation check on the Competitive no-score guard.
+
+    Its predecessor was a three-way disjunction whose third arm was guaranteed by an
+    assertion four lines above, so it held whatever the renderer computed. These four
+    are the ways a score really enters a surface; the fifth is the shape the honest
+    surfaces already use, and must NOT trip it -- a guard that forbade the disclosure
+    would forbid the very sentence the honesty rule requires.
+    """
+    for js in (
+        "const trust_score = a / b; html += `${trust_score}`;",
+        "const o = {score: 0.8};",
+        'html += `<td>${esc(t("overall score"))}</td>`;',
+        "const compositeScore = x;",
+    ):
+        assert _score_leak(js) is not None, f"not detected: {js}"
+    assert _score_leak('t("there is no winner and no composite score.")') is None
+    assert _score_leak('t("an exact count, never a score.")') is None
