@@ -11,11 +11,13 @@ carries the off marking -- including the one where the health probe itself faile
 a neutral pill would read as "fine" on no evidence.
 """
 
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
+from tests.js_source_helper import function_body
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -32,8 +34,7 @@ def css() -> str:
 
 def _paint_body(js: str) -> str:
     """The loadLlmHealth body only -- a whole-file search would match any other pill."""
-    body = js.split("async function loadLlmHealth(", 1)[1]
-    return body.split("\n    async function ", 1)[0].split("\n    // ----", 1)[0]
+    return function_body(js, "loadLlmHealth")
 
 
 def test_every_non_serving_branch_marks_the_pill_off(js):

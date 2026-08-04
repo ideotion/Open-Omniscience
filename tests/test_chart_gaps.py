@@ -27,6 +27,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.js_source_helper import function_body as _slice
 
 _ROOT = Path(__file__).resolve().parents[1]
 _APP = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
@@ -36,32 +37,8 @@ _GAP_NOTE = "The line breaks where nothing was recorded — a gap is not a zero.
 
 
 def _body(name: str) -> str:
-    """The source of ONE top-level function, brace-matched from its BODY brace.
-
-    Matching starts only after the parentheses balance: a signature can carry a
-    ``{}`` in a default parameter, and starting at the first brace would truncate
-    the body to nothing and make every assertion over it pass vacuously.
-    """
-    at = _APP.index(f"function {name}(")
-    depth, i = 0, -1
-    for j in range(_APP.index("(", at), len(_APP)):
-        if _APP[j] == "(":
-            depth += 1
-        elif _APP[j] == ")":
-            depth -= 1
-            if depth == 0:
-                i = _APP.index("{", j)
-                break
-    assert i != -1, f"could not find the body of {name}"
-    depth = 0
-    for j in range(i, len(_APP)):
-        if _APP[j] == "{":
-            depth += 1
-        elif _APP[j] == "}":
-            depth -= 1
-            if depth == 0:
-                return _APP[at:j + 1]
-    raise AssertionError(f"unbalanced braces in {name}")
+    """One function's body, brace-matched. Shared slicer."""
+    return _slice(_APP, name)
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node not available")

@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
+from tests.js_source_helper import function_body
 
 _ROOT = Path(__file__).resolve().parent.parent
 _APP_JS = _ROOT / "src" / "static" / "app.js"
@@ -34,10 +35,9 @@ _NEW_STRINGS = (
 )
 
 
-def _body(fn: str) -> str:
-    src = _APP_JS.read_text(encoding="utf-8")
-    assert f"function {fn}(" in src, f"{fn} is gone"
-    return src.split(f"function {fn}(", 1)[1].split("\n    }", 1)[0]
+def _body(fn_name: str) -> str:
+    """One function's own body, brace-matched (tests.js_source_helper)."""
+    return function_body(_APP_JS.read_text(encoding="utf-8"), fn_name)
 
 
 def test_the_bars_are_added_beside_the_table_not_instead_of_it():

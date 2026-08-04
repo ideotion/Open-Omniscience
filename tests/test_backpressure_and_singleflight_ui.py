@@ -10,11 +10,12 @@ Open Omniscience - Global Intelligence Platform for Investigative Journalism
 Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 """
 
+
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
+from tests.js_source_helper import function_body
 
 _ROOT = Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
@@ -25,12 +26,7 @@ def _app() -> str:
 
 
 def _fn_body(src: str, name: str) -> str:
-    m = re.search(r"(?:async )?function " + re.escape(name) + r"\s*\(", src)
-    assert m, f"{name} not found in app.js"
-    start = m.start()
-    nxt = re.search(r"\n    (?:async )?function \w+\s*\(", src[start + 10 :])
-    end = start + 10 + nxt.start() if nxt else len(src)
-    return src[start:end]
+    return function_body(src, name)
 
 
 def test_api_retries_429_honoring_retry_after() -> None:
