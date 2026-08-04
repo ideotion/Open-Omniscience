@@ -640,6 +640,36 @@ Each entry: where method/caveat/n appear · how absence differs from zero.
   duplicates are rejected at ingest by the unique `hash` (`models.py:625, 684`), so this
   measures canonical-URL collisions **only** — otherwise the figure over-reads as "the
   corpus has no duplicates".
+  > **SCOPED + MEASURED 2026-08-04.** Preconditions verified: `canonical_url` is
+  > `String(1000) NOT NULL` with a NON-unique `idx_article_canonical_url`
+  > (`models.py:611, 686`), and it genuinely differs from `url` on the web path —
+  > `url` = the requested URL, `canonical_url` =
+  > `canonicalize_url(declared canonical or final redirect)` (`pipeline.py:194, 202-203`),
+  > which is what lets several URLs collapse onto one value. No `GROUP BY canonical_url`
+  > exists anywhere in the tree, so nothing is being duplicated.
+  >
+  > **C10 needs a MIGRATION — it is not the no-schema-change build it looks like.**
+  > `EXPLAIN QUERY PLAN` over the production-shaped queries (statements captured from a
+  > `before_cursor_execute` listener, `ANALYZE` run, engine disposed between checks):
+  > the bare aggregate is `SCAN articles USING COVERING INDEX idx_article_canonical_url`
+  > — index-only. Adding `Article.quarantined.isnot(True)`, which Q3 obliges every new
+  > figure to do, drops it to `USING INDEX` **not covering**: `quarantined` is not in that
+  > index, so each row is fetched to evaluate the predicate — a decrypt per row under
+  > SQLCipher, the trap `idx_article_source_sentiment` and `idx_article_created_lang` were
+  > both added to fix. A composite `(canonical_url, quarantined)` restores
+  > `USING COVERING INDEX`; that is the reliable fix and it is a schema change.
+  >
+  > **Two things that do NOT work, so they are not re-tried:** folding the predicate into
+  > the GROUP BY — the trick that fixed the per-language feed — does nothing here and adds
+  > a temp B-tree, because the problem is not which index the planner picks but that
+  > `quarantined` is absent from every candidate index. And a two-step design (covering
+  > aggregate to find collisions, then a bounded `IN (…)` for the quarantine check)
+  > measured as a **bare `SCAN articles`** on the probe — but that result is UNSAFE to
+  > rely on in either direction: the fixture had 32 collision groups out of 40, so the
+  > planner rightly scanned rather than index-seek 112 of 120 rows. A realistic collision
+  > rate may well plan differently. If the two-step is preferred over a migration, measure
+  > it against a realistic collision density first; the probe settles the composite-index
+  > question and settles nothing about this one.
 - **C11** — F2 panel; `n` articles plotted and `n` excluded for a missing `word_count`.
   **Mandatory caveat: neither axis is a quality measure**, and correlation is not causation.
   Absence: an article with a NULL `word_count` is excluded and counted in the panel, never

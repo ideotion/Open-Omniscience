@@ -2281,6 +2281,26 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     definition of time by construction and the disagreement cannot reach it. Same pass: a
     trend bar is a MENTION total, not an article count (`trend()` sums
     `KeywordMention.count`), so such a readout owes both numbers.
+  - **A PROBE'S DATA DISTRIBUTION IS PART OF THE LOOKALIKE — and "fold the predicate into the
+    GROUP BY" only works when the predicate column is IN the index (2026-08-04, scoping the
+    duplicate-group figure):** the recorded lesson says a hand-written SQL probe differs from
+    the shipped query in table stats, ANALYZE state and which other indexes exist. A fourth
+    axis: the ROW DISTRIBUTION. Measuring a two-step design (a covering aggregate to find
+    canonical-URL collisions, then a bounded `IN (…)` to apply the quarantine filter to just
+    the colliders) produced a **bare `SCAN articles`** — which reads as a damning result until
+    you look at the fixture: 32 collision groups out of 40, so the planner correctly scanned
+    rather than index-seek 112 of 120 rows. At a realistic collision rate it may plan the
+    opposite way. So a plan measured over a fixture whose DENSITY is unrepresentative is
+    evidence about the fixture, not about production — state which questions the probe
+    settles and which it does not, rather than reporting every line of its output with equal
+    confidence. SECOND HALF, a genuine limit on a recorded trick: the 2026-08-04 per-language
+    fix folded a predicate into the GROUP BY so the planner had no escape, and that does NOT
+    transfer here — it changed nothing and added a temp B-tree, because the problem was never
+    index CHOICE but that `quarantined` is absent from every candidate index, so any reference
+    to it costs a row fetch (a decrypt per row under SQLCipher). When a predicate column is
+    not in the index, the only real options are a composite covering index (a migration) or
+    not referencing the column in that query at all; grouping on it is a non-fix that looks
+    like one.
 
 ## Open queue (when maintainer says proceed)
 - **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;
