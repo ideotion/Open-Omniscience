@@ -2457,6 +2457,26 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     input, and the client preview snaps through the same widening — a preview that shows the
     raw gesture while the result reports a widened one is two answers to one action, the
     same divergence the shared day formatter had already fixed once in this very component.
+  - **A MESSAGE CAN BE ENTIRELY TRUE AND STILL NOT BE THE ANSWER — and the third read of
+    the same tri-state is where that finally showed (2026-08-04, "explicit override
+    (vllm), but its server is NOT running — Ollama IS reachable; clear the override to
+    use it"):** every clause was accurate. The engine had nonetheless been STARTED and had
+    EXITED about a minute later — a vLLM reaches CUDA-graph capture around t+67s, far past
+    any click-time confirm window — and `start_outcome()` had recorded exactly that while
+    `outage_reason()` reported REACHABILITY instead. This is the "local model hiccup"
+    defect one level deeper: not a missing fact, a correct-but-wrong-question fact
+    published where a cause belonged. `start_outcome()` has now needed reading in THREE
+    places (the start itself, the plan on every poll, and the sweep's retry line); after
+    building a state that exposes a failure, the consumers are not one call site but every
+    surface an operator can see the failure ON. THE TWIN IS LOAD-BEARING: only `exited`
+    may be called a death — a still-loading engine keeps the generic wording, because the
+    backoff exists to wait a model load out and naming that a failure is the
+    fabricated-failure mirror of the fabricated-success being fixed. SECOND HALF, a
+    separate class: the advice had gone stale. "clear the override to use it" was the only
+    thing on offer when nothing in the app could start a backend; once `activation` could,
+    it was telling operators to abandon the choice they had deliberately made. When a
+    capability lands, grep the strings that were written around its ABSENCE — and pin the
+    fix by ORDER, not presence, since both options should still be offered.
 
 ## Open queue (when maintainer says proceed)
 - **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;

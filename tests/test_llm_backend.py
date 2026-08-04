@@ -499,3 +499,71 @@ def test_the_model_id_follows_the_backend_it_was_chosen_for(monkeypatch):
     _stored(monkeypatch, backend="auto")
     assert active_model("ollama") == "ollama-tag:3b"
     assert active_model("vllm") == "org/Repo-3B"
+
+
+# --------------------------------------------------------------------------- #
+#  A backend that was STARTED and DIED is not one that was never started
+# --------------------------------------------------------------------------- #
+def test_a_dead_vllm_is_named_as_dead_not_as_merely_not_running(monkeypatch):
+    """Field report 2026-08-04: with the override on vLLM the sweep read "its server is
+    NOT running — Ollama IS reachable; clear the override to use it", four times over.
+
+    Every word was true and none of it was the answer. The engine had been started and
+    had EXITED about a minute later, which ``start_outcome()`` already knew and this
+    layer simply never asked. Reachability was reported where a cause was needed — the
+    same shape as the "local model hiccup" fallback, one level deeper."""
+    import src.llm.vllm_lifecycle as vl
+
+    _stored(monkeypatch, backend="vllm")
+    _stub(monkeypatch, gpu={"available": True}, vllm_installed=True, vllm_running=False)
+    monkeypatch.setattr(vl, "start_outcome", lambda: {"state": "exited", "returncode": 1})
+    monkeypatch.setattr(
+        vl,
+        "failure_excerpt",
+        lambda **k: {"available": True, "advice": "The GPU ran out of memory while starting."},
+    )
+    why = B.outage_reason()
+    assert "exited" in why, "say that it died, not that it is absent"
+    assert "ran out of memory" in why, "and carry the reason it died for"
+    assert "clear the override" not in why
+
+
+@pytest.mark.parametrize("state", ["starting", "not-started", "ready"])
+def test_but_a_loading_or_never_started_engine_keeps_the_generic_wording(monkeypatch, state):
+    """THE twin, and it is load-bearing. A model load takes tens of seconds and the
+    backoff exists to wait it out; calling that a failure would be the fabricated-failure
+    mirror of the fabricated-success this fixes. Only ``exited`` is a death."""
+    import src.llm.vllm_lifecycle as vl
+
+    _stored(monkeypatch, backend="vllm")
+    _stub(monkeypatch, gpu={"available": True}, vllm_installed=True, vllm_running=False)
+    monkeypatch.setattr(vl, "start_outcome", lambda: {"state": state})
+    why = B.outage_reason()
+    assert "exited" not in why
+    assert "NOT running" in why
+
+
+def test_the_advice_names_starting_it_rather_than_abandoning_the_choice(monkeypatch):
+    """"clear the override to use it" was the only advice on offer when nothing in the
+    app could start a backend. ``src.llm.activation`` can, so telling an operator to
+    drop the choice they deliberately made is now the wrong first suggestion — it is
+    offered second, as a real alternative, not as the way out."""
+    import src.llm.vllm_lifecycle as vl
+
+    _stored(monkeypatch, backend="vllm")
+    _stub(monkeypatch, gpu={"available": True}, vllm_installed=True, vllm_running=False)
+    monkeypatch.setattr(vl, "start_outcome", lambda: {"state": "not-started"})
+    why = B.outage_reason()
+    assert "start it" in why
+    assert why.index("start it") < why.index("clear the override"), (
+        "the action the app can take leads; abandoning the choice is the alternative"
+    )
+
+
+def test_an_unreadable_start_outcome_never_breaks_the_message(monkeypatch):
+    import src.llm.vllm_lifecycle as vl
+
+    _stored(monkeypatch, backend="vllm")
+    _stub(monkeypatch, gpu={"available": True}, vllm_installed=True, vllm_running=False)
+    monkeypatch.setattr(vl, "start_outcome", lambda: (_ for _ in ()).throw(OSError("boom")))
+    assert "NOT running" in B.outage_reason()

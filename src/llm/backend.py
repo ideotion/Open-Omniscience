@@ -760,7 +760,8 @@ def resolve_backend(*, override: str | None = None) -> dict:
         elif vllm_running:
             reason = (
                 "explicit override (ollama), but Ollama is NOT reachable "
-                "-- vLLM's server IS running; clear the override or start Ollama"
+                "-- vLLM's server IS running; start Ollama, or clear the override "
+                "to use the vLLM that is already up"
             )
         else:
             reason = (
@@ -781,7 +782,8 @@ def resolve_backend(*, override: str | None = None) -> dict:
         elif ollama_ok:
             reason = (
                 "explicit override (vllm), but its server is NOT running "
-                "-- Ollama IS reachable; clear the override to use it"
+                "-- start it from Settings -> AI (Ollama IS reachable if you would "
+                "rather clear the override and use that instead)"
             )
         else:
             reason = (
@@ -979,8 +981,45 @@ def outage_reason() -> str | None:
     except Exception:  # noqa: BLE001 - a message-enrichment probe must never break a run
         return None
     if resolved.get("no_backend") or not resolved.get("available"):
+        # A vLLM that was STARTED and then DIED is not the same condition as one that
+        # was never started, and only the first has an actionable reason. Field report
+        # 2026-08-04: with the override on vLLM, the sweep read "its server is NOT
+        # running -- Ollama IS reachable; clear the override to use it" ten times over,
+        # while the real answer -- the engine had exited on a CUDA OOM about a minute
+        # after the start returned -- was already recorded and simply not consulted.
+        if resolved.get("backend") == "vllm" and (died := _vllm_start_failure()):
+            return died
         return str(resolved.get("reason") or "no AI backend is reachable right now")
     return None
+
+
+def _vllm_start_failure() -> str | None:
+    """Why the last vLLM start IN THIS PROCESS died, or None if none did.
+
+    ``start_outcome()`` already separates never-started from still-loading from
+    already-dead, and ``failure_excerpt()`` already searches the log for the cause. This
+    is the third place that pair needed to be read: a sweep's retry line is where an
+    operator actually SEES a failure, and it was showing them reachability instead.
+
+    Deliberately reports ONLY the ``exited`` state. "Still loading" must keep the
+    generic wording, because a model load takes tens of seconds and the backoff exists
+    precisely to wait it out -- naming it a failure would be the fabricated-failure twin
+    of the fabricated-success this fixes.
+    """
+    try:
+        from src.llm.vllm_lifecycle import failure_excerpt, start_outcome
+
+        outcome = start_outcome()
+        if outcome.get("state") != "exited":
+            return None
+        base = (
+            f"vLLM was started and its server process then exited "
+            f"(code {outcome.get('returncode')}), so it is not coming back on its own"
+        )
+        advice = str(failure_excerpt(limit=400).get("advice") or "")
+    except Exception:  # noqa: BLE001 - an enrichment probe must never break a run
+        return None
+    return f"{base} — {advice}" if advice else base
 
 
 #: Longest error text a retry line carries. Long enough for a Python exception's
