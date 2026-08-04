@@ -1293,6 +1293,53 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     (stash `src/`, keep the test) and assert only the portable property — here "every imported
     article reaches the re-index", never `failed == 0`, which pins the environment rather than the
     behaviour.
+  - **SQLite SPILLS DIRTY PAGES AS THE CACHE FILLS — an open transaction does NOT pin them,
+    so `cache_size` bounds merge memory and transaction length does not (2026-08-03, the
+    import cache regression):** the 2026-07-30 "scale the import cache to RAM" rule was built
+    on the opposite belief, written into its own comment ("pages dirtied early cannot be
+    evicted until the final COMMIT … closer to a floor on residency than a ceiling"), and that
+    belief is FALSE. Measured directly (encrypted, WAL, page_size 16384, the merge's own
+    INSERT..SELECT-with-NOT-EXISTS shape, 1 GB incoming): cache 2048/989/512/256/64/32 MiB →
+    RSS held 2042/2026/1545/1286/1093/1060 MiB, with the balance spilled to the file DURING the
+    open transaction (96 MB spilled at 989 MiB of cache, 984 MB at 32 MiB). So the cache is a
+    RESIDENCY DIAL, not a throughput lever — and the old rule turned it UP on exactly the
+    machines least able to pay. FIELD COST: a ~35-42 GB corpus merging into a 2.49 GB one on an
+    8.3 GB box was handed a 989 MiB cache, drove RSS to 6.4 GB, pinned all 1 GB of swap 55
+    minutes in, and spent **15.9 hours inside merge step 3 of 19** without finishing; the same
+    code merged 20k-45k-article backups in 17-91 SECONDS. WHY A BIGGER CACHE CANNOT HELP THIS
+    SHAPE: the dominant step streams the whole incoming corpus exactly once, so its working set
+    is always far larger than any cache and the hit rate is ~0 at every size — cache exists to
+    serve re-reads and there are none. TWO COROLLARIES worth as much as the fix: (a) an RSS
+    trace that CLIMBS then PLATEAUS and stays flat for hours while writing continues is itself
+    proof of a bounded-and-recycling structure, not an accumulator — read the plateau before
+    blaming transaction size; (b) the codec is arithmetically NOT the cost here — 35 GB at
+    AES-NI speed is ~35 CPU-seconds against 33,925 CPU-seconds observed, so "N GB through the
+    SQLCipher codec" is a framing to check with a division before repeating it (I stated it
+    myself before doing the arithmetic).
+  - **`sqlcipher3.Error` IS NOT A SUBCLASS OF `sqlite3.Error` — every driver-class catch on a
+    merge/restore connection is dead code on the encrypted store, i.e. on every real corpus
+    (2026-08-03; verified with `issubclass`, and the third recurrence of this family after the
+    2026-07-14 `is_locked_error` fix):** `merge_corpus`'s cleanup did
+    `with suppress(sqlite3.Error): con.execute("ROLLBACK")`, and that connection comes from the
+    raw `connect()` factory — so on an encrypted corpus a failing ROLLBACK was NOT suppressed
+    and PROPAGATED FROM INSIDE THE `except` BLOCK, replacing the real failure the operator
+    needed to see. It fails routinely: an interrupted statement leaves SQLite having already
+    rolled back, so the cleanup ROLLBACK raises "cannot rollback - no transaction is active".
+    RULE: in the backup/merge chain, a cleanup path suppresses `Exception`, never a driver
+    class; and where an outcome must be recognised across drivers, key on YOUR OWN flag set
+    before the call, never on the exception type (`_step_watch`'s `stopped[0]`).
+  - **A SINGLE SQL STATEMENT IS A BLIND SPOT FOR BOTH PROGRESS AND STOP — the VDBE progress
+    handler is the way in (2026-08-03):** the merge checked `should_stop` only BETWEEN its 14
+    steps, so during the step that actually takes the time (15.9 h in the field) the Stop button
+    was inert, ruling 2026-07-29 item 15 notwithstanding, and the run journal's counter could not
+    move because step 3 published nothing internally. `con.set_progress_handler(fn, n_ops)` fires
+    inside a running statement and **returning non-zero ABORTS it** — measured: at n_ops=1000,
+    ~38 callbacks/s on the merge's own INSERT shape (n_ops=100 → ~536/s, too many); the abort
+    raises the driver's "interrupted" and the transaction is ALREADY rolled back when it lands.
+    Rate-limit the REPORTING but never the stop check (an `Event.is_set()` costs nothing and
+    rate-limiting it just adds latency to the one control the operator is waiting on). The tick
+    is a LIVENESS signal — elapsed seconds — and must NOT be turned into a percentage or an ETA:
+    it counts VM operations, which bear no honest relation to rows remaining.
   - **A MEASUREMENT THAT NEVER TOUCHES DISK WHILE THE RUN IS IN FLIGHT CANNOT DIAGNOSE A RUN
     THAT NEVER FINISHES — the gap is a SINK, not instrumentation (2026-07-31, the import/export
     run journal):** the import path was already well instrumented and every number it produced
