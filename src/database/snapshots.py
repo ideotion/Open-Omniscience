@@ -411,6 +411,7 @@ def article_counts_by_language(
     totals: dict[str, int] = {}
     unassigned = 0
     deduced_only = 0
+    undated = 0
     for raw_bucket, raw_lang, deduced, n in rows:
         count = int(n or 0)
         key = normalize_lang(raw_lang)
@@ -421,6 +422,13 @@ def article_counts_by_language(
             continue
         at = _as_naive_dt(raw_bucket)
         if at is None:
+            # A created_at that will not parse into a bucket (SQLite is dynamically
+            # typed, so a malformed value can be stored and strftime then yields
+            # NULL). Counted rather than dropped: this is a counting function, and
+            # the conservation property below — that every article in the window
+            # lands in exactly one published figure — is what lets a reader trust
+            # any single one of them.
+            undated += count
             continue
         slot = per_lang.setdefault(key, {})
         slot[at] = slot.get(at, 0) + count
@@ -477,6 +485,7 @@ def article_counts_by_language(
         "clamped_to_corpus_start": clamped,
         "other": {"languages": len(tail), "articles": sum(totals[lang] for lang in tail)},
         "unassigned": {"articles": unassigned, "with_deduced_language": deduced_only},
+        "undated": undated,
         "method": (
             f"Articles stored per {bucket}, counted by their asserted language "
             "(Article.language, region subtags folded) — the same column and the same "

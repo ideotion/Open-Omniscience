@@ -295,6 +295,74 @@ def test_and_nothing_is_disclosed_when_nothing_was_ranked_out(db):
     assert out["other"] == {"languages": 0, "articles": 0}
 
 
+def test_every_article_in_the_window_lands_in_exactly_one_published_figure(db):
+    """The conservation property, and the reason any single figure can be trusted.
+
+    A reader looking at twelve panels has no way to tell a language that was ranked
+    out from one that was quietly dropped. So the drawn totals, the ranked-out tail,
+    the un-tagged articles and the un-bucketable ones must ADD UP to the window's
+    real count -- a claim that survives every future change to how the rows are
+    folded, which no per-figure assertion does.
+    """
+    from sqlalchemy import func as sa_func
+
+    base = _isolated(db) + timedelta(hours=1)
+    src = _source(db)
+    _articles(db, src, lang="en", at=base, n=5)
+    _articles(db, src, lang="en-GB", at=base + timedelta(minutes=1), n=2)
+    _articles(db, src, lang="fr", at=base + timedelta(minutes=2), n=3)
+    _articles(db, src, lang="de", at=base + timedelta(minutes=3), n=1)
+    _articles(db, src, lang=None, detected="es", at=base + timedelta(minutes=4), n=4)
+    _articles(db, src, lang=None, at=base + timedelta(minutes=5), n=2)
+
+    now = base + timedelta(hours=1)
+    out = article_counts_by_language(db, days=1, top_n=2, now=now)
+    since = datetime.fromisoformat(out["begins_at"])
+    real = int(
+        db.query(sa_func.count(Article.id))
+        .filter(Article.created_at >= since, Article.created_at <= now.replace(tzinfo=None))
+        .scalar()
+    )
+    accounted = (
+        sum(s["total"] for s in out["series"])
+        + out["other"]["articles"]
+        + out["unassigned"]["articles"]
+        + out["undated"]
+    )
+    assert accounted == real, (
+        f"{real - accounted} articles vanished between the query and the payload"
+    )
+    # And the drawn bars are the panel's own claim, not a second number.
+    for s in out["series"]:
+        assert sum(p["n"] for p in s["points"]) == s["total"]
+
+
+def test_an_article_whose_date_will_not_parse_is_counted_not_dropped(db):
+    """The ``undated`` branch, reproduced rather than asserted.
+
+    SQLite is dynamically typed, so a malformed ``created_at`` can genuinely be
+    stored; ``strftime`` then yields NULL and the row has no bucket. It still
+    matches the window (string comparison puts 'not-a-date' above a timestamp), so
+    it is IN the count and must appear somewhere -- dropping it would make the
+    conservation property above pass while an article quietly vanished.
+
+    The row is flushed, never committed, so the fixture's rollback removes it: a
+    malformed date left in the shared session DB would follow every later test.
+    """
+    from sqlalchemy import text
+
+    base = _isolated(db) + timedelta(hours=1)
+    src = _source(db)
+    _articles(db, src, lang="cs", at=base, n=2)
+    _articles(db, src, lang="cs", at=base + timedelta(minutes=1), n=1)
+    broken = db.query(Article.id).order_by(Article.id.desc()).first()[0]
+    db.execute(text("UPDATE articles SET created_at = 'not-a-date' WHERE id = :i"), {"i": broken})
+
+    out = article_counts_by_language(db, days=1, now=base + timedelta(hours=1))
+    assert out["undated"] == 1, "the unbucketable article must be counted, not dropped"
+    assert next(s for s in out["series"] if s["language"] == "cs")["total"] == 2
+
+
 def test_panels_are_ordered_by_volume_then_deterministically(db):
     """A view whose panels reshuffle on refresh cannot be read for change.
 
