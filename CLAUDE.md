@@ -1998,6 +1998,72 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     both sides and assert same keys, same values, only the ordering differs — rather than
     reverting on faith. No repository script does this, so there was nothing in the tree
     to fix; the fix is the habit.
+  - **A GUARD CAN PASS FOR A REASON THAT HAS NOTHING TO DO WITH ITS CLAIM — and the ratchet
+    meant to catch that class had the same defect (2026-08-04, PR #861, the ruling-7c audit
+    of every source-reading test file):** a 14-agent sweep with an adversarial verifier on
+    each finding reported examining 8,204 assertions and produced 41 distinct guards that
+    could not fail for the reason they were named — 47 confirmed of 58 raw, 11 refuted, each
+    hand-re-verified before any edit. FIVE SHAPES, all of which really shipped here. (a) **The
+    tautology.** `assert 'ensureOnline("Download an offline map region")' not in osm or
+    "ensureOnline" in osm` — the second needle is a SUBSTRING of the first, so the disjunction
+    is true for every possible input; it could not have failed with the consent gate deleted
+    outright. A three-way disjunction whose third arm is guaranteed by an `assert` four lines
+    above is the same thing wearing more clothes, and so is a loop that re-asserts the exact
+    regex it just derived its ids from. (b) **The wrong operand.** `assert "score" not in
+    "renderAnTrend drawAnTrend"` compares against a Python string LITERAL holding two function
+    NAMES — a compile-time constant that never opened app.js, in a file whose every other
+    assertion does. (c) **The comment-satisfied positive.** Invariant #16's `"never
+    downsampled"`: all three occurrences are on `//` comment lines, and the assertion's own
+    message said the toolkit must "state AND implement" the rule. Delete the implementation,
+    keep the comment, stay green. (d) **The non-unique needle.** `confirm(` 30 matches,
+    `card-caveat` 41, `ensureOnline` 47, `d.caveat` 58 — each asserted about ONE surface and
+    satisfied by any of dozens. Its special case: a ZERO-ARGUMENT function's own declaration
+    contains `name()`, so `assert "loadFamilyCuration()" in app, "showSetCat must WIRE it"` was
+    satisfied by the definition and could not tell wired from defined. (e) **The mis-slice.**
+    `split(DELIM)` where DELIM does not occur is a no-op and the "body" becomes the whole
+    remainder: `split("\ndef test_")` against `src/api/main.py` — a source file with no tests in
+    it — made the slice 108,272 characters, and the guard was then satisfied by `main()`, the
+    exact call path its own docstring said must not count. Ten JS slices split on
+    `"\n    function "`, which cannot match the `async function` that follows, over-running by
+    up to 3.2x; one bounded a CSS rule by "the next selector I could think of" and took 820
+    lines for a 20-line block. **THE PART WORTH MOST:** `test_source_slicing_discipline`'s own
+    budget read 0 — not because the tree was clean but because its detector was a regex over
+    five hardcoded helper NAMES, blind to the inline `html[a:b]` and `src.split(...)` forms
+    nearly every slice actually uses; and its sibling "the budget is not left above the real
+    count" AGREED, because both sides came from the same blind detector. The real count was
+    276. A ratchet is only as good as its detector, and a detector keyed to NAMES is defeated
+    by a rename — test the PROPERTY (an AST walk for `.index/.find/.split` taking a code-anchor
+    literal, f-strings INCLUDED, since `src.split(f"def {name}(")` is the common parametrised
+    form and reading only `ast.Constant` misses every one). GENERAL FORM: for any
+    read-the-source guard ask what ELSE in the file satisfies the needle, and whether the slice
+    is bounded by something that provably occurs; the correct bound comes from a parser (`ast`
+    for Python, brace-matching from the BODY brace for JS and CSS — `tests/js_source_helper.py`
+    now carries all three, each with its failure mode pinned), never from a guessed delimiter.
+    And when you fix one, check whether its own failure MESSAGE claims more than the new check
+    tests: "state and implement" needed splitting into two guards, one per half. COROLLARY on
+    tightening: only ONE assertion in the sweep changed truth value, and that IS the finding —
+    `test_honest_empty_and_bounded_states` sliced four functions and three of its four claims
+    belonged to siblings. Three scopes would have been wrong without opening the file first
+    (a loader that had MOVED to `_ADV_LOADERS`, a caveat in `drawAnTrend` not `renderAnTrend`,
+    and a byte window that swept into `UNRESOLVED_CANDIDATES` — exactly where the unverified
+    model tag is SUPPOSED to live).
+  - **AN LLM TRANSLATION PASS NEEDS A SECOND PASS THAT ONLY CHECKS THE CLAIM, BECAUSE THE
+    FAILURE MECHANICAL VALIDATION CANNOT SEE IS AN OFF-BY-ONE (2026-08-04, PR #861, the 127
+    honesty/data-safety strings ×12):** eleven translators, then eleven reviewers briefed
+    ONLY to catch a changed claim — a dropped negation, a softened "cannot be undone", an
+    uncertainty qualifier presented as fact, a mangled identifier. Both halves earned it. The
+    **zh** draft SKIPPED index 68 and shifted every later entry up by one, so 59 English keys
+    would have carried the NEXT string's translation; its reviewer found the shift and
+    renumbered all 58 affected slots. NO mechanical check can catch that: every slot was
+    non-empty, in the right script, and a plausible translation OF SOMETHING. The **ru** draft
+    rendered "tamper-evident" (alteration is DETECTABLE) as "protected against tampering" —
+    claiming a security guarantee the English deliberately does not make, which is exactly the
+    line this project draws between honest and fabricated security. Keep the mechanical layer
+    too (gaps, English echoes, per-locale script, identifiers/paths preserved) but know what it
+    is for. AND WATCH THE CHECKER ITSELF: a path regex captured the sentence's full stop with
+    the filename, so three CORRECT translations ending in their own terminator (Bengali "।",
+    CJK "。") read as dropped paths — a good translation must never present as a defect, so fix
+    the checker rather than counting it.
   - **`cmd | tail` MAKES `$?` THE EXIT CODE OF `tail` — a pre-push gate checked that way
     always reads green (2026-08-04, the #858 bandit red):** the local check was
     `bandit -r src/ -ll -q 2>&1 | tail -5; echo "exit: $?"`, which printed 0 while bandit
