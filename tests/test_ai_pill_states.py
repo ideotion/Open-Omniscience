@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 from tests.js_source_helper import function_body
+from tests.js_source_helper import css_rule
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -66,8 +67,12 @@ def test_off_is_red_and_carries_a_diagonal_bar(css):
 def test_every_colour_is_theme_derived(css):
     """A hardcoded hue failed 8/17 themes when --caveat was introduced. The pill is
     painted from --err through color-mix, exactly as .pill.err already is."""
-    block = css.split("#llm.ai-off {", 1)[1].split("#llm.ai-off::after {", 1)[1].split("}", 1)[0]
-    whole = css.split("/* The AI pill (maintainer 2026-08-02)", 1)[1].split("\n    .pill", 1)[0]
+    # Scoped to the pill's OWN rules. Bounding "whole" by splitting on the next
+    # selector that came to mind took 820 lines of app.css, in which var(--border)
+    # occurs 73 times -- so the assertion held for the stylesheet at large and could
+    # not have caught a hardcoded hue in the pill, the one regression it names.
+    block = css_rule(css, "#llm.ai-off::after")
+    whole = "".join(css_rule(css, sel) for sel in ("#llm", "#llm.ai-off", "#llm.ai-off::after"))
     assert "#" not in block, "no hex literals in the bar"
     for token in ("var(--err)", "var(--border)", "var(--panel2)"):
         assert token in whole, f"{token} must come from the theme"

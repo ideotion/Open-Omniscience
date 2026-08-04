@@ -17,6 +17,7 @@ from pathlib import Path
 from tests.js_source_helper import assert_absent as _assert_js_absent
 from tests.js_source_helper import assert_present as _assert_js_present
 from tests.js_source_helper import function_body as _js_function_body
+from tests.js_source_helper import python_function_source as _py_function_source
 from tests.js_source_helper import strip_comments as _strip_js_comments
 
 _ROOT = Path(__file__).resolve().parents[1]
@@ -2516,7 +2517,7 @@ def test_ui_invariants():
     #     .card-caveat line on the card BACK — an equal side revealed by ONE flip, never
     #     a hidden toggle/checkbox — right beside the action that opens its corpus. It is
     #     in the DOM by default (not behind [hidden]); only the FRONT is decluttered.
-    card_html = html.split("function cardHtml(", 1)[1].split("\n    function ", 1)[0]
+    card_html = _js_function_body(html, "cardHtml")
     assert "card-face card-front" in card_html and "card-face card-back" in card_html, (
         "Lead cards must have a flip FRONT + BACK (maintainer 2026-06-23)"
     )
@@ -3622,8 +3623,9 @@ def test_analysis_mindmap_subtab():
     assert 'id="ins-mindmap"' in html, "Insights #ins-mindmap host must remain (no regression)"
     # the analysis renderer must stay self-contained: its body must not touch the
     # Insights #ins-mindmap host nor share the _mm* force-canvas state.
-    an_start = html.index("function renderAnMindmap")
-    an_body = html[an_start:an_start + 2200]
+    # A fixed 2,200-character window covered ~57% of renderAnMindmap, so the two
+    # negative guards below did not cover the function they are written about.
+    an_body = _js_function_body(html, "renderAnMindmap")
     assert "ins-mindmap" not in an_body, "renderAnMindmap must not touch the Insights host"
     assert "_mm" not in an_body, "renderAnMindmap must not share the Insights _mm* state"
 
@@ -3738,7 +3740,7 @@ def test_commodities_category_subtabs():
     # was silently satisfied by the HOME families call site instead (the commodities
     # one passes the shorthand {initial}), so it never tested this board at all —
     # the misscoped-anchor family. It now reads the function it names.
-    _cat_tabs = html.split("function _renderCommodityCatTabs", 1)[1].split("\n    function ", 1)[0]
+    _cat_tabs = _js_function_body(html, "_renderCommodityCatTabs")
     assert '_mktCat : "__all"' in _cat_tabs and "ooSubtabs(catNav, selectCommodityCat, {initial})" in _cat_tabs, (
         "'All' (__all) must be the commodities board's default lens"
     )
@@ -4436,7 +4438,7 @@ def test_corpus_window_mindmap_subtab():
     for sib in ('data-tab="trend"', 'data-tab="articles"', 'data-tab="links"'):
         assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
     # 2. corpusTab dispatches "mindmap" → the SHARED renderer for the window term.
-    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    body = _js_function_body(html, "corpusTab")
     assert 'which === "mindmap"' in body, "corpusTab must handle the mindmap sub-tab"
     assert "renderMindmap(_corpusTerm)" in body, (
         "the Mindmap sub-tab must render the EXISTING associations mind-map for "
@@ -4491,7 +4493,7 @@ def test_corpus_window_sentiment_subtab():
         "in its hover title"
     )
     # 2. corpusTab dispatches "sentiment" -> the SHARED framing renderer, term-keyed.
-    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    body = _js_function_body(html, "corpusTab")
     assert 'which === "sentiment"' in body, "corpusTab must handle the sentiment sub-tab"
     assert "loadFraming(_corpusTerm" in body, (
         "the Sentiment sub-tab must render the EXISTING Insights framing surface "
@@ -4542,7 +4544,7 @@ def test_corpus_window_keywords_subtab():
     ):
         assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
     # 2. corpusTab dispatches "keywords" -> the ranked-table renderer for _corpusTerm.
-    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    body = _js_function_body(html, "corpusTab")
     assert 'which === "keywords"' in body, "corpusTab must handle the keywords sub-tab"
     assert "renderCorpusKeywords(_corpusTerm" in body, (
         "the Keywords sub-tab must render the ranked table for THIS window's corpus term"
@@ -4606,7 +4608,7 @@ def test_corpus_window_sources_subtab():
     ):
         assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
     # 2. corpusTab dispatches "sources" -> the source-description renderer for _corpusTerm.
-    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    body = _js_function_body(html, "corpusTab")
     assert 'which === "sources"' in body, "corpusTab must handle the sources sub-tab"
     assert "renderCorpusSources(_corpusTerm" in body, (
         "the Sources sub-tab must render for THIS window's corpus term into a fresh host"
@@ -4681,7 +4683,7 @@ def test_corpus_window_competitive_subtab():
     ):
         assert sib in nav, f"corpus sub-tab regressed: {sib} missing"
     # 2. corpusTab dispatches "competitive" -> the renderer for _corpusTerm.
-    body = html.split("async function corpusTab(", 1)[1].split("\n    function ", 1)[0]
+    body = _js_function_body(html, "corpusTab")
     assert 'which === "competitive"' in body, "corpusTab must handle the competitive sub-tab"
     assert "renderCorpusCompetitive(_corpusTerm" in body, (
         "the Competitive sub-tab must render for THIS window's corpus term into a fresh host"
@@ -5454,7 +5456,13 @@ def test_startup_seeds_the_source_catalog_at_unlock():
     main_src = (_ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
     # run_deferred_startup now delegates the post-init upkeep to _run_startup_upkeep
     # (so the web-unlock path can background it); the seed lives there. Read both.
-    deferred = main_src.split("def run_deferred_startup", 1)[1].split("\ndef test_", 1)[0]
+    # Bounded by the parser, to the two functions this test is actually about.
+    # It used to slice `split("\ndef test_", 1)[0]` -- a delimiter that does not
+    # occur anywhere in main.py, so the "body" was the whole remaining 108,272
+    # characters of the module. seed_default_sources also appears in main(), which
+    # this docstring says does NOT reach an encrypted catalog, so the guard was
+    # satisfied by the very code path it was written to rule out.
+    deferred = _py_function_source(main_src, "run_deferred_startup", "_run_startup_upkeep")
     assert "_run_startup_upkeep" in deferred, "run_deferred_startup must call the upkeep"
     assert "seed_default_sources" in deferred, (
         "run_deferred_startup must seed the source catalog (encrypted stores seed at "
@@ -7101,7 +7109,7 @@ def test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role():
     explicitly-scoped <button> instead of relying on the whole (button/link-hosting)
     back face being itself a button."""
     js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    card_html = js.split("function cardHtml(", 1)[1].split("\n    function ", 1)[0]
+    card_html = _js_function_body(js, "cardHtml")
 
     # The outer container is a plain, non-interactive group wrapper -- exact-string
     # match so no tabindex/onclick/role="button" can sneak back onto it.
@@ -7314,7 +7322,7 @@ def test_worldmap_fullscreen_targets_host_so_legend_and_caveat_stay_visible():
     #oo-coverage-map) already wraps .oomap-wrap AND .oomap-legend AND the method/
     caveat and nothing unrelated, so fullscreen now targets `host` instead."""
     js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    fn = js.split("function _wireOoMap(host, opts) {", 1)[1].split("\n    function ", 1)[0]
+    fn = _js_function_body(js, "_wireOoMap")
 
     # The three fullscreen call sites must all resolve against `host` directly,
     # never re-query .oomap-wrap as a narrower fullscreen target.
@@ -7349,7 +7357,7 @@ def test_markdown_bold_span_survives_a_source_line_break():
     running inline() lets the regex see the whole span regardless of which
     source line it was wrapped on."""
     js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
-    fn = js.split("function mdToHtml(md) {", 1)[1].split("\n    function humanBytes", 1)[0]
+    fn = _js_function_body(js, "mdToHtml")
 
     # Paragraphs: inline() must run on the WHOLE joined string, never per-line.
     assert "inline(buf.join(" in fn, (
@@ -7526,7 +7534,7 @@ def test_library_qualification_tile_window_switcher_hide_flat_auto_log():
     # (2026-08-01) legitimately hoisted the spread test into a local so the same
     # verdict could also drive zeroBase, and a literal `logY: _libQualSpread`
     # anchor failed against correct code (the recorded stale-anchor family).
-    _qual_render = app.split("function _libRenderQualChart", 1)[1].split("\n    function ", 1)[0]
+    _qual_render = _js_function_body(app, "_libRenderQualChart")
     assert "_libQualSpread(_libQualSeries) > 50" in _qual_render and "logY:" in _qual_render, (
         "the qualification chart's logY must be driven by the measured spread"
     )
@@ -7626,16 +7634,14 @@ def test_briefing_refresh_runs_in_a_background_thread_not_inline():
     # skipped, never stacked/queued) and tracked in the task manager like the
     # other ride-alongs (world-discovery, qualification), not as a scheduler
     # phase — it can now genuinely overlap the next pass's own phase.
-    async_body = runner.split("def _refresh_briefing_async(self)", 1)[1].split(
-        "\n    def _default_run_once", 1
-    )[0]
+    async_body = _py_function_source(runner, "_refresh_briefing_async")
     assert "acquire(blocking=False)" in async_body
     assert 'tasks.register("briefing"' in async_body
     assert "threading.Thread(" in async_body and ".start()" in async_body
 
     # _default_run_once's OWN body: it calls the async kickoff, and never calls
     # refresh_briefing directly (the old synchronous inline call site is gone).
-    pass_body = runner.split("def _default_run_once", 1)[1]
+    pass_body = _py_function_source(runner, "_default_run_once")
     assert "self._refresh_briefing_async()" in pass_body
     assert "refresh_briefing(" not in pass_body
     assert '_phase_set("briefing")' not in pass_body
@@ -7674,7 +7680,7 @@ def test_housekeeping_lane_runs_in_a_background_thread_not_inline():
     # are gone -- they now live ONLY inside the _lane_step_* functions, which
     # are defined BEFORE _default_run_once in this module, so this slice
     # excludes them by construction, not by accident).
-    pass_body = runner.split("def _default_run_once", 1)[1]
+    pass_body = _py_function_source(runner, "_default_run_once")
     assert "self._kick_housekeeping_lane()" in pass_body
     for gone in (
         "auto_import_due_feeds(fetcher)",
@@ -8172,7 +8178,7 @@ def test_the_ai_install_egress_window_is_wired_and_states_its_limit():
     #    sites and would stay green with this gate deleted (this project's own S4.1
     #    lesson -- a removal guard is only as strong as the scope it searches).
     for fn in ("prepareOllamaInstall", "runOllamaInstall"):
-        body = app_js.split(f"async function {fn}(", 1)[1].split("\n    async function", 1)[0]
+        body = _js_function_body(app_js, fn)
         assert "if (!await ensureAiEgress(" in body, (
             f"{fn} must ask for a window and act on the answer"
         )
@@ -8181,9 +8187,7 @@ def test_the_ai_install_egress_window_is_wired_and_states_its_limit():
     #    flight runs in a child process this app cannot stop -- exactly what the
     #    consent dialog said when the window opened -- so "can no longer reach the
     #    network" would contradict it three clicks later.
-    close_body = app_js.split("async function closeEgressWindow(", 1)[1].split(
-        "\n    // Render the bar", 1
-    )[0]
+    close_body = _js_function_body(app_js, "closeEgressWindow")
     # Comment-STRIPPED: the comment explaining why the old wording is gone has to
     # quote it, so a raw search fails against correct code -- on its own
     # explanation. Dropping whole-line // comments leaves a URL inside a string

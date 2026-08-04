@@ -21,6 +21,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import pytest
+from tests.js_source_helper import function_body
 
 
 def test_deferral_is_the_default_and_is_revertible(monkeypatch):
@@ -309,7 +310,7 @@ def test_the_deferral_is_VISIBLE_in_the_import_summary():
     from pathlib import Path
 
     app = Path("src/static/app.js").read_text(encoding="utf-8")
-    fn = app.split("function _renderImportSummary", 1)[1].split("\n    function ", 1)[0]
+    fn = function_body(app, "_renderImportSummary")
 
     assert "reindex_deferred" in fn, "the summary must read the report's own deferral block"
     assert "indexingLine" in fn and "+ indexingLine +" in fn, "…and actually render it"

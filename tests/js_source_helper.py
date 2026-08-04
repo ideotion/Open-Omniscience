@@ -32,6 +32,7 @@ than by re-derivation.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -86,6 +87,60 @@ def function_body(js: str, name: str) -> str:
                     raise AssertionError(f"{name!r} sliced to an empty body: {out!r}")
                 return out
     raise AssertionError(f"unbalanced braces while slicing {name!r}")
+
+
+def python_function_source(src: str, *names: str) -> str:
+    """The source of one or more PYTHON functions, taken from the parser.
+
+    The module is named for JavaScript because that is where the technique started,
+    but the same failure applies to a test that slices a .py file with
+    ``split("def foo", 1)[1].split(DELIM, 1)[0]``: pick a delimiter that does not
+    occur and the "body" silently becomes the whole rest of the module, so the
+    assertion is satisfied by any other function in the file. That really happened
+    -- ``split("\\ndef test_")`` against ``src/api/main.py``, a source file with no
+    tests in it, made the slice 108,272 characters long.
+
+    Here the bounds come from ``ast``, so they are exact by construction rather
+    than by a guessed delimiter. Several names may be given when a guard genuinely
+    spans a caller and its helper; each must exist.
+    """
+    tree = ast.parse(src)
+    out = []
+    for name in names:
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == name:
+                seg = ast.get_source_segment(src, node)
+                assert seg, f"no source segment for {name!r}"
+                out.append(seg)
+                break
+        else:
+            raise AssertionError(f"no def of {name!r} found in the source")
+    return "\n".join(out)
+
+
+def css_rule(css: str, selector: str) -> str:
+    """One CSS rule's declaration block, brace-matched from its selector.
+
+    The same failure again in a third language: a test bounded the AI pill's rules
+    by splitting on ``"\\n    .pill"``, the next selector it happened to think of,
+    and got 820 lines instead of 20 -- inside which ``var(--border)`` occurs 73
+    times, so "every colour is theme-derived" was true of app.css at large and said
+    nothing about the pill.
+    """
+    at = css.find(selector + " {")
+    if at == -1:
+        at = css.find(selector + "{")
+    assert at != -1, f"no rule for selector {selector!r}"
+    body_at = css.index("{", at)
+    depth = 0
+    for j in range(body_at, len(css)):
+        if css[j] == "{":
+            depth += 1
+        elif css[j] == "}":
+            depth -= 1
+            if depth == 0:
+                return css[body_at : j + 1]
+    raise AssertionError(f"unbalanced braces while slicing {selector!r}")
 
 
 _LINE_COMMENT = re.compile(r"^\s*//.*$", re.MULTILINE)

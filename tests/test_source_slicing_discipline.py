@@ -22,7 +22,9 @@ import pytest
 from tests.js_source_helper import (
     assert_absent,
     assert_present,
+    css_rule,
     function_body,
+    python_function_source,
     read_static,
     strip_comments,
 )
@@ -108,7 +110,7 @@ def test_a_comment_mentioning_a_call_does_not_satisfy_assert_present():
 #: the same blind detector, which makes the pair a tautology rather than a check.
 #: That is the exact failure mode this module exists to document, committed into the
 #: module documenting it. The detector below tests the PROPERTY instead.
-_ADHOC_SLICER_BUDGET = 273
+_ADHOC_SLICER_BUDGET = 234
 
 #: A string literal that anchors into SOURCE CODE rather than into data. A
 #: `.index`/`.split`/`.find` taking one of these is slicing a program, which is the
@@ -194,3 +196,32 @@ def test_the_budget_is_not_left_above_the_real_count():
     assert len(sites) == _ADHOC_SLICER_BUDGET, (
         f"lower _ADHOC_SLICER_BUDGET to {len(sites)}"
     )
+
+
+def test_a_python_slice_is_bounded_by_the_parser_not_a_guessed_delimiter():
+    """The Python half of the same failure, from a real case.
+
+    ``main_src.split("def run_deferred_startup", 1)[1].split("\\ndef test_", 1)[0]``
+    used a delimiter that does not occur in ``src/api/main.py``, so the slice was the
+    whole rest of the module and the guard was satisfied by a DIFFERENT function --
+    the one its own docstring said must not satisfy it.
+    """
+    src = (
+        "def wanted():\n    mine = 1\n\n\n"
+        "def other():\n    theirs = 2\n"
+    )
+    body = python_function_source(src, "wanted")
+    assert "mine" in body
+    assert "theirs" not in body, "the parser bound must not run into the next def"
+    with pytest.raises(AssertionError, match="no def of"):
+        python_function_source(src, "missing")
+
+
+def test_a_css_rule_is_brace_matched_not_split_on_the_next_selector():
+    """The third language, same failure. Bounding a rule by "the next selector I can
+    think of" took 820 lines of app.css for a 20-line block."""
+    css = "#a { color: red; }\n.other { color: blue; }\n#b { color: green; }\n"
+    assert "red" in css_rule(css, "#a")
+    assert "blue" not in css_rule(css, "#a") and "green" not in css_rule(css, "#a")
+    with pytest.raises(AssertionError, match="no rule for selector"):
+        css_rule(css, "#missing")
