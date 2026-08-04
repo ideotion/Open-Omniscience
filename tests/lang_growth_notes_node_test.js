@@ -30,12 +30,33 @@ const APP = fs.readFileSync(path.join(__dirname, "..", "src", "static", "app.js"
 
 let passed = 0;
 function assert(cond, msg) { if (!cond) { console.error("FAIL: " + msg); process.exit(1); } }
-function test(name, fn) { fn(); passed += 1; console.log("ok  - " + name); }
+
+// Tests are QUEUED and awaited, not called and counted. The first version of this
+// runner did `fn(); passed += 1;`, which reports an async test as "ok" the instant
+// it returns a pending promise -- so the two tile tests below printed a pass while
+// their assertions had not run, and the ReferenceError they were written to catch
+// surfaced afterwards as an unhandled rejection, well past the summary line. A
+// runner that cannot fail is the same defect as a guard that cannot fail.
+const QUEUE = [];
+function test(name, fn) { QUEUE.push([name, fn]); }
+async function run() {
+  for (const [name, fn] of QUEUE) {
+    await fn();
+    passed += 1;
+    console.log("ok  - " + name);
+  }
+  console.log(`\n${passed} passed`);
+}
 
 function extract(name) {
   const decl = "function " + name + "(";
-  const at = APP.indexOf(decl);
+  let at = APP.indexOf(decl);
   assert(at !== -1, "could not find " + name);
+  // Keep an `async` prefix: slicing from `function` alone hands back a body that
+  // still contains `await`, which is a SyntaxError rather than a wrong answer --
+  // loud, but only if you notice it is the harness and not the code.
+  const before = APP.slice(Math.max(0, at - 8), at);
+  if (/async\s*$/.test(before)) at -= before.length - before.search(/async\s*$/);
   let p = 0, i = -1;
   for (let j = at + decl.length - 1; j < APP.length; j++) {
     if (APP[j] === "(") p++;
@@ -142,4 +163,78 @@ test("no template placeholder ever reaches the user", () => {
   assert(!/\{[a-z_]+\}/.test(s), `an uninterpolated placeholder leaked: ${s}`);
 });
 
-console.log(`\n${passed} passed`);
+// --------------------------------------------------------------------------- //
+//  The tile renders at all
+// --------------------------------------------------------------------------- //
+// node --check proves the file PARSES; it cannot see a ReferenceError. This
+// codebase has already shipped one in a Library tile (a bare `t` in the
+// source-tag click handler), so the template gets driven once with a realistic
+// payload, with every collaborator stubbed and none of them silently absent:
+// `undefined is not a function` is the same class of defect.
+const I18N = {
+  t: (s) => s,
+  tf: (tpl, v) => String(tpl).replace(/\{(\w+)\}/g, (m, k) => String(v[k])),
+};
+// The window constants come from app.js, not from a stub: the chips a stub
+// produced would be the test's own opinion of the windows, not the app's.
+const CONSTS = ["LIB_WINDOWS", "LIB_DEFAULT_DAYS", "LIB_LANG_TOP_N"].map(name => {
+  const m = APP.match(new RegExp("\\n\\s*const " + name + " = [^\\n]+"));
+  assert(m, "could not read " + name + " from app.js");
+  return m[0].trim();
+});
+const tileSrc = [
+  ...CONSTS,
+  "let _libTileDays = {};",
+  extract("_libWindowChips"),
+  src,
+  extract("_libLanguageTile"),
+  "this._libLanguageTile = _libLanguageTile;",
+].join("\n");
+
+test("the tile renders a panel grid, its notes and its window chips", async () => {
+  const calls = [];
+  const box = {};
+  new Function(
+    "esc", "api", "smallMultiplesSvg", "ooLangName", "window", "OOI18N",
+    tileSrc
+  ).call(box,
+    (s) => String(s),
+    (u) => { calls.push(u); return Promise.resolve({
+      bucket: "day",
+      series: [{language: "en", total: 9, points: [{t: "2027-01-01", n: 9}]},
+               {language: "fr", total: 4, points: [{t: "2027-01-01", n: 4}]}],
+      other: {languages: 3, articles: 11},
+      unassigned: {articles: 6, with_deduced_language: 2},
+      clamped_to_corpus_start: true, corpus_began_at: "2027-01-01T00:00:00",
+    }); },
+    (panels) => `<svg data-panels="${panels.length}"></svg>`,
+    (code) => ({en: "English", fr: "French"})[code] || code,
+    {OOI18N: I18N}, I18N
+  );
+
+  return box._libLanguageTile(30).then(html => {
+    assert(/\/api\/library\/languages\?days=30&top_n=12/.test(calls[0] || ""),
+      `the tile must request the feed with its window: ${calls[0]}`);
+    assert(/id="lib-tile-__lang"/.test(html), "the tile needs the id its window chips re-render");
+    assert(/data-panels="2"/.test(html), "both languages must reach the renderer");
+    assert(/3 more languages/.test(html) && /6 articles have no asserted language/.test(html),
+      `the disclosures must reach the DOM, not just the notes array: ${html}`);
+    assert(/_libSetWindow\('__lang'/.test(html), "the window chips must carry this tile's own key");
+  });
+});
+
+test("...and a failing fetch degrades to a visible error, not a blank tab", () => {
+  const box = {};
+  new Function("esc", "api", "smallMultiplesSvg", "ooLangName", "window", "OOI18N", tileSrc).call(box,
+    (s) => String(s),
+    () => Promise.reject(new Error("boom")),
+    () => "", (c) => c,
+    {OOI18N: I18N}, I18N);
+  return box._libLanguageTile(30).then(html => {
+    assert(/note err/.test(html) && /boom/.test(html),
+      `a failed fetch must say so where the tile was: ${html}`);
+    assert(/id="lib-tile-__lang"/.test(html), "even the error keeps the id, so chips still work");
+  });
+});
+
+run().catch((e) => { console.error("FAIL: " + (e && e.stack || e)); process.exit(1); });
