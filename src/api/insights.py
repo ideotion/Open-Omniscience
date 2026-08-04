@@ -2508,3 +2508,52 @@ def backfill_keyword_tags(limit: int = Query(0, ge=0, le=500000)) -> dict:
 def backfill_keyword_tags_status() -> dict:
     """Live status of the background baseline-tag backfill (state/result/error)."""
     return _TAGS_BACKFILL_JOB.status()
+
+
+# ===== Figure endpoints (the GUI visualization plan §7) ==================== //
+# Read-only chartable aggregates. Each returns the rows plus the method/caveat/n the
+# frontend's figMeta panel renders verbatim, so "every displayed figure carries its
+# method, its caveat and its n" is satisfied by the PAYLOAD rather than by each call
+# site remembering to add it. All three go through _deadlined for the same reason
+# every other aggregate here does: on a large encrypted corpus an ungated whole-table
+# scan is the request death-spiral (field test 2026-07-08, Item 8).
+
+
+@router.get("/figures/quarantine-composition")
+def figures_quarantine_composition(
+    limit: int = Query(40, ge=1, le=200),
+    db: Session = Depends(get_db),
+) -> dict:
+    """C1 — how many articles each quarantine reason condemned, per criteria version."""
+    from src.analytics.figures import quarantine_composition
+
+    key = _ckey("fig-quarantine", limit=limit)
+    return _deadlined(db, key, lambda: quarantine_composition(db, limit=limit))
+
+
+@router.get("/figures/sentiment-measurability")
+def figures_sentiment_measurability(
+    limit: int = Query(24, ge=1, le=100),
+    db: Session = Depends(get_db),
+) -> dict:
+    """C2 — per language, how many articles carry a tone measurement and how many do not.
+
+    The point of the figure is the SECOND number: tone is English-only, so most of a
+    multilingual corpus is unmeasured, and until now nothing said so on screen.
+    """
+    from src.analytics.figures import sentiment_measurability
+
+    key = _ckey("fig-sentiment-measurability", limit=limit)
+    return _deadlined(db, key, lambda: sentiment_measurability(db, limit=limit))
+
+
+@router.get("/figures/source-concentration")
+def figures_source_concentration(
+    limit: int = Query(400, ge=2, le=5000),
+    db: Session = Depends(get_db),
+) -> dict:
+    """C5 — the Lorenz curve of how unequally the corpus draws on its sources, plus Gini."""
+    from src.analytics.figures import source_concentration
+
+    key = _ckey("fig-source-concentration", limit=limit)
+    return _deadlined(db, key, lambda: source_concentration(db, limit=limit))

@@ -465,6 +465,7 @@
       <button class="active" data-tab="overview">Overview</button>
       <button data-tab="activity">Activity</button>
       <button data-tab="tracked">Tracked</button>
+      <button data-tab="composition">Composition</button>
       <button data-tab="storage">Database &amp; storage</button>
       <button data-tab="coverage">World coverage</button>
     </nav>
@@ -499,6 +500,23 @@
       <div class="hint" style="margin-bottom:10px">Legal documents and revisions tracked over time (an hourly
         count, recorded from when this feature shipped).</div>
       <div id="lib-law-graphs"><div class="muted">Loading…</div></div>
+    </section>
+    </div>
+
+    <!-- Composition: what the corpus is MADE OF, as opposed to Activity (how it grew
+         over time) and Database & storage (how many bytes it takes). Three figures
+         whose whole job is to make an existing honesty gap visible instead of
+         implicit — most of a multilingual corpus has no tone measurement at all, the
+         corpus draws far more unevenly on its sources than a total suggests, and a
+         quarantine verdict is a reversible extraction-validity judgement rather than
+         a statement about a source. Each loads on SELECT, not on tab-show. -->
+    <div class="lib-view" id="lib-view-composition">
+    <section class="panel">
+      <h2>Composition</h2>
+      <div class="hint" style="margin-bottom:10px">What this corpus is made of. Every figure states how it was
+        computed, what it does not mean, and its n — and where something was never measured it is hatched,
+        which is not the same as a zero.</div>
+      <div id="lib-composition"><div class="muted">Loading…</div></div>
     </section>
     </div>
 

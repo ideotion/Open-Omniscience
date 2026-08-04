@@ -8327,6 +8327,7 @@
       overview: () => { renderLibraryOverview(); },
       activity: () => { renderLibraryActivityGraphs(); },
       tracked:  () => { renderLibraryWikiGraphs(); renderLibraryLawGraphs(); },
+      composition: () => { renderCompositionFigures(); },
       storage:  () => { renderStorageFootprint("library-storage"); },
       coverage: () => { loadCoverage(); },
     };
@@ -8683,6 +8684,184 @@
     // EVOLUTION over time the maintainer asked for, alongside the counters that
     // had no history at all until this feature shipped, plus the qualification
     // funnel's own 4-line breakdown (§5).
+    // ===== Library -> Composition: what the corpus is MADE OF ============== //
+    // Three figures (GUI visualization plan C1/C2/C5). Each is a horizontal SORTED
+    // BAR or a Lorenz curve — position and length carry the quantity, colour carries
+    // only category, and every one ends in the shared figMeta panel so its method,
+    // caveat and n are on screen without a click.
+    //
+    // SVG, not canvas: an SVG figure has a DOM, so the .sr-only data table below each
+    // chart is the same numbers a sighted reader sees, and the figure can be exported
+    // as vector. Canvas is reserved for ooChart, where pan/zoom over many points
+    // earns it.
+
+    // A horizontal bar row set. `rows` are {label, n, hatched?, title?}. The bar
+    // LENGTH is the only quantitative channel; a hatched row is an absence and is
+    // textured rather than coloured, so it can never be mistaken for a short bar.
+    function _figBars(rows, opts) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const o = opts || {};
+      if (!rows.length) return figEmpty(o.empty);
+      const max = Math.max(...rows.map(r => Math.max(0, +r.n || 0)), 1);
+      const w = 100, labelW = o.labelW || 34;
+      const body = rows.map((r) => {
+        const n = Math.max(0, +r.n || 0);
+        const pct = (n / max) * (w - labelW - 12);
+        const fill = r.hatched ? figGapFill() : (r.color || "var(--fig-1)");
+        return `<div class="fig-bar-row"${r.title ? ` title="${esc(r.title)}"` : ""}>` +
+          `<span class="fig-bar-label">${esc(r.label)}</span>` +
+          `<span class="fig-bar-track"><span class="fig-bar-fill" style="width:${pct.toFixed(2)}%;` +
+          `background:${r.hatched ? "transparent" : fill};` +
+          (r.hatched ? "background-image:repeating-linear-gradient(45deg, var(--fig-gap) 0 1.25px, transparent 1.25px 6px);border:1px solid var(--border)" : "") +
+          `"></span></span>` +
+          `<span class="fig-bar-n">${r.hatched ? esc(t("not measured")) + " · " : ""}${esc(fmtNum(n))}</span>` +
+          `</div>`;
+      }).join("");
+      // One shared <defs> for the hatch, and the sr-only table so the numbers are
+      // readable without seeing the bars.
+      return `<svg width="0" height="0" style="position:absolute">${figGapDefs()}</svg>` +
+        `<div class="fig-bars" role="img" aria-label="${esc(o.aria || o.title || "")}">${body}</div>` +
+        `<table class="sr-only"><caption>${esc(o.title || "")}</caption><tbody>` +
+        rows.map(r => `<tr><th scope="row">${esc(r.label)}</th><td>` +
+          (r.hatched ? esc(t("not measured")) : esc(fmtNum(Math.max(0, +r.n || 0)))) +
+          `</td></tr>`).join("") + `</tbody></table>`;
+    }
+
+    // The Lorenz curve: cumulative share of articles against cumulative share of
+    // sources. The equality DIAGONAL is drawn and labelled, because the curve means
+    // nothing without it — the gap between the two IS the inequality, and a curve
+    // shown alone reads as an arbitrary shape.
+    function _figLorenz(curve, opts) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const o = opts || {};
+      if (!curve || curve.length < 2) return figEmpty(o.empty);
+      const W = 320, H = 220, padL = 40, padB = 30, padT = 10, padR = 10;
+      // ooViz.linearScale, wired here for the first time (it was written, node-tested
+      // and never called).
+      const X = ooViz.linearScale(0, 1, padL, W - padR);
+      const Y = ooViz.linearScale(0, 1, H - padB, padT);
+      const pts = curve.map(p => `${X(p.sources).toFixed(2)},${Y(p.articles).toFixed(2)}`).join(" ");
+      const ticks = [0, 0.25, 0.5, 0.75, 1];
+      const grid = ticks.map(v =>
+        `<line x1="${padL}" y1="${Y(v).toFixed(1)}" x2="${W - padR}" y2="${Y(v).toFixed(1)}"` +
+        ` stroke="var(--border-soft)" stroke-width="1"/>` +
+        `<text x="${padL - 5}" y="${(Y(v) + 3).toFixed(1)}" text-anchor="end" font-size="8.5"` +
+        ` fill="var(--muted)">${Math.round(v * 100)}%</text>`).join("");
+      const xlab = ticks.map(v =>
+        `<text x="${X(v).toFixed(1)}" y="${H - padB + 12}" text-anchor="middle" font-size="8.5"` +
+        ` fill="var(--muted)">${Math.round(v * 100)}%</text>`).join("");
+      return `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block;max-width:${W}px"` +
+        ` role="img" aria-label="${esc(o.aria || "")}">${grid}${xlab}` +
+        `<line x1="${X(0)}" y1="${Y(0)}" x2="${X(1)}" y2="${Y(1)}" stroke="var(--fig-6)"` +
+        ` stroke-width="1.5" stroke-dasharray="4 3"/>` +
+        `<polyline points="${pts}" fill="none" stroke="var(--fig-1)" stroke-width="2"/>` +
+        // The diagonal's label sits BESIDE the line, not on it: printed on the line it
+        // was unreadable exactly where the two cross.
+        `<text x="${X(0.56)}" y="${Y(0.34)}" font-size="8.5" fill="var(--muted)">` +
+        `${esc(t("equal draw"))}</text>` +
+        `</svg>` +
+        `<div class="hint muted">${esc(t("Horizontal: share of sources, fewest articles first. Vertical: share of articles."))}</div>`;
+    }
+
+    async function renderCompositionFigures() {
+      const host = $("lib-composition");
+      if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // Each figure fetches independently and renders its own failure, so one broken
+      // endpoint leaves the other two on screen instead of blanking the whole view.
+      const get = async (path) => { try { return await api(path); } catch (e) { return {__err: e}; } };
+      const [quar, sent, conc] = await Promise.all([
+        get("/api/insights/figures/quarantine-composition"),
+        get("/api/insights/figures/sentiment-measurability"),
+        get("/api/insights/figures/source-concentration"),
+      ]);
+      const block = (title, inner, d) =>
+        `<div class="fig-block"><h3 class="fig-title">${esc(title)}</h3>${inner}` +
+        (d && !d.__err ? figMeta(d) : "") + `</div>`;
+      const errLine = (d) => `<div class="fig-empty">${esc(t("Could not load this figure."))}</div>`;
+
+      // --- C2: tone measurability. Deliberately FIRST: it is the figure that makes
+      // an existing gap visible, and on a multilingual corpus it is the largest one.
+      let sentHtml;
+      if (sent.__err) sentHtml = errLine(sent);
+      else {
+        const rows = [];
+        for (const r of (sent.rows || [])) {
+          // ooLangName, not a bare code: the shipped CLDR helper already renders the
+          // full language name in the reader's own locale.
+          const name = ooLangName(r.language, r.language);
+          if (r.measured > 0) {
+            rows.push({label: `${name} · ${t("measured")}`, n: r.measured, color: "var(--fig-1)",
+                       title: t("A tone value was stored for these articles.")});
+          }
+          if (r.unmeasured > 0) {
+            // The label is just the language: the hatch and the value's own "not
+            // measured" prefix already state the condition, and saying it a third
+            // time in the label crowded the row for no added information.
+            rows.push({label: r.supported ? `${name} · ${t("no tone stored")}` : name,
+                       n: r.unmeasured, hatched: !r.supported,
+                       color: "var(--fig-3)",
+                       title: r.supported
+                         ? t("This language can be scored, but these articles carry no tone value.")
+                         : t("The tone engine cannot read this language, so these articles were never scored.")});
+          }
+        }
+        if (sent.untagged && sent.untagged.n) {
+          rows.push({label: t("no asserted language"), n: sent.untagged.n, hatched: true,
+                     title: t("These articles carry no language, which is the tone gate's own blind spot.")});
+        }
+        sentHtml = _figBars(rows, {
+          title: t("Articles with and without a tone measurement, by language"),
+          aria: t("Articles with and without a tone measurement, by language"),
+          empty: t("No article carries a language yet."),
+        }) + figGapKey();
+      }
+
+      // --- C1: quarantine composition
+      let quarHtml;
+      if (quar.__err) quarHtml = errLine(quar);
+      else if (!(quar.rows || []).length) {
+        quarHtml = figEmpty(t("Nothing in this corpus is quarantined."));
+      } else {
+        quarHtml = _figBars((quar.rows || []).map(r => ({
+          label: (r.reason || t("reason not recorded")) +
+            (r.criteria_version ? ` · ${r.criteria_version}` : ""),
+          n: r.n, color: "var(--fig-3)",
+        })), {
+          title: t("Quarantined articles by the reason recorded"),
+          aria: t("Quarantined articles by the reason recorded"),
+        });
+      }
+
+      // --- C5: source concentration
+      let concHtml;
+      if (conc.__err) concHtml = errLine(conc);
+      else {
+        const g = conc.gini;
+        // gini() returns null when undefined (fewer than two sources, or no
+        // articles). A Gini of 0 means perfect EQUALITY, so printing 0 here would
+        // state the opposite of "we cannot say".
+        const gLine = g == null
+          ? `<div class="hint">${esc(t("Gini is undefined for this set — it needs at least two sources with articles."))}</div>`
+          : `<div class="hint"><strong>${esc(fmtNum(g, 3))}</strong> ${esc(t("Gini"))}` +
+            (conc.top_share != null
+              ? ` <span class="muted">· ${esc(OOI18N && OOI18N.tf
+                  ? OOI18N.tf("top 3 sources hold {pct}% of articles",
+                              {pct: fmtNum(conc.top_share * 100, 1)})
+                  : "top 3 hold " + fmtNum(conc.top_share * 100, 1) + "%")}</span>`
+              : "") + `</div>`;
+        concHtml = _figLorenz(conc.curve, {
+          aria: t("Lorenz curve of how unevenly the corpus draws on its sources"),
+          empty: t("No source has stored an article yet."),
+        }) + gLine;
+      }
+
+      host.innerHTML =
+        block(t("Tone measurement by language"), sentHtml, sent) +
+        block(t("Quarantine composition"), quarHtml, quar) +
+        block(t("How evenly the corpus draws on its sources"), concHtml, conc);
+    }
+
     async function renderLibraryActivityGraphs() {
       const host = $("lib-activity-graphs");
       if (!host) return;
@@ -10370,6 +10549,213 @@
     // render as a BAR graph (not dots), n>=10 as the full-resolution line. Shared by
     // BOTH chart renderers (dashChartSvg + ooChart).
     const _SPARSE_BAR_MAX = 10;
+
+    // --- categorical series identity: three channels, not one ------------- //
+    // A multi-series chart used to be told apart by COLOUR ALONE (a 4-entry cycle
+    // indexed i % 4, a solid stroke, a solid legend swatch). Measured: the worst
+    // mutual contrast between two of the six theme-derived series colours is
+    // 1.00:1 — luminance-identical — so on a greyscale print, to a colour-blind
+    // reader, or at i == 4 where the cycle wrapped series 5 onto series 1, the
+    // series were not distinguishable at all. app.css states the rule the code was
+    // breaking: "Colour is never the only signal."
+    //
+    // So a series carries THREE redundant channels: the --fig-N colour, a dash
+    // pattern, and a marker shape. Any one of them alone identifies the series;
+    // colour is now the decorative one. Six slots (not four) so a sixth series is
+    // still its own thing rather than a duplicate of the first — and the wrap at
+    // slot 7 is disclosed by _figStyle rather than silent.
+    //
+    // Dash arrays are in CSS px and are the SAME numbers for canvas
+    // (ctx.setLineDash) and SVG (stroke-dasharray), so ooChart and the legend
+    // swatch cannot drift apart.
+    // The patterns are chosen so no two share a FAMILY, not merely a number. A first
+    // cut used [2,3] for slot 3 and [1,3] for slot 6 — both read as "the dotted one",
+    // since a 1px difference in dot length is not perceptible — and [11,3,2,3] against
+    // [4,3,1,3], both "dash-dot". Each is now a different rhythm: solid / long dash /
+    // fine dot / dash-dot / long-dash-double-dot / wide-spaced square dot.
+    //
+    // Marker shapes avoid pairs that are the same shape rotated: a diamond IS a
+    // rotated square, and at a few pixels across, anti-aliasing makes them a coin
+    // flip. Circle / square / triangle / plus / cross / chevron differ in vertex
+    // count and stroke direction, which survives being small.
+    const _FIG_STYLES = [
+      {color: "var(--fig-1)", dash: [],                  marker: "circle"},
+      {color: "var(--fig-2)", dash: [10, 5],             marker: "square"},
+      {color: "var(--fig-3)", dash: [1.5, 3.5],          marker: "triangle"},
+      {color: "var(--fig-4)", dash: [9, 4, 2, 4],        marker: "plus"},
+      {color: "var(--fig-5)", dash: [13, 4, 2, 4, 2, 4], marker: "cross"},
+      // dot-DASH: the same two mark lengths as slot 4 in the opposite ORDER, which
+      // reads differently. [3, 7] was tried here and rejected by the rhythm guard —
+      // against slot 3's [1.5, 3.5] it is the same uniform-dotted family at half the
+      // frequency, and scaling a pattern up does not make it a different pattern.
+      {color: "var(--fig-6)", dash: [2, 4, 9, 4],        marker: "chevron"},
+    ];
+    // The style for series index i. Beyond six series the channels re-use, which
+    // is a real limit and is reported (`wrapped`) rather than hidden: a caller with
+    // seven series is told its 7th looks like its 1st.
+    function _figStyle(i) {
+      const n = _FIG_STYLES.length;
+      return Object.assign({}, _FIG_STYLES[((i % n) + n) % n], {wrapped: i >= n});
+    }
+    // One marker path, drawn identically on canvas and in SVG so the legend glyph
+    // and the plotted point are the same shape. r is the half-size in px.
+    function _figMarkerPath(shape, x, y, r) {
+      switch (shape) {
+        case "square":   return [[x - r, y - r], [x + r, y - r], [x + r, y + r], [x - r, y + r]];
+        case "triangle": return [[x, y - r * 1.2], [x + r * 1.1, y + r * 0.8], [x - r * 1.1, y + r * 0.8]];
+        // A downward chevron: an OPEN outline, so it never reads as a filled blob the
+        // way a small square or triangle can. (A diamond was dropped — it is a
+        // rotated square, and at ~6px the two are indistinguishable.)
+        case "chevron":  return [[[x - r * 1.2, y - r * 0.6], [x, y + r * 0.8]],
+                                 [[x, y + r * 0.8], [x + r * 1.2, y - r * 0.6]]];
+        // cross/plus are strokes, not fills — returned as segment pairs
+        case "cross":    return [[[x - r, y - r], [x + r, y + r]], [[x - r, y + r], [x + r, y - r]]];
+        case "plus":     return [[[x - r * 1.25, y], [x + r * 1.25, y]], [[x, y - r * 1.25], [x, y + r * 1.25]]];
+        default:         return null;                      // circle: drawn as an arc
+      }
+    }
+    // The shapes drawn as STROKES rather than fills. Kept in one place so the canvas
+    // and SVG paths cannot disagree about which is which.
+    const _FIG_STROKE_MARKERS = new Set(["cross", "plus", "chevron"]);
+    // Draw one marker on a 2D canvas context (fill for closed shapes, stroke for
+    // the two open ones, arc for circle).
+    function _figMarkerCanvas(ctx, shape, x, y, r) {
+      const p = _figMarkerPath(shape, x, y, r);
+      if (!p) { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); ctx.fill(); return; }
+      if (_FIG_STROKE_MARKERS.has(shape)) {
+        const w = ctx.lineWidth, d = ctx.getLineDash();
+        ctx.setLineDash([]); ctx.lineWidth = Math.max(1.4, r * 0.7);
+        ctx.beginPath();
+        for (const [[ax, ay], [bx, by]] of p) { ctx.moveTo(ax, ay); ctx.lineTo(bx, by); }
+        ctx.stroke(); ctx.lineWidth = w; ctx.setLineDash(d);
+        return;
+      }
+      ctx.beginPath();
+      p.forEach(([px, py], i) => (i ? ctx.lineTo(px, py) : ctx.moveTo(px, py)));
+      ctx.closePath(); ctx.fill();
+    }
+    // The legend/key glyph as inline SVG: the series' own dash pattern on a short
+    // rule with its marker centred, so the legend states all three channels. Vector,
+    // so it survives greyscale printing and a browser zoom.
+    function _figGlyph(st) {
+      // The marker sits at the FAR END, not the middle. Centred at x=15 on a 30px
+      // swatch, it covered exactly the stretch where a dash-dot cycle shows its
+      // distinguishing detail — slot 4's [8,4,2,4] rendered as two long solid runs
+      // with the whole pattern hidden behind the glyph, so its key showed no pattern
+      // at all. The swatch is also wider now (38px) so a long cycle completes at
+      // least once inside it: a key that cannot show the pattern cannot teach it.
+      const c = st.color, mx = 33, mk = _figMarkerPath(st.marker, mx, 7, 3.4);
+      let m;
+      if (!mk) m = `<circle cx="${mx}" cy="7" r="3.4" fill="${c}"/>`;
+      else if (_FIG_STROKE_MARKERS.has(st.marker))
+        m = mk.map(([[ax, ay], [bx, by]]) =>
+          `<line x1="${ax}" y1="${ay}" x2="${bx}" y2="${by}" stroke="${c}" stroke-width="2"` +
+          ` stroke-linecap="round"/>`).join("");
+      else m = `<polygon points="${mk.map(([px, py]) => px + "," + py).join(" ")}" fill="${c}"/>`;
+      return `<svg width="38" height="14" viewBox="0 0 38 14" aria-hidden="true" focusable="false"` +
+        ` style="vertical-align:middle;flex:none">` +
+        `<line x1="0" y1="7" x2="28" y2="7" stroke="${c}" stroke-width="2"` +
+        (st.dash.length ? ` stroke-dasharray="${st.dash.join(" ")}"` : "") + `/>${m}</svg>`;
+    }
+    // One shared "no data here" hatch, so absence is a TEXTURE (a shape cue) and
+    // never a colour or a zero. Both shipped hatches (#oomap-nodata, #rhythm-none)
+    // hand-rolled their own <defs> and stroked with var(--border), which measures
+    // 1.20:1 against --panel on garnet — the absence cue was itself near-invisible.
+    // --fig-gap clears 3:1 on all 17 themes (worst 3.44:1, paper).
+    const FIG_GAP_ID = "fig-nodata";
+    function figGapDefs(id) {
+      const pid = id || FIG_GAP_ID;
+      return `<defs><pattern id="${pid}" width="6" height="6" patternUnits="userSpaceOnUse"` +
+        ` patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="6"` +
+        ` stroke="var(--fig-gap)" stroke-width="1.25"></line></pattern></defs>`;
+    }
+    function figGapFill(id) { return `url(#${id || FIG_GAP_ID})`; }
+
+    // --- F2: the one method / caveat / n panel ----------------------------- //
+    // "Every displayed figure carries its method, its caveat and its n" is a
+    // structural invariant on the backend — Card.method and Card.caveat are
+    // non-defaulted required fields, Envelope refuses an empty method or a
+    // fabricated as_of — but on the frontend it was 41 hand-built `.card-caveat`
+    // sites and no component at all. Every new figure therefore re-implemented the
+    // honesty furniture, which is exactly how a figure ends up shipping without it.
+    //
+    // Takes the Envelope shape as it is serialized (envelope.py:106-114):
+    //   {method, caveat, n, basis, as_of}
+    // and renders it VISIBLY, never behind a toggle (informed consent by layering:
+    // the long form belongs in an #oo-tip title, not behind a checkbox).
+    //
+    // `basis` is a DISCLOSURE, not a score: "exact" = verified against the
+    // canonical store at as_of, "estimated" = a maintained value that may have
+    // drifted since. It is printed in words, never as a badge that could be read
+    // as a grade.
+    function figMeta(env) {
+      if (!env) return "";
+      const parts = [];
+      // `t` is not a module-level global in app.js — every function aliases it, and
+      // a function that forgets throws "t is not defined" at runtime. (Aliasing it
+      // as t9 = (s) => t(s) would have slipped past the invariant guard, which looks
+      // for a literal t("…"), and still broken at runtime. Bind it directly.)
+      const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      // The method sentence gets its OWN element. The i18n walker matches a text node
+      // against the key map EXACTLY, so `Method: <sentence>` as one text node is not a
+      // key and never translates — which a browser screenshot in Arabic showed as
+      // English method lines under translated Arabic caveats. Two elements, two exact
+      // matches: the label "Method" and the sentence itself.
+      if (env.method) {
+        parts.push(`<span class="fig-method">${esc(t9("Method"))}:</span> ` +
+          `<span class="fig-method">${esc(env.method)}</span>`);
+      }
+      // n === 0 is a real measurement ("nothing matched") and must print; only an
+      // absent n is omitted. `n == null` catches undefined too, and nothing else.
+      if (env.n != null) {
+        parts.push(`<span class="fig-n">${esc(OOI18N && OOI18N.tf
+          ? OOI18N.tf("n = {n}", {n: fmtNum(env.n)}) : "n = " + fmtNum(env.n))}</span>`);
+      }
+      if (env.basis) {
+        // Each basis value is translated through its OWN FIXED key, so the disclosure
+        // is readable in every locale. An unrecognised value is printed verbatim
+        // rather than silently normalised into one of the known ones — a wrong basis
+        // claim is worse than an untranslated one.
+        const lab = env.basis === "exact" ? t9("verified against the corpus")
+          : env.basis === "estimated" ? t9("from a maintained counter — may have drifted")
+          : env.basis === "live" ? t9("counted live just now")
+          : env.basis;
+        const asOf = env.as_of ? ` (${esc(_figAsOf(env.as_of))})` : "";
+        parts.push(`<span class="fig-basis">${esc(lab)}${asOf}</span>`);
+      }
+      let html = parts.length ? `<div class="fig-meta"><span class="fig-method">` +
+        parts.join(` <span class="muted">·</span> `) + `</span></div>` : "";
+      if (env.caveat) {
+        html += `<div class="fig-meta"><span class="fig-caveat">${esc(env.caveat)}</span></div>`;
+      }
+      return html;
+    }
+    // as_of is an ISO timestamp the backend guarantees is real (envelope.py refuses
+    // an empty one). Render it as a plain date-time; a value that will not parse is
+    // shown verbatim rather than replaced by a guess.
+    function _figAsOf(iso) {
+      const d = new Date(iso);
+      return isFinite(+d) ? d.toLocaleString() : String(iso);
+    }
+
+    // --- F3: absence is not zero ------------------------------------------ //
+    // An honest empty state: a sentence where the figure would be. Never a blank
+    // box (which reads as broken) and never an axis drawn through no data (which
+    // reads as a measured zero — the fabricated-spike trap an all-zero histogram
+    // from an n == 0 report walks straight into).
+    function figEmpty(msg, env) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return `<div class="fig-empty">${esc(msg || t("Nothing to show yet."))}</div>` +
+        (env ? figMeta(env) : "");
+    }
+    // The legend row naming the hatch in words, so the texture is not the only
+    // statement that a cell was never measured.
+    function figGapKey(msg) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return `<div class="fig-gap-key"><span class="fig-gap-swatch"></span>` +
+        `<span>${esc(msg || t("Hatched = not measured, which is not a zero."))}</span></div>`;
+    }
+
     // --- chart accessibility (audit PR G) -------------------------------- //
     // <svg>/<canvas> charts are opaque to screen readers. Give each a role="img"
     // + a translated aria-label SUMMARY, and a visually-hidden data table so the
@@ -11173,7 +11559,12 @@
       };
       const all = seriesList.map((s, i) => ({
         label: s.label || `#${i + 1}`, unit: s.unit || "",
-        color: s.color || ["var(--accent)", "var(--ok)", "var(--warn)", "var(--err)"][i % 4],
+        // Three redundant channels per series (see _FIG_STYLES): colour, dash
+        // pattern, marker shape. A caller-supplied s.color still wins — a surface
+        // that deliberately means something by its colour keeps saying it — but it
+        // gets the dash and marker too, so it is identifiable without the hue.
+        style: _figStyle(i),
+        color: s.color || _figStyle(i).color,
         // `+p.v` alone made a MISSING value a plotted ZERO: +null is 0 and
         // isFinite(0) is true, so a published gap survived the filter as a real
         // measurement of nothing. No caller passes nulls today -- /api/stats/
@@ -11286,25 +11677,69 @@
           if (!s.vis.length) continue;
           const n = s.vis.length, pxPer = plotW / Math.max(n - 1, 1);
           const barMode = n < _SPARSE_BAR_MAX;              // Item Y: n<10 -> bars, n>=10 -> line
+          const st = s.style || _figStyle(0);
           ctx.strokeStyle = s.color.startsWith("var(") ? cssVar(s.color.slice(4, -1)) : s.color;
           ctx.fillStyle = ctx.strokeStyle; ctx.lineWidth = 1.8;
           if (barMode) {
             // Bars anchor to the plot baseline Yof(yMin): true ZERO for zeroBase
             // (count) series, else the window-MIN which the gridlines LABEL (price
-            // levels) — never a fabricated zero. Bars sit at their TRUE time x; a 2px
-            // cap marks the value so a flush/equal/single point stays visible.
+            // levels) — never a fabricated zero. A 2px cap marks the value so a
+            // flush/equal/single point stays visible.
+            //
+            // GROUPED, not overlaid, when more than one series is in bar mode. Every
+            // series used to draw its bar centred on the same x from the same
+            // baseline, so the bars sat ON TOP of each other and the tallest one read
+            // as a STACK with the others as its segments — a part-to-whole statement
+            // nobody computed. (Adding a dashed outline per series made that
+            // misreading worse, not better: the outlines look like segment
+            // boundaries.) Each series now gets its own sub-slot within the time
+            // position, the group centred on the true x, which is the ordinary
+            // grouped-bar convention for comparing series at one time slot.
+            //
+            // A SINGLE series is byte-identical to before: one slot, centred on its
+            // true x, no offset. So no existing single-series chart moves.
             const baseY = Yof(yMin);
-            const bw = Math.max(3, Math.min(plotW / (n * 1.5), 26));
+            const nS = vs.length, slot = Math.max(2, Math.min(plotW / (n * 1.5), 26));
+            const bw = nS > 1 ? Math.max(2, slot / nS) : slot;
+            const si = vs.indexOf(s);
             for (const p of s.vis) {
-              const x = Xof(p.t), y = Yof(vt(pv(s, p)));
-              ctx.globalAlpha = 0.72; ctx.fillRect(x - bw / 2, y, bw, Math.max(0, baseY - y));
-              ctx.globalAlpha = 1;    ctx.fillRect(x - bw / 2, y - 1, bw, 2);
+              const cx = Xof(p.t);
+              // Clamp the GROUP, then offset within it — never the other way round.
+              // The first and last points sit exactly on the plot edges, so half a
+              // slot always fell outside; clipping is bad for one bar (the HEIGHT,
+              // which is the value, still reads correctly) and much worse for a group,
+              // where the outermost series can be cut away entirely and a reader who
+              // sees no bar concludes nothing was measured.
+              //
+              // The first fix clamped each series' OWN x0 independently, which
+              // reproduced that failure by another route: at the first slot, series 0
+              // and series 1 both clamped to exactly padL, drew on top of each other,
+              // and the later one hid the earlier — an invisible measurement, and not
+              // even hatched. Clamping the group's left edge keeps every sub-slot
+              // distinct by construction. Found by screenshotting the bars and
+              // counting pixels per group, not by reading the code.
+              const g0 = nS > 1
+                ? Math.max(padL, Math.min(cx - slot / 2, W - padR - slot))
+                : cx - slot / 2;
+              // A 1px inset so two adjacent bars have a real background gap between
+              // them rather than a shared anti-aliased edge.
+              const inset = nS > 1 ? 1 : 0;
+              const x0 = g0 + si * bw;
+              const y = Yof(vt(pv(s, p)));
+              const bwv = Math.max(1, bw - inset);
+              ctx.globalAlpha = 0.72; ctx.fillRect(x0, y, bwv, Math.max(0, baseY - y));
+              ctx.globalAlpha = 1;    ctx.fillRect(x0, y - 1, bwv, 2);
+              // The series' own marker above its bar, so identity survives greyscale
+              // here too — the fill colour alone cannot carry it (worst mutual
+              // separation between two series colours is 1.00:1).
+              if (nS > 1) _figMarkerCanvas(ctx, st.marker, x0 + bwv / 2, y - 6, 3.2);
             }
           } else {
             // One subpath PER RUN: the pen lifts across a hole instead of drawing a
             // measurement nobody took. ooChart always has a REAL time axis, so a
             // cadence gap counts here; the visible window is what is split, so
             // zooming into a quiet stretch still shows it as quiet, not as a line.
+            ctx.setLineDash(st.dash);
             ctx.beginPath();
             for (const run of _seriesRuns(s.vis, {timed: true})) {
               run.forEach((ix, i) => {
@@ -11313,8 +11748,21 @@
               });
             }
             ctx.stroke();
-            if (pxPer > 9) {                                 // honest dots on a roomy line
-              for (const p of s.vis) { ctx.beginPath(); ctx.arc(Xof(p.t), Yof(vt(pv(s, p))), 2, 0, 7); ctx.fill(); }
+            ctx.setLineDash([]);
+            // The honest dot on a roomy line, now carrying the series' own SHAPE — so
+            // identity survives greyscale, a colour-blind reader, and a dash pattern
+            // whose gap happens to land where you are looking.
+            //
+            // EVERY visible point still gets its mark, exactly as before. Spacing the
+            // glyphs out would have been the tidier drawing and is wrong twice: it
+            // thins what the chart states (invariant #16 — the full series renders
+            // within the visible window, and test_ui_invariants catches the `%
+            // every` that expresses it), and a reader who has learned that a dot
+            // means "measured here" would read the unmarked points as unmeasured.
+            if (pxPer > 9) {
+              for (const p of s.vis) {
+                _figMarkerCanvas(ctx, st.marker, Xof(p.t), Yof(vt(pv(s, p))), 3.2);
+              }
             }
           }
         }
@@ -11324,14 +11772,29 @@
           ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, H - padB); ctx.stroke(); ctx.setLineDash([]);
           ctx.beginPath(); ctx.arc(x, y, 4, 0, 7); ctx.stroke();
         }
+        // The legend glyph shows all three channels (colour + dash + marker), so the
+        // key itself is readable in greyscale. It is a <button>, not a clickable
+        // <span> with an inline onclick, so it keeps this component off the
+        // 'unsafe-inline' script-src debt instead of adding to it, and the toggle
+        // becomes keyboard-reachable with its pressed state announced.
+        //
+        // Careful: the loop below used to only ASSIGN elm._oo, and the inline
+        // `onclick="this._oo&&this._oo()"` was what invoked it \u2014 so that property was
+        // not a listener and dropping the inline attribute alone would have left the
+        // toggle dead. It is now a real addEventListener; _oo stays because
+        // ooChart re-renders the legend on every draw and the property is the
+        // per-element closure the listener calls.
         legend.innerHTML = vs.map((s) => {
           const i = all.indexOf(all.find(a => a.label === s.label));
-          return `<span style="cursor:pointer;${s.hidden ? "opacity:.4" : ""}" onclick="this._oo&&this._oo()" data-oo-leg="${i}">` +
-            `<span style="display:inline-block;width:14px;height:0;border-top:3px solid ${s.color};vertical-align:middle;margin-inline-end:4px"></span>` +
-            `${esc(s.label)} <span class="muted">n=${s.vis.length}${s.unit ? " \u00b7 " + esc(s.unit) : ""}</span></span>`;
+          const st = s.style || _figStyle(Math.max(i, 0));
+          return `<button type="button" class="fig-leg" data-oo-leg="${i}"` +
+            ` aria-pressed="${s.hidden ? "false" : "true"}"${s.hidden ? ' style="opacity:.4"' : ""}>` +
+            _figGlyph(Object.assign({}, st, {color: s.color})) +
+            `${esc(s.label)} <span class="muted">n=${s.vis.length}${s.unit ? " \u00b7 " + esc(s.unit) : ""}</span></button>`;
         }).join("");
         legend.querySelectorAll("[data-oo-leg]").forEach(elm => {
           elm._oo = () => { all[+elm.dataset.ooLeg].hidden = !all[+elm.dataset.ooLeg].hidden; draw(); };
+          elm.addEventListener("click", elm._oo);
         });
       }
       function nearest(ev) {
@@ -21330,6 +21793,18 @@
       // runs); the endpoint is server-cached (~30s) and dismissal is server-tracked,
       // so re-fetching never resurrects a dismissed card.
       try { if (_lastBriefGen !== null && typeof loadBriefing === "function") loadBriefing(); } catch (_e) {}
+      // The Composition figures are the same frozen-locale bug class as the Lead
+      // titles above, and for the same reason: a Library view renders ONCE
+      // (_libViewLoaded is a Set) and its labels are built at render time with t()
+      // and OOI18N.tf(). The DOM walker can re-translate an exact-key text node, but
+      // an already-INTERPOLATED tf() string ("top 3 sources hold 77.8% of articles")
+      // is no longer a key and stays in whatever locale first rendered it. Caught by
+      // screenshotting the panel in Arabic. Only re-renders if it has ever loaded.
+      try {
+        if (_libViewLoaded.has("composition") && typeof renderCompositionFigures === "function") {
+          renderCompositionFigures();
+        }
+      } catch (_e) {}
       // Re-translate the airplane button's JS-managed (data-i18n-dyn) title.
       try { if (_netOnline !== null && typeof _paintNetwork === "function") _paintNetwork(_netOnline); } catch (_e) {}
       // Re-render the AI prompt editor (remark 13): its labels are auto-translated by the
