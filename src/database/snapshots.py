@@ -440,8 +440,18 @@ def article_counts_by_language(
     # and getting the bucket arithmetic subtly wrong.
     clamped = bool(corpus_floor and corpus_floor > since)
 
+    # The axis runs to `now` OR to the newest bucket that actually holds data,
+    # whichever is later. They are normally the same; they diverge when a stored
+    # article carries a created_at ahead of the clock (skew, or a corpus restored
+    # from a machine that was ahead), and then a bucket counted in `total` would
+    # have no slot to be drawn in — a panel silently claiming more than its bars
+    # add up to.
     axis: list[datetime] = []
-    at, last = begins, _bucket_floor(now, bucket)
+    newest = max((slot for slots in per_lang.values() for slot in slots), default=None)
+    last = _bucket_floor(now, bucket)
+    if newest and newest > last:
+        last = newest
+    at = begins
     while at <= last:
         axis.append(at)
         at += step

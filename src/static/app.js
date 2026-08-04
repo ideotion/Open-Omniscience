@@ -8598,7 +8598,6 @@
     // lever's own blind spot), and where the series starts if the corpus is
     // younger than the window.
     const LIB_LANG_TOP_N = 12;
-    let _libLangData = null;
     // Pure, so the disclosures can be tested for what they SAY rather than for
     // which identifiers appear in the source. A substring guard over the tile
     // survives a mutation that leaves `d.other` in a variable binding and drops
@@ -8640,7 +8639,6 @@
           <b style="font-size:12.5px">${esc(label)}</b>
           <div class="note err" style="font-size:11px">${esc(e.message || e)}</div></div>`;
       }
-      _libLangData = d;
       // The panel label is the language NAME in the current UI locale, via the
       // browser's own CLDR data (ooLangName) — the code is what the lever keys on,
       // not what a reader should have to decode. Degrades to the code.

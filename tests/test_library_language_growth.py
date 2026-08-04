@@ -240,6 +240,24 @@ def test_a_window_inside_the_corpus_is_not_reported_as_clamped(db):
     assert out["clamped_to_corpus_start"] is False
 
 
+def test_every_counted_article_has_a_slot_to_be_drawn_in(db):
+    """A panel's stated total and its drawn bars must be the same number.
+
+    They diverge if the axis stops at ``now`` while an article carries a created_at
+    ahead of the clock -- skew, or a corpus restored from a machine that was ahead.
+    The article is counted (it is inside the window) and then has no bucket on the
+    axis, so the panel silently claims more than its bars add up to.
+    """
+    base = _isolated(db) + timedelta(hours=1)
+    src = _source(db)
+    _articles(db, src, lang="fi", at=base, n=2)
+    _articles(db, src, lang="fi", at=base + timedelta(hours=3), n=1)  # "ahead of the clock"
+
+    out = article_counts_by_language(db, days=1, now=base + timedelta(minutes=1))
+    panel = next(s for s in out["series"] if s["language"] == "fi")
+    assert sum(p["n"] for p in panel["points"]) == panel["total"] == 3
+
+
 def test_the_bucket_is_named_so_a_point_can_be_read(db):
     """Binning is permitted when labelled; downsampling is not. Every article in
     the window is still counted, in one bin or another -- the payload just has to
