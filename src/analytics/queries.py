@@ -277,6 +277,127 @@ def trend(session, term: str, *, bucket: str = "week", country: str | None = Non
     }
 
 
+# The brush cap. Bounds the id list a selection can hand to the analysis window, which
+# itself caps at 5000 (_SQLITE_SAFE_IN_CAP downstream) -- matching it here means the
+# disclosure is computed where the truncation happens, rather than silently downstream.
+_BRUSH_ID_CAP = 5000
+
+
+def trend_range_article_ids(
+    session,
+    term: str,
+    *,
+    start: date,
+    end: date,
+    cap: int = _BRUSH_ID_CAP,
+) -> dict:
+    """The articles behind a brushed span of a keyword trend chart.
+
+    WHY THIS RESOLVES ON ``observed_on`` AND NOT ON ``Article.published_at``. The chart's
+    x-axis IS ``KeywordMention.observed_on``, which is
+    ``(published_at or created_at).date()`` -- a coalesce. The date filter behind Advanced
+    search uses ``published_at`` alone, so an article whose publish date could not be
+    extracted is plotted on the chart and excluded by that filter. Resolving a brushed
+    range through the filter would therefore hand back fewer articles than the bars the
+    user just selected were counting, silently. Resolving it here, against the same column
+    and the same rows that produced the bar heights, makes the selection inherit the
+    chart's own definition of time by construction. The disagreement itself is pinned in
+    ``tests/test_chart_time_vs_filter_time.py``.
+
+    TWO NUMBERS, BOTH REPORTED, BECAUSE THEY ARE DIFFERENT QUANTITIES. A bar's height is a
+    MENTION total (``trend`` sums ``KeywordMention.count``); the selection is a set of
+    ARTICLES. One article mentioning a term three times contributes 3 to the bar and 1 to
+    the set. Reporting only one of them would let it stand for the other.
+
+    QUARANTINE. ``trend`` does not exclude quarantined articles (the standing gap recorded
+    in the GUI plan's 3.4), so a bar counts them -- but the analysis window this selection
+    opens filters them, because ``_query_articles`` always applies
+    ``Article.quarantined.isnot(True)``. Rather than let the user open a selection and
+    silently receive fewer rows, the excluded ones are removed HERE and counted in
+    ``quarantined_excluded`` so the number reported is the number that opens.
+
+    The quarantine check is deliberately a SECOND, bounded query rather than a join.
+    Joining ``keyword_mentions`` to ``articles`` for one small column is this project's
+    documented codec trap -- measured at ~26 s of a 32 s wall -- because it drags whole
+    article rows (content included) through the SQLCipher codec. Measured plans on a
+    120-day fixture: the id query is
+    ``SEARCH keyword_mentions USING INDEX ix_mention_keyword_date`` (a seek over small
+    mention rows), the mention total is index-only on ``ix_mention_date_keyword``, and the
+    quarantine check is index-only on ``idx_article_quarantined`` (SQLite carries the rowid
+    in every index, so ``(quarantined)`` covers ``(id, quarantined)``). The join variant
+    shows the trap explicitly as ``SEARCH articles USING INTEGER PRIMARY KEY (rowid=?)``.
+    """
+    kw = resolve_keyword(session, term)
+    if kw is None or start > end:
+        return {
+            "term": term,
+            "resolved": None,
+            "article_ids": [],
+            "articles": 0,
+            "mentions": 0,
+            "quarantined_excluded": 0,
+            "capped": False,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "method": _BRUSH_METHOD,
+            "caveat": _BRUSH_CAVEAT,
+        }
+
+    in_range = (
+        KeywordMention.keyword_id == kw.id,
+        KeywordMention.observed_on >= start,
+        KeywordMention.observed_on <= end,
+    )
+    ids = [
+        r[0]
+        for r in session.query(KeywordMention.article_id).filter(*in_range).distinct().all()
+    ]
+    mentions = int(
+        session.query(func.sum(KeywordMention.count)).filter(*in_range).scalar() or 0
+    )
+
+    # Bounded quarantine removal, chunked under SQLite's variable ceiling via the
+    # module's own _IN_CHUNK rather than a second copy of the same 900.
+    openable: list[int] = []
+    for i in range(0, len(ids), _IN_CHUNK):
+        chunk = ids[i : i + _IN_CHUNK]
+        rows = (
+            session.query(Article.id)
+            .filter(Article.id.in_(chunk), Article.quarantined.isnot(True))
+            .all()
+        )
+        keep = {r[0] for r in rows}
+        openable.extend(aid for aid in chunk if aid in keep)
+
+    excluded = len(ids) - len(openable)
+    capped = len(openable) > cap
+    return {
+        "term": term,
+        "resolved": {"term": kw.term, "normalized": kw.normalized_term, "kind": kind_of(kw)},
+        "article_ids": openable[:cap],
+        "articles": len(openable),
+        "mentions": mentions,
+        "quarantined_excluded": excluded,
+        "capped": capped,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "method": _BRUSH_METHOD,
+        "caveat": _BRUSH_CAVEAT,
+    }
+
+
+# Fixed strings so they are keyable for translation -- a value interpolated into either
+# would make the key vary per corpus and no locale entry could ever match it.
+_BRUSH_METHOD = (
+    "Articles whose mentions of this keyword fall in the selected span, matched on the "
+    "same article date the chart plots. Quarantined articles are excluded."
+)
+_BRUSH_CAVEAT = (
+    "A bar's height counts mentions, not articles: one article mentioning the term "
+    "several times raises the bar more than it adds to this selection."
+)
+
+
 def top_terms(
     session,
     *,
