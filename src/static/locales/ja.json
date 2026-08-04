@@ -2691,5 +2691,13 @@
   "unavailable (Tor/proxy)": "利用できません（Tor／プロキシ）",
   "unused keywords removed": "未使用のキーワードを削除しました",
   "watch only": "ウォッチのみ",
-  "— create, add, remove, delete": "— 作成・追加・除去・削除"
+  "— create, add, remove, delete": "— 作成・追加・除去・削除",
+  "Select a period": "期間を選択",
+  "Drag across the chart to open the articles in that period. Hold Shift to drag without switching mode.": "チャート上をドラッグすると、その期間の記事を開きます。Shift を押しながらドラッグするとモードを切り替えずに選択できます。",
+  "No articles in {from} → {to}.": "{from} ～ {to} に記事はありません。",
+  "{articles} articles · {mentions} mentions · {from} → {to}": "記事 {articles} 件 · 言及 {mentions} 件 · {from} → {to}",
+  "{n} quarantined, not included": "{n} 件は隔離中のため含まれません",
+  "showing the first 5000": "先頭 5000 件を表示",
+  "{term}: {from} → {to}": "{term}：{from} → {to}",
+  "Could not open that period": "この期間を開けませんでした"
 }
