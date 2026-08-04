@@ -8,11 +8,12 @@ app.js has no module boundaries and much of the UI contract is visible only in
 the source -- but it is only as sound as the slice it runs over, and the slice
 used to be re-derived per file. This module proves the shared slicer handles the
 three failure modes the ledger actually recorded, and ratchets the number of
-ad-hoc re-implementations so it can only go down.
+hand-rolled slicing SITES so it can only go down.
 """
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 
@@ -94,51 +95,95 @@ def test_a_comment_mentioning_a_call_does_not_satisfy_assert_present():
 
 # --- the ratchet ------------------------------------------------------------ #
 
-#: Local re-implementations of function-body slicing, counted 2026-08-04. The
-#: shared helper above is the correct one (promoted from test_bench_roster.py,
-#: the only local copy that balanced the parameter list). This number may only go
-#: DOWN: migrate a file to tests.js_source_helper and lower it.
-_ADHOC_SLICER_BUDGET = 0
+#: Hand-rolled source-slicing sites, counted 2026-08-04. This number may only go
+#: DOWN: migrate a slice to tests.js_source_helper and lower it.
+#:
+#: WHY IT IS NOT ZERO, AND WHY IT WAS. The first version of this ratchet read 0 --
+#: not because the tree was clean, but because its detector was a regex anchored to
+#: five hardcoded helper NAMES (_fn, _fn_body, _func_body, _paint_body, _body). It
+#: could not see a slice written inline (the common case: `html[a:b]`,
+#: `src.split("\n    function ")`), nor one in a helper named anything else. So it
+#: certified a budget of zero over 276 real sites, and its sibling
+#: "the budget is not left above the real count" agreed -- both sides computed from
+#: the same blind detector, which makes the pair a tautology rather than a check.
+#: That is the exact failure mode this module exists to document, committed into the
+#: module documenting it. The detector below tests the PROPERTY instead.
+_ADHOC_SLICER_BUDGET = 273
 
-_ADHOC = re.compile(
-    r"^def (?:_fn|_fn_body|_func_body|_paint_body|_body)\(.*?(?=^\S|\Z)",
-    re.MULTILINE | re.DOTALL,
-)
+#: A string literal that anchors into SOURCE CODE rather than into data. A
+#: `.index`/`.split`/`.find` taking one of these is slicing a program, which is the
+#: operation the shared helper exists to get right.
+_CODE_ANCHOR = re.compile(r"(?:^|\n)?\s*(?:async\s+)?(?:def |function |const |let |var |class )")
+
+_SLICING_CALLS = ("index", "find", "split", "rindex", "partition")
 
 
-#: The mechanics of slicing. A local helper containing any of these is doing the
-#: work itself; one that contains none is delegating.
-_SLICING_MECHANICS = ("depth", ".index(", ".split(", ".find(", "re.search(")
+def _anchor_literal(call: ast.Call) -> bool:
+    """Does this call take a code-anchor string? f-strings count -- the common
+    parametrised form is ``src.split(f"def {name}(")``, and reading only
+    ``ast.Constant`` would miss every one of them."""
+    for arg in call.args:
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            if _CODE_ANCHOR.search(arg.value):
+                return True
+        elif isinstance(arg, ast.JoinedStr):
+            for part in arg.values:
+                if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                    if _CODE_ANCHOR.search(part.value):
+                        return True
+    return False
 
 
-def _adhoc_sites() -> list[str]:
-    """Local helpers that still IMPLEMENT slicing.
+def _adhoc_sites() -> list[tuple[str, int, int]]:
+    """Every hand-rolled source-slicing site, wherever it is written.
 
-    Tested by the PROPERTY (does the body do brace/offset arithmetic?) rather than
-    by looking for a call to ``function_body`` -- several files import the shared
-    slicer under an alias, and a detector keyed to one spelling would report them
-    as re-derivations forever while a genuinely hand-rolled helper that happened to
-    call something named function_body would slip past.
-
-    A thin wrapper keeps its local name so call sites are untouched; that is not a
-    re-derivation and does not count.
+    HONEST LIMIT: this finds a slice whose anchor is a literal (or an f-string with
+    a literal part). A slice whose anchor is built entirely in a variable is not
+    detected -- so this is a floor, not a total. It is still the right shape: the
+    previous detector's limit was a list of five names, which is a floor of a
+    different and much smaller kind, and one that a rename defeats.
     """
-    out = []
+    out: list[tuple[str, int, int]] = []
     for path in sorted(_TESTS.glob("test_*.py")):
-        for m in _ADHOC.finditer(path.read_text(encoding="utf-8")):
-            body = m.group(0)
-            if any(tok in body for tok in _SLICING_MECHANICS):
-                out.append(path.name)
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr in _SLICING_CALLS
+                and _anchor_literal(node)
+            ):
+                out.append((path.name, node.lineno, node.col_offset))
     return out
+
+
+def test_the_detector_sees_an_inline_slice_not_just_a_named_helper():
+    """The mutation check on the ratchet itself: the shapes that were invisible.
+
+    Both of these are how the tree actually writes slices, and neither is inside a
+    helper whose name a regex could enumerate."""
+    inline = ast.parse('seg = JS[JS.index("function a"): JS.index("function b")]\n')
+    fstring = ast.parse('body = src.split(f"def {name}(", 1)[1]\n')
+    for tree in (inline, fstring):
+        calls = [
+            n
+            for n in ast.walk(tree)
+            if isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and n.func.attr in _SLICING_CALLS
+            and _anchor_literal(n)
+        ]
+        assert calls, ast.dump(tree)
 
 
 def test_adhoc_slicers_do_not_multiply():
     sites = _adhoc_sites()
     assert len(sites) <= _ADHOC_SLICER_BUDGET, (
-        f"{len(sites)} local source-slicers, budget {_ADHOC_SLICER_BUDGET}. Each "
-        f"re-derivation is a chance to reintroduce the default-parameter or "
-        f"over-run bug this module documents. Import tests.js_source_helper "
-        f"instead: {sorted(set(sites))}"
+        f"{len(sites)} hand-rolled source-slicing sites, budget "
+        f"{_ADHOC_SLICER_BUDGET}. Each one is a chance to reintroduce the "
+        f"default-parameter or over-run bug this module documents. Import "
+        f"tests.js_source_helper instead. New since the budget: "
+        f"{sorted(set(s for s, _, _ in sites))}"
     )
 
 

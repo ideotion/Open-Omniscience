@@ -14,8 +14,24 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from tests.js_source_helper import assert_absent as _assert_js_absent
+from tests.js_source_helper import assert_present as _assert_js_present
+from tests.js_source_helper import function_body as _js_function_body
+from tests.js_source_helper import strip_comments as _strip_js_comments
+
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"
+
+# Thinning a series -- what invariant #16's "never downsampled" forbids. A WINDOW
+# filter is deliberately absent from this list: "the FULL series within the VISIBLE
+# WINDOW" permits dropping points outside the window and nothing else.
+_DECIMATION = (
+    r"\bi\s*\+=\s*(?:step|stride|every|skip)\b",
+    r"%\s*(?:step|stride|every|skip)\b",
+    r"\(\s*\w+\s*,\s*i\s*\)\s*=>\s*i\s*%",  # .filter((p, i) => i % n === 0)
+    r"\b(?:maxPoints|MAX_POINTS|max_points|POINT_CAP)\b",
+    r"Math\.(?:ceil|floor|round)\(\s*\w+\.length\s*/",
+)
 
 # Conservative: a secret-like NAME assigned a non-trivial STRING LITERAL. Env reads,
 # ORM Column defaults, descriptions and placeholders are excluded so this stays
@@ -629,10 +645,19 @@ def test_world_map_near_time_capped_log_slider_and_no_download_confirm():
     assert "Math.min(win || _OOMAP_NEAR_YEARS, _OOMAP_NEAR_YEARS)" in app
     assert "Math.pow(_LOGB, 1 - frac)" in app, "the time slider is no longer logarithmic"
     # The OSM download keeps the network consent but dropped the redundant 'are you sure'.
-    osm = app.split("async function startOsmDownload(", 1)[1].split("\n    }", 1)[0]
-    assert 'ensureOnline("Download an offline map region")' not in osm or "ensureOnline" in osm
-    assert "confirm(t(\"Download this offline map region" not in osm, (
-        "the redundant map-download confirm should be gone (#15)"
+    #
+    # The first assertion here used to read
+    #     assert 'ensureOnline("Download an offline map region")' not in osm or "ensureOnline" in osm
+    # which is a TAUTOLOGY: the second needle is a substring of the first, so if the
+    # long form is present the short one necessarily is too, and if it is absent the
+    # first disjunct holds. True for every possible input; it could not fail even if
+    # the consent gate were deleted outright -- the one thing it is named for.
+    osm = _js_function_body(app, "startOsmDownload")
+    _assert_js_present(osm, "ensureOnline(", why="the ONE network consent must gate the map download")
+    _assert_js_absent(
+        osm,
+        'confirm(t("Download this offline map region',
+        why="the redundant map-download confirm should be gone (#15)",
     )
 
 
@@ -1514,7 +1539,14 @@ def test_gui_shutdown_button_and_endpoint():
     sysapi = (_SRC / "api" / "system.py").read_text(encoding="utf-8")
     assert 'id="app-shutdown"' in html and 'onclick="appShutdown()"' in html
     assert "async function appShutdown(" in app and "/api/system/shutdown" in app
-    assert "confirm(" in app, "a confirmation prompt must precede shutdown"
+    # Scoped to appShutdown's own body. Whole-file, `"confirm(" in app` matched ~30
+    # unrelated call sites, so the confirmation could be deleted from the shutdown
+    # path with the guard still green -- the one thing this test is named for.
+    _assert_js_present(
+        _js_function_body(app, "appShutdown"),
+        "confirm(",
+        why="a confirmation prompt must precede shutdown",
+    )
     assert '@router.post("/shutdown")' in sysapi and "confirmation required" in sysapi
     # the shutdown helper must require confirm + must not be the uninstall/panic path
     sd = (_SRC / "safety" / "shutdown.py").read_text(encoding="utf-8")
@@ -1530,10 +1562,11 @@ def test_uninstall_and_shutdown_replace_ui_with_terminal_overlay():
     assert "function _terminalOverlay(" in app
     assert "window.close()" in app, "best-effort close (works only for script-opened tabs)"
     # both the shutdown button and the uninstall flow use it
-    ov = app[app.index("function _terminalOverlay("):]
-    ov = ov[: ov.index("\n    }")]
+    ov = _js_function_body(app, "_terminalOverlay")
     assert "position:fixed;inset:0" in ov and "z-index:99999" in ov, "must cover/disable the UI"
-    assert "_terminalOverlay(" in app[app.index("async function appShutdown("):]
+    # Scoped to appShutdown's own body: slicing "from appShutdown to the END OF FILE"
+    # was satisfied by the uninstallApp call site ~6,500 lines later, all on its own.
+    _assert_js_present(_js_function_body(app, "appShutdown"), "_terminalOverlay(")
     assert "_terminalOverlay(" in app[app.index("async function uninstallApp("):]
 
 
@@ -2087,8 +2120,28 @@ def test_ui_invariants():
     #     curve interpolated" caveat is REMOVED app-wide, only n=x is kept. Both
     #     renderers (ooChart + dashChartSvg) share the _SPARSE_BAR_MAX threshold.
     assert "function ooChart(" in html, "the one chart toolkit must exist (CLAUDE.md #16)"
+    # The rule has two halves and they need two guards. This assertion used to be
+    # `"never downsampled" in html` with the message "must state AND implement" --
+    # but all three occurrences of that phrase are on `//` comment lines, so the
+    # implementation could be deleted with the comment left behind and the guard
+    # stayed green. It certified the sentence, not the behaviour.
     assert "never downsampled" in html, (
-        "the toolkit must state and implement the full-resolution rule (CLAUDE.md #16)"
+        "the toolkit must STATE the full-resolution rule in its own comment (CLAUDE.md #16)"
+    )
+    # ...and the other half, behaviourally. Decimation is what the rule forbids:
+    # index-strided sampling, a non-unit loop step over the points, or a cap on how
+    # many points may be drawn. A WINDOW filter (`p.t >= t0 && p.t <= t1`) is not
+    # decimation -- invariant #16 is "the full series WITHIN THE VISIBLE WINDOW" --
+    # so it must not trip this, and the assertion below pins that it is present.
+    for _fn in ("ooChart", "dashChartSvg"):
+        _renderer = _strip_js_comments(_js_function_body(html, _fn))
+        for _pat in _DECIMATION:
+            assert not re.search(_pat, _renderer), (
+                f"{_fn} must not thin the series ({_pat!r} — CLAUDE.md #16: the FULL "
+                f"series renders within the visible window)"
+            )
+    assert re.search(r"p\.t\s*>=\s*t0\s*&&\s*p\.t\s*<=\s*t1", html), (
+        "ooChart must keep the visible-window filter -- the one permitted reduction"
     )
     # Item Y: the n<10->bar rule is shared by both renderers, and the old sparse
     # caveat string is gone from the rendered UI (only the count n=x remains).
@@ -3826,7 +3879,13 @@ def test_markets_family_stacked_graphs():
     assert "indexed: opts.indexed !== false" in html, (
         "family graphs must default to the indexed (cross-magnitude) scale"
     )
-    assert 'class="card-caveat"' in html, "the families view must carry a VISIBLE caveat"
+    # Scoped: whole-file, `class="card-caveat"` matched 40+ unrelated surfaces, so the
+    # families view could lose its caveat entirely with the guard still green.
+    _assert_js_present(
+        _js_function_body(html, "renderFamilyGraphs"),
+        'class="card-caveat"',
+        why="the families view must carry a VISIBLE caveat",
+    )
     # families-first: the view DEFAULTS to families; the toggle UI is dropped
     assert 'let _mktView = "families"' in html, "the board must DEFAULT to the families view (P2-10)"
     assert 'tog.innerHTML = ""; tog.style.display = "none"' in html, (
@@ -4188,7 +4247,10 @@ def test_ooMap_choropleth():
     # SIGNED data (mean tone) rides a DIVERGING scale, never a one-sided ramp.
     assert "function _ooMapFillDiverging(t)" in html, "sentiment needs a diverging fill"
     assert 'opts.scale === "diverging"' in html, "the scale must branch to diverging for signed data"
-    assert "var(--err)" in html and "var(--ok)" in html, (
+    # Scoped to the ramp itself: whole-file, both tokens occur dozens of times across
+    # the UI, so the assertion said nothing about _ooMapFillDiverging.
+    _ramp = _js_function_body(html, "_ooMapFillDiverging")
+    assert "var(--err)" in _ramp and "var(--ok)" in _ramp, (
         "the diverging ramp must use the theme's err/ok hues"
     )
     # The sentiment dimension carries the VADER English-only caveat (B1), visible.
@@ -5248,7 +5310,14 @@ def test_world_law_renamed_governments_with_subtabs():
     # JS wiring: subtabs + the three loaders + the consented load + the map reuses ooMap.
     assert "function loadGovernments" in app and "function showGovView" in app
     assert "function loadGovCountry" in app and "function loadGovMap" in app
-    assert "govLoadStandard" in app and "ensureOnline" in app  # the ONE consent on the fetch
+    # Scoped to govLoadStandard's own body: `"ensureOnline" in app` matched the
+    # helper's own definition and ~50 other call sites, so it established nothing
+    # about the Governments fetch it is commented for.
+    _assert_js_present(
+        _js_function_body(app, "govLoadStandard"),
+        "ensureOnline(",
+        why="the ONE network consent must gate the standard-indicator fetch",
+    )
     assert "/api/governments/" in app and "await ooMap(" in app  # the map reuses ooMap
     # The label is keyed x12 (gate stays 100%).
     en = _json.loads((_ROOT / "src" / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
@@ -8418,4 +8487,28 @@ def test_the_scope_toggles_never_widen_what_the_engine_may_claim():
     )
     assert "ensureOnline" not in code, (
         "a loopback settings write must not demand the network-consent popup"
+    )
+
+
+def test_the_downsampling_guard_actually_bites():
+    """The mutation check on invariant #16's new behavioural half.
+
+    Its predecessor (``"never downsampled" in html``) passed against any tree that
+    kept the comment, so it never had to be true of the code. This proves the
+    replacement fires on the four shapes a real decimation takes -- and, in the
+    other direction, that a plain visible-window filter does NOT trip it, because a
+    guard that forbade windowing would forbid the invariant's own wording.
+    """
+    thinned = (
+        "for (let i = 0; i < pts.length; i += step) { draw(pts[i]); }",
+        "const shown = pts.filter((p, i) => i % stride === 0);",
+        "if (pts.length > maxPoints) pts = sample(pts);",
+        "const step = Math.ceil(pts.length / 400);",
+    )
+    for js in thinned:
+        assert any(re.search(p, js) for p in _DECIMATION), f"not detected: {js}"
+
+    windowed = "const vis = s.pts.filter(p => p.t >= t0 && p.t <= t1);"
+    assert not any(re.search(p, windowed) for p in _DECIMATION), (
+        "the visible-window filter is the one permitted reduction and must not trip"
     )
