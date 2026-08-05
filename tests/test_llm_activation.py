@@ -1165,3 +1165,89 @@ def test_a_dns_failure_is_named_rather_than_its_hundred_line_traceback():
     assert keys.index("offline") < keys.index("traceback")
     advice = next(a for k, _, a in vl._FATAL_SIGNATURES if k == "offline")
     assert "offline mode" in advice and "cached" in advice
+
+
+# --------------------------------------------------------------------------- #
+#  THE START JOURNAL
+#
+#  Operator ask 2026-08-05: "shouldn't we develop a diagnostic tool that would help
+#  identify the root cause of all of this?" Five rounds, five different artifacts,
+#  and the one that finally named a cause was install_attempts.jsonl -- a bounded
+#  journal in this very module. What had no journal was the START.
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def _journal(tmp_path, monkeypatch):
+    import src.llm.vllm_lifecycle as vl
+
+    monkeypatch.setattr(vl, "venv_dir", lambda: tmp_path)
+    vl._exits_noted.clear()
+    return vl
+
+
+def test_a_spawn_and_its_death_are_both_recorded_with_the_reason(_journal):
+    vl = _journal
+    vl._record_start_attempt({"at": 1.0, "event": "spawned", "pid": 7, "model": "org/M"})
+    vl._record_start_attempt(
+        {"at": 2.0, "event": "exited", "pid": 7, "returncode": 1,
+         "signature": "cuda-oom", "advice": "the GPU ran out of memory"}
+    )
+    hist = vl.start_history()
+    assert [r["event"] for r in hist] == ["spawned", "exited"]
+    assert hist[-1]["advice"] == "the GPU ran out of memory"
+    # It SURVIVES the process, which start_outcome() does not: read from the file.
+    assert vl.start_history()[-1]["signature"] == "cuda-oom"
+
+
+def test_the_journal_is_bounded_and_a_torn_line_is_skipped_not_fatal(_journal):
+    vl = _journal
+    for i in range(vl._ATTEMPTS_CAP + 5):
+        vl._record_start_attempt({"at": float(i), "event": "spawned", "pid": i})
+    assert len(vl.start_history()) == vl._ATTEMPTS_CAP
+    with vl._start_history_path().open("a", encoding="utf-8") as fh:
+        fh.write('{"at": 1, "event": "spa\n')  # a torn tail, as a crash would leave
+    assert len(vl.start_history()) == vl._ATTEMPTS_CAP, "a bad line is skipped, never raises"
+
+
+def test_repeated_deaths_are_named_a_loop_rather_than_reported_as_progress(_journal, monkeypatch):
+    """The field message: "vLLM is starting on <model>. A model load takes tens of
+    seconds" — reassuring, repeated, and wrong. The 3s watch cannot see a death at
+    t+40 and the recovery respawns every 30s against a 60-90s load, so a crash loop
+    and a healthy start are identical from there. Only the record separates them."""
+    vl = _journal
+    for pid in (1, 2, 3):
+        vl._record_start_attempt(
+            {"at": time.time(), "event": "exited", "pid": pid, "returncode": 1,
+             "advice": "The GPU ran out of memory while starting."}
+        )
+    _machine(monkeypatch, gpu=True, vllm_installed=True, model="org/Loop-3B")
+    kw = _spawns_vllm(monkeypatch, {"state": "starting", "pid": 9})
+    out = activation.ensure_running(**kw)
+    assert out["started"] is True and out["ready"] is False
+    assert out["crash_loop"]["exits"] == 3
+    assert "exited every time" in out["detail"]
+    assert "The GPU ran out of memory" in out["detail"], "and the last reason travels"
+    assert "takes tens of seconds" not in out["detail"], "which is no longer the truth"
+
+
+def test_but_one_earlier_failure_does_not_brand_the_next_start_a_loop(_journal, monkeypatch):
+    """The negative-space twin: an operator who FIXED the cause must get a fair start,
+    not a verdict inherited from the attempt they just repaired."""
+    vl = _journal
+    vl._record_start_attempt(
+        {"at": time.time(), "event": "exited", "pid": 1, "returncode": 1, "advice": "x"}
+    )
+    _machine(monkeypatch, gpu=True, vllm_installed=True, model="org/Fresh-3B")
+    kw = _spawns_vllm(monkeypatch, {"state": "starting", "pid": 9})
+    out = activation.ensure_running(**kw)
+    assert "crash_loop" not in out
+    assert "takes tens of seconds" in out["detail"]
+
+
+def test_an_old_failure_is_outside_the_window(_journal, monkeypatch):
+    """And a death from last week is history, not a live loop."""
+    vl = _journal
+    for pid in (1, 2, 3):
+        vl._record_start_attempt(
+            {"at": time.time() - 86400, "event": "exited", "pid": pid, "returncode": 1}
+        )
+    assert vl.recent_start_failures()["exits"] == 0

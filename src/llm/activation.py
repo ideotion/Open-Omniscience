@@ -484,15 +484,49 @@ def _after_vllm_spawn(
     elif state == "exited":
         upd.update(_vllm_exited(out, plan, outcome, wait=wait, timeout=timeout))
     else:
-        # Alive and not answering yet. The normal path for a model load, and the one
-        # case where "starting" is the honest word.
+        # Alive and not answering yet. The normal path for a model load -- UNLESS the
+        # journal says the same start has already died several times, in which case
+        # "starting" is the fabrication (field report 2026-08-05: "retrying in 60s
+        # (5/10)" with a reassuring sentence, against a server that kept dying). The
+        # 3s watch window cannot see a death at t+40, and the recovery respawns every
+        # 30s against a 60-90s load, so a crash loop and a healthy start look
+        # identical from here. Only the record tells them apart.
         upd["started"] = True
         upd["ready"] = False
         upd["detail"] = (
             f"vLLM is starting on {plan['model']}. A model load takes tens of "
             "seconds; the backend reports when it is answering."
         )
+        loop = _crash_loop()
+        if loop:
+            upd["crash_loop"] = loop
+            upd["detail"] = (
+                f"vLLM has been started {loop['exits']} times in the last "
+                f"{int(loop['within_s'] // 60)} minutes and its server exited every "
+                f"time (last exit code {loop['last_returncode']}), so this start is "
+                f"most likely going the same way rather than still loading."
+                + (f" {loop['last_reason']}" if loop.get("last_reason") else "")
+            )
     return upd
+
+
+#: How many recorded exits in the window make "still loading" the wrong word. Two, not
+#: one: a single earlier failure the operator has since FIXED must not brand the next
+#: start a loop before it has had its chance.
+_CRASH_LOOP_MIN_EXITS = 2
+
+
+def _crash_loop() -> dict | None:
+    """Recent repeated deaths, or None. Reads the journal ONLY -- a start that has not
+    been recorded as exiting is never called a failure."""
+    try:
+        from src.llm.vllm_lifecycle import recent_start_failures
+
+        loop = recent_start_failures()
+    except Exception as exc:  # noqa: BLE001 - a journal read must never break a start
+        _LOG.info("could not read the vLLM start journal: %s", exc)
+        return None
+    return loop if int(loop.get("exits") or 0) >= _CRASH_LOOP_MIN_EXITS else None
 
 
 #: How often a RUN that is already going may try to bring its backend back up.

@@ -2624,6 +2624,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     truncating). The test that proves it is the one that failed against my own first
     implementation. And prefer being stopped by a ratchet over lowering its budget: 233
     unchanged.
+  - **A PROBE WHOSE WINDOW IS SHORTER THAN THE FAILURE CANNOT TELL A CRASH LOOP FROM
+    PROGRESS — and the log that would say so is overwritten by the next attempt
+    (2026-08-05, the fifth round of "vLLM won't start"):** three instruments each held
+    part of the answer and none held it long enough. `start_outcome()` is process-local
+    and keeps only the LAST spawn, so a restart erases every death; `server.log` is
+    opened `"wb"` per start, so each attempt DESTROYS the evidence of the one before
+    it — the file whose entire job is explaining a failure is deleted by the next
+    failure; and the recovery re-attempts every 30 s while a load takes 60–90 s, so a
+    server dying at t+40 is respawned at t+60 and reports "starting" forever. The
+    operator read steady progress off a crash loop, and every word of it was
+    individually true. THE FIX IS A JOURNAL, and the reason to reach for one is that
+    the artifact which finally cracked this chain was `install_attempts.jsonl` — a
+    bounded append-only record already in the same module, whose value was proven the
+    round before. GENERAL FORM: when a diagnosis needs *what happened over time* rather
+    than *what is true now*, no amount of improving the point-in-time probe will do it;
+    and any per-attempt log opened for truncation is a point-in-time probe wearing a
+    file's clothes. TWO DESIGN POINTS worth reusing: recording a TRANSITION inside a
+    read-only probe (`start_outcome`) is a journal rather than a side effect — it is the
+    only place an exit is reliably observed — provided it is idempotent per pid, so a
+    status endpoint polled a hundred times writes one line. And the verdict threshold
+    is TWO exits, not one: an operator who has just FIXED the cause must get a fair
+    start rather than a verdict inherited from the attempt they repaired, which is the
+    fabricated-failure twin of the fabricated-progress being fixed.
 
 ## Open queue (when maintainer says proceed)
 - **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;

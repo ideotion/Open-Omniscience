@@ -756,7 +756,7 @@ def start_outcome() -> dict:
                 "tens of seconds; this is the normal path, not a failure"
             ),
         }
-    return {
+    out = {
         "state": "exited",
         "returncode": code,
         "detail": (
@@ -771,6 +771,29 @@ def start_outcome() -> dict:
         ),
         "log_path": str(server_log_path()),
     }
+    # JOURNAL THE EXIT, ONCE, AT THE MOMENT IT IS FIRST SEEN -- with the excerpt, because
+    # the next start opens server.log in "wb" and destroys it. A probe that records a
+    # TRANSITION is a journal, not a side effect; it is the only place an exit is
+    # reliably observed, and the per-pid guard means calling this a hundred times writes
+    # one line. Never raises (the recorder swallows), so a read stays a read.
+    pid = getattr(_proc, "pid", None)
+    if pid is not None and pid not in _exits_noted:
+        _exits_noted.add(pid)
+        excerpt = {}
+        try:
+            excerpt = failure_excerpt(limit=400)
+        except Exception:  # noqa: BLE001 - a log read must never break a status probe
+            excerpt = {}
+        _record_start_attempt({
+            "at": time.time(),
+            "event": "exited",
+            "pid": pid,
+            "returncode": code,
+            "signature": excerpt.get("signature"),
+            "advice": excerpt.get("advice"),
+            "excerpt": excerpt.get("excerpt"),
+        })
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -1040,6 +1063,95 @@ def vram_fit(model: str, vram_mb: int | None) -> dict:
     return {"verdict": verdict, "estimate": est, "vram_gb": vram_gb}
 
 
+# --------------------------------------------------------------------------- #
+#  START JOURNAL (field report 2026-08-05, and the operator's own ask: "shouldn't
+#  we develop a diagnostic tool that would help identify the root cause of all
+#  of this?")
+#
+#  Five rounds of "vLLM won't start" were each diagnosed from a DIFFERENT artifact,
+#  and the one that finally named the cause was install_attempts.jsonl -- a bounded
+#  append-only journal in this very module. What had no journal was the START, and
+#  starts are where this fails:
+#
+#    * ``start_outcome()`` is process-local and holds only the LAST spawn, so a
+#      restart erases every death;
+#    * ``server.log`` is opened "wb" per start, so each attempt DESTROYS the
+#      evidence of the one before it -- the file whose whole job is explaining a
+#      failure is overwritten by the next failure;
+#    * the recovery re-attempts every 30s while a load takes 60-90s, so a server
+#      that dies at t+40 is respawned at t+60 and reports "starting" forever. The
+#      operator sees steady progress and it is a crash loop.
+#
+#  So: record every spawn, and record its exit WITH the failure excerpt, at the
+#  moment the exit is first observed. Bounded and atomic exactly like the install
+#  journal, whose helpers this reuses.
+# --------------------------------------------------------------------------- #
+
+#: Exits already journalled, keyed by pid, so a probe called many times records a
+#: transition ONCE. Process-local: a restart re-reads the file, never re-writes it.
+_exits_noted: set[int] = set()
+
+
+def _start_history_path() -> Path:
+    return venv_dir() / "start_attempts.jsonl"
+
+
+def _record_start_attempt(record: dict) -> None:
+    """Append one bounded, atomic line. Never raises: a journal that can break the
+    thing it records is worse than no journal (the recorded crash-recovery lesson)."""
+    try:
+        path = _start_history_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        line = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(line + "\n")
+        lines = path.read_text(encoding="utf-8").splitlines()
+        if len(lines) > _ATTEMPTS_CAP:
+            _atomic_write_text(path, "\n".join(lines[-_ATTEMPTS_CAP:]) + "\n")
+    except Exception as exc:  # noqa: BLE001 - never break a start to record it
+        _LOG.info("could not record a vLLM start attempt: %s", exc)
+
+
+def start_history(limit: int | None = None) -> list[dict]:
+    """Every recorded spawn and exit, oldest first. Survives restarts, which is the
+    whole point: ``start_outcome()`` forgets on every boot."""
+    try:
+        raw = _start_history_path().read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    out: list[dict] = []
+    for ln in raw:
+        try:
+            rec = json.loads(ln)
+        except ValueError:
+            continue  # a torn tail line is skipped, never fatal
+        if isinstance(rec, dict):
+            out.append(rec)
+    return out[-limit:] if limit else out
+
+
+def recent_start_failures(within_s: float = 600.0) -> dict:
+    """Is this a slow load, or the same start dying over and over?
+
+    The distinction the operator could not make and neither could the app: with a
+    3s watch window and a 30s recovery interval against a 60-90s load, a crash loop
+    and a healthy start both read as "starting". Counting the JOURNAL tells them
+    apart -- and only ever from recorded exits, so "still loading" is never
+    fabricated into a failure.
+    """
+    now = time.time()
+    exits = [
+        r for r in start_history()
+        if r.get("event") == "exited" and (now - float(r.get("at") or 0)) <= within_s
+    ]
+    return {
+        "exits": len(exits),
+        "within_s": within_s,
+        "last_reason": (exits[-1].get("advice") or exits[-1].get("detail")) if exits else None,
+        "last_returncode": exits[-1].get("returncode") if exits else None,
+    }
+
+
 def _server_env() -> dict[str, str]:
     """The environment the SERVER is spawned with: the app's model store, plus offline.
 
@@ -1166,6 +1278,13 @@ def start(
     # disagree about where the weights are.
     proc = run(argv, stdout=out, stderr=subprocess.STDOUT, env=_server_env())  # noqa: S603
     _proc = proc
+    _record_start_attempt({
+        "at": time.time(),
+        "event": "spawned",
+        "pid": getattr(proc, "pid", None),
+        "model": model,
+        "server_args": args,
+    })
     return {
         "started": True,
         "model": model,
@@ -1252,6 +1371,11 @@ def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
         # "not running", with the reason discarded to DEVNULL and unrecoverable.
         # `installed and not running` is precisely when an operator needs it.
         "server_log": server_log_tail(),
+        # THE START JOURNAL, beside the install one. start_outcome() forgets on every
+        # boot and server.log is overwritten by the next attempt, so this is the only
+        # durable record of a start that keeps dying.
+        "start_history": start_history(limit=history_limit),
+        "recent_start_failures": recent_start_failures(),
         "verified_version": VLLM_VERIFIED_VERSION,
         "verified_as_of": VLLM_VERIFIED_AS_OF,
         "estimated_size_note": ESTIMATED_INSTALL_SIZE_NOTE,
