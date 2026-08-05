@@ -4344,3 +4344,82 @@ so nothing that already resolved by day changes. The client preview snaps throug
 widening, because previewing the raw gesture while the result reports a widened one is two
 answers to one action — the same preview-versus-action divergence the shared day formatter
 had already fixed once in this component, which is exactly why it should not have recurred.
+
+## 2026-08-04 — Scoping a chart, and finding six defects under it
+
+The plan's C7 (a per-source qualification timeline) and F5 (extract hover/zoom from
+`ooChart`) both came back REFUSED on evidence, recorded in the plan itself. What shipped
+instead is the chain of defects that scoping C7 walked into. One `shipped.csv` row carries
+the detail; this entry records what is reusable.
+
+**A METRIC KEY CAN BE A MISNOMER THAT MUST NOT BE FIXED BY REDEFINING IT.**
+`_count_sources_never_judged` counts `status == 'unqualified'`, and
+`log_no_evidence_attempts` writes a `no_evidence` attempt row while deliberately leaving
+status alone — that is the whole reason it exists. So an ENABLED source with no feed is
+tried on every rotation of the queue and sat in a line labelled "Never judged". The
+tempting repair is to make the key mean what its name says; that is the wrong one, because
+the snapshot store has INFINITE retention and changing what an existing key measures makes
+its own history incomparable with its future — a silent break in a time series, which is a
+second honesty defect layered on the first. Freeze the definition, fix the LABEL, and add
+a new key for the honest count. The general form: when a name and a measurement disagree
+and the measurement has history, the name is the thing you are allowed to change.
+
+**A FIX THAT MAKES TWO TEXTS AGREE CAN DO IT BY DELETING ONE.** An earlier fix cured a
+real bug — a per-mode caveat went stale when the scale toggled and contradicted the hint
+above it — by making the note mirror `HINTS[mode]`. The line it left was
+`note.textContent = HINTS[mode] || caveat`, and `HINTS[mode]` is non-empty for all three
+modes, so `|| caveat` was dead code and every `{scales: true}` caller silently lost its
+caveat. Two of them were mode-INDEPENDENT statements that had nothing to do with the
+toggle. Two statements of different KINDS need two slots; putting both through one slot
+means the volatile one always wins. Found by opening the modal in a browser and reading
+its last line, which was the scale hint where the caveat should have been.
+
+**CLAMPING log(0) FABRICATES AN AXIS, and refusing a mode means not offering it.**
+`vt(v) = log10(max(v, 1e-9))` looks like defensive coding and its guard even said "never
+crash on a zero/negative". Measured on four integer series in 0..6 with zeros at the start:
+the axis spanned log-space −9..0.78, so the real differences occupied about 5% of the plot,
+`honestTicks` labelled log-space ticks back through `vtInv` and printed `0.003` and TWO
+`0` gridlines — none of them values a count can take — and every true zero was drawn as a
+plotted point on the floor with a line through it. It had been invisible because `logY`
+shipped for the markets boards, where an index value is never 0; a caller whose values
+legitimately start at zero is what exposes it. Refuse the mode, fall back to the axis the
+data deserves, and say so. Then the follow-on: leaving the control enabled put two
+statements on screen at once — a hint claiming "equal ratios are equal distances" above a
+chart that had drawn linear and said so. The chart-level refusal is the load-bearing guard
+because it cannot be bypassed; disabling the control is what stops the contradiction being
+reachable. And test the OTHER direction, in a browser: a positive-only series must still
+get a working log mode, or the fix has quietly removed a capability.
+
+**A SENTENCE WITH AN INTERPOLATED COUNT CANNOT CONJUGATE.** The composition note read
+"1 have never been attempted", and the French carried the identical error — which is the
+tell that it is the TEMPLATE, not the translation. Per-form keys are not the answer either:
+Russian has three plural forms and Arabic six, and this app has no CLDR plural rules. Phrase
+a value-bearing string as label:value and nothing conjugates, so every locale is correct by
+construction. (The participles in the fr/es/pt renderings agree with the CATEGORY, not with
+the number, which is why they survive.) Caught by an adversarial critic reading the rendered
+screenshot; no mechanical check could see it, because every locale was present, non-empty,
+in the right script, and a plausible translation.
+
+**AN LTR-SHAPED VALUE INTERPOLATED INTO A TRANSLATED SENTENCE NEEDS A BIDI ISOLATE.**
+Measured in the real Arabic page by reading each character's rendered x position: the Arabic
+prefix plus an ISO timestamp comes out in visual order `.07T18:00:00-07-2026` — the year at
+the wrong end, a MISREAD date rather than an ugly one. `U+2068` … `U+2069` around the value
+gives `.2026-07-07T18:00:00`. They are plain characters, so they survive `esc()` and work
+anywhere a string is interpolated, and they are inert in LTR locales. It is
+punctuation-joined runs that need it — dates, versions, IDs, URLs, ranges — not a bare
+number, so a lone count does not get one.
+
+**AND THE RECURRENCE WORTH THE MOST.** The frozen-locale class (an interpolated `tf()`
+string is no longer a key the DOM walker can match, and a Library view renders once)
+recurred the moment a new interpolated string was added to a render-once surface — even
+though the `oo:langchange` handler already registered a sibling view for exactly this
+reason, with the reason written above it. A recorded lesson does not propagate itself to
+the next surface; only a guard does, so the registration is now asserted.
+
+**A postscript on the tooling.** The slicing ratchet rejected three hand-rolled slices in
+the new test file — the class it exists to stop, from someone who had read it — and writing
+the shared shape it asked for immediately exposed that raw brace-matching truncates on a `}`
+inside a string value. So `object_literal` landed with a string-, template- and
+comment-aware scanner that `array_literal` now shares, and the test that proves it is the
+one that failed against my own first implementation. Prefer being stopped by a ratchet over
+lowering its budget: the budget is unchanged at 233.

@@ -7,8 +7,9 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 app.js has no module boundaries and much of the UI contract is visible only in
 the source -- but it is only as sound as the slice it runs over, and the slice
 used to be re-derived per file. This module proves the shared slicer handles the
-three failure modes the ledger actually recorded, and ratchets the number of
-hand-rolled slicing SITES so it can only go down.
+failure modes the ledger actually recorded -- one per SHAPE, since each shape has
+its own way of truncating -- and ratchets the number of hand-rolled slicing SITES
+so it can only go down.
 """
 
 from __future__ import annotations
@@ -20,10 +21,12 @@ from pathlib import Path
 import pytest
 
 from tests.js_source_helper import (
+    array_literal,
     assert_absent,
     assert_present,
     css_rule,
     function_body,
+    object_literal,
     python_function_source,
     read_static,
     strip_comments,
@@ -69,6 +72,36 @@ def test_the_body_does_not_over_run_into_the_next_function():
     body = function_body(js, "first")
     assert "mine" in body
     assert "theirs" not in body and "helper" not in body
+
+
+def test_a_bracket_in_an_element_does_not_truncate_an_array_slice():
+    """The fourth shape. ``_FIG_STYLES`` was sliced ``index("const _FIG_STYLES = [")`` to
+    ``index("];")``, which is correct only while no element contains that pair first --
+    and its elements are themselves arrays."""
+    js = 'const T = [\n  {dash: [2, 3]},\n  {dash: []},\n];\nconst AFTER = 1;\n'
+    src = array_literal(js, "T")
+    assert src.count("dash") == 2, src
+    assert "AFTER" not in src
+
+
+def test_a_brace_in_a_value_does_not_truncate_an_object_slice():
+    """The fifth shape, produced by this module's own ratchet stopping the author of the
+    fourth. A guard over ``LIB_QUAL_LABELS`` sliced it to the first ``}``; a value holding
+    a nested object, a template literal, or that character inside a string truncates it,
+    and every assertion over the fragment passes for free."""
+    js = 'const L = {\n  a: "x}y",\n  b: {nested: 1},\n  c: "last",\n};\nconst AFTER = 1;\n'
+    src = object_literal(js, "L")
+    assert '"last"' in src, src
+    assert "AFTER" not in src
+    # And the sibling failure: slicing to the NEXT declaration by name is correct only
+    # while the two stay adjacent, in that order.
+    assert object_literal("const B = {q: 1};\nconst A = {p: 2};\n", "A") == "{p: 2}"
+
+
+def test_an_empty_literal_slice_raises_rather_than_passing_vacuously():
+    for fn, kind in ((array_literal, "array"), (object_literal, "object")):
+        with pytest.raises(AssertionError, match=f"no {kind} literal named"):
+            fn("const other = 1;", "missing")
 
 
 def test_a_must_be_gone_guard_ignores_the_comment_that_explains_the_removal():
