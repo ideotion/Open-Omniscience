@@ -1090,9 +1090,13 @@ def _recovery_clause(recovery: Mapping[str, object] | None) -> str | None:
     """The words for what a recovery attempt did, or None when it did nothing worth
     saying. Kept separate so the composition rule above reads as three cases rather
     than three nested conditionals."""
-    if not recovery or not recovery.get("attempted"):
+    if not recovery:
         return None
     detail = str(recovery.get("detail") or "").strip()
+    if not detail:
+        # Nothing was attempted, or an attempt that had nothing to say. Either way the
+        # line is what it was -- and the byte-identical guarantee below depends on it.
+        return None
     if recovery.get("started") or recovery.get("ready"):
         return detail or "the app is starting it now"
     # Tried and could not. A blocker in the operator's hands beats a generic apology;

@@ -219,6 +219,18 @@ _FATAL_SIGNATURES: tuple[tuple[str, str, str], ...] = (
     ),
     ("cuda-oom", "torch.AcceleratorError", ""),
     (
+        # Ahead of the generic traceback entry, because the traceback this produces is
+        # a hundred lines of httpx/huggingface_hub ending in "Cannot send a request,
+        # as the client has been closed" -- true, and not the reason.
+        "offline",
+        "Temporary failure in name resolution",
+        "The server could not reach huggingface.co to revalidate the model's metadata. "
+        "That lookup is not needed when the weights are already cached, and the app now "
+        "starts the server in Hugging Face's offline mode so it cannot happen; a log "
+        "showing this came from a build before that fix, or from a server started "
+        "outside the app.",
+    ),
+    (
         "port-taken",
         "Address already in use",
         "Something is already listening on vLLM's port.",
@@ -1028,6 +1040,45 @@ def vram_fit(model: str, vram_mb: int | None) -> dict:
     return {"verdict": verdict, "estimate": est, "vram_gb": vram_gb}
 
 
+def _server_env() -> dict[str, str]:
+    """The environment the SERVER is spawned with: the app's model store, plus offline.
+
+    Field report 2026-08-05, and the fourth cause in this chain. The weights were
+    cached and the server still died at startup::
+
+        Error retrieving file list: [Errno -3] Temporary failure in name resolution
+        ... thrown while requesting HEAD
+        https://huggingface.co/<repo>/resolve/main/preprocessor_config.json
+
+    huggingface_hub revalidates repo METADATA over the network even when every weight
+    is in the cache, so a machine with no clearnet -- which is this app's normal state
+    -- lost the start to a DNS failure over a file it did not need.
+
+    OFFLINE IS THE HONEST SETTING HERE, not merely the working one. Activation already
+    REFUSES to start on uncached weights precisely so the server never fetches several
+    GB from a subprocess this app's socket guard cannot see; without these flags that
+    promise held only for the weights themselves, and only because DNS happened to
+    fail. Now the subprocess cannot reach out at all, and an uncached model fails fast
+    and locally instead of quietly downloading.
+
+    NOT in ``launch_env()``, deliberately: the weights DOWNLOAD shares that helper and
+    must be online. Serve is offline, download is online, and they differ by exactly
+    this function.
+
+    The usage-stats opt-outs are the documented vLLM names for a reporter that is
+    opt-OUT by default. This project sends no telemetry, and a bundled subprocess
+    doing so on its behalf is the same thing wearing a different process id.
+    """
+    from src.llm.model_store import launch_env
+
+    env = launch_env()
+    env["HF_HUB_OFFLINE"] = "1"
+    env["TRANSFORMERS_OFFLINE"] = "1"
+    env["VLLM_NO_USAGE_STATS"] = "1"
+    env["DO_NOT_TRACK"] = "1"
+    return env
+
+
 def start(
     model: str,
     *,
@@ -1113,9 +1164,7 @@ def start(
     # huggingface_hub, which honours it, so this is the whole mechanism -- and it must
     # be the SAME answer ``hf_cache_dir()`` gives, or a probe and a download would
     # disagree about where the weights are.
-    from src.llm.model_store import launch_env
-
-    proc = run(argv, stdout=out, stderr=subprocess.STDOUT, env=launch_env())  # noqa: S603
+    proc = run(argv, stdout=out, stderr=subprocess.STDOUT, env=_server_env())  # noqa: S603
     _proc = proc
     return {
         "started": True,
