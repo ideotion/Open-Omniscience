@@ -8641,3 +8641,20 @@ def test_the_no_score_guard_actually_bites():
         assert _score_leak(js) is not None, f"not detected: {js}"
     assert _score_leak('t("there is no winner and no composite score.")') is None
     assert _score_leak('t("an exact count, never a score.")') is None
+
+
+def test_the_ai_store_panel_leads_with_the_path_in_use():
+    """Field report 2026-08-04: models found in ~/.ollama that the operator believed
+    the app had put there. It had not — an `ollama pull` is served by the daemon,
+    which writes to its OWN OLLAMA_MODELS — but the panel's headline line printed the
+    app's configured path and the app's configured size, so the numbers pointed away
+    from the answer and the folder had to be found in a file manager."""
+    app = (Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_text()
+    body = _js_function_body(app, "loadAiStore")
+    assert "r.ollama.in_app_folder === false" in body, "the two cases must be told apart"
+    assert "r.ollama.detected" in body and "r.ollama.detected_bytes" in body, (
+        "the path IN USE, sized by what it actually holds"
+    )
+    # And the app folder is still named, labelled for what it is — hiding it would
+    # trade one confusion for another (where SHOULD they be?).
+    assert "r.ollama.configured" in body

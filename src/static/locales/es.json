@@ -205,6 +205,8 @@
   "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.": "El modo automático prefiere vLLM donde puede ejecutarse — necesita una GPU dedicada y permite peticiones simultáneas — y usa Ollama en los demás casos. Su elección siempre prevalece sobre esa preferencia.",
   "Models are stored in": "Los modelos se almacenan en",
   "Move them into the app folder": "Moverlos a la carpeta de la aplicación",
+  "in use": "en uso",
+  "app folder, not in use": "carpeta de la aplicación, sin usar",
   "Copy the existing models into the app folder? Nothing is deleted — the originals stay where they are until you remove them yourself.": "¿Copiar los modelos existentes a la carpeta de la aplicación? No se borra nada: los originales permanecen donde están hasta que los elimine usted.",
   "Copying…": "Copiando…",
   "Could not copy the models.": "No se pudieron copiar los modelos.",

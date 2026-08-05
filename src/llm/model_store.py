@@ -173,6 +173,12 @@ def store_report() -> dict:
             "detected": str(detected),
             "in_app_folder": same,
             "bytes": _store_size(configured_ollama),
+            # The size of the store ACTUALLY IN USE, which is a different number
+            # whenever a foreign daemon owns it -- and the interesting one, because
+            # the configured folder is then near-empty while the real store holds
+            # every model. Reporting only the configured size next to a path label
+            # reads as "you have no models" to an operator who has twenty GB of them.
+            "detected_bytes": _store_size(configured_ollama) if same else _store_size(detected),
             "legacy_bytes": None if same else _store_size(detected),
             "operator_override": bool((os.getenv("OLLAMA_MODELS") or "").strip()),
         },

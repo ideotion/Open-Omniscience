@@ -321,3 +321,53 @@ def test_a_started_download_is_still_not_a_cached_model(app_dir, monkeypatch):
     monkeypatch.setenv("XDG_CACHE_HOME", str(app_dir / "xdg"))
     (app_dir / "xdg" / "huggingface" / "hub" / "models--org--M" / "snapshots").mkdir(parents=True)
     assert model_cache_state("org/M")["cached"] is False
+
+
+# --------------------------------------------------------------------------- #
+#  The store IN USE, with the size that belongs to it
+#
+#  Field report 2026-08-04: "when going inside the .ollama/models folder, I still see
+#  several models. It seems the app downloaded the models into this folder." It did
+#  not -- an `ollama pull` is served by the DAEMON, which writes to its own
+#  OLLAMA_MODELS, and a systemd-managed daemon never sees the app's. The panel said
+#  so in prose while its headline line printed the configured path and the configured
+#  size, so the numbers pointed away from the answer.
+# --------------------------------------------------------------------------- #
+def test_the_report_sizes_the_store_that_is_actually_in_use(tmp_path, monkeypatch):
+    from src.llm import model_store
+
+    app = tmp_path / "app"
+    foreign = tmp_path / "home" / ".ollama" / "models"
+    (foreign / "blobs").mkdir(parents=True)
+    (foreign / "blobs" / "sha256-abc").write_bytes(b"x" * 4096)
+    monkeypatch.setattr(model_store, "data_dir", lambda: app)
+    monkeypatch.delenv("OLLAMA_MODELS", raising=False)
+    monkeypatch.delenv("HF_HOME", raising=False)
+    monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+    monkeypatch.setattr("src.backup.ollama_models.default_store", lambda: foreign)
+
+    r = model_store.store_report()["ollama"]
+    assert r["in_app_folder"] is False
+    assert r["detected"] == str(foreign)
+    assert r["detected_bytes"] == 4096, "the size of the store that HOLDS the models"
+    assert r["bytes"] in (0, None), "the app folder is empty, and says so"
+    assert "Migrate the store" in r["note"]
+
+
+def test_and_one_store_reports_one_size(tmp_path, monkeypatch):
+    """The twin: when the app folder IS the store, the two numbers are the same fact
+    and a second differing figure would invent a distinction that does not exist."""
+    from src.llm import model_store
+
+    app = tmp_path / "app"
+    monkeypatch.setattr(model_store, "data_dir", lambda: app)
+    monkeypatch.delenv("OLLAMA_MODELS", raising=False)
+    store = app / "models" / "ollama"
+    (store / "blobs").mkdir(parents=True)
+    (store / "blobs" / "sha256-def").write_bytes(b"y" * 2048)
+    monkeypatch.setattr("src.backup.ollama_models.default_store", lambda: store)
+
+    r = model_store.store_report()["ollama"]
+    assert r["in_app_folder"] is True
+    assert r["detected_bytes"] == r["bytes"] == 2048
+    assert "note" not in r, "nothing to explain when there is nothing to reconcile"

@@ -205,6 +205,8 @@
   "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.": "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.",
   "Models are stored in": "Models are stored in",
   "Move them into the app folder": "Move them into the app folder",
+  "in use": "in use",
+  "app folder, not in use": "app folder, not in use",
   "Copy the existing models into the app folder? Nothing is deleted — the originals stay where they are until you remove them yourself.": "Copy the existing models into the app folder? Nothing is deleted — the originals stay where they are until you remove them yourself.",
   "Copying…": "Copying…",
   "Could not copy the models.": "Could not copy the models.",
