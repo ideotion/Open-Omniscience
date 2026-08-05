@@ -828,6 +828,42 @@ _GRAPH_POOL_RESERVE_GB = 1.5
 #: the smallest cards -- which is what shipped -- is the wrong direction to be bold in.
 _MAX_GPU_UTILIZATION = 0.90
 
+#: At or below this much VRAM, skip CUDA-graph capture entirely (``--enforce-eager``).
+#:
+#: This is the SECOND, independent answer to the same field failure
+#: :data:`_GRAPH_POOL_RESERVE_GB` addresses, and the two are deliberately not
+#: alternatives: the reserve makes capture AFFORDABLE, eager mode makes it
+#: UNNECESSARY. On the 8 GiB card this app is designed around, capture died with
+#: ``cudaErrorMemoryAllocation`` at 86% of 51 graphs -- and the reserve that now
+#: guards it is a judgement (its own docstring says so), never a measurement that
+#: capture succeeds. Where the two costs are decode speed versus a server that does
+#: not start, the small card should not be asked to gamble.
+#:
+#: THE RESERVE IS NOT RECLAIMED when eager mode is on, and that is deliberate rather
+#: than an oversight a later session should "fix": the pool disappears but allocator
+#: fragmentation does not, and buying back ~0.7 GiB of KV by loosening a safety number
+#: — on the exact card that has been failing to start — would be reasoning where a
+#: measurement belongs. If context length on small cards ever needs the room, measure
+#: first; the operator override is there in the meantime.
+#:
+#: NOT applied above the threshold, and that is half the point: a large card can
+#: afford the graph pool, and slowing every big GPU to protect a small one would be
+#: a fabricated cost. 10 GB sits above the measured failure (8 GiB) and below the
+#: 12 GB class, so a card that comfortably holds weights + KV + graphs keeps them.
+_EAGER_MAX_VRAM_GB = 10.0
+
+
+def _eager_default(vram_mb: int | None) -> bool:
+    """Whether to skip CUDA-graph capture for a card of this size.
+
+    An UNREADABLE card returns True for the same reason the no-VRAM branch of
+    :func:`compute_server_args` returns conservative numbers: a card we cannot
+    measure could be a small one, and the small card is the case that fails to
+    start."""
+    if not vram_mb or vram_mb <= 0:
+        return True
+    return (vram_mb / 1024.0) <= _EAGER_MAX_VRAM_GB
+
 
 def compute_server_args(
     vram_mb: int | None,
@@ -836,10 +872,11 @@ def compute_server_args(
     kv_cache_reserve_frac: float = 0.15,
     max_model_len_override: int | None = None,
     gpu_memory_utilization_override: float | None = None,
+    enforce_eager_override: bool | None = None,
 ) -> dict:
-    """Compute ``--max-model-len`` and ``--gpu-memory-utilization`` from detected VRAM
-    (pure, testable). Returns ``{"max_model_len", "gpu_memory_utilization", "method",
-    "caveat"}``; an explicit override for either field is honoured verbatim.
+    """Compute the VRAM-dependent server flags from detected VRAM (pure, testable).
+    Returns ``{"max_model_len", "gpu_memory_utilization", "enforce_eager", "method",
+    "caveat"}``; an explicit override for any field is honoured verbatim.
 
     THE TWO VALUES ARE DERIVED SEPARATELY, and saying so is the correction here. They
     answer different questions and scale differently:
@@ -851,6 +888,9 @@ def compute_server_args(
       * ``max_model_len`` is how long one sequence may be, which the KV budget bounds --
         and that IS what is left after the weights, so it keeps the post-weights
         derivation.
+      * ``enforce_eager`` is whether to capture CUDA graphs at all, which is a
+        threshold question about the card rather than a budget split (see
+        :data:`_EAGER_MAX_VRAM_GB`).
 
     Deriving BOTH from weights + KV, as this used to, produced a utilization that ROSE
     as the card shrank (0.95 at 6 GB, 0.86 at 80 GB): the fixed weight reserve was added
@@ -871,17 +911,34 @@ def compute_server_args(
         f"capture and fragmentation need, which does not shrink with the card. "
         f"max_model_len = (VRAM − {weight_footprint_gb} GB for weights, less "
         f"{kv_cache_reserve_frac:.0%} headroom) ÷ {_KV_MB_PER_TOKEN} MB/token (a 7B-class "
-        f"fp16 multi-head figure, deliberately conservative), floored at 2048, capped at 32768."
+        f"fp16 multi-head figure, deliberately conservative), floored at 2048, capped at 32768. "
+        f"enforce_eager (skip CUDA-graph capture) is set at or below {_EAGER_MAX_VRAM_GB} GB of "
+        f"VRAM and left off above it — capture died at 86% of 51 graphs on an 8 GiB card, and "
+        f"skipping it costs decode speed rather than a server that never starts."
     )
     caveat = (
         "A conservative, DISCLOSED heuristic — not a measured fact. Override "
-        "either value in Settings if the server OOMs or under-uses the GPU."
+        "any of these in Settings if the server OOMs or under-uses the GPU."
     )
+    if enforce_eager_override is not None:
+        eager, eager_how = enforce_eager_override, "enforce_eager set by the operator"
+    else:
+        eager = _eager_default(vram_mb)
+        eager_how = (
+            "CUDA-graph capture skipped (an unreadable card could be a small one)"
+            if not vram_mb or vram_mb <= 0
+            else f"CUDA-graph capture {'skipped' if eager else 'kept'} "
+            f"(VRAM {'at or below' if eager else 'above'} {_EAGER_MAX_VRAM_GB} GB)"
+        )
     if max_model_len_override is not None and gpu_memory_utilization_override is not None:
+        # The method must not claim "verbatim" for a value nobody overrode: with both
+        # context flags set but enforce_eager left alone, that third value is still
+        # derived, and saying otherwise would misreport how it was reached.
         return {
             "max_model_len": max_model_len_override,
             "gpu_memory_utilization": gpu_memory_utilization_override,
-            "method": "operator override (verbatim)",
+            "enforce_eager": eager,
+            "method": f"operator override (verbatim); {eager_how}",
             "caveat": caveat,
         }
     if not vram_mb or vram_mb <= 0:
@@ -891,7 +948,8 @@ def compute_server_args(
         return {
             "max_model_len": max_model_len_override or 4096,
             "gpu_memory_utilization": gpu_memory_utilization_override or 0.80,
-            "method": "no VRAM reading available -- a conservative fixed default",
+            "enforce_eager": eager,
+            "method": f"no VRAM reading available -- a conservative fixed default; {eager_how}",
             "caveat": caveat,
         }
     vram_gb = vram_mb / 1024.0
@@ -924,6 +982,7 @@ def compute_server_args(
     return {
         "max_model_len": max_len,
         "gpu_memory_utilization": gpu_util,
+        "enforce_eager": eager,
         "method": method,
         "caveat": caveat,
     }
@@ -939,6 +998,7 @@ def server_argv(
     port: int | None = None,
     max_model_len: int | None = None,
     gpu_memory_utilization: float | None = None,
+    enforce_eager: bool = False,
 ) -> list[str]:
     """Build the server command line (pure -- testable without a real venv).
     Prefers the ``vllm`` console script installed in the managed venv (the
@@ -962,6 +1022,10 @@ def server_argv(
         argv += ["--max-model-len", str(max_model_len)]
     if gpu_memory_utilization is not None:
         argv += ["--gpu-memory-utilization", str(gpu_memory_utilization)]
+    if enforce_eager:
+        # A bare switch, not a value flag. Present on both entry points above
+        # (it is an EngineArgs option, which the module invocation also parses).
+        argv.append("--enforce-eager")
     return argv
 
 
@@ -1188,7 +1252,54 @@ def _server_env() -> dict[str, str]:
     env["TRANSFORMERS_OFFLINE"] = "1"
     env["VLLM_NO_USAGE_STATS"] = "1"
     env["DO_NOT_TRACK"] = "1"
+    env["HF_HUB_DISABLE_TELEMETRY"] = "1"
+
+    # AND THE COMPUTE CACHES. Pointing HF_HOME at the app folder moved the WEIGHTS;
+    # it did nothing about torch's Inductor cache, Triton's kernel cache or the CUDA
+    # JIT cache, all of which write into $HOME on first run. They are GB-capable and
+    # they are exactly what makes "everything the app downloads lives in the app
+    # folder" (the standing ruling) true or a fiction.
+    #
+    # Set at SERVE only, and the split is deliberate: XDG_CACHE_HOME also governs
+    # pip's wheel cache, and moving that would make the next reinstall re-download
+    # several GB it already has. Install keeps the system cache; the server, which
+    # runs no pip, gets the blanket redirect so anything else honouring XDG lands
+    # here too.
+    #
+    # THE WHOLE BLOCK DEGRADES, including resolving the root: ``data_dir()`` creates
+    # the directory it returns, so on a read-only volume this would raise BEFORE the
+    # per-var guard below could catch anything -- and a start must never die because a
+    # CACHE could not be placed. Failing here just leaves the backend on its own
+    # defaults, which is where it wrote before this redirect existed.
+    try:
+        root = _cache_root()
+    except OSError:  # noqa: BLE001 - see above
+        return env
+    for var, sub in (
+        ("XDG_CACHE_HOME", ""),
+        ("TRITON_CACHE_DIR", "triton"),
+        ("TORCHINDUCTOR_CACHE_DIR", "inductor"),
+        ("CUDA_CACHE_PATH", "nv"),
+        ("VLLM_CACHE_ROOT", "vllm"),
+        ("VLLM_CONFIG_ROOT", "vllm-config"),
+    ):
+        # An operator-set value WINS, as everywhere else in this module.
+        if (os.environ.get(var) or "").strip():
+            continue
+        target = root / sub if sub else root
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+        except OSError:  # noqa: BLE001 - an unwritable cache dir must not block a start
+            continue
+        env[var] = str(target)
     return env
+
+
+def _cache_root() -> Path:
+    """Where the server's compute caches live: inside the app's own data folder."""
+    from src.paths import data_dir
+
+    return data_dir() / "cache"
 
 
 def start(
@@ -1257,6 +1368,7 @@ def start(
         model,
         max_model_len=args["max_model_len"],
         gpu_memory_utilization=args["gpu_memory_utilization"],
+        enforce_eager=bool(args["enforce_eager"]),
     )
     run = popen or subprocess.Popen
     # CAPTURE the server's output instead of discarding it (field report 2026-07-29).

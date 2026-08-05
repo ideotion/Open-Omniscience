@@ -75,3 +75,52 @@ def test_validate_rejects_unrelated_sqlite(tmp_path):
 # additive merge restore is covered by the torture suite + the merge tests, and
 # tests/test_additive_restore_only.py guards that no replace path comes back.
 # Backup CREATION + validation are still tested above (backup_to / validate_sqlite_file).
+
+
+# --------------------------------------------------------------------------- #
+# The manifest's "excluded" block (D3: an omission is listed, never silent)
+# --------------------------------------------------------------------------- #
+def test_the_two_big_directories_inside_data_dir_are_named_as_excluded(
+    tmp_path, monkeypatch
+):
+    """``models/`` (AI weights) and ``cache/`` (the vLLM server's Triton/Inductor/CUDA
+    caches) both moved INSIDE ``data_dir()`` in 2026-08. Neither is collected as a
+    member -- ``_collect_members`` is an explicit allowlist -- so both were being left
+    out correctly and not SAID, which is the silence this block exists to prevent.
+
+    They are the two largest things an operator finds in that folder, so a backup that
+    quietly omits them owes the reason and the way back."""
+    from src.backup import artifact
+
+    monkeypatch.setattr(artifact, "data_dir", lambda: tmp_path)
+    for sub in ("models/ollama", "cache/triton"):
+        d = tmp_path / sub
+        d.mkdir(parents=True)
+        (d / "blob").write_bytes(b"x" * 16)
+
+    named = {e["name"]: e for e in artifact._excluded_inventory()}
+    assert "models" in named and "cache" in named
+    assert named["models"]["bytes"] == 16 and named["models"]["files"] == 1
+    # Each states WHY and what to do about it -- weights come back, caches rebuild.
+    assert "re-download" in named["models"]["reason"]
+    assert "rebuilt" in named["cache"]["reason"]
+
+
+def test_an_empty_or_absent_directory_is_not_listed_as_an_omission(tmp_path, monkeypatch):
+    """The twin. Reporting an omission that never happened is a fabricated gap, and it
+    reads as badly as a hidden one.
+
+    BOTH cases, because they are guarded separately and only the second is interesting:
+    an ABSENT folder never reaches the size walk, while an EMPTY one does -- and the app
+    creates ``models/`` at launch whether or not anything was ever downloaded, so
+    "exists, holds nothing" is the normal state on a machine with no local AI. A first
+    draft of this test used the absent case alone and could not fail: removing the
+    ``if files`` guard left it green, because ``is_dir()`` had already short-circuited."""
+    from src.backup import artifact
+
+    monkeypatch.setattr(artifact, "data_dir", lambda: tmp_path)
+    assert artifact._excluded_inventory() == [], "absent"
+
+    (tmp_path / "models" / "huggingface" / "hub").mkdir(parents=True)
+    (tmp_path / "cache").mkdir()
+    assert artifact._excluded_inventory() == [], "present but empty"
