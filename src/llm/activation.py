@@ -512,6 +512,13 @@ _recovery_lock = threading.Lock()
 #: (Caught by an existing ride-along test, not by a new one: the same shape as a
 #: default argument standing in for a value that was never measured.)
 _recovery_last_at: float | None = None
+#: The last real attempt's outcome, remembered so a rate-limited call can still SAY
+#: what is going on. Without it the window silently ate the explanation: a sweep's
+#: ladder retries at 5s then 10s then 20s, so the first retry inside a 30s window
+#: carried the blocker and every one after it fell back to the bare reachability
+#: sentence -- which is the line the operator actually reads, over and over, and is
+#: exactly the "start it from Settings -> AI" report that came back a fourth time.
+_recovery_last: dict | None = None
 
 
 def recover_backend(reason: str | None) -> dict:
@@ -544,7 +551,7 @@ def recover_backend(reason: str | None) -> dict:
 
     Returns ``{"attempted", "started", "ready", "detail", "skipped"}``; never raises.
     """
-    global _recovery_last_at
+    global _recovery_last_at, _recovery_last
 
     if not reason:
         return {"attempted": False, "skipped": "the backend is reachable"}
@@ -554,20 +561,33 @@ def recover_backend(reason: str | None) -> dict:
     with _recovery_lock:
         last = _recovery_last_at
         if last is not None and now - last < _RECOVERY_MIN_INTERVAL_S:
-            return {"attempted": False, "skipped": "a start was attempted moments ago"}
+            # NOT a fresh attempt -- ``attempted`` stays False and says so. But the
+            # words from the attempt moments ago are still the truth about this
+            # backend (an engine that was loading is still loading; a blocker that
+            # is a filesystem fact has not moved in ten seconds), so they are
+            # carried rather than dropped.
+            remembered = dict(_recovery_last or {})
+            remembered.update(
+                {"attempted": False, "skipped": "a start was attempted moments ago"}
+            )
+            return remembered
         _recovery_last_at = now
     try:
         act = ensure_running()
     except Exception as exc:  # noqa: BLE001 - a recovery attempt must never break a run
         _LOG.info("background recovery of the AI backend failed: %s", exc)
-        return {"attempted": True, "started": False, "ready": False, "detail": None}
-    return {
+        failed: dict = {"attempted": True, "started": False, "ready": False, "detail": None}
+        _recovery_last = failed
+        return failed
+    out: dict = {
         "attempted": True,
         "started": bool(act.get("started")),
         "ready": bool(act.get("ready")),
         "detail": str(act.get("detail") or "") or None,
         "backend": act.get("backend"),
     }
+    _recovery_last = out
+    return out
 
 
 def _start_ollama(*, wait: bool, timeout: float | None) -> dict:

@@ -24,6 +24,7 @@ where a fabricated success or a silent several-GB download would land:
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 from fastapi import HTTPException
@@ -812,8 +813,10 @@ def _recovery_isolation(monkeypatch):
     is ABOUT the recovery has to turn the thing it tests back on, explicitly."""
     monkeypatch.setenv("OO_LLM_AUTOSTART", "1")
     activation._recovery_last_at = None
+    activation._recovery_last = None
     yield
     activation._recovery_last_at = None
+    activation._recovery_last = None
 
 
 def _records_ensure_running(monkeypatch, **result):
@@ -1042,3 +1045,48 @@ def test_a_download_lands_where_the_server_will_look_for_it():
     assert "launch_env()" in inspect.getsource(vl._install_env)
     # PROBE: the question "is it already here?", which must ask about the same folder.
     assert "hf_home()" in inspect.getsource(vl.hf_cache_dir)
+
+
+def test_a_rate_limited_call_still_says_what_is_going_on(monkeypatch):
+    """Field report 2026-08-04, the fourth: the retry line came back BARE — the
+    reachability sentence with no word about what the app had done. The window was
+    eating the explanation. A ladder retries at 5s then 10s then 20s, so the first
+    call inside a 30s window carried the blocker and every one after it dropped to
+    nothing — and the ones after it are what an operator reads, over and over."""
+    _records_ensure_running(
+        monkeypatch, started=False, ready=False, detail="the weights are not downloaded"
+    )
+    first = activation.recover_backend("down")
+    second = activation.recover_backend("down")
+    assert first["attempted"] is True and second["attempted"] is False
+    assert second["skipped"] == "a start was attempted moments ago", "and it says it is not new"
+    assert second["detail"] == "the weights are not downloaded", "but the truth is carried"
+    assert second["started"] is False
+
+
+def test_and_the_remembered_words_reach_the_retry_line(monkeypatch):
+    """End to end, because the composition rule lives in another module: the point of
+    remembering is that the sentence an operator reads is the useful one."""
+    from src.llm.backend import outage_detail
+
+    _records_ensure_running(monkeypatch, started=True, detail="vLLM is starting on org/M.")
+    activation.recover_backend("down")
+    line = outage_detail(
+        "its server is NOT running", None, recovery=activation.recover_backend("down")
+    )
+    assert line == "vLLM is starting on org/M."
+
+
+def test_but_nothing_remembered_leaves_the_line_exactly_as_it_was(monkeypatch):
+    """The negative-space twin: a process that has never attempted a recovery, or one
+    whose attempt had nothing to say, must not have words invented for it."""
+    from src.llm.backend import outage_detail
+
+    activation._recovery_last = None
+    activation._recovery_last_at = time.monotonic()  # inside the window, nothing remembered
+    rec = activation.recover_backend("its server is NOT running")
+    assert rec["attempted"] is False
+    assert (
+        outage_detail("its server is NOT running", None, recovery=rec)
+        == "its server is NOT running"
+    )
