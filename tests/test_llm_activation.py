@@ -1037,8 +1037,11 @@ def test_a_download_lands_where_the_server_will_look_for_it():
 
     from src.llm import vllm_lifecycle as vl
 
-    # SERVE: the process that reads the weights.
-    assert "launch_env()" in inspect.getsource(vl.start)
+    # SERVE: the process that reads the weights. Through _server_env, which adds the
+    # offline flags on top -- so the chain is one hop longer and must still land on
+    # the same resolver.
+    assert "env=_server_env()" in inspect.getsource(vl.start)
+    assert "launch_env()" in inspect.getsource(vl._server_env)
     # DOWNLOAD: the process that writes them, via the shared install env.
     dl = inspect.getsource(vl.run_model_download_job)
     assert "_install_env(" in dl, "the download must not build its own environment"
@@ -1090,3 +1093,75 @@ def test_but_nothing_remembered_leaves_the_line_exactly_as_it_was(monkeypatch):
         outage_detail("its server is NOT running", None, recovery=rec)
         == "its server is NOT running"
     )
+
+
+# --------------------------------------------------------------------------- #
+#  SERVE IS OFFLINE, DOWNLOAD IS ONLINE
+#
+#  Field report 2026-08-05, the cause behind four rounds of "vLLM won't start": the
+#  weights were cached and the server still died on
+#  "[Errno -3] Temporary failure in name resolution" while doing a HEAD for
+#  preprocessor_config.json. huggingface_hub revalidates repo METADATA over the
+#  network even when every weight is local.
+# --------------------------------------------------------------------------- #
+def test_the_server_is_spawned_in_hugging_faces_offline_mode():
+    """Not merely the working setting, the HONEST one: activation already refuses to
+    start on uncached weights so the server never fetches GB from a subprocess the
+    socket guard cannot see. Without this the promise held only for the weights, and
+    only because DNS happened to fail."""
+    from src.llm.vllm_lifecycle import _server_env
+
+    env = _server_env()
+    assert env["HF_HUB_OFFLINE"] == "1"
+    assert env["TRANSFORMERS_OFFLINE"] == "1"
+    # And the store still points at the app folder -- offline must not cost the
+    # 2026-08-04 model-store move.
+    from src.llm.model_store import hf_home
+
+    assert env["HF_HOME"] == str(hf_home())
+
+
+def test_but_the_weights_download_is_not(monkeypatch, tmp_path):
+    """THE TWIN, and the one that would break everything: the download shares
+    launch_env() with the server. Putting the offline flags there would make a model
+    impossible to fetch — a fix that trades one dead end for a worse one."""
+    from src.llm import model_store
+
+    monkeypatch.setattr(model_store, "data_dir", lambda: tmp_path)
+    dl = model_store.launch_env({})
+    for flag in ("HF_HUB_OFFLINE", "TRANSFORMERS_OFFLINE"):
+        assert flag not in dl, f"{flag} would make every weights download fail"
+
+
+def test_the_server_sends_no_usage_statistics():
+    """vLLM's usage reporter is opt-OUT. This project sends no telemetry, and a
+    bundled subprocess doing it on the app's behalf is the same thing wearing a
+    different process id."""
+    from src.llm.vllm_lifecycle import _server_env
+
+    env = _server_env()
+    assert env["VLLM_NO_USAGE_STATS"] == "1"
+    assert env["DO_NOT_TRACK"] == "1"
+
+
+def test_the_start_actually_uses_that_environment():
+    """A helper nothing calls is the recorded dead-end shape. Pinned at the spawn."""
+    import inspect
+
+    from src.llm import vllm_lifecycle as vl
+
+    src = inspect.getsource(vl.start)
+    assert "env=_server_env()" in src
+    assert "env=launch_env()" not in src, "the server must not use the download's env"
+
+
+def test_a_dns_failure_is_named_rather_than_its_hundred_line_traceback():
+    """The operator's log ended in 'Cannot send a request, as the client has been
+    closed' -- true, and not the reason. The specific signature must win over the
+    generic traceback, and carry advice."""
+    from src.llm import vllm_lifecycle as vl
+
+    keys = [k for k, _, _ in vl._FATAL_SIGNATURES]
+    assert keys.index("offline") < keys.index("traceback")
+    advice = next(a for k, _, a in vl._FATAL_SIGNATURES if k == "offline")
+    assert "offline mode" in advice and "cached" in advice
