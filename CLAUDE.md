@@ -2647,6 +2647,28 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     is TWO exits, not one: an operator who has just FIXED the cause must get a fair
     start rather than a verdict inherited from the attempt they repaired, which is the
     fabricated-failure twin of the fabricated-progress being fixed.
+  - **"EVERYTHING LIVES IN THE APP FOLDER" IS A CLAIM ABOUT EVERY PROCESS YOU SPAWN, AND
+    ONE REDIRECTED CACHE DOES NOT MAKE IT TRUE (2026-08-05, from an operator's own
+    provisioning scripts):** the model-store move pointed `HF_HOME` at the app's data
+    folder and every test agreed the WEIGHTS landed there — while torch's Inductor cache,
+    Triton's kernel cache, the CUDA JIT cache and vLLM's own cache/config roots all still
+    wrote into `$HOME` on first run, GB-capable and invisible. The scripts said it in one
+    line: *"Without these, torch / Triton / Inductor / NVIDIA / uv all write into $HOME and
+    your self-contained app folder is a fiction."* GENERAL FORM: when you relocate one
+    thing a subprocess writes, enumerate the OTHERS by asking what the whole dependency
+    stack caches, not what your feature downloads. THREE THINGS THE FIX TURNED ON: the
+    redirect is SERVE-only, because `XDG_CACHE_HOME` also governs pip's wheel cache and
+    moving that would make the next reinstall re-download several GB it already has —
+    which is exactly why the operator's reinstall took seconds, so the split has a
+    measurement behind it, and it needs its own twin test or a later tidy-up will
+    "simplify" it into the install path. An operator-set value must win, since someone who
+    put Triton's cache on a big disk did that deliberately. And **the guard belongs on the
+    RESOLVER, not only on the operation** — `data_dir()` CREATES the directory it returns,
+    so guarding each `target.mkdir` while calling `_cache_root()` unguarded put the failure
+    one call *earlier* than the guard, and on a read-only volume the whole start died for
+    want of a cache. An existing test about something else entirely (losing the log must
+    never block a start) is what caught it, which is the argument for running the
+    neighbouring suites rather than only the ones you wrote.
 
 ## Open queue (when maintainer says proceed)
 - **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;
@@ -9594,6 +9616,26 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the other unattended AI sweeps (triage / source-tags / perception-extract) if the maintainer wants
   them default-off too; the frontend (pill third state + Settings disclosure/toggle) is
   BROWSER-UNVERIFIED per fork-3.
+- **MODEL WEIGHTS ARE THE ONE DOWNLOADED ARTIFACT WITH NO PIN (finding, 2026-08-05, from the
+  operator's own vLLM provisioning scripts; NOT built — recorded so it is not rediscovered):**
+  the scripts fetch weights at a full 40-char commit SHA and write a `sha256sum` manifest that
+  every later run verifies, refusing a tag-shaped revision outright. This app downloads by REPO
+  ID at whatever `main` points to, with no integrity check — so the bytes can change under an
+  operator between two installs and nothing would say so. That is a gap in HOUSE DOCTRINE, not
+  a new idea: the DuckDB httpfs extension is SHA-pinned and verified before every `LOAD`, the
+  Ollama installer verifies against GitHub's own attested `digest: sha256:…` and REFUSES when
+  no digest is attested, and the external-artifact registry exists precisely for "anything
+  externally sourced gets an entry in the same commit". Weights escape all three. WHAT A BUILD
+  WOULD NEED, honestly: HF revisions are resolvable to a commit SHA and `huggingface_hub`
+  accepts `revision=`, so the pin itself is cheap — the work is deciding where the pin lives
+  (a registry entry per roster model, dated) and what a MISMATCH does (refuse, per the
+  no-fabricated-security rule, with the operator able to re-pin deliberately). NOT adopted
+  from the same scripts, with reasons: `--max-num-seqs` (the app already bounds concurrency
+  client-side at `OO_VLLM_CONCURRENCY`, and a server-side cap kept in sync with a client-side
+  one is two copies of one decision — the recorded "a value only meaningful beside another
+  must travel WITH it" trap); a compute-capability ≥7.5 preflight (real, but `detect_gpu()`
+  already gates on CUDA and the failure it prevents is loud); a per-launch `--api-key` on a
+  loopback socket (defence against a local process that could read the token file anyway).
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 

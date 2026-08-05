@@ -200,6 +200,64 @@ def test_server_argv_includes_context_flags_when_given():
     assert "--gpu-memory-utilization" in argv and "0.5" in argv
 
 
+def test_server_argv_carries_enforce_eager_only_when_asked():
+    """A bare switch: present when asked, ABSENT otherwise. The negative half is the
+    load-bearing one -- a flag appended unconditionally would slow every card."""
+    assert "--enforce-eager" in V.server_argv("m", port=1, enforce_eager=True)
+    assert "--enforce-eager" not in V.server_argv("m", port=1)
+
+
+# --------------------------------------------------------------------------- #
+# enforce_eager -- skip CUDA-graph capture where the card cannot spare the pool
+# --------------------------------------------------------------------------- #
+def test_a_small_card_skips_cuda_graph_capture_and_a_large_one_keeps_it():
+    """Field report 2026-08-04: capture died with cudaErrorMemoryAllocation at 86% of
+    51 graphs on an 8 GiB card. Eager mode costs decode speed; a failed capture costs
+    a server that never starts, and only the small card faces that trade.
+
+    THE NEGATIVE HALF IS THE POINT: a large card must KEEP capture. A guard that fired
+    everywhere would read as conservative while quietly slowing hardware that can
+    comfortably afford the pool -- a fabricated cost, the mirror of a fabricated pass."""
+    assert V.compute_server_args(8188)["enforce_eager"] is True, "the measured failure"
+    assert V.compute_server_args(24576)["enforce_eager"] is False
+    assert V.compute_server_args(81920)["enforce_eager"] is False
+
+
+def test_the_eager_threshold_is_a_real_boundary_not_an_always_on_switch():
+    """Pins that the rule actually TURNS somewhere between the two cases above, so a
+    future edit cannot collapse it to a constant while both assertions still pass."""
+    on = [mb for mb in (4096, 8192, 10240, 12288, 16384, 24576)
+          if V.compute_server_args(mb)["enforce_eager"]]
+    assert on and len(on) < 6, f"eager must be applied to some cards and not others: {on}"
+    # ...and it must be the SMALL ones, in one contiguous run from the bottom.
+    assert on == [4096, 8192, 10240]
+
+
+def test_an_unreadable_card_skips_capture_rather_than_assuming_it_fits():
+    """Consistent with the same branch's conservative context numbers: a card we cannot
+    measure could be a small one, and the small card is the case that fails to start.
+    The method must SAY that, so the value never reads as a measurement."""
+    args = V.compute_server_args(None)
+    assert args["enforce_eager"] is True
+    assert "unreadable" in args["method"]
+
+
+def test_an_operator_can_force_cuda_graphs_on_or_off():
+    """An explicit choice is never second-guessed in either direction, and the method
+    stops claiming a VRAM derivation the moment the operator decides instead."""
+    forced_off = V.compute_server_args(8192, enforce_eager_override=False)
+    assert forced_off["enforce_eager"] is False
+    forced_on = V.compute_server_args(81920, enforce_eager_override=True)
+    assert forced_on["enforce_eager"] is True
+    both = V.compute_server_args(
+        8192, max_model_len_override=1, gpu_memory_utilization_override=0.5
+    )
+    assert "operator override" in both["method"]
+    # ...but enforce_eager was NOT overridden there, and the method must not pretend
+    # otherwise: it says how that third value was actually reached.
+    assert "CUDA-graph capture skipped" in both["method"]
+
+
 # --------------------------------------------------------------------------- #
 # start() -- refuses on CPU-only machines, refuses when not installed
 # --------------------------------------------------------------------------- #
@@ -241,6 +299,38 @@ def test_start_launches_the_subprocess_when_gpu_is_present(monkeypatch):
     assert result["started"] is True
     assert "my/model" in calls["argv"]
     assert V.process_alive() is True
+
+
+@pytest.mark.parametrize("vram_mb,expect_eager", [(8192, True), (24576, False)])
+def test_start_puts_the_computed_eager_decision_on_the_real_command_line(
+    monkeypatch, vram_mb, expect_eager
+):
+    """The wiring, driven through the production path rather than asserted against the
+    source: a decision computed and then never passed to the subprocess would leave
+    compute_server_args' tests green while the server still captured graphs."""
+    V.venv_python().parent.mkdir(parents=True, exist_ok=True)
+    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8")
+    V._write_marker("0.25.1")
+    monkeypatch.setattr(
+        "src.llm.backend.detect_gpu", lambda: {"available": True, "vram_mb": vram_mb}
+    )
+    monkeypatch.setattr(V, "is_running", lambda: False)
+
+    seen = {}
+
+    class _FakeProc:
+        pid = 4242
+
+        def poll(self):
+            return None
+
+    def fake_popen(argv, **kw):
+        seen["argv"] = argv
+        return _FakeProc()
+
+    out = V.start("my/model", popen=fake_popen)
+    assert out["server_args"]["enforce_eager"] is expect_eager
+    assert ("--enforce-eager" in seen["argv"]) is expect_eager
 
 
 def test_start_is_a_no_op_when_already_running(monkeypatch):

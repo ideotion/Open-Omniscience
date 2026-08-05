@@ -80,6 +80,8 @@ _KEYS_DIR = "keys"
 _CUSTODY_DB = "custody_log.db"
 _WIKI_DUMPS_DIR = "wiki_dumps"
 _OSM_DIR = "osm_regions"  # offline-map downloads (src/geo/osm_downloads.py)
+_MODELS_DIR = "models"  # local AI weights (src/llm/model_store.py, 2026-08-04 move)
+_CACHE_DIR = "cache"  # the vLLM server's compute caches (src/llm/vllm_lifecycle.py)
 
 # Source domains under which imported newsletters live (src/api/ingestion.py). A
 # backup can EXCLUDE them (maintainer 2026-06-21: re-import fixed .eml to replace
@@ -231,6 +233,16 @@ def _excluded_inventory() -> list[dict]:
                           "re-download via Settings after restore"),
         (_OSM_DIR, "re-downloadable offline-map (OSM) region extracts; in-progress "
                    "downloads are never backed up — re-download via Settings after restore"),
+        # Both moved INSIDE data_dir() after this list was written, so both were being
+        # excluded by construction and not said. An omission the manifest does not name
+        # is exactly the silence D3 exists to prevent, and these are the two largest
+        # things in the folder an operator will find there.
+        (_MODELS_DIR, "re-downloadable local AI weights (Ollama models, vLLM/Hugging Face "
+                      "weights); carried by the large-data folder backup instead, or "
+                      "re-download via Settings → AI after restore"),
+        (_CACHE_DIR, "the vLLM server's compute caches (Triton, torch Inductor, CUDA JIT, "
+                     "vLLM's own roots) — rebuilt automatically on the next run, so there "
+                     "is nothing to restore"),
     ):
         d = data_dir() / name
         if d.is_dir():

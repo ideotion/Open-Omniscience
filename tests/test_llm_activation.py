@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import time
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
@@ -1142,6 +1143,73 @@ def test_the_server_sends_no_usage_statistics():
     env = _server_env()
     assert env["VLLM_NO_USAGE_STATS"] == "1"
     assert env["DO_NOT_TRACK"] == "1"
+
+
+_COMPUTE_CACHE_VARS = (
+    "XDG_CACHE_HOME",
+    "TRITON_CACHE_DIR",
+    "TORCHINDUCTOR_CACHE_DIR",
+    "CUDA_CACHE_PATH",
+    "VLLM_CACHE_ROOT",
+    "VLLM_CONFIG_ROOT",
+)
+
+
+def test_the_servers_compute_caches_land_inside_the_app_folder(monkeypatch):
+    """Pointing HF_HOME at the app folder moved the WEIGHTS and nothing else. torch's
+    Inductor cache, Triton's kernel cache and the CUDA JIT cache all write into $HOME
+    on first run, are GB-capable, and made "everything the app downloads lives in the
+    app folder" false while every existing test passed."""
+    from src.llm.vllm_lifecycle import _cache_root, _server_env
+
+    for var in _COMPUTE_CACHE_VARS:
+        monkeypatch.delenv(var, raising=False)
+    env = _server_env()
+    root = _cache_root().resolve()
+    for var in _COMPUTE_CACHE_VARS:
+        assert var in env, f"{var} would leave its cache in $HOME"
+        assert Path(env[var]).resolve().is_relative_to(root), f"{var} -> {env[var]}"
+
+
+def test_an_operator_placed_cache_is_never_relocated(monkeypatch, tmp_path):
+    """The twin. Someone who has already put Triton's cache on a big disk did that
+    deliberately; silently moving several GB back into the app folder is the surprise
+    the model-store move was careful not to spring either."""
+    from src.llm.vllm_lifecycle import _server_env
+
+    for var in _COMPUTE_CACHE_VARS:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("TRITON_CACHE_DIR", str(tmp_path / "mine"))
+    env = _server_env()
+    assert env["TRITON_CACHE_DIR"] == str(tmp_path / "mine")
+    # ...and the vars the operator did NOT set are still redirected.
+    assert "TORCHINDUCTOR_CACHE_DIR" in env
+
+
+def test_the_installs_pip_cache_is_deliberately_left_where_it_is(monkeypatch, tmp_path):
+    """THE OTHER TWIN, and the reason this is serve-only: XDG_CACHE_HOME also governs
+    pip's wheel cache. Moving it would make the next vLLM reinstall re-download several
+    GB it already has — the very thing that made the operator's reinstall take seconds.
+    The server runs no pip, so only the server gets the blanket redirect."""
+    from src.llm import model_store
+
+    monkeypatch.setattr(model_store, "data_dir", lambda: tmp_path)
+    assert "XDG_CACHE_HOME" not in model_store.launch_env({})
+
+
+def test_an_unwritable_cache_location_never_blocks_a_start(monkeypatch):
+    """A cache is a convenience; a start is the point. ``data_dir()`` CREATES the
+    directory it returns, so resolving the root has to degrade too — guarding only the
+    per-variable mkdir left the failure one call earlier than the guard."""
+    from src.llm import vllm_lifecycle as vl
+
+    for var in _COMPUTE_CACHE_VARS:
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setattr(vl, "_cache_root", lambda: (_ for _ in ()).throw(OSError("read-only")))
+    env = vl._server_env()
+    assert env["HF_HUB_OFFLINE"] == "1", "the rest of the environment still stands"
+    for var in _COMPUTE_CACHE_VARS:
+        assert var not in env
 
 
 def test_the_start_actually_uses_that_environment():

@@ -1245,9 +1245,14 @@ data directory rather than in each backend's home:
 | --- | --- |
 | `models/ollama/` | Ollama's model store (`OLLAMA_MODELS` points here) |
 | `models/huggingface/hub/models--<org>--<name>/` | vLLM's weights, one folder per repo (`HF_HOME` points at `models/huggingface`) |
+| `cache/` | The vLLM server's compute caches — Triton kernels, torch Inductor, the CUDA JIT cache, vLLM's own cache and config roots. Built on first run, safe to delete (it is rebuilt), and can reach several GB |
 
-Setting `OLLAMA_MODELS` or `HF_HOME` yourself always wins — the app re-exports
-your value rather than overriding it. Weights downloaded **before** 2026-08-04 are
+Setting `OLLAMA_MODELS`, `HF_HOME`, or any of the cache variables
+(`XDG_CACHE_HOME`, `TRITON_CACHE_DIR`, `TORCHINDUCTOR_CACHE_DIR`,
+`CUDA_CACHE_PATH`, `VLLM_CACHE_ROOT`, `VLLM_CONFIG_ROOT`) yourself always wins —
+the app re-exports your value rather than overriding it. The redirect applies to
+the **server** only: installing vLLM still uses pip's normal wheel cache, so
+reinstalling does not re-download several GB it already has. Weights downloaded **before** 2026-08-04 are
 still in Hugging Face's own `~/.cache/huggingface/hub/`; Settings → AI reports
 them and names where to move them, and nothing is moved or deleted for you.
 
