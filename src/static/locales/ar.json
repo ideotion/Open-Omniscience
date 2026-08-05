@@ -205,6 +205,8 @@
   "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.": "يفضّل الوضع التلقائي vLLM حيثما أمكن تشغيله — فهو يتطلّب معالج رسومات مخصّصًا ويتيح طلبات متزامنة — ويستخدم Ollama فيما عدا ذلك. اختيارك يتقدّم دائمًا على هذا التفضيل.",
   "Models are stored in": "تُخزَّن النماذج في",
   "Move them into the app folder": "نقلها إلى مجلد التطبيق",
+  "in use": "قيد الاستخدام",
+  "app folder, not in use": "مجلد التطبيق، غير مستخدم",
   "Copy the existing models into the app folder? Nothing is deleted — the originals stay where they are until you remove them yourself.": "هل تريد نسخ النماذج الحالية إلى مجلد التطبيق؟ لن يُحذف شيء — تبقى النسخ الأصلية مكانها حتى تحذفها بنفسك.",
   "Copying…": "جارٍ النسخ…",
   "Could not copy the models.": "تعذّر نسخ النماذج.",

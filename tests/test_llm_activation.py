@@ -968,3 +968,77 @@ def test_the_suite_wide_switch_turns_automatic_starts_off(monkeypatch):
     out = activation.recover_backend("down")
     assert out == {"attempted": False, "skipped": "automatic starts are switched off"}
     assert calls == []
+
+
+# --------------------------------------------------------------------------- #
+#  WHERE the weights must go, said by the app rather than looked up by the operator
+#
+#  Field report 2026-08-04: "Tell me where should the model be moved precisely."
+#  The blocker named the SOURCE and pointed at a settings page for the destination --
+#  the same go-and-find-it-yourself shape this chain has already fixed twice.
+# --------------------------------------------------------------------------- #
+def test_the_legacy_cache_blocker_names_the_destination_and_a_command_that_works(monkeypatch):
+    _machine(monkeypatch, gpu=True, vllm_installed=True, model="org/Weights-3B")
+    monkeypatch.setattr(
+        "src.llm.vllm_lifecycle.model_cache_state",
+        lambda m: {
+            "cached": True,
+            "path": "/home/u/.cache/huggingface/hub/models--org--Weights-3B",
+            "location": "legacy",
+            "expected": "/data/models/huggingface/hub/models--org--Weights-3B",
+            "bytes": 1,
+        },
+    )
+    blocker = activation.activation_plan()["blocker"]
+    assert "/home/u/.cache/huggingface/hub/models--org--Weights-3B" in blocker, "the source"
+    assert "/data/models/huggingface/hub/models--org--Weights-3B" in blocker, "the DESTINATION"
+    # The parent, created first: the app makes HF_HOME on every launch but `hub/` is
+    # huggingface_hub's, so on a machine where vLLM never started a bare mv would fail.
+    assert "mkdir -p '/data/models/huggingface/hub'" in blocker
+    assert "mv '/home/u/.cache/huggingface/hub/models--org--Weights-3B' " in blocker
+    # And it no longer sends the operator to a settings page to find the answer.
+    assert "Settings" not in blocker
+
+
+def test_the_expected_path_is_reported_on_every_answer_not_just_the_legacy_one():
+    """Including "not downloaded": that is exactly when an operator asks where a
+    download will land, and a field that appears only in one branch is a field every
+    caller has to re-derive."""
+    from src.llm.vllm_lifecycle import hf_cache_dir, model_cache_state
+
+    state = model_cache_state("org/Never-Fetched")
+    assert state["cached"] is False
+    assert state["expected"] == str(hf_cache_dir() / "models--org--Never-Fetched")
+
+
+def test_the_folder_the_app_advertises_is_a_folder_the_app_creates(tmp_path, monkeypatch):
+    """The negative-space twin of the command above: naming a destination that does not
+    exist is only half an answer. A launch prepares HF_HOME *and* its hub/."""
+    from src.llm import model_store
+
+    monkeypatch.setattr(model_store, "data_dir", lambda: tmp_path)
+    monkeypatch.delenv("HF_HOME", raising=False)
+    monkeypatch.delenv("HF_HUB_CACHE", raising=False)
+    env = model_store.launch_env({})
+    hub = tmp_path / "models" / "huggingface" / "hub"
+    assert hub.is_dir(), "the path the blocker tells an operator to mv into"
+    assert env["HF_HOME"] == str(hub.parent)
+
+
+def test_a_download_lands_where_the_server_will_look_for_it():
+    """The second half of the ask ("make sure any future model download points to the
+    proper folder"), pinned structurally rather than trusted: the weights download, the
+    server spawn and the cache probe must all derive ONE path. Three call sites that
+    agree today can disagree tomorrow, and nothing would say so."""
+    import inspect
+
+    from src.llm import vllm_lifecycle as vl
+
+    # SERVE: the process that reads the weights.
+    assert "launch_env()" in inspect.getsource(vl.start)
+    # DOWNLOAD: the process that writes them, via the shared install env.
+    dl = inspect.getsource(vl.run_model_download_job)
+    assert "_install_env(" in dl, "the download must not build its own environment"
+    assert "launch_env()" in inspect.getsource(vl._install_env)
+    # PROBE: the question "is it already here?", which must ask about the same folder.
+    assert "hf_home()" in inspect.getsource(vl.hf_cache_dir)

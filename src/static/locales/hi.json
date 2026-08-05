@@ -205,6 +205,8 @@
   "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.": "स्वचालित मोड वहाँ vLLM को प्राथमिकता देता है जहाँ वह चल सकता है — इसके लिए समर्पित GPU चाहिए और यह समवर्ती अनुरोध देता है — अन्यथा Ollama का उपयोग करता है। आपकी पसंद हमेशा इस प्राथमिकता पर भारी पड़ती है।",
   "Models are stored in": "मॉडल यहाँ संग्रहीत हैं",
   "Move them into the app folder": "उन्हें ऐप फ़ोल्डर में ले जाएँ",
+  "in use": "उपयोग में",
+  "app folder, not in use": "ऐप फ़ोल्डर, उपयोग में नहीं",
   "Copy the existing models into the app folder? Nothing is deleted — the originals stay where they are until you remove them yourself.": "मौजूदा मॉडल को ऐप फ़ोल्डर में कॉपी करें? कुछ भी नहीं हटाया जाता — मूल फ़ाइलें तब तक वहीं रहती हैं जब तक आप स्वयं उन्हें न हटाएँ।",
   "Copying…": "कॉपी हो रहा है…",
   "Could not copy the models.": "मॉडल कॉपी नहीं किए जा सके।",

@@ -21427,7 +21427,18 @@
       try { r = await api("/api/llm/model-store"); } catch (e) { box.textContent = ""; return; }
       const gb = (n) => (n === null || n === undefined) ? "" : ` <span class="muted">(${(n / 1e9).toFixed(1)} GB)</span>`;
       let html = `<div>${esc(t("Models are stored in"))} <code>${esc(r.root)}</code></div>`;
-      html += `<div style="margin-top:2px">Ollama: <code>${esc(r.ollama.configured)}</code>${gb(r.ollama.bytes)}</div>`;
+      // The path IN USE leads when it is not the app's: printing the configured one
+      // (near-empty) beside a size reads as "you have no models" to an operator whose
+      // real store holds twenty GB, which is how "the app downloaded them into
+      // ~/.ollama" gets discovered by opening a file manager instead of this panel.
+      if (r.ollama.in_app_folder === false) {
+        html += `<div style="margin-top:2px">Ollama: <code>${esc(r.ollama.detected)}</code>` +
+                `${gb(r.ollama.detected_bytes)} <span class="muted">${esc(t("in use"))}</span></div>` +
+                `<div class="muted">${esc(t("app folder, not in use"))}: ` +
+                `<code>${esc(r.ollama.configured)}</code>${gb(r.ollama.bytes)}</div>`;
+      } else {
+        html += `<div style="margin-top:2px">Ollama: <code>${esc(r.ollama.configured)}</code>${gb(r.ollama.bytes)}</div>`;
+      }
       html += `<div>Hugging Face: <code>${esc(r.huggingface.configured)}</code>${gb(r.huggingface.bytes)}</div>`;
       if (r.ollama.note) {
         html += `<div class="card-caveat" style="margin-top:4px">${esc(r.ollama.note)}</div>` +

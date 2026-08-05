@@ -205,6 +205,8 @@
   "Automatic prefers vLLM where it can run — it needs a dedicated GPU and gives concurrent requests — and uses Ollama otherwise. Your choice always wins over that preference.": "自动模式会在可运行的机器上优先使用 vLLM（它需要独立 GPU，并支持并发请求），否则使用 Ollama。您的选择始终优先于该偏好。",
   "Models are stored in": "模型存储于",
   "Move them into the app folder": "移动到应用文件夹",
+  "in use": "使用中",
+  "app folder, not in use": "应用文件夹，未使用",
   "Copy the existing models into the app folder? Nothing is deleted — the originals stay where they are until you remove them yourself.": "将现有模型复制到应用文件夹？不会删除任何内容——原件将保留在原处，直到您自行移除。",
   "Copying…": "正在复制…",
   "Could not copy the models.": "无法复制模型。",

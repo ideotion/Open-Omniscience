@@ -122,7 +122,12 @@ def launch_env(base: dict | None = None) -> dict:
         o_store = ollama_store()
         h_home = hf_home()
         o_store.mkdir(parents=True, exist_ok=True)
-        h_home.mkdir(parents=True, exist_ok=True)
+        # ``hub/`` too, not just HF_HOME: it is huggingface_hub's own subdirectory and
+        # it would create it on the first download -- but the app ADVERTISES that path
+        # as where weights belong (the activation blocker prints it, and an operator
+        # moving an existing cache needs it to exist). A folder the app names should be
+        # a folder the app has made.
+        (h_home / "hub").mkdir(parents=True, exist_ok=True)
         env["OLLAMA_MODELS"] = str(o_store)
         env["HF_HOME"] = str(h_home)
     except OSError as exc:  # noqa: BLE001 - an unwritable data dir must not block a start
@@ -168,6 +173,12 @@ def store_report() -> dict:
             "detected": str(detected),
             "in_app_folder": same,
             "bytes": _store_size(configured_ollama),
+            # The size of the store ACTUALLY IN USE, which is a different number
+            # whenever a foreign daemon owns it -- and the interesting one, because
+            # the configured folder is then near-empty while the real store holds
+            # every model. Reporting only the configured size next to a path label
+            # reads as "you have no models" to an operator who has twenty GB of them.
+            "detected_bytes": _store_size(configured_ollama) if same else _store_size(detected),
             "legacy_bytes": None if same else _store_size(detected),
             "operator_override": bool((os.getenv("OLLAMA_MODELS") or "").strip()),
         },
@@ -189,8 +200,9 @@ def store_report() -> dict:
         out["huggingface"]["legacy_bytes"] = legacy_hf_bytes
         out["huggingface"]["note"] = (
             f"There are also model weights at {legacy_hf}, from before the store moved "
-            "into the app folder. They are still usable: move that folder to the "
-            "configured path above, or set HF_HOME to point back at it. Nothing is "
+            f"into the app folder. They are still usable — move them into "
+            f"{configured_hf / 'hub'} (that is where the server looks), or set HF_HOME "
+            f"back to {legacy_hf} and let future downloads land there too. Nothing is "
             "moved or deleted for you."
         )
     if not same:

@@ -46,7 +46,10 @@ Check that `wipe_data_dir` and `app_folder` point at the throwaway VM's paths
 
 ## Verify
 - `<repo>/.venv` is gone; the launchers are gone; the app folder is gone.
-- The data dir (`~/.local/share/open-omniscience` by default) is gone.
+- The data dir is gone. It is `<app folder>/data/` for a normal source install,
+  `$OO_DATA_DIR` if you set one, and `~/.local/share/open-omniscience` only when
+  the app is not running from a writable tree — check which one applies before
+  concluding the wipe missed it.
 - `~/.open-omniscience-uninstall.log` exists and lists what was removed.
 
 ## Accept path (sanity)

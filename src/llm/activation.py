@@ -63,6 +63,7 @@ import logging
 import os
 import threading
 import time
+from pathlib import Path
 
 _LOG = logging.getLogger("llm.activation")
 
@@ -292,12 +293,26 @@ def _plan_for(
             # refusal below exists to prevent -- so it is refused for the same reason,
             # and told apart from "you never downloaded it", which is what an operator
             # in this state used to be told.
+            #
+            # BOTH PATHS, and the command. Naming only the source is the same
+            # go-and-find-it-yourself shape this chain has already had to fix twice:
+            # the app knows exactly where the weights must end up, so it says so
+            # rather than pointing at a settings page (2026-08-04, asked by name).
+            src_path = str(state.get("path") or "")
+            dst_path = str(state.get("expected") or "")
+            # mkdir FIRST, and not because the app is careless: it creates HF_HOME on
+            # every launch but the ``hub/`` inside it is huggingface_hub's to make, so
+            # on a machine where vLLM has never actually started the destination's
+            # parent does not exist yet and a bare `mv` would fail. A command an
+            # operator pastes has to work on the machine that is in this state.
+            dst_parent = str(Path(dst_path).parent) if dst_path else ""
             out["blocker"] = (
-                f"{model} IS downloaded — at {state.get('path')} — but the server is "
-                "started pointed at the app's own model folder, so it would fetch the "
-                "weights again over the clear internet. Move that cache to "
-                "Settings → AI's configured path (or set HF_HOME back to the old one), "
-                "and nothing has to be downloaded twice."
+                f"{model} IS downloaded — at {src_path} — but the server is started "
+                f"pointed at the app's own model folder, so it would fetch the weights "
+                f"again over the clear internet. Move it to {dst_path} and nothing has "
+                f"to be downloaded twice:  mkdir -p '{dst_parent}' && mv '{src_path}' "
+                f"'{dst_path}'  — setting HF_HOME back to the old location works too, "
+                "but then every future download lands there as well."
             )
             return out
         if cached is False:

@@ -1669,11 +1669,18 @@ def model_cache_state(model: str) -> dict:
     ``location`` is ``"app"`` for the configured path and ``"legacy"`` for Hugging
     Face's own default -- a real difference, because the server is spawned pointed at
     the configured one, so a legacy-only copy is present but not yet usable.
+
+    ``expected`` is where the server WILL look, on every answer including the legacy
+    and not-cached ones. Asked for by name (2026-08-04: "tell me where should the model
+    be moved precisely"): the caller previously had to re-derive it, and a message that
+    names the source but not the destination is the same go-and-find-it-yourself shape
+    as the advice this chain has already had to fix twice.
     """
     repo = "models--" + model.replace("/", "--")
     from src.llm.model_store import legacy_hf_home
 
-    candidates: list[tuple[str, Path]] = [("app", hf_cache_dir() / repo)]
+    expected = hf_cache_dir() / repo
+    candidates: list[tuple[str, Path]] = [("app", expected)]
     if (legacy := legacy_hf_home()) is not None:
         candidates.append(("legacy", legacy / "hub" / repo))
 
@@ -1692,14 +1699,24 @@ def model_cache_state(model: str) -> dict:
             size: int | None = sum(f.stat().st_size for f in root.rglob("*") if f.is_file())
         except OSError:
             size = None
-        return {"cached": True, "path": str(root), "bytes": size, "location": where}
+        return {
+            "cached": True,
+            "path": str(root),
+            "bytes": size,
+            "location": where,
+            "expected": str(expected),
+        }
 
     # Nothing found. An unreadable candidate makes that a "cannot tell", never a "no":
     # refusing a start on a directory we could not stat is its own fabrication.
     root = candidates[0][1]
-    if unreadable:
-        return {"cached": None, "path": str(root), "bytes": None, "location": None}
-    return {"cached": False, "path": str(root), "bytes": None, "location": None}
+    return {
+        "cached": None if unreadable else False,
+        "path": str(root),
+        "bytes": None,
+        "location": None,
+        "expected": str(expected),
+    }
 
 
 #: Run INSIDE the managed venv (which has ``huggingface_hub`` -- vLLM depends on it).

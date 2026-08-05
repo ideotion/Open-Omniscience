@@ -1231,10 +1231,25 @@ Resolved by `src/paths.py`, in this precedence:
 3. **Per-user** — otherwise XDG: `$XDG_DATA_HOME/open-omniscience` or
    `~/.local/share/open-omniscience`.
 
+Case 2 is the normal one for an `install.sh` install: the installer clones a
+writable tree, so your data is in `<app folder>/data/` and the XDG path in case 3
+is never created. That is not a bug when you go looking for it and it is absent.
+
 In that directory you'll find: `open_omniscience.db` (the corpus, SQLite/WAL),
 `app_settings.json` (theme, result limit), `custody_settings.json` (custody
-preferences), custody keys, downloaded Wikipedia dumps, and any `pre-restore-*.db`
-snapshots.
+preferences), custody keys, downloaded Wikipedia dumps, any `pre-restore-*.db`
+snapshots, and `models/` — the local AI weights, which live inside the app's own
+data directory rather than in each backend's home:
+
+| path | what |
+| --- | --- |
+| `models/ollama/` | Ollama's model store (`OLLAMA_MODELS` points here) |
+| `models/huggingface/hub/models--<org>--<name>/` | vLLM's weights, one folder per repo (`HF_HOME` points at `models/huggingface`) |
+
+Setting `OLLAMA_MODELS` or `HF_HOME` yourself always wins — the app re-exports
+your value rather than overriding it. Weights downloaded **before** 2026-08-04 are
+still in Hugging Face's own `~/.cache/huggingface/hub/`; Settings → AI reports
+them and names where to move them, and nothing is moved or deleted for you.
 
 ### 5.2 Environment variables
 
