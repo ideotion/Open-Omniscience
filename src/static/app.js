@@ -8526,36 +8526,80 @@
     ];
     const LIB_QUAL_LABELS = {
       sources_qualified: "Qualified", sources_disqualified: "Disqualified",
-      sources_never_judged: "Never judged", sources_candidates: "Candidates",
+      // NOT "Never judged", which this line claimed until 2026-08-04 and is false for
+      // roughly the population the livelock fix was about: the metric counts
+      // status == "unqualified", and an attempt that concludes no_evidence deliberately
+      // leaves status alone, so an enabled feedless source is tried over and over and
+      // still counted here. "Awaiting a verdict" is what the number actually measures.
+      sources_never_judged: "Awaiting a verdict", sources_candidates: "Candidates",
     };
+    // Wrap an LTR-shaped VALUE before interpolating it into a translated sentence, so the
+    // bidi algorithm treats it as one run instead of reordering its parts against the
+    // surrounding RTL text. Measured in the real Arabic page: "بدأ التسجيل في " + an ISO
+    // timestamp renders in visual order ".07T18:00:00-07-2026" -- the year at the wrong
+    // end, which is a MISREAD date, not merely an ugly one. With U+2068 FIRST STRONG
+    // ISOLATE / U+2069 POP DIRECTIONAL ISOLATE around it: ".2026-07-07T18:00:00".
+    //
+    // Plain characters, not markup, so they survive esc() and work anywhere a string is
+    // interpolated. Needed for punctuation-joined runs (dates, versions, IDs, URLs,
+    // ranges); a bare number does not need it and does not get one, since an isolate on a
+    // lone digit is invisible clutter. LTR locales are unaffected -- the characters are
+    // zero-width and the reordering they suppress only happens in an RTL paragraph.
+    const _LTR_ISOLATE = ["⁨", "⁩"];
+    function _ltrIsolate(v) {
+      return v == null ? v : _LTR_ISOLATE[0] + String(v) + _LTR_ISOLATE[1];
+    }
+    // Fetched for the composition note, deliberately NOT charted as a fifth line: it is a
+    // SUBSET of the line above (nested series on one axis read as separate populations),
+    // and it starts recording today while the others have months, so a new line would
+    // appear to begin at zero when it simply was not being recorded. One data point is
+    // enough to state the split in words, which is what the note does.
+    const LIB_QUAL_SPLIT_METRIC = "sources_never_attempted";
     let _libQualSeries = [];   // stashed live series (enlarge + in-place re-render)
     function _libQualSpread(series) {
       const vals = series.flatMap(s => s.points.map(p => p.v)).filter(v => v > 0);
       return vals.length ? Math.max(...vals) / Math.min(...vals) : 1;
+    }
+    // Whether a log axis is even POSSIBLE for these series. Source counts legitimately
+    // start at zero and log10(0) is undefined, so ooChart refuses log mode on such data
+    // and falls back to linear -- this asks the same question, so the tile's own "log
+    // scale" chip can never claim a scale the chart declined to use.
+    function _libQualLogOk(series) {
+      return series.every(s => (s.points || []).every(p => p.v != null && +p.v > 0));
     }
     async function _libQualificationTile(days) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const cur = days || _libTileDays.__qual || LIB_DEFAULT_DAYS;
       _libTileDays.__qual = cur;
       const label = t("Source qualification");
-      let payloads;
+      let payloads, splitPayload = null;
       try {
-        payloads = await Promise.all(LIB_QUAL_METRICS.map(m =>
-          api(`/api/library/history?metric=${encodeURIComponent(m)}&days=${cur}`)));
+        const all = await Promise.all(
+          LIB_QUAL_METRICS.concat([LIB_QUAL_SPLIT_METRIC]).map(m =>
+            api(`/api/library/history?metric=${encodeURIComponent(m)}&days=${cur}`)));
+        payloads = all.slice(0, LIB_QUAL_METRICS.length);
+        splitPayload = all[all.length - 1];
       } catch (e) {
         return `<div id="lib-tile-__qual" style="flex:2;min-width:280px;padding:6px;border:1px solid var(--border);border-radius:8px">
           <b style="font-size:12.5px">${esc(label)}</b>
           <div class="note err" style="font-size:11px">${esc(e.message || e)}</div></div>`;
       }
       _libQualSeries = LIB_QUAL_METRICS.map((m, i) => ({
-        label: t(LIB_QUAL_LABELS[m] || m), unit: t(LIB_QUAL_LABELS[m] || m),
+        // NO unit. ooChart's legend renders `label` then `n=N · unit`, where n is the
+        // DATAPOINT count -- so the slot is the unit OF N, not of the values. Passing the
+        // label read "Qualified n=29 · Qualified" (redundant); passing "sources" read
+        // "Qualified n=29 · sources", which a reader takes as "29 sources in this
+        // category" and cannot be true of all four series at once. It is 29 daily
+        // samples. An adversarial critic reading the screenshot caught the second form.
+        // What the values count is said by the tile's title and its caveat.
+        label: t(LIB_QUAL_LABELS[m] || m),
         points: (payloads[i].series || []).map(p => ({t: p.t, v: p.n})),
       }));
       const flat = _libAllZero(_libQualSeries.flatMap(s => s.points.map(p => p.v)));
-      const logY = _libQualSpread(_libQualSeries) > 50;
+      const logY = _libQualSpread(_libQualSeries) > 50 && _libQualLogOk(_libQualSeries);
       const began = payloads.map(p => p.recording_began_at).filter(Boolean).sort()[0];
       const beganNote = began
-        ? `<div class="hint muted" style="font-size:11px">${esc(t("Recording began at {x}.").replace("{x}", began))}</div>`
+        ? `<div class="hint muted" style="font-size:11px">${esc(t("Recording began at {x}.").replace("{x}", _ltrIsolate(began)))}</div>`
         : "";
       const body = flat
         ? `<div class="muted" style="padding:14px 0;font-size:12px">${esc(t("No data yet."))}</div>`
@@ -8565,7 +8609,50 @@
         <div style="display:flex;align-items:baseline;gap:6px;justify-content:space-between">
           <b style="font-size:12.5px">${esc(label)}</b>
           <button class="ghost tiny" onclick="enlargeLibQualification()" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
-        </div>${body}${beganNote}${_libWindowChips("__qual", cur)}</div>`;
+        </div>${body}${_libQualSplitNote(payloads, splitPayload)}${beganNote}${_libWindowChips("__qual", cur)}</div>`;
+    }
+    // The composition of the "Awaiting a verdict" line, in words. Extracted as a pure
+    // function of the two payloads so a test can drive it directly: a source guard
+    // asserting the identifier appears would survive deleting the sentence.
+    function _libQualNewest(payload) {
+      const pts = (payload && payload.series) || [];
+      // Newest by timestamp, not by array position: a reordered payload must not silently
+      // become "the latest reading".
+      let best = null;
+      for (const p of pts) if (best === null || String(p.t) > String(best.t)) best = p;
+      return best === null ? null : best.n;
+    }
+    function _libQualSplitText(awaiting, never) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : null;
+      const fmt = (tpl, vars) => (tf ? tf(tpl, vars)
+        : Object.keys(vars).reduce((s, k) => s.split("{" + k + "}").join(String(vars[k])), t(tpl)));
+      // An absent reading is stated as absent. Rendering 0 here would claim every waiting
+      // source had been attempted, which is the opposite of what "not recorded yet" means.
+      if (awaiting === null || never === null) {
+        return t("Not yet recorded: how many of these have never been attempted.");
+      }
+      if (never > awaiting) {
+        // Structurally a subset, so this can only be two readings from different
+        // snapshots. Say that rather than printing a negative remainder.
+        return t("The two readings come from different snapshots, so the split is not comparable yet.");
+      }
+      // Label:value, not prose. A conjugated verb cannot agree with an interpolated
+      // count without CLDR plural rules this app does not have -- the prose form read
+      // "1 have never been attempted", and the French carried the identical error
+      // because the TEMPLATE always pluralised. Russian has three plural forms and
+      // Arabic six, so per-form keys are not the answer either. Nothing conjugates here,
+      // so every locale is correct by construction. Caught by an adversarial critic
+      // reading the rendered screenshot, not by any mechanical check.
+      return fmt(
+        "Awaiting a verdict: {awaiting} · never attempted: {never} · tried without one: {tried}",
+        {awaiting: awaiting, never: never, tried: awaiting - never});
+    }
+    function _libQualSplitNote(payloads, splitPayload) {
+      const i = LIB_QUAL_METRICS.indexOf("sources_never_judged");
+      const awaiting = i < 0 ? null : _libQualNewest(payloads[i]);
+      const never = _libQualNewest(splitPayload);
+      return `<div class="hint muted" style="font-size:11px">${esc(_libQualSplitText(awaiting, never))}</div>`;
     }
     function _libRenderQualChart(root) {
       const scope = root || document;
@@ -8574,7 +8661,7 @@
       if (!host || !live.length) return;   // defensive: a flat/errored tile has no chart host
       // zeroBase: these are source COUNTS, so the axis starts at a true zero
       // (ignored under logY, where log(0) is undefined — stated in ooChart).
-      const logY = _libQualSpread(_libQualSeries) > 50;
+      const logY = _libQualSpread(_libQualSeries) > 50 && _libQualLogOk(_libQualSeries);
       ooChart(host, live, {height: 150, indexed: false, logY: logY, zeroBase: !logY});
     }
     function enlargeLibQualification() {
@@ -8582,7 +8669,7 @@
       const live = _libQualSeries.filter(s => s.points.length);
       if (!live.length) return;   // defensive: nothing to enlarge
       chartEnlarge(t("Source qualification"), live,
-        t("Counts only, never a quality score. Qualified = actively collecting; disqualified/never-judged are enabled but not (yet) admitted; candidates are disabled, awaiting review."),
+        t("Counts only, never a quality score. Qualified = actively collecting; disqualified and awaiting-a-verdict are enabled but not (yet) admitted; candidates are disabled, awaiting review. Awaiting a verdict does not mean untried: an attempt that finds nothing to judge is recorded and leaves the status alone, so a source with no feed stays here however often it is tried."),
         {scales: true});
     }
 
@@ -11165,7 +11252,12 @@
             const g = host._famGroups[+eb.dataset.fam]; if (!g) return;
             // The ONE shared fullscreen graph overlay (P2-10) — the family's
             // multi-series on #chart-enlarge with the Absolute/Indexed/Log scales.
-            chartEnlarge(t(g.label), g.series.filter(s => (s.points || []).length), host._famCaveat, {scales: true});
+            // No caveat passed: this view's caveat is the per-mode "Indexed to 100 at
+            // the window start…" statement, which the modal's own HINTS says for every
+            // mode and keeps correct when the mode changes. Passing it here is what
+            // made the note go stale on a scale toggle in the first place; the inline
+            // .card-caveat still carries it for the un-enlarged family view.
+            chartEnlarge(t(g.label), g.series.filter(s => (s.points || []).length), "", {scales: true});
             return;
           }
           const mb = e.target.closest(".fam-mbtn");
@@ -11808,8 +11900,32 @@
       // off, so every existing chart is byte-for-byte unchanged (the same additive
       // contract as opts.indexed). zeroBase is ignored under logY (log(0) is -∞).
       const LOGEPS = 1e-9;
-      const vt = (v) => opts.logY ? Math.log10(Math.max(v, LOGEPS)) : v;   // value -> axis space
-      const vtInv = (d) => opts.logY ? Math.pow(10, d) : d;                // axis space -> value (labels)
+      // log10(0) is -Infinity, so a series containing a zero has NO honest position on a
+      // log axis -- and the clamp to LOGEPS invented one. Measured on the source
+      // qualification tile (four integer series in 0..6, zeros at the start): the axis
+      // spanned log-space -9..0.78, so the real differences occupied about 5% of the plot
+      // height, honestTicks labelled log-space ticks back through vtInv and printed
+      // "0.003" and TWO "0" gridlines -- none of them values a count can take -- and every
+      // true zero was drawn as a plotted point sitting on the floor with a line through it.
+      // A fabricated axis, found by rendering the modal and reading its ticks.
+      //
+      // It never showed before because logY shipped for the markets boards, where an index
+      // value is never 0. So the mode is REFUSED when the data cannot support it: fall back
+      // to linear (zero-based, integer ticks -- the honest axis for counts) and SAY so,
+      // rather than drawing a decade range the data never occupied. Judged over the WHOLE
+      // series, not the visible window, so the axis cannot silently flip while zooming.
+      const logOk = !!opts.logY
+        && all.every(s => (s.pts || []).every(p => !_missing(p.v) && +p.v > 0));
+      const logRefused = !!opts.logY && !logOk;
+      const vt = (v) => logOk ? Math.log10(Math.max(v, LOGEPS)) : v;   // value -> axis space
+      const vtInv = (d) => logOk ? Math.pow(10, d) : d;                // axis space -> value (labels)
+      if (logRefused) {
+        const warn = document.createElement("div");
+        warn.className = "hint muted";
+        warn.style.cssText = "font-size:11px";
+        warn.textContent = t9("Linear scale: a log axis cannot place a zero, and this data has some.");
+        wrap.insertBefore(warn, readout);
+      }
 
       function visible() {
         return all.filter(s => !s.hidden).map(s => ({...s, vis: s.pts.filter(p => p.t >= t0 && p.t <= t1)}));
@@ -11824,7 +11940,7 @@
         const vs = visible();
         const ys = vs.flatMap(s => s.vis.map(p => vt(pv(s, p))));
         if (!ys.length) { readout.textContent = t9("no points in this window — zoom out (double-click)"); return; }
-        const dataLo = (opts.zeroBase && !opts.logY) ? Math.min(0, ...ys) : Math.min(...ys);
+        const dataLo = (opts.zeroBase && !logOk) ? Math.min(0, ...ys) : Math.min(...ys);
         const dataHi = Math.max(...ys);
         // A FLAT series is centred instead of fabricating a span: the old
         // `(yMax-yMin)||1` fallback drew 23 / 23.33 / 23.67 / 24 for a constant
@@ -11838,7 +11954,7 @@
         // fractional count), exactly one tick for a flat series. Under logY the
         // axis space is log10, so integer snapping applies to the LABEL values,
         // not the axis positions — hence the vtInv round-trip stays as-is.
-        const tickInt = !opts.logY && !opts.indexed && _allInteger(ys);
+        const tickInt = !logOk && !opts.indexed && _allInteger(ys);
         for (const v of honestTicks(dataLo, dataHi, 4, tickInt)) {
           const y = Yof(v);
           ctx.setLineDash([2, 4]); ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y); ctx.stroke();
@@ -16032,11 +16148,23 @@
         const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
         const SCALES = [["absolute", "Absolute"], ["indexed", "Indexed (=100)"], ["log", "Log"]];
         let mode = "absolute";
+        // Offering a mode the chart will refuse puts two statements on screen at once: the
+        // hint claiming "Log scale (base 10) — equal ratios are equal distances" above a
+        // chart that drew a linear axis and says so underneath. ooChart's refusal is the
+        // load-bearing guard (it cannot be bypassed); this stops the contradiction from
+        // being reachable, and states the reason on the control itself rather than only
+        // after the reader has clicked it.
+        const logPossible = seriesList.every(
+          s => (s.points || []).every(p => p.v != null && +p.v > 0));
         const ctl = document.createElement("div");
         ctl.className = "mkt-scalerow";
         ctl.innerHTML = `<span class="muted" style="font-size:12px;margin-right:2px">${esc(t9("Scale"))}:</span>`
-          + SCALES.map(([k, lbl]) =>
-              `<button type="button" class="chip${k === mode ? " on" : ""}" data-scale="${k}">${esc(t9(lbl))}</button>`).join("");
+          + SCALES.map(([k, lbl]) => {
+              const off = k === "log" && !logPossible;
+              return `<button type="button" class="chip${k === mode ? " on" : ""}" data-scale="${k}"`
+                + (off ? ` disabled title="${esc(t9("A log axis cannot place a zero, and this data has some."))}"` : "")
+                + `>${esc(t9(lbl))}</button>`;
+            }).join("");
         const hint = document.createElement("div");
         hint.className = "hint muted"; hint.style.cssText = "font-size:11.5px;margin:2px 0 4px";
         const host = document.createElement("div");
@@ -16048,18 +16176,28 @@
         };
         const render = () => {
           hint.textContent = HINTS[mode] || "";
-          // mkt-002-stale-caveat-scale-toggle (P1): the static #chart-enlarge-note
-          // set once above (from the caller's own `caveat` — for the Commodities
-          // family-stacked view, a fixed "Indexed to 100 at the window start…"
-          // string) never refreshed on a scale-toggle click, so switching to
-          // Absolute or Log left a note directly contradicting the now-accurate
-          // dynamic hint just above it. The note now mirrors the same per-mode
-          // HINTS text as the dynamic hint, so the two can never disagree.
-          if (note) { note.textContent = HINTS[mode] || caveat || ""; note.style.display = ""; }
+          // mkt-002-stale-caveat-scale-toggle (P1): the note was set once above from
+          // the caller's `caveat`, and for the Commodities family view that caveat IS
+          // a per-mode statement ("Indexed to 100 at the window start…"), so it never
+          // refreshed on a scale-toggle click and ended up contradicting the accurate
+          // hint just above it. The fix mirrored HINTS into the note — which cured the
+          // contradiction and silently DISCARDED every caller's caveat, because
+          // HINTS[mode] is non-empty for all three modes and `|| caveat` was therefore
+          // dead code. Two mode-INDEPENDENT caveats were lost that way: the
+          // qualification tile's "counts only, never a quality score / awaiting a
+          // verdict does not mean untried" and the index comparison's provenance line.
+          // Found by opening the modal in a browser and reading its last line.
+          //
+          // So the two statements now live in the two slots they belong to: the mode
+          // text in `hint`, which tracks the mode, and the caller's caveat in `note`,
+          // which does not depend on it. A caller whose caveat is a MODE statement must
+          // pass none — HINTS already says it (the Commodities caller does exactly that
+          // and keeps its inline .card-caveat for the un-enlarged view).
+          if (note) { note.textContent = caveat || ""; note.style.display = caveat ? "" : "none"; }
           ooChart(host, seriesList, {height: 360, maxWidth: 880, indexed: mode === "indexed", logY: mode === "log"});
         };
         ctl.addEventListener("click", (e) => {
-          const b = e.target.closest("[data-scale]"); if (!b) return;
+          const b = e.target.closest("[data-scale]"); if (!b || b.disabled) return;
           mode = b.dataset.scale;
           ctl.querySelectorAll("[data-scale]").forEach(x => x.classList.toggle("on", x.dataset.scale === mode));
           render();
@@ -22134,6 +22272,18 @@
       try {
         if (_libViewLoaded.has("composition") && typeof renderCompositionFigures === "function") {
           renderCompositionFigures();
+        }
+      } catch (_e) {}
+      // The Activity view is the same class again, and it recurred the moment a new
+      // interpolated string was added there: the qualification tile's composition note
+      // ("Of 3 awaiting a verdict, 1 have never been attempted…") is built with
+      // OOI18N.tf(), so once interpolated it is not a key and the walker cannot touch it.
+      // Caught by screenshotting the tile in French, where every neighbouring label had
+      // translated and this one sentence had not. Any future render-once surface that
+      // interpolates must register here too.
+      try {
+        if (_libViewLoaded.has("activity") && typeof renderLibraryActivityGraphs === "function") {
+          renderLibraryActivityGraphs();
         }
       } catch (_e) {}
       // Re-translate the airplane button's JS-managed (data-i18n-dyn) title.
