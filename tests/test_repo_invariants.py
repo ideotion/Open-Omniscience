@@ -8649,7 +8649,9 @@ def test_the_ai_store_panel_leads_with_the_path_in_use():
     which writes to its OWN OLLAMA_MODELS — but the panel's headline line printed the
     app's configured path and the app's configured size, so the numbers pointed away
     from the answer and the folder had to be found in a file manager."""
-    app = (Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_text()
+    app = (Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_text(
+        encoding="utf-8"
+    )
     body = _js_function_body(app, "loadAiStore")
     assert "r.ollama.in_app_folder === false" in body, "the two cases must be told apart"
     assert "r.ollama.detected" in body and "r.ollama.detected_bytes" in body, (
