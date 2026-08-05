@@ -80,12 +80,59 @@ def _count_sources_disqualified(session: Session) -> int:
 
 
 def _count_sources_never_judged(session: Session) -> int:
+    """Enabled sources carrying no verdict yet.
+
+    ⚠ THE METRIC KEY IS A MISNOMER AND MUST NOT BE "FIXED" BY REDEFINING IT.
+    This counts ``status == 'unqualified'``, which is NOT the same as "never
+    attempted": ``log_no_evidence_attempts`` writes a ``no_evidence``
+    ``SourceQualificationAttempt`` row and deliberately leaves ``Source.status``
+    untouched (``src/catalog/qualification.py:310-329``), so a source that has been
+    tried repeatedly and concluded nothing sits here too — which is exactly the case
+    an ENABLED source with no feed produces, forever. The genuinely-never-attempted
+    count is ``_count_sources_never_attempted`` below.
+
+    The key stays ``sources_never_judged`` because the snapshot store has infinite
+    retention: changing what an existing key measures would make its own history
+    incomparable with its future, a silent break in a time series. So the definition
+    is frozen and the LABEL is what got corrected.
+    """
     from src.catalog.qualification import STATUS_UNQUALIFIED
     from src.database.models import Source
 
     return int(
         session.query(func.count(Source.id))
         .filter(Source.enabled.is_(True), Source.status == STATUS_UNQUALIFIED)
+        .scalar()
+        or 0
+    )
+
+
+def _count_sources_never_attempted(session: Session) -> int:
+    """Enabled, verdict-less sources that have never been through a qualification pass.
+
+    The subset of ``sources_never_judged`` that the old label claimed the whole line
+    was. The difference between the two is "attempted, concluded nothing" — a real,
+    dated event that only ``source_qualification_attempts`` records, and which no
+    surface in the app read before this metric existed.
+
+    NOT EXISTS rather than a LEFT JOIN … IS NULL: measured identical in time on a
+    76,679-source fixture (~9 ms both ways) and the plan is
+    ``SEARCH sources USING INDEX idx_source_status`` with a per-candidate
+    ``SEARCH … USING COVERING INDEX idx_qual_attempt_source_time`` — index-only on
+    the attempts side, and it never touches ``articles``, so none of the SQLCipher
+    row-decrypt cost that governs the article-side queries applies here.
+    """
+    from src.catalog.qualification import STATUS_UNQUALIFIED
+    from src.database.models import Source, SourceQualificationAttempt
+
+    tried = (
+        select(SourceQualificationAttempt.id)
+        .where(SourceQualificationAttempt.source_id == Source.id)
+        .exists()
+    )
+    return int(
+        session.query(func.count(Source.id))
+        .filter(Source.enabled.is_(True), Source.status == STATUS_UNQUALIFIED, ~tried)
         .scalar()
         or 0
     )
@@ -107,6 +154,7 @@ _FILTERED_METRICS: dict[str, Callable[[Session], int]] = {
     "sources_qualified": _count_sources_qualified,
     "sources_disqualified": _count_sources_disqualified,
     "sources_never_judged": _count_sources_never_judged,
+    "sources_never_attempted": _count_sources_never_attempted,
     "sources_candidates": _count_sources_candidates,
 }
 

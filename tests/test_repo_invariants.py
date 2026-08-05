@@ -3866,11 +3866,28 @@ def test_indices_multiseries_compare():
     # ooChart gained an ADDITIVE log-Y mode: identity when off, so every existing
     # chart is byte-for-byte unchanged (the same contract as opts.indexed)
     assert "opts.logY" in html, "ooChart must support the additive opts.logY scale"
-    assert "Math.log10(Math.max(v, LOGEPS))" in html, (
-        "log-Y must map log10(value) (clamped) — never crash on a zero/negative"
+    # AMENDED 2026-08-04. This used to assert the clamp with the message "never crash on a
+    # zero/negative", treating LOGEPS as the correct handling of a zero. It is not: log10(0)
+    # is undefined, and clamping INVENTS a position for it. Measured on the source
+    # qualification tile -- four integer series in 0..6, zeros at the start -- the axis
+    # spanned log-space -9..0.78, so the real differences occupied about 5% of the plot, the
+    # tick labels read "0.003" and TWO zeros (values no count can take), and every true zero
+    # was plotted on the floor with a line drawn through it. A fabricated axis.
+    #
+    # The mode is now REFUSED when the data cannot support it: linear fallback, zero-based
+    # with integer ticks, stated on screen. The clamp survives only as belt-and-braces
+    # inside the branch that no longer runs on such data.
+    assert "const logOk" in html and "const logRefused" in html, (
+        "log-Y must refuse data it cannot place, rather than clamping a zero into a value"
     )
-    assert "opts.logY ? Math.pow(10, d) : d" in html, (
+    assert "logOk ? Math.log10(Math.max(v, LOGEPS))" in html, (
+        "the log transform must be gated on the refusal, not on opts.logY alone"
+    )
+    assert "logOk ? Math.pow(10, d) : d" in html, (
         "log-Y must back-transform gridline labels to the REAL value (identity when off)"
+    )
+    assert "opts.zeroBase && !logOk" in html and "const tickInt = !logOk" in html, (
+        "a refused log falls back to the zero-based integer-tick axis counts deserve"
     )
 
 
@@ -7360,37 +7377,57 @@ def test_home_recent_panel_unhides_on_error_too():
     assert "box.innerHTML" in catch_block
 
 
-def test_chart_enlarge_note_refreshes_on_scale_toggle():
-    """GUI-test finding mkt-002-stale-caveat-scale-toggle (P1): the Commodities
-    enlarge dialog's dynamic scale hint (Absolute/Indexed/Log) updated correctly
-    on toggle, but a SEPARATE static caption (#chart-enlarge-note, set once at
-    dialog-open time from the caller's own caveat -- for the family-stacked
-    Commodities view, a fixed 'Indexed to 100 at the window start…' string) never
-    refreshed, so switching to Absolute or Log left it directly contradicting the
-    now-accurate dynamic hint a few lines above. The note now mirrors the same
-    per-mode HINTS text inside the same render() the scale-toggle click handler
-    calls, so the two can never disagree."""
+def test_chart_enlarge_scale_hint_and_caveat_cannot_disagree_or_evict_each_other():
+    """GUI-test finding mkt-002-stale-caveat-scale-toggle (P1): the Commodities enlarge
+    dialog's dynamic scale hint (Absolute/Indexed/Log) updated on toggle, but a SEPARATE
+    static caption (#chart-enlarge-note, set once at dialog-open time from the caller's
+    own caveat -- for the family-stacked Commodities view a fixed 'Indexed to 100 at the
+    window start…' string) never refreshed, so switching to Absolute or Log left it
+    contradicting the now-accurate hint a few lines above.
+
+    AMENDED 2026-08-04. That fix made the note mirror HINTS[mode], which cured the
+    contradiction and silently DISCARDED every caller's caveat: the code read
+    ``HINTS[mode] || caveat`` and HINTS[mode] is non-empty for all three modes, so the
+    second branch was dead. Two mode-INDEPENDENT caveats were lost -- the source
+    qualification tile's "never a quality score / awaiting a verdict does not mean
+    untried" and the index comparison's provenance line -- and it was found by opening the
+    modal in a browser and reading its last line.
+
+    So this test now guards the PROPERTY both fixes were reaching for, rather than either
+    one's implementation: the mode statement lives in the hint, which refreshes inside the
+    same render() the click handler calls, and the caller's caveat lives in the note, which
+    the mode can neither stale nor evict. A caller whose caveat IS a mode statement passes
+    none, because HINTS already says it.
+    """
     js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
     fn = js.split("function chartEnlarge(title, seriesList, caveat, opts) {", 1)[1].split(
         "\n    function _chartEnlargeExtra", 1)[0]
 
     render_block = fn.split("const render = () => {", 1)[1].split("};", 1)[0]
     assert "hint.textContent = HINTS[mode]" in render_block, (
-        "sanity: the dynamic hint's own per-mode refresh must still exist"
+        "the mode statement must still refresh per mode, inside render()"
     )
-    assert "note.textContent = HINTS[mode]" in render_block, (
-        "the static note must refresh to the SAME per-mode text inside the same "
-        "render() the scale-toggle click handler calls"
+    assert "HINTS[mode] || caveat" not in render_block, (
+        "the dead branch is back: HINTS[mode] is never empty for any of the three modes, "
+        "so the caller's caveat would never render"
     )
-    # The click handler's only job is to update `mode` then call render() -- the
-    # note refresh must live INSIDE render(), not be a second, separately-wired
-    # update that could drift out of sync again.
+    assert 'note.textContent = caveat || ""' in render_block, (
+        "the note must carry the caller's own mode-independent caveat"
+    )
+    # The click handler's only job is to update `mode` then call render() -- neither text
+    # may be a second, separately-wired update that could drift out of sync again.
     click_block = fn.split('ctl.addEventListener("click", (e) => {', 1)[1].split("});", 1)[0]
-    assert "note.textContent" not in click_block, (
-        "the note refresh must live inside render(), reached via the single "
-        "render() call at the end of the click handler -- not duplicated here"
+    assert "note.textContent" not in click_block and "hint.textContent" not in click_block, (
+        "both refreshes live inside render(), reached via its single call at the end of "
+        "the click handler -- not duplicated here"
     )
     assert "render();" in click_block
+    # And the caller that motivated the original finding must no longer hand its per-mode
+    # string to the modal at all, or the staleness it fixed becomes reachable again.
+    fam = js[js.index("chartEnlarge(t(g.label)"):]
+    assert "_famCaveat" not in fam[:fam.index(";") + 1], (
+        "the Commodities family view's caveat is a MODE statement; HINTS owns it now"
+    )
 
 
 def test_worldmap_fullscreen_targets_host_so_legend_and_caveat_stay_visible():

@@ -583,7 +583,7 @@ report path). These are two surfaces over one backend, not one view with a toggl
 | **C4** | Article word-count distribution | 5 | Bar chart over labelled ranges (**not** a density histogram — the bins are unequal width) | The real length distribution, per language, excluding pooled unsegmented languages | E | **M** | **BOUNDED** | F1, F2, F3, F8 + `ooViz.binCounts1D` | **PROPOSED** |
 | **C5** | Source concentration | concentration | Lorenz curve + Gini printed beside it | How unequally the corpus draws on its sources | E + D | **M** | **BOUNDED** | F1, F2, F3, F8 | **PROPOSED** |
 | **C6** | Language × month ingest matrix | 1, 7 | Matrix heatmap | Which languages the corpus is actually growing in — the missing feedback surface for the `language_equilibrium` scheduler lever | E | **M** | **BOUNDED** | F1, F2, F3, F8 + `ooViz.bin2D` | **PROPOSED** |
-| **C7** | Qualification attempt history per source | 1, intervals | Timeline / Gantt rows | Each source's attempt sequence, verdicts and re-qualification ladder position | E | **M** | **NONE** | F1, F2, F3, F4, F8 | **PROPOSED** |
+| **C7** | Qualification attempt history per source | 1, intervals | Timeline / Gantt rows | Each source's attempt sequence, verdicts and re-qualification ladder position | E | **M** | **NONE** | F1, F2, F3, F4, F8 | **REFUSED 2026-08-04 — the form's promises exceed the data; see §7b** |
 | **C8** | Stat vintage ribbon | 4 | Slope chart / vintage ribbon | The same official figure as published at several dates — a revision made visible | D | **M** | **BOUNDED** | F1, F2, F6, F7, F8 + existing `slopeChartSvg`, `ooViz.slopeGeometry` | **PROPOSED** |
 | **C9** | Revision cadence for tracked wiki/law documents | 1, intervals | Timeline + small multiples | When each tracked document actually changed | E | **M** | **NONE** | F1, F2, F3, F5, F8 | **PROPOSED** |
 | **C10** | Canonical-URL duplicate-group sizes | 5 | Log-log or bar over group size | Whether duplicate storage is a long tail or a few pathological cases | E | **M** | **NONE** | F1, F2, F3, F8 | **PROPOSED** |
@@ -594,6 +594,77 @@ report path). These are two surfaces over one backend, not one view with a toggl
 | **C15** | Near-duplicate cluster-size distribution | 5 | Histogram | How much of the corpus is republication | E | **L** | **BOUNDED** | F1, F2, F3, F8 | **DEFERRED** — requires content decrypt; not persisted (`src/signals/near_dup.py:308`) |
 | **C16** | Novelty over time | 1 | Line | Whether new material is actually new | E | **L** | **BOUNDED** | F1, F2, F3, F8 | **DEFERRED** — requires content decrypt; not persisted (`src/signals/novelty.py:64-90`) |
 | **C17** | Per-source per-day coverage grid | 1, 8 | Colour-stripe rows | Which source went quiet when | E | **L** | **BOUNDED** | F1, F2, F3, F8 | **DEFERRED — blocked on data.** §3.3: no durable per-source-per-day outcome record exists. Building the *chart* first would assert what the data cannot support. |
+
+### 7b. Two refusals, recorded with their evidence (2026-08-04)
+
+The framework's own rule is that a rejected technique is a FINDING, not a gap. Both of
+these were scoped against the live tree and both fail — so they are written down here
+rather than left PROPOSED for the next session to re-scope from scratch.
+
+**C7 — a per-source qualification timeline: REFUSED.** Five independent reasons, each
+checked in the code rather than inferred:
+
+1. **No duration column.** `source_qualification_attempts` is
+   `(id, source_id, attempted_at, verdict, criteria_version)` — `attempted_at` is a single
+   instant. So the row's own "Timeline / **Gantt**" phrasing is half wrong for this data: a
+   Gantt bar spans a duration, and drawing one here fabricates the span.
+2. **Most rows would be a single dot.** `select_unqualified` filters
+   `status == 'unqualified'` and `select_due_disqualified` filters `'disqualified'`; nothing
+   selects a QUALIFIED source, so it carries exactly one attempt row forever. The form
+   promises a sequence worth tracing, and the data has one for the small minority of
+   chronically-disqualified sources only.
+3. **~40 drawable rows out of ~76,679 sources**, so the chart is bounded by construction and
+   owes a disclosed ordering plus the count it left out.
+4. **`criteria_version` is a single hardcoded constant**, so faceting or legending by it
+   shows one value.
+5. **THE DECISIVE ONE.** A chart coloured by verdict would render near-monochrome — not
+   because sources are healthy, but because the only `extraction_failure` criterion is
+   `pathology_rate` against `PATHOLOGY_ABS_FLOOR = 0.5`, calibrated above the observable
+   range (a maintainer-pending ruling already in the ledger). A reader takes a monochrome
+   chart as "these sources are almost all fine". That is a fabricated reassurance, and it is
+   the one reason that would still hold if the other four were fixed.
+
+Measured while scoping, so a future session need not re-measure: the per-source read the
+chart would issue is `SEARCH … USING INDEX (source_id=?)` at 0.10 ms for 40 sources;
+choosing which 40 is a covering-index scan plus a temp B-tree at ~6 ms over 24k attempt
+rows; the denominator is 1.25 ms. Cost was never the obstacle. The SQLCipher row-decrypt
+trap does not apply either — five small columns, no `articles` join, ~1.5 MB at field scale.
+
+What the scoping DID find is shipped instead: the tile's third line was labelled "Never
+judged" for a count that includes sources tried repeatedly, and the attempts table — the
+only place carrying that distinction — had no reader anywhere in the app.
+
+**F5 — extract `ooChart`'s hover and zoom into shared utilities: REFUSED AS SPECIFIED.**
+The ticket's shape ("extract from `ooChart`, the other renderers inherit it") has no valid
+target for most of its intended beneficiaries:
+
+1. **`ooChart` is the only canvas chart in the app.** Every other renderer (~10 of them,
+   `dashChartSvg` included) returns an SVG *string* that callers interpolate into
+   `innerHTML` and keep no handle to, so its scale closures die on return. There is nothing
+   for an extracted hover to attach to.
+2. **The only SVG-string hover precedent here is the native `<title>` element** — one value,
+   one shape, no crosshair, no live readout. Extending that is not reuse of `ooChart`'s
+   mechanism; it is a second, structurally different mechanism.
+3. **`ooChart`'s hover and zoom are not separable today.** They share `dragX`/`dragT` and one
+   `pointermove` with the brush merged in #869 — `dragT == null` is literally what
+   distinguishes a brush from a pan — and `Yof` is rebuilt inside `draw()` every frame rather
+   than hoisted.
+4. **There is no scaffold.** `ooviz.js` has zero event listeners and zero interaction state
+   by design, and even its geometry layer is unevenly adopted: `ooChart` and `dashChartSvg`,
+   the two renderers this ticket is about, are exactly the two that hand-roll their own
+   scales. `setupCanvas` and `readCssVar` are exported and never called.
+5. **14+ test files assert on `ooChart`'s literal source**, many over brace-matched slices of
+   the very lines an extraction would move.
+
+TWO THINGS FOUND WHILE SCOPING, worth keeping so neither is "fixed" wrongly:
+`ooChart`'s local `cssVar` is **not** interchangeable with `ooViz.readCssVar` — the former
+falls back to `"#888"` and does not trim, the latter trims and returns `""`, so swapping it
+in would turn canvas colours into empty strings. And `sparkSvg` and `trendSvg` have exactly
+one occurrence each in `app.js`: their own definitions. They are dead, and their deletion
+belongs to the browser-verified dead-code pass the ledger already tracks, not here.
+
+If the underlying want is overview→detail on the SVG renderers, the honest framing is a new,
+small, delegated-listener mechanism designed for string renderers — not an extraction.
 
 **Twelve PROPOSED, five DEFERRED.** §9 additionally records **three candidates I generated
 and rejected as UNSAFE**, plus the categories the brief excludes outright (listed there for

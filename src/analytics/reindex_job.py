@@ -41,6 +41,10 @@ from pathlib import Path
 _BATCH = 300
 _STATE_FILE = "reindex_job.json"
 
+#: How often to re-check whether an exclusive operation still owns the machine.
+#: The wait is on the stop event, so pause/cancel stay instant regardless.
+_EXCLUSIVE_POLL_S = 5.0
+
 
 def _default_session():
     from src.database.session import SessionLocal
@@ -68,6 +72,7 @@ class ReindexJobManager:
         self._total = 0  # total articles at start (for percent + ETA)
         self._done = 0  # articles processed so far (for percent + ETA)
         self._done_at_start = 0  # _done when the current run began (honest run-rate ETA)
+        self._parked = False  # yielding to an exclusive operation (a restore owns the machine)
         self._tally: dict[str, int] = {}  # reindexed / failed / pruned / kept_curated
         self._error: str | None = None
         self._cancelled = False
@@ -220,6 +225,9 @@ class ReindexJobManager:
                 while True:
                     if self._stop.is_set():
                         break
+                    self._yield_to_exclusive()
+                    if self._stop.is_set():
+                        break
                     r = reindex_all_batch(
                         session,
                         extractor=extractor,
@@ -307,6 +315,46 @@ class ReindexJobManager:
                 self._error = str(exc)
                 self._save()
 
+    def _yield_to_exclusive(self) -> None:
+        """Block between batches while an exclusive operation owns the machine.
+
+        A restore claims the machine via ``BackgroundScheduler.hold_exclusive()``
+        and, on that premise, takes all cores and an enlarged page cache. That
+        hold gated ``run_now()`` and nothing else, so THIS job -- a second entry
+        point that starts equivalently heavy work -- ran straight through it. It
+        is not hypothetical: the 2026-08-04 field import recorded
+        ``owns_the_machine: true`` and then logged two ``reindex_resume``
+        milestones INSIDE its own merge, competing for CPU and disk with the
+        operation that believed it was alone. Same shape as the 2026-07-24
+        ``run_now`` finding, one module over: a pause that only stops the primary
+        loop is honest-sounding and incomplete.
+
+        Waiting, not aborting: the import is transient and this job is
+        cursor-persisted, so yielding costs a delay and nothing else. The wait is
+        on ``self._stop``, so pause/cancel stay instant while parked.
+        """
+        try:
+            from src.scheduler.runner import get_scheduler
+
+            scheduler = get_scheduler()
+        except Exception:  # noqa: BLE001 - never let a scheduler import failure stall the job
+            return
+        try:
+            while not self._stop.is_set():
+                try:
+                    if not scheduler.holds_exclusive():
+                        return
+                except Exception:  # noqa: BLE001 - an unreadable hold must not park us forever
+                    return
+                with self._lock:
+                    self._parked = True
+                self._stop.wait(_EXCLUSIVE_POLL_S)
+        finally:
+            # ALWAYS clear, on every exit path -- a stuck `parked` flag would
+            # report the job as yielding long after it resumed.
+            with self._lock:
+                self._parked = False
+
     def pause(self) -> None:
         self._stop.set()  # the worker stops between batches; state -> paused (persisted)
 
@@ -358,6 +406,11 @@ class ReindexJobManager:
                 "prune_after": self._prune_after,
                 "error": self._error,
                 "running": self._alive(),
+                # A parked job is running and making no progress ON PURPOSE. Without
+                # this the task manager shows "running" with a frozen counter, which
+                # is exactly the signature of the stall this yielding was added to
+                # avoid -- say which one it is rather than let the two look alike.
+                "parked_for_exclusive": self._parked,
             }
 
 

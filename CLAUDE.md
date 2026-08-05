@@ -2141,6 +2141,40 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     browser-unverified slice, run the FULL invariant suite rather than the tests you wrote, and
     read every endpoint payload you consume — those two guards are most of what stands between a
     conservative frontend slice and a broken one.
+  - **A LAZY `.*?` LOOKING FOR A CLOSER THAT MAY NOT EXIST IS QUADRATIC, AND THE UNROLLED-LOOP
+    REWRITE DOES NOT FIX IT (2026-08-05, the 412 KB article that wedged a field re-index):**
+    `<(style|script)\b[^>]*>.*?</\1\s*>` is the textbook way to strip a block, and it is fine
+    until an opener has no closer — then `.*?` expands to end-of-document, fails, and the engine
+    RESTARTS that scan from the next opener, so K openers cost K·N. MEASURED at 412,351 chars:
+    138.3 s worst case, 25.7 s on realistic unclosed-`<script>` spam, against **0.004 s for the
+    same volume of well-formed markup** — a ~350× cliff that turns only on whether the closers
+    happen to be there, i.e. reached by ordinary broken HTML rather than by a crafted input. THE
+    TRAP WORTH REMEMBERING: the obvious fix — possessive quantifiers and an unrolled loop
+    (`[^<]*+(?:<(?!/\1\s*>)[^<]*+)*+`) — removes the BACKTRACKING and bought only **2×** (138 s →
+    66 s), because the K restarts are not backtracking; they are K separate linear scans. Only
+    leaving the regex engine fixes it: walk openers with two cursors and RETIRE a tag once no
+    closer remains after it (if there is no `</style>` after p there is none after any q > p), →
+    0.030 s (4,648×). Two further rules: the replacement's copy cursor and scan cursor must be
+    SEPARATE — advancing the copy cursor past a skipped opener silently swallows the text before
+    it, a bug every one of 19 hand-written cases missed and a randomised differential against the
+    old pattern caught in 2,479 of 6,000; and state the LOSS as well as the win — the linear
+    version is ~10 ms SLOWER per 412 KB of well-formed style-heavy markup, because it pays two
+    Python-level searches per block instead of one C-level `re.sub`. GENERAL FORM: any
+    `OPEN.*?CLOSE` over untrusted markup is a K·N bomb; grep for the shape rather than waiting
+    for the article that finds it.
+  - **AN INSTRUMENT'S OUTPUT NAMES A SUSPECT, NOT A CAUSE — AND TWO STALLS CAN RUN AT ONCE
+    (2026-08-05, the same import):** the console line (`serial precompute still on article 26324
+    after 17536 s`) and the run journal disagreed: the journal said the run died in `merge` at
+    step 3 of 19, having never reached the re-index at all. Both were true — the autonomous
+    re-index job was draining an EARLIER batch concurrently, which the `reindex_resume`
+    milestones prove. Reading either signal alone produces a confident wrong story. THE
+    NEAR-MISS: the journal contains `step_elapsed_s: 26324.0`, so grepping the raw file for the
+    article id "26324" returns a coincidental hit — a number matching across two payloads is not
+    corroboration, and the units have to be checked before it is treated as such. SECOND HALF:
+    that concurrency was itself the 2026-07-24 exclusive-hold lesson recurring one module over —
+    the import recorded `owns_the_machine: true` and `hold_exclusive()` still gated only
+    `run_now()`, because `reindex_job.py` never consulted `holds_exclusive()`. When a lesson says
+    "gate EVERY entry point", the entry points added AFTER it are the ones that will be missing.
   - **NAME THE QUESTION A DECISION FUNCTION ANSWERS, THEN COUNT THE COPIES (2026-08-04, "AI
     backend won't start … local model hiccup"):** the recorded K2/routing lesson says a
     selection function answers the question it was written for. The sequel is that the
@@ -2517,6 +2551,79 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     turn it back on. GENERAL FORM: when a change makes a code path DO something rather
     than merely report, ask what the test suite now does on a machine unlike this one,
     and measure it with a plugin rather than reasoning about it.
+  - **A METRIC KEY CAN BE A MISNOMER THAT MUST NOT BE "FIXED" BY REDEFINING IT — and a fix
+    that makes two texts agree can do it by DELETING one (2026-08-04, the Library
+    qualification tile):** `_count_sources_never_judged` counts `status == 'unqualified'`,
+    while `log_no_evidence_attempts` writes a `no_evidence` attempt row and DELIBERATELY
+    leaves status alone (its whole reason for existing, the 2026-07-23 livelock fix) — so an
+    ENABLED source with no feed is tried on every rotation of the queue and was counted, and
+    labelled, "Never judged". The tempting repair is to make the key mean its name; that is
+    wrong, because the snapshot store has INFINITE retention and redefining an existing key
+    makes its own history incomparable with its future, a silent break in a time series
+    layered on top of the first defect. Freeze the definition, fix the LABEL, add a new key
+    for the honest count. GENERAL FORM: when a name and a measurement disagree and the
+    measurement has history, the name is the part you are allowed to change. SECOND HALF, in
+    the same tile: an earlier fix had cured a real staleness bug (a per-mode caveat
+    contradicting the scale hint above it) by writing `note.textContent = HINTS[mode] ||
+    caveat` — and `HINTS[mode]` is non-empty for all three modes, so `|| caveat` was DEAD
+    CODE and every `{scales: true}` caller silently lost its caveat, two of them
+    mode-INDEPENDENT statements with nothing to do with the toggle. Two statements of
+    different KINDS need two slots; through one slot the volatile one always wins. Found by
+    opening the modal and reading its last line, which was the hint where the caveat should
+    have been. COROLLARY on recurrence: the frozen-locale class (an interpolated `tf()`
+    string is not a key the DOM walker can match, and a Library view renders once) recurred
+    the moment a new interpolated string was added to a render-once surface — even though
+    `oo:langchange` already registered a SIBLING view for exactly this reason with the reason
+    written above it. A recorded lesson does not propagate itself to the next surface; only a
+    guard does.
+  - **CLAMPING log(0) FABRICATES AN AXIS, AND REFUSING A MODE MEANS NOT OFFERING IT
+    (2026-08-04, ooChart's logY):** `vt(v) = log10(Math.max(v, 1e-9))` reads as defensive
+    coding, and the guard pinning it even said "never crash on a zero/negative". Measured on
+    four integer series in 0..6 with zeros at the start: the axis spanned log-space
+    **−9..0.78**, so the real differences occupied about **5% of the plot**, `honestTicks`
+    labelled log-space ticks back through `vtInv` and printed **`0.003` and TWO `0`
+    gridlines** — none of them values a count can take — and every true zero was drawn as a
+    plotted point on the floor with a line through it. Invisible for months because `logY`
+    shipped for the markets boards, where an index value is never 0; the caller whose values
+    legitimately start at zero is what exposes it. Refuse the mode when the data cannot
+    support it, fall back to the axis the data deserves (zero-based, integer ticks for
+    counts), and SAY so. THEN THE FOLLOW-ON, which is the part that generalises: leaving the
+    control enabled put two statements on screen at once — a hint claiming "equal ratios are
+    equal distances" above a chart that had drawn linear and said so underneath. The
+    renderer-level refusal is the load-bearing guard because it cannot be bypassed; disabling
+    the control is what makes the contradiction unreachable. And TEST THE OTHER DIRECTION in
+    a browser: a positive-only series must still get a working log mode, or a fabricated-axis
+    fix has quietly removed a real capability.
+  - **A SENTENCE WITH AN INTERPOLATED COUNT CANNOT CONJUGATE, AND AN LTR-SHAPED VALUE NEEDS
+    A BIDI ISOLATE (2026-08-04, the same tile; both caught by adversarial critics reading
+    screenshots, neither visible to any mechanical check):** the note read "**1 have** never
+    been attempted", and the French carried the identical error — which is the tell that it
+    is the TEMPLATE, not the translation. Per-form keys are not the answer either: Russian
+    has three plural forms and Arabic six, and this app has no CLDR plural rules. Phrase a
+    value-bearing string as **label:value** and nothing conjugates, so every locale is
+    correct by construction (the participles in the fr/es/pt renderings agree with the
+    CATEGORY, not the number, which is why they survive). No mechanical check could see the
+    original: every locale was present, non-empty, in the right script, and a plausible
+    translation. SECOND: interpolating an ISO timestamp into a translated sentence renders in
+    visual order **`.07T18:00:00-07-2026`** in Arabic — the year at the wrong end, a MISREAD
+    date rather than an ugly one (measured by reading each character's rendered x position in
+    the real page, not assumed). `U+2068` FIRST STRONG ISOLATE … `U+2069` POP DIRECTIONAL
+    ISOLATE around the value fixes it; they are plain characters so they survive `esc()`, and
+    they are inert in LTR locales. It is PUNCTUATION-JOINED runs that need it — dates,
+    versions, IDs, URLs, ranges — never a bare number, so a lone count does not get one.
+  - **BRACE-MATCHING A LITERAL IS NOT ENOUGH — a `}` INSIDE A STRING TRUNCATES IT
+    (2026-08-04, the fifth slicer shape):** the slicing ratchet rejected three hand-rolled
+    slices in a new test file (the class it exists to stop, written by someone who had read
+    it), and writing the shared shape it asked for immediately exposed that the obvious
+    implementation is wrong: `const L = {a: "x}y", …}` truncates at the brace inside the
+    string, so the slice ends after one key and every assertion over the fragment passes for
+    free — the same failure the module is about, one level down. `object_literal` therefore
+    landed with a string-, template-literal- and comment-aware scanner that `array_literal`
+    now shares (template literals additionally nest through `${…}`; a JS regex literal
+    containing an unbalanced delimiter is an honest, stated limit that raises rather than
+    truncating). The test that proves it is the one that failed against my own first
+    implementation. And prefer being stopped by a ratchet over lowering its budget: 233
+    unchanged.
 
 ## Open queue (when maintainer says proceed)
 - **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;
