@@ -93,7 +93,13 @@ def _context_settings(backend_facts: dict, corpus: dict | None = None) -> dict:
     elif vllm_installed:
         from src.llm.vllm_lifecycle import compute_server_args
 
-        out["vllm"] = compute_server_args(gpu.get("vram_mb"))
+        # The free figure too (2026-08-05): on a machine sharing one card with Ollama,
+        # a budget reported from the TOTAL describes a start that would be refused, and
+        # a bundle exists to show what would really happen. Read at bundle time, so it
+        # is a snapshot of that moment -- the `method` says so when it narrowed.
+        out["vllm"] = compute_server_args(
+            gpu.get("vram_mb"), vram_free_mb=gpu.get("vram_free_mb")
+        )
     else:
         out["vllm"] = {"available": False, "reason": "vLLM is not installed"}
 

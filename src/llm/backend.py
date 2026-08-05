@@ -68,10 +68,23 @@ def detect_gpu() -> dict:
     the probe fails (no GPU, no driver, the command is missing, or it times out) --
     never asserted from guesswork. AMD/other GPUs are not probed here (vLLM's own
     ROCm path exists, per its PyPI description, but this app has no verified
-    detection story for it yet; an honest gap, not a fabricated "no GPU")."""
+    detection story for it yet; an honest gap, not a fabricated "no GPU").
+
+    ``vram_free_mb`` is read ALONGSIDE the total (2026-08-05, field report). The total
+    is what the card HAS; the free figure is what a backend about to start can actually
+    claim, and on a machine that runs Ollama and vLLM against ONE card those are
+    different numbers -- sizing a vLLM budget from the total describes a card that is
+    not there. It is a MEASUREMENT, not policy, so it belongs here rather than in
+    :func:`inference_capability` (the two-predicate split is unchanged). ``None`` when
+    the driver did not report it: an unreadable figure must never read as zero free.
+    """
     try:
         out = subprocess.run(  # noqa: S603,S607 - fixed argv, no shell, 5s cap
-            ["nvidia-smi", "--query-gpu=name,memory.total", "--format=csv,noheader,nounits"],
+            [
+                "nvidia-smi",
+                "--query-gpu=name,memory.total,memory.free",
+                "--format=csv,noheader,nounits",
+            ],
             capture_output=True,
             text=True,
             timeout=5,
@@ -83,13 +96,20 @@ def detect_gpu() -> dict:
     line = out.stdout.strip().splitlines()[0]
     parts = [p.strip() for p in line.split(",")]
     name = parts[0] if parts else None
-    vram_mb: int | None = None
-    if len(parts) > 1:
+    def _mb(i: int) -> int | None:
+        if len(parts) <= i:
+            return None
         try:
-            vram_mb = int(float(parts[1]))
+            return int(float(parts[i]))
         except ValueError:
-            vram_mb = None
-    return {"available": True, "name": name, "vram_mb": vram_mb}
+            return None
+
+    return {
+        "available": True,
+        "name": name,
+        "vram_mb": _mb(1),
+        "vram_free_mb": _mb(2),
+    }
 
 
 # --------------------------------------------------------------------------- #

@@ -177,6 +177,50 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
     }
 
 
+def release_vram(*, timeout: float = 8.0) -> dict:
+    """Ask Ollama to release every model it is holding in memory, WITHOUT stopping it.
+
+    THE POINT: on a single-GPU machine both backends want the same card, and nothing
+    sequenced them -- so a vLLM start would size its budget for an 8 GB card while
+    Ollama sat on 4 of those gigabytes, and die (field report 2026-08-05). This is the
+    release half of that fix.
+
+    IT IS NOT A ``stop()``, and the distinction is the whole reason this is allowed to
+    exist beside the comment below. Killing a daemon this app usually does not own is
+    out of bounds; asking a running daemon to drop model RESIDENCY is a request it
+    already exposes, is reversed by Ollama itself on the next request, and costs at
+    worst one model-load latency. Nothing the operator started is stopped.
+
+    Returns what was actually released -- names and the VRAM each held -- so the caller
+    can report a real number rather than "freed some memory". An unreachable or
+    uninstalled Ollama is a clean no-op with a stated reason, never an error: the
+    post-condition wanted is "Ollama is not holding the card", and that already holds.
+    """
+    if not is_installed():
+        return {"released": [], "reason": "Ollama is not installed", "attempted": False}
+    try:
+        from src.llm.ollama import OllamaClient
+
+        client = OllamaClient(timeout=timeout)
+        if not client.is_available():
+            return {"released": [], "reason": "Ollama is not running", "attempted": False}
+        loaded = client.loaded_models()
+        if not loaded:
+            return {"released": [], "reason": "Ollama was holding nothing", "attempted": True}
+        released: list[dict] = []
+        for entry in loaded:
+            if client.unload(entry["model"]):
+                released.append(entry)
+        return {
+            "released": released,
+            "attempted": True,
+            "reason": None if released else "Ollama declined to unload",
+        }
+    except Exception as exc:  # noqa: BLE001 - a courtesy release must never block a start
+        _LOG.info("could not ask Ollama to release VRAM: %s", exc)
+        return {"released": [], "reason": str(exc), "attempted": True}
+
+
 # NO stop(). Deliberate, not an oversight: unlike vLLM -- which this app installs into
 # a venv it owns and starts as a subprocess it tracks -- an Ollama daemon is usually a
 # system service (systemd/launchd) or a process the operator started in their own

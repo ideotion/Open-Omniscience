@@ -853,6 +853,19 @@ _MAX_GPU_UTILIZATION = 0.90
 _EAGER_MAX_VRAM_GB = 10.0
 
 
+#: How much of the card has to be spoken for before the budget is called "narrowed".
+#: Small enough that a resident model (gigabytes) always trips it, large enough that
+#: ordinary driver/display overhead never does.
+_NARROW_MIN_GAP_GB = 0.5
+
+#: Appended to the method when a real free-VRAM reading narrowed the budget, so the
+#: numbers are never read as "what this card can do" when they are "what was left".
+_NARROWED_NOTE = (
+    " NARROWED BY A LIVE READING: {free} GB of {total} GB was free when this was "
+    "computed, so the budget is sized for that, not for the whole card."
+)
+
+
 def _eager_default(vram_mb: int | None) -> bool:
     """Whether to skip CUDA-graph capture for a card of this size.
 
@@ -868,11 +881,13 @@ def _eager_default(vram_mb: int | None) -> bool:
 def compute_server_args(
     vram_mb: int | None,
     *,
+    vram_free_mb: int | None = None,
     weight_footprint_gb: float = 5.0,
     kv_cache_reserve_frac: float = 0.15,
     max_model_len_override: int | None = None,
     gpu_memory_utilization_override: float | None = None,
     enforce_eager_override: bool | None = None,
+    max_num_seqs: int | None = None,
 ) -> dict:
     """Compute the VRAM-dependent server flags from detected VRAM (pure, testable).
     Returns ``{"max_model_len", "gpu_memory_utilization", "enforce_eager", "method",
@@ -891,6 +906,17 @@ def compute_server_args(
       * ``enforce_eager`` is whether to capture CUDA graphs at all, which is a
         threshold question about the card rather than a budget split (see
         :data:`_EAGER_MAX_VRAM_GB`).
+      * ``max_num_seqs`` is how many sequences may be in flight, which bounds the
+        ACTIVATION peak during vLLM's startup memory profiling. Derived from the app's
+        own concurrency, never a second independent number (see :func:`start`).
+
+    ``vram_free_mb`` BOUNDS THE BUDGET (2026-08-05, field report). ``vram_mb`` is what
+    the card HAS; on a machine where Ollama is also resident, what vLLM can claim is
+    the free figure, and ``gpu_memory_utilization`` is a fraction of the TOTAL -- so
+    asking for 0.81 of an 8 GB card while 4 GB is already spoken for is a request that
+    cannot be met, and vLLM refuses it before the card ever saturates. Passing None
+    keeps the old total-derived behaviour byte-for-byte, because a MISSING reading must
+    not be treated as "nothing free"; only a real measurement narrows the budget.
 
     Deriving BOTH from weights + KV, as this used to, produced a utilization that ROSE
     as the card shrank (0.95 at 6 GB, 0.86 at 80 GB): the fixed weight reserve was added
@@ -953,10 +979,35 @@ def compute_server_args(
             "caveat": caveat,
         }
     vram_gb = vram_mb / 1024.0
+    # What vLLM can actually CLAIM, which is the free reading when we have one and the
+    # whole card when we do not. Clamped to the total because a driver reading larger
+    # than the card is nonsense, and floored at 0 so a full card yields a refusal
+    # upstream rather than a negative budget here.
+    free_gb = vram_gb
+    narrowed = False
+    if vram_free_mb is not None and vram_free_mb >= 0:
+        free_gb = min(vram_gb, vram_free_mb / 1024.0)
+        # A card is never exactly as free as it is large -- the driver and the display
+        # server hold some of it -- so "narrowed" needs a gap worth reporting, not any
+        # gap at all. Below this the budget still uses the real reading (a little less
+        # free IS a little less budget); what the threshold governs is whether the
+        # operator is told the numbers describe a shared card.
+        narrowed = free_gb < vram_gb - _NARROW_MIN_GAP_GB
     gpu_util = gpu_memory_utilization_override
     if gpu_util is None:
         reserve_gb = max(_GRAPH_POOL_RESERVE_GB, vram_gb * 0.10)
-        gpu_util = round(min(_MAX_GPU_UTILIZATION, max(0.50, 1.0 - reserve_gb / vram_gb)), 2)
+        # The RESERVE comes off the free figure, but the FRACTION is still of the total
+        # -- that is vLLM's own unit, and mixing the two is how a budget that looks
+        # conservative asks for memory nobody has.
+        #
+        # THE FLOOR IS 0.50 ONLY WHEN NOTHING NARROWED IT. That floor exists to stop an
+        # unmeasured guess collapsing to an unusable budget; applying it to a MEASURED
+        # free figure would do the opposite of this fix -- floor the request back up
+        # above what is actually free, which is the request vLLM already refuses. When
+        # a real reading says the card is mostly taken, the honest output is a small
+        # number that `start()` turns into a named refusal, not a comfortable-looking one.
+        floor = 0.05 if narrowed else 0.50
+        gpu_util = round(min(_MAX_GPU_UTILIZATION, max(floor, (free_gb - reserve_gb) / vram_gb)), 2)
     max_len = max_model_len_override
     if max_len is None:
         # UNIT CORRECTED 2026-08-02. The 0.5 MB figure is per TOKEN, not per 1K
@@ -975,17 +1026,26 @@ def compute_server_args(
         # utilization: the field run served 5120 with 24,960 tokens of KV (4.88x
         # concurrency), so this value was demonstrably NOT the thing that failed, and
         # tightening it would regress a number the measurement says works.
-        usable_gb = max(0.5, vram_gb - weight_footprint_gb)
+        #
+        # ...but off the FREE figure when we have one: the weights and the KV cache
+        # both have to fit in memory that exists right now, not in memory another
+        # process is holding.
+        usable_gb = max(0.5, free_gb - weight_footprint_gb)
         kv_gb = usable_gb * (1.0 - kv_cache_reserve_frac)
         est_tokens = int((kv_gb * 1024) / _KV_MB_PER_TOKEN)
         max_len = max(2048, min(32768, (est_tokens // 1024) * 1024 or 2048))
-    return {
+    out = {
         "max_model_len": max_len,
         "gpu_memory_utilization": gpu_util,
         "enforce_eager": eager,
-        "method": method,
+        "method": method if not narrowed else method + _NARROWED_NOTE.format(
+            free=round(free_gb, 1), total=round(vram_gb, 1)
+        ),
         "caveat": caveat,
     }
+    if max_num_seqs is not None:
+        out["max_num_seqs"] = max_num_seqs
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -999,6 +1059,7 @@ def server_argv(
     max_model_len: int | None = None,
     gpu_memory_utilization: float | None = None,
     enforce_eager: bool = False,
+    max_num_seqs: int | None = None,
 ) -> list[str]:
     """Build the server command line (pure -- testable without a real venv).
     Prefers the ``vllm`` console script installed in the managed venv (the
@@ -1026,6 +1087,8 @@ def server_argv(
         # A bare switch, not a value flag. Present on both entry points above
         # (it is an EngineArgs option, which the module invocation also parses).
         argv.append("--enforce-eager")
+    if max_num_seqs is not None:
+        argv += ["--max-num-seqs", str(max_num_seqs)]
     return argv
 
 
@@ -1302,6 +1365,110 @@ def _cache_root() -> Path:
     return data_dir() / "cache"
 
 
+#: How long to wait for the driver to report memory an unloaded model has given back.
+#: An unload is asynchronous -- Ollama answers before the allocator has returned the
+#: pages -- so measuring immediately reads the card we had, not the one we made.
+_VRAM_SETTLE_TIMEOUT_S = 6.0
+_VRAM_SETTLE_POLL_S = 0.3
+
+
+def _free_vram_mb() -> int | None:
+    """The card's free memory right now, or None if it cannot be read."""
+    from src.llm.backend import detect_gpu
+
+    v = detect_gpu().get("vram_free_mb")
+    return v if isinstance(v, int) else None
+
+
+def clear_gpu_for_vllm(*, settle: float = _VRAM_SETTLE_TIMEOUT_S) -> dict:
+    """Ask the OTHER local backend to stop holding the GPU, then wait for the driver
+    to agree, and report both readings.
+
+    Returns ``{"free_mb_before", "free_mb_after", "ollama": {...}, "waited_s"}``. The
+    before/after pair is the honest form: it says what was actually recovered rather
+    than asserting that something was, and a run where nothing was held shows two
+    equal numbers instead of a claim.
+
+    Never raises. Failing to clear the card is a worse start, not a failed one -- and
+    on a machine with no Ollama at all this is a measurement and nothing else.
+    """
+    before = _free_vram_mb()
+    try:
+        from src.llm.ollama_lifecycle import release_vram
+
+        released = release_vram()
+    except Exception as exc:  # noqa: BLE001 - see the docstring
+        _LOG.info("could not clear the GPU before starting vLLM: %s", exc)
+        released = {"released": [], "reason": str(exc), "attempted": True}
+    waited = 0.0
+    if released.get("released") and before is not None:
+        # Poll until the reading stops improving, not for a fixed nap: the release is
+        # usually sub-second, and a hardcoded sleep would tax every start for the
+        # worst case.
+        deadline, last = time.monotonic() + settle, before
+        while time.monotonic() < deadline:
+            time.sleep(_VRAM_SETTLE_POLL_S)
+            waited += _VRAM_SETTLE_POLL_S
+            now = _free_vram_mb()
+            if now is None:
+                break
+            if now <= last:
+                break
+            last = now
+    return {
+        "free_mb_before": before,
+        "free_mb_after": _free_vram_mb(),
+        "ollama": released,
+        "waited_s": round(waited, 1),
+    }
+
+
+def _refuse_if_the_card_is_taken(
+    model: str, gpu: dict, release: dict, *, allow_oversized: bool
+) -> None:
+    """Refuse, by name and with the numbers, when the weights cannot fit in the memory
+    that is actually FREE -- even though they would fit the card.
+
+    ``vram_fit`` already refuses a model too large for the GPU; this is the sibling
+    case the field hit, where the model fits the hardware and not the moment. Silence
+    here is what produced "exited immediately (code 1)" with a card that was never
+    even saturated: vLLM checks free memory against its total-derived budget and
+    refuses before filling anything, and that refusal reached the operator as an exit
+    code. Honouring ``allow_oversized`` keeps the operator's override meaningful in
+    both directions.
+    """
+    if allow_oversized:
+        return
+    free_mb = release.get("free_mb_after")
+    if not isinstance(free_mb, int) or free_mb <= 0:
+        return  # no reading is not a reading of zero
+    fit = vram_fit(model, gpu.get("vram_mb"))
+    est = fit.get("estimate") or {}
+    need_gb = est.get("weights_gb_low")
+    if not isinstance(need_gb, (int, float)):
+        return  # an unparseable model name is a gap, never grounds to refuse
+    free_gb = free_mb / 1024.0
+    if free_gb >= need_gb:
+        return
+    held = release.get("ollama") or {}
+    who = ", ".join(str(e.get("model")) for e in (held.get("released") or []))
+    total_gb = fit.get("vram_gb")
+    detail = (
+        f"{model} needs about {need_gb} GB of weights and only {free_gb:.1f} GB of this "
+        f"{total_gb} GB GPU is free"
+    )
+    if who:
+        detail += f" even after asking Ollama to release {who}"
+    elif held.get("reason"):
+        detail += f" ({held['reason']})"
+    raise VllmUnsupportedError(
+        detail + ". Something else on this machine is holding the card -- check "
+        "`nvidia-smi --query-compute-apps=pid,process_name,used_memory --format=csv`, "
+        "free it, and start again. Ollama can serve this model on far less memory in "
+        "the meantime."
+    )
+
+
 def start(
     model: str,
     *,
@@ -1313,7 +1480,15 @@ def start(
     """Launch the vLLM server as a subprocess bound to loopback. Refuses outright
     on a CPU-only machine (RULED, §8) -- Ollama is the CPU path, never vLLM's CPU
     mode presented as viable. ``popen`` is injectable for tests (never a real
-    subprocess in the test suite)."""
+    subprocess in the test suite).
+
+    THE CARD IS CLEARED FIRST (2026-08-05). Ollama and vLLM want the same GPU and
+    nothing sequenced them, so a start would size its budget for the whole card while
+    Ollama sat on several gigabytes of it. This asks Ollama to drop model residency,
+    re-measures, and only then computes the budget -- and it happens HERE rather than
+    in ``activation.ensure_running`` because ``POST /api/llm/vllm/start`` reaches this
+    function directly: a gate on one entry point is not a gate (the standing lesson).
+    """
     global _proc
     from src.llm.backend import detect_gpu
 
@@ -1344,11 +1519,26 @@ def start(
             "8 GB), a 4-bit AWQ/GPTQ build, or Ollama, which runs quantised models on "
             "far less memory."
         )
+    # Clear the card, THEN measure. Order matters: a free reading taken before the
+    # release would describe the machine we are about to change.
+    release = clear_gpu_for_vllm()
+    free_mb = release["free_mb_after"]
+    from src.llm.concurrency import concurrency_for
+
     args = compute_server_args(
         gpu.get("vram_mb"),
+        vram_free_mb=free_mb,
         max_model_len_override=max_model_len,
         gpu_memory_utilization_override=gpu_memory_utilization,
+        # DERIVED, not a second independent knob. The app already bounds how many
+        # requests it will have in flight; telling the server the same number stops
+        # vLLM's startup profiling sizing an activation peak for a concurrency no
+        # caller will ever reach -- which is memory that has to come from somewhere on
+        # a card with under a gigabyte of headroom. One decision, read in two places,
+        # never two numbers to keep in sync.
+        max_num_seqs=concurrency_for("vllm"),
     )
+    _refuse_if_the_card_is_taken(model, gpu, release, allow_oversized=allow_oversized)
     # Refuse a start that CANNOT succeed, before spawning anything (field report
     # 2026-08-02). vLLM's port was the app's own, so `vllm serve` hit
     # OSError(98) Address already in use and died instantly; the only symptom
@@ -1369,6 +1559,7 @@ def start(
         max_model_len=args["max_model_len"],
         gpu_memory_utilization=args["gpu_memory_utilization"],
         enforce_eager=bool(args["enforce_eager"]),
+        max_num_seqs=args.get("max_num_seqs"),
     )
     run = popen or subprocess.Popen
     # CAPTURE the server's output instead of discarding it (field report 2026-07-29).
@@ -1396,12 +1587,16 @@ def start(
         "pid": getattr(proc, "pid", None),
         "model": model,
         "server_args": args,
+        "vram_release": release,
     })
     return {
         "started": True,
         "model": model,
         "argv": argv,
         "server_args": args,
+        # What the card looked like at the moment of the attempt, and what the other
+        # backend gave back to make it look that way.
+        "vram_release": release,
         "base_url": base_url(),
         "log_path": str(server_log_path()) if log_fh is not None else None,
         "note": "starting (model load takes tens of seconds) -- poll is_running() before use",

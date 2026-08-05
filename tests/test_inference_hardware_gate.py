@@ -83,11 +83,29 @@ def test_detect_gpu_contract_is_unchanged_and_apple_silicon_does_not_satisfy_it(
 
     class _Done:
         returncode = 0
-        stdout = "NVIDIA GeForce RTX 4070, 12282\n"
+        stdout = "NVIDIA GeForce RTX 4070, 12282, 9001\n"
 
     monkeypatch.setattr(B.subprocess, "run", lambda *a, **k: _Done())
     r = B.detect_gpu()
-    assert r == {"available": True, "name": "NVIDIA GeForce RTX 4070", "vram_mb": 12282}
+    assert r == {
+        "available": True,
+        "name": "NVIDIA GeForce RTX 4070",
+        "vram_mb": 12282,
+        # ADDITIVE (2026-08-05): what is free right now, beside what the card has.
+        # A measurement, not policy -- the two-predicate split this file guards is
+        # about POLICY, and the free figure is exactly as factual as the total.
+        "vram_free_mb": 9001,
+    }
+
+    # A driver that reports no free figure yields None, never 0: an unread value must
+    # not read as "nothing is free", which would refuse every start on that machine.
+    class _NoFree:
+        returncode = 0
+        stdout = "NVIDIA GeForce RTX 4070, 12282\n"
+
+    monkeypatch.setattr(B.subprocess, "run", lambda *a, **k: _NoFree())
+    assert B.detect_gpu()["vram_free_mb"] is None
+    assert B.detect_gpu()["vram_mb"] == 12282
 
     # On a machine with no nvidia-smi, detect_gpu is False REGARDLESS of the OS --
     # Apple Silicon must not leak into this predicate.

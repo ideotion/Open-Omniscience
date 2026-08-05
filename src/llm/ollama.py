@@ -456,6 +456,60 @@ class OllamaClient:
             eval_duration=data.get("eval_duration"),
         )
 
+    # -- VRAM residency ----------------------------------------------------- #
+
+    def loaded_models(self) -> list[dict]:
+        """Models Ollama currently holds IN MEMORY, with the VRAM each is using.
+
+        Distinct from :meth:`list_installed`, which lists what is on DISK. On a
+        single-GPU machine that also runs vLLM, this is the difference between "a
+        model exists" and "a model is occupying the card right now" -- and only the
+        second one makes a vLLM start fail. Honest empty list when Ollama is not
+        reachable: absence of a reading is not a reading of zero, and the caller is
+        told which it got by :meth:`is_available`.
+        """
+        self._check_kill_switch()
+        try:
+            resp = self._client.get("/api/ps")
+            resp.raise_for_status()
+        except httpx.HTTPError:
+            return []
+        out: list[dict] = []
+        for m in (resp.json() or {}).get("models", []) or []:
+            name = m.get("name") or m.get("model")
+            if not name:
+                continue
+            vram = m.get("size_vram")
+            out.append({
+                "model": name,
+                "vram_bytes": vram if isinstance(vram, int) else None,
+                "size_bytes": m.get("size") if isinstance(m.get("size"), int) else None,
+            })
+        return out
+
+    def unload(self, model: str) -> bool:
+        """Ask Ollama to release ``model`` from memory NOW, without stopping the daemon.
+
+        The documented idiom: a generate call with an empty prompt and
+        ``keep_alive: 0`` unloads rather than generating, so this costs no inference.
+        The daemon stays up and reloads the model on its next request -- which is what
+        makes this safe to do speculatively: the worst case is one model-load latency
+        on the next Ollama call, never a backend that stops working.
+
+        Returns whether Ollama accepted the request. A model that was not resident is
+        not an error: the post-condition asked for is "not holding the card", and that
+        already held.
+        """
+        self._check_kill_switch()
+        try:
+            resp = self._client.post(
+                "/api/generate", json={"model": model, "prompt": "", "keep_alive": 0}
+            )
+            resp.raise_for_status()
+        except httpx.HTTPError:
+            return False
+        return True
+
     def pull(self, model: str):
         """Pull (download + install) a model via the local Ollama process, STREAMING
         Ollama's own progress objects (yields dicts) — honest real progress, never a
