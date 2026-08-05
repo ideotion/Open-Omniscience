@@ -315,9 +315,12 @@ def run_progressive_perception_extract_job(
             consecutive_failures += 1
             # WHY it failed, in the resolver's own words; the budget is untouched
             # (field report 2026-08-02).
+            from src.llm.activation import recover_backend
             from src.llm.backend import outage_detail, outage_reason
 
             _why = outage_reason()
+            # See triage_job.py: a background run may bring its own backend up.
+            _fix = recover_backend(_why)
             state.update({
                 "totals": totals,
                 "batches_completed": batches_completed,
@@ -352,7 +355,7 @@ def run_progressive_perception_extract_job(
             )
             ctx.set_progress(
                 detail=(
-                    f"{outage_detail(_why, result.get('reason'))} — retrying in "
+                    f"{outage_detail(_why, result.get('reason'), recovery=_fix)} — retrying in "
                     f"{backoff:.0f}s in case it comes back ({consecutive_failures}/"
                     f"{_PERCEPTION_EXTRACT_MAX_CONSECUTIVE_FAILURES})"
                 )

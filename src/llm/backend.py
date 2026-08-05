@@ -26,6 +26,7 @@ from __future__ import annotations
 import os
 import platform
 import subprocess  # noqa: S404 - fixed argv, no shell, 5s timeout (nvidia-smi probe only)
+from collections.abc import Mapping
 from typing import Protocol, runtime_checkable
 
 from src.llm.ollama import GenerationResult, total_ram_gb
@@ -1027,7 +1028,12 @@ def _vllm_start_failure() -> str | None:
 _DETAIL_LIMIT = 200
 
 
-def outage_detail(resolver_reason: str | None, error: object) -> str:
+def outage_detail(
+    resolver_reason: str | None,
+    error: object,
+    *,
+    recovery: Mapping[str, object] | None = None,
+) -> str:
     """The sentence a RETRY line should carry when a local-model call fails.
 
     Field report 2026-08-04, after ``outage_reason()`` shipped: "I just reinstalled
@@ -1048,13 +1054,48 @@ def outage_detail(resolver_reason: str | None, error: object) -> str:
     ``error`` is whatever the call site is holding -- an exception, a reason string,
     or None -- because the four sweep loops do not agree on which, and normalising
     here beats four near-identical conditionals that can drift apart.
+
+    ``recovery`` is what ``activation.recover_backend()`` just DID about it, and it is
+    composed here for the same reason: one rule in one place rather than four copies.
+    Three cases, and the first is the one that matters:
+
+      * the app STARTED something -- that supersedes the resolver entirely, because
+        the resolver's advice was written for a world where nothing in the app could.
+        "explicit override (vllm), but its server is NOT running -- start it from
+        Settings -> AI" is true, unhelpful, and now stale: the app is starting it. This
+        is the recorded stale-advice lesson, one surface over.
+      * it TRIED and could not -- the blocker is the actionable half, so it rides
+        ALONGSIDE the resolver's reason rather than replacing it.
+      * it did nothing (reachable backend, or a start attempted moments ago) -- the
+        line is exactly what it was.
     """
+    tail = _recovery_clause(recovery)
+    rec = recovery or {}
+    if tail and (rec.get("started") or rec.get("ready")):
+        return tail
     if resolver_reason:
-        return str(resolver_reason)
+        return f"{resolver_reason} — {tail}" if tail else str(resolver_reason)
     if isinstance(error, BaseException):
         text = str(error).strip()
         # An exception whose str() is empty (a bare ``raise SomeError``) still has a
         # TYPE, and "ReadTimeout" is a far better clue than "hiccup".
-        return text[:_DETAIL_LIMIT] if text else type(error).__name__
-    text = str(error or "").strip()
-    return text[:_DETAIL_LIMIT] if text else "the local model call failed"
+        base = text[:_DETAIL_LIMIT] if text else type(error).__name__
+    else:
+        text = str(error or "").strip()
+        base = text[:_DETAIL_LIMIT] if text else "the local model call failed"
+    return f"{base} — {tail}" if tail else base
+
+
+def _recovery_clause(recovery: Mapping[str, object] | None) -> str | None:
+    """The words for what a recovery attempt did, or None when it did nothing worth
+    saying. Kept separate so the composition rule above reads as three cases rather
+    than three nested conditionals."""
+    if not recovery or not recovery.get("attempted"):
+        return None
+    detail = str(recovery.get("detail") or "").strip()
+    if recovery.get("started") or recovery.get("ready"):
+        return detail or "the app is starting it now"
+    # Tried and could not. A blocker in the operator's hands beats a generic apology;
+    # without one, say plainly that the attempt was made and failed rather than
+    # implying nothing was tried.
+    return f"the app tried to start it and could not: {detail}" if detail else None

@@ -60,6 +60,8 @@ unusable exactly when it matters. The cache refusal above is what keeps that tru
 from __future__ import annotations
 
 import logging
+import os
+import threading
 import time
 
 _LOG = logging.getLogger("llm.activation")
@@ -416,29 +418,26 @@ def ensure_running(
             res = vllm_start(plan["model"])
             out["log_path"] = res.get("log_path")
             if not res.get("started"):
-                out["detail"] = str(res.get("reason") or "vLLM was not started")
-                out["ready"] = res.get("reason") == "already running"
+                reason = str(res.get("reason") or "vLLM was not started")
+                out["detail"] = reason
+                if reason != "already running":
+                    return out
+                # "already running" is `start()`'s word for `process_alive() or
+                # is_running()`, and we only reach this line AFTER the plan's health
+                # probe said the backend is NOT answering -- so a tracked process is
+                # alive and still loading its engine. Reading that word as `ready`
+                # claimed the backend was answering when it demonstrably was not, and
+                # the caller then handed a sweep to a server that 503s every call.
+                # Ask the tri-state instead of trusting the word (the same lesson the
+                # spawn path below already learned).
+                out.update(
+                    _after_vllm_spawn(out, plan, wait=wait, timeout=timeout, confirm=confirm)
+                )
                 return out
             # ``start()`` returns the moment Popen succeeds, so "started" so far means
             # only "a process was spawned". Ask the lifecycle's own tri-state what
             # became of it rather than assuming, which is what this branch used to do.
-            outcome = _confirm_vllm_start(**(confirm or {}))
-            out["start_outcome"] = outcome
-            state = str(outcome.get("state") or "")
-            if state == "ready":
-                out["started"] = True
-                out["ready"] = True
-                out["detail"] = f"vLLM is answering on {plan['model']}."
-            elif state == "exited":
-                out.update(_vllm_exited(out, plan, outcome, wait=wait, timeout=timeout))
-            else:
-                # Alive and not answering yet. The normal path for a model load, and
-                # the one case where "starting" is the honest word.
-                out["started"] = True
-                out["detail"] = (
-                    f"vLLM is starting on {plan['model']}. A model load takes tens of "
-                    "seconds; the backend reports when it is answering."
-                )
+            out.update(_after_vllm_spawn(out, plan, wait=wait, timeout=timeout, confirm=confirm))
         else:
             out.update(_start_ollama(wait=wait, timeout=timeout))
     except Exception as exc:  # noqa: BLE001 - a launch failure is a sentence, not a 500
@@ -448,6 +447,112 @@ def ensure_running(
         out["error"] = True
         _LOG.info("activation of %s failed: %s", backend, exc)
     return out
+
+
+def _after_vllm_spawn(
+    out: dict, plan: dict, *, wait: bool, timeout: float | None, confirm: dict | None
+) -> dict:
+    """What became of a vLLM process that is now alive -- the tri-state, in words.
+
+    Shared by BOTH ways of arriving at a live process: the spawn we just performed, and
+    ``start()`` answering "already running" because an earlier call spawned one that is
+    still loading. They had drifted apart, and the second read a live-but-silent engine
+    as ``ready``.
+    """
+    outcome = _confirm_vllm_start(**(confirm or {}))
+    upd: dict = {"start_outcome": outcome}
+    state = str(outcome.get("state") or "")
+    if state == "ready":
+        upd["started"] = True
+        upd["ready"] = True
+        upd["detail"] = f"vLLM is answering on {plan['model']}."
+    elif state == "exited":
+        upd.update(_vllm_exited(out, plan, outcome, wait=wait, timeout=timeout))
+    else:
+        # Alive and not answering yet. The normal path for a model load, and the one
+        # case where "starting" is the honest word.
+        upd["started"] = True
+        upd["ready"] = False
+        upd["detail"] = (
+            f"vLLM is starting on {plan['model']}. A model load takes tens of "
+            "seconds; the backend reports when it is answering."
+        )
+    return upd
+
+
+#: How often a RUN that is already going may try to bring its backend back up.
+#:
+#: The retry ladders behind this start at a few seconds and double, so without a floor
+#: four sweeps would re-probe (an ``nvidia-smi`` + two health checks) far more often
+#: than a start could possibly change anything. A model load takes tens of seconds, so
+#: a window in that order costs at most a handful of cheap probes per load while still
+#: reacting inside a single backoff step on the ladders' later rungs.
+_RECOVERY_MIN_INTERVAL_S = 30.0
+
+_recovery_lock = threading.Lock()
+#: None, never 0.0. ``time.monotonic()``'s reference point is undefined, and on a
+#: freshly booted machine it is a small number -- so a zero sentinel reads as "a start
+#: was attempted moments ago" for the first half-minute of uptime, which is precisely
+#: when the backend is most likely to be down and the attempt most likely to matter.
+#: (Caught by an existing ride-along test, not by a new one: the same shape as a
+#: default argument standing in for a value that was never measured.)
+_recovery_last_at: float | None = None
+
+
+def recover_backend(reason: str | None) -> dict:
+    """A run is already going and its backend is down: try ONCE to bring it back.
+
+    THE GAP THIS FILLS (field report 2026-08-04, third of the chain). ``ensure_running``
+    had exactly two callers, and both are a human pressing a button: the coordinator's
+    run endpoint and Settings -> AI's start button. So a machine whose operator had
+    chosen vLLM and left the app running would say, correctly and forever, "its server
+    is NOT running -- start it from Settings -> AI", while every background sweep spent
+    its whole retry budget on a condition retrying cannot change. That is the same
+    defect the coordinator's entry point already fixed, recurring one level over: the
+    ENTRY was given an activation call and the RECOVERY path was not.
+
+    IT DOES NOT DECIDE THE RETRY. The recorded rule is that a health probe may enrich a
+    message but must never end a run -- a reload, a restart and a busy server answer a
+    probe identically. So this returns WORDS and a fact about what it did; the caller's
+    budget and control flow are untouched, and a failure to start is one more thing the
+    operator gets told rather than a reason to stop.
+
+    ``reason`` is the resolver's own outage sentence, which the callers already have in
+    hand: ``None`` means the backend is REACHABLE, so there is nothing to recover and
+    this returns without probing anything.
+
+    ``OO_LLM_AUTOSTART=0`` turns it off for an operator who wants background runs to
+    report an outage and never act on it -- and the test suite sets it, because a suite
+    on a machine that HAS a backend installed would otherwise spawn a real daemon as a
+    side effect of driving a sweep's failure path. (Measured, not assumed: a plugin that
+    faked "installed" and recorded start calls caught exactly one such spawn.)
+
+    Returns ``{"attempted", "started", "ready", "detail", "skipped"}``; never raises.
+    """
+    global _recovery_last_at
+
+    if not reason:
+        return {"attempted": False, "skipped": "the backend is reachable"}
+    if os.getenv("OO_LLM_AUTOSTART", "1").strip().lower() in ("0", "false", "no"):
+        return {"attempted": False, "skipped": "automatic starts are switched off"}
+    now = time.monotonic()
+    with _recovery_lock:
+        last = _recovery_last_at
+        if last is not None and now - last < _RECOVERY_MIN_INTERVAL_S:
+            return {"attempted": False, "skipped": "a start was attempted moments ago"}
+        _recovery_last_at = now
+    try:
+        act = ensure_running()
+    except Exception as exc:  # noqa: BLE001 - a recovery attempt must never break a run
+        _LOG.info("background recovery of the AI backend failed: %s", exc)
+        return {"attempted": True, "started": False, "ready": False, "detail": None}
+    return {
+        "attempted": True,
+        "started": bool(act.get("started")),
+        "ready": bool(act.get("ready")),
+        "detail": str(act.get("detail") or "") or None,
+        "backend": act.get("backend"),
+    }
 
 
 def _start_ollama(*, wait: bool, timeout: float | None) -> dict:

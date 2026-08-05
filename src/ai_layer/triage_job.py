@@ -333,6 +333,7 @@ def run_progressive_triage_job(
     becomes ``error`` -- never a benign-looking ``done``). A genuine user cancel
     (``ctx.stopping``) still stops immediately, no retry."""
     from src.database.session import session_scope
+    from src.llm.activation import recover_backend
     from src.llm.backend import outage_detail, outage_reason
     from src.llm.ollama import LLMError  # LLMUnavailable IS-A LLMError; catching the base catches both
 
@@ -439,6 +440,9 @@ def run_progressive_triage_job(
             # (a probe cannot tell a gone backend from a momentarily unreachable one),
             # only what the operator is told (field report 2026-08-02).
             _why = outage_reason()
+            # The app's own hands: a backend that is down stays down unless
+            # something starts it, and until now nothing in a background run did.
+            _fix = recover_backend(_why)
             if consecutive_failures >= _TRIAGE_MAX_CONSECUTIVE_FAILURES:
                 err = (
                     f"stopped after {consecutive_failures} consecutive local-model "
@@ -477,8 +481,8 @@ def run_progressive_triage_job(
             )
             ctx.set_progress(
                 detail=(
-                    f"{outage_detail(_why, exc)} — retrying in {backoff:.0f}s in case it "
-                    f"comes back ({consecutive_failures}/"
+                    f"{outage_detail(_why, exc, recovery=_fix)} — retrying in "
+                    f"{backoff:.0f}s in case it comes back ({consecutive_failures}/"
                     f"{_TRIAGE_MAX_CONSECUTIVE_FAILURES})"
                 )
             )
