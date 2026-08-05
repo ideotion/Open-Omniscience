@@ -409,8 +409,19 @@ class MergeStepStopped(RestoreAborted):
     new exception to keep behaving correctly."""
 
 
+#: Longest SQL prefix kept as a statement's label. Enough to tell the six
+#: statements of a merge step apart; short enough that a killed run's journal
+#: stays readable.
+_STMT_LABEL_CHARS = 120
+
+
+def _stmt_label(sql: str) -> str:
+    """A stable, short, whitespace-collapsed label for one SQL statement."""
+    return " ".join((sql or "").split())[:_STMT_LABEL_CHARS]
+
+
 @contextmanager
-def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb):
+def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb, stmt_cb=None):
     """Make a long merge step observable AND interruptible from inside.
 
     SQLite's progress handler runs every ``_STEP_WATCH_OPS`` VDBE operations
@@ -464,11 +475,44 @@ def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb):
             pass
         return 0
 
+    # ---- per-STATEMENT timing ------------------------------------------- #
+    # A step-level tick proved step 3 was executing; it could not say WHICH of
+    # its six statements was executing, so a 14 h step still left nothing to act
+    # on. SQLite's trace callback fires once per statement START, so statement N
+    # ends when N+1 begins -- per-statement timing for the whole merge from ONE
+    # hook, with no call-site changes and no per-row cost (these are bulk
+    # statements: a handful per step, not one per article).
+    #
+    # Reported as each statement ENDS rather than only at step exit, and that is
+    # the load-bearing part: the run this was built for was KILLED at hour 14 and
+    # never reached any exit path. An exit-only breakdown would have produced
+    # exactly the nothing we already had.
+    cur: list = [None]  # [(label, t_start)] or [None]
+
+    def _trace(sql) -> None:
+        try:
+            now = time.monotonic()
+            prev = cur[0]
+            if prev is not None and stmt_cb is not None:
+                stmt_cb(index, name, prev[0], round(now - prev[1], 3), False)
+            label = _stmt_label(sql if isinstance(sql, str) else str(sql))
+            cur[0] = (label, now)
+            if stmt_cb is not None:
+                stmt_cb(index, name, label, 0.0, True)
+        except Exception:  # noqa: BLE001 - tracing never breaks a merge
+            pass
+
+    traced = False
     try:
         con.set_progress_handler(_tick, _STEP_WATCH_OPS)
     except Exception:  # noqa: BLE001 - an old/exotic driver simply gets the old behaviour
         yield
         return
+    try:
+        con.set_trace_callback(_trace)
+        traced = True
+    except Exception:  # noqa: BLE001 - statement timing is a BONUS; its absence never costs the step
+        traced = False
     try:
         yield
     except Exception as exc:
@@ -490,6 +534,18 @@ def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb):
             ) from exc
         raise
     finally:
+        # Close out the statement still in flight, so the LAST one in a step is
+        # reported too (it has no successor to end it). Runs on the abort path
+        # as well -- when a stop lands inside a statement, the one it landed in
+        # is exactly the one worth naming.
+        with suppress(Exception):
+            prev = cur[0]
+            if prev is not None and stmt_cb is not None:
+                stmt_cb(index, name, prev[0], round(time.monotonic() - prev[1], 3), False)
+            cur[0] = None
+        if traced:
+            with suppress(Exception):
+                con.set_trace_callback(None)
         with suppress(Exception):
             con.set_progress_handler(None, 0)
 
@@ -508,6 +564,7 @@ def merge_corpus(
     staged_corpus: Path, working_copy: Path, batch_meta: dict, progress_cb=None,
     cache_mb: int | None = None, should_stop: Callable[[], bool] | None = None,
     step_cb: Callable[[int, int, str, float], None] | None = None,
+    stmt_cb: Callable[[int, str, str, float, bool], None] | None = None,
 ) -> tuple[dict, int]:
     """Merge the staged corpus into the working copy. Returns (per-domain counts,
     batch_id). The working copy is disposable; the live DB is never touched.
@@ -588,7 +645,7 @@ def merge_corpus(
             # whole time the between-steps checks above are unreachable -- so a
             # Stop was inert during the longest phase of an import, and the run
             # journal's counter could not move. See _step_watch.
-            with _step_watch(con, i, total, name, should_stop, step_cb):
+            with _step_watch(con, i, total, name, should_stop, step_cb, stmt_cb):
                 fn(con, batch_id, results)
             if progress_cb is not None:
                 try:
@@ -3491,14 +3548,59 @@ def run_restore(
         if progress_cb is not None:
             progress_cb(index - 1, total, f"{name} ({elapsed_s:.0f}s)")
 
+    #: Statements slower than this get their own durable journal line. Below it a
+    #: merge step's setup statements would bury the one that matters; the per-step
+    #: rollup still carries every statement's total regardless.
+    _STMT_DURABLE_S = 30.0
+    _stmt_totals: dict[str, dict[str, float]] = {}
+
+    def _stmt_tick(step: int, step_name: str, label: str, seconds: float, begin: bool) -> None:
+        """Per-STATEMENT timing inside a merge step (see _step_watch).
+
+        Emitted as each statement ENDS, not batched to the end of the step: the
+        field import this was built for was killed at hour 14 and never reached
+        any exit path, so anything held until then would have been lost with it.
+        """
+        from src.backup import runlog
+
+        try:
+            if begin:
+                # Non-durable: a liveness breadcrumb naming the statement now in
+                # flight, so a run inspected WHILE it hangs already says which one.
+                runlog.milestone(
+                    "merge_statement_begin", durable=False,
+                    step=step, label=step_name, sql=label,
+                )
+                return
+            agg = _stmt_totals.setdefault(label, {"seconds": 0.0, "n": 0})
+            agg["seconds"] = round(agg["seconds"] + seconds, 3)
+            agg["n"] += 1
+            if seconds >= _STMT_DURABLE_S:
+                runlog.milestone(
+                    "merge_statement", durable=True,
+                    step=step, label=step_name, sql=label, seconds=seconds,
+                )
+        except Exception:  # noqa: BLE001 - reporting never breaks a merge
+            pass
+
     _abort_point("merge")
     with timings.stage("merge"):
         _step_clock["t"] = time.monotonic()
         counts, batch_id = merge_corpus(
             staged.corpus_path, working, meta,
             progress_cb=_timed_progress_cb, cache_mb=merge_cache_mb,
-            should_stop=should_stop, step_cb=_step_tick,
+            should_stop=should_stop, step_cb=_step_tick, stmt_cb=_stmt_tick,
         )
+    # Per-statement rollup into the import report: the SUM per statement, so a
+    # step whose cost is spread over several executions is still attributable.
+    # Slow individual statements were already journalled durably as they ended,
+    # so a killed run keeps its evidence and this is the complete picture for a
+    # run that finished.
+    for _sql, _agg in sorted(
+        _stmt_totals.items(), key=lambda kv: kv[1]["seconds"], reverse=True
+    )[:40]:
+        with suppress(Exception):
+            timings.record(f"merge_sql:{_sql}", float(_agg["seconds"]))
     _abort_point("verify")
     with timings.stage("verify"):
         verification = verify_copy(working, staged.corpus_path, batch_id)

@@ -23,6 +23,7 @@ argued for it:
 
 from __future__ import annotations
 
+import re
 import sqlite3
 
 import pytest
@@ -359,7 +360,14 @@ def test_merge_corpus_wires_the_watcher_around_every_step():
     import inspect
 
     src = inspect.getsource(m.merge_corpus)
-    assert "with _step_watch(con, i, total, name, should_stop, step_cb):" in src
+    # Anchored on the PROPERTY (the step loop is wrapped in _step_watch, carrying
+    # the loop's own index/name and the stop predicate), never on a literal
+    # argument list: pinning the exact call text made this test fail the moment
+    # `stmt_cb` was added -- a stale source anchor breaking on correct code, which
+    # is the failure mode this repo already has a lesson about.
+    assert re.search(
+        r"with _step_watch\(\s*con,\s*i,\s*total,\s*name,\s*should_stop\b[^)]*\):", src
+    ), "the step loop must wrap every step in _step_watch"
     assert "fn(con, batch_id, results)" in src
 
 
