@@ -36,6 +36,11 @@ atexit.register(shutil.rmtree, _ISOLATED, ignore_errors=True)
 os.environ.setdefault("OO_DATA_DIR", _ISOLATED)
 # Never autostart the background scraper thread during tests.
 os.environ.setdefault("OO_NO_SCHEDULER", "1")
+# Never START a real Ollama/vLLM server during tests. A sweep's failure path now asks
+# the activation layer to bring its backend back up (field report 2026-08-04), which is
+# right in production and would spawn a daemon here on any machine that HAS one
+# installed -- a suite must not leave servers behind. Production default is ON.
+os.environ.setdefault("OO_LLM_AUTOSTART", "0")
 # Never auto-seed the ~3,200-source production catalog during tests. The seed moved
 # into run_deferred_startup on 2026-06-18, so it now fires on EVERY TestClient-context
 # lifespan -- slow, non-hermetic, and its auto-increment Source ids collide with tests

@@ -791,3 +791,180 @@ def test_an_operator_override_is_still_honoured_verbatim():
 
     a = compute_server_args(8192, gpu_memory_utilization_override=0.97)
     assert a["gpu_memory_utilization"] == 0.97, "an explicit choice is never second-guessed"
+
+
+# --------------------------------------------------------------------------- #
+#  A RUN THAT IS ALREADY GOING CAN BRING ITS OWN BACKEND UP
+#
+#  Field report 2026-08-04 (third of the chain): "explicit override (vllm), but its
+#  server is NOT running -- start it from Settings -> AI". Every word true, and the
+#  app was the only thing in a position to act on it. ``ensure_running`` had exactly
+#  two callers and both are a human pressing a button, so a background sweep spent its
+#  whole budget waiting for a click that a running app has no way to ask for.
+# --------------------------------------------------------------------------- #
+@pytest.fixture(autouse=True)
+def _recovery_isolation(monkeypatch):
+    """Two process-globals, both of which a shared pytest session gets wrong by default.
+
+    The window is a module global, so one test's timestamp silently disables the next
+    test's attempt. And ``conftest`` switches automatic starts OFF for the whole suite
+    (a suite must not spawn a daemon on a machine that has one) -- so every test that
+    is ABOUT the recovery has to turn the thing it tests back on, explicitly."""
+    monkeypatch.setenv("OO_LLM_AUTOSTART", "1")
+    activation._recovery_last_at = None
+    yield
+    activation._recovery_last_at = None
+
+
+def _records_ensure_running(monkeypatch, **result):
+    calls: list[dict] = []
+
+    def _fake(**kw):
+        calls.append(kw)
+        return {"backend": "vllm", **result}
+
+    monkeypatch.setattr(activation, "ensure_running", _fake)
+    return calls
+
+
+def test_a_reachable_backend_is_never_probed_for_recovery(monkeypatch):
+    """``outage_reason()`` returns None precisely when the backend IS reachable, so a
+    None here means there is nothing to recover. The negative space matters more than
+    the positive: this branch runs on every retry of every sweep, including the ones
+    that failed for reasons that have nothing to do with the backend being up."""
+    calls = _records_ensure_running(monkeypatch, started=True)
+    out = activation.recover_backend(None)
+    assert out["attempted"] is False
+    assert calls == [], "a reachable backend must not be started, probed or waited on"
+
+
+def test_a_down_backend_is_started_and_says_so(monkeypatch):
+    calls = _records_ensure_running(
+        monkeypatch, started=True, ready=False, detail="vLLM is starting on org/M."
+    )
+    out = activation.recover_backend("explicit override (vllm), but its server is NOT running")
+    assert len(calls) == 1
+    assert out == {
+        "attempted": True,
+        "started": True,
+        "ready": False,
+        "detail": "vLLM is starting on org/M.",
+        "backend": "vllm",
+    }
+
+
+def test_a_second_sweep_moments_later_does_not_start_a_second_server(monkeypatch):
+    """Four sweeps share one backend and their backoff ladders start at a few seconds.
+    Without a floor they would re-run an nvidia-smi and two health probes far more
+    often than a start could change anything -- and a model load takes tens of
+    seconds, so nothing they learned in between would be new."""
+    calls = _records_ensure_running(monkeypatch, started=True)
+    first = activation.recover_backend("down")
+    second = activation.recover_backend("down")
+    assert first["attempted"] is True
+    assert second["attempted"] is False and "moments ago" in second["skipped"]
+    assert len(calls) == 1
+
+
+def test_but_the_window_reopens(monkeypatch):
+    """The twin: a floor that never lifted would be a one-shot, and a backend that
+    goes down an hour into a run would never be brought back."""
+    calls = _records_ensure_running(monkeypatch, started=True)
+    activation.recover_backend("down")
+    activation._recovery_last_at -= activation._RECOVERY_MIN_INTERVAL_S + 1
+    assert activation.recover_backend("down")["attempted"] is True
+    assert len(calls) == 2
+
+
+def test_a_recovery_that_raises_never_breaks_the_run(monkeypatch):
+    """This runs inside a sweep's failure handler. An exception here would turn a
+    retryable outage into a dead job -- the opposite of the point."""
+
+    def _boom(**kw):
+        raise RuntimeError("nvidia-smi went missing")
+
+    monkeypatch.setattr(activation, "ensure_running", _boom)
+    out = activation.recover_backend("down")
+    assert out == {"attempted": True, "started": False, "ready": False, "detail": None}
+
+
+def test_the_recovery_never_decides_the_retry(monkeypatch):
+    """The recorded rule, pinned structurally: a reload, a restart and a busy server
+    answer a probe identically, so this may enrich a message and must never end a run.
+    It therefore returns words and facts -- no verdict, no budget, no stop."""
+    _records_ensure_running(monkeypatch, started=False, ready=False, detail="cannot start")
+    out = activation.recover_backend("down")
+    assert set(out) <= {"attempted", "started", "ready", "detail", "backend", "skipped"}
+    for banned in ("stop", "give_up", "fatal", "terminal", "abort", "retry"):
+        assert not any(banned in k for k in out), f"{banned} is a control-flow decision"
+
+
+# --------------------------------------------------------------------------- #
+#  "already running" is not "answering"
+# --------------------------------------------------------------------------- #
+def _already_running_vllm(monkeypatch, outcome):
+    """``start()`` says "already running" for ``process_alive() or is_running()``, and we
+    only reach it after the plan's health probe said the backend does NOT answer."""
+    import src.llm.vllm_lifecycle as vl
+
+    monkeypatch.setattr(vl, "start", lambda m, **k: {"started": False, "reason": "already running"})
+    monkeypatch.setattr(vl, "start_outcome", lambda: outcome)
+    monkeypatch.setattr(vl, "failure_excerpt", lambda **k: {"available": False})
+    return {"confirm": {"grace": 0.0, "step": 0.0, "sleep": lambda _s: None}}
+
+
+def test_a_second_start_while_the_engine_loads_is_not_reported_ready(monkeypatch):
+    """The defect the recovery path above would have hit on its very first retry: a
+    live-but-silent engine came back ``ready: True``, so the coordinator handed a sweep
+    to a server that 503s every call -- a fabricated ready, from a word about a process
+    rather than a probe of the port."""
+    _machine(monkeypatch, gpu=True, vllm_installed=True, model="org/Loading-3B")
+    kw = _already_running_vllm(monkeypatch, {"state": "starting", "pid": 9})
+    out = activation.ensure_running(**kw)
+    assert out["ready"] is False, "a loading engine is not answering"
+    assert out["started"] is True, "but a live start IS in flight"
+    assert "org/Loading-3B" in out["detail"] and "seconds" in out["detail"]
+
+
+def test_and_one_that_has_come_up_is_reported_ready(monkeypatch):
+    """The twin: the fix must not turn a server that IS answering into a permanent
+    "starting", which would refuse every sweep on a perfectly healthy backend."""
+    _machine(monkeypatch, gpu=True, vllm_installed=True, model="org/Up-3B")
+    kw = _already_running_vllm(monkeypatch, {"state": "ready", "pid": 9})
+    out = activation.ensure_running(**kw)
+    assert out["ready"] is True and out["started"] is True
+    assert "org/Up-3B" in out["detail"]
+
+
+def test_and_one_that_has_died_reports_the_death(monkeypatch):
+    """The third state: a tracked process that exited is neither loading nor serving,
+    and saying "already running" about it is the exact confusion start_outcome exists
+    to end. Under an explicit vLLM choice, so the death is the whole answer rather
+    than a fallback's -- the field scenario exactly."""
+    _machine(monkeypatch, gpu=True, vllm_installed=True, override="vllm")
+    kw = _already_running_vllm(monkeypatch, {"state": "exited", "returncode": 1})
+    out = activation.ensure_running(**kw)
+    assert out["ready"] is False
+    assert "exited" in out["detail"]
+
+
+def test_the_very_first_attempt_on_a_fresh_boot_is_not_rate_limited(monkeypatch):
+    """``time.monotonic()``'s reference point is undefined and is small on a freshly
+    booted machine, so a 0.0 "last attempt" sentinel silently swallowed the first
+    attempt of every process -- exactly when the backend is most likely to be down.
+    A sentinel that is also a legal value is not a sentinel."""
+    calls = _records_ensure_running(monkeypatch, started=True)
+    activation._recovery_last_at = None
+    monkeypatch.setattr(activation.time, "monotonic", lambda: 3.9)  # 3.9s of uptime
+    assert activation.recover_backend("down")["attempted"] is True
+    assert len(calls) == 1
+
+
+def test_the_suite_wide_switch_turns_automatic_starts_off(monkeypatch):
+    """The opt-out itself, in both directions: an operator who wants a background run to
+    report an outage and never act on it gets exactly that, and nothing is probed."""
+    calls = _records_ensure_running(monkeypatch, started=True)
+    monkeypatch.setenv("OO_LLM_AUTOSTART", "0")
+    out = activation.recover_backend("down")
+    assert out == {"attempted": False, "skipped": "automatic starts are switched off"}
+    assert calls == []

@@ -567,3 +567,104 @@ def test_an_unreadable_start_outcome_never_breaks_the_message(monkeypatch):
     _stub(monkeypatch, gpu={"available": True}, vllm_installed=True, vllm_running=False)
     monkeypatch.setattr(vl, "start_outcome", lambda: (_ for _ in ()).throw(OSError("boom")))
     assert "NOT running" in B.outage_reason()
+
+
+# --------------------------------------------------------------------------- #
+#  What the app DID about the outage, composed in one place
+#
+#  Field report 2026-08-04: "explicit override (vllm), but its server is NOT running
+#  -- start it from Settings -> AI". Every clause true; the advice was written for a
+#  world where nothing in a background run could start a backend, and that world
+#  ended. The same stale-advice shape as the sentence this message replaced.
+# --------------------------------------------------------------------------- #
+_WHY = "explicit override (vllm), but its server is NOT running -- start it from Settings -> AI"
+
+
+def test_a_start_the_app_just_made_supersedes_the_advice_to_go_and_make_it():
+    from src.llm.backend import outage_detail
+
+    out = outage_detail(
+        _WHY,
+        None,
+        recovery={"attempted": True, "started": True, "detail": "vLLM is starting on org/M."},
+    )
+    assert out == "vLLM is starting on org/M."
+    assert "Settings" not in out, "telling the operator to do what the app is doing is stale"
+
+
+def test_a_start_that_could_not_be_made_rides_alongside_the_reason(monkeypatch):
+    """The blocker is the actionable half, and the resolver's reason is still the
+    context for it -- so this one appends rather than replaces."""
+    from src.llm.backend import outage_detail
+
+    out = outage_detail(
+        _WHY,
+        None,
+        recovery={"attempted": True, "started": False, "detail": "the weights are not downloaded"},
+    )
+    assert out.startswith(_WHY)
+    assert "the app tried to start it and could not: the weights are not downloaded" in out
+
+
+def test_a_recovery_that_did_nothing_leaves_the_line_byte_identical():
+    """The negative-space twin, and the one that protects every other caller: a
+    reachable backend, a rate-limited attempt, or no recovery at all must produce
+    EXACTLY the string this function produced before the parameter existed."""
+    from src.llm.backend import outage_detail
+
+    base = outage_detail(_WHY, None)
+    for rec in (
+        None,
+        {},
+        {"attempted": False, "skipped": "the backend is reachable"},
+        {"attempted": False, "skipped": "a start was attempted moments ago"},
+        {"attempted": True, "started": False, "detail": ""},  # tried, nothing to say
+    ):
+        assert outage_detail(_WHY, None, recovery=rec) == base, rec
+
+
+def test_the_error_branch_carries_the_recovery_too():
+    """A failure with no resolver reason is the common case, and an operator watching
+    a 500 from a loading server should still learn that the app is starting one."""
+    from src.llm.backend import outage_detail
+
+    out = outage_detail(
+        None,
+        RuntimeError("connection refused"),
+        recovery={"attempted": True, "started": False, "detail": "vLLM is not installed"},
+    )
+    assert out.startswith("connection refused")
+    assert "vLLM is not installed" in out
+
+
+def test_every_sweep_that_reports_an_outage_also_tries_to_fix_it():
+    """THE RATCHET, and the reason it is parsed rather than grepped.
+
+    The recorded lesson is that enumerating the paths that need a gate is how one gets
+    missed -- the coordinator's entry point was given an activation call in an earlier
+    fix and the four RETRY paths were not, which is the whole of this field report. So
+    the property is checked where it lives: every call to ``outage_detail`` in the tree
+    must pass what the app did about the outage, and a fifth sweep cannot be added
+    without it.
+    """
+    import ast
+    import pathlib
+
+    checked = 0
+    for path in sorted(pathlib.Path("src").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", None)
+            if name != "outage_detail":
+                continue
+            checked += 1
+            kws = {k.arg for k in node.keywords}
+            assert "recovery" in kws, (
+                f"{path}:{node.lineno} reports an outage without saying what was done "
+                "about it — the retry line will tell the operator to start a backend "
+                "the app could have started itself"
+            )
+    assert checked >= 4, f"expected the four sweep loops, found {checked} call sites"
