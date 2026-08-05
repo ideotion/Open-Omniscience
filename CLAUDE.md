@@ -2141,6 +2141,40 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     browser-unverified slice, run the FULL invariant suite rather than the tests you wrote, and
     read every endpoint payload you consume — those two guards are most of what stands between a
     conservative frontend slice and a broken one.
+  - **A LAZY `.*?` LOOKING FOR A CLOSER THAT MAY NOT EXIST IS QUADRATIC, AND THE UNROLLED-LOOP
+    REWRITE DOES NOT FIX IT (2026-08-05, the 412 KB article that wedged a field re-index):**
+    `<(style|script)\b[^>]*>.*?</\1\s*>` is the textbook way to strip a block, and it is fine
+    until an opener has no closer — then `.*?` expands to end-of-document, fails, and the engine
+    RESTARTS that scan from the next opener, so K openers cost K·N. MEASURED at 412,351 chars:
+    138.3 s worst case, 25.7 s on realistic unclosed-`<script>` spam, against **0.004 s for the
+    same volume of well-formed markup** — a ~350× cliff that turns only on whether the closers
+    happen to be there, i.e. reached by ordinary broken HTML rather than by a crafted input. THE
+    TRAP WORTH REMEMBERING: the obvious fix — possessive quantifiers and an unrolled loop
+    (`[^<]*+(?:<(?!/\1\s*>)[^<]*+)*+`) — removes the BACKTRACKING and bought only **2×** (138 s →
+    66 s), because the K restarts are not backtracking; they are K separate linear scans. Only
+    leaving the regex engine fixes it: walk openers with two cursors and RETIRE a tag once no
+    closer remains after it (if there is no `</style>` after p there is none after any q > p), →
+    0.030 s (4,648×). Two further rules: the replacement's copy cursor and scan cursor must be
+    SEPARATE — advancing the copy cursor past a skipped opener silently swallows the text before
+    it, a bug every one of 19 hand-written cases missed and a randomised differential against the
+    old pattern caught in 2,479 of 6,000; and state the LOSS as well as the win — the linear
+    version is ~10 ms SLOWER per 412 KB of well-formed style-heavy markup, because it pays two
+    Python-level searches per block instead of one C-level `re.sub`. GENERAL FORM: any
+    `OPEN.*?CLOSE` over untrusted markup is a K·N bomb; grep for the shape rather than waiting
+    for the article that finds it.
+  - **AN INSTRUMENT'S OUTPUT NAMES A SUSPECT, NOT A CAUSE — AND TWO STALLS CAN RUN AT ONCE
+    (2026-08-05, the same import):** the console line (`serial precompute still on article 26324
+    after 17536 s`) and the run journal disagreed: the journal said the run died in `merge` at
+    step 3 of 19, having never reached the re-index at all. Both were true — the autonomous
+    re-index job was draining an EARLIER batch concurrently, which the `reindex_resume`
+    milestones prove. Reading either signal alone produces a confident wrong story. THE
+    NEAR-MISS: the journal contains `step_elapsed_s: 26324.0`, so grepping the raw file for the
+    article id "26324" returns a coincidental hit — a number matching across two payloads is not
+    corroboration, and the units have to be checked before it is treated as such. SECOND HALF:
+    that concurrency was itself the 2026-07-24 exclusive-hold lesson recurring one module over —
+    the import recorded `owns_the_machine: true` and `hold_exclusive()` still gated only
+    `run_now()`, because `reindex_job.py` never consulted `holds_exclusive()`. When a lesson says
+    "gate EVERY entry point", the entry points added AFTER it are the ones that will be missing.
   - **NAME THE QUESTION A DECISION FUNCTION ANSWERS, THEN COUNT THE COPIES (2026-08-04, "AI
     backend won't start … local model hiccup"):** the recorded K2/routing lesson says a
     selection function answers the question it was written for. The sequel is that the
