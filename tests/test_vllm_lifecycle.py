@@ -259,6 +259,61 @@ def test_an_operator_can_force_cuda_graphs_on_or_off():
 
 
 # --------------------------------------------------------------------------- #
+# One card, two backends: the budget follows FREE memory, not the card's size
+# --------------------------------------------------------------------------- #
+def test_a_missing_free_reading_leaves_the_budget_exactly_as_it_was():
+    """THE TWIN, and the one that protects every machine that is not the field case:
+    an unread free figure must not be treated as "nothing free". Byte-identical to the
+    total-derived answer, so passing None can never narrow anything."""
+    assert V.compute_server_args(8188) == V.compute_server_args(8188, vram_free_mb=None)
+
+
+def test_memory_another_process_holds_is_not_offered_to_vllm():
+    """Field report 2026-08-05: Ollama sat on ~4 GB of an 8 GB card while vLLM sized a
+    budget for the whole thing, asked for more than existed, and exited 1 -- with the
+    card never saturated, because vLLM refuses that request before filling anything."""
+    whole = V.compute_server_args(8188)
+    shared = V.compute_server_args(8188, vram_free_mb=3700)
+    assert shared["gpu_memory_utilization"] < whole["gpu_memory_utilization"]
+    assert shared["max_model_len"] <= whole["max_model_len"]
+    # The fraction is of the TOTAL (vLLM's own unit), so the request must fit the free
+    # memory that was actually measured.
+    assert shared["gpu_memory_utilization"] * 8188 <= 3700
+
+
+def test_the_narrowed_numbers_say_they_describe_a_shared_card():
+    """A budget computed for 3.6 GB must not read as this card's capability."""
+    m = V.compute_server_args(8188, vram_free_mb=3700)["method"]
+    assert "NARROWED" in m and "3.6 GB of 8.0 GB" in m
+
+
+def test_ordinary_driver_overhead_is_not_reported_as_a_shared_card():
+    """The other twin. A card is never exactly as free as it is large, so a threshold
+    of "any gap at all" would print the shared-card warning on every healthy machine
+    and teach the operator to ignore it."""
+    m = V.compute_server_args(8188, vram_free_mb=8100)["method"]
+    assert "NARROWED" not in m
+
+
+def test_a_full_card_yields_a_small_budget_rather_than_a_comfortable_looking_one():
+    """The 0.50 floor exists to stop an UNMEASURED guess collapsing; applying it to a
+    real reading would floor the request back above what is free -- reinstating the
+    exact ask vLLM refuses. `start()` turns the small number into a named refusal."""
+    assert V.compute_server_args(8188, vram_free_mb=1000)["gpu_memory_utilization"] < 0.5
+    # ...but the unmeasured path keeps its floor.
+    assert V.compute_server_args(4096)["gpu_memory_utilization"] >= 0.5
+
+
+def test_max_num_seqs_is_absent_unless_asked_for():
+    """Derived from the app's own concurrency at the call site, never invented here."""
+    assert "max_num_seqs" not in V.compute_server_args(8188)
+    assert V.compute_server_args(8188, max_num_seqs=4)["max_num_seqs"] == 4
+    assert "--max-num-seqs" not in V.server_argv("m", port=1)
+    argv = V.server_argv("m", port=1, max_num_seqs=4)
+    assert argv[argv.index("--max-num-seqs") + 1] == "4"
+
+
+# --------------------------------------------------------------------------- #
 # start() -- refuses on CPU-only machines, refuses when not installed
 # --------------------------------------------------------------------------- #
 def test_start_refuses_when_not_installed(monkeypatch):

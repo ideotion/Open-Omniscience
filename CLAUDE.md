@@ -2669,6 +2669,36 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     want of a cache. An existing test about something else entirely (losing the log must
     never block a start) is what caught it, which is the argument for running the
     neighbouring suites rather than only the ones you wrote.
+  - **A BUDGET DERIVED FROM A RESOURCE'S *TOTAL* DESCRIBES A MACHINE THAT MAY NOT EXIST —
+    and the operator's "it was never saturated" is what identified the mechanism
+    (2026-08-05, five vLLM starts exiting 1 in ten minutes):** `detect_gpu()` read
+    `memory.total`, so `compute_server_args` sized vLLM's budget for the whole 8 GB card
+    while Ollama sat on several of those gigabytes serving the very sweeps that were
+    waiting for vLLM. Nothing sequenced them: `ollama_lifecycle` deliberately has no
+    `stop()` (the daemon is usually a system service the app does not own), and that
+    correct constraint had silently become "no arbitration at all". THE DETAIL THAT
+    CRACKED IT was the one that looked like a refutation — the operator noted ~900 MB
+    still free at the peak, which rules out a plain OOM and points instead at vLLM's own
+    startup check: `gpu_memory_utilization` is a fraction of the TOTAL, so a request for
+    0.81 of a card with 3.6 GB free is refused *before* anything fills, and that refusal
+    reaches the caller as exit code 1. When a reported detail seems to weaken your
+    hypothesis, ask which mechanism it is *consistent* with rather than discarding it.
+    FOUR RULES FROM THE FIX. (a) Size from what is FREE, but keep the fraction in the
+    consumer's own unit (`(free − reserve) / total`) — mixing the two is how a budget
+    that looks conservative asks for memory nobody has. (b) A MISSING reading is not a
+    reading of zero: `vram_free_mb=None` must leave the old total-derived answer
+    byte-identical, or every machine whose driver omits the field gets refused. (c) The
+    floor that protects an *unmeasured* guess must NOT be applied to a *measured* one —
+    flooring a real 0.26 back up to 0.50 reinstates the exact request being fixed; let
+    the small number become a named refusal upstream instead. (d) The release goes in
+    `start()`, not in the activation orchestrator, because `POST /api/llm/vllm/start`
+    reaches `start()` directly — the standing "gate EVERY entry point" lesson, and the
+    reason the fix is one chokepoint rather than two call sites. COROLLARY on shape: with
+    `stop()` off the table, the release had to be a request the daemon already exposes
+    (`keep_alive: 0` drops residency, Ollama reloads on its next call), so the worst case
+    is one model-load latency and nothing the operator started is ever killed. And an
+    unload is ASYNCHRONOUS — poll until the free reading stops improving rather than
+    measuring immediately or sleeping a fixed worst case.
 
 ## Open queue (when maintainer says proceed)
 - **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;
