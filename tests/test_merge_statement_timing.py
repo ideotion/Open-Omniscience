@@ -78,6 +78,23 @@ def test_time_is_attributed_to_the_statement_that_actually_spent_it() -> None:
             assert sec < slow, f"{lbl} ({sec}s) should be faster than the slow one"
 
 
+def test_the_in_flight_slot_is_cleared_when_the_step_ends() -> None:
+    """A finished step must stop publishing its last statement as "in flight".
+
+    The breadcrumb is now a STORE the beat reads rather than a journal line
+    (2026-08-06 -- writing one per statement grew a journal to 1.6 GB and left
+    the app unable to boot). A store persists until overwritten, so the step has
+    to clear it: otherwise every beat after a completed step keeps naming that
+    step's last statement, which reads as a stall in work that already finished.
+    An empty label is the clear signal (runlog.statement treats falsy as None).
+    """
+    con = _con()
+    cb, began, _ended = _collect()
+    with _step_watch(con, 3, 19, "articles", None, None, cb):
+        con.execute("SELECT COUNT(*) FROM t").fetchone()
+    assert began[-1] == "", f"the step must clear the slot on exit, got {began[-1]!r}"
+
+
 def test_a_statement_interrupted_by_stop_is_still_named() -> None:
     """A stop lands INSIDE a statement -- that statement is the one worth naming."""
     con = _con()

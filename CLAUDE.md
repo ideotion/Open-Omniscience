@@ -1667,6 +1667,45 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     evidence of absence — read the export site first. (Same pass: `ooDonut` DOES have
     a slice-count guard, falling back to theme-derived share bars past five, so that
     half of audit finding V-4 is spent too. Recorded so neither is "fixed" twice.)
+  - **AN INSTRUMENT ON A HOT PATH IS A LOAD SOURCE — and "durable=False" meant
+    "skip the fsync", not "cheap" (2026-08-06, the import that left the app
+    unbootable):** PR #878 added a per-statement breadcrumb to diagnose a merge
+    step and sent it through `runlog.milestone(durable=False)`. That flag controls
+    ONLY whether `fsync` is called; the FILE is chosen by `beat=`, which
+    `milestone()` hardcodes to False — so every breadcrumb was appended and
+    flushed to the milestone stream, the one the module's own docstring calls
+    "never trimmed". The beat file has a 5,760-line ring; the milestone file had
+    no ceiling at all. MEASURED, from the operator's two bundles: `run_logs` went
+    **11 MB / 76 files → 1,615 MB / 78 files** across one 24 h merge. THE SECOND
+    HALF IS WHERE IT BECAME UNRECOVERABLE: `_read_jsonl` loaded a whole journal
+    into a list of dicts with no cap, and `promote_incomplete_runs` calls it at
+    BOOT, before the unlock screen, over up to 50 files. Parsed JSON costs several
+    times its on-disk size, so on a 12.5 GB box with 1 GB of swap the app was
+    OOM-killed at startup on every attempt — and an OOM is a SIGKILL, so the
+    `except Exception` wrapped around that call could not catch it, and a
+    reinstall could not fix it because a reinstall does not touch `data/`. FOUR
+    GENERAL RULES. (a) Before putting an event on a per-call path, ask what
+    *writes* it, not just what computes it; a flush under a lock per SQL statement
+    is a throughput change, not instrumentation. (b) An in-flight breadcrumb wants
+    to be a STORE the existing sampler reads (`runlog.statement` → the beat), not
+    a write — the beat is already capped, already periodic, and a statement that
+    finishes in milliseconds needed no record at all; only one still running at
+    the next sample did. (c) "Not trimmed" is a promise about ORDER, never about
+    SIZE: any append-only stream whose safety rests on "these events are rare"
+    needs that premise ENFORCED (a byte cap, with the forensic-contract events
+    exempt so a capped journal never reads as a killed run), because the next
+    person to violate it will be as sure as I was. (d) Every reader of an
+    on-disk artifact needs a ceiling **independently** of the writer, since the
+    oversized file already exists by the time you find out; and a bounded read
+    keeps BOTH ends and states the gap, because which end matters depends on the
+    question (`run_begin` identifies the run, `run_end` says how it ended) — then
+    anything derived by PAIRING events across the gap, like an unmatched
+    `stage_begin`, must be published with its basis rather than as a measurement.
+    MY OWN PR TEXT CARRIED THE REFUTATION: it claimed "no per-row cost — these are
+    bulk statements, a handful per step, not one per article", which is true of
+    the six statements in the step I was looking at and false across all 19. I
+    wrote a quantitative claim without counting, in the comment right above the
+    code that depended on it.
   - **A LOG TAIL IS THE WRONG HALF WHEN THE ROOT CAUSE COMES FROM A CHILD PROCESS
     (2026-08-02, the vLLM start failure):** `server_log_tail` kept the last 8000 bytes
     on the written assumption that "a CUDA OOM puts the actionable numbers at the END".

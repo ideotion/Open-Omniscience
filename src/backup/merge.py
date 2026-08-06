@@ -480,13 +480,21 @@ def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb, st
     # its six statements was executing, so a 14 h step still left nothing to act
     # on. SQLite's trace callback fires once per statement START, so statement N
     # ends when N+1 begins -- per-statement timing for the whole merge from ONE
-    # hook, with no call-site changes and no per-row cost (these are bulk
-    # statements: a handful per step, not one per article).
+    # hook, with no call-site changes.
     #
-    # Reported as each statement ENDS rather than only at step exit, and that is
-    # the load-bearing part: the run this was built for was KILLED at hour 14 and
-    # never reached any exit path. An exit-only breakdown would have produced
-    # exactly the nothing we already had.
+    # WHAT THE CALLBACK MAY DO IS THE LOAD-BEARING PART, and the first version of
+    # this got it wrong. The comment here used to read "no per-row cost -- these
+    # are bulk statements, a handful per step, not one per article". That is true
+    # of step 3's six statements and FALSE across all 19 steps, and it was written
+    # without counting. The `begin` side then journalled a flushed line per
+    # statement, which on a 24 h merge wrote 1.6 GB and left the app unable to
+    # boot. So: `begin` must be a STORE (see runlog.statement) and only a
+    # genuinely slow statement earns a durable line.
+    #
+    # Completion is still reported as each statement ENDS rather than at step
+    # exit: the run this was built for was KILLED at hour 14 and never reached
+    # any exit path. An exit-only breakdown would have produced exactly the
+    # nothing we already had.
     cur: list = [None]  # [(label, t_start)] or [None]
 
     def _trace(sql) -> None:
@@ -542,6 +550,11 @@ def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb, st
             prev = cur[0]
             if prev is not None and stmt_cb is not None:
                 stmt_cb(index, name, prev[0], round(time.monotonic() - prev[1], 3), False)
+                # Clear the published in-flight slot (empty label == nothing in
+                # flight). Without this a finished step leaves its last statement
+                # showing in every later beat, which reads as a stall in a step
+                # that already completed.
+                stmt_cb(index, name, "", 0.0, True)
             cur[0] = None
         if traced:
             with suppress(Exception):
@@ -3565,12 +3578,15 @@ def run_restore(
 
         try:
             if begin:
-                # Non-durable: a liveness breadcrumb naming the statement now in
-                # flight, so a run inspected WHILE it hangs already says which one.
-                runlog.milestone(
-                    "merge_statement_begin", durable=False,
-                    step=step, label=step_name, sql=label,
-                )
+                # A STORE, not a write. This published a journal line per statement
+                # in its first version, on the mistaken belief that `durable=False`
+                # meant ring-buffered; it means only "skip the fsync", so every one
+                # of them was appended and flushed to the untrimmed milestone
+                # stream. A 24 h merge wrote 1.6 GB and the app could no longer
+                # boot, because `promote_incomplete_runs` reads that directory
+                # before the unlock screen. The beat carries it now: capped,
+                # already sampled every 15 s, and free per statement.
+                runlog.statement(label)
                 return
             agg = _stmt_totals.setdefault(label, {"seconds": 0.0, "n": 0})
             agg["seconds"] = round(agg["seconds"] + seconds, 3)
