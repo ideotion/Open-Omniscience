@@ -2833,6 +2833,36 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the wrong half — the pragma is what the measurement supports; windowing is what
     makes it corpus-independent, and the two need separate tests or one will be
     reported as evidence for the other.
+  - **A BOUND MUST BE DENOMINATED IN THE UNIT THAT ACTUALLY COSTS — and an
+    architectural-consistency question can find that faster than a measurement
+    (2026-08-06, the merge window):** the windowed merge shipped with a bound of
+    20,000 source IDS and a comment claiming that kept a window "in the low hundreds
+    of MB". The maintainer then asked whether the batch size shouldn't relate to the
+    600 MB the backup already slices volumes into. It cannot *directly* —
+    `write_volume_set` cuts an opaque encrypted stream at byte offsets with no row
+    alignment, and restore reassembles every volume into one staged file before
+    `merge_corpus` opens it, so by merge time volumes do not exist. But the question
+    was right about the UNIT, and that is what the ids bound got wrong: measured on
+    the shipped engine, the SAME 20,000 rows cost **178 MB at a 2 KB body, 393 MB at
+    8 KB and 947 MB at 32 KB** (9.1 / 20.1 / 48.5 KB per row) — so a row-count window
+    means something different on every corpus, and on the field artifact (32.1 GB /
+    ~1.43M articles ≈ 22 KB each) it would have carried **~800 MB, five times its own
+    comment's claim**. A fabricated figure, sitting directly above the constant it
+    justified. THE FIX is to size the window in BYTES from a sampled average row size
+    and clamp both ends; the numbers differ from the volume size because they answer
+    different constraints (a volume is sized by the GF(2⁸) parity ceiling and download
+    granularity, a window by what one machine holds at once) but the unit is the same.
+    FOUR THINGS WORTH KEEPING. (a) The general form: when you bound a loop, name what
+    the loop COSTS and bound that — a count is only a proxy, and it is a bad one
+    wherever the items vary (this corpus holds articles from 1 KB to 412 KB).
+    (b) Sample from SEVERAL blocks of the id range, not one `LIMIT n`: the oldest rows
+    of a corpus are not its typical ones, and a single block makes a systematic drift
+    invisible. (c) `LENGTH()` on TEXT counts CHARACTERS — on a mostly non-Latin corpus
+    that under-counts every multi-byte row, widening the window exactly where rows are
+    biggest; `CAST(x AS BLOB)` is what makes it bytes. (d) A "is X consistent with Y?"
+    question from someone holding the whole system in view is a real review instrument:
+    it found this when the measurement (which used one row size) and the tests (which
+    asserted bounded rows) both could not.
   - **A GUARD OVER AN INTERRUPTED RUN MUST FORCE THE INTERRUPTION TO BE REACHABLE
     (2026-08-06, same slice — the recorded anti-vacuity lesson recurring):** the new
     guard "a half-merged working copy is never stamped `merged`" PASSED against the

@@ -88,6 +88,19 @@ def _spy_windows(monkeypatch) -> list[tuple[str, tuple]]:
     return seen
 
 
+def _pin_window(monkeypatch, ids: int) -> None:
+    """Force the window to exactly ``ids``, via the clamp rather than the budget.
+
+    The real width is derived from a sampled average row size, so pinning
+    ``_MERGE_WINDOW_BYTES`` would make every test's step depend on the fixture's
+    exact row bytes -- a number nobody reading the test can see. Collapsing the
+    floor and ceiling onto one value makes the step deterministic and leaves the
+    byte derivation itself to the test that is actually about it.
+    """
+    monkeypatch.setattr(merge_mod, "_MERGE_WINDOW_MIN_IDS", ids)
+    monkeypatch.setattr(merge_mod, "_MERGE_WINDOW_MAX_IDS", ids)
+
+
 def _hashes(path: Path) -> set[str]:
     engine = create_engine(f"sqlite:///{path}", future=True)
     try:
@@ -156,6 +169,109 @@ def test_the_shipped_driver_really_does_default_temp_storage_to_memory() -> None
 
 
 # --------------------------------------------------------------------------- #
+#  the window is denominated in BYTES, not rows
+# --------------------------------------------------------------------------- #
+def test_a_window_is_sized_by_bytes_so_bigger_rows_get_fewer_of_them(tmp_path) -> None:
+    """THE unit question, and the first cut of this got it wrong.
+
+    A fixed row count bounds rows; the cost is bytes. Measured on the shipped
+    engine, the SAME 20,000 rows cost 178 MB at a 2 KB body and 947 MB at a
+    32 KB one -- so a row-count window means something different on every
+    corpus, and on the 2026-08-05 field artifact (~22 KB/article) the original
+    20,000-id window would have carried ~800 MB, five times what its own
+    comment claimed.
+
+    Asserts the RELATIONSHIP rather than a number: a corpus of larger rows must
+    get proportionally fewer ids per window. A constant would satisfy `>=`, so
+    the comparison is strict -- the recorded clamped-monotonicity trap.
+    """
+    import sqlite3
+
+    def measure(body_bytes: int) -> int:
+        p = tmp_path / f"src{body_bytes}.db"
+        con = sqlite3.connect(p)
+        con.execute("CREATE TABLE articles (id INTEGER PRIMARY KEY, content TEXT)")
+        con.executemany(
+            "INSERT INTO articles (id, content) VALUES (?, ?)",
+            [(i, "x" * body_bytes) for i in range(1, 401)],
+        )
+        con.commit()
+        con.close()
+        host = sqlite3.connect(":memory:")
+        try:
+            host.execute("ATTACH DATABASE ? AS inc", (str(p),))
+            return merge_mod._window_ids_for(host, "articles", 0, 400)
+        finally:
+            host.close()
+
+    small, large = measure(100), measure(10_000)
+    assert small > large, (
+        f"a 100-byte-row corpus got {small} ids/window and a 10 KB-row corpus got "
+        f"{large} -- the window is not tracking bytes"
+    )
+
+
+def test_the_window_is_clamped_at_both_ends(tmp_path) -> None:
+    """Neither degenerate direction is acceptable.
+
+    Rows so large that a window is one row would pay per-statement overhead on
+    every row; rows so small that a window spans millions would coarsen stop
+    latency and resume granularity back to where they started -- the other two
+    things a window buys besides memory.
+    """
+    import sqlite3
+
+    p = tmp_path / "tiny.db"
+    con = sqlite3.connect(p)
+    con.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)")
+    con.executemany("INSERT INTO t (id, v) VALUES (?, ?)", [(i, "x") for i in range(1, 51)])
+    con.commit()
+    con.close()
+
+    host = sqlite3.connect(":memory:")
+    try:
+        host.execute("ATTACH DATABASE ? AS inc", (str(p),))
+        n = merge_mod._window_ids_for(host, "t", 0, 50)
+    finally:
+        host.close()
+    assert n == merge_mod._MERGE_WINDOW_MAX_IDS, (
+        f"one-byte rows should hit the ceiling, got {n}"
+    )
+    assert merge_mod._MERGE_WINDOW_MIN_IDS >= 1
+
+
+def test_row_size_is_measured_in_bytes_not_characters(tmp_path) -> None:
+    """A non-ASCII corpus must not get a wider window than an ASCII one.
+
+    ``LENGTH()`` on TEXT counts CHARACTERS. Most of this corpus is not Latin
+    script, so counting characters would under-count every multi-byte row --
+    widening the window exactly where rows are biggest, which is the inverse of
+    what the sizing is for.
+    """
+    import sqlite3
+
+    def avg(ch: str) -> float:
+        p = tmp_path / f"s{ord(ch)}.db"
+        con = sqlite3.connect(p)
+        con.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)")
+        con.executemany("INSERT INTO t (id, v) VALUES (?, ?)", [(i, ch * 100) for i in range(1, 31)])
+        con.commit()
+        con.close()
+        host = sqlite3.connect(":memory:")
+        try:
+            host.execute("ATTACH DATABASE ? AS inc", (str(p),))
+            return merge_mod._avg_row_bytes(host, "t", 0, 30)
+        finally:
+            host.close()
+
+    ascii_bytes, cjk_bytes = avg("a"), avg("中")
+    assert cjk_bytes > ascii_bytes * 2, (
+        f"100 CJK characters measured {cjk_bytes:.0f} bytes against {ascii_bytes:.0f} for "
+        "100 ASCII ones -- LENGTH is counting characters, not bytes"
+    )
+
+
+# --------------------------------------------------------------------------- #
 #  windowing -- bounded work per statement
 # --------------------------------------------------------------------------- #
 def test_a_large_article_merge_runs_in_bounded_windows(tmp_path, monkeypatch) -> None:
@@ -164,7 +280,7 @@ def test_a_large_article_merge_runs_in_bounded_windows(tmp_path, monkeypatch) ->
     Mutation check: dropping ``src="articles"`` from ``_merge_articles`` makes
     this one window and fails.
     """
-    monkeypatch.setattr(merge_mod, "_MERGE_WINDOW_IDS", 25)
+    _pin_window(monkeypatch, 25)
     seen = _spy_windows(monkeypatch)
 
     working, staged = tmp_path / "w.db", tmp_path / "s.db"
@@ -184,7 +300,7 @@ def test_windowing_loses_no_article(tmp_path, monkeypatch) -> None:
     Bounded-and-wrong is the failure mode a memory test cannot see, so it is
     pinned separately from the bound itself.
     """
-    monkeypatch.setattr(merge_mod, "_MERGE_WINDOW_IDS", 7)
+    _pin_window(monkeypatch, 7)
     working, staged = tmp_path / "w.db", tmp_path / "s.db"
     _corpus(working, articles=3)
     _corpus(staged, articles=120, first_hash=500)
@@ -200,7 +316,7 @@ def test_windowing_loses_no_article(tmp_path, monkeypatch) -> None:
 
 def test_a_source_smaller_than_one_window_runs_a_single_statement(tmp_path, monkeypatch) -> None:
     """Opting a small table in must be a no-op, not a behaviour change."""
-    monkeypatch.setattr(merge_mod, "_MERGE_WINDOW_IDS", 10_000)
+    _pin_window(monkeypatch, 10_000)
     seen = _spy_windows(monkeypatch)
 
     working, staged = tmp_path / "w.db", tmp_path / "s.db"
@@ -230,7 +346,7 @@ def test_negative_source_ids_are_not_skipped(tmp_path, monkeypatch) -> None:
     A window floor hardcoded at 0 would silently drop every such row -- and a
     dropped article is invisible: the report would just say fewer were new.
     """
-    monkeypatch.setattr(merge_mod, "_MERGE_WINDOW_IDS", 5)
+    _pin_window(monkeypatch, 5)
     working, staged = tmp_path / "w.db", tmp_path / "s.db"
     _corpus(working, articles=1)
     _corpus(staged, articles=20, first_hash=700)
@@ -279,7 +395,7 @@ def test_an_interrupted_merge_is_not_stamped_merged(tmp_path, monkeypatch) -> No
     and the non-empty assertion below: a guard that cannot see its own subject
     is worse than none.
     """
-    monkeypatch.setattr(merge_mod, "_MERGE_WINDOW_IDS", 10)
+    _pin_window(monkeypatch, 10)
     working, staged = tmp_path / "w.db", tmp_path / "s.db"
     _corpus(working, articles=1)
     _corpus(staged, articles=60, first_hash=400)

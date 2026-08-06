@@ -365,35 +365,106 @@ def _ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
-#: Source-PK ids per window in a windowed merge insert.
+#: Source BYTES per window in a windowed merge insert -- not rows.
 #:
-#: Ids are UNIQUE, so a window of N ids holds at most N rows. That is what makes
-#: this a bound rather than a hope: it does not depend on row size, on the query
-#: plan, or on which allocation happens to dominate.
+#: THE UNIT IS THE WHOLE POINT, and the first cut of this got it wrong. A
+#: row-count window bounds rows; the cost is bytes. Measured on the shipped
+#: engine (sqlcipher3, encrypted, FTS trigger live, 256 MiB cache), the SAME
+#: 20,000 rows at three body sizes, each in a fresh process:
 #:
-#: WHY IT IS NEEDED, measured on the shipped engine (sqlcipher3, encrypted, the
-#: FTS trigger live, 256 MiB page cache) -- ONE ``INSERT..SELECT`` of N rows:
+#:     20,000 rows x  2 KB body  ->  178 MB   ( 9.1 KB/row)
+#:     20,000 rows x  8 KB body  ->  393 MB   (20.1 KB/row)
+#:     20,000 rows x 32 KB body  ->  947 MB   (48.5 KB/row)
+#:
+#: So a fixed 20,000-id window is ~180 MB on one corpus and ~950 MB on another.
+#: On the 2026-08-05 field artifact (32.1 GB staged, ~1.43M articles = ~22 KB
+#: each) it would have been ~800 MB -- five times what its own comment claimed.
+#: Denominating in bytes is what makes the bound mean the same thing on every
+#: corpus, and it is the same unit the backup already uses to size a volume
+#: (512 MiB); the NUMBERS differ because they answer different constraints --
+#: a volume is sized by the GF(2^8) parity ceiling and download granularity,
+#: a window by what one machine can hold at once.
+#:
+#: WHY ANY OF IT IS NEEDED, measured the same way -- one INSERT..SELECT of N rows:
 #:
 #:     rows     temp_store=MEMORY (the sqlcipher3 default)   temp_store=FILE
 #:     100,000  +663 MB                                      +0 MB
 #:     200,000  +377 MB  (cumulative 1,138)                  +0 MB
 #:     400,000  +735 MB  (cumulative 1,980)                  +0 MB
 #:
-#: ~5 KB of RAM per row inserted, LINEAR, and ``cache_size`` does not bound it
-#: (the 2026-08-03 cache lesson is about the page cache; this is temp storage,
-#: a separate allocation). The 2026-08-05 field import inserted 1,358,765
-#: articles in one statement on a 5.5 GB machine and held 5,937 MB resident.
+#: ``cache_size`` does not bound it -- the 2026-08-03 cache lesson is about the
+#: page cache; this is temp storage, a separate allocation. The field import put
+#: 1,358,765 articles through one statement on a 5.5 GB machine.
 #:
-#: 20,000 keeps a window's worth in the low hundreds of MB even where temp
-#: storage is RAM, and costs one extra statement per 20,000 rows -- nothing
-#: beside the work the statement itself does.
-_MERGE_WINDOW_IDS = 20_000
+#: 64 MiB of source text costs roughly 100-200 MB of temp (the measurements
+#: above put the multiplier near 1.5-2x once index and FTS churn are counted),
+#: which is affordable even where temp storage is still RAM.
+_MERGE_WINDOW_BYTES = 64 * 1024 * 1024
+
+#: Floor and ceiling on the derived id window. The floor keeps a corpus of
+#: enormous rows from degenerating into one statement per row (the per-statement
+#: overhead would then dominate); the ceiling keeps a corpus of tiny rows from
+#: producing a window so wide that stop latency and resume granularity get
+#: coarse again -- the other two things a window buys.
+_MERGE_WINDOW_MIN_IDS = 1_000
+_MERGE_WINDOW_MAX_IDS = 200_000
+
+#: Rows sampled to estimate the incoming table's average row size. Bounded and
+#: tiny: at the field corpus's ~22 KB/article this reads ~4 MB through the codec
+#: once per windowed step, against the tens of GB the step itself moves.
+_MERGE_SAMPLE_ROWS = 200
 
 #: Where a windowed insert's bound is spliced in. A caller that opts into
 #: windowing and forgets the marker would run the WHOLE-corpus statement once
 #: per window -- quadratic, and silent. So its absence is a hard error, never a
 #: fallback to the unwindowed shape.
 _WINDOW_MARK = "/*WINDOW*/"
+
+
+def _avg_row_bytes(con: sqlite3.Connection, src: str, lo: int, hi: int) -> float:
+    """Average size of an incoming row, from a bounded sample. 0.0 if unknowable.
+
+    Sampled from THREE blocks -- near the low end, the middle and the high end of
+    the id range -- rather than one. A single ``LIMIT n`` takes the oldest rows,
+    and a corpus's oldest articles are not its typical ones (early scraping is
+    not later scraping); three blocks cost three index seeks and make a
+    systematic drift across the corpus visible to the average instead of
+    invisible to it.
+
+    This is an ESTIMATE and is treated as one: it decides only how wide a window
+    is, and the result is clamped, so a badly non-uniform corpus makes the window
+    a poor fit rather than making it unsafe.
+    """
+    cols = [r[1] for r in _q(con, f'PRAGMA inc.table_info("{src}")')]  # noqa: S608  # nosec B608 - table name comes from the app's OWN fixed schema maps (design doc D3), never input
+    if not cols:
+        return 0.0
+    # CAST to BLOB so LENGTH counts BYTES: on TEXT it would count characters, and
+    # a corpus is not ASCII -- every non-Latin script would be under-counted, i.e.
+    # the window would be widest exactly where rows are biggest.
+    expr = " + ".join(f'LENGTH(CAST(COALESCE("{c}", \'\') AS BLOB))' for c in cols)
+    per = max(1, _MERGE_SAMPLE_ROWS // 3)
+    span = max(1, hi - lo)
+    total, seen = 0.0, 0
+    for frac in (0.0, 0.5, 0.9):
+        start = lo + int(span * frac)
+        row = _q(
+            con,
+            f'SELECT SUM(n), COUNT(*) FROM (SELECT {expr} AS n FROM inc."{src}"'  # noqa: S608  # nosec B608 - table/column names come from the incoming schema, allowlist-validated upstream and quoted here; the sampled values are never interpolated
+            f" WHERE id > ? ORDER BY id LIMIT {per})",
+            (start,),
+        )[0]
+        total += float(row[0] or 0.0)
+        seen += int(row[1] or 0)
+    return total / seen if seen else 0.0
+
+
+def _window_ids_for(con: sqlite3.Connection, src: str, lo: int, hi: int) -> int:
+    """How many ids a window may span, so it carries ~``_MERGE_WINDOW_BYTES``."""
+    avg = _avg_row_bytes(con, src, lo, hi)
+    if avg <= 0:
+        return _MERGE_WINDOW_MAX_IDS  # nothing to measure: rows are trivially small
+    ids = int(_MERGE_WINDOW_BYTES / avg)
+    return max(_MERGE_WINDOW_MIN_IDS, min(_MERGE_WINDOW_MAX_IDS, ids))
 
 
 def _insert_window(
@@ -440,11 +511,17 @@ def _insert_tracked(
     """Run an INSERT..SELECT and record every new row in merged_rows (provenance).
 
     ``src`` opts this call into WINDOWED execution over the incoming table's
-    primary key: the statement runs once per ``_MERGE_WINDOW_IDS``-wide slice of
-    ``i.id``, committing between slices, so memory and temp storage scale with
-    the window instead of with the corpus. The incoming table MUST be aliased
-    ``i`` (the house convention throughout this module) and ``insert_sql`` MUST
-    carry ``_WINDOW_MARK`` where the bound belongs.
+    primary key: the statement runs once per slice of ``i.id``, committing
+    between slices, so memory and temp storage scale with the window instead of
+    with the corpus. The incoming table MUST be aliased ``i`` (the house
+    convention throughout this module) and ``insert_sql`` MUST carry
+    ``_WINDOW_MARK`` where the bound belongs.
+
+    The slice is as many ids as fit ``_MERGE_WINDOW_BYTES`` of source data, from
+    a sampled average row size -- NOT a fixed row count. Rows differ in size by
+    orders of magnitude (this corpus holds articles from 1 KB to 412 KB), and
+    the cost is bytes, so a fixed row count means a bound that silently means
+    something different on every corpus.
 
     Two properties make committing mid-step safe, and neither is incidental:
 
@@ -487,12 +564,13 @@ def _insert_tracked(
     # The floor is exclusive, hence -1.
     row = _q(con, f'SELECT COALESCE(MIN(id), 1) - 1, COALESCE(MAX(id), 0) FROM inc."{src}"')[0]  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
     lo_min, hi_max = int(row[0]), int(row[1])
-    if hi_max - lo_min <= _MERGE_WINDOW_IDS:
+    step = _window_ids_for(con, src, lo_min, hi_max)
+    if hi_max - lo_min <= step:
         return _insert_window(con, batch_id, table, sql, (lo_min, hi_max))
 
     total, lo = 0, lo_min
     while lo < hi_max:
-        hi = min(lo + _MERGE_WINDOW_IDS, hi_max)
+        hi = min(lo + step, hi_max)
         total += _insert_window(con, batch_id, table, sql, (lo, hi))
         # Commit the window, then reopen. The step's progress-handler watcher
         # (see _step_watch) still owns stop-and-tick INSIDE each statement; this
@@ -758,7 +836,7 @@ def merge_corpus(
     # and transient index defaults to memory -- and none of it is bounded by
     # cache_size. Measured on that engine, one INSERT..SELECT costs ~5 KB of RAM
     # per row inserted under the default and ZERO under FILE, with no time
-    # penalty (see _MERGE_WINDOW_IDS). Windowing bounds this too; setting it
+    # penalty (see _MERGE_WINDOW_BYTES). Windowing bounds this too; setting it
     # explicitly means a later window-size increase cannot quietly bring it back.
     try:
         con.execute("PRAGMA temp_store=FILE")
