@@ -2810,6 +2810,43 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     against correct code, because that builds a genuinely large aggregate the summary is
     supposed to report — pad with records the code does not accumulate, or the test
     measures the wrong thing in both directions.
+  - **A COMPILE-TIME DEFAULT CAN DIFFER BETWEEN THE ENGINE YOU BENCHMARK ON AND THE
+    ONE YOU SHIP — and `PRAGMA temp_store` does not tell you which (2026-08-06, the
+    merge's 5.9 GB):** the bundled **sqlcipher3 is compiled `SQLITE_TEMP_STORE=2`**,
+    the stdlib `sqlite3` is `TEMP_STORE=1`. So every statement journal, temp table and
+    transient index defaults to **RAM on the encrypted store and to DISK everywhere
+    else** — and `connect.py` never set it. Measured on the real engine, one
+    `INSERT..SELECT` with the FTS trigger live and a 256 MiB cache: **~5 KB of RAM per
+    row inserted, linear, and `cache_size` does not bound it** (that lesson is about
+    the page cache; this is a separate allocation) — 100k/200k/400k rows → +663/+377/
+    +735 MB cumulative to 1,980 MB, against **+0 MB and no time penalty** under FILE.
+    A field import of 1,358,765 articles in one statement held 5,937 MB on a 5.5 GB
+    box. THREE THINGS WORTH KEEPING. (a) The tell is invisible from the pragma:
+    `PRAGMA temp_store` returns **0 = "the compile default"**, which is not
+    self-describing — you must read `compile_options` to learn what 0 means, and every
+    plaintext probe in this repo's history therefore measured the opposite default
+    while looking authoritative. This is the recorded "a probe's data distribution is
+    part of the lookalike" trap with the ENGINE as the varying axis. (b) Fix the
+    setting AND bound the work anyway: the pragma moves the allocation to disk, but a
+    5 TB import would then size a temp FILE by the corpus, so the durable answer is a
+    statement that only ever handles a bounded window. (c) Do not credit the fix to
+    the wrong half — the pragma is what the measurement supports; windowing is what
+    makes it corpus-independent, and the two need separate tests or one will be
+    reported as evidence for the other.
+  - **A GUARD OVER AN INTERRUPTED RUN MUST FORCE THE INTERRUPTION TO BE REACHABLE
+    (2026-08-06, same slice — the recorded anti-vacuity lesson recurring):** the new
+    guard "a half-merged working copy is never stamped `merged`" PASSED against the
+    mutation that reverts the fix. Its fixture had three articles and the production
+    window is 20,000, so the merge took the single-shot path, never committed
+    mid-way, and the failure's rollback wiped `merge_batches` — leaving
+    `all(status != 'merged' for row in rows)` to range over an **empty list**. The
+    guard could not see its own subject. Two changes, both needed: shrink the window
+    so a mid-run commit actually happens, and assert the collection is NON-EMPTY
+    before asserting anything about its contents. GENERAL FORM: any assertion of the
+    shape "no element of X has property P" is satisfied for free by an empty X, so
+    every such guard owes a companion assertion that X exists — and for a guard about
+    a *partial* state, that the partial state was genuinely produced rather than
+    rolled away.
 
 ## Open queue (when maintainer says proceed)
 - **MERGE STEP 3 IS STILL UNEXPLAINED — and the leading hypothesis is now REFUTED, so do
