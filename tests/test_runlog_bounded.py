@@ -32,6 +32,7 @@ from src.backup import runlog
 from src.backup.runlog import (
     _MILESTONE_CAP_BYTES,
     _has_terminal_event,
+    _iter_jsonl,
     _read_jsonl,
     prune_run_logs,
 )
@@ -131,7 +132,12 @@ def test_the_cap_is_generous_enough_for_an_ordinary_run(rl) -> None:
 
 
 # --------------------------------------------------------------------------- #
-#  F2 -- the reader is bounded, and keeps BOTH ends
+#  F2 -- the reader never materialises a journal
+#
+#  PR #884 (a sibling session, same field report) made every read STREAM, which
+#  is strictly better than the head+tail budget this file originally guarded:
+#  O(1) memory AND the whole file, so nothing is elided at all. Those tests are
+#  gone with the mechanism they described; what remains is the property.
 # --------------------------------------------------------------------------- #
 def _big_journal(path, *, lines: int, begin=True, end=True) -> None:
     with open(path, "w", encoding="utf-8") as fh:
@@ -143,31 +149,8 @@ def _big_journal(path, *, lines: int, begin=True, end=True) -> None:
             fh.write(json.dumps({"ev": "run_end", "outcome": "ok", "wall_s": 9.0}) + "\n")
 
 
-def test_a_huge_journal_is_read_within_budget(tmp_path) -> None:
-    p = tmp_path / "imp-big.jsonl"
-    _big_journal(p, lines=40_000)          # ~16 MB
-    assert p.stat().st_size > 8 * 1024 * 1024
-
-    recs = _read_jsonl(p, max_bytes=256 * 1024)
-    assert len(recs) < 2000, f"read {len(recs)} records from a capped read"
 
 
-def test_both_ends_survive_truncation_and_the_gap_is_stated(tmp_path) -> None:
-    """Head and tail, because which one matters depends on the question asked.
-
-    ``run_begin`` identifies the run; ``run_end`` says how it ended. A reader that
-    kept one end would answer the other question wrongly -- and silently.
-    """
-    p = tmp_path / "imp-big.jsonl"
-    _big_journal(p, lines=40_000)
-    recs = _read_jsonl(p, max_bytes=256 * 1024)
-
-    assert recs[0]["ev"] == "run_begin"
-    assert recs[-1]["ev"] == "run_end"
-    elided = [r for r in recs if r.get("ev") == "_elided"]
-    assert len(elided) == 1
-    assert elided[0]["elided_bytes"] > 0
-    assert elided[0]["file_bytes"] == p.stat().st_size
 
 
 def test_a_small_journal_is_read_whole_and_unchanged(tmp_path) -> None:
@@ -179,24 +162,6 @@ def test_a_small_journal_is_read_whole_and_unchanged(tmp_path) -> None:
     assert len(recs) == 12
     assert not [r for r in recs if r.get("ev") == "_elided"]
 
-
-def test_summarise_discloses_that_its_view_was_truncated(tmp_path, monkeypatch) -> None:
-    """A partial view must not produce a confident died_in_stage."""
-    monkeypatch.setattr(runlog, "run_logs_dir", lambda: tmp_path)
-    monkeypatch.setattr(runlog, "_READ_CAP_BYTES", 128 * 1024)
-    p = tmp_path / "imp-x.jsonl"
-    with open(p, "w", encoding="utf-8") as fh:
-        fh.write(json.dumps({"ev": "run_begin", "kind": "import", "t": "T0"}) + "\n")
-        fh.write(json.dumps({"ev": "stage_begin", "name": "merge"}) + "\n")
-        for i in range(40_000):
-            fh.write(json.dumps({"ev": "filler", "i": i, "pad": "z" * 400}) + "\n")
-
-    out = runlog.summarise("imp-x")
-    assert "journal_elided" in out
-    assert out["died_in_stage"] == "merge"
-    assert "died_in_stage_basis" in out, (
-        "a stage inferred from a truncated view must state what it rests on"
-    )
 
 
 # --------------------------------------------------------------------------- #
@@ -261,3 +226,21 @@ def test_prune_keeps_the_newest_runs_and_drops_both_files(tmp_path, monkeypatch)
     left = sorted(p.name for p in tmp_path.glob("*.jsonl"))
     assert len(left) == 6, left  # 3 runs x 2 files
     assert not list(tmp_path.glob("*20260800*")), "the oldest run's files must be gone"
+
+
+def test_reading_a_huge_journal_does_not_materialise_it(tmp_path) -> None:
+    """The read side is O(1) in memory at ANY journal size (PR #884's property).
+
+    Guarded here because this file is where the 1.6 GB incident is recorded, and
+    a future reader reaching for ``_read_jsonl`` in a boot path is exactly how it
+    would come back.
+    """
+    import resource
+
+    p = tmp_path / "imp-big.jsonl"
+    _big_journal(p, lines=60_000)             # ~24 MB
+    before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    n = sum(1 for _ in _iter_jsonl(p))
+    after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    assert n == 60_002
+    assert after - before < 50, f"streaming the journal cost {after - before:.0f} MB"

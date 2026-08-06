@@ -2785,6 +2785,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     tool, enumerate what the old one was configured with and find each setting's
     equivalent — an unset knob is invisible in a diff that only shows the swap.
 
+  - **A FORENSIC READER THAT MATERIALISES ITS FILE COSTS MOST EXACTLY WHEN IT IS
+    NEEDED MOST (2026-08-06, the app SIGKILLed during startup):** `promote_incomplete_runs`
+    runs in the LIFESPAN STARTUP, before unlock, on every boot — and read every journal
+    into a list of dicts. A journal's size is proportional to how much there was to
+    diagnose, so **the worse the incident, the more likely the app died trying to tell
+    you about it**; the operator saw only `Waiting for application startup.` then
+    `Killed`. Measured on a 28 MB journal: **+243 MB RSS, 9× the file**. `summarise` was
+    worse — it uses the beat file for a COUNT, the FINAL beat and the LAST TEN, and
+    materialised all of them (a 19-hour import writes thousands, each carrying a
+    per-child CPU array). GENERAL FORM: for any reader, write down what it actually
+    consumes before choosing how to read; a count, a tail and a few aggregates are all
+    streamable, and a whole-file read in a *boot* path is a startup cost proportional to
+    the last disaster. Also check the readers that bound their output — `raw_runs` read
+    every beat and THEN sliced `[-max_beats:]`, so the bound it advertised never applied
+    to the peak, and `list_runs` was not even capped at 50 files like the boot pass was.
+    **TWO TEST LESSONS, both from getting it wrong first.** (a) A memory guard built on
+    `ru_maxrss` is VACUOUS: peak RSS is a process high-water mark that never shrinks, so
+    by the time the test runs the peak is already set by earlier tests and the delta is 0
+    whatever the code does — reverting the fix left it green. `tracemalloc` measures
+    allocations inside the window and resets, which is the actual claim. (b) The fixture
+    must grow EVERY file the path reads: padding only the beat file left the milestone
+    read undetectable, and padding it with 30,000 *distinct* stage names then failed
+    against correct code, because that builds a genuinely large aggregate the summary is
+    supposed to report — pad with records the code does not accumulate, or the test
+    measures the wrong thing in both directions.
+
 ## Open queue (when maintainer says proceed)
 - **`card-audit.json` HAS NOT SERIALISED SINCE AT LEAST 2026-08-06 — found in a field
   bundle, NOT fixed (a different subsystem from the vLLM chain that surfaced it, and the
