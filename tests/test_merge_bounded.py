@@ -16,8 +16,8 @@ the wrong half is a fabricated pass waiting to happen.
         400,000  +735 MB  (→1,980)   +0 MB   (41.6s vs 45.5s)
 
     ~5 KB of RAM per row inserted, linear, no time penalty for moving it to disk.
-    The 2026-08-05 field import inserted 1,358,765 articles in ONE statement on a
-    5.5 GB machine and held 5,937 MB resident.
+    The 2026-08-05 field import inserted 1,358,765 articles in ONE statement and
+    held 5,937 MB resident for the whole run.
 
   * WINDOWING is what bounds the work any single statement must hold -- the temp
     FILE the pragma just created, the rows in flight, the distance a Stop has to
@@ -27,12 +27,23 @@ the wrong half is a fabricated pass waiting to happen.
     inserted row does not explain. That plateau is still unexplained, so the
     corpus-independence must not rest on the one allocation we managed to name.
 
+WHAT THIS DOES NOT FIX, stated because the temptation to claim it is strong: on
+the machine that produced those numbers, memory was never the constraint --
+``mem_avail`` sat steady around 4,300 MB for all twenty-two hours, and the OOM
+that followed came from a diagnostics bundle reading a 1.6 GB journal, not from
+the merge. So this makes a large import possible on a SMALL-RAM machine, where
+5.9 GB is fatal; it is not an explanation of why that particular run was slow.
+(The field artifact's own ``import_scale`` note reports a much smaller machine
+than ``mem_avail`` implies. The two cannot both be right and nothing here
+depends on either, so no machine size is asserted.)
+
 So the memory test below asserts the PRAGMA, and the windowing tests assert
 BOUNDED WORK -- neither claims the other's property.
 """
 
 from __future__ import annotations
 
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -358,6 +369,60 @@ def test_negative_source_ids_are_not_skipped(tmp_path, monkeypatch) -> None:
 
     merge_corpus(staged, working, _BATCH_META)
     assert "h00000700" in _hashes(working), "the article at a negative id was skipped"
+
+
+def test_windowing_changes_nothing_about_the_result(tmp_path, monkeypatch) -> None:
+    """THE equivalence check: a windowed merge and a one-shot merge agree exactly.
+
+    The other guards say the window is bounded and that no article is lost.
+    Neither would notice a window that changed a source_id remap, wrote
+    provenance for the wrong rows, or reordered an id map -- and "the numbers
+    still add up" is exactly how a merge bug hides. So: merge the SAME staged
+    corpus twice, once in many windows and once in one statement, and compare
+    every table the merge writes, row for row.
+
+    ``imported_at`` is excluded because the two runs happen at different
+    instants; everything else must match, ``merged_rows`` included, since a
+    provenance row pointing at the wrong id is a silent corruption of the only
+    record of what an import brought in.
+    """
+    tables = ("articles", "sources", "keywords", "merged_rows")
+
+    def snapshot(path: Path) -> dict[str, list]:
+        engine = create_engine(f"sqlite:///{path}", future=True)
+        try:
+            out = {}
+            with engine.connect() as c:
+                for t in tables:
+                    rows = c.execute(text(f"SELECT * FROM {t}")).all()  # noqa: S608
+                    out[t] = sorted(tuple("" if v is None else str(v) for v in r) for r in rows)
+            return out
+        finally:
+            engine.dispose()
+
+    staged = tmp_path / "staged.db"
+    _corpus(staged, articles=150, first_hash=2000)
+
+    # ONE working copy, byte-copied -- not two built the same way. Two builds
+    # differ in their own rows' created_at, which would show up as a diff that
+    # has nothing to do with the merge. Copying makes any remaining difference
+    # attributable, and keeps the timestamp columns IN the comparison rather
+    # than excluding them, which could hide a real one.
+    windowed, oneshot = tmp_path / "a.db", tmp_path / "b.db"
+    _corpus(windowed, articles=4)
+    shutil.copyfile(windowed, oneshot)
+
+    _pin_window(monkeypatch, 11)          # ~14 windows over 150 articles
+    counts_w, _ = merge_corpus(staged, windowed, _BATCH_META)
+    monkeypatch.undo()
+    _pin_window(monkeypatch, 10_000_000)  # one statement
+    counts_1, _ = merge_corpus(staged, oneshot, _BATCH_META)
+
+    assert counts_w == counts_1, "the two runs disagree about what they merged"
+    a, b = snapshot(windowed), snapshot(oneshot)
+    for t in tables:
+        assert a[t] == b[t], f"{t} differs between a windowed and a one-shot merge"
+    assert len(a["articles"]) == 154
 
 
 # --------------------------------------------------------------------------- #
