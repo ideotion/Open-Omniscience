@@ -94,7 +94,8 @@ def test_the_milestone_stream_stops_at_its_cap(rl, monkeypatch) -> None:
     size = rl.milestone_path.stat().st_size
     assert size < 20_000, f"milestone stream grew to {size} bytes past a 4 KB cap"
 
-    evs = [json.loads(ln)["ev"] for ln in rl.milestone_path.read_text().splitlines() if ln]
+    body = rl.milestone_path.read_text(encoding="utf-8")
+    evs = [json.loads(ln)["ev"] for ln in body.splitlines() if ln]
     assert "milestones_capped" in evs, "a truncated journal must SAY it was truncated"
 
 
@@ -110,7 +111,8 @@ def test_run_end_survives_the_cap(rl, monkeypatch) -> None:
         rl.milestone("noisy", i=i, payload="y" * 200)
     rl.milestone("run_end", outcome="ok", wall_s=1.0)
 
-    evs = [json.loads(ln)["ev"] for ln in rl.milestone_path.read_text().splitlines() if ln]
+    body = rl.milestone_path.read_text(encoding="utf-8")
+    evs = [json.loads(ln)["ev"] for ln in body.splitlines() if ln]
     assert evs[-1] == "run_end"
 
 
@@ -124,7 +126,7 @@ def test_the_cap_is_generous_enough_for_an_ordinary_run(rl) -> None:
     for i in range(2000):
         rl.milestone("stage_end", name=f"merge_step:{i}", seconds=1.5)
     assert rl.milestone_path.stat().st_size < _MILESTONE_CAP_BYTES
-    body = rl.milestone_path.read_text()
+    body = rl.milestone_path.read_text(encoding="utf-8")
     assert "milestones_capped" not in body
 
 
@@ -242,7 +244,7 @@ def test_boot_still_marks_a_killed_run(tmp_path, monkeypatch) -> None:
 
     out = runlog.promote_incomplete_runs()
     assert [r["run_id"] for r in out] == ["imp-killed"]
-    assert json.loads(p.read_text().splitlines()[-1])["ev"] == "promoted"
+    assert json.loads(p.read_text(encoding="utf-8").splitlines()[-1])["ev"] == "promoted"
 
 
 # --------------------------------------------------------------------------- #
@@ -251,8 +253,8 @@ def test_boot_still_marks_a_killed_run(tmp_path, monkeypatch) -> None:
 def test_prune_keeps_the_newest_runs_and_drops_both_files(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(runlog, "run_logs_dir", lambda: tmp_path)
     for i in range(10):
-        (tmp_path / f"imp-2026080{i}T000000Z-aaaa.jsonl").write_text('{"ev":"run_begin"}\n')
-        (tmp_path / f"imp-2026080{i}T000000Z-aaaa.beat.jsonl").write_text('{"t":"x"}\n')
+        (tmp_path / f"imp-2026080{i}T000000Z-aaaa.jsonl").write_text('{"ev":"run_begin"}\n', encoding="utf-8")
+        (tmp_path / f"imp-2026080{i}T000000Z-aaaa.beat.jsonl").write_text('{"t":"x"}\n', encoding="utf-8")
 
     removed = prune_run_logs(keep=3)
     assert len(removed) == 7
