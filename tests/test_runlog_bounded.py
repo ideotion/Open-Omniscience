@@ -234,13 +234,28 @@ def test_reading_a_huge_journal_does_not_materialise_it(tmp_path) -> None:
     Guarded here because this file is where the 1.6 GB incident is recorded, and
     a future reader reaching for ``_read_jsonl`` in a boot path is exactly how it
     would come back.
+
+    ``tracemalloc``, NOT ``resource.ru_maxrss`` -- and the first draft of this
+    test used ru_maxrss, in the same commit that merged the lesson saying not to.
+    Peak RSS is a process HIGH-WATER MARK that never falls, so by the time this
+    runs the peak is already set by earlier tests and the delta reads 0 whatever
+    the code does: mutation-checked, materialising the whole file with ``list()``
+    PASSED it. It is also in BYTES on macOS and KILOBYTES on Linux, so the unit
+    was wrong on half the fleet. tracemalloc measures allocation inside the
+    window, resets, and is portable -- it measures the actual claim.
     """
-    import resource
+    import tracemalloc
 
     p = tmp_path / "imp-big.jsonl"
-    _big_journal(p, lines=60_000)             # ~24 MB
-    before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
-    n = sum(1 for _ in _iter_jsonl(p))
-    after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss / 1024
+    _big_journal(p, lines=60_000)             # ~24 MB on disk
+    tracemalloc.start()
+    try:
+        n = sum(1 for _ in _iter_jsonl(p))
+        _cur, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
     assert n == 60_002
-    assert after - before < 50, f"streaming the journal cost {after - before:.0f} MB"
+    assert peak < 4 * 1024 * 1024, (
+        f"streaming a 24 MB journal allocated {peak / 1e6:.1f} MB — it is being held, "
+        "not streamed"
+    )
