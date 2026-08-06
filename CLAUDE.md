@@ -2786,6 +2786,37 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     equivalent — an unset knob is invisible in a diff that only shows the swap.
 
 ## Open queue (when maintainer says proceed)
+- **MERGE STEP 3 IS STILL UNEXPLAINED — and the leading hypothesis is now REFUTED, so do
+  not re-chase it (2026-08-06, from the field beat ring of `imp-20260805T032610Z-477e83`):**
+  a second 24 h import died at the same place. WHAT THE BEAT PROVES: the merge entered step
+  3 of 19 at 1.93 h and never advanced — 22.1 h at `done=2/19`, `d_done=0` throughout —
+  while genuinely working (~0.7 core, CPU-bound, ~80 KB/s written, `gate.held=false`, no
+  child processes). RSS went **845 → 5,937 MB in ~90 s** at step-3 entry and then sat
+  byte-stable (±4 MB) for twenty-two hours: a SINGLE bounded allocation, not an accumulator
+  (the recorded plateau lesson). WHAT IS REFUTED: `#878`'s standing hypothesis — that the
+  report-only duplicate/conflict tally in `_merge_articles` owns the time because it drags
+  full `content` through the codec for every hash-matching pair. Measured on a 2×60,000-row
+  /494 MB fixture at 100 % hash overlap (the additive re-import case): **0.24 s, 14 MB peak**,
+  plan `SCAN i` + `SEARCH m USING INDEX idx_hash` — it STREAMS. The 2026-07-30 one-pass
+  rewrite already halved it, and it is neither the memory nor, at any plausible constant
+  factor, the time. (Caveat, per the lookalike lesson: the fixture is plaintext, uniform and
+  smaller than the field corpus; the PLAN would not change, and codec cost is arithmetically
+  ~0.1 % here — 59,235 CPU-seconds were burned against ~50 s of AES at AES-NI speed.) SO THE
+  5.1 GB ALLOCATION AND THE 22 HOURS BOTH REMAIN UNATTRIBUTED, and the honest next step is
+  evidence, not another guess: the run's MILESTONE journal carries a `merge_statement_begin`
+  line naming every statement, so a streamed histogram plus its last line names the culprit
+  outright. That file is the same 1.6 GB artifact the F1–F4 fix exists to stop producing —
+  it is still on the operator's disk, and it is the only place the answer currently lives.
+- **THE APP'S OOM AT 24 h WAS THE JOURNAL READ, and the timeline is exact (same run):** the
+  merge held 5,960 MB for 22 h with `mem_avail` steady around 4,300 MB. The operator then ran
+  an all-diagnostics bundle: its own journal shows `run-journal.json` beginning at 03:27:18,
+  and the last beat ever written is 03:28:03 — **45 s later**, with RSS 5,960 → **10,063 MB**,
+  `mem_avail` 4,301 → **716 MB** and swap 885 → **1,024 MB (full)**. Independently measured:
+  reading that 1.6 GB journal through the pre-fix `_read_jsonl` peaks at **7,323 MB**. So the
+  merge was survivable and the diagnostic was not; the bundle also never finished (it stopped
+  at member 26 of 54, leaving a `.part`). Both halves are closed by the F1–F4 fix — but note
+  the ORDER of blame: the import would not have completed regardless (entry above), so a
+  future session must not read "the OOM is fixed" as "the import is fixed".
 - **`card-audit.json` HAS NOT SERIALISED SINCE AT LEAST 2026-08-06 — found in a field
   bundle, NOT fixed (a different subsystem from the vLLM chain that surfaced it, and the
   root cause needs a real corpus to locate):** the member computes for **112 seconds**
