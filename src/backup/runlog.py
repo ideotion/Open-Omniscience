@@ -22,12 +22,30 @@ WHAT IT WRITES
 --------------
 Two files per run under ``data_dir()/run_logs/``:
 
-``<run_id>.jsonl``       milestones -- append-only, fsync'd, **never trimmed**
+``<run_id>.jsonl``       milestones -- append-only, fsync'd, capped, never trimmed
 ``<run_id>.beat.jsonl``  heartbeat  -- newest-wins ring, flushed, not fsync'd
 
 Two files, not one, for one reason: milestones must never be trimmed away and
 heartbeats must be. Mixing them means either an unbounded file or a ring that
 eventually eats the ``run_begin`` line.
+
+NOT TRIMMED IS NOT THE SAME AS NOT BOUNDED, and that distinction was learned
+expensively. The split above rests on a premise -- that milestones are rare,
+deliberate events -- which for a long time was an assumption rather than a rule.
+On 2026-08-06 a per-statement breadcrumb was routed through
+``milestone(durable=False)``, believing that flag meant "cheap, ring-buffered";
+it means only "skip the fsync", and the FILE is chosen by ``beat=``. One 24 h
+merge took ``run_logs`` from 11 MB to 1.6 GB, every reader of that directory
+then had to load it into RAM -- ``promote_incomplete_runs`` does so at BOOT --
+and the app was OOM-killed at startup on every attempt, which no reinstall could
+fix because a reinstall does not touch ``data/``.
+
+So the premise is enforced in three places now, because one is not enough:
+the milestone stream has a byte CAP (``_MILESTONE_CAP_BYTES``) past which only
+``run_end``/``promoted`` are written; every read STREAMS (``_iter_jsonl``), so no
+journal is ever materialised whatever its size; and the directory keeps a fixed
+number of runs (``_KEEP_RUNS``). A hot-path milestone is now a truncated journal,
+never an unbootable machine.
 
 THE FORENSIC CONTRACT
 ---------------------
@@ -105,6 +123,35 @@ _BEAT_CAP_LINES = 5760
 #: Rewrite (trim) the ring every N appends rather than on every one.
 _BEAT_TRIM_EVERY = 512
 
+#: Hard ceiling on the MILESTONE stream, which is otherwise never trimmed.
+#:
+#: The two-file split above rests on a premise -- milestones are rare, deliberate
+#: events -- and that premise was an assumption, not a rule. On 2026-08-06 a
+#: per-statement breadcrumb was routed through `milestone(durable=False)` in the
+#: belief that `durable=False` meant "cheap/ring-buffered"; it means only "skip
+#: the fsync", and the FILE is chosen by `beat=`. One 24 h merge took run_logs
+#: from 11 MB to 1.6 GB, and every reader of that directory then had to load it
+#: into RAM -- including `promote_incomplete_runs`, which runs at BOOT. The app
+#: OOM-died at startup on every attempt, which no reinstall can fix because a
+#: reinstall does not touch data/.
+#:
+#: So the premise is now ENFORCED. Past the cap only the events that carry the
+#: forensic contract are still written (see `_MILESTONE_ALWAYS`), which keeps a
+#: capped journal readable as "capped" rather than as "killed" -- those must stay
+#: distinguishable, since the absence of `run_end` is the whole signal.
+_MILESTONE_CAP_BYTES = 64 * 1024 * 1024
+
+#: Events that are written even after the milestone cap is reached. `run_end` and
+#: `promoted` ARE the forensic contract; `milestones_capped` is the disclosure
+#: that the rest of the stream stopped, so a short journal is never misread as a
+#: short run.
+_MILESTONE_ALWAYS = frozenset({"run_end", "promoted", "milestones_capped"})
+
+#: Runs whose journals are kept. The per-run cap bounds each FILE; this bounds
+#: the COUNT, which is the other half of how a diagnostics directory becomes
+#: unreadable (the field machine had 78 files before anyone looked).
+_KEEP_RUNS = 40
+
 #: Above this measured cost the child-process walk is sampled at a reduced
 #: cadence. `children(recursive=True)` enumerates /proc and builds a Process
 #: object per pid; on a loaded box that is not free, and the beat must never
@@ -142,6 +189,36 @@ def run_logs_dir() -> Path:
     from src.paths import data_dir
 
     return data_dir() / _DIR_NAME
+
+
+def prune_run_logs(*, keep: int = _KEEP_RUNS) -> list[str]:
+    """Keep the newest ``keep`` runs; delete the rest. Returns what was removed.
+
+    Retention, not a size check: a run's journal is only useful next to the run
+    it describes, and 78 files accumulated across a month is how a directory
+    nobody looks at becomes a directory nobody can read. The per-run cap bounds
+    each file; this bounds the count.
+
+    Deliberately newest-FIRST by run id, which is time-ordered by construction
+    (`_new_run_id`), so this never depends on mtimes that a copy or a restore
+    would rewrite. Best-effort: a file that will not delete is skipped, never
+    raised -- pruning old diagnostics must not be able to fail a run.
+    """
+    d = run_logs_dir()
+    if not d.is_dir():
+        return []
+    runs: list[str] = sorted(
+        {p.name.split(".")[0] for p in d.glob("*.jsonl")}, reverse=True
+    )
+    removed: list[str] = []
+    for rid in runs[keep:]:
+        for suffix in (".jsonl", ".beat.jsonl"):
+            with suppress(OSError):
+                (d / f"{rid}{suffix}").unlink(missing_ok=True)
+        removed.append(rid)
+    if removed:
+        _LOG.info("run journal: pruned %d old run(s), kept %d", len(removed), keep)
+    return removed
 
 
 def journal_enabled() -> bool:
@@ -276,6 +353,15 @@ class RunLog:
         # unlike a per-phase progress counter.
         self._prog: dict | None = None
         self._prog_seq = 0
+        #: The SQL statement currently in flight, as (label, started_monotonic).
+        #: Set on the merge's trace callback -- see `statement()`. Read by the
+        #: beat, never written per statement: a hot-path WRITE is what broke this
+        #: module once already.
+        self._stmt: tuple[str, float] | None = None
+
+        #: Bytes appended to the milestone stream, against `_MILESTONE_CAP_BYTES`.
+        self._m_bytes = 0
+        self._m_capped = False
 
         self._sampler: threading.Thread | None = None
         self._stop = threading.Event()
@@ -316,6 +402,55 @@ class RunLog:
         self._disabled_reasons.append(reason)
         _LOG.warning("run journal %s disabled for run %s (%s)", stream, self.run_id, reason)
 
+    def _cap_milestone(self, fp: Any, rec: dict, line: str) -> bool:
+        """Enforce the milestone ceiling. Returns True when the line is dropped.
+
+        The two-file split makes the milestone stream untrimmed BY DESIGN, on the
+        premise that milestones are rare. This turns that premise into a rule, so
+        that a future hot-path milestone costs a truncated journal instead of a
+        machine that will not boot -- which is what it cost the first time.
+
+        Events in `_MILESTONE_ALWAYS` are never dropped: the absence of `run_end`
+        is the signal that a run was killed, and spending it on a cap would make
+        every capped run read as a crashed one.
+        """
+        ev = rec.get("ev")
+        if ev in _MILESTONE_ALWAYS:
+            return False
+        if self._m_capped:
+            return True
+        n = len(line.encode("utf-8", "replace"))
+        if self._m_bytes + n <= _MILESTONE_CAP_BYTES:
+            self._m_bytes += n
+            return False
+        self._m_capped = True
+        note = json.dumps(
+            {
+                "ev": "milestones_capped",
+                "t": _utc_iso(),
+                "el_s": round(time.monotonic() - self._t0, 1),
+                "cap_bytes": _MILESTONE_CAP_BYTES,
+                "bytes": self._m_bytes,
+                "dropped_from": ev,
+                "reason": (
+                    "the milestone stream hit its ceiling; from here only run_end "
+                    "and promoted are written. This journal is TRUNCATED -- not a "
+                    "run that stopped doing things."
+                ),
+            },
+            separators=(",", ":"),
+            default=str,
+        ) + "\n"
+        with suppress(Exception):
+            fp.write(note)
+            fp.flush()
+            self._m_bytes += len(note.encode("utf-8", "replace"))
+        _LOG.warning(
+            "run %s: milestone stream capped at %d bytes (dropped %r and every "
+            "ordinary milestone after it)", self.run_id, _MILESTONE_CAP_BYTES, ev,
+        )
+        return True
+
     def _write(self, rec: dict, *, beat: bool, durable: bool) -> None:
         # PID guard BEFORE the lock. A forked child inherits both, and if the
         # guard sat inside the critical section the child would block on a lock
@@ -328,7 +463,10 @@ class RunLog:
             if fp is None or (self._b_off if beat else self._m_off):
                 return
             try:
-                fp.write(json.dumps(rec, separators=(",", ":"), default=str) + "\n")
+                line = json.dumps(rec, separators=(",", ":"), default=str) + "\n"
+                if not beat and self._cap_milestone(fp, rec, line):
+                    return
+                fp.write(line)
                 fp.flush()
                 if durable:
                     # fsync is asymmetric BY DESIGN: a milestone is the evidence
@@ -363,6 +501,24 @@ class RunLog:
         self._prog = p
         self._prog_seq += 1
 
+    def statement(self, label: str | None) -> None:
+        """Publish the SQL statement now in flight. One store; nothing is written.
+
+        This exists because a merge step runs many statements and a step-level
+        tick cannot say which one is slow. The first version of it wrote a
+        breadcrumb per statement through `milestone(durable=False)` -- which does
+        not mean "cheap", only "skip the fsync" -- and so appended a flushed line
+        to the untrimmed milestone stream once per statement. A 24 h merge turned
+        an 11 MB journal directory into 1.6 GB and left the app unable to boot.
+
+        The beat is the right home: it is capped, it is the time series a reader
+        already consults for "what was it doing at time T", and it costs nothing
+        per statement. A statement that finishes in milliseconds needs no record
+        at all; only one still running at the next beat does, and that one is
+        exactly the one worth naming.
+        """
+        self._stmt = (label, time.monotonic()) if label else None
+
     # -- heartbeat --------------------------------------------------------- #
     def _beat(self, prev: dict) -> dict:
         t_beat0 = time.monotonic()
@@ -376,6 +532,16 @@ class RunLog:
             if ph:
                 rec["phase"] = ph
         rec["d_prog_seq"] = seq - int(prev.get("_seq", seq))
+
+        # The statement in flight, if a merge published one. `sql_s` is how long
+        # THIS statement has been running -- the number that separates "the step
+        # is working through many statements" from "one statement has owned the
+        # last four hours", which is the distinction a step-level counter cannot
+        # draw and the reason step 3 of a 19-step merge stayed unexplained.
+        stmt = self._stmt
+        if stmt is not None:
+            rec["sql"] = stmt[0]
+            rec["sql_s"] = round(time.monotonic() - stmt[1], 1)
 
         src_name, done, total = _counter_of(prog)
         if src_name is None:
@@ -630,6 +796,12 @@ def begin(kind: str, *, label: str = "", dest: str | None = None, **header: Any)
                 return None
             rl = RunLog(_new_run_id(kind), kind)
             _CURRENT = rl
+        # Prune BEFORE the new run opens its files, so the new one is never a
+        # prune candidate and the directory is bounded from the moment work
+        # starts rather than only after it finishes -- a run that gets killed
+        # would otherwise never prune at all.
+        with suppress(Exception):
+            prune_run_logs()
         try:
             from src.api.diagnostics import _hardware_profile
 
@@ -674,6 +846,18 @@ def progress(p: dict) -> None:
     rl = _CURRENT
     if rl is not None:
         rl.progress(p)
+
+
+def statement(label: str | None) -> None:
+    """Publish the in-flight SQL statement. Hot path -- see :meth:`RunLog.statement`.
+
+    Called once per statement from a merge's trace callback, so it must stay a
+    store. Anything that writes, locks or fsyncs here is paid by every statement
+    in a 19-step merge.
+    """
+    rl = _CURRENT
+    if rl is not None:
+        rl.statement(label)
 
 
 @contextmanager
@@ -778,6 +962,51 @@ if hasattr(os, "register_at_fork"):  # pragma: no branch - POSIX only
 # --------------------------------------------------------------------------- #
 #  Reading the journals back
 # --------------------------------------------------------------------------- #
+def _parse_lines(chunk: str, out: list[dict]) -> None:
+    """Parse whole JSONL records out of a text chunk.
+
+    Used by the byte-range tail read, where the FIRST line is very likely torn.
+    Skipping a torn line is right; treating the file as corrupt is not."""
+    for line in chunk.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            rec = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(rec, dict):
+            out.append(rec)
+
+
+def _has_terminal_event(p: Path, *, tail_bytes: int = 64 * 1024) -> bool:
+    """Does this journal end in ``run_end`` or ``promoted``? Reads only the TAIL.
+
+    COMPOSES with :func:`_iter_jsonl` rather than competing with it. Streaming
+    made the read O(1) in MEMORY, which is what stopped a bad incident from
+    preventing startup; this makes the one question asked at BOOT O(1) in I/O
+    too. Both events are written LAST by construction, so a streaming reader
+    still has to parse an entire journal to reach a line that is always at the
+    end -- across every journal on disk, on every boot.
+
+    Unreadable is reported as False: a journal we cannot read has not been shown
+    to have ended, and re-marking an already-marked run is harmless, while
+    skipping a genuinely unfinished one loses the evidence."""
+    try:
+        size = p.stat().st_size
+        if size == 0:
+            return False
+        with open(p, "rb") as fb:
+            if size > tail_bytes:
+                fb.seek(size - tail_bytes)
+            chunk = fb.read(tail_bytes)
+    except OSError:
+        return False
+    recs: list[dict] = []
+    _parse_lines(chunk.decode("utf-8", "replace"), recs)
+    return any(r.get("ev") in ("run_end", "promoted") for r in recs)
+
+
 def _iter_jsonl(p: Path) -> Iterator[dict]:
     """Stream one journal, a record at a time.
 
@@ -904,6 +1133,9 @@ def summarise(run_id: str) -> dict:
     begin_rec: dict = {}
     end_rec: dict | None = None
     errors: list[dict] = []
+    # A capped journal is TRUNCATED, not a run that went quiet -- surfaced so a
+    # short milestone stream is never read as a short run.
+    capped: dict | None = None
     open_stages: list[str] = []
     stages: dict = {}
     last_stage_end: str | None = None
@@ -917,6 +1149,8 @@ def summarise(run_id: str) -> dict:
             end_rec = r  # the LAST one wins, as reversed() gave before
         elif ev == "error":
             errors.append(r)
+        elif ev == "milestones_capped":
+            capped = r
         elif ev == "stage_begin":
             open_stages.append(r.get("name", "?"))
         elif ev == "stage_end":
@@ -951,7 +1185,11 @@ def summarise(run_id: str) -> dict:
         out["wall_s"] = end_rec.get("wall_s")
         if end_rec.get("journal_truncated"):
             out["journal_truncated"] = True
-    else:
+    if capped is not None:
+        out["milestones_capped"] = {
+            k: capped.get(k) for k in ("cap_bytes", "bytes", "dropped_from", "reason")
+        }
+    if end_rec is None:
         out["died_in_stage"] = open_stages[-1] if open_stages else None
         if not open_stages:
             # It died BETWEEN stages, or in work no stage wraps. The last stage
@@ -1067,18 +1305,16 @@ def promote_incomplete_runs(*, max_runs: int = 50) -> list[dict]:
     for p in sorted(d.glob("*.jsonl"), reverse=True)[:max_runs]:
         if p.name.endswith(".beat.jsonl"):
             continue
-        # STREAMED, and it answers a yes/no question, so it stops at the first
-        # match. This runs on every boot before unlock; holding a multi-megabyte
-        # journal in memory here is what made a bad incident able to prevent the
-        # app from starting at all.
-        seen = False
-        done = False
-        for r in _iter_jsonl(p):
-            seen = True
-            if r.get("ev") in ("run_end", "promoted"):
-                done = True
-                break
-        if not seen or done:
+        # Answered from the TAIL first. Streaming is O(1) in MEMORY, which is what
+        # made a bad incident survivable -- but `run_end`/`promoted` are written
+        # LAST by construction, so streaming from the top still parses the whole
+        # file to reach a line that is always at the end. At boot, across every
+        # journal on disk, that is the difference between 64 KB and the lot.
+        if _has_terminal_event(p):
+            continue
+        # Only that the file holds at least one parseable record: `next` stops
+        # at the first one, so an empty or unreadable journal costs nothing.
+        if next(_iter_jsonl(p), None) is None:
             continue
         run_id = p.stem
         try:

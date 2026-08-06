@@ -1667,6 +1667,45 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     evidence of absence — read the export site first. (Same pass: `ooDonut` DOES have
     a slice-count guard, falling back to theme-derived share bars past five, so that
     half of audit finding V-4 is spent too. Recorded so neither is "fixed" twice.)
+  - **AN INSTRUMENT ON A HOT PATH IS A LOAD SOURCE — and "durable=False" meant
+    "skip the fsync", not "cheap" (2026-08-06, the import that left the app
+    unbootable):** PR #878 added a per-statement breadcrumb to diagnose a merge
+    step and sent it through `runlog.milestone(durable=False)`. That flag controls
+    ONLY whether `fsync` is called; the FILE is chosen by `beat=`, which
+    `milestone()` hardcodes to False — so every breadcrumb was appended and
+    flushed to the milestone stream, the one the module's own docstring calls
+    "never trimmed". The beat file has a 5,760-line ring; the milestone file had
+    no ceiling at all. MEASURED, from the operator's two bundles: `run_logs` went
+    **11 MB / 76 files → 1,615 MB / 78 files** across one 24 h merge. THE SECOND
+    HALF IS WHERE IT BECAME UNRECOVERABLE: `_read_jsonl` loaded a whole journal
+    into a list of dicts with no cap, and `promote_incomplete_runs` calls it at
+    BOOT, before the unlock screen, over up to 50 files. Parsed JSON costs several
+    times its on-disk size, so on a 12.5 GB box with 1 GB of swap the app was
+    OOM-killed at startup on every attempt — and an OOM is a SIGKILL, so the
+    `except Exception` wrapped around that call could not catch it, and a
+    reinstall could not fix it because a reinstall does not touch `data/`. FOUR
+    GENERAL RULES. (a) Before putting an event on a per-call path, ask what
+    *writes* it, not just what computes it; a flush under a lock per SQL statement
+    is a throughput change, not instrumentation. (b) An in-flight breadcrumb wants
+    to be a STORE the existing sampler reads (`runlog.statement` → the beat), not
+    a write — the beat is already capped, already periodic, and a statement that
+    finishes in milliseconds needed no record at all; only one still running at
+    the next sample did. (c) "Not trimmed" is a promise about ORDER, never about
+    SIZE: any append-only stream whose safety rests on "these events are rare"
+    needs that premise ENFORCED (a byte cap, with the forensic-contract events
+    exempt so a capped journal never reads as a killed run), because the next
+    person to violate it will be as sure as I was. (d) Every reader of an
+    on-disk artifact needs a ceiling **independently** of the writer, since the
+    oversized file already exists by the time you find out; and a bounded read
+    keeps BOTH ends and states the gap, because which end matters depends on the
+    question (`run_begin` identifies the run, `run_end` says how it ended) — then
+    anything derived by PAIRING events across the gap, like an unmatched
+    `stage_begin`, must be published with its basis rather than as a measurement.
+    MY OWN PR TEXT CARRIED THE REFUTATION: it claimed "no per-row cost — these are
+    bulk statements, a handful per step, not one per article", which is true of
+    the six statements in the step I was looking at and false across all 19. I
+    wrote a quantitative claim without counting, in the comment right above the
+    code that depended on it.
   - **A LOG TAIL IS THE WRONG HALF WHEN THE ROOT CAUSE COMES FROM A CHILD PROCESS
     (2026-08-02, the vLLM start failure):** `server_log_tail` kept the last 8000 bytes
     on the written assumption that "a CUDA OOM puts the actionable numbers at the END".
@@ -2771,8 +2810,106 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     against correct code, because that builds a genuinely large aggregate the summary is
     supposed to report — pad with records the code does not accumulate, or the test
     measures the wrong thing in both directions.
+  - **A COMPILE-TIME DEFAULT CAN DIFFER BETWEEN THE ENGINE YOU BENCHMARK ON AND THE
+    ONE YOU SHIP — and `PRAGMA temp_store` does not tell you which (2026-08-06, the
+    merge's 5.9 GB):** the bundled **sqlcipher3 is compiled `SQLITE_TEMP_STORE=2`**,
+    the stdlib `sqlite3` is `TEMP_STORE=1`. So every statement journal, temp table and
+    transient index defaults to **RAM on the encrypted store and to DISK everywhere
+    else** — and `connect.py` never set it. Measured on the real engine, one
+    `INSERT..SELECT` with the FTS trigger live and a 256 MiB cache: **~5 KB of RAM per
+    row inserted, linear, and `cache_size` does not bound it** (that lesson is about
+    the page cache; this is a separate allocation) — 100k/200k/400k rows → +663/+377/
+    +735 MB cumulative to 1,980 MB, against **+0 MB and no time penalty** under FILE.
+    A field import of 1,358,765 articles in one statement held 5,937 MB on a 5.5 GB
+    box. THREE THINGS WORTH KEEPING. (a) The tell is invisible from the pragma:
+    `PRAGMA temp_store` returns **0 = "the compile default"**, which is not
+    self-describing — you must read `compile_options` to learn what 0 means, and every
+    plaintext probe in this repo's history therefore measured the opposite default
+    while looking authoritative. This is the recorded "a probe's data distribution is
+    part of the lookalike" trap with the ENGINE as the varying axis. (b) Fix the
+    setting AND bound the work anyway: the pragma moves the allocation to disk, but a
+    5 TB import would then size a temp FILE by the corpus, so the durable answer is a
+    statement that only ever handles a bounded window. (c) Do not credit the fix to
+    the wrong half — the pragma is what the measurement supports; windowing is what
+    makes it corpus-independent, and the two need separate tests or one will be
+    reported as evidence for the other.
+  - **A BOUND MUST BE DENOMINATED IN THE UNIT THAT ACTUALLY COSTS — and an
+    architectural-consistency question can find that faster than a measurement
+    (2026-08-06, the merge window):** the windowed merge shipped with a bound of
+    20,000 source IDS and a comment claiming that kept a window "in the low hundreds
+    of MB". The maintainer then asked whether the batch size shouldn't relate to the
+    600 MB the backup already slices volumes into. It cannot *directly* —
+    `write_volume_set` cuts an opaque encrypted stream at byte offsets with no row
+    alignment, and restore reassembles every volume into one staged file before
+    `merge_corpus` opens it, so by merge time volumes do not exist. But the question
+    was right about the UNIT, and that is what the ids bound got wrong: measured on
+    the shipped engine, the SAME 20,000 rows cost **178 MB at a 2 KB body, 393 MB at
+    8 KB and 947 MB at 32 KB** (9.1 / 20.1 / 48.5 KB per row) — so a row-count window
+    means something different on every corpus, and on the field artifact (32.1 GB /
+    ~1.43M articles ≈ 22 KB each) it would have carried **~800 MB, five times its own
+    comment's claim**. A fabricated figure, sitting directly above the constant it
+    justified. THE FIX is to size the window in BYTES from a sampled average row size
+    and clamp both ends; the numbers differ from the volume size because they answer
+    different constraints (a volume is sized by the GF(2⁸) parity ceiling and download
+    granularity, a window by what one machine holds at once) but the unit is the same.
+    FOUR THINGS WORTH KEEPING. (a) The general form: when you bound a loop, name what
+    the loop COSTS and bound that — a count is only a proxy, and it is a bad one
+    wherever the items vary (this corpus holds articles from 1 KB to 412 KB).
+    (b) Sample from SEVERAL blocks of the id range, not one `LIMIT n`: the oldest rows
+    of a corpus are not its typical ones, and a single block makes a systematic drift
+    invisible. (c) `LENGTH()` on TEXT counts CHARACTERS — on a mostly non-Latin corpus
+    that under-counts every multi-byte row, widening the window exactly where rows are
+    biggest; `CAST(x AS BLOB)` is what makes it bytes. (d) A "is X consistent with Y?"
+    question from someone holding the whole system in view is a real review instrument:
+    it found this when the measurement (which used one row size) and the tests (which
+    asserted bounded rows) both could not.
+  - **A GUARD OVER AN INTERRUPTED RUN MUST FORCE THE INTERRUPTION TO BE REACHABLE
+    (2026-08-06, same slice — the recorded anti-vacuity lesson recurring):** the new
+    guard "a half-merged working copy is never stamped `merged`" PASSED against the
+    mutation that reverts the fix. Its fixture had three articles and the production
+    window is 20,000, so the merge took the single-shot path, never committed
+    mid-way, and the failure's rollback wiped `merge_batches` — leaving
+    `all(status != 'merged' for row in rows)` to range over an **empty list**. The
+    guard could not see its own subject. Two changes, both needed: shrink the window
+    so a mid-run commit actually happens, and assert the collection is NON-EMPTY
+    before asserting anything about its contents. GENERAL FORM: any assertion of the
+    shape "no element of X has property P" is satisfied for free by an empty X, so
+    every such guard owes a companion assertion that X exists — and for a guard about
+    a *partial* state, that the partial state was genuinely produced rather than
+    rolled away.
 
 ## Open queue (when maintainer says proceed)
+- **MERGE STEP 3 IS STILL UNEXPLAINED — and the leading hypothesis is now REFUTED, so do
+  not re-chase it (2026-08-06, from the field beat ring of `imp-20260805T032610Z-477e83`):**
+  a second 24 h import died at the same place. WHAT THE BEAT PROVES: the merge entered step
+  3 of 19 at 1.93 h and never advanced — 22.1 h at `done=2/19`, `d_done=0` throughout —
+  while genuinely working (~0.7 core, CPU-bound, ~80 KB/s written, `gate.held=false`, no
+  child processes). RSS went **845 → 5,937 MB in ~90 s** at step-3 entry and then sat
+  byte-stable (±4 MB) for twenty-two hours: a SINGLE bounded allocation, not an accumulator
+  (the recorded plateau lesson). WHAT IS REFUTED: `#878`'s standing hypothesis — that the
+  report-only duplicate/conflict tally in `_merge_articles` owns the time because it drags
+  full `content` through the codec for every hash-matching pair. Measured on a 2×60,000-row
+  /494 MB fixture at 100 % hash overlap (the additive re-import case): **0.24 s, 14 MB peak**,
+  plan `SCAN i` + `SEARCH m USING INDEX idx_hash` — it STREAMS. The 2026-07-30 one-pass
+  rewrite already halved it, and it is neither the memory nor, at any plausible constant
+  factor, the time. (Caveat, per the lookalike lesson: the fixture is plaintext, uniform and
+  smaller than the field corpus; the PLAN would not change, and codec cost is arithmetically
+  ~0.1 % here — 59,235 CPU-seconds were burned against ~50 s of AES at AES-NI speed.) SO THE
+  5.1 GB ALLOCATION AND THE 22 HOURS BOTH REMAIN UNATTRIBUTED, and the honest next step is
+  evidence, not another guess: the run's MILESTONE journal carries a `merge_statement_begin`
+  line naming every statement, so a streamed histogram plus its last line names the culprit
+  outright. That file is the same 1.6 GB artifact the F1–F4 fix exists to stop producing —
+  it is still on the operator's disk, and it is the only place the answer currently lives.
+- **THE APP'S OOM AT 24 h WAS THE JOURNAL READ, and the timeline is exact (same run):** the
+  merge held 5,960 MB for 22 h with `mem_avail` steady around 4,300 MB. The operator then ran
+  an all-diagnostics bundle: its own journal shows `run-journal.json` beginning at 03:27:18,
+  and the last beat ever written is 03:28:03 — **45 s later**, with RSS 5,960 → **10,063 MB**,
+  `mem_avail` 4,301 → **716 MB** and swap 885 → **1,024 MB (full)**. Independently measured:
+  reading that 1.6 GB journal through the pre-fix `_read_jsonl` peaks at **7,323 MB**. So the
+  merge was survivable and the diagnostic was not; the bundle also never finished (it stopped
+  at member 26 of 54, leaving a `.part`). Both halves are closed by the F1–F4 fix — but note
+  the ORDER of blame: the import would not have completed regardless (entry above), so a
+  future session must not read "the OOM is fixed" as "the import is fixed".
 - **`card-audit.json` HAS NOT SERIALISED SINCE AT LEAST 2026-08-06 — found in a field
   bundle, NOT fixed (a different subsystem from the vLLM chain that surfaced it, and the
   root cause needs a real corpus to locate):** the member computes for **112 seconds**

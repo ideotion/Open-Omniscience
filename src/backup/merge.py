@@ -365,25 +365,237 @@ def _ident(name: str) -> str:
     return '"' + name.replace('"', '""') + '"'
 
 
-def _insert_tracked(
+#: Source BYTES per window in a windowed merge insert -- not rows.
+#:
+#: THE UNIT IS THE WHOLE POINT, and the first cut of this got it wrong. A
+#: row-count window bounds rows; the cost is bytes. Measured on the shipped
+#: engine (sqlcipher3, encrypted, FTS trigger live, 256 MiB cache), the SAME
+#: 20,000 rows at three body sizes, each in a fresh process:
+#:
+#:     20,000 rows x  2 KB body  ->  178 MB   ( 9.1 KB/row)
+#:     20,000 rows x  8 KB body  ->  393 MB   (20.1 KB/row)
+#:     20,000 rows x 32 KB body  ->  947 MB   (48.5 KB/row)
+#:
+#: So a fixed 20,000-id window is ~180 MB on one corpus and ~950 MB on another.
+#: On the 2026-08-05 field artifact (32.1 GB staged, ~1.43M articles = ~22 KB
+#: each) it would have been ~800 MB -- five times what its own comment claimed.
+#: Denominating in bytes is what makes the bound mean the same thing on every
+#: corpus, and it is the same unit the backup already uses to size a volume
+#: (512 MiB); the NUMBERS differ because they answer different constraints --
+#: a volume is sized by the GF(2^8) parity ceiling and download granularity,
+#: a window by what one machine can hold at once.
+#:
+#: WHY ANY OF IT IS NEEDED, measured the same way -- one INSERT..SELECT of N rows:
+#:
+#:     rows     temp_store=MEMORY (the sqlcipher3 default)   temp_store=FILE
+#:     100,000  +663 MB                                      +0 MB
+#:     200,000  +377 MB  (cumulative 1,138)                  +0 MB
+#:     400,000  +735 MB  (cumulative 1,980)                  +0 MB
+#:
+#: ``cache_size`` does not bound it -- the 2026-08-03 cache lesson is about the
+#: page cache; this is temp storage, a separate allocation. The field import put
+#: 1,358,765 articles through one statement on a 5.5 GB machine.
+#:
+#: 64 MiB of source text costs roughly 100-200 MB of temp (the measurements
+#: above put the multiplier near 1.5-2x once index and FTS churn are counted),
+#: which is affordable even where temp storage is still RAM.
+_MERGE_WINDOW_BYTES = 64 * 1024 * 1024
+
+#: Floor and ceiling on the derived id window. The floor keeps a corpus of
+#: enormous rows from degenerating into one statement per row (the per-statement
+#: overhead would then dominate); the ceiling keeps a corpus of tiny rows from
+#: producing a window so wide that stop latency and resume granularity get
+#: coarse again -- the other two things a window buys.
+_MERGE_WINDOW_MIN_IDS = 1_000
+_MERGE_WINDOW_MAX_IDS = 200_000
+
+#: Rows sampled to estimate the incoming table's average row size. Bounded and
+#: tiny: at the field corpus's ~22 KB/article this reads ~4 MB through the codec
+#: once per windowed step, against the tens of GB the step itself moves.
+_MERGE_SAMPLE_ROWS = 200
+
+#: Where a windowed insert's bound is spliced in. A caller that opts into
+#: windowing and forgets the marker would run the WHOLE-corpus statement once
+#: per window -- quadratic, and silent. So its absence is a hard error, never a
+#: fallback to the unwindowed shape.
+_WINDOW_MARK = "/*WINDOW*/"
+
+
+def _avg_row_bytes(con: sqlite3.Connection, src: str, lo: int, hi: int) -> float:
+    """Average size of an incoming row, from a bounded sample. 0.0 if unknowable.
+
+    Sampled from THREE blocks -- near the low end, the middle and the high end of
+    the id range -- rather than one. A single ``LIMIT n`` takes the oldest rows,
+    and a corpus's oldest articles are not its typical ones (early scraping is
+    not later scraping); three blocks cost three index seeks and make a
+    systematic drift across the corpus visible to the average instead of
+    invisible to it.
+
+    This is an ESTIMATE and is treated as one: it decides only how wide a window
+    is, and the result is clamped, so a badly non-uniform corpus makes the window
+    a poor fit rather than making it unsafe.
+    """
+    cols = [r[1] for r in _q(con, f'PRAGMA inc.table_info("{src}")')]  # noqa: S608  # nosec B608 - table name comes from the app's OWN fixed schema maps (design doc D3), never input
+    if not cols:
+        return 0.0
+    # CAST to BLOB so LENGTH counts BYTES: on TEXT it would count characters, and
+    # a corpus is not ASCII -- every non-Latin script would be under-counted, i.e.
+    # the window would be widest exactly where rows are biggest.
+    expr = " + ".join(f'LENGTH(CAST(COALESCE("{c}", \'\') AS BLOB))' for c in cols)
+    per = max(1, _MERGE_SAMPLE_ROWS // 3)
+    span = max(1, hi - lo)
+    total, seen = 0.0, 0
+    for frac in (0.0, 0.5, 0.9):
+        start = lo + int(span * frac)
+        row = _q(
+            con,
+            f'SELECT SUM(n), COUNT(*) FROM (SELECT {expr} AS n FROM inc."{src}"'  # noqa: S608  # nosec B608 - table/column names come from the incoming schema, allowlist-validated upstream and quoted here; the sampled values are never interpolated
+            f" WHERE id > ? ORDER BY id LIMIT {per})",
+            (start,),
+        )[0]
+        total += float(row[0] or 0.0)
+        seen += int(row[1] or 0)
+    return total / seen if seen else 0.0
+
+
+def _window_ids_for(con: sqlite3.Connection, src: str, lo: int, hi: int) -> int:
+    """How many ids a window may span, so it carries ~``_MERGE_WINDOW_BYTES``."""
+    avg = _avg_row_bytes(con, src, lo, hi)
+    if avg <= 0:
+        return _MERGE_WINDOW_MAX_IDS  # nothing to measure: rows are trivially small
+    ids = int(_MERGE_WINDOW_BYTES / avg)
+    return max(_MERGE_WINDOW_MIN_IDS, min(_MERGE_WINDOW_MAX_IDS, ids))
+
+
+def _insert_window(
     con: sqlite3.Connection,
     batch_id: int,
     table: str,
     insert_sql: str,
     params: tuple = (),
 ) -> int:
-    """Run an INSERT..SELECT and record every new row in merged_rows (provenance).
+    """One INSERT..SELECT + its merged_rows provenance. Returns rows inserted.
 
-    Uses a rowid watermark: we hold the copy exclusively inside one transaction,
-    so rows with rowid > the pre-insert max are exactly the inserted ones."""
+    Uses a rowid watermark: we hold the copy exclusively, so rows with rowid >
+    the pre-insert max are exactly the inserted ones.
+
+    The count comes from the provenance INSERT's own ``rowcount`` (verified
+    populated for ``INSERT..SELECT`` under sqlcipher3). It used to be a third
+    pass -- ``SELECT COUNT(*) ... WHERE rowid > ?`` -- over the same btree
+    range, which for ``articles`` means dragging every newly inserted article's
+    full text back through the SQLCipher codec for a number we already hold.
+    The COUNT survives only as a fallback for a driver that declines to report.
+    """
     wm = con.execute(f'SELECT COALESCE(MAX(rowid), 0) FROM "{table}"').fetchone()[0]  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
     con.execute(insert_sql, params)
-    con.execute(
+    cur = con.execute(
         f'INSERT INTO merged_rows (batch_id, table_name, row_id) '  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
         f'SELECT ?, ?, rowid FROM "{table}" WHERE rowid > ?',
         (batch_id, table, wm),
     )
-    return _count(con, f'SELECT COUNT(*) FROM "{table}" WHERE rowid > ?', (wm,))  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+    n = cur.rowcount
+    if n is None or n < 0:  # a driver that does not report -- pay for the scan
+        return _count(con, f'SELECT COUNT(*) FROM "{table}" WHERE rowid > ?', (wm,))  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+    return int(n)
+
+
+def _insert_tracked(
+    con: sqlite3.Connection,
+    batch_id: int,
+    table: str,
+    insert_sql: str,
+    params: tuple = (),
+    *,
+    src: str | None = None,
+) -> int:
+    """Run an INSERT..SELECT and record every new row in merged_rows (provenance).
+
+    ``src`` opts this call into WINDOWED execution over the incoming table's
+    primary key: the statement runs once per slice of ``i.id``, committing
+    between slices, so memory and temp storage scale with the window instead of
+    with the corpus. The incoming table MUST be aliased ``i`` (the house
+    convention throughout this module) and ``insert_sql`` MUST carry
+    ``_WINDOW_MARK`` where the bound belongs.
+
+    The slice is as many ids as fit ``_MERGE_WINDOW_BYTES`` of source data, from
+    a sampled average row size -- NOT a fixed row count. Rows differ in size by
+    orders of magnitude (this corpus holds articles from 1 KB to 412 KB), and
+    the cost is bytes, so a fixed row count means a bound that silently means
+    something different on every corpus.
+
+    Two properties make committing mid-step safe, and neither is incidental:
+
+      * The merge's commit point has always been the ``os.replace`` of the
+        DISPOSABLE working copy, not the enclosing ``BEGIN IMMEDIATE``. A
+        failure part-way leaves a half-merged working copy, which is thrown
+        away; the live corpus is byte-identical either way.
+      * Every windowed statement's predicate is idempotent (``WHERE NOT EXISTS
+        (... m.hash = i.hash)`` and its siblings), so re-running a window
+        inserts nothing. Correctness does not depend on knowing where we
+        stopped -- which is what will make a durable resume cursor a pure speed
+        optimisation when it is built, rather than a new way to corrupt.
+
+    A source smaller than one window runs EXACTLY the unwindowed statement, so
+    opting a small table in is a no-op rather than a behaviour change.
+
+    ⚠ NOT EVERY STEP CAN BE WINDOWED AS WRITTEN. A statement that contains an
+    aggregate over the WHOLE source runs that aggregate once per window, which
+    turns a linear step quadratic -- silently, since the result stays correct.
+    ``_merge_keywords`` is the live example: its ``rep`` subquery GROUPs all of
+    ``inc.keywords`` to pick one representative row per (term, language), so
+    windowing it without first materialising ``rep`` into a temp table would
+    re-group millions of rows per window. Before opting a step in, read its SQL
+    for subqueries whose FROM is the source table rather than the target.
+    """
+    if src is None:
+        return _insert_window(con, batch_id, table, insert_sql, params)
+
+    if _WINDOW_MARK not in insert_sql:
+        raise ValueError(
+            f"windowed insert into {table!r} is missing {_WINDOW_MARK} -- without it "
+            "the whole-corpus statement would run once per window"
+        )
+    if params:
+        raise ValueError("a windowed insert binds its own parameters; pass none")
+
+    sql = insert_sql.replace(_WINDOW_MARK, " AND i.id > ? AND i.id <= ?")
+    # MIN as well as MAX: SQLite rowids may be negative if a row was inserted
+    # with an explicit id, and starting at 0 would silently skip every such row.
+    # The floor is exclusive, hence -1.
+    row = _q(con, f'SELECT COALESCE(MIN(id), 1) - 1, COALESCE(MAX(id), 0) FROM inc."{src}"')[0]  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+    lo_min, hi_max = int(row[0]), int(row[1])
+    step = _window_ids_for(con, src, lo_min, hi_max)
+    if hi_max - lo_min <= step:
+        return _insert_window(con, batch_id, table, sql, (lo_min, hi_max))
+
+    total, lo = 0, lo_min
+    while lo < hi_max:
+        hi = min(lo + step, hi_max)
+        total += _insert_window(con, batch_id, table, sql, (lo, hi))
+        # Commit the window, then reopen. The step's progress-handler watcher
+        # (see _step_watch) still owns stop-and-tick INSIDE each statement; this
+        # is what bounds the work any one statement must hold.
+        con.execute("COMMIT")
+        con.execute("BEGIN IMMEDIATE")
+        lo = hi
+        _window_tick(table, lo - lo_min, hi_max - lo_min, total)
+    return total
+
+
+def _window_tick(table: str, done_ids: int, total_ids: int, rows: int) -> None:
+    """Publish windowed progress into the beat. Report-only, never raises.
+
+    This is the first honest ROW-level progress the merge has had: the step
+    watcher can only report elapsed seconds, because it counts VM operations,
+    which bear no relation to rows remaining. A window boundary knows exactly
+    how much of the source id space is behind it.
+    """
+    try:
+        from src.backup import runlog
+
+        runlog.statement(f"merge {table}: {done_ids:,}/{total_ids:,} ids, {rows:,} rows in")
+    except Exception:  # noqa: BLE001 - reporting must never break a merge
+        pass
 
 
 #: VDBE operations between progress-handler callbacks during a merge step.
@@ -480,13 +692,21 @@ def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb, st
     # its six statements was executing, so a 14 h step still left nothing to act
     # on. SQLite's trace callback fires once per statement START, so statement N
     # ends when N+1 begins -- per-statement timing for the whole merge from ONE
-    # hook, with no call-site changes and no per-row cost (these are bulk
-    # statements: a handful per step, not one per article).
+    # hook, with no call-site changes.
     #
-    # Reported as each statement ENDS rather than only at step exit, and that is
-    # the load-bearing part: the run this was built for was KILLED at hour 14 and
-    # never reached any exit path. An exit-only breakdown would have produced
-    # exactly the nothing we already had.
+    # WHAT THE CALLBACK MAY DO IS THE LOAD-BEARING PART, and the first version of
+    # this got it wrong. The comment here used to read "no per-row cost -- these
+    # are bulk statements, a handful per step, not one per article". That is true
+    # of step 3's six statements and FALSE across all 19 steps, and it was written
+    # without counting. The `begin` side then journalled a flushed line per
+    # statement, which on a 24 h merge wrote 1.6 GB and left the app unable to
+    # boot. So: `begin` must be a STORE (see runlog.statement) and only a
+    # genuinely slow statement earns a durable line.
+    #
+    # Completion is still reported as each statement ENDS rather than at step
+    # exit: the run this was built for was KILLED at hour 14 and never reached
+    # any exit path. An exit-only breakdown would have produced exactly the
+    # nothing we already had.
     cur: list = [None]  # [(label, t_start)] or [None]
 
     def _trace(sql) -> None:
@@ -542,6 +762,11 @@ def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb, st
             prev = cur[0]
             if prev is not None and stmt_cb is not None:
                 stmt_cb(index, name, prev[0], round(time.monotonic() - prev[1], 3), False)
+                # Clear the published in-flight slot (empty label == nothing in
+                # flight). Without this a finished step leaves its last statement
+                # showing in every later beat, which reads as a stall in a step
+                # that already completed.
+                stmt_cb(index, name, "", 0.0, True)
             cur[0] = None
         if traced:
             with suppress(Exception):
@@ -585,20 +810,38 @@ def merge_corpus(
     it is safe unconditionally and best-effort (a tuning-PRAGMA failure must
     never break a merge).
 
-    ``should_stop`` (field ruling 2026-07-29 item 15): checked BETWEEN the 14
-    table-merge steps. The whole merge runs inside ONE ``BEGIN IMMEDIATE`` on
-    the DISPOSABLE working copy, so aborting mid-sequence rolls that
-    transaction back and throws the copy away -- the live corpus is untouched
-    either way. Checked between steps rather than inside them because a single
-    step is one bulk SQL statement set; the granularity is honest (a Stop takes
-    effect at the next step boundary, not instantly mid-statement) and is the
-    difference between a Stop that works during the LONGEST phase of an import
-    and one that only appears to."""
+    ``should_stop`` (field ruling 2026-07-29 item 15): checked between the
+    table-merge steps AND, via :func:`_step_watch`, inside each one. Aborting
+    discards the DISPOSABLE working copy; the live corpus is untouched either
+    way -- that has always been true, and it is the commit point that matters
+    (the ``os.replace`` at the end), not the transaction shape below.
+
+    TRANSACTION SHAPE (changed 2026-08-06): the merge no longer runs as ONE
+    transaction. Windowed steps (see ``_insert_tracked``'s ``src=``) commit
+    between windows so that no single statement has to hold a whole corpus'
+    worth of temp storage. A failure part-way therefore leaves a HALF-MERGED
+    working copy rather than an empty one -- which is why ``merge_batches``
+    starts at status ``merging`` and is only stamped ``merged`` at the end: a
+    half-merged copy must never satisfy the already-merged skip
+    (``_STATUS_MERGED``), or a resumed import would strand the rows it had not
+    reached yet."""
     from src.database.connect import attach
     from src.database.connect import connect as db_connect
 
     con = db_connect(working_copy, check_same_thread=False)
     con.isolation_level = None  # explicit BEGIN/COMMIT (auto-BEGIN would collide)
+    # Temp storage on DISK, not in RAM. The bundled sqlcipher3 is compiled
+    # SQLITE_TEMP_STORE=2 (verified: `PRAGMA compile_options` says TEMP_STORE=2,
+    # against the stdlib's TEMP_STORE=1), so every statement journal, temp table
+    # and transient index defaults to memory -- and none of it is bounded by
+    # cache_size. Measured on that engine, one INSERT..SELECT costs ~5 KB of RAM
+    # per row inserted under the default and ZERO under FILE, with no time
+    # penalty (see _MERGE_WINDOW_BYTES). Windowing bounds this too; setting it
+    # explicitly means a later window-size increase cannot quietly bring it back.
+    try:
+        con.execute("PRAGMA temp_store=FILE")
+    except Exception:  # noqa: BLE001 - a tuning PRAGMA must never break a merge
+        pass
     if cache_mb:
         try:
             con.execute(f"PRAGMA cache_size=-{int(cache_mb) * 1024}")  # negative = KiB
@@ -613,7 +856,7 @@ def merge_corpus(
         cur = con.execute(
             "INSERT INTO merge_batches (imported_at, artifact_kind, origin_fingerprint,"
             " app_version, alembic_rev, manifest_json, source_digest, status)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, 'merged')",
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 datetime.now(UTC).isoformat(timespec="seconds"),
                 batch_meta.get("artifact_kind", "oo-backup-2"),
@@ -621,11 +864,15 @@ def merge_corpus(
                 batch_meta.get("app_version"),
                 batch_meta.get("alembic_rev"),
                 json.dumps(batch_meta.get("manifest")) if batch_meta.get("manifest") else None,
-                # Written inside the SAME transaction as the merge itself, so the
-                # digest exists if and only if the merge committed. A crash or an
-                # abort rolls it back with everything else -- a half-merged artifact
-                # must never be recorded as done, or the skip would strand its rows.
+                # The digest identifies the artifact for the already-merged skip.
+                # It used to rely on the whole merge being one transaction: the row
+                # existed if and only if the merge committed. Windowed steps commit
+                # mid-merge, so that no longer holds -- and the guarantee moved to
+                # the STATUS below, which stays `merging` until every step has run.
+                # A half-merged artifact must never be recorded as done, or the skip
+                # would strand the rows it never reached.
                 batch_meta.get("source_digest"),
+                _STATUS_MERGING,
             ),
         )
         batch_id = int(cur.lastrowid or 0)
@@ -662,9 +909,12 @@ def merge_corpus(
             # (never silently dropped) and never interpolated/counted (OO-01).
             counts["_rejected_tables"] = rejected
 
+        # Every step has run: only now is this artifact "merged". Before the
+        # windowed steps this stamp was implicit in the single transaction; it is
+        # explicit because it is no longer implicit, not as belt-and-braces.
         con.execute(
-            "UPDATE merge_batches SET counts_json = ? WHERE id = ?",
-            (json.dumps(counts), batch_id),
+            "UPDATE merge_batches SET counts_json = ?, status = ? WHERE id = ?",
+            (json.dumps(counts), _STATUS_MERGED, batch_id),
         )
         con.execute("COMMIT")
         return counts, batch_id
@@ -1112,7 +1362,7 @@ def _merge_articles(con, batch_id, results) -> None:
         r.conflicts.append({"hash": row[0], "incoming_title": row[1], "kept": "local"})
     r.new = _insert_tracked(
         con, batch_id, "articles",
-        "INSERT INTO articles (url, canonical_url, source_id, title, content,"
+        "INSERT INTO articles (url, canonical_url, source_id, title, content,"  # nosec B608 - every fragment is a literal; _WINDOW_MARK is a module constant replaced by a bound-parameter clause, never input
         " compressed_content, published_at, language, hash, created_at, updated_at, region,"
         " country, author, word_count, reading_time, sentiment_score, sentiment_label,"
         # 2026-08-03 (the AST column diff): three groups added to the model AFTER this
@@ -1143,7 +1393,9 @@ def _merge_articles(con, batch_id, results) -> None:
         " i.content_multihash, i.canon_version,"
         " i.quarantined, i.quarantine_reason, i.quarantine_criteria_version, i.quarantined_at"
         " FROM inc.articles i JOIN temp.map_sources ms ON ms.old = i.source_id"
-        " WHERE NOT EXISTS (SELECT 1 FROM articles m WHERE m.hash = i.hash)",
+        " WHERE NOT EXISTS (SELECT 1 FROM articles m WHERE m.hash = i.hash)"
+        + _WINDOW_MARK,
+        src="articles",
     )
     for row in _q(
         con,
@@ -2762,6 +3014,13 @@ def _corpus_snapshot(session) -> dict:
 # durable thing is the guarantee.
 _REINDEX_STATE_FILE = "reindex_backlog.json"
 
+#: A merge that has begun but not finished. It exists because windowed steps
+#: COMMIT mid-merge (see _insert_tracked), so a killed import can leave a
+#: half-merged working copy carrying a batch row. Stamped `merged` only once
+#: every step has run -- so the already-merged skip below, which matches
+#: `status IN ('merged', 'reindexed')`, can never mistake a partial import for a
+#: complete one and strand the rows it never reached.
+_STATUS_MERGING = "merging"
 _STATUS_MERGED = "merged"
 _STATUS_REINDEXED = "reindexed"
 
@@ -3565,12 +3824,15 @@ def run_restore(
 
         try:
             if begin:
-                # Non-durable: a liveness breadcrumb naming the statement now in
-                # flight, so a run inspected WHILE it hangs already says which one.
-                runlog.milestone(
-                    "merge_statement_begin", durable=False,
-                    step=step, label=step_name, sql=label,
-                )
+                # A STORE, not a write. This published a journal line per statement
+                # in its first version, on the mistaken belief that `durable=False`
+                # meant ring-buffered; it means only "skip the fsync", so every one
+                # of them was appended and flushed to the untrimmed milestone
+                # stream. A 24 h merge wrote 1.6 GB and the app could no longer
+                # boot, because `promote_incomplete_runs` reads that directory
+                # before the unlock screen. The beat carries it now: capped,
+                # already sampled every 15 s, and free per statement.
+                runlog.statement(label)
                 return
             agg = _stmt_totals.setdefault(label, {"seconds": 0.0, "n": 0})
             agg["seconds"] = round(agg["seconds"] + seconds, 3)
