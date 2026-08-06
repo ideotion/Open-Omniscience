@@ -2699,8 +2699,79 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     is one model-load latency and nothing the operator started is ever killed. And an
     unload is ASYNCHRONOUS — poll until the free reading stops improving rather than
     measuring immediately or sleeping a fixed worst case.
+  - **A LEAD MEASURED IN LINES AGAINST A BUDGET MEASURED IN CHARACTERS SPENDS THE
+    WHOLE BUDGET ON CONTEXT (2026-08-06, the sixth round of "vLLM won't start"):**
+    the start journal was built precisely because `server.log` is truncated on the
+    next start, and it recorded ten consecutive failures without once recording a
+    reason. `failure_excerpt` searched correctly, anchored correctly, and then built
+    its window as "six lead lines, then everything after, truncated to `limit`" —
+    but vLLM prefixes every line with `(EngineCore pid=NNNNNN) INFO MM-DD HH:MM:SS
+    [file.py:NNN]`, so six lead lines cost **662 characters against the 400 the
+    journal passed**. Live-reproduced: at 400 the excerpt provably never reaches the
+    matched line, so every persisted record held the six lines BEFORE the error and
+    never the error. The instrument built to survive the log being overwritten could
+    only preserve the part that was not evidence — the K2 shape (a degrade becoming
+    the hiding place for the bug it was built to survive) at the level of a window's
+    arithmetic. RULE: when a bounded window must contain a specific thing, give that
+    thing the budget FIRST and buy context with the remainder; and when two bounds
+    are expressed in different units, convert one before trusting the pair. THE
+    DISCRIMINATING TEST is the tight budget, not the generous one: raising the limit
+    400→1200 also "fixes" today's log, and would break again on a longer prefix, a
+    deeper stack or a smaller limit — so assert that a 200-character budget still
+    reaches the failure and drops the context instead. TWO SIBLINGS from the same
+    pass. **An instrument that lives inside the thing it diagnoses is destroyed by
+    the first fix anyone tries**: the journal sat in `venv_dir()`, and "reinstall
+    vLLM" — which deletes the venv — is the first thing an operator does when a
+    server will not start, so the record was erased by the response the failure
+    provokes (moved to `data_dir()`, legacy file migrated once). And **a bounded
+    excerpt cannot hold a traceback anyway**, so a FAILED start now keeps its whole
+    log under a swept, capped `vllm_failed_starts/`, with the newest carried IN the
+    diagnostics bundle — five rounds of this were each diagnosed from an export and
+    every one ended in another request for a file the export did not contain.
+  - **A RESILIENCE SETTING DOES NOT SURVIVE A TOOL SWITCH — and the tool may be
+    naming its own fix in a message nobody reads (2026-08-06, the aborted vLLM
+    installs):** `_PIP_NET_FLAGS` raises pip's timeout to 60 s because 5–10 GB of
+    wheels are exposed to a dropped link for a long time. The big install then moved
+    to **uv**, which reads none of pip's flags — it takes `UV_HTTP_TIMEOUT` from the
+    environment, defaults to **30 s**, and nothing set it. Two field installs aborted
+    after 22 and 76 minutes, one on a 187 MiB wheel and one on a 43 MiB one, and the
+    install journal had captured uv saying *"Failed to download distribution due to
+    network timeout. Try increasing UV_HTTP_TIMEOUT (current value: 30s)"* — verbatim,
+    both times. The operator's report was "aborted for unknown reasons", so the
+    second defect is that a captured cause which never reaches a surface is not a
+    captured cause. This is the recorded "a fix in the ledger does not propagate
+    itself to a newer sibling module" lesson with a twist worth naming separately:
+    the sibling here is not a new module but a REPLACEMENT for the hardened one, and
+    a replacement inherits the requirement, not the implementation. When swapping a
+    tool, enumerate what the old one was configured with and find each setting's
+    equivalent — an unset knob is invisible in a diff that only shows the swap.
 
 ## Open queue (when maintainer says proceed)
+- **`card-audit.json` HAS NOT SERIALISED SINCE AT LEAST 2026-08-06 — found in a field
+  bundle, NOT fixed (a different subsystem from the vLLM chain that surfaced it, and the
+  root cause needs a real corpus to locate):** the member computes for **112 seconds**
+  and is then thrown away whole by the JSON encoder — `Out of range float values are not
+  JSON compliant: -inf`. `card_audit._eval_arith` already refuses non-finite values
+  (`card_audit.py:235`), so the `-inf` is reaching the payload from some OTHER field, and
+  which one is unknown without the corpus that produced it. THE FIX SHAPE, when built:
+  sanitise at the serialisation boundary — non-finite floats become `null` **and the
+  report NAMES the fields that were non-finite**, so the member survives AND the next
+  bundle identifies the culprit. Sanitising silently would make this the exact
+  hiding-place-for-the-bug-it-survives shape the ledger already warns about twice. The
+  other bundle members were unaffected (the per-member guard did its job — one failure,
+  not an aborted export).
+- **WHY TEN vLLM STARTS DIED ON THE FIELD MACHINE IS STILL UNKNOWN (2026-08-06):** the
+  instruments were fixed, the cause was not. Every death got PAST weight loading and KV
+  cache allocation (`Available KV cache memory: 1.49 GiB`, `GPU KV cache size: 15,024
+  tokens`), exited 1, and matched no CUDA-OOM / `torch.AcceleratorError` / name-resolution
+  / port-taken / gated-repo signature — only the generic `EngineCore failed to start`.
+  Since a SIGKILL produces no Python exception in the child and no torch error, host RAM
+  exhaustion is the leading hypothesis (11.36 GiB total, vLLM's own log reporting
+  `Available RAM: 5.84 GiB` against a `Checkpoint size: 4.35 GiB`, 1.0 GiB swap, the app
+  itself at 1.18 GB RSS) — but that is a HYPOTHESIS and must not be recorded as the
+  cause. It is settled either by `dmesg`/`journalctl -k` naming the OOM killer, or by the
+  next bundle, whose journal excerpt and preserved log now carry the reason by
+  construction.
 - **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;
   five `docs/ledger/shipped.csv` rows). MAINTAINER RULINGS RECEIVED + BUILT the same day.**
   **MERGE_TABLES:** Part 0's fourteen silently-dropped columns are carried and the class is

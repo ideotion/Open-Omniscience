@@ -39,6 +39,11 @@ class FakeCtx:
 @pytest.fixture(autouse=True)
 def _isolate_venv(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_VLLM_VENV_DIR", str(tmp_path / "vllm_venv"))
+    # data_dir() too, since 2026-08-06: the start journal and the preserved
+    # failed-start logs moved OUT of the venv so a vLLM reinstall cannot delete
+    # them. Isolating only the venv would leave every start test writing into the
+    # session-wide data dir and polluting whatever ran next.
+    monkeypatch.setattr(V, "data_dir", lambda: tmp_path / "data")
     V._proc = None
     # V3: the journal's disable flag is a MODULE GLOBAL -- reset it, or the
     # write-failure test silently disables recording for every later test.
@@ -1564,3 +1569,233 @@ def test_package_present_is_none_when_the_layout_is_unreadable(monkeypatch):
     monkeypatch.setattr("src.llm.backend.detect_gpu", lambda: {"available": False})
     # No site-packages at all -> not measurable, and must NOT collapse to False.
     assert V._package_present(V.venv_dir(), "vllm") is None
+
+
+# --------------------------------------------------------------------------- #
+# The failure excerpt's BUDGET (field report 2026-08-06).
+#
+# Ten identical deaths, and the journal recorded the six lines BEFORE each one and
+# never the failure. The window was "six lead lines, then everything after,
+# truncated to limit" -- but vLLM prefixes every line with
+# "(EngineCore pid=NNNNNN) INFO MM-DD HH:MM:SS [file.py:NNN]", so six lead lines
+# cost ~660 characters against the 400 the journal passed. The lead ate the whole
+# budget and the matched line was truncated away every single time.
+# --------------------------------------------------------------------------- #
+_P = "(EngineCore pid=412808) "
+_FIELD_LOG = [
+    _P + "INFO 08-06 05:11:41 [cuda.py:482] Using FLASH_ATTN attention backend out of "
+         "potential backends: ['FLASH_ATTN', 'FLASHINFER', 'TRITON_ATTN', 'FLEX_ATTENTION'].",
+    _P + "INFO 08-06 05:11:41 [flash_attn.py:776] Using FlashAttention version 2",
+    _P + "INFO 08-06 05:11:42 [weight_utils.py:869] Filesystem type for checkpoints: EXT4. "
+         "Checkpoint size: 4.35 GiB. Available RAM: 5.84 GiB.",
+    _P + "INFO 08-06 05:11:43 [default_loader.py:314] Loading weights took 1.62 seconds",
+    _P + "INFO 08-06 05:11:43 [gpu_model_runner.py:2653] Model loading took 4.3524 GiB",
+    _P + "INFO 08-06 05:11:43 [topk_topp_sampler.py:55] Using FlashInfer for top-p sampling.",
+    _P + "INFO 08-06 05:11:50 [gpu_worker.py:560] Available KV cache memory: 1.49 GiB",
+    _P + "INFO 08-06 05:11:50 [kv_cache_utils.py:2177] GPU KV cache size: 15,024 tokens",
+    _P + "INFO 08-06 05:11:50 [kv_cache_utils.py:2178] Maximum concurrency: 2.93x",
+    "ERROR 08-06 05:12:31 [core.py:918] EngineCore failed to start.",
+    "ERROR 08-06 05:12:31 [core.py:918] Traceback (most recent call last):",
+    "ERROR 08-06 05:12:31 [core.py:918]   THE ACTUAL CAUSE LIVES HERE",
+]
+_MATCH_AT = 9
+
+
+def test_the_excerpt_reaches_the_failure_at_the_budget_the_journal_uses():
+    out = V._window_around(_FIELD_LOG, _MATCH_AT, V._JOURNAL_EXCERPT_CHARS)
+    assert "EngineCore failed to start" in out
+    assert "THE ACTUAL CAUSE LIVES HERE" in out
+
+
+def test_a_tight_budget_drops_context_rather_than_the_failure():
+    """The discriminating case: at 200 characters the six lead lines cannot fit at
+    all. Dropping them is right; dropping the error is the defect."""
+    out = V._window_around(_FIELD_LOG, _MATCH_AT, 200)
+    assert "EngineCore failed to start" in out
+    assert "THE ACTUAL CAUSE LIVES HERE" in out
+    assert "Available KV cache memory" not in out, "lead is the part that gives way"
+
+
+def test_the_window_never_exceeds_its_budget():
+    for limit in (50, 200, 400, 900, 4000):
+        assert len(V._window_around(_FIELD_LOG, _MATCH_AT, limit)) <= limit
+
+
+def test_context_is_still_bought_when_there_is_room_for_it():
+    """The negative-space twin: a fix that simply deleted the lead would pass every
+    assertion above while throwing away the call site that shows what was allocating."""
+    out = V._window_around(_FIELD_LOG, _MATCH_AT, 900)
+    assert "Available KV cache memory" in out
+    assert out.count("\n") > 3, "several lines of context, not just the error"
+
+
+def test_context_lines_are_whole_lines_never_a_truncated_fragment():
+    """A half-line of context reads as a truncated MESSAGE rather than as context that
+    was skipped, so lead is added whole or not at all."""
+    out = V._window_around(_FIELD_LOG, _MATCH_AT, 420)
+    lead_lines = out.split("ERROR 08-06 05:12:31", 1)[0].strip().splitlines()
+    assert lead_lines, "this budget must actually buy some context, or the test proves nothing"
+    for line in lead_lines:
+        assert line in _FIELD_LOG, f"context line was cut mid-way: {line!r}"
+
+
+def test_failure_excerpt_finds_the_signature_in_a_real_shaped_log():
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("\n".join(_FIELD_LOG), encoding="utf-8")
+    out = V.failure_excerpt(limit=V._JOURNAL_EXCERPT_CHARS)
+    assert out["signature"] == "engine-init"
+    assert "EngineCore failed to start" in out["excerpt"]
+    assert "THE ACTUAL CAUSE LIVES HERE" in out["excerpt"]
+
+
+# --------------------------------------------------------------------------- #
+# The journal and the failed-start logs OUTLIVE a reinstall (2026-08-06).
+# --------------------------------------------------------------------------- #
+def test_the_start_journal_lives_outside_the_venv():
+    """Reinstalling vLLM is the first thing anyone tries when a server will not
+    start, and it deletes the venv. The record built to diagnose repeated start
+    failures must not be destroyed by the response the failure provokes."""
+    path = V._start_history_path()
+    assert V.venv_dir() not in path.parents, path
+
+
+def test_an_in_venv_journal_is_migrated_once_and_not_lost():
+    legacy = V._legacy_start_history_path()
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text('{"at":1,"event":"spawned","pid":11}\n', encoding="utf-8")
+    V._record_start_attempt({"at": 2, "event": "exited", "pid": 11, "returncode": 1})
+    hist = V.start_history()
+    assert [h["at"] for h in hist] == [1, 2], "the old entries survive the move"
+
+
+def test_history_still_reads_a_legacy_journal_before_the_first_new_write():
+    legacy = V._legacy_start_history_path()
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text('{"at":7,"event":"spawned","pid":9}\n', encoding="utf-8")
+    assert [h["at"] for h in V.start_history()] == [7]
+
+
+def test_a_failed_start_keeps_its_whole_log_before_the_next_start_truncates_it():
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("\n".join(_FIELD_LOG), encoding="utf-8")
+    kept = V._preserve_failed_log(4242, 1)
+    assert kept is not None
+    # Now the next start truncates the live log, exactly as production does.
+    V.server_log_path().write_bytes(b"")
+    body = Path(kept).read_text(encoding="utf-8")
+    assert "THE ACTUAL CAUSE LIVES HERE" in body, "the whole log, not a window"
+
+
+def test_preserved_logs_are_capped_so_they_cannot_grow_without_bound():
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("boom", encoding="utf-8")
+    for pid in range(V._FAILED_LOG_KEEP + 4):
+        V._preserve_failed_log(pid, 1)
+    assert len(V.failed_start_logs()) == V._FAILED_LOG_KEEP
+
+
+def test_an_empty_or_absent_server_log_preserves_nothing_rather_than_an_empty_file():
+    assert V._preserve_failed_log(1, 1) is None
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_bytes(b"")
+    assert V._preserve_failed_log(1, 1) is None
+    assert V.failed_start_logs() == []
+
+
+def test_the_bundle_carries_the_newest_failed_log_whole_when_it_is_small():
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("\n".join(_FIELD_LOG), encoding="utf-8")
+    V._preserve_failed_log(1, 1)
+    out = V.newest_failed_start_log()
+    assert out["available"] is True and out["truncated"] is False
+    assert "THE ACTUAL CAUSE LIVES HERE" in out["text"]
+
+
+def test_a_long_failed_log_is_split_with_the_gap_stated():
+    V.server_log_path().parent.mkdir(parents=True, exist_ok=True)
+    V.server_log_path().write_text("A" * 500 + "B" * 500, encoding="utf-8")
+    V._preserve_failed_log(1, 1)
+    out = V.newest_failed_start_log(limit=100)
+    assert out["truncated"] is True
+    assert out["elided_bytes"] == 900, "a reader must know the halves are not contiguous"
+    assert "text" not in out, "a split log must never present as one continuous run"
+
+
+def test_no_failed_start_is_an_honest_absence_not_a_crash():
+    out = V.newest_failed_start_log()
+    assert out["available"] is False and "reason" in out
+
+
+# --------------------------------------------------------------------------- #
+# uv's download timeout (field report 2026-08-06: two installs aborted at 22 and
+# 76 minutes, uv naming UV_HTTP_TIMEOUT in its own failure message).
+# --------------------------------------------------------------------------- #
+def test_the_install_environment_gives_uv_a_timeout_fit_for_a_500mb_wheel(tmp_path):
+    env = V._install_env(tmp_path)
+    assert int(env["UV_HTTP_TIMEOUT"]) == V._UV_HTTP_TIMEOUT_S
+    assert V._UV_HTTP_TIMEOUT_S > 30, (
+        "30s is uv's default and is what aborted the field installs twice"
+    )
+
+
+def test_an_operator_set_uv_timeout_is_left_alone(tmp_path, monkeypatch):
+    monkeypatch.setenv("UV_HTTP_TIMEOUT", "45")
+    assert V._install_env(tmp_path)["UV_HTTP_TIMEOUT"] == "45"
+
+
+def test_a_download_timeout_is_classified_not_reported_as_a_bare_exit_code(monkeypatch):
+    """The field failure, twice: 22 and 76 minutes in, on a 187 MiB and a 43 MiB wheel.
+    The operator reported it as "aborted for unknown reasons" -- uv had named the cause
+    AND its own fix, and the message that reached them was an exit code."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+
+    def fake_runner(argv, env=None, should_stop=None):
+        yield "Downloading nvidia-nccl-cu13 (187.4MiB)"
+        yield "  x Failed to download `nvidia-nccl-cu13==2.28.9`"
+        yield "  ╰─> Failed to download distribution due to network timeout. Try"
+        yield "      increasing UV_HTTP_TIMEOUT (current value: 30s)."
+        yield "__exit__ 1"
+
+    with pytest.raises(V.VllmLifecycleError) as exc:
+        V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)
+    said = str(exc.value)
+    assert "timed out DOWNLOADING" in said
+    assert "UV_HTTP_TIMEOUT" in said, "name the knob the operator can turn"
+    assert "cached" in said, "a retry resumes; say so, or it reads as starting over"
+    assert "disk space" not in said, "a slow link is not a full disk"
+
+
+def test_an_unclassified_failure_still_hands_back_the_installers_own_words(monkeypatch):
+    """The general case behind the two classifiers: whatever the tool said last is
+    strictly more use than an exit code, and 'unknown reasons' is what an operator
+    reports when a captured cause reaches no surface."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+
+    def fake_runner(argv, env=None, should_stop=None):
+        yield "Resolving dependencies"
+        yield "error: distribution torch==2.11.0 has no wheel for this platform"
+        yield "__exit__ 2"
+
+    with pytest.raises(V.VllmLifecycleError) as exc:
+        V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)
+    said = str(exc.value)
+    assert "exit code 2" in said
+    assert "no wheel for this platform" in said, "the tool's own last words survive"
+
+
+def test_the_installers_own_words_are_bounded(monkeypatch):
+    """A progress bar must not become the error text."""
+    _allow_install(monkeypatch)
+    _fake_venv()
+
+    def fake_runner(argv, env=None, should_stop=None):
+        for i in range(200):
+            yield f"Downloading something-{i} ({'x' * 300})"
+        yield "__exit__ 1"
+
+    with pytest.raises(V.VllmLifecycleError) as exc:
+        V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)
+    tail = str(exc.value).split("said last:", 1)[-1]
+    assert len(tail) <= V._ERROR_TAIL_CHARS + 1

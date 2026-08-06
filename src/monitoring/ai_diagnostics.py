@@ -21,7 +21,13 @@ per-diagnostic-degrades convention).
 
 from __future__ import annotations
 
-SCHEMA = "oo-ai-diagnostics-1"
+#: Bumped to -2 on 2026-08-06: ``active_model`` changed from a bare string to
+#: ``{provisioning_backend, model, routing_backend}``, and ``vllm_last_failure`` joined.
+#: A field that changes TYPE is a schema change even when nothing in this repo reads it
+#: -- exported bundles are compared across months and across machines, and a reader
+#: hitting a dict where the last export held a string deserves to be told which shape
+#: it is looking at rather than left to infer it.
+SCHEMA = "oo-ai-diagnostics-2"
 
 
 def _safe(fn):
@@ -175,10 +181,38 @@ def ai_diagnostics_report(corpus: dict | None = None) -> dict:
         lambda: _context_settings(backend if isinstance(backend, dict) else {}, corpus)
     )
 
-    def _active_model():
-        from src.api.llm import active_model
+    def _active_model(backend_facts: dict):
+        """The model this machine will actually serve with -- a PROVISIONING answer.
 
-        return active_model()
+        Field bundle 2026-08-06: an RTX 4070 laptop with vLLM installed, its server in a
+        start-retry loop, and Ollama not installed at all. ``resolve_backend()`` answered
+        ``"ollama"`` -- correctly, since ROUTING disqualifies an unreachable backend and
+        Ollama is the ruled fallback -- so ``active_model()`` with no argument read the
+        Ollama setting and this report named ``ministral-3:8b-instruct-2512-q4_K_M`` on a
+        machine with no Ollama to serve it. Every AI job in the same bundle had in fact
+        run against the vLLM repo id, so the diagnostics disagreed with the app.
+
+        That is the recorded routing-vs-provisioning split, one surface further on:
+        reading a selection function's answer for a question it was not written for.
+        ``provisioning_backend`` exists for exactly this and its own docstring describes
+        this machine. Both answers are reported, because on a dual-backend machine "which
+        model" genuinely has two answers and a reader needs to see the backend beside it."""
+        from src.api.llm import active_model
+        from src.llm.backend import provisioning_backend
+
+        prov = provisioning_backend(backend_facts) if backend_facts else {}
+        chosen = prov.get("backend")
+        return {
+            "provisioning_backend": chosen,
+            "model": active_model(chosen) if chosen else active_model(),
+            "routing_backend": backend_facts.get("backend"),
+            "note": (
+                "`model` is what this machine will serve with once its backend is up "
+                "(provisioning). `routing_backend` is who could serve a request right "
+                "now, which is a different question and falls back to Ollama when "
+                "nothing is reachable."
+            ),
+        }
 
     def _vllm_status():
         from src.llm.vllm_lifecycle import status
@@ -188,13 +222,25 @@ def ai_diagnostics_report(corpus: dict | None = None) -> dict:
         # interactive default is trimmed for the UI panel, not for this member.
         return status(history_limit=None)
 
+    def _vllm_last_failure():
+        from src.llm.vllm_lifecycle import newest_failed_start_log
+
+        return newest_failed_start_log()
+
     return {
         "schema": SCHEMA,
         "backend": backend,
         "hardware": _safe(lambda: _hardware_facts(backend if isinstance(backend, dict) else {})),
-        "active_model": _safe(_active_model),
+        "active_model": _safe(
+            lambda: _active_model(backend if isinstance(backend, dict) else {})
+        ),
         "context": context,
         "vllm": _safe(_vllm_status),
+        # The complete log of the most recent FAILED start. The status payload above
+        # carries only a bounded excerpt, and the live server log is truncated by the
+        # next start -- so on a machine in a start-retry loop this is the one member
+        # that says WHY, and it is the member every previous round had to ask for.
+        "vllm_last_failure": _safe(_vllm_last_failure),
         "jobs": _safe(_job_reports),
     }
 
