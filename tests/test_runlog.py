@@ -746,3 +746,187 @@ def test_an_unreadable_report_is_unknown_never_ok(tmp_path, monkeypatch):
     monkeypatch.setattr(import_reports, "_reports_dir", lambda: d)
     (d / "restore-20260731T000000Z-zzz.json").write_text("{ torn", encoding="utf-8")
     assert import_reports.list_import_reports()[0]["outcome"] == "unknown"
+
+
+# --------------------------------------------------------------------------- #
+# Reading a journal must not cost what it cost to write one (2026-08-06).
+#
+# Field report: the app was SIGKILLed between "Waiting for application startup"
+# and the unlock page. `promote_incomplete_runs` runs there, on every boot,
+# BEFORE unlock -- and it read every journal into a list of dicts. A journal's
+# size is proportional to how much there was to diagnose, so the worse the
+# incident, the more likely the app died trying to tell you about it. Measured
+# on a 28 MB journal: +243 MB of RSS, 9x the file.
+# --------------------------------------------------------------------------- #
+def _write_journal(d, run_id, *, beats=0, ended=False, stage="merge", milestones=0):
+    """``milestones`` pads the MILESTONE file, which is a separate cost from the
+    beat file: the field run journal carried a ``merge_sql:`` line per statement,
+    so both files grow with the incident and each is read by a different call."""
+    d.mkdir(parents=True, exist_ok=True)
+    with (d / f"{run_id}.jsonl").open("w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ev": "run_begin", "t": "T0", "kind": "import"}) + "\n")
+        fh.write(json.dumps({"ev": "stage_begin", "t": "T1", "name": stage}) + "\n")
+        for i in range(milestones):
+            # A record type the summary does not AGGREGATE, on purpose: padding with
+            # 30,000 distinct stage names would build a genuinely large `stages` dict,
+            # and the test would then be measuring an aggregate the summary is supposed
+            # to report rather than the cost of reading the file.
+            fh.write(json.dumps({
+                "ev": "progress", "t": f"T{i}", "i": i, "pad": "x" * 200,
+            }, separators=(",", ":")) + "\n")
+        if ended:
+            fh.write(json.dumps({"ev": "stage_end", "t": "T2", "name": stage,
+                                 "seconds": 1.5}) + "\n")
+            fh.write(json.dumps({"ev": "run_end", "t": "T3", "outcome": "ok",
+                                 "wall_s": 2.0}) + "\n")
+    if beats:
+        with (d / f"{run_id}.beat.jsonl").open("w", encoding="utf-8") as fh:
+            for i in range(beats):
+                fh.write(json.dumps({
+                    "ev": "beat", "t": f"T{i}", "el_s": float(i), "phase": "reindexing",
+                    "done": i * 10, "counter": "reindex_done", "d_cpu_s": 1.0,
+                    "kids_cpu_s": [1.0] * 8, "pad": "x" * 200,
+                }, separators=(",", ":")) + "\n")
+
+
+def _boot_peak(d, run_id, *, beats, milestones):
+    """Peak Python allocation during one boot pass over a journal of this size.
+
+    tracemalloc, NOT ``ru_maxrss``: the first draft of this guard used the latter and
+    was VACUOUS -- peak RSS is a process high-water mark that never shrinks, so by
+    the time the test runs the peak is already set by earlier tests and the delta is
+    0 whatever the code does. Reverting the fix left it green."""
+    import tracemalloc
+
+    # BOTH files, deliberately: the boot pass reads the milestone file to decide
+    # whether the run finished, and summarise reads the beat file. A fixture that
+    # only grew one leaves the other's whole-file read undetectable.
+    _write_journal(d, run_id, beats=beats, milestones=milestones)
+    total = sum(p.stat().st_size for p in d.glob(f"{run_id}*.jsonl"))
+    tracemalloc.start()
+    try:
+        runlog.promote_incomplete_runs()
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    return total, peak
+
+
+def test_the_boot_pass_costs_the_SAME_whatever_the_journal_size(tmp_path):
+    """CONSTANT memory is the claim, so measure at two sizes rather than against a
+    fixed ceiling.
+
+    An absolute bar encodes this badly and is not portable: it really measures
+    "fixed overhead + streaming cost", and the fixed overhead belongs to the
+    environment. A 2 MB bar passed locally at 0.04 MB and failed in CI at 3.2 MB
+    -- with the peak provably FLAT across a 2 MB and a 68 MB journal in both. The
+    honest response is not to raise the bar until the lane goes green (that weakens
+    the guard) but to assert the property the fix actually has.
+
+    Whole-file reading cannot satisfy this: its peak is ~9x the file, so a 12x
+    bigger journal costs ~12x more."""
+    d = runlog.run_logs_dir()
+    small_bytes, small_peak = _boot_peak(d, "imp-20260806T050000Z-a", beats=3000, milestones=2500)
+    big_bytes, big_peak = _boot_peak(d, "imp-20260806T050000Z-b", beats=36000, milestones=30000)
+
+    assert big_bytes > small_bytes * 8, "the two fixtures must differ enough to show growth"
+    # Generous headroom for allocator noise; the defect this catches is order-of-magnitude.
+    assert big_peak <= max(small_peak * 3, 4_000_000), (
+        f"boot allocated {small_peak / 1e6:.2f} MB for {small_bytes / 1e6:.1f} MB of journal "
+        f"and {big_peak / 1e6:.2f} MB for {big_bytes / 1e6:.1f} MB -- the cost is tracking the "
+        "file, which is what let a big incident stop the app from starting"
+    )
+
+
+def test_summarise_reports_the_real_beat_count_not_its_window(tmp_path):
+    """The trap in the fix: keeping only the last N beats and then reporting
+    `len(beats)` would cap every long run at N and read as a short one."""
+    d = runlog.run_logs_dir()
+    n = runlog._SUMMARY_BEAT_WINDOW * 7 + 3
+    _write_journal(d, "imp-20260806T050000Z-count", beats=n)
+    out = runlog.summarise("imp-20260806T050000Z-count")
+    assert out["beats"] == n, "the count is the file's, not the retained window's"
+
+
+def test_summarise_still_names_where_an_incomplete_run_died(tmp_path):
+    """The negative-space twin: streaming must not cost the verdicts. A fix that
+    simply read less and answered less would pass the memory test above."""
+    d = runlog.run_logs_dir()
+    _write_journal(d, "imp-20260806T050000Z-dead", beats=25)
+    out = runlog.summarise("imp-20260806T050000Z-dead")
+    assert out["complete"] is False
+    assert out["outcome"] == "incomplete"
+    assert out["died_in_stage"] == "merge"
+    assert out["last_phase"] == "reindexing", "the last beat still reaches the summary"
+    assert out["recent"]["samples"] == runlog._SUMMARY_BEAT_WINDOW
+
+
+def test_a_completed_run_still_summarises_as_completed(tmp_path):
+    d = runlog.run_logs_dir()
+    _write_journal(d, "imp-20260806T050000Z-ok", beats=3, ended=True)
+    out = runlog.summarise("imp-20260806T050000Z-ok")
+    assert out["complete"] is True and out["outcome"] == "ok"
+    assert out["stages"] == {"merge": 1.5}
+    assert out["wall_s"] == 2.0
+    assert "died_in_stage" not in out
+
+
+def test_a_finished_run_is_never_promoted_and_the_scan_stops_at_the_marker(tmp_path):
+    d = runlog.run_logs_dir()
+    _write_journal(d, "imp-20260806T050000Z-done", beats=2, ended=True)
+    runlog.promote_incomplete_runs()
+    evs = [r.get("ev") for r in _lines(d / "imp-20260806T050000Z-done.jsonl")]
+    assert "promoted" not in evs
+
+
+def test_promotion_happens_once_not_on_every_boot(tmp_path):
+    d = runlog.run_logs_dir()
+    _write_journal(d, "imp-20260806T050000Z-once", beats=2)
+    runlog.promote_incomplete_runs()
+    runlog.promote_incomplete_runs()
+    evs = [r.get("ev") for r in _lines(d / "imp-20260806T050000Z-once.jsonl")]
+    assert evs.count("promoted") == 1
+
+
+def test_raw_runs_bounds_beats_while_reading_and_states_what_it_dropped(tmp_path):
+    d = runlog.run_logs_dir()
+    _write_journal(d, "imp-20260806T050000Z-raw", beats=500)
+    out = runlog.raw_runs(max_runs=4, max_beats=20)
+    entry = out["imp-20260806T050000Z-raw"]
+    assert len(entry["beats"]) == 20
+    assert entry["beats_omitted"] == 480, "the omission counts the FILE, not the window"
+    assert entry["beats"][-1]["el_s"] == 499.0, "the retained window is the NEWEST beats"
+
+
+def _list_peak(d, run_id, *, milestones):
+    import tracemalloc
+
+    _write_journal(d, run_id, beats=5, milestones=milestones, ended=True)
+    total = sum(p.stat().st_size for p in d.glob("*.jsonl")
+                if not p.name.endswith(".beat.jsonl"))
+    tracemalloc.start()
+    try:
+        runs = runlog.list_runs()
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+    return total, peak, runs
+
+
+def test_listing_runs_costs_the_SAME_whatever_the_journals_hold(tmp_path):
+    """`list_runs` wants three records per file and is not capped at 50 like the
+    boot pass, so on a machine with a long history it was the biggest read here.
+
+    Two sizes for the same reason as the boot guard: constant memory is the claim,
+    and a fixed ceiling measures the environment as much as the code."""
+    d = runlog.run_logs_dir()
+    small_bytes, small_peak, _ = _list_peak(d, "imp-20260806T050000Z-a", milestones=1200)
+    big_bytes, big_peak, runs = _list_peak(d, "imp-20260806T050001Z-b", milestones=30000)
+
+    assert big_bytes > small_bytes * 8, "the two fixtures must differ enough to show growth"
+    assert len(runs) == 2 and all(r["complete"] for r in runs), "and it still lists them"
+    assert big_peak <= max(small_peak * 3, 4_000_000), (
+        f"listing allocated {small_peak / 1e6:.2f} MB for {small_bytes / 1e6:.1f} MB of "
+        f"journals and {big_peak / 1e6:.2f} MB for {big_bytes / 1e6:.1f} MB -- the cost "
+        "is tracking the files"
+    )
