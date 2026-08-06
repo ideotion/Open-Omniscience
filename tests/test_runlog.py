@@ -789,37 +789,52 @@ def _write_journal(d, run_id, *, beats=0, ended=False, stage="merge", milestones
                 }, separators=(",", ":")) + "\n")
 
 
-def test_the_boot_pass_does_not_hold_a_journal_in_memory(tmp_path):
-    """The property, measured rather than asserted about the code shape.
+def _boot_peak(d, run_id, *, beats, milestones):
+    """Peak Python allocation during one boot pass over a journal of this size.
 
-    tracemalloc, NOT ``ru_maxrss``: the first draft of this test used the latter and
+    tracemalloc, NOT ``ru_maxrss``: the first draft of this guard used the latter and
     was VACUOUS -- peak RSS is a process high-water mark that never shrinks, so by
-    the time this runs the peak is already set by earlier tests and the delta is 0
-    whatever the code does. Reverting the fix left it green. tracemalloc measures
-    the allocations made INSIDE the window and resets, which is the actual claim."""
+    the time the test runs the peak is already set by earlier tests and the delta is
+    0 whatever the code does. Reverting the fix left it green."""
     import tracemalloc
 
-    d = runlog.run_logs_dir()
-    # BOTH files large, deliberately: the boot pass reads the milestone file to
-    # decide whether the run finished, and summarise reads the beat file. A fixture
-    # that only grew one of them leaves the other's whole-file read undetectable.
-    _write_journal(d, "imp-20260806T050000Z-big", beats=40000, milestones=30000)
-    size = (d / "imp-20260806T050000Z-big.jsonl").stat().st_size
-    beats_size = (d / "imp-20260806T050000Z-big.beat.jsonl").stat().st_size
-    assert size > 5_000_000, "the milestone file must be big enough for its cost to show"
-    assert beats_size > 8_000_000, "the fixture must be big enough for the old cost to show"
-
+    # BOTH files, deliberately: the boot pass reads the milestone file to decide
+    # whether the run finished, and summarise reads the beat file. A fixture that
+    # only grew one leaves the other's whole-file read undetectable.
+    _write_journal(d, run_id, beats=beats, milestones=milestones)
+    total = sum(p.stat().st_size for p in d.glob(f"{run_id}*.jsonl"))
     tracemalloc.start()
     try:
         runlog.promote_incomplete_runs()
         peak = tracemalloc.get_traced_memory()[1]
     finally:
         tracemalloc.stop()
+    return total, peak
 
-    # Either file read whole lands far above this; streaming both lands near zero.
-    assert peak < 2_000_000, (
-        f"boot allocated {peak / 1e6:.1f} MB for a {beats_size / 1e6:.0f} MB journal -- "
-        "reading it whole is what let a big incident stop the app from starting"
+
+def test_the_boot_pass_costs_the_SAME_whatever_the_journal_size(tmp_path):
+    """CONSTANT memory is the claim, so measure at two sizes rather than against a
+    fixed ceiling.
+
+    An absolute bar encodes this badly and is not portable: it really measures
+    "fixed overhead + streaming cost", and the fixed overhead belongs to the
+    environment. A 2 MB bar passed locally at 0.04 MB and failed in CI at 3.2 MB
+    -- with the peak provably FLAT across a 2 MB and a 68 MB journal in both. The
+    honest response is not to raise the bar until the lane goes green (that weakens
+    the guard) but to assert the property the fix actually has.
+
+    Whole-file reading cannot satisfy this: its peak is ~9x the file, so a 12x
+    bigger journal costs ~12x more."""
+    d = runlog.run_logs_dir()
+    small_bytes, small_peak = _boot_peak(d, "imp-20260806T050000Z-a", beats=3000, milestones=2500)
+    big_bytes, big_peak = _boot_peak(d, "imp-20260806T050000Z-b", beats=36000, milestones=30000)
+
+    assert big_bytes > small_bytes * 8, "the two fixtures must differ enough to show growth"
+    # Generous headroom for allocator noise; the defect this catches is order-of-magnitude.
+    assert big_peak <= max(small_peak * 3, 4_000_000), (
+        f"boot allocated {small_peak / 1e6:.2f} MB for {small_bytes / 1e6:.1f} MB of journal "
+        f"and {big_peak / 1e6:.2f} MB for {big_bytes / 1e6:.1f} MB -- the cost is tracking the "
+        "file, which is what let a big incident stop the app from starting"
     )
 
 
@@ -883,28 +898,35 @@ def test_raw_runs_bounds_beats_while_reading_and_states_what_it_dropped(tmp_path
     assert entry["beats"][-1]["el_s"] == 499.0, "the retained window is the NEWEST beats"
 
 
-def test_listing_runs_does_not_hold_every_journal_in_memory(tmp_path):
-    """`list_runs` wants three records per file and is not capped at 50 like the
-    boot pass, so on a machine with a long history it was the biggest read here."""
+def _list_peak(d, run_id, *, milestones):
     import tracemalloc
 
-    d = runlog.run_logs_dir()
-    for i in range(3):
-        _write_journal(d, f"imp-20260806T05000{i}Z-list", beats=5,
-                       milestones=12000, ended=True)
+    _write_journal(d, run_id, beats=5, milestones=milestones, ended=True)
     total = sum(p.stat().st_size for p in d.glob("*.jsonl")
                 if not p.name.endswith(".beat.jsonl"))
-    assert total > 5_000_000, "the fixture must be big enough for the old cost to show"
-
     tracemalloc.start()
     try:
         runs = runlog.list_runs()
         peak = tracemalloc.get_traced_memory()[1]
     finally:
         tracemalloc.stop()
+    return total, peak, runs
 
-    assert len(runs) == 3, "and it still lists them"
-    assert all(r["complete"] for r in runs)
-    assert peak < 2_000_000, (
-        f"listing allocated {peak / 1e6:.1f} MB for {total / 1e6:.0f} MB of journals"
+
+def test_listing_runs_costs_the_SAME_whatever_the_journals_hold(tmp_path):
+    """`list_runs` wants three records per file and is not capped at 50 like the
+    boot pass, so on a machine with a long history it was the biggest read here.
+
+    Two sizes for the same reason as the boot guard: constant memory is the claim,
+    and a fixed ceiling measures the environment as much as the code."""
+    d = runlog.run_logs_dir()
+    small_bytes, small_peak, _ = _list_peak(d, "imp-20260806T050000Z-a", milestones=1200)
+    big_bytes, big_peak, runs = _list_peak(d, "imp-20260806T050001Z-b", milestones=30000)
+
+    assert big_bytes > small_bytes * 8, "the two fixtures must differ enough to show growth"
+    assert len(runs) == 2 and all(r["complete"] for r in runs), "and it still lists them"
+    assert big_peak <= max(small_peak * 3, 4_000_000), (
+        f"listing allocated {small_peak / 1e6:.2f} MB for {small_bytes / 1e6:.1f} MB of "
+        f"journals and {big_peak / 1e6:.2f} MB for {big_bytes / 1e6:.1f} MB -- the cost "
+        "is tracking the files"
     )
