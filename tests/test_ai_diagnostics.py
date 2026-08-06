@@ -20,9 +20,58 @@ def test_report_has_the_expected_top_level_shape():
     # `hardware` joined in 2026-07-30 (the inference hardware-suitability gate):
     # a SEPARATE question from `backend`'s "which backend would serve" -- an
     # unsuitable machine can still resolve a backend, start it, and then crawl.
+    # `vllm_last_failure` joined 2026-08-06: the complete log of the most recent FAILED
+    # start. The status block carries a bounded excerpt and the live log is truncated by
+    # the next start, so on a machine in a retry loop this is the member that says why.
     assert set(out) == {
-        "schema", "backend", "hardware", "active_model", "context", "vllm", "jobs",
+        "schema", "backend", "hardware", "active_model", "context", "vllm",
+        "vllm_last_failure", "jobs",
     }
+
+
+def test_the_reported_model_is_a_provisioning_answer_not_a_routing_one():
+    """A vLLM-only machine must never be reported as serving an Ollama tag.
+
+    The field bundle showed exactly that: vLLM installed and looping, Ollama absent,
+    and `active_model` naming an Ollama tag because it read `resolve_backend()` --
+    which correctly answers ROUTING and correctly falls back to Ollama when nothing is
+    reachable. Both answers are now reported, and the model is tied to the provisioning
+    one."""
+    out = AID.ai_diagnostics_report()
+    am = out["active_model"]
+    assert isinstance(am, dict), "the model must travel WITH the backend it was chosen for"
+    assert set(am) >= {"provisioning_backend", "model", "routing_backend"}
+
+
+def test_the_reported_model_names_the_vllm_repo_on_a_vllm_only_machine(monkeypatch):
+    """The negative-space twin: reproduce the field machine and assert it is fixed.
+
+    Without this, the change above is only a shape change -- it would pass just as well
+    if the model still came from the routing answer."""
+    from src.api import llm as api_llm
+
+    monkeypatch.setattr(
+        AID,
+        "_backend_facts",
+        lambda: {
+            # Exactly what the field bundle carried.
+            "backend": "ollama",
+            "gpu": {"available": True, "name": "NVIDIA GeForce RTX 4070 Laptop GPU"},
+            "vllm": {"installed": True, "running": False},
+            "ollama": {"installed": False, "running": False, "can_launch": False},
+            "ollama_available": False,
+            "available": False,
+            "no_backend": True,
+            "override": None,
+        },
+    )
+    out = AID.ai_diagnostics_report()
+    am = out["active_model"]
+    assert am["provisioning_backend"] == "vllm"
+    assert am["routing_backend"] == "ollama", "the routing answer is still reported"
+    # The whole point: not an Ollama tag on a machine with no Ollama.
+    assert am["model"] != api_llm.DEFAULT_MODEL
+    assert "/" in am["model"], f"expected a Hugging Face repo id, got {am['model']!r}"
 
 
 def test_report_carries_every_named_ai_job_summary():

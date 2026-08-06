@@ -1248,6 +1248,11 @@ def _journal(tmp_path, monkeypatch):
     import src.llm.vllm_lifecycle as vl
 
     monkeypatch.setattr(vl, "venv_dir", lambda: tmp_path)
+    # data_dir() as well since 2026-08-06: the journal moved OUT of the venv so a
+    # vLLM reinstall cannot delete it, and this fixture's job is to isolate the
+    # journal -- patching only where it used to live left every test in this file
+    # appending to the session-wide data dir and reading each other's entries.
+    monkeypatch.setattr(vl, "data_dir", lambda: tmp_path)
     vl._exits_noted.clear()
     return vl
 

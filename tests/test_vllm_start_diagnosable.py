@@ -292,9 +292,14 @@ def test_a_process_that_EXITED_is_a_failed_start_with_its_code(gpu8, monkeypatch
     assert out["returncode"] == 1
     assert "FAILED" in out["detail"]
     assert "never succeed" in out["detail"], "polling must be named as futile, not implied"
-    # For a STARTUP failure the reason is at the log's head: EngineCore is a child, so
-    # it prints its traceback first and the parent's stack follows it.
-    assert "HEAD" in out["log_hint"]
+    # NOT "read the head" any more. That was this module's SECOND guess about where a
+    # reason lives, and the field refuted it in 2026-08-04 (the cause sat at byte 27,405,
+    # outside both the head and the tail) -- `failure_excerpt` searches for the signature
+    # instead. This assertion had pinned the refuted advice in place; it now pins the two
+    # artifacts that actually carry the answer and outlive the next start.
+    assert "start journal" in out["log_hint"]
+    assert "preserved_log_path" in out["log_hint"]
+    assert "HEAD" not in out["log_hint"], "the refuted guess must not come back"
     assert out["log_path"].endswith("server.log")
 
 

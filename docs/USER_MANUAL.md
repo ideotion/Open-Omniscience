@@ -1246,6 +1246,8 @@ data directory rather than in each backend's home:
 | `models/ollama/` | Ollama's model store (`OLLAMA_MODELS` points here) |
 | `models/huggingface/hub/models--<org>--<name>/` | vLLM's weights, one folder per repo (`HF_HOME` points at `models/huggingface`) |
 | `cache/` | The vLLM server's compute caches — Triton kernels, torch Inductor, the CUDA JIT cache, vLLM's own cache and config roots. Built on first run, safe to delete (it is rebuilt), and can reach several GB |
+| `vllm_start_attempts.jsonl` | Every vLLM server start and every exit, with the failure's own words. Kept **here** rather than inside the vLLM environment so that reinstalling vLLM — the first thing most people try when a server will not start — does not delete the record of why it was failing |
+| `vllm_failed_starts/` | The complete log of each of the last few **failed** starts. The live server log is overwritten by the next attempt, and a retry loop overwrites it within a minute, so a copy is taken the moment a start is seen to have failed. A few hundred KB at most |
 
 Setting `OLLAMA_MODELS`, `HF_HOME`, or any of the cache variables
 (`XDG_CACHE_HOME`, `TRITON_CACHE_DIR`, `TORCHINDUCTOR_CACHE_DIR`,
@@ -1408,6 +1410,18 @@ default sources imported over Tor in one pass):
   internet through its own process (install/pull from **Settings → AI**); a working
   clearnet path is a stated prerequisite for downloading a model. Once pulled, inference
   is loopback and unaffected. *(A packaged offline LLM kit is planned, not yet shipped.)*
+- **If the vLLM install aborts part-way**, it is nearly always a download timing out
+  on one of the very large wheels — torch alone is around 500 MB. The message names
+  it, and already-downloaded wheels are cached, so starting the install again resumes
+  rather than beginning over. On a link slow enough to keep failing, raise
+  `UV_HTTP_TIMEOUT` (in seconds) before launching the app.
+- **If the vLLM server starts and dies repeatedly**, the reason is recorded whether or
+  not you were watching: every start and every exit goes into
+  `vllm_start_attempts.jsonl` with the failure's own words, and the complete log of
+  each of the last few failed starts is kept in `vllm_failed_starts/` — both in the
+  data directory, so reinstalling vLLM does not erase them. Both ride the
+  **Diagnostics → all diagnostics** export, so the answer is in the bundle rather than
+  something to catch live.
 - **Anonymity remains yours to manage**: Protected mode cannot guarantee
   anonymity — you run and trust the proxy; the app's part is a generic
   User-Agent and routing every fetch through it.

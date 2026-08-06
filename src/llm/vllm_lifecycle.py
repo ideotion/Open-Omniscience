@@ -101,6 +101,18 @@ _OUTPUT_TAIL_LINES = 50
 _OUTPUT_LINE_CHARS = 400
 _ENOSPC_MARKERS = ("no space left on device", "errno 28")
 
+#: The OTHER half of the recorded "classify disk-full vs network failures honestly"
+#: rule, which had only ever been built for disk. Two field installs aborted on this
+#: after 22 and 76 minutes, and the operator's report was "aborted for unknown
+#: reasons" -- the cause was in the journal's captured output and never on a surface.
+_NET_TIMEOUT_MARKERS = ("network timeout", "uv_http_timeout", "timed out", "read timeout")
+
+#: How much of the installer's own last output rides an UNCLASSIFIED failure message.
+#: Bounded so a runaway progress bar cannot become the error text, and large enough to
+#: carry uv's multi-line error block (a `x Failed to ...` with its indented reasons).
+_ERROR_TAIL_LINES = 8
+_ERROR_TAIL_CHARS = 600
+
 # RAM-backed filesystems (mirrors forensics._VOLATILE_FS): pip unpacking multi-GB
 # wheels into one of these is the Errno-28-while-df-reports-free-disk condition.
 _VOLATILE_FILESYSTEMS = frozenset({"tmpfs", "ramfs"})
@@ -245,8 +257,29 @@ _FATAL_SIGNATURES: tuple[tuple[str, str, str], ...] = (
 )
 
 #: Lines of context kept BEFORE a matched signature -- enough to show the call site
-#: (which function was allocating) without pasting a whole stack.
+#: (which function was allocating) without pasting a whole stack. A CEILING, not a
+#: quota: lead is added only from whatever budget the failure itself leaves (see
+#: ``failure_excerpt``).
 _EXCERPT_LEAD_LINES = 6
+
+
+def _window_around(lines: list[str], idx: int, limit: int) -> str:
+    """``limit`` characters around ``lines[idx]``, spending the budget on the MATCH and
+    what follows it before buying any leading context.
+
+    Lead is added one whole line at a time, nearest the match first, and only while it
+    fits in what is left over. A partial line of context is worse than no line: it reads
+    as a truncated message rather than as context that was skipped."""
+    tail = "\n".join(lines[idx:])[:limit]
+    room = limit - len(tail)
+    kept: list[str] = []
+    for line in reversed(lines[max(0, idx - _EXCERPT_LEAD_LINES) : idx]):
+        cost = len(line) + 1  # the newline that will join it
+        if cost > room:
+            break
+        kept.insert(0, line)
+        room -= cost
+    return "\n".join([*kept, tail]).strip()
 
 
 def failure_excerpt(*, limit: int = 900) -> dict:
@@ -263,6 +296,20 @@ def failure_excerpt(*, limit: int = 900) -> dict:
     known fatal signature and return a window around it, most specific signature first.
     Falls back to the head when nothing matches -- with no recognised signature the
     beginning is as good a guess as any, and it at least shows what was launched.
+
+    THE BUDGET BELONGS TO THE FAILURE, and getting that backwards is a third way this
+    function has been wrong (field report 2026-08-06, ten identical deaths). The window
+    used to be built as "six lines of lead, then everything after, truncated to
+    ``limit``" -- but vLLM prefixes every line with ``(EngineCore pid=NNNNNN) INFO
+    MM-DD HH:MM:SS [file.py:NNN]``, so six lead lines cost ~660 characters. Against the
+    400-character budget the start journal passes, the lead consumed the ENTIRE window
+    and the matched line was truncated away: every persisted record held the six lines
+    BEFORE the error and never the error. The instrument built to survive the log being
+    overwritten could only preserve the part that was not evidence.
+
+    So: give the matched line and everything after it the budget first, then spend
+    whatever remains on context, nearest line first, whole lines only. Lead is a
+    courtesy; the failure is the point.
 
     Never raises: an unreadable log returns ``{"available": False, "reason": ...}``.
     """
@@ -283,9 +330,12 @@ def failure_excerpt(*, limit: int = 900) -> dict:
         idx = next((i for i, ln in enumerate(lines) if needle in ln), None)
         if idx is None:
             continue
-        start = max(0, idx - _EXCERPT_LEAD_LINES)
-        excerpt = "\n".join(lines[start:])[:limit].strip()
-        out = {"available": True, "path": str(p), "signature": kind, "excerpt": excerpt}
+        out = {
+            "available": True,
+            "path": str(p),
+            "signature": kind,
+            "excerpt": _window_around(lines, idx, limit),
+        }
         if advice:
             out["advice"] = advice
         return out
@@ -764,10 +814,15 @@ def start_outcome() -> dict:
             "still loading, and polling will never succeed; start it again after fixing "
             "the cause below."
         ),
+        # NOT "read the head": that was this module's second guess about where a reason
+        # lives, and the field refuted it (see `failure_excerpt`). The excerpt in the
+        # start journal is searched to the signature, and `preserved_log_path` below is
+        # the whole log of this very failure, kept before the next start truncates it.
         "log_hint": (
-            "read the HEAD of the server log: vLLM's EngineCore is a child process, so a "
-            "startup failure prints its traceback FIRST and the parent's stack (ending in "
-            "'See root cause above') follows it"
+            "the reason is in this exit's entry in the start journal (the `excerpt` and "
+            "`signature` fields), and the complete log of this attempt is preserved at "
+            "`preserved_log_path` -- the live server log will be overwritten by the next "
+            "start"
         ),
         "log_path": str(server_log_path()),
     }
@@ -781,9 +836,13 @@ def start_outcome() -> dict:
         _exits_noted.add(pid)
         excerpt = {}
         try:
-            excerpt = failure_excerpt(limit=400)
+            # 1200, not the 400 this used to pass: the excerpt is the ONE record that
+            # survives the next start truncating the log, and a bounded window that
+            # stops before the traceback is a record of everything except the answer.
+            excerpt = failure_excerpt(limit=_JOURNAL_EXCERPT_CHARS)
         except Exception:  # noqa: BLE001 - a log read must never break a status probe
             excerpt = {}
+        preserved = _preserve_failed_log(pid, code) if code != 0 else None
         _record_start_attempt({
             "at": time.time(),
             "event": "exited",
@@ -792,7 +851,10 @@ def start_outcome() -> dict:
             "signature": excerpt.get("signature"),
             "advice": excerpt.get("advice"),
             "excerpt": excerpt.get("excerpt"),
+            "full_log": preserved,
         })
+        if preserved:
+            out["preserved_log_path"] = preserved
     return out
 
 
@@ -1212,15 +1274,155 @@ def vram_fit(model: str, vram_mb: int | None) -> dict:
 #  So: record every spawn, and record its exit WITH the failure excerpt, at the
 #  moment the exit is first observed. Bounded and atomic exactly like the install
 #  journal, whose helpers this reuses.
+#
+#  2026-08-06 -- the journal was built and STILL did not carry a reason, because two
+#  of its own bounds worked against it, and a third defect made it disposable:
+#
+#    * the excerpt spent its whole 400-character budget on six lines of lead, so the
+#      matched signature line was truncated away every time (see `failure_excerpt`);
+#    * a bounded excerpt cannot hold a whole traceback anyway, and the log it was read
+#      from was gone 30 seconds later -- so a FAILED start now keeps its complete log
+#      under `failed_start_log_dir()`, newest few only;
+#    * the journal lived inside the venv, which "reinstall vLLM" deletes -- and
+#      reinstalling is what an operator does when a server will not start, so the
+#      record was destroyed by the very response the failure provokes. It now lives
+#      in `data_dir()`, and the in-venv file is migrated once.
 # --------------------------------------------------------------------------- #
 
 #: Exits already journalled, keyed by pid, so a probe called many times records a
 #: transition ONCE. Process-local: a restart re-reads the file, never re-writes it.
 _exits_noted: set[int] = set()
 
+#: Characters of failure excerpt kept in the journal. Larger than the interactive
+#: default because this is the copy that OUTLIVES the log it was read from.
+_JOURNAL_EXCERPT_CHARS = 1200
+
 
 def _start_history_path() -> Path:
+    """OUTSIDE the venv, deliberately (2026-08-06).
+
+    This journal used to live in ``venv_dir()``, which an operator destroys whenever
+    they reinstall vLLM -- and reinstalling is the first thing anyone tries when a
+    server will not start. The record built to diagnose repeated start failures was
+    deleted by the most common response to a start failure. ``_legacy_start_history_path``
+    is read once and migrated so nothing already written is lost."""
+    return data_dir() / "vllm_start_attempts.jsonl"
+
+
+def _legacy_start_history_path() -> Path:
     return venv_dir() / "start_attempts.jsonl"
+
+
+def _migrate_start_history(path: Path) -> None:
+    """One-time move of the in-venv journal to its durable home. Best-effort: a journal
+    that cannot be migrated is still a journal that can be appended to."""
+    if path.exists():
+        return
+    try:
+        legacy = _legacy_start_history_path()
+        if legacy.is_file():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            _atomic_write_text(path, legacy.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - losing old history must not stop new history
+        _LOG.info("could not migrate the vLLM start journal: %s", exc)
+
+
+#: How many FAILED starts keep their full server log. Small on purpose: the newest few
+#: answer "why does it keep dying", and each is a few hundred KB at most.
+_FAILED_LOG_KEEP = 5
+
+
+def failed_start_log_dir() -> Path:
+    """Where a failed start's complete log is preserved, outside the venv for the same
+    reason the journal is."""
+    return data_dir() / "vllm_failed_starts"
+
+
+def _preserve_failed_log(pid: int | None, returncode: int) -> str | None:
+    """Copy the server log of a start that just FAILED, before the next start truncates it.
+
+    ``server.log`` is opened ``"wb"`` per start, so each failure destroys the evidence of
+    the one before it -- and with the recovery loop respawning every 30 s while a load
+    takes 60-90 s, that window is far too short for a human to look. The excerpt in the
+    journal is the at-a-glance answer; this is the whole thing, for when the excerpt's
+    bounded window is not enough.
+
+    Best-effort and bounded: never raises, keeps only the newest few, and returns the
+    path it wrote so the status payload can name it.
+
+    ITS ONE BOUND, stated rather than left to be rediscovered: the copy happens when the
+    exit is first OBSERVED, so a death nobody polled between and the next start is still
+    lost. That is the same window the journal's excerpt has always had, and the field
+    journal shows every one of ten exits being recorded, so it holds in practice --
+    but a caller that stops polling stops preserving."""
+    try:
+        src_path = server_log_path()
+        if not src_path.is_file() or src_path.stat().st_size == 0:
+            return None
+        dest_dir = failed_start_log_dir()
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%dT%H%M%S", time.gmtime())
+        dest = dest_dir / f"{stamp}-pid{pid or 0}-rc{returncode}.log"
+        dest.write_bytes(src_path.read_bytes())
+        kept = sorted(dest_dir.glob("*.log"))
+        for stale in kept[:-_FAILED_LOG_KEEP]:
+            stale.unlink(missing_ok=True)
+        return str(dest)
+    except Exception as exc:  # noqa: BLE001 - preserving evidence must never break a probe
+        _LOG.info("could not preserve the failed vLLM server log: %s", exc)
+        return None
+
+
+def failed_start_logs() -> list[dict]:
+    """The preserved failed-start logs, newest last. Names only -- a reader asks for one
+    by path rather than having the bundle carry every byte."""
+    try:
+        return [
+            {"path": str(p), "bytes": p.stat().st_size}
+            for p in sorted(failed_start_log_dir().glob("*.log"))
+        ]
+    except OSError:
+        return []
+
+
+#: Bytes of the newest failed log carried IN the diagnostics bundle. A whole vLLM
+#: startup log is tens of KB, so this is the complete answer in the common case, and a
+#: stated head/tail split when it is not.
+_BUNDLED_FAILED_LOG_BYTES = 64_000
+
+
+def newest_failed_start_log(*, limit: int = _BUNDLED_FAILED_LOG_BYTES) -> dict:
+    """The most recent FAILED start's complete log, for the diagnostics bundle.
+
+    Why carry the bytes rather than just the path: five rounds of "vLLM will not start"
+    were each diagnosed from an exported bundle, and every one of them ended in another
+    request for a file the bundle did not contain. A start that is failing right now
+    makes this the single most valuable thing in the export.
+
+    Head-and-tail when it is too long, with the gap STATED -- never two halves a reader
+    could mistake for one continuous log."""
+    logs = failed_start_logs()
+    if not logs:
+        return {
+            "available": False,
+            "reason": "no failed start has been recorded since this was added",
+        }
+    newest = Path(logs[-1]["path"])
+    try:
+        raw = newest.read_bytes()
+    except OSError as exc:
+        return {"available": False, "reason": f"could not read {newest}: {exc}"}
+    out: dict = {"available": True, "path": str(newest), "bytes": len(raw)}
+    if len(raw) <= limit:
+        out["text"] = raw.decode("utf-8", errors="replace")
+        out["truncated"] = False
+        return out
+    half = limit // 2
+    out["truncated"] = True
+    out["elided_bytes"] = len(raw) - 2 * half
+    out["head"] = raw[:half].decode("utf-8", errors="replace")
+    out["tail"] = raw[-half:].decode("utf-8", errors="replace")
+    return out
 
 
 def _record_start_attempt(record: dict) -> None:
@@ -1229,6 +1431,7 @@ def _record_start_attempt(record: dict) -> None:
     try:
         path = _start_history_path()
         path.parent.mkdir(parents=True, exist_ok=True)
+        _migrate_start_history(path)
         line = json.dumps(record, ensure_ascii=False, separators=(",", ":"))
         with path.open("a", encoding="utf-8") as fh:
             fh.write(line + "\n")
@@ -1240,12 +1443,20 @@ def _record_start_attempt(record: dict) -> None:
 
 
 def start_history(limit: int | None = None) -> list[dict]:
-    """Every recorded spawn and exit, oldest first. Survives restarts, which is the
-    whole point: ``start_outcome()`` forgets on every boot."""
+    """Every recorded spawn and exit, oldest first. Survives restarts -- and, since
+    2026-08-06, a vLLM reinstall -- which is the whole point: ``start_outcome()``
+    forgets on every boot, and the venv forgets on every reinstall."""
+    path = _start_history_path()
     try:
-        raw = _start_history_path().read_text(encoding="utf-8").splitlines()
+        raw = path.read_text(encoding="utf-8").splitlines()
     except OSError:
-        return []
+        # Nothing at the durable path yet: an install that has not started since the
+        # move still has its history in the venv, and reading it is how a reader who
+        # asks BEFORE the next start still sees it.
+        try:
+            raw = _legacy_start_history_path().read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return []
     out: list[dict] = []
     for ln in raw:
         try:
@@ -1683,6 +1894,10 @@ def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:
         # durable record of a start that keeps dying.
         "start_history": start_history(limit=history_limit),
         "recent_start_failures": recent_start_failures(),
+        # Complete logs of the newest few FAILED starts, kept because the excerpt above
+        # is a bounded window and a retry loop overwrites the log within 30 s. Paths
+        # and sizes only -- the bytes are fetched on request, not carried in every poll.
+        "failed_start_logs": failed_start_logs(),
         "verified_version": VLLM_VERIFIED_VERSION,
         "verified_as_of": VLLM_VERIFIED_AS_OF,
         "estimated_size_note": ESTIMATED_INSTALL_SIZE_NOTE,
@@ -2075,6 +2290,15 @@ def install_preflight(*, version: str = VLLM_VERIFIED_VERSION, gpu: dict | None 
     }
 
 
+#: Seconds uv may spend on one HTTP read before giving up, when the operator has not
+#: said otherwise. uv's default is 30, which the field proved too short twice over.
+#: Deliberately generous rather than merely doubled: the failing downloads are single
+#: wheels of 43-506 MiB, the transport may be Tor, and the cost of being too patient is
+#: a slow install, while the cost of being too impatient is an abort that throws away
+#: everything already downloaded. There is no in-between failure to trade against.
+_UV_HTTP_TIMEOUT_S = 900
+
+
 def _install_env(tmpdir: Path) -> dict[str, str]:
     """The environment for the install subprocesses: the ambient environment
     (PATH, proxy vars, locale -- all preserved) with ``TMPDIR`` redirected onto
@@ -2091,11 +2315,27 @@ def _install_env(tmpdir: Path) -> dict[str, str]:
     ``HF_HOME`` rides along (2026-08-04) so a weights download lands in the SAME place
     the server will read from and ``hf_cache_dir()`` will probe. Three call sites have
     to agree about that directory -- probe, download, serve -- and the way they stay
-    agreed is that all three resolve it through ``model_store``."""
+    agreed is that all three resolve it through ``model_store``.
+
+    ``UV_HTTP_TIMEOUT`` rides along too (2026-08-06), and it is the fix for a real
+    field failure: two installs aborted after 22 and 76 minutes, and the journal
+    captured uv naming its own cause -- *"Failed to download distribution due to
+    network timeout. Try increasing UV_HTTP_TIMEOUT (current value: 30s)"* -- once
+    while fetching a 187 MiB wheel and once a 43 MiB one. This module had already
+    learned that lesson for pip (``_PIP_NET_FLAGS`` raises its timeout to 60 s for
+    exactly this reason) and then switched the big install to uv, which reads none of
+    pip's flags; the resilience did not come with it. Thirty seconds is a reasonable
+    default for ordinary wheels and hopeless for a 506 MiB torch over a slow or
+    Tor-routed link, which is the link this app is built for.
+
+    An operator-set value is left ALONE, here as everywhere: someone who tuned this
+    deliberately is not second-guessed."""
     from src.llm.model_store import launch_env
 
     env = launch_env()
     env["TMPDIR"] = str(tmpdir)
+    if not env.get("UV_HTTP_TIMEOUT"):
+        env["UV_HTTP_TIMEOUT"] = str(_UV_HTTP_TIMEOUT_S)
     return env
 
 
@@ -2329,7 +2569,8 @@ def run_models_download_job(
 #: pip's own flags for a very large download. ``--retries``/``--timeout`` mirror
 #: ``install.sh:pip_install``: pip's 15 s default turns a dropped link into a
 #: MISLEADING "ResolutionImpossible / no matching distribution", and 5-10 GB is exposed
-#: to that for a long time. ``uv`` retries by default and takes neither flag.
+#: to that for a long time. ``uv`` takes neither flag -- it reads ``UV_HTTP_TIMEOUT``
+#: from the environment instead, which is why ``_install_env`` sets it (see there).
 _PIP_NET_FLAGS = ["--retries", "5", "--timeout", "60"]
 
 
@@ -2616,8 +2857,26 @@ def run_install_job(
                     f"the unpack area at {tmp}, so the volume behind that path is what "
                     f"filled up. Check it (look at the 'Avail' column):  df -h {tmp}"
                 )
+            elif any(m in joined for m in _NET_TIMEOUT_MARKERS):
+                msg = (
+                    f"{resolver} install vllm=={version} timed out DOWNLOADING a "
+                    "dependency, so nothing is wrong with this machine or the install "
+                    "itself -- the link was too slow for one of the very large wheels "
+                    f"(torch alone is ~500 MB). This install now allows uv "
+                    f"{_UV_HTTP_TIMEOUT_S}s per download; if it still times out, set "
+                    "UV_HTTP_TIMEOUT higher and start it again. Already-downloaded "
+                    "wheels are cached, so a retry resumes rather than starting over."
+                )
             else:
+                # No classification: hand back the tool's OWN last words rather than a
+                # bare exit code. "Failed (exit code 1)" is what an operator reported as
+                # "aborted for unknown reasons" while the reason sat in the captured
+                # output -- a cause that reaches no surface is not a captured cause.
+                said = [ln.strip() for ln in tail if ln.strip()][-_ERROR_TAIL_LINES:]
+                detail = "\n".join(said)[:_ERROR_TAIL_CHARS]
                 msg = f"{resolver} install vllm=={version} failed (exit code {exit_code})."
+                if detail:
+                    msg += f"\n\nWhat {resolver} said last:\n{detail}"
             _journal("error", exit_code=exit_code, error=msg)
             raise VllmLifecycleError(msg)
         # pip exiting 0 is evidence about PIP, not about this venv: PIP_TARGET /
