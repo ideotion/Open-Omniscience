@@ -27,6 +27,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 import http.server
 import re
+import socket
 import threading
 from pathlib import Path
 
@@ -36,6 +37,23 @@ from src.llm import vllm_lifecycle as V
 from src.llm.vllm_client import default_vllm_port, default_vllm_url
 
 _ROOT = Path(__file__).resolve().parents[1]
+
+
+def _retire(s: http.server.HTTPServer) -> None:
+    """Stop a test server AND release its port.
+
+    Both calls, and ``server_close`` is the load-bearing one. ``shutdown()`` stops the
+    serve_forever loop and leaves the LISTENING SOCKET BOUND -- verified directly: after
+    ``shutdown()`` alone the port still accepts connections, and only ``server_close()``
+    refuses them. Without it this fixture held vLLM's OWN port for the whole remaining
+    pytest process, and every later test that called ``start()`` was refused with
+    "port 8001 is already taken by another server". That refusal was correct: production
+    code was reading a genuinely occupied port. The defect was here.
+
+    A named helper rather than two lines inline, so the pairing is something a test can
+    hold onto -- see ``test_retiring_a_test_server_frees_its_port``."""
+    s.shutdown()
+    s.server_close()
 
 
 @pytest.fixture
@@ -60,7 +78,7 @@ def server_on():
 
     yield _start
     for s in servers:
-        s.shutdown()
+        _retire(s)
 
 
 def _app_default_port() -> int:
@@ -157,3 +175,45 @@ def test_status_surfaces_who_is_on_the_port(monkeypatch):
     st = V.status()
     assert "port_occupant" in st
     assert st["port_occupant"]["state"] in {"vllm", "foreign", "free", "unknown"}
+
+
+
+# --------------------------------------------------------------------------- #
+# The fixture's own hygiene (2026-08-06). A leaked listening socket does not fail
+# HERE -- it fails in some other file, twenty minutes into the suite, as a source
+# defect that is not one. So pin it where it can be read.
+# --------------------------------------------------------------------------- #
+def _accepts(port: int) -> bool:
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def test_retiring_a_test_server_frees_its_port():
+    """Drives the real teardown helper the fixture uses.
+
+    Deleting ``server_close()`` from ``_retire`` fails this immediately, which is the
+    whole point: the leak it prevents is otherwise invisible until an unrelated test
+    calls ``start()`` and is refused."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+
+    class H(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):  # noqa: N802
+            self.send_response(404)
+            self.end_headers()
+
+        def log_message(self, *a):
+            pass
+
+    s = http.server.HTTPServer(("127.0.0.1", port), H)
+    threading.Thread(target=s.serve_forever, daemon=True).start()
+    assert _accepts(port), "the server must really be up, or this proves nothing"
+    _retire(s)
+    assert not _accepts(port), (
+        "the port is still bound after teardown -- shutdown() alone leaks it, and the "
+        "next test to want this port is refused by production code that is right"
+    )
