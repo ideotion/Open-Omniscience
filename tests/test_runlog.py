@@ -746,3 +746,165 @@ def test_an_unreadable_report_is_unknown_never_ok(tmp_path, monkeypatch):
     monkeypatch.setattr(import_reports, "_reports_dir", lambda: d)
     (d / "restore-20260731T000000Z-zzz.json").write_text("{ torn", encoding="utf-8")
     assert import_reports.list_import_reports()[0]["outcome"] == "unknown"
+
+
+# --------------------------------------------------------------------------- #
+# Reading a journal must not cost what it cost to write one (2026-08-06).
+#
+# Field report: the app was SIGKILLed between "Waiting for application startup"
+# and the unlock page. `promote_incomplete_runs` runs there, on every boot,
+# BEFORE unlock -- and it read every journal into a list of dicts. A journal's
+# size is proportional to how much there was to diagnose, so the worse the
+# incident, the more likely the app died trying to tell you about it. Measured
+# on a 28 MB journal: +243 MB of RSS, 9x the file.
+# --------------------------------------------------------------------------- #
+def _write_journal(d, run_id, *, beats=0, ended=False, stage="merge", milestones=0):
+    """``milestones`` pads the MILESTONE file, which is a separate cost from the
+    beat file: the field run journal carried a ``merge_sql:`` line per statement,
+    so both files grow with the incident and each is read by a different call."""
+    d.mkdir(parents=True, exist_ok=True)
+    with (d / f"{run_id}.jsonl").open("w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"ev": "run_begin", "t": "T0", "kind": "import"}) + "\n")
+        fh.write(json.dumps({"ev": "stage_begin", "t": "T1", "name": stage}) + "\n")
+        for i in range(milestones):
+            # A record type the summary does not AGGREGATE, on purpose: padding with
+            # 30,000 distinct stage names would build a genuinely large `stages` dict,
+            # and the test would then be measuring an aggregate the summary is supposed
+            # to report rather than the cost of reading the file.
+            fh.write(json.dumps({
+                "ev": "progress", "t": f"T{i}", "i": i, "pad": "x" * 200,
+            }, separators=(",", ":")) + "\n")
+        if ended:
+            fh.write(json.dumps({"ev": "stage_end", "t": "T2", "name": stage,
+                                 "seconds": 1.5}) + "\n")
+            fh.write(json.dumps({"ev": "run_end", "t": "T3", "outcome": "ok",
+                                 "wall_s": 2.0}) + "\n")
+    if beats:
+        with (d / f"{run_id}.beat.jsonl").open("w", encoding="utf-8") as fh:
+            for i in range(beats):
+                fh.write(json.dumps({
+                    "ev": "beat", "t": f"T{i}", "el_s": float(i), "phase": "reindexing",
+                    "done": i * 10, "counter": "reindex_done", "d_cpu_s": 1.0,
+                    "kids_cpu_s": [1.0] * 8, "pad": "x" * 200,
+                }, separators=(",", ":")) + "\n")
+
+
+def test_the_boot_pass_does_not_hold_a_journal_in_memory(tmp_path):
+    """The property, measured rather than asserted about the code shape.
+
+    tracemalloc, NOT ``ru_maxrss``: the first draft of this test used the latter and
+    was VACUOUS -- peak RSS is a process high-water mark that never shrinks, so by
+    the time this runs the peak is already set by earlier tests and the delta is 0
+    whatever the code does. Reverting the fix left it green. tracemalloc measures
+    the allocations made INSIDE the window and resets, which is the actual claim."""
+    import tracemalloc
+
+    d = runlog.run_logs_dir()
+    # BOTH files large, deliberately: the boot pass reads the milestone file to
+    # decide whether the run finished, and summarise reads the beat file. A fixture
+    # that only grew one of them leaves the other's whole-file read undetectable.
+    _write_journal(d, "imp-20260806T050000Z-big", beats=40000, milestones=30000)
+    size = (d / "imp-20260806T050000Z-big.jsonl").stat().st_size
+    beats_size = (d / "imp-20260806T050000Z-big.beat.jsonl").stat().st_size
+    assert size > 5_000_000, "the milestone file must be big enough for its cost to show"
+    assert beats_size > 8_000_000, "the fixture must be big enough for the old cost to show"
+
+    tracemalloc.start()
+    try:
+        runlog.promote_incomplete_runs()
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+    # Either file read whole lands far above this; streaming both lands near zero.
+    assert peak < 2_000_000, (
+        f"boot allocated {peak / 1e6:.1f} MB for a {beats_size / 1e6:.0f} MB journal -- "
+        "reading it whole is what let a big incident stop the app from starting"
+    )
+
+
+def test_summarise_reports_the_real_beat_count_not_its_window(tmp_path):
+    """The trap in the fix: keeping only the last N beats and then reporting
+    `len(beats)` would cap every long run at N and read as a short one."""
+    d = runlog.run_logs_dir()
+    n = runlog._SUMMARY_BEAT_WINDOW * 7 + 3
+    _write_journal(d, "imp-20260806T050000Z-count", beats=n)
+    out = runlog.summarise("imp-20260806T050000Z-count")
+    assert out["beats"] == n, "the count is the file's, not the retained window's"
+
+
+def test_summarise_still_names_where_an_incomplete_run_died(tmp_path):
+    """The negative-space twin: streaming must not cost the verdicts. A fix that
+    simply read less and answered less would pass the memory test above."""
+    d = runlog.run_logs_dir()
+    _write_journal(d, "imp-20260806T050000Z-dead", beats=25)
+    out = runlog.summarise("imp-20260806T050000Z-dead")
+    assert out["complete"] is False
+    assert out["outcome"] == "incomplete"
+    assert out["died_in_stage"] == "merge"
+    assert out["last_phase"] == "reindexing", "the last beat still reaches the summary"
+    assert out["recent"]["samples"] == runlog._SUMMARY_BEAT_WINDOW
+
+
+def test_a_completed_run_still_summarises_as_completed(tmp_path):
+    d = runlog.run_logs_dir()
+    _write_journal(d, "imp-20260806T050000Z-ok", beats=3, ended=True)
+    out = runlog.summarise("imp-20260806T050000Z-ok")
+    assert out["complete"] is True and out["outcome"] == "ok"
+    assert out["stages"] == {"merge": 1.5}
+    assert out["wall_s"] == 2.0
+    assert "died_in_stage" not in out
+
+
+def test_a_finished_run_is_never_promoted_and_the_scan_stops_at_the_marker(tmp_path):
+    d = runlog.run_logs_dir()
+    _write_journal(d, "imp-20260806T050000Z-done", beats=2, ended=True)
+    runlog.promote_incomplete_runs()
+    evs = [r.get("ev") for r in _lines(d / "imp-20260806T050000Z-done.jsonl")]
+    assert "promoted" not in evs
+
+
+def test_promotion_happens_once_not_on_every_boot(tmp_path):
+    d = runlog.run_logs_dir()
+    _write_journal(d, "imp-20260806T050000Z-once", beats=2)
+    runlog.promote_incomplete_runs()
+    runlog.promote_incomplete_runs()
+    evs = [r.get("ev") for r in _lines(d / "imp-20260806T050000Z-once.jsonl")]
+    assert evs.count("promoted") == 1
+
+
+def test_raw_runs_bounds_beats_while_reading_and_states_what_it_dropped(tmp_path):
+    d = runlog.run_logs_dir()
+    _write_journal(d, "imp-20260806T050000Z-raw", beats=500)
+    out = runlog.raw_runs(max_runs=4, max_beats=20)
+    entry = out["imp-20260806T050000Z-raw"]
+    assert len(entry["beats"]) == 20
+    assert entry["beats_omitted"] == 480, "the omission counts the FILE, not the window"
+    assert entry["beats"][-1]["el_s"] == 499.0, "the retained window is the NEWEST beats"
+
+
+def test_listing_runs_does_not_hold_every_journal_in_memory(tmp_path):
+    """`list_runs` wants three records per file and is not capped at 50 like the
+    boot pass, so on a machine with a long history it was the biggest read here."""
+    import tracemalloc
+
+    d = runlog.run_logs_dir()
+    for i in range(3):
+        _write_journal(d, f"imp-20260806T05000{i}Z-list", beats=5,
+                       milestones=12000, ended=True)
+    total = sum(p.stat().st_size for p in d.glob("*.jsonl")
+                if not p.name.endswith(".beat.jsonl"))
+    assert total > 5_000_000, "the fixture must be big enough for the old cost to show"
+
+    tracemalloc.start()
+    try:
+        runs = runlog.list_runs()
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+    assert len(runs) == 3, "and it still lists them"
+    assert all(r["complete"] for r in runs)
+    assert peak < 2_000_000, (
+        f"listing allocated {peak / 1e6:.1f} MB for {total / 1e6:.0f} MB of journals"
+    )

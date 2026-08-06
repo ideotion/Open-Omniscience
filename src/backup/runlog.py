@@ -84,6 +84,7 @@ import logging
 import os
 import threading
 import time
+from collections import deque
 from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
@@ -777,8 +778,20 @@ if hasattr(os, "register_at_fork"):  # pragma: no branch - POSIX only
 # --------------------------------------------------------------------------- #
 #  Reading the journals back
 # --------------------------------------------------------------------------- #
-def _read_jsonl(p: Path) -> list[dict]:
-    out: list[dict] = []
+def _iter_jsonl(p: Path) -> Iterator[dict]:
+    """Stream one journal, a record at a time.
+
+    THE STREAMING FORM IS THE DEFAULT because of where these files are read from.
+    ``promote_incomplete_runs`` runs in the LIFESPAN STARTUP, before unlock, on
+    every boot -- and a journal's size is proportional to how much there was to
+    diagnose. Materialising it meant the worse the incident, the more likely the
+    app died trying to tell you about it (field report 2026-08-06: the process
+    SIGKILLed between "Waiting for application startup" and the unlock page).
+    Measured: a 28 MB journal cost +243 MB of RSS, 9x the file, because every
+    line becomes a dict and they are all held at once.
+
+    A torn final line is exactly what a hard kill leaves, so it is skipped rather
+    than treated as corruption -- unchanged from the list version this replaces."""
     try:
         with open(p, encoding="utf-8") as fh:
             for line in fh:
@@ -788,14 +801,33 @@ def _read_jsonl(p: Path) -> list[dict]:
                 try:
                     rec = json.loads(line)
                 except ValueError:
-                    # A torn final line is exactly what a hard kill leaves.
-                    # Skipping it is right; treating the file as corrupt is not.
                     continue
                 if isinstance(rec, dict):
-                    out.append(rec)
+                    yield rec
     except OSError:
-        return out
-    return out
+        return
+
+
+def _read_jsonl(p: Path) -> list[dict]:
+    """Every record at once. Kept for the callers that genuinely need the whole
+    file; prefer :func:`_iter_jsonl` or :func:`_tail_jsonl` anywhere the size is
+    not known to be small."""
+    return list(_iter_jsonl(p))
+
+
+def _tail_jsonl(p: Path, n: int) -> tuple[int, list[dict]]:
+    """``(total_records, the last n)`` in CONSTANT memory.
+
+    The shape almost every reader here actually wants: ``summarise`` uses the beat
+    file for a count, the final beat and the last ten -- and used to build a list of
+    all of them, which on a 19-hour import is thousands of records each carrying a
+    per-child CPU array."""
+    window: deque[dict] = deque(maxlen=max(0, n))
+    total = 0
+    for rec in _iter_jsonl(p):
+        total += 1
+        window.append(rec)
+    return total, list(window)
 
 
 def list_runs() -> list[dict]:
@@ -807,12 +839,26 @@ def list_runs() -> list[dict]:
     for p in sorted(d.glob("*.jsonl")):
         if p.name.endswith(".beat.jsonl"):
             continue
-        recs = _read_jsonl(p)
-        if not recs:
+        # Streamed for the same reason as the rest of this module (2026-08-06): it
+        # wants three records and used to hold the whole file for them -- and unlike
+        # the boot pass it is not even capped at 50 journals, so on a machine with a
+        # long history it was the largest read here.
+        seen = False
+        begin_rec: dict = {}
+        end_rec: dict | None = None
+        promoted: dict | None = None
+        for r in _iter_jsonl(p):
+            seen = True
+            ev = r.get("ev")
+            if ev == "run_begin":
+                if not begin_rec:
+                    begin_rec = r
+            elif ev == "run_end":
+                end_rec = r
+            elif ev == "promoted":
+                promoted = r
+        if not seen:
             continue
-        begin_rec = next((r for r in recs if r.get("ev") == "run_begin"), {})
-        end_rec = next((r for r in reversed(recs) if r.get("ev") == "run_end"), None)
-        promoted = next((r for r in reversed(recs) if r.get("ev") == "promoted"), None)
         outcome = (
             (end_rec or {}).get("outcome")
             if end_rec is not None
@@ -835,6 +881,12 @@ def list_runs() -> list[dict]:
     return out
 
 
+#: Beats retained by :func:`summarise`. It reports the last beat, a count, and a
+#: rate over a short window -- so this is everything it needs, and holding more was
+#: pure cost on a run long enough to be worth summarising.
+_SUMMARY_BEAT_WINDOW = 10
+
+
 def summarise(run_id: str) -> dict:
     """A compact answer to "what was this run doing, and was it moving?".
 
@@ -843,32 +895,43 @@ def summarise(run_id: str) -> dict:
     0.0 -- it is reported as absent, with the reason.
     """
     d = run_logs_dir()
-    m = _read_jsonl(d / f"{run_id}.jsonl")
-    beats = _read_jsonl(d / f"{run_id}.beat.jsonl")
-    if not m and not beats:
-        raise FileNotFoundError(run_id)
-
-    begin_rec = next((r for r in m if r.get("ev") == "run_begin"), {})
-    end_rec = next((r for r in reversed(m) if r.get("ev") == "run_end"), None)
-    errors = [r for r in m if r.get("ev") == "error"]
-
-    # Unmatched stage_begin == the stage that was running when the run died.
+    # ONE STREAMING PASS over the milestones, and only the last ten beats: every
+    # figure below is an aggregate or a tail, so nothing here needs the file in
+    # memory (2026-08-06). This function is called from the boot-time promotion
+    # pass, which is the worst possible place to allocate in proportion to how
+    # much went wrong.
+    milestones_seen = 0
+    begin_rec: dict = {}
+    end_rec: dict | None = None
+    errors: list[dict] = []
     open_stages: list[str] = []
-    for r in m:
-        if r.get("ev") == "stage_begin":
+    stages: dict = {}
+    last_stage_end: str | None = None
+    for r in _iter_jsonl(d / f"{run_id}.jsonl"):
+        milestones_seen += 1
+        ev = r.get("ev")
+        if ev == "run_begin":
+            if not begin_rec:
+                begin_rec = r
+        elif ev == "run_end":
+            end_rec = r  # the LAST one wins, as reversed() gave before
+        elif ev == "error":
+            errors.append(r)
+        elif ev == "stage_begin":
             open_stages.append(r.get("name", "?"))
-        elif r.get("ev") == "stage_end":
+        elif ev == "stage_end":
             nm = r.get("name")
             if nm in open_stages:
                 open_stages.remove(nm)
             # A lone stage_end is normal, not corruption: StageTimings.record()
             # is called directly by sites that measured elsewhere.
+            last_stage_end = nm
+            if r.get("seconds") is not None:
+                stages[nm] = r.get("seconds")
 
-    stages = {
-        r.get("name"): r.get("seconds")
-        for r in m
-        if r.get("ev") == "stage_end" and r.get("seconds") is not None
-    }
+    beats_total, beats = _tail_jsonl(d / f"{run_id}.beat.jsonl", _SUMMARY_BEAT_WINDOW)
+    if not milestones_seen and not beats_total:
+        raise FileNotFoundError(run_id)
 
     out: dict = {
         "run_id": run_id,
@@ -879,7 +942,9 @@ def summarise(run_id: str) -> dict:
         "complete": end_rec is not None,
         "outcome": (end_rec or {}).get("outcome") or "incomplete",
         "stages": stages,
-        "beats": len(beats),
+        # The REAL total, not the size of the retained window -- reporting the
+        # window would silently cap every long run at ten beats.
+        "beats": beats_total,
         "errors": [{"t": e.get("t"), "cls": e.get("cls"), "msg": e.get("msg")} for e in errors],
     }
     if end_rec is not None:
@@ -892,10 +957,7 @@ def summarise(run_id: str) -> dict:
             # It died BETWEEN stages, or in work no stage wraps. The last stage
             # that finished is still a real, measured bound on where it got to --
             # and it is the honest thing to report rather than a null and nothing.
-            last_end = next(
-                (r.get("name") for r in reversed(m) if r.get("ev") == "stage_end"), None
-            )
-            out["died_after_stage"] = last_end
+            out["died_after_stage"] = last_stage_end
         out["note"] = (
             "no run_end: this run was killed, OR its journal was disabled mid-run "
             "(e.g. the sidecar's disk filled). The two are indistinguishable from "
@@ -911,7 +973,7 @@ def summarise(run_id: str) -> dict:
         out["last_seen_at"] = last.get("t")
         out["last_phase"] = last.get("phase")
 
-    window = beats[-10:]
+    window = beats[-_SUMMARY_BEAT_WINDOW:]
     if len(window) >= 2:
         first, last = window[0], window[-1]
         d_wall = (last.get("el_s") or 0) - (first.get("el_s") or 0)
@@ -953,7 +1015,7 @@ def summarise(run_id: str) -> dict:
         else:
             out["recent_unavailable"] = "the last samples span no wall time"
     else:
-        out["recent_unavailable"] = f"only {len(beats)} beat(s): a rate needs two"
+        out["recent_unavailable"] = f"only {beats_total} beat(s): a rate needs two"
     return out
 
 
@@ -969,15 +1031,18 @@ def raw_runs(*, max_runs: int = 4, max_beats: int = 4000) -> dict:
     out: dict = {}
     for r in list_runs()[:max_runs]:
         rid = r["run_id"]
-        beats = _read_jsonl(run_logs_dir() / f"{rid}.beat.jsonl")
+        # Bounded WHILE READING, not after: this took every beat into memory and
+        # then kept the last `max_beats`, so the bound it advertises never applied
+        # to the peak. The retained window and the omission count are unchanged.
+        total, beats = _tail_jsonl(run_logs_dir() / f"{rid}.beat.jsonl", max_beats)
         entry: dict = {
             "milestones": _read_jsonl(run_logs_dir() / f"{rid}.jsonl"),
-            "beats": beats[-max_beats:],
+            "beats": beats,
         }
-        if len(beats) > max_beats:
-            entry["beats_omitted"] = len(beats) - max_beats
+        if total > max_beats:
+            entry["beats_omitted"] = total - max_beats
             entry["beats_note"] = (
-                f"the oldest {len(beats) - max_beats} beat(s) of this run are not "
+                f"the oldest {total - max_beats} beat(s) of this run are not "
                 "included here; the full file is in data_dir()/run_logs/"
             )
         out[rid] = entry
@@ -1002,10 +1067,18 @@ def promote_incomplete_runs(*, max_runs: int = 50) -> list[dict]:
     for p in sorted(d.glob("*.jsonl"), reverse=True)[:max_runs]:
         if p.name.endswith(".beat.jsonl"):
             continue
-        recs = _read_jsonl(p)
-        if not recs:
-            continue
-        if any(r.get("ev") in ("run_end", "promoted") for r in recs):
+        # STREAMED, and it answers a yes/no question, so it stops at the first
+        # match. This runs on every boot before unlock; holding a multi-megabyte
+        # journal in memory here is what made a bad incident able to prevent the
+        # app from starting at all.
+        seen = False
+        done = False
+        for r in _iter_jsonl(p):
+            seen = True
+            if r.get("ev") in ("run_end", "promoted"):
+                done = True
+                break
+        if not seen or done:
             continue
         run_id = p.stem
         try:
