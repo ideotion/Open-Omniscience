@@ -1,7 +1,7 @@
 # Internet-session prompt — Governments data, aggregates and blocs (2026-08-07)
 
 The build sandbox cannot reach `api.worldbank.org`, `oecd.org`, `imf.org` or
-`afdb.org` (403 / HTTP 000), so seven facts the Governments work needs were
+`afdb.org` (403 / HTTP 000), so every fact below that the Governments work needs was
 **deliberately left unverified rather than guessed**. This file is the prompt to hand a
 networked session, and the format its answer should come back in.
 
@@ -86,6 +86,23 @@ Return the **complete** list as a table. Then answer explicitly:
 
   Flag any row that is **wrong**, and any real aggregate **missing** from it.
 
+### Task 1b — and the region of every COUNTRY, from the same response
+
+The same call carries `region.value` for each real country ("Europe & Central Asia",
+"Sub-Saharan Africa", …). Report it as a plain `alpha-2 → region` list for every entry
+whose region is **not** "Aggregates".
+
+This is a separate deliverable from the aggregate list above and it populates a
+different thing: the World Bank *region* lens, which is registered in the app but empty.
+Do not substitute continents for it — **World Bank regions are not continents.**
+"Sub-Saharan Africa" excludes Egypt, Libya, Tunisia, Algeria and Morocco, which the Bank
+files under "Middle East & North Africa", so the two lenses give genuinely different
+answers for Africa and both are wanted.
+
+Also report which `incomeLevel.value` and `lendingType.value` each country carries, if
+they come back in the same response — they cost nothing extra here and they are the
+membership of the income-group aggregates in Task 1.
+
 ## Task 2 — the shape of a paginated response
 
 Fetch page 1 of a real indicator over every economy:
@@ -104,7 +121,7 @@ Report:
   real countries. (The tool relies on this indirectly; if it is not true, say so.)
 - Fetch page 2 as well and confirm `&page=2` is the correct parameter name.
 
-## Task 3 — verify 37 indicator codes
+## Task 3 — verify all 36 indicator codes
 
 Each of these was **search-verified but never fetched**. A wrong code fails silently as
 "no data" — which is indistinguishable from a country genuinely not reporting.
@@ -118,13 +135,14 @@ name from the response so the label can be checked against ours.
 NY.GDP.MKTP.CD  NY.GDP.PCAP.CD  NY.GDP.MKTP.KD.ZG  NY.GDP.MKTP.PP.CD
 NY.GDP.PCAP.PP.CD  NE.TRD.GNFS.ZS  BX.KLT.DINV.WD.GD.ZS  FP.CPI.TOTL.ZG
 SP.POP.TOTL  SP.POP.GROW  SP.URB.TOTL.IN.ZS  SP.DYN.TFRT.IN
-SP.DYN.LE00.IN  SH.DYN.MORT  SH.STA.MMRT  SH.MED.PHYS.ZS  SH.XPD.CHEX.GD.ZS
-SL.UEM.TOTL.ZS
+SP.DYN.LE00.IN  SH.DYN.MORT  SH.STA.MMRT  SH.MED.PHYS.ZS
+SH.XPD.CHEX.GD.ZS  SL.UEM.TOTL.ZS  SL.TLF.TOTL.IN  SL.TLF.CACT.ZS
+SE.ADT.LITR.ZS  SE.XPD.TOTL.GD.ZS  SE.PRM.ENRR  SE.SEC.ENRR
+EG.ELC.ACCS.ZS  EG.FEC.RNEW.ZS  EN.ATM.CO2E.PC  AG.LND.FRST.ZS
+IT.NET.USER.ZS  IT.CEL.SETS.P2  MS.MIL.XPND.GD.ZS  GC.NLD.TOTL.GD.ZS
+GC.DOD.TOTL.GD.ZS  GC.TAX.TOTL.GD.ZS  GC.REV.XGRT.GD.ZS  SI.POV.GINI
 ```
 
-…and any further codes the coding session lists when you run this; ask it to print
-`python -c "from src.stats.indicators import indicator_ids; print(' '.join(indicator_ids()))"`
-if you want the exact live set rather than this excerpt.
 
 **Also report, for two of them, whether the value is what we think it is**, because both
 look like errors and are believed correct:
@@ -137,8 +155,14 @@ look like errors and are believed correct:
 For each bloc below, give the **current member list** and, per member, the **date it
 joined** and (if applicable) **left**, each with the URL you read it from.
 
-`BRICS · G7 · G20 · NATO · African Union · ASEAN · Mercosur · CARICOM · GCC · OPEC ·
-Commonwealth of Nations · Organisation internationale de la Francophonie`
+`BRICS · G7 · G20 · NATO · European Union · African Union · ASEAN · Mercosur ·
+CARICOM · Gulf Cooperation Council · OPEC · Commonwealth of Nations ·
+Organisation internationale de la Francophonie`
+
+These are exactly the thirteen groups the app has registered and left empty, so a
+roster for any one of them is directly usable and a roster for anything else is not
+(yet) — if a bloc is easy to source and not on this list, mention it rather than
+researching it in depth.
 
 This is time-critical data and the reason the dates matter is worth stating: a bloc
 figure computed with today's roster over a 1995 series is wrong in a way no reader can
@@ -155,18 +179,31 @@ detect. So:
   Union members have been), because that is a third state and neither `joined` nor
   `left` expresses it.
 
-Format each as:
+Format each member as the four fields the registry actually stores, so the answer can be
+transcribed without interpretation. Omit a field that does not apply; write `UNVERIFIED`
+where you looked and could not source it.
 
 ```
 BRICS
+  source: <url for the roster itself>
+  br  joined 2009-06-16                          source <url>
+  ru  joined 2009-06-16                          source <url>
+  eg  joined 2024-01-01                          source <url>
+  sa  joined UNVERIFIED  — invited 2023, accession status reported ambiguously; <url>
+
+AFRICAN UNION
   source: <url>
-  BR  joined 2009-06-16  source <url>
-  RU  joined 2009-06-16  source <url>
-  ...
-  SA  UNVERIFIED — invited 2023, accession status unclear; <url>
+  ml  joined 2002-07-09  suspended_from 2021-06-01   source <url>
+  ma  joined 2017-01-30  left 1984-11-12 rejoined 2017-01-30 — see note   source <url>
 ```
 
-Use ISO 3166-1 alpha-2 codes.
+Use lowercase ISO 3166-1 alpha-2 codes. `suspended_from` is a **third state**: it is
+neither `joined` nor `left`, and a member that is suspended is still a member, so please
+do not resolve it into either — the app models it separately for exactly this reason.
+
+If a country left and later rejoined (Morocco and the OAU/AU is the clean example), say
+so in a note rather than collapsing it to one date range; the registry can hold the
+history but only if the answer distinguishes the two spells.
 
 ## Task 5 — publishers of bloc-level data
 
