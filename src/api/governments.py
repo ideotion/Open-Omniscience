@@ -20,9 +20,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from src.catalog import blocs
 from src.catalog.countries import to_iso2, to_iso3
 from src.database.session import get_db, session_scope
 from src.jobs.background import BackgroundJob, register_job
+from src.stats import aggregate
 from src.stats import indicators as ind
 from src.stats.store import list_figures
 
@@ -98,6 +100,116 @@ def map_data(indicator: str, year: str | None = None, db: Session = Depends(get_
         "located": len(by_country),
         "caveat": _CAVEAT,
     }
+
+
+@router.get("/groups")
+def list_groups() -> dict:
+    """Every country group the registry knows — populated or honestly empty.
+
+    An unpopulated group is LISTED rather than hidden, because "BRICS exists and its
+    membership dates are not held" is a different and more useful answer than "no such
+    group", and hiding it invites a future session to re-invent it from memory.
+    """
+    out = []
+    for key in blocs.group_names():
+        g = blocs.resolve_group(key)
+        if g is None:  # pragma: no cover - group_names() is derived from the registry
+            continue
+        out.append(
+            {
+                "key": g.key,
+                "label": g.label,
+                "kind": g.kind,
+                "populated": g.unpopulated_reason is None,
+                "members": len(g.members),
+                "reason": g.unpopulated_reason,
+            }
+        )
+    return {
+        "groups": out,
+        "as_of": blocs.BLOC_REGISTRY_AS_OF,
+        "caveat": (
+            "Membership is time-varying and resolves against the figure's own year. A "
+            "group listed as not populated has no sourced accession dates yet; no dates "
+            "are guessed to make a series continuous."
+        ),
+    }
+
+
+@router.get("/group-aggregate")
+def group_aggregate(
+    group: str,
+    indicator: str,
+    year: str | None = None,
+    allow_incomplete: bool = False,
+    db: Session = Depends(get_db),
+) -> dict:
+    """One indicator aggregated over one group — every honest strategy, side by side.
+
+    Rulings 43/44/47. The strategies are returned together and never blended: a total, a
+    mean over members, a median, and each weighting we hold a series for, each carrying
+    its own method and whether it is exact or approximate. Coverage is reported, and an
+    incomplete group refuses unless ``allow_incomplete`` is set — in which case the
+    missing members travel IN the payload, not only in the UI.
+
+    Indicator and weights are read at the SAME period. Weighting a 2023 value by a 2019
+    population would be a quiet basis mismatch, so when no ``year`` is given the most
+    recent period present for the indicator is chosen and used for both.
+    """
+    meta = ind.indicator_meta(indicator)
+    if meta is None:
+        raise HTTPException(status_code=404, detail=f"unknown indicator: {indicator!r}")
+    roster = blocs.members_as_of(group, year)
+    if not roster.get("known"):
+        raise HTTPException(status_code=404, detail=f"unknown group: {group!r}")
+    if not roster.get("populated"):
+        # Not an error: the group is real and its membership is a stated gap.
+        return {
+            "group": roster,
+            "indicator": meta,
+            "aggregate": None,
+            "reason": roster["reason"],
+            "caveat": _CAVEAT,
+        }
+
+    figs = _figures(db, series_id=indicator)
+    resolved_year = str(year) if year else None
+    if resolved_year is None:
+        periods = sorted({str(f["time_period"]) for f in figs if f.get("time_period")})
+        resolved_year = periods[-1] if periods else None
+    # Re-resolve membership against the year actually used, so the roster and the
+    # figures describe the same moment even when the caller named no year.
+    if year is None and resolved_year:
+        roster = blocs.members_as_of(group, resolved_year)
+
+    def _values(series_id: str) -> dict[str, float | None]:
+        rows, _years = _latest_by_country(
+            _figures(db, series_id=series_id) if series_id != indicator else figs,
+            year=resolved_year,
+        )
+        return {r["country"]: r["value"] for r in rows}
+
+    member_codes = roster["members"]
+    values = _values(indicator)
+    members = [aggregate.Member(area=a, value=values.get(a)) for a in member_codes]
+
+    # Only fetch the weight series a strategy can actually use.
+    weights: dict[str, dict[str, float | None]] = {}
+    for name, series_id in ind.WEIGHT_SERIES.items():
+        got = _values(series_id)
+        if got:
+            weights[name] = {a: got.get(a) for a in member_codes}
+
+    result = aggregate.aggregate_indicator(
+        indicator=meta,
+        aggregation=ind.indicator_aggregation(indicator),
+        members=members,
+        weights=weights,
+        allow_incomplete=allow_incomplete,
+    )
+    result["period"] = resolved_year
+    result["period_source"] = "requested" if year else "latest available for this indicator"
+    return {"group": roster, "aggregate": result, "caveat": _CAVEAT}
 
 
 @router.get("/country/{iso}")
