@@ -1201,6 +1201,34 @@ def recursive_loop(download: bool = Query(False)) -> JSONResponse:
     return JSONResponse(log, headers=headers)
 
 
+@router.get("/merge")
+def merge_diag(
+    download: bool = Query(False),
+    probe: bool = Query(True),
+) -> JSONResponse:
+    """Where a merge's time and memory go — measured on THIS machine, not inferred.
+
+    Five blocks, each degrading on its own: the engine's compile-time temp-storage
+    default (the fact that made every plaintext probe measure the opposite of
+    production); this corpus's real average article size and the window the merge
+    therefore derives; which SQL statement was in flight, SAMPLED from the capped
+    beat ring; exact per-statement seconds from any pre-2026-08-06 journal that
+    still carries per-statement records; and a bounded synthetic INSERT..SELECT at
+    this corpus's real row size, timed with temp storage in RAM and on disk.
+
+    ``probe=0`` skips only the synthetic benchmark (~50 MB written to a swept temp
+    directory under the data dir, deleted in a finally). Everything else is
+    read-only: no live-corpus write, no network, no score."""
+    from src.monitoring.merge_diag import merge_diagnostics
+
+    log = merge_diagnostics(probe=probe)
+    headers = {}
+    if download:
+        fname = f"oo-merge-diag-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(log, headers=headers)
+
+
 @router.get("/kpi")
 def kpi(download: bool = Query(False)) -> JSONResponse:
     """R1 (V1_PATHWAY §2.3): the read-only K1–K14 KPI SNAPSHOT — the V1 definition made
@@ -3229,6 +3257,14 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # substitutes for. Bounded, with what was dropped stated.
         ("run-journal-raw.json", lambda: _run_journal_raw()),
         ("run-timeline.json", lambda: run_timeline(max_runs=4)),
+        # The MERGE diagnostic (2026-08-06). Every Query()-defaulted parameter passed
+        # EXPLICITLY, per the ai.json/run_journal lesson three members above: called
+        # directly, a Query(True) default is the sentinel OBJECT, which is truthy, so
+        # omitting `probe` would run the benchmark by accident rather than by choice.
+        # It IS wanted here -- the per-row cost at the operator's real row size is the
+        # number that named the 5 KB/row allocation -- so it is passed as True, on
+        # purpose and visibly. ~50 MB written to a swept temp dir, deleted in a finally.
+        ("merge-diag.json", lambda: merge_diag(download=False, probe=True)),
         # 2026-07-17 completeness fix (maintainer: "all diagnostics should comprise ALL
         # diagnostics"): the read-only reports + cheap deterministic selftests that had
         # accumulated OUTSIDE the bundle since the #645 membership pass. Deliberate
@@ -3421,6 +3457,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/perception-eval-live/last": "perception-eval-live.json",
     "/keyword-triage-selftest": "keyword-triage-selftest.json",
     "/recursive-loop": "recursive-loop.json",
+    "/merge": "merge-diag.json",
     "/kpi": "kpi.json",
     "/search-timing": "search-timing.json",
     "/run-journal": "run-journal.json",
