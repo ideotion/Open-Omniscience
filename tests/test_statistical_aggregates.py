@@ -24,11 +24,20 @@ from src.catalog.aggregates import (
 )
 from src.catalog.countries import classify_ref_area, to_iso2, to_iso3
 
-# The codes the field investigation actually saw, plus the rest of the published set.
+# Codes the field investigation actually saw. This is a RECORD of what was observed, not
+# the coverage claim: the complete live set of 78 is checked by
+# test_every_live_aggregate_code_is_refused_by_the_country_guard below.
 AGGREGATE_CODES_2 = ["XD", "XC", "XT", "XM", "XN", "XO", "XP", "EU", "OE", "1W",
-                     "Z4", "Z7", "ZG", "ZJ", "ZQ", "8S", "B8", "F1", "S1", "S2", "S3", "S4"]
+                     "Z4", "Z7", "ZG", "ZJ", "ZQ", "8S", "B8", "S1", "S2", "S3", "S4"]
 AGGREGATE_CODES_3 = ["HIC", "EMU", "UMC", "LIC", "LMC", "LMY", "MIC", "EUU", "OED",
-                     "WLD", "EAS", "ECS", "SSF", "LCN", "MEA", "SAS", "CEB", "FCS"]
+                     "WLD", "EAS", "ECS", "SSF", "LCN", "MEA", "SAS", "CEB"]
+
+# NOT aggregates. `FCS`/`F1` are absent from /v2/country -- see
+# test_the_fabricated_FCS_row_stays_gone. They are still guarded, because whatever they
+# are they must never resolve as a country, but they are kept OUT of the lists above:
+# a code sitting in a list named AGGREGATE_CODES_* reads as evidence that the World Bank
+# publishes it, which is the exact belief that put the fabricated row in the table.
+RETIRED_CODES_STILL_NEVER_COUNTRIES = ["F1", "FCS"]
 
 
 # --------------------------------------------------------------------------- #
@@ -46,6 +55,13 @@ def test_two_letter_aggregate_codes_are_not_countries(code):
 def test_three_letter_aggregate_codes_are_not_countries(code):
     assert to_iso2(code) is None
     assert to_iso3(code) is None, f"{code} echoed straight through before this fix"
+
+
+@pytest.mark.parametrize("code", RETIRED_CODES_STILL_NEVER_COUNTRIES)
+def test_a_code_we_once_wrongly_shipped_still_never_resolves_as_a_country(code):
+    """Same protection, without the claim that the code is published anywhere."""
+    assert to_iso2(code) is None
+    assert to_iso3(code) is None
 
 
 def test_the_field_specimen_is_excluded():
