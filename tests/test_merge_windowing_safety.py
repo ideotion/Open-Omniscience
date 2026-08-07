@@ -33,8 +33,9 @@ from pathlib import Path
 import pytest
 
 from src.backup import merge as merge_mod
+from src.database.models import Article, ArticleKeyword
 
-_SRC = Path(merge_mod.__file__).read_text()
+_SRC = Path(merge_mod.__file__).read_text(encoding="utf-8")
 
 
 # --------------------------------------------------------------------------- #
@@ -263,11 +264,7 @@ def test_a_unique_justification_is_backed_by_the_schema() -> None:
     windowing safe. That was true by luck rather than by check when it shipped;
     this is the check.
     """
-    models = Path("src/database/models.py").read_text()
-    art = [b for b in re.split(r"\nclass ", models) if '__tablename__ = "articles"' in b]
-    assert art, "could not find the Article model -- this guard is not reading the schema"
-    hash_line = re.search(r"\n    hash\s*[:=][^\n]*(\n\s+[^\n)]*)*", art[0])
-    assert hash_line and "unique=True" in hash_line.group(0).replace("\n", " "), (
+    assert Article.__table__.columns["hash"].unique is True, (
         "articles.hash is no longer unique, so the articles step's 'unique' justification "
         "is false and windowing it can now collapse incoming duplicates"
     )
@@ -369,10 +366,7 @@ def test_the_link_tables_window_on_article_id_not_id() -> None:
     outright -- but silently doing the wrong thing is the risk worth pinning, not
     the crash."""
     assert 'src_key="article_id"' in _SRC
-    models = Path("src/database/models.py").read_text()
-    ak = [b for b in re.split(r"\nclass ", models) if '__tablename__ = "article_keywords"' in b]
-    assert ak, "could not find the ArticleKeyword model"
-    assert not re.search(r"\n    id\s*[:=]", ak[0]), (
+    assert "id" not in ArticleKeyword.__table__.columns, (
         "article_keywords gained an `id` -- windowing it on article_id still works, but the "
         "reason recorded at the call site is now stale"
     )
