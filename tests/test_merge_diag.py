@@ -239,7 +239,19 @@ def test_the_probe_measures_a_real_per_row_cost(probe: bool) -> None:
         # platform cannot make.
         assert mem["rss"] is None
         return
-    assert mem["kb_per_row"] is not None and mem["kb_per_row"] > 0, mem
+    # An RSS delta can be genuinely unobservable, and for two different reasons:
+    # ru_maxrss never falls, so a window smaller than the process's all-time peak is
+    # invisible to it; and current RSS only grows when the allocator asks the OS for
+    # more, so an allocation served from a warm arena moves nothing. Neither is a
+    # failure — they are measurements this process cannot make right now, exactly like
+    # the Windows arm above. What the probe may NOT do is publish 0.0 as if it had
+    # measured. That is the property, and it is pinned in test_merge_diag_rss.py.
+    assert mem["rss_method"] in ("current", "peak")
+    assert mem["kb_per_row"] != 0.0, mem
+    if mem["kb_per_row"] is None:
+        assert mem.get("kb_per_row_unavailable"), mem
+        return
+    assert mem["kb_per_row"] > 0, mem
 
 
 def test_the_probe_leaves_nothing_behind(tmp_path, monkeypatch) -> None:
