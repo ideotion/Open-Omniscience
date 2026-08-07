@@ -295,3 +295,65 @@ def test_vintage_is_caller_stamped_per_parse_sdmx() -> None:
     assert all(f.extracted_at == "2026-01-01T00:00:00Z" for f in v1)
     assert all(f.extracted_at == "2026-06-16T12:00:00Z" for f in v2)
     assert v1[0].extracted_at != v2[0].extracted_at
+
+
+# --------------------------------------------------------------------------- #
+#  The real page-1 shape, read off the live API on 2026-08-07
+# --------------------------------------------------------------------------- #
+
+
+def _obs(cid, iso3, name, year, value):
+    """One observation in the exact shape the live response returns."""
+    return {
+        "indicator": {"id": "NY.GDP.MKTP.CD", "value": "GDP (current US$)"},
+        "country": {"id": cid, "value": name},
+        "countryiso3code": iso3,
+        "date": str(year),
+        "value": value,
+        "unit": "", "obs_status": "", "decimal": 0,
+    }
+
+
+def test_contiguous_per_economy_blocks_do_not_collapse_to_one_area():
+    """A networked pass warned that fixing pagination could turn a '15 -> 1' collapse
+    into '265 -> 1', if something downstream keyed rows without the economy.
+
+    Page 1 is NOT interleaved: it is contiguous blocks of 66 rows, one economy each,
+    years descending with gaps present as null rows. This drives that exact shape and
+    asserts every economy survives as its own ref_area -- the parser is not the collapse.
+    """
+    payload = [
+        {"page": 1, "pages": 18, "per_page": 1000, "total": 17490,
+         "sourceid": "2", "lastupdated": "2026-07-13"},
+        [
+            *(_obs("ZH", "AFE", "Africa Eastern and Southern", y, 1.0) for y in (2025, 2024, 2023)),
+            *(_obs("ZI", "AFW", "Africa Western and Central", y, 2.0) for y in (2025, 2024, 2023)),
+            *(_obs("1A", "ARB", "Arab World", y, 3.0) for y in (2025, 2024, 2023)),
+        ],
+    ]
+    figs = parse_worldbank(payload, agency="worldbank", extracted_at="2026-08-07T00:00:00Z")
+    assert len({f.ref_area for f in figs}) == 3, "each block must keep its own area"
+    assert {f.ref_area for f in figs} == {"AFE", "AFW", "ARB"}
+    assert len(figs) == 9
+
+
+def test_an_aggregate_row_carries_its_own_alpha3_not_an_empty_code():
+    """The brief assumed `countryiso3code` is empty for aggregates. It is not -- verified
+    2026-08-07 -- so nothing in an indicator response distinguishes a country from an
+    aggregate, and any ingest inferring that from an empty code classifies every
+    aggregate as a country. This pins the real shape so the assumption cannot creep back.
+    """
+    payload = [{"page": 1, "pages": 1, "per_page": 50, "total": 1},
+               [_obs("ZH", "AFE", "Africa Eastern and Southern", 2023, 1.0)]]
+    fig = parse_worldbank(payload, agency="worldbank", extracted_at="2026-08-07T00:00:00Z")[0]
+    assert fig.ref_area == "AFE", "the aggregate's own alpha-3, not '' and not 'ZH'"
+
+
+def test_a_missing_year_is_a_null_row_not_an_absent_one():
+    """Each block is a full 66 rows; a year with no observation is present with
+    `value: null`. Treating row count as coverage would therefore overcount every time."""
+    payload = [{"page": 1, "pages": 1, "per_page": 50, "total": 2},
+               [_obs("FR", "FRA", "France", 2023, 3.0e12), _obs("FR", "FRA", "France", 2022, None)]]
+    figs = parse_worldbank(payload, agency="worldbank", extracted_at="2026-08-07T00:00:00Z")
+    assert len(figs) == 2
+    assert [f.value for f in figs] == [3.0e12, None], "a gap is stored as None, never 0"

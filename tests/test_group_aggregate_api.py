@@ -164,5 +164,74 @@ def test_the_groups_listing_shows_unpopulated_groups_with_their_reason(client):
     by_key = {g["key"]: g for g in body["groups"]}
     assert by_key["africa"]["populated"] is True and by_key["africa"]["members"] > 50
     assert by_key["brics"]["populated"] is False and by_key["brics"]["reason"]
-    assert by_key["wb-sub-saharan-africa"]["populated"] is False
+    # Populated from a live read on 2026-08-07, so no longer an example of a gap.
+    assert by_key["wb-sub-saharan-africa"]["populated"] is True
+    assert by_key["wb-sub-saharan-africa"]["members"] == 48
+    # ...and the thirteen blocs still are, which is what keeps this test meaningful.
+    assert sum(1 for g in body["groups"] if not g["populated"]) == 13
     assert body["as_of"]
+
+
+# --------------------------------------------------------------------------- #
+#  World Bank regions — populated 2026-08-07, so they aggregate end to end now
+# --------------------------------------------------------------------------- #
+
+
+@pytest.fixture
+def sasia_client():
+    """Three of South Asia's six members, plus the region's OWN published aggregate row.
+
+    That last row is the point: the World Bank publishes `SAS` as an economy in the same
+    series, and it must never be counted as a member of itself. `to_iso2("SAS")` is None
+    so it cannot enter — this fixture proves that rather than assuming it.
+    """
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                           poolclass=StaticPool, future=True)
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    rows = []
+    for iso3, pop, gdp_pc in (("IND", 1428.0, 2500.0), ("BGD", 173.0, 2700.0), ("LKA", 22.0, 3800.0)):
+        rows += [_fig(iso3, "SP.POP.TOTL", 2023, pop), _fig(iso3, "NY.GDP.PCAP.CD", 2023, gdp_pc)]
+    rows.append(_fig("SAS", "SP.POP.TOTL", 2023, 1900.0))       # the aggregate itself
+    rows.append(_fig("SAS", "NY.GDP.PCAP.CD", 2023, 2600.0))
+    s.add_all(rows)
+    s.commit()
+    app.dependency_overrides[get_db] = lambda: s
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+        s.close()
+
+
+def test_a_world_bank_region_aggregates_end_to_end(sasia_client):
+    out = _agg(sasia_client, group="wb-south-asia", indicator="NY.GDP.PCAP.CD",
+               year="2023", allow_incomplete=True)
+    assert out["group"]["populated"] is True
+    assert out["group"]["kind"] == "wb_region"
+    assert len(out["group"]["members"]) == 6
+    w = out["aggregate"]["strategies"]["population_weighted"]
+    expected = (2500 * 1428.0 + 2700 * 173.0 + 3800 * 22.0) / (1428.0 + 173.0 + 22.0)
+    assert w["value"] == pytest.approx(expected)
+
+
+def test_the_regions_own_aggregate_row_is_never_counted_as_one_of_its_members(sasia_client):
+    """`SAS` is published as an economy in the same series. If it leaked in, the region
+    would contain itself and the weighted mean would double-count a whole region's worth
+    of people -- a large, plausible, undetectable error."""
+    out = _agg(sasia_client, group="wb-south-asia", indicator="SP.POP.TOTL",
+               year="2023", allow_incomplete=True)
+    agg = out["aggregate"]
+    assert agg["coverage"]["reported"] == 3, "only the three real members reported"
+    assert agg["strategies"]["sum"]["value"] == pytest.approx(1428.0 + 173.0 + 22.0)
+    assert agg["spread"]["max"] == 1428.0, "1900 (the SAS aggregate) must not be in range"
+
+
+def test_afghanistan_and_pakistan_aggregate_under_MENA_not_south_asia(sasia_client):
+    """The reassignment reaching the surface it matters on. A tool still filing them under
+    South Asia would compute both regions over the wrong populations."""
+    sas = _agg(sasia_client, group="wb-south-asia", indicator="SP.POP.TOTL")["group"]["members"]
+    mea = _agg(sasia_client, group="wb-middle-east-north-africa",
+               indicator="SP.POP.TOTL")["group"]["members"]
+    assert {"af", "pk"} & set(sas) == set()
+    assert {"af", "pk"} <= set(mea)
