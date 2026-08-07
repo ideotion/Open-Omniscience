@@ -39,19 +39,31 @@ def test_current_rss_moves_with_a_real_allocation_and_falls_back():
     )
 
 
-def test_a_raised_high_water_mark_no_longer_hides_the_measurement():
-    """The CI failure, reproduced and then shown fixed.
+def test_a_raised_high_water_mark_never_yields_a_fabricated_zero():
+    """The CI failure, reproduced — and the property that actually holds.
 
     Raising ``ru_maxrss`` far above anything the probe allocates used to force
-    ``kb_per_row`` to 0.0. With the current-RSS reader it stays a real number.
+    ``kb_per_row`` to 0.0. Switching to current RSS fixes the *usual* case, but not
+    this one: freeing the ballast leaves the pages in glibc's arena, so the probe's
+    next 40 MB is served without RSS growing either. CI found exactly that.
+
+    So the guarantee is not "always a number" — no RSS-based reader can promise that
+    — it is **never a fabricated zero**. Either a real measurement, or a stated gap.
     """
     if merge_diag._rss_current_mb() is None:
         pytest.skip("current-RSS reading unavailable on this platform")
     ballast = bytearray(400 * 1024 * 1024)
-    del ballast  # the mark stays raised; only the current reading falls back
+    del ballast  # the mark stays raised; the arena stays warm
     arm = merge_diag.cost_probe(avg_row_bytes=512)["arms"][0]
+
     assert arm.get("rss_method") == "current"
-    assert arm["kb_per_row"] is not None and arm["kb_per_row"] > 0, arm
+    assert arm["kb_per_row"] != 0.0, "0.0 KB/row is a claim, and nothing was measured"
+    if arm["kb_per_row"] is None:
+        assert arm["kb_per_row_unavailable"], "an absent number owes its reason"
+        assert "did not grow" in arm["kb_per_row_unavailable"]
+    else:
+        assert arm["kb_per_row"] > 0, arm
+    assert arm["seconds"] > 0, "the timing half is a real measurement either way"
 
 
 def test_an_unobservable_delta_is_a_stated_gap_not_a_zero(monkeypatch):

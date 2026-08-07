@@ -499,19 +499,31 @@ def _probe_arm(work: Path, rows: int, body: bytes, temp_store: str) -> dict[str,
         "rss_delta_mb": round(delta),
         "kb_per_row": round(delta * 1024 / rows, 1) if rows else None,
     })
-    if rss_method == "peak" and delta <= 0:
-        # The high-water mark did not move, which does NOT mean the insert allocated
-        # nothing -- it means the process had already been bigger at some earlier point,
-        # so this window is invisible to that instrument. Publishing 0.0 KB/row here
-        # would be a fabricated measurement in exactly the case where nothing was
-        # measured, and it is the same mistake `_rss_mb`'s own docstring warns about one
-        # level down. State the gap and its reason instead.
+    if delta <= 0:
+        # A NON-POSITIVE delta does not mean the insert allocated nothing. It means the
+        # allocation was invisible to this instrument, and BOTH readers have a way of
+        # going blind:
+        #
+        #   peak     ru_maxrss never falls, so a window that does not exceed everything
+        #            the process has ever done registers as zero.
+        #   current  RSS only grows when the allocator asks the OS for more. After a
+        #            large free, glibc keeps the pages in its arena, so the next tens of
+        #            megabytes are served without RSS moving at all.
+        #
+        # Publishing 0.0 KB/row in either case is a fabricated measurement in exactly the
+        # situation where nothing was measured -- the mistake `_rss_mb`'s own docstring
+        # warns about one level down. State the gap and which reader hit its limit.
+        # (CI found this: the first cut guarded only the peak path, and the current path
+        # then reported the same zero for the second reason.)
         out["kb_per_row"] = None
         out["kb_per_row_unavailable"] = (
-            "ru_maxrss is a high-water mark that never falls, and the process peak "
+            "ru_maxrss is a high-water mark that never falls and the process peak "
             "already exceeded this probe's allocation, so the delta is unobservable "
-            "here (current-RSS reading via /proc/self/statm is unavailable on this "
-            "platform)"
+            "here (current-RSS via /proc/self/statm is unavailable on this platform)"
+            if rss_method == "peak" else
+            "resident memory did not grow during the insert, which means the allocation "
+            "was served from memory the process already held (a freed arena is not "
+            "returned to the OS), not that it allocated nothing"
         )
     return out
 
