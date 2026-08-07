@@ -24,6 +24,7 @@ from datetime import UTC, datetime
 
 from src.database.models import LawDocument, LawRevision
 from src.database.write import is_integrity_error
+from src.services.boilerplate import BOILERPLATE_STRIP_VERSION
 from src.wiki.flagging import flag_revision
 
 _LOG = logging.getLogger(__name__)
@@ -33,21 +34,35 @@ _MAX_DIFF_LINES = 4000  # cap stored diff size (bounded, like the crawler)
 _WS_RE = re.compile(r"[ \t]+")
 
 
-def page_text(html: str) -> str:
+def _lines_of(soup) -> str:
+    lines = [_WS_RE.sub(" ", ln).strip() for ln in soup.get_text("\n").splitlines()]
+    return "\n".join(ln for ln in lines if ln)
+
+
+def page_text(html: str, *, legacy: bool = False) -> str:
     """Normalised visible text of an HTML page — a stable basis for change detection.
 
-    Strips script/style/nav/footer/header chrome and collapses whitespace, so a real
-    amendment produces a diff while cosmetic re-rendering does not.
+    Removes chrome the markup DECLARES to be chrome (see
+    :mod:`src.services.boilerplate`) and collapses whitespace, so a real amendment
+    produces a diff while cosmetic re-rendering does not.
+
+    ``legacy=True`` reproduces the reading this function gave before the strip stage
+    (script/style/nav/footer/header only). That is not a fallback: it is how
+    :func:`check_document` tells "our extractor improved" from "the law changed" on the
+    one poll where both could look identical.
     """
     try:
         from bs4 import BeautifulSoup
     except ImportError:  # pragma: no cover - bs4 is a core dependency
         return re.sub(r"<[^>]+>", " ", html)
+    from src.services.boilerplate import strip_boilerplate, strip_enabled, strip_legacy
+
     soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script", "style", "nav", "footer", "header", "noscript", "svg"]):
-        tag.decompose()
-    lines = [_WS_RE.sub(" ", ln).strip() for ln in soup.get_text("\n").splitlines()]
-    return "\n".join(ln for ln in lines if ln)
+    if legacy or not strip_enabled():
+        strip_legacy(soup)
+    else:
+        strip_boilerplate(soup)
+    return _lines_of(soup)
 
 
 def _diff(baseline: str, new: str) -> str:
@@ -124,6 +139,10 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         return {"document_id": doc.id, "status": "error", "detail": str(exc)}
 
     text, reason = _document_text(result)
+    # Kept for the extractor-change check below. Only HTML has chrome to strip, so a
+    # PDF body leaves this None and the check is simply skipped -- never a re-baseline
+    # decided on a comparison we could not make.
+    raw_html = result.content if reason == "ok" else None
     if not text or len(text) < _MIN_TEXT:
         # Degrade loudly: a scanned/encrypted/mis-decoded PDF (or too-short HTML)
         # records WHY and stores NO body — never a fabricated one.
@@ -207,6 +226,44 @@ def track_document(session, fetcher, doc: LawDocument, *, extractor=None) -> dic
         if backfilled:
             _ingest_to_corpus(session, doc, extractor)
         return {"document_id": doc.id, "status": "unchanged"}
+
+    # THE EXTRACTOR CHANGED, NOT THE LAW. The boilerplate strip removes chrome this
+    # function used to keep, so on the ONE poll after it ships every tracked document's
+    # text legitimately changes -- and the code below would read that as an amendment,
+    # write a LawRevision for it, and (chrome on a real portal runs past
+    # LARGE_CHANGE_BYTES) very likely FLAG it as a large removal. A fabricated
+    # amendment, flagged, on a legal audit trail whose whole value is being trustworthy.
+    #
+    # So ask the question directly instead of guessing: re-read the SAME bytes the way
+    # this function used to, and see whether THAT still matches what we stored. If it
+    # does, the page did not change and the delta is entirely ours -- re-baseline, and
+    # record no revision, because none happened. If it does not, the page really did
+    # change too, and it falls through to the normal path below: a real amendment is
+    # never silently absorbed into the re-baseline.
+    #
+    # No schema column is needed for this: the legacy reading IS the stamp, derived
+    # from the bytes in hand. It is also self-limiting -- once re-baselined, last_hash
+    # holds a stripped hash, which a legacy reading can never equal again.
+    if raw_html is not None and doc.baseline_text is not None:
+        legacy = page_text(raw_html, legacy=True)
+        if hashlib.sha256(legacy.encode("utf-8")).hexdigest() == doc.last_hash:
+            removed = len(doc.baseline_text) - len(text)
+            doc.baseline_text = text
+            doc.baseline_hash = h
+            doc.last_hash = h
+            doc.last_size = len(text)
+            doc.latest_text = text
+            doc.last_status = (
+                f"re-read with {BOILERPLATE_STRIP_VERSION} "
+                f"({removed:+d} bytes of page chrome); the document itself is unchanged"
+            )
+            session.commit()
+            _ingest_to_corpus(session, doc, extractor)
+            return {
+                "document_id": doc.id,
+                "status": "re-extracted",
+                "chrome_bytes_removed": removed,
+            }
 
     # A revision with this exact text was seen before → a revert to a known version.
     seen = session.query(LawRevision).filter_by(document_id=doc.id, content_hash=h).first()

@@ -1597,13 +1597,150 @@
       }
       return msg || (res.status + " " + res.statusText);
     }
+    // ------------------------------------------------------------------ //
+    //  Is the server actually there? (field report 2026-08-07, item 4)     //
+    // ------------------------------------------------------------------ //
+    // loadHealth() runs ONCE, at boot, so the green "healthy" pill was a
+    // boot-time paint that could never go red: the app could be dead and the
+    // chrome would still say healthy. A dedicated health poll is the wrong
+    // repair -- this app already carries a measured polling-storm lesson
+    // (~10k status polls in one 2h session) -- and it is unnecessary, because
+    // every request the UI makes is already evidence.
+    //
+    // THE DISTINCTION THAT MAKES THIS HONEST: a rejected fetch means the
+    // server did not answer. An HTTP error status means it answered, and said
+    // no -- which is a working server, so it must NOT paint the app as down.
+    // api() is the one chokepoint every call goes through, so recording the
+    // outcome there costs nothing and cannot miss a caller.
+    const _DOWN_STRIKES = 3;      // consecutive unanswered calls before the crash screen
+    let _downStreak = 0;
+    let _lastReachableAt = Date.now();
+    let _serverDown = false;
+    function _noteReachable(ok) {
+      if (ok) {
+        _downStreak = 0;
+        _lastReachableAt = Date.now();
+        if (_serverDown) { _serverDown = false; _paintCrashScreen(); }
+        _paintHealth(true);
+        return;
+      }
+      _downStreak++;
+      _paintHealth(false);
+      // One blip is a blip. Only a run of unanswered calls is an outage -- and
+      // the screen below states what was observed, never a diagnosis of why.
+      if (_downStreak >= _DOWN_STRIKES && !_serverDown) {
+        _serverDown = true;
+        _paintCrashScreen();
+      }
+    }
+    function _paintHealth(ok) {
+      const el = $("health"); if (!el) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      el.innerHTML = ok
+        ? '<span class="dot ok"></span> ' + esc(t("healthy"))
+        : '<span class="dot err"></span> ' + esc(t("not responding"));
+    }
+
+    // The honest crash screen (maintainer rulings 17-19, 2026-08-07).
+    //
+    // RULING 19 IS "NO AUTO-RESTART -- honesty first", and it shapes everything
+    // here. This screen does not reload, does not retry in the background, and
+    // does not reconnect and carry on as if nothing happened. It says what was
+    // OBSERVED -- calls stopped being answered, and when the last one was -- and
+    // leaves every action to the reader.
+    //
+    // It also refuses to diagnose. From the browser, "crashed", "killed",
+    // "shutting down" and "the machine went to sleep" are indistinguishable:
+    // all four are just silence. Naming one would be a fabricated cause on the
+    // screen a reader trusts most, so the wording stays at what is known.
+    //
+    // THE RUN-JOURNAL LINK IS CONDITIONAL, and that is the point rather than a
+    // limitation: the journal lives behind /api/diagnostics/run-journal, so if
+    // the server is not answering, that download cannot work either. Offering
+    // the button anyway would be a control that fabricates a capability. It
+    // appears only once the server answers again, and until then the screen
+    // says plainly why it is absent.
+    // Each of these is ONE literal, deliberately: t() resolves a concatenation fine at
+    // runtime, but the i18n audit's scan sees only the first fragment -- so a fully
+    // keyed sentence would still be counted as untranslatable, and the gate would be
+    // measuring something other than what ships. Hoisted rather than inlined only
+    // because they are too long for the call site.
+    const _CRASH_WHAT = "Requests to the local server are going unanswered. This page is still here, but it is showing you the last data it received, which may now be out of date.";
+    const _CRASH_UNKNOWN = "What happened is not known from here: a stopped server, a crash and a sleeping machine look identical to this page. Nothing has been restarted for you.";
+    const _CRASH_CORPUS = "Your corpus is on disk and is not affected by this. Relaunch the app the way you normally start it.";
+
+    function _paintCrashScreen() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      let o = document.getElementById("oo-crash-screen");
+      if (!_serverDown) { if (o) o.remove(); return; }
+      if (!o) {
+        o = document.createElement("div");
+        o.id = "oo-crash-screen";
+        o.setAttribute("role", "alertdialog");
+        o.setAttribute("aria-modal", "true");
+        document.body.appendChild(o);
+      }
+      const secs = Math.max(0, Math.round((Date.now() - _lastReachableAt) / 1000));
+      o.innerHTML =
+        '<div class="crash-box">'
+        + '<h2>' + esc(t("The app stopped answering")) + '</h2>'
+        + '<p>' + esc(t(_CRASH_WHAT)) + '</p>'
+        + '<p class="card-caveat">' + esc(t(_CRASH_UNKNOWN)) + '</p>'
+        + '<p class="muted" id="crash-since"></p>'
+        + '<div class="crash-actions">'
+        + '<button id="crash-retry">' + esc(t("Check again")) + '</button>'
+        + '<span id="crash-journal"></span>'
+        + '</div>'
+        + '<p class="hint">' + esc(t(_CRASH_CORPUS)) + '</p>'
+        + '</div>';
+      // tf() so the number is DATA interpolated into a keyable frame, never a
+      // sentence built by concatenation (the composite-string i18n rule).
+      const since = $("crash-since");
+      if (since) {
+        since.textContent = (window.OOI18N && OOI18N.tf)
+          ? OOI18N.tf("Last answered {seconds}s ago.", {seconds: secs})
+          : "Last answered " + secs + "s ago.";
+      }
+      const btn = $("crash-retry");
+      if (btn) {
+        btn.addEventListener("click", async () => {
+          btn.disabled = true;
+          btn.textContent = t("Checking…");
+          try {
+            await api("/api/health");   // success clears _serverDown via _noteReachable
+          } catch (e) {
+            btn.disabled = false;
+            btn.textContent = t("Check again");
+            const s = $("crash-since");
+            if (s) s.textContent = t("Still not answering.");
+          }
+        });
+      }
+      // Only reachable-again offers the journal, because only then can it load.
+      const jslot = $("crash-journal");
+      if (jslot) {
+        jslot.innerHTML = '<span class="hint">'
+          + esc(t("The run journal cannot be downloaded while the server is not answering."))
+          + '</span>';
+      }
+    }
+
     async function api(path, opts={}) {
       _bumpInflight(1);
       try {
         for (let attempt = 0; ; attempt++) {
-          const res = await fetch(path, {
-            headers: {"Content-Type": "application/json"}, ...opts,
-          });
+          let res;
+          try {
+            res = await fetch(path, {
+              headers: {"Content-Type": "application/json"}, ...opts,
+            });
+          } catch (netErr) {
+            // The fetch itself failed: no response at all. This is the only
+            // shape that means "the server is not there".
+            _noteReachable(false);
+            throw netErr;
+          }
+          _noteReachable(true);  // it answered -- an error STATUS is still an answer
           if (res.status === 429 && attempt < _API_MAX_RETRIES) {
             const ra = parseFloat(res.headers.get("Retry-After"));
             const waitMs = Math.min(
@@ -4687,13 +4824,36 @@
       if (a >= 1e3) return (v / 1e3).toFixed(a >= 1e4 ? 0 : 1) + "k";
       return fmtNum(v, 1);
     }
+    // Every unit in the catalog gets a branch, and an UNKNOWN unit is appended
+    // rather than dropped. The old fallthrough was `fmtNum(v, 2)`, which silently
+    // discarded the unit for six of the catalog's eleven: GDP-PPP rendered as
+    // "99 594 884 137 256.80" and mobile subscriptions as a bare "141.60", which
+    // reads as a broken percentage rather than as subscriptions per 100 people
+    // (field feedback 2026-08-07, item 8). A new unit added to the catalog now
+    // degrades to "value unit" instead of to a naked number, and
+    // test_governments_units.py fails if it has no explicit branch here.
     function _govFmt(v, unit) {
+      // `t` is NOT a global in this file; bind it or every call throws at runtime
+      // (test_no_app_function_calls_i18n_t_without_binding_it exists because that
+      // has shipped before). Unkeyed units fall back to their English form.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (v == null || !isFinite(v)) return "—";
       if (unit === "%") return fmtNum(v, 1) + "%";
       if (unit === "years" || unit === "index") return fmtNum(v, 1);
       if (unit === "USD") return "$" + _govCompact(v);
+      // International dollars are PPP-converted and are NOT US dollars; giving them
+      // a "$" would silently equate two different units.
+      if (unit === "intl$") return "Int$" + _govCompact(v);
       if (unit === "people") return _govCompact(v);
-      return fmtNum(v, 2);
+      // These use fmtNum's OWN magnitude-scaled precision rather than a fixed number
+      // of decimals, per the app-wide units principle (sensible significant digits
+      // scaled to magnitude). A fixed 1 decimal would render 141.6 correctly and turn
+      // 3.78 physicians per 1,000 into 3.8, losing a real digit on the small end.
+      if (unit === "per 100" || unit === "per 1,000" || unit === "per 100,000")
+        return fmtNum(v) + " " + t(unit);
+      if (unit === "births/woman") return fmtNum(v) + " " + t("births/woman");
+      if (unit === "t/capita") return fmtNum(v) + " " + t("t/capita");
+      return unit ? fmtNum(v, 2) + " " + t(unit) : fmtNum(v, 2);
     }
 
     async function loadGovIndicators() {
@@ -4764,11 +4924,20 @@
         const latest = ind.latest;
         const val = latest ? _govFmt(latest.value, ind.unit) : "—";
         const yr = latest ? ` <span class="muted">(${esc(latest.year)})</span>` : "";
-        const spark = (ind.series && ind.series.length > 1)
-          ? dashChartSvg(ind.series.filter(p => p.value != null).map(p => ({observed_on: p.year + "-01-01", price: p.value})), "")
+        // Gate the chart on the points that will actually be PLOTTED, not on the raw
+        // series: a series of several entries with one non-null value used to pass
+        // this check and then hand dashChartSvg a single point, which is how a
+        // one-point card ended up drawing an axis at all.
+        const pts = (ind.series || []).filter(p => p.value != null);
+        const spark = pts.length > 1
+          ? dashChartSvg(pts.map(p => ({observed_on: p.year + "-01-01", price: p.value})),
+                         ind.unit || "", {nUnit: t("years")})
           : "";
+        // A definition where the number reads as an error and is not one. Rides the
+        // #oo-tip hover convention (invariant #17), which marks the element for free.
+        const note = ind.note ? ` title="${esc(ind.note)}"` : "";
         return `<div class="gov-ind">
-          <div class="gov-ind-label">${esc(ind.label)}</div>
+          <div class="gov-ind-label"${note}>${esc(ind.label)}</div>
           <div class="gov-ind-val">${esc(val)}${yr}</div>
           <div class="gov-ind-spark">${spark}</div></div>`;
       };
@@ -5237,15 +5406,14 @@
       return n.toFixed(i ? 1 : 0) + " " + u[i];
     }
 
+    // Boot: fetch the version once. The PILL is no longer painted from here --
+    // api() paints it from every request's outcome (see _noteReachable), because
+    // this function runs exactly once and a one-shot paint can never go red.
     async function loadHealth() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const h = await api("/api/health");
         $("version").textContent = "v" + h.version;
-        $("health").innerHTML = '<span class="dot ok"></span> ' + esc(t("healthy"));
-      } catch (e) {
-        $("health").innerHTML = '<span class="dot err"></span> ' + esc(t("offline"));
-      }
+      } catch (e) { /* _noteReachable has already painted the pill honestly */ }
     }
 
     // -- Settings tab ------------------------------------------------------- //
@@ -10949,9 +11117,35 @@
     // (maintainer-reported). Returns a formatter; callers then drop duplicate
     // label TEXT, so a window that genuinely sits inside one hour honestly
     // shows one label instead of the same one repeated.
+    // A single point (or several stamped at one instant) has a span of EXACTLY zero,
+    // which carries no granularity at all -- so the granularity comes from the
+    // timestamp's own precision instead of from a span that cannot speak. Without
+    // this, a one-point annual series fell into the <=2-days arm and "2022-01-01"
+    // was sliced to "01-01": a year printed as a month and a day (field feedback
+    // 2026-08-07, item 8, the Physicians card). An hourly pair one hour apart has a
+    // span of 0.04 days, not 0, so it keeps the hourly label -- this arm is only
+    // reached when there is genuinely no interval to read.
+    function _pointLabelFmt(s) {
+      const str = String(s);
+      const hasTime = /T\d\d:/.test(str) && !/T00:00/.test(str);
+      if (hasTime) return str.slice(5, 13).replace("T", " ");   // MM-DD HH
+      if (/^\d{4}-01-01/.test(str)) return str.slice(0, 4);     // YYYY -- an annual figure
+      return str.slice(0, 10);                                  // YYYY-MM-DD
+    }
+    // An AXIS label has ~40px of room, so a magnitude that does not fit must be
+    // compacted rather than printed in full and clipped: a GDP gridline read
+    // "51167643745037.1" (field feedback 2026-08-07, item 8). Only values at or
+    // above a million change -- a count axis, a price axis and a percentage axis
+    // are byte-identical to before, because those are the axes where the exact
+    // grouped figure is both readable and the thing the reader wants. The hover
+    // and the value line still carry the precise number; this is the tick only.
+    function _axisNum(v) {
+      return (isFinite(v) && Math.abs(v) >= 1e6) ? _govCompact(v) : fmtNum(v);
+    }
     function _timeLabelFmt(firstIso, lastIso) {
       const a = Date.parse(String(firstIso)), b = Date.parse(String(lastIso));
       const days = (isFinite(a) && isFinite(b)) ? Math.abs(b - a) / 864e5 : NaN;
+      if (isFinite(days) && days === 0) return _pointLabelFmt;
       if (isFinite(days) && days <= 2)
         return (s) => String(s).slice(5, 13).replace("T", " ");   // MM-DD HH
       if (isFinite(days) && days <= 92)
@@ -11100,7 +11294,7 @@
         `<line x1="${padL}" y1="${Y(v).toFixed(1)}" x2="${w-padR}" y2="${Y(v).toFixed(1)}"
            stroke="var(--border)" stroke-dasharray="2 4" stroke-width="0.6"></line>
          <text x="${padL-4}" y="${(Y(v)+3).toFixed(1)}" text-anchor="end" font-size="8.5"
-           fill="var(--muted)">${fmtNum(v)}</text>`).join("");
+           fill="var(--muted)">${_axisNum(v)}</text>`).join("");
       // X ticks: in SHARED mode the ticks are the WINDOW endpoints (start/mid/end of
       // the plot at fixed positions) so every card reads the SAME coherent time
       // legend; otherwise first / middle / last point dates (YYYY-MM, de-duplicated).
