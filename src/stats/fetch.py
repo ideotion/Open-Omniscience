@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from datetime import datetime, timezone
 from typing import Any, Callable
 from urllib.parse import quote, urlencode
@@ -47,6 +48,8 @@ from src.stats.sdmx import (
 # Dated provenance: the documented public JSON / SDMX-JSON endpoints as of
 # STATS_API_AS_OF. Verify-on-use — do NOT fabricate exotic endpoints; if a host
 # moves its API, re-confirm against its published docs and bump the date.
+logger = logging.getLogger(__name__)
+
 STATS_API_AS_OF = "2026-06"
 WORLDBANK_API_BASE = "https://api.worldbank.org/v2"
 EUROSTAT_API_BASE = (
@@ -73,10 +76,15 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def worldbank_url(indicator: str, country: str = "all", *, per_page: int = 1000) -> str:
+def worldbank_url(
+    indicator: str, country: str = "all", *, per_page: int = 1000, page: int = 1
+) -> str:
     """Build a World Bank API v2 JSON URL for ``indicator`` over ``country``.
 
-    Shape: ``{base}/country/{country}/indicator/{indicator}?format=json&per_page=N``.
+    Shape: ``{base}/country/{country}/indicator/{indicator}?format=json&per_page=N``,
+    plus ``&page=N`` for any page past the first (page 1 is the server's default, so it
+    is omitted — that keeps a single-page fetch's URL byte-identical to the pre-pagination
+    one, which matters because the URL is also the Tor circuit-isolation token).
     Path segments are URL-encoded defensively. An empty indicator is a programming
     error, not a fetchable request → ``ValueError``.
     """
@@ -84,10 +92,13 @@ def worldbank_url(indicator: str, country: str = "all", *, per_page: int = 1000)
         raise ValueError("worldbank_url: indicator must be a non-empty string")
     ind = quote(indicator.strip(), safe="")
     ctry = quote((country or "all").strip(), safe="")
-    return (
+    url = (
         f"{WORLDBANK_API_BASE}/country/{ctry}/indicator/{ind}"
         f"?format=json&per_page={int(per_page)}"
     )
+    if int(page) > 1:
+        url += f"&page={int(page)}"
+    return url
 
 
 def eurostat_url(dataset: str, params: dict[str, str] | None = None) -> str:
@@ -156,6 +167,33 @@ def _default_getter(url: str) -> Any:
     return session.get(url, timeout=DEFAULT_TIMEOUT_S)
 
 
+def _worldbank_page_count(payload: Any) -> int:
+    """Total pages reported by a World Bank ``[page_meta, [observations]]`` payload.
+
+    Returns 1 for anything unreadable — a bare observation list, a missing or non-numeric
+    ``pages``, a meta that is not a dict. Defensive by design: the caller uses this to
+    decide how many MORE requests to make, so "I could not tell" must mean "stop", never
+    "keep going".
+    """
+    if not (isinstance(payload, list) and payload and isinstance(payload[0], dict)):
+        return 1
+    raw = payload[0].get("pages")
+    try:
+        # The API sends integers, but a string "18" is cheap to accept and a float,
+        # None or "many" must not raise — int(bool) is also excluded, being nonsense here.
+        pages = int(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 1
+    return pages if pages >= 1 else 1
+
+
+# Safety valve, not an expected path. One indicator over every economy and every year is
+# ~17k observations = ~18 pages at the default per_page, so tripping this means the meta
+# is wrong or hostile. Bounding REQUESTS (not rows) keeps the guarantee independent of
+# per_page. Hitting it logs loudly rather than returning a short answer silently.
+_WORLDBANK_MAX_PAGES = 200
+
+
 def fetch_worldbank(
     indicator: str,
     country: str = "all",
@@ -166,10 +204,20 @@ def fetch_worldbank(
 ) -> list[StatFigure]:
     """Fetch a World Bank indicator live and parse it into ``StatFigure`` rows.
 
-    ``get`` is injectable for tests (any ``url -> response``); the default routes
-    through the guarded session. ``extracted_at`` stamps the vintage (defaults to
-    now). Delegates parsing to :func:`src.stats.sdmx.parse_worldbank` — no parsing
-    here.
+    PAGINATES (field feedback 2026-08-07, item 8). The World Bank returns a
+    ``[page_meta, [observations]]`` envelope and caps a response at ``per_page`` rows;
+    the earlier version made exactly ONE request and discarded ``page_meta`` entirely, so
+    for ``country=all`` — ~266 economies × ~65 years ≈ 17k rows — roughly 94% of every
+    indicator was silently missing. The stored data looked like a short, recent series
+    rather than a truncated one, which is why it read as "no data" instead of as an error.
+
+    Requests page 1, reads the reported page count, then walks pages 2..N concatenating
+    observations in order. ``get`` is injectable for tests (any ``url -> response``); the
+    default routes through the guarded session, which applies the kill switch, the
+    protected-mode proxy and per-URL circuit isolation to EVERY page. ``extracted_at``
+    stamps one vintage across all pages, so a series fetched in several requests is a
+    single vintage rather than a smear. Delegates parsing to
+    :func:`src.stats.sdmx.parse_worldbank` — the parser stays pure and page-unaware.
     """
     # Defense in depth: refuse UP FRONT, before any socket, so the refusal is testable
     # without a real network (the guarded session also refuses, but the up-front guard
@@ -178,10 +226,33 @@ def fetch_worldbank(
         raise RuntimeError("network refused: airplane mode is engaged")
     extracted_at = extracted_at or _now_iso()
     getter = get or _default_getter
+
     resp = getter(worldbank_url(indicator, country, per_page=per_page))
     resp.raise_for_status()
     payload = resp.json()
-    return parse_worldbank(payload, agency="worldbank", extracted_at=extracted_at)
+    figures = parse_worldbank(payload, agency="worldbank", extracted_at=extracted_at)
+
+    total_pages = min(_worldbank_page_count(payload), _WORLDBANK_MAX_PAGES)
+    for page in range(2, total_pages + 1):
+        resp = getter(worldbank_url(indicator, country, per_page=per_page, page=page))
+        resp.raise_for_status()
+        rows = parse_worldbank(resp.json(), agency="worldbank", extracted_at=extracted_at)
+        if not rows:
+            # `pages` over-reported, or the tail is empty. Stop rather than spend the
+            # remaining requests on nothing — over Tor those are expensive.
+            break
+        figures.extend(rows)
+
+    if _worldbank_page_count(payload) > _WORLDBANK_MAX_PAGES:
+        logger.warning(
+            "worldbank %s/%s reported %s pages; stopped at the %s-page ceiling — the "
+            "series is TRUNCATED, not complete",
+            country,
+            indicator,
+            _worldbank_page_count(payload),
+            _WORLDBANK_MAX_PAGES,
+        )
+    return figures
 
 
 def fetch_eurostat(

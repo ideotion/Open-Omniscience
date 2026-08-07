@@ -26,6 +26,9 @@ from __future__ import annotations
 import unicodedata
 from functools import lru_cache
 
+# One-directional: aggregates.py imports nothing from this module, so there is no cycle.
+from src.catalog.aggregates import is_statistical_aggregate
+
 # ISO 3166-1 alpha-2 (officially assigned codes), lowercased. Kept as a
 # whitespace-separated string (split at import) so it stays compact and neutral.
 _CODES = """
@@ -641,21 +644,67 @@ ISO2_TO_ISO3: dict[str, str] = {v: k for k, v in ISO3_TO_ISO2.items()}
 def to_iso2(code: str | None) -> str | None:
     """Normalise an ISO country code to lowercase alpha-2: an alpha-2 passes through,
     an alpha-3 (the WB/SDMX storage form) converts. Returns None for an unknown code or
-    a non-country aggregate (WLD/EUU/...), so callers drop it honestly."""
+    a non-country aggregate (WLD/EUU/XD/...), so callers drop it honestly.
+
+    FAILS CLOSED (field feedback 2026-08-07, item 8). The earlier version returned ANY
+    2-letter string unchanged, so every World Bank aggregate code — ``XD`` High income,
+    ``XC`` Euro area, ``Z4`` East Asia & Pacific, ``1W`` World — was admitted as a
+    country and reached the Governments dropdown and choropleth. The docstring already
+    promised ``None`` for aggregates; that promise was kept only for the 3-letter form.
+
+    The guard is STRUCTURAL rather than an allowlist of aggregates: a 2-letter code must
+    be a recognised ISO-3166 country (or one of the four SPECIAL_CODES) to pass. Measured
+    against the shipped alpha-2 set, every territory the World Bank reports separately
+    (``cw`` ``sx`` ``mf`` ``bq`` ``ss``) is an ISO country and every aggregate code is
+    not — so an aggregate invented tomorrow is excluded with no edit anywhere. The
+    aggregate table is consulted FIRST only to settle ``EU``, which is simultaneously a
+    project special code and a World Bank aggregate; in a statistics ``ref_area`` it is
+    the aggregate.
+    """
     c = (code or "").strip().lower()
+    if is_statistical_aggregate(c):
+        return None
     if len(c) == 2:
-        return c
+        return c if (c in ISO_3166_1_ALPHA2 or c in SPECIAL_CODES) else None
     return ISO3_TO_ISO2.get(c)
 
 
 def to_iso3(code: str | None) -> str | None:
     """Normalise to UPPERCASE alpha-3 (the stored ref_area form): alpha-3 passes
-    through, alpha-2 converts. Returns None for an unknown code."""
+    through, alpha-2 converts. Returns None for an unknown code or a known aggregate.
+
+    Mirrors :func:`to_iso2`'s fail-closed guard: a 3-letter code must be a recognised
+    country to pass, so ``HIC``/``WLD``/``EUU`` no longer look like nations. The
+    alpha-3 hole was narrower than the alpha-2 one (an unknown alpha-3 already failed the
+    ``ISO2_TO_ISO3`` lookup on the way back), but ``to_iso3("HIC")`` still echoed
+    ``"HIC"`` straight through, which is what let an aggregate be queried as a country.
+    """
     c = (code or "").strip().lower()
+    if is_statistical_aggregate(c):
+        return None
     if len(c) == 3:
-        return c.upper()
+        return c.upper() if c in ISO3_TO_ISO2 else None
     iso3 = ISO2_TO_ISO3.get(c)
     return iso3.upper() if iso3 else None
+
+
+def classify_ref_area(code: str | None) -> str:
+    """Three-state classification of a statistics ``ref_area``: the honest answer.
+
+    ``"country"`` | ``"aggregate"`` | ``"unknown"``. The third state is the point.
+    Collapsing "we do not recognise this code" into either of the other two is how a junk
+    value becomes a nation on a map (or a real aggregate silently disappears), so callers
+    that show aggregates get to render an unrecognised code AS the raw code, labelled,
+    rather than dropping it or inventing a name for it.
+    """
+    c = (code or "").strip().lower()
+    if not c:
+        return "unknown"
+    if is_statistical_aggregate(c):
+        return "aggregate"
+    if to_iso2(c) is not None:
+        return "country"
+    return "unknown"
 
 
 def _slug(value: str) -> str:

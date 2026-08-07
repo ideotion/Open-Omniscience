@@ -89,6 +89,34 @@ artifacts:
     freshness: {max_age_months: 6}
     last_verified: "2026-08-02"
 
+  - id: worldbank-aggregate-codes
+    title: World Bank statistical aggregate codes
+    kind: catalog
+    description: >
+      The ~30 non-country rows a World Bank `country/all` response contains — "High
+      income", "Sub-Saharan Africa", "World" — mapped code -> display name so the
+      Governments aggregate view can name them. DISPLAY METADATA ONLY: the guard that
+      keeps an aggregate out of country surfaces is structural (countries.to_iso2 admits
+      a 2-letter code only when it is a recognised ISO-3166 country), so a stale or
+      incomplete table degrades to showing a raw code, never to a fabricated nation.
+      That asymmetry is why an entry we are unsure of is OMITTED rather than guessed.
+    upstream: https://api.worldbank.org/v2/country?format=json (region.value == "Aggregates")
+    check_upstream: >
+      Re-read the country list and diff the aggregate rows. The vocabulary changes rarely
+      (an income-group boundary, a new regional grouping), but api.worldbank.org 403s from
+      the build sandbox, so this table can NEVER be re-verified by the session that edits
+      it — which is exactly why it is dated and registered.
+    license: CC BY 4.0 (World Bank open data; the table is our metadata)
+    pin: {file: src/catalog/aggregates.py, const: WB_AGGREGATES_AS_OF}
+    refresh: >
+      Fetch the country list on a networked box, take every row whose region.value is
+      "Aggregates", and reconcile iso3/iso2/name against the table. Omit rather than guess
+      an alpha-2 you cannot read off the response — several are deliberately absent for
+      exactly that reason (the demographic-dividend and least-developed groupings, whose
+      alpha-2 codes could not be told apart from the IDA/IBRD lending block's offline).
+    freshness: {max_age_months: 24}
+    last_verified: "2026-08-07"
+
   - id: wiki-dump-sizes
     title: Wikipedia dump size estimates
     kind: dated-data
