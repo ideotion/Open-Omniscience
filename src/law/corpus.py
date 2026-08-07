@@ -40,7 +40,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
@@ -119,7 +118,13 @@ def upsert_law_corpus_article(
             content=text,
             language=doc.language,  # the catalog's OWN asserted language — never a guess
             hash=content_hash,
-            published_at=doc.last_checked_at or datetime.now(UTC),
+            # published_at is DELIBERATELY unset. It used to be doc.last_checked_at,
+            # which is when WE last polled the page -- so the reader showed
+            # "Published 2026-07-31" for the Data Protection Act 2018 (maintainer field
+            # report 2026-08-07). A tracking date is not a publication date, and
+            # LawDocument holds no enactment date to put here instead. An honest gap,
+            # never a plausible-looking wrong answer; downstream already falls back to
+            # created_at where it needs a date at all.
         )
         session.add(art)
         created = True
@@ -127,8 +132,14 @@ def upsert_law_corpus_article(
         # S4b: heal an existing, unchanged-content article whose language was never
         # set (or predates the catalog stating one) — a legitimate correction, never
         # touched when the catalog states no language for this document.
+        healed = False
         if doc.language and art.language != doc.language:
             art.language = doc.language
+            healed = True
+        if art.published_at is not None:
+            art.published_at = None  # clear a poll date previously stored as a pub date
+            healed = True
+        if healed:
             session.commit()
         return {"document_id": doc.id, "status": "unchanged", "article_id": art.id}
     else:
@@ -137,8 +148,7 @@ def upsert_law_corpus_article(
         art.title = doc.title
         if doc.language and art.language != doc.language:
             art.language = doc.language
-        if doc.last_checked_at:
-            art.published_at = doc.last_checked_at
+        art.published_at = None  # see the create branch: a poll date is not a pub date
     try:
         session.commit()
     except Exception as exc:  # noqa: BLE001 - is_integrity_error is the precise discriminator
