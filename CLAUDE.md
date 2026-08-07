@@ -2879,6 +2879,135 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     rolled away.
 
 ## Open queue (when maintainer says proceed)
+- **FIELD FEEDBACK 2026-08-07 — governments · law extraction · Feed tab · crash visibility ·
+  card provenance · Articles tab · Settings (maintainer; INTAKE + INVESTIGATION this session,
+  code-verified against `main`@9c651ee, 47 numbered questions ANSWERED the same day; brief of
+  record = [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-08-07_FIELD_FEEDBACK.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-08-07_FIELD_FEEDBACK.md);
+  NOTHING BUILT):** eight impressions, two of them with attachments that changed the plan.
+  **THE HEADLINE CORRECTION — the Governments figures are NOT cross-assigned.** `XD` is the
+  World Bank's 2-letter code for the **"High income" aggregate** (iso3 `HIC`), and every value
+  in the maintainer's PDF is mutually consistent with it (GDP $77T · per capita $54k ·
+  population 1.4B · life expectancy 80.4 · fertility 1.42 · literacy 97.7% · electricity 100% ·
+  internet 94.2% · mobile 141.6/100). So the work is FILTERING, PAGINATION and LABELLING — do
+  NOT open a data-corruption investigation. Two figures that read as errors are CORRECT and
+  need a label, not a fix: `IT.CEL.SETS.P2` 141.6 (subscriptions, not people — multiple SIMs)
+  and `SE.SEC.ENRR` 103.2% (gross enrollment counts repeaters and over-age pupils).
+  **SIX GOVERNMENTS DEFECTS, each anchored:** (G1) `fetch_worldbank` **never paginates** —
+  `src/stats/fetch.py:181` does ONE GET at `per_page=1000` and `_worldbank_observations`
+  returns `payload[1]` while **discarding `payload[0]`**, the page meta carrying `pages`/`total`;
+  `country=all` is ~266 economies × ~65 years ≈ 17k rows, so ~94% of every indicator is silently
+  missing (corroborated by the PDF's 2016–2025 span, n=9/8/5/1). (G2) `to_iso2()` returns ANY
+  2-letter string unchanged, so WB 2-letter AGGREGATE codes are admitted as countries (`XD`,
+  `XC`, `XT`/`XM`/`XN`/`XO`/`XP`, `EU`, `OE`, `1W`, `Z4`/`Z7`/`ZG`/`ZJ`/`ZQ`, `8S`, `B8`, `F1`,
+  `S1`–`S4`…) — **its docstring promises `None` for aggregates, which is true only for the
+  3-letter form: a fabricated guarantee in a docstring**; `to_iso3` has the mirror hole.
+  (G3) `_govFmt` (`app.js:4690`) covers 5 of the catalog's 11 units, so `intl$` renders GDP-PPP
+  as `99 594 884 137 256.80` and `per 100` renders bare — the maintainer's "ten digit figure"
+  and "140%" complaints, both exactly reproduced in the PDF. (G4) chart GRIDLINE labels are
+  unformatted too (`51167643745037.1`). (G5) a single-point series prints its x-axis as `01-01`
+  instead of the year. (G6) `.gov-ind-spark svg{width:100%;height:32px}` forces a fixed 300×120
+  viewBox into 9:1. NOT SETTLED (egress-blocked, HTTP 000): *why exactly one* economy survives —
+  it does not change the fix; the subscription replay path was checked and is NOT a second
+  culprit (`refresh_due` calls the same un-paginated fetch).
+  **THE LAW ATTACHMENT — a boilerplate STRIP stage is missing, architecturally.** The stored
+  body of *Data Protection Act 2018 (consolidated)* is the entire legislation.gov.uk page chrome
+  (`Skip to main content · Cymraeg · Search Legislation · Title: · Year: · All UK Legislation
+  (excluding originating from the EU) · UK Private and Personal Acts · …` — the site's
+  search-form dropdown, ingested as prose). Every bogus extraction traces to it: `Personal Acts`
+  and `Data Protection`/`Great Britain`/`United Kingdom` as PEOPLE, `PART ×24` as an
+  ORGANIZATION, `Uk`/`United Kingdom`/`Britain` as three uncanonicalised places, **`Ireland (ie)`
+  inside a UK Act** (a geographic FABRICATION — "Northern Ireland" mis-resolved), and event dates
+  three days before capture (the "changes to legislation as at" banner). `Published 2026-07-31`
+  for the 2018 Act = the tracking date stored as the publication date. WHY THE GATES MISSED IT:
+  `classify_non_article` + `prose_gate_verdict` are BINARY (article / not-article) and this page
+  is ~80% genuine Act text, so it is correctly KEPT and the chrome rides along — **there is a
+  reject stage and no strip stage**, which affects every source without a clean extractor.
+  SEQUENCING RULE recorded: fix the INPUT and re-measure BEFORE touching the entity classifier —
+  four of the five bogus "people" are nav text, so tuning against that input calibrates on an
+  artefact.
+  **FOUR MORE VERIFIED FINDINGS:** `loadHealth()` is called EXACTLY ONCE, at boot
+  (`app.js:22320`), never polled — the green "healthy" pill is a boot-time paint that can never
+  go red (item 4, root-caused). Articles-tab SORTING **already exists** end-to-end
+  (`an-adv-sort`/`an-adv-dir` → `sort_by`, `main.py:1038`) but lives in the **Advanced** subtab —
+  placement, not absence (item 5); sort-by-TAG genuinely does not exist, and the existing
+  keyword-count sort counts THE SEARCHED keyword, not the article's own top keyword.
+  `famHue(bi)=hsl((bi*53)%360…)` is keyed to BUCKET INDEX (`app.js:2816`), so a card family's
+  hue SHIFTS whenever the set of non-empty buckets changes — it cannot carry identity until it
+  is hashed from a stable name (item 1). **The 2026-07-20 one-button diagnostics ruling was
+  NEVER EXECUTED** — item 6 is a repeat, which by rule (3) of THE PROTOCOL is a ledger failure,
+  not merely a task. Also verified: **no bloc/membership registry exists anywhere in the tree**;
+  OECD and IMF are directory-only entries in `agencies.py:73-76` (no fetch/parse wiring) and
+  `parse_sdmx_json` handles SDMX-JSON **2.1** while OECD is 1.0 and IMF 3.0 — verify, never assume.
+  **THE 47 RULINGS (maintainer, same day):** • (1b) aggregates are KEPT, tagged, excluded from
+  country surfaces, and given their own view — **the reframe: the World Bank aggregates leaking
+  in as "XD" ARE the regional/world averages the maintainer asked for**, so Africa (SSF/AFE/AFW),
+  the Middle East (MEA/Arab World) and South/Central America (LCN) close FOR FREE with pagination.
+  • (2) no computed BRICS for now; the **BRICS Joint Statistical Publication** exists and is an
+  acquisition task, recorded. • (3) "Western" uses an EXISTING published set (OECD/EU/High
+  income), never an invented one. • (4) two countries side by side across all indicators.
+  • (5,30,31) government data goes DEEP into search: **one Article per SERIES** (indicator ×
+  country ≈ 9,800) through `index_article`, INCLUDED in trending/Leads/Feed, own `statistics`
+  provenance class. • (6) store all years. • (7) live code verification deferred to an
+  internet-connected session. • (8,41) Feed random ordering uses a seed **persisted per session**
+  + a Settings→General "reset scrolling history" offering BOTH a reshuffle and a clear-seen reset.
+  • (9) Feed defaults to everything; provenance selection lives in Settings. • (10) per-article
+  own top-3 keywords, honest and verifiable. • (11) exclude quarantined AND not-yet-qualified.
+  • (12) "read more" expands IN PLACE. • (13,40) a NEW sidebar tab, named **Feed**. • (14) the
+  family hue is hashed from a STABLE name. • (15) a PERSISTENT header in the analysis window.
+  • (16) the WHOLE provenance travels (card · family · producer · trigger · method · caveat).
+  • (17,18,19) an honest crash screen with a run-journal download, **NO auto-restart — "honesty
+  first"**. • (20,21,22) MOVE the sort controls into the Articles tab (never duplicate), sortable
+  column headers, and REMOVE the `source ↗` column + the Summarize/Translate buttons (the reader
+  carries both — absorption-verified). • (23,38,39) PRE-COMPUTE the top keyword as additive
+  nullable `Article.top_keyword_id`/`top_keyword_count` on the `detected_language` pattern,
+  **ties store BOTH**. • (24) per-sweep AI on/off toggles are KEPT; only the redundant per-sweep
+  RUN buttons go. • (25) Diagnostics becomes ONE section in Advanced; **job-starters and
+  interactive tools are ACTIONS, not report downloads, and stay**. • (26,42) Safety moves into
+  Advanced and **Uninstall & wipe becomes its OWN separate section**; end state = **9 subtabs**.
+  • (27) no second-level subtab strip. • (32) a curated aggregate shortlist with "show all 48".
+  • (33) fill gradually via the existing ride-along — no hours-long button. • (34) build the
+  **legislation.gov.uk XML adapter** (law brief S6 adapter #1) + a generic boilerplate-STRIP
+  stage, PLUS a new **XML-ingest reliability diagnostic** across structured law sources
+  (decision taken unless objected: it re-parses STORED copies offline so it runs under airplane
+  mode; a live re-fetch sits behind the one consent). • (35) RE-EXTRACT the 23 tracked law
+  documents. • (36) add legislative furniture (`PART`/`SCHEDULE`/`CHAPTER`/`SECTION`/`ANNEX`…)
+  to the caps-acronym stoplist. • (37) the Northern-Ireland gazetteer mis-resolution gets its own
+  reproducer + regression test. • (43,44) **local compute IS offered, with SEVERAL strategies
+  shown side by side so the user compares and forms their own view** — population-weighted
+  (default), simple mean, GDP-weighted, median, and sum; **REFUSE by default on incomplete
+  coverage, with an explicit publish-anyway override carrying the warning and the missing members
+  IN THE PAYLOAD**, not only in the UI. • (45) the membership registry is **TIME-VARYING** with
+  sourced joined/left dates, and every bloc surface — INCLUDING side-by-side, which is not
+  "computed" — states its membership vintage. • (46) Tier-2 publisher order: OECD+IMF → AfDB →
+  regional bodies. • (47) **BOTH continents AND World Bank regions as two lenses, and not only
+  averages — cumulative TOTALS too.**
+  **THE LOAD-BEARING DESIGN RAIL (derived from ruling 47, recorded so it is not lost):
+  AGGREGATION IS INDICATOR-AWARE.** An **extensive** indicator (population, GDP, GDP-PPP, labour
+  force) may be SUMMED; an **intensive** one (every `%`, `per N`, `years`, `index`,
+  `births/woman`, `t/capita`) may NOT — a summed percentage is a fabricated statistic and must be
+  REFUSED, not offered greyed-out. Declare `extensive: true|false` EXPLICITLY on each catalog
+  entry rather than inferring it from the unit string (a string heuristic breaks the day someone
+  adds a unit). Corollary worth keeping: a population-weighted mean of a per-capita indicator
+  EQUALS `Σ numerator / Σ denominator` — the true aggregate, not an approximation — provided the
+  numerator is reconstructed as `value × population` and the weight series is real for the same
+  members and year (a missing weight is a coverage failure, never a silent fallback to
+  unweighted). Always display the SPREAD (min/max/n) beside a central figure: a bloc headline
+  hiding a ten-fold range is technically true and practically misleading.
+  **MEMBERSHIP IS TIME-VARYING AND THIS SILENTLY CORRUPTS EVERY BLOC SERIES IF UNHANDLED:**
+  BRICS was five members until 2024 (then Egypt, Ethiopia, Iran, UAE; Indonesia 2025), NATO
+  gained Finland (2023) and Sweden (2024), the EU lost the UK (2020). A bloc figure computed with
+  today's roster over a 1995 series is wrong in a way no reader can detect — so membership
+  resolves AS OF the figure's year, the vintage is stated on every surface, and a member whose
+  accession date cannot be sourced is recorded `joined: null` with its unresolvable history
+  stated (never guess a date to make a series continuous).
+  **A NUANCE THAT DECIDED RULING 47:** World Bank REGIONS are not CONTINENTS — "Sub-Saharan
+  Africa" excludes Egypt, Libya, Tunisia, Algeria and Morocco (they sit in MENA), so the WB lens
+  has NO continental-Africa figure at all. That is precisely why both lenses ship, and why AfDB
+  is the publisher-route to continental Africa rather than a computation.
+  **OPERATOR / INTERNET-SESSION TO-DO (egress-blocked here; none may be guessed):** verify the 37
+  WB indicator codes live · confirm the shape of WB page 1 · the BRICS Joint Statistical
+  Publication · AfDB/UNECA continental endpoints · OECD/IMF SDMX message-version verification ·
+  bloc membership sourcing with dates.
 - **MERGE STEP 3 IS STILL UNEXPLAINED — and the leading hypothesis is now REFUTED, so do
   not re-chase it (2026-08-06, from the field beat ring of `imp-20260805T032610Z-477e83`):**
   a second 24 h import died at the same place. WHAT THE BEAT PROVES: the merge entered step
