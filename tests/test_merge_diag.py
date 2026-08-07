@@ -239,6 +239,17 @@ def test_the_probe_measures_a_real_per_row_cost(probe: bool) -> None:
         # platform cannot make.
         assert mem["rss"] is None
         return
+    if mem.get("rss_method") == "peak":
+        # Only the ru_maxrss high-water mark is readable here. It never falls, so a
+        # window that does not exceed everything the process has ever done is invisible
+        # to it — which is not a failure, it is a measurement this platform cannot make
+        # inside a long test session. The probe must then STATE the gap rather than
+        # publish a zero (pinned in test_merge_diag_rss.py); asserting a number here
+        # would demand a measurement that does not exist, exactly like the Windows arm
+        # above. Where /proc/self/statm is readable the strict assertion still applies.
+        assert mem["kb_per_row"] is None and mem.get("kb_per_row_unavailable"), mem
+        return
+    assert mem["rss_method"] == "current"
     assert mem["kb_per_row"] is not None and mem["kb_per_row"] > 0, mem
 
 

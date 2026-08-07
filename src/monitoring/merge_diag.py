@@ -37,6 +37,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sys
 import time
 from collections import Counter
 from pathlib import Path
@@ -88,9 +89,34 @@ def _rss_mb() -> float | None:
         import resource  # Unix-only; absent on Windows
     except Exception:  # noqa: BLE001 - a missing platform module is a fact, not a failure
         return None
-    kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
-    # Linux reports KB, macOS bytes.
-    return (kb / 1024.0) if kb > 1024 * 1024 else (kb / 1024.0)
+    raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    # Linux reports KB, macOS BYTES. Both arms of the old ternary were `raw / 1024.0`,
+    # so the unit branch was a no-op and macOS read 1024x high -- a copy-paste slip, not
+    # a judgement call (the comment named the difference the code then ignored). The
+    # discriminator is the platform, not the magnitude: a Linux process legitimately
+    # above 1 GB reports ru_maxrss > 1024*1024 KB and would have taken the macOS arm.
+    return (raw / 1024.0 / 1024.0) if sys.platform == "darwin" else (raw / 1024.0)
+
+
+def _rss_current_mb() -> float | None:
+    """CURRENT resident set size in MB, or None where it cannot be read.
+
+    The counterpart :func:`_rss_mb` cannot provide, and the reason this exists:
+    ``ru_maxrss`` is a high-water mark that NEVER FALLS, so a delta taken across a
+    window only shows anything if that window pushes the process past its all-time
+    peak. Inside a long test session -- or any long-lived app process that has already
+    done something bigger -- a perfectly real 40 MB allocation registers as zero.
+
+    ``/proc/self/statm`` field 2 is resident pages, and it rises AND falls, so a delta
+    across a window measures that window. Linux-only; None elsewhere, and the caller
+    then says so rather than publishing a zero it did not measure.
+    """
+    try:
+        with open("/proc/self/statm", encoding="ascii") as fh:
+            resident_pages = int(fh.read().split()[1])
+    except Exception:  # noqa: BLE001 - absent /proc is a platform fact, not a failure
+        return None
+    return resident_pages * os.sysconf("SC_PAGE_SIZE") / 1024.0 / 1024.0
 
 
 # --------------------------------------------------------------------------- #
@@ -436,13 +462,19 @@ def _probe_arm(work: Path, rows: int, body: bytes, temp_store: str) -> dict[str,
     d.execute("CREATE TRIGGER ai AFTER INSERT ON articles BEGIN INSERT INTO"
               " article_fts(rowid, title, content) VALUES (new.id, new.title, new.content); END")
     d.execute(f"ATTACH DATABASE '{src}' AS inc")
-    base = _rss_mb()
+    # Prefer CURRENT RSS, which rises and falls, over the ru_maxrss high-water mark,
+    # which never falls and therefore reports 0 for any window that does not exceed
+    # everything the process has ever done. Both are recorded so the reader knows which
+    # question the number answers.
+    rss_method = "current" if _rss_current_mb() is not None else "peak"
+    _rss = _rss_current_mb if rss_method == "current" else _rss_mb
+    base = _rss()
     t0 = time.monotonic()
     d.execute("BEGIN IMMEDIATE")
     d.execute("INSERT INTO articles (title, content, hash) SELECT i.title, i.content, i.hash"
               " FROM inc.articles i WHERE NOT EXISTS"
               " (SELECT 1 FROM articles m WHERE m.hash = i.hash)")
-    peak = _rss_mb()
+    peak = _rss()
     d.execute("COMMIT")
     el = time.monotonic() - t0
     d.close()
@@ -459,12 +491,28 @@ def _probe_arm(work: Path, rows: int, body: bytes, temp_store: str) -> dict[str,
         out["rss"] = None
         out["rss_unavailable"] = "resource.getrusage is Unix-only (absent on this platform)"
         return out
+    delta = peak - base
     out.update({
+        "rss_method": rss_method,
         "rss_before_mb": round(base),
         "rss_peak_mb": round(peak),
-        "rss_delta_mb": round(peak - base),
-        "kb_per_row": round((peak - base) * 1024 / rows, 1) if rows else None,
+        "rss_delta_mb": round(delta),
+        "kb_per_row": round(delta * 1024 / rows, 1) if rows else None,
     })
+    if rss_method == "peak" and delta <= 0:
+        # The high-water mark did not move, which does NOT mean the insert allocated
+        # nothing -- it means the process had already been bigger at some earlier point,
+        # so this window is invisible to that instrument. Publishing 0.0 KB/row here
+        # would be a fabricated measurement in exactly the case where nothing was
+        # measured, and it is the same mistake `_rss_mb`'s own docstring warns about one
+        # level down. State the gap and its reason instead.
+        out["kb_per_row"] = None
+        out["kb_per_row_unavailable"] = (
+            "ru_maxrss is a high-water mark that never falls, and the process peak "
+            "already exceeded this probe's allocation, so the delta is unobservable "
+            "here (current-RSS reading via /proc/self/statm is unavailable on this "
+            "platform)"
+        )
     return out
 
 
