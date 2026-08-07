@@ -22,32 +22,10 @@ import textwrap
 import pytest
 
 from src.stats.indicators import INDICATOR_CATALOG
-from tests.js_source_helper import css_rule, function_body, read_static
+from tests.js_source_helper import css_rule, function_body, function_source, read_static
 
 NODE = shutil.which("node")
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is required to drive app.js logic")
-
-
-def _fn(js: str, name: str) -> str:
-    """The whole declaration of `name` -- signature and body -- from the real file.
-
-    `function_body` deliberately returns only the braced body (it exists to stop a
-    slice over-running into a sibling), so the signature is recovered here by
-    balancing the parameter list, and the body is taken from the shared helper so
-    the brace-matching stays in one place.
-    """
-    at = js.index(f"function {name}(")
-    i = at + len(f"function {name}")
-    depth = 0
-    while True:
-        if js[i] == "(":
-            depth += 1
-        elif js[i] == ")":
-            depth -= 1
-            if depth == 0:
-                break
-        i += 1
-    return f"function {name}{js[at + len(f'function {name}') : i + 1]} {function_body(js, name)}"
 
 
 def _run_js(snippet: str) -> dict:
@@ -57,7 +35,7 @@ def _run_js(snippet: str) -> dict:
         """
         const window = {};   // _govFmt binds t from window.OOI18N; absent -> English
         """
-    ) + "\n".join(_fn(app, n) for n in ("fmtNum", "_govCompact", "_govFmt", "_axisNum"))
+    ) + "\n".join(function_source(app, n) for n in ("fmtNum", "_govCompact", "_govFmt", "_axisNum"))
     proc = subprocess.run(
         [NODE, "-e", harness + "\n" + snippet],
         capture_output=True, text=True, timeout=60,
@@ -177,7 +155,7 @@ def test_small_axis_values_are_byte_identical_to_before():
 
 def test_a_single_point_series_labels_the_year_not_a_month_and_day():
     app = read_static("app.js")
-    harness = _fn(app, "_pointLabelFmt")
+    harness = function_source(app, "_pointLabelFmt")
     proc = subprocess.run(
         [NODE, "-e", harness + """
         console.log(JSON.stringify({

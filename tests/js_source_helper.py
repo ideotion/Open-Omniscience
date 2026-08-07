@@ -44,8 +44,8 @@ def read_static(name: str) -> str:
     return (_STATIC / name).read_text(encoding="utf-8")
 
 
-def function_body(js: str, name: str) -> str:
-    """One function's body, brace-matched from the BODY brace.
+def _function_span(js: str, name: str) -> tuple[int, int, int]:
+    """``(decl_at, body_at, body_end)`` for one function declaration.
 
     Balances the PARAMETER LIST first, then brace-matches -- so a default
     parameter (``opts = {}``) cannot be mistaken for the body, and the result is
@@ -82,11 +82,35 @@ def function_body(js: str, name: str) -> str:
         elif js[j] == "}":
             depth -= 1
             if depth == 0:
-                out = js[body_at : j + 1]
-                if len(out) < 3:
-                    raise AssertionError(f"{name!r} sliced to an empty body: {out!r}")
-                return out
+                if j + 1 - body_at < 3:
+                    raise AssertionError(
+                        f"{name!r} sliced to an empty body: {js[body_at : j + 1]!r}"
+                    )
+                return at, body_at, j + 1
     raise AssertionError(f"unbalanced braces while slicing {name!r}")
+
+
+def function_body(js: str, name: str) -> str:
+    """One function's body -- the braced block only, brace-matched from the BODY
+    brace. Use this to assert about what a function DOES."""
+    _, body_at, body_end = _function_span(js, name)
+    return js[body_at:body_end]
+
+
+def function_source(js: str, name: str) -> str:
+    """One function's WHOLE declaration -- signature and body.
+
+    ``function_body`` deliberately drops the signature, which is right for an
+    assertion about a function's behaviour and wrong for the other use of these
+    slices: lifting the real implementation out of ``app.js`` to DRIVE it under
+    node, where a body without its ``function name(args)`` header is not a
+    program. Every test that wanted that was re-deriving the parameter-list walk
+    locally -- the exact re-derivation this module exists to end, and the thing
+    ``test_source_slicing_discipline`` counts -- so the shape lives here, sharing
+    one brace-matcher with ``function_body`` rather than owning a second copy.
+    """
+    decl_at, _, body_end = _function_span(js, name)
+    return js[decl_at:body_end]
 
 
 def python_function_source(src: str, *names: str) -> str:
