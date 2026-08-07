@@ -4687,13 +4687,36 @@
       if (a >= 1e3) return (v / 1e3).toFixed(a >= 1e4 ? 0 : 1) + "k";
       return fmtNum(v, 1);
     }
+    // Every unit in the catalog gets a branch, and an UNKNOWN unit is appended
+    // rather than dropped. The old fallthrough was `fmtNum(v, 2)`, which silently
+    // discarded the unit for six of the catalog's eleven: GDP-PPP rendered as
+    // "99 594 884 137 256.80" and mobile subscriptions as a bare "141.60", which
+    // reads as a broken percentage rather than as subscriptions per 100 people
+    // (field feedback 2026-08-07, item 8). A new unit added to the catalog now
+    // degrades to "value unit" instead of to a naked number, and
+    // test_governments_units.py fails if it has no explicit branch here.
     function _govFmt(v, unit) {
+      // `t` is NOT a global in this file; bind it or every call throws at runtime
+      // (test_no_app_function_calls_i18n_t_without_binding_it exists because that
+      // has shipped before). Unkeyed units fall back to their English form.
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (v == null || !isFinite(v)) return "—";
       if (unit === "%") return fmtNum(v, 1) + "%";
       if (unit === "years" || unit === "index") return fmtNum(v, 1);
       if (unit === "USD") return "$" + _govCompact(v);
+      // International dollars are PPP-converted and are NOT US dollars; giving them
+      // a "$" would silently equate two different units.
+      if (unit === "intl$") return "Int$" + _govCompact(v);
       if (unit === "people") return _govCompact(v);
-      return fmtNum(v, 2);
+      // These use fmtNum's OWN magnitude-scaled precision rather than a fixed number
+      // of decimals, per the app-wide units principle (sensible significant digits
+      // scaled to magnitude). A fixed 1 decimal would render 141.6 correctly and turn
+      // 3.78 physicians per 1,000 into 3.8, losing a real digit on the small end.
+      if (unit === "per 100" || unit === "per 1,000" || unit === "per 100,000")
+        return fmtNum(v) + " " + t(unit);
+      if (unit === "births/woman") return fmtNum(v) + " " + t("births/woman");
+      if (unit === "t/capita") return fmtNum(v) + " " + t("t/capita");
+      return unit ? fmtNum(v, 2) + " " + t(unit) : fmtNum(v, 2);
     }
 
     async function loadGovIndicators() {
@@ -4764,11 +4787,20 @@
         const latest = ind.latest;
         const val = latest ? _govFmt(latest.value, ind.unit) : "—";
         const yr = latest ? ` <span class="muted">(${esc(latest.year)})</span>` : "";
-        const spark = (ind.series && ind.series.length > 1)
-          ? dashChartSvg(ind.series.filter(p => p.value != null).map(p => ({observed_on: p.year + "-01-01", price: p.value})), "")
+        // Gate the chart on the points that will actually be PLOTTED, not on the raw
+        // series: a series of several entries with one non-null value used to pass
+        // this check and then hand dashChartSvg a single point, which is how a
+        // one-point card ended up drawing an axis at all.
+        const pts = (ind.series || []).filter(p => p.value != null);
+        const spark = pts.length > 1
+          ? dashChartSvg(pts.map(p => ({observed_on: p.year + "-01-01", price: p.value})),
+                         ind.unit || "", {nUnit: t("years")})
           : "";
+        // A definition where the number reads as an error and is not one. Rides the
+        // #oo-tip hover convention (invariant #17), which marks the element for free.
+        const note = ind.note ? ` title="${esc(ind.note)}"` : "";
         return `<div class="gov-ind">
-          <div class="gov-ind-label">${esc(ind.label)}</div>
+          <div class="gov-ind-label"${note}>${esc(ind.label)}</div>
           <div class="gov-ind-val">${esc(val)}${yr}</div>
           <div class="gov-ind-spark">${spark}</div></div>`;
       };
@@ -10949,9 +10981,35 @@
     // (maintainer-reported). Returns a formatter; callers then drop duplicate
     // label TEXT, so a window that genuinely sits inside one hour honestly
     // shows one label instead of the same one repeated.
+    // A single point (or several stamped at one instant) has a span of EXACTLY zero,
+    // which carries no granularity at all -- so the granularity comes from the
+    // timestamp's own precision instead of from a span that cannot speak. Without
+    // this, a one-point annual series fell into the <=2-days arm and "2022-01-01"
+    // was sliced to "01-01": a year printed as a month and a day (field feedback
+    // 2026-08-07, item 8, the Physicians card). An hourly pair one hour apart has a
+    // span of 0.04 days, not 0, so it keeps the hourly label -- this arm is only
+    // reached when there is genuinely no interval to read.
+    function _pointLabelFmt(s) {
+      const str = String(s);
+      const hasTime = /T\d\d:/.test(str) && !/T00:00/.test(str);
+      if (hasTime) return str.slice(5, 13).replace("T", " ");   // MM-DD HH
+      if (/^\d{4}-01-01/.test(str)) return str.slice(0, 4);     // YYYY -- an annual figure
+      return str.slice(0, 10);                                  // YYYY-MM-DD
+    }
+    // An AXIS label has ~40px of room, so a magnitude that does not fit must be
+    // compacted rather than printed in full and clipped: a GDP gridline read
+    // "51167643745037.1" (field feedback 2026-08-07, item 8). Only values at or
+    // above a million change -- a count axis, a price axis and a percentage axis
+    // are byte-identical to before, because those are the axes where the exact
+    // grouped figure is both readable and the thing the reader wants. The hover
+    // and the value line still carry the precise number; this is the tick only.
+    function _axisNum(v) {
+      return (isFinite(v) && Math.abs(v) >= 1e6) ? _govCompact(v) : fmtNum(v);
+    }
     function _timeLabelFmt(firstIso, lastIso) {
       const a = Date.parse(String(firstIso)), b = Date.parse(String(lastIso));
       const days = (isFinite(a) && isFinite(b)) ? Math.abs(b - a) / 864e5 : NaN;
+      if (isFinite(days) && days === 0) return _pointLabelFmt;
       if (isFinite(days) && days <= 2)
         return (s) => String(s).slice(5, 13).replace("T", " ");   // MM-DD HH
       if (isFinite(days) && days <= 92)
@@ -11100,7 +11158,7 @@
         `<line x1="${padL}" y1="${Y(v).toFixed(1)}" x2="${w-padR}" y2="${Y(v).toFixed(1)}"
            stroke="var(--border)" stroke-dasharray="2 4" stroke-width="0.6"></line>
          <text x="${padL-4}" y="${(Y(v)+3).toFixed(1)}" text-anchor="end" font-size="8.5"
-           fill="var(--muted)">${fmtNum(v)}</text>`).join("");
+           fill="var(--muted)">${_axisNum(v)}</text>`).join("");
       // X ticks: in SHARED mode the ticks are the WINDOW endpoints (start/mid/end of
       // the plot at fixed positions) so every card reads the SAME coherent time
       // legend; otherwise first / middle / last point dates (YYYY-MM, de-duplicated).

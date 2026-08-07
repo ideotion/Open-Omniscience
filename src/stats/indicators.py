@@ -64,7 +64,10 @@ INDICATOR_CATALOG: list[dict] = [
     {"id": "SE.ADT.LITR.ZS", "label": "Literacy rate, adult total (% of people ages 15+)", "unit": "%", "category": "education"},
     {"id": "SE.XPD.TOTL.GD.ZS", "label": "Government expenditure on education, total (% of GDP)", "unit": "%", "category": "education"},
     {"id": "SE.PRM.ENRR", "label": "School enrollment, primary (% gross)", "unit": "%", "category": "education"},
-    {"id": "SE.SEC.ENRR", "label": "School enrollment, secondary (% gross)", "unit": "%", "category": "education"},
+    {"id": "SE.SEC.ENRR", "label": "School enrollment, secondary (% gross)", "unit": "%", "category": "education",
+     "note": "GROSS enrollment counts every enrolled pupil against the official school-age "
+             "population, so repeaters and over-age pupils are included and the figure can "
+             "legitimately exceed 100%. It is not an error and not a share of children."},
     # Energy & environment
     {"id": "EG.ELC.ACCS.ZS", "label": "Access to electricity (% of population)", "unit": "%", "category": "energy & environment"},
     {"id": "EG.FEC.RNEW.ZS", "label": "Renewable energy consumption (% of total final energy consumption)", "unit": "%", "category": "energy & environment"},
@@ -72,7 +75,10 @@ INDICATOR_CATALOG: list[dict] = [
     {"id": "AG.LND.FRST.ZS", "label": "Forest area (% of land area)", "unit": "%", "category": "energy & environment"},
     # Connectivity
     {"id": "IT.NET.USER.ZS", "label": "Individuals using the Internet (% of population)", "unit": "%", "category": "connectivity"},
-    {"id": "IT.CEL.SETS.P2", "label": "Mobile cellular subscriptions (per 100 people)", "unit": "per 100", "category": "connectivity"},
+    {"id": "IT.CEL.SETS.P2", "label": "Mobile cellular subscriptions (per 100 people)", "unit": "per 100", "category": "connectivity",
+     "note": "Counts SUBSCRIPTIONS, not people. One person with a work and a personal SIM is "
+             "two, so a value above 100 is normal in high-income economies and does not mean "
+             "more than one phone per inhabitant."},
     # Military
     {"id": "MS.MIL.XPND.GD.ZS", "label": "Military expenditure (% of GDP)", "unit": "%", "category": "military"},
     # Public finance (patchy coverage by nature — stated to the user)

@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import ast
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -26,6 +28,7 @@ from tests.js_source_helper import (
     assert_present,
     css_rule,
     function_body,
+    function_source,
     object_literal,
     python_function_source,
     read_static,
@@ -72,6 +75,53 @@ def test_the_body_does_not_over_run_into_the_next_function():
     body = function_body(js, "first")
     assert "mine" in body
     assert "theirs" not in body and "helper" not in body
+
+
+def test_the_whole_declaration_slice_keeps_the_signature_and_stops_at_the_body():
+    """A SECOND slice over the same span, and why it is here rather than in a test.
+
+    ``function_body`` drops the signature, which is right for asserting what a
+    function DOES and wrong for the other use: lifting the real implementation out
+    of ``app.js`` to DRIVE under node, where a bare body is not a program. Tests
+    that wanted that were re-deriving the parameter-list walk locally -- which is
+    precisely what the budget below counts, so the shape belongs in the shared
+    module. (2026-08-07: the ratchet caught exactly that, in a new test file, and
+    this is the repair it asked for rather than a raised budget.)
+
+    It inherits the default-parameter guard for free by sharing one span finder:
+    naive ``index("{")`` would end the signature inside ``opts = {}``.
+    """
+    js = (
+        "function ooChart(el, seriesList, opts = {}) {\n  const real = 1;\n}\n"
+        "function sibling() {\n  const theirs = 2;\n}\n"
+    )
+    src = function_source(js, "ooChart")
+    assert src.startswith("function ooChart(el, seriesList, opts = {})"), src
+    assert "const real = 1;" in src
+    assert "theirs" not in src and "sibling" not in src, "must not over-run into the next function"
+    # The body slice is the same span minus the signature -- one brace-matcher, not two.
+    assert src.endswith(function_body(js, "ooChart"))
+
+
+def test_the_whole_declaration_slice_is_runnable_and_not_vacuous():
+    """The point of the shape is that node can execute it. A slice that merely
+    LOOKS right still fails the only thing it is for."""
+    js = "function add(a, b = {x: 1}) {\n  return a + b.x;\n}\n"
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is required to prove the slice is executable")
+    proc = subprocess.run(
+        [node, "-e", function_source(js, "add") + "\nconsole.log(add(2));"],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    assert proc.stdout.strip() == "3"
+    # ...and the failure mode it replaces: the body alone is NOT a program.
+    broken = subprocess.run(
+        [node, "-e", function_body(js, "add") + "\nconsole.log(add(2));"],
+        capture_output=True, text=True, timeout=60,
+    )
+    assert broken.returncode != 0, "a bare body must not silently work -- that is the whole gap"
 
 
 def test_a_bracket_in_an_element_does_not_truncate_an_array_slice():
