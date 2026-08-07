@@ -485,6 +485,106 @@ _NOT_WINDOWED: dict[str, str] = {
 
 _WINDOW_JUSTIFICATIONS = frozenset({"unique", "rep", "constraint"})
 
+#: The FTS5 insert trigger, suspended for the duration of the article step.
+_FTS_INSERT_TRIGGER = "article_fts_ai"
+
+#: How many articles to index per bulk FTS statement. Same reasoning as the merge
+#: window: bounded work per statement so stop latency and temp storage do not
+#: scale with the corpus. Not byte-derived -- the FTS cost tracks TEXT volume,
+#: which the row count tracks closely enough here, and the statement holds one
+#: batch of tokenizer state rather than a materialised set.
+_FTS_BULK_BATCH = 20_000
+
+
+@contextmanager
+def _fts_insert_suspended(con: sqlite3.Connection):
+    """Drop the FTS5 AFTER INSERT trigger for the merge, restoring it after.
+
+    WHY, measured on the operator's own field beat (imp-20260807T033245Z): 1,198
+    of 1,223 beats in a five-hour merging phase had FTS5's internal segment-merge
+    delete in flight -- 98% of the wall clock. ``article_fts_ai`` fires per
+    inserted article and fts.py sets no automerge value, so FTS5 runs its default
+    of 4 and merges b-tree segments continuously while hundreds of thousands of
+    articles land in an index already holding hundreds of thousands more.
+
+    THE TWO OBVIOUS FIXES ARE REFUTED, and are not to be re-tried: deferring
+    ``automerge`` alone measured 0.93-0.97x (no help), and dropping the trigger to
+    run ``'rebuild'`` afterwards measured 0.75x -- WORSE, because ``'rebuild'``
+    re-indexes the whole corpus including the part already indexed. Indexing only
+    the rows this merge actually added measured **1.36x faster overall**, with the
+    article insert itself **23.7x** faster (38.11s -> 1.61s), against an identical
+    index (same document count, same match count on identical content).
+
+    ONLY the INSERT trigger is suspended. The merge's only write to ``articles``
+    is one INSERT -- no UPDATE, no DELETE -- so the ``ad``/``au`` triggers have
+    nothing to do here and are left alone, which keeps the blast radius to the one
+    thing being replaced.
+
+    The trigger is recreated from the SQL read out of ``sqlite_master``, not from
+    a copy of fts.py's DDL: a second copy would drift, and this cannot. Restoration
+    is in a ``finally``, so an exception mid-merge still puts it back -- and even
+    if the process dies outright, the working copy is disposable and the live
+    corpus never had its trigger touched. ``verify_copy`` additionally REFUSES to
+    pass a working copy whose trigger is missing, so a copy that somehow lost it
+    can never be swapped in.
+    """
+    row = con.execute(
+        "SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?",
+        (_FTS_INSERT_TRIGGER,),
+    ).fetchone()
+    if not row or not row[0]:
+        # No FTS on this corpus (or a build without the trigger): nothing to
+        # suspend, and nothing to restore. Never fabricate a trigger we did not
+        # find -- creating one here would add indexing to a corpus that had none.
+        yield False
+        return
+    ddl = row[0]
+    con.execute(f"DROP TRIGGER {_FTS_INSERT_TRIGGER}")
+    try:
+        yield True
+    finally:
+        con.execute(ddl)
+
+
+def _fts_index_merged_articles(con: sqlite3.Connection, batch_id: int) -> int:
+    """Index exactly the articles this batch inserted, in bounded batches.
+
+    ``merged_rows`` is the provenance the merge already writes for every inserted
+    row, so it is the exact set -- no watermark to get wrong, and correct even
+    though merged article ids are not contiguous.
+
+    ``automerge`` is set to 0 for the load and restored afterwards, then ONE
+    ``'optimize'`` merges the segments. That ordering is what the measurement
+    rewards: the merging happens once over the finished index instead of
+    continuously against a moving one.
+    """
+    ids = [
+        int(r[0]) for r in con.execute(
+            "SELECT row_id FROM merged_rows WHERE batch_id = ? AND table_name = 'articles'"
+            " ORDER BY row_id",
+            (batch_id,),
+        )
+    ]
+    if not ids:
+        return 0
+    con.execute("INSERT INTO article_fts(article_fts, rank) VALUES('automerge', 0)")
+    try:
+        for i in range(0, len(ids), _FTS_BULK_BATCH):
+            chunk = ids[i:i + _FTS_BULK_BATCH]
+            con.execute(
+                "INSERT INTO article_fts(rowid, title, content)"  # noqa: S608  # nosec B608 - the only interpolation is a placeholder count derived from len(chunk); every id is a bound parameter
+                " SELECT id, title, content FROM articles WHERE id IN"
+                f" ({','.join('?' * len(chunk))})",
+                chunk,
+            )
+            _window_tick("article_fts", min(i + len(chunk), len(ids)), len(ids), len(ids))
+        con.execute("INSERT INTO article_fts(article_fts) VALUES('optimize')")
+    finally:
+        # Restore the default whatever happened, so a corpus is never left with
+        # automerge disabled -- that would degrade every later ingest silently.
+        con.execute("INSERT INTO article_fts(article_fts, rank) VALUES('automerge', 4)")
+    return len(ids)
+
 
 def _materialise_rep(con: sqlite3.Connection, name: str, group_sql: str) -> int:
     """Materialise "the winning incoming id per identity group" into a temp table.
@@ -1009,26 +1109,40 @@ def merge_corpus(
 
         steps = _merge_steps()
         total = len(steps)
-        for i, (name, fn) in enumerate(steps, 1):
-            if should_stop is not None and should_stop():
-                # The `except` below rolls this BEGIN IMMEDIATE back; the working
-                # copy is disposable and the live corpus was never opened.
-                raise RestoreAborted(
-                    f"stopped during the merge (before the '{name}' step) — "
-                    "nothing was written to your corpus"
-                )
-            # INSIDE the step, not just between steps. A single step can run for
-            # HOURS (field 2026-08-03: 15.9 h in 'articles' alone), and for that
-            # whole time the between-steps checks above are unreachable -- so a
-            # Stop was inert during the longest phase of an import, and the run
-            # journal's counter could not move. See _step_watch.
-            with _step_watch(con, i, total, name, should_stop, step_cb, stmt_cb):
-                fn(con, batch_id, results)
-            if progress_cb is not None:
-                try:
-                    progress_cb(i, total, name)
-                except Exception:  # noqa: BLE001 - progress reporting must never break a merge
-                    pass
+        # The FTS insert trigger is suspended across the steps and the index is
+        # built once, from merged_rows, at the end. See _fts_insert_suspended for
+        # the field measurement that made this the single biggest win available,
+        # and for the two cheaper fixes it refutes.
+        with _fts_insert_suspended(con) as fts_suspended:
+            for i, (name, fn) in enumerate(steps, 1):
+                if should_stop is not None and should_stop():
+                    # The `except` below rolls this BEGIN IMMEDIATE back; the working
+                    # copy is disposable and the live corpus was never opened.
+                    raise RestoreAborted(
+                        f"stopped during the merge (before the '{name}' step) — "
+                        "nothing was written to your corpus"
+                    )
+                # INSIDE the step, not just between steps. A single step can run for
+                # HOURS (field 2026-08-03: 15.9 h in 'articles' alone), and for that
+                # whole time the between-steps checks above are unreachable -- so a
+                # Stop was inert during the longest phase of an import, and the run
+                # journal's counter could not move. See _step_watch.
+                with _step_watch(con, i, total, name, should_stop, step_cb, stmt_cb):
+                    fn(con, batch_id, results)
+                if progress_cb is not None:
+                    try:
+                        progress_cb(i, total, name)
+                    except Exception:  # noqa: BLE001 - progress reporting must never break a merge
+                        pass
+
+            # INSIDE the suspend: the bulk load must not fire the trigger it
+            # replaces. Reported as its own step so the operator sees indexing
+            # rather than an unexplained tail after step 19.
+            if fts_suspended:
+                with _step_watch(con, total, total, "search index", should_stop, step_cb, stmt_cb):
+                    results["article_fts"] = DomainResult(
+                        new=_fts_index_merged_articles(con, batch_id)
+                    )
 
         counts: dict[str, object] = {k: v.as_dict() for k, v in results.items()}
         unmerged, rejected = _unmerged_tables(con)
@@ -2635,6 +2749,20 @@ def verify_copy(working_copy: Path, staged_corpus: Path, batch_id: int) -> dict:
         v["articles"] = _count(con, "SELECT COUNT(*) FROM articles")
         v.update(_verify_fts(con, has_fts, v["articles"]))
 
+        # The merge SUSPENDS the FTS insert trigger and restores it in a finally
+        # (see _fts_insert_suspended). This is the net beneath that: a working copy
+        # whose trigger is missing must never become the live corpus, because the
+        # damage would be SILENT and open-ended -- search would simply stop
+        # indexing new articles, with nothing failing and nothing to notice. The
+        # index being complete right now (checked above) says nothing about
+        # whether the NEXT article will be indexed, so it needs its own check.
+        v["fts_trigger_present"] = (not has_fts) or bool(
+            con.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name=?",
+                (_FTS_INSERT_TRIGGER,),
+            ).fetchone()
+        )
+
         # Sampled transfer-integrity check: merged articles' content must equal
         # the staged source's content byte-for-byte (joined on the content hash).
         attach(con, staged_corpus, "inc")
@@ -2653,6 +2781,7 @@ def verify_copy(working_copy: Path, staged_corpus: Path, batch_id: int) -> dict:
             v["quick_check"] == "ok"
             and v["foreign_key_violations"] == 0
             and v["fts_matches_articles"]
+            and v["fts_trigger_present"]
             and bad == 0
         )
         return v
