@@ -36,7 +36,6 @@ from __future__ import annotations
 
 import json
 import os
-import resource
 import shutil
 import time
 from collections import Counter
@@ -69,10 +68,26 @@ _SAMPLE_ROWS = 300
 _PROBE_PREFIX = ".merge-probe-"
 
 
-def _rss_mb() -> float:
-    """Peak RSS in MB. A HIGH-WATER MARK that never falls -- only meaningful as a
-    delta across a window in which nothing else grew, which is why the probe below
-    reports the delta from its own immediately-preceding baseline and says so."""
+def _rss_mb() -> float | None:
+    """Peak RSS in MB, or None where it cannot be measured.
+
+    A HIGH-WATER MARK that never falls -- only meaningful as a delta across a
+    window in which nothing else grew, which is why the probe below reports the
+    delta from its own immediately-preceding baseline and says so.
+
+    ``resource`` IS UNIX-ONLY, and importing it at module scope is what broke the
+    Windows lane: the import failure made this module uncollectable, pytest
+    aborted the whole run at collection, and a lane whose entire job is catching
+    portability problems first went blind instead. Every other use of ``resource``
+    in this tree is a guarded, function-local import for exactly that reason.
+
+    Returns None rather than 0.0 on a platform without it: an unmeasurable figure
+    must read as ABSENT, never as a measurement of zero.
+    """
+    try:
+        import resource  # Unix-only; absent on Windows
+    except Exception:  # noqa: BLE001 - a missing platform module is a fact, not a failure
+        return None
     kb = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     # Linux reports KB, macOS bytes.
     return (kb / 1024.0) if kb > 1024 * 1024 else (kb / 1024.0)
@@ -431,16 +446,26 @@ def _probe_arm(work: Path, rows: int, body: bytes, temp_store: str) -> dict[str,
     d.execute("COMMIT")
     el = time.monotonic() - t0
     d.close()
-    return {
+    out: dict[str, Any] = {
         "temp_store": temp_store,
         "rows": rows,
         "seconds": round(el, 2),
         "rows_per_s": round(rows / el) if el > 0 else None,
+    }
+    if base is None or peak is None:
+        # The TIMING half is still a real measurement and is reported; the memory
+        # half is absent, and says so. Reporting 0 here would be a measurement of
+        # zero allocation -- the opposite of "we could not look".
+        out["rss"] = None
+        out["rss_unavailable"] = "resource.getrusage is Unix-only (absent on this platform)"
+        return out
+    out.update({
         "rss_before_mb": round(base),
         "rss_peak_mb": round(peak),
         "rss_delta_mb": round(peak - base),
         "kb_per_row": round((peak - base) * 1024 / rows, 1) if rows else None,
-    }
+    })
+    return out
 
 
 def cost_probe(avg_row_bytes: int | None = None) -> dict[str, Any]:

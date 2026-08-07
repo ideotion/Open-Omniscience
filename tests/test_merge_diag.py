@@ -232,6 +232,13 @@ def test_the_probe_measures_a_real_per_row_cost(probe: bool) -> None:
     mem = out["arms"][0]
     assert mem["temp_store"] == "MEMORY", "MEMORY must run FIRST — see the block's own note"
     assert mem["rows"] > 0 and mem["seconds"] > 0
+    if "rss_unavailable" in mem:
+        # Windows has no resource.getrusage. The TIMING above is still real; the
+        # memory half is absent and says so, which is the property under test on
+        # that platform -- asserting a number here would demand a measurement the
+        # platform cannot make.
+        assert mem["rss"] is None
+        return
     assert mem["kb_per_row"] is not None and mem["kb_per_row"] > 0, mem
 
 
@@ -242,6 +249,45 @@ def test_the_probe_leaves_nothing_behind(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr("src.paths.data_dir", lambda: tmp_path)
     merge_diag.cost_probe(avg_row_bytes=512)
     assert not list(tmp_path.glob(merge_diag._PROBE_PREFIX + "*")), list(tmp_path.iterdir())
+
+
+def test_no_module_imports_a_unix_only_stdlib_module_at_import_time() -> None:
+    """A repo-wide guard, from a defect this file shipped (2026-08-06).
+
+    ``import resource`` at module scope raises ImportError on Windows. That made
+    ``src/monitoring/merge_diag.py`` uncollectable, pytest ABORTED the entire
+    Windows run at collection ("3 skipped, 1 error"), and the lane whose whole
+    job is catching portability problems before the blocking lanes hit them went
+    blind instead. One line, and the cost was every other test on that platform.
+
+    The two pre-existing uses in this tree are both function-local and marked
+    Unix-only; that is the convention, and this is what keeps it one.
+    """
+    import ast
+    import pathlib
+
+    unix_only = {"resource", "fcntl", "termios", "pwd", "grp", "posix"}
+    offenders: list[str] = []
+    for path in pathlib.Path("src").rglob("*.py"):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001 - a file that will not parse is another test's problem
+            continue
+        for node in tree.body:  # TOP LEVEL only: a function-local import is the fix
+            names: list[str] = []
+            if isinstance(node, ast.Import):
+                names = [a.name.split(".")[0] for a in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                names = [node.module.split(".")[0]]
+            for n in names:
+                if n in unix_only:
+                    offenders.append(f"{path}:{node.lineno} imports {n}")
+    assert not offenders, (
+        "these modules import a Unix-only stdlib module at import time, which raises "
+        "ImportError on Windows and aborts collection of everything that imports them:\n  "
+        + "\n  ".join(offenders)
+        + "\nMove the import inside the function that needs it and degrade honestly."
+    )
 
 
 def test_the_bundle_member_produces_a_real_report(monkeypatch) -> None:
