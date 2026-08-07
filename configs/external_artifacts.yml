@@ -117,6 +117,40 @@ artifacts:
     freshness: {max_age_months: 24}
     last_verified: "2026-08-07"
 
+  - id: bloc-membership-registry
+    title: Country-group membership (continents, World Bank regions, political blocs)
+    kind: catalog
+    description: >
+      Which countries belong to which group, and WHEN. Membership is time-varying and
+      that is the whole point of dating it: BRICS was five members until 2024, NATO
+      gained Finland in 2023 and Sweden in 2024, the UK left the EU in 2020 — so a bloc
+      figure computed with today's roster over a 1995 series is wrong in a way no reader
+      can detect. Continents are populated from the shipped CONTINENT_OF table and carry
+      no dates (a country's continent does not change). The political blocs and the World
+      Bank regions are deliberately EMPTY: their accession dates are sourced facts, none
+      were reachable offline, and ruling 45 forbids guessing a date to make a series
+      continuous. Each empty group reports a REASON rather than being absent.
+    upstream: >
+      Per-bloc: each organisation's own membership page. World Bank regions:
+      https://api.worldbank.org/v2/country?format=json (region.value per country).
+    check_upstream: >
+      Accessions and departures are irregular and individually newsworthy, so there is no
+      cadence to poll — re-check when a membership change is reported, and re-read the
+      whole roster rather than patching one member, since a departure is easy to miss.
+      Note that suspension (several African Union members) is a THIRD state that neither
+      joined nor left expresses.
+    license: n/a (facts; the dates carry their own source URLs per member)
+    pin: {file: src/catalog/blocs.py, const: BLOC_REGISTRY_AS_OF}
+    refresh: >
+      Run task 4 of docs/design/INTERNET_SESSION_PROMPT_2026-08-07_GOVERNMENTS_DATA.md on
+      a networked box. Record joined/left/suspended_from per member WITH the URL each date
+      was read from; a member whose accession date cannot be sourced is recorded
+      joined=None and surfaces in the payload's `undated_members`, never filled with a
+      plausible year. World Bank regions come from the same country list as the aggregate
+      codes above, so refresh both together.
+    freshness: {max_age_months: 12}
+    last_verified: "2026-08-07"
+
   - id: wiki-dump-sizes
     title: Wikipedia dump size estimates
     kind: dated-data
