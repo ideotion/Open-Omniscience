@@ -453,10 +453,30 @@ def test_a_second_concurrent_run_is_refused_and_logged(caplog):
     assert "refusing a concurrent" in caplog.text
 
 
+_HEX = set("0123456789abcdef")
+
+
 def test_secrets_are_scrubbed_out_of_milestone_fields():
-    rl = runlog.begin("import", label="x", passphrase="hunter2", nested={"api_key": "abc"})
+    """A sentinel asserted ABSENT from a whole document must be drawn from an
+    alphabet the document cannot generate.
+
+    This test used "abc", which is valid hex -- and the milestone file embeds
+    the run id, `secrets.token_hex(3)`. Measured: 1 in ~1004 ids contain "abc"
+    as a substring, and one really did (imp-...Z-5aabcf), failing the blocking
+    lane under the most alarming label available while redaction was working
+    perfectly. Any sentinel carrying a non-hex character cannot collide, so the
+    guard below is the requirement rather than a comment about it."""
+    passphrase = "hunter2"
+    api_key = "zz-not-a-real-key"
+    for sentinel in (passphrase, api_key):
+        assert not set(sentinel.lower()) <= _HEX, (
+            f"{sentinel!r} is hex-representable, so it can appear inside a "
+            "generated run id and raise a false secret-leak alarm"
+        )
+
+    rl = runlog.begin("import", label="x", passphrase=passphrase, nested={"api_key": api_key})
     text = rl.milestone_path.read_text(encoding="utf-8")
-    assert "hunter2" not in text and "abc" not in text
+    assert passphrase not in text and api_key not in text
     assert "***redacted***" in text
 
 
