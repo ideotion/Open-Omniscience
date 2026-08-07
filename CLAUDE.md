@@ -2913,6 +2913,34 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     `ast.Call` for the `src=` keyword), and add the NEGATIVE-SPACE TWIN asserting an
     unwindowed inline rep still exists somewhere, or "correctly scoped" and "matches
     nothing anywhere" stay indistinguishable.
+  - **SQLite DDL IS TRANSACTIONAL, so a merge-level test of a `finally` that restores a
+    dropped trigger proves the ROLLBACK, not the `finally` (2026-08-07, B6):** the guard
+    for "the FTS insert trigger is always restored" passed against the mutation that
+    deletes the `finally` — because the merge's own ROLLBACK undoes a `DROP TRIGGER` by
+    itself (verified directly: the trigger is absent mid-transaction and present again
+    after the rollback). The test was vacuous in the precise way the anti-vacuity lesson
+    above describes, but by a mechanism no fixture size could fix. THE SPLIT that makes it
+    real: test the context manager's contract OUTSIDE a transaction, where only the
+    `finally` can restore the trigger and where removing it genuinely fails; and rename
+    the merge-level test to claim only the property it actually proves. GENERAL FORM:
+    before trusting a cleanup test, ask what ELSE would restore the state if the cleanup
+    were deleted — in SQLite that includes every DDL statement inside an open transaction,
+    so a mutation run inside one is testing the database, not your code.
+  - **A PROBE'S SCALE IS PART OF THE LOOKALIKE — a fixture small enough to sit in cache
+    cannot reproduce a cache-pressure defect, and "refuted" then goes in the ledger
+    (2026-08-07, B6; the recorded "a probe's data distribution is part of the lookalike"
+    trap with SCALE as the varying axis):** I recorded FTS automerge as refuted at
+    "1.25×/1.24×/1.50×, ~600× short". The measurement was real and the conclusion was
+    wrong: on a small fixture the whole index fits in the page cache and few segment
+    merges happen, which is the one regime where the problem cannot appear. Re-measured on
+    a cache-constrained fixture, the same change is 1.36× overall and 23.7× on the insert
+    itself. It cost three field imports. So when a probe REFUTES a hypothesis, state the
+    regime it refuted it in, and check that regime is the one the field is in — a negative
+    result is a claim about the fixture until it is shown to be a claim about the system.
+    Corollary that saved the follow-up: the two OBVIOUS fixes were then genuinely refuted
+    by measurement (deferring automerge alone 0.93–0.97×; `'rebuild'` 0.75×, because it
+    re-indexes the half of the corpus already indexed), so record refutations WITH their
+    numbers or the next session re-chases them.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD FEEDBACK 2026-08-07 — governments · law extraction · Feed tab · crash visibility ·
