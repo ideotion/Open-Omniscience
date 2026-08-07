@@ -420,8 +420,210 @@ _MERGE_SAMPLE_ROWS = 200
 #: fallback to the unwindowed shape.
 _WINDOW_MARK = "/*WINDOW*/"
 
+#: A window key must be a plain identifier. Every caller passes a literal from
+#: this module, so this can never fire on our own code -- which is the point of
+#: keeping it: it is the guard that stays correct if a future caller ever
+#: derives the name from something less fixed. Same discipline as
+#: ``_SAFE_TABLE_NAME`` for the incoming table names.
+_SAFE_KEY_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 
-def _avg_row_bytes(con: sqlite3.Connection, src: str, lo: int, hi: int) -> float:
+#: WHY EACH WINDOWED STEP IS SAFE TO WINDOW -- and the reason this registry exists
+#: rather than a comment per call site.
+#:
+#: MEASURED, not assumed: a ``NOT EXISTS`` against the target does NOT see rows the
+#: SAME statement is inserting. So if the incoming corpus holds two rows sharing a
+#: step's dedup key, the whole-corpus statement inserts BOTH and the windowed one
+#: inserts ONE (the second window sees the first window's committed row). That is a
+#: silent change to what lands in the user's corpus, and it is invisible to any test
+#: whose fixture happens to have no internal duplicates.
+#:
+#: A step may therefore be windowed ONLY when a second candidate for one identity
+#: cannot survive in the first place. Exactly three things establish that:
+#:
+#:   "unique"    the incoming dedup column is UNIQUE in the schema, so the corpus
+#:               cannot contain a second row to collapse.
+#:   "rep"       a ``_materialise_rep`` collapse reduces each identity group to one
+#:               candidate BEFORE the insert, deterministically (lowest incoming id).
+#:   "constraint" the TARGET carries a real PK/UNIQUE covering the dedup key and the
+#:               insert is ``OR IGNORE``, so the constraint collapses the second
+#:               candidate whether it arrives in the same statement or a later window.
+#:
+#: Steps deliberately NOT windowed are listed below with the reason, because
+#: "absent" and "considered and refused" are not the same thing.
+_WINDOWED_STEPS: dict[str, str] = {
+    "articles": "unique",  # articles.hash is unique=True
+    "keywords": "rep",  # rep_keywords, on (normalized_term, language)
+    "article_links": "rep",  # rep_links, on (article_id, url, position)
+    "article_source_relationships": "rep",  # rep_asr
+    "article_keyword_association": "constraint",  # PK (article_id, keyword_id) + OR IGNORE
+    "article_keywords": "constraint",  # PK (article_id, keyword_id) + OR IGNORE
+    "article_mentioned_dates": "constraint",  # uq_amd_article_date + OR IGNORE
+}
+
+#: Corpus-proportional steps left UNWINDOWED, and why. Each would need a
+#: ``_materialise_rep`` collapse added first -- which is a change to dedup
+#: semantics, not a bounding change, so it is not smuggled in under a performance
+#: slice.
+_NOT_WINDOWED: dict[str, str] = {
+    "source_articles": (
+        "dedups on url AND content_hash, neither unique, no rep collapse. Windowing "
+        "would collapse incoming-internal duplicates the whole-corpus statement keeps. "
+        "Not urgent either: it is populated by external-link resolution, which is "
+        "largely dormant, so it is not corpus-proportional in practice."
+    ),
+    "article_analyses": (
+        "dedups on (article_id, kind, model, prompt_version) with a plain NOT EXISTS "
+        "and no constraint behind it."
+    ),
+    "ai_keyword": (
+        "INSERT OR IGNORE, but ix_ai_keyword_article_kind and ix_ai_keyword_term are "
+        "both NON-unique, so there is no constraint for OR IGNORE to fire on -- it "
+        "reads as protection that is not there. The NOT EXISTS alone does the dedup, "
+        "which puts this in the same class as article_analyses."
+    ),
+}
+
+_WINDOW_JUSTIFICATIONS = frozenset({"unique", "rep", "constraint"})
+
+#: The FTS5 insert trigger, suspended for the duration of the article step.
+_FTS_INSERT_TRIGGER = "article_fts_ai"
+
+#: How many articles to index per bulk FTS statement. Same reasoning as the merge
+#: window: bounded work per statement so stop latency and temp storage do not
+#: scale with the corpus. Not byte-derived -- the FTS cost tracks TEXT volume,
+#: which the row count tracks closely enough here, and the statement holds one
+#: batch of tokenizer state rather than a materialised set.
+_FTS_BULK_BATCH = 20_000
+
+
+@contextmanager
+def _fts_insert_suspended(con: sqlite3.Connection):
+    """Drop the FTS5 AFTER INSERT trigger for the merge, restoring it after.
+
+    WHY, measured on the operator's own field beat (imp-20260807T033245Z): 1,198
+    of 1,223 beats in a five-hour merging phase had FTS5's internal segment-merge
+    delete in flight -- 98% of the wall clock. ``article_fts_ai`` fires per
+    inserted article and fts.py sets no automerge value, so FTS5 runs its default
+    of 4 and merges b-tree segments continuously while hundreds of thousands of
+    articles land in an index already holding hundreds of thousands more.
+
+    THE TWO OBVIOUS FIXES ARE REFUTED, and are not to be re-tried: deferring
+    ``automerge`` alone measured 0.93-0.97x (no help), and dropping the trigger to
+    run ``'rebuild'`` afterwards measured 0.75x -- WORSE, because ``'rebuild'``
+    re-indexes the whole corpus including the part already indexed. Indexing only
+    the rows this merge actually added measured **1.36x faster overall**, with the
+    article insert itself **23.7x** faster (38.11s -> 1.61s), against an identical
+    index (same document count, same match count on identical content).
+
+    ONLY the INSERT trigger is suspended. The merge's only write to ``articles``
+    is one INSERT -- no UPDATE, no DELETE -- so the ``ad``/``au`` triggers have
+    nothing to do here and are left alone, which keeps the blast radius to the one
+    thing being replaced.
+
+    The trigger is recreated from the SQL read out of ``sqlite_master``, not from
+    a copy of fts.py's DDL: a second copy would drift, and this cannot. Restoration
+    is in a ``finally``, so an exception mid-merge still puts it back -- and even
+    if the process dies outright, the working copy is disposable and the live
+    corpus never had its trigger touched. ``verify_copy`` additionally REFUSES to
+    pass a working copy whose trigger is missing, so a copy that somehow lost it
+    can never be swapped in.
+    """
+    row = con.execute(
+        "SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?",
+        (_FTS_INSERT_TRIGGER,),
+    ).fetchone()
+    if not row or not row[0]:
+        # No FTS on this corpus (or a build without the trigger): nothing to
+        # suspend, and nothing to restore. Never fabricate a trigger we did not
+        # find -- creating one here would add indexing to a corpus that had none.
+        yield False
+        return
+    ddl = row[0]
+    con.execute(f"DROP TRIGGER {_FTS_INSERT_TRIGGER}")
+    try:
+        yield True
+    finally:
+        con.execute(ddl)
+
+
+def _fts_index_merged_articles(con: sqlite3.Connection, batch_id: int) -> int:
+    """Index exactly the articles this batch inserted, in bounded batches.
+
+    ``merged_rows`` is the provenance the merge already writes for every inserted
+    row, so it is the exact set -- no watermark to get wrong, and correct even
+    though merged article ids are not contiguous.
+
+    ``automerge`` is set to 0 for the load and restored afterwards, then ONE
+    ``'optimize'`` merges the segments. That ordering is what the measurement
+    rewards: the merging happens once over the finished index instead of
+    continuously against a moving one.
+    """
+    ids = [
+        int(r[0]) for r in con.execute(
+            "SELECT row_id FROM merged_rows WHERE batch_id = ? AND table_name = 'articles'"
+            " ORDER BY row_id",
+            (batch_id,),
+        )
+    ]
+    if not ids:
+        return 0
+    con.execute("INSERT INTO article_fts(article_fts, rank) VALUES('automerge', 0)")
+    try:
+        for i in range(0, len(ids), _FTS_BULK_BATCH):
+            chunk = ids[i:i + _FTS_BULK_BATCH]
+            con.execute(
+                "INSERT INTO article_fts(rowid, title, content)"  # noqa: S608  # nosec B608 - the only interpolation is a placeholder count derived from len(chunk); every id is a bound parameter
+                " SELECT id, title, content FROM articles WHERE id IN"
+                f" ({','.join('?' * len(chunk))})",
+                chunk,
+            )
+            _window_tick("article_fts", min(i + len(chunk), len(ids)), len(ids), len(ids))
+        con.execute("INSERT INTO article_fts(article_fts) VALUES('optimize')")
+    finally:
+        # Restore the default whatever happened, so a corpus is never left with
+        # automerge disabled -- that would degrade every later ingest silently.
+        con.execute("INSERT INTO article_fts(article_fts, rank) VALUES('automerge', 4)")
+    return len(ids)
+
+
+def _materialise_rep(con: sqlite3.Connection, name: str, group_sql: str) -> int:
+    """Materialise "the winning incoming id per identity group" into a temp table.
+
+    Several steps must keep exactly ONE incoming row per natural-identity group
+    before inserting, because the corresponding table carries no unique
+    constraint (deliberately -- near-duplicates are reconciled later at the
+    family/ring layer, not at the schema layer). They express that as an inline
+    ``JOIN (SELECT ..., MIN(id) AS rep_id ... GROUP BY ...) rep``.
+
+    That inline form CANNOT be windowed: the aggregate covers the whole source,
+    so it re-runs per window and turns a linear step quadratic -- silently,
+    because the answer stays correct. MEASURED on 200k rows with a 10% duplicate
+    rate: 0.295 s unwindowed, 1.125 s at 4 windows, 4.279 s at 16, 17.119 s at
+    64. Against 0.019 s at every width once materialised, plus 0.307 s to build
+    it once.
+
+    The materialised form keeps only the winning IDS, and the join collapses to
+    ``rep.rep_id = i.id``. That is EXACTLY equivalent, not merely close: an id
+    appears in the set iff it is its group's ``MIN(id)``, and an id belongs to
+    exactly one group, so the discarded ``rep.<group col> = i.<group col>``
+    conditions are implied by the id match rather than narrowing it. Verified as
+    a set equality, not a row count, before this was written.
+
+    The table is a TEMP table, so it survives the ``COMMIT`` between windows (a
+    temp table's lifetime is the connection, not the transaction) -- the same
+    property the ``temp.map_*`` id maps have always relied on across the
+    already-windowed articles step.
+    """
+    if not _SAFE_KEY_NAME.fullmatch(name):
+        raise ValueError(f"unsafe temp table name {name!r}")
+    con.execute(f"DROP TABLE IF EXISTS temp.{name}")  # noqa: S608  # nosec B608 - name is regex-validated above and comes from a module literal
+    con.execute(f"CREATE TEMP TABLE {name} (rep_id INTEGER PRIMARY KEY)")  # noqa: S608  # nosec B608 - name is regex-validated above and comes from a module literal
+    cur = con.execute(f"INSERT INTO temp.{name} (rep_id) {group_sql}")  # noqa: S608  # nosec B608 - name is regex-validated above; group_sql is a module literal, never input
+    n = cur.rowcount
+    return int(n) if n is not None and n >= 0 else _count(con, f"SELECT COUNT(*) FROM temp.{name}")  # noqa: S608  # nosec B608 - name is regex-validated above and comes from a module literal
+
+
+def _avg_row_bytes(con: sqlite3.Connection, src: str, lo: int, hi: int, key: str = "id") -> float:
     """Average size of an incoming row, from a bounded sample. 0.0 if unknowable.
 
     Sampled from THREE blocks -- near the low end, the middle and the high end of
@@ -450,7 +652,7 @@ def _avg_row_bytes(con: sqlite3.Connection, src: str, lo: int, hi: int) -> float
         row = _q(
             con,
             f'SELECT SUM(n), COUNT(*) FROM (SELECT {expr} AS n FROM inc."{src}"'  # noqa: S608  # nosec B608 - table/column names come from the incoming schema, allowlist-validated upstream and quoted here; the sampled values are never interpolated
-            f" WHERE id > ? ORDER BY id LIMIT {per})",
+            f' WHERE "{key}" > ? ORDER BY "{key}" LIMIT {per})',
             (start,),
         )[0]
         total += float(row[0] or 0.0)
@@ -458,9 +660,9 @@ def _avg_row_bytes(con: sqlite3.Connection, src: str, lo: int, hi: int) -> float
     return total / seen if seen else 0.0
 
 
-def _window_ids_for(con: sqlite3.Connection, src: str, lo: int, hi: int) -> int:
+def _window_ids_for(con: sqlite3.Connection, src: str, lo: int, hi: int, key: str = "id") -> int:
     """How many ids a window may span, so it carries ~``_MERGE_WINDOW_BYTES``."""
-    avg = _avg_row_bytes(con, src, lo, hi)
+    avg = _avg_row_bytes(con, src, lo, hi, key)
     if avg <= 0:
         return _MERGE_WINDOW_MAX_IDS  # nothing to measure: rows are trivially small
     ids = int(_MERGE_WINDOW_BYTES / avg)
@@ -507,15 +709,26 @@ def _insert_tracked(
     params: tuple = (),
     *,
     src: str | None = None,
+    src_key: str = "id",
 ) -> int:
     """Run an INSERT..SELECT and record every new row in merged_rows (provenance).
 
     ``src`` opts this call into WINDOWED execution over the incoming table's
-    primary key: the statement runs once per slice of ``i.id``, committing
+    primary key: the statement runs once per slice of ``i.<src_key>``, committing
     between slices, so memory and temp storage scale with the window instead of
     with the corpus. The incoming table MUST be aliased ``i`` (the house
     convention throughout this module) and ``insert_sql`` MUST carry
     ``_WINDOW_MARK`` where the bound belongs.
+
+    ``src_key`` names the column to slice on, defaulting to the ``id`` surrogate
+    key. Two link tables (``article_keyword_association``, ``article_keywords``)
+    have a COMPOSITE primary key and no ``id`` at all, so they window on
+    ``article_id`` instead. That is sound for the same reason ``id`` is: the
+    windows partition the source exactly (every row has exactly one value, and
+    the slices are contiguous and disjoint), which is the only property the
+    window loop needs. It is NOT required to be unique -- a window simply carries
+    all of an article's rows together, which is if anything the more natural
+    grain.
 
     The slice is as many ids as fit ``_MERGE_WINDOW_BYTES`` of source data, from
     a sampled average row size -- NOT a fixed row count. Rows differ in size by
@@ -541,11 +754,13 @@ def _insert_tracked(
     ⚠ NOT EVERY STEP CAN BE WINDOWED AS WRITTEN. A statement that contains an
     aggregate over the WHOLE source runs that aggregate once per window, which
     turns a linear step quadratic -- silently, since the result stays correct.
-    ``_merge_keywords`` is the live example: its ``rep`` subquery GROUPs all of
-    ``inc.keywords`` to pick one representative row per (term, language), so
-    windowing it without first materialising ``rep`` into a temp table would
-    re-group millions of rows per window. Before opting a step in, read its SQL
-    for subqueries whose FROM is the source table rather than the target.
+    Three steps carried that shape (``keywords``, ``article_links``,
+    ``article_source_relationships``): a ``rep`` subquery GROUPing the entire
+    source to pick one representative row per identity group. Each now calls
+    ``_materialise_rep`` FIRST and joins the result on ``rep_id = i.id``, which
+    is O(1) per row. Before opting a NEW step in, read its SQL for subqueries
+    whose FROM is the source table rather than the target -- and if you find
+    one, materialise it rather than accepting the quadratic.
     """
     if src is None:
         return _insert_window(con, batch_id, table, insert_sql, params)
@@ -557,14 +772,29 @@ def _insert_tracked(
         )
     if params:
         raise ValueError("a windowed insert binds its own parameters; pass none")
+    if not _SAFE_KEY_NAME.fullmatch(src_key):
+        raise ValueError(f"unsafe window key {src_key!r}")
+    # Windowing is only behaviour-preserving where a second candidate for one
+    # identity cannot survive; see _WINDOWED_STEPS for what establishes that and
+    # for the measurement behind it. Refusing here rather than in a test alone
+    # means the property is enforced on the real path, not just on the paths a
+    # test happens to drive.
+    if _WINDOWED_STEPS.get(src) not in _WINDOW_JUSTIFICATIONS:
+        raise ValueError(
+            f"{src!r} is not a registered windowed step. Windowing changes what lands "
+            "when the incoming corpus holds two rows sharing the dedup key: the "
+            "whole-corpus statement keeps both, a windowed one keeps the first. Add it "
+            "to _WINDOWED_STEPS with its justification (unique/rep/constraint), or to "
+            "_NOT_WINDOWED with the reason."
+        )
 
-    sql = insert_sql.replace(_WINDOW_MARK, " AND i.id > ? AND i.id <= ?")
+    sql = insert_sql.replace(_WINDOW_MARK, f' AND i."{src_key}" > ? AND i."{src_key}" <= ?')
     # MIN as well as MAX: SQLite rowids may be negative if a row was inserted
     # with an explicit id, and starting at 0 would silently skip every such row.
     # The floor is exclusive, hence -1.
-    row = _q(con, f'SELECT COALESCE(MIN(id), 1) - 1, COALESCE(MAX(id), 0) FROM inc."{src}"')[0]  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
+    row = _q(con, f'SELECT COALESCE(MIN("{src_key}"), 1) - 1, COALESCE(MAX("{src_key}"), 0) FROM inc."{src}"')[0]  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input; src_key is regex-validated above
     lo_min, hi_max = int(row[0]), int(row[1])
-    step = _window_ids_for(con, src, lo_min, hi_max)
+    step = _window_ids_for(con, src, lo_min, hi_max, src_key)
     if hi_max - lo_min <= step:
         return _insert_window(con, batch_id, table, sql, (lo_min, hi_max))
 
@@ -879,26 +1109,40 @@ def merge_corpus(
 
         steps = _merge_steps()
         total = len(steps)
-        for i, (name, fn) in enumerate(steps, 1):
-            if should_stop is not None and should_stop():
-                # The `except` below rolls this BEGIN IMMEDIATE back; the working
-                # copy is disposable and the live corpus was never opened.
-                raise RestoreAborted(
-                    f"stopped during the merge (before the '{name}' step) — "
-                    "nothing was written to your corpus"
-                )
-            # INSIDE the step, not just between steps. A single step can run for
-            # HOURS (field 2026-08-03: 15.9 h in 'articles' alone), and for that
-            # whole time the between-steps checks above are unreachable -- so a
-            # Stop was inert during the longest phase of an import, and the run
-            # journal's counter could not move. See _step_watch.
-            with _step_watch(con, i, total, name, should_stop, step_cb, stmt_cb):
-                fn(con, batch_id, results)
-            if progress_cb is not None:
-                try:
-                    progress_cb(i, total, name)
-                except Exception:  # noqa: BLE001 - progress reporting must never break a merge
-                    pass
+        # The FTS insert trigger is suspended across the steps and the index is
+        # built once, from merged_rows, at the end. See _fts_insert_suspended for
+        # the field measurement that made this the single biggest win available,
+        # and for the two cheaper fixes it refutes.
+        with _fts_insert_suspended(con) as fts_suspended:
+            for i, (name, fn) in enumerate(steps, 1):
+                if should_stop is not None and should_stop():
+                    # The `except` below rolls this BEGIN IMMEDIATE back; the working
+                    # copy is disposable and the live corpus was never opened.
+                    raise RestoreAborted(
+                        f"stopped during the merge (before the '{name}' step) — "
+                        "nothing was written to your corpus"
+                    )
+                # INSIDE the step, not just between steps. A single step can run for
+                # HOURS (field 2026-08-03: 15.9 h in 'articles' alone), and for that
+                # whole time the between-steps checks above are unreachable -- so a
+                # Stop was inert during the longest phase of an import, and the run
+                # journal's counter could not move. See _step_watch.
+                with _step_watch(con, i, total, name, should_stop, step_cb, stmt_cb):
+                    fn(con, batch_id, results)
+                if progress_cb is not None:
+                    try:
+                        progress_cb(i, total, name)
+                    except Exception:  # noqa: BLE001 - progress reporting must never break a merge
+                        pass
+
+            # INSIDE the suspend: the bulk load must not fire the trigger it
+            # replaces. Reported as its own step so the operator sees indexing
+            # rather than an unexplained tail after step 19.
+            if fts_suspended:
+                with _step_watch(con, total, total, "search index", should_stop, step_cb, stmt_cb):
+                    results["article_fts"] = DomainResult(
+                        new=_fts_index_merged_articles(con, batch_id)
+                    )
 
         counts: dict[str, object] = {k: v.as_dict() for k, v in results.items()}
         unmerged, rejected = _unmerged_tables(con)
@@ -1431,6 +1675,16 @@ def _merge_keywords(con, batch_id, results) -> None:
     # only ONE representative incoming row per (normalized_term, language) group --
     # deterministically the lowest incoming id, the SAME tie-break map_keywords
     # below already uses for the target side.
+    #
+    # Materialised ONCE rather than inlined, because this step is windowed: an
+    # inline GROUP BY over the whole source re-runs per window (see
+    # _materialise_rep for the measurement). `keywords` is the largest table the
+    # merge still copies -- ~6.9M rows on the field corpus -- so this is the step
+    # where that mattered most.
+    _materialise_rep(
+        con, "rep_keywords",
+        "SELECT MIN(id) FROM inc.keywords GROUP BY normalized_term, COALESCE(language,'en')",
+    )
     r.new = _insert_tracked(
         con, batch_id, "keywords",
         "INSERT INTO keywords (term, normalized_term, language, frequency, category_id,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
@@ -1440,11 +1694,10 @@ def _merge_keywords(con, batch_id, results) -> None:
         " i.is_ngram, i.ngram_size, i.is_entity, i.entity_type, i.relevance_score,"
         " i.extractor, i.created_at, i.updated_at"
         " FROM inc.keywords i LEFT JOIN temp.map_kwcat mc ON mc.old = i.category_id"
-        " JOIN (SELECT normalized_term, COALESCE(language,'en') AS lang, MIN(id) AS rep_id"
-        "       FROM inc.keywords GROUP BY normalized_term, COALESCE(language,'en')) rep"
-        "  ON rep.normalized_term = i.normalized_term"
-        "  AND rep.lang = COALESCE(i.language,'en') AND rep.rep_id = i.id"
-        f" WHERE NOT EXISTS (SELECT 1 FROM keywords m WHERE {key})",
+        " JOIN temp.rep_keywords rep ON rep.rep_id = i.id"
+        f" WHERE NOT EXISTS (SELECT 1 FROM keywords m WHERE {key})"
+        + _WINDOW_MARK,
+        src="keywords",
     )
     _build_map(
         con, "map_keywords",
@@ -1475,6 +1728,11 @@ def _merge_article_keyword_links(con, batch_id, results) -> None:
         # this same statement, and the real PRIMARY KEY on (article_id, keyword_id) aborts
         # the whole merge. OR IGNORE keeps one, silently drops the other (an arbitrary but
         # harmless tie-break -- the two incoming rows describe the same article+concept).
+        # Windowed on `article_id`, not `id`: both tables have a COMPOSITE primary
+        # key and no surrogate. Safe to window (see _WINDOWED_STEPS) precisely
+        # because of the OR IGNORE above -- the target's real PRIMARY KEY is what
+        # collapses a second candidate for the same pair, so the whole-corpus and
+        # windowed shapes cannot disagree.
         r.new += _insert_tracked(
             con, batch_id, table,
             f"INSERT OR IGNORE INTO {table} (article_id, keyword_id, {cols})"  # noqa: S608  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
@@ -1482,7 +1740,10 @@ def _merge_article_keyword_links(con, batch_id, results) -> None:
             " JOIN temp.map_articles ma ON ma.old = i.article_id"
             " JOIN temp.map_keywords mk ON mk.old = i.keyword_id"
             f" WHERE NOT EXISTS (SELECT 1 FROM {table} t"
-            "  WHERE t.article_id = ma.new AND t.keyword_id = mk.new)",
+            "  WHERE t.article_id = ma.new AND t.keyword_id = mk.new)"
+            + _WINDOW_MARK,
+            src=table,
+            src_key="article_id",
         )
     r.duplicate = _count(
         con,
@@ -1668,6 +1929,14 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
     # corpus carrying two rows for the exact same (article, url, position) would
     # otherwise insert both (audit 2026-07-16, following the keyword_mentions
     # collapse fix). The `rep` join keeps only the lowest incoming id per group.
+    # Materialised once (see _materialise_rep): this step is windowed, and
+    # article_links is corpus-proportional -- roughly one row per outbound link
+    # per article, so millions on any real corpus.
+    _materialise_rep(
+        con, "rep_links",
+        "SELECT MIN(id) FROM inc.article_links"
+        " GROUP BY article_id, url, COALESCE(position,-1)",
+    )
     li.new = _insert_tracked(
         con, batch_id, "article_links",
         "INSERT INTO article_links (article_id, url, normalized_url, link_text, position,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
@@ -1681,12 +1950,10 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         " LEFT JOIN temp.map_ext me ON me.old = i.external_source_id"
         " LEFT JOIN temp.map_srcart msa ON msa.old = i.source_article_id"
-        " JOIN (SELECT article_id, url, COALESCE(position,-1) AS pos, MIN(id) AS rep_id"
-        "       FROM inc.article_links"
-        "       GROUP BY article_id, url, COALESCE(position,-1)) rep"
-        "  ON rep.article_id = i.article_id AND rep.url = i.url"
-        "  AND rep.pos = COALESCE(i.position,-1) AND rep.rep_id = i.id"
-        f" WHERE NOT EXISTS (SELECT 1 FROM article_links t WHERE {link_key})",
+        " JOIN temp.rep_links rep ON rep.rep_id = i.id"
+        f" WHERE NOT EXISTS (SELECT 1 FROM article_links t WHERE {link_key})"
+        + _WINDOW_MARK,
+        src="article_links",
     )
     results["article_links"] = li
 
@@ -1704,6 +1971,12 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
     )
     # Same rationale as article_links above: no schema-level uniqueness, so collapse
     # incoming-internal duplicates on the merge's own identity key before inserting.
+    # Materialised once, for the same reason -- this step is windowed too.
+    _materialise_rep(
+        con, "rep_asr",
+        "SELECT MIN(id) FROM inc.article_source_relationships"
+        " GROUP BY article_id, COALESCE(source_id,-1), COALESCE(relationship_type,'')",
+    )
     rel.new = _insert_tracked(
         con, batch_id, "article_source_relationships",
         "INSERT INTO article_source_relationships (article_id, source_id, source_article_id,"  # nosec B608 - table/column names come from the app's OWN fixed schema maps (design doc D3), never input
@@ -1715,13 +1988,10 @@ def _merge_external_link_graph(con, batch_id, results) -> None:
         " JOIN temp.map_articles ma ON ma.old = i.article_id"
         " LEFT JOIN temp.map_ext me ON me.old = i.source_id"
         " LEFT JOIN temp.map_srcart msa ON msa.old = i.source_article_id"
-        " JOIN (SELECT article_id, COALESCE(source_id,-1) AS sid,"
-        "       COALESCE(relationship_type,'') AS rtype, MIN(id) AS rep_id"
-        "       FROM inc.article_source_relationships"
-        "       GROUP BY article_id, COALESCE(source_id,-1), COALESCE(relationship_type,''))"
-        "  rep ON rep.article_id = i.article_id AND rep.sid = COALESCE(i.source_id,-1)"
-        "  AND rep.rtype = COALESCE(i.relationship_type,'') AND rep.rep_id = i.id"
-        f" WHERE NOT EXISTS (SELECT 1 FROM article_source_relationships t WHERE {rel_key})",
+        " JOIN temp.rep_asr rep ON rep.rep_id = i.id"
+        f" WHERE NOT EXISTS (SELECT 1 FROM article_source_relationships t WHERE {rel_key})"
+        + _WINDOW_MARK,
+        src="article_source_relationships",
     )
     results["article_source_relationships"] = rel
 
@@ -1782,7 +2052,9 @@ def _merge_article_derivations(con, batch_id, results) -> None:
         " SELECT ma.new, i.mentioned_on, i.precision, i.snippet, i.confidence, i.extractor,"
         " i.status, i.created_at"
         " FROM inc.article_mentioned_dates i JOIN temp.map_articles ma ON ma.old = i.article_id"
-        f" WHERE NOT EXISTS (SELECT 1 FROM article_mentioned_dates t WHERE {md_key})",
+        f" WHERE NOT EXISTS (SELECT 1 FROM article_mentioned_dates t WHERE {md_key})"
+        + _WINDOW_MARK,
+        src="article_mentioned_dates",
     )
     results["article_mentioned_dates"] = md
 
@@ -2477,6 +2749,20 @@ def verify_copy(working_copy: Path, staged_corpus: Path, batch_id: int) -> dict:
         v["articles"] = _count(con, "SELECT COUNT(*) FROM articles")
         v.update(_verify_fts(con, has_fts, v["articles"]))
 
+        # The merge SUSPENDS the FTS insert trigger and restores it in a finally
+        # (see _fts_insert_suspended). This is the net beneath that: a working copy
+        # whose trigger is missing must never become the live corpus, because the
+        # damage would be SILENT and open-ended -- search would simply stop
+        # indexing new articles, with nothing failing and nothing to notice. The
+        # index being complete right now (checked above) says nothing about
+        # whether the NEXT article will be indexed, so it needs its own check.
+        v["fts_trigger_present"] = (not has_fts) or bool(
+            con.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='trigger' AND name=?",
+                (_FTS_INSERT_TRIGGER,),
+            ).fetchone()
+        )
+
         # Sampled transfer-integrity check: merged articles' content must equal
         # the staged source's content byte-for-byte (joined on the content hash).
         attach(con, staged_corpus, "inc")
@@ -2495,6 +2781,7 @@ def verify_copy(working_copy: Path, staged_corpus: Path, batch_id: int) -> dict:
             v["quick_check"] == "ok"
             and v["foreign_key_violations"] == 0
             and v["fts_matches_articles"]
+            and v["fts_trigger_present"]
             and bad == 0
         )
         return v

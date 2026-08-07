@@ -2877,6 +2877,42 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     every such guard owes a companion assertion that X exists — and for a guard about
     a *partial* state, that the partial state was genuinely produced rather than
     rolled away.
+  - **BATCHING A DEDUPING `INSERT..SELECT` CHANGES WHAT LANDS, because a `NOT EXISTS`
+    against the target does NOT see rows the same statement is inserting (2026-08-07,
+    B5):** given two incoming rows sharing a step's dedup key, the whole-corpus
+    statement keeps **both** and a windowed one keeps **one** — the second window sees
+    the first window's commit. Measured on both stdlib sqlite3 and sqlcipher3 before a
+    line was written. Neither answer is wrong; they are different, and swapping one for
+    the other under a *performance* change is a silent edit to the user's corpus that
+    no fixture without internal duplicates can detect. So windowing needs a
+    JUSTIFICATION, not just an id to slice on, and exactly three establish it: the
+    incoming dedup column is UNIQUE (no second row can exist), a `rep` collapse leaves
+    one candidate per identity group, or the target carries a real PK/UNIQUE behind an
+    `INSERT OR IGNORE`. Enforce it on the REAL PATH (`_insert_tracked` raises on an
+    unregistered step), not only in a test, and record the refusals too — `_NOT_WINDOWED`
+    exists because "absent" and "considered and refused" read identically otherwise.
+    TWO COROLLARIES. (a) This retroactively audited the articles windowing shipped a week
+    earlier: it was safe, because `articles.hash` is `unique=True` — but that was true by
+    LUCK, not by check, so the guard now reads it from the schema. When a past change
+    turns out to have been safe, ask whether it was safe *by construction* or *by
+    accident*; only the first survives the next edit. (b) An `INSERT OR IGNORE` is not
+    itself evidence of a constraint: `ai_keyword` has one and its two indexes are both
+    NON-unique, so the `OR IGNORE` reads as protection that is not there.
+  - **A "MUST BE GONE" GUARD IN PYTHON TRIPS ON THE DOCSTRING THAT EXPLAINS THE REMOVAL —
+    and the fix is `ast`, not rewording (2026-08-07, B5; the recorded JS lesson recurring
+    one language over, hit while writing the fix it warns about):** the guard asserting the
+    inline `MIN(id) AS rep_id` sub-query was gone failed against CORRECT code, on the
+    `_materialise_rep` docstring that quotes the pattern to explain why it was removed.
+    That docstring is exactly what a future session reads before deciding the removal was
+    a mistake, so rewording it is the wrong repair. Parse instead of grep: `ast` gives an
+    exact docstring test (first statement of a module/class/function body), so the guard
+    can search only the string literals that could really BE SQL. SECOND HALF, and the more
+    general point: scoped that way it then failed on `commodity_prices`, whose inline rep
+    is CORRECT because that step is not windowed — a guard that fires on correct code gets
+    relaxed, and a relaxed guard catches nothing. Scope to the windowed call sites (walk
+    `ast.Call` for the `src=` keyword), and add the NEGATIVE-SPACE TWIN asserting an
+    unwindowed inline rep still exists somewhere, or "correctly scoped" and "matches
+    nothing anywhere" stay indistinguishable.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD FEEDBACK 2026-08-07 — governments · law extraction · Feed tab · crash visibility ·
@@ -3023,12 +3059,39 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   rewrite already halved it, and it is neither the memory nor, at any plausible constant
   factor, the time. (Caveat, per the lookalike lesson: the fixture is plaintext, uniform and
   smaller than the field corpus; the PLAN would not change, and codec cost is arithmetically
-  ~0.1 % here — 59,235 CPU-seconds were burned against ~50 s of AES at AES-NI speed.) SO THE
-  5.1 GB ALLOCATION AND THE 22 HOURS BOTH REMAIN UNATTRIBUTED, and the honest next step is
-  evidence, not another guess: the run's MILESTONE journal carries a `merge_statement_begin`
-  line naming every statement, so a streamed histogram plus its last line names the culprit
-  outright. That file is the same 1.6 GB artifact the F1–F4 fix exists to stop producing —
-  it is still on the operator's disk, and it is the only place the answer currently lives.
+  ~0.1 % here — 59,235 CPU-seconds were burned against ~50 s of AES at AES-NI speed.)
+  **⚠ ANSWERED 2026-08-07 — IT IS FTS5, AND MY OWN EARLIER REFUTATION OF FTS WAS WRONG.**
+  A third field import (`imp-20260807T033245Z-c65469`, ~1.4M-article corpus) stalled the same
+  way, and the beat that F1/#886 shipped names it outright: of **1,223 merging beats, 1,198 —
+  98 %, 4.99 of the 5.10 h** — carry `sql: "-- DELETE FROM 'main'.'article_fts_data' WHERE
+  id>=? AND id<=?"`, FTS5's internal segment-merge cleanup (the `--` prefix is SQLite
+  reporting a statement IT ran, from the `article_fts_ai` trigger's machinery, not one we
+  wrote). Four things the beat settles that no reasoning could: it is **not one stuck
+  statement** (`sql_s` median 1.2 s, max 6.5 s — thousands of short ones); **memory is fine**
+  (RSS 1.1–1.5 GB against 8.7 GB free, so B1/B2 work and the 5.1 GB allocation above was the
+  pre-B2 `temp_store=MEMORY` default, now closed); it is **single-threaded CPU** (5.09 h wall
+  vs 4.24 h CPU = 0.83 cores); and `done=2/19` never moved. MECHANISM: `article_fts_ai AFTER
+  INSERT ON articles` fires per inserted article and `src/database/fts.py` sets **no automerge
+  value anywhere**, so FTS5 runs its default (4), merging b-tree segments continuously as
+  ~686k incoming articles land in an index already holding ~794k. **THE CORRECTION I OWE THE
+  RECORD:** an earlier entry refuted FTS automerge at "1.25×/1.24×/1.50×, ~600× short". That
+  measurement was real but taken on a small fixture, where the index fits in the page cache and
+  few merges happen — the one regime where the problem cannot appear. Stated as refuted; it was
+  not. This is the recorded "a probe's data distribution is part of the lookalike" trap with
+  **SCALE** as the varying axis, and it cost three field imports.
+  **BOTH OBVIOUS FIXES ARE ALSO REFUTED, by measurement (do not re-chase either):** deferring
+  automerge is **0.93×/0.94×/0.97×** at 10k/30k/60k docs (no help, and scaling there is linear);
+  dropping the trigger and running `'rebuild'` after is **0.75× at both 40k and 80k docs** —
+  33 % MORE total work, because `'rebuild'` re-indexes the WHOLE corpus including the half
+  already indexed. What those probes DO establish is the number the fix rests on: with the
+  trigger off, the article insert itself runs **12–14× faster** (18.76 s → 1.59 s; 40.04 s →
+  2.92 s). So the FTS work is not reducible by tuning — it is relocatable. See the B6 entry.
+  **STILL OPEN, and not to be guessed at:** the probes extrapolate to ~20 min at field scale
+  against 5+ h observed, a 15–65× gap nothing here reproduces. Candidates are the SQLCipher
+  codec over multi-GB FTS segments, the operator's virtual disk, and merges rewriting against
+  the 794k already-indexed documents. The `cost_probe` block of `merge-diag.json` measures
+  per-row cost on the operator's OWN machine, which is how that gap gets closed rather than
+  argued about.
 - **THE APP'S OOM AT 24 h WAS THE JOURNAL READ, and the timeline is exact (same run):** the
   merge held 5,960 MB for 22 h with `mem_avail` steady around 4,300 MB. The operator then ran
   an all-diagnostics bundle: its own journal shows `run-journal.json` beginning at 03:27:18,
