@@ -1597,13 +1597,150 @@
       }
       return msg || (res.status + " " + res.statusText);
     }
+    // ------------------------------------------------------------------ //
+    //  Is the server actually there? (field report 2026-08-07, item 4)     //
+    // ------------------------------------------------------------------ //
+    // loadHealth() runs ONCE, at boot, so the green "healthy" pill was a
+    // boot-time paint that could never go red: the app could be dead and the
+    // chrome would still say healthy. A dedicated health poll is the wrong
+    // repair -- this app already carries a measured polling-storm lesson
+    // (~10k status polls in one 2h session) -- and it is unnecessary, because
+    // every request the UI makes is already evidence.
+    //
+    // THE DISTINCTION THAT MAKES THIS HONEST: a rejected fetch means the
+    // server did not answer. An HTTP error status means it answered, and said
+    // no -- which is a working server, so it must NOT paint the app as down.
+    // api() is the one chokepoint every call goes through, so recording the
+    // outcome there costs nothing and cannot miss a caller.
+    const _DOWN_STRIKES = 3;      // consecutive unanswered calls before the crash screen
+    let _downStreak = 0;
+    let _lastReachableAt = Date.now();
+    let _serverDown = false;
+    function _noteReachable(ok) {
+      if (ok) {
+        _downStreak = 0;
+        _lastReachableAt = Date.now();
+        if (_serverDown) { _serverDown = false; _paintCrashScreen(); }
+        _paintHealth(true);
+        return;
+      }
+      _downStreak++;
+      _paintHealth(false);
+      // One blip is a blip. Only a run of unanswered calls is an outage -- and
+      // the screen below states what was observed, never a diagnosis of why.
+      if (_downStreak >= _DOWN_STRIKES && !_serverDown) {
+        _serverDown = true;
+        _paintCrashScreen();
+      }
+    }
+    function _paintHealth(ok) {
+      const el = $("health"); if (!el) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      el.innerHTML = ok
+        ? '<span class="dot ok"></span> ' + esc(t("healthy"))
+        : '<span class="dot err"></span> ' + esc(t("not responding"));
+    }
+
+    // The honest crash screen (maintainer rulings 17-19, 2026-08-07).
+    //
+    // RULING 19 IS "NO AUTO-RESTART -- honesty first", and it shapes everything
+    // here. This screen does not reload, does not retry in the background, and
+    // does not reconnect and carry on as if nothing happened. It says what was
+    // OBSERVED -- calls stopped being answered, and when the last one was -- and
+    // leaves every action to the reader.
+    //
+    // It also refuses to diagnose. From the browser, "crashed", "killed",
+    // "shutting down" and "the machine went to sleep" are indistinguishable:
+    // all four are just silence. Naming one would be a fabricated cause on the
+    // screen a reader trusts most, so the wording stays at what is known.
+    //
+    // THE RUN-JOURNAL LINK IS CONDITIONAL, and that is the point rather than a
+    // limitation: the journal lives behind /api/diagnostics/run-journal, so if
+    // the server is not answering, that download cannot work either. Offering
+    // the button anyway would be a control that fabricates a capability. It
+    // appears only once the server answers again, and until then the screen
+    // says plainly why it is absent.
+    // Each of these is ONE literal, deliberately: t() resolves a concatenation fine at
+    // runtime, but the i18n audit's scan sees only the first fragment -- so a fully
+    // keyed sentence would still be counted as untranslatable, and the gate would be
+    // measuring something other than what ships. Hoisted rather than inlined only
+    // because they are too long for the call site.
+    const _CRASH_WHAT = "Requests to the local server are going unanswered. This page is still here, but it is showing you the last data it received, which may now be out of date.";
+    const _CRASH_UNKNOWN = "What happened is not known from here: a stopped server, a crash and a sleeping machine look identical to this page. Nothing has been restarted for you.";
+    const _CRASH_CORPUS = "Your corpus is on disk and is not affected by this. Relaunch the app the way you normally start it.";
+
+    function _paintCrashScreen() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      let o = document.getElementById("oo-crash-screen");
+      if (!_serverDown) { if (o) o.remove(); return; }
+      if (!o) {
+        o = document.createElement("div");
+        o.id = "oo-crash-screen";
+        o.setAttribute("role", "alertdialog");
+        o.setAttribute("aria-modal", "true");
+        document.body.appendChild(o);
+      }
+      const secs = Math.max(0, Math.round((Date.now() - _lastReachableAt) / 1000));
+      o.innerHTML =
+        '<div class="crash-box">'
+        + '<h2>' + esc(t("The app stopped answering")) + '</h2>'
+        + '<p>' + esc(t(_CRASH_WHAT)) + '</p>'
+        + '<p class="card-caveat">' + esc(t(_CRASH_UNKNOWN)) + '</p>'
+        + '<p class="muted" id="crash-since"></p>'
+        + '<div class="crash-actions">'
+        + '<button id="crash-retry">' + esc(t("Check again")) + '</button>'
+        + '<span id="crash-journal"></span>'
+        + '</div>'
+        + '<p class="hint">' + esc(t(_CRASH_CORPUS)) + '</p>'
+        + '</div>';
+      // tf() so the number is DATA interpolated into a keyable frame, never a
+      // sentence built by concatenation (the composite-string i18n rule).
+      const since = $("crash-since");
+      if (since) {
+        since.textContent = (window.OOI18N && OOI18N.tf)
+          ? OOI18N.tf("Last answered {seconds}s ago.", {seconds: secs})
+          : "Last answered " + secs + "s ago.";
+      }
+      const btn = $("crash-retry");
+      if (btn) {
+        btn.addEventListener("click", async () => {
+          btn.disabled = true;
+          btn.textContent = t("Checking…");
+          try {
+            await api("/api/health");   // success clears _serverDown via _noteReachable
+          } catch (e) {
+            btn.disabled = false;
+            btn.textContent = t("Check again");
+            const s = $("crash-since");
+            if (s) s.textContent = t("Still not answering.");
+          }
+        });
+      }
+      // Only reachable-again offers the journal, because only then can it load.
+      const jslot = $("crash-journal");
+      if (jslot) {
+        jslot.innerHTML = '<span class="hint">'
+          + esc(t("The run journal cannot be downloaded while the server is not answering."))
+          + '</span>';
+      }
+    }
+
     async function api(path, opts={}) {
       _bumpInflight(1);
       try {
         for (let attempt = 0; ; attempt++) {
-          const res = await fetch(path, {
-            headers: {"Content-Type": "application/json"}, ...opts,
-          });
+          let res;
+          try {
+            res = await fetch(path, {
+              headers: {"Content-Type": "application/json"}, ...opts,
+            });
+          } catch (netErr) {
+            // The fetch itself failed: no response at all. This is the only
+            // shape that means "the server is not there".
+            _noteReachable(false);
+            throw netErr;
+          }
+          _noteReachable(true);  // it answered -- an error STATUS is still an answer
           if (res.status === 429 && attempt < _API_MAX_RETRIES) {
             const ra = parseFloat(res.headers.get("Retry-After"));
             const waitMs = Math.min(
@@ -5269,15 +5406,14 @@
       return n.toFixed(i ? 1 : 0) + " " + u[i];
     }
 
+    // Boot: fetch the version once. The PILL is no longer painted from here --
+    // api() paints it from every request's outcome (see _noteReachable), because
+    // this function runs exactly once and a one-shot paint can never go red.
     async function loadHealth() {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try {
         const h = await api("/api/health");
         $("version").textContent = "v" + h.version;
-        $("health").innerHTML = '<span class="dot ok"></span> ' + esc(t("healthy"));
-      } catch (e) {
-        $("health").innerHTML = '<span class="dot err"></span> ' + esc(t("offline"));
-      }
+      } catch (e) { /* _noteReachable has already painted the pill honestly */ }
     }
 
     // -- Settings tab ------------------------------------------------------- //

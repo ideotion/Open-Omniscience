@@ -1300,3 +1300,25 @@
     .lib-view > .panel:first-child { margin-top:0; }
     .lib-sub { font-size:13px; margin:14px 0 6px; }
     .lib-rhythm svg { border:1px solid var(--border); border-radius:6px; padding:4px; background:var(--panel2); }
+
+    /* The honest crash screen (rulings 17-19, field report 2026-08-07). Painted
+       when several consecutive requests go unanswered; see _paintCrashScreen.
+       Every colour is a theme token -- this must render correctly on all 17
+       themes, and it appears at exactly the moment a hardcoded hue would be
+       most jarring. */
+    #oo-crash-screen {
+      position:fixed; inset:0; z-index:99998; display:flex;
+      align-items:center; justify-content:center; padding:24px;
+      background:color-mix(in srgb, var(--bg) 88%, transparent);
+      backdrop-filter:blur(2px);
+    }
+    #oo-crash-screen .crash-box {
+      max-width:560px; width:100%; background:var(--panel); color:var(--fg);
+      border:1px solid var(--border); border-left:3px solid var(--err);
+      border-radius:10px; padding:20px 22px; line-height:1.5;
+    }
+    #oo-crash-screen h2 { margin:0 0 10px; font-size:18px; }
+    #oo-crash-screen p { margin:8px 0; }
+    #oo-crash-screen .crash-actions {
+      display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin:14px 0 4px;
+    }
