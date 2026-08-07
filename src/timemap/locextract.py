@@ -60,22 +60,68 @@ _COUNTRY_NAMES: dict[str, str] = {
     "denmark": "dk", "danemark": "dk", "ireland": "ie", "irlande": "ie",
     "hungary": "hu", "hongrie": "hu", "romania": "ro", "roumanie": "ro",
     "serbia": "rs", "serbie": "rs", "czechia": "cz", "tchéquie": "cz",
+    # Longer names that CONTAIN a shorter one. Present so the longest-match rule below
+    # has something to win with: without "northern ireland" in the table, the only
+    # thing that could match inside it was "ireland", and a UK Act was filed under the
+    # Republic of Ireland (field feedback 2026-08-07, item 3 — a geographic fabrication,
+    # not noise). Same shape for the two Sudans, separate states since 2011, and the two
+    # Congos, which the bare name cannot tell apart.
+    "northern ireland": "gb", "republic of ireland": "ie",
+    "south sudan": "ss", "soudan du sud": "ss",
+    "democratic republic of the congo": "cd", "république démocratique du congo": "cd",
+    "republic of the congo": "cg", "république du congo": "cg",
 }
+
+# Phrases that CLAIM their span without asserting any country — the honest half of the
+# longest-match rule. "South China Sea" contains "China" and is not China; a body of
+# water attributed to one of several claimants is a loaded fabrication, not a rounding
+# error. Likewise a place inside one country named after another. Each entry below was
+# REPRODUCED mis-resolving before it was added; none is speculative.
+#
+# Deliberately NOT here: "Georgia", which is genuinely ambiguous between the country and
+# the US state. There is no evidence in the text to decide it, so it keeps resolving to
+# the country and keeps its "deduced, not confirmed" note. Inventing a rule for it would
+# be guessing with extra steps.
+_SPAN_GUARDS: tuple[str, ...] = (
+    "south china sea", "east china sea", "sea of japan", "gulf of mexico",
+    "new mexico", "little italy",
+)
 
 _MAX_SCAN = 60_000  # characters of text scanned (bounded, like every scan)
 
 
 @lru_cache(maxsize=1)
 def _patterns() -> list[tuple[re.Pattern, str, str]]:
-    """[(compiled pattern, canonical name, kind)] for countries + gazetteer cities."""
+    """[(compiled pattern, canonical name, kind)] for guards + countries + cities.
+
+    Ordered by name length DESCENDING across all three kinds, because the caller claims
+    each match's character span and skips anything overlapping an existing claim — so
+    whichever pattern runs first wins the span. Longest-first is what makes "Northern
+    Ireland" beat "Ireland" and "New York" beat "York".
+    """
     pats: list[tuple[re.Pattern, str, str]] = []
-    for name in sorted(_COUNTRY_NAMES, key=len, reverse=True):
+    for name in _SPAN_GUARDS:
+        pats.append((re.compile(rf"\b{re.escape(name)}\b", re.IGNORECASE), name, "guard"))
+    for name in _COUNTRY_NAMES:
         pats.append((re.compile(rf"\b{re.escape(name)}\b", re.IGNORECASE), name, "country"))
     from src.catalog.cities import load_cities
 
     for c in load_cities():
         pats.append((re.compile(rf"\b{re.escape(c.name)}\b"), c.name, "city"))  # case-sensitive
+    pats.sort(key=lambda p: len(p[1]), reverse=True)
     return pats
+
+
+def _display_name(iso2: str) -> str:
+    """The canonical English name for a country code, so every surface form that
+    matched ("uk", "britain", "united kingdom") renders as one place.
+
+    Falls back to the code itself if the shared catalog does not know it — degrade
+    loudly rather than mask an unknown code behind a fabricated name.
+    """
+    from src.catalog.countries import country_display_name
+
+    return country_display_name(iso2) or iso2.upper()
 
 
 def _snippet(text: str, start: int, end: int, pad: int = 30) -> str:
@@ -93,10 +139,21 @@ def extract_locations(
     case-insensitively (Iran/IRAN/iran all refer to the country). An ambiguous
     city prefers the article's source country, else the most populous bearer —
     and says which rule decided.
+
+    LONGEST MATCH WINS, and a matched span is CONSUMED. Every pattern used to be run
+    independently over the whole text, so a shorter name nested inside a longer one
+    matched too: "Northern Ireland" yielded Ireland (ie) inside a United Kingdom Act,
+    "South Sudan" yielded Sudan, "South China Sea" yielded China. Those are wrong
+    countries, not noisy ones — a reader cannot tell a fabricated attribution from a
+    real one. Patterns now run longest-first and claim their characters, so nothing
+    nested inside an already-matched name can match.
     """
     if not text:
         return []
     text = text[:_MAX_SCAN]
+    # One byte per character; a match is skipped when any of its characters is already
+    # spoken for. Cheap, and O(len(name)) per check rather than O(matches so far).
+    claimed = bytearray(len(text))
     # cached_index() rather than build_index(load_cities()): the latter re-read and
     # re-parsed the whole gazetteer YAML on EVERY call, i.e. once per article
     # through the re-index. Measured at 50,000 cities: 17 seconds. Per article.
@@ -106,19 +163,34 @@ def extract_locations(
     found: dict[str, dict] = {}
     for rx, name, kind in _patterns():
         for m in rx.finditer(text):
-            key = f"{kind}:{name.lower()}"
+            start, end = m.start(), m.end()
+            if any(claimed[start:end]):
+                continue  # nested inside a longer name that already won this span
+            claimed[start:end] = b"\x01" * (end - start)
+            if kind == "guard":
+                # The span is spent and nothing is asserted. A sea is not a country,
+                # and a place named after one is not that one.
+                continue
+            # CANONICALISE a country by its ISO code, not by the surface form that
+            # happened to match. The same field report showed "Uk (gb)", "United Kingdom
+            # (gb)" and "Britain (gb)" as three separate places in one document; they are
+            # one country mentioned three ways, and summing them is both truer and what a
+            # reader expects. Cities keep their gazetteer name as the key — two cities can
+            # legitimately share a name, and collapsing those would lose a real distinction.
+            iso2 = _COUNTRY_NAMES[name] if kind == "country" else None
+            key = f"country:{iso2}" if iso2 else f"{kind}:{name.lower()}"
             if key in found:
                 found[key]["mentions"] += 1
                 continue
             entry: dict = {
-                "name": name if kind == "city" else name.title(),
+                "name": _display_name(iso2) if iso2 else name,
                 "kind": kind,
                 "mentions": 1,
                 "snippet": _snippet(text, m.start(), m.end()),
                 "note": "deduced from the text — a name match, not a confirmed event site",
             }
             if kind == "country":
-                entry["country"] = _COUNTRY_NAMES[name]
+                entry["country"] = iso2
             else:
                 hit = lookup(index, name, source_country)
                 if hit:

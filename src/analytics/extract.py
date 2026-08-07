@@ -224,6 +224,20 @@ _CAPS_FURNITURE_STOP: frozenset[str] = frozenset(
     {"foto", "video", "live", "info", "premium", "pdf", "rss"}
 )
 
+# LEGISLATIVE STRUCTURAL HEADINGS -- field evidence 2026-08-07 (the maintainer's reader
+# export of the UK Data Protection Act 2018): "PART" appeared 24 times and was extracted
+# as an ORGANIZATION. Statute text is full of shouted structural headings, so any tracked
+# legal document reliably manufactures the same false entity. Same layer and same
+# collision-freedom as the block above: this demotes only the standalone ALL-CAPS token,
+# so the lowercase content words -- an "article" of clothing, "part" of a whole, a
+# "chapter" of a book -- are untouched terms and stay in the index. None of these is a
+# real acronym, so there is no homograph to protect (unlike the Roman-numeral case
+# below, which needed an allowlist). Evidence-grown: ship what the export showed plus its
+# immediate structural siblings, which co-occur in the same headings of the same document.
+_LEGISLATIVE_FURNITURE_STOP: frozenset[str] = frozenset(
+    {"part", "schedule", "chapter", "section", "annex", "appendix", "article"}
+)
+
 # Canonical-form Roman numeral (strict subtractive notation), length >= 2. Deliberately
 # STRICT: a malformed run (IIII, VX, IC) does NOT match, so this never over-reaches past
 # a token that is genuinely, unambiguously a numeral shape (§0 row 4 of the 2026-07-18
@@ -501,6 +515,9 @@ class BaselineExtractor:
             if surface.casefold() in _CAPS_FURNITURE_STOP:
                 # Publishing/headline furniture (FOTO, VIDEO, LIVE...) -- the lowercase
                 # content word is untouched, this only demotes the shouted CHROME form.
+                continue
+            if surface.casefold() in _LEGISLATIVE_FURNITURE_STOP:
+                # Statute structure (PART, SCHEDULE, ANNEX...) -- a heading, not an org.
                 continue
             # An accented-Latin all-caps word (DÉCOUVREZ) or a known CTA button word (PARTAGEZ,
             # SUBSCRIBE) is a shouted term, NOT an acronym entity — demote it to a plain term.
