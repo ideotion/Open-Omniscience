@@ -31,11 +31,18 @@ WHAT IS POPULATED HERE, AND WHAT IS DELIBERATELY EMPTY:
   recorded ``joined=None`` WITH the gap stated, and that no date is ever guessed to make a
   series continuous. An empty table that says why is honest; a table of plausible dates is
   not, and would be indistinguishable from a correct one on inspection.
-* **World Bank regions** — **EMPTY** for the same reason: the region assignment per
-  country comes off ``/v2/country``, which is egress-blocked here. Note that WB regions
-  are NOT continents — "Sub-Saharan Africa" excludes Egypt, Libya, Tunisia, Algeria and
-  Morocco, which sit in "Middle East & North Africa" — which is precisely why ruling 47
+* **World Bank regions** — **populated 2026-08-07** from a live ``/v2/country`` read: all
+  217 economies across the seven regions. They are NOT continents — Sub-Saharan Africa
+  excludes Egypt, Libya, Tunisia, Algeria and Morocco — which is precisely why ruling 47
   asked for both lenses rather than treating one as a rename of the other.
+
+  Their membership is UNDATED, and that is a real weakness rather than a simplification.
+  The Bank reassigns economies between regions — Afghanistan and Pakistan moved out of
+  South Asia, and the region was renamed to match — but publishes no dated history of
+  those moves, only the current assignment. So the registry vintage is the only thing
+  saying which assignment a figure was computed under, where a bloc can say it per member.
+  Pairing a WB-region figure across vintages can therefore compare different country sets
+  silently; the group's ``notes`` say so on every payload.
 
 A KNOWN LIMIT, stated rather than papered over: a country that did not yet exist in the
 requested year (South Sudan before 2011) is still listed as a member and simply reports no
@@ -138,13 +145,57 @@ _BLOC_GAP = (
     "dated, sourced rosters."
 )
 
-_WB_REGION_GAP = (
-    "Membership is not held: the World Bank's region assignment per country comes off "
-    "its /v2/country response, which was unreachable when this registry was written. "
-    "These regions are NOT continents (Sub-Saharan Africa excludes the five North "
-    "African economies, which sit in Middle East & North Africa), so they cannot be "
-    "substituted with the continent lens."
-)
+#: The World Bank's own region for each of the 217 economies in its country list, read
+#: off /v2/country on 2026-08-07. These regions are NOT continents — "Sub-Saharan Africa"
+#: excludes Egypt, Libya, Tunisia, Algeria and Morocco, which the Bank files under MENA —
+#: which is why both lenses ship and neither substitutes for the other.
+#:
+#: The MENA region has been RENAMED and RESHAPED: it is "Middle East, North Africa,
+#: Afghanistan & Pakistan", and those two countries moved out of South Asia. The
+#: arithmetic corroborates it rather than taking it on trust — South Asia comes out at
+#: SIX members here, where it has historically had eight. Malta is also in MEA, not ECS.
+#: A series pairing a pre-change SAS or MEA figure with a post-change one is therefore
+#: comparing different populations, which is why this table is dated and registered.
+_WB_REGION_MEMBERS: dict[str, tuple[str, ...]] = {
+    "EAS": (
+        "as", "au", "bn", "cn", "fj", "fm", "gu", "hk", "id", "jp", "kh", "ki", "kp",
+        "kr", "la", "mh", "mm", "mn", "mo", "mp", "my", "nc", "nr", "nz", "pf", "pg",
+        "ph", "pw", "sb", "sg", "th", "tl", "to", "tv", "vn", "vu", "ws",
+    ),
+    "ECS": (
+        "ad", "al", "am", "at", "az", "ba", "be", "bg", "by", "ch", "cy", "cz", "de",
+        "dk", "ee", "es", "fi", "fo", "fr", "gb", "ge", "gi", "gl", "gr", "hr", "hu",
+        "ie", "im", "is", "it", "jg", "kg", "kz", "li", "lt", "lu", "lv", "mc", "md",
+        "me", "mk", "nl", "no", "pl", "pt", "ro", "rs", "ru", "se", "si", "sk", "sm",
+        "tj", "tm", "tr", "ua", "uz", "xk",
+    ),
+    "LCN": (
+        "ag", "ar", "aw", "bb", "bo", "br", "bs", "bz", "cl", "co", "cr", "cu", "cw",
+        "dm", "do", "ec", "gd", "gt", "gy", "hn", "ht", "jm", "kn", "ky", "lc", "mf",
+        "mx", "ni", "pa", "pe", "pr", "py", "sr", "sv", "sx", "tc", "tt", "uy", "vc",
+        "ve", "vg", "vi",
+    ),
+    "MEA": (
+        "ae", "af", "bh", "dj", "dz", "eg", "il", "iq", "ir", "jo", "kw", "lb", "ly",
+        "ma", "mt", "om", "pk", "ps", "qa", "sa", "sy", "tn", "ye",
+    ),
+    "NAC": ("bm", "ca", "us"),
+    "SAS": ("bd", "bt", "in", "lk", "mv", "np"),
+    "SSF": (
+        "ao", "bf", "bi", "bj", "bw", "cd", "cf", "cg", "ci", "cm", "cv", "er", "et",
+        "ga", "gh", "gm", "gn", "gq", "gw", "ke", "km", "lr", "ls", "mg", "ml", "mr",
+        "mu", "mw", "mz", "na", "ne", "ng", "rw", "sc", "sd", "sl", "sn", "so", "ss",
+        "st", "sz", "td", "tg", "tz", "ug", "za", "zm", "zw",
+    ),
+}
+
+#: The Channel Islands is a World Bank economy (`CHI`, alpha-2 `JG`) and a member of
+#: Europe & Central Asia, but `JG` is not ISO 3166-1 and `to_iso2` correctly refuses it —
+#: so no figure for it can ever reach an aggregate through this app's pipeline. It is
+#: listed as a member anyway. Dropping it to make the region's coverage completable would
+#: be exactly the move this module exists to prevent: a real member deleted so a number
+#: stops carrying a caveat. It surfaces as a permanent coverage gap, which is the truth.
+UNREPRESENTABLE_MEMBERS: frozenset[str] = frozenset({"jg"})
 
 #: Known groups whose membership is deliberately EMPTY. Naming them is the point: a
 #: caller can say "BRICS exists and we cannot yet compute it", which is a different and
@@ -167,15 +218,33 @@ _UNPOPULATED: tuple[Group, ...] = tuple(
         ("european-union", "European Union"),
     )
 ) + tuple(
-    Group(key=key, label=label, kind="wb_region", unpopulated_reason=_WB_REGION_GAP)
-    for key, label in (
-        ("wb-east-asia-pacific", "East Asia & Pacific"),
-        ("wb-europe-central-asia", "Europe & Central Asia"),
-        ("wb-latin-america-caribbean", "Latin America & Caribbean"),
-        ("wb-middle-east-north-africa", "Middle East & North Africa"),
-        ("wb-north-america", "North America"),
-        ("wb-south-asia", "South Asia"),
-        ("wb-sub-saharan-africa", "Sub-Saharan Africa"),
+    Group(
+        key=key,
+        label=label,
+        kind="wb_region",
+        members=tuple(Membership(area=a) for a in _WB_REGION_MEMBERS[code]),
+        # The Bank reassigns economies between regions (Afghanistan and Pakistan moved
+        # out of South Asia), but it publishes no dated history of those moves -- only
+        # the CURRENT assignment. So membership here is undated, and the registry
+        # vintage is the only thing that says which assignment a figure was computed
+        # under. That is weaker than the bloc model and is stated rather than hidden.
+        dates_apply=False,
+        notes=(
+            "The World Bank's own region, as of the registry vintage. NOT a continent: "
+            "Sub-Saharan Africa excludes Egypt, Libya, Tunisia, Algeria and Morocco. The "
+            "Bank reassigns economies without publishing a dated history, so a figure "
+            "from an earlier vintage may have been computed over a different set."
+        ),
+    )
+    for key, label, code in (
+        ("wb-east-asia-pacific", "East Asia & Pacific", "EAS"),
+        ("wb-europe-central-asia", "Europe & Central Asia", "ECS"),
+        ("wb-latin-america-caribbean", "Latin America & Caribbean", "LCN"),
+        ("wb-middle-east-north-africa",
+         "Middle East, North Africa, Afghanistan & Pakistan", "MEA"),
+        ("wb-north-america", "North America", "NAC"),
+        ("wb-south-asia", "South Asia", "SAS"),
+        ("wb-sub-saharan-africa", "Sub-Saharan Africa", "SSF"),
     )
 )
 

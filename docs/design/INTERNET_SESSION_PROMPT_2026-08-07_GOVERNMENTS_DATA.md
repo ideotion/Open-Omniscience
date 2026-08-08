@@ -9,6 +9,26 @@ networked session, and the format its answer should come back in.
 internet-connected session, then paste the whole answer back here. Nothing in the answer
 gets merged without being re-read against the code first.
 
+
+> **STATUS 2026-08-07 — partially answered; re-run only the open tasks.**
+>
+> A networked pass returned Tasks 1, 1b and most of 2, and they are MERGED: the aggregate
+> table is now the complete live set of 78, and the seven World Bank regions are populated
+> with all 217 economies. Three of its findings were corrections to things this repo had
+> asserted from documentation, each invisible on inspection — a row for `FCS`/`F1` that
+> does not exist, a MEA rename that had moved Afghanistan and Pakistan out of South Asia,
+> and the premise that `countryiso3code` is empty for aggregates, which is false.
+>
+> **Still open, and the reason to run this again:** Task 3 (all 36 indicator codes — the
+> pass was blocked from constructing those URLs), Task 4 (bloc membership with dates, which
+> is the one thing still holding the bloc lens empty), Task 5, Task 6, and the AfDB/UNECA
+> half of Task 7. Task 2 has two loose ends: confirm `page=2` against a cache-disabled
+> request, and read the tail of page 1.
+>
+> Task 4 is worth its own session. Several hundred member-rows each wanting a dated source
+> URL, and a partial roster is more dangerous than none: an empty registry fails visibly,
+> a half-filled one computes.
+
 ---
 
 You are researching **public statistical data sources** for a local-first, offline

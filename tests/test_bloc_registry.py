@@ -166,17 +166,26 @@ def test_a_known_bloc_reports_that_it_exists_and_why_it_is_empty():
 
 
 def test_every_unpopulated_group_carries_a_reason():
-    for g in (*groups_of_kind("bloc"), *groups_of_kind("wb_region")):
-        assert g.unpopulated_reason, g.key
+    """Scoped to blocs since 2026-08-07: the World Bank regions were populated from a
+    live read and are no longer part of this claim. Kept narrow deliberately -- widening
+    it back to every kind would pass vacuously the day another kind is populated."""
+    unpopulated = [g for g in groups_of_kind("bloc") if g.unpopulated_reason]
+    assert len(unpopulated) == 13, "all thirteen blocs are still awaiting sourced dates"
+    for g in unpopulated:
         assert members_as_of(g.key)["populated"] is False
 
 
 def test_world_bank_regions_are_not_offered_as_a_rename_of_continents():
     """Sub-Saharan Africa excludes the five North African economies, so substituting the
-    continent lens would silently answer a different question."""
-    reason = resolve_group("wb-sub-saharan-africa").unpopulated_reason
-    assert "NOT continents" in reason
-    assert "North African" in reason
+    continent lens would silently answer a different question.
+
+    The claim moved from `unpopulated_reason` to `notes` when the lens was populated on
+    2026-08-07 -- it is a permanent property of the region, not an excuse for an empty
+    table, so it belongs on every payload rather than only on a refusal."""
+    g = resolve_group("wb-sub-saharan-africa")
+    assert g.unpopulated_reason is None, "populated since 2026-08-07"
+    assert "NOT a continent" in g.notes
+    assert "Egypt" in g.notes
 
 
 def test_an_unknown_group_is_not_silently_empty():
@@ -188,3 +197,79 @@ def test_an_unknown_group_is_not_silently_empty():
 def test_every_payload_states_the_registry_vintage():
     for key in ("africa", "brics", "wb-south-asia", "atlantis"):
         assert members_as_of(key)["as_of"] == BLOC_REGISTRY_AS_OF
+
+
+# --------------------------------------------------------------------------- #
+#  World Bank regions — populated from a live read, 2026-08-07
+# --------------------------------------------------------------------------- #
+
+
+def test_all_seven_regions_are_populated_and_partition_the_217_economies():
+    """295 entries in /v2/country, 78 aggregates, 217 economies. The regions partition
+    them exactly — a count that would catch a dropped or duplicated row on transcription.
+    """
+    groups = groups_of_kind("wb_region")
+    assert len(groups) == 7
+    seen: set[str] = set()
+    total = 0
+    for g in groups:
+        out = members_as_of(g.key)
+        assert out["populated"] is True, g.key
+        members = out["members"]
+        assert members, g.key
+        overlap = seen & set(members)
+        assert not overlap, f"{g.key} repeats {overlap}"
+        seen |= set(members)
+        total += len(members)
+    assert total == 217 and len(seen) == 217
+
+
+def test_south_asia_has_six_members_which_corroborates_the_MENA_reassignment():
+    """South Asia has historically had eight. Afghanistan and Pakistan moved to MEA, and
+    the arithmetic agrees independently of the rename — which is why the reassignment is
+    treated as fact here rather than as a reported claim."""
+    sas = members_as_of("wb-south-asia")["members"]
+    assert len(sas) == 6
+    assert "af" not in sas and "pk" not in sas
+    mea = members_as_of("wb-middle-east-north-africa")["members"]
+    assert "af" in mea and "pk" in mea
+    assert "mt" in mea, "Malta is in MEA on this response, not ECS"
+
+
+def test_the_wb_africa_regions_really_do_exclude_north_africa():
+    """The claim that makes two lenses necessary rather than redundant. If this ever
+    passes vacuously the continent lens could be quietly substituted for this one."""
+    ssf = set(members_as_of("wb-sub-saharan-africa")["members"])
+    for north_african in ("eg", "ly", "tn", "dz", "ma"):
+        assert north_african not in ssf, north_african
+        assert north_african in members_as_of("wb-middle-east-north-africa")["members"]
+
+
+def test_a_wb_region_states_that_its_membership_is_undated():
+    """Weaker than the bloc model, and said so rather than left to be assumed: the Bank
+    publishes only the CURRENT assignment, so cross-vintage comparison is unsafe."""
+    out = members_as_of("wb-europe-central-asia", "1995")
+    assert out["dates_apply"] is False
+    assert "reassigns economies" in out["notes"]
+    assert out["undated_members"] == []
+
+
+def test_the_channel_islands_is_kept_even_though_it_can_never_carry_a_figure():
+    """`JG` is not ISO 3166-1, so `to_iso2` refuses it and no figure for the Channel
+    Islands can reach an aggregate. It stays a member anyway: deleting a real member so a
+    region's coverage becomes completable is precisely the move the coverage gate exists
+    to prevent."""
+    from src.catalog.blocs import UNREPRESENTABLE_MEMBERS
+    from src.catalog.countries import to_iso2
+
+    assert "jg" in members_as_of("wb-europe-central-asia")["members"]
+    assert to_iso2("JG") is None
+    assert "jg" in UNREPRESENTABLE_MEMBERS
+
+
+def test_every_member_code_is_lowercase_alpha2_like_the_continent_lens():
+    """Both lenses feed the same aggregation, which keys on what `to_iso2` returns."""
+    for kind in ("continent", "wb_region"):
+        for g in groups_of_kind(kind):
+            for m in g.members:
+                assert m.area == m.area.lower() and len(m.area) == 2, (g.key, m.area)

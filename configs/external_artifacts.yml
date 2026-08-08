@@ -93,7 +93,7 @@ artifacts:
     title: World Bank statistical aggregate codes
     kind: catalog
     description: >
-      The ~30 non-country rows a World Bank `country/all` response contains — "High
+      The 78 non-country rows a World Bank `country/all` response contains — "High
       income", "Sub-Saharan Africa", "World" — mapped code -> display name so the
       Governments aggregate view can name them. DISPLAY METADATA ONLY: the guard that
       keeps an aggregate out of country surfaces is structural (countries.to_iso2 admits
@@ -102,18 +102,21 @@ artifacts:
       That asymmetry is why an entry we are unsure of is OMITTED rather than guessed.
     upstream: https://api.worldbank.org/v2/country?format=json (region.value == "Aggregates")
     check_upstream: >
-      Re-read the country list and diff the aggregate rows. The vocabulary changes rarely
-      (an income-group boundary, a new regional grouping), but api.worldbank.org 403s from
-      the build sandbox, so this table can NEVER be re-verified by the session that edits
-      it — which is exactly why it is dated and registered.
+      Re-read the country list and diff the aggregate rows. VERIFIED 2026-08-07 by a
+      networked session: 295 entries, 78 aggregates, 217 economies. That pass found the
+      table's own errors were invisible ones — a row for FCS/F1 that does not exist, and
+      a MEA rename that moved Afghanistan and Pakistan out of South Asia — so "changes
+      rarely" is true of the vocabulary and false of the country SETS behind it. The
+      build sandbox still 403s, so re-verification remains a networked task.
     license: CC BY 4.0 (World Bank open data; the table is our metadata)
     pin: {file: src/catalog/aggregates.py, const: WB_AGGREGATES_AS_OF}
     refresh: >
       Fetch the country list on a networked box, take every row whose region.value is
-      "Aggregates", and reconcile iso3/iso2/name against the table. Omit rather than guess
-      an alpha-2 you cannot read off the response — several are deliberately absent for
-      exactly that reason (the demographic-dividend and least-developed groupings, whose
-      alpha-2 codes could not be told apart from the IDA/IBRD lending block's offline).
+      "Aggregates", and reconcile iso3/iso2/name against the table. Diff the COUNT first
+      (78 as of 2026-08-07) — a changed count is the cheapest signal that the vocabulary
+      moved. Watch for renames that are really country-set changes: MEA is the worked
+      example, and a rename alone would have looked cosmetic. Two names come back with a
+      trailing space and are stored trimmed; never key on a name.
     freshness: {max_age_months: 24}
     last_verified: "2026-08-07"
 
