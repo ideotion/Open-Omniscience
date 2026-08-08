@@ -318,3 +318,127 @@ def test_the_bulk_load_indexes_exactly_the_merged_rows(tmp_path) -> None:
     assert st["articles"] == 25, "expected 15 genuinely-new articles on top of 10"
     assert st["indexed"] == 25, "the index and the table disagree after a partial overlap"
     assert st["hits_zebra"] == 25
+
+
+# --------------------------------------------------------------------------- #
+#  C2/C3 -- the bulk-load knobs, and the step that reports itself
+# --------------------------------------------------------------------------- #
+def test_hashsize_is_raised_for_the_load_and_restored_after(tmp_path) -> None:
+    """FTS5's default hash budget is 1 MiB, which flushes a level-0 segment every
+    megabyte -- the segment explosion whose crisis-merge cascade is the cost. It
+    is raised for the load; leaving it raised would change every later ingest's
+    memory profile silently, exactly as leaving automerge at 0 would."""
+    working, staged = tmp_path / "w.db", tmp_path / "s.db"
+    _corpus(working, articles=3)
+    _corpus(staged, articles=12, first=4000)
+
+    seen: list[str] = []
+    merge_corpus(
+        staged, working, _BATCH_META,
+        stmt_cb=lambda i, name, label, secs, begin: (
+            seen.append(label) if begin and "hashsize" in label else None),
+    )
+
+    assert seen, "hashsize was never set -- FTS5 ran its 1 MiB default"
+    assert len(seen) >= 2, f"hashsize set but never restored: {seen}"
+
+    # The PERSISTED value is the load-bearing assertion, not the statement count:
+    # FTS5 writes hashsize into its own %_config table (verified), so a merge that
+    # forgot to put it back would leave the corpus permanently holding a 64 MiB
+    # pending-index budget -- a memory profile the operator never chose, applied
+    # to every later ingest.
+    con = sqlite3.connect(working)
+    try:
+        row = con.execute(
+            "SELECT v FROM article_fts_config WHERE k='hashsize'").fetchone()
+    finally:
+        con.close()
+    assert row is None or int(row[0]) == 1024 * 1024, (
+        f"the corpus was left with hashsize={row[0]}, not FTS5's default")
+
+
+def test_the_bulk_load_never_runs_optimize(tmp_path) -> None:
+    """'optimize' rewrites the WHOLE index, so its cost tracks the corpus rather
+    than the import -- measured 2.05s/3.00s/9.31s as the index grew 25k->50k->100k
+    documents while the insert beside it stayed flat. With a queue of backups that
+    is one whole-index rewrite per backup, each bigger than the last."""
+    working, staged = tmp_path / "w.db", tmp_path / "s.db"
+    _corpus(working, articles=3)
+    _corpus(staged, articles=12, first=4000)
+
+    ran: list[str] = []
+    merge_corpus(
+        staged, working, _BATCH_META,
+        stmt_cb=lambda i, name, label, secs, begin: (
+            ran.append(label) if begin and "optimize" in label else None),
+    )
+
+    assert ran == [], f"the merge still runs a whole-index rewrite: {ran}"
+    # ...and the index is still complete and searchable without it. A faster
+    # build that lost coverage would be no fix at all.
+    st = _fts_state(working)
+    assert st["indexed"] == 15
+    assert st["hits_zebra"] == 15
+
+
+def test_the_search_index_step_is_counted_and_reports_its_rows(tmp_path) -> None:
+    """The field defect this closes: the step reported (total, total) against a
+    denominator that EXCLUDED it, so its tick published done = total-1 -- the same
+    number the last table step publishes on completion. "18/19" therefore meant
+    either "watches finished" or "the search index has been running for fourteen
+    hours", and the run journal could not tell them apart."""
+    working, staged = tmp_path / "w.db", tmp_path / "s.db"
+    _corpus(working, articles=3)
+    _corpus(staged, articles=40, first=7000)
+
+    ticks: list[tuple[int, int, str]] = []
+    done: list[tuple[int, int, str]] = []
+
+    merge_corpus(
+        staged, working, _BATCH_META,
+        step_cb=lambda i, t, name, el: ticks.append((i, t, name)),
+        progress_cb=lambda i, t, name: done.append((i, t, name)),
+    )
+
+    steps = merge_mod._merge_steps()
+    total = len(steps) + 1
+    assert all(t == total for _, t, _ in done), (
+        f"the denominator must include the search index: {sorted({t for _, t, _ in done})}")
+    # the last TABLE step and the search-index step must not share a number
+    last_table = [i for i, _, n in done if n == steps[-1][0]]
+    assert last_table == [len(steps)]
+    assert len(steps) < total, "the search index is not counted as a step"
+
+    fts_ticks = [(i, n) for i, _, n in ticks if n.startswith("search index")]
+    if fts_ticks:  # ticks are time-gated; on a tiny fixture there may be none
+        assert all(i == total for i, _ in fts_ticks)
+        assert any("articles" in n for _, n in fts_ticks), (
+            "the search-index step must report rows, not just elapsed seconds")
+
+
+def test_the_row_counter_reaches_the_full_set(tmp_path) -> None:
+    """The counter is the instrument that will answer the still-open field
+    question, so it has to be right: it must end at the exact number of articles
+    this batch added, not at a batch boundary."""
+    working, staged = tmp_path / "w.db", tmp_path / "s.db"
+    _corpus(working, articles=2)
+    _corpus(staged, articles=37, first=9000)
+
+    prog: dict = {}
+    real = merge_mod._fts_index_merged_articles
+
+    def _capture(con, batch_id, progress=None):
+        n = real(con, batch_id, progress=progress)
+        if progress is not None:
+            prog.update(progress)
+        return n
+
+    merge_mod._fts_index_merged_articles = _capture
+    try:
+        merge_corpus(staged, working, _BATCH_META)
+    finally:
+        merge_mod._fts_index_merged_articles = real
+
+    assert prog.get("total") == 37, prog
+    assert prog.get("done") == 37, prog
+    assert prog.get("phase") == "done"
