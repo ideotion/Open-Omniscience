@@ -76,8 +76,23 @@ Measured, 60k documents into a 60k index, varying only `hashsize`:
 
 It controls segment count as expected, and 64 MiB is the measured optimum — more is
 not better, which is why the shipped default is a measured number and not "as much
-as we can get". *(The 16 MiB point is inconsistent with both its neighbours at the
-same segment count; that is noise, and §6 records the repeat.)*
+as we can get".
+
+The 16 MiB point disagreed with both its neighbours at the same segment count, which
+is the signature of noise rather than of a curve — and the default only rests on
+**1 MiB (what FTS5 does today) against 64 MiB (what this ships)**, so that pair was
+repeated, interleaved so a machine drifting warmer over the run could not be mistaken
+for one arm being faster:
+
+| run | 1 MiB | 64 MiB |
+|---|---:|---:|
+| 1 | 11.84 s | 8.17 s |
+| 2 | 11.97 s | 8.64 s |
+| 3 | 12.05 s | 8.34 s |
+| **median** | **11.97 s** | **8.34 s** |
+
+**1.44×, with non-overlapping ranges.** The 16 MiB reading was noise; this pair is
+not.
 
 ### 2.3 What the query side cost — the part that decides whether this is allowed
 
@@ -170,8 +185,19 @@ guess.
   changing two data-safety-adjacent things in one session is how a corpus is lost.
   Recorded as the next candidate once the FTS cost is measured on real hardware —
   at which point it becomes the *largest* remaining per-backup cost, so it will need
-  answering. §6 records a probe of whether its 2 MB default page cache is costing it,
-  which would be a free win that changes nothing about the check.
+  answering.
+
+  **The free win I went looking for is not there.** I suspected its 2 MB default page
+  cache: `quick_check` walks b-trees rather than reading the file in order, so a
+  bigger cache might have paid for itself with nothing about the check changing.
+  Measured on a 1,966 MB plaintext corpus with the OS cache dropped between runs:
+  **10.04 s at 2 MB, 10.53 s at 64 MB** — no benefit, and the larger cache is
+  marginally worse. Refuted, recorded with its numbers so nobody re-chases it.
+
+  What the same probe does show is *why* the field's number is what it is: 196 MB/s
+  here on a file that fits in RAM, against **17 MB/s** on the field's 32 GB artifact.
+  That is an 11× gap, and it is the cost of walking b-trees across a file far larger
+  than memory — inherent to the check, not a tuning miss.
 
 - **The merge direction.** The working copy is built from the *live* corpus and the
   (much larger) incoming one is merged into it, so the FTS index is rebuilt for
@@ -191,9 +217,9 @@ guess.
 | `ftsbench` ladder | do the strategies differ, and does it hold with scale? | yes; 1.6–1.9× across 25k–150k, and B6's per-doc cost is the only one *climbing* |
 | `ftsseg` | does `hashsize` control segment count and cost? | yes; 19 → 4 segments, 64 MiB the measured optimum (256 MiB is worse) |
 | `ftsquery` | what does skipping `'optimize'` cost at search time? | **nothing measurable** — 74.5 vs 74.6 ms median |
-| `ftsrepeat` | is the 1 MiB vs 64 MiB result repeatable? | interleaved n=3; see the PR |
-| `ftsvac` | does `auto_vacuum=INCREMENTAL` cost the load? | see the PR |
-| `qcheck` | is `validate` slow because of its 2 MB page cache? | see the PR |
+| `ftsrepeat` | is the 1 MiB vs 64 MiB result repeatable? | **yes** — 1.44×, interleaved n=3, non-overlapping ranges |
+| `ftsvac` | does `auto_vacuum=INCREMENTAL` cost the load? | **~5%** (30.43 vs 28.83 s; 15.91 vs 15.17 s) — real, small, **not** the answer |
+| `qcheck` | is `validate` slow because of its 2 MB page cache? | **no** — 10.04 s at 2 MB vs 10.53 s at 64 MB. Refuted; the free win does not exist |
 
 Every probe ran on the **production engine** — real sqlcipher3, real pragmas — and
 each arm's index was checked for identical document and MATCH counts before its
