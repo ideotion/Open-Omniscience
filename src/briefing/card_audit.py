@@ -1593,7 +1593,68 @@ def card_audit_report(
         "caveat": AUDIT_CAVEAT,
     }
     _report(total_units, total_units, "done")
-    return report
+    return _sanitise_non_finite(report)
+
+
+#: How many non-finite field PATHS to name in the report. A handful identifies the
+#: culprit; naming thousands would itself bloat the member this exists to save.
+_NON_FINITE_NAME_LIMIT = 50
+
+
+def _sanitise_non_finite(report: dict) -> dict:
+    """Replace ``inf``/``-inf``/``NaN`` with ``None``, and NAME where they were.
+
+    WHY THIS EXISTS, from the operator's 2026-08-08 bundle: this member computed
+    for **112 seconds** and was then thrown away whole by the JSON encoder --
+    ``Out of range float values are not JSON compliant: -inf``. Every bundle since
+    at least 2026-08-06 shipped ``card-audit.json.error.txt`` instead of a report.
+
+    ``_eval_arith`` already refuses a non-finite value (returns not-checkable), so
+    the offender arrives from a PRODUCER's own card payload, and which one is not
+    knowable without the corpus that produced it. So the repair does two things,
+    and the second is the load-bearing one: the value becomes ``null`` so the
+    member survives, AND its dotted path is listed under ``non_finite`` so the
+    NEXT bundle identifies the producer. Sanitising silently would make this the
+    exact hiding-place-for-the-bug-it-survives shape the ledger already names
+    twice (K2, ``ai_diagnostics._safe``).
+
+    ``None`` is the honest replacement: an infinity is not a measurement, and the
+    report's own convention already reads ``null`` as "no value here" rather than
+    as zero.
+    """
+    paths: list[str] = []
+    truncated = [0]
+
+    def _walk(node, path: str):
+        if isinstance(node, float):
+            if node != node or node in (float("inf"), float("-inf")):
+                if len(paths) < _NON_FINITE_NAME_LIMIT:
+                    paths.append(path or "<root>")
+                else:
+                    truncated[0] += 1
+                return None
+            return node
+        if isinstance(node, dict):
+            return {k: _walk(v, f"{path}.{k}" if path else str(k)) for k, v in node.items()}
+        if isinstance(node, list):
+            return [_walk(v, f"{path}[{i}]") for i, v in enumerate(node)]
+        if isinstance(node, tuple):
+            return [_walk(v, f"{path}[{i}]") for i, v in enumerate(node)]
+        return node
+
+    out = _walk(report, "")
+    if paths or truncated[0]:
+        out["non_finite"] = {
+            "n": len(paths) + truncated[0],
+            "fields": paths,
+            "named_truncated": truncated[0],
+            "note": (
+                "these fields held inf/-inf/NaN and were replaced with null so this "
+                "report could be serialised at all. An infinity is not a measurement: "
+                "the producer that emitted it is the defect, and these paths name it."
+            ),
+        }
+    return out
 
 
 def _determinism_check(session, first: list[ProducerOutcome]) -> dict:
