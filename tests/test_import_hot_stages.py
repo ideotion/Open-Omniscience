@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import sqlite3
 
+import pytest
+
 from src.database.maintenance import HOT_INDEXES
 
 _DDL = """
@@ -159,24 +161,49 @@ def test_prepare_staged_records_its_two_expensive_halves_separately():
     # RECORD, not STAGE: .stage() also fires stage_progress_cb, whose names are
     # the user-visible phases counted against restore_stage_plan(). A sub-stage
     # pinged as a phase makes _phase_of report its honest-unknown 0.
-    assert 'getattr(timings, "record", None)' in src
+    #
+    # Read from _sub_timer, which is where the mechanism lives now that
+    # verify_copy needs it too. This assertion previously read
+    # prepare_staged_corpus's own source and broke on the hoist -- the claim was
+    # still true, it was just pointed at the old address.
+    assert 'getattr(timings, "record", None)' in inspect.getsource(m._sub_timer)
     assert "_stage(name)" not in src, "a sub-timing must never emit a phase ping"
 
     caller = inspect.getsource(m.run_restore)
     assert "timings=timings" in caller, "run_restore must actually pass its recorder"
 
 
-def test_prepare_staged_still_works_with_no_recorder(tmp_path, monkeypatch):
+def test_prepare_staged_still_works_with_no_recorder():
     """The default path (no timings) must be byte-identical in behaviour -- every
-    existing caller and test relies on it."""
-    import inspect
+    existing caller and test relies on it.
 
+    BEHAVIOURAL, not a word-grep. This asserted ``"if _record is None:" in src``
+    and broke when the closure was hoisted into ``_sub_timer`` -- a true claim
+    anchored to an address. Driving the timer proves the same thing and cannot be
+    moved out from under itself.
+    """
     from src.backup import merge as m
 
-    src = inspect.getsource(m.prepare_staged_corpus)
-    # With no recorder the sub-context yields straight through: no attribute is
-    # touched on the absent recorder, so None can never raise.
-    assert "if _record is None:" in src and "yield" in src
+    ran = []
+    with m._sub_timer(None)("prepare_staged:validate"):
+        ran.append("body")
+    assert ran == ["body"], "the sub-context must yield straight through"
+
+    # THE TWIN, and it is what makes the line above mean anything: a context that
+    # yields is not evidence of a no-recorder BRANCH -- a timer that recorded
+    # nothing for everyone would pass that assertion just as happily. So prove the
+    # branch exists by taking the other side of it.
+    seen: list[str] = []
+
+    class _Rec:
+        def record(self, name, seconds):  # noqa: ANN001
+            seen.append(name)
+
+    with m._sub_timer(_Rec())("prepare_staged:validate"):
+        pass
+    assert seen == ["prepare_staged:validate"], (
+        "with a recorder the sub-timing must actually be recorded"
+    )
 
 
 def test_sub_timings_are_recorded_but_never_pinged_as_phases(monkeypatch, tmp_path):
@@ -229,14 +256,29 @@ def test_sub_timings_are_recorded_but_never_pinged_as_phases(monkeypatch, tmp_pa
 def test_a_failing_validate_still_records_the_time_the_operator_waited():
     """A quick_check that reads 90 minutes of a multi-GB file and THEN rejects it
     has still cost 90 minutes. Recording only on success would hide exactly the
-    case worth measuring."""
-    import inspect
+    case worth measuring.
 
+    BEHAVIOURAL, not a word-grep: this sliced ``prepare_staged_corpus``'s source
+    from ``def _sub(`` and raised ValueError once the closure was hoisted into
+    ``_sub_timer``. Driving a failing body proves the ``finally`` does its job,
+    which is what the test is named for.
+    """
     from src.backup import merge as m
 
-    src = inspect.getsource(m.prepare_staged_corpus)
-    body = src[src.index("def _sub("):]
-    assert "finally:" in body, "the sub-timer must record through an exception"
+    seen: dict[str, float] = {}
+
+    class _Rec:
+        def record(self, name, seconds):  # noqa: ANN001
+            seen[name] = seconds
+
+    with pytest.raises(RuntimeError, match="rejected"):
+        with m._sub_timer(_Rec())("prepare_staged:validate"):
+            raise RuntimeError("the corpus was rejected after 90 minutes")
+
+    assert "prepare_staged:validate" in seen, (
+        "time the operator waited before a REJECTION is still time they waited"
+    )
+    assert seen["prepare_staged:validate"] >= 0.0
 
 
 # --------------------------------------------------------------------------- #
