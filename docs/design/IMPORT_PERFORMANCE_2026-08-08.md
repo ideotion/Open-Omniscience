@@ -94,6 +94,33 @@ for one arm being faster:
 **1.44×, with non-overlapping ranges.** The 16 MiB reading was noise; this pair is
 not.
 
+### 2.2b The mechanism, measured against the field's own dominant statement
+
+The two sections above are wall-clock. This is the link to the field: the beat shows
+`DELETE FROM 'main'.'article_fts_data' WHERE id>=? AND id<=?` — FTS5's
+`fts5DataRemoveSegment` — in flight in **3,382 of 3,405** sampled beats. So the claim
+"`hashsize` is the lever" is testable directly: raising it must cut the **number of
+times that statement runs**. Counted with a trace callback:
+
+| base + new | hashsize | seconds | **segment deletes** |
+|---|---:|---:|---:|
+| 30k + 30k | 1 MiB | 6.37 | **304** |
+| 30k + 30k | **64 MiB** | 3.79 | **0** |
+| 60k + 60k | 1 MiB | 12.62 | **624** |
+| 60k + 60k | **64 MiB** | 9.32 | **0** |
+
+At the default the count is **linear in documents loaded** (304 → 624 for twice the
+documents). At 64 MiB, at this scale, the field's dominant statement runs **zero
+times** — the load fits in few enough flushes that no crisis merge fires at all.
+
+**What this does and does not license.** It confirms the mechanism is the one the
+field's beat shows, which the wall-clock numbers alone could not. It does **not**
+license extrapolating the field's speedup: at ~1.3M documents and a ~10 GB index a
+64 MiB budget cannot reach zero flushes, so crisis merges will still fire, just far
+fewer times — and merging fewer, larger segments does not reduce merged *bytes* in
+proportion to merged *passes*. The measured wall-clock effect is 1.44–1.89× here. The
+field effect is somewhere at or above that and I cannot say where.
+
 ### 2.3 What the query side cost — the part that decides whether this is allowed
 
 Dropping `'optimize'` is only defensible if search still works. A faster import
