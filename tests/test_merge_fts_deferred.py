@@ -442,3 +442,77 @@ def test_the_row_counter_reaches_the_full_set(tmp_path) -> None:
     assert prog.get("total") == 37, prog
     assert prog.get("done") == 37, prog
     assert prog.get("phase") == "done"
+
+
+# --------------------------------------------------------------------------- #
+# verify_copy's sub-timings
+#
+# This stage runs once per QUEUED BACKUP over the whole working copy, so an
+# 18-backup import walks a growing multi-GB file eighteen times -- and it had
+# never been measured at field scale, because neither of the maintainer's runs
+# survived long enough to reach it (one `incomplete`, one `stopped-by-operator`).
+# The aggregate was already recorded; what was missing was WHICH half to act on.
+# --------------------------------------------------------------------------- #
+
+
+class _Recorder:
+    """A StageTimings-like sink with only ``record`` -- deliberately WITHOUT
+    ``sub``, so this also exercises the fallback branch of ``_sub_timer``."""
+
+    def __init__(self) -> None:
+        self.seen: dict[str, float] = {}
+
+    def record(self, name: str, seconds: float) -> None:
+        self.seen[name] = seconds
+
+
+def test_verify_splits_its_cost_into_the_parts_that_can_be_acted_on(tmp_path) -> None:
+    working, staged = tmp_path / "w.db", tmp_path / "s.db"
+    _corpus(working, articles=4)
+    _corpus(staged, articles=8, first=3000)
+    counts, batch_id = merge_corpus(staged, working, _BATCH_META)
+
+    rec = _Recorder()
+    v = verify_copy(working, staged, batch_id, timings=rec)
+
+    assert v["ok"] is True, v
+    # The page walk and the index-driven check are unrelated work over unrelated
+    # amounts of data; an aggregate cannot say which one to look at.
+    for name in (
+        "verify:quick_check",
+        "verify:foreign_key_check",
+        "verify:counts",
+        "verify:content_sample",
+    ):
+        assert name in rec.seen, f"{name} was not recorded: {sorted(rec.seen)}"
+        assert rec.seen[name] >= 0.0
+
+
+def test_verify_records_the_size_its_page_walk_traverses(tmp_path) -> None:
+    """A duration is not portable; a rate is.
+
+    Without the size, "2414 s" cannot be compared against another machine, against
+    the standalone probe, or against itself after the corpus doubles. With it, the
+    same measurement is "17 MB/s", which can.
+    """
+    working, staged = tmp_path / "w.db", tmp_path / "s.db"
+    _corpus(working, articles=4)
+    _corpus(staged, articles=8, first=3000)
+    counts, batch_id = merge_corpus(staged, working, _BATCH_META)
+
+    v = verify_copy(working, staged, batch_id)
+    assert v["working_copy_bytes"] == working.stat().st_size
+    assert v["working_copy_bytes"] > 0
+
+
+def test_verify_without_a_recorder_is_byte_identical(tmp_path) -> None:
+    """The negative-space twin. Instrumentation that changes the verdict is not
+    instrumentation, and every existing caller passes no recorder at all."""
+    working, staged = tmp_path / "w.db", tmp_path / "s.db"
+    _corpus(working, articles=4)
+    _corpus(staged, articles=8, first=3000)
+    counts, batch_id = merge_corpus(staged, working, _BATCH_META)
+
+    bare = verify_copy(working, staged, batch_id)
+    timed = verify_copy(working, staged, batch_id, timings=_Recorder())
+    assert bare == timed, "recording changed what verification concluded"

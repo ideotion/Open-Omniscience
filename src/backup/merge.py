@@ -249,6 +249,45 @@ def _report_import_scale(corpus_path: Path) -> dict:
     return facts
 
 
+def _sub_timer(timings: object):
+    """A ``with _sub("name"):`` that records a sub-stage, or does nothing.
+
+    Hoisted out of :func:`prepare_staged_corpus` when ``verify_copy`` needed the
+    same thing. Duplicating it would have been the cheaper edit and the worse one:
+    the no-phase-ping guarantee below is subtle, and two copies drift.
+
+    Prefers ``StageTimings.sub()`` when the recorder has it -- same timing, but it
+    ALSO emits a begin to the run journal, and that begin is what names the stage a
+    KILLED run died in. Bare ``record()`` is end-only, so an interrupted sub-stage
+    left no trace at all, which is precisely the case these exist for.
+
+    RECORD, never STAGE: ``timings.stage()`` fires the phase-progress callback, and
+    a sub-stage is not a phase. Pinging one would make the user-visible counter show
+    a phase outside ``restore_stage_plan()``'s honest denominator.
+    """
+    _record = getattr(timings, "record", None)
+    _sub_cm = getattr(timings, "sub", None)
+
+    @contextmanager
+    def _sub(name: str):
+        if _sub_cm is not None:
+            with _sub_cm(name):
+                yield
+            return
+        if _record is None:
+            yield
+            return
+        _t0 = time.monotonic()
+        try:
+            yield
+        finally:
+            # In a finally: time spent before a failure is real time the operator
+            # waited, and a check that raises is exactly when knowing that helps.
+            _record(name, time.monotonic() - _t0)
+
+    return _sub
+
+
 def prepare_staged_corpus(
     staged: StagedArtifact, *, allow_unverified: bool = False, timings: object = None
 ) -> str:
@@ -289,30 +328,7 @@ def prepare_staged_corpus(
     # prepare_staged, so the UI would flash an unknown phase mid-import. The
     # stage_a:* sub-timings a few lines up are recorded rather than staged for the
     # same reason; this follows them.
-    _record = getattr(timings, "record", None)
-    # ...and prefer StageTimings.sub() when the recorder has it: same timing, same
-    # no-phase-ping guarantee, but it ALSO emits a begin to the run journal. That
-    # begin is what names prepare_staged:validate as the stage a killed run died
-    # in; bare record() is end-only, so an interrupted sub-stage left no trace.
-    _sub_cm = getattr(timings, "sub", None)
-
-    @contextmanager
-    def _sub(name: str):
-        """Time a sub-stage when a recorder was supplied, else do nothing."""
-        if _sub_cm is not None:
-            with _sub_cm(name):
-                yield
-            return
-        if _record is None:
-            yield
-            return
-        _t0 = time.monotonic()
-        try:
-            yield
-        finally:
-            # In a finally: time spent before a failure is real time the operator
-            # waited, and a validate that raises is exactly when knowing that helps.
-            _record(name, time.monotonic() - _t0)
+    _sub = _sub_timer(timings)
 
     _report_import_scale(staged.corpus_path)
 
@@ -2845,17 +2861,42 @@ def _verify_fts(con, has_fts: bool, articles: int) -> dict:
 # --------------------------------------------------------------------------- #
 #  Verification on the working copy (design §3: the merge gate)
 # --------------------------------------------------------------------------- #
-def verify_copy(working_copy: Path, staged_corpus: Path, batch_id: int) -> dict:
+def verify_copy(
+    working_copy: Path, staged_corpus: Path, batch_id: int, *, timings: object = None
+) -> dict:
     """Post-merge verification, all on the copy. Any failure aborts the restore
-    BEFORE the swap -- the live DB never sees an unverified merge."""
+    BEFORE the swap -- the live DB never sees an unverified merge.
+
+    ``timings`` (optional): a StageTimings-like recorder. SPLIT for the same reason
+    ``prepare_staged`` is, and with more urgency: this stage runs once per queued
+    backup over the WHOLE working copy, so on an 18-backup import it walks a
+    growing multi-GB file eighteen times -- and it had never once been observed at
+    field scale, because no run had survived long enough to reach it. The aggregate
+    alone would not say which half to act on, and the halves are unrelated work:
+    ``quick_check`` is a page walk of the entire file (and the working copy
+    PRESERVES the live at-rest state, so on an encrypted corpus every one of those
+    pages is decrypted), ``foreign_key_check`` is index-driven, and the content
+    sample is a bounded join. Optional, so every existing caller and test is
+    untouched and a timing failure can never break a restore.
+    """
     from src.database.connect import attach
     from src.database.connect import connect as db_connect
 
+    _sub = _sub_timer(timings)
     con = db_connect(working_copy, check_same_thread=False)
     try:
         v: dict = {}
-        v["quick_check"] = con.execute("PRAGMA quick_check").fetchone()[0]
-        fk = con.execute("PRAGMA foreign_key_check").fetchall()
+        # The size the page walk below actually traverses. Recorded because a
+        # duration alone is not portable between machines or corpus sizes: with
+        # this, "2414 s" becomes "17 MB/s", which is the form that can be compared
+        # against another box, against the standalone probe, or against itself
+        # after the corpus doubles.
+        with suppress(OSError):
+            v["working_copy_bytes"] = working_copy.stat().st_size
+        with _sub("verify:quick_check"):
+            v["quick_check"] = con.execute("PRAGMA quick_check").fetchone()[0]
+        with _sub("verify:foreign_key_check"):
+            fk = con.execute("PRAGMA foreign_key_check").fetchall()
         v["foreign_key_violations"] = len(fk)
 
         has_fts = bool(
@@ -2863,8 +2904,9 @@ def verify_copy(working_copy: Path, staged_corpus: Path, batch_id: int) -> dict:
                 "SELECT 1 FROM sqlite_master WHERE name='article_fts' LIMIT 1"
             ).fetchone()
         )
-        v["articles"] = _count(con, "SELECT COUNT(*) FROM articles")
-        v.update(_verify_fts(con, has_fts, v["articles"]))
+        with _sub("verify:counts"):
+            v["articles"] = _count(con, "SELECT COUNT(*) FROM articles")
+            v.update(_verify_fts(con, has_fts, v["articles"]))
 
         # The merge SUSPENDS the FTS insert trigger and restores it in a finally
         # (see _fts_insert_suspended). This is the net beneath that: a working copy
@@ -2882,17 +2924,19 @@ def verify_copy(working_copy: Path, staged_corpus: Path, batch_id: int) -> dict:
 
         # Sampled transfer-integrity check: merged articles' content must equal
         # the staged source's content byte-for-byte (joined on the content hash).
-        attach(con, staged_corpus, "inc")
-        bad = _count(
-            con,
-            "SELECT COUNT(*) FROM ("
-            " SELECT m.id FROM merged_rows r"
-            " JOIN articles m ON m.id = r.row_id"
-            " JOIN inc.articles i ON i.hash = m.hash"
-            " WHERE r.batch_id = ? AND r.table_name = 'articles' AND i.content <> m.content"
-            " LIMIT 32)",
-            (batch_id,),
-        )
+        with _sub("verify:content_sample"):
+            attach(con, staged_corpus, "inc")
+            bad = _count(
+                con,
+                "SELECT COUNT(*) FROM ("
+                " SELECT m.id FROM merged_rows r"
+                " JOIN articles m ON m.id = r.row_id"
+                " JOIN inc.articles i ON i.hash = m.hash"
+                " WHERE r.batch_id = ? AND r.table_name = 'articles'"
+                " AND i.content <> m.content"
+                " LIMIT 32)",
+                (batch_id,),
+            )
         v["sampled_content_mismatches"] = bad
         v["ok"] = (
             v["quick_check"] == "ok"
@@ -4269,7 +4313,9 @@ def run_restore(
             timings.record(f"merge_sql:{_sql}", float(_agg["seconds"]))
     _abort_point("verify")
     with timings.stage("verify"):
-        verification = verify_copy(working, staged.corpus_path, batch_id)
+        verification = verify_copy(
+            working, staged.corpus_path, batch_id, timings=timings
+        )
 
     report: dict = {
         "artifact_kind": staged.kind,
