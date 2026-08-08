@@ -78,9 +78,6 @@ def test_the_real_probe_builds_both_arms_at_one_geometry(tmp_path, monkeypatch) 
     """Drives the production function. A test that asserted on hand-built dicts
     would prove the arithmetic and miss the thing that was actually wrong."""
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
-    # Big enough that the walk clears the probe's own timer-resolution floor. At
-    # 4 MiB it finished in 0.017 s, the probe correctly refused to divide a rate
-    # out of that, and the test failed on the refusal rather than on the code.
     monkeypatch.setattr(merge_diag, "_WALK_BYTES", 24 * 1024 * 1024)
     out = merge_diag.walk_probe()
 
@@ -95,8 +92,29 @@ def test_the_real_probe_builds_both_arms_at_one_geometry(tmp_path, monkeypatch) 
     enc = out["encrypted"]
     if "skipped" in enc:
         pytest.skip(f"no encrypted arm on this install: {enc['skipped']}")
+
+    # THE CLAIM THIS TEST OWNS: both arms at one geometry. That is the defect the
+    # probe shipped with, and it is a property of the code on every machine.
     assert enc["page_size"] == plain["page_size"]
-    assert out["codec_multiplier"] is not None, out
+
+    # THE RATIO IS NOT THIS TEST'S CLAIM, and asserting it here made the test a
+    # hardware bet. A fixture big enough to out-run one machine's timer is not big
+    # enough for the next: sized for this sandbox at 24 MiB it walked in ~0.1 s,
+    # and the macOS runner did the same file in 0.007 s -- below the probe's own
+    # resolution floor, so the probe correctly refused a rate and the test failed
+    # on the refusal. Growing the fixture until every runner is slow enough is an
+    # arms race against hardware that also slows the suite everywhere.
+    #
+    # So: whichever branch this machine lands in, assert what is true there. The
+    # ratio's own arithmetic is pinned deterministically by the pure tests above,
+    # which need no files and no clock.
+    if plain["mb_per_s"] and enc["mb_per_s"]:
+        assert out["codec_multiplier"] > 0, out
+    else:
+        assert out["codec_multiplier"] is None
+        assert "invented" in out["codec_multiplier_unavailable"], (
+            "a walk too fast to time must refuse the rate AND say why"
+        )
 
 
 def test_the_probe_leaves_nothing_behind(tmp_path, monkeypatch) -> None:
