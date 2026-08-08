@@ -130,3 +130,43 @@ def test_the_unit_branch_is_on_the_platform_not_the_magnitude():
     src = inspect.getsource(merge_diag._rss_mb)
     assert 'sys.platform == "darwin"' in src
     assert "1024 * 1024" not in src, "magnitude must not decide the unit"
+
+
+def _rss_stub(monkeypatch, per_arm):
+    """Drive cost_probe's RSS reader deterministically.
+
+    Each arm calls it three times: once to DETECT which reader is available, then
+    once for `base` and once for `peak`. Getting that sequence wrong is how a first
+    draft of these tests measured a delta of zero and blamed the code.
+    """
+    seq = list(per_arm) * 4  # more arms than cost_probe runs; the tail is never read
+    it = iter(seq)
+    monkeypatch.setattr(merge_diag, "_rss_current_mb", lambda: next(it, seq[-1]))
+
+
+def test_a_real_delta_is_never_ROUNDED_into_the_fabricated_zero(monkeypatch):
+    """The CI failure this file already names, by its OTHER route.
+
+    The gap branch tests the RAW delta, but the number published is the ROUNDED
+    one -- so a genuinely positive delta below ~1.2 MB printed 0.0 KB/row at one
+    decimal place while ``delta > 0`` kept the gap branch shut. That is a
+    fabricated zero arriving through arithmetic rather than through a blind
+    reader, and it is the same claim either way.
+    """
+    _rss_stub(monkeypatch, [1000.0, 1000.0, 1000.4])  # detect, base, peak
+    arm = merge_diag.cost_probe(avg_row_bytes=512)["arms"][0]
+
+    assert arm["rss_delta_mb"] == 0, "this is the case that rounds the DISPLAY to zero"
+    assert arm["kb_per_row"] is not None, "a real 0.4 MB delta was reported as a gap"
+    assert arm["kb_per_row"] > 0, "...and never as a claim of zero"
+
+
+def test_a_delta_too_small_to_print_is_still_a_stated_gap(monkeypatch):
+    """The negative-space twin: extra precision must not turn an unmeasurable
+    delta into a number. Below what three places can express, it is a gap."""
+    _rss_stub(monkeypatch, [1000.0, 1000.0, 1000.000001])  # a byte-scale delta
+    arm = merge_diag.cost_probe(avg_row_bytes=512)["arms"][0]
+
+    assert arm["kb_per_row"] is None
+    assert arm["kb_per_row_unavailable"], "an absent number owes its reason"
+    assert arm["seconds"] > 0, "the timing half is a real measurement either way"

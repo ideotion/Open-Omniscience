@@ -492,14 +492,24 @@ def _probe_arm(work: Path, rows: int, body: bytes, temp_store: str) -> dict[str,
         out["rss_unavailable"] = "resource.getrusage is Unix-only (absent on this platform)"
         return out
     delta = peak - base
+    # PRECISION IS PART OF THE GUARD. The branch below refuses a fabricated 0.0 when
+    # nothing was measured -- but it tests the RAW delta, while the number PUBLISHED
+    # is the ROUNDED one, and rounding manufactures the same zero out of a real
+    # measurement: at ~12k rows a 0.4 MB delta is 0.034 KB/row, which one decimal
+    # place prints as 0.0 while `delta > 0` keeps the gap branch shut. CI hit exactly
+    # that. Three places keep a real delta real (a 0.05 MB delta still prints
+    # 0.004); anything that STILL prints as zero was genuinely not measurable and
+    # falls through to the gap below, which is now decided on the published value
+    # rather than on a number the reader never sees.
+    _kb = (delta * 1024 / rows) if rows else None
     out.update({
         "rss_method": rss_method,
         "rss_before_mb": round(base),
         "rss_peak_mb": round(peak),
         "rss_delta_mb": round(delta),
-        "kb_per_row": round(delta * 1024 / rows, 1) if rows else None,
+        "kb_per_row": round(_kb, 3) if _kb is not None else None,
     })
-    if delta <= 0:
+    if delta <= 0 or out["kb_per_row"] == 0.0:
         # A NON-POSITIVE delta does not mean the insert allocated nothing. It means the
         # allocation was invisible to this instrument, and BOTH readers have a way of
         # going blind:
@@ -521,9 +531,9 @@ def _probe_arm(work: Path, rows: int, body: bytes, temp_store: str) -> dict[str,
             "already exceeded this probe's allocation, so the delta is unobservable "
             "here (current-RSS via /proc/self/statm is unavailable on this platform)"
             if rss_method == "peak" else
-            "resident memory did not grow during the insert, which means the allocation "
-            "was served from memory the process already held (a freed arena is not "
-            "returned to the OS), not that it allocated nothing"
+            "resident memory did not measurably grow during the insert, which means the "
+            "allocation was served from memory the process already held (a freed arena is "
+            "not returned to the OS), not that it allocated nothing"
         )
     return out
 
