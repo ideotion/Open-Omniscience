@@ -41,6 +41,7 @@ import sys
 import time
 from collections import Counter
 from pathlib import Path
+from contextlib import suppress
 from typing import Any
 
 #: Bytes read per milestone journal. The field artifact was 1.6 GB and ~8.7M
@@ -67,6 +68,21 @@ _SAMPLE_ROWS = 300
 #: something a later run can recognise and reclaim, rather than anonymous bytes
 #: on the operator's disk (the P0.2 swept-prefix lesson).
 _PROBE_PREFIX = ".merge-probe-"
+
+#: Bytes the structural-walk probe builds per arm. Matched to _PROBE_BYTES so
+#: the two probes cost the same order inside one bundle.
+_WALK_BYTES = 48 * 1024 * 1024
+
+#: Both walk arms are built at THIS page size. quick_check costs per page, so
+#: leaving each arm to its own default made the probe compare geometry rather
+#: than the codec. 16384 because that is what connect() gives a fresh encrypted
+#: file (_FRESH_PAGE_SIZE), i.e. what the live corpus this predicts actually is.
+_WALK_PAGE_SIZE = 16384
+
+#: Walks per arm. One sample is not a rate: two consecutive single-shot runs of
+#: this probe gave codec multipliers of 2.36 and 1.55. Odd, so the median is a
+#: measured sample rather than an average of two.
+_WALK_REPEATS = 3
 
 #: The two ways an RSS reader goes blind, as NAMED constants rather than literals
 #: written where they are published. A guard that asserts a *substring* of one of
@@ -598,6 +614,257 @@ def cost_probe(avg_row_bytes: int | None = None) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
+#  the structural-walk probe
+# --------------------------------------------------------------------------- #
+def _drop_page_cache(path: Path) -> bool:
+    """Ask the kernel to forget this file's pages. True if it was asked.
+
+    Without this the probe would time its own write cache and report a memory
+    bandwidth figure dressed as a disk one. ``POSIX_FADV_DONTNEED`` needs no
+    privileges but does need the dirty pages flushed first, hence the fsync.
+    Linux-only; elsewhere the caller says the cache was not dropped rather than
+    pretending it was.
+    """
+    if not hasattr(os, "posix_fadvise"):
+        return False
+    try:
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+        finally:
+            os.close(fd)
+        return True
+    except Exception:  # noqa: BLE001 - a hint the kernel declined is not a failure
+        return False
+
+
+def _walk_arm(path: Path, *, key: str | None) -> dict[str, Any]:
+    """Build a database of known size, then time ``PRAGMA quick_check`` over it.
+
+    BOTH ARMS ARE PINNED TO THE SAME PAGE SIZE, and that is not tidiness. A first
+    cut let each arm take its own default -- and ``connect`` gives a fresh
+    ENCRYPTED file ``_FRESH_PAGE_SIZE`` (16384, DB-10 1b) while a fresh plaintext
+    one takes SQLite's 4096. So the two arms walked 670 large pages against 2255
+    small ones, quick_check's cost tracks pages rather than bytes, and the
+    resulting "codec multiplier" came out at 0.81: encryption measured as making
+    the walk FASTER. Geometry wearing the costume of the codec.
+    """
+    from src.database.connect import connect as db_connect
+
+    body = (b"lorem ipsum dolor sit amet consectetur adipiscing elit " * 4096)[:4096]
+    con = db_connect(
+        path, key=key, create_encrypted=key is not None, cipher_page_size=_WALK_PAGE_SIZE
+    )
+    try:
+        # ORDER IS LOAD-BEARING, and each step earns its line. `connect` has
+        # already created the file, so PRAGMA page_size alone is accepted and
+        # silently ignored -- it takes effect on the next VACUUM, which is
+        # instantaneous here because the database is empty. And it must happen
+        # BEFORE journal_mode=WAL, since WAL refuses a page-size change outright.
+        # Getting this wrong is not loud: the arm simply stays at 4096 and the
+        # comparison quietly measures geometry again.
+        con.execute(f"PRAGMA page_size = {_WALK_PAGE_SIZE}")
+        con.execute("VACUUM")
+        con.execute("PRAGMA journal_mode=WAL")
+        con.execute("CREATE TABLE t (id INTEGER PRIMARY KEY, body BLOB)")
+        con.execute("BEGIN")
+        con.executemany(
+            "INSERT INTO t (body) VALUES (?)",
+            ((body,) for _ in range(_WALK_BYTES // len(body))),
+        )
+        con.execute("COMMIT")
+        con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        con.close()
+
+    size = path.stat().st_size
+    # REPEATED, because one sample is not a rate. Two consecutive single-shot runs
+    # of this probe produced multipliers of 2.36 and 1.55 -- a 50% spread on the
+    # very number an operator would multiply their import estimate by. Build once,
+    # walk several times with the cache dropped before each, and publish the median
+    # WITH the spread so the noise is visible rather than rounded away.
+    samples: list[float] = []
+    geometry: dict[str, int] = {}
+    verdict = "not run"
+    dropped = False
+    for _ in range(_WALK_REPEATS):
+        dropped = _drop_page_cache(path)
+        con = db_connect(path, key=key, cipher_page_size=_WALK_PAGE_SIZE)
+        try:
+            if not geometry:
+                # int() the read-backs: some sqlcipher3 builds return PRAGMA values
+                # as TEXT, and the recorded lesson is that an un-coerced read-back
+                # reads as a perfectly plausible value right up to the moment it is
+                # used in arithmetic. (Hit live while building this: "16384" * 670.)
+                geometry = {
+                    "page_size": int(con.execute("PRAGMA page_size").fetchone()[0]),
+                    "page_count": int(con.execute("PRAGMA page_count").fetchone()[0]),
+                }
+            t0 = time.monotonic()
+            verdict = con.execute("PRAGMA quick_check").fetchone()[0]
+            samples.append(time.monotonic() - t0)
+        finally:
+            con.close()
+
+    samples.sort()
+    seconds = samples[len(samples) // 2]
+    out: dict[str, Any] = {
+        "bytes": size,
+        "seconds": round(seconds, 3),
+        "seconds_min": round(samples[0], 3),
+        "seconds_max": round(samples[-1], 3),
+        "walks": len(samples),
+        "quick_check": verdict,
+        "page_cache_dropped": dropped,
+        **geometry,
+    }
+    # A rate is the portable form, but only when there was enough time to divide
+    # by. Below the timer's own resolution it would be an artefact, not a
+    # measurement -- so it is an absent number with its reason, never a big one.
+    if seconds >= 0.05:
+        out["mb_per_s"] = round(size / 1024.0 / 1024.0 / seconds, 1)
+    else:
+        out["mb_per_s"] = None
+        out["mb_per_s_unavailable"] = (
+            f"the walk finished in {seconds:.3f}s, at or below this timer's useful "
+            "resolution -- a rate divided out of it would be an artefact"
+        )
+    return out
+
+
+def codec_multiplier(plain: dict, enc: dict) -> dict[str, Any]:
+    """How much slower the encrypted walk was -- or why that cannot be said.
+
+    A SEPARATE, PURE function because its refusal is the load-bearing half and a
+    refusal buried inside a probe that builds real files is a refusal nobody tests.
+
+    COMPARABILITY IS PART OF THE MEASUREMENT, not an assumption. ``quick_check``
+    costs per PAGE, so two arms built at different page sizes are not running the
+    same operation -- and this is not hypothetical: it is exactly the bug the first
+    version of this probe shipped with. ``connect`` gives a fresh encrypted file
+    16384-byte pages and a fresh plaintext one 4096, so the arms walked 670 large
+    pages against 2255 small ones and the ratio came out at **0.81** -- encryption
+    measured as making the walk faster. A ratio over incomparable arms is worse
+    than no ratio, because it looks like a finding.
+    """
+    p, e = plain.get("mb_per_s"), enc.get("mb_per_s")
+    ps, es = plain.get("page_size"), enc.get("page_size")
+    if ps is None or es is None or ps != es:
+        return {
+            "codec_multiplier": None,
+            "codec_multiplier_unavailable": (
+                f"the arms are not comparable -- page sizes {ps} vs {es}, and "
+                "quick_check costs per page, so a ratio would describe geometry "
+                "rather than the codec"
+            ),
+        }
+    if not p or not e:
+        return {
+            "codec_multiplier": None,
+            "codec_multiplier_unavailable": (
+                "an arm produced no rate, so a ratio would be invented rather "
+                "than measured"
+            ),
+        }
+    return {
+        "codec_multiplier": round(p / e, 2),
+        "codec_multiplier_method": (
+            "plaintext MB/s divided by encrypted MB/s, medians of "
+            f"{_WALK_REPEATS} walks each over ~{_WALK_BYTES // (1024 * 1024)} MiB "
+            f"at an identical {ps}-byte page size, page cache dropped before every "
+            "walk. A RATIO rather than a rate: this probe is small enough to fit in "
+            "the page cache and the field's corpus is not, so an absolute MB/s here "
+            "would be an upper bound wearing the costume of a forecast. Both arms "
+            "share this regime, so it cancels. For the same reason the multiplier "
+            "itself is likely an UPPER bound at field scale, where I/O takes a "
+            "larger share and the codec a smaller one"
+        ),
+    }
+
+
+def walk_probe() -> dict[str, Any]:
+    """How fast this machine walks a database's pages, plaintext vs encrypted.
+
+    WHY THIS EXISTS. ``PRAGMA quick_check`` is run twice per queued backup and
+    both runs are invisible in advance: ``prepare_staged:validate`` walks the
+    incoming staged corpus (PLAINTEXT by design) and ``verify_copy`` walks the
+    merged working copy (which preserves the live at-rest state, so ENCRYPTED on
+    an encrypted corpus). The first has been measured in the field at 1,839-2,414
+    s; the second never has, because no import has yet survived long enough to
+    reach it.
+
+    WHAT IT REPORTS, AND WHY IT IS A RATIO. The headline is
+    ``codec_multiplier`` -- how much slower the same walk is through the
+    SQLCipher codec -- and not the absolute rates, deliberately. A probe small
+    enough to sit in a diagnostics bundle is small enough to fit in the page
+    cache, and the field's file is far larger than RAM: the recorded lesson is
+    that a probe's SCALE is part of the lookalike, and an absolute MB/s measured
+    here would be an upper bound presented as a prediction. A ratio survives that,
+    because both arms are measured in the same regime and the regime cancels.
+
+    So the honest use is: take the field's own measured ``validate`` rate, apply
+    this multiplier, and scale by ``working_copy_bytes / staged_bytes``. The
+    absolute rates are reported too, but as inputs to the ratio rather than as
+    forecasts -- ``fits_in_page_cache_hint`` is there so nobody mistakes one for
+    the other.
+
+    The encrypted arm is SKIPPED WITH ITS REASON where sqlcipher3 is absent. A
+    fabricated multiplier would be worse than no multiplier, since the whole
+    point is to predict a cost nobody has yet observed.
+    """
+    from src.paths import data_dir
+
+    root = data_dir()
+    swept = _sweep(root)
+    work = root / f"{_PROBE_PREFIX}walk-{os.getpid()}"
+    out: dict[str, Any] = {}
+    try:
+        work.mkdir(parents=True, exist_ok=True)
+        out["plaintext"] = _walk_arm(work / "plain.db", key=None)
+        try:
+            out["encrypted"] = _walk_arm(work / "enc.db", key="oo-walk-probe-key")
+        except Exception as exc:  # noqa: BLE001
+            out["encrypted"] = {
+                "skipped": (
+                    "no encrypted walk on this install "
+                    f"({type(exc).__name__}: {exc})"
+                )
+            }
+
+        out.update(codec_multiplier(out["plaintext"], out.get("encrypted", {})))
+
+        # The number that says how far to trust the absolute rates. NOT a verdict:
+        # it states the comparison and lets the reader draw it.
+        with suppress(Exception):
+            out["fits_in_page_cache_hint"] = {
+                "probe_bytes": _WALK_BYTES,
+                "mem_available_bytes": _mem_available_bytes(),
+                "note": (
+                    "a walk over a file that fits in available memory measures RAM, "
+                    "not the disk-bound regime a multi-GB corpus is walked in"
+                ),
+            }
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    if swept:
+        out["swept_leftovers"] = swept
+    return out
+
+
+def _mem_available_bytes() -> int | None:
+    """MemAvailable in bytes, or None where it cannot be read."""
+    try:
+        with open("/proc/meminfo", encoding="ascii") as fh:
+            for line in fh:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) * 1024
+    except Exception:  # noqa: BLE001 - absent /proc is a platform fact
+        return None
+    return None
+
+
+# --------------------------------------------------------------------------- #
 #  the report
 # --------------------------------------------------------------------------- #
 def merge_diagnostics(*, probe: bool = True) -> dict[str, Any]:
@@ -625,5 +892,15 @@ def merge_diagnostics(*, probe: bool = True) -> dict[str, Any]:
             safe("probe", lambda: cost_probe(avg))
             if probe
             else {"skipped": "probe=0 — pass probe=1 to measure the per-row cost here"}
+        ),
+        # Gated on the same flag: this one also builds and walks real files, so a
+        # caller that asked for a cheap report must not silently get an expensive
+        # one. Its own block, because it answers a different question from
+        # cost_probe -- that one measures INSERT cost per row, this one measures
+        # the page-WALK cost that both integrity checks pay.
+        "walk": (
+            safe("walk", walk_probe)
+            if probe
+            else {"skipped": "probe=0 — pass probe=1 to measure the walk rate here"}
         ),
     }
