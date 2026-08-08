@@ -364,3 +364,63 @@ def test_summary_depth_notice_states_no_content_and_deeper_states_content():
         notice = _content_notice(deep)
         assert notice["contains_article_content"] is True
         assert "CONTAINS CORPUS CONTENT" in notice["statement"]
+
+
+# --------------------------------------------------------------------------- #
+#  Non-finite floats -- the field defect that silently killed this whole member.
+# --------------------------------------------------------------------------- #
+
+
+def test_non_finite_values_are_nulled_and_named_so_the_report_survives():
+    """An inf anywhere in a producer's payload must not cost the whole 112s report.
+
+    The operator's 2026-08-08 bundle carried ``card-audit.json.error.txt`` reading
+    "Out of range float values are not JSON compliant: -inf" -- the member had been
+    dead since at least 2026-08-06. Surviving is half the fix; NAMING the field is
+    the other half, or the repair becomes the hiding place for the producer bug.
+    """
+    import json
+
+    from src.briefing.card_audit import _sanitise_non_finite
+
+    out = _sanitise_non_finite(
+        {
+            "cards": [{"trigger": {"ratio": float("-inf")}, "title": "t"}],
+            "summary": {"mean": float("inf"), "nan": float("nan"), "real": 1.5},
+        }
+    )
+
+    # It serialises AT ALL -- json.dumps(allow_nan=False) is what FastAPI's
+    # JSONResponse uses, and is exactly what was raising in the field.
+    json.dumps(out, allow_nan=False)
+
+    assert out["cards"][0]["trigger"]["ratio"] is None
+    assert out["summary"]["mean"] is None
+    assert out["summary"]["nan"] is None
+    assert out["summary"]["real"] == 1.5  # a real measurement is untouched
+    assert out["non_finite"]["n"] == 3
+    assert set(out["non_finite"]["fields"]) == {
+        "cards[0].trigger.ratio",
+        "summary.mean",
+        "summary.nan",
+    }
+
+
+def test_a_clean_report_gains_no_non_finite_block():
+    """The negative-space twin: an honest report must not sprout a defect marker."""
+    from src.briefing.card_audit import _sanitise_non_finite
+
+    out = _sanitise_non_finite({"summary": {"n": 3, "rate": 0.5}, "cards": [{"k": None}]})
+    assert "non_finite" not in out
+    assert out == {"summary": {"n": 3, "rate": 0.5}, "cards": [{"k": None}]}
+
+
+def test_naming_is_bounded_but_the_count_stays_exact():
+    """Naming thousands of paths would bloat the member this exists to save."""
+    from src.briefing.card_audit import _NON_FINITE_NAME_LIMIT, _sanitise_non_finite
+
+    n = _NON_FINITE_NAME_LIMIT + 17
+    out = _sanitise_non_finite({"rows": [{"v": float("inf")} for _ in range(n)]})
+    assert out["non_finite"]["n"] == n  # exact, never capped
+    assert len(out["non_finite"]["fields"]) == _NON_FINITE_NAME_LIMIT
+    assert out["non_finite"]["named_truncated"] == 17
