@@ -60,7 +60,12 @@ def test_a_raised_high_water_mark_never_yields_a_fabricated_zero():
     assert arm["kb_per_row"] != 0.0, "0.0 KB/row is a claim, and nothing was measured"
     if arm["kb_per_row"] is None:
         assert arm["kb_per_row_unavailable"], "an absent number owes its reason"
-        assert "did not grow" in arm["kb_per_row_unavailable"]
+        # Identity against the named constant, not a substring of it. A substring
+        # guard here broke the moment the sentence was reworded ("did not grow" ->
+        # "did not measurably grow"), reddening this test for a reason that had
+        # nothing to do with what it is named for. What carries meaning is WHICH
+        # reader went blind — and that is what this now pins.
+        assert arm["kb_per_row_unavailable"] == merge_diag.RSS_GAP_CURRENT
     else:
         assert arm["kb_per_row"] > 0, arm
     assert arm["seconds"] > 0, "the timing half is a real measurement either way"
@@ -78,7 +83,7 @@ def test_an_unobservable_delta_is_a_stated_gap_not_a_zero(monkeypatch):
 
     assert arm["rss_method"] == "peak"
     assert arm["kb_per_row"] is None, "a zero here is a claim we did not measure"
-    assert "high-water mark" in arm["kb_per_row_unavailable"]
+    assert arm["kb_per_row_unavailable"] == merge_diag.RSS_GAP_PEAK
     assert arm["seconds"] > 0, "the TIMING half is still a real measurement"
 
 
@@ -169,4 +174,10 @@ def test_a_delta_too_small_to_print_is_still_a_stated_gap(monkeypatch):
 
     assert arm["kb_per_row"] is None
     assert arm["kb_per_row_unavailable"], "an absent number owes its reason"
+    # Pinned HERE as well as in the arena test above, and deliberately: that one
+    # reaches this branch only when the allocator happens to serve the probe from
+    # a warm arena, which is a CI-shaped accident rather than something every
+    # machine reproduces. This stub reaches it on every platform, so the
+    # current-reader reason can never again be changed with no test to notice.
+    assert arm["kb_per_row_unavailable"] == merge_diag.RSS_GAP_CURRENT
     assert arm["seconds"] > 0, "the timing half is a real measurement either way"

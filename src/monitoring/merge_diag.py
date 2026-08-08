@@ -68,6 +68,24 @@ _SAMPLE_ROWS = 300
 #: on the operator's disk (the P0.2 swept-prefix lesson).
 _PROBE_PREFIX = ".merge-probe-"
 
+#: The two ways an RSS reader goes blind, as NAMED constants rather than literals
+#: written where they are published. A guard that asserts a *substring* of one of
+#: these is a guard that breaks the next time the sentence is reworded for clarity
+#: -- which is exactly what happened when "did not grow" became "did not measurably
+#: grow", reddening a test about something else entirely. Tests assert identity
+#: against these names, so the wording stays free to improve and the guard keeps
+#: discriminating WHICH reader hit its limit, which is the part that carries meaning.
+RSS_GAP_PEAK = (
+    "ru_maxrss is a high-water mark that never falls and the process peak already "
+    "exceeded this probe's allocation, so the delta is unobservable here "
+    "(current-RSS via /proc/self/statm is unavailable on this platform)"
+)
+RSS_GAP_CURRENT = (
+    "resident memory did not measurably grow during the insert, which means the "
+    "allocation was served from memory the process already held (a freed arena is "
+    "not returned to the OS), not that it allocated nothing"
+)
+
 
 def _rss_mb() -> float | None:
     """Peak RSS in MB, or None where it cannot be measured.
@@ -527,13 +545,7 @@ def _probe_arm(work: Path, rows: int, body: bytes, temp_store: str) -> dict[str,
         # then reported the same zero for the second reason.)
         out["kb_per_row"] = None
         out["kb_per_row_unavailable"] = (
-            "ru_maxrss is a high-water mark that never falls and the process peak "
-            "already exceeded this probe's allocation, so the delta is unobservable "
-            "here (current-RSS via /proc/self/statm is unavailable on this platform)"
-            if rss_method == "peak" else
-            "resident memory did not measurably grow during the insert, which means the "
-            "allocation was served from memory the process already held (a freed arena is "
-            "not returned to the OS), not that it allocated nothing"
+            RSS_GAP_PEAK if rss_method == "peak" else RSS_GAP_CURRENT
         )
     return out
 
