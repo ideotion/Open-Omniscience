@@ -2994,6 +2994,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     is waiting on, so it waits for itself forever, silently, looking exactly like a
     long-running experiment. Cost ~20 minutes of wall clock and produced four empty logs.
     Run sequential work in ONE script, or match on something the waiter cannot contain.
+  - **A PUBLISHED REASON SENTENCE IS AN API — NAME IT, AND ASSERT IDENTITY, NOT A
+    SUBSTRING (2026-08-08, the `kb_per_row_unavailable` red lane):** rewording a gap
+    reason from "did not grow" to "did not **measurably** grow" reddened a guard asserting
+    `"did not grow" in reason`. I greped the source for readers of that string and not the
+    TEST tree, which is the half that mattered — the recorded stale-anchor class, again.
+    The repair is not to re-pick a substring but to hoist both reasons into module
+    constants and have every guard assert `== RSS_GAP_CURRENT` / `== RSS_GAP_PEAK`.
+    Identity is strictly **stronger** here, not merely more robust: a substring proves
+    some words appear, whereas identity proves WHICH of the two readers went blind — which
+    is the property those guards sit inside a branch to check, and the one a substring
+    could never distinguish (both sentences are about an unobservable delta). Mutation-check
+    both directions: swapping which constant each branch publishes must fail by name, and a
+    pure rewording must now pass. COROLLARY that is the real fix: the branch CI hit was
+    reachable locally only when the allocator happened to serve the probe from a warm arena
+    — a CI-shaped accident — so it also got a stub test that reaches it on every platform.
+    When a guard fails only on CI, ask whether its branch has any deterministic driver at
+    all; if not, the fix is a second test, not a better assertion.
 
 ## Open queue (when maintainer says proceed)
 - **FIELD FEEDBACK 2026-08-07 — governments · law extraction · Feed tab · crash visibility ·
