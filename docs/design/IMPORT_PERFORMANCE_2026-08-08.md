@@ -102,24 +102,38 @@ The two sections above are wall-clock. This is the link to the field: the beat s
 "`hashsize` is the lever" is testable directly: raising it must cut the **number of
 times that statement runs**. Counted with a trace callback:
 
-| base + new | hashsize | seconds | **segment deletes** |
-|---|---:|---:|---:|
-| 30k + 30k | 1 MiB | 6.37 | **304** |
-| 30k + 30k | **64 MiB** | 3.79 | **0** |
-| 60k + 60k | 1 MiB | 12.62 | **624** |
-| 60k + 60k | **64 MiB** | 9.32 | **0** |
+| base + new | hashsize | seconds | **segment deletes** | ratio |
+|---|---:|---:|---:|---:|
+| 30k + 30k | 1 MiB | 6.37 | **304** | |
+| 30k + 30k | **64 MiB** | 3.79 | **0** | 1.68× |
+| 60k + 60k | 1 MiB | 12.62 | **624** | |
+| 60k + 60k | **64 MiB** | 9.32 | **0** | 1.35× |
+| 120k + 120k | 1 MiB | 27.20 | **1264** | |
+| 120k + 120k | **64 MiB** | 21.80 | **0** | 1.25× |
 
-At the default the count is **linear in documents loaded** (304 → 624 for twice the
-documents). At 64 MiB, at this scale, the field's dominant statement runs **zero
-times** — the load fits in few enough flushes that no crisis merge fires at all.
+At the default the count is **linear in documents loaded** (304 → 624 → 1264, each
+doubling with the corpus). At 64 MiB, at every scale measured here, the field's
+dominant statement runs **zero times** — the load fits in few enough flushes that no
+crisis merge fires at all.
 
-**What this does and does not license.** It confirms the mechanism is the one the
-field's beat shows, which the wall-clock numbers alone could not. It does **not**
-license extrapolating the field's speedup: at ~1.3M documents and a ~10 GB index a
-64 MiB budget cannot reach zero flushes, so crisis merges will still fire, just far
-fewer times — and merging fewer, larger segments does not reduce merged *bytes* in
-proportion to merged *passes*. The measured wall-clock effect is 1.44–1.89× here. The
-field effect is somewhere at or above that and I cannot say where.
+**What this does and does not license, and the part that cuts against me.** It
+confirms the mechanism is the one the field's beat shows, which the wall-clock
+numbers alone could not. But read the ratio column: **the wall-clock advantage
+shrinks as the corpus grows** — 1.68× → 1.35× → 1.25× — even though the delete count
+stays at zero throughout. The reason is arithmetic rather than mysterious:
+eliminating crisis merges removes a fixed *category* of work, and as the corpus grows
+the remaining b-tree writes grow with it, so the eliminated share falls. This is the
+opposite of the direction a claim like "this will be much bigger in the field" would
+need.
+
+So the field effect is bounded from **above**, not below, by these numbers, and I am
+not going to guess where it lands. Two further reasons it will be smaller than 1.25×
+in kind: at ~1.3M documents on a ~10 GB index a 64 MiB budget cannot reach zero
+flushes, so crisis merges still fire (fewer, larger); and merging fewer, larger
+segments does not reduce merged *bytes* in proportion to merged *passes*. What the
+change is defensible on is the mechanism plus the fact that it costs nothing on the
+query side (§2.3) — not on a projected multiplier. The counter shipped alongside it
+(§3) is what will actually measure the field.
 
 ### 2.3 What the query side cost — the part that decides whether this is allowed
 
@@ -149,6 +163,15 @@ for its whole life before B6.
 content. The pre-existing equivalence test
 (`test_the_deferred_build_matches_what_the_trigger_would_have_produced`) still
 passes, which is the guarantee that matters more than the speed.
+
+**The two halves scale in opposite directions, and this is the one projection I will
+make.** The `hashsize` half shrinks with scale (§2.2b: 1.68× → 1.25×) because it
+removes a fixed category of work while the rest grows. The `'optimize'` half grows
+with scale, because its cost is set by the **live corpus** — every article already
+there, not just the ones arriving — so on a 1.3M-article index it rewrites ~8× more
+than it did at 162k, for an import of the same size. Do not read the shrinking
+`hashsize` ratio as the trend of the whole change: at field scale the dominant term
+is the one that was scaling the wrong way, and it is now simply gone.
 
 ## 3. The counter was lying, and that is why this run cannot explain itself
 
@@ -245,6 +268,7 @@ guess.
 | `ftsseg` | does `hashsize` control segment count and cost? | yes; 19 → 4 segments, 64 MiB the measured optimum (256 MiB is worse) |
 | `ftsquery` | what does skipping `'optimize'` cost at search time? | **nothing measurable** — 74.5 vs 74.6 ms median |
 | `ftsrepeat` | is the 1 MiB vs 64 MiB result repeatable? | **yes** — 1.44×, interleaved n=3, non-overlapping ranges |
+| `ftsdel` | does `hashsize` cut the **field's own dominant statement**? | **yes, to zero** at every scale (304/624/1264 → 0) — but the wall-clock ratio *shrinks* with scale, 1.68→1.25× |
 | `ftsvac` | does `auto_vacuum=INCREMENTAL` cost the load? | **~5%** (30.43 vs 28.83 s; 15.91 vs 15.17 s) — real, small, **not** the answer |
 | `qcheck` | is `validate` slow because of its 2 MB page cache? | **no** — 10.04 s at 2 MB vs 10.53 s at 64 MB. Refuted; the free win does not exist |
 
