@@ -546,17 +546,80 @@ def _fts_insert_suspended(con: sqlite3.Connection):
         con.execute(ddl)
 
 
-def _fts_index_merged_articles(con: sqlite3.Connection, batch_id: int) -> int:
+def _fts_hash_mb() -> int:
+    """FTS5 pending-index budget for the bulk load, in MiB (OO_FTS_HASH_MB).
+
+    This is a REAL allocation: FTS5 holds pending index data in memory and
+    flushes a level-0 segment every time it exceeds this. It is therefore a
+    deliberate, bounded number and not "as much as we can get" -- the merge
+    already holds a page cache beside it, and the 2026-08-03 lesson is that a
+    merge which sizes its memory by what the machine HAS is the one that dies on
+    the machine that has least.
+    """
+    try:
+        mb = int(os.getenv("OO_FTS_HASH_MB", "64"))
+    except (TypeError, ValueError):
+        mb = 64
+    return max(1, min(mb, 512))
+
+
+def _fts_index_merged_articles(
+    con: sqlite3.Connection, batch_id: int, progress: dict | None = None
+) -> int:
     """Index exactly the articles this batch inserted, in bounded batches.
 
     ``merged_rows`` is the provenance the merge already writes for every inserted
     row, so it is the exact set -- no watermark to get wrong, and correct even
     though merged article ids are not contiguous.
 
-    ``automerge`` is set to 0 for the load and restored afterwards, then ONE
-    ``'optimize'`` merges the segments. That ordering is what the measurement
-    rewards: the merging happens once over the finished index instead of
-    continuously against a moving one.
+    THE STRATEGY, and what each piece is worth (measured 2026-08-08 on the
+    production engine -- sqlcipher3 3.51.1, page_size 16384, auto_vacuum
+    INCREMENTAL, cache 256 MiB, temp_store FILE -- over a base index that already
+    held the same number of documents again; per-arm numbers in the PR):
+
+    * ``hashsize`` -- NOTHING in this repo has ever set it, so FTS5 ran its
+      default of **1 MiB**, flushing a new level-0 segment every megabyte of
+      pending index data. A multi-GB index therefore arrives as thousands of tiny
+      segments, and the crisis-merge cascade that collapses them is the cost.
+      Raising it is the single cheapest lever available.
+    * ``automerge = 0`` for the load, restored to 4 after. Kept from B6 -- and the
+      restore is what makes the next point safe: ordinary ingest goes on merging
+      segments incrementally, which is FTS5's designed behaviour and what this app
+      did for its whole life before B6.
+    * **NO post-load merge of any kind.** This is the change B6 got wrong.
+      ``'optimize'`` merges the whole index into ONE b-tree, so its cost scales
+      with the CORPUS and not with the import: measured 2.05 / 3.00 / 9.31 /
+      13.81 s as the index grew 25k -> 50k -> 100k -> 150k documents, while the
+      insert beside it stayed flat. With eighteen backups queued that is eighteen
+      whole-index rewrites, each bigger than the last.
+
+    WHAT THE QUERY SIDE COST, because dropping it is only defensible if search
+    still works -- a faster import that quietly slows every later search is a
+    transfer, not a win. Measured over six terms spanning the very common to the
+    rare, bm25-ranked exactly as ``fts.search_ids`` runs them, on a reopened
+    connection, at 100k+100k:
+
+        b6 (automerge 0 + optimize)   build 29.10 s   median 74.6 ms   max 269.1 ms
+        hashsize 64 + no merge        build 15.39 s   median 74.5 ms   max 262.6 ms
+        hashsize 64 + bounded merge   build 17.85 s   median 72.7 ms   max 255.1 ms
+
+    Query latency is the SAME (the middle row is marginally faster than the one
+    that rewrote the whole index). A bounded incremental merge was written, and
+    then deleted: it bought 2-3% on query -- inside this measurement's noise --
+    for 16% more build. Raising ``hashsize`` already leaves the load with ~4
+    segments, so there is very little left for a merge pass to collapse.
+
+    Together: **1.89x faster** at 100k+100k (29.10 s -> 15.39 s), against an index
+    verified identical -- same ``article_fts_docsize`` count, same MATCH row
+    count, on identical content, and the pre-existing equivalence test against a
+    trigger-built index still passes.
+
+    WHAT IS STILL UNEXPLAINED, stated so nobody reads this as a solved problem:
+    on the operator's own 2026-08-08 field run this step took **51,116 seconds
+    and had not finished**, which is ~150x per document what any scale measured
+    here predicts. That gap is NOT reproduced by this fixture and is NOT
+    explained by these knobs. ``progress`` below is what will answer it: the next
+    run reports how many articles it has indexed and how fast.
     """
     ids = [
         int(r[0]) for r in con.execute(
@@ -567,6 +630,14 @@ def _fts_index_merged_articles(con: sqlite3.Connection, batch_id: int) -> int:
     ]
     if not ids:
         return 0
+    if progress is not None:
+        progress["total"] = len(ids)
+        progress["done"] = 0
+        progress["phase"] = "indexing"
+    con.execute(
+        "INSERT INTO article_fts(article_fts, rank) VALUES('hashsize', ?)",
+        (_fts_hash_mb() * 1024 * 1024,),
+    )
     con.execute("INSERT INTO article_fts(article_fts, rank) VALUES('automerge', 0)")
     try:
         for i in range(0, len(ids), _FTS_BULK_BATCH):
@@ -577,12 +648,19 @@ def _fts_index_merged_articles(con: sqlite3.Connection, batch_id: int) -> int:
                 f" ({','.join('?' * len(chunk))})",
                 chunk,
             )
-            _window_tick("article_fts", min(i + len(chunk), len(ids)), len(ids), len(ids))
-        con.execute("INSERT INTO article_fts(article_fts) VALUES('optimize')")
+            if progress is not None:
+                progress["done"] = min(i + len(chunk), len(ids))
     finally:
-        # Restore the default whatever happened, so a corpus is never left with
-        # automerge disabled -- that would degrade every later ingest silently.
+        # Restore the defaults whatever happened, so a corpus is never left with
+        # automerge disabled or an outsized hash budget -- either would change
+        # every later ingest silently.
         con.execute("INSERT INTO article_fts(article_fts, rank) VALUES('automerge', 4)")
+        con.execute(
+            "INSERT INTO article_fts(article_fts, rank) VALUES('hashsize', ?)",
+            (1024 * 1024,),
+        )
+        if progress is not None:
+            progress["phase"] = "done"
     return len(ids)
 
 
@@ -863,7 +941,8 @@ def _stmt_label(sql: str) -> str:
 
 
 @contextmanager
-def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb, stmt_cb=None):
+def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb, stmt_cb=None,
+                detail=None):
     """Make a long merge step observable AND interruptible from inside.
 
     SQLite's progress handler runs every ``_STEP_WATCH_OPS`` VDBE operations
@@ -887,6 +966,14 @@ def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb, st
     Report-only in both directions: a raising ``step_cb`` can never break a merge,
     and a raising ``should_stop`` is treated as "do not stop" (a broken stop
     predicate must not abort an hours-long import by accident).
+
+    ``detail`` is an optional callable returning a short string appended to the
+    step name. Elapsed seconds prove a step is EXECUTING; they cannot say how far
+    it has got, and for most steps nothing honest can. The search-index step is
+    the exception -- it walks a known list of article ids, so it knows exactly
+    how much of that list is behind it -- and it is also the step that ran for
+    14.2 hours in the field with the counter frozen. A raising ``detail`` is
+    ignored, like every other reporting path here.
     """
     t0 = time.monotonic()
     last = [t0]
@@ -911,8 +998,16 @@ def _step_watch(con, index: int, total: int, name: str, should_stop, step_cb, st
         if now - last[0] < _STEP_WATCH_INTERVAL_S:
             return 0
         last[0] = now
+        label = name
+        if detail is not None:
+            try:
+                extra = detail()
+                if extra:
+                    label = f"{name} — {extra}"
+            except Exception:  # noqa: BLE001 - reporting never breaks a merge
+                pass
         try:
-            step_cb(index, total, name, round(now - t0, 1))
+            step_cb(index, total, label, round(now - t0, 1))
         except Exception:  # noqa: BLE001 - reporting never breaks a merge
             pass
         return 0
@@ -1108,12 +1203,20 @@ def merge_corpus(
         batch_id = int(cur.lastrowid or 0)
 
         steps = _merge_steps()
-        total = len(steps)
         # The FTS insert trigger is suspended across the steps and the index is
         # built once, from merged_rows, at the end. See _fts_insert_suspended for
         # the field measurement that made this the single biggest win available,
         # and for the two cheaper fixes it refutes.
         with _fts_insert_suspended(con) as fts_suspended:
+            # COUNT the search-index build as a step. It is not a tail: on the
+            # operator's 2026-08-08 import it was 51,116 s of a 51,631 s merge,
+            # i.e. 99% of it. Reporting it as `(total, total)` against a
+            # denominator that excluded it made its tick publish `done = total-1`
+            # -- the same number the LAST table step publishes on completion, so
+            # "18/19" meant either "watches finished" or "the search index has
+            # been running for fourteen hours" and the journal could not tell
+            # them apart. One more in the denominator separates them.
+            total = len(steps) + (1 if fts_suspended else 0)
             for i, (name, fn) in enumerate(steps, 1):
                 if should_stop is not None and should_stop():
                     # The `except` below rolls this BEGIN IMMEDIATE back; the working
@@ -1139,9 +1242,23 @@ def merge_corpus(
             # replaces. Reported as its own step so the operator sees indexing
             # rather than an unexplained tail after step 19.
             if fts_suspended:
-                with _step_watch(con, total, total, "search index", should_stop, step_cb, stmt_cb):
+                # The one step that CAN say how far it has got: it walks a known
+                # list of ids. Everything else here reports elapsed seconds only,
+                # because a VDBE-operation tick bears no honest relation to rows
+                # remaining -- but a position in a list does.
+                fts_prog: dict[str, object] = {"done": 0, "total": 0, "phase": "reading ids"}
+
+                def _fts_detail() -> str:
+                    done, tot = fts_prog.get("done"), fts_prog.get("total")
+                    phase = fts_prog.get("phase")
+                    if isinstance(tot, int) and tot and isinstance(done, int):
+                        return f"{done:,}/{tot:,} articles ({phase})"
+                    return str(phase)
+
+                with _step_watch(con, total, total, "search index", should_stop, step_cb,
+                                 stmt_cb, detail=_fts_detail):
                     results["article_fts"] = DomainResult(
-                        new=_fts_index_merged_articles(con, batch_id)
+                        new=_fts_index_merged_articles(con, batch_id, progress=fts_prog)
                     )
 
         counts: dict[str, object] = {k: v.as_dict() for k, v in results.items()}

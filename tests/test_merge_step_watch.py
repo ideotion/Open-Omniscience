@@ -281,10 +281,15 @@ def test_the_tick_reports_elapsed_seconds_and_never_a_fraction():
     remaining. A percentage derived from them would be invented."""
     import inspect
 
-    src = inspect.getsource(m._step_watch)
-    assert "step_cb(index, total, name, round(now - t0, 1))" in src
     # Behavioural, not a word-grep: the prose legitimately DISCUSSES percentages
     # in order to rule them out. What matters is the payload.
+    #
+    # This used to ALSO assert the literal call text `step_cb(index, total, name,
+    # round(now - t0, 1))`. That anchor broke on a rename that changed nothing
+    # about the property -- the stale-source-anchor class this repo has paid for
+    # before -- and it was never the load-bearing half: the assertions below
+    # already pin the payload, which is the thing that must not become a
+    # fraction. Dropped rather than re-typed.
     seen: list[tuple] = []
     with sqlite3.connect(":memory:") as c:
         with m._step_watch(c, 3, 19, "articles", None, lambda *a: seen.append(a)):
@@ -292,6 +297,22 @@ def test_the_tick_reports_elapsed_seconds_and_never_a_fraction():
     for call in seen:
         assert len(call) == 4 and isinstance(call[3], float), call
         assert 0 <= call[3] < 10, "the 4th argument is elapsed SECONDS, nothing else"
+
+    # A `detail` may decorate the step NAME (the search-index step reports rows
+    # that way) -- but it must never turn the elapsed-seconds payload into
+    # something else, and a raising detail must not break the tick.
+    decorated: list[tuple] = []
+    with sqlite3.connect(":memory:") as c:
+        with m._step_watch(c, 3, 19, "articles", None, lambda *a: decorated.append(a),
+                           detail=lambda: "1/2 articles"):
+            c.execute("SELECT 1")
+    for call in decorated:
+        assert len(call) == 4 and isinstance(call[3], float), call
+        assert isinstance(call[2], str)
+    with sqlite3.connect(":memory:") as c:
+        with m._step_watch(c, 3, 19, "articles", None, lambda *a: None,
+                           detail=lambda: (_ for _ in ()).throw(RuntimeError("boom"))):
+            c.execute("SELECT 1")  # a raising detail is swallowed, like every report here
 
     caller = inspect.getsource(m.run_restore)
     assert "merge_step_tick" in caller
