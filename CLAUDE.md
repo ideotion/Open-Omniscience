@@ -2941,8 +2941,115 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     by measurement (deferring automerge alone 0.93–0.97×; `'rebuild'` 0.75×, because it
     re-indexes the half of the corpus already indexed), so record refutations WITH their
     numbers or the next session re-chases them.
+  - **A FIX THAT RELOCATES A COST MUST BE ASKED WHAT THE REPLACEMENT SCALES WITH — the
+    lesson directly above recurred ONE TURN LATER, inside its own fix (2026-08-08, C2):**
+    B6 correctly found that FTS work was 98% of the merge and moved it off the article
+    step; it then chose `'optimize'` as the tidy-up. `'optimize'` merges the WHOLE index
+    into one b-tree, so its cost tracks the **corpus** while the insert beside it tracks
+    the **import** — measured 2.05 / 3.00 / 9.31 / 13.81 s as the index grew 25k → 150k
+    documents with the insert flat. On a fixture whose corpus is small that is invisible;
+    on a queue of eighteen backups it is eighteen whole-index rewrites, each larger than
+    the last. GENERAL FORM: when you replace a mechanism, name the dimension the
+    REPLACEMENT's cost scales with and check it is the same dimension the original scaled
+    with — a replacement that tracks a different axis looks fine at the fixture's scale
+    and wrong at the field's, and no amount of re-running the same fixture reveals it.
+    COROLLARY, and the reason this one was caught: **a change that removes a tidying pass
+    owes a QUERY-side measurement**, or it is a transfer rather than a win. Here the
+    measurement said the trade did not exist (74.5 vs 74.6 ms median over six terms from
+    very common to rare, bm25 as `search_ids` runs it, on a reopened connection) — and it
+    also killed a mechanism I had already written: a bounded incremental merge bought 2–3%
+    on query, inside the noise, for 16% more build, so it was deleted rather than shipped
+    "just in case".
+  - **FTS5 `hashsize` IS THE BULK-LOAD LEVER NOBODY IN THIS REPO HAD SET, AND IT IS NOT
+    MONOTONIC (2026-08-08, C2):** FTS5 holds pending index data in memory and flushes a
+    **new level-0 segment** every time it exceeds `hashsize`, whose default is **1 MiB**.
+    That is what decides how many segments a bulk load creates, and collapsing them is the
+    crisis-merge cascade whose `fts5DataRemoveSegment` dominated the field beat. Measured
+    60k docs into a 60k index, varying only that: 1 MiB → 19 segments / 12.33 s; 4 MiB →
+    16 / 9.43 s; 64 MiB → 4 / **8.40 s**; 256 MiB → 4 / **8.69 s, worse than 64**. So "as
+    much as we can get" is the wrong instinct and the default is a measured number. TWO
+    THINGS THAT BITE: it is a REAL allocation, so it belongs beside the page cache in the
+    merge's memory budget rather than on top of it; and it **PERSISTS to
+    `article_fts_config`** (verified), so a load that forgets to restore it leaves the
+    corpus holding that budget for every later ingest — which is why the guard asserts the
+    persisted value rather than counting statements. MEASURED AND NOT THE ANSWER, recorded
+    so nobody re-chases it: `auto_vacuum=INCREMENTAL` costs ~5% on this workload
+    (30.43 vs 28.83 s, 15.91 vs 15.17 s) — real, small, and nowhere near the field's gap.
+  - **A STEP REPORTED AGAINST A DENOMINATOR THAT EXCLUDES IT PUBLISHES A NUMBER THAT
+    COLLIDES WITH ANOTHER STEP (2026-08-08, C3):** the search-index build called
+    `_step_watch(con, total, total, …)` where `total = len(steps)` did not count it, and
+    the tick publishes `done = index − 1` — so it published `18`, which is exactly what the
+    LAST table step publishes on completion. "18/19" therefore meant either *watches
+    finished* or *the search index has been running for fourteen hours*, and the run
+    timeline duly reported `stuck_at: 18` with the reading *"workers were idle"*. Count
+    every step you report, including one that is not in the steps tuple. SECOND HALF: that
+    step's own row progress went through `runlog.statement` — the **same slot** the
+    per-statement trace overwrites within milliseconds — so the one step that genuinely
+    knows how far it has got (it walks a known list of ids) published nothing that
+    survived. Before adding progress, check which slot already owns that field and who
+    else writes it.
+  - **`pgrep -f "<pattern>"` IN A WAIT LOOP MATCHES THE WAITING SCRIPT'S OWN COMMAND LINE
+    (2026-08-08, harness):** a chain of `while pgrep -f "a.py"; do sleep 10; done` scripts
+    deadlocked on itself — each script's own `bash -c` command line contains the pattern it
+    is waiting on, so it waits for itself forever, silently, looking exactly like a
+    long-running experiment. Cost ~20 minutes of wall clock and produced four empty logs.
+    Run sequential work in ONE script, or match on something the waiter cannot contain.
+  - **A PUBLISHED REASON SENTENCE IS AN API — NAME IT, AND ASSERT IDENTITY, NOT A
+    SUBSTRING (2026-08-08, the `kb_per_row_unavailable` red lane):** rewording a gap
+    reason from "did not grow" to "did not **measurably** grow" reddened a guard asserting
+    `"did not grow" in reason`. I greped the source for readers of that string and not the
+    TEST tree, which is the half that mattered — the recorded stale-anchor class, again.
+    The repair is not to re-pick a substring but to hoist both reasons into module
+    constants and have every guard assert `== RSS_GAP_CURRENT` / `== RSS_GAP_PEAK`.
+    Identity is strictly **stronger** here, not merely more robust: a substring proves
+    some words appear, whereas identity proves WHICH of the two readers went blind — which
+    is the property those guards sit inside a branch to check, and the one a substring
+    could never distinguish (both sentences are about an unobservable delta). Mutation-check
+    both directions: swapping which constant each branch publishes must fail by name, and a
+    pure rewording must now pass. COROLLARY that is the real fix: the branch CI hit was
+    reachable locally only when the allocator happened to serve the probe from a warm arena
+    — a CI-shaped accident — so it also got a stub test that reaches it on every platform.
+    When a guard fails only on CI, ask whether its branch has any deterministic driver at
+    all; if not, the fix is a second test, not a better assertion.
 
 ## Open queue (when maintainer says proceed)
+- **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
+  the MEASUREMENT shipped, the two structural changes did NOT — deliberately, and the
+  reasons are findings rather than reluctance):** the queue runs `_drive()` as a strict
+  `for` loop of `_run_item` → `run_restore`, so every backup pays its own
+  **prepare** (stage A + validate + upgrade, measured 46.7 and 56.0 min on the two field
+  runs, on files that never touch the live corpus) and its own **verify_copy** (a
+  `quick_check` + `foreign_key_check` over the WHOLE working copy — the live corpus plus
+  everything merged so far). On eighteen backups that is ~14–17 h of prepare in series
+  with the merges, and eighteen structural walks of a growing multi-GB file.
+  **(a) PREFETCH — three blockers found by reading the seam, all of which raise the
+  estimate:** (i) staging lives INSIDE `VolumeBackupManager._run_restore`, on the
+  singleton manager's worker thread, and that singleton is one-job-at-a-time BY DESIGN
+  (`_reap_or_reject`) — so the queue would need to stage into its own tree and hand a
+  `StagedArtifact` across, which means a new `start_restore(..., staged=)` seam; (ii)
+  `cleanup_staging(staged)` is in a `finally` owned by the merge thread, so a
+  prefetched tree crosses an ownership boundary the current code guarantees by
+  construction — and on an encrypted corpus that tree is PLAINTEXT, so an orphan is an
+  at-rest hole, not just bytes; (iii) **decisive** — `find_completed_import` runs
+  BEFORE staging precisely so an already-merged artifact costs one small JSON read, and
+  the field log records **8 of 18 imports adding zero articles**. A prefetch that stages
+  ahead of that check burns 47–56 min per skipped item and defeats an existing
+  optimisation. Any build must run the digest check first.
+  **(b) CHECKPOINT INTERVAL — needs a RULING, not a guess:** verify+swap once per K
+  backups instead of per backup would save 17 × (verify + snapshot + swap), but nothing
+  is durable until a swap: today a kill at item 12 keeps eleven committed and skipped on
+  re-run, and at K=18 it loses twelve merges' CPU. The maintainer has killed this import
+  twice, so the trade is real. K is theirs to choose.
+  **WHAT SHIPPED INSTEAD (both merged-order-independent):** `verify_copy` sub-timings
+  (`verify:quick_check` / `foreign_key_check` / `counts` / `content_sample`) + the
+  `working_copy_bytes` the walk traverses, so the first completed backup converts
+  "2414 s" into a rate; and `merge_diag.walk_probe`, which measures the plaintext-vs-
+  encrypted page-walk RATIO on this machine (**2.40 / 2.39 / 2.42 across three runs**;
+  likely an upper bound at field scale, where I/O takes a larger share). `verify_copy`
+  has NEVER been observed in the field — both recorded runs ended before it — so every
+  estimate above rests on it, and the next completed backup supplies it for free.
+  SEQUENCING: read the first real verify number, THEN pick K, THEN build the prefetch if
+  the prepare side still dominates.
 - **FIELD FEEDBACK 2026-08-07 — governments · law extraction · Feed tab · crash visibility ·
   card provenance · Articles tab · Settings (maintainer; INTAKE + INVESTIGATION this session,
   code-verified against `main`@9c651ee, 47 numbered questions ANSWERED the same day; brief of
