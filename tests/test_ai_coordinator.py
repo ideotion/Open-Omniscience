@@ -255,3 +255,90 @@ def test_the_default_follows_the_same_practicality_predicate() -> None:
     out = C.coordinator_default_enabled(
         capability=lambda: {"practical": False, "reason": "no dedicated GPU"})
     assert out["default_on"] is False and "GPU" in out["reason"]
+
+
+# --------------------------------------------------------------------------- #
+#  the lane's concurrency budget has to reach the calls
+# --------------------------------------------------------------------------- #
+def _budget_probe(monkeypatch, *, backend: str, budget: int, flags: dict) -> dict:
+    """Run one turn and report the kwargs each member was actually called with."""
+    seen: dict[str, dict] = {}
+
+    def _mk(key: str, enabled_key: str, per_item: bool) -> "C.Member":
+        def _run(ctx, model, **kw):
+            seen[key] = dict(kw)
+            return {}
+        return C.Member(key, key, enabled_key, _run, per_item_concurrency=per_item)
+
+    monkeypatch.setattr(C, "_member_specs", lambda: [
+        _mk("triage", "ai_sweep_keyword_triage", False),
+        _mk("tags", "ai_sweep_source_tags", False),
+        _mk("perception", "ai_sweep_perception_extract", True),
+    ])
+    monkeypatch.setattr(C, "_resolve_backend_name", lambda: backend)
+    monkeypatch.setattr(C, "_turn_workers", lambda _b: budget)
+    C.run_coordinator(ctx=_Ctx(stop_after=1), model="m", settings=_Settings(**flags),
+                      sleep=lambda _s: None)
+    return seen
+
+
+def test_the_lane_budget_reaches_the_member_that_calls_once_per_item(monkeypatch) -> None:
+    """Field report 2026-08-09: "I see my GPU working only 20%".
+
+    Turn-level overlap alone caps real concurrency at the number of enabled sweeps, and
+    each member ran its own items SERIALLY because nothing passed max_workers and its
+    default is 1 -- so OO_VLLM_CONCURRENCY, whose own docstring invites the operator to
+    measure and override it, could not reach the loop that issues the calls."""
+    seen = _budget_probe(
+        monkeypatch, backend="vllm", budget=8,
+        flags={"keyword_triage": True, "source_tags": True, "perception_extract": True},
+    )
+    # Three due members: the two batched ones spend one sequence each, so the per-item
+    # member gets the remaining six and the lane's total matches the budget rather than
+    # exceeding it and queueing behind the server's own --max-num-seqs.
+    assert seen["perception"] == {"max_workers": 6}
+
+
+def test_a_member_that_batches_its_items_is_never_handed_workers(monkeypatch) -> None:
+    """Triage and source-tags already carry a whole batch in one call, so extra workers
+    would be silently ignored -- and a silently-ignored argument is what later reads as
+    a bug. They are not given one."""
+    seen = _budget_probe(
+        monkeypatch, backend="vllm", budget=8,
+        flags={"keyword_triage": True, "source_tags": True, "perception_extract": True},
+    )
+    assert seen["triage"] == {} and seen["tags"] == {}
+
+
+def test_ollama_stays_serial(monkeypatch) -> None:
+    """The negative-space twin. Ollama is serial by this project's default posture, so
+    the same wiring must not quietly start issuing concurrent calls to it."""
+    seen = _budget_probe(
+        monkeypatch, backend="ollama", budget=1,
+        flags={"keyword_triage": True, "perception_extract": True},
+    )
+    assert seen["perception"] == {"max_workers": 1}
+
+
+def test_the_per_item_member_alone_gets_the_whole_budget(monkeypatch) -> None:
+    """With nothing else due there is nothing to reserve for."""
+    seen = _budget_probe(
+        monkeypatch, backend="vllm", budget=8, flags={"perception_extract": True},
+    )
+    assert seen["perception"] == {"max_workers": 8}
+
+
+def test_the_shipped_perception_member_is_the_per_item_one() -> None:
+    """The flag is only meaningful if the REAL registry carries it, and only on the
+    member whose job actually accepts max_workers."""
+    import inspect
+
+    from src.ai_layer.perception_extract_job import run_progressive_perception_extract_job
+
+    by_key = {m.key: m for m in C._member_specs()}
+    assert by_key["perception_extract"].per_item_concurrency is True
+    assert by_key["keyword_triage"].per_item_concurrency is False
+    assert by_key["source_tags"].per_item_concurrency is False
+    assert "max_workers" in inspect.signature(
+        run_progressive_perception_extract_job
+    ).parameters, "the member is marked per-item, so its job must take the argument"

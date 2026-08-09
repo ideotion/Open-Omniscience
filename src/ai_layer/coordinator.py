@@ -18,6 +18,18 @@ batching, member turns may run CONCURRENTLY up to ``concurrency_for("vllm")``; o
 Ollama they run strictly serially. The backend is resolved through
 :func:`src.llm.backend.resolve_backend` — never a hardcoded name.
 
+That turn-level overlap is not the whole budget, and treating it as such is what a
+field report of a GPU at 20% turned out to be (2026-08-09). Overlapping TURNS caps
+real concurrency at the number of enabled sweeps — three — and each member then ran
+its own items serially, because nothing passed ``max_workers`` and its default is 1.
+So ``concurrency_for`` reached the scheduler and never the loop that issues the
+calls. The budget is now SPENT: a member whose calls each carry a whole batch
+(triage's 25 keywords, a page of source domains) costs one sequence, and the
+per-item member — who/where/when, one call per article — gets the remainder, so the
+lane's total in flight matches the same number the server's ``--max-num-seqs`` was
+set from. What that number should BE is a measurement, not a guess:
+``/api/diagnostics/llm-throughput`` sweeps it on the operator's own machine.
+
 PREEMPTION (ruling 13): interactive one-off calls are never governed by this
 toggle and never queue behind it. A user-initiated BATCH (bulk translate/
 summarize, a manual sweep run) takes the EXCLUSIVE HOLD below, and the
@@ -116,6 +128,14 @@ class Member:
     label: str
     enabled_key: str
     run: Callable[..., dict]
+    #: Does this member issue ONE model call PER ITEM, so that giving it more workers
+    #: puts more sequences in flight? Triage and source-tags do not: each of their calls
+    #: already carries a whole batch (25 keywords, a page of domains), so their
+    #: concurrency lever would be running several BATCHES at once -- a different change,
+    #: in their own batch loops. Only the per-item member can spend the lane's budget,
+    #: and marking that here keeps the coordinator from handing workers to a member that
+    #: would silently ignore them.
+    per_item_concurrency: bool = False
 
 
 def _member_specs() -> list[Member]:
@@ -132,11 +152,11 @@ def _member_specs() -> list[Member]:
 
         return run_progressive_source_tags_job(ctx, model=model, max_batches=BATCHES_PER_TURN)
 
-    def _perception(ctx, model: str) -> dict:
+    def _perception(ctx, model: str, max_workers: int = 1) -> dict:
         from src.ai_layer.perception_extract_job import run_progressive_perception_extract_job
 
         return run_progressive_perception_extract_job(
-            ctx, model=model, max_batches=BATCHES_PER_TURN
+            ctx, model=model, max_batches=BATCHES_PER_TURN, max_workers=max_workers
         )
 
     return [
@@ -147,6 +167,7 @@ def _member_specs() -> list[Member]:
             "When / where / who extraction",
             "ai_sweep_perception_extract",
             _perception,
+            per_item_concurrency=True,
         ),
     ]
 
@@ -242,9 +263,27 @@ def run_coordinator(
 
         turns += 1
 
-        def _one(m: Member) -> tuple[str, dict]:
+        # THE LANE'S BUDGET, SPENT RATHER THAN LEFT ON THE TABLE (field report
+        # 2026-08-09: "I see my GPU working only 20%"). Turn-level overlap alone caps
+        # real concurrency at the number of enabled sweeps -- three -- and each member
+        # ran its own items serially, because nothing passed max_workers and its default
+        # is 1. So OO_VLLM_CONCURRENCY, whose own docstring invites the operator to
+        # measure and override it, could not reach the loop that issues the calls.
+        #
+        # The budget is `workers` sequences in flight, which is also what the server was
+        # started with (--max-num-seqs comes from the same concurrency_for). A member
+        # that batches its items spends exactly one; the per-item member gets whatever
+        # remains, so the lane's total matches the budget instead of exceeding it and
+        # queueing.
+        batched = sum(1 for m in due if not m.per_item_concurrency)
+        per_item_workers = max(1, workers - batched)
+
+        # `_budget` is bound at definition rather than closed over: this function is
+        # handed to a thread pool, and the enclosing name is rebound every turn.
+        def _one(m: Member, _budget: int = per_item_workers) -> tuple[str, dict]:
             try:
-                out = m.run(ctx, model=model) or {}
+                kw = {"max_workers": _budget} if m.per_item_concurrency else {}
+                out = m.run(ctx, model=model, **kw) or {}
             except Exception as exc:  # noqa: BLE001 - one member must never end the lane
                 _LOG.warning("coordinator member %s failed", m.key, exc_info=True)
                 return m.key, {"error": f"{type(exc).__name__}: {exc}"[:200]}
