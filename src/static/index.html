@@ -1454,67 +1454,6 @@
       <div id="ollama-bench-box" style="margin-top:12px"></div>
       <div id="vllm-bench-box" style="margin-top:12px"></div>
     </section>
-    <section class="panel">
-      <h2>Behaviour &amp; prompts</h2>
-      <p class="muted" style="margin-top:0">There are four system prompts — Summary (used for one or many articles), Translation (one or many), Synthesis (one combined output across several), and Keyword extraction (the built-in keyword/entity indexer). They instruct the local model, and the exact prompt used is recorded with every result.</p>
-      <div class="row" style="align-items:end;margin-bottom:6px">
-        <div style="flex:0 0 auto"><label for="llm-keep-alive">Keep the model loaded for</label>
-          <input id="llm-keep-alive" style="max-width:140px" placeholder="30m"></div>
-        <div class="hint" style="flex:1;align-self:center">How long Ollama keeps the model in memory after a request, so the next one does not reload it. Examples: 30m, 1h, -1 (never unload), 0 (unload now).</div>
-      </div>
-      <div class="hint" style="margin:10px 0 6px">Leave a prompt empty to use the built-in default (shown as the placeholder). In the translation prompt, the placeholder {target} is replaced by the target language; in the keyword-extraction prompt, {max_terms} is the per-article limit.</div>
-      <div style="margin-bottom:10px"><label for="llm-prompt-summary">Summary prompt</label>
-        <textarea id="llm-prompt-summary" rows="8" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"></textarea>
-        <div class="row" style="gap:6px;margin-top:4px">
-          <button class="ghost tiny" onclick="copyLlmPrompt('summary',this)">Copy</button>
-          <button class="ghost tiny" onclick="resetLlmPrompt('summary')">Reset to default</button></div></div>
-      <div style="margin-bottom:10px"><label for="llm-prompt-translate">Translation prompt</label>
-        <textarea id="llm-prompt-translate" rows="8" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"></textarea>
-        <div class="row" style="gap:6px;margin-top:4px">
-          <button class="ghost tiny" onclick="copyLlmPrompt('translate',this)">Copy</button>
-          <button class="ghost tiny" onclick="resetLlmPrompt('translate')">Reset to default</button></div></div>
-      <div style="margin-bottom:10px"><label for="llm-prompt-synthesis">Synthesis prompt</label>
-        <textarea id="llm-prompt-synthesis" rows="10" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"></textarea>
-        <div class="row" style="gap:6px;margin-top:4px">
-          <button class="ghost tiny" onclick="copyLlmPrompt('synthesis',this)">Copy</button>
-          <button class="ghost tiny" onclick="resetLlmPrompt('synthesis')">Reset to default</button></div></div>
-      <div style="margin-bottom:10px"><label for="llm-prompt-ai_keywords">Keyword-extraction prompt</label>
-        <textarea id="llm-prompt-ai_keywords" rows="8" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"></textarea>
-        <div class="row" style="gap:6px;margin-top:4px">
-          <button class="ghost tiny" onclick="copyLlmPrompt('ai_keywords',this)">Copy</button>
-          <button class="ghost tiny" onclick="resetLlmPrompt('ai_keywords')">Reset to default</button></div></div>
-      <div class="row" style="align-items:center;gap:10px">
-        <button onclick="saveLlmBehaviour(this)">Save prompts &amp; behaviour</button>
-        <span id="llm-behaviour-status" class="hint"></span>
-      </div>
-    </section>
-    <section class="panel">
-      <h2>Custom extractors</h2>
-      <p class="muted" style="margin-top:0">Your own AI extractors — each a prompt that pulls one kind of rich metadata from an article (an extension of the built-in who / where / when). Output items are stored as AI-derived metadata of the type you name, shown beside the article and labelled "AI-derived · unreliable", never mixed into the trusted keyword index. Define and manage them here; run them over a selection from the search toolbar or an analysis window (the "Run extractor" action), or automatically on new articles via each extractor's run-on-ingest toggle.</p>
-      <div id="ai-prompts-list" class="hint">Loading…</div>
-      <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
-        <div id="ai-prompt-form-title" style="font-weight:600;margin-bottom:6px">Add a custom extractor</div>
-        <input type="hidden" id="ai-prompt-id">
-        <div class="row" style="gap:10px">
-          <div style="flex:2"><label for="ai-prompt-label">Name</label>
-            <input id="ai-prompt-label" placeholder="e.g. Monetary figures" maxlength="80"></div>
-          <div style="flex:1"><label for="ai-prompt-kind">Metadata type</label>
-            <input id="ai-prompt-kind" placeholder="e.g. figure" maxlength="40"></div>
-        </div>
-        <label for="ai-prompt-text" style="display:block;margin-top:6px">Prompt</label>
-        <textarea id="ai-prompt-text" rows="6" maxlength="4000" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"
-          placeholder="Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above."></textarea>
-        <div class="row" style="gap:16px;margin-top:6px;align-items:center">
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ai-prompt-oningest" style="width:auto"> Run automatically on new articles</label>
-          <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ai-prompt-enabled" style="width:auto" checked> Enabled</label>
-        </div>
-        <div class="row" style="gap:8px;margin-top:8px;align-items:center">
-          <button onclick="saveCustomPrompt(this)">Save extractor</button>
-          <button class="ghost" onclick="resetCustomPromptForm()">Clear</button>
-          <span id="ai-prompt-status" class="hint"></span>
-        </div>
-      </div>
-    </section>
     </div>
 
     <div class="set-view" id="set-wikipedia" style="display:none">
@@ -1971,6 +1910,71 @@
         curation. None of it is needed for everyday use, and each section only loads its data
         once you open it.</p>
     </section>
+
+    <details class="adv-sec" data-adv="ai">
+      <summary><span class="adv-sec-t">AI</span> <span class="muted">— system prompts, model behaviour and your own extractors</span></summary>
+    <section class="panel">
+      <h2>Behaviour &amp; prompts</h2>
+      <p class="muted" style="margin-top:0">There are four system prompts — Summary (used for one or many articles), Translation (one or many), Synthesis (one combined output across several), and Keyword extraction (the built-in keyword/entity indexer). They instruct the local model, and the exact prompt used is recorded with every result.</p>
+      <div class="row" style="align-items:end;margin-bottom:6px">
+        <div style="flex:0 0 auto"><label for="llm-keep-alive">Keep the model loaded for</label>
+          <input id="llm-keep-alive" style="max-width:140px" placeholder="30m"></div>
+        <div class="hint" style="flex:1;align-self:center">How long Ollama keeps the model in memory after a request, so the next one does not reload it. Examples: 30m, 1h, -1 (never unload), 0 (unload now).</div>
+      </div>
+      <div class="hint" style="margin:10px 0 6px">Leave a prompt empty to use the built-in default (shown as the placeholder). In the translation prompt, the placeholder {target} is replaced by the target language; in the keyword-extraction prompt, {max_terms} is the per-article limit.</div>
+      <div style="margin-bottom:10px"><label for="llm-prompt-summary">Summary prompt</label>
+        <textarea id="llm-prompt-summary" rows="8" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"></textarea>
+        <div class="row" style="gap:6px;margin-top:4px">
+          <button class="ghost tiny" onclick="copyLlmPrompt('summary',this)">Copy</button>
+          <button class="ghost tiny" onclick="resetLlmPrompt('summary')">Reset to default</button></div></div>
+      <div style="margin-bottom:10px"><label for="llm-prompt-translate">Translation prompt</label>
+        <textarea id="llm-prompt-translate" rows="8" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"></textarea>
+        <div class="row" style="gap:6px;margin-top:4px">
+          <button class="ghost tiny" onclick="copyLlmPrompt('translate',this)">Copy</button>
+          <button class="ghost tiny" onclick="resetLlmPrompt('translate')">Reset to default</button></div></div>
+      <div style="margin-bottom:10px"><label for="llm-prompt-synthesis">Synthesis prompt</label>
+        <textarea id="llm-prompt-synthesis" rows="10" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"></textarea>
+        <div class="row" style="gap:6px;margin-top:4px">
+          <button class="ghost tiny" onclick="copyLlmPrompt('synthesis',this)">Copy</button>
+          <button class="ghost tiny" onclick="resetLlmPrompt('synthesis')">Reset to default</button></div></div>
+      <div style="margin-bottom:10px"><label for="llm-prompt-ai_keywords">Keyword-extraction prompt</label>
+        <textarea id="llm-prompt-ai_keywords" rows="8" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"></textarea>
+        <div class="row" style="gap:6px;margin-top:4px">
+          <button class="ghost tiny" onclick="copyLlmPrompt('ai_keywords',this)">Copy</button>
+          <button class="ghost tiny" onclick="resetLlmPrompt('ai_keywords')">Reset to default</button></div></div>
+      <div class="row" style="align-items:center;gap:10px">
+        <button onclick="saveLlmBehaviour(this)">Save prompts &amp; behaviour</button>
+        <span id="llm-behaviour-status" class="hint"></span>
+      </div>
+    </section>
+    <section class="panel">
+      <h2>Custom extractors</h2>
+      <p class="muted" style="margin-top:0">Your own AI extractors — each a prompt that pulls one kind of rich metadata from an article (an extension of the built-in who / where / when). Output items are stored as AI-derived metadata of the type you name, shown beside the article and labelled "AI-derived · unreliable", never mixed into the trusted keyword index. Define and manage them here; run them over a selection from the search toolbar or an analysis window (the "Run extractor" action), or automatically on new articles via each extractor's run-on-ingest toggle.</p>
+      <div id="ai-prompts-list" class="hint">Loading…</div>
+      <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
+        <div id="ai-prompt-form-title" style="font-weight:600;margin-bottom:6px">Add a custom extractor</div>
+        <input type="hidden" id="ai-prompt-id">
+        <div class="row" style="gap:10px">
+          <div style="flex:2"><label for="ai-prompt-label">Name</label>
+            <input id="ai-prompt-label" placeholder="e.g. Monetary figures" maxlength="80"></div>
+          <div style="flex:1"><label for="ai-prompt-kind">Metadata type</label>
+            <input id="ai-prompt-kind" placeholder="e.g. figure" maxlength="40"></div>
+        </div>
+        <label for="ai-prompt-text" style="display:block;margin-top:6px">Prompt</label>
+        <textarea id="ai-prompt-text" rows="6" maxlength="4000" style="width:100%;font:13px ui-monospace,monospace;resize:vertical"
+          placeholder="Tell the local model what to extract. Output one item per line — each becomes a piece of metadata of the type above."></textarea>
+        <div class="row" style="gap:16px;margin-top:6px;align-items:center">
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ai-prompt-oningest" style="width:auto"> Run automatically on new articles</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" id="ai-prompt-enabled" style="width:auto" checked> Enabled</label>
+        </div>
+        <div class="row" style="gap:8px;margin-top:8px;align-items:center">
+          <button onclick="saveCustomPrompt(this)">Save extractor</button>
+          <button class="ghost" onclick="resetCustomPromptForm()">Clear</button>
+          <span id="ai-prompt-status" class="hint"></span>
+        </div>
+      </div>
+    </section>
+    </details>
 
     <details class="adv-sec" data-adv="collect">
       <summary><span class="adv-sec-t">Collection</span> <span class="muted">— schedule, crawl modes, manual and batch ingest</span></summary>

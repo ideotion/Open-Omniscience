@@ -1578,6 +1578,11 @@ def llm_model_catalog(backend: str | None = None) -> dict:
     out = catalog_for(chosen)
     out["chosen_because"] = pick["chosen_because"] if not backend else "explicitly requested"
     out["prerequisite"] = pick["prerequisite"]
+    # WHICH ONE IS IN USE, so a picker built from this list can show the operator's own
+    # choice rather than re-deriving it (2026-08-09). ``active_model()`` is the stored UI
+    # setting falling back to the default -- the same answer /models publishes, read from
+    # the same place, so the two surfaces cannot drift into disagreeing about it.
+    out["active"] = active_model()
 
     have: set[str] | None = None
     if chosen == "ollama":

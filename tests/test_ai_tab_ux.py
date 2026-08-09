@@ -1,0 +1,149 @@
+"""The AI tab is for a journalist, not a console operator.
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+
+Maintainer review 2026-08-09, verbatim: "Replace small tick boxes for model download
+with big buttons. Replace the bla bla about default model with a drop down menu with
+only the readily/downloaded models, and make the UI automatically remove useless
+elements of the UI such as a button to download a model which is already downloaded ...
+Let's move the entire Behaviour & prompts section to an AI section in the advanced
+subtab."
+
+Every assertion here runs over a PROPERLY SLICED function body (``js_source_helper``),
+never a whole-file substring: the ledger records three separate guards that passed for
+years while testing nothing, all of them whole-file matches against a needle that
+occurred somewhere else entirely.
+"""
+
+from __future__ import annotations
+
+from tests.js_source_helper import (
+    assert_absent,
+    function_body,
+    read_static,
+    strip_comments,
+)
+
+APP = read_static("app.js")
+HTML = read_static("index.html")
+
+
+# --------------------------------------------------------------------------- #
+#  one big button per model, and it goes away when it has nothing left to do
+# --------------------------------------------------------------------------- #
+def test_the_catalogue_offers_one_button_per_model_not_tickboxes():
+    body = function_body(APP, "loadModelCatalog")
+    assert 'onclick="installOneModel(' in body, "each row needs its own download action"
+    # The tick-box + shared "Download selected" gesture is what this replaced. Comments
+    # are stripped first: the comment EXPLAINING the removal necessarily quotes it, and
+    # a guard that trips on its own explanation gets reworded rather than fixed.
+    clean = strip_comments(body)
+    assert_absent(clean, 'type="checkbox"', why="the per-model button replaced the tick-boxes")
+    assert_absent(clean, "installSelectedModels", why="the shared multi-select is gone")
+
+
+def test_a_downloaded_model_offers_no_download_button():
+    """THE 'remove useless elements' RULE. A row for a model already on disk must
+    render a state, never a live control for work that is already done."""
+    body = function_body(APP, "loadModelCatalog")
+    # The installed branch and the button must be on OPPOSITE sides of one condition.
+    assert "m.installed === true" in body
+    i_state = body.index('t("Downloaded")')
+    i_button = body.index("installOneModel(")
+    assert i_state < i_button, (
+        "the installed case must be the FIRST arm of the conditional, so a downloaded "
+        "model can never fall through to the download button"
+    )
+
+
+def test_an_unreadable_probe_still_offers_the_download():
+    """Negative-space twin. ``installed === null`` is a stopped daemon that cannot
+    tell us — hiding the button on that guess would strand the operator, and
+    downloading something already present is harmless."""
+    body = function_body(APP, "loadModelCatalog")
+    assert "m.installed === null" in body, "the third state must keep its own answer"
+
+
+def test_installOneModel_asks_consent_and_repaints():
+    body = function_body(APP, "installOneModel")
+    assert "ensureAiEgress" in body, "a multi-GB clearnet download passes the ONE consent"
+    assert "/api/llm/models/install" in body, "same endpoint as the gesture it replaced"
+    assert "loadModelCatalog()" in body, "the finished row must lose its button"
+    # `t` is not a global in this file; the repo has a dedicated guard for that, and
+    # this is the local half of it.
+    assert "OOI18N.t" in body
+
+
+# --------------------------------------------------------------------------- #
+#  the default model becomes a picker over what is actually downloaded
+# --------------------------------------------------------------------------- #
+def test_the_default_model_block_is_a_picker_over_downloaded_models():
+    body = function_body(APP, "_paintDefaultModel")
+    assert 'id="llm-model-pick"' in body
+    assert 'onchange="setActiveModel(' in body
+    # ONLY downloaded ones — the whole point of the ask.
+    assert "m.installed === true" in body, "the options are filtered to what is on disk"
+    assert "/api/llm/models/catalog" in body, (
+        "the list must come from the catalogue, which resolves `installed` against the "
+        "backend that will actually serve — /api/llm/models answers about Ollama"
+    )
+
+
+def test_the_picker_falls_back_to_a_download_when_nothing_is_downloaded():
+    """With an empty disk there is nothing to choose BETWEEN, so the honest control is
+    the one that gets you a first model — not an empty dropdown."""
+    body = function_body(APP, "_paintDefaultModel")
+    assert "installDefaultModel(this)" in body
+
+
+def test_the_catalogue_endpoint_publishes_the_active_model():
+    """The picker shows the operator's own choice, so the payload has to carry it —
+    re-deriving it in the browser is how two surfaces start disagreeing."""
+    from pathlib import Path
+
+    src = (
+        Path(__file__).resolve().parents[1]
+        .joinpath("src/api/llm.py")
+        .read_text(encoding="utf-8")
+    )
+    assert 'out["active"] = active_model()' in src
+
+
+# --------------------------------------------------------------------------- #
+#  the developer surface moves to Advanced
+# --------------------------------------------------------------------------- #
+def test_prompts_and_extractors_live_under_advanced_ai():
+    adv = HTML.index('id="set-advanced"')
+    models = HTML.index('id="set-models"')
+    for marker in ("Behaviour &amp; prompts", "Custom extractors"):
+        at = HTML.index(marker)
+        assert at > adv, f"{marker} must sit inside the Advanced view"
+        assert at > models, f"{marker} must no longer sit inside the AI view"
+    assert 'data-adv="ai"' in HTML, "it needs the foldable section wrapper"
+
+
+def test_nothing_was_lost_in_the_move():
+    """Absorption, the Desk lesson: the panels moved WHOLE. Every control the old AI
+    tab carried must still exist somewhere in the document."""
+    for el in (
+        "llm-prompt-summary", "llm-prompt-translate", "llm-prompt-synthesis",
+        "llm-prompt-ai_keywords", "llm-keep-alive", "ai-prompts-list",
+        "ai-prompt-label", "ai-prompt-kind", "ai-prompt-text",
+    ):
+        assert f'id="{el}"' in HTML, f"{el} disappeared in the move"
+
+
+def test_the_moved_panels_load_on_expand_not_with_the_subtab():
+    """Folded must not mean fetched — the Advanced convention. And the AI subtab must
+    no longer pay for panels it no longer shows."""
+    loaders = APP[APP.index("const _ADV_LOADERS"):]
+    loaders = loaders[: loaders.index("\n    }")]
+    assert "ai:" in loaders and "loadLlmPrompts()" in loaders and "loadCustomPrompts()" in loaders
+
+    show = function_body(APP, "showSetCat")
+    models_line = next(
+        ln for ln in show.splitlines() if 'cat === "models"' in ln and "loadOllamaInstall" in ln
+    )
+    assert "loadLlmPrompts()" not in models_line, "the AI subtab must not load the moved panel"
+    assert "loadCustomPrompts()" not in models_line
