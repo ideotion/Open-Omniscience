@@ -2785,6 +2785,40 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     tool, enumerate what the old one was configured with and find each setting's
     equivalent — an unset knob is invisible in a diff that only shows the swap.
 
+  - **A BUDGET FOR A LOOP WRAPPED IN BLANKET EXCEPTION ISOLATION CANNOT *BE* AN
+    EXCEPTION (2026-08-09, the 69-minute `leads-quality.json`):** an all-diagnostics run
+    hung at member 53/55 on a ~1M-article corpus, and the member was **not** unguarded —
+    it runs inline under a 300 s `statement_deadline`, which fired exactly as designed,
+    raising `StatementTimeout` from the next SQL statement. What it met was `run_all`'s
+    per-producer `except Exception`, which exists so one bad producer can never blank
+    Home. The guard fired; the isolation ate it; the loop moved to the next producer and
+    did it again, once per producer, and the caller never learned anything was wrong.
+    Neither half is wrong on its own — that is what makes the pair hard to see. RULE:
+    when a loop is wrapped in blanket isolation, its budget must be **control flow the
+    isolation cannot intercept** (a `break` in the loop that owns the budget), never a
+    raised exception; and the budget must expire **before** any enclosing
+    exception-based deadline, or the swallowed path is reached first anyway. Pin it with
+    a reproducer that drives the *defeated* design (a producer raising the very
+    exception the deadline raises, and the pass carrying on), so the reason for the
+    `break` cannot later rot into "someone preferred it". SIBLING, same fix: report
+    truncation in the PAYLOAD, not only a log line — otherwise a reader diffing two
+    exports cannot tell a shorter FEED from a shorter RUN.
+  - **A SIGNATURE TABLE IS AN ENUMERATION, SO GIVE IT A STRUCTURAL FALLBACK — and the
+    wrapper is never the answer (2026-08-09, seventh round of "the log keeps the wrong
+    part"):** `failure_excerpt` searches known fatal signatures, which is already the
+    fix for two earlier wrong guesses about *where* a reason lives. It still missed this
+    one, because the cause was new: the nvcc `RuntimeError` sat at byte 26,370 of 45,782
+    — outside the retained head AND tail — and with no matching signature the search
+    fell through to the generic `Traceback (most recent call last)` entry, whose window
+    is the TOP of a stack while the reason is 115 lines below it. The durable half of
+    the fix is not the new signature, it is reading the shape every Python failure
+    shares: the terminal `SomeError: message` line. Take the **first non-wrapper** one —
+    first because a child process prints its traceback before the parent prints one that
+    merely says the answer is above, and non-wrapper because that parent line
+    ("Engine core initialization failed. See root cause above.") is always present,
+    always last, and always useless. Prove the structural half is live by testing it with
+    the specific signature REMOVED; a rule that only works once you already knew the
+    answer is not a rule.
   - **A FORENSIC READER THAT MATERIALISES ITS FILE COSTS MOST EXACTLY WHEN IT IS
     NEEDED MOST (2026-08-06, the app SIGKILLed during startup):** `promote_incomplete_runs`
     runs in the LIFESPAN STARTUP, before unlock, on every boot — and read every journal
@@ -3250,18 +3284,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   hiding-place-for-the-bug-it-survives shape the ledger already warns about twice. The
   other bundle members were unaffected (the per-member guard did its job — one failure,
   not an aborted export).
-- **WHY TEN vLLM STARTS DIED ON THE FIELD MACHINE IS STILL UNKNOWN (2026-08-06):** the
-  instruments were fixed, the cause was not. Every death got PAST weight loading and KV
-  cache allocation (`Available KV cache memory: 1.49 GiB`, `GPU KV cache size: 15,024
-  tokens`), exited 1, and matched no CUDA-OOM / `torch.AcceleratorError` / name-resolution
-  / port-taken / gated-repo signature — only the generic `EngineCore failed to start`.
-  Since a SIGKILL produces no Python exception in the child and no torch error, host RAM
-  exhaustion is the leading hypothesis (11.36 GiB total, vLLM's own log reporting
-  `Available RAM: 5.84 GiB` against a `Checkpoint size: 4.35 GiB`, 1.0 GiB swap, the app
-  itself at 1.18 GB RSS) — but that is a HYPOTHESIS and must not be recorded as the
-  cause. It is settled either by `dmesg`/`journalctl -k` naming the OOM killer, or by the
-  next bundle, whose journal excerpt and preserved log now carry the reason by
-  construction.
+- **~~WHY TEN vLLM STARTS DIED~~ — ANSWERED 2026-08-09, and the host-RAM hypothesis was
+  WRONG.** The operator's preserved log named it outright: vLLM 0.26 selects FlashInfer
+  for top-k/top-p sampling (`Using FlashInfer for top-p & top-k sampling`), FlashInfer
+  **JIT-compiles** that kernel on first use, and first use is `warmup_kernels` at the very
+  END of engine init — so on a machine with the NVIDIA driver and **no CUDA toolkit** it
+  died on `RuntimeError: Could not find nvcc and default cuda_home='/usr/local/cuda'
+  doesn't exist`, ~78 s in, with the weights already resident. That is precisely the
+  reported "model loads in VRAM but unloads for unknown reasons" — the card was full when
+  it died. NOT host RAM (`journalctl -k` was empty and 5.5 GB was available), NOT the OOM
+  killer, NOT graph capture (`enforce_eager` is on below 10 GB, so no capture happens).
+  FIXED same day: `_server_env()` sets `VLLM_USE_FLASHINFER_SAMPLER=0` whenever
+  `cuda_toolkit_present()` is false. **The standing lesson to keep: a DRIVER is not a
+  TOOLKIT.** Inference needs only the driver; any JIT path silently converts a runtime
+  dependency into a BUILD dependency, and it fails at the END of initialisation with the
+  expensive resource already committed — which reads as "it worked and then stopped"
+  rather than "it never started". When a component is chosen at runtime because a package
+  is merely importable, ask what that component does on first use.
 - **THE TWO 2026-08-03 BRIEFS ARE EXECUTED (PR #856, branch `claude/pr852-coding-session-m1m6k0`;
   five `docs/ledger/shipped.csv` rows). MAINTAINER RULINGS RECEIVED + BUILT the same day.**
   **MERGE_TABLES:** Part 0's fourteen silently-dropped columns are carried and the class is
