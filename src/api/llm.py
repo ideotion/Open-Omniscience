@@ -1320,7 +1320,13 @@ def _roster_backend(explicit: str | None) -> dict:
     """The backend a roster view or install is about, and why.
 
     An explicit choice from a panel wins: the vLLM section showing Hugging Face repos
-    must not install Ollama tags because the machine happens to prefer Ollama today."""
+    must not install Ollama tags because the machine happens to prefer Ollama today.
+
+    ``provisioning_backend`` rides along on EVERY answer (2026-08-09) so a caller can
+    tell "the backend this machine will serve with" from "the backend this particular
+    panel asked about" without re-deriving it or parsing ``chosen_because``, which is a
+    human sentence and not an API. The panel needs exactly that distinction to decide
+    whether it is worth drawing at all -- see the field report on the bench roster."""
     from src.llm.backend import resolve_backend
 
     r = resolve_backend()
@@ -1331,8 +1337,9 @@ def _roster_backend(explicit: str | None) -> dict:
             "backend": explicit,
             "chosen_because": "explicitly requested by the panel",
             "prerequisite": None if installed else explicit,
+            "provisioning_backend": pick["backend"],
         }
-    return pick
+    return {**pick, "provisioning_backend": pick["backend"]}
 
 
 @router.get("/bench-roster")
@@ -1350,6 +1357,7 @@ def bench_roster(backend: str | None = None) -> dict:
     out = roster_for(pick["backend"])
     out["chosen_because"] = pick["chosen_because"]
     out["prerequisite"] = pick["prerequisite"]
+    out["provisioning_backend"] = pick["provisioning_backend"]
     return out
 
 

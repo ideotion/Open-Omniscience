@@ -22180,13 +22180,40 @@
     const _BENCH_HOSTS = {vllm: "vllm-bench-box", ollama: "ollama-bench-box"};
     const _benchTicked = {vllm: null, ollama: null};  // null = "use the roster defaults"
 
+    // FIELD REPORT 2026-08-09: "downloading other models (for benchmark) doesn't seem
+    // to work". BOTH rosters were drawn on every machine, so a GPU box showed the
+    // Ollama panel FIRST -- same heading, same tick-boxes, and a DISABLED button,
+    // because Ollama is not installed there. Ticking models in it and pressing the
+    // button did nothing, which is exactly what was reported.
+    //
+    // A roster is worth drawing when this machine will SERVE with that backend (even
+    // if it still has to be installed -- that panel carries the one honest "install it
+    // first" line) or when the backend is already installed, so the download can
+    // actually happen. A backend that is neither can only ever be a dead duplicate.
+    //
+    // Pure, and named, so both directions can be driven in node: hiding too eagerly
+    // would leave a fresh machine with no bench panel AND no install message, which is
+    // the same defect pointing the other way.
+    function _benchPanelApplies(r) {
+      if (!r) return false;
+      if (r.backend === r.provisioning_backend) return true;  // this machine's own answer
+      return !r.prerequisite;                                 // installed => it can download
+    }
+
     async function loadBenchRoster(backend) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $(_BENCH_HOSTS[backend]);
       if (!host) return;
       let r;
       try { r = await api("/api/llm/bench-roster?backend=" + encodeURIComponent(backend)); }
-      catch (e) { host.innerHTML = `<p class="muted">${esc(t("Could not read the bench roster."))}</p>`; return; }
+      catch (e) { host.innerHTML = `<p class="muted">${esc(t("Could not read the bench roster."))}</p>`; host.style.display = ""; return; }
+      // Installing the missing backend is offered ONCE, in the Models section above;
+      // this panel reappears the moment it exists, because every install path re-runs
+      // this loader.
+      if (!_benchPanelApplies(r)) {
+        host.innerHTML = ""; host.style.display = "none"; return;
+      }
+      host.style.display = "";
       const meanings = r.flag_meanings || {};
       const picked = _benchTicked[backend];
       const rows = (r.models || []).map((m) => {
