@@ -10266,6 +10266,80 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   must travel WITH it" trap); a compute-capability ≥7.5 preflight (real, but `detect_gpu()`
   already gates on CUDA and the failure it prevents is loud); a per-launch `--api-key` on a
   loopback socket (defence against a local process that could read the token file anyway).
+  - **A TUNABLE IS ONLY TUNABLE WHERE ITS VALUE REACHES THE LOOP THAT SPENDS IT
+    (2026-08-09, "I see my GPU working only 20%"):** `concurrency_for()` was read in two
+    honest places — the coordinator's turn-level overlap, and `--max-num-seqs` at server
+    start — and in neither did it reach the call site. Turn overlap parallelises across
+    MEMBERS, so it caps at the number of enabled sweeps (three); and each member then ran
+    its own items serially, because none of the three closures in `_member_specs()` passed
+    `max_workers` and `run_progressive_perception_extract_job`'s default is 1. So at most
+    three sequences ever reached vLLM, whose entire advantage is continuous batching, and
+    the knob whose own docstring says *"the operator can measure and override"* could not
+    be overridden where it mattered. GENERAL FORM: after wiring a tunable, grep for the
+    site that SPENDS it, not the sites that compute or forward it — this is the recorded
+    "a diagnostic state with no caller in the decision path is a dead end" lesson applied
+    to a configuration value, and it hides better, because every intermediate read looks
+    correct in isolation. TWO DESIGN POINTS from the fix. (a) Do not divide a budget
+    evenly across consumers that spend it differently: a member whose call already carries
+    a whole batch (25 keywords, a page of domains) costs ONE sequence however many workers
+    you hand it, so the per-item member gets the REMAINDER and the lane's total matches the
+    number the server was started from. (b) Mark which consumer can spend it
+    (`per_item_concurrency`) rather than passing the argument to all of them — an argument
+    a callee silently ignores is what later reads as a bug, and the flag is also the thing
+    a test can pin against the SHIPPED registry. And do NOT invent a replacement default in
+    the same change: the old one is a disclosed guess by its own admission, so raising it
+    without the measurement swaps one unchecked number for another.
+  - **A PERFECTLY-SCALING TEST DOUBLE CANNOT TELL A MEASURED RATE FROM AN ASSUMED ONE
+    (2026-08-09, the throughput sweep):** the bench exists because `budget_translation`
+    computes articles/hour as `3600/p50 × concurrency` — a multiplication nobody had
+    checked. Its first fixture was a client that sleeps a fixed time per call, and against
+    that the measured batch rate and the assumed multiplication come out THE SAME, so the
+    test passed and proved nothing about the distinction the module is for. The
+    discriminating fixture is one that STOPS scaling: a semaphore capping real lanes at 2,
+    where eight workers must NOT be four times the measured rate. GENERAL FORM: when a
+    change replaces an assumption with a measurement, the fixture has to be one where the
+    assumption is FALSE — a well-behaved double agrees with the thing being refuted.
+    COROLLARY on the same bench: a report whose published rate cannot be recomputed from
+    its own published wall reads as an inconsistency, so round the wall finely enough
+    (3 dp, matching the per-call figures) and assert within the rounding band computed from
+    the granularity, never a magic percentage.
+  - **"CHECK WHETHER THE INSTRUMENT ALREADY EXISTS" HAS A SECOND HALF: IT MAY EXIST AND
+    HAVE NO READER (2026-08-09, the AI details feed):** the recorded lesson says to check
+    whether existing instruments reach durable storage DURING the operation before building
+    more. Here they did — triage, source-tags and perception-extract each append a
+    per-batch JSONL record carrying `started_at` AND `finished_at` while the run is in
+    flight, beside detail records holding the values found — and the feature was still
+    missing, because `last_*_report` parses a header, a footer and a line count and the
+    only other route to the details was downloading the whole log. So the answer was a
+    bounded tail READER, not a fifth recorder. THREE THINGS THE READER OWED. (a) Its OWN
+    ceiling (seek to `size - tail_bytes`, drop the leading fragment): the writer's
+    discipline is not the reader's, and a sweep left running for days writes a log whose
+    size tracks how much there was to report. (b) TWO rates, because under a round-robin
+    coordinator "the model's own speed" (items ÷ summed batch durations) and "what the
+    corpus gains" (items ÷ elapsed span) differ by exactly the duty cycle — publishing
+    either alone misleads in opposite directions, one promising a completion date the
+    machine cannot keep and the other blaming the model for the scheduler. (c) The item
+    UNIT per sweep (keywords / sources / articles), so a headline total is taken only over
+    rows that share one unit. EMPIRICAL FACT worth keeping: the coordinator calls each
+    member's job FUNCTION directly rather than through its registered `BackgroundJob`, so
+    while the lane drives a sweep that sweep's own status endpoint reports `idle` with no
+    result — any UI built on the per-sweep status surfaces is blank in the normal case, and
+    a busy machine reads as a stopped one unless that is stated.
+  - **TWO PANELS RENDERED UNCONDITIONALLY, ONE STRUCTURALLY INERT, AND THE INERT ONE FIRST
+    (2026-08-09, "downloading other models for benchmark doesn't seem to work"):**
+    `refreshAiPanels` drew both bench rosters on every machine, and `index.html` puts the
+    Ollama host ABOVE the vLLM one — so on a GPU box with Ollama absent the FIRST panel with
+    that heading was the one whose button is disabled. Ticking models in it did nothing,
+    which is the entire report. The defect is not the disabled button (that is honest); it
+    is drawing a surface that can never act, ABOVE the one that can. RULE: a panel for a
+    capability this machine cannot exercise is not a disclosure, it is a decoy — draw it
+    only when the backend will SERVE here (that panel carries the one honest "install it
+    first" line) or is already installed. Decide it from a machine-readable FACT the
+    endpoint publishes (`provisioning_backend`), never by parsing a human sentence like
+    `chosen_because`. And the NEGATIVE-SPACE TWIN is the load-bearing half: a fresh machine
+    has nothing installed, so the SERVING panel also carries a prerequisite and must still
+    be drawn — hiding on `prerequisite` alone trades one dead end for another, and only the
+    twin test catches it.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 

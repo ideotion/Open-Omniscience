@@ -4423,3 +4423,88 @@ inside a string value. So `object_literal` landed with a string-, template- and
 comment-aware scanner that `array_literal` now shares, and the test that proves it is the
 one that failed against my own first implementation. Prefer being stopped by a ratchet over
 lowering its budget: the budget is unchanged at 233.
+
+## 2026-08-09 — The AI tab, the bench decoy, and the concurrency that never reached the calls
+
+Five asks from a maintainer review, one reported bug, and one question — *"I see my GPU
+working only 20%"* — that turned out to name a real defect rather than a tuning knob.
+
+**The bench decoy.** `refreshAiPanels` drew BOTH bench rosters on every machine, and
+`index.html` puts `ollama-bench-box` ABOVE `vllm-bench-box`. So on a GPU box with vLLM
+installed and Ollama absent, the first "Comparative-bench models" panel you meet is the
+Ollama one — same heading, same tick-boxes, and a disabled button, because the endpoint
+correctly answers `prerequisite: "ollama"`. Ticking models there and pressing it does
+nothing, which is the whole report. The defect is not the disabled button (that is honest);
+it is drawing a surface that can never act, above the one that can. A roster is now drawn
+when the machine will SERVE with that backend — even if it still has to be installed, since
+that panel carries the one honest "install it first" line — or when the backend is already
+installed and the download can actually happen. Decided from `provisioning_backend`, a fact
+the endpoint publishes, rather than from `chosen_because`, which is a human sentence and not
+an API. The negative-space twin is the load-bearing half: a fresh machine has nothing
+installed, so the SERVING panel also carries a prerequisite and must still be drawn.
+Mutation-checked both ways — always-draw reproduces the report, over-eager-hide strands the
+fresh machine.
+
+**The 20% GPU.** Two layers, both verified in the tree. `run_coordinator` parallelises
+across MEMBERS — `run_concurrent(due, _one, …)` over at most three enabled sweeps — and each
+member then ran its own items serially, because none of the three closures in
+`_member_specs()` passed `max_workers` and `run_progressive_perception_extract_job`'s
+default is 1. So at most three sequences ever reached vLLM, whose entire advantage is
+continuous batching, and `OO_VLLM_CONCURRENCY` — whose own docstring invites the operator to
+measure and override — reached the scheduler and never the loop that issues the calls. The
+budget is now spent rather than left on the table: a member whose call already carries a
+whole batch (triage's 25 keywords, a page of source domains) costs one sequence, and the
+per-item member gets the remainder, so the lane's total matches the same number
+`--max-num-seqs` was set from instead of overshooting it and queueing. `Member` gains an
+explicit `per_item_concurrency` flag rather than handing `max_workers` to members that would
+silently ignore it. The DEFAULT of 4 is deliberately unchanged: it is a disclosed guess by
+its own admission, and raising it without the measurement swaps one unchecked number for
+another. Ruff B023 caught the closure over a loop variable handed to a thread pool.
+
+Worth recording separately: the prompt shape was never the lever. `perception.py`'s
+`_SYSTEM_PROMPT` already returns `WHO:` / `WHERE:` / `WHEN:` from a single generation, so
+"ask the model several things about one article at once" was already how it worked.
+
+**The throughput sweep** (`src/monitoring/llm_throughput.py`). `llm_bench.budget_translation`
+computes articles/hour as `3600 / wall_p50 × concurrency` — a multiplication by an unmeasured
+ceiling, honestly labelled an upper bound and never checked, and a GPU at 20% is what an
+unchecked upper bound looks like from outside. The sweep issues the same call at 1/2/4/8/16
+in flight through the app's OWN `run_concurrent` (a probe that reimplements the execution
+path measures the probe) and reports the BATCH rate achieved at each, with `nvidia-smi`
+sampled on a thread while the work happens. Levels above the running server's own limit are
+labelled `beyond_server_limit`, because vLLM queues rather than refusing and reporting that
+plateau unlabelled would read as "concurrency stops helping here" — a different claim; the
+reading names the restart that would lift it. `linear_extrapolation` restates the assumption
+beside the measured figure and says in its own method string that it is not a measurement.
+An unreadable GPU is `None` with a reason, never 0 — opposite findings, and this bench exists
+because of a report about a GPU that LOOKED idle.
+
+The discriminating fixture is the lesson: the first one was a client sleeping a fixed time
+per call, and against a perfectly-scaling double the measured batch rate and the assumed
+multiplication come out THE SAME — the test passed and proved nothing about the distinction
+the module is for. The fixture that discriminates is one that STOPS scaling (a semaphore
+capping real lanes at 2, where eight workers must not be four times the measured rate).
+
+**The details feed** (`src/ai_layer/activity.py`). No recorder was needed, and that was the
+finding. Triage, source-tags and perception-extract each append a per-batch JSONL record
+carrying `started_at` AND `finished_at` while the run is in flight, beside detail records
+holding the values found; `ai_keyword.created_at` is a per-article clock for perception and
+langdetect. Nothing had ever parsed any of it — `last_*_report` reads a header, a footer and
+a line count, and the only other route was downloading the whole log. So this is a bounded
+tail reader under its OWN 256 KiB ceiling, because a reader with no bound is how a 1.6 GB
+journal OOM'd the app at boot. Two rates per sweep, never one: `while_working_per_hour`
+(items ÷ summed batch durations — the model's own speed) and `wall_clock_per_hour` (items ÷
+elapsed span, including every gap waiting its turn). They diverge by exactly the duty cycle —
+3600/h vs 654/h on the fixture — and either alone misleads. The item unit is per-sweep, so the
+headline total is taken only over the stored rows, which share one. A measured zero is
+published as 0.0, not None: we looked, over a stated window; "never ran" stays visible as a
+total of 0. And the feed states the thing that made this invisible — the coordinator calls
+each member's job function directly rather than through its registered `BackgroundJob`, so a
+sweep's own status endpoint reads `idle` while the lane drives it.
+
+**Process.** The slicing ratchet caught its own author: a new guard reached into `app.js`
+with `index()`/`index()` instead of importing `js_source_helper`. Budget unchanged at 232 —
+prefer being stopped by it over lowering it. A hand-written session double drifted and failed
+against correct code, so the stored-rows test uses a real session on an isolated engine.
+Full suite 7424 passed / 41 skipped / 0 failed, +5 over the pre-change baseline, which is the
+check that the run exercised the change rather than an unchanged tree.
