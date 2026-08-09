@@ -1629,6 +1629,27 @@ def keyword_growth(download: bool = Query(False), db: Session = Depends(get_db))
     return JSONResponse(curve, headers=headers)
 
 
+def _leads_quality_budget_s() -> float:
+    """How long the Leads producer pass inside this member may run
+    (``OO_LEADS_QUALITY_BUDGET_S``).
+
+    DELIBERATELY BELOW ``_all_diag_db_member_deadline_s()`` (300 s), and that ordering
+    is the fix rather than an implementation detail. The statement deadline wrapped
+    around this member DOES fire -- and ``run_all``'s per-producer ``except Exception``
+    catches it, logs "producer failed", and continues, once per producer, which is how
+    an export sat 69 minutes on a member that was nominally bounded. Expiring first
+    means the loop stops itself with a ``break`` nothing can intercept, and the
+    statement deadline stays where it belongs: the backstop for a single runaway query.
+    """
+    import math
+
+    try:
+        v = float(os.environ.get("OO_LEADS_QUALITY_BUDGET_S", "240"))
+    except ValueError:
+        return 240.0
+    return v if math.isfinite(v) and v > 0 else 240.0
+
+
 @router.get("/leads-quality")
 def leads_quality(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
     """S6.1 (Leads-calibration, 2026-07-18): export the CURRENT Home Leads feed as a
@@ -1639,7 +1660,7 @@ def leads_quality(download: bool = Query(False), db: Session = Depends(get_db)) 
     writes nothing. With ``download=1`` it returns as a dated attachment."""
     from src.analytics.leads_quality import leads_quality_report
 
-    report = leads_quality_report(db)
+    report = leads_quality_report(db, budget_s=_leads_quality_budget_s())
     headers = {}
     if download:
         fname = f"oo-leads-quality-{datetime.now().strftime('%Y%m%d')}.json"

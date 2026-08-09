@@ -252,8 +252,45 @@ _FATAL_SIGNATURES: tuple[tuple[str, str, str], ...] = (
         "gated repo",
         "The model repository requires accepting its licence on Hugging Face first.",
     ),
+    (
+        "cuda-toolkit-missing",
+        "Could not find nvcc",
+        "A component asked to COMPILE a CUDA kernel and this machine has the NVIDIA "
+        "driver but no CUDA toolkit (nvcc). In vLLM 0.26 that component is FlashInfer's "
+        "top-k/top-p sampler, which JIT-compiles at the very END of engine init -- so "
+        "the model loads into VRAM, sits there for a moment, and the server then dies "
+        "with the card already full. The app now starts the server with the native "
+        "PyTorch sampler whenever no toolkit is present, so this cannot happen; a log "
+        "showing it came from a build before that fix. Installing a CUDA toolkit also "
+        "resolves it, but is not required to run models.",
+    ),
+)
+
+#: Matched only AFTER the specific table and the terminal-exception search below. These
+#: two say a failure HAPPENED without saying what it was: ``EngineCore failed to start``
+#: and the top line of a stack. Kept last on purpose -- when they matched first they
+#: returned a window of stack frames while the real ``RuntimeError`` sat a hundred lines
+#: further down (field report 2026-08-09).
+_GENERIC_SIGNATURES: tuple[tuple[str, str, str], ...] = (
     ("engine-init", "EngineCore failed to start", ""),
     ("traceback", "Traceback (most recent call last)", ""),
+)
+
+#: A Python traceback's LAST line -- ``SomeError: what went wrong`` -- is the reason.
+#: Tolerates vLLM's ``(EngineCore pid=NNNN) `` line prefix.
+_EXCEPTION_LINE_RE = re.compile(
+    r"^(?:\([A-Za-z]+ pid=\d+\)\s*)?(?:[A-Za-z_][A-Za-z0-9_.]*\.)?"
+    r"[A-Za-z_][A-Za-z0-9_]*(?:Error|Exception|Interrupt)\s*:\s*\S"
+)
+
+#: Terminal exceptions that report SOMEONE ELSE'S failure. vLLM's API server re-raises
+#: whatever killed its EngineCore child, and its message says so in as many words -- so
+#: it is always present, always last, and never the answer. Skipping these is what makes
+#: "take the first terminal exception" correct rather than merely usually-right.
+_WRAPPER_EXCEPTIONS = (
+    "Engine core initialization failed",
+    "See root cause above",
+    "EngineCore failed to start",
 )
 
 #: Lines of context kept BEFORE a matched signature -- enough to show the call site
@@ -326,10 +363,7 @@ def failure_excerpt(*, limit: int = 900) -> dict:
 
     text = raw.decode("utf-8", errors="replace")
     lines = text.splitlines()
-    for kind, needle, advice in _FATAL_SIGNATURES:
-        idx = next((i for i, ln in enumerate(lines) if needle in ln), None)
-        if idx is None:
-            continue
+    def _hit(kind: str, idx: int, advice: str = "") -> dict:
         out = {
             "available": True,
             "path": str(p),
@@ -339,6 +373,39 @@ def failure_excerpt(*, limit: int = 900) -> dict:
         if advice:
             out["advice"] = advice
         return out
+
+    for kind, needle, advice in _FATAL_SIGNATURES:
+        idx = next((i for i, ln in enumerate(lines) if needle in ln), None)
+        if idx is not None:
+            return _hit(kind, idx, advice)
+
+    # NO SIGNATURE MATCHED, which is the case that matters: the table is an
+    # ENUMERATION of causes we have already met, and the next failure is by definition
+    # one we have not. Rather than fall straight to a generic "a traceback exists"
+    # match, read the shape every Python failure shares -- the terminal
+    # ``SomeError: message`` line -- and window around the FIRST one that is not a
+    # wrapper. First, not last: vLLM's child prints its own traceback before the parent
+    # prints the one that merely says the answer is above.
+    #
+    # This is what would have named the missing CUDA toolkit without anyone knowing to
+    # look for it, and it is the half of this fix that keeps working for whatever comes
+    # next.
+    idx = next(
+        (
+            i
+            for i, ln in enumerate(lines)
+            if _EXCEPTION_LINE_RE.match(ln) and not any(w in ln for w in _WRAPPER_EXCEPTIONS)
+        ),
+        None,
+    )
+    if idx is not None:
+        return _hit("exception", idx)
+
+    for kind, needle, advice in _GENERIC_SIGNATURES:
+        idx = next((i for i, ln in enumerate(lines) if needle in ln), None)
+        if idx is not None:
+            return _hit(kind, idx, advice)
+
     return {
         "available": True,
         "path": str(p),
@@ -1490,6 +1557,31 @@ def recent_start_failures(within_s: float = 600.0) -> dict:
     }
 
 
+def cuda_toolkit_present() -> bool:
+    """Whether a CUDA TOOLKIT (``nvcc``) is on this machine -- not merely a driver.
+
+    The distinction is the whole point. ``detect_gpu()`` asks whether a card and its
+    driver are present, which is all that RUNNING a model needs; this asks whether the
+    machine can COMPILE CUDA, which is what any JIT path needs. A laptop with an RTX
+    4070 and a stock driver install answers yes to the first and no to the second, and
+    conflating them is what let a start reach the last step of engine init before dying.
+
+    Deliberately mirrors the lookup FlashInfer itself performs (``nvcc`` on PATH, then
+    ``CUDA_HOME``/``CUDA_PATH``, then ``/usr/local/cuda``) so this predicts ITS outcome
+    rather than a plausible-looking approximation of it. Read-only; never raises.
+    """
+    if shutil.which("nvcc"):
+        return True
+    for var in ("CUDA_HOME", "CUDA_PATH"):
+        root = (os.environ.get(var) or "").strip()
+        if root and (Path(root) / "bin" / "nvcc").is_file():
+            return True
+    try:
+        return (Path("/usr/local/cuda") / "bin" / "nvcc").is_file()
+    except OSError:  # noqa: BLE001 - an unreadable path is not a toolkit
+        return False
+
+
 def _server_env() -> dict[str, str]:
     """The environment the SERVER is spawned with: the app's model store, plus offline.
 
@@ -1527,6 +1619,30 @@ def _server_env() -> dict[str, str]:
     env["VLLM_NO_USAGE_STATS"] = "1"
     env["DO_NOT_TRACK"] = "1"
     env["HF_HUB_DISABLE_TELEMETRY"] = "1"
+
+    # NO COMPILER, NO JIT SAMPLER (field report 2026-08-09, and the cause of ten
+    # identical deaths this chain never named).
+    #
+    # vLLM 0.26 picks FlashInfer for top-k/top-p sampling when the package is present,
+    # and FlashInfer COMPILES that kernel on first use. So the very last step of engine
+    # init -- `warmup_kernels` -> `sample_tokens`, AFTER the weights are in VRAM and the
+    # KV cache is allocated -- shells out to `nvcc`, and on a machine with the NVIDIA
+    # DRIVER but no CUDA TOOLKIT it dies::
+    #
+    #     RuntimeError: Could not find nvcc and default cuda_home='/usr/local/cuda'
+    #                   doesn't exist
+    #
+    # That is why the operator saw the model load into VRAM and then vanish: the death
+    # is ~78 s in, with the card already full. Inference needs the driver; nvcc is a
+    # BUILD dependency, and requiring a multi-gigabyte toolkit to answer one prompt
+    # would break the app's whole "it just works" promise. vLLM's native PyTorch
+    # sampler needs no compiler and is the path it used before FlashInfer existed.
+    #
+    # CONDITIONAL, not blanket: where a toolkit IS installed, FlashInfer compiles fine
+    # and is faster, so this defers to it. The condition is a real machine fact rather
+    # than a guess, and an operator-set value still wins.
+    if not os.environ.get("VLLM_USE_FLASHINFER_SAMPLER") and not cuda_toolkit_present():
+        env["VLLM_USE_FLASHINFER_SAMPLER"] = "0"
 
     # AND THE COMPUTE CACHES. Pointing HF_HOME at the app folder moved the WEIGHTS;
     # it did nothing about torch's Inductor cache, Triton's kernel cache or the CUDA

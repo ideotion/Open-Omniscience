@@ -31,12 +31,26 @@ LEADS_QUALITY_CAVEAT = (
 )
 
 
-def leads_quality_report(session) -> dict:
-    """The bounded, real-facts export described in the module docstring."""
-    from src.briefing.leads import _distinct_sources, is_major
-    from src.briefing.registry import run_all
+def leads_quality_report(session, *, budget_s: float | None = None) -> dict:
+    """The bounded, real-facts export described in the module docstring.
 
-    cards = run_all(session)
+    ``budget_s`` caps how long the underlying producer pass may run. It exists because
+    this member hung an all-diagnostics run for 69 minutes on a ~1M-article corpus: the
+    pass is the whole Home Leads feed, its cost scales with the corpus, and the
+    statement deadline wrapped around it could not bound it (see
+    :func:`~src.briefing.registry.run_all_bounded`). A truncated pass is reported AS
+    truncated, with the count -- a partial feed labelled partial is a usable
+    measurement, an unbounded one is a hung export.
+    """
+    import time
+
+    from src.briefing.leads import _distinct_sources, is_major
+    from src.briefing.registry import run_all_bounded
+
+    cards, stats = run_all_bounded(
+        session,
+        deadline=(time.monotonic() + budget_s) if budget_s else None,
+    )
     rows = []
     for c in cards:
         rows.append(
@@ -52,10 +66,24 @@ def leads_quality_report(session) -> dict:
                 "major": is_major(c),
             }
         )
+    caveat = LEADS_QUALITY_CAVEAT
+    if stats["truncated"]:
+        # Said in the payload, not only in a log: a reader comparing two exports must be
+        # able to see that this one covers fewer producers, or the diff reads as cards
+        # having disappeared from the feed.
+        caveat += (
+            f" TRUNCATED: the producer pass was stopped after {stats['producers_run']} of "
+            f"{stats['producers_total']} producers by a {budget_s:.0f}s budget, so cards "
+            "from the producers that did not run are ABSENT here — that is a limit of "
+            "this export, not a change in the feed."
+        )
     return {
         "schema": SCHEMA,
         "count": len(rows),
         "cards": rows,
+        "producers_run": stats["producers_run"],
+        "producers_total": stats["producers_total"],
+        "truncated": stats["truncated"],
         "method": LEADS_QUALITY_METHOD,
-        "caveat": LEADS_QUALITY_CAVEAT,
+        "caveat": caveat,
     }

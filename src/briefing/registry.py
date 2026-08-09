@@ -391,7 +391,19 @@ def _disabled_names() -> frozenset[str]:
 
 
 def run_all(session, on_progress: Callable[[int, int, str], None] | None = None) -> list[Card]:
-    """Run every registered producer, isolating failures.
+    """Run every registered producer, isolating failures. See :func:`run_all_bounded`,
+    of which this is the unbounded form Home uses -- behaviour is unchanged."""
+    return run_all_bounded(session, on_progress=on_progress)[0]
+
+
+def run_all_bounded(
+    session,
+    *,
+    on_progress: Callable[[int, int, str], None] | None = None,
+    deadline: float | None = None,
+) -> tuple[list[Card], dict]:
+    """Run every registered producer, isolating failures. Returns ``(cards, stats)``
+    where ``stats`` is ``{"producers_run", "producers_total", "truncated"}``.
 
     One misbehaving producer must never blank the whole briefing, so each is run in
     its own ``try`` and its error is logged, not raised (no silent ``pass``: the
@@ -400,12 +412,39 @@ def run_all(session, on_progress: Callable[[int, int, str], None] | None = None)
     ``on_progress(done, total, name)`` (optional) is called after each producer so a
     background recompute can publish a determinate progress bar; it is cosmetic and is
     never allowed to break the feed.
+
+    ``deadline`` is a :func:`time.monotonic` instant after which no FURTHER producer is
+    started; None (Home's path) is unbounded, exactly as before.
+
+    WHY THE BOUND IS A ``break`` AND NOT A TIMEOUT (field report 2026-08-09). An
+    all-diagnostics run sat 69 minutes inside ``leads-quality.json``, which calls this
+    function -- even though that member runs under a 300 s ``statement_deadline``. The
+    deadline was doing its job: it raised ``StatementTimeout`` from the next SQL
+    statement. The ``except Exception`` below then caught it, logged "producer failed",
+    and moved on to the next producer, where it was raised and caught again. The guard
+    fired and the fail-safe wrapper ate it, once per producer, and the caller never
+    learned anything had gone wrong.
+
+    That is not a reason to weaken the isolation -- it exists so one bad producer cannot
+    blank Home, which is a standing invariant. It is a reason for a budget to be
+    CONTROL FLOW that the isolation cannot intercept. An exception is catchable by
+    design; a ``break`` in the loop that owns the budget is not.
     """
     cards: list[Card] = []
     total = len(_REGISTRY)
     disabled = _disabled_names()
+    ran = 0
+    truncated = False
     with _wal_guard(session):  # PR-D / W1: release the WAL snapshot within a producer's own scan too
         for i, (name, producer) in enumerate(_REGISTRY):
+            if deadline is not None and time.monotonic() >= deadline:
+                truncated = True
+                _LOG.warning(
+                    "run_all: budget spent after %d/%d producers; stopping before %r",
+                    ran, total, name,
+                )
+                break
+            ran += 1
             try:
                 # Settings restructure PR-7: ONE place decides whether a producer
                 # runs at all, so every Lead is switchable from Settings → Cards
@@ -445,4 +484,8 @@ def run_all(session, on_progress: Callable[[int, int, str], None] | None = None)
         deduped.append(card)
     if dup_count:
         _LOG.info("run_all: dropped %d duplicate (type, key) card(s) across producers", dup_count)
-    return deduped
+    return deduped, {
+        "producers_run": ran,
+        "producers_total": total,
+        "truncated": truncated,
+    }
