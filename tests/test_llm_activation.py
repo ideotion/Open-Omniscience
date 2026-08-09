@@ -1223,16 +1223,45 @@ def test_the_start_actually_uses_that_environment():
     assert "env=launch_env()" not in src, "the server must not use the download's env"
 
 
-def test_a_dns_failure_is_named_rather_than_its_hundred_line_traceback():
+def test_a_dns_failure_is_named_rather_than_its_hundred_line_traceback(tmp_path, monkeypatch):
     """The operator's log ended in 'Cannot send a request, as the client has been
     closed' -- true, and not the reason. The specific signature must win over the
-    generic traceback, and carry advice."""
+    generic traceback, and carry advice.
+
+    BEHAVIOURAL, not a list layout (2026-08-09). This used to assert
+    ``keys.index("offline") < keys.index("traceback")`` against one flat table, which
+    broke the moment the generic entries moved into ``_GENERIC_SIGNATURES`` -- even
+    though the property it names became MORE firmly true (specific entries are now
+    searched in a separate, earlier pass). Driving the real function pins what the
+    docstring actually claims and survives the next restructure."""
     from src.llm import vllm_lifecycle as vl
 
-    keys = [k for k, _, _ in vl._FATAL_SIGNATURES]
-    assert keys.index("offline") < keys.index("traceback")
-    advice = next(a for k, _, a in vl._FATAL_SIGNATURES if k == "offline")
-    assert "offline mode" in advice and "cached" in advice
+    # A HUNDRED-LINE traceback, as the name says. The length is the whole point: on a
+    # log shorter than the budget every candidate window contains everything, so a short
+    # fixture would pass whatever the function did. Here the stack sits far above the
+    # reason, and a 400-character window can hold one or the other but not both.
+    log = tmp_path / "server.log"
+    log.write_text(
+        "\n".join(
+            [
+                "INFO starting",
+                "Traceback (most recent call last):",
+                *[f"  File 'httpx.py', line {i}, in send" for i in range(100)],
+                "OSError: [Errno -3] Temporary failure in name resolution",
+                "RuntimeError: Cannot send a request, as the client has been closed",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(vl, "server_log_path", lambda: log)
+
+    out = vl.failure_excerpt(limit=400)
+    assert out["signature"] == "offline", "the specific cause must beat the generic traceback"
+    assert "offline mode" in out["advice"] and "cached" in out["advice"]
+    assert "Temporary failure in name resolution" in out["excerpt"]
+    assert "Traceback (most recent call last)" not in out["excerpt"], (
+        "anchoring on the stack header instead of the reason is the defect this guards"
+    )
 
 
 # --------------------------------------------------------------------------- #

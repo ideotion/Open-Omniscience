@@ -89,7 +89,7 @@ def test_the_toolkit_probe_reads_CUDA_HOME(monkeypatch, tmp_path):
     one FlashInfer's own lookup honours."""
     nvcc = tmp_path / "bin" / "nvcc"
     nvcc.parent.mkdir(parents=True)
-    nvcc.write_text("")
+    nvcc.write_text("", encoding="utf-8")
     monkeypatch.setattr(V.shutil, "which", lambda name: None)
     monkeypatch.setenv("CUDA_HOME", str(tmp_path))
     assert V.cuda_toolkit_present() is True
@@ -100,7 +100,7 @@ def test_the_toolkit_probe_reads_CUDA_HOME(monkeypatch, tmp_path):
 # --------------------------------------------------------------------------- #
 def _log(tmp_path, monkeypatch, text=_REAL_LOG):
     p = tmp_path / "server.log"
-    p.write_text(text)
+    p.write_text(text, encoding="utf-8")
     monkeypatch.setattr(V, "server_log_path", lambda: p)
     return p
 
