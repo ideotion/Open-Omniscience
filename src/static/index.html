@@ -1792,6 +1792,17 @@
         </div>
         <div id="pe-result" class="small" style="margin-top:6px"></div>
       </div>
+      <!-- Maintainer ask 2026-08-09: "a collapsed 'details' section giving details about
+           what exactly has been done by the AI background metadata enhancement ... a live
+           feed with details about latest detected keywords, languages, and so forth, and
+           the amount total for each category, and the remaining amount ... article
+           processing per hour (per category + total)." Folded, and FOLDED MEANS NOT
+           FETCHED: the loader runs on expand, and polls only while it is open. -->
+      <details id="ai-activity-box" class="adv-collect" style="margin-top:10px"
+               ontoggle="onAiActivityToggle(this)">
+        <summary class="muted" style="cursor:pointer">Details — what the background AI has been doing</summary>
+        <div id="ai-activity-body" class="hint" style="margin-top:6px"></div>
+      </details>
       <!-- E-S2 (2026-08-01, rulings 14-16): the COMPARATIVE model bench. Answers
            "does the ruled default model deserve to stay the default?" with a
            measurement rather than an opinion: every roster model, on every backend

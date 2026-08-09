@@ -14759,6 +14759,111 @@
       await _syncAiSweepToggle("perception-extract", "pe-toggle-btn", $("pe-status"), $("pe-result"), renderPerceptionExtractResult);
     }
 
+    // ----------------------------------------------------------------------- //
+    //  Details — what the background AI has been doing (maintainer ask 2026-08-09)
+    // ----------------------------------------------------------------------- //
+    // FOLDED MEANS NOT FETCHED, and the poll lives and dies with the disclosure: a
+    // details panel nobody has opened must not cost a request every few seconds.
+    let _aiActivityTimer = null;
+
+    function onAiActivityToggle(el) {
+      if (el && el.open) {
+        loadAiActivity();
+        if (!_aiActivityTimer) _aiActivityTimer = setInterval(loadAiActivity, 5000);
+      } else if (_aiActivityTimer) {
+        clearInterval(_aiActivityTimer);
+        _aiActivityTimer = null;
+      }
+    }
+
+    // Two rates per sweep, never one. They diverge by the duty cycle -- the sweeps take
+    // turns in the coordinator's lane -- so the model's own speed and what the corpus
+    // actually gains are different numbers, and either alone tells a different story.
+    function _aiRateLine(r, unit) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!r || r.measurable !== true) {
+        return `<div class="muted">${esc(t("Rate:"))} ${esc((r && r.reason) || t("not measurable yet"))}</div>`;
+      }
+      const w = r.while_working_per_hour, c = r.wall_clock_per_hour;
+      if (w === null && c === null) {
+        return `<div class="muted">${esc(t("Too little time observed to state a rate yet."))}</div>`;
+      }
+      return `<div>` +
+        `<strong>${esc(String(w === null ? "—" : w))}</strong> ${esc(unit)}/h ` +
+        `<span class="muted">${esc(t("while working"))}</span> · ` +
+        `<strong>${esc(String(c === null ? "—" : c))}</strong> ${esc(unit)}/h ` +
+        `<span class="muted">${esc(t("wall clock"))}</span>` +
+        ` <span class="muted">(n=${esc(String(r.batches))} ${esc(t("batches"))})</span></div>`;
+    }
+
+    async function loadAiActivity() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("ai-activity-body");
+      if (!host) return;
+      let r;
+      try { r = await api("/api/diagnostics/ai-activity"); }
+      catch (e) {
+        host.innerHTML = `<p class="muted">${esc(t("Could not read the AI activity feed."))}</p>`;
+        return;
+      }
+      const sweeps = (r.sweeps || []).map((s) => {
+        const rows = [`<div style="font-weight:600;margin-top:8px">${esc(s.label || s.key)}</div>`];
+        if (s.note) rows.push(`<div class="muted">${esc(s.note)}</div>`);
+        rows.push(_aiRateLine(s.rates, s.unit || t("items")));
+        const st = s.state || {};
+        const totals = st.totals || {};
+        const bits = Object.keys(totals).map((k) => `${esc(k)} ${esc(String(totals[k]))}`);
+        if (st.batches_completed !== undefined) {
+          bits.unshift(`${esc(t("batches"))} ${esc(String(st.batches_completed))}`);
+        }
+        if (bits.length) rows.push(`<div class="muted">${bits.join(" · ")}</div>`);
+        if ((s.latest || []).length) {
+          const items = s.latest.slice(0, 12).map((x) =>
+            `<span class="pill">${esc(x.term || x.domain || "")}` +
+            (x.verdict ? ` · ${esc(x.verdict)}` : "") +
+            (Array.isArray(x.tags) && x.tags.length ? ` · ${esc(x.tags.join(", "))}` : "") +
+            `</span>`).join(" ");
+          rows.push(`<div style="margin-top:4px">${items}</div>`);
+        } else if (s.latest_note) {
+          // An empty list would read as "it found nothing", which is a different claim.
+          rows.push(`<div class="muted">${esc(s.latest_note)}</div>`);
+        }
+        return rows.join("");
+      }).join("");
+
+      let stored = "";
+      const sd = r.stored || {};
+      if (sd.available === true) {
+        // The TOTAL is over the STORED rows only, because those share one unit. Summing
+        // keywords/h with sources/h with articles/h would put three different things
+        // under one label -- so the per-sweep rates above stay in their own units.
+        let total = 0, any = false;
+        const kinds = (sd.kinds || []).map((k) => {
+          if (typeof k.per_hour === "number") { total += k.per_hour; any = true; }
+          const latest = (k.latest || []).slice(0, 8)
+            .map((x) => `<span class="pill">${esc(x.term || "")}</span>`).join(" ");
+          return `<div style="margin-top:6px"><strong>${esc(k.kind)}</strong> · ` +
+            `${esc(t("total"))} ${esc(String(k.total))} · ` +
+            `${esc(t("in the last"))} ${esc(String(sd.window_hours))}h: ${esc(String(k.in_window))}` +
+            (typeof k.per_hour === "number" ? ` · <strong>${esc(String(k.per_hour))}</strong>/h` : "") +
+            `</div>` + (latest ? `<div style="margin-top:2px">${latest}</div>` : "");
+        }).join("");
+        stored =
+          `<div style="font-weight:600;margin-top:10px">${esc(t("Stored by the AI layer"))}</div>` +
+          kinds +
+          (any ? `<div style="margin-top:6px"><strong>${esc(String(Math.round(total * 10) / 10))}</strong> ` +
+                 `${esc(t("AI-layer rows per hour, all categories"))}</div>` : "") +
+          `<div class="card-caveat" style="margin-top:4px">${esc(sd.caveat || "")}</div>`;
+      } else if (sd.reason) {
+        stored = `<div class="muted" style="margin-top:8px">${esc(sd.reason)}</div>`;
+      }
+
+      const coord = (r.coordinator || {}).note
+        ? `<div class="muted" style="margin-top:8px">${esc(r.coordinator.note)}</div>` : "";
+      host.innerHTML = sweeps + stored + coord +
+        `<div class="card-caveat" style="margin-top:8px">${esc(r.caveat || "")}</div>`;
+    }
+
     // IR retrieval-eval over a human-judged gold set (keyword-engine P3): open the
     // /api/diagnostics/ir-eval report for a gold-set FILE — score the live search at the
     // current BM25F default, or (both weight boxes filled) A/B two (title,body) weight

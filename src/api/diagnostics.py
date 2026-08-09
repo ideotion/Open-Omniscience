@@ -2527,6 +2527,44 @@ def llm_throughput(
     )
 
 
+@router.get("/ai-activity")
+def ai_activity(
+    recent: int = Query(12, ge=1, le=100, description="Latest found items per category"),
+    hours: int = Query(24, ge=1, le=720, description="Window for the stored-rows rate"),
+    db: Session = Depends(get_db),
+) -> dict:
+    """What the background AI has actually been doing — the live details feed.
+
+    Maintainer ask 2026-08-09: latest detected keywords and languages, totals per
+    category, what is left, and articles processed per hour.
+
+    A READER over records the sweeps already write. Three of the four append a per-batch
+    JSONL record — with a start AND a finish time — while the run is in flight, next to
+    detail records carrying what they found; nothing had ever parsed them, because
+    `last_*_report` reads a header, a footer and a line count. Each log is read from its
+    END under a byte ceiling of the reader's own, so a sweep left running for days cannot
+    turn this into the whole-file read that once OOM'd the app at boot.
+
+    TWO RATES per sweep, both real: the model's own speed (items over summed batch
+    durations) and what the corpus gains (items over the elapsed span, including every
+    gap where the sweep waited its turn in the coordinator's round-robin). They diverge
+    by the duty cycle, and publishing either alone would mislead.
+
+    LOCAL only: reads files and the corpus, no egress, airplane-safe.
+    """
+    from src.ai_layer.activity import recent_activity
+
+    return recent_activity(session=db, recent=recent, hours=hours)
+
+
+@router.get("/ai-activity-selftest")
+def ai_activity_selftest() -> dict:
+    """Prove the reader is bounded and the two rates really separate, on a fixture."""
+    from src.ai_layer.activity import run_activity_selftest
+
+    return run_activity_selftest()
+
+
 @router.get("/llm-throughput-selftest")
 def llm_throughput_selftest() -> dict:
     """Prove the concurrency sweep measures concurrency, with no model and no GPU.
@@ -3409,6 +3447,11 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # operator action needing a live model; this proves it really runs concurrently
         # -- a bench that silently ran serially would still publish a plausible curve.
         ("llm-throughput-selftest.json", llm_throughput_selftest),
+        # What the background AI has been doing lately, read from the sweeps' own
+        # logs (2026-08-09). Bounded tail reads, so a long-running sweep cannot make
+        # this member grow without limit.
+        ("ai-activity.json", lambda: ai_activity(recent=12, hours=24, db=db)),
+        ("ai-activity-selftest.json", ai_activity_selftest),
         # S5 (law-vertical brief 2026-07-17): per-jurisdiction law-tracking coverage/
         # freshness — "is law working?" answered by one JSON, in the bundle by default.
         ("law-coverage.json", lambda: law_coverage(download=False, db=db)),
@@ -3589,6 +3632,8 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/bulletin-preview": "bulletin-weekly.json",  # Bulletin Layer A, weekly period
     "/keyword-triage/last": "keyword-triage-run.json",
     "/llm-throughput-selftest": "llm-throughput-selftest.json",
+    "/ai-activity": "ai-activity.json",
+    "/ai-activity-selftest": "ai-activity-selftest.json",
     "/source-tags-selftest": "source-tags-selftest.json",
     "/source-tags/last": "source-tags-run.json",
     "/perception-extract/last": "perception-extract-run.json",
