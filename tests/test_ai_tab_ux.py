@@ -21,6 +21,7 @@ from __future__ import annotations
 from tests.js_source_helper import (
     assert_absent,
     function_body,
+    object_literal,
     read_static,
     strip_comments,
 )
@@ -137,8 +138,7 @@ def test_nothing_was_lost_in_the_move():
 def test_the_moved_panels_load_on_expand_not_with_the_subtab():
     """Folded must not mean fetched — the Advanced convention. And the AI subtab must
     no longer pay for panels it no longer shows."""
-    loaders = APP[APP.index("const _ADV_LOADERS"):]
-    loaders = loaders[: loaders.index("\n    }")]
+    loaders = object_literal(APP, "_ADV_LOADERS")
     assert "ai:" in loaders and "loadLlmPrompts()" in loaders and "loadCustomPrompts()" in loaders
 
     show = function_body(APP, "showSetCat")
