@@ -45,6 +45,8 @@ LOOP_SELFTESTS: tuple[tuple[str, str, str], ...] = (
     ("leads-selftest", "src.briefing.leads", "run_leads_selftest"),
     ("card-audit-diff-selftest", "src.briefing.card_audit_diff", "run_card_audit_diff_selftest"),
     ("llm-bench-selftest", "src.monitoring.llm_bench", "run_llm_bench_selftest"),
+    ("llm-throughput-selftest", "src.monitoring.llm_throughput", "run_throughput_selftest"),
+    ("ai-activity-selftest", "src.ai_layer.activity", "run_activity_selftest"),
     ("bulletin-period-selftest", "src.bulletin.period", "run_bulletin_period_selftest"),
     ("bulletin-grounding-selftest", "src.bulletin.grounding", "run_grounding_selftest"),
     ("non-article-selftest", "src.ingest.non_article", "run_non_article_selftest"),

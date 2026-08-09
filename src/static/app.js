@@ -2158,7 +2158,9 @@
       }
 
       if (cat === "agenda" && !AG.cals.length) loadAgenda();  // calendars/directory live here now
-      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmPrompts(); loadCustomPrompts(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); loadAiSetup(); loadAiHero(); loadAiStore(); loadModelCatalog(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); syncAiCoordinator(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
+      // loadLlmPrompts/loadCustomPrompts are NOT here any more: their panels moved to
+      // Advanced → AI and load when that section is expanded (2026-08-09).
+      if (cat === "models") { loadOllamaInstall(); loadLlmModels(); loadLlmHealth(); _llmPullStartPoll(); loadLangDetectCount(); loadAiBackendPanel(); loadVllmStatusPanel(); loadAiSetup(); loadAiHero(); loadAiStore(); loadModelCatalog(); syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle(); loadPerceptionGate(); syncAiCoordinator(); }  // LLM-management subtab (Q6) — also offer the binary installer + re-check the pill + show any in-progress pull + the dual-backend panel (B1/B2/B4) + the B5 progressive-sweep toggles + the B6 perception-extract toggle/gate
       if (cat === "advanced") _advWire();             // Collection / Sources / Keywords, lazily per section
       if (cat === "general") loadShortcuts();         // the shortcuts panel moved into General (2026-07-31)
       if (cat === "cards") loadCardCatalog();     // the Leads catalogue (PR-7): lazy, one loopback read
@@ -2178,6 +2180,13 @@
     // would make opening Advanced the most expensive click in Settings.
     const _ADV_LOADERS = {
       collect:  () => { loadScheduler(); },
+      // The system prompts and the operator's own extractors (maintainer 2026-08-09:
+      // "move the entire Behaviour & prompts section to an AI section in the advanced
+      // subtab"). They are a developer surface -- four full prompt textareas and a CRUD
+      // form -- and having them under the AI tab made the page a console for a reader
+      // who only wanted to switch AI on. Nothing is lost: both panels moved WHOLE, and
+      // they load on expand rather than with the subtab.
+      ai:       () => { loadLlmPrompts(); loadCustomPrompts(); },
       sources:  () => { loadSrcFacets(); loadManagedSources(); loadCandidates(); },
       // Both quality gates + the scope toggles + the bulk catch-up (absorbed from the
       // Sources section, which now points here — never two homes for one control).
@@ -5571,19 +5580,52 @@
         return;
       }
       const already = p.installed === true;
-      const lines = [
-        `<p><code>${esc(p.artifact)}</code> <span class="muted">${esc(p.size || "")}</span>` +
-        ` <span class="pill">${esc(p.backend)}</span>` +
-        (already
-          ? ` <span class="pill ok">${esc(t("installed"))}</span>`
-          : ` <button class="tiny" onclick="installDefaultModel(this)">${esc(t("Download the default model"))}</button>`) +
-        `</p>`,
-        // WHY this artifact: the resolver's own reason, not a restatement of it.
-        `<p class="hint">${esc(p.reason || "")}</p>`,
-        `<p class="hint">${esc(p.mechanism_note || "")}</p>`,
-      ];
-      if (p.installed === null && !already) {
-        lines.push(`<p class="hint">${esc(t("Whether it is already present here could not be read — downloading again is harmless."))}</p>`);
+      // A PICKER OVER WHAT IS ACTUALLY DOWNLOADED (maintainer 2026-08-09: "replace the
+      // bla bla about default model with a drop down menu with only the readily
+      // downloaded models"). The list comes from the CATALOGUE, not from
+      // /api/llm/models: the catalogue resolves `installed` per model against the
+      // backend that will actually serve, so on a vLLM machine it answers about the
+      // weight cache rather than about a stopped Ollama daemon.
+      //
+      // The prose that used to fill this block (the resolver's reason and its
+      // mechanism note) has not been deleted -- it moved into the picker's hover,
+      // which is where the layering convention puts a long explanation.
+      let picker = "";
+      try {
+        const c = await api("/api/llm/models/catalog");
+        const have = (c.models || []).filter((m) => m.available && m.installed === true);
+        if (have.length) {
+          const cur = c.active || p.artifact;
+          const opts = have.map((m) =>
+            `<option value="${esc(m.artifact)}"${m.artifact === cur ? " selected" : ""}>` +
+            `${esc(m.label)}${m.is_default ? " — " + esc(t("default")) : ""}</option>`).join("");
+          picker =
+            `<div class="row" style="gap:8px;align-items:center">` +
+            `<label for="llm-model-pick" style="flex:0 0 auto;margin:0">${esc(t("Model in use"))}</label>` +
+            `<select id="llm-model-pick" style="flex:1;max-width:420px"` +
+            ` title="${esc((p.reason || "") + " " + (p.mechanism_note || ""))}"` +
+            ` onchange="setActiveModel(this.value)">${opts}</select>` +
+            `<span class="pill">${esc(p.backend)}</span></div>`;
+        }
+      } catch (e) { /* fall through to the download line below */ }
+
+      const lines = [];
+      if (picker) {
+        lines.push(picker);
+      } else {
+        // Nothing downloaded yet, so there is nothing to choose BETWEEN -- the only
+        // useful control is the one that gets you a first model.
+        lines.push(
+          `<p><code>${esc(p.artifact)}</code> <span class="muted">${esc(p.size || "")}</span>` +
+          ` <span class="pill">${esc(p.backend)}</span>` +
+          (already
+            ? ` <span class="pill ok">${esc(t("Downloaded"))}</span>`
+            : ` <button onclick="installDefaultModel(this)">${esc(t("Download the default model"))}</button>`) +
+          `</p>`,
+          `<p class="hint">${esc(p.reason || "")}</p>`);
+        if (p.installed === null && !already) {
+          lines.push(`<p class="hint">${esc(t("Whether it is already present here could not be read — downloading again is harmless."))}</p>`);
+        }
       }
       // A live line while the vLLM weights come down. The pull queue already has its
       // own live surface for the Ollama half, so this only fills the gap that existed
@@ -14717,6 +14759,111 @@
       await _syncAiSweepToggle("perception-extract", "pe-toggle-btn", $("pe-status"), $("pe-result"), renderPerceptionExtractResult);
     }
 
+    // ----------------------------------------------------------------------- //
+    //  Details — what the background AI has been doing (maintainer ask 2026-08-09)
+    // ----------------------------------------------------------------------- //
+    // FOLDED MEANS NOT FETCHED, and the poll lives and dies with the disclosure: a
+    // details panel nobody has opened must not cost a request every few seconds.
+    let _aiActivityTimer = null;
+
+    function onAiActivityToggle(el) {
+      if (el && el.open) {
+        loadAiActivity();
+        if (!_aiActivityTimer) _aiActivityTimer = setInterval(loadAiActivity, 5000);
+      } else if (_aiActivityTimer) {
+        clearInterval(_aiActivityTimer);
+        _aiActivityTimer = null;
+      }
+    }
+
+    // Two rates per sweep, never one. They diverge by the duty cycle -- the sweeps take
+    // turns in the coordinator's lane -- so the model's own speed and what the corpus
+    // actually gains are different numbers, and either alone tells a different story.
+    function _aiRateLine(r, unit) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!r || r.measurable !== true) {
+        return `<div class="muted">${esc(t("Rate:"))} ${esc((r && r.reason) || t("not measurable yet"))}</div>`;
+      }
+      const w = r.while_working_per_hour, c = r.wall_clock_per_hour;
+      if (w === null && c === null) {
+        return `<div class="muted">${esc(t("Too little time observed to state a rate yet."))}</div>`;
+      }
+      return `<div>` +
+        `<strong>${esc(String(w === null ? "—" : w))}</strong> ${esc(unit)}/h ` +
+        `<span class="muted">${esc(t("while working"))}</span> · ` +
+        `<strong>${esc(String(c === null ? "—" : c))}</strong> ${esc(unit)}/h ` +
+        `<span class="muted">${esc(t("wall clock"))}</span>` +
+        ` <span class="muted">(n=${esc(String(r.batches))} ${esc(t("batches"))})</span></div>`;
+    }
+
+    async function loadAiActivity() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("ai-activity-body");
+      if (!host) return;
+      let r;
+      try { r = await api("/api/diagnostics/ai-activity"); }
+      catch (e) {
+        host.innerHTML = `<p class="muted">${esc(t("Could not read the AI activity feed."))}</p>`;
+        return;
+      }
+      const sweeps = (r.sweeps || []).map((s) => {
+        const rows = [`<div style="font-weight:600;margin-top:8px">${esc(s.label || s.key)}</div>`];
+        if (s.note) rows.push(`<div class="muted">${esc(s.note)}</div>`);
+        rows.push(_aiRateLine(s.rates, s.unit || t("items")));
+        const st = s.state || {};
+        const totals = st.totals || {};
+        const bits = Object.keys(totals).map((k) => `${esc(k)} ${esc(String(totals[k]))}`);
+        if (st.batches_completed !== undefined) {
+          bits.unshift(`${esc(t("batches"))} ${esc(String(st.batches_completed))}`);
+        }
+        if (bits.length) rows.push(`<div class="muted">${bits.join(" · ")}</div>`);
+        if ((s.latest || []).length) {
+          const items = s.latest.slice(0, 12).map((x) =>
+            `<span class="pill">${esc(x.term || x.domain || "")}` +
+            (x.verdict ? ` · ${esc(x.verdict)}` : "") +
+            (Array.isArray(x.tags) && x.tags.length ? ` · ${esc(x.tags.join(", "))}` : "") +
+            `</span>`).join(" ");
+          rows.push(`<div style="margin-top:4px">${items}</div>`);
+        } else if (s.latest_note) {
+          // An empty list would read as "it found nothing", which is a different claim.
+          rows.push(`<div class="muted">${esc(s.latest_note)}</div>`);
+        }
+        return rows.join("");
+      }).join("");
+
+      let stored = "";
+      const sd = r.stored || {};
+      if (sd.available === true) {
+        // The TOTAL is over the STORED rows only, because those share one unit. Summing
+        // keywords/h with sources/h with articles/h would put three different things
+        // under one label -- so the per-sweep rates above stay in their own units.
+        let total = 0, any = false;
+        const kinds = (sd.kinds || []).map((k) => {
+          if (typeof k.per_hour === "number") { total += k.per_hour; any = true; }
+          const latest = (k.latest || []).slice(0, 8)
+            .map((x) => `<span class="pill">${esc(x.term || "")}</span>`).join(" ");
+          return `<div style="margin-top:6px"><strong>${esc(k.kind)}</strong> · ` +
+            `${esc(t("total"))} ${esc(String(k.total))} · ` +
+            `${esc(t("in the last"))} ${esc(String(sd.window_hours))}h: ${esc(String(k.in_window))}` +
+            (typeof k.per_hour === "number" ? ` · <strong>${esc(String(k.per_hour))}</strong>/h` : "") +
+            `</div>` + (latest ? `<div style="margin-top:2px">${latest}</div>` : "");
+        }).join("");
+        stored =
+          `<div style="font-weight:600;margin-top:10px">${esc(t("Stored by the AI layer"))}</div>` +
+          kinds +
+          (any ? `<div style="margin-top:6px"><strong>${esc(String(Math.round(total * 10) / 10))}</strong> ` +
+                 `${esc(t("AI-layer rows per hour, all categories"))}</div>` : "") +
+          `<div class="card-caveat" style="margin-top:4px">${esc(sd.caveat || "")}</div>`;
+      } else if (sd.reason) {
+        stored = `<div class="muted" style="margin-top:8px">${esc(sd.reason)}</div>`;
+      }
+
+      const coord = (r.coordinator || {}).note
+        ? `<div class="muted" style="margin-top:8px">${esc(r.coordinator.note)}</div>` : "";
+      host.innerHTML = sweeps + stored + coord +
+        `<div class="card-caveat" style="margin-top:8px">${esc(r.caveat || "")}</div>`;
+    }
+
     // IR retrieval-eval over a human-judged gold set (keyword-engine P3): open the
     // /api/diagnostics/ir-eval report for a gold-set FILE — score the live search at the
     // current BM25F default, or (both weight boxes filled) A/B two (title,body) weight
@@ -21694,58 +21841,86 @@
           // informative rather than just a refusal.
           const elsewhere = m.other_artifact
             ? `<div class="hint"><code>${esc(m.other_artifact)}</code></div>` : "";
-          return `<label class="row" style="gap:8px;align-items:flex-start;opacity:.65;margin:4px 0">` +
-            `<input type="checkbox" disabled style="width:auto;margin-top:3px">` +
-            `<span><b>${esc(m.label)}</b>${only} <span class="muted">— ${esc(_tf("not available for {backend}", {backend: c.backend}))}</span>` +
+          // No control at all, not a DISABLED one. There is nothing here to act on,
+          // and a dead tick-box is exactly the "useless element" this pass removes;
+          // the row stays because WHY a model is missing is worth reading.
+          return `<div class="row" style="gap:10px;align-items:flex-start;opacity:.65;margin:8px 0;` +
+            `padding:8px;border:1px solid var(--line);border-radius:8px">` +
+            `<span style="flex:1"><b>${esc(m.label)}</b>${only} <span class="muted">— ${esc(_tf("not available for {backend}", {backend: c.backend}))}</span>` +
             elsewhere +
-            `<div class="hint">${esc(m.absent_reason || "")}</div></span></label>`;
+            `<div class="hint">${esc(m.absent_reason || "")}</div></span></div>`;
         }
         // installed === null means the probe could not answer (a stopped daemon
         // genuinely does not know), which is not the same claim as "not installed".
-        const state = m.installed === true ? `<span class="ok">${esc(t("installed"))}</span>`
-                    : m.installed === null ? `<span class="muted">${esc(t("unknown"))}</span>` : "";
         const bits = [m.size, m.licence, m.verification === "search-verified" ? t("identifier search-verified") : null]
           .filter(Boolean).map(esc).join(" · ");
-        return `<label class="row" style="gap:8px;align-items:flex-start;margin:4px 0">` +
-          `<input type="checkbox" id="${esc(id)}" data-mckey="${esc(m.key)}" style="width:auto;margin-top:3px"` +
-          `${m.installed === true ? "" : ""}>` +
-          `<span><b>${esc(m.label)}</b>${m.is_default ? ` <span class="pill">${esc(t("default"))}</span>` : ""}${only} ${state}` +
+        // ONE BIG BUTTON PER MODEL, and it DISAPPEARS once it has done its job
+        // (maintainer 2026-08-09: "replace small tick boxes with big buttons ...
+        // automatically remove useless elements of the UI such as a button to download
+        // a model which is already downloaded"). A tick-box plus a shared "Download
+        // selected" made choosing one model a two-step gesture and left a live control
+        // on a row where there was nothing left to do.
+        //
+        // `installed === null` keeps its OWN answer rather than being folded into
+        // either: a stopped daemon cannot tell us, and offering a download is the
+        // honest move there -- downloading something already present is harmless,
+        // whereas hiding the button on a guess would strand the operator.
+        const action = m.installed === true
+          ? `<span class="pill ok">${esc(t("Downloaded"))}</span>`
+          : `<button data-mckey="${esc(m.key)}" onclick="installOneModel(${esc(JSON.stringify(m.key))}, this)">` +
+            `${esc(t("Download"))}</button>` +
+            (m.installed === null
+              ? ` <span class="hint">${esc(t("already present? — could not read"))}</span>` : "");
+        return `<div class="row" id="${esc(id)}" style="gap:10px;align-items:flex-start;margin:8px 0;` +
+          `padding:8px;border:1px solid var(--line);border-radius:8px">` +
+          `<span style="flex:1"><b>${esc(m.label)}</b>` +
+          `${m.is_default ? ` <span class="pill">${esc(t("default"))}</span>` : ""}${only}` +
           `<div class="hint"><code>${esc(m.artifact)}</code>${bits ? " · " + bits : ""}</div>` +
-          (m.summary ? `<div class="hint">${esc(m.summary)}</div>` : "") + `</span></label>`;
+          (m.summary ? `<div class="hint">${esc(m.summary)}</div>` : "") + `</span>` +
+          `<span style="flex:0 0 auto;white-space:nowrap">${action}</span></div>`;
       }).join("");
       box.innerHTML =
         `<div style="font-weight:600">${esc(t("Available models"))}</div>` +
         `<div class="hint" style="margin:2px 0 6px">${esc(c.method || "")}</div>` +
         rows +
         `<div class="row" style="gap:8px;margin-top:8px;align-items:center">` +
-        `<button onclick="installSelectedModels(this)">${esc(t("Download selected"))}</button>` +
         `<span id="mc-status" class="hint"></span></div>`;
     }
 
-    async function installSelectedModels(btn) {
+    // One model, one click. Shares the SAME endpoint and the same egress consent as the
+    // multi-key path it replaces -- only the gesture changed, not the contract.
+    async function installOneModel(key, btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const keys = Array.from(document.querySelectorAll("#llm-catalog-box input[data-mckey]:checked"))
-        .map(el => el.getAttribute("data-mckey"));
       const status = $("mc-status");
-      if (!keys.length) { if (status) status.textContent = t("Tick a model first."); return; }
       if (!await ensureAiEgress(t("Download local models (over the clear internet)"))) return;
       const was = btn ? btn.textContent : "";
-      if (btn) { btn.disabled = true; btn.textContent = t("Working…"); }
+      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
       try {
-        const r = await api("/api/llm/models/install", {
-          method: "POST", body: JSON.stringify({keys}),
-        });
-        // Refusals travel WITH the result: an operator who ticked four and can have
-        // two is owed an account of four, not a silent download of two.
-        const parts = [];
-        if ((r.queued || []).length) parts.push(`${r.queued.length} ${t("queued")}`);
-        (r.refused || []).forEach(x => parts.push(`${x.label || x.key}: ${x.reason}`));
-        if (status) status.textContent = parts.join(" · ") || t("Nothing to do.");
+        const r = await api("/api/llm/models/install",
+          {method: "POST", body: JSON.stringify({keys: [key]})});
+        for (const ref of (r.refused || [])) {
+          toast(`${ref.label || ref.key}: ${ref.reason || t("refused")}`, "err");
+        }
+        if (r.action === "nothing_to_do") {
+          if (status) status.textContent = t("Nothing to download — it was refused.");
+          return;
+        }
+        if (status) status.textContent = t("Downloading:") + " " + (r.queued || []).join(", ");
+        if (r.backend === "ollama") _llmPullStartPoll();
+        const st = await _followJob(
+          "/api/llm/bench-roster/status?backend=" + encodeURIComponent(r.backend || ""),
+          (m) => { if (status) status.textContent = m; });
+        if (status) {
+          status.textContent = st.state === "error"
+            ? (t("Download failed:") + " " + (st.detail || "")) : (st.detail || t("Done."));
+        }
+        // Repaint so the finished row loses its button and the picker gains the model.
+        loadModelCatalog();
+        loadLlmModels();
       } catch (e) {
-        if (status) status.textContent = _apiErrorMessage ? _apiErrorMessage(e) : String(e);
+        if (status) status.textContent = t("Download failed:") + " " + (e.message || e);
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = was; }
-        loadLlmModels(); loadModelCatalog();
+        if (btn) { btn.disabled = false; btn.textContent = was || t("Download"); }
       }
     }
 
@@ -22110,13 +22285,40 @@
     const _BENCH_HOSTS = {vllm: "vllm-bench-box", ollama: "ollama-bench-box"};
     const _benchTicked = {vllm: null, ollama: null};  // null = "use the roster defaults"
 
+    // FIELD REPORT 2026-08-09: "downloading other models (for benchmark) doesn't seem
+    // to work". BOTH rosters were drawn on every machine, so a GPU box showed the
+    // Ollama panel FIRST -- same heading, same tick-boxes, and a DISABLED button,
+    // because Ollama is not installed there. Ticking models in it and pressing the
+    // button did nothing, which is exactly what was reported.
+    //
+    // A roster is worth drawing when this machine will SERVE with that backend (even
+    // if it still has to be installed -- that panel carries the one honest "install it
+    // first" line) or when the backend is already installed, so the download can
+    // actually happen. A backend that is neither can only ever be a dead duplicate.
+    //
+    // Pure, and named, so both directions can be driven in node: hiding too eagerly
+    // would leave a fresh machine with no bench panel AND no install message, which is
+    // the same defect pointing the other way.
+    function _benchPanelApplies(r) {
+      if (!r) return false;
+      if (r.backend === r.provisioning_backend) return true;  // this machine's own answer
+      return !r.prerequisite;                                 // installed => it can download
+    }
+
     async function loadBenchRoster(backend) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const host = $(_BENCH_HOSTS[backend]);
       if (!host) return;
       let r;
       try { r = await api("/api/llm/bench-roster?backend=" + encodeURIComponent(backend)); }
-      catch (e) { host.innerHTML = `<p class="muted">${esc(t("Could not read the bench roster."))}</p>`; return; }
+      catch (e) { host.innerHTML = `<p class="muted">${esc(t("Could not read the bench roster."))}</p>`; host.style.display = ""; return; }
+      // Installing the missing backend is offered ONCE, in the Models section above;
+      // this panel reappears the moment it exists, because every install path re-runs
+      // this loader.
+      if (!_benchPanelApplies(r)) {
+        host.innerHTML = ""; host.style.display = "none"; return;
+      }
+      host.style.display = "";
       const meanings = r.flag_meanings || {};
       const picked = _benchTicked[backend];
       const rows = (r.models || []).map((m) => {
