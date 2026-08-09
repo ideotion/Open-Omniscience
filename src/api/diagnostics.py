@@ -2472,6 +2472,73 @@ def llm_bench(
     )
 
 
+@router.get("/llm-throughput")
+def llm_throughput(
+    levels: str = Query(
+        "1,2,4,8,16", description="Comma-separated concurrency levels to sweep"
+    ),
+    calls_per_level: int = Query(12, ge=1, le=200, description="Calls issued at each level"),
+    shape: str = Query("perception", description="Which prompt shape to sweep"),
+) -> JSONResponse:
+    """Articles per hour ACTUALLY achieved at each concurrency level, on this machine.
+
+    Field report 2026-08-09: "I see my GPU working only 20%". The sibling `/llm-bench`
+    measures one call at a time and then multiplies by the configured concurrency to get
+    a rate — a multiplication nothing had ever checked, and a 20%-utilised GPU is what an
+    unchecked upper bound looks like from the outside. This sweeps the levels instead and
+    reports the batch rate measured at each, with GPU utilisation sampled while the work
+    is happening, so the curve's bend is a measurement rather than a guess.
+
+    Levels above the RUNNING vLLM server's `--max-num-seqs` measure queueing rather than
+    concurrency (raising it takes a restart); those rows say so rather than reporting a
+    plateau as though it were a finding.
+
+    LOOPBACK inference only: no egress, so it is airplane-safe and deliberately carries
+    no kill-switch refusal of its own. Runs on click only and is never transmitted.
+    A plain `def` so the sweep runs in the threadpool and never freezes the one worker.
+    See src/monitoring/llm_throughput.py.
+    """
+    from src.monitoring.llm_throughput import run_throughput_bench
+
+    wanted: list[int] = []
+    for part in (levels or "").split(","):
+        part = part.strip()
+        if part.isdigit() and 0 < int(part) <= 256:
+            wanted.append(int(part))
+    if not wanted:
+        raise HTTPException(
+            status_code=400,
+            detail="levels must be comma-separated positive integers, each at most 256",
+        )
+    payload = run_throughput_bench(
+        levels=tuple(sorted(set(wanted))),
+        calls_per_level=calls_per_level,
+        shape=shape,
+    )
+    body = envelope(
+        kind="llm-throughput",
+        query={"levels": wanted, "calls_per_level": calls_per_level, "shape": shape},
+        count=len(payload.get("levels", [])),
+        payload=payload,
+    )
+    fname = f"oo-llm-throughput-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+    return JSONResponse(
+        body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+    )
+
+
+@router.get("/llm-throughput-selftest")
+def llm_throughput_selftest() -> dict:
+    """Prove the concurrency sweep measures concurrency, with no model and no GPU.
+
+    Cheap and deterministic, so it rides the all-diagnostics bundle: a bench whose own
+    mechanism is unverified would report a plausible curve while running everything
+    serially."""
+    from src.monitoring.llm_throughput import run_throughput_selftest
+
+    return run_throughput_selftest()
+
+
 @router.get("/bulletin-preview")
 def bulletin_preview(
     cadence: str = Query("weekly", description="daily | weekly | monthly | trimester | semester | yearly"),
@@ -3338,6 +3405,10 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("search-timing-selftest.json", lambda: search_timing_selftest(download=False)),
         ("power-profile-selftest.json", lambda: power_profile_selftest(download=False)),
         ("source-audit-selftest.json", lambda: source_audit_selftest(download=False)),
+        # The concurrency sweep's own MECHANISM (2026-08-09). The sweep itself is an
+        # operator action needing a live model; this proves it really runs concurrently
+        # -- a bench that silently ran serially would still publish a plausible curve.
+        ("llm-throughput-selftest.json", llm_throughput_selftest),
         # S5 (law-vertical brief 2026-07-17): per-jurisdiction law-tracking coverage/
         # freshness — "is law working?" answered by one JSON, in the bundle by default.
         ("law-coverage.json", lambda: law_coverage(download=False, db=db)),
@@ -3517,6 +3588,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/card-audit": "card-audit.json",  # the DEEP card-system audit (summary depth)
     "/bulletin-preview": "bulletin-weekly.json",  # Bulletin Layer A, weekly period
     "/keyword-triage/last": "keyword-triage-run.json",
+    "/llm-throughput-selftest": "llm-throughput-selftest.json",
     "/source-tags-selftest": "source-tags-selftest.json",
     "/source-tags/last": "source-tags-run.json",
     "/perception-extract/last": "perception-extract-run.json",
@@ -3535,6 +3607,11 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/source-quality": "whole-corpus decrypt ZIP export — own button (manifest 'excluded')",
     "/rollup-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
     "/llm-bench": "heavy operator-run benchmark, needs a live model (manifest 'excluded')",
+    "/llm-throughput": (
+        "heavy operator-run concurrency sweep, needs a live model — minutes of real "
+        "generation (manifest 'excluded'); its MECHANISM rides the bundle as "
+        "llm-throughput-selftest.json"
+    ),
     "/source-coverage-benchmark": "heavy operator-run benchmark (manifest 'excluded')",
     "/ir-eval": "needs an operator-graded gold-set file (manifest 'excluded')",
     "/gold-builder/sample": "interactive grading sampler, not a report (manifest 'excluded')",

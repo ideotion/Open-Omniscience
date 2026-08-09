@@ -2486,6 +2486,8 @@
   "A model download is already running.": "هناك تنزيل نموذج قيد التشغيل بالفعل.",
   "Downloading:": "جارٍ التنزيل:",
   "Download failed:": "فشل التنزيل:",
+  "AI throughput sweep (.json)": "اختبار إنتاجية الذكاء الاصطناعي (.json)",
+  "Measures the articles per hour your local model ACTUALLY achieves with 1, 2, 4, 8 and 16 requests in flight, sampling GPU use while it runs. The latency bench beside it times one call and multiplies by the configured concurrency — a multiplication nobody has ever checked, and a GPU sitting at 20% is what an unchecked upper bound looks like. Levels above the running server's own limit measure queueing rather than concurrency, and say so. Loopback only: works in airplane mode. Needs a running model. Takes a few minutes.": "يقيس عدد المقالات في الساعة التي يحققها نموذجك المحلي فعليًا مع 1 و 2 و 4 و 8 و 16 طلبًا متزامنًا، مع أخذ عينات من استخدام وحدة معالجة الرسوميات أثناء التشغيل. اختبار الاستجابة المجاور يقيس استدعاءً واحدًا ثم يضربه في التوازي المُهيأ — وهو ضرب لم يتحقق منه أحد قط، ووحدة معالجة رسوميات عند 20٪ هي بالضبط ما يبدو عليه حد أعلى غير متحقق منه. المستويات التي تتجاوز حد الخادم نفسه تقيس الانتظار في الطابور لا التوازي، وتذكر ذلك. محلي فقط: يعمل في وضع الطيران. يتطلب نموذجًا قيد التشغيل. يستغرق بضع دقائق.",
   "Downloaded": "تم التنزيل",
   "Model in use": "النموذج المستخدم",
   "Nothing to download — it was refused.": "لا شيء للتنزيل — تم الرفض.",

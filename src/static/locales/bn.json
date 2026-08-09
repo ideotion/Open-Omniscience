@@ -2486,6 +2486,8 @@
   "A model download is already running.": "একটি মডেল ইতিমধ্যেই নামানো হচ্ছে।",
   "Downloading:": "নামানো হচ্ছে:",
   "Download failed:": "নামানো ব্যর্থ:",
+  "AI throughput sweep (.json)": "AI থ্রুপুট পরীক্ষা (.json)",
+  "Measures the articles per hour your local model ACTUALLY achieves with 1, 2, 4, 8 and 16 requests in flight, sampling GPU use while it runs. The latency bench beside it times one call and multiplies by the configured concurrency — a multiplication nobody has ever checked, and a GPU sitting at 20% is what an unchecked upper bound looks like. Levels above the running server's own limit measure queueing rather than concurrency, and say so. Loopback only: works in airplane mode. Needs a running model. Takes a few minutes.": "আপনার স্থানীয় মডেল 1, 2, 4, 8 এবং 16টি একসঙ্গে অনুরোধে প্রকৃতপক্ষে ঘণ্টায় কতগুলি নিবন্ধ প্রক্রিয়া করে তা মাপে, এবং চলাকালীন GPU ব্যবহার নমুনা হিসাবে নেয়। পাশের লেটেন্সি পরীক্ষা একটি কলের সময় মাপে এবং কনফিগার করা সমান্তরালতা দিয়ে গুণ করে — এই গুণন কখনও যাচাই করা হয়নি, আর 20% এ থাকা GPU ও ঠিক একটি যাচাই-না-করা উর্ধ্বসীমার মতোই দেখায়। সার্ভারের নিজস্ব সীমার উপরের স্তরগুলি সমান্তরালতা নয়, সারি মাপে — এবং সেই কথা বলে। কেবল লুপব্যাক: বিমান মোডেও কাজ করে। একটি চলমান মডেল প্রয়োজন। কয়েক মিনিট সময় লাগে।",
   "Downloaded": "ডাউনলোড হয়েছে",
   "Model in use": "ব্যবহৃত মডেল",
   "Nothing to download — it was refused.": "ডাউনলোড করার কিছু নেই — অনুরোধ প্রত্যাখ্যাত।",

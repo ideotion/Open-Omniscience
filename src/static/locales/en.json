@@ -2486,6 +2486,8 @@
   "A model download is already running.": "A model download is already running.",
   "Downloading:": "Downloading:",
   "Download failed:": "Download failed:",
+  "AI throughput sweep (.json)": "AI throughput sweep (.json)",
+  "Measures the articles per hour your local model ACTUALLY achieves with 1, 2, 4, 8 and 16 requests in flight, sampling GPU use while it runs. The latency bench beside it times one call and multiplies by the configured concurrency — a multiplication nobody has ever checked, and a GPU sitting at 20% is what an unchecked upper bound looks like. Levels above the running server's own limit measure queueing rather than concurrency, and say so. Loopback only: works in airplane mode. Needs a running model. Takes a few minutes.": "Measures the articles per hour your local model ACTUALLY achieves with 1, 2, 4, 8 and 16 requests in flight, sampling GPU use while it runs. The latency bench beside it times one call and multiplies by the configured concurrency — a multiplication nobody has ever checked, and a GPU sitting at 20% is what an unchecked upper bound looks like. Levels above the running server's own limit measure queueing rather than concurrency, and say so. Loopback only: works in airplane mode. Needs a running model. Takes a few minutes.",
   "Downloaded": "Downloaded",
   "Model in use": "Model in use",
   "Nothing to download — it was refused.": "Nothing to download — it was refused.",

@@ -2486,6 +2486,8 @@
   "A model download is already running.": "Un téléchargement de modèle est déjà en cours.",
   "Downloading:": "Téléchargement :",
   "Download failed:": "Échec du téléchargement :",
+  "AI throughput sweep (.json)": "Test de débit de l’IA (.json)",
+  "Measures the articles per hour your local model ACTUALLY achieves with 1, 2, 4, 8 and 16 requests in flight, sampling GPU use while it runs. The latency bench beside it times one call and multiplies by the configured concurrency — a multiplication nobody has ever checked, and a GPU sitting at 20% is what an unchecked upper bound looks like. Levels above the running server's own limit measure queueing rather than concurrency, and say so. Loopback only: works in airplane mode. Needs a running model. Takes a few minutes.": "Mesure le nombre d’articles par heure que votre modèle local atteint RÉELLEMENT avec 1, 2, 4, 8 puis 16 requêtes simultanées, en échantillonnant l’usage du GPU pendant l’exécution. Le test de latence voisin chronomètre un seul appel puis multiplie par la concurrence configurée — une multiplication que personne n’a jamais vérifiée, et un GPU à 20 % correspond exactement à une borne supérieure non vérifiée. Les niveaux au-delà de la limite propre du serveur mesurent la mise en file d’attente et non la concurrence, et le disent. Boucle locale uniquement : fonctionne en mode avion. Nécessite un modèle en cours d’exécution. Prend quelques minutes.",
   "Downloaded": "Téléchargé",
   "Model in use": "Modèle utilisé",
   "Nothing to download — it was refused.": "Rien à télécharger — la demande a été refusée.",
