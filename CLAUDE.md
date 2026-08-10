@@ -10376,7 +10376,12 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     invariant implemented in one branch and merely *commented* in the other will be
     reintroduced by whoever reads only the branch they are in. And a stop that was
     performed but did not TAKE (`port_quiet: False`) has to be treated by the caller
-    exactly like a refusal, because for the caller it is one.
+    exactly like a refusal, because for the caller it is one. **AND THE RECURRENCE, in
+    the same module, while that sentence was being written:** `release_backend("vllm")`
+    — the path used when handing the card to OLLAMA rather than switching vLLM's model —
+    still read `stopped` alone, so it reported `released: True` while vLLM held the
+    memory. Fixing a property in one place is not fixing it; grep the module for every
+    other reader of the same field before calling it done.
   - **A BACKEND NOBODY STARTED READS AS A BACKEND THAT CANNOT SERVE (same run):** every
     Ollama pair was dropped as `backend-unreachable` while Ollama was installed,
     launchable, and holding the models the operator had pulled — the probe asked a
