@@ -2523,6 +2523,8 @@
   "on both backends": "উভয় ব্যাকএন্ডে",
   "Anchor accuracy": "অ্যাঙ্করে নির্ভুলতা",
   "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "প্রতিটি মডেল পরিমাপ করতে কয়েক ঘণ্টা লাগে। এটি বন্ধ থাকা ব্যাকএন্ড চালু করে, মডেলগুলির মাঝে আপনার AI ব্যাকএন্ড পুনরায় চালু করে, এবং শেষে মেশিনটিকে আগের ব্যাকএন্ডে ফিরিয়ে দেয়। এটি পুনরায় শুরু করা যায়: বাতিল করলে ইতিমধ্যে পরিমাপ করা মডেলগুলি থেকে যায়। শুরু করবেন?",
+  "Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here.": "এখনই সেগুলি ডাউনলোড করে প্রতিটি আসার সঙ্গে সঙ্গে মূল্যায়ন করবেন? কেবল ইতিমধ্যে থাকা মডেলগুলি মূল্যায়ন করতে বাতিল বেছে নিন।",
+  "Could not check which models are on this machine \u2014 benching what is already here.": "এই মেশিনে কোন মডেলগুলি আছে তা যাচাই করা যায়নি — যা ইতিমধ্যে আছে তারই মূল্যায়ন করা হচ্ছে।",
   "Not part of this check": "এই পরীক্ষার অংশ নয়",
   "at concurrency": "সমান্তরালতায়",
   "configured": "কনফিগার করা",

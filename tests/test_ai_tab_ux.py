@@ -233,7 +233,11 @@ def test_the_deep_run_is_confirmed_and_the_quick_one_is_not():
     assert "deep &&" in body or "deep && !confirm" in body, (
         "the confirm must be gated on deep, never asked for the quick check"
     )
-    assert "JSON.stringify({ deep })" in body, "the choice must reach the endpoint"
+    # The PROPERTY, not the literal: this used to pin `JSON.stringify({ deep })`, which
+    # went red the day a second field joined the same body — a stale anchor guarding
+    # correct code. What matters is that the choice reaches the endpoint at all.
+    run_call = body.split("/api/diagnostics/ai-check/run", 1)[1][:200]
+    assert "deep" in run_call, "the choice must reach the endpoint"
 
 
 def test_the_confirm_names_every_way_the_run_rearranges_the_machine():
@@ -294,3 +298,37 @@ def test_the_check_toggles_instead_of_disabling():
     body = function_body(APP, "runAiCheck")
     assert "dataset.running" in body
     assert ".disabled = true" not in body
+
+
+def test_the_download_is_its_own_question_with_its_own_size():
+    """Ticking "bench every model" is consent to a long RUN, not to fetching tens of
+    gigabytes. The survey is cheap, local and downloads nothing, so there is no reason
+    to infer the second answer from the first."""
+    body = function_body(APP, "runAiCheck")
+    assert "/api/diagnostics/ai-check/provision" in body, "survey before asking"
+    survey_to_ask = body.split("ai-check/provision", 1)[1].split("ai-check/run", 1)[0]
+    assert "needs_download" in survey_to_ask, "the survey's own verdict decides whether to ask"
+    assert "q.text" in survey_to_ask, (
+        "the question carries the survey's own sentence — which holds the size; a "
+        "re-worded prompt here would drop the number the operator is deciding on"
+    )
+    run_call = body.split("/api/diagnostics/ai-check/run", 1)[1][:220]
+    assert "download_missing" in run_call
+
+
+def test_a_survey_that_fails_does_not_block_the_bench():
+    """The negative-space twin: an unreachable survey means the run covers what is
+    already on the machine, exactly as it did before the survey existed. Refusing to
+    bench because a preflight failed would be a regression dressed as caution."""
+    body = function_body(APP, "runAiCheck")
+    guarded = body.split("ai-check/provision", 1)[1].split("ai-check/run", 1)[0]
+    assert "catch" in guarded, "the survey is guarded"
+    assert "return" not in guarded.split("catch", 1)[1], (
+        "and its failure path must not bail out of the run"
+    )
+
+
+def test_the_default_is_no_download():
+    """A field that defaults to fetching would make the confirm decorative."""
+    body = function_body(APP, "runAiCheck")
+    assert "let download_missing = false" in body

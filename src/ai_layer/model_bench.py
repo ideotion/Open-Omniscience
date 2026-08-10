@@ -239,6 +239,27 @@ def resolve_pairs(
     """
     from src.ai_layer.triage import verify_roster
 
+    def _vllm_missing_detail(tag: str) -> str:
+        """Never downloaded, or downloaded and unusable — different repairs.
+
+        A partly-fetched repo leaves gigabytes on the disk that the loader refuses;
+        telling that operator "its weights are not in the model cache" sends them to
+        re-download without ever explaining the space already gone.
+        """
+        try:
+            from src.llm import vllm_lifecycle
+
+            note = (vllm_lifecycle.model_cache_state(tag) or {}).get("incomplete")
+        except Exception:  # noqa: BLE001 - an unreadable cache falls back to the plain wording
+            note = None
+        if note:
+            return f"{tag!r} cannot be served by vLLM — {note}"
+        return (
+            f"{tag!r} is not downloaded for vLLM — its weights are not in the "
+            "model cache and no server is holding it. Download it from "
+            "Settings → AI, or drop it from the roster."
+        )
+
     runnable: list[dict] = []
     skipped: list[dict] = []
     for backend in sorted(installed_by_backend):
@@ -276,9 +297,7 @@ def resolve_pairs(
                     # download into the HF cache. One sentence for both would send half
                     # of readers to the wrong button.
                     "detail": (
-                        f"{tag!r} is not downloaded for vLLM — its weights are not in the "
-                        "model cache and no server is holding it. Download it from "
-                        "Settings → AI, or drop it from the roster."
+                        _vllm_missing_detail(tag)
                         if backend == "vllm"
                         else f"{tag!r} is not an installed tag on {backend} — install the "
                         "EXACT tag or drop it from the roster. A close tag would benchmark "

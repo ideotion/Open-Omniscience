@@ -2523,6 +2523,8 @@
   "on both backends": "على كلا المحركين",
   "Anchor accuracy": "الدقة على المراجع",
   "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "قياس كل النماذج يستغرق ساعات. يشغّل الاختبار محركًا متوقفًا، ويعيد تشغيل محرك الذكاء الاصطناعي بين نموذج وآخر، ثم يعيد الجهاز إلى المحرك الذي كان يعمل من قبل. يمكن استئنافه: الإلغاء يحتفظ بالنماذج التي تم قياسها بالفعل. هل تريد البدء؟",
+  "Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here.": "هل تريد تنزيلها الآن وتقييم كل نموذج فور وصوله؟ اختر إلغاء لتقييم ما هو موجود بالفعل فقط.",
+  "Could not check which models are on this machine \u2014 benching what is already here.": "تعذّر التحقق من النماذج الموجودة على هذا الجهاز — سيتم تقييم ما هو موجود بالفعل.",
   "Not part of this check": "خارج هذا الفحص",
   "at concurrency": "عند التزامن",
   "configured": "المُهيَّأ",

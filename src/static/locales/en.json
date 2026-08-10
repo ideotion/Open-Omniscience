@@ -2523,6 +2523,8 @@
   "on both backends": "on both backends",
   "Anchor accuracy": "Anchor accuracy",
   "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?",
+  "Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here.": "Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here.",
+  "Could not check which models are on this machine \u2014 benching what is already here.": "Could not check which models are on this machine — benching what is already here.",
   "Not part of this check": "Not part of this check",
   "at concurrency": "at concurrency",
   "configured": "configured",

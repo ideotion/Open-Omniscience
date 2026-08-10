@@ -433,3 +433,59 @@ def test_a_raising_bench_still_releases_the_lane(monkeypatch) -> None:
     except RuntimeError:
         pass
     assert user_batch_active()["held"] is False
+
+
+# --------------------------------------------------------------------------- #
+#  provisioning (2026-08-10): survey first, download only when asked
+# --------------------------------------------------------------------------- #
+def test_provision_runs_before_the_bench_not_after():
+    """The step that explains an EMPTY bench costs seconds; the bench costs hours.
+    Learning in minute one that five of seven models are missing is the whole value."""
+    names = AC.default_step_names(deep=True)
+    assert names[0] == "provision"
+    assert names[-1] == "model_bench"
+    assert "provision" not in AC.default_step_names(deep=False), (
+        "a shallow run benches nothing, so it has nothing to provision for"
+    )
+
+
+def test_a_deep_run_never_downloads_unless_asked():
+    """Tens of gigabytes must not be inferred from a click on 'run the benchmark'."""
+    calls: list[str] = []
+    steps = {
+        "provision": lambda: {"to_fetch": [{"backend": "vllm", "model": "x"}], "models": []},
+        "model_bench": lambda: calls.append("bench") or {"results": {}},
+    }
+    AC.run_ai_check(steps=steps, deep=True)
+    assert calls == ["bench"], "the injected plan runs as given; no fetch is implied"
+
+
+def test_the_question_reaches_the_reading():
+    """An empty bench is explained at the top of the report, not left to be inferred
+    from a results dict that is empty for a reason nothing states."""
+    q = {"needs_download": True, "count": 3, "estimated_mb": 5000.0, "text": "3 model(s) …"}
+    out = AC.run_ai_check(
+        steps={"provision": lambda: {"question": q, "to_fetch": [], "models": []}}, deep=True
+    )
+    assert out["reading"]["provisioning"] == q
+
+
+def test_a_failed_provision_step_does_not_stop_the_run():
+    def boom():
+        raise RuntimeError("cache unreadable")
+
+    out = AC.run_ai_check(steps={"provision": boom, "facts": lambda: {"ok": 1}}, deep=True)
+    names = [s["step"] for s in out["steps"]]
+    assert names == ["provision", "facts"]
+    assert out["reading"]["provisioning"] is None, "no survey, no question — never a guessed one"
+
+
+def test_context_is_measured_in_every_run_not_only_the_deep_one():
+    """The question "what does a longer article cost me" does not need an afternoon —
+    it is minutes, so it belongs in the ordinary check beside latency and throughput."""
+    for deep in (False, True):
+        names = AC.default_step_names(deep=deep)
+        assert "context" in names
+        assert names.index("context") > names.index("throughput"), (
+            "after throughput: both sweep the same client, and the cheap ones come first"
+        )

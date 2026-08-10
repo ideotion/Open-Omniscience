@@ -2628,6 +2628,12 @@ def hf_cache_dir() -> Path:
     return hf_home() / "hub"
 
 
+#: What vLLM itself requires a model directory to contain, quoted from the error it
+#: raises when the directory does not have it. Not our guess at completeness — the
+#: loader's own stated precondition.
+_LOADER_CONFIG_FILES = ("config.json", "params.json")
+
+
 def model_cache_state(model: str) -> dict:
     """Is ``model`` already downloaded? ``{cached, path, bytes}``.
 
@@ -2635,12 +2641,21 @@ def model_cache_state(model: str) -> dict:
     probe") into a real answer, so the button can say "already downloaded" instead of
     inviting an operator to re-fetch several GB they already hold.
 
-    A repo is cached when its ``snapshots/`` directory holds at least one revision with
-    at least one file. That is deliberately stricter than "the directory exists":
-    ``huggingface_hub`` creates the tree as soon as a download STARTS, so an interrupted
-    fetch leaves a directory that a naive existence check would call cached -- reporting
-    a half-downloaded model as ready is the fabrication to avoid here. ``bytes`` is the
-    real on-disk size, or None when it cannot be read (never a 0).
+    A repo is cached when its ``snapshots/`` directory holds a revision carrying the
+    config file the loader requires. That is deliberately stricter than "the directory
+    exists" and than "the directory has files in it": ``huggingface_hub`` creates the
+    tree as soon as a download STARTS, so an interrupted fetch leaves a populated
+    directory that both weaker checks call cached -- reporting a half-downloaded model
+    as ready is the fabrication to avoid here. The predicate is vLLM's OWN, quoted from
+    the error it raises when it is not met: "For Hugging Face models: ensure the presence
+    of a 'config.json'. For Mistral models: ensure the presence of a 'params.json'." A
+    field run hit exactly this -- a model reported downloaded, then a server that exited
+    during startup on a missing ``config.json`` (2026-08-10).
+
+    A tree that exists but cannot load is reported as ``cached: False`` WITH
+    ``incomplete`` naming it, because "several GB on the disk that will not load" and
+    "never downloaded" call for opposite actions and must not share one answer.
+    ``bytes`` is the real on-disk size, or None when it cannot be read (never a 0).
 
     BOTH LOCATIONS ARE PROBED, and ``location`` says which answered. Moving the cache
     into the app folder (2026-08-04) changed where new weights land; reading only there
@@ -2665,15 +2680,24 @@ def model_cache_state(model: str) -> dict:
         candidates.append(("legacy", legacy / "hub" / repo))
 
     unreadable = False
+    partial: tuple[str, Path] | None = None
     for where, root in candidates:
         snaps = root / "snapshots"
         try:
             revisions = [d for d in snaps.iterdir() if d.is_dir()] if snaps.is_dir() else []
-            cached = any(any(rev.iterdir()) for rev in revisions)
+            # is_file() FOLLOWS symlinks, and a snapshot entry is a symlink into blobs/ --
+            # so an aborted fetch that left the link but not the blob reads as absent here,
+            # which is what we want.
+            loadable = any(
+                any((rev / name).is_file() for name in _LOADER_CONFIG_FILES) for rev in revisions
+            )
+            populated = any(any(rev.iterdir()) for rev in revisions)
         except OSError:
             unreadable = True
             continue
-        if not cached:
+        if not loadable:
+            if populated and partial is None:
+                partial = (where, root)
             continue
         try:
             size: int | None = sum(f.stat().st_size for f in root.rglob("*") if f.is_file())
@@ -2685,6 +2709,26 @@ def model_cache_state(model: str) -> dict:
             "bytes": size,
             "location": where,
             "expected": str(expected),
+            "incomplete": None,
+        }
+
+    if partial is not None:
+        where, root = partial
+        try:
+            size = sum(f.stat().st_size for f in root.rglob("*") if f.is_file())
+        except OSError:
+            size = None
+        return {
+            "cached": False,
+            "path": str(root),
+            "bytes": size,
+            "location": where,
+            "expected": str(expected),
+            "incomplete": (
+                "the download is on the disk but incomplete — no "
+                + " or ".join(sorted(_LOADER_CONFIG_FILES))
+                + " in it, which is the file the loader needs. Download it again."
+            ),
         }
 
     # Nothing found. An unreadable candidate makes that a "cannot tell", never a "no":
@@ -2696,6 +2740,7 @@ def model_cache_state(model: str) -> dict:
         "bytes": None,
         "location": None,
         "expected": str(expected),
+        "incomplete": None,
     }
 
 

@@ -37,6 +37,7 @@ from src.llm.ollama import (
     GenerationResult,
     LLMError,
     LLMUnavailable,
+    _http_error_text,
     _is_loopback_url,
     _require_loopback,
 )
@@ -330,7 +331,7 @@ class VllmClient:
                 raise LLMUnavailable(
                     f"Model {model!r} is not the model this vLLM server was started with."
                 ) from exc
-            raise LLMError(f"vLLM error for model {model!r}: {exc}") from exc
+            raise LLMError(f"vLLM error for model {model!r}: {_http_error_text(exc)}") from exc
         except httpx.HTTPError as exc:
             raise LLMUnavailable(f"vLLM not reachable at {self.base_url}: {exc}") from exc
         data = resp.json()

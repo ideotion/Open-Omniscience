@@ -10545,6 +10545,72 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     enumerate every rounding between the true value and the published one and widen by
     each — and prove it by simulation rather than by re-running until it passes, since
     a 2% false-failure rate looks exactly like a flake.
+  - **AN HTTP STATUS SAYS A CALL FAILED; THE RESPONSE BODY SAYS WHY — and the one line
+    that converts the exception is where the answer gets thrown away (2026-08-10, five
+    Ollama models, ten failures, zero information):** the first runs that ever reached
+    Ollama produced nothing but `Server error '500 Internal Server Error' for url …`,
+    repeated per model per run. Nothing was wrong with the call: both local backends
+    answer a failure with a JSON body naming the cause, and `httpx`'s `HTTPStatusError`
+    string carries only the status and the URL, so `raise LLMError(f"…: {exc}")` — which
+    looks like it is passing the error through — silently drops the only part that
+    diagnoses anything. RULE: wherever an exception is re-raised with a message, ask what
+    the ORIGINAL carried that the new one does not; for HTTP that is always the body.
+    THREE THINGS THE READER OWES: unwrap both shapes (`{"error": "…"}` and
+    `{"error": {"message": "…"}}`) but keep a non-JSON body verbatim, since the server's
+    own words beat a parse; BOUND it, because one runaway body should not become the
+    whole log line; and degrade to the status line when the body is empty or unreadable,
+    never to a dangling separator with nothing after it — the guard for that direction is
+    the one worth writing, because it is what stops "read the reason" from making a
+    reason-less failure WORSE than it was.
+  - **"AT LEAST ONE FILE" IS NOT A COMPLETENESS CHECK — ask the loader what it requires
+    (2026-08-10, a model reported downloaded that vLLM would not open):** the cache probe
+    already knew the trap and said so in its own docstring — `huggingface_hub` creates the
+    tree as soon as a download STARTS — and guarded it by requiring a revision directory
+    with a file in it. An interrupted fetch leaves real weight files, so the guard passed
+    and the server then exited on `Invalid repository ID or local directory specified …
+    ensure the presence of a 'config.json'`. The correct predicate was written in the
+    error the failure itself raised. GENERAL FORM: when you guard "is this artifact
+    complete", do not invent a proxy for completeness (a file count, a byte floor) — find
+    the consumer's own stated precondition and check THAT. Two riders: `is_file()` follows
+    symlinks, which is what you want for an HF snapshot (a dangling link into a missing
+    blob reads as absent); and a populated-but-unusable tree must not collapse into the
+    same answer as a never-fetched one — "several GB on the disk that will not load" and
+    "you never downloaded it" call for opposite actions, so the sentinel says which and
+    reports the wasted bytes. The pre-existing test used `config.json` as its filename by
+    coincidence and so passed either way — the discriminating fixture is files present,
+    config absent.
+  - **AN OPTIONAL PARAMETER THAT NO CALLER PASSES IS A POLICY NOBODY IS UNDER
+    (2026-08-10, the context budget):** `llm_perception_extract` takes `budget_chars`,
+    falls back to a hardcoded `_MAX_CHARS = 6000`, and **not one caller supplies it** —
+    so `src/ai_layer/context.py`, a whole module about sizing the window to the corpus,
+    governs the user-driven summarize/translate path and NOTHING in the background
+    sweeps. Three numbers that do not know about each other: the operator's
+    `llm_max_context_length` (8192 by default), vLLM's `max_model_len` computed from
+    free VRAM (2048 on the field machine), and the 6000-char slice every sweep actually
+    takes. The seam looks like the feature is wired; only a grep for callers shows it is
+    not. **AND THE NAIVE FIX IS WORSE THAN THE GAP:** wiring the setting straight
+    through yields `(8192−512−1024)×4 ≈ 26,600` chars ≈ 6,650 tokens, which exceeds the
+    2048 the server would accept — every sweep call would fail on a machine where they
+    currently succeed. The budget has to be `min(what the operator configured, what the
+    backend will actually serve)`, and the second half must be READ from the backend
+    rather than assumed, because those two diverged by 4× in the field. General form:
+    before wiring a dormant knob, compute what the live value would BE and check it
+    against the constant it replaces — a dead seam and a seam wired to the wrong number
+    fail in opposite directions, and the second one fails loudly on the operator's
+    machine rather than quietly on yours. (Recorded with the finding; the correct
+    two-sided wiring is not yet built.)
+  - **A SURVEY THAT STARTS SOMETHING IS NOT A SURVEY — and "nobody asked" is not
+    "you have none" (2026-08-10, the bench preflight):** the same `survey()` serves an
+    endpoint and a diagnostics bundle, and they need opposite behaviour: the endpoint
+    may wake a stopped Ollama (local, free, and the difference between a useful answer
+    and a misleading one), the bundle may not, because a bundle describes the machine
+    and must not change it. Making the wake an INJECTED callable rather than an internal
+    choice is what lets one function do both honestly — and it is also what lets a test
+    prove the bundle starts nothing. The related honesty rule underneath: a probe that
+    could not run returns `unknown`, never `missing`. Zero models from a live daemon and
+    zero from a dead one are opposite facts, and collapsing them offers to re-download a
+    roster the operator already holds. Both directions need a test — an over-eager
+    `unknown` would never offer to download anything for a working, empty backend.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
