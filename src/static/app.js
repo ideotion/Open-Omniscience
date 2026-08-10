@@ -7673,6 +7673,11 @@
       // data): reproduces the ORIGINAL generic imported/deduplicated stat, unchanged.
       let tallyNew = 0, tallyDup = 0;
       let newSources = 0, discoveryAdded = 0, eventsAdded = 0, unindexed = 0;
+      // Source QUALIFICATION carried by this import (field ask 2026-08-10). Counts
+      // only; `qualEngines` maps criteria version -> n, which is the "by which
+      // engine" half — never inferred, only what the incoming stamp recorded.
+      let qualGained = 0, disqGained = 0, qualKept = 0, qualDisagreed = 0;
+      const qualEngines = {};
       let deltaBefore = null, deltaAfter = null;
       const extra = [];  // empty/errored newsletters, surfaced honestly
       const detail = [];
@@ -7718,12 +7723,22 @@
           for (const row of perType) {
             for (const k of row.keys) { const c = p[k]; if (c) row.n += c.new || 0; }
           }
-          // New sources: reported plainly (worth a look in Source Management) — NOT
-          // "awaiting qualification". That lifecycle (ledger ruling, same-day amend)
-          // is not yet built (no qualification-status column/gate exists), so a new
-          // source is enabled exactly as the backup had it; claiming a queued
-          // "awaiting qualification" state here would be fabricated.
+          // New sources: reported plainly (worth a look in Source Management). The
+          // qualification lifecycle DOES exist now (Source.status + the admission gate
+          // in select_sources), so the qualification block below states what this
+          // import actually carried; this line stays the plain count of added sources,
+          // qualified or not.
           newSources += (p.sources && p.sources.new) || 0;
+          const pq = p._source_qualification;
+          if (pq) {
+            qualGained += (pq.introduced_qualified || 0) + (pq.adopted_qualified || 0);
+            disqGained += (pq.introduced_disqualified || 0) + (pq.adopted_disqualified || 0);
+            qualKept += pq.local_verdict_kept || 0;
+            qualDisagreed += pq.local_verdict_disagreed || 0;
+            for (const [eng, n] of Object.entries(pq.engines || {})) {
+              qualEngines[eng] = (qualEngines[eng] || 0) + (n || 0);
+            }
+          }
           discoveryAdded += (p.source_candidates && p.source_candidates.new) || 0;
           detail.push({ title: sm.title, body: _v2PlanTable(p) + _uxTimingsView(sm.timings, t, tf) });
 
@@ -7809,6 +7824,38 @@
       if (newSources > 0) queueLines.push(`${num(newSources)} ${t("New sources")}`);
       if (unindexed > 0) queueLines.push(`${num(unindexed)} ${t("Articles awaiting indexing")}`);
       if (discoveryAdded > 0) queueLines.push(`${num(discoveryAdded)} ${t("Discovery candidates")}`);
+      // SOURCE QUALIFICATION carried by this import (field ask 2026-08-10: "display the
+      // amount of qualified sources imported"). Rendered only when the import actually
+      // carried a verdict — a run that carried none says nothing rather than "0", which
+      // would read as a finding about the backup instead of an absence of data.
+      // Every line is label:value rather than a sentence with the count inside it —
+      // an interpolated count cannot conjugate, and this app has no CLDR plural rules,
+      // so a "{n} sources were ..." frame is wrong in most of the twelve locales.
+      let qualBlock = "";
+      if (qualGained || disqGained) {
+        const lead = [];
+        if (qualGained) lead.push(tf("Qualified sources added: {n}", { n: num(qualGained) }));
+        if (disqGained) lead.push(tf("Arrived disqualified: {n}", { n: num(disqGained) }));
+        const sub = [];
+        // Local-wins, stated rather than left to be inferred from numbers that do not
+        // add up: a verdict this machine reached itself is never overwritten.
+        if (qualKept) sub.push(tf("Already judged here, kept: {n}", { n: num(qualKept) }));
+        if (qualDisagreed) sub.push(tf("Backup disagreed, your verdict kept: {n}", { n: num(qualDisagreed) }));
+        const engNames = Object.keys(qualEngines);
+        if (engNames.length) {
+          sub.push(tf("Judged by: {engines}", {
+            engines: engNames.map((e) => `${e} (${num(qualEngines[e])})`).join(", "),
+          }));
+        }
+        qualBlock =
+          `<div style="margin-top:8px"><div style="font-size:13px">`
+          + esc("✓ " + lead.join(" · ")) + `</div>`
+          + (sub.length
+              ? `<div class="muted" style="font-size:12px">${esc(sub.join(" · "))}</div>`
+              : "")
+          + `</div>`;
+      }
+
       const queueBlock = queueLines.length
         ? `<div class="muted" style="font-size:12px;margin-top:6px">${queueLines.map(esc).join(" · ")}</div>`
         : "";
@@ -7874,7 +7921,7 @@
         `<div class="card" style="margin-top:8px;padding:12px;border-left:3px solid ${head.col}">`
         + `<div style="font-weight:700;font-size:15px">${esc(head.icon)} ${esc(head.text)}</div>`
         + countLine + excludedNote
-        + growLine + headline + bar + typeBlock + extraLine + indexingLine + queueBlock
+        + growLine + headline + bar + typeBlock + extraLine + qualBlock + indexingLine + queueBlock
         + _uxPerItemView(perItem, t, tf)
         + deltaView
         + `<div class="muted" style="font-size:12px;margin-top:6px">${esc(t("Additive restore: nothing in your corpus was replaced or deleted. Duplicates were skipped."))}</div>`

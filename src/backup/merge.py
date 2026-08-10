@@ -1277,7 +1277,11 @@ def merge_corpus(
                         new=_fts_index_merged_articles(con, batch_id, progress=fts_prog)
                     )
 
-        counts: dict[str, object] = {k: v.as_dict() for k, v in results.items()}
+        # Underscore keys carry non-table diagnostic blocks (the same convention
+        # `_unmerged_tables` below uses); they are plain dicts, not DomainResults.
+        counts: dict[str, object] = {
+            k: (v.as_dict() if hasattr(v, "as_dict") else v) for k, v in results.items()
+        }
         unmerged, rejected = _unmerged_tables(con)
         if unmerged:
             counts["_unmerged_tables"] = unmerged  # stated, never silent
@@ -1552,6 +1556,51 @@ def _merge_keyword_categories(con, batch_id, results) -> None:
     results["keyword_categories"] = r
 
 
+def _qualification_tally(con, *, kept: int, disagreed: int) -> dict:
+    """What this import contributed to source QUALIFICATION, read off temp.qual_landed.
+
+    Counts only -- never a score, and never a percentage of anything. Every figure is
+    exact: the landing table holds one row per source whose verdict this merge either
+    INTRODUCED (a source the merge added, already carrying a verdict) or ADOPTED (a
+    source that existed here but had never been judged).
+
+    ``engines`` is the criteria version that produced each verdict
+    (``Source.qualification_criteria_version``) -- the "by which engine" the field ask
+    names. A verdict whose criteria version was never recorded is reported under
+    ``unrecorded`` rather than being dropped or attributed to the current engine: which
+    engine judged it is exactly what is unknown there.
+    """
+    landed: dict[str, dict[str, int]] = {}
+    for mode, verdict, n in _q(
+        con, "SELECT mode, verdict, COUNT(*) FROM temp.qual_landed GROUP BY mode, verdict"
+    ):
+        landed.setdefault(str(mode), {})[str(verdict)] = int(n)
+
+    engines = {
+        (str(row[0]) if row[0] else "unrecorded"): int(row[1])
+        for row in _q(
+            con, "SELECT engine, COUNT(*) FROM temp.qual_landed GROUP BY engine"
+        )
+    }
+    _span = _q(con, "SELECT MIN(stamped_at), MAX(stamped_at) FROM temp.qual_landed")
+    stamped_from, stamped_to = _span[0] if _span else (None, None)
+
+    introduced = landed.get("introduced", {})
+    adopted = landed.get("adopted", {})
+    return {
+        "introduced_qualified": introduced.get("qualified", 0),
+        "introduced_disqualified": introduced.get("disqualified", 0),
+        "adopted_qualified": adopted.get("qualified", 0),
+        "adopted_disqualified": adopted.get("disqualified", 0),
+        # Local-wins: verdicts this instance had already reached itself, left untouched.
+        "local_verdict_kept": int(kept),
+        "local_verdict_disagreed": int(disagreed),
+        "engines": engines,
+        "qualified_at_min": str(stamped_from) if stamped_from else None,
+        "qualified_at_max": str(stamped_to) if stamped_to else None,
+    }
+
+
 def _merge_sources(con, batch_id, results) -> None:
     r = DomainResult()
     r.duplicate = _count(
@@ -1595,6 +1644,45 @@ def _merge_sources(con, batch_id, results) -> None:
     # untouched (the merge's standing policy) — the incoming EVIDENCE for it is carried
     # instead by the source_qualification_attempts merge below, which is what keeps the
     # re-qualification ladder honest without overwriting a local verdict.
+    # ---- what THIS import contributes to qualification (field ask 2026-08-10) ----
+    # Recorded in a temp table rather than derived afterwards, because both halves are
+    # only knowable BEFORE the statements that change them: "introduced" needs the
+    # NOT EXISTS predicate that stops being true the moment the INSERT below runs, and
+    # "adopted" needs the local row to still read 'unqualified'.
+    con.execute("DROP TABLE IF EXISTS temp.qual_landed")
+    con.execute(
+        "CREATE TEMP TABLE qual_landed"
+        " (domain TEXT, verdict TEXT, engine TEXT, stamped_at TEXT, mode TEXT)"
+    )
+    con.execute(
+        "INSERT INTO temp.qual_landed (domain, verdict, engine, stamped_at, mode)"
+        " SELECT i.domain, i.status, i.qualification_criteria_version, i.qualified_at,"
+        " 'introduced' FROM inc.sources i"
+        " WHERE i.status <> 'unqualified'"
+        "   AND NOT EXISTS (SELECT 1 FROM sources m WHERE m.domain = i.domain)"
+    )
+    # The domains about to ADOPT a verdict (they exist here and were never judged), and
+    # the ones where local-wins will apply because a verdict was reached here already.
+    # All four figures are measured against the PRE-MERGE local state: a first draft
+    # counted `kept` after the INSERT, and a source the merge had just introduced then
+    # read as a pre-existing local verdict (caught by the tally test, not by review).
+    con.execute(
+        "INSERT INTO temp.qual_landed (domain, verdict, engine, stamped_at, mode)"
+        " SELECT i.domain, i.status, i.qualification_criteria_version, i.qualified_at,"
+        " 'adopted' FROM inc.sources i JOIN sources m ON m.domain = i.domain"
+        " WHERE i.status <> 'unqualified' AND m.status = 'unqualified'"
+    )
+    _kept = _count(
+        con,
+        "SELECT COUNT(*) FROM inc.sources i JOIN sources m ON m.domain = i.domain"
+        " WHERE i.status <> 'unqualified' AND m.status <> 'unqualified'",
+    )
+    _disagreed = _count(
+        con,
+        "SELECT COUNT(*) FROM inc.sources i JOIN sources m ON m.domain = i.domain"
+        " WHERE i.status <> 'unqualified' AND m.status <> 'unqualified'"
+        "   AND i.status <> m.status",
+    )
     r.new = _insert_tracked(
         con, batch_id, "sources",
         "INSERT INTO sources (name, domain, rss_url, rate_limit_ms, enabled, priority, tags,"
@@ -1613,6 +1701,50 @@ def _merge_sources(con, batch_id, results) -> None:
         f" (SELECT 1 FROM sources m WHERE m.domain = i.domain) LIMIT {_SAMPLE_LIMIT}",
     ):
         r.samples.append(row[0])
+
+    # ---- ADOPTION: a never-judged local row takes the incoming verdict ----
+    # Field report 2026-08-10: "Export and import should integrate source having been
+    # qualified ... to allow backup imports to add new validated sources to their list.
+    # Currently I don't see this working."
+    #
+    # It did not work, and the 2026-07-24 fix above is not what was missing: that fix
+    # stamps sources the merge INTRODUCES. The maintainer runs many instances all seeded
+    # from the SAME catalog, so essentially every domain in an incoming backup ALREADY
+    # EXISTS locally -- the INSERT's `WHERE NOT EXISTS` skips it, and the standing
+    # local-wins policy left the local row at its `server_default='unqualified'`.
+    # Reproduced against this function before it was changed: two domains present in
+    # both corpora, judged qualified/disqualified in the incoming one, both ending
+    # status='unqualified' with a NULL stamp -- while their attempt history carried
+    # correctly. So one instance's qualification work was invisible to every other.
+    #
+    # The defect is that local-wins was defending a NON-judgement. `status` is exactly
+    # unqualified|qualified|disqualified, and 'unqualified' means "no verdict has been
+    # reached here" -- there is nothing to overwrite. Adopting the incoming stamp there
+    # is pure information gain, and it is the SAME trust basis the merge already applies
+    # one line above to a brand-new source: a domain that happens to pre-exist locally
+    # but was never judged should not be treated differently from one that does not.
+    #
+    # It is deliberately BOTH directions. Adopting 'disqualified' is the safety
+    # direction the 2026-07-24 entry argues for (a known-bad source stays out of
+    # collection instead of being laundered back into the trial queue); adopting
+    # 'qualified' is the direction the field ask names. Neither can overwrite a local
+    # verdict: the `m.status = 'unqualified'` guard is what keeps local-wins intact
+    # wherever this instance actually judged the source itself -- in particular a local
+    # 'disqualified' can never be laundered to 'qualified' by an incoming corpus.
+    con.execute(
+        "UPDATE sources SET"
+        "  status = (SELECT i.status FROM inc.sources i WHERE i.domain = sources.domain),"
+        "  qualified_at = (SELECT i.qualified_at FROM inc.sources i"
+        "                  WHERE i.domain = sources.domain),"
+        "  qualification_criteria_version = (SELECT i.qualification_criteria_version"
+        "                                    FROM inc.sources i"
+        "                                    WHERE i.domain = sources.domain)"
+        " WHERE sources.status = 'unqualified'"
+        "   AND EXISTS (SELECT 1 FROM inc.sources i"
+        "               WHERE i.domain = sources.domain AND i.status <> 'unqualified')"
+    )
+    results["_source_qualification"] = _qualification_tally(con, kept=_kept, disagreed=_disagreed)
+
     _build_map(
         con, "map_sources",
         "SELECT i.id, m.id FROM inc.sources i JOIN sources m ON m.domain = i.domain",

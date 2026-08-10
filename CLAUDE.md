@@ -1385,6 +1385,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     hiding place for the bug it was built to survive) at the schema level rather than the
     resolver level, and the test that pins it must assert BOTH directions (the happy path still
     publishes a real value; the sad path publishes the sentinel and NOT the measurement key).
+  - **A "LOCAL WINS" POLICY MUST NOT DEFEND A NON-JUDGEMENT — and a fixture with an EMPTY
+    local side cannot tell the two apart (2026-08-10, qualification across a multi-instance
+    import):** the 2026-07-24 fix below made the merge carry the qualification stamp, and it
+    was still true a year of field use later that importing a fully-qualified instance's
+    backup added ZERO qualified sources. The stamp rides the sources INSERT, guarded by
+    `WHERE NOT EXISTS (... m.domain = i.domain)` — and every instance is seeded from the SAME
+    catalog, so essentially every incoming domain ALREADY EXISTS locally, takes the
+    duplicate path, and keeps its `server_default='unqualified'`. Local-wins was defending a
+    row that had never been judged: `status='unqualified'` means NO verdict was reached here,
+    so there is nothing to overwrite and adopting is pure information gain. THE FIX is an
+    UPDATE gated on `m.status = 'unqualified'` — which is also precisely what keeps the
+    dangerous direction closed, since a local `disqualified` can then never be laundered to
+    `qualified` by an incoming corpus. TWO THINGS WORTH MORE THAN THE FIX. (a) **Twelve tests
+    covered this table and none could see it**, because every one either started from an
+    EMPTY local corpus (so all sources take the INSERT path and arrive stamped) or seeded the
+    local row as ALREADY JUDGED (so local-wins is the correct answer). The uncovered cell —
+    local present but unjudged — is the only one the field actually produces, and it is the
+    "a probe's data distribution is part of the lookalike" trap with the FIXTURE'S LOCAL SIDE
+    as the varying axis. (b) **Measure every "what did this import contribute" figure against
+    the PRE-MERGE state.** A first draft counted "local verdicts kept" after the INSERT, so a
+    source the merge had just introduced read as a pre-existing local verdict; caught by the
+    tally test, not by review. Same ordering hazard the adopted-set capture was already
+    written to avoid — getting it right once in a function does not get it right twice.
   - **AN EXPLICIT COLUMN ALLOWLIST SILENTLY DROPS EVERY COLUMN ADDED AFTER IT — AND A
     `server_default` MAKES THE LOSS INVISIBLE (2026-07-24, source qualification through the
     restore-merge):** `_merge_sources` copies a hardcoded 14-column list, so the three
