@@ -10378,6 +10378,28 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     restarting is the lever" has a NEGATIVE-SPACE TWIN that says the opposite when
     throughput peaked BELOW the limit. A recommendation that fires in every case is advice,
     not a reading.
+  - **A THRESHOLD OVER A RATIO OF TWO TIMINGS IS NOT A GUARD ON A SHARED RUNNER — FIND THE
+    ARITHMETIC CLAIM UNDERNEATH IT (2026-08-10, the throughput bench's own test going red
+    in a full-suite run):** the assertion was "on a saturated backend the measured rate is
+    under half what latency×workers assumes", which passed alone and failed at 0.52 in the
+    suite. The tempting reading is a flaky threshold; the measurement says something worse.
+    Under CPU contention a **perfectly-scaling** client reads **0.047–0.101** of its own
+    assumed rate — so the bar the saturated fixture was supposed to be distinguished by is
+    cleared by the client it was supposed to be distinguished FROM, and the test had been
+    passing for the wrong reason every time. Both sides of a ratio inflate under load, at
+    rates that depend on the scheduler, so no constant separates them. THE FIX IS TO FIND
+    THE LOAD-INDEPENDENT CLAIM: the real property was "the published rate is the batch's
+    own arithmetic (n / wall), not p50 × workers", which is an EXACT identity over numbers
+    the report already publishes (drift ≤ 2/h, pure rounding, at every load measured) and
+    which a mutation to the wrong formula fails immediately. The ratio survives only as an
+    anti-vacuity companion — evidence that the two formulas disagree on this fixture —
+    never as the proof. AND THE CALIBRATION DIRECTION HELD: the fixture was made HARDER
+    (16 workers / 32 calls instead of 8 / 16, worst ratio 0.157 under twelve competing
+    spinners against a 0.5 bar) rather than the bar softer, per the recorded WAL lesson;
+    the measured numbers are recorded IN the test so the next session does not re-derive
+    them. GENERAL FORM: when a timing-derived guard goes red, measure what it reads for the
+    case it is supposed to REJECT before touching it — if that case also passes, the guard
+    never worked and tuning it would only hide that.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
