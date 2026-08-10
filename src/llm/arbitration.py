@@ -140,7 +140,13 @@ def release_backend(backend: str) -> dict:
         else:
             detail = vllm_lifecycle.stop()
             out["method"] = "stop-server"
-            out["released"] = bool(detail.get("stopped"))
+            # A stop that was PERFORMED and did not TAKE has released nothing: the
+            # server is still answering and still holding the card, so the caller would
+            # start Ollama onto memory vLLM has not given back. Same rule the
+            # model-switch path applies -- written here too rather than left as a
+            # comment on one branch, which is how this class recurred in the first
+            # place.
+            out["released"] = bool(detail.get("stopped")) and detail.get("port_quiet") is not False
             out["detail"] = detail
     else:
         out["method"] = "none"

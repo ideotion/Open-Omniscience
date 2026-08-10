@@ -166,6 +166,10 @@ def test_an_unowned_vllm_is_refused_with_the_path_that_would_have_matched(monkey
 
     assert out["stopped"] is False
     assert "managed venv" in out["reason"]
+    # A refusal owes the caller the way forward -- the Ollama one points at
+    # release_vram(), and this one is what an operator hits when the bench cannot
+    # switch models on a server they started by hand.
+    assert "Settings" in out["reason"] and "start it from" in out["reason"]
 
 
 def test_stop_without_adopt_keeps_the_old_narrow_answer(monkeypatch):
@@ -657,3 +661,38 @@ def test_a_stop_that_did_not_take_is_treated_as_a_refusal(monkeypatch):
     assert started == [], "a stop that did not take must not be followed by a start"
     assert out["switch_refused"] is True
     assert "still answering after 10s" in out["reason"]
+
+
+def test_a_vllm_stop_that_did_not_take_has_released_nothing(monkeypatch):
+    """The sibling of the switch-path rule, and the same defect one function over: a
+    server still answering is still holding the card, so reporting it as released
+    would send Ollama onto memory vLLM has not given back."""
+    from src.llm import vllm_lifecycle as VL
+
+    monkeypatch.setattr(VL, "is_running", lambda **_kw: True)
+    monkeypatch.setattr(
+        VL, "stop", lambda **_kw: {"stopped": True, "port_quiet": False, "note": "still answering"}
+    )
+    monkeypatch.setattr(A, "free_vram_mb", lambda: 1496)
+
+    out = A.release_backend("vllm")
+
+    assert out["released"] is False, "a stop that did not take released nothing"
+    assert out["detail"]["note"] == "still answering"
+
+
+def test_a_vllm_stop_that_took_is_a_real_release(monkeypatch):
+    """The negative-space twin: the ordinary success must survive the new check, and a
+    stop path that reports no `port_quiet` at all (an older shape) is not called a
+    failure on the strength of an absent field."""
+    from src.llm import vllm_lifecycle as VL
+
+    monkeypatch.setattr(VL, "is_running", lambda **_kw: True)
+    monkeypatch.setattr(A, "free_vram_mb", lambda: 1496)
+    monkeypatch.setattr(A, "_settle", lambda *_a, **_kw: (7000, 1.0))
+
+    monkeypatch.setattr(VL, "stop", lambda **_kw: {"stopped": True, "port_quiet": True})
+    assert A.release_backend("vllm")["released"] is True
+
+    monkeypatch.setattr(VL, "stop", lambda **_kw: {"stopped": True})
+    assert A.release_backend("vllm")["released"] is True, "an absent field is not a failure"

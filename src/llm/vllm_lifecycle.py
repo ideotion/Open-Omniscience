@@ -2042,7 +2042,9 @@ def stop(*, timeout: float = 10.0, adopt: bool = True) -> dict:
             "stopped": False,
             "reason": (
                 "a vLLM server is answering, but it was not started from this app's "
-                f"managed venv ({venv_dir()}), so it is not this app's to stop."
+                f"managed venv ({venv_dir()}), so it is not this app's to stop. Stop it "
+                "yourself and start it from Settings → AI, and the app can then manage "
+                "it — including switching models for the comparative bench."
             ),
         }
     stopped: list[int] = []
