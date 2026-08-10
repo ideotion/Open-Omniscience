@@ -1007,7 +1007,6 @@ _COMPARABLE: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("perception.where.hallucination_rate", "share 0-1", ("perception", "report", "by_field_overall", "where", "hallucination_rate")),
     ("perception.when.recall", "share 0-1", ("perception", "report", "by_field_overall", "when", "recall")),
     ("perception.when.hallucination_rate", "share 0-1", ("perception", "report", "by_field_overall", "when", "hallucination_rate")),
-    ("latency.calls_per_hour", "per hour", ("latency", "budget", "calls_per_hour")),
 )
 
 
@@ -1033,6 +1032,17 @@ def comparable_metrics(pair_result: dict) -> dict:
         value = _dig(tasks, path)
         if value is not None:
             out[name] = {"value": value, "unit": unit}
+    # LATENCY IS PER PROMPT SHAPE, and it is expanded here rather than declared above
+    # because the shapes are data, not a fixed list. It nearly went in as a single
+    # `latency.calls_per_hour` reading a key that does not exist -- `_dig` would have
+    # returned None forever and the row would simply never have appeared, saying
+    # nothing about why. The shapes measure genuinely different work (a small fact
+    # bundle against a 24,000-character synthesis), so one figure over them would be
+    # the composite this bench refuses anyway.
+    for row in (((tasks.get("latency") or {}).get("budget") or {}).get("rows") or []):
+        per_hour = row.get("per_hour")
+        if isinstance(per_hour, (int, float)) and row.get("shape"):
+            out[f"latency.{row['shape']}.per_hour"] = {"value": per_hour, "unit": "per hour"}
     return out
 
 
@@ -1082,8 +1092,15 @@ def same_model_across_backends(results: dict[str, dict]) -> list[dict]:
             continue  # one side only is not a comparison
         metrics: dict[str, dict] = {}
         per_backend = {b: comparable_metrics(p) for b, p in by_backend.items()}
-        for name, unit, _path in _COMPARABLE:
+        # The UNION of what the two sides produced, not the declared table: latency
+        # expands per prompt shape, so a loop over the static table would drop exactly
+        # the rows that are per-corpus data. Declared metrics keep their table order;
+        # the expanded ones follow, sorted, so the report is stable between runs.
+        declared = [n for n, _u, _p in _COMPARABLE]
+        seen = {k for m in per_backend.values() for k in m}
+        for name in [n for n in declared if n in seen] + sorted(seen - set(declared)):
             present = {b: m[name]["value"] for b, m in per_backend.items() if name in m}
+            unit = next(m[name]["unit"] for m in per_backend.values() if name in m)
             if present:
                 metrics[name] = {"unit": unit, "by_backend": present}
         rows.append(

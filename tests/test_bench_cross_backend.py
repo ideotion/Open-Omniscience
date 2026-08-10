@@ -364,3 +364,74 @@ def test_vllm_not_installed_at_all_IS_unreachable(monkeypatch):
     assert out["vllm"] is None
     _, skipped = MB.resolve_pairs(models=["vllm|org/a"], installed_by_backend=out)
     assert skipped[0]["reason"] == "backend-unreachable"
+
+
+def test_latency_is_compared_per_prompt_shape_against_the_real_payload():
+    """BUILT FROM THE REAL BUILDER, not from a hand-typed shape.
+
+    This nearly shipped as a single ``latency.calls_per_hour`` reading a key that does
+    not exist -- ``budget_translation`` reports per SHAPE, in ``budget.rows[]``. The dig
+    would have returned None forever and the row would simply never have appeared,
+    saying nothing about why: the silent-omission failure the ledger already names for
+    resolvers that read another module's payload by an assumed key.
+    """
+    from src.monitoring.llm_bench import budget_translation
+
+    real = budget_translation(
+        [
+            {"shape": "facts", "wall_s": {"p50": 0.5}, "ok_calls": 3},
+            {"shape": "summary", "wall_s": {"p50": 2.0}, "ok_calls": 3},
+        ],
+        concurrency=2,
+    )
+    assert real["rows"], "the fixture must come from the builder, not from memory"
+    # The builder reports None when no call succeeded; give it real numbers the way a
+    # measured run would, keeping its own key names.
+    for row in real["rows"]:
+        row["per_hour"] = 100 if row["shape"] == "facts" else 25
+
+    # ``run_llm_bench`` puts this block under "budget" (llm_bench.py, the report's own
+    # assembly). Getting that nesting wrong here is how the production dig ended up one
+    # level off in the first place, so the fixture mirrors the real report exactly.
+    metrics = MB.comparable_metrics({"tasks": {"latency": {"budget": real}}})
+
+    assert metrics["latency.facts.per_hour"]["value"] == 100
+    assert metrics["latency.summary.per_hour"]["value"] == 25
+    assert metrics["latency.facts.per_hour"]["unit"] == "per hour"
+    assert not any(k == "latency.calls_per_hour" for k in metrics), (
+        "a single blended latency figure would be the composite this bench refuses — "
+        "a fact bundle and a 24,000-character synthesis are different work"
+    )
+
+
+def test_a_shape_that_never_completed_is_absent_rather_than_zero():
+    """budget_translation reports per_hour None with a reason when no call succeeded."""
+    metrics = MB.comparable_metrics(
+        {"tasks": {"latency": {"budget": {"rows": [{"shape": "facts", "per_hour": None}]}}}}
+    )
+    assert metrics == {}
+
+
+def test_the_cross_backend_table_carries_the_expanded_latency_rows():
+    """The comparison used to loop the DECLARED table only, which would have dropped
+    exactly the rows that are per-corpus data."""
+    def pair(backend, per_hour):
+        return {
+            "backend": backend,
+            "model": "m",
+            "tasks": {
+                "triage": {"format_validity": 0.9},
+                "latency": {"budget": {"rows": [{"shape": "facts", "per_hour": per_hour}]}},
+            },
+        }
+
+    rows = MB.same_model_across_backends(
+        {
+            "ollama|qwen3.5:0.8b-q8_0": pair("ollama", 120),
+            "vllm|Qwen/Qwen3.5-0.8B": pair("vllm", 480),
+        }
+    )
+
+    m = rows[0]["metrics"]
+    assert m["latency.facts.per_hour"]["by_backend"] == {"ollama": 120, "vllm": 480}
+    assert list(m)[0] == "triage.format_validity", "declared metrics keep their table order"
