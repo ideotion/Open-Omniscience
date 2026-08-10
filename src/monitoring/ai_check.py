@@ -280,19 +280,30 @@ def _live_bench(ctx, *, models, repeats: int, refresh_batch: bool) -> dict:
     are downloaded.
     """
     from src.ai_layer.bench_batch import load_anchors
+    from src.ai_layer.coordinator import user_batch_hold
     from src.ai_layer.model_bench import run_model_bench
 
     batch = ensure_frozen_batch(refresh=refresh_batch)
     anchors = load_anchors()
-    report = run_model_bench(
-        _StepCtx(ctx, "bench"),
-        models=models,
-        repeats=repeats,
-        restart=refresh_batch,
-        allow_backend_switch=True,
-    )
+    # THE HOLD IS NOT POLITENESS HERE, it is correctness. This run STOPS AND RESTARTS
+    # the backend between models; a background sweep mid-batch against the server we
+    # are about to kill would fail for a reason that has nothing to do with it, and
+    # its retries would be competing for the card the bench is trying to measure. The
+    # coordinator and every background-AI entry point already check this hold (the
+    # 2026-07-24 lesson: a pause that only stops the main loop is incomplete), and
+    # nothing was claiming it for the bench. Released in the context manager's
+    # `finally`, so a raising bench cannot strand the lane.
+    with user_batch_hold("comparative model bench"):
+        report = run_model_bench(
+            _StepCtx(ctx, "bench"),
+            models=models,
+            repeats=repeats,
+            restart=refresh_batch,
+            allow_backend_switch=True,
+        )
     report["frozen_batch_step"] = batch
     report["anchors_available"] = bool(anchors and anchors.get("anchors"))
+    report["background_ai_paused"] = True
     return report
 
 

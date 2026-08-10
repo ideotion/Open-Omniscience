@@ -391,3 +391,45 @@ def test_refreshing_the_inputs_restarts_the_bench(monkeypatch) -> None:
     AC._live_bench(None, models=None, repeats=1, refresh_batch=True)
 
     assert seen["restart"] is True
+
+
+def test_the_bench_holds_the_lane_while_it_restarts_the_backend(monkeypatch) -> None:
+    """Correctness, not politeness. The deep run STOPS AND RESTARTS the backend between
+    models; a background sweep mid-batch against the server about to be killed fails for
+    a reason that has nothing to do with it, and its retries then compete for the card
+    the bench is trying to measure. Every background-AI entry point already checks this
+    hold — nothing was claiming it for the bench."""
+    from src.ai_layer.coordinator import user_batch_active
+
+    seen: list[dict] = []
+    monkeypatch.setattr(AC, "ensure_frozen_batch", lambda **_kw: {"digest": "d"})
+    monkeypatch.setattr("src.ai_layer.bench_batch.load_anchors", lambda **_kw: None)
+    monkeypatch.setattr(
+        "src.ai_layer.model_bench.run_model_bench",
+        lambda _ctx, **_kw: seen.append(user_batch_active()) or {},
+    )
+
+    assert user_batch_active()["held"] is False, "nothing should be holding it beforehand"
+    AC._live_bench(None, models=None, repeats=1, refresh_batch=False)
+
+    assert seen[0]["held"] is True, "the lane was not held while the bench ran"
+    assert any("bench" in h for h in seen[0]["holders"])
+    assert user_batch_active()["held"] is False, "the hold outlived the run"
+
+
+def test_a_raising_bench_still_releases_the_lane(monkeypatch) -> None:
+    """A stranded hold would leave background AI paused until the app restarts."""
+    from src.ai_layer.coordinator import user_batch_active
+
+    monkeypatch.setattr(AC, "ensure_frozen_batch", lambda **_kw: {"digest": "d"})
+    monkeypatch.setattr("src.ai_layer.bench_batch.load_anchors", lambda **_kw: None)
+    monkeypatch.setattr(
+        "src.ai_layer.model_bench.run_model_bench",
+        lambda _ctx, **_kw: (_ for _ in ()).throw(RuntimeError("no backend")),
+    )
+
+    try:
+        AC._live_bench(None, models=None, repeats=1, refresh_batch=False)
+    except RuntimeError:
+        pass
+    assert user_batch_active()["held"] is False
