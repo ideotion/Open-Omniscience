@@ -122,13 +122,18 @@ def test_the_rate_is_measured_not_a_latency_multiplied_by_the_worker_count():
     lv = r["levels"][0]
     measured = lv["calls_per_hour"]
 
-    # THE CLAIM: the published rate is the batch's own arithmetic. Not an equality:
-    # batch_wall_s is published rounded, so the honest check is that the rate lies inside
-    # the band that rounding allows, computed from the rounding granularity rather than a
-    # magic percentage. Exact at every load measured (drift <= 2/h, pure rounding).
-    half = 0.0005
-    lo = lv["n"] / (lv["batch_wall_s"] + half) * 3600
-    hi = lv["n"] / (lv["batch_wall_s"] - half) * 3600
+    # THE CLAIM: the published rate is the batch's own arithmetic. Not an equality —
+    # TWO roundings sit between the true rate and the published one, and the band has to
+    # carry both. The wall is published to 3 dp, which puts the true rate inside
+    # [lo, hi]; the rate is then published as an INTEGER, which moves it a further half
+    # either way. Omitting that second term is what reddened the macOS lane at
+    # "65251 outside [65214, 65251]" — a true rate of 65250.5-ish rounding up past a
+    # bound computed as though it had not been rounded at all. The wall's own band is
+    # ~37/h wide here and the rate's rounding is 1/h, so the missing term is small but
+    # decisive exactly at the edge, which is where a boundary assertion lives.
+    wall_half, rate_half = 0.0005, 0.5
+    lo = lv["n"] / (lv["batch_wall_s"] + wall_half) * 3600 - rate_half
+    hi = lv["n"] / (lv["batch_wall_s"] - wall_half) * 3600 + rate_half
     assert lo <= measured <= hi, f"{measured} outside [{lo:.0f}, {hi:.0f}]"
 
     # ANTI-VACUITY: on this fixture the two formulas genuinely disagree, so the identity

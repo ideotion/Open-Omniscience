@@ -10399,7 +10399,20 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the measured numbers are recorded IN the test so the next session does not re-derive
     them. GENERAL FORM: when a timing-derived guard goes red, measure what it reads for the
     case it is supposed to REJECT before touching it — if that case also passes, the guard
-    never worked and tuning it would only hide that.
+    never worked and tuning it would only hide that. **THE SEQUEL, one lane later: A
+    ROUNDING-BAND ASSERTION MUST CARRY EVERY ROUNDING IN THE CHAIN.** The replacement
+    identity derived its band from the wall's 3-dp publication and forgot that the RATE is
+    published as an integer too, so a true rate of 65250.5-ish rounded UP past a bound
+    computed as though it had not been rounded at all — `65251 outside [65214, 65251]` on
+    the macOS observation lane, which is exactly the "investigate it before the blocking
+    lane hits the same thing" role that lane exists for (the same full suite was green
+    locally, so the boundary is rare, not absent). The omitted term is ~1/h against a
+    ~37/h wall band — small everywhere except at the edge, which is the only place a
+    boundary assertion is ever evaluated. Simulating 200,000 publishes: **4,118 false
+    failures without the term, 0 with it.** When an assertion bounds a PUBLISHED number,
+    enumerate every rounding between the true value and the published one and widen by
+    each — and prove it by simulation rather than by re-running until it passes, since
+    a 2% false-failure rate looks exactly like a flake.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
