@@ -191,11 +191,30 @@ def test_start_spawns_a_fixed_argv_with_no_shell(fake_ollama, monkeypatch):
     )
 
 
-def test_there_is_no_stop_for_ollama():
-    """Deliberate asymmetry with vLLM, not an oversight: an Ollama daemon is usually a
-    system service shared with everything else on the machine. Launching one that is
-    down is additive; killing one this app does not own is not ours to do."""
-    assert not hasattr(life, "stop"), (
-        "if a stop() is ever added, it must only ever kill a process this app itself "
-        "spawned — update this test deliberately, never by reflex"
+def test_stopping_ollama_only_ever_reaches_a_daemon_this_app_spawned(monkeypatch):
+    """The deliberate asymmetry with vLLM, now pinned as BEHAVIOUR rather than absence.
+
+    This test used to assert ``not hasattr(life, "stop")`` and carried its own
+    instruction for the day one arrived: "it must only ever kill a process this app
+    itself spawned — update this test deliberately, never by reflex". A stop() arrived
+    on 2026-08-10, because the automated bench has to hand one GPU between two
+    backends, and this is that deliberate update.
+
+    Asserting the absence of a function proved nothing about behaviour; asserting that
+    NO SIGNAL IS SENT to a daemon we did not spawn proves the thing the ruling is
+    actually about. The reason still holds for such a daemon — it is usually a system
+    service shared with everything else on the machine — so the refusal is the feature.
+    """
+    signalled: list = []
+    monkeypatch.setattr(life, "_proc", None)
+    monkeypatch.setattr(life, "is_running", lambda **_kw: True)
+    monkeypatch.setattr("os.kill", lambda *a, **kw: signalled.append(a))
+
+    out = life.stop()
+
+    assert signalled == [], "a daemon this app did not spawn was signalled"
+    assert out["stopped"] is False and out["owned"] is False
+    assert "not ours to do" in out["reason"]
+    assert "release_vram" in out["reason"], (
+        "the refusal must name what DOES free the card, or it is a dead end"
     )

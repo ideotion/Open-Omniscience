@@ -2784,6 +2784,79 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     a replacement inherits the requirement, not the implementation. When swapping a
     tool, enumerate what the old one was configured with and find each setting's
     equivalent — an unset knob is invisible in a diff that only shows the swap.
+  - **A GUARDED CALL TO A MISREMEMBERED METHOD NAME IS INDISTINGUISHABLE FROM A JOB
+    WITH NOTHING TO REPORT — and the double that was written beside it asserts the bug
+    (2026-08-10, the AI check's progress line):** the worker called
+    `ctx.progress(done, total, detail)` behind `if hasattr(ctx, "progress")`, and
+    `JobContext`'s actual API is a keyword-only `set_progress`. The guard was doing its
+    job perfectly: it saw no such method and did nothing, for every step of every run,
+    so a button that runs for minutes reported no progress at all — which looks exactly
+    like a slow first step. It survived review because the test's own `_Ctx` double
+    carried the method I had invented, so the test PASSED while asserting a class that
+    does not exist. TWO RULES. (a) A `hasattr` guard around a call you wrote is
+    self-fulfilling; when the attribute is part of a class YOU control, call it
+    directly and let a wrong name raise. (b) Pin a hand-written double to the real class
+    with `inspect.signature` — same parameter names AND kinds — because "the double
+    drifted" and "the code is wrong" produce the identical green. Same family as the
+    recorded resolver-stub lesson, one level up: there the double omitted a field, here
+    it invented a method. **SIBLING, from the same slice: a test that drives the LIVE
+    steps of a composition is a test that pollutes whatever runs next.** Asking "does
+    the one check include the perception harness?" by calling `run_ai_check(steps=None)`
+    ran real inference and real DB paths, and reddened `test_doctor_healthy_returns_zero`
+    in a subset — a failure in a different file, about a different subsystem, with
+    nothing in it pointing back. The order of a plan is a PURE fact; give it a seam
+    (`default_step_names`) so it can be asserted without executing.
+  - **READING "WHAT IS SERVING" AS "WHAT IS INSTALLED" — and the hazard the correct
+    answer creates (2026-08-10, the vLLM half of the bench):** `GET /v1/models` reports
+    the ONE model a vLLM server was started with, because that is how vLLM works; the
+    bench read it as the installed set, so an operator who had downloaded four models
+    was told all four were "not-installed" while the weights sat on the disk. The fix is
+    to ask the question that was meant — is it DOWNLOADED — of the weights cache. THE
+    PART WORTH REMEMBERING IS WHAT THAT COSTS: once several models count as available on
+    a backend that serves one at a time, benching the second without restarting the
+    server sends its prompts to the first and files the answers under the second's name.
+    That is a fabricated measurement no reader could later detect, so it is REFUSED by
+    name rather than run — a correctness fix that widens a set owes an audit of what the
+    consumers assumed about that set's size. COROLLARY on where the guard looks: the
+    first cut opened its own client to ask which model was serving, which let it
+    disagree with the run itself and broke a test that had injected one; ask the object
+    that will actually do the work, never a second connection to the same thing.
+  - **A RULING IS PINNED BY GUARDS THAT DO NOT SHARE ITS VOCABULARY — grep the test
+    tree for the MODULE, never for a plausible filename (2026-08-10, adding a narrowed
+    `stop()` to `ollama_lifecycle`):** the no-stop ruling was enforced by
+    `test_backend_launch.py` and `test_gpu_arbitration.py`, neither of which I ran,
+    because I had listed candidate suites by NAME (`test_ollama_*`, `test_vllm_*`) and
+    those two are named for what they test rather than for the module they test it
+    through. `grep -rln ollama_lifecycle tests/` finds them instantly. The full suite
+    caught it, which is the argument for running the full suite before pushing rather
+    than the files you can think of. **THE HALF WORTH MORE:** both guards were RIGHT,
+    and one of them had written down what to do — *"if a stop() is ever added, it must
+    only ever kill a process this app itself spawned — update this test deliberately,
+    never by reflex."* A guard that anticipates its own supersession is worth writing;
+    it turns a red test from an obstacle into an instruction. Both were then rewritten
+    from asserting an ABSENCE (`not hasattr(mod, "stop")`, which says nothing about
+    behaviour) to proving the PROPERTY — patch `os.kill`, drive the real refusal,
+    assert no signal reaches a daemon the app did not spawn — which is strictly
+    stronger and survives the feature existing. Prefer that shape from the start: a
+    ruling about what the code must NOT DO is testable as behaviour, and expressing it
+    as the absence of a function guarantees a false red the day the function is
+    legitimately added.
+  - **THE THREE i18n GATES ARE THREE SEPARATE CI COMMANDS — running the combined form
+    locally exercises a DIFFERENT computation (2026-08-10, PR #910's first red):**
+    `ci.yml` runs `--min 100`, then `--max-untranslatable N`, then
+    `--max-unkeyed-t-calls N`, as three invocations. I ran
+    `--audit-chrome --max-untranslatable 572 --max-unkeyed-t-calls 301` in one call, it
+    printed only the unkeyed line and exited 0, and I read that as both ratchets green.
+    The untranslatable count was 578 against a 572 ratchet the whole time — six new
+    `title=` attributes and paragraphs, which are UI strings the DOM walker can
+    translate but only once they have keys. This is the recorded `cmd | tail` lesson in
+    a new costume: a gate that never says anything interesting is the one to distrust,
+    and the fix is the same — reproduce each CI command VERBATIM, separately, and read
+    each one's own output. COROLLARY worth keeping: a ratchet is not only a floor to
+    stay under, it is a floor to LOWER. Keying the nine strings took the count 578 →
+    569, three BELOW the old bar, and the script prints the new floor when it can drop
+    — the step's own comment says "lower it in the same PR that adds the keys". Leaving
+    the slack invites the next drift to land unseen.
 
   - **A BUDGET FOR A LOOP WRAPPED IN BLANKET EXCEPTION ISOLATION CANNOT *BE* AN
     EXCEPTION (2026-08-09, the 69-minute `leads-quality.json`):** an all-diagnostics run

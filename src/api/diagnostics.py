@@ -4969,6 +4969,26 @@ class AiCheckRunBody(BaseModel):
             "slow machine."
         ),
     )
+    deep: bool = Field(
+        default=False,
+        description=(
+            "also run the COMPARATIVE bench over every roster model on every backend "
+            "that serves it, restarting vLLM between models and handing the GPU back "
+            "and forth. Minutes become hours; the frozen inputs are built on first use "
+            "and reused after, so runs stay comparable."
+        ),
+    )
+    bench_models: list[str] | None = Field(
+        default=None,
+        description="override the roster (bench-roster keys, or backend|identifier)",
+    )
+    refresh_batch: bool = Field(
+        default=False,
+        description=(
+            "re-sample the frozen bench inputs from the corpus. Changes the questions, so "
+            "the run is NOT comparable with earlier ones and starts the bench from scratch."
+        ),
+    )
 
 
 def _ai_check_worker(ctx, **kwargs) -> dict:
@@ -4995,9 +5015,15 @@ def ai_check_run(body: AiCheckRunBody) -> JSONResponse:
     records why and the run continues rather than losing the ones that worked.
 
     Loopback inference only: no egress, airplane-safe, and it writes nothing to the
-    corpus. The comparative model bench is deliberately NOT part of this — it runs for
-    hours and is resumable per model, and the report says so rather than implying
-    "everything" covered it.
+    corpus.
+
+    ``deep`` adds the COMPARATIVE bench: every roster model, on every backend that
+    serves it, over frozen inputs this endpoint builds on first use and reuses after
+    (rebuilding per run would make each run incomparable with the last). It restarts
+    vLLM between models and hands the GPU back and forth with Ollama, so it is measured
+    in hours where the rest is measured in minutes — which is why it is a choice on one
+    button rather than a second button. Whatever the run does NOT cover is listed in the
+    report's ``not_run_here``, computed from what actually ran.
     """
     levels = tuple(
         int(x) for x in (body.levels or "").split(",") if x.strip().isdigit() and int(x) > 0
@@ -5008,6 +5034,9 @@ def ai_check_run(body: AiCheckRunBody) -> JSONResponse:
             levels=levels or None,
             calls_per_level=body.calls_per_level,
             include_perception=body.include_perception,
+            deep=body.deep,
+            bench_models=body.bench_models,
+            refresh_batch=body.refresh_batch,
         )
     except RuntimeError as exc:
         st = _AI_CHECK_JOB.status()

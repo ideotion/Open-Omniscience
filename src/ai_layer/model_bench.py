@@ -271,10 +271,18 @@ def resolve_pairs(
                     "backend": backend,
                     "model": tag,
                     "reason": "not-installed",
+                    # Backend-specific, because the two need different actions from the
+                    # operator: an Ollama tag is `ollama pull`, a vLLM model is a weights
+                    # download into the HF cache. One sentence for both would send half
+                    # of readers to the wrong button.
                     "detail": (
-                        f"{tag!r} is not an installed tag on {backend} — install the EXACT tag "
-                        "or drop it from the roster. A close tag would benchmark a different "
-                        "model than the one named."
+                        f"{tag!r} is not downloaded for vLLM — its weights are not in the "
+                        "model cache and no server is holding it. Download it from "
+                        "Settings → AI, or drop it from the roster."
+                        if backend == "vllm"
+                        else f"{tag!r} is not an installed tag on {backend} — install the "
+                        "EXACT tag or drop it from the roster. A close tag would benchmark "
+                        "a different model than the one named."
                     ),
                 }
             )
@@ -624,19 +632,27 @@ def _default_unload(client, *, backend: str, model: str) -> dict:
 
 
 def _default_switch(*, backend: str, model: str) -> dict:
-    """Point a backend at ``model``. Ollama loads per request, so this is a no-op
-    there; vLLM serves ONE model per server, so switching is a lifecycle restart.
+    """Hand the GPU to ``backend`` and point it at ``model``.
+
+    Both halves matter on a single-card machine, and only one of them used to happen.
+    vLLM serves ONE model per server, so pointing it at another model is a restart —
+    but a restart is useless while Ollama is still holding several gigabytes of the
+    card, which is the failure the field hit (2026-08-05: five starts dead in ten
+    minutes). ``arbitration.hand_gpu_to`` owns that sequencing, including the
+    direction: Ollama drops model residency and keeps running, vLLM is stopped.
 
     Never downloads: the weights must already be present, because a pull is a
     consented task-manager job and the bench is not allowed to start one.
     """
-    if backend != "vllm":
-        return {"switched": False, "reason": "ollama loads the requested model per call"}
-    from src.llm import vllm_lifecycle
+    from src.llm.arbitration import hand_gpu_to
 
-    vllm_lifecycle.stop()
-    started = vllm_lifecycle.start(model)
-    return {"switched": True, "detail": started}
+    out = hand_gpu_to(backend, model=model if backend == "vllm" else None)
+    return {
+        "switched": bool(out.get("ready")),
+        "ready": bool(out.get("ready")),
+        "reason": out.get("reason"),
+        "detail": out,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -705,11 +721,14 @@ def run_model_bench(
     requested = list(dict.fromkeys(t for t in requested if t))
 
     if installed_by_backend is None:
-        installed_by_backend = _installed_by_backend(tuple(backends))
+        installed_by_backend = _installed_by_backend(tuple(backends), wanted=requested)
     if clients is None:
         clients = _clients_for(tuple(backends))
 
     runnable, skipped = resolve_pairs(models=requested, installed_by_backend=installed_by_backend)
+    if not allow_backend_switch:
+        runnable, refused = _refuse_unswitchable_vllm(runnable, clients.get("vllm"))
+        skipped.extend(refused)
 
     cursor = None if restart else load_cursor()
     if cursor and cursor.get("batch_digest") != batch.get("digest"):
@@ -751,27 +770,45 @@ def run_model_bench(
             }
             continue
         switch_note = None
-        if backend == "vllm":
-            if allow_backend_switch:
-                try:
-                    switch_note = switch(backend=backend, model=model)
-                except Exception as exc:  # noqa: BLE001
-                    results[pair["key"]] = {
-                        "model": model,
-                        "backend": backend,
-                        "status": "error",
-                        "detail": f"could not switch vLLM to this model: {exc}"[:300],
-                    }
-                    continue
-            else:
-                switch_note = {
-                    "switched": False,
-                    "reason": (
-                        "vLLM serves one model per server; switching restarts it. Not done "
-                        "automatically — pass allow_backend_switch to let the bench restart "
-                        "the server between models."
-                    ),
+        if allow_backend_switch:
+            # EVERY pair, not just the vLLM ones. Handing the card to Ollama means
+            # stopping vLLM, which holds its allocation for its whole lifetime — on a
+            # single-GPU machine an Ollama pair measured beside a live vLLM server is
+            # measuring contention, when it loads at all.
+            try:
+                switch_note = switch(backend=backend, model=model)
+            except Exception as exc:  # noqa: BLE001
+                results[pair["key"]] = {
+                    "model": model,
+                    "backend": backend,
+                    "status": "error",
+                    "detail": f"could not hand the GPU to {backend} for this model: {exc}"[:300],
                 }
+                continue
+            if switch_note and switch_note.get("ready") is False:
+                # A pair benched against a backend that never came up would record
+                # five task errors under this model's name, which reads as "this model
+                # failed" rather than "the server did not start".
+                results[pair["key"]] = {
+                    "model": model,
+                    "backend": backend,
+                    "status": "error",
+                    "detail": (
+                        f"{backend} did not come up for this model: "
+                        f"{switch_note.get('reason') or 'no reason reported'}"
+                    )[:300],
+                    "backend_switch": switch_note,
+                }
+                continue
+        elif backend == "vllm":
+            switch_note = {
+                "switched": False,
+                "reason": (
+                    "vLLM serves one model per server; switching restarts it. Not done "
+                    "automatically — pass allow_backend_switch to let the bench restart "
+                    "the server between models."
+                ),
+            }
         pair_result = bench_one_pair(
             client,
             model=model,
@@ -820,11 +857,118 @@ def run_model_bench(
     return report
 
 
-def _installed_by_backend(backends: tuple[str, ...]) -> dict[str, list[str] | None]:
+def _refuse_unswitchable_vllm(
+    runnable: list[dict], client=None
+) -> tuple[list[dict], list[dict]]:
+    """Drop vLLM pairs that could only be measured under the wrong model's name.
+
+    THIS IS THE COST OF READING DOWNLOADED WEIGHTS AS AVAILABLE, and it has to be paid
+    explicitly. A vLLM server serves the one model it was started with, so with
+    switching off, benching a second downloaded model would send its prompts to the
+    model already loaded and file the answers under the second one's name — a
+    fabricated measurement, and one nothing in the report could later reveal.
+
+    So the pairs are REFUSED with the reason, never quietly run. The currently served
+    model stays runnable because it is the one that would actually answer.
+
+    ``client`` is the very client the bench will send prompts to, so the question
+    "which model will answer" is asked of the thing that will do the answering. Opening
+    a second connection here instead would let this disagree with the run itself.
+    """
+    served: set[str] = set()
+    try:
+        if client is not None:
+            served = set(client.list_installed())
+    except Exception:  # noqa: BLE001 - nothing serving means nothing is measurable
+        pass
+    kept, refused = [], []
+    for pair in runnable:
+        if pair["backend"] != "vllm" or pair["model"] in served:
+            kept.append(pair)
+            continue
+        refused.append(
+            {
+                "backend": "vllm",
+                "model": pair["model"],
+                "reason": "would-measure-the-wrong-model",
+                "detail": (
+                    f"{pair['model']!r} is downloaded, but vLLM is currently serving "
+                    f"{sorted(served) or 'nothing'} and serves exactly one model per server. "
+                    "Benching it now would send its prompts to the loaded model and file the "
+                    "answers under this name. Enable backend switching to let the bench "
+                    "restart the server between models."
+                ),
+            }
+        )
+    return kept, refused
+
+
+def _vllm_available(wanted: list[str]) -> list[str]:
+    """Which vLLM models this machine can actually serve — DOWNLOADED, not served.
+
+    ``GET /v1/models`` answers "what is this server serving right now", which is
+    exactly ONE model, because that is how vLLM works. Reading it as the installed
+    set is what told an operator who had downloaded four models that all four were
+    "not-installed" (field report 2026-08-10): the weights were on the disk and the
+    question being asked was a different one.
+
+    So availability is the HF cache, probed per requested identifier. The currently
+    served model is unioned in regardless — a server answering with a model is proof
+    it can serve it, even if the cache probe looks somewhere else (an operator-set
+    HF_HOME, a legacy location), and refusing the model actually loaded would be the
+    silliest possible false negative.
+    """
+    from src.llm import vllm_lifecycle
+
+    available: list[str] = []
+    try:
+        from src.llm.vllm_client import VllmClient
+
+        available.extend(VllmClient(timeout=3.0).list_installed())
+    except Exception:  # noqa: BLE001 - a stopped server is normal here, not an error
+        pass
+    for model in wanted:
+        if model in available:
+            continue
+        try:
+            # `cached is True` only. The probe returns None for "could not read the
+            # directory", and treating that as present would send the bench into a
+            # start that cannot work.
+            if vllm_lifecycle.model_cache_state(model).get("cached") is True:
+                available.append(model)
+        except Exception as exc:  # noqa: BLE001
+            _LOG.info("bench: could not probe the vLLM cache for %s (%s)", model, exc)
+    return available
+
+
+def _installed_by_backend(
+    backends: tuple[str, ...], *, wanted: list[str] | None = None
+) -> dict[str, list[str] | None]:
+    """What each backend can serve. ``None`` means the backend itself is unreachable.
+
+    vLLM is asked a different question from Ollama on purpose — see
+    :func:`_vllm_available`. ``wanted`` is the resolved request list, needed because
+    the cache is probed per identifier rather than enumerated (the cache directory
+    names are mangled repo ids, and reversing that mapping would be guessing).
+    """
     from src.llm.backend import get_client_with_name
 
     out: dict[str, list[str] | None] = {}
     for backend in backends:
+        if backend == "vllm":
+            # "Unreachable" means something different here, and getting it wrong puts a
+            # spurious backend-unreachable row in the report. A stopped vLLM is NOT
+            # unreachable — this app starts the server itself, so downloaded weights are
+            # runnable with nothing answering. The genuinely unreachable case is vLLM not
+            # being installed at all; anything else is a list, empty or not.
+            from src.llm import vllm_lifecycle
+
+            if not vllm_lifecycle.is_installed():
+                out[backend] = None
+                continue
+            want, _ = _wanted_on("vllm", list(wanted or []))
+            out[backend] = _vllm_available(want)
+            continue
         try:
             _, client = get_client_with_name(backend=backend)
             out[backend] = list(client.list_installed())
@@ -844,6 +988,142 @@ def _clients_for(backends: tuple[str, ...]) -> dict:
         except Exception:  # noqa: BLE001
             continue
     return out
+
+
+#: The scalars worth putting side by side, each with the unit it is measured in and
+#: where it lives in a pair's own report. DECLARED rather than discovered: walking the
+#: nested reports for anything numeric would put "n_cases" next to "accuracy" and invite
+#: exactly the blend this bench refuses.
+_COMPARABLE: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("triage.format_validity", "share 0-1", ("triage", "format_validity")),
+    ("triage.pct_unsure", "share 0-1", ("triage", "pct_unsure")),
+    ("triage.valid_verdicts_per_s", "per second", ("triage", "valid_verdicts_per_s")),
+    ("source_tags.format_validity", "share 0-1", ("source_tags", "format_validity")),
+    ("langdetect.accuracy_over_answered", "share 0-1", ("langdetect", "accuracy_over_answered")),
+    ("langdetect.accuracy_over_all", "share 0-1", ("langdetect", "accuracy_over_all")),
+    ("perception.who.recall", "share 0-1", ("perception", "report", "by_field_overall", "who", "recall")),
+    ("perception.who.hallucination_rate", "share 0-1", ("perception", "report", "by_field_overall", "who", "hallucination_rate")),
+    ("perception.where.recall", "share 0-1", ("perception", "report", "by_field_overall", "where", "recall")),
+    ("perception.where.hallucination_rate", "share 0-1", ("perception", "report", "by_field_overall", "where", "hallucination_rate")),
+    ("perception.when.recall", "share 0-1", ("perception", "report", "by_field_overall", "when", "recall")),
+    ("perception.when.hallucination_rate", "share 0-1", ("perception", "report", "by_field_overall", "when", "hallucination_rate")),
+)
+
+
+def _dig(tasks: dict, path: tuple[str, ...]):
+    node: object = tasks
+    for step in path:
+        if not isinstance(node, dict):
+            return None
+        node = node.get(step)
+    return node if isinstance(node, (int, float)) else None
+
+
+def comparable_metrics(pair_result: dict) -> dict:
+    """The scalars from one pair that can be lined up against another's.
+
+    A metric the pair did not produce is ABSENT, never 0: a task that errored and a
+    task that measured zero are opposite findings, and a column of zeros would read as
+    the model answering badly rather than as nothing having run.
+    """
+    tasks = pair_result.get("tasks") or {}
+    out: dict = {}
+    for name, unit, path in _COMPARABLE:
+        value = _dig(tasks, path)
+        if value is not None:
+            out[name] = {"value": value, "unit": unit}
+    # LATENCY IS PER PROMPT SHAPE, and it is expanded here rather than declared above
+    # because the shapes are data, not a fixed list. It nearly went in as a single
+    # `latency.calls_per_hour` reading a key that does not exist -- `_dig` would have
+    # returned None forever and the row would simply never have appeared, saying
+    # nothing about why. The shapes measure genuinely different work (a small fact
+    # bundle against a 24,000-character synthesis), so one figure over them would be
+    # the composite this bench refuses anyway.
+    for row in (((tasks.get("latency") or {}).get("budget") or {}).get("rows") or []):
+        per_hour = row.get("per_hour")
+        if isinstance(per_hour, (int, float)) and row.get("shape"):
+            out[f"latency.{row['shape']}.per_hour"] = {"value": per_hour, "unit": "per hour"}
+    return out
+
+
+def _identifier_to_key() -> dict[str, str]:
+    """identifier → roster key, per backend, so the same model can be recognised under
+    the two different names its two backends give it.
+
+    This is the ONLY honest link between them: ``Qwen/Qwen3.5-0.8B`` and
+    ``qwen3.5:0.8b-q8_0`` are the same model because the roster says one entry publishes
+    both, not because the strings resemble each other. String-matching them would be the
+    guess this bench refuses everywhere else.
+    """
+    out: dict[str, str] = {}
+    try:
+        from src.llm.bench_roster import BENCH_ROSTER, identifiers_for
+    except Exception:  # noqa: BLE001 - a core install compares nothing across backends
+        return out
+    for entry in BENCH_ROSTER:
+        for backend in BENCH_BACKENDS:
+            ok, _ = identifiers_for(backend, [entry["key"]])
+            for row in ok:
+                out[pair_key(backend, row["identifier"])] = entry["key"]
+    return out
+
+
+def same_model_across_backends(results: dict[str, dict]) -> list[dict]:
+    """Ollama vs vLLM for the IDENTICAL model, lined up metric by metric.
+
+    Maintainer ask 2026-08-10, item 1. This is a table, not a verdict: the two rows are
+    printed beside each other with their quantizations named, and nothing here subtracts
+    one from the other or calls a side better. The same weights are quantized differently
+    by the two backends -- that is the point of running both -- so a difference is a fact
+    about two artifacts, not a measurement of one model twice.
+    """
+    key_of = _identifier_to_key()
+    grouped: dict[str, dict[str, dict]] = {}
+    for pair_id, pair in results.items():
+        roster_key = key_of.get(pair_id)
+        if roster_key is None:
+            continue
+        backend = pair.get("backend")
+        if backend:
+            grouped.setdefault(roster_key, {})[backend] = pair
+    rows: list[dict] = []
+    for roster_key, by_backend in sorted(grouped.items()):
+        if len(by_backend) < 2:
+            continue  # one side only is not a comparison
+        metrics: dict[str, dict] = {}
+        per_backend = {b: comparable_metrics(p) for b, p in by_backend.items()}
+        # The UNION of what the two sides produced, not the declared table: latency
+        # expands per prompt shape, so a loop over the static table would drop exactly
+        # the rows that are per-corpus data. Declared metrics keep their table order;
+        # the expanded ones follow, sorted, so the report is stable between runs.
+        declared = [n for n, _u, _p in _COMPARABLE]
+        seen = {k for m in per_backend.values() for k in m}
+        for name in [n for n in declared if n in seen] + sorted(seen - set(declared)):
+            present = {b: m[name]["value"] for b, m in per_backend.items() if name in m}
+            unit = next(m[name]["unit"] for m in per_backend.values() if name in m)
+            if present:
+                metrics[name] = {"unit": unit, "by_backend": present}
+        rows.append(
+            {
+                "roster_key": roster_key,
+                "backends": {
+                    b: {
+                        "model": p.get("model"),
+                        "quantization": p.get("quantization"),
+                        "quantization_note": p.get("quantization_note"),
+                    }
+                    for b, p in sorted(by_backend.items())
+                },
+                "metrics": metrics,
+                "caveat": (
+                    "Two builds of one model, not one model measured twice: the backends "
+                    "quantize the same weights differently (see each side's quantization). A "
+                    "gap is a fact about these two artifacts on this machine, and neither "
+                    "side is called the winner here."
+                ),
+            }
+        )
+    return rows
 
 
 def assemble_report(
@@ -896,6 +1176,7 @@ def assemble_report(
         "pairwise_verdict_agreement": (
             pairwise_agreement(verdicts_by_pair) if len(verdicts_by_pair) > 1 else None
         ),
+        "same_model_across_backends": same_model_across_backends(results),
         "method": (
             "Every model runs the SAME frozen inputs (digest above) on every backend that "
             "serves it, five tasks per pair, all tasks completed before the next model is "
@@ -986,12 +1267,14 @@ __all__ = [
     "assemble_report",
     "bench_one_pair",
     "clear_cursor",
+    "comparable_metrics",
     "last_model_bench_report",
     "load_cursor",
     "pair_key",
     "quantization_of",
     "resolve_pairs",
     "run_model_bench",
+    "same_model_across_backends",
     "save_report",
     "summarize_report",
 ]

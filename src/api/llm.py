@@ -1532,6 +1532,36 @@ def ollama_start() -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.post("/ollama/stop")
+def ollama_stop() -> dict:
+    """Stop an Ollama daemon THIS app started, and refuse any other by name.
+
+    The refusal is the feature, not a limitation to route around: on most machines the
+    daemon is systemd's or the operator's own terminal process, shared with everything
+    else running there. The reply carries ``owned: false`` and names ``release_vram``
+    as what does work, so a caller can free the GPU without stopping anything.
+
+    Always 200: "not ours to stop" is an ANSWER, and an error status would push callers
+    into treating a correct refusal as a fault.
+    """
+    from src.llm.ollama_lifecycle import stop
+
+    return stop()
+
+
+@router.post("/ollama/release")
+def ollama_release() -> dict:
+    """Ask Ollama to drop the models it is holding, WITHOUT stopping it.
+
+    This is the universal answer to "stop holding the GPU" — it works on a daemon this
+    app does not own, costs at worst one model reload, and is how the card is handed to
+    vLLM on a single-GPU machine.
+    """
+    from src.llm.ollama_lifecycle import release_vram
+
+    return release_vram()
+
+
 @router.get("/model-store")
 def llm_model_store() -> dict:
     """Where local model weights live -- configured AND actually in use.

@@ -47,18 +47,47 @@ _LOG = logging.getLogger("monitoring.ai_check")
 
 AI_CHECK_SCHEMA = "oo-ai-check-1"
 
-#: The bench this check deliberately leaves out, named so its absence is a statement.
+#: What a QUICK check leaves out, named so its absence is a statement rather than a
+#: silence. In a DEEP run the bench is included and this list shrinks to the one thing
+#: no machine can do for the operator — see :func:`not_run_here`.
 SEPARATE_RUNS: tuple[dict, ...] = (
     {
         "name": "Comparative model bench",
-        "where": "Settings → Advanced → AI diagnostics → Run the bench",
+        "where": "the same button, with 'every model' ticked",
         "why": (
             "It loads every roster model in turn over a frozen input set and is resumable "
-            "per model because it runs for hours. Folding it in would turn a check into an "
-            "afternoon."
+            "per model because it runs for hours. A quick check is minutes, so the two are "
+            "one button with a choice rather than two buttons."
         ),
     },
 )
+
+#: The human step. Anchor accuracy needs verdicts a PERSON graded: agreement between
+#: models is not correctness, and a model grading its own answers measures nothing. So
+#: the bench reports that one metric as unmeasured with its reason, rather than filling
+#: it with something that looks like a number.
+NEEDS_A_HUMAN: dict = {
+    "name": "Anchor grading",
+    "where": "Settings → Advanced → AI diagnostics → grade a sitting",
+    "why": (
+        "Triage anchor accuracy is measured against verdicts a person graded. Nothing here "
+        "can supply those: two models agreeing is not either being right, and a model asked "
+        "to grade itself measures nothing at all. Every other metric in this report is "
+        "measured without you; this one is reported as unmeasured until a sitting exists."
+    ),
+}
+
+
+def not_run_here(*, deep: bool, anchors_available: bool) -> list[dict]:
+    """What this run did NOT cover, computed rather than hardcoded.
+
+    A static list would keep claiming the bench was skipped in the very runs that
+    include it, which is the kind of stale sentence that survives for months.
+    """
+    out: list[dict] = [] if deep else list(SEPARATE_RUNS)
+    if not anchors_available:
+        out.append(NEEDS_A_HUMAN)
+    return out
 
 
 def _step(name: str, fn: Callable[[], Any], *, monotonic=time.monotonic) -> dict:
@@ -163,6 +192,181 @@ def _gate_lines(perception: dict | None) -> dict | None:
     }
 
 
+class _StepCtx:
+    """Forwards a sub-run's own progress into the outer job's line, prefixed.
+
+    The comparative bench reports "vllm · model · triage" as it goes, and that detail
+    is the only thing that makes an hours-long step readable. Without this the button
+    would sit on "bench" for the whole run, which is indistinguishable from a hang.
+    """
+
+    def __init__(self, outer, label: str) -> None:
+        self._outer, self._label = outer, label
+
+    @property
+    def stopping(self) -> bool:
+        return bool(self._outer is not None and getattr(self._outer, "stopping", False))
+
+    def set_progress(self, *, done=None, total=None, detail=None) -> None:
+        if self._outer is None:
+            return
+        try:
+            suffix = f" · {done}/{total}" if done is not None and total else ""
+            self._outer.set_progress(detail=f"{self._label}{suffix} · {detail or ''}".strip(" ·"))
+        except Exception:  # noqa: BLE001 - progress must never break the run
+            pass
+
+
+def ensure_frozen_batch(*, refresh: bool = False, db=None) -> dict:
+    """Make sure the bench has its frozen inputs, building them from the corpus if not.
+
+    Maintainer ask 2026-08-10: "I don't want to take care of freezing bench inputs."
+
+    REUSE IS THE DEFAULT, and that is not laziness — it is the comparability rule. Every
+    bench report records the digest of the batch it answered, and a resume whose digest
+    moved is refused rather than blending two question sets. Rebuilding on every run
+    would make each run incomparable with the last, which is the opposite of what a
+    bench is for. ``refresh`` is the deliberate "ask new questions" switch.
+    """
+    from src.ai_layer.bench_batch import (
+        BenchArtifactError,
+        collect_frozen_inputs,
+        load_frozen_batch,
+        save_frozen_batch,
+    )
+
+    if not refresh:
+        try:
+            existing = load_frozen_batch()
+            return {
+                "built": False,
+                "digest": existing.get("digest"),
+                "built_at": existing.get("built_at"),
+                "n_keywords": existing.get("n_keywords") or len(existing.get("keywords") or []),
+                "n_sources": existing.get("n_sources") or len(existing.get("sources") or []),
+                "reason": "reusing the existing frozen batch so this run is comparable with the last",
+            }
+        except BenchArtifactError:
+            pass  # none yet — build one below
+
+    owned = db is None
+    if owned:
+        from src.database.session import SessionLocal
+
+        db = SessionLocal()
+    try:
+        payload = collect_frozen_inputs(db)
+    finally:
+        if owned:
+            db.close()
+    save_frozen_batch(payload)
+    return {
+        "built": True,
+        "digest": payload.get("digest"),
+        "built_at": payload.get("built_at"),
+        "n_keywords": payload.get("n_keywords") or len(payload.get("keywords") or []),
+        "n_sources": payload.get("n_sources") or len(payload.get("sources") or []),
+        "reason": "no frozen batch existed, so one was sampled from this corpus",
+    }
+
+
+def _live_bench(ctx, *, models, repeats: int, refresh_batch: bool) -> dict:
+    """Freeze the inputs if needed, then bench every runnable (model, backend) pair.
+
+    ``allow_backend_switch`` is ON here and that is the whole point of the deep run: a
+    vLLM server serves one model, so measuring several means restarting it between
+    them, and on a single-GPU machine it means handing the card back and forth with
+    Ollama. Left off, the run would silently cover one vLLM model out of however many
+    are downloaded.
+    """
+    from src.ai_layer.bench_batch import load_anchors
+    from src.ai_layer.coordinator import user_batch_hold
+    from src.ai_layer.model_bench import run_model_bench
+
+    batch = ensure_frozen_batch(refresh=refresh_batch)
+    anchors = load_anchors()
+    # THE HOLD IS NOT POLITENESS HERE, it is correctness. This run STOPS AND RESTARTS
+    # the backend between models; a background sweep mid-batch against the server we
+    # are about to kill would fail for a reason that has nothing to do with it, and
+    # its retries would be competing for the card the bench is trying to measure. The
+    # coordinator and every background-AI entry point already check this hold (the
+    # 2026-07-24 lesson: a pause that only stops the main loop is incomplete), and
+    # nothing was claiming it for the bench. Released in the context manager's
+    # `finally`, so a raising bench cannot strand the lane.
+    with user_batch_hold("comparative model bench"):
+        report = run_model_bench(
+            _StepCtx(ctx, "bench"),
+            models=models,
+            repeats=repeats,
+            restart=refresh_batch,
+            allow_backend_switch=True,
+        )
+    report["frozen_batch_step"] = batch
+    report["anchors_available"] = bool(anchors and anchors.get("anchors"))
+    report["background_ai_paused"] = True
+    return report
+
+
+def _bench_lines(bench: dict | None) -> dict | None:
+    """What the comparative bench covered, and what it could not.
+
+    Deliberately NOT a summary of the numbers: those are per model, per task, per
+    language, and flattening them into a headline is the composite this bench exists
+    to refuse. This says which pairs ran, which were skipped and why, and where the
+    same model was measured on both backends -- so the reader knows what the table
+    contains before opening it.
+    """
+    if not bench:
+        return None
+    if bench.get("status") == "refused":
+        return {"refused": bench.get("reason"), "detail": bench.get("detail")}
+    skipped = bench.get("skipped") or []
+    by_reason: dict[str, list[str]] = {}
+    for s in skipped:
+        label = s.get("model") or s.get("roster_key") or s.get("backend") or "?"
+        by_reason.setdefault(str(s.get("reason") or "unknown"), []).append(
+            f"{s.get('backend')}|{label}"
+        )
+    cross = bench.get("same_model_across_backends") or []
+    return {
+        "pairs_measured": bench.get("pairs_run") or [],
+        "pairs_pending": bench.get("pairs_pending") or [],
+        "skipped_by_reason": {k: sorted(v) for k, v in sorted(by_reason.items())},
+        "same_model_on_both_backends": [row.get("roster_key") for row in cross],
+        "frozen_batch": bench.get("frozen_batch_step"),
+        "anchor_accuracy": (
+            "measured against the graded sitting"
+            if bench.get("anchors_available")
+            else "unmeasured — no graded anchors exist; every other metric is measured"
+        ),
+        "note": (
+            "No headline number: the bench reports each metric per model, backend, task "
+            "and language, and a single figure over those would hide which one moved. "
+            "Open the artifact for the table."
+        ),
+    }
+
+
+def default_step_names(
+    *, include_perception: bool = True, include_selftests: bool = True, deep: bool = False
+) -> list[str]:
+    """The steps a live run would take, in order — without taking them.
+
+    A seam rather than a comment: it lets the ORDER be asserted (the bench last, because
+    it is the step measured in hours and every cheap step above explains its failures)
+    without a test driving real inference, which is how a check-composition test ends up
+    touching the corpus and polluting whatever runs after it.
+    """
+    names = ["facts", "latency", "throughput"]
+    if include_perception:
+        names.append("perception_eval")
+    if include_selftests:
+        names.append("selftests")
+    if deep:
+        names.append("model_bench")
+    return names
+
+
 def run_ai_check(
     ctx=None,
     *,
@@ -171,6 +375,10 @@ def run_ai_check(
     calls_per_level: int = 8,
     include_perception: bool = True,
     include_selftests: bool = True,
+    deep: bool = False,
+    bench_models: list[str] | None = None,
+    bench_repeats: int = 2,
+    refresh_batch: bool = False,
     steps: dict[str, Callable[[], Any]] | None = None,
 ) -> dict:
     """Run every AI check this machine can do, in one pass, and report each ALONE.
@@ -181,11 +389,17 @@ def run_ai_check(
     started = time.monotonic()
 
     def progress(done: int, total: int, detail: str) -> None:
-        if ctx is not None and hasattr(ctx, "progress"):
-            try:
-                ctx.progress(done, total, detail)
-            except Exception:  # noqa: BLE001 - progress must never break the run
-                pass
+        # ``set_progress``, keyword-only: that is JobContext's actual API. An earlier
+        # cut called a ``progress`` method that does not exist, guarded by hasattr —
+        # so it silently did nothing and the button reported no progress at all for
+        # the whole run. A guarded call to a misremembered name is indistinguishable
+        # from a job that has nothing to report.
+        if ctx is None:
+            return
+        try:
+            ctx.set_progress(done=done, total=total, detail=detail)
+        except Exception:  # noqa: BLE001 - progress must never break the run
+            pass
 
     def stopping() -> bool:
         return bool(ctx is not None and getattr(ctx, "stopping", False))
@@ -194,13 +408,29 @@ def run_ai_check(
     if steps is not None:
         plan = list(steps.items())
     else:
-        plan.append(("facts", _live_facts))
-        plan.append(("latency", lambda: _live_latency(repeats)))
-        plan.append(("throughput", lambda: _live_throughput(levels, calls_per_level)))
-        if include_perception:
-            plan.append(("perception_eval", _live_perception))
-        if include_selftests:
-            plan.append(("selftests", _live_selftests))
+        # ``model_bench`` is LAST, and deliberately so: it is the step measured in
+        # hours, and every cheap step above explains its failures. A backend that is
+        # unreachable should be visible in seconds, not after a bench has spent an
+        # afternoon failing every pair for that one reason. The order lives in
+        # ``default_step_names`` so it can be asserted without running anything.
+        live: dict[str, Callable[[], Any]] = {
+            "facts": _live_facts,
+            "latency": lambda: _live_latency(repeats),
+            "throughput": lambda: _live_throughput(levels, calls_per_level),
+            "perception_eval": _live_perception,
+            "selftests": _live_selftests,
+            "model_bench": lambda: _live_bench(
+                ctx, models=bench_models, repeats=bench_repeats, refresh_batch=refresh_batch
+            ),
+        }
+        plan = [
+            (name, live[name])
+            for name in default_step_names(
+                include_perception=include_perception,
+                include_selftests=include_selftests,
+                deep=deep,
+            )
+        ]
 
     results: dict[str, dict] = {}
     total = len(plan)
@@ -215,20 +445,25 @@ def run_ai_check(
     facts = (results.get("facts") or {}).get("report")
     throughput = (results.get("throughput") or {}).get("report")
     perception = (results.get("perception_eval") or {}).get("report")
+    bench = (results.get("model_bench") or {}).get("report")
 
     failed = [k for k, v in results.items() if not v.get("ok")]
     return {
         "schema": AI_CHECK_SCHEMA,
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "elapsed_s": round(time.monotonic() - started, 2),
+        "deep": bool(deep),
         "steps": [results[k] for k, _ in plan if k in results],
         "reading": {
             "backend": _backend_line(facts),
             "throughput": _throughput_advice(throughput),
             "extraction_gate": _gate_lines(perception),
+            "models": _bench_lines(bench),
             "steps_failed": failed,
         },
-        "not_run_here": list(SEPARATE_RUNS),
+        "not_run_here": not_run_here(
+            deep=bool(deep), anchors_available=bool((bench or {}).get("anchors_available"))
+        ),
         "method": (
             "Each check runs once, in order, against the model this machine actually "
             "serves with, and reports its own numbers with its own method and caveats "
@@ -357,8 +592,12 @@ def last_ai_check_report() -> dict:
 
 __all__ = [
     "AI_CHECK_SCHEMA",
+    "NEEDS_A_HUMAN",
     "SEPARATE_RUNS",
+    "default_step_names",
+    "ensure_frozen_batch",
     "last_ai_check_report",
+    "not_run_here",
     "run_ai_check",
     "run_and_persist_ai_check",
 ]

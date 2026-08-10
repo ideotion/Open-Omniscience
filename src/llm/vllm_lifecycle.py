@@ -39,6 +39,7 @@ import os
 import platform
 import re
 import shutil
+import signal
 import subprocess  # noqa: S404 - fixed argv, no shell; every call site documents why
 import sys
 import time
@@ -1930,20 +1931,132 @@ def start(
     }
 
 
-def stop(*, timeout: float = 10.0) -> dict:
-    """Stop the tracked subprocess (SIGTERM, then SIGKILL after ``timeout``)."""
+def _adoptable_server_pids() -> list[int]:
+    """PIDs of vLLM servers running out of THIS app's own managed venv.
+
+    Why this exists: ``stop()`` could only ever reach a subprocess the CURRENT process
+    spawned, so a server started before the app was restarted -- the ordinary case on a
+    machine that leaves the backend up -- was unstoppable, and the automated bench could
+    not hand the GPU to Ollama. That is not a lifecycle this app fails to own; it is one
+    it lost the handle to.
+
+    Ownership is re-established from the command line, not from the port: a match
+    requires the executable to be inside ``venv_dir()``, which this app created and
+    installed vLLM into. A vLLM the operator runs from their own environment does not
+    match and is left alone, so this cannot reach past what we installed. Linux-only by
+    construction (``/proc``), which is also the only platform vLLM ships wheels for.
+    """
+    proc_root = Path("/proc")
+    if not proc_root.is_dir():
+        return []
+    venv = str(venv_dir().resolve())
+    found: list[int] = []
+    for entry in proc_root.iterdir():
+        if not entry.name.isdigit():
+            continue
+        try:
+            argv = (entry / "cmdline").read_bytes().split(b"\0")
+        except OSError:
+            continue  # the process ended, or is not ours to read — either way, not it
+        if not argv or not argv[0]:
+            continue
+        parts = [a.decode("utf-8", "replace") for a in argv if a]
+        # The executable must live in our venv AND the command must be a vLLM server.
+        # Both halves matter: the first is the ownership claim, the second stops us
+        # terminating some other tool that happens to run from the same venv.
+        if not parts[0].startswith(venv):
+            continue
+        if _looks_like_our_server(parts):
+            found.append(int(entry.name))
+    return found
+
+
+def _looks_like_our_server(argv: list[str]) -> bool:
+    """Is this command line one ``server_argv`` would have produced?
+
+    BOTH shapes, because ``server_argv`` has two: the console script (``vllm serve
+    <model>``) and the module fallback it uses when that entry point is absent. An
+    earlier cut recognised only the first, so on exactly the install layout the
+    fallback exists for, ``stop`` would have refused to adopt a server this app had
+    started -- the gap it was written to close, half closed.
+
+    Kept beside the builder and tested against its real output rather than against a
+    hand-written command line, so a change to how the server is launched cannot leave
+    this behind.
+    """
+    if not argv:
+        return False
+    head = argv[0]
+    if head.endswith("/vllm") or head.endswith("\\vllm"):
+        return "serve" in argv[1:2]
+    return any(a.startswith("vllm.entrypoints") for a in argv)
+
+
+def stop(*, timeout: float = 10.0, adopt: bool = True) -> dict:
+    """Stop the vLLM server: the tracked subprocess, or one left by an earlier run.
+
+    ``adopt`` re-establishes ownership of a server started out of this app's own
+    managed venv by a previous app process (see :func:`_adoptable_server_pids`). It is
+    on by default because the alternative -- reporting "not tracked by this process"
+    while a server we installed sits on the card -- is a refusal the operator cannot
+    act on from here.
+    """
     global _proc
-    if _proc is None:
+    if _proc is not None:
+        proc = _proc
+        proc.terminate()
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+        _proc = None
+        return {"stopped": True, "how": "tracked subprocess"}
+
+    if not adopt:
         return {"stopped": False, "reason": "not tracked by this process"}
-    proc = _proc
-    proc.terminate()
+    if not is_running():
+        return {"stopped": False, "reason": "no vLLM server is running"}
     try:
-        proc.wait(timeout=timeout)
-    except subprocess.TimeoutExpired:
-        proc.kill()
-        proc.wait(timeout=5)
-    _proc = None
-    return {"stopped": True}
+        pids = _adoptable_server_pids()
+    except Exception as exc:  # noqa: BLE001 - a scan that fails is a reason, not a crash
+        return {"stopped": False, "reason": f"could not identify the server: {exc}"[:200]}
+    if not pids:
+        return {
+            "stopped": False,
+            "reason": (
+                "a vLLM server is answering, but it was not started from this app's "
+                f"managed venv ({venv_dir()}), so it is not this app's to stop."
+            ),
+        }
+    stopped: list[int] = []
+    for pid in pids:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            stopped.append(pid)
+        except OSError as exc:
+            _LOG.info("could not signal vLLM pid %s: %s", pid, exc)
+    if not stopped:
+        return {"stopped": False, "reason": "found the server but could not signal it"}
+    # Wait for the port to actually go quiet: the caller's next move is usually to put
+    # something else on the card, and a SIGTERM that has been *sent* is not memory that
+    # has been *released*.
+    deadline = time.monotonic() + max(0.0, timeout)
+    while time.monotonic() < deadline:
+        if not is_running():
+            return {"stopped": True, "how": "adopted", "pids": stopped}
+        time.sleep(0.25)
+    for pid in stopped:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    return {
+        "stopped": True,
+        "how": "adopted",
+        "pids": stopped,
+        "note": f"did not exit within {timeout:.0f}s and was killed",
+    }
 
 
 def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:

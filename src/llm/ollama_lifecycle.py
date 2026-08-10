@@ -55,6 +55,12 @@ _LOG = logging.getLogger("llm.ollama_lifecycle")
 _READY_TIMEOUT_S = 12.0
 _READY_POLL_S = 0.25
 
+#: The daemon THIS process spawned, or None. Ownership is the whole basis on which
+#: ``stop`` is allowed to exist at all (see its docstring and the note at the foot of
+#: this file), so it is tracked rather than inferred: a PID discovered by scanning for
+#: an ``ollama`` process would be indistinguishable from the operator's own.
+_proc: subprocess.Popen | None = None
+
 
 class OllamaLifecycleError(RuntimeError):
     """A launch could not even be attempted (not installed / already running is NOT
@@ -87,6 +93,18 @@ def is_running(*, timeout: float = 2.0) -> bool:
         return False
 
 
+def owns_daemon() -> bool:
+    """True when the running daemon is one THIS process spawned and it is still alive.
+
+    Deliberately narrow. An ``ollama`` process found by scanning the process table
+    could equally be systemd's, launchd's, or one the operator started in a terminal
+    they are using for something else -- and nothing about the process itself
+    distinguishes those from ours. So ownership is only ever claimed for a handle we
+    hold, and every other case is reported as not-ours rather than guessed at.
+    """
+    return _proc is not None and _proc.poll() is None
+
+
 def state() -> dict:
     """The three-way answer the UI needs, in ONE payload.
 
@@ -102,6 +120,12 @@ def state() -> dict:
         "running": running,
         "path": binary_path(),
         "can_launch": installed and not running,
+        # OURS to stop, or the machine's? Published because it is the difference
+        # between a control that will work and one that will honestly refuse, and a
+        # caller that has to try the call to find out will show a button that does
+        # nothing on most machines.
+        "owned": owns_daemon(),
+        "can_stop": owns_daemon() and running,
     }
 
 
@@ -136,6 +160,7 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
     # set OLLAMA_MODELS themselves keeps their value untouched.
     from src.llm.model_store import launch_env
 
+    global _proc
     env = launch_env()
     try:
         popen_kwargs: dict = {
@@ -149,7 +174,7 @@ def start(*, wait: bool = True, timeout: float = _READY_TIMEOUT_S) -> dict:
             # signal -- a server the user launched should not die because they
             # later stopped the app.
             popen_kwargs["start_new_session"] = True
-        subprocess.Popen([path, "serve"], **popen_kwargs)  # noqa: S603  # nosec B603 - fixed argv, absolute path from shutil.which, no shell
+        _proc = subprocess.Popen([path, "serve"], **popen_kwargs)  # noqa: S603  # nosec B603 - fixed argv, absolute path from shutil.which, no shell
     except OSError as exc:
         raise OllamaLifecycleError(f"could not launch 'ollama serve': {exc}") from exc
 
@@ -221,9 +246,54 @@ def release_vram(*, timeout: float = 8.0) -> dict:
         return {"released": [], "reason": str(exc), "attempted": True}
 
 
-# NO stop(). Deliberate, not an oversight: unlike vLLM -- which this app installs into
-# a venv it owns and starts as a subprocess it tracks -- an Ollama daemon is usually a
-# system service (systemd/launchd) or a process the operator started in their own
-# terminal, shared with everything else on the machine. Killing it would reach outside
-# anything this app owns. Launching one that is not running is additive and reversible
-# by the operator's own tooling; stopping one is not ours to do.
+def stop(*, timeout: float = 10.0) -> dict:
+    """Stop a daemon THIS process started. Refuses, by name, to touch any other.
+
+    THE RULING THIS NARROWS RATHER THAN REVERSES. There was no ``stop`` here for a
+    stated reason: an Ollama daemon is usually a system service or the operator's own
+    terminal process, shared with everything else on the machine, and killing it would
+    reach outside anything this app owns. That reasoning is about a daemon we did not
+    start, and it still holds for one -- so the refusal is kept and made explicit
+    instead of being expressed as an absent function.
+
+    What changed is that the automated bench (2026-08-10) has to hand one GPU from one
+    backend to the other, which needs an answer to "stop holding the card". For a
+    daemon we spawned, terminating our own subprocess is that answer. For every other
+    daemon it is NOT, and :func:`release_vram` is -- it drops model residency through
+    an API Ollama already exposes, costs at worst one model load, and stops nothing the
+    operator started. Callers that want the card free should ask for THAT; this exists
+    so a bench that started its own daemon can tidy up after itself.
+
+    Never raises: a stop that cannot be made is a reported outcome, not an error.
+    """
+    global _proc
+    if not owns_daemon():
+        running = is_running()
+        return {
+            "stopped": False,
+            "owned": False,
+            "running": running,
+            "reason": (
+                "this Ollama daemon was not started by this app (it is a system service "
+                "or the operator's own process), so stopping it is not ours to do. To "
+                "free the GPU without stopping anything, use release_vram()."
+                if running
+                else "no Ollama daemon is running"
+            ),
+        }
+    proc = _proc
+    if proc is None:  # pragma: no cover - owns_daemon() just proved otherwise
+        # Not an assert: those vanish under `python -O`, and this project has already
+        # had to convert a set of them for exactly that reason.
+        return {"stopped": False, "owned": False, "reason": "no tracked daemon"}
+    try:
+        proc.terminate()
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=5)
+    except OSError as exc:
+        return {"stopped": False, "owned": True, "reason": f"{type(exc).__name__}: {exc}"}
+    _proc = None
+    return {"stopped": True, "owned": True}
