@@ -2841,6 +2841,22 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     ruling about what the code must NOT DO is testable as behaviour, and expressing it
     as the absence of a function guarantees a false red the day the function is
     legitimately added.
+  - **THE THREE i18n GATES ARE THREE SEPARATE CI COMMANDS — running the combined form
+    locally exercises a DIFFERENT computation (2026-08-10, PR #910's first red):**
+    `ci.yml` runs `--min 100`, then `--max-untranslatable N`, then
+    `--max-unkeyed-t-calls N`, as three invocations. I ran
+    `--audit-chrome --max-untranslatable 572 --max-unkeyed-t-calls 301` in one call, it
+    printed only the unkeyed line and exited 0, and I read that as both ratchets green.
+    The untranslatable count was 578 against a 572 ratchet the whole time — six new
+    `title=` attributes and paragraphs, which are UI strings the DOM walker can
+    translate but only once they have keys. This is the recorded `cmd | tail` lesson in
+    a new costume: a gate that never says anything interesting is the one to distrust,
+    and the fix is the same — reproduce each CI command VERBATIM, separately, and read
+    each one's own output. COROLLARY worth keeping: a ratchet is not only a floor to
+    stay under, it is a floor to LOWER. Keying the nine strings took the count 578 →
+    569, three BELOW the old bar, and the script prints the new floor when it can drop
+    — the step's own comment says "lower it in the same PR that adds the keys". Leaving
+    the slack invites the next drift to land unseen.
 
   - **A BUDGET FOR A LOOP WRAPPED IN BLANKET EXCEPTION ISOLATION CANNOT *BE* AN
     EXCEPTION (2026-08-09, the 69-minute `leads-quality.json`):** an all-diagnostics run
