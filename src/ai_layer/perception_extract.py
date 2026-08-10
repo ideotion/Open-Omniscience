@@ -434,7 +434,11 @@ def extract_perception_batch(
             tally["attempted"] += 1
             out = res.value or {}
             cov = out.get("coverage") or {}
-            n_parts = int(cov.get("parts") or 1)
+            # `cov.get("parts") or 1` would turn a REAL zero (nothing to read) into a
+            # reported call that never happened -- the `.get(key, 0)` family of
+            # fabricated measurement, pointed the other way. Default only when the key
+            # is ABSENT, which is an older payload, not a measured zero.
+            n_parts = cov["parts"] if isinstance(cov.get("parts"), int) else 1
             tally["parts"] += n_parts
             if n_parts > 1:
                 tally["multi_part"] += 1

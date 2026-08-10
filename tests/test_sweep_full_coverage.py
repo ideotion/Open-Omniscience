@@ -165,6 +165,17 @@ def test_the_term_cap_is_spread_across_parts_not_spent_on_the_opening():
     )
 
 
+def test_a_zero_part_run_reports_a_real_zero():
+    """A measured zero must stay zero on the way out. The counting side of this is
+    defensive only — the batch gates empty content out before it can run — but the
+    PRODUCING side is reachable and is what a reader would be misled by: `parts: 0`
+    means no call was made, and any consumer defaulting a falsy value to 1 turns that
+    into a call that never happened."""
+    parts, cov = COV.split_for_sweep("", 4000)
+    assert parts == [] and cov["parts"] == 0
+    assert cov["chars"] == 0 and cov["complete"] is True
+
+
 def test_merge_items_dedupes_case_insensitively_keeping_the_first_form():
     assert COV.merge_items([["Ada"], ["ADA"], ["ada", "Grace"]]) == ["Ada", "Grace"]
 
