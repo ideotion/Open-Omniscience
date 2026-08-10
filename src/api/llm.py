@@ -1636,7 +1636,13 @@ def llm_model_catalog(backend: str | None = None) -> dict:
             try:
                 from src.llm.vllm_lifecycle import model_cache_state
 
-                m["installed"] = model_cache_state(m["artifact"])["cached"]
+                cache = model_cache_state(m["artifact"])
+                m["installed"] = cache["cached"]
+                # A partly-downloaded model is not installed, but it is also not
+                # absent -- several GB are sitting on the disk. Say so, or the row
+                # looks identical to one that was never fetched.
+                if cache.get("incomplete"):
+                    m["incomplete"] = cache["incomplete"]
             except Exception:  # noqa: BLE001 - an unreadable cache is unknown, not absent
                 m["installed"] = None
         else:

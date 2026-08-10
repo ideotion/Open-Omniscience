@@ -1365,9 +1365,25 @@ def test_an_interrupted_download_is_not_reported_as_cached(monkeypatch, tmp_path
         "an empty revision directory is a started download, not a finished one"
     )
 
+    # THE FIELD CASE (2026-08-10): a revision with real weight files in it and no
+    # config.json. Both weaker checks -- "the directory exists", "it has files" --
+    # call this downloaded, and vLLM then exits during startup on
+    # "Invalid repository ID or local directory specified ... ensure the presence of
+    # a 'config.json'". A file count cannot separate the two; only the loader's own
+    # required file can.
+    (rev / "model-00001-of-00002.safetensors").write_text("weights", encoding="utf-8")
+    st = V.model_cache_state("mistralai/Ministral-3-3B-Instruct-2512")
+    assert st["cached"] is False, "files without the loader's config file are not a model"
+    assert "config.json" in (st["incomplete"] or ""), (
+        "and the answer must say WHY -- GB on the disk that will not load and a model "
+        "never fetched call for opposite actions"
+    )
+    assert st["bytes"] == 7, "the wasted bytes are reported, so the operator can see them"
+
     (rev / "config.json").write_text("{}", encoding="utf-8")
     st = V.model_cache_state("mistralai/Ministral-3-3B-Instruct-2512")
-    assert st["cached"] is True and st["bytes"] == 2
+    assert st["cached"] is True and st["bytes"] == 9
+    assert st["incomplete"] is None
 
 
 def test_the_cache_dir_follows_hugging_faces_own_rules(monkeypatch, tmp_path):

@@ -10545,6 +10545,40 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     enumerate every rounding between the true value and the published one and widen by
     each — and prove it by simulation rather than by re-running until it passes, since
     a 2% false-failure rate looks exactly like a flake.
+  - **AN HTTP STATUS SAYS A CALL FAILED; THE RESPONSE BODY SAYS WHY — and the one line
+    that converts the exception is where the answer gets thrown away (2026-08-10, five
+    Ollama models, ten failures, zero information):** the first runs that ever reached
+    Ollama produced nothing but `Server error '500 Internal Server Error' for url …`,
+    repeated per model per run. Nothing was wrong with the call: both local backends
+    answer a failure with a JSON body naming the cause, and `httpx`'s `HTTPStatusError`
+    string carries only the status and the URL, so `raise LLMError(f"…: {exc}")` — which
+    looks like it is passing the error through — silently drops the only part that
+    diagnoses anything. RULE: wherever an exception is re-raised with a message, ask what
+    the ORIGINAL carried that the new one does not; for HTTP that is always the body.
+    THREE THINGS THE READER OWES: unwrap both shapes (`{"error": "…"}` and
+    `{"error": {"message": "…"}}`) but keep a non-JSON body verbatim, since the server's
+    own words beat a parse; BOUND it, because one runaway body should not become the
+    whole log line; and degrade to the status line when the body is empty or unreadable,
+    never to a dangling separator with nothing after it — the guard for that direction is
+    the one worth writing, because it is what stops "read the reason" from making a
+    reason-less failure WORSE than it was.
+  - **"AT LEAST ONE FILE" IS NOT A COMPLETENESS CHECK — ask the loader what it requires
+    (2026-08-10, a model reported downloaded that vLLM would not open):** the cache probe
+    already knew the trap and said so in its own docstring — `huggingface_hub` creates the
+    tree as soon as a download STARTS — and guarded it by requiring a revision directory
+    with a file in it. An interrupted fetch leaves real weight files, so the guard passed
+    and the server then exited on `Invalid repository ID or local directory specified …
+    ensure the presence of a 'config.json'`. The correct predicate was written in the
+    error the failure itself raised. GENERAL FORM: when you guard "is this artifact
+    complete", do not invent a proxy for completeness (a file count, a byte floor) — find
+    the consumer's own stated precondition and check THAT. Two riders: `is_file()` follows
+    symlinks, which is what you want for an HF snapshot (a dangling link into a missing
+    blob reads as absent); and a populated-but-unusable tree must not collapse into the
+    same answer as a never-fetched one — "several GB on the disk that will not load" and
+    "you never downloaded it" call for opposite actions, so the sentinel says which and
+    reports the wasted bytes. The pre-existing test used `config.json` as its filename by
+    coincidence and so passed either way — the discriminating fixture is files present,
+    config absent.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 

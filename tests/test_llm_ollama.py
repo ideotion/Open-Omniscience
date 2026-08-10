@@ -21,7 +21,7 @@ from src.api.llm import get_llm_client, get_ollama_client
 from src.api.main import app
 from src.database.models import Article, Base, Source
 from src.database.session import get_db
-from src.llm.ollama import LLMUnavailable, OllamaClient
+from src.llm.ollama import LLMError, LLMUnavailable, OllamaClient
 
 
 def _client_with(handler, *, base_url: str = "http://testollama") -> OllamaClient:
@@ -333,3 +333,73 @@ def test_summarize_unknown_article_404(client):
         lambda r: httpx.Response(200, json={"response": "x"})
     )
     assert c.post("/api/llm/articles/999/summarize", json={}).status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# the server's own reason survives the exception (2026-08-10)
+# --------------------------------------------------------------------------- #
+#
+# A bench run of five Ollama models produced nothing but
+# "Server error '500 Internal Server Error' for url ..." ten times over, because
+# the status line was kept and the response BODY -- which is where both backends
+# put the actual cause -- was discarded. These pin both directions: a body must
+# reach the message, and a body-less failure must degrade to the status line
+# rather than to an empty or fabricated reason.
+
+
+def test_a_500_carries_ollamas_own_reason():
+    def handler(request):
+        return httpx.Response(
+            500, json={"error": "model requires more system memory (9.3 GiB) than is available"}
+        )
+
+    with pytest.raises(LLMError) as exc:
+        _client_with(handler).generate("hi", model="qwen3.5:0.8b-q8_0")
+    msg = str(exc.value)
+    assert "more system memory" in msg, "the server's reason must reach the caller"
+    assert "500" in msg, "the status line is still reported alongside it"
+
+
+def test_a_500_with_no_body_degrades_to_the_status_line():
+    """The reason is absent, not invented -- an unreadable body must never make
+    the message WORSE than it was before the body was read."""
+
+    def handler(request):
+        return httpx.Response(500, content=b"")
+
+    with pytest.raises(LLMError) as exc:
+        _client_with(handler).generate("hi", model="m")
+    msg = str(exc.value)
+    assert "500" in msg
+    assert "—" not in msg, "no reason separator with nothing after it"
+
+
+def test_a_non_json_500_body_is_kept_verbatim():
+    def handler(request):
+        return httpx.Response(500, content=b"llama runner process has terminated: signal 9")
+
+    with pytest.raises(LLMError) as exc:
+        _client_with(handler).generate("hi", model="m")
+    assert "signal 9" in str(exc.value)
+
+
+def test_a_very_long_reason_is_bounded():
+    def handler(request):
+        return httpx.Response(500, json={"error": "x" * 5000})
+
+    with pytest.raises(LLMError) as exc:
+        _client_with(handler).generate("hi", model="m")
+    assert len(str(exc.value)) < 700, "a runaway body must not become the whole log line"
+    assert "…" in str(exc.value), "truncation is disclosed, never silent"
+
+
+def test_a_404_still_says_pull_it_rather_than_the_body():
+    """The 404 branch is a DIFFERENT, more actionable message; reading the body
+    must not have swallowed it."""
+
+    def handler(request):
+        return httpx.Response(404, json={"error": "model 'nope' not found"})
+
+    with pytest.raises(LLMUnavailable) as exc:
+        _client_with(handler).generate("hi", model="nope")
+    assert "ollama pull nope" in str(exc.value)

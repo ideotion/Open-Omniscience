@@ -778,3 +778,37 @@ def test_a_vllm_whose_model_could_not_be_read_is_left_alone_rather_than_guessed(
     note = report["backend_restored"]
     assert note["restored"] is False
     assert "could not be read" in note["reason"] and "left alone" in note["reason"]
+
+
+def test_a_partly_downloaded_vllm_model_is_named_as_such(monkeypatch):
+    """"Never downloaded" and "downloaded and unusable" need opposite repairs.
+
+    The field run skipped google/gemma-3n-E2B-it with "its weights are not in the model
+    cache" while several GB of it sat on the disk missing only config.json — the
+    operator would have re-downloaded it without learning where the space went.
+    """
+    monkeypatch.setattr(
+        "src.llm.vllm_lifecycle.model_cache_state",
+        lambda _m: {"cached": False, "incomplete": "no config.json in it. Download it again."},
+    )
+    _runnable, skipped = MB.resolve_pairs(
+        models=["vllm|org/Half-Fetched"], installed_by_backend={"vllm": []}
+    )
+    detail = next(s["detail"] for s in skipped if s["model"] == "org/Half-Fetched")
+    assert "config.json" in detail
+    assert "not in the model cache" not in detail, "that wording is for a model never fetched"
+
+
+def test_a_never_downloaded_vllm_model_keeps_the_plain_wording(monkeypatch):
+    """The negative-space twin: an over-eager 'incomplete' would mislabel every
+    model that was simply never fetched."""
+    monkeypatch.setattr(
+        "src.llm.vllm_lifecycle.model_cache_state",
+        lambda _m: {"cached": False, "incomplete": None},
+    )
+    _runnable, skipped = MB.resolve_pairs(
+        models=["vllm|org/Never-Fetched"], installed_by_backend={"vllm": []}
+    )
+    detail = next(s["detail"] for s in skipped if s["model"] == "org/Never-Fetched")
+    assert "not in the model cache" in detail
+    assert "config.json" not in detail

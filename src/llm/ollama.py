@@ -245,6 +245,53 @@ class LLMUnavailable(LLMError):
     """Ollama is unreachable, or the requested model is not installed."""
 
 
+# An HTTP status line says a call failed; the RESPONSE BODY says why. Both local
+# backends answer a failure with a JSON body naming the cause ("model requires more
+# system memory than is available", "This model's maximum context length is ..."),
+# and httpx's HTTPStatusError string carries only the status and the URL. Reporting
+# the status alone turns a diagnosable failure into a dead end -- a whole bench run
+# of five models produced nothing but "Server error '500'" with the reason discarded
+# at this line (2026-08-10). Read the body here, once, for every call site.
+_ERR_BODY_MAX = 400
+
+
+def _http_reason(exc: httpx.HTTPStatusError) -> str:
+    """The server's own explanation, bounded, or an empty string when it gave none.
+
+    Empty means the body was absent or unreadable -- never a fabricated reason, and
+    the caller still reports the status, so a silent body degrades to today's message
+    rather than to nothing.
+    """
+    try:
+        raw = exc.response.text or ""
+    except Exception:  # a streamed/closed response has no readable text
+        return ""
+    body = raw.strip()
+    if not body:
+        return ""
+    try:
+        import json as _json
+
+        parsed = _json.loads(body)
+        if isinstance(parsed, dict):
+            # Ollama: {"error": "..."}; OpenAI-compatible: {"error": {"message": "..."}}
+            err = parsed.get("error")
+            if isinstance(err, dict):
+                body = str(err.get("message") or err)
+            elif err is not None:
+                body = str(err)
+    except ValueError:
+        pass  # a non-JSON body is still the server's own words -- keep it verbatim
+    body = " ".join(body.split())
+    return body[:_ERR_BODY_MAX] + "…" if len(body) > _ERR_BODY_MAX else body
+
+
+def _http_error_text(exc: httpx.HTTPStatusError) -> str:
+    """``<status line> — <the server's reason>``, or just the status line."""
+    reason = _http_reason(exc)
+    return f"{exc} — {reason}" if reason else str(exc)
+
+
 def _is_loopback_url(url: str) -> bool:
     """True if url's hostname is loopback (127.0.0.0/8, ::1, or the localhost family).
 
@@ -441,7 +488,9 @@ class OllamaClient:
                 raise LLMUnavailable(
                     f"Model {model!r} is not installed. Run: ollama pull {model}"
                 ) from exc
-            raise LLMError(f"Ollama error for model {model!r}: {exc}") from exc
+            raise LLMError(
+                f"Ollama error for model {model!r}: {_http_error_text(exc)}"
+            ) from exc
         except httpx.HTTPError as exc:
             raise LLMUnavailable(f"Ollama not reachable at {self.base_url}: {exc}") from exc
         data = resp.json()
@@ -535,7 +584,7 @@ class OllamaClient:
                     except ValueError:
                         continue
         except httpx.HTTPStatusError as exc:
-            raise LLMError(f"Ollama error pulling {model!r}: {exc}") from exc
+            raise LLMError(f"Ollama error pulling {model!r}: {_http_error_text(exc)}") from exc
         except httpx.HTTPError as exc:
             raise LLMUnavailable(f"Ollama not reachable at {self.base_url}: {exc}") from exc
 
@@ -549,7 +598,7 @@ class OllamaClient:
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 raise LLMUnavailable(f"Model {model!r} is not installed.") from exc
-            raise LLMError(f"Ollama error removing {model!r}: {exc}") from exc
+            raise LLMError(f"Ollama error removing {model!r}: {_http_error_text(exc)}") from exc
         except httpx.HTTPError as exc:
             raise LLMUnavailable(f"Ollama not reachable at {self.base_url}: {exc}") from exc
         return True
