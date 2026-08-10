@@ -31,6 +31,7 @@ proceeding into a start that the numbers already say will fail.
 from __future__ import annotations
 
 import logging
+import os
 import time
 
 _LOG = logging.getLogger("llm.arbitration")
@@ -40,6 +41,16 @@ _LOG = logging.getLogger("llm.arbitration")
 #: stops improving costs nothing when the release was instant.
 _SETTLE_TIMEOUT_S = 20.0
 _SETTLE_POLL_S = 0.5
+
+#: How long to wait for a backend this module just STARTED to actually answer.
+#: A vLLM model load runs to tens of seconds and reaches CUDA-graph capture around
+#: t+67s on an 8 GB card, so anything shorter would report a healthy load as a
+#: failure. Bounded, and abandoned early on an exit -- waiting out a dead server is
+#: the fabricated-patience mirror of the fabricated readiness this replaces.
+#: ``OO_GPU_HANDOVER_TIMEOUT_S`` overrides it for an operator whose weights are
+#: larger or whose disk is slower than the machine this was measured on.
+_READY_TIMEOUT_S = 300.0
+_READY_POLL_S = 2.0
 
 
 def free_vram_mb() -> int | None:
@@ -56,6 +67,34 @@ def free_vram_mb() -> int | None:
         return v if isinstance(v, int) else None
     except Exception:  # noqa: BLE001 - a reading that fails is an absence, not a crash
         return None
+
+
+def current_holder() -> dict:
+    """Which backend holds the card right now, and -- for vLLM -- with which model.
+
+    Exists so a caller that is about to rearrange the machine can put it back the way
+    it found it. A bench that stops vLLM to measure Ollama and then walks away has
+    silently changed which backend every later request is served by, which is a side
+    effect nobody asked for and nobody would think to look for.
+
+    ``backend`` is None when neither is up: an honest "nothing was holding it", which
+    is a legitimate prior state and must not be restored INTO something.
+    """
+    try:
+        from src.llm import vllm_lifecycle
+
+        if vllm_lifecycle.is_running():
+            return {"backend": "vllm", "model": _served_vllm_model()}
+    except Exception:  # noqa: BLE001 - an unreadable backend is not a holder
+        pass
+    try:
+        from src.llm.ollama_lifecycle import is_running as ollama_running
+
+        if ollama_running():
+            return {"backend": "ollama", "model": None}
+    except Exception:  # noqa: BLE001
+        pass
+    return {"backend": None, "model": None}
 
 
 def _settle(before: int | None, *, timeout: float = _SETTLE_TIMEOUT_S) -> tuple[int | None, float]:
@@ -119,6 +158,7 @@ def hand_gpu_to(
     model: str | None = None,
     start: bool = True,
     others: tuple[str, ...] = ("ollama", "vllm"),
+    wait_ready_s: float | None = None,
 ) -> dict:
     """Make ``backend`` the one holding the card, and report every step of it.
 
@@ -126,10 +166,24 @@ def hand_gpu_to(
     one up. ``model`` matters only for vLLM, which serves exactly one model per server,
     so pointing it at a different model IS a restart.
 
-    ``ready`` is the honest bottom line: it is a live probe of the backend answering,
-    never an inference from "we spawned something". A start that was attempted and has
-    not come up yet reports ``ready: False`` with the reason, because the caller's next
-    move is to send it work.
+    ``ready`` is the honest bottom line: it is a live probe of the backend answering
+    **as the model that was asked for**, never an inference from "we spawned something".
+
+    BOTH halves of that sentence were learned from one field run (2026-08-10). A deep
+    bench asked for seven vLLM models in turn, and six came back with every task
+    refused, because readiness was a probe of the PORT: a server serving model A
+    answers, so pointing it at model B and asking "is it ready?" said yes, and the
+    caller sent B's work to A's server. Nothing was mislabelled -- the client refuses a
+    model it was not started with, which is what made the run diagnosable rather than
+    fabricated -- but six models produced nothing and the run called itself complete.
+
+    ``wait_ready_s`` exists because the other half of that fix would have produced the
+    mirror defect: ``vllm_lifecycle.start`` returns the moment the process is spawned
+    ("a model load takes tens of seconds -- poll is_running() before use"), so a
+    one-shot probe taken immediately after a restart reads not-ready for a server that
+    is loading perfectly well. The wait is bounded and is abandoned the moment the
+    lifecycle's own tri-state says the server EXITED, so a dead start is reported in
+    seconds rather than waited out.
     """
     steps: list[dict] = []
     for other in others:
@@ -143,16 +197,27 @@ def hand_gpu_to(
         "released": steps,
         "free_mb_before_start": free_vram_mb(),
     }
+    want = model if backend == "vllm" else None
     if not start:
         out["started"] = None
-        out["ready"] = _is_ready(backend)
+        out["ready"] = _is_ready(backend, want)
         return out
 
     try:
         out["started"] = _start(backend, model)
     except Exception as exc:  # noqa: BLE001 - a failed start is the finding
         out["started"] = {"error": f"{type(exc).__name__}: {str(exc)[:300]}"}
-    out["ready"] = _is_ready(backend)
+    started = out["started"] if isinstance(out["started"], dict) else {}
+    # A start that REFUSED has nothing to wait for. Polling for five minutes against a
+    # server we were told we may not stop would turn one honest sentence into a
+    # five-minute stall, per pair.
+    refused = bool(started.get("switch_refused")) or bool(started.get("error"))
+    # ONLY vLLM is waited for. Its ``start()`` returns the instant the process is
+    # spawned; ``ollama_lifecycle.start()`` already blocks until the daemon answers or
+    # gives up, so polling another five minutes for a daemon that has already been
+    # waited for and failed is the same fabricated patience, one backend over.
+    wait_for = _ready_timeout(wait_ready_s) if backend == "vllm" else 0.0
+    out["ready"] = _wait_ready(backend, want, timeout=0.0 if refused else wait_for)
     if not out["ready"]:
         # A release that was REFUSED is the likeliest cause of the failure that follows
         # it, and it is the one fact the backend's own diagnosis cannot see: vLLM
@@ -163,10 +228,56 @@ def hand_gpu_to(
             for s in steps
             if not s.get("released") and (s.get("detail") or {}).get("reason")
         ]
-        out["reason"] = _why_not_ready(backend)
+        # The start's OWN reason wins when it refused: it names what we were not
+        # allowed to do, which is more specific than any probe of the aftermath.
+        out["reason"] = started.get("reason") if refused else _why_not_ready(backend, want)
+        out["reason"] = out["reason"] or _why_not_ready(backend, want)
         if held:
             out["reason"] += f" — and the card was not released by: {', '.join(held)}"
     return out
+
+
+def _ready_timeout(explicit: float | None) -> float:
+    if explicit is not None:
+        return max(0.0, explicit)
+    raw = os.getenv("OO_GPU_HANDOVER_TIMEOUT_S")
+    if raw:
+        try:
+            return max(0.0, float(raw))
+        except ValueError:
+            _LOG.info("ignoring unreadable OO_GPU_HANDOVER_TIMEOUT_S=%r", raw)
+    return _READY_TIMEOUT_S
+
+
+def _wait_ready(backend: str, model: str | None, *, timeout: float) -> bool:
+    """Poll until ``backend`` answers as ``model``, it demonstrably died, or time runs out.
+
+    Probes BEFORE sleeping, so a timeout of 0 is exactly the one-shot check this used to
+    do and an already-ready backend costs nothing.
+    """
+    deadline = time.monotonic() + max(0.0, timeout)
+    while True:
+        if _is_ready(backend, model):
+            return True
+        if backend == "vllm" and _vllm_exited():
+            return False
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(_READY_POLL_S)
+
+
+def _vllm_exited() -> bool:
+    """Did the last vLLM start die? Read from the lifecycle's own tri-state.
+
+    Only ``exited`` counts. "Still loading" is not a failure -- calling it one is the
+    defect this wait exists to avoid, one level down.
+    """
+    try:
+        from src.llm import vllm_lifecycle
+
+        return str((vllm_lifecycle.start_outcome() or {}).get("state") or "") == "exited"
+    except Exception:  # noqa: BLE001 - an unreadable journal is not a death
+        return False
 
 
 def _start(backend: str, model: str | None) -> dict:
@@ -183,7 +294,35 @@ def _start(backend: str, model: str | None) -> dict:
                 return {"started": False, "reason": "already running", "model": served}
             # A different model: vLLM serves one per server, so this is a restart and
             # there is no cheaper way to do it.
-            vllm_lifecycle.stop()
+            #
+            # THE OUTCOME OF THIS STOP IS LOAD-BEARING and used to be discarded. When
+            # it refused -- a server this app did not start, or one it could not
+            # signal -- the next line asked `start()` for the new model, `start()`
+            # answered "already running" (its word for `process_alive() or
+            # is_running()`, which is about a PROCESS and not about a model), and the
+            # handover reported success while the old model kept the card. Every field
+            # symptom followed from those two words being trusted.
+            stopped = vllm_lifecycle.stop()
+            # `port_quiet is False` is a stop that was PERFORMED and did not take: the
+            # server is still answering, so starting the new model would read
+            # "already running" and keep serving the old one. Treated exactly like a
+            # refusal, because for the caller it is one.
+            if not stopped.get("stopped") or stopped.get("port_quiet") is False:
+                return {
+                    "started": False,
+                    "switch_refused": True,
+                    "served": served,
+                    "stop": stopped,
+                    "reason": (
+                        f"vLLM is serving {served!r} and could not be stopped to serve "
+                        f"{model!r}: "
+                        + (
+                            stopped.get("reason")
+                            or stopped.get("note")
+                            or "it was stopped but its port is still answering"
+                        )
+                    ),
+                }
             _settle(free_vram_mb())
         target = model or _default_vllm_model()
         if not target:
@@ -224,7 +363,15 @@ def _served_vllm_model() -> str | None:
         return None
 
 
-def _is_ready(backend: str) -> bool:
+def _is_ready(backend: str, model: str | None = None) -> bool:
+    """Is ``backend`` answering -- and, when a model is named, answering AS that model?
+
+    The second half is the whole point. vLLM serves exactly one model per server, so a
+    port that answers proves only that SOME model is loaded; asking it for another one
+    gets every call refused. A caller whose next move is to send that model work needs
+    the stronger claim, and there is no cheaper way to get it than asking the server
+    which model it holds.
+    """
     try:
         if backend == "ollama":
             from src.llm.ollama_lifecycle import is_running
@@ -233,13 +380,15 @@ def _is_ready(backend: str) -> bool:
         if backend == "vllm":
             from src.llm import vllm_lifecycle
 
-            return vllm_lifecycle.is_running()
+            if not vllm_lifecycle.is_running():
+                return False
+            return model is None or _served_vllm_model() == model
     except Exception:  # noqa: BLE001
         return False
     return False
 
 
-def _why_not_ready(backend: str) -> str:
+def _why_not_ready(backend: str, model: str | None = None) -> str:
     """The most specific reason available, never the generic one.
 
     vLLM keeps a tri-state for exactly this ("still loading" is not "died"), and a
@@ -248,6 +397,16 @@ def _why_not_ready(backend: str) -> str:
     whole chain exists to remove.
     """
     if backend == "vllm":
+        # The server is UP but holding something else: a restart that did not take.
+        # Distinct from "not answering" and from "died", and it is the one an operator
+        # can act on, so it is checked before either.
+        if model:
+            served = _served_vllm_model()
+            if served and served != model:
+                return (
+                    f"the vLLM server is answering, but it is serving {served!r} rather "
+                    f"than {model!r} — the restart did not take effect"
+                )
         try:
             from src.llm import vllm_lifecycle
 
@@ -273,4 +432,4 @@ def _why_not_ready(backend: str) -> str:
     return f"unknown backend {backend!r}"
 
 
-__all__ = ["free_vram_mb", "hand_gpu_to", "release_backend"]
+__all__ = ["current_holder", "free_vram_mb", "hand_gpu_to", "release_backend"]

@@ -2522,7 +2522,7 @@
   "model/backend pairs": "模型/后端组合",
   "on both backends": "在两个后端上",
   "Anchor accuracy": "锚点准确率",
-  "Benching every model takes hours and restarts your AI backend between models. It is resumable: cancelling keeps the models already measured. Start it?": "测量所有模型需要数小时，并会在模型之间重启 AI 后端。该过程可恢复：取消后已测量的模型将保留。要开始吗？",
+  "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "测量所有模型需要数小时。该测试会启动已停止的后端，在各模型之间重启 AI 后端，并在结束后将机器恢复到原先使用的后端。过程可恢复：取消会保留已测量的模型。要开始吗？",
   "Not part of this check": "不属于本次检查",
   "at concurrency": "并发为",
   "configured": "已配置",

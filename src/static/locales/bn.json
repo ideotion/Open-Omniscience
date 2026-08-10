@@ -2522,7 +2522,7 @@
   "model/backend pairs": "মডেল/ব্যাকএন্ড জোড়া",
   "on both backends": "উভয় ব্যাকএন্ডে",
   "Anchor accuracy": "অ্যাঙ্করে নির্ভুলতা",
-  "Benching every model takes hours and restarts your AI backend between models. It is resumable: cancelling keeps the models already measured. Start it?": "প্রতিটি মডেল পরিমাপ করতে কয়েক ঘণ্টা লাগে এবং মডেলের মাঝে আপনার AI ব্যাকএন্ড পুনরায় চালু হয়। এটি পুনরায় শুরু করা যায়: বাতিল করলে ইতিমধ্যে পরিমাপ করা মডেলগুলি থেকে যায়। শুরু করবেন?",
+  "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "প্রতিটি মডেল পরিমাপ করতে কয়েক ঘণ্টা লাগে। এটি বন্ধ থাকা ব্যাকএন্ড চালু করে, মডেলগুলির মাঝে আপনার AI ব্যাকএন্ড পুনরায় চালু করে, এবং শেষে মেশিনটিকে আগের ব্যাকএন্ডে ফিরিয়ে দেয়। এটি পুনরায় শুরু করা যায়: বাতিল করলে ইতিমধ্যে পরিমাপ করা মডেলগুলি থেকে যায়। শুরু করবেন?",
   "Not part of this check": "এই পরীক্ষার অংশ নয়",
   "at concurrency": "সমান্তরালতায়",
   "configured": "কনফিগার করা",

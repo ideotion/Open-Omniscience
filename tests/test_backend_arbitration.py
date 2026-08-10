@@ -276,7 +276,7 @@ def test_hand_over_releases_every_other_backend_first(monkeypatch):
         A, "release_backend", lambda b: (order.append(f"release:{b}"), {"backend": b})[1]
     )
     monkeypatch.setattr(A, "_start", lambda b, m: order.append(f"start:{b}") or {"started": True})
-    monkeypatch.setattr(A, "_is_ready", lambda _b: True)
+    monkeypatch.setattr(A, "_is_ready", lambda _b, _m=None: True)
     monkeypatch.setattr(A, "free_vram_mb", lambda: 8000)
 
     out = A.hand_gpu_to("vllm", model="org/model")
@@ -291,11 +291,11 @@ def test_a_backend_that_did_not_come_up_says_why_rather_than_claiming_ready(monk
     next move is to send it work."""
     monkeypatch.setattr(A, "release_backend", lambda b: {"backend": b})
     monkeypatch.setattr(A, "_start", lambda _b, _m: {"started": True})
-    monkeypatch.setattr(A, "_is_ready", lambda _b: False)
-    monkeypatch.setattr(A, "_why_not_ready", lambda _b: "still loading its model")
+    monkeypatch.setattr(A, "_is_ready", lambda _b, _m=None: False)
+    monkeypatch.setattr(A, "_why_not_ready", lambda _b, _m=None: "still loading its model")
     monkeypatch.setattr(A, "free_vram_mb", lambda: 1000)
 
-    out = A.hand_gpu_to("vllm", model="m")
+    out = A.hand_gpu_to("vllm", model="m", wait_ready_s=0.0)
 
     assert out["ready"] is False
     assert out["reason"] == "still loading its model"
@@ -306,11 +306,11 @@ def test_a_start_that_raises_is_recorded_not_propagated(monkeypatch):
     monkeypatch.setattr(
         A, "_start", lambda _b, _m: (_ for _ in ()).throw(RuntimeError("no CUDA here"))
     )
-    monkeypatch.setattr(A, "_is_ready", lambda _b: False)
-    monkeypatch.setattr(A, "_why_not_ready", lambda _b: "exited")
+    monkeypatch.setattr(A, "_is_ready", lambda _b, _m=None: False)
+    monkeypatch.setattr(A, "_why_not_ready", lambda _b, _m=None: "exited")
     monkeypatch.setattr(A, "free_vram_mb", lambda: None)
 
-    out = A.hand_gpu_to("vllm", model="m")
+    out = A.hand_gpu_to("vllm", model="m", wait_ready_s=0.0)
 
     assert "no CUDA here" in out["started"]["error"]
     assert out["ready"] is False
@@ -363,10 +363,141 @@ def test_asking_for_the_model_already_served_does_not_restart(monkeypatch):
     assert out["reason"] == "already running"
 
 
+def test_a_refused_stop_is_reported_instead_of_being_walked_past(monkeypatch):
+    """THE FIELD DEFECT (2026-08-10). ``stop()`` can legitimately refuse -- a server
+    this app did not start, or one it could not signal -- and its answer used to be
+    discarded. ``start()`` then said "already running" (its word for a live PROCESS,
+    not for a served model), and the handover reported success while the previous
+    model kept the card."""
+    from src.llm import vllm_lifecycle as VL
+
+    started: list[str] = []
+    monkeypatch.setattr(VL, "is_running", lambda **_kw: True)
+    monkeypatch.setattr(
+        VL, "stop", lambda **_kw: {"stopped": False, "reason": "not started from this app's venv"}
+    )
+    monkeypatch.setattr(VL, "start", lambda m=None, **_kw: started.append(m) or {})
+    monkeypatch.setattr(A, "_served_vllm_model", lambda: "org/first")
+
+    out = A._start("vllm", "org/second")
+
+    assert started == [], "a refused stop must not be followed by a start attempt"
+    assert out["switch_refused"] is True
+    assert out["served"] == "org/first"
+    assert "org/first" in out["reason"] and "org/second" in out["reason"]
+    assert "not started from this app's venv" in out["reason"], "the refusal's own words"
+
+
+def test_a_refused_switch_is_not_waited_out(monkeypatch):
+    """The negative-space twin of the wait: there is nothing to wait FOR when the
+    switch was refused, and polling five minutes per pair would turn one honest
+    sentence into an hour of stalling on a seven-model roster."""
+    monkeypatch.setattr(A, "release_backend", lambda b: {"backend": b})
+    monkeypatch.setattr(
+        A,
+        "_start",
+        lambda _b, _m: {"started": False, "switch_refused": True, "reason": "serving org/other"},
+    )
+    monkeypatch.setattr(A, "_is_ready", lambda _b, _m=None: False)
+    monkeypatch.setattr(A, "free_vram_mb", lambda: 1000)
+
+    def _never(*_a, **_kw):
+        raise AssertionError("a refused switch must not sleep")
+
+    monkeypatch.setattr(A.time, "sleep", _never)
+
+    out = A.hand_gpu_to("vllm", model="org/wanted", wait_ready_s=600.0)
+
+    assert out["ready"] is False
+    assert out["reason"] == "serving org/other", "the refusal's reason, not a probe of the aftermath"
+
+
+def test_readiness_asks_which_model_is_served_not_merely_whether_a_port_answers(monkeypatch):
+    """A vLLM server serves ONE model. A port that answers proves some model is
+    loaded, which is exactly what made six of seven benched models return nothing
+    while the handover reported ready."""
+    from src.llm import vllm_lifecycle as VL
+
+    monkeypatch.setattr(VL, "is_running", lambda **_kw: True)
+    monkeypatch.setattr(A, "_served_vllm_model", lambda: "org/first")
+
+    assert A._is_ready("vllm", "org/first") is True
+    assert A._is_ready("vllm", "org/second") is False, "a different model is NOT ready"
+    assert A._is_ready("vllm") is True, "with no model named, a live server is the whole claim"
+
+
+def test_the_mismatch_is_named_rather_than_reported_as_not_answering(monkeypatch):
+    """"It is serving something else" and "it is not answering" need different words
+    because they need different actions."""
+    from src.llm import vllm_lifecycle as VL
+
+    monkeypatch.setattr(VL, "is_running", lambda **_kw: True)
+    monkeypatch.setattr(A, "_served_vllm_model", lambda: "org/first")
+
+    why = A._why_not_ready("vllm", "org/second")
+
+    assert "org/first" in why and "org/second" in why
+    assert "did not take effect" in why
+
+
+def test_a_server_that_is_still_loading_is_waited_for(monkeypatch):
+    """``vllm_lifecycle.start`` returns the moment the process is spawned, so a
+    one-shot probe taken straight afterwards reads not-ready for a perfectly healthy
+    model load. Without this wait, fixing the readiness probe would simply have moved
+    the defect to the other side."""
+    probes: list[int] = []
+
+    def _ready(_b, _m=None):
+        probes.append(1)
+        return len(probes) >= 3
+
+    monkeypatch.setattr(A, "_is_ready", _ready)
+    monkeypatch.setattr(A, "_vllm_exited", lambda: False)
+    monkeypatch.setattr(A.time, "sleep", lambda _s: None)
+
+    assert A._wait_ready("vllm", "org/model", timeout=60.0) is True
+    assert len(probes) == 3
+
+
+def test_the_wait_is_abandoned_the_moment_the_server_is_known_to_have_died(monkeypatch):
+    """The other half: waiting out a server the lifecycle already knows exited is the
+    fabricated-patience mirror. Only ``exited`` ends it -- "starting" must not."""
+    slept: list[float] = []
+    monkeypatch.setattr(A, "_is_ready", lambda _b, _m=None: False)
+    monkeypatch.setattr(A, "_vllm_exited", lambda: True)
+    monkeypatch.setattr(A.time, "sleep", lambda s: slept.append(s))
+
+    assert A._wait_ready("vllm", "org/model", timeout=600.0) is False
+    assert slept == [], "a known death is reported at once, not waited out"
+
+
+def test_a_zero_timeout_still_probes_once(monkeypatch):
+    """So a caller that wants the old one-shot behaviour keeps it exactly."""
+    monkeypatch.setattr(A, "_is_ready", lambda _b, _m=None: True)
+    monkeypatch.setattr(A, "_vllm_exited", lambda: False)
+    assert A._wait_ready("vllm", "m", timeout=0.0) is True
+
+
+def test_current_holder_names_the_model_for_vllm_and_nothing_when_idle(monkeypatch):
+    from src.llm import ollama_lifecycle as OL
+    from src.llm import vllm_lifecycle as VL
+
+    monkeypatch.setattr(VL, "is_running", lambda **_kw: True)
+    monkeypatch.setattr(A, "_served_vllm_model", lambda: "org/held")
+    assert A.current_holder() == {"backend": "vllm", "model": "org/held"}
+
+    monkeypatch.setattr(VL, "is_running", lambda **_kw: False)
+    monkeypatch.setattr(OL, "is_running", lambda **_kw: True)
+    assert A.current_holder() == {"backend": "ollama", "model": None}
+
+    monkeypatch.setattr(OL, "is_running", lambda **_kw: False)
+    assert A.current_holder()["backend"] is None, "nothing holding it is a real answer"
+
+
 def test_no_field_name_carries_a_banned_substring(monkeypatch):
     monkeypatch.setattr(A, "release_backend", lambda b: {"backend": b, "released": False})
     monkeypatch.setattr(A, "_start", lambda _b, _m: {"started": True})
-    monkeypatch.setattr(A, "_is_ready", lambda _b: True)
+    monkeypatch.setattr(A, "_is_ready", lambda _b, _m=None: True)
     monkeypatch.setattr(A, "free_vram_mb", lambda: 8000)
     banned = ("score", "ranking", "rating", "grade")
 
@@ -409,11 +540,13 @@ def test_a_refused_release_reaches_the_reason_for_the_failure_that_follows(monke
         },
     )
     monkeypatch.setattr(A, "_start", lambda _b, _m: {"started": True})
-    monkeypatch.setattr(A, "_is_ready", lambda _b: False)
-    monkeypatch.setattr(A, "_why_not_ready", lambda _b: "the vLLM server exited during startup")
+    monkeypatch.setattr(A, "_is_ready", lambda _b, _m=None: False)
+    monkeypatch.setattr(
+        A, "_why_not_ready", lambda _b, _m=None: "the vLLM server exited during startup"
+    )
     monkeypatch.setattr(A, "free_vram_mb", lambda: 500)
 
-    out = A.hand_gpu_to("vllm", model="m")
+    out = A.hand_gpu_to("vllm", model="m", wait_ready_s=0.0)
 
     assert "exited during startup" in out["reason"], "the backend's own diagnosis survives"
     assert "not released by: ollama" in out["reason"]
@@ -427,8 +560,100 @@ def test_a_successful_release_adds_nothing_to_the_reason(monkeypatch):
         A, "release_backend", lambda b: {"backend": b, "released": True, "detail": {}}
     )
     monkeypatch.setattr(A, "_start", lambda _b, _m: {"started": True})
-    monkeypatch.setattr(A, "_is_ready", lambda _b: False)
-    monkeypatch.setattr(A, "_why_not_ready", lambda _b: "the vLLM server exited during startup")
+    monkeypatch.setattr(A, "_is_ready", lambda _b, _m=None: False)
+    monkeypatch.setattr(
+        A, "_why_not_ready", lambda _b, _m=None: "the vLLM server exited during startup"
+    )
     monkeypatch.setattr(A, "free_vram_mb", lambda: 7000)
 
-    assert A.hand_gpu_to("vllm", model="m")["reason"] == "the vLLM server exited during startup"
+    assert (
+        A.hand_gpu_to("vllm", model="m", wait_ready_s=0.0)["reason"]
+        == "the vLLM server exited during startup"
+    )
+
+
+def test_only_vllm_is_waited_for(monkeypatch):
+    """``ollama_lifecycle.start`` already blocks until the daemon answers or gives up,
+    so waiting again for one that has ALREADY failed is the same fabricated patience,
+    one backend over."""
+    slept: list[float] = []
+    monkeypatch.setattr(A, "release_backend", lambda b: {"backend": b})
+    monkeypatch.setattr(A, "_start", lambda _b, _m: {"started": True})
+    monkeypatch.setattr(A, "_is_ready", lambda _b, _m=None: False)
+    monkeypatch.setattr(A, "_why_not_ready", lambda _b, _m=None: "the daemon is not answering")
+    monkeypatch.setattr(A, "free_vram_mb", lambda: 8000)
+    monkeypatch.setattr(A.time, "sleep", lambda s: slept.append(s))
+
+    out = A.hand_gpu_to("ollama", wait_ready_s=600.0)
+
+    assert out["ready"] is False
+    assert slept == [], "an Ollama start that failed was already waited for"
+
+
+def test_the_tracked_stop_waits_for_the_port_not_just_for_the_parent(monkeypatch):
+    """vLLM runs its engine in CHILD processes, so the parent can be reaped while the
+    server still answers and still holds the card. The adopted path always waited for
+    the port; this one returned the instant `proc.wait()` came back -- the same
+    requirement, one implementation. A caller's next move is to start another model,
+    which then reads "already running" and keeps serving the old one."""
+    from src.llm import vllm_lifecycle as VL
+
+    class _Proc:
+        def terminate(self):
+            pass
+
+        def wait(self, timeout=None):
+            return 0
+
+    answering = [True, True, False]  # still up for two polls after the parent is gone
+    monkeypatch.setattr(VL, "_proc", _Proc())
+    monkeypatch.setattr(VL, "is_running", lambda **_kw: answering.pop(0) if answering else False)
+    monkeypatch.setattr(VL.time, "sleep", lambda _s: None)
+
+    out = VL.stop(timeout=5)
+
+    assert out["stopped"] is True
+    assert out["port_quiet"] is True, "the stop is only done when nothing answers"
+    assert answering == [], "it polled until the port went quiet"
+
+
+def test_a_stop_whose_port_never_goes_quiet_says_so(monkeypatch):
+    from src.llm import vllm_lifecycle as VL
+
+    class _Proc:
+        def terminate(self):
+            pass
+
+        def wait(self, timeout=None):
+            return 0
+
+    monkeypatch.setattr(VL, "_proc", _Proc())
+    monkeypatch.setattr(VL, "is_running", lambda **_kw: True)
+    monkeypatch.setattr(VL.time, "sleep", lambda _s: None)
+
+    out = VL.stop(timeout=1)
+
+    assert out["port_quiet"] is False
+    assert "still answering" in out["note"]
+
+
+def test_a_stop_that_did_not_take_is_treated_as_a_refusal(monkeypatch):
+    """For the caller it IS one: starting the new model would read "already running"
+    and keep serving the old one, which is the whole defect."""
+    from src.llm import vllm_lifecycle as VL
+
+    started: list[str] = []
+    monkeypatch.setattr(VL, "is_running", lambda **_kw: True)
+    monkeypatch.setattr(
+        VL,
+        "stop",
+        lambda **_kw: {"stopped": True, "port_quiet": False, "note": "still answering after 10s"},
+    )
+    monkeypatch.setattr(VL, "start", lambda m=None, **_kw: started.append(m) or {})
+    monkeypatch.setattr(A, "_served_vllm_model", lambda: "org/first")
+
+    out = A._start("vllm", "org/second")
+
+    assert started == [], "a stop that did not take must not be followed by a start"
+    assert out["switch_refused"] is True
+    assert "still answering after 10s" in out["reason"]

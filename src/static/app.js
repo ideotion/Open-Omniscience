@@ -15332,7 +15332,7 @@
       // measured", not "you can undo this".
       const deep = !on && !!($("aicheck-deep") || {}).checked;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      if (deep && !confirm(t("Benching every model takes hours and restarts your AI backend between models. It is resumable: cancelling keeps the models already measured. Start it?"))) return;
+      if (deep && !confirm(t("Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?"))) return;
       try {
         if (on) await api("/api/diagnostics/ai-check/cancel", { method: "POST" });
         else await api("/api/diagnostics/ai-check/run", { method: "POST", body: JSON.stringify({ deep }) });

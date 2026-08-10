@@ -435,3 +435,346 @@ def test_the_cross_backend_table_carries_the_expanded_latency_rows():
     m = rows[0]["metrics"]
     assert m["latency.facts.per_hour"]["by_backend"] == {"ollama": 120, "vllm": 480}
     assert list(m)[0] == "triage.format_validity", "declared metrics keep their table order"
+
+
+# --------------------------------------------------------------------------- #
+#  Bringing the other backend up at all (field report 2026-08-10)
+# --------------------------------------------------------------------------- #
+def test_an_installed_but_stopped_ollama_is_woken_so_its_models_can_be_seen(monkeypatch):
+    """THE FIELD DEFECT. The deep bench dropped every Ollama pair with
+    "backend-unreachable" while Ollama was installed and launchable -- because nobody
+    had started the daemon and the probe read that as "cannot serve". Listing models
+    costs no GPU, so the wake belongs before the probe."""
+    from src.llm import ollama_lifecycle as OL
+
+    started: list[bool] = []
+    monkeypatch.setenv("OO_LLM_AUTOSTART", "1")
+    monkeypatch.setattr(OL, "is_running", lambda **_kw: False)
+    monkeypatch.setattr(OL, "is_installed", lambda: True)
+    monkeypatch.setattr(OL, "start", lambda **_kw: started.append(True) or {"started": True})
+
+    out = MB._default_wake("ollama")
+
+    assert started == [True]
+    assert out["woken"] is True
+
+
+def test_an_operator_who_turned_automatic_starts_off_is_obeyed(monkeypatch):
+    """OO_LLM_AUTOSTART=0 means it here too. The suite sets it, which is also what
+    stops a test run leaving a daemon behind on a developer's machine."""
+    from src.llm import ollama_lifecycle as OL
+
+    monkeypatch.setenv("OO_LLM_AUTOSTART", "0")
+    monkeypatch.setattr(OL, "is_running", lambda **_kw: False)
+    monkeypatch.setattr(OL, "is_installed", lambda: True)
+    monkeypatch.setattr(
+        OL, "start", lambda **_kw: (_ for _ in ()).throw(AssertionError("must not start"))
+    )
+
+    out = MB._default_wake("ollama")
+
+    assert out["woken"] is False
+    assert "OO_LLM_AUTOSTART=0" in out["reason"]
+
+
+def test_vllm_is_never_woken_at_probe_time(monkeypatch):
+    """It serves ONE model per server, so there is no model-independent "up" to reach --
+    and its availability is read from the weights cache precisely so a stopped server
+    is not mistaken for an empty one."""
+    out = MB._default_wake("vllm")
+
+    assert out["woken"] is False
+    assert "only the Ollama daemon" in out["reason"]
+
+
+def test_nothing_is_woken_when_switching_is_off(frozen_batch):
+    """The negative-space twin: a run that was not given the machine must not start
+    anything on it."""
+    woken: list[str] = []
+    MB.run_model_bench(
+        None,
+        models=["ollama|a:1"],
+        backends=("ollama",),
+        installed_by_backend={"ollama": ["a:1"]},
+        clients={"ollama": _BenchStub()},
+        batch=frozen_batch,
+        anchors=None,
+        allow_backend_switch=False,
+        wake=lambda b: woken.append(b) or {"woken": True},
+        unload=lambda *_a, **_kw: {},
+        tasks=("triage",),
+        persist=False,
+    )
+    assert woken == []
+
+
+def test_the_wake_runs_before_the_probe_and_is_reported(frozen_batch, monkeypatch):
+    """Reported because an operator who finds a daemon running afterwards deserves to
+    know the bench started it."""
+    order: list[str] = []
+    monkeypatch.setattr(
+        MB,
+        "_installed_by_backend",
+        lambda _b, **_kw: order.append("probe") or {"ollama": ["a:1"]},
+    )
+    report = MB.run_model_bench(
+        None,
+        models=["ollama|a:1"],
+        backends=("ollama",),
+        clients={"ollama": _BenchStub()},
+        batch=frozen_batch,
+        anchors=None,
+        allow_backend_switch=True,
+        wake=lambda b: order.append(f"wake:{b}") or {"woken": True, "detail": {"started": True}},
+        switch=lambda **_kw: {"ready": True},
+        unload=lambda *_a, **_kw: {},
+        tasks=("triage",),
+        persist=False,
+    )
+    assert order == ["wake:ollama", "probe"], "a probe before the wake reads a stopped daemon"
+    assert report["backends_woken"]["ollama"]["woken"] is True
+
+
+# --------------------------------------------------------------------------- #
+#  One handover per backend, and the machine put back
+# --------------------------------------------------------------------------- #
+def test_the_grouping_guard_actually_groups_an_interleaved_list():
+    """Driven with the input it exists FOR. ``resolve_pairs`` happens to emit grouped
+    output today (it iterates sorted backend names), so an end-to-end assertion alone
+    would pass with this helper deleted -- a guard tested only where its subject never
+    occurs."""
+    interleaved = [
+        {"backend": "vllm", "model": "org/a"},
+        {"backend": "ollama", "model": "a:1"},
+        {"backend": "vllm", "model": "org/b"},
+        {"backend": "ollama", "model": "b:1"},
+    ]
+
+    out = MB._grouped_by_backend(interleaved)
+
+    assert [p["backend"] for p in out] == ["vllm", "vllm", "ollama", "ollama"]
+    # Within a backend the roster's own order survives, so one roster always produces
+    # the same sequence and two runs stay comparable.
+    assert [p["model"] for p in out] == ["org/a", "org/b", "a:1", "b:1"]
+
+
+def test_the_card_changes_hands_once_per_backend(frozen_batch):
+    """The property, end to end: every handover costs a stop and a model load, so a
+    backend must never be returned to after another has had the card."""
+    handed: list[str] = []
+    MB.run_model_bench(
+        None,
+        models=["vllm|org/a", "ollama|a:1", "vllm|org/b", "ollama|b:1"],
+        backends=("vllm", "ollama"),
+        installed_by_backend={"vllm": ["org/a", "org/b"], "ollama": ["a:1", "b:1"]},
+        clients={"vllm": _BenchStub(), "ollama": _BenchStub()},
+        batch=frozen_batch,
+        anchors=None,
+        allow_backend_switch=True,
+        wake=lambda _b: {"woken": False, "reason": "already running"},
+        switch=lambda *, backend, model: handed.append(backend) or {"ready": True},
+        unload=lambda *_a, **_kw: {},
+        tasks=("triage",),
+        persist=False,
+    )
+    assert len(handed) == 4
+    runs = [b for i, b in enumerate(handed) if i == 0 or b != handed[i - 1]]
+    assert len(runs) == len(set(runs)), f"a backend was returned to: {handed}"
+
+
+def test_the_machine_is_left_on_the_backend_it_was_found_on(frozen_batch, monkeypatch):
+    """A bench that stops vLLM to measure Ollama and walks away has silently changed
+    which backend serves every later request."""
+    holders = [{"backend": "vllm", "model": "org/held"}, {"backend": "ollama", "model": None}]
+    monkeypatch.setattr("src.llm.arbitration.current_holder", lambda: holders[-1])
+    monkeypatch.setattr(MB, "_prior_holder", lambda: holders[0])
+    handed: list[tuple] = []
+    report = MB.run_model_bench(
+        None,
+        models=["ollama|a:1"],
+        backends=("ollama",),
+        installed_by_backend={"ollama": ["a:1"]},
+        clients={"ollama": _BenchStub()},
+        batch=frozen_batch,
+        anchors=None,
+        allow_backend_switch=True,
+        wake=lambda _b: {"woken": False, "reason": "already running"},
+        switch=lambda *, backend, model: handed.append((backend, model)) or {"ready": True},
+        unload=lambda *_a, **_kw: {},
+        tasks=("triage",),
+        persist=False,
+    )
+    assert handed[-1] == ("vllm", "org/held"), "the card goes back to what held it"
+    assert report["backend_restored"] == {
+        "backend": "vllm",
+        "model": "org/held",
+        "restored": True,
+        "reason": None,
+    }
+
+
+def test_a_restore_that_fails_is_reported_rather_than_swallowed(frozen_batch, monkeypatch):
+    monkeypatch.setattr("src.llm.arbitration.current_holder", lambda: {"backend": "ollama"})
+    monkeypatch.setattr(MB, "_prior_holder", lambda: {"backend": "vllm", "model": "org/held"})
+    report = MB.run_model_bench(
+        None,
+        models=["ollama|a:1"],
+        backends=("ollama",),
+        installed_by_backend={"ollama": ["a:1"]},
+        clients={"ollama": _BenchStub()},
+        batch=frozen_batch,
+        anchors=None,
+        allow_backend_switch=True,
+        wake=lambda _b: {"woken": False, "reason": "already running"},
+        switch=lambda *, backend, model: {"ready": backend == "ollama", "reason": "CUDA OOM"},
+        unload=lambda *_a, **_kw: {},
+        tasks=("triage",),
+        persist=False,
+    )
+    assert report["backend_restored"]["restored"] is False
+    assert report["backend_restored"]["reason"] == "CUDA OOM"
+
+
+def test_nothing_is_restored_when_nothing_was_serving(frozen_batch, monkeypatch):
+    """A machine with no backend up is a legitimate prior state, and must not be
+    restored INTO something it never had."""
+    monkeypatch.setattr(MB, "_prior_holder", lambda: None)
+    report = MB.run_model_bench(
+        None,
+        models=["ollama|a:1"],
+        backends=("ollama",),
+        installed_by_backend={"ollama": ["a:1"]},
+        clients={"ollama": _BenchStub()},
+        batch=frozen_batch,
+        anchors=None,
+        allow_backend_switch=True,
+        wake=lambda _b: {"woken": False, "reason": "already running"},
+        switch=lambda **_kw: {"ready": True},
+        unload=lambda *_a, **_kw: {},
+        tasks=("triage",),
+        persist=False,
+    )
+    assert report["backend_restored"] is None
+
+
+def test_a_pair_that_died_at_the_handover_is_counted_at_the_top_level(frozen_batch):
+    """"complete" over a table of pairs that never got the card reads as "these models
+    were tested and did badly"."""
+    report = MB.run_model_bench(
+        None,
+        models=["vllm|org/a"],
+        backends=("vllm",),
+        installed_by_backend={"vllm": ["org/a"]},
+        clients={"vllm": _BenchStub()},
+        batch=frozen_batch,
+        anchors=None,
+        allow_backend_switch=True,
+        wake=lambda _b: {"woken": False, "reason": "already running"},
+        switch=lambda **_kw: {"ready": False, "reason": "serving org/other"},
+        unload=lambda *_a, **_kw: {},
+        tasks=("triage",),
+        persist=False,
+    )
+    failures = report["handover_failures"]
+    assert [f["key"] for f in failures] == ["vllm|org/a"]
+    assert failures[0]["reason"] == "serving org/other"
+
+
+def test_a_run_where_every_pair_worked_reports_no_handover_failures(frozen_batch):
+    """The negative-space twin: the field's own shape must not become the only one
+    this reports."""
+    report = MB.run_model_bench(
+        None,
+        models=["vllm|org/a"],
+        backends=("vllm",),
+        installed_by_backend={"vllm": ["org/a"]},
+        clients={"vllm": _BenchStub()},
+        batch=frozen_batch,
+        anchors=None,
+        allow_backend_switch=True,
+        wake=lambda _b: {"woken": False, "reason": "already running"},
+        switch=lambda **_kw: {"ready": True},
+        unload=lambda *_a, **_kw: {},
+        tasks=("triage",),
+        persist=False,
+    )
+    assert report["handover_failures"] == []
+    assert report["pairs_run"] == ["vllm|org/a"]
+
+
+def test_the_restore_says_what_it_is_doing_so_a_cancel_is_not_a_mystery(frozen_batch, monkeypatch):
+    """Putting the card back costs a model load, so a cancel can sit for tens of
+    seconds. Shortening it would leave the machine rearranged; the honest answer is to
+    say what the wait is for."""
+    monkeypatch.setattr("src.llm.arbitration.current_holder", lambda: {"backend": "ollama"})
+    monkeypatch.setattr(MB, "_prior_holder", lambda: {"backend": "vllm", "model": "org/held"})
+    lines: list[str] = []
+
+    class _Ctx:
+        stopping = False
+
+        # Pinned to the real JobContext below rather than guessed at: a double that
+        # invents an arity is how a test comes to assert a bug (2026-08-10).
+        def set_progress(self, *, done=None, total=None, detail=None):
+            lines.append(detail)
+
+    import inspect
+
+    from src.jobs.background import JobContext
+
+    def _shape(fn):
+        # Names and KINDS, not annotations: the double must be callable everywhere the
+        # real one is, which is what a caller depends on.
+        return [(p.name, p.kind, p.default is inspect.Parameter.empty)
+                for p in inspect.signature(fn).parameters.values()]
+
+    assert _shape(_Ctx.set_progress) == _shape(JobContext.set_progress), (
+        "the double must be callable exactly where the real context is, or it describes "
+        "a context that cannot exist"
+    )
+
+    MB.run_model_bench(
+        _Ctx(),
+        models=["ollama|a:1"],
+        backends=("ollama",),
+        installed_by_backend={"ollama": ["a:1"]},
+        clients={"ollama": _BenchStub()},
+        batch=frozen_batch,
+        anchors=None,
+        allow_backend_switch=True,
+        wake=lambda _b: {"woken": False, "reason": "already running"},
+        switch=lambda **_kw: {"ready": True},
+        unload=lambda *_a, **_kw: {},
+        tasks=("triage",),
+        persist=False,
+    )
+    assert any("putting the card back on vllm" in ln for ln in lines), lines
+
+
+def test_a_vllm_whose_model_could_not_be_read_is_left_alone_rather_than_guessed(
+    frozen_batch, monkeypatch
+):
+    """Restarting it on the DEFAULT would put the machine on a model it was not on --
+    a silent change, which is worse than a stated gap."""
+    monkeypatch.setattr("src.llm.arbitration.current_holder", lambda: {"backend": "ollama"})
+    monkeypatch.setattr(MB, "_prior_holder", lambda: {"backend": "vllm", "model": None})
+    handed: list = []
+    report = MB.run_model_bench(
+        None,
+        models=["ollama|a:1"],
+        backends=("ollama",),
+        installed_by_backend={"ollama": ["a:1"]},
+        clients={"ollama": _BenchStub()},
+        batch=frozen_batch,
+        anchors=None,
+        allow_backend_switch=True,
+        wake=lambda _b: {"woken": False, "reason": "already running"},
+        switch=lambda *, backend, model: handed.append(backend) or {"ready": True},
+        unload=lambda *_a, **_kw: {},
+        tasks=("triage",),
+        persist=False,
+    )
+    assert handed == ["ollama"], "no vLLM restart was attempted on a guess"
+    note = report["backend_restored"]
+    assert note["restored"] is False
+    assert "could not be read" in note["reason"] and "left alone" in note["reason"]
