@@ -134,7 +134,7 @@ def test_both_of_server_argv_s_own_launch_shapes_are_recognised(tmp_path, monkey
     monkeypatch.setattr(VL, "venv_python", lambda: venv / "bin" / "python")
 
     # (a) the console script is present -> `vllm serve <model>`
-    (venv / "bin" / "vllm").write_text("#!/bin/sh\n")
+    (venv / "bin" / "vllm").write_text("#!/bin/sh\n", encoding="utf-8")
     console = VL.server_argv("org/model", port=8001)
     assert VL._looks_like_our_server(console), console
 
