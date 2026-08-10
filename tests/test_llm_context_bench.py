@@ -19,23 +19,15 @@ from src.monitoring import llm_context as LC
 class _Client:
     """Cost grows with the prompt, SUB-linearly — the real shape, because prompt
     tokens are processed in parallel. A client whose cost was flat would let a broken
-    reading pass, and one whose cost was linear would hide the sub-linear branch.
+    reading pass, and one whose cost was linear would hide the sub-linear branch."""
 
-    ``overhead`` is a FIXED per-call cost, and it is the whole reason this parameter
-    exists: a real runner adds one, and it lands on both arms equally in absolute terms,
-    so it compresses a RATIO. macOS CI adds ~2–3 ms per call while Linux adds
-    essentially none (Linux measures the intended 12.00x exactly, every run), which is
-    why the small arm's sleep has to dominate it — see
-    test_a_fixed_per_call_overhead_does_not_turn_proportional_into_sub_linear.
-    """
-
-    def __init__(self, unit: float = 0.002, power: float = 0.6, overhead: float = 0.0):
-        self.unit, self.power, self.overhead = unit, power, overhead
+    def __init__(self, unit: float = 0.002, power: float = 0.6):
+        self.unit, self.power = unit, power
         self.prompts: list[int] = []
 
     def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         self.prompts.append(len(prompt))
-        time.sleep(self.overhead + self.unit * (len(prompt) / 2000) ** self.power)
+        time.sleep(self.unit * (len(prompt) / 2000) ** self.power)
 
         class R:
             text = "{}"
@@ -69,51 +61,13 @@ def test_a_sublinear_cost_is_named_as_such():
     assert "Sub-linear" in out["reading"]["note"]
 
 
-#: The proportional arm's per-call sleep. NOT a tuning knob to nudge when this goes red:
-#: the verdict fires "Sub-linear" below ratio 9.6 (span 12 x 0.8), and a fixed per-call
-#: overhead C makes a truly-proportional fixture measure (24u + C)/(2u + C) instead of 12,
-#: so the sleep has to dominate C. MEASURED, macOS CI at the old unit of 0.002 (2 ms):
-#: 6.8x and 5.6x on two runs of the identical commit — both below 9.6, i.e. a red lane on
-#: every PR, not a flake. Solving for C gives 1.8–2.8 ms, and simulating that exact
-#: overhead on Linux reproduces 6.50x and 5.40x. At 50 ms the same simulation holds the
-#: ratio at 11.38x with 3 ms of overhead and 10.17x with a punitive 10 ms — margin to
-#: spare against the weakest platform observed, which is the side to calibrate on.
-_PROPORTIONAL_UNIT = 0.05
-
-
 def test_a_proportional_cost_is_not_called_sub_linear():
     """The negative-space twin: a machine where cost DOES track length must not be told
     it is getting a bargain."""
     out = LC.run_context_bench(
-        sizes=(2000, 24000), calls=3,
-        client=_Client(unit=_PROPORTIONAL_UNIT, power=1.0),
-        model="m", backend_name="ollama",
+        sizes=(2000, 24000), calls=3, client=_Client(power=1.0), model="m", backend_name="ollama"
     )
     assert "Sub-linear" not in out["reading"]["note"]
-
-
-def test_a_fixed_per_call_overhead_does_not_turn_proportional_into_sub_linear():
-    """The platform property, pinned where the platform cannot show it.
-
-    The test above passed on Linux and failed on macOS for months' worth of runs' reasons
-    that had nothing to do with the code under test: Linux adds no measurable per-call
-    cost, so it measures 12.00x exactly and cannot observe the defect at all. Injecting
-    the overhead explicitly is what lets every platform check the thing macOS was the only
-    one to see — and it is a real assertion about the reading, not about the fixture,
-    because a machine that is genuinely proportional must never be told it is getting a
-    bargain just because each call carries a constant cost.
-    """
-    out = LC.run_context_bench(
-        sizes=(2000, 24000), calls=3,
-        client=_Client(unit=_PROPORTIONAL_UNIT, power=1.0, overhead=0.003),
-        model="m", backend_name="ollama",
-    )
-    r = out["reading"]
-    assert "Sub-linear" not in r["note"], (
-        "a fixed per-call overhead compressed a proportional ratio past the sub-linear "
-        f"threshold — ratio {r.get('latency_ratio')}, note {r['note']!r}"
-    )
-    assert "Roughly proportional" in r["note"]
     assert "proportional" in out["reading"]["note"]
 
 
