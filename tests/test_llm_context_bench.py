@@ -63,12 +63,40 @@ def test_a_sublinear_cost_is_named_as_such():
 
 def test_a_proportional_cost_is_not_called_sub_linear():
     """The negative-space twin: a machine where cost DOES track length must not be told
-    it is getting a bargain."""
-    out = LC.run_context_bench(
-        sizes=(2000, 24000), calls=3, client=_Client(power=1.0), model="m", backend_name="ollama"
-    )
-    assert "Sub-linear" not in out["reading"]["note"]
-    assert "proportional" in out["reading"]["note"]
+    it is getting a bargain.
+
+    TESTED AGAINST THE CLASSIFIER DIRECTLY, and that is the fix rather than a detail.
+    Driving it through the timing harness measured the fixture's sleeps PLUS a fixed
+    per-call overhead, and a fixed addend compresses a ratio toward 1: with the sleeps
+    at 2 ms and 24 ms, an overhead of c makes the measured ratio (c+24)/(c+2), which
+    falls under the 0.8x-span bar as soon as c is a few milliseconds. The macOS runner
+    measured 4.8x where the fixture intends 12x — c was about 3.8 ms — so a PROPORTIONAL
+    fixture read as sub-linear and the guard failed against correct code. The failure is
+    guaranteed on a slow enough machine, so it was never a flake.
+
+    The claim underneath is pure arithmetic over two published numbers, which is what
+    this now asserts. The sub-linear direction keeps its end-to-end test above, where
+    overhead only ever pushes the ratio further under the bar — it cannot manufacture
+    the verdict being asserted there."""
+    rows = [
+        {"prompt_chars": 2000, "n": 3, "call_wall_p50_s": 0.010},
+        {"prompt_chars": 24000, "n": 3, "call_wall_p50_s": 0.120},  # exactly 12x for 12x
+    ]
+    out = LC._reading(rows, {"tokens": None})
+    assert out["latency_ratio"] == 12.0 and out["size_ratio"] == 12.0
+    assert "Sub-linear" not in out["note"]
+    assert "proportional" in out["note"]
+
+
+def test_the_sub_linear_verdict_is_reachable_by_arithmetic_too():
+    """Both branches pinned on the same exact footing, so the boundary is a decision
+    and not an accident of whichever machine ran it."""
+    rows = [
+        {"prompt_chars": 2000, "n": 3, "call_wall_p50_s": 0.010},
+        {"prompt_chars": 24000, "n": 3, "call_wall_p50_s": 0.040},  # 4x wall for 12x text
+    ]
+    out = LC._reading(rows, {"tokens": None})
+    assert "Sub-linear" in out["note"]
 
 
 def test_prompt_sizes_are_actually_swept():
