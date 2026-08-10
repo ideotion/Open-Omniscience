@@ -142,7 +142,10 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
         lines.append("| table | new | duplicate | conflict |")
         lines.append("| --- | ---: | ---: | ---: |")
         for table_name, counts in sorted(plan.items()):
-            if not isinstance(counts, dict):
+            # Underscore keys are non-table diagnostic blocks (_unmerged_tables,
+            # _source_qualification); they have no new/duplicate/conflict and would
+            # render as a row of em-dashes.
+            if not isinstance(counts, dict) or table_name.startswith("_"):
                 continue
             lines.append(
                 f"| {table_name} | {_fmt_count(counts.get('new'))} "
@@ -166,6 +169,49 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
                 f"| {after.get('date_min') or '—'} .. {after.get('date_max') or '—'} |"
             )
         lines.append("")
+
+    qual = plan.get("_source_qualification") if isinstance(plan, dict) else None
+    if isinstance(qual, dict):
+        gained_q = (qual.get("introduced_qualified") or 0) + (qual.get("adopted_qualified") or 0)
+        gained_d = (
+            qual.get("introduced_disqualified") or 0
+        ) + (qual.get("adopted_disqualified") or 0)
+        if gained_q or gained_d or qual.get("local_verdict_kept"):
+            lines.append("## Source qualification")
+            lines.append("")
+            lines.append(
+                f"- **{_fmt_count(gained_q)} qualified sources** arrived with this import "
+                f"({_fmt_count(qual.get('introduced_qualified'))} on sources it added, "
+                f"{_fmt_count(qual.get('adopted_qualified'))} on sources already here that "
+                "had never been judged)."
+            )
+            if gained_d:
+                lines.append(
+                    f"- {_fmt_count(gained_d)} sources arrived DISQUALIFIED and are kept out "
+                    "of collection (a verdict another instance already reached — carried so a "
+                    "known-bad source is not re-trialled here from scratch)."
+                )
+            if qual.get("local_verdict_kept"):
+                kept_line = (
+                    f"- {_fmt_count(qual.get('local_verdict_kept'))} sources already carried a "
+                    "verdict reached on THIS machine; those were left exactly as they were"
+                )
+                if qual.get("local_verdict_disagreed"):
+                    kept_line += (
+                        f", including {_fmt_count(qual.get('local_verdict_disagreed'))} where the "
+                        "incoming corpus disagreed — your own verdict was kept"
+                    )
+                lines.append(kept_line + ".")
+            engines = qual.get("engines") or {}
+            if engines:
+                shown = ", ".join(
+                    f"{name} ({_fmt_count(n)})" for name, n in sorted(engines.items())
+                )
+                lines.append(f"- Judged by: {shown}.")
+            span_lo, span_hi = qual.get("qualified_at_min"), qual.get("qualified_at_max")
+            if span_lo or span_hi:
+                lines.append(f"- Qualification dates: {span_lo or '—'} .. {span_hi or '—'}.")
+            lines.append("")
 
     work = report.get("work_induced")
     if work:
