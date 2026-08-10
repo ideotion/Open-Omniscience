@@ -105,14 +105,25 @@ def test_every_resident_model_is_released_and_reported(fake_ollama):
     assert made[0].calls[-2:] == [("unload", "ministral-3:8b"), ("unload", "nomic-embed")]
 
 
-def test_the_daemon_is_never_stopped(fake_ollama):
-    """THE CONSTRAINT this whole design bends around: ollama_lifecycle deliberately has
-    no stop(), because the daemon is usually a system service the app does not own.
-    Dropping model residency is a request Ollama already exposes and reverses itself on
-    the next call; killing the process is not ours to do."""
+def test_freeing_the_card_never_stops_the_daemon(fake_ollama, monkeypatch):
+    """THE CONSTRAINT this whole design bends around: freeing the GPU means dropping
+    model RESIDENCY, a request Ollama already exposes and reverses itself on the next
+    call. Killing the process is a different act.
+
+    Pinned as behaviour rather than as ``not hasattr(OL, "stop")``. A stop() now exists
+    (2026-08-10) and refuses any daemon this app did not spawn -- but the property that
+    matters here is narrower and unchanged: the RELEASE path must never reach it, so a
+    machine whose Ollama is a system service keeps running it while the card is handed
+    to vLLM.
+    """
     made = fake_ollama([{"model": "m", "vram_bytes": 1, "size_bytes": 1}])
+    stopped: list = []
+    monkeypatch.setattr(OL, "stop", lambda **kw: stopped.append(kw) or {})
+    monkeypatch.setattr("os.kill", lambda *a, **kw: stopped.append(a))
+
     OL.release_vram()
-    assert not hasattr(OL, "stop"), "adding stop() would reach outside what the app owns"
+
+    assert stopped == [], "the release path reached for a stop"
     assert {c[0] for c in made[0].calls} <= {"is_available", "loaded_models", "unload"}
 
 

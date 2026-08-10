@@ -116,6 +116,45 @@ def test_only_a_server_from_our_own_venv_is_adoptable(tmp_path, monkeypatch):
     assert seen() == [101]
 
 
+def test_both_of_server_argv_s_own_launch_shapes_are_recognised(tmp_path, monkeypatch):
+    """DERIVED FROM THE BUILDER, not from a hand-written command line.
+
+    ``server_argv`` produces two shapes -- the console script, and a module fallback for
+    installs where that entry point is absent. An earlier cut of the matcher recognised
+    only the first, so on exactly the layout the fallback exists for, ``stop`` would
+    have refused to adopt a server this app had started. Generating the argv here means
+    a change to how the server is launched cannot leave the matcher behind.
+    """
+    from src.llm import vllm_lifecycle as VL
+
+    venv = tmp_path / "venv"
+    (venv / "bin").mkdir(parents=True)
+    monkeypatch.setattr(VL, "venv_dir", lambda: venv)
+    monkeypatch.setattr(VL, "venv_bin", lambda n: venv / "bin" / n)
+    monkeypatch.setattr(VL, "venv_python", lambda: venv / "bin" / "python")
+
+    # (a) the console script is present -> `vllm serve <model>`
+    (venv / "bin" / "vllm").write_text("#!/bin/sh\n")
+    console = VL.server_argv("org/model", port=8001)
+    assert VL._looks_like_our_server(console), console
+
+    # (b) it is absent -> the module fallback, which the first cut missed entirely
+    (venv / "bin" / "vllm").unlink()
+    module = VL.server_argv("org/model", port=8001)
+    assert module != console, "the fixture did not actually exercise the second shape"
+    assert VL._looks_like_our_server(module), module
+
+
+def test_another_tool_from_the_same_venv_is_not_a_server():
+    """The ownership half is the venv; this half stops us terminating a pip install
+    that happens to be running out of it."""
+    from src.llm import vllm_lifecycle as VL
+
+    assert not VL._looks_like_our_server(["/v/bin/python", "-m", "pip", "install", "vllm"])
+    assert not VL._looks_like_our_server(["/v/bin/vllm", "--help"])
+    assert not VL._looks_like_our_server([])
+
+
 def test_an_unowned_vllm_is_refused_with_the_path_that_would_have_matched(monkeypatch):
     from src.llm import vllm_lifecycle as VL
 

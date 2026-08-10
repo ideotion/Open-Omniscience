@@ -1961,14 +1961,35 @@ def _adoptable_server_pids() -> list[int]:
         if not argv or not argv[0]:
             continue
         parts = [a.decode("utf-8", "replace") for a in argv if a]
-        # The executable must live in our venv AND the command must be a `vllm serve`.
+        # The executable must live in our venv AND the command must be a vLLM server.
         # Both halves matter: the first is the ownership claim, the second stops us
         # terminating some other tool that happens to run from the same venv.
         if not parts[0].startswith(venv):
             continue
-        if "serve" in parts and any("vllm" in p for p in parts[:2]):
+        if _looks_like_our_server(parts):
             found.append(int(entry.name))
     return found
+
+
+def _looks_like_our_server(argv: list[str]) -> bool:
+    """Is this command line one ``server_argv`` would have produced?
+
+    BOTH shapes, because ``server_argv`` has two: the console script (``vllm serve
+    <model>``) and the module fallback it uses when that entry point is absent. An
+    earlier cut recognised only the first, so on exactly the install layout the
+    fallback exists for, ``stop`` would have refused to adopt a server this app had
+    started -- the gap it was written to close, half closed.
+
+    Kept beside the builder and tested against its real output rather than against a
+    hand-written command line, so a change to how the server is launched cannot leave
+    this behind.
+    """
+    if not argv:
+        return False
+    head = argv[0]
+    if head.endswith("/vllm") or head.endswith("\\vllm"):
+        return "serve" in argv[1:2]
+    return any(a.startswith("vllm.entrypoints") for a in argv)
 
 
 def stop(*, timeout: float = 10.0, adopt: bool = True) -> dict:
