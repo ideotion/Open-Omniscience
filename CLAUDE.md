@@ -2821,6 +2821,26 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     first cut opened its own client to ask which model was serving, which let it
     disagree with the run itself and broke a test that had injected one; ask the object
     that will actually do the work, never a second connection to the same thing.
+  - **A RULING IS PINNED BY GUARDS THAT DO NOT SHARE ITS VOCABULARY — grep the test
+    tree for the MODULE, never for a plausible filename (2026-08-10, adding a narrowed
+    `stop()` to `ollama_lifecycle`):** the no-stop ruling was enforced by
+    `test_backend_launch.py` and `test_gpu_arbitration.py`, neither of which I ran,
+    because I had listed candidate suites by NAME (`test_ollama_*`, `test_vllm_*`) and
+    those two are named for what they test rather than for the module they test it
+    through. `grep -rln ollama_lifecycle tests/` finds them instantly. The full suite
+    caught it, which is the argument for running the full suite before pushing rather
+    than the files you can think of. **THE HALF WORTH MORE:** both guards were RIGHT,
+    and one of them had written down what to do — *"if a stop() is ever added, it must
+    only ever kill a process this app itself spawned — update this test deliberately,
+    never by reflex."* A guard that anticipates its own supersession is worth writing;
+    it turns a red test from an obstacle into an instruction. Both were then rewritten
+    from asserting an ABSENCE (`not hasattr(mod, "stop")`, which says nothing about
+    behaviour) to proving the PROPERTY — patch `os.kill`, drive the real refusal,
+    assert no signal reaches a daemon the app did not spawn — which is strictly
+    stronger and survives the feature existing. Prefer that shape from the start: a
+    ruling about what the code must NOT DO is testable as behaviour, and expressing it
+    as the absence of a function guarantees a false red the day the function is
+    legitimately added.
 
   - **A BUDGET FOR A LOOP WRAPPED IN BLANKET EXCEPTION ISOLATION CANNOT *BE* AN
     EXCEPTION (2026-08-09, the 69-minute `leads-quality.json`):** an all-diagnostics run
