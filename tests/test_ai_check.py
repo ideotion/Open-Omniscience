@@ -355,3 +355,39 @@ def test_the_endpoint_forwards_every_field_the_worker_accepts() -> None:
         "the hours-long run must be opt-in — a default-on deep check would turn one "
         "click into an afternoon"
     )
+
+
+def test_the_deep_run_turns_backend_switching_ON(monkeypatch) -> None:
+    """THE LOAD-BEARING FLAG for the whole ask. Left off, a vLLM server serves the one
+    model it was started with, so the run would silently cover ONE model out of however
+    many are downloaded — and report it as though that were the roster."""
+    seen: dict = {}
+    monkeypatch.setattr(AC, "ensure_frozen_batch", lambda **kw: {"built": False, "digest": "d"})
+    monkeypatch.setattr("src.ai_layer.bench_batch.load_anchors", lambda **_kw: None)
+    monkeypatch.setattr(
+        "src.ai_layer.model_bench.run_model_bench",
+        lambda ctx, **kw: seen.update(kw) or {"pairs_run": []},
+    )
+
+    out = AC._live_bench(None, models=None, repeats=2, refresh_batch=False)
+
+    assert seen["allow_backend_switch"] is True
+    assert seen["restart"] is False, "a reused batch resumes; it does not start over"
+    assert out["frozen_batch_step"]["digest"] == "d"
+    assert out["anchors_available"] is False
+
+
+def test_refreshing_the_inputs_restarts_the_bench(monkeypatch) -> None:
+    """New questions mean the earlier answers are answers to something else; resuming
+    across them would put two question sets in one table."""
+    seen: dict = {}
+    monkeypatch.setattr(AC, "ensure_frozen_batch", lambda **kw: {"built": True, "digest": "new"})
+    monkeypatch.setattr("src.ai_layer.bench_batch.load_anchors", lambda **_kw: None)
+    monkeypatch.setattr(
+        "src.ai_layer.model_bench.run_model_bench",
+        lambda ctx, **kw: seen.update(kw) or {},
+    )
+
+    AC._live_bench(None, models=None, repeats=1, refresh_batch=True)
+
+    assert seen["restart"] is True
