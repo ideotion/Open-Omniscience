@@ -66,9 +66,17 @@ def extract_for_articles(
     text, output ``kind`` (the metadata type) and ``prompt_version`` (e.g. ``custom:7``) —
     the same unified typed-metadata path either way.
     """
+    from src.ai_layer.coverage import sweep_text_budget
+
     total = len(work)
     yield {"event": "start", "total": total, "model": model, "kind": kind}
     stored = skipped = failed = terms_total = 0
+    # Warm the shared TTL cache once (the vLLM probe shells out to nvidia-smi, the
+    # settings read hits the encrypted KV store); the per-article budget still resolves
+    # per article, since its remaining input is that article's SCRIPT. Every article is
+    # then read WHOLE, in as many parts as the window needs (2026-08-10 ruling).
+    if work:
+        sweep_text_budget(work[0].content)
 
     with session_scope() as session:
         already: set[int] = set()

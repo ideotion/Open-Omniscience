@@ -83,10 +83,14 @@ def test_vram_is_preferred_over_system_ram_when_both_are_known() -> None:
     assert out["afford_basis"] == "VRAM"
 
 
-def test_a_small_machine_is_capped_and_says_the_tail_will_be_truncated() -> None:
+def test_a_small_machine_is_capped_and_says_the_tail_costs_more_calls() -> None:
+    """Before 2026-08-10 the honest thing to say here was "the tail gets truncated,
+    with disclosure". The ruling removed that trade, so the sentence has to change with
+    it: a small window no longer costs COVERAGE, it costs CALLS."""
     out = C.recommend_num_ctx(p95_chars=200_000, script="latin", vram_mb=2048)
     assert out["recommended"] <= C.MAX_NUM_CTX
-    assert "truncated with disclosure" in out["reason"]
+    assert "read in several parts" in out["reason"]
+    assert "truncat" not in out["reason"], "a window no longer costs coverage"
 
 
 def test_a_huge_machine_is_still_capped_by_the_heuristic_ceiling() -> None:
@@ -102,24 +106,20 @@ def test_the_recommendation_states_that_it_is_an_estimate() -> None:
 
 
 # --------------------------------------------------------------------------- #
-#  Head truncation — the BACKGROUND path.
+#  Truncation is GONE, not deprecated.
 # --------------------------------------------------------------------------- #
-def test_a_short_text_is_untouched_and_carries_no_disclosure() -> None:
-    text, disc = C.head_truncate("short", 1000)
-    assert text == "short" and disc is None
-
-
-def test_truncation_says_what_it_did() -> None:
-    """An extraction over the first 6,000 of 40,000 characters is not an extraction
-    over the article, and a result that does not say so invites being read as one."""
-    text, disc = C.head_truncate("x" * 40_000, 6000)
-    assert len(text) == 6000
-    assert disc["analyzed_chars"] == 6000 and disc["total_chars"] == 40_000
-    assert "the rest was not seen" in disc["note"]
+def test_there_is_no_truncation_helper_left_to_reach_for() -> None:
+    """``head_truncate`` cut an article to the budget and returned a disclosure saying
+    so. The maintainer retired that trade on 2026-08-10 ("not acceptable ... otherwise
+    it won't work"), and it was DELETED rather than left unused: with no helper to
+    truncate with, "no sweep truncates" holds by construction instead of by everyone
+    remembering. This guard is why re-adding it is a deliberate act."""
+    assert not hasattr(C, "head_truncate")
+    assert "head_truncate" not in C.__all__
 
 
 # --------------------------------------------------------------------------- #
-#  Chunking — the USER-DRIVEN path.
+#  Chunking — now the ONLY path, for user-driven work and sweeps alike.
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize(
     "text",

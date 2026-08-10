@@ -8505,7 +8505,11 @@ def test_a_user_asked_summarize_or_translate_never_silently_truncates():
     and stored the result as if it were a summary/translation of the whole thing —
     which is indistinguishable, to the reader, from a complete one of a shorter
     article. Both single-article endpoints and the bulk run now go through the
-    chunking path; background sweeps may still truncate, but must SAY so."""
+    chunking path.
+
+    AMENDED 2026-08-10: the "background sweeps may still truncate, but must SAY so"
+    half of this guard is GONE — the maintainer ruled that trade out, and the sweep
+    side is now pinned by ``test_sweep_full_coverage.py``."""
     src = (_SRC / "api" / "llm.py").read_text(encoding="utf-8")
     for fn in ("summarize_article", "translate_article"):
         body = src.split(f"def {fn}(", 1)[1].split("\ndef ", 1)[0]
@@ -8514,10 +8518,6 @@ def test_a_user_asked_summarize_or_translate_never_silently_truncates():
     # The bulk stream is a user-initiated batch too (ruling 13 names it one).
     bulk = src.split("def bulk_llm(", 1)[1]
     assert "_run_over_long_text" in bulk and "content[:_MAX_CHARS]" not in bulk
-
-    # A background sweep MAY truncate — and discloses it.
-    per = (_SRC / "ai_layer" / "perception.py").read_text(encoding="utf-8")
-    assert "head_truncate" in per and "truncation" in per
 
     # The method is provenance: a hierarchical summary is a different artifact.
     assert "_version_with_method" in src

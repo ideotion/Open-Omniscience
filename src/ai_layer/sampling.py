@@ -86,14 +86,26 @@ def sweep_temperature() -> float:
     return value
 
 
-def sweep_options() -> dict[str, float | int]:
+def sweep_options(*, num_ctx: int | None = None) -> dict[str, float | int]:
     """Sampling options for one constrained-output call.
 
     Both backends accept these: Ollama takes them in its ``options`` dict natively, and
     ``vllm_client.openai_sampling_params`` maps all three onto the OpenAI-compatible
     body. A caller passes the result straight through as ``options=``.
+
+    ``num_ctx`` is the CONTEXT WINDOW the caller sized its prompt for, and sending it
+    is load-bearing rather than decorative: Ollama serves each model's own default
+    window (2048 tokens on many builds) unless it is told otherwise, so a part sized
+    for a configured 8192 would be silently cut at the daemon — reintroducing at the
+    server the truncation the coverage module removes at the client. vLLM's window is
+    fixed at server start, so its mapper drops the key and reports the drop; that is
+    correct, not a loss. Omitted (``None``) when nothing could be read, which leaves
+    the request byte-identical to before.
     """
-    return {"temperature": sweep_temperature(), "top_p": 1.0, "seed": 0}
+    opts: dict[str, float | int] = {"temperature": sweep_temperature(), "top_p": 1.0, "seed": 0}
+    if isinstance(num_ctx, int) and num_ctx > 0:
+        opts["num_ctx"] = num_ctx
+    return opts
 
 
 __all__ = [

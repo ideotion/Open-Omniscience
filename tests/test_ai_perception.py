@@ -78,7 +78,13 @@ def test_llm_perception_extract_calls_generate_with_the_constrained_system_promp
             return _FakeResult()
 
     out = P.llm_perception_extract(_FakeClient(), "some text", model="m", keep_alive="5m")
-    assert out == {"who": ["A"], "where": ["B"], "when": ["2020"]}
+    # The three fields are the contract; ``coverage`` rides alongside since 2026-08-10
+    # (how many parts the article took to read in full). Asserting the fields rather
+    # than whole-dict equality so an honest addition beside them is not a failure.
+    assert {k: out[k] for k in ("who", "where", "when")} == {
+        "who": ["A"], "where": ["B"], "when": ["2020"]
+    }
+    assert out["coverage"]["parts"] == 1 and out["coverage"]["complete"] is True
     assert len(calls) == 1
     prompt, model, system, keep_alive = calls[0]
     assert prompt == "some text"

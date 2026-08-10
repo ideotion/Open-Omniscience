@@ -154,3 +154,14 @@ def test_both_backends_carry_the_options_through_to_their_own_wire_shape():
     # Ollama's own client passes `options` through verbatim; assert the shape it needs
     # rather than re-testing httpx.
     assert set(sweep_options()) <= {"temperature", "top_p", "seed"}
+
+    # ``num_ctx`` (2026-08-10) is the one knob that is Ollama-only by design: the sweeps
+    # size a part for a window and must SEND it, or Ollama serves each model's own
+    # default and re-truncates at the daemon. vLLM's window is fixed at server start, so
+    # its mapper DROPS the key — and reports the drop, which is the honest outcome
+    # rather than a silently ignored request.
+    mapped2, dropped2 = openai_sampling_params(sweep_options(num_ctx=8192))
+    assert "num_ctx" in dropped2, "an unmappable knob must be reported, not swallowed"
+    assert mapped2["temperature"] == 0.0, "and the mappable ones still map"
+    assert sweep_options(num_ctx=8192)["num_ctx"] == 8192
+    assert "num_ctx" not in sweep_options(num_ctx=None), "unset stays unset"
