@@ -38,9 +38,23 @@ class _Stub:
     """Echoes a well-formed answer for every item the prompt lists, so the parser's
     happy path runs end to end without a model."""
 
-    def __init__(self, *, verdict: str = "content", kind: str = "other", tag: str | None = None):
+    def __init__(
+        self,
+        *,
+        verdict: str = "content",
+        kind: str = "other",
+        tag: str | None = None,
+        installed: tuple[str, ...] = (),
+    ):
         self.verdict, self.kind, self.tag = verdict, kind, tag
+        # Part of the LlmBackend protocol, and the bench now asks it which model will
+        # ANSWER (a vLLM server serves exactly one). A double without it describes a
+        # client that could not exist.
+        self.installed = installed
         self.calls: list[tuple[str, str | None]] = []
+
+    def list_installed(self) -> list[str]:
+        return list(self.installed)
 
     @staticmethod
     def _listed(prompt: str) -> list[str]:
@@ -589,7 +603,7 @@ def test_vllm_is_not_restarted_unless_the_operator_allows_it(frozen) -> None:
         models=["m1"],
         backends=("vllm",),
         installed_by_backend={"vllm": ["m1"]},
-        clients={"vllm": _Stub(tag="politics")},
+        clients={"vllm": _Stub(tag="politics", installed=("m1",))},
         switch=lambda *, backend, model: switched.append(model) or {"switched": True},
     )
     assert switched == [], "restarting the operator's server is not a bench's decision to make"
@@ -602,7 +616,7 @@ def test_vllm_is_not_restarted_unless_the_operator_allows_it(frozen) -> None:
         models=["m1"],
         backends=("vllm",),
         installed_by_backend={"vllm": ["m1"]},
-        clients={"vllm": _Stub(tag="politics")},
+        clients={"vllm": _Stub(tag="politics", installed=("m1",))},
         allow_backend_switch=True,
         switch=lambda *, backend, model: switched.append(model) or {"switched": True},
     )
