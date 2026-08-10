@@ -10611,6 +10611,54 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     zero from a dead one are opposite facts, and collapsing them offers to re-download a
     roster the operator already holds. Both directions need a test — an over-eager
     `unknown` would never offer to download anything for a working, empty backend.
+  - **A BOUNDED WATCHER THAT EXITS SILENTLY PUBLISHES ITS OWN TIMEOUT AS THE WORK'S
+    OUTCOME — and the honest sentence already being IN the function is why the gap
+    survives review (2026-08-10, "the diagnostics takes forever and then seems to
+    stop"):** `runAllDiagnostics` polled `for (let i = 0; i < 1800; i++)` and on
+    exhaustion simply fell out of the loop — no message, the status frozen on its last
+    `Building in the background… 42% · member 12/59` line, the button re-enabled.
+    Nothing had crashed: the build FINISHED, unclaimed, after the watcher stopped
+    looking, which is exactly why the operator's hardware graph went quiet and why the
+    report read as a stop. THREE GENERAL POINTS. (a) A ceiling is a claim about how long
+    you will WATCH, never about how long the work takes, so any exit that saw no
+    terminal state owes a sentence; the durable shape is a `settled` latch set by each
+    terminal branch plus one `if (!settled)` after the loop, which makes "the UI never
+    goes silent" a property instead of a habit to remember per branch. (b) **The reason
+    it passed review is that the right message was already in the function** — the
+    `miss > 30` dropped-poll path set "Still building — check the task manager." A
+    reviewer greps for the honest string, finds it, and moves on; the string existed,
+    just not on the path that fired. That is the recorded "a whole-file substring
+    assertion is only as meaningful as that string's uniqueness" trap wearing control
+    flow instead of a test. (c) A bound chosen against yesterday's workload silently
+    becomes the common case: 60 minutes was generous when the bundle was smaller, and at
+    59 members each allowed a 300 s deadline the run is *permitted* ~5 hours, so
+    exhaustion went from exceptional to routine with no code change — when a fixed bound
+    guards work whose size grows, re-derive it from what the work is now allowed to cost.
+    TESTING NOTE, and why a source guard would have been worthless here: the defect was
+    an ABSENCE, so no assertion over the message's presence in the file can distinguish
+    "it exists" from "it is reached". Extract the real function and drive the real
+    ceiling with a fake clock (`Date.now` plus a `setTimeout` that advances it by exactly
+    what it was asked to wait, which also exercises the real poll pacing rather than
+    bypassing it), then assert what the operator ends up READING — with the twin in both
+    directions, since a fix that painted the honest message unconditionally would satisfy
+    the first case while destroying the download path.
+  - **A JOB'S IN-MEMORY RESULT IS NOT THE ARTIFACT'S EXISTENCE — gate a download on the
+    file, and answer the staleness question explicitly (2026-08-10, same investigation):**
+    `/all-job/download` refused unless the registered job object still reported
+    `state == "done"` with its `path`. That object lives exactly as long as the process,
+    while the archive it published lives in `data_dir()/diagnostics/` until a later build
+    sweeps it — so any restart between a finished build and the click that claims it
+    answered 404 about a file sitting right there. The failure mode is worst where it
+    matters most: an OOM during a large import is precisely when the bundle is needed and
+    the process least likely to have survived, i.e. the artifact outlives the only thing
+    that knew how to hand it over. GENERAL FORM: when a durable artifact is advertised
+    through ephemeral state, that state is a CACHE, not the authority — resolve from disk.
+    But the fallback needs its own guard, because "newest file on disk" is not always the
+    answer to the question being asked: while a build is RUNNING the operator asked the
+    NEW run something the previous archive cannot answer, and serving it silently is a
+    fabricated result. So the fallback is conditional on the job not running, and a
+    `.part` is never served at all — handing a truncated zip to someone already trying to
+    diagnose something is the worst available answer.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
