@@ -154,7 +154,18 @@ def hand_gpu_to(
         out["started"] = {"error": f"{type(exc).__name__}: {str(exc)[:300]}"}
     out["ready"] = _is_ready(backend)
     if not out["ready"]:
+        # A release that was REFUSED is the likeliest cause of the failure that follows
+        # it, and it is the one fact the backend's own diagnosis cannot see: vLLM
+        # reports "exited", not "exited because another process held four gigabytes".
+        # Carrying it here is the difference between a reason and a symptom.
+        held = [
+            f"{s['backend']} ({(s.get('detail') or {}).get('reason') or 'not released'})"
+            for s in steps
+            if not s.get("released") and (s.get("detail") or {}).get("reason")
+        ]
         out["reason"] = _why_not_ready(backend)
+        if held:
+            out["reason"] += f" — and the card was not released by: {', '.join(held)}"
     return out
 
 

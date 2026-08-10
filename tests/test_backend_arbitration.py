@@ -352,3 +352,44 @@ def test_every_backend_this_app_can_serve_with_is_arbitrable(backend):
     assert backend in BENCH_BACKENDS
     out = A.release_backend(backend)
     assert out["method"] in {"unload-models", "stop-server", "none"}
+
+
+def test_a_refused_release_reaches_the_reason_for_the_failure_that_follows(monkeypatch):
+    """vLLM reports "exited", never "exited because another process held four gigabytes".
+
+    The release refusal is the one fact the failing backend's own diagnosis cannot see,
+    so it travels with the reason rather than sitting in a nested step nobody reads.
+    """
+    monkeypatch.setattr(
+        A,
+        "release_backend",
+        lambda b: {
+            "backend": b,
+            "released": False,
+            "detail": {"reason": "not started by this app"},
+        },
+    )
+    monkeypatch.setattr(A, "_start", lambda _b, _m: {"started": True})
+    monkeypatch.setattr(A, "_is_ready", lambda _b: False)
+    monkeypatch.setattr(A, "_why_not_ready", lambda _b: "the vLLM server exited during startup")
+    monkeypatch.setattr(A, "free_vram_mb", lambda: 500)
+
+    out = A.hand_gpu_to("vllm", model="m")
+
+    assert "exited during startup" in out["reason"], "the backend's own diagnosis survives"
+    assert "not released by: ollama" in out["reason"]
+    assert "not started by this app" in out["reason"]
+
+
+def test_a_successful_release_adds_nothing_to_the_reason(monkeypatch):
+    """The negative-space twin: a start that failed for its own reasons must not be
+    given a second, irrelevant cause to chase."""
+    monkeypatch.setattr(
+        A, "release_backend", lambda b: {"backend": b, "released": True, "detail": {}}
+    )
+    monkeypatch.setattr(A, "_start", lambda _b, _m: {"started": True})
+    monkeypatch.setattr(A, "_is_ready", lambda _b: False)
+    monkeypatch.setattr(A, "_why_not_ready", lambda _b: "the vLLM server exited during startup")
+    monkeypatch.setattr(A, "free_vram_mb", lambda: 7000)
+
+    assert A.hand_gpu_to("vllm", model="m")["reason"] == "the vLLM server exited during startup"
