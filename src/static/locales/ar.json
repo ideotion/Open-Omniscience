@@ -2076,6 +2076,8 @@
   "No articles are missing a language — nothing to detect.": "لا توجد مقالات بدون لغة — لا شيء للاكتشاف.",
   "Lost contact with the job — see the task manager.": "فقد الاتصال بالمهمة — راجع مدير المهام.",
   "Connection hiccup — retrying…": "تعثّر في الاتصال — إعادة المحاولة…",
+  "Still building — check the task manager.": "لا يزال قيد الإنشاء — راجع مدير المهام.",
+  "Still running — check the task manager.": "لا يزال قيد التشغيل — راجع مدير المهام.",
   "The local model is unavailable (Ollama down or airplane mode).": "النموذج المحلي غير متاح (Ollama متوقف أو وضع الطيران).",
   "labelled": "مُصنَّفة",
   "unclear": "غير واضحة",
