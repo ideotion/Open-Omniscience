@@ -2076,6 +2076,8 @@
   "No articles are missing a language — nothing to detect.": "言語が欠けている記事はありません — 検出対象なし。",
   "Lost contact with the job — see the task manager.": "ジョブとの接続が失われました — タスクマネージャーを確認してください。",
   "Connection hiccup — retrying…": "接続の問題 — 再試行中…",
+  "Still building — check the task manager.": "まだ作成中 — タスクマネージャーを確認してください。",
+  "Still running — check the task manager.": "まだ実行中 — タスクマネージャーを確認してください。",
   "The local model is unavailable (Ollama down or airplane mode).": "ローカルモデルを利用できません（Ollama 停止または機内モード）。",
   "labelled": "ラベル付け",
   "unclear": "不明",

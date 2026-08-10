@@ -2076,6 +2076,8 @@
   "No articles are missing a language — nothing to detect.": "কোনো নিবন্ধের ভাষা অনুপস্থিত নেই — শনাক্ত করার কিছু নেই।",
   "Lost contact with the job — see the task manager.": "কাজের সঙ্গে সংযোগ হারিয়ে গেছে — টাস্ক ম্যানেজার দেখুন।",
   "Connection hiccup — retrying…": "সংযোগে বাধা — আবার চেষ্টা করা হচ্ছে…",
+  "Still building — check the task manager.": "এখনও তৈরি হচ্ছে — টাস্ক ম্যানেজার দেখুন।",
+  "Still running — check the task manager.": "এখনও চলছে — টাস্ক ম্যানেজার দেখুন।",
   "The local model is unavailable (Ollama down or airplane mode).": "স্থানীয় মডেল অনুপলব্ধ (Ollama বন্ধ বা এয়ারপ্লেন মোড)।",
   "labelled": "চিহ্নিত",
   "unclear": "অস্পষ্ট",

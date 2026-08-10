@@ -4339,21 +4339,61 @@ def all_diagnostics_job_status() -> JSONResponse:
     return JSONResponse(st)
 
 
+def _newest_all_diagnostics_archive() -> pathlib.Path | None:
+    """The newest FINISHED archive on disk, or None.
+
+    ``.part`` files are excluded: one is an in-flight or abandoned build, and serving a
+    truncated zip as a finished archive would be the worst possible answer for an operator
+    who is already trying to diagnose something. The glob alone cannot match one (a
+    ``.part`` name does not end in ``.zip``); the suffix check states the requirement
+    instead of leaving it resting on that.
+    """
+    try:
+        files = [
+            p for p in _all_diagnostics_dir().glob("oo-all-diagnostics-*.zip")
+            if p.suffix == ".zip" and p.is_file()
+        ]
+        # A file can vanish between glob and stat (the worker sweeps old archives), so the
+        # key is guarded rather than allowed to raise out of a sort.
+        return max(files, key=lambda p: p.stat().st_mtime) if files else None
+    except OSError:
+        return None
+
+
 @router.get("/all-job/download")
 def all_diagnostics_job_download() -> FileResponse:
     """Serve the finished background all-diagnostics archive (D2). 404 until a build has
-    completed successfully (run ``/all-job`` first)."""
+    completed successfully (run ``/all-job`` first).
+
+    FALLS BACK TO DISK when the in-memory job result is gone. The job object lives only as
+    long as the process, while the archive it published lives in ``data_dir()/diagnostics/``
+    until a later build sweeps it — so an app restart between a finished build and the click
+    that claims it used to strand a multi-hour archive that was sitting right there,
+    answering 404 about a file on disk. This is not hypothetical for this app: an OOM during
+    a large import is precisely when the operator most needs the bundle and least likely to
+    have kept the process alive.
+
+    It NEVER falls back while a build is RUNNING. The operator asked the NEW run a question,
+    and the previous run's archive cannot answer it; handing it over silently would be a
+    fabricated result — the one thing a diagnostic must not produce.
+    """
     st = _ALL_DIAG_JOB.status()
     res = st.get("result") or {}
     path = res.get("path")
-    if st.get("state") != "done" or not path or not os.path.exists(path):
-        raise HTTPException(
-            status_code=404,
-            detail="no all-diagnostics archive is ready — start one with POST /api/diagnostics/all-job",
+    if st.get("state") == "done" and path and os.path.exists(path):
+        return FileResponse(
+            path, media_type="application/zip",
+            filename=res.get("filename") or "oo-all-diagnostics.zip",
         )
-    return FileResponse(
-        path, media_type="application/zip",
-        filename=res.get("filename") or "oo-all-diagnostics.zip",
+    if st.get("state") != "running":
+        on_disk = _newest_all_diagnostics_archive()
+        if on_disk is not None:
+            return FileResponse(
+                str(on_disk), media_type="application/zip", filename=on_disk.name,
+            )
+    raise HTTPException(
+        status_code=404,
+        detail="no all-diagnostics archive is ready — start one with POST /api/diagnostics/all-job",
     )
 
 

@@ -4508,3 +4508,61 @@ prefer being stopped by it over lowering it. A hand-written session double drift
 against correct code, so the stored-rows test uses a real session on an isolated engine.
 Full suite 7424 passed / 41 skipped / 0 failed, +5 over the pre-change baseline, which is the
 check that the run exercised the change rather than an unchanged tree.
+
+## 2026-08-10 — All-diagnostics: an honest poll-loop exit, and an archive that survives its process
+
+A field report in one sentence: the built-in diagnostics "takes forever and then seems to
+stop, based on hardware usage statistics." Two independent defects produced it, and neither
+is in the build. Both are reachability, which is why the symptom reads as a crash when
+nothing crashed.
+
+**The watcher gave up and said nothing.** `runAllDiagnostics` polled a fixed
+`for (let i = 0; i < 1800; i++)` — 60 minutes at 2 s — and on exhaustion fell out of the
+loop: no message, the status frozen on its last `Building in the background… 42% ·
+member 12/59` line, the button re-enabled. The build meanwhile ran on, finished, and went
+unclaimed. That is the whole of the hardware observation: the machine went quiet because the
+work was DONE, and nobody was told. The ceiling was also structurally too short by then —
+59 members, each allowed `OO_ALL_DIAG_{DB,NONDB}_MEMBER_DEADLINE_S` (300 s default), so a
+corpus-scale run is *permitted* roughly five hours. Exhaustion had stopped being exceptional
+without a line of code changing.
+
+The ceiling is now a display bound that reports rather than one that merely stops: every
+terminal branch latches `settled`, and one `if (!settled)` after the loop covers the ceiling
+and anything else that ends it early. The advice it gives is true at that moment — the job is
+still registered and `running`, so `/api/jobs` lists it (`api/jobs.py:484` filters to
+`running`/`error`) and the task manager shows live progress. Past two minutes the poll drops
+to 5 s, against the 2026-06-13 polling-storm finding: a 2 s poll for hours, for a line that
+changes every few minutes. The same silent-exhaustion shape was in the P0 validation poller
+and is fixed there too — an enumeration of one is how a class regrows.
+
+**A finished archive died with the process that built it.** `/all-job/download` gated on the
+in-memory job result while the archive lives in `data_dir()/diagnostics/` until a later build
+sweeps it, so a restart answered 404 about a file sitting right there. It now falls back to
+the newest `.zip` on disk — but never while a build is RUNNING, because the operator asked
+the new run a question the old file cannot answer and handing it over silently would be a
+fabricated result. A `.part` is never served: a truncated zip is the worst available answer
+for someone already trying to diagnose something.
+
+**Verification.** The node suite extracts `runAllDiagnostics` from `app.js` and reaches the
+real six-hour ceiling with a fake clock, then asserts what the operator ends up reading —
+because the defect was an absence, and no assertion over a string's presence in the file can
+tell "it exists" from "it is reached". Both directions are pinned so an unconditionally
+painted message would fail. Both mutations checked: removing the honest exit reddens the node
+suite; removing the disk fallback reddens two endpoint tests.
+
+**Checked and clean**, recorded so they are not re-investigated: `merge-diag` (the newest
+member and the only one that benchmarks) uses its own connections, so `_member_touches_db`'s
+shared-session premise holds for it; the five members added this week are read-only
+`*_last()`/snapshot reads, so no live AI runs inside the bundle;
+`llm_throughput_selftest`/`ai_activity_selftest` are passed as bare function references —
+the recorded `Query()`-sentinel trap — but both take no parameters, so it is correct; the
+pool is `QueuePool(8, timeout=30)` with `busy_timeout=30000`, so contention errors rather
+than hanging, which ruled out pool exhaustion as a silent-hang mechanism.
+
+**Not addressed, deliberately.** Why the run takes hours. The manifest already records
+per-member `wall_s` and a `slowest_members` summary, so the next archive names its own hot
+spots on the operator's real corpus rather than me picking a suspect from a sandbox with no
+data in it. Two status strings, reachable before this change and keyed in none of the twelve
+locales, are now keyed by textual insert beside their sibling (+2/−0 per locale), each using
+that locale's own existing "Task manager" term. Full suite 7514 passed / 111 skipped / 0
+failed; ruff clean; mypy 127 = baseline; bandit rc 0; i18n 2783 ×12.

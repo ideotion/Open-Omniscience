@@ -2076,6 +2076,8 @@
   "No articles are missing a language — nothing to detect.": "Aucun article sans langue — rien à détecter.",
   "Lost contact with the job — see the task manager.": "Contact perdu avec la tâche — voir le gestionnaire de tâches.",
   "Connection hiccup — retrying…": "Problème de connexion — nouvelle tentative…",
+  "Still building — check the task manager.": "Toujours en cours de création — consultez le gestionnaire de tâches.",
+  "Still running — check the task manager.": "Toujours en cours — consultez le gestionnaire de tâches.",
   "The local model is unavailable (Ollama down or airplane mode).": "Le modèle local est indisponible (Ollama arrêté ou mode avion).",
   "labelled": "étiquetés",
   "unclear": "indéterminés",

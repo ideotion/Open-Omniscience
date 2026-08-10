@@ -2076,6 +2076,8 @@
   "No articles are missing a language — nothing to detect.": "किसी लेख की भाषा नहीं छूटी — पहचानने के लिए कुछ नहीं।",
   "Lost contact with the job — see the task manager.": "कार्य से संपर्क टूट गया — टास्क मैनेजर देखें।",
   "Connection hiccup — retrying…": "कनेक्शन बाधा — फिर से प्रयास…",
+  "Still building — check the task manager.": "अभी भी बन रहा है — कार्य प्रबंधक देखें।",
+  "Still running — check the task manager.": "अभी भी चल रहा है — कार्य प्रबंधक देखें।",
   "The local model is unavailable (Ollama down or airplane mode).": "स्थानीय मॉडल अनुपलब्ध है (Ollama बंद या हवाई जहाज़ मोड)।",
   "labelled": "लेबल किए गए",
   "unclear": "अस्पष्ट",

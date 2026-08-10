@@ -2076,6 +2076,8 @@
   "No articles are missing a language — nothing to detect.": "Ни у одной статьи нет пропущенного языка — нечего определять.",
   "Lost contact with the job — see the task manager.": "Связь с задачей потеряна — см. диспетчер задач.",
   "Connection hiccup — retrying…": "Сбой соединения — повтор…",
+  "Still building — check the task manager.": "Ещё собирается — откройте диспетчер задач.",
+  "Still running — check the task manager.": "Ещё выполняется — откройте диспетчер задач.",
   "The local model is unavailable (Ollama down or airplane mode).": "Локальная модель недоступна (Ollama выключена или режим полёта).",
   "labelled": "помечено",
   "unclear": "неясно",

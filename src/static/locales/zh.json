@@ -2076,6 +2076,8 @@
   "No articles are missing a language — nothing to detect.": "没有缺少语言的文章——无需检测。",
   "Lost contact with the job — see the task manager.": "与任务失去联系——请查看任务管理器。",
   "Connection hiccup — retrying…": "连接中断——正在重试…",
+  "Still building — check the task manager.": "仍在生成——请查看任务管理器。",
+  "Still running — check the task manager.": "仍在运行——请查看任务管理器。",
   "The local model is unavailable (Ollama down or airplane mode).": "本地模型不可用（Ollama 未运行或飞行模式）。",
   "labelled": "已标注",
   "unclear": "无法确定",

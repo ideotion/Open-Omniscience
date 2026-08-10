@@ -14264,6 +14264,19 @@
     // minutes on a large corpus. This starts the background job, polls its status, shows live
     // progress, and downloads when ready. JOB-STATE-AS-TRUTH: a dropped poll shows an honest
     // "connection hiccup — retrying", NEVER "failed" — only a backend error state says failed.
+    //
+    // THE CEILING IS A DISPLAY BOUND, NOT A BOUND ON THE BUILD, so outliving it must SAY so.
+    // The old loop ran a fixed 1800 iterations and, on exhaustion, simply fell out: no
+    // message, the status frozen on its last "Building in the background… N%" line, the
+    // button re-enabled. That is indistinguishable from a crash, and it is what a field
+    // report described as "takes forever and then seems to stop" — the build had in fact
+    // finished, unclaimed, after the watcher had stopped looking. 60 minutes is also
+    // structurally too short now: the bundle carries ~55 members and each is allowed
+    // OO_ALL_DIAG_{DB,NONDB}_MEMBER_DEADLINE_S (300 s default), so a corpus-scale run is
+    // permitted hours and routinely takes them. Any exit without a terminal job state now
+    // reports one, and the advice is true at that moment: the job is still registered and
+    // RUNNING, so /api/jobs lists it and the task manager shows its live progress.
+    const _ALL_DIAG_POLL_CEILING_MS = 6 * 60 * 60 * 1000;
     async function runAllDiagnostics(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("all-diag-status");
@@ -14277,14 +14290,19 @@
         try { await api("/api/diagnostics/all-job", { method: "POST" }); }
         catch (e) { /* a transient start failure still lets us poll an existing job */ }
         let miss = 0;
-        for (let i = 0; i < 1800; i++) {  // ~60 min ceiling at 2 s (bounded, never infinite)
+        // `settled` is the honesty latch: it is set by EVERY terminal branch, and whatever
+        // ends the loop without it (the ceiling above all) owes the operator a sentence.
+        let settled = false;
+        const pollStart = Date.now();
+        const deadline = pollStart + _ALL_DIAG_POLL_CEILING_MS;
+        while (Date.now() < deadline) {
           let s;
           try { s = await api("/api/diagnostics/all-job/status"); miss = 0; }
           catch (e) {
             miss++;
             set(t("Connection hiccup — retrying…"));  // the JOB is still running server-side
             await sleep(Math.min(2000 * miss, 10000));  // backoff, capped
-            if (miss > 30) { set(t("Still building — check the task manager.")); break; }
+            if (miss > 30) { settled = true; set(t("Still building — check the task manager.")); break; }
             continue;
           }
           const state = s && s.state;
@@ -14292,11 +14310,12 @@
             const sz = s.download_bytes ? " · " + _fmtBytes(s.download_bytes) : "";
             set(t("Ready — downloading…") + sz);
             window.open("/api/diagnostics/all-job/download", "_blank");
+            settled = true;
             break;
           }
-          if (state === "error") { set(t("Build failed:") + " " + (s.error || t("unknown error"))); break; }
-          if (state === "cancelled") { set(t("Build cancelled.")); break; }
-          if (state === "done") { set(t("Done — check the task manager for the file.")); break; }
+          if (state === "error") { settled = true; set(t("Build failed:") + " " + (s.error || t("unknown error"))); break; }
+          if (state === "cancelled") { settled = true; set(t("Build cancelled.")); break; }
+          if (state === "done") { settled = true; set(t("Done — check the task manager for the file.")); break; }
           // running / idle: show live progress — "member i/N · name · elapsed" (the DIAGNOSE-
           // THE-DIAGNOSTICS run-journal ruling): i/N + name already ride the existing
           // done/total/detail fields, elapsed is computed client-side from started_at so no new
@@ -14310,8 +14329,15 @@
           const elapsed = elapsedS != null ? " · " + elapsedS + "s" : "";
           const pct = (s.progress && s.progress.percent != null) ? " " + s.progress.percent + "%" : "";
           set(t("Building in the background…") + pct + (member ? " · " + member : "") + elapsed);
-          await sleep(2000);
+          // 2 s keeps a short build feeling immediate; past the first two minutes this is a
+          // long haul and a 2 s poll for hours is the polling storm the 2026-06-13 field log
+          // already complained about, for a line that changes every few minutes at most.
+          await sleep(Date.now() - pollStart > 120000 ? 5000 : 2000);
         }
+        // The ceiling, or any other way out that never saw a terminal state. The build is
+        // still running server-side; say that rather than leaving the last progress line
+        // standing as if it were the outcome.
+        if (!settled) set(t("Still building — check the task manager."));
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -14345,25 +14371,32 @@
         // Hand-off done: clear the passphrase from the field (never keep a secret in the DOM).
         if ($("p0-pass")) $("p0-pass").value = "";
         let miss = 0;
-        for (let i = 0; i < 5400; i++) {  // ~3 h ceiling at 2 s (a 100 GB backup is slow; bounded)
+        // Same honesty latch as the all-diagnostics poller above, for the same reason: a
+        // fixed-iteration loop that fell out silently froze the status on its last progress
+        // line, which reads as a crash. A P0 run against a multi-GB corpus can outlive any
+        // ceiling worth setting, so the ceiling reports rather than just stopping.
+        let settled = false;
+        const p0Deadline = Date.now() + 6 * 60 * 60 * 1000;
+        while (Date.now() < p0Deadline) {
           let s;
           try { s = await api("/api/diagnostics/p0-validation/status"); miss = 0; }
           catch (e) {
             miss++;
             set(t("Connection hiccup — retrying…"));  // the JOB is still running server-side
             await sleep(Math.min(2000 * miss, 10000));
-            if (miss > 30) { set(t("Still running — check the task manager.")); break; }
+            if (miss > 30) { settled = true; set(t("Still running — check the task manager.")); break; }
             continue;
           }
           const state = s && s.state;
-          if (state === "done" && s.ready) { set(t("Done.")); renderP0Result(out, (s.result && s.result.report) || {}); break; }
-          if (state === "error") { set(t("Validation failed:") + " " + (s.error || t("unknown error"))); break; }
-          if (state === "cancelled") { set(t("Validation cancelled.")); break; }
-          if (state === "done") { set(t("Done — check the task manager for the report.")); break; }
+          if (state === "done" && s.ready) { settled = true; set(t("Done.")); renderP0Result(out, (s.result && s.result.report) || {}); break; }
+          if (state === "error") { settled = true; set(t("Validation failed:") + " " + (s.error || t("unknown error"))); break; }
+          if (state === "cancelled") { settled = true; set(t("Validation cancelled.")); break; }
+          if (state === "done") { settled = true; set(t("Done — check the task manager for the report.")); break; }
           const member = s.detail ? " · " + s.detail : "";
           set(t("Running in the background…") + member);
           await sleep(2000);
         }
+        if (!settled) set(t("Still running — check the task manager."));
       } finally {
         if (btn) btn.disabled = false;
       }
