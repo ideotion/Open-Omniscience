@@ -3302,6 +3302,23 @@ def _fixity_bundle_member(db: Session) -> dict:
         return {"available": False, "reason": _all_diag_err_str(exc)}
 
 
+def _bench_provision_snapshot() -> dict:
+    """The bench's coverage survey for the bundle — read-only, starts NOTHING.
+
+    Deliberately calls ``survey()`` with no ``wake``: the endpoint may start a stopped
+    Ollama daemon (local, free, and the difference between "you have no models" and
+    "nobody asked"), but a diagnostics bundle must not change the machine it is
+    describing. The cost is that a stopped daemon reports ``unknown`` here rather than a
+    model list — which is the truth, and is what the field reports needed to see.
+    """
+    try:
+        from src.ai_layer.bench_provision import survey
+
+        return survey()
+    except Exception as exc:  # noqa: BLE001 - one member never sinks the bundle
+        return {"available": False, "reason": _all_diag_err_str(exc)}
+
+
 def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
     """The ordered (filename, generator) list for the all-diagnostics archive — the SINGLE
     source of truth shared by the synchronous ``/all`` endpoint and the background job, so the
@@ -3433,6 +3450,11 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # than sending somebody to run five diagnostics by hand. Read-only -- RUNNING it
         # is a background job of its own, never a bundle member.
         ("ai-check.json", lambda: ai_check_last()),
+        # What the bench COULD cover on this machine. Read-only, and pointedly WITHOUT
+        # the endpoint's `wake`: a bundle reports what it can see and starts nothing.
+        # It answers the first question every one of the 10 August field reports raised
+        # — "why is this bench so short" — without the reader having to run anything.
+        ("bench-provision.json", lambda: _bench_provision_snapshot()),
         # B7.1: the whole dual-backend AI stack snapshot -- backend/hardware facts,
         # active model, context settings, and every AI job's last saved summary.
         # Called DIRECTLY, so both arguments are passed explicitly: a FastAPI default
@@ -3647,6 +3669,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/qualification-assist/last": "qualification-assist-run.json",
     "/model-bench/last": "model-bench.json",
     "/ai-check/last": "ai-check.json",
+    "/ai-check/provision": "bench-provision.json",
     # transversal audit 09 (2026-07-25), C2: /fixity is a genuine diagnostic-shaped
     # report (a local re-hash audit) that happened to live in the SIBLING
     # src/api/integrity.py router -- see _DIAG_SIBLING_FILES below, which is what
@@ -4989,6 +5012,35 @@ class AiCheckRunBody(BaseModel):
             "the run is NOT comparable with earlier ones and starts the bench from scratch."
         ),
     )
+    download_missing: bool = Field(
+        default=False,
+        description=(
+            "fetch the roster models this machine does not have, and bench each one as "
+            "it lands. OFF by default and deliberately: this can be tens of gigabytes, "
+            "which is not something to infer from a click on 'run the benchmark'. Call "
+            "GET /ai-check/provision first — it surveys without downloading and returns "
+            "the size, which is the question to put to the operator."
+        ),
+    )
+
+
+@router.get("/ai-check/provision")
+def ai_check_provision() -> JSONResponse:
+    """What the deep bench needs, what is already here, and what a full fetch costs.
+
+    Downloads NOTHING and starts no server of its own (it does wake a stopped Ollama
+    daemon, which is local and free, because a daemon that is down reports zero models
+    and that reads as "you have none"). Safe to call before asking the operator
+    anything — which is the point: the answer IS the question they have to answer.
+    """
+    from src.ai_layer.bench_provision import survey
+
+    def _wake(backend: str) -> dict:
+        from src.ai_layer.model_bench import _default_wake
+
+        return _default_wake(backend)
+
+    return JSONResponse(survey(wake=_wake))
 
 
 def _ai_check_worker(ctx, **kwargs) -> dict:
@@ -5037,6 +5089,7 @@ def ai_check_run(body: AiCheckRunBody) -> JSONResponse:
             deep=body.deep,
             bench_models=body.bench_models,
             refresh_batch=body.refresh_batch,
+            download_missing=body.download_missing,
         )
     except RuntimeError as exc:
         st = _AI_CHECK_JOB.status()

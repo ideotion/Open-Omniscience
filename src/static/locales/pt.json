@@ -2523,6 +2523,8 @@
   "on both backends": "nos dois motores",
   "Anchor accuracy": "Exatidão sobre as âncoras",
   "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "Avaliar todos os modelos leva horas. O teste inicia um motor parado, reinicia o seu motor de IA entre modelos e devolve a máquina àquele que estava a servir antes. É retomável: cancelar mantém os modelos já medidos. Iniciar?",
+  "Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here.": "Baixá-los agora e avaliar cada um à medida que chegar? Escolha Cancelar para avaliar apenas o que já está aqui.",
+  "Could not check which models are on this machine \u2014 benching what is already here.": "Não foi possível verificar quais modelos estão nesta máquina — avaliando o que já está aqui.",
   "Not part of this check": "Fora desta verificação",
   "at concurrency": "com concorrência",
   "configured": "configurado",

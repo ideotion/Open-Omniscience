@@ -15333,9 +15333,29 @@
       const deep = !on && !!($("aicheck-deep") || {}).checked;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       if (deep && !confirm(t("Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?"))) return;
+      // Surveyed BEFORE the run, and asked as its own question with its own size. A
+      // deep run that quietly fetched tens of gigabytes because someone ticked "bench
+      // every model" would be a download nobody consented to — and the survey is
+      // cheap, local, and downloads nothing, so there is no reason to guess.
+      let download_missing = false;
+      if (deep) {
+        try {
+          const pv = await api("/api/diagnostics/ai-check/provision");
+          const q = (pv && pv.question) || {};
+          if (q.needs_download) {
+            download_missing = confirm(
+              q.text + "\n\n" +
+              t("Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here."));
+          }
+        } catch (e) {
+          // A survey that could not run is not a reason to refuse the bench: it just
+          // means the run covers what is already on the machine, as it always did.
+          if (typeof toast === "function") toast(t("Could not check which models are on this machine — benching what is already here."), "warn");
+        }
+      }
       try {
         if (on) await api("/api/diagnostics/ai-check/cancel", { method: "POST" });
-        else await api("/api/diagnostics/ai-check/run", { method: "POST", body: JSON.stringify({ deep }) });
+        else await api("/api/diagnostics/ai-check/run", { method: "POST", body: JSON.stringify({ deep, download_missing }) });
       } catch (e) {
         if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
       }

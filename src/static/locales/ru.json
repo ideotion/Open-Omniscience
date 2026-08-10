@@ -2523,6 +2523,8 @@
   "on both backends": "на обоих бэкендах",
   "Anchor accuracy": "Точность по эталонам",
   "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "Проверка всех моделей займёт часы. Она запускает остановленный движок, перезапускает ваш ИИ-движок между моделями и возвращает машину к тому, который работал до этого. Её можно возобновить: отмена сохраняет уже измеренные модели. Запустить?",
+  "Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here.": "Загрузить их сейчас и оценивать каждую модель по мере поступления? Нажмите «Отмена», чтобы оценить только то, что уже есть.",
+  "Could not check which models are on this machine \u2014 benching what is already here.": "Не удалось проверить, какие модели есть на этой машине — оцениваем то, что уже есть.",
   "Not part of this check": "Не входит в эту проверку",
   "at concurrency": "при параллелизме",
   "configured": "настроено",

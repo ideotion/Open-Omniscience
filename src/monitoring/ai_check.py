@@ -270,6 +270,20 @@ def ensure_frozen_batch(*, refresh: bool = False, db=None) -> dict:
     }
 
 
+def _provisioned_bench(ctx, *, survey_report: dict | None, run_one) -> dict:
+    """Fetch what is missing and bench each model as it lands, not after all of them.
+
+    The operator asked for this by name: the downloads take longer than the tests, so
+    running them in series leaves the card idle for most of the session. What is
+    already here is benched first, and the rest is pulled on a background thread.
+    """
+    from src.ai_layer.bench_provision import provision_and_bench
+
+    plan = list((survey_report or {}).get("to_fetch") or [])
+    ready = [r for r in ((survey_report or {}).get("models") or []) if r.get("state") == "ready"]
+    return provision_and_bench(plan, ready=ready, bench_one=run_one, ctx=ctx)
+
+
 def _live_bench(ctx, *, models, repeats: int, refresh_batch: bool) -> dict:
     """Freeze the inputs if needed, then bench every runnable (model, backend) pair.
 
@@ -347,22 +361,44 @@ def _bench_lines(bench: dict | None) -> dict | None:
     }
 
 
+def _live_provision(ctx) -> dict:
+    """Survey what the deep run needs BEFORE it needs it — download nothing.
+
+    Every "why did nothing happen" in the 10 August runs was knowable in seconds: a
+    model that was never fetched, a daemon that was down, a weights directory that was
+    half there. This step puts all of it at the TOP of the report, and its ``question``
+    is what a caller shows the operator before spending gigabytes on their behalf.
+    """
+    from src.ai_layer.bench_provision import survey
+
+    def _wake(backend: str) -> dict:
+        from src.ai_layer.model_bench import _default_wake
+
+        return _default_wake(backend)
+
+    return survey(wake=_wake)
+
+
 def default_step_names(
     *, include_perception: bool = True, include_selftests: bool = True, deep: bool = False
 ) -> list[str]:
     """The steps a live run would take, in order — without taking them.
 
     A seam rather than a comment: it lets the ORDER be asserted (the bench last, because
-    it is the step measured in hours and every cheap step above explains its failures)
-    without a test driving real inference, which is how a check-composition test ends up
-    touching the corpus and polluting whatever runs after it.
+    it is the step measured in hours and every cheap step above explains its failures;
+    ``provision`` first, because it is the step that explains an EMPTY bench and costs
+    seconds) without a test driving real inference, which is how a check-composition
+    test ends up touching the corpus and polluting whatever runs after it.
     """
-    names = ["facts", "latency", "throughput"]
+    names = ["facts", "latency", "throughput", "context"]
     if include_perception:
         names.append("perception_eval")
     if include_selftests:
         names.append("selftests")
     if deep:
+        # Before the hours-long step, not after it: an operator who is missing five of
+        # seven models should learn that in the first minute.
+        names.insert(0, "provision")
         names.append("model_bench")
     return names
 
@@ -379,6 +415,7 @@ def run_ai_check(
     bench_models: list[str] | None = None,
     bench_repeats: int = 2,
     refresh_batch: bool = False,
+    download_missing: bool = False,
     steps: dict[str, Callable[[], Any]] | None = None,
 ) -> dict:
     """Run every AI check this machine can do, in one pass, and report each ALONE.
@@ -414,13 +451,25 @@ def run_ai_check(
         # afternoon failing every pair for that one reason. The order lives in
         # ``default_step_names`` so it can be asserted without running anything.
         live: dict[str, Callable[[], Any]] = {
+            "provision": lambda: _live_provision(ctx),
             "facts": _live_facts,
             "latency": lambda: _live_latency(repeats),
             "throughput": lambda: _live_throughput(levels, calls_per_level),
+            "context": _live_context,
             "perception_eval": _live_perception,
             "selftests": _live_selftests,
-            "model_bench": lambda: _live_bench(
-                ctx, models=bench_models, repeats=bench_repeats, refresh_batch=refresh_batch
+            "model_bench": lambda: (
+                _provisioned_bench(
+                    ctx,
+                    survey_report=(results.get("provision") or {}).get("report"),
+                    run_one=lambda pairs: _live_bench(
+                        ctx, models=pairs, repeats=bench_repeats, refresh_batch=False
+                    ),
+                )
+                if download_missing
+                else _live_bench(
+                    ctx, models=bench_models, repeats=bench_repeats, refresh_batch=refresh_batch
+                )
             ),
         }
         plan = [
@@ -447,6 +496,8 @@ def run_ai_check(
     perception = (results.get("perception_eval") or {}).get("report")
     bench = (results.get("model_bench") or {}).get("report")
 
+    provision = (results.get("provision") or {}).get("report")
+
     failed = [k for k, v in results.items() if not v.get("ok")]
     return {
         "schema": AI_CHECK_SCHEMA,
@@ -456,6 +507,10 @@ def run_ai_check(
         "steps": [results[k] for k, _ in plan if k in results],
         "reading": {
             "backend": _backend_line(facts),
+            # First in the reading as well as first in the plan: an empty bench is
+            # explained here, and the reader should meet the explanation before the
+            # empty result rather than after it.
+            "provisioning": (provision or {}).get("question"),
             "throughput": _throughput_advice(throughput),
             "extraction_gate": _gate_lines(perception),
             "models": _bench_lines(bench),
@@ -499,6 +554,19 @@ def _live_throughput(levels: tuple[int, ...] | None, calls_per_level: int) -> di
     from src.monitoring.llm_throughput import run_throughput_bench
 
     return run_throughput_bench(levels=levels, calls_per_level=calls_per_level)
+
+
+def _live_context() -> dict:
+    """What a longer prompt costs on this machine, and what the backend will accept.
+
+    Maintainer ask 2026-08-10: "I still don't know how you manage articles longer than
+    the context window." This is the measured half of the answer — the policy half
+    (background sweeps head-truncate WITH disclosure, user-driven work chunks and never
+    truncates) lives in ``src.ai_layer.context``.
+    """
+    from src.monitoring.llm_context import run_context_bench
+
+    return run_context_bench()
 
 
 def _live_perception() -> dict:

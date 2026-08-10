@@ -10579,6 +10579,38 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     reports the wasted bytes. The pre-existing test used `config.json` as its filename by
     coincidence and so passed either way — the discriminating fixture is files present,
     config absent.
+  - **AN OPTIONAL PARAMETER THAT NO CALLER PASSES IS A POLICY NOBODY IS UNDER
+    (2026-08-10, the context budget):** `llm_perception_extract` takes `budget_chars`,
+    falls back to a hardcoded `_MAX_CHARS = 6000`, and **not one caller supplies it** —
+    so `src/ai_layer/context.py`, a whole module about sizing the window to the corpus,
+    governs the user-driven summarize/translate path and NOTHING in the background
+    sweeps. Three numbers that do not know about each other: the operator's
+    `llm_max_context_length` (8192 by default), vLLM's `max_model_len` computed from
+    free VRAM (2048 on the field machine), and the 6000-char slice every sweep actually
+    takes. The seam looks like the feature is wired; only a grep for callers shows it is
+    not. **AND THE NAIVE FIX IS WORSE THAN THE GAP:** wiring the setting straight
+    through yields `(8192−512−1024)×4 ≈ 26,600` chars ≈ 6,650 tokens, which exceeds the
+    2048 the server would accept — every sweep call would fail on a machine where they
+    currently succeed. The budget has to be `min(what the operator configured, what the
+    backend will actually serve)`, and the second half must be READ from the backend
+    rather than assumed, because those two diverged by 4× in the field. General form:
+    before wiring a dormant knob, compute what the live value would BE and check it
+    against the constant it replaces — a dead seam and a seam wired to the wrong number
+    fail in opposite directions, and the second one fails loudly on the operator's
+    machine rather than quietly on yours. (Recorded with the finding; the correct
+    two-sided wiring is not yet built.)
+  - **A SURVEY THAT STARTS SOMETHING IS NOT A SURVEY — and "nobody asked" is not
+    "you have none" (2026-08-10, the bench preflight):** the same `survey()` serves an
+    endpoint and a diagnostics bundle, and they need opposite behaviour: the endpoint
+    may wake a stopped Ollama (local, free, and the difference between a useful answer
+    and a misleading one), the bundle may not, because a bundle describes the machine
+    and must not change it. Making the wake an INJECTED callable rather than an internal
+    choice is what lets one function do both honestly — and it is also what lets a test
+    prove the bundle starts nothing. The related honesty rule underneath: a probe that
+    could not run returns `unknown`, never `missing`. Zero models from a live daemon and
+    zero from a dead one are opposite facts, and collapsing them offers to re-download a
+    roster the operator already holds. Both directions need a test — an over-eager
+    `unknown` would never offer to download anything for a working, empty backend.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
