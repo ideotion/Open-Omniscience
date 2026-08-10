@@ -73,7 +73,7 @@ def test_llm_perception_extract_calls_generate_with_the_constrained_system_promp
         text = "WHO: A\nWHERE: B\nWHEN: 2020"
 
     class _FakeClient:
-        def generate(self, prompt, *, model, system=None, keep_alive=None):
+        def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
             calls.append((prompt, model, system, keep_alive))
             return _FakeResult()
 
@@ -121,7 +121,7 @@ def test_run_perception_eval_against_model_reports_ok_with_metadata():
         stand-in that never invents anything; the harness scores it honestly
         (low recall, but zero hallucination on the negative case)."""
 
-        def generate(self, prompt, *, model, system=None, keep_alive=None):
+        def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
             class _R:
                 text = "WHO: none\nWHERE: none\nWHEN: none"
 

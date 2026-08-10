@@ -95,28 +95,54 @@ class _SaturatingClient(_Client):
 def test_the_rate_is_measured_not_a_latency_multiplied_by_the_worker_count():
     """The assumption ``llm_bench.budget_translation`` makes is 3600/p50 x workers. On a
     saturated backend that overstates the truth several-fold, which is exactly the shape
-    of a report that says "plenty of headroom" beside a GPU sitting at 20%."""
+    of a report that says "plenty of headroom" beside a GPU sitting at 20%.
+
+    THE LOAD-INDEPENDENT CLAIM IS THE ARITHMETIC ONE, and that ordering is the lesson
+    this test carries. The ratio below is an anti-vacuity companion -- it shows the wrong
+    formula would have answered differently here -- but a ratio THRESHOLD cannot prove
+    anything on a shared test runner: measured under CPU contention, a PERFECTLY-SCALING
+    client reads 0.047-0.101 of its own assumed rate, so any "must be under a half" bar
+    passes for the client it is supposed to distinguish. Do not re-derive a discriminating
+    threshold from timings; the identity is what discriminates.
+
+    CALIBRATION, recorded so the next session does not re-measure it. At 16 workers over
+    32 calls with 2 real lanes the ratio was 0.083-0.192 under 8 competing spinners and
+    0.061-0.157 under 12 -- against a 0.5 bar, better than 3x margin. The previous shape
+    (8 workers, 16 calls) reached 0.368 in the same harness and 0.52 in a real full-suite
+    run, i.e. it sat inside its own noise. The fixture was made HARDER rather than the bar
+    softer, which is the only legitimate direction when a guard goes red.
+    """
     r = run_throughput_bench(
-        levels=(8,),
-        calls_per_level=16,
+        levels=(16,),
+        calls_per_level=32,
         client=_SaturatingClient(seconds=0.02, lanes=2),
         model="fake",
         backend_name="vllm",
     )
     lv = r["levels"][0]
-    assumed = (3600.0 / lv["call_wall_p50_s"]) * lv["concurrency"]
     measured = lv["calls_per_hour"]
+
+    # THE CLAIM: the published rate is the batch's own arithmetic. Not an equality —
+    # TWO roundings sit between the true rate and the published one, and the band has to
+    # carry both. The wall is published to 3 dp, which puts the true rate inside
+    # [lo, hi]; the rate is then published as an INTEGER, which moves it a further half
+    # either way. Omitting that second term is what reddened the macOS lane at
+    # "65251 outside [65214, 65251]" — a true rate of 65250.5-ish rounding up past a
+    # bound computed as though it had not been rounded at all. The wall's own band is
+    # ~37/h wide here and the rate's rounding is 1/h, so the missing term is small but
+    # decisive exactly at the edge, which is where a boundary assertion lives.
+    wall_half, rate_half = 0.0005, 0.5
+    lo = lv["n"] / (lv["batch_wall_s"] + wall_half) * 3600 - rate_half
+    hi = lv["n"] / (lv["batch_wall_s"] - wall_half) * 3600 + rate_half
+    assert lo <= measured <= hi, f"{measured} outside [{lo:.0f}, {hi:.0f}]"
+
+    # ANTI-VACUITY: on this fixture the two formulas genuinely disagree, so the identity
+    # above is not satisfied by both at once.
+    assumed = (3600.0 / lv["call_wall_p50_s"]) * lv["concurrency"]
     assert measured < assumed / 2, (
-        "with only two real lanes, eight workers cannot be four times the measured "
+        "with only two real lanes, sixteen workers cannot be twice the measured "
         f"rate: measured={measured}/h, assumed={round(assumed)}/h"
     )
-    # And it is the batch's own arithmetic. Not an equality: batch_wall_s is published
-    # rounded, so the honest check is that the rate lies inside the band that rounding
-    # allows, computed from the rounding granularity rather than a magic percentage.
-    half = 0.0005
-    lo = lv["n"] / (lv["batch_wall_s"] + half) * 3600
-    hi = lv["n"] / (lv["batch_wall_s"] - half) * 3600
-    assert lo <= measured <= hi, f"{measured} outside [{lo:.0f}, {hi:.0f}]"
 
 
 def test_a_serial_batch_wall_is_the_sum_of_its_calls():

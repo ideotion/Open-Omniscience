@@ -48,7 +48,7 @@ def test_run_persists_a_proposals_artifact_and_never_touches_the_source(
             self.text = text
 
     class _FakeClient:
-        def generate(self, prompt, *, model, system=None, keep_alive=None):
+        def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
             low = prompt.lower()
             if "storm" in low or "residents" in low:
                 return _FakeResult("article")

@@ -47,7 +47,7 @@ class FakeResult:
 class FakeClient:
     """Tags every candidate 'sports' (the only vocabulary tag in this fixture)."""
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         lines = []
         for ln in prompt.splitlines():
             ln = ln.strip()
@@ -58,7 +58,7 @@ class FakeClient:
 
 
 class RaisingClient:
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         from src.llm.ollama import LLMUnavailable
 
         raise LLMUnavailable("Ollama not reachable (simulated outage)")
@@ -74,7 +74,7 @@ class FlakyClient:
         self.calls = 0
         self._real = FakeClient()
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         self.calls += 1
         if self.calls <= self._fail_times:
             from src.llm.ollama import LLMUnavailable
@@ -88,7 +88,7 @@ class AlwaysRaisingHTTPErrorClient:
     500 from a server that's up but erroring. Plausibly the actual trigger: the
     uncapped, verbatim, corpus-wide tag vocabulary embedded in every prompt."""
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         from src.llm.ollama import LLMError
 
         raise LLMError("simulated HTTP 500 from the model server")
@@ -299,7 +299,7 @@ def test_13_consecutive_zero_zero_batches_are_now_diagnosable_via_missing_and_pa
         out-of-vocabulary / misspelled tag token) -- every response fails
         parse_source_tags' validation, landing in pb.missing."""
 
-        def generate(self, prompt, *, model, system=None, keep_alive=None):
+        def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
             return FakeResult("not-a-real-domain.invalid :: sports")
 
     ctx = FakeCtx()

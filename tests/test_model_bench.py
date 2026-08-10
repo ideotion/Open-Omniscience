@@ -50,7 +50,7 @@ class _Stub:
                 out.append(line[2:].split("  [")[0].strip())
         return out
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         self.calls.append((model, keep_alive))
         items = self._listed(prompt)
         if "assigning topical TAGS" in (system or ""):
@@ -270,6 +270,111 @@ def test_a_near_tag_is_never_substituted() -> None:
     assert skipped[0]["reason"] == "not-installed"
 
 
+#: What the operator's GPU machine actually holds after ticking four boxes in the
+#: Settings panel: vLLM serving, its own downloads present, no Ollama daemon at all.
+_FIELD_MACHINE = {
+    "vllm": [
+        "mistralai/Ministral-3-3B-Instruct-2512",
+        "Qwen/Qwen3.5-0.8B",
+        "google/gemma-3n-E2B-it",
+        "microsoft/Phi-4-mini-instruct",
+        "LiquidAI/LFM2.5-1.2B-Instruct",
+    ],
+    "ollama": None,
+}
+
+
+def test_a_roster_key_resolves_to_each_backends_own_identifier() -> None:
+    """The same model is a different string on each backend.
+
+    ``qwen35-0-8b`` is ``Qwen/Qwen3.5-0.8B`` to vLLM and ``qwen3.5:0.8b-q8_0`` to
+    Ollama; a bench that carried one string to both would ask each backend for the
+    other's name.
+    """
+    runnable, _ = MB.resolve_pairs(
+        models=["qwen35-0-8b"],
+        installed_by_backend={
+            "vllm": ["Qwen/Qwen3.5-0.8B"],
+            "ollama": ["qwen3.5:0.8b-q8_0"],
+        },
+    )
+    assert {p["key"] for p in runnable} == {
+        "vllm|Qwen/Qwen3.5-0.8B",
+        "ollama|qwen3.5:0.8b-q8_0",
+    }
+
+
+def test_the_default_roster_finds_the_models_this_machine_downloaded() -> None:
+    """The field report, as a fixture.
+
+    Every model the operator installed through the panel is benched, under the name
+    the panel installed it as.
+    """
+    runnable, _ = MB.resolve_pairs(
+        models=list(MB.DEFAULT_ROSTER), installed_by_backend=_FIELD_MACHINE
+    )
+    assert {p["model"] for p in runnable} == set(_FIELD_MACHINE["vllm"])
+
+
+def test_no_ollama_tag_is_ever_reported_as_not_installed_on_vllm() -> None:
+    """The defect itself: an instruction the operator cannot carry out.
+
+    "vllm - gemma4:e4b - not-installed" is true and useless. vLLM serves Hugging Face
+    repositories; an Ollama tag is not a thing it could ever have installed, so telling
+    somebody to install the exact tag on vLLM asks for the impossible.
+    """
+    _, skipped = MB.resolve_pairs(
+        models=list(MB.DEFAULT_ROSTER), installed_by_backend=_FIELD_MACHINE
+    )
+    for s in skipped:
+        if s["backend"] == "vllm" and s.get("model"):
+            assert "/" in s["model"], f"{s['model']!r} is not a Hugging Face repository id"
+
+
+def test_a_model_the_operator_did_not_download_is_still_reported() -> None:
+    """The negative-space twin.
+
+    A fix that made the skipped list empty would be silence, not a fix -- a model that
+    is genuinely absent must still be named, by its real identifier on this backend.
+    """
+    _, skipped = MB.resolve_pairs(
+        models=list(MB.DEFAULT_ROSTER), installed_by_backend=_FIELD_MACHINE
+    )
+    missing = {s["model"] for s in skipped if s["reason"] == "not-installed"}
+    assert "HuggingFaceTB/SmolLM3-3B" in missing
+    assert "LiquidAI/LFM2.5-1.2B-Base" in missing
+
+
+def test_no_build_for_a_backend_is_a_different_fact_from_no_download() -> None:
+    """SmolLM3 has no Ollama tag at all; nobody can install it there.
+
+    Reporting that as "not-installed" would send the operator looking for a download
+    that does not exist.
+    """
+    _, skipped = MB.resolve_pairs(
+        models=["smollm3-3b"],
+        installed_by_backend={"ollama": [], "vllm": []},
+    )
+    by_backend = {s["backend"]: s for s in skipped}
+    assert by_backend["ollama"]["reason"] == "not-published-for-backend"
+    assert by_backend["ollama"]["roster_key"] == "smollm3-3b"
+    assert by_backend["vllm"]["reason"] == "not-installed"
+
+
+def test_a_bare_tag_is_still_asked_of_every_backend() -> None:
+    """``extra_models`` is the operator typing a verified tag we have no roster row for.
+
+    We do not know which backend they meant, and guessing from the string's shape would
+    be inventing a rule, so it goes to both -- unchanged from before this fix.
+    """
+    runnable, skipped = MB.resolve_pairs(
+        models=["some/hand-verified-repo"],
+        installed_by_backend={"vllm": ["some/hand-verified-repo"], "ollama": []},
+    )
+    assert [p["key"] for p in runnable] == ["vllm|some/hand-verified-repo"]
+    assert [(s["backend"], s["reason"]) for s in skipped] == [("ollama", "not-installed")]
+
+
 def test_the_same_weights_on_two_backends_are_two_rows_never_one() -> None:
     runnable, _ = MB.resolve_pairs(
         models=["mistral:7b"], installed_by_backend={"ollama": ["mistral:7b"], "vllm": ["mistral:7b"]}
@@ -282,11 +387,64 @@ def test_quantization_is_read_off_the_tag_and_never_guessed() -> None:
     assert MB.quantization_of("mistralai/Ministral-3-3B-Instruct-2512") is None
 
 
-def test_the_liquid_ai_candidate_is_a_note_not_an_invented_tag() -> None:
-    """Writing a guessed tag into the roster would be a fabricated catalog entry."""
-    joined = " ".join(MB.DEFAULT_ROSTER).lower()
-    assert "lfm" not in joined
+def _norm(s: str) -> str:
+    return "".join(c for c in s.lower() if c.isalnum())
+
+
+def test_an_unresolved_candidate_is_a_note_not_an_invented_tag() -> None:
+    """Writing a guessed tag into the roster would be a fabricated catalog entry.
+
+    The needle is DERIVED from ``UNRESOLVED_CANDIDATES`` rather than hardcoded, because
+    the hardcoded version ("lfm" must not appear) fired on the LFM2.5-1.2B roster keys
+    -- which are a DIFFERENT, page-verified model that the maintainer added on purpose.
+    A substring is only as meaningful as its uniqueness, and that one had stopped
+    testing the property it was named for.
+    """
     assert any("LFM2.5-8B-A1B" in c["named"] for c in MB.UNRESOLVED_CANDIDATES)
+    entries = [_norm(e) for e in MB.DEFAULT_ROSTER]
+    for candidate in MB.UNRESOLVED_CANDIDATES:
+        # Drop the vendor word: what must never appear is the MODEL nobody verified.
+        needle = _norm(candidate["named"].split(" ", 1)[-1])
+        assert needle, candidate
+        assert not any(needle in e for e in entries), (
+            f"{candidate['named']!r} is unresolved and must travel as a note, "
+            "never as a roster entry"
+        )
+
+
+def test_every_roster_entry_has_a_provenance_and_none_was_hand_typed() -> None:
+    """Three legal shapes, and nothing else.
+
+    This is the anti-fabrication guard the substring above was reaching for. A bench
+    entry is either a key of the verified download roster, a backend-qualified tag from
+    the ruled list, or an incumbent read from the app's own constants -- so a model name
+    cannot enter the bench without somebody having verified it somewhere.
+    """
+    from src.llm.bench_roster import BENCH_ROSTER
+
+    keys = {e["key"] for e in BENCH_ROSTER}
+    for entry in MB.DEFAULT_ROSTER:
+        assert entry in keys or "|" in entry, entry
+        if "|" in entry:
+            backend, _, identifier = entry.partition("|")
+            assert backend in MB.BENCH_BACKENDS, entry
+            assert identifier, entry
+
+
+def test_the_bench_asks_for_what_the_download_panel_installs() -> None:
+    """The two catalogues must not drift apart again.
+
+    They had: the panel offered Qwen3.5-0.8B / Gemma-3n / Phi-4 / LFM2.5 while the bench
+    asked for qwen3.5:4b / gemma4:e4b / mistral:7b / granite4.1, so an operator could
+    download four models through the app and have the bench report all four of its own
+    names as not-installed.
+    """
+    from src.llm.bench_roster import BENCH_ROSTER
+
+    for entry in BENCH_ROSTER:
+        assert entry["key"] in MB.DEFAULT_ROSTER, (
+            f"{entry['key']} can be installed from Settings but the bench never asks for it"
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -344,7 +502,7 @@ def test_langdetect_separates_a_refusal_from_a_wrong_answer() -> None:
     pytest.importorskip("httpx")
 
     class _Refuser:
-        def generate(self, prompt, *, model, system=None, keep_alive=None):
+        def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
             return _R("I cannot tell.")
 
     out = MB._task_langdetect(_Refuser(), model="m", keep_alive=None)
@@ -412,7 +570,7 @@ def test_the_model_is_unloaded_before_the_next_one_is_measured(frozen) -> None:
 
 def test_a_failing_task_never_costs_the_whole_pair(frozen) -> None:
     class _Broken(_Stub):
-        def generate(self, prompt, *, model, system=None, keep_alive=None):
+        def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
             if "assigning topical TAGS" in (system or ""):
                 raise RuntimeError("boom")
             return super().generate(prompt, model=model, system=system, keep_alive=keep_alive)

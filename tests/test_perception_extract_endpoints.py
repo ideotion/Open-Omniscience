@@ -197,7 +197,7 @@ def test_perception_extract_job_status_reports_a_genuine_error_after_a_permanent
         session.commit()
 
     class RaisingClient:
-        def generate(self, prompt, *, model, system=None, keep_alive=None):
+        def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
             from src.llm.ollama import LLMUnavailable
 
             raise LLMUnavailable("simulated outage")

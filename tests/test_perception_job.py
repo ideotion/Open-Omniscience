@@ -17,7 +17,7 @@ class _FakeResult:
 
 
 class _FakeClient:
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         return _FakeResult("WHO: none\nWHERE: none\nWHEN: none")
 
 

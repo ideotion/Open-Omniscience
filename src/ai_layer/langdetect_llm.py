@@ -38,6 +38,7 @@ from sqlalchemy.orm import Session
 
 from src.ai_layer import store as ai_store
 from src.ai_layer.jobs import ArticleWork
+from src.ai_layer.sampling import sweep_options
 from src.ai_layer.translate import KNOWN_LANG_CODES, lang_name
 from src.database.models import AiKeyword, Article
 from src.database.session import session_scope
@@ -97,7 +98,11 @@ def detect_language_llm(
     if not text:
         return None
     result = client.generate(
-        text[:_MAX_TEXT], model=model, system=build_system(), keep_alive=keep_alive
+        text[:_MAX_TEXT],
+        model=model,
+        system=build_system(),
+        options=sweep_options(),
+        keep_alive=keep_alive,
     )
     return parse_lang(getattr(result, "text", None))
 

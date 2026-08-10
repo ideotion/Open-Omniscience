@@ -45,6 +45,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from src.ai_layer.sampling import sweep_options
+
 # Intentional re-export (noqa: F401 on each -- consumed by source_tags_job.py, not
 # used directly in this file): reuse triage.py's EXPORT-ONLY writer + timing helper
 # wholesale, per the ruling.
@@ -456,7 +458,9 @@ def run_source_tag_batch(
     monotonic = monotonic or _time.monotonic
     system, user, expected = build_source_tag_prompt(items, vocabulary, canaries=canaries)
     t0 = monotonic()
-    result = client.generate(user, model=model, system=system, keep_alive=keep_alive)
+    result = client.generate(
+        user, model=model, system=system, options=sweep_options(), keep_alive=keep_alive
+    )
     wall_s = max(0.0, monotonic() - t0)
     pb = parse_source_tags(getattr(result, "text", ""), expected, vocabulary)
     canary = check_source_canaries(pb, canary_expected or {}, vocabulary)
@@ -531,7 +535,7 @@ class _StubClient:
     def __init__(self, text: str):
         self._text = text
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         return type(
             "R",
             (),

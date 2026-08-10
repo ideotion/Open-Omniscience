@@ -70,20 +70,52 @@ BENCH_BACKENDS: tuple[str, ...] = ("ollama", "vllm")
 #: point of the bench is to challenge the current default, so a roster that named a
 #: stale tag would be challenging a model nobody runs.
 def _incumbents() -> tuple[str, ...]:
+    """The models this app actually serves with, each qualified by ITS backend.
+
+    Backend-qualified because these are three strings for two backends, not three
+    models: asking vLLM for an Ollama tag can only ever answer "not installed", and
+    that answer reads as an instruction nobody can carry out.
+    """
     try:
         from src.llm.ollama import DEFAULT_MODEL, MINISTRAL_TAG, MINISTRAL_VLLM_MODEL
 
-        return (DEFAULT_MODEL, MINISTRAL_TAG, MINISTRAL_VLLM_MODEL)
+        return (
+            f"ollama|{DEFAULT_MODEL}",
+            f"ollama|{MINISTRAL_TAG}",
+            f"vllm|{MINISTRAL_VLLM_MODEL}",
+        )
     except Exception:  # noqa: BLE001 - a core install still gets a usable roster
         return ()
 
 
+def _downloadable() -> tuple[str, ...]:
+    """The keys of every model the Settings panel can install, in its own order.
+
+    This is the half that was missing. The bench named a set of Ollama tags and the
+    download buttons offered a different set of models, so an operator who ticked four
+    boxes and waited for the weights found the bench asking for four other names --
+    and being told, correctly and uselessly, that they were not installed.
+    """
+    try:
+        from src.llm.bench_roster import BENCH_ROSTER
+
+        return tuple(e["key"] for e in BENCH_ROSTER)
+    except Exception:  # noqa: BLE001 - a core install benches raw tags only
+        return ()
+
+
 DEFAULT_ROSTER: tuple[str, ...] = (
-    *_incumbents(),  # the Ollama default, the 3B sibling, and the vLLM repo id
-    "mistral:7b",
-    "gemma4:e4b",
-    "qwen3.5:4b",
-    "granite4.1",
+    *_incumbents(),  # what this machine serves with today
+    *_downloadable(),  # what its own panel can install, resolved per backend
+    # The ruled roster (ruling 15). These are OLLAMA tags -- that is the form the
+    # ruling named them in -- so they are asked of Ollama and of nothing else. They
+    # are kept rather than folded into the roster keys above because the ruling named
+    # these specific models, and a bench that quietly benched different ones would be
+    # answering a question nobody asked.
+    "ollama|mistral:7b",
+    "ollama|gemma4:e4b",
+    "ollama|qwen3.5:4b",
+    "ollama|granite4.1",
 )
 
 #: Models the maintainer named whose EXACT tag could not be verified from this
@@ -125,6 +157,70 @@ def pair_key(backend: str, model: str) -> str:
 # --------------------------------------------------------------------------- #
 #  Roster resolution.
 # --------------------------------------------------------------------------- #
+def _roster_keys() -> set[str]:
+    """The download panel's own keys, or an empty set on a core install."""
+    try:
+        from src.llm.bench_roster import BENCH_ROSTER
+
+        return {e["key"] for e in BENCH_ROSTER}
+    except Exception:  # noqa: BLE001 - a core install benches raw tags only
+        return set()
+
+
+def _wanted_on(backend: str, entries: list[str]) -> tuple[list[str], list[dict]]:
+    """Resolve roster entries to the identifiers to ASK ``backend`` for.
+
+    Three shapes, because the same model is a different string on each backend and a
+    bench that ignores that asks Ollama tags of vLLM:
+
+    * a bench-roster KEY (``qwen35-0-8b``) resolves through the download panel's own
+      table, so the bench asks for exactly what the panel installed -- ``Qwen/Qwen3.5-0.8B``
+      on vLLM, ``qwen3.5:0.8b-q8_0`` on Ollama. A key the roster has no build for on
+      this backend is reported with the roster's OWN reason, which is a different fact
+      from "you have not downloaded it";
+    * ``backend|identifier`` asks that backend only. The ruled Ollama tags and the
+      incumbent are written this way: an Ollama tag is not a thing vLLM could ever have
+      installed, so "not-installed on vllm" reads as an instruction the operator cannot
+      follow;
+    * a bare identifier is asked of every backend, unchanged. That is what
+      ``extra_models`` is for -- the operator typed it and we do not know which backend
+      they meant, so guessing from the string's shape would be inventing a rule.
+    """
+    keys = _roster_keys()
+    wanted: list[str] = []
+    refused: list[dict] = []
+    key_entries = [e for e in entries if e in keys]
+    if key_entries:
+        from src.llm.bench_roster import identifiers_for
+
+        ok, no_build = identifiers_for(backend, key_entries)
+        wanted.extend(r["identifier"] for r in ok)
+        for r in no_build:
+            refused.append(
+                {
+                    "backend": backend,
+                    "model": None,
+                    "roster_key": r["key"],
+                    "reason": "not-published-for-backend",
+                    "detail": (
+                        f"{r.get('label') or r['key']} has no {backend} build in the model "
+                        f"roster: {r.get('reason')}. Nothing to install — this is a gap in "
+                        "what the publisher ships, not a missing download."
+                    ),
+                }
+            )
+    for entry in entries:
+        if entry in keys:
+            continue
+        if "|" in entry:
+            want_backend, _, identifier = entry.partition("|")
+            if want_backend == backend and identifier:
+                wanted.append(identifier)
+            continue
+        wanted.append(entry)
+    return list(dict.fromkeys(wanted)), refused
+
+
 def resolve_pairs(
     *,
     models: list[str],
@@ -135,6 +231,11 @@ def resolve_pairs(
     ``installed_by_backend`` maps a backend to its installed tags, or ``None`` when
     the backend itself is unreachable (a different fact from "the model is missing",
     and reported as such).
+
+    Entries are resolved PER BACKEND -- see :func:`_wanted_on`. Before that, a roster
+    of Ollama-shaped tags was matched against every backend, so a GPU machine serving
+    with vLLM was told that ``gemma4:e4b`` and ``mistral:7b`` were "not-installed" on
+    vLLM while the models it had actually downloaded were never asked for at all.
     """
     from src.ai_layer.triage import verify_roster
 
@@ -152,7 +253,9 @@ def resolve_pairs(
                 }
             )
             continue
-        v = verify_roster(models, list(installed))
+        wanted, no_build = _wanted_on(backend, models)
+        skipped.extend(no_build)
+        v = verify_roster(wanted, list(installed))
         for tag in v["runnable"]:
             runnable.append(
                 {
@@ -798,7 +901,10 @@ def assemble_report(
             "serves it, five tasks per pair, all tasks completed before the next model is "
             "loaded. Each metric is reported ALONE, per (model, backend, task, language): "
             "there is no composite, no ranking and no winner column, because the tasks "
-            "measure different things and a blend would hide which one moved."
+            "measure different things and a blend would hide which one moved. Roster "
+            "entries are resolved PER BACKEND — the same model is a Hugging Face "
+            "repository to vLLM and a library tag to Ollama — so a backend is only ever "
+            "asked for names it could actually hold."
         ),
         "caveat": (
             "Measured on THIS machine, at THIS moment, over a SAMPLE of the corpus. The same "

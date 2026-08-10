@@ -193,7 +193,7 @@ class _Stub:
     def __init__(self, text):
         self.text = text
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         return type("R", (), {"text": self.text, "total_duration": 3, "eval_count": 2})()
 
 

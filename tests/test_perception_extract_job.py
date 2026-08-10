@@ -51,12 +51,12 @@ class _FakeResult:
 
 
 class FakeClient:
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         return _FakeResult("WHO: Acme Corp\nWHERE: Springfield\nWHEN: 2024-01-01")
 
 
 class RaisingClient:
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         from src.llm.ollama import LLMUnavailable
 
         raise LLMUnavailable("Ollama not reachable (simulated outage)")
@@ -71,7 +71,7 @@ class RaisingAfterNClient:
         self._n = n
         self._calls = 0
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         from src.llm.ollama import LLMUnavailable
 
         self._calls += 1
@@ -91,7 +91,7 @@ class FlakyOnceClient:
         self._fail_times = fail_times
         self.calls = 0
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         from src.llm.ollama import LLMUnavailable
 
         self.calls += 1

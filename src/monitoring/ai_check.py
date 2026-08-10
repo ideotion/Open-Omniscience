@@ -1,0 +1,364 @@
+"""One button, every AI check on THIS machine, one report.
+
+Maintainer ask 2026-08-09, after running four of them by hand: "Can you simplify all
+AI related diagnostics into one single button to test everything at once?"
+
+WHAT IT RUNS, in this order, because each step's failure explains the next one's:
+
+1. FACTS -- which backend serves here, what the GPU is, which model is active, what
+   context and concurrency it was started with. If this step says no backend is
+   reachable, everything below it will fail for that one reason rather than four.
+2. LATENCY -- one call per prompt shape the app actually sends.
+3. THROUGHPUT -- the same shape at rising concurrency, with GPU utilisation sampled
+   while it runs. This is the step that answers "why is my GPU at 25%".
+4. PERCEPTION EVAL -- the live gate that decides which languages may store who/where/
+   when extractions, run against the ACTIVE model over the real gold set.
+5. SELF-TESTS -- the deterministic harness checks (parsers, canaries, echo-back).
+   Seconds, no model needed, and they say whether a bad measurement above is the
+   model's doing or the harness's.
+
+WHAT IT DOES NOT RUN, and why saying so matters more than quietly omitting it: the
+COMPARATIVE MODEL BENCH. That one loads every roster model in turn over a frozen input
+set; it is resumable per model precisely because it runs for hours, and folding it in
+here would turn a check into an afternoon. It keeps its own button, and this report
+says where it is rather than leaving a reader to assume "everything" included it.
+
+EVERY STEP IS GUARDED AND TIMED. A step that fails records why and the run continues,
+because the most useful report from a half-broken machine is the one that says which
+half. No step writes anything to the corpus; all of it is loopback inference, so it
+works in airplane mode.
+
+NO SCORE. The report ends in a `reading` block that states what was measured and what
+follows from it -- a concurrency the curve supports, a language the gate refuses -- and
+never a number standing for "how good is my AI".
+
+Open Omniscience - Global Intelligence Platform for Investigative Journalism
+Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from datetime import datetime
+from typing import Any, Callable
+
+_LOG = logging.getLogger("monitoring.ai_check")
+
+AI_CHECK_SCHEMA = "oo-ai-check-1"
+
+#: The bench this check deliberately leaves out, named so its absence is a statement.
+SEPARATE_RUNS: tuple[dict, ...] = (
+    {
+        "name": "Comparative model bench",
+        "where": "Settings → Advanced → AI diagnostics → Run the bench",
+        "why": (
+            "It loads every roster model in turn over a frozen input set and is resumable "
+            "per model because it runs for hours. Folding it in would turn a check into an "
+            "afternoon."
+        ),
+    },
+)
+
+
+def _step(name: str, fn: Callable[[], Any], *, monotonic=time.monotonic) -> dict:
+    """Run one step, timed, and never let its failure end the run."""
+    t0 = monotonic()
+    try:
+        out = fn()
+        return {"step": name, "ok": True, "seconds": round(monotonic() - t0, 3), "report": out}
+    except Exception as exc:  # noqa: BLE001 - a broken step is data, not a crash
+        _LOG.warning("ai-check step %s failed: %s", name, exc)
+        return {
+            "step": name,
+            "ok": False,
+            "seconds": round(monotonic() - t0, 3),
+            "error": f"{type(exc).__name__}: {str(exc)[:300]}",
+        }
+
+
+def _backend_line(facts: dict | None) -> dict:
+    """Whether a model can be reached at all -- the fact every other step depends on.
+
+    The model comes from ``active_model``, not from the backend block: those answer
+    different questions (what this machine will SERVE with, versus who could serve a
+    request right now), and reading one for the other is how a model id ends up beside
+    the wrong backend's name.
+    """
+    f = (facts or {}).get("backend") or {}
+    am = (facts or {}).get("active_model") or {}
+    return {
+        "backend": f.get("backend"),
+        "serves_with": am.get("provisioning_backend"),
+        "model": am.get("model"),
+        "available": bool(f.get("available")),
+        "reason": f.get("reason"),
+    }
+
+
+def _throughput_advice(throughput: dict | None) -> dict | None:
+    """What the concurrency curve supports, in the operator's own terms.
+
+    The measurement already knows this; it was buried in a downloadable file. A GPU
+    sitting at a quarter of its capacity while the best measured level is at or above
+    the server's configured limit is not a mystery, it is a setting.
+    """
+    if not throughput or not throughput.get("available"):
+        return None
+    reading = throughput.get("reading") or {}
+    best = reading.get("best_concurrency")
+    configured = throughput.get("configured_concurrency")
+    if best is None or configured is None:
+        return None
+    line = {
+        "best_measured_concurrency": best,
+        "configured_concurrency": configured,
+        "best_calls_per_hour": reading.get("best_calls_per_hour"),
+        "speedup_over_serial": reading.get("speedup_over_serial"),
+    }
+    if best >= configured:
+        line["action"] = (
+            f"The best level measured ({best}) is at or above the running server's limit "
+            f"({configured}), so the curve had not flattened when it ran out of room. "
+            "Raising OO_VLLM_CONCURRENCY and RESTARTING the backend is what would let a "
+            "higher level be measured."
+        )
+    else:
+        line["action"] = (
+            f"Throughput peaked at {best}, below the configured limit of {configured}, so "
+            "more requests in flight would not have helped: the ceiling here is the model "
+            "and the card, not the setting."
+        )
+    return line
+
+
+def _gate_lines(perception: dict | None) -> dict | None:
+    """Which languages the live gate clears, refuses, or never measured.
+
+    Three states, never two: "never evaluated" is not "failed", and collapsing them
+    would make an untested language look like a rejected one.
+    """
+    if not perception or perception.get("status") == "unavailable":
+        return None
+    try:
+        from src.ai_layer.perception_extract import gate_languages_from_report
+    except Exception:  # noqa: BLE001 - a core install has no gate to read
+        return None
+    try:
+        gates = gate_languages_from_report(perception) or {}
+    except Exception as exc:  # noqa: BLE001 - report the gap, never guess a verdict
+        return {"error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+    cleared = sorted(k for k, v in gates.items() if v.get("active") is True)
+    refused = sorted(k for k, v in gates.items() if v.get("active") is False)
+    unmeasured = sorted(k for k, v in gates.items() if v.get("active") is None)
+    return {
+        "cleared": cleared,
+        "refused": refused,
+        "unmeasured": unmeasured,
+        "note": (
+            "'unmeasured' is not 'failed'. A language the harness never tested is refused "
+            "for want of evidence, which is a different thing to fix than one that "
+            "hallucinated its way past the floor."
+        ),
+    }
+
+
+def run_ai_check(
+    ctx=None,
+    *,
+    repeats: int = 2,
+    levels: tuple[int, ...] | None = None,
+    calls_per_level: int = 8,
+    include_perception: bool = True,
+    include_selftests: bool = True,
+    steps: dict[str, Callable[[], Any]] | None = None,
+) -> dict:
+    """Run every AI check this machine can do, in one pass, and report each ALONE.
+
+    ``ctx`` is the ``BackgroundJob`` context (progress + cancellation); ``steps`` is an
+    injection seam so the sequencing and the degrade paths are testable without a model.
+    """
+    started = time.monotonic()
+
+    def progress(done: int, total: int, detail: str) -> None:
+        if ctx is not None and hasattr(ctx, "progress"):
+            try:
+                ctx.progress(done, total, detail)
+            except Exception:  # noqa: BLE001 - progress must never break the run
+                pass
+
+    def stopping() -> bool:
+        return bool(ctx is not None and getattr(ctx, "stopping", False))
+
+    plan: list[tuple[str, Callable[[], Any]]] = []
+    if steps is not None:
+        plan = list(steps.items())
+    else:
+        plan.append(("facts", _live_facts))
+        plan.append(("latency", lambda: _live_latency(repeats)))
+        plan.append(("throughput", lambda: _live_throughput(levels, calls_per_level)))
+        if include_perception:
+            plan.append(("perception_eval", _live_perception))
+        if include_selftests:
+            plan.append(("selftests", _live_selftests))
+
+    results: dict[str, dict] = {}
+    total = len(plan)
+    for i, (name, fn) in enumerate(plan):
+        if stopping():
+            results[name] = {"step": name, "ok": False, "error": "cancelled"}
+            break
+        progress(i, total, name)
+        results[name] = _step(name, fn)
+    progress(total, total, "done")
+
+    facts = (results.get("facts") or {}).get("report")
+    throughput = (results.get("throughput") or {}).get("report")
+    perception = (results.get("perception_eval") or {}).get("report")
+
+    failed = [k for k, v in results.items() if not v.get("ok")]
+    return {
+        "schema": AI_CHECK_SCHEMA,
+        "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "elapsed_s": round(time.monotonic() - started, 2),
+        "steps": [results[k] for k, _ in plan if k in results],
+        "reading": {
+            "backend": _backend_line(facts),
+            "throughput": _throughput_advice(throughput),
+            "extraction_gate": _gate_lines(perception),
+            "steps_failed": failed,
+        },
+        "not_run_here": list(SEPARATE_RUNS),
+        "method": (
+            "Each check runs once, in order, against the model this machine actually "
+            "serves with, and reports its own numbers with its own method and caveats "
+            "unchanged. A step that fails records why and the run continues, so a "
+            "half-broken machine still produces a report that says which half. Every "
+            "call is loopback inference: no egress, works in airplane mode."
+        ),
+        "caveat": (
+            "Measured HERE, with THIS model, on synthetic prompts of representative size, "
+            "on a machine that may be doing other work. There is no overall figure and no "
+            "pass mark: each number answers its own question, and blending them would hide "
+            "which one moved."
+        ),
+    }
+
+
+# --------------------------------------------------------------------------- #
+#  The live steps. Imported lazily so a core install can still import this module.
+# --------------------------------------------------------------------------- #
+def _live_facts() -> dict:
+    from src.monitoring.ai_diagnostics import ai_diagnostics_report
+
+    return ai_diagnostics_report()
+
+
+def _live_latency(repeats: int) -> dict:
+    from src.monitoring.llm_bench import run_llm_bench
+
+    return run_llm_bench(repeats=repeats)
+
+
+def _live_throughput(levels: tuple[int, ...] | None, calls_per_level: int) -> dict:
+    from src.monitoring.llm_throughput import run_throughput_bench
+
+    return run_throughput_bench(levels=levels, calls_per_level=calls_per_level)
+
+
+def _live_perception() -> dict:
+    from src.ai_layer.perception_job import run_and_persist_perception_eval
+
+    return run_and_persist_perception_eval()
+
+
+def _live_selftests() -> dict:
+    """The deterministic harness checks: seconds, no model, no network."""
+    from src.ai_layer.qualification_assist import run_qualification_assist_selftest
+    from src.ai_layer.source_tags import run_source_tags_selftest
+    from src.ai_layer.triage import run_triage_selftest
+    from src.analytics.perception_eval import run_perception_eval_selftest
+
+    out: dict[str, Any] = {}
+    for name, fn in (
+        ("keyword_triage", run_triage_selftest),
+        ("source_tags", run_source_tags_selftest),
+        ("qualification_assist", run_qualification_assist_selftest),
+        ("perception_harness", run_perception_eval_selftest),
+    ):
+        try:
+            rep = fn()
+            # Each harness reports one overall boolean plus a dict of named boolean
+            # checks. Summarise it -- but name the checks that FAILED, because
+            # "3 of 16 failed" sends somebody reading a whole file to find which.
+            checks = rep.get("checks")
+            checks = checks if isinstance(checks, dict) else {}
+            out[name] = {
+                "passed": bool(rep.get("passed")),
+                "checks": len(checks),
+                "failed_checks": sorted(k for k, v in checks.items() if v is False),
+            }
+        except Exception as exc:  # noqa: BLE001 - one broken harness is not five
+            out[name] = {"error": f"{type(exc).__name__}: {str(exc)[:200]}"}
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  Persistence. One dated artifact per run, in the same archive the AI sweeps use,
+#  so "the file to attach to a bug report" is one place rather than five.
+# --------------------------------------------------------------------------- #
+def _dir():
+    from src.paths import data_dir
+
+    d = data_dir() / "triage"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def run_and_persist_ai_check(ctx=None, **kwargs) -> dict:
+    """``BackgroundJob`` worker: run the check and save it, dated.
+
+    A failed WRITE must not lose the measurement -- the run took minutes and the report
+    is already in hand, so a disk error is reported beside the results rather than
+    thrown over them.
+    """
+    import json
+
+    out = run_ai_check(ctx, **kwargs)
+    try:
+        path = _dir() / f"oo-ai-check-{datetime.now().strftime('%Y%m%d-%H%M%S')}.json"
+        path.write_text(json.dumps(out, indent=1, ensure_ascii=False), encoding="utf-8")
+        out["path"] = str(path)
+        out["filename"] = path.name
+    except OSError as exc:
+        out["persist_error"] = f"{type(exc).__name__}: {str(exc)[:200]}"
+    return out
+
+
+def last_ai_check_report() -> dict:
+    """The newest saved run, or an honest ``{available: false}``."""
+    import json
+
+    try:
+        files = sorted(_dir().glob("oo-ai-check-*.json"))
+    except OSError as exc:
+        return {"available": False, "reason": f"{type(exc).__name__}: {str(exc)[:200]}"}
+    if not files:
+        return {"available": False, "reason": "no AI check has been run on this machine yet"}
+    newest = files[-1]
+    try:
+        out = json.loads(newest.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001 - a corrupt artifact is a fact, not a crash
+        return {"available": False, "reason": f"{type(exc).__name__}: {str(exc)[:200]}"}
+    out["available"] = True
+    out["filename"] = newest.name
+    return out
+
+
+__all__ = [
+    "AI_CHECK_SCHEMA",
+    "SEPARATE_RUNS",
+    "last_ai_check_report",
+    "run_ai_check",
+    "run_and_persist_ai_check",
+]

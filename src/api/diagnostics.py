@@ -3428,6 +3428,11 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # (every metric, without the hundreds of per-term answers per pair). Read-only
         # -- running the bench is a heavy operator job, never a bundle member.
         ("model-bench.json", lambda: model_bench_last(full=False)),
+        # The one-button AI check (maintainer 2026-08-09): the last run's report, so a
+        # debug bundle carries what this machine measured about its own model rather
+        # than sending somebody to run five diagnostics by hand. Read-only -- RUNNING it
+        # is a background job of its own, never a bundle member.
+        ("ai-check.json", lambda: ai_check_last()),
         # B7.1: the whole dual-backend AI stack snapshot -- backend/hardware facts,
         # active model, context settings, and every AI job's last saved summary.
         # Called DIRECTLY, so both arguments are passed explicitly: a FastAPI default
@@ -3641,6 +3646,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/qualification-assist-selftest": "qualification-assist-selftest.json",
     "/qualification-assist/last": "qualification-assist-run.json",
     "/model-bench/last": "model-bench.json",
+    "/ai-check/last": "ai-check.json",
     # transversal audit 09 (2026-07-25), C2: /fixity is a genuine diagnostic-shaped
     # report (a local re-hash audit) that happened to live in the SIBLING
     # src/api/integrity.py router -- see _DIAG_SIBLING_FILES below, which is what
@@ -3671,6 +3677,7 @@ _DIAG_COVERAGE_EXEMPT: dict[str, str] = {
     "/perception-extract/gate": "job control — a live, cheap gate preview, not a static report",
     "/ai-coordinator/status": "job control — the background-AI lane's live state",
     "/model-bench/status": "job control", "/model-bench/download": "job control",
+    "/ai-check/status": "job control", "/ai-check/download": "job control",
     "/model-bench/batch": (
         "the frozen bench INPUT's own summary — the RESULTS ride the bundle as "
         "model-bench.json, and that member already states the batch digest it answered"
@@ -4940,6 +4947,112 @@ def perception_extract_download() -> Response:
         path, media_type="application/x-jsonlines",
         filename=res.get("filename") or "oo-perception-extract.jsonl",
     )
+
+
+# --------------------------------------------------------------------------- #
+#  ONE BUTTON: every AI check on this machine, in order, one report.
+#  Maintainer 2026-08-09, after running four of them by hand: "Can you simplify all
+#  AI related diagnostics into one single button to test everything at once?"
+# --------------------------------------------------------------------------- #
+class AiCheckRunBody(BaseModel):
+    repeats: int = Field(default=2, ge=1, le=10, description="timed calls per latency shape")
+    levels: str = Field(
+        default="1,2,4,8",
+        description="comma-separated concurrency levels for the throughput sweep",
+    )
+    calls_per_level: int = Field(default=8, ge=1, le=200)
+    include_perception: bool = Field(
+        default=True,
+        description=(
+            "run the live who/where/when eval — the gate that decides which languages "
+            "may store extractions. One call per gold case, so it is the slow step on a "
+            "slow machine."
+        ),
+    )
+
+
+def _ai_check_worker(ctx, **kwargs) -> dict:
+    from src.monitoring.ai_check import run_and_persist_ai_check
+
+    return run_and_persist_ai_check(ctx, **kwargs)
+
+
+_AI_CHECK_JOB = register_job(
+    BackgroundJob(
+        "ai-check", "AI checks (backend, latency, throughput, extraction gate, self-tests)",
+        _ai_check_worker, is_writer=False, cancellable=True,
+    )
+)
+
+
+@router.post("/ai-check/run")
+def ai_check_run(body: AiCheckRunBody) -> JSONResponse:
+    """Run every AI check this machine can do, in one background pass.
+
+    A job rather than a synchronous call because the throughput sweep and the live eval
+    take minutes on a slow machine, and a request that long would hold the one worker.
+    Cancellable between steps; each step is timed and guarded, so a step that fails
+    records why and the run continues rather than losing the ones that worked.
+
+    Loopback inference only: no egress, airplane-safe, and it writes nothing to the
+    corpus. The comparative model bench is deliberately NOT part of this — it runs for
+    hours and is resumable per model, and the report says so rather than implying
+    "everything" covered it.
+    """
+    levels = tuple(
+        int(x) for x in (body.levels or "").split(",") if x.strip().isdigit() and int(x) > 0
+    )
+    try:
+        st = _AI_CHECK_JOB.start(
+            repeats=body.repeats,
+            levels=levels or None,
+            calls_per_level=body.calls_per_level,
+            include_perception=body.include_perception,
+        )
+    except RuntimeError as exc:
+        st = _AI_CHECK_JOB.status()
+        st["already_running"] = True
+        st["detail"] = str(exc)
+    return JSONResponse(st)
+
+
+@router.get("/ai-check/status")
+def ai_check_status() -> JSONResponse:
+    """Live status of the AI-check run (state, which step, and the report when done)."""
+    return JSONResponse(_AI_CHECK_JOB.status())
+
+
+@router.post("/ai-check/cancel")
+def ai_check_cancel() -> JSONResponse:
+    """Stop the run at its next step boundary. The steps already measured are kept."""
+    _AI_CHECK_JOB.cancel()
+    return JSONResponse(_AI_CHECK_JOB.status())
+
+
+@router.get("/ai-check/last")
+def ai_check_last() -> JSONResponse:
+    """The newest saved AI-check report (read-only; never starts a run). Honest
+    ``{available:false}`` when none has been run on this machine."""
+    from src.monitoring.ai_check import last_ai_check_report
+
+    return JSONResponse(last_ai_check_report())
+
+
+@router.get("/ai-check/download")
+def ai_check_download() -> Response:
+    """The newest AI-check report as one downloadable .json — the file to attach to a
+    bug report. 404 until a run has produced one."""
+    from src.monitoring.ai_check import last_ai_check_report
+
+    out = last_ai_check_report()
+    if not out.get("available"):
+        raise HTTPException(
+            status_code=404,
+            detail=out.get("reason")
+            or "no AI check has been run — start one with POST /api/diagnostics/ai-check/run",
+        )
+    fname = out.get("filename") or "oo-ai-check.json"
+    return JSONResponse(out, headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
 
 # Language -> script, for sizing the context window in CHARACTERS. Only the

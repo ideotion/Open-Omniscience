@@ -20,7 +20,7 @@ class StubClient:
         self.calls = []
         self.fail = fail
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         self.calls.append(prompt)
         if self.fail:
             raise RuntimeError("ollama down")
@@ -85,7 +85,7 @@ class EndpointStub:
     def is_available(self):
         return self._avail
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         self.calls.append(prompt)
         return type("R", (), {"text": self.mapping.get(prompt.strip().casefold(), prompt)})()
 

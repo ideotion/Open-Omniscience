@@ -52,6 +52,11 @@ class LlmBackend(Protocol):
         *,
         model: str = ...,
         system: str | None = ...,
+        # Sampling. Declared here because leaving it out is how the seam drifted:
+        # both real clients take it, every constrained-output sweep now sends
+        # ``ai_layer.sampling.sweep_options()`` through it, and a stand-in that
+        # omits it describes a client that does not exist.
+        options: dict | None = ...,
         keep_alive: str | None = ...,
     ) -> GenerationResult: ...
 

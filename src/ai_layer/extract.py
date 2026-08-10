@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import re
 
+from src.ai_layer.sampling import sweep_options
+
 # Prompt provenance — stored on every AI keyword row (bump when this prompt changes).
 EXTRACT_PROMPT_VERSION = "ai-keywords-v1"
 
@@ -88,5 +90,7 @@ def extract_terms(
     base = system if (system and system.strip()) else _EXTRACT_SYSTEM
     sys_prompt = base.replace("{max_terms}", str(max_terms))
     prompt = f"Article title: {title or '(untitled)'}\n\n{text[:_MAX_CHARS]}"
-    result = client.generate(prompt, model=model, system=sys_prompt, keep_alive=keep_alive)
+    result = client.generate(
+        prompt, model=model, system=sys_prompt, options=sweep_options(), keep_alive=keep_alive
+    )
     return parse_terms(result.text, max_terms=max_terms)

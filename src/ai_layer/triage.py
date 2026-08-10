@@ -42,6 +42,8 @@ import unicodedata
 from dataclasses import dataclass, field
 from itertools import combinations
 
+from src.ai_layer.sampling import sweep_options
+
 # Prompt provenance — stored on every triage record (bump when the prompt changes).
 TRIAGE_PROMPT_VERSION = "keyword-triage-v1"
 
@@ -476,7 +478,9 @@ def run_triage_batch(
     LLMUnavailable/LLMError up (the caller decides how to handle a mid-run outage)."""
     system, user, expected = build_triage_prompt(items, canaries=canaries)
     t0 = monotonic()
-    result = client.generate(user, model=model, system=system, keep_alive=keep_alive)
+    result = client.generate(
+        user, model=model, system=system, options=sweep_options(), keep_alive=keep_alive
+    )
     wall_s = max(0.0, monotonic() - t0)
     pb = parse_verdicts(getattr(result, "text", ""), expected)
     canary = check_canaries(pb, canary_expected or {})
@@ -720,7 +724,7 @@ class _StubClient:
     def __init__(self, text: str):
         self._text = text
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         return type(
             "R",
             (),
