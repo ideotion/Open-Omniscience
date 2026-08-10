@@ -10339,6 +10339,60 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   must travel WITH it" trap); a compute-capability ≥7.5 preflight (real, but `detect_gpu()`
   already gates on CUDA and the failure it prevents is loud); a per-launch `--api-key` on a
   loopback socket (defence against a local process that could read the token file anyway).
+  - **A PROBE OF THE PORT IS NOT A PROBE OF THE MODEL — and the fix for that creates
+    its exact mirror one line later (2026-08-10, the deep bench that measured one of
+    seven models):** `arbitration._is_ready("vllm")` asked whether the server ANSWERS.
+    A vLLM serves exactly one model per server, so a server holding model A answers
+    perfectly while being useless for B — and the caller's next move was to send B's
+    work to it. Compounding it, `_start` called `vllm_lifecycle.stop()` and **discarded
+    the result**, so a refused stop (a server this app did not spawn) fell straight
+    into `start()`, whose `"already running"` is `process_alive() or is_running()` —
+    another word about a PROCESS standing in for a fact about a MODEL. Six of seven
+    pairs recorded five task errors each and the run called itself `complete`. THE
+    HONESTY LAYER IS WHY THIS WAS DIAGNOSABLE AT ALL: `VllmClient` refuses a model its
+    server was not started with, so the field report contained six honest refusals
+    rather than model A's answers filed under six other names — a wrong measurement no
+    reader could ever have detected. FOUR RULES. (a) When a resource serves ONE thing
+    at a time, readiness must name the thing, not the socket. (b) An action whose
+    success is load-bearing must have its answer read; if you are about to ignore a
+    return value, ask what the next line assumes. (c) **Fixing (a) alone produces the
+    fabricated-failure mirror**: `vllm_lifecycle.start()` returns at spawn ("poll
+    is_running() before use"), so a one-shot probe immediately after a restart reads
+    not-ready for a healthy 60–90s model load — the wait has to land in the same
+    change, bounded, and abandoned the moment the tri-state says `exited`. (d) A wait
+    that outlives a cancel must SAY what it is waiting for; shortening it would have
+    left the operator's machine serving a backend they did not choose, which is worse
+    than a minute of explained delay. **THE THIRD DEFECT, found by replaying the field
+    conditions against the fix rather than by reading:** `vllm_lifecycle.stop()` has two
+    paths, and only one of them waited for the PORT. The adopted path polls until
+    nothing answers and says why in a comment — *"a SIGTERM that has been sent is not
+    memory that has been released"* — while the tracked path returned the instant
+    `proc.wait()` reaped the parent. vLLM runs its engine in CHILD processes, so the
+    parent can be gone while the server still answers and still holds the card; the
+    caller's next move is `start()`, which reads "already running" and keeps serving the
+    old model. That fits the field timing exactly (every switch completed in about a
+    second, where a real restart is 60–90s). GENERAL FORM: when one function has two
+    paths to the same outcome, the guarantee has to live in a shared helper — an
+    invariant implemented in one branch and merely *commented* in the other will be
+    reintroduced by whoever reads only the branch they are in. And a stop that was
+    performed but did not TAKE (`port_quiet: False`) has to be treated by the caller
+    exactly like a refusal, because for the caller it is one.
+  - **A BACKEND NOBODY STARTED READS AS A BACKEND THAT CANNOT SERVE (same run):** every
+    Ollama pair was dropped as `backend-unreachable` while Ollama was installed,
+    launchable, and holding the models the operator had pulled — the probe asked a
+    daemon that was simply not running. The question "what can this backend serve"
+    needs no GPU, so it can be answered by WAKING the daemon first; the question "can
+    it serve it NOW" is the handover, and stays per-pair. Separating the two is what
+    makes a one-run comparison of two backends possible at all. Gate the wake on the
+    same `OO_LLM_AUTOSTART=0` every other automatic start honours — a deliberate click
+    is not a reason to ignore an operator who said never start a backend behind my
+    back, and it is also what stops a test run leaving a daemon behind. COROLLARY on a
+    guard that repairs nothing: the pair ordering was grouped by backend to save a
+    handover, and `resolve_pairs` turned out to already emit grouped output because it
+    iterates `sorted(installed_by_backend)`. Kept as a stated GUARD with its own test
+    driven by an interleaved list — an end-to-end assertion alone would have passed
+    with the helper deleted — and the docstring says outright that it repairs nothing
+    today, because a no-op that reads like a fix is worse than no fix.
   - **A TUNABLE IS ONLY TUNABLE WHERE ITS VALUE REACHES THE LOOP THAT SPENDS IT
     (2026-08-09, "I see my GPU working only 20%"):** `concurrency_for()` was read in two
     honest places — the coordinator's turn-level overlap, and `--max-num-seqs` at server

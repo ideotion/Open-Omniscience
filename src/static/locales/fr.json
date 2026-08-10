@@ -2522,7 +2522,7 @@
   "model/backend pairs": "paires modèle/moteur",
   "on both backends": "sur les deux moteurs",
   "Anchor accuracy": "Exactitude sur les ancres",
-  "Benching every model takes hours and restarts your AI backend between models. It is resumable: cancelling keeps the models already measured. Start it?": "Évaluer tous les modèles prend des heures et redémarre votre moteur d'IA entre chaque modèle. L'opération est reprenable : l'annuler conserve les modèles déjà mesurés. Lancer ?",
+  "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "Évaluer tous les modèles prend des heures. Le test démarre un moteur arrêté, redémarre votre moteur d'IA entre chaque modèle, puis remet la machine sur celui qui servait auparavant. Il est reprenable : annuler conserve les modèles déjà mesurés. Lancer ?",
   "Not part of this check": "Hors de ce test",
   "at concurrency": "à la concurrence",
   "configured": "configuré",

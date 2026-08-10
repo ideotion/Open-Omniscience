@@ -631,6 +631,44 @@ def _default_unload(client, *, backend: str, model: str) -> dict:
         return {"unloaded": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}
 
 
+def _default_wake(backend: str) -> dict:
+    """Bring a stopped-but-installed backend far enough up to be ASKED what it serves.
+
+    The field run of 2026-08-10 dropped every Ollama pair with "backend-unreachable"
+    while Ollama was installed and perfectly launchable, because the bench probed a
+    daemon nobody had started. Listing installed models costs no GPU, so waking the
+    daemon belongs at PROBE time -- before the request list is resolved -- while the
+    card itself still changes hands per pair.
+
+    Only Ollama. vLLM is deliberately not woken here: it serves ONE model per server,
+    so there is no model-independent "up" to reach, and its availability is read from
+    the weights cache precisely so a stopped server is not mistaken for an empty one.
+
+    Honours ``OO_LLM_AUTOSTART=0`` like every other automatic start in the app. The
+    bench is a deliberate click rather than a background recovery, but an operator who
+    has said "never start a backend behind my back" has said it about this too, and
+    the suite sets that variable so a test run cannot leave a daemon behind.
+    """
+    if backend != "ollama":
+        return {"woken": False, "reason": "only the Ollama daemon is woken at probe time"}
+    from src.llm import ollama_lifecycle
+
+    try:
+        if ollama_lifecycle.is_running():
+            return {"woken": False, "reason": "already running"}
+        if os.getenv("OO_LLM_AUTOSTART", "1").strip().lower() in ("0", "false", "no"):
+            return {
+                "woken": False,
+                "reason": "OO_LLM_AUTOSTART=0 — automatic backend starts are off on this machine",
+            }
+        if not ollama_lifecycle.is_installed():
+            return {"woken": False, "reason": "Ollama is not installed on this machine"}
+        res = ollama_lifecycle.start()
+        return {"woken": bool(res.get("started")), "detail": res}
+    except Exception as exc:  # noqa: BLE001 - a daemon that will not start is a reason
+        return {"woken": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}
+
+
 def _default_switch(*, backend: str, model: str) -> dict:
     """Hand the GPU to ``backend`` and point it at ``model``.
 
@@ -705,6 +743,7 @@ def run_model_bench(
     installed_by_backend: dict[str, list[str] | None] | None = None,
     unload=_default_unload,
     switch=_default_switch,
+    wake=_default_wake,
     persist: bool = True,
 ) -> dict:
     """``BackgroundJob`` worker: bench every runnable (model, backend) pair.
@@ -713,12 +752,35 @@ def run_model_bench(
     the next run picks up the rest — but only if the frozen batch is unchanged. A
     digest that moved means the questions moved, so the run REFUSES to resume and
     asks for a restart rather than assembling one table out of two input sets.
+
+    With ``allow_backend_switch`` the run owns the GPU for its duration: it wakes a
+    stopped-but-installed backend so its models can be seen at all (``wake``), hands
+    the card over per pair (``switch``), and puts the machine back on whatever backend
+    was serving when it started. Without it, nothing is started, stopped or restored --
+    the run measures only what is already up, and says so.
     """
     batch = batch or BB.load_frozen_batch()
     if anchors is None:
         anchors = BB.load_anchors()
     requested = list(models or DEFAULT_ROSTER) + list(extra_models or [])
     requested = list(dict.fromkeys(t for t in requested if t))
+
+    # Wake first, then probe. Both the "what can it serve" list and the client factory
+    # read a live daemon, so a probe taken before this reports a stopped-but-installed
+    # backend as unreachable and drops its models before the card is ever offered to
+    # it -- which is exactly how a run asked to compare two backends measured one.
+    woken: dict[str, dict] = {}
+    prior_holder: dict | None = None
+    if allow_backend_switch:
+        # Remembered BEFORE anything is woken or stopped, because this is the state the
+        # machine is put back into afterwards. A bench that stops vLLM to measure Ollama
+        # and leaves it stopped has quietly changed which backend serves every later
+        # request, and the operator would have no reason to look.
+        prior_holder = _prior_holder()
+        for backend in backends:
+            note = wake(backend)
+            if note and (note.get("woken") or note.get("reason") not in (None, "already running")):
+                woken[backend] = note
 
     if installed_by_backend is None:
         installed_by_backend = _installed_by_backend(tuple(backends), wanted=requested)
@@ -729,6 +791,7 @@ def run_model_bench(
     if not allow_backend_switch:
         runnable, refused = _refuse_unswitchable_vllm(runnable, clients.get("vllm"))
         skipped.extend(refused)
+    runnable = _grouped_by_backend(runnable)
 
     cursor = None if restart else load_cursor()
     if cursor and cursor.get("batch_digest") != batch.get("digest"):
@@ -840,6 +903,20 @@ def run_model_bench(
             ctx.set_progress(done=_done(), total=total, detail=f"{backend} · {model} · done")
 
     cancelled = bool(ctx is not None and getattr(ctx, "stopping", False))
+    # Put the card back, cancelled or not: leaving the machine rearranged is a side
+    # effect of the measurement, not a result of it.
+    #
+    # This costs a model load, so a cancel can sit here for tens of seconds. That is
+    # worth SAYING rather than shortening -- an unexplained wait after "cancel" reads
+    # as a hang, and skipping the restore would leave the operator's machine serving
+    # something they did not choose.
+    if allow_backend_switch and prior_holder and ctx is not None:
+        ctx.set_progress(
+            done=_done(),
+            total=total,
+            detail=f"putting the card back on {prior_holder.get('backend')}",
+        )
+    restored = _restore_holder(prior_holder, switch) if allow_backend_switch else None
     report = assemble_report(
         results,
         batch=batch,
@@ -849,12 +926,95 @@ def run_model_bench(
         requested=requested,
         run_id=run_id,
         cancelled=cancelled,
+        woken=woken,
+        restored=restored,
     )
     if persist:
         report["path"] = str(save_report(report))
         if not cancelled and _done() >= total:
             clear_cursor()
     return report
+
+
+def _prior_holder() -> dict | None:
+    """What was serving before this run touched anything, or None if unreadable."""
+    try:
+        from src.llm.arbitration import current_holder
+
+        holder = current_holder()
+        return holder if holder.get("backend") else None
+    except Exception as exc:  # noqa: BLE001 - an unreadable prior state is not a crash
+        _LOG.info("bench: could not read which backend was serving (%s)", exc)
+        return None
+
+
+def _restore_holder(prior: dict | None, switch) -> dict | None:
+    """Hand the card back to whatever held it when the run started.
+
+    Returns None when there was nothing to restore -- either nothing was serving, or
+    the same thing still is. A restore that FAILS is reported rather than swallowed:
+    the operator's machine is now serving something other than what they left it on,
+    and that is worth a sentence.
+    """
+    if not prior or not prior.get("backend"):
+        return None
+    backend, model = prior["backend"], prior.get("model")
+    if backend == "vllm" and not model:
+        # We know a vLLM was serving and NOT which model. Restarting it on the default
+        # would put the machine on a model it was not on, which is a worse wrong answer
+        # than leaving it down: one is a stated gap, the other is a silent change.
+        return {
+            "backend": backend,
+            "model": None,
+            "restored": False,
+            "reason": (
+                "a vLLM server was running before this run, but which model it was "
+                "serving could not be read — restarting it on the default would put "
+                "this machine on a model it was not on, so it was left alone"
+            ),
+        }
+    try:
+        from src.llm.arbitration import current_holder
+
+        now = current_holder()
+        if now.get("backend") == backend and (backend != "vllm" or now.get("model") == model):
+            return None
+        note = switch(backend=backend, model=model or "")
+        return {
+            "backend": backend,
+            "model": model,
+            "restored": bool(note.get("ready")),
+            "reason": note.get("reason"),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "backend": backend,
+            "model": model,
+            "restored": False,
+            "reason": f"{type(exc).__name__}: {exc}"[:200],
+        }
+
+
+def _grouped_by_backend(runnable: list[dict]) -> list[dict]:
+    """All of one backend's pairs, then all of the next one's.
+
+    On a single-card machine every handover costs a stop and a model load -- tens of
+    seconds each way -- so alternating backends pair by pair would pay that twice per
+    model for nothing.
+
+    HONEST NOTE: today this changes nothing, because ``resolve_pairs`` iterates
+    ``sorted(installed_by_backend)`` and so already emits one backend's pairs before
+    the next one's. It is here as a GUARD, not a repair: that grouping is currently an
+    accident of alphabetical order, it is not what that loop is for, and the cost of
+    losing it is measured in minutes per run. Stated rather than relied upon.
+
+    Order WITHIN a backend is untouched (``sorted`` is stable), and the backends
+    themselves keep first-appearance order, so the same roster always produces the same
+    sequence. That matters for a bench: a run has to be comparable with the last one,
+    and an order that depended on which backend happened to be up would not be.
+    """
+    first_seen = {b: i for i, b in enumerate(dict.fromkeys(p["backend"] for p in runnable))}
+    return sorted(runnable, key=lambda p: first_seen[p["backend"]])
 
 
 def _refuse_unswitchable_vllm(
@@ -1136,6 +1296,8 @@ def assemble_report(
     requested: list[str],
     run_id: str,
     cancelled: bool = False,
+    woken: dict[str, dict] | None = None,
+    restored: dict | None = None,
 ) -> dict:
     """The side-by-side artifact: one row per (model, backend), every metric alone."""
     from src.ai_layer.triage import pairwise_agreement
@@ -1172,6 +1334,24 @@ def assemble_report(
         "pairs_run": [p["key"] for p in runnable if p["key"] in results],
         "pairs_pending": [p["key"] for p in runnable if p["key"] not in results],
         "skipped": skipped,
+        # A pair that never got the card measured NOTHING, and "complete" over a table
+        # of those reads as "these models were tested and did badly". Counted at the
+        # top level so it cannot be missed by a reader who does not open every row.
+        "handover_failures": [
+            {
+                "key": key,
+                "backend": r.get("backend"),
+                "model": r.get("model"),
+                "reason": (r.get("backend_switch") or {}).get("reason") or r.get("detail"),
+            }
+            for key, r in results.items()
+            if r.get("status") == "error" and r.get("backend_switch")
+        ],
+        # What was started to make this run possible, so an operator can see that the
+        # bench woke a daemon rather than wondering why one is now up.
+        "backends_woken": woken or {},
+        # And what was put back afterwards. None means there was nothing to put back.
+        "backend_restored": restored,
         "results": results,
         "pairwise_verdict_agreement": (
             pairwise_agreement(verdicts_by_pair) if len(verdicts_by_pair) > 1 else None

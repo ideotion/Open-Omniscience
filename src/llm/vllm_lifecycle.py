@@ -2011,7 +2011,23 @@ def stop(*, timeout: float = 10.0, adopt: bool = True) -> dict:
             proc.kill()
             proc.wait(timeout=5)
         _proc = None
-        return {"stopped": True, "how": "tracked subprocess"}
+        # WAIT FOR THE PORT, not just for the parent to be reaped. The adopted path
+        # below already did this ("a SIGTERM that has been *sent* is not memory that
+        # has been *released*") and this one did not -- the same requirement, one
+        # implementation. vLLM runs its engine in CHILD processes, so the parent can be
+        # gone while the server is still answering and still holding the card; the
+        # caller's very next move is to start another model, which then reads
+        # "already running" and quietly keeps serving the old one. That is the shape of
+        # the 2026-08-10 field run, where every model switch completed in about a
+        # second and six of seven models measured nothing.
+        quiet = _wait_until_quiet(timeout)
+        out = {"stopped": True, "how": "tracked subprocess", "port_quiet": quiet}
+        if not quiet:
+            out["note"] = (
+                f"the process was terminated but the server was still answering after "
+                f"{timeout:.0f}s — something else may be holding vLLM's port"
+            )
+        return out
 
     if not adopt:
         return {"stopped": False, "reason": "not tracked by this process"}
@@ -2041,11 +2057,8 @@ def stop(*, timeout: float = 10.0, adopt: bool = True) -> dict:
     # Wait for the port to actually go quiet: the caller's next move is usually to put
     # something else on the card, and a SIGTERM that has been *sent* is not memory that
     # has been *released*.
-    deadline = time.monotonic() + max(0.0, timeout)
-    while time.monotonic() < deadline:
-        if not is_running():
-            return {"stopped": True, "how": "adopted", "pids": stopped}
-        time.sleep(0.25)
+    if _wait_until_quiet(timeout):
+        return {"stopped": True, "how": "adopted", "pids": stopped, "port_quiet": True}
     for pid in stopped:
         try:
             os.kill(pid, signal.SIGKILL)
@@ -2055,8 +2068,24 @@ def stop(*, timeout: float = 10.0, adopt: bool = True) -> dict:
         "stopped": True,
         "how": "adopted",
         "pids": stopped,
+        "port_quiet": _wait_until_quiet(5.0),
         "note": f"did not exit within {timeout:.0f}s and was killed",
     }
+
+
+def _wait_until_quiet(timeout: float, *, poll: float = 0.25) -> bool:
+    """Poll until nothing answers on vLLM's port, or time runs out.
+
+    Shared by both stop paths so neither can drift into reporting a stop that has been
+    REQUESTED as a stop that has HAPPENED.
+    """
+    deadline = time.monotonic() + max(0.0, timeout)
+    while True:
+        if not is_running():
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(poll)
 
 
 def status(*, history_limit: int | None = _UI_HISTORY_LIMIT) -> dict:

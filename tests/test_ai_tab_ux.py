@@ -236,6 +236,37 @@ def test_the_deep_run_is_confirmed_and_the_quick_one_is_not():
     assert "JSON.stringify({ deep })" in body, "the choice must reach the endpoint"
 
 
+def test_the_confirm_names_every_way_the_run_rearranges_the_machine():
+    """The deep run does three things to the operator's backends -- it STARTS a stopped
+    one, RESTARTS vLLM between models, and puts the machine BACK afterwards. A confirm
+    that names only the middle one is asking consent for less than it does."""
+    body = strip_comments(function_body(APP, "runAiCheck"))
+    sentence = body[body.index("confirm(t(") : body.index("))) return;")]
+
+    assert "starts a stopped backend" in sentence, "the wake is a side effect too"
+    assert "restarts your AI backend between models" in sentence
+    assert "puts the machine back" in sentence, "the restore is a promise, so it is stated"
+    assert "resumable" in sentence, "cancelling keeps what it measured — the honest promise"
+
+
+def test_the_confirm_sentence_is_translated_in_every_locale():
+    """It is a keyed string, so EXTENDING it would have silently reverted eleven
+    locales to English (the DOM walker matches a key exactly). Pinned so the next edit
+    has to re-key rather than append."""
+    import json
+    import pathlib
+
+    body = strip_comments(function_body(APP, "runAiCheck"))
+    start = body.index('confirm(t("') + len('confirm(t("')
+    key = body[start : body.index('"', start)]
+
+    for f in sorted(pathlib.Path("src/static/locales").glob("*.json")):
+        d = json.loads(f.read_text(encoding="utf-8"))
+        assert key in d, f"{f.stem} is missing the deep-run confirm"
+        if f.stem != "en":
+            assert d[key] != key, f"{f.stem} fell back to the English sentence"
+
+
 def test_the_perception_harness_button_is_folded_into_the_one_check():
     """Maintainer ask: "Perception eval harness test should be included in those tests,
     bundle it and remove the button."

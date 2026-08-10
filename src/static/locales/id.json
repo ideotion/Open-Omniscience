@@ -2522,7 +2522,7 @@
   "model/backend pairs": "pasangan model/backend",
   "on both backends": "di kedua backend",
   "Anchor accuracy": "Akurasi terhadap jangkar",
-  "Benching every model takes hours and restarts your AI backend between models. It is resumable: cancelling keeps the models already measured. Start it?": "Mengukur semua model memakan waktu berjam-jam dan memulai ulang backend AI Anda di antara model. Proses ini dapat dilanjutkan: membatalkan tetap menyimpan model yang sudah diukur. Mulai?",
+  "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "Mengukur semua model memakan waktu berjam-jam. Pengujian ini menyalakan backend yang berhenti, memulai ulang backend AI Anda di antara model, lalu mengembalikan mesin ke backend yang sebelumnya melayani. Dapat dilanjutkan: membatalkan tetap menyimpan model yang sudah diukur. Mulai?",
   "Not part of this check": "Bukan bagian pemeriksaan ini",
   "at concurrency": "pada konkurensi",
   "configured": "terkonfigurasi",

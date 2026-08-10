@@ -2522,7 +2522,7 @@
   "model/backend pairs": "пар модель/бэкенд",
   "on both backends": "на обоих бэкендах",
   "Anchor accuracy": "Точность по эталонам",
-  "Benching every model takes hours and restarts your AI backend between models. It is resumable: cancelling keeps the models already measured. Start it?": "Проверка всех моделей займёт часы и будет перезапускать ИИ-бэкенд между моделями. Её можно возобновить: отмена сохраняет уже измеренные модели. Запустить?",
+  "Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?": "Проверка всех моделей займёт часы. Она запускает остановленный движок, перезапускает ваш ИИ-движок между моделями и возвращает машину к тому, который работал до этого. Её можно возобновить: отмена сохраняет уже измеренные модели. Запустить?",
   "Not part of this check": "Не входит в эту проверку",
   "at concurrency": "при параллелизме",
   "configured": "настроено",
