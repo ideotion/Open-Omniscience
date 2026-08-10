@@ -15260,6 +15260,25 @@
           + ((g.unmeasured || []).length ? ` · ${esc(t("unmeasured"))}: ${esc(g.unmeasured.join(", "))}` : ""),
         ));
       }
+      // WHAT THE BENCH COVERED, never a headline number for it: the numbers are per
+      // model, per task, per language, and a single figure over those is the composite
+      // the whole bench exists to refuse. This says what is IN the table.
+      const m = r.models;
+      if (m && !m.refused) {
+        const ran = (m.pairs_measured || []).length;
+        const both = m.same_model_on_both_backends || [];
+        const skipped = Object.entries(m.skipped_by_reason || {})
+          .map(([why, who]) => `${esc(why)} (${who.length})`).join(" · ");
+        rows.push(_aiCheckLine(
+          t("Models measured"),
+          `${esc(String(ran))} ${esc(t("model/backend pairs"))}`
+          + (both.length ? ` · ${esc(String(both.length))} ${esc(t("on both backends"))}` : "")
+          + (skipped ? `<div class="hint">${esc(t("skipped"))}: ${skipped}</div>` : "")
+          + `<div class="hint">${esc(t("Anchor accuracy"))}: ${esc(m.anchor_accuracy || "")}</div>`,
+        ));
+      } else if (m && m.refused) {
+        rows.push(_aiCheckLine(t("Models measured"), `<span class="warn">${esc(m.refused)}</span>`));
+      }
       // Every step, with its own time — including the ones that failed, because a
       // report from a half-broken machine is most useful when it says which half.
       const steps = (res.steps || []).map((s) =>
@@ -15307,9 +15326,16 @@
 
     async function runAiCheck(btn) {
       const on = btn && btn.dataset.running === "1";
+      // The deep run adds the comparative bench: hours rather than minutes, restarting
+      // vLLM between models and taking the GPU from Ollama and back. That is worth one
+      // confirm — it is resumable, so the honest promise is "cancelling keeps what it
+      // measured", not "you can undo this".
+      const deep = !on && !!($("aicheck-deep") || {}).checked;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      if (deep && !confirm(t("Benching every model takes hours and restarts your AI backend between models. It is resumable: cancelling keeps the models already measured. Start it?"))) return;
       try {
         if (on) await api("/api/diagnostics/ai-check/cancel", { method: "POST" });
-        else await api("/api/diagnostics/ai-check/run", { method: "POST", body: JSON.stringify({}) });
+        else await api("/api/diagnostics/ai-check/run", { method: "POST", body: JSON.stringify({ deep }) });
       } catch (e) {
         if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
       }

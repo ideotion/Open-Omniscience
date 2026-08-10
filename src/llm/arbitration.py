@@ -174,8 +174,33 @@ def _start(backend: str, model: str | None) -> dict:
             # there is no cheaper way to do it.
             vllm_lifecycle.stop()
             _settle(free_vram_mb())
-        return vllm_lifecycle.start(model) if model else vllm_lifecycle.start()
+        target = model or _default_vllm_model()
+        if not target:
+            # vLLM cannot be started without naming a model, and picking one here would
+            # be this module inventing a decision that belongs to the activation plan.
+            return {
+                "started": False,
+                "reason": (
+                    "no vLLM model to serve: none was named and no default could be "
+                    "resolved. Choose one in Settings → AI."
+                ),
+            }
+        return vllm_lifecycle.start(target)
     raise ValueError(f"unknown backend {backend!r}")
+
+
+def _default_vllm_model() -> str | None:
+    """The model this machine would serve with, from the activation plan's own answer.
+
+    Read rather than re-derived: activation already decides this, and a second opinion
+    here is how two surfaces end up naming different models.
+    """
+    try:
+        from src.llm.activation import _vllm_model
+
+        return _vllm_model() or None
+    except Exception:  # noqa: BLE001 - no answer is a reason, not a crash
+        return None
 
 
 def _served_vllm_model() -> str | None:

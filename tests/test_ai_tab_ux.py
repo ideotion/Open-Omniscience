@@ -205,16 +205,56 @@ def test_one_button_runs_every_ai_check():
     assert "/api/diagnostics/ai-check/cancel" in body, "a multi-minute run needs a stop"
 
 
-def test_the_one_button_names_the_bench_it_does_not_run():
-    """"Test everything at once" must not silently exclude the longest test.
+def test_the_one_button_offers_the_bench_rather_than_excluding_it():
+    """The bench is now IN the button, behind a choice (maintainer ask 2026-08-10:
+    "Fuse all AI related benchmark into one single button").
 
-    The comparative bench keeps its own control because it runs for hours; the button's
-    own explanation says so, so a reader is never left to assume it was covered.
+    It used to be excluded and said so. What must never happen is the third state --
+    included silently, or excluded silently -- so the control names the choice and the
+    checkbox's own title says what ticking it costs.
     """
     src = strip_comments(HTML)
     at = src.index('id="aicheck-btn"')
     title = src[at:src.index(">", at)]
-    assert "model bench" in title.lower() and "NOT included" in title
+    assert "comparative bench" in title.lower(), "the button must name what the tick adds"
+
+    box = src.index('id="aicheck-deep"')
+    label = src[src.rindex("<label", 0, box):src.index("</label>", box)]
+    assert "hours" in label.lower(), "an hours-long run must say so before it is ticked"
+    assert "resumable" in label.lower(), "and that cancelling keeps what it measured"
+
+
+def test_the_deep_run_is_confirmed_and_the_quick_one_is_not():
+    """Ticking it restarts the AI backend and takes hours. Not ticking it must stay a
+    single click -- a confirm on the ordinary path is how a confirm stops being read."""
+    body = function_body(APP, "runAiCheck")
+    assert "aicheck-deep" in body
+    assert "confirm(" in body
+    assert "deep &&" in body or "deep && !confirm" in body, (
+        "the confirm must be gated on deep, never asked for the quick check"
+    )
+    assert "JSON.stringify({ deep })" in body, "the choice must reach the endpoint"
+
+
+def test_the_perception_harness_button_is_folded_into_the_one_check():
+    """Maintainer ask: "Perception eval harness test should be included in those tests,
+    bundle it and remove the button."
+
+    It is a STEP of the check now. The control survives inside the run-one-on-its-own
+    fold (never lose a tool), but it must no longer sit beside the extraction sweep as
+    a thing to remember to press first, and the gate result it produces stays there.
+    """
+    from src.monitoring.ai_check import default_step_names
+
+    assert "perception_eval" in default_step_names(), (
+        "the harness must run as part of the one check"
+    )
+
+    src = strip_comments(HTML)
+    assert src.index('id="pel-run-btn"') < src.index('id="perception-extract-box"'), (
+        "the harness button moved out of the extraction box into the one-check fold"
+    )
+    assert 'id="pe-gate-result"' in src, "the gate result belongs beside the sweep it gates"
 
 
 def test_the_check_toggles_instead_of_disabling():

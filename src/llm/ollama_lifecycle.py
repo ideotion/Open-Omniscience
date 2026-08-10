@@ -282,7 +282,10 @@ def stop(*, timeout: float = 10.0) -> dict:
             ),
         }
     proc = _proc
-    assert proc is not None  # noqa: S101  # nosec B101 - owns_daemon() just proved it
+    if proc is None:  # pragma: no cover - owns_daemon() just proved otherwise
+        # Not an assert: those vanish under `python -O`, and this project has already
+        # had to convert a set of them for exactly that reason.
+        return {"stopped": False, "owned": False, "reason": "no tracked daemon"}
     try:
         proc.terminate()
         try:

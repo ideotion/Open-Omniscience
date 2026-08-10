@@ -341,3 +341,26 @@ def frozen_batch() -> dict:
         "sources": [],
         "source_tag_vocabulary": [],
     }
+
+
+def test_a_stopped_vllm_is_not_reported_as_an_unreachable_backend(monkeypatch):
+    """This app STARTS the server, so "nothing answering" is not "cannot serve". A
+    None here would put a spurious backend-unreachable row in the report, next to the
+    downloaded models it is telling you it cannot run."""
+    monkeypatch.setattr("src.llm.vllm_lifecycle.is_installed", lambda: True)
+    monkeypatch.setattr(MB, "_vllm_available", lambda _w: ["org/a"])
+
+    out = MB._installed_by_backend(("vllm",), wanted=["vllm|org/a"])
+
+    assert out["vllm"] == ["org/a"]
+
+
+def test_vllm_not_installed_at_all_IS_unreachable(monkeypatch):
+    """The negative-space twin: there is a real unreachable case and it must survive."""
+    monkeypatch.setattr("src.llm.vllm_lifecycle.is_installed", lambda: False)
+
+    out = MB._installed_by_backend(("vllm",), wanted=["vllm|org/a"])
+
+    assert out["vllm"] is None
+    _, skipped = MB.resolve_pairs(models=["vllm|org/a"], installed_by_backend=out)
+    assert skipped[0]["reason"] == "backend-unreachable"

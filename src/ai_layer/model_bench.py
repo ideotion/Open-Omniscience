@@ -956,12 +956,18 @@ def _installed_by_backend(
     out: dict[str, list[str] | None] = {}
     for backend in backends:
         if backend == "vllm":
+            # "Unreachable" means something different here, and getting it wrong puts a
+            # spurious backend-unreachable row in the report. A stopped vLLM is NOT
+            # unreachable — this app starts the server itself, so downloaded weights are
+            # runnable with nothing answering. The genuinely unreachable case is vLLM not
+            # being installed at all; anything else is a list, empty or not.
+            from src.llm import vllm_lifecycle
+
+            if not vllm_lifecycle.is_installed():
+                out[backend] = None
+                continue
             want, _ = _wanted_on("vllm", list(wanted or []))
-            installed = _vllm_available(want)
-            # Installed-but-stopped is a real state for vLLM: the app starts the
-            # server itself, so downloaded weights are runnable even with nothing
-            # answering. Only "no weights AND nothing serving" is unreachable.
-            out[backend] = installed if installed else ([] if want else None)
+            out[backend] = _vllm_available(want)
             continue
         try:
             _, client = get_client_with_name(backend=backend)

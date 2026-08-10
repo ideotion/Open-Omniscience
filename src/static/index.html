@@ -1886,17 +1886,22 @@
       <h2>AI diagnostics</h2>
       <p class="hint" style="margin-top:0">Everything here runs on your own machine against the model you chose, through loopback only — no egress, and it works in airplane mode. Every number carries its own method and caveat; there is no overall figure and no pass mark.</p>
       <div class="row" style="margin-top:8px">
-        <button id="aicheck-btn" onclick="runAiCheck(this)" data-running="0" title="Run every AI check this machine can do, in one pass: which backend and model are live, how long each prompt shape takes, how many articles per hour you actually get at rising concurrency (sampling GPU use), the live who/where/when eval that gates extraction per language, and the deterministic harness self-tests. Each result is reported alone — no score. A step that fails records why and the run continues. The comparative model bench is NOT included: it loads every roster model in turn and runs for hours, so it keeps its own button below.">Run all AI checks</button>
+        <button id="aicheck-btn" onclick="runAiCheck(this)" data-running="0" title="Run every AI check this machine can do, in one pass: which backend and model are live, how long each prompt shape takes, how many articles per hour you actually get at rising concurrency (sampling GPU use), the live who/where/when eval that gates extraction per language, and the deterministic harness self-tests. Each result is reported alone — no score. A step that fails records why and the run continues. Tick 'every model' beside it to add the comparative bench.">Run all AI checks</button>
+        <label class="small" style="margin-left:6px" title="Also bench EVERY roster model, on every backend that serves it, over the same frozen inputs — restarting vLLM between models and handing the GPU back and forth with Ollama. It builds the frozen inputs on first use and reuses them afterwards, so runs stay comparable. Minutes become HOURS; it is resumable, so cancelling keeps the models already measured."><input type="checkbox" id="aicheck-deep"> every model (hours)</label>
         <span id="aicheck-status" class="small" style="margin-left:6px"></span>
         <button class="secondary" onclick="window.open('/api/diagnostics/ai-check/download','_blank')" title="Download the newest AI-check report as one .json — the file to attach to a bug report or hand to a verification session.">Download the last AI check (.json)</button>
       </div>
       <div id="aicheck-result" class="small" style="margin-top:6px"></div>
       <details class="adv-collect" style="margin-top:8px">
         <summary class="muted" style="cursor:pointer">Run one check on its own</summary>
+        <p class="hint" style="margin-top:6px">The button above runs all of these in order and keeps the results together. Each one is still here on its own, for when you want to re-run a single measurement without waiting for the rest.</p>
         <div class="row" style="margin-top:6px">
           <button class="secondary" onclick="window.open('/api/diagnostics/llm-bench','_blank')" title="Times your local model on the prompt SHAPES the app actually sends — a small fact bundle, one article for who/where/when, one article for a summary, and a 24,000-character excerpt set for a synthesis — and turns the result into calls per hour, so an AI time budget rests on a measurement instead of a guess. Each shape runs one warmup call (excluded, reported separately, because it carries model load) then a few timed calls at temperature 0. Ollama reports its own durations; vLLM reports none, so those figures are wall-clock — stated per shape. LOOPBACK only: no egress, works in airplane mode. Needs a running model; with none reachable it says so and reports no numbers. Takes a few minutes on a slow machine.">LLM latency bench (.json)</button>
           <button class="secondary" onclick="window.open('/api/diagnostics/llm-throughput','_blank')" title="Measures the articles per hour your local model ACTUALLY achieves with 1, 2, 4, 8 and 16 requests in flight, sampling GPU use while it runs. The latency bench beside it times one call and multiplies by the configured concurrency — a multiplication nobody has ever checked, and a GPU sitting at 20% is what an unchecked upper bound looks like. Levels above the running server's own limit measure queueing rather than concurrency, and say so. Loopback only: works in airplane mode. Needs a running model. Takes a few minutes.">AI throughput sweep (.json)</button>
+          <button id="pel-run-btn" class="secondary" onclick="runPerceptionEvalLive(this)" title="Run the S6.5 perception-eval harness against the currently active model — the gate evidence the who/where/when extraction sweep uses to decide which languages are safe to extract. Included in 'Run all AI checks' above; this runs it alone. Bounded (a small synthetic gold set); read-only, no writes.">Perception-eval harness</button>
+          <span id="pel-status" class="small" style="margin-left:6px"></span>
         </div>
+        <div id="pel-result" class="small" style="margin-top:6px"></div>
       </details>
     <!-- KEYWORD-TRIAGE progressive sweep (Section 8, ruled 2026-07-20; B5 2026-07-24
            Session B: the numeric limit/batch-size inputs are GONE -- an ON/OFF TOGGLE now
@@ -1964,11 +1969,11 @@
           <summary class="muted" style="cursor:pointer">What this does</summary>
           <div class="hint" style="margin-top:4px">Extracts who (persons/organisations), where, and when from each article's text via the active local model -- stored ONLY as labelled "AI-derived · unreliable" candidates, never the trusted rule-based extractors. GATED by a live run of the perception-eval harness against the active model: a language that fails it (too much hallucination, or never tested) is skipped, shown below with why. Toggle ON to start (or resume) the sweep; toggle OFF pauses it -- progress is saved either way.</div>
         </details>
-        <div class="row" style="margin-top:6px">
-          <button id="pel-run-btn" onclick="runPerceptionEvalLive(this)" title="Run the S6.5 perception-eval harness against the currently active model -- the gate evidence this extraction sweep uses to decide which languages are safe to extract. Bounded (a small synthetic gold set); read-only, no writes.">Run perception-eval harness</button>
-          <span id="pel-status" class="small" style="margin-left:6px"></span>
-        </div>
-      <div id="pel-result" class="small" style="margin-top:6px"></div>
+      <!-- The harness BUTTON moved up into "Run one check on its own" (maintainer ask
+             2026-08-10: "Perception eval harness test should be included in those
+             tests, bundle it and remove the button"). It is a step of the one check
+             now; the gate result it produces still belongs HERE, beside the sweep it
+             gates, which is why this div stays. -->
       <div id="pe-gate-result" class="small" style="margin-top:6px"></div>
         <div class="row" style="margin-top:6px">
           <button id="pe-toggle-btn" onclick="togglePerceptionExtract(this)" data-running="0" title="Toggle the progressive who/where/when extraction sweep on/off. ON starts (or resumes from the saved cursor) a run across every article whose language cleared the perception-eval harness using the active model; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues.">Start sweep</button>
@@ -1990,21 +1995,25 @@
           <summary class="muted" style="cursor:pointer">What this does</summary>
           <div class="hint" style="margin-top:4px">Runs every roster model over the SAME frozen inputs — a stratified keyword sample, your own closed tag vocabulary, and the reviewed who/where/when gold set — on every backend that actually serves it, and reports five task measurements per model: who/where/when accuracy and hallucination, keyword-triage format validity and throughput, closed-vocabulary tag validity, language detection, and per-shape latency. Every metric stands ALONE: there is no composite, no ranking and no winner column, because the tasks measure different things and a blend would hide which one moved. The inputs are frozen ONCE so that every model answers the same questions — a fresh sample per model would look comparable and measure different work. Nothing here changes your active model.</div>
         </details>
+        <p class="hint" style="margin-top:6px">Ticking "every model" beside Run all AI checks above does all of this for you: it freezes the inputs on first use, resolves the roster per backend, restarts vLLM between models and hands the GPU back and forth. The only thing it cannot do for you is grade the anchors — that needs a person, because two models agreeing is not either being right.</p>
+        <div class="row" style="margin-top:6px">
+          <button class="secondary" onclick="mbAnchorsLoad(this)" title="Start the grading sitting: ~50 keywords drawn FROM the frozen batch, graded junk / content / unsure (press J, C or U on a focused row) with an optional kind. Graded once, reused across every model and every future run — this is what turns 'the models agree' into 'the models are right'. It is the one step nothing here can do for you.">Grade anchors (~50)</button>
+          <button class="secondary" onclick="mbAnchorsSave(this)" title="Persist the grading sitting. A grade outside junk/content/unsure — or a term graded twice — is refused loudly rather than repaired.">Save anchors</button>
+          <button class="secondary" onclick="window.open('/api/diagnostics/model-bench/download','_blank')" title="The whole artifact, including every model's per-term answers — the one log to upload for verification (the answers are what a verification session re-judges).">Download the bench log (.json)</button>
+        </div>
+      <div id="mb-anchors-cov" class="hint muted"></div>
+      <div id="mb-anchors-body"></div>
+      <details class="adv-collect" style="margin-top:8px">
+        <summary class="muted" style="cursor:pointer">Run the bench on its own</summary>
         <div class="row" style="margin-top:6px">
           <button class="secondary" onclick="mbBuildBatch(this)" title="Build and freeze the bench inputs from your corpus: a stratified keyword sample (equal per-language quotas, half from the highest article spread and half from the tail), the top sources' keyword evidence, and your corpus's own closed tag vocabulary. Read-only. Rebuild it and the bench asks a different question, so a run in progress will refuse to resume across the change rather than blend two input sets.">Freeze the bench inputs</button>
           <button class="secondary" onclick="mbShowRoster(this)" title="Check the requested roster against what each backend actually serves right now. Every tag is matched EXACTLY: an absent tag is refused, never substituted with a close one, because a close tag would report numbers under a model name that never ran.">Check the roster</button>
-          <button class="secondary" onclick="mbAnchorsLoad(this)" title="Start the grading sitting: ~50 keywords drawn FROM the frozen batch, graded junk / content / unsure (press J, C or U on a focused row) with an optional kind. Graded once, reused across every model and every future run — this is what turns 'the models agree' into 'the models are right'.">Grade anchors (~50)</button>
-          <button class="secondary" onclick="mbAnchorsSave(this)" title="Persist the grading sitting. A grade outside junk/content/unsure — or a term graded twice — is refused loudly rather than repaired.">Save anchors</button>
-        </div>
-      <div id="mb-batch" class="small" style="margin-top:6px"></div>
-      <div id="mb-anchors-cov" class="hint muted"></div>
-      <div id="mb-anchors-body"></div>
-        <div class="row" style="margin-top:6px">
           <button id="mb-run-btn" onclick="mbRun(this)" data-running="0" title="Run the bench as a background job. Resumable PER MODEL: cancelling, a crash or a restart keeps the pairs already measured and continues with the rest. On vLLM only the currently-served model is benched unless you allow the bench to restart the server between models — restarting your server is not a benchmark's decision to make.">Run the bench</button>
           <span id="mb-status" class="small" style="margin-left:6px"></span>
           <label class="small" style="margin-left:6px"><input id="mb-switch" type="checkbox"> restart vLLM per model</label>
-          <button class="secondary" onclick="window.open('/api/diagnostics/model-bench/download','_blank')" title="The whole artifact, including every model's per-term answers — the one log to upload for verification (the answers are what a verification session re-judges).">Download the bench log (.json)</button>
         </div>
+        <div id="mb-batch" class="small" style="margin-top:6px"></div>
+      </details>
       <div id="mb-result" class="small" style="margin-top:6px"></div>
       <div id="mb-gates" class="small" style="margin-top:6px"></div>
       </div>
