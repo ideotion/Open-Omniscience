@@ -218,24 +218,24 @@ class _FakeClient:
     """Reports the SAME fixed who/where/when for every call -- a real client
     stand-in, so the extraction pipeline is exercised end-to-end."""
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         return _FakeResult("WHO: Acme Corp\nWHERE: Springfield\nWHEN: 2024-01-01")
 
 
 class _AlwaysNothingClient:
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         return _FakeResult("WHO: none\nWHERE: none\nWHEN: none")
 
 
 class _HallucinatingUnparseableClient:
     """Never replies in the constrained format -- a garbage answer."""
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         return _FakeResult("I refuse to answer this request.")
 
 
 class _RaisingClient:
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         from src.llm.ollama import LLMUnavailable
 
         raise LLMUnavailable("simulated outage")

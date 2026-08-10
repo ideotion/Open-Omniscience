@@ -15145,8 +15145,13 @@
         if (errs.length) bits.push(`errors: ${errs.join(", ")}`);
         return `<div><b>${esc(key)}</b>${r.quantization ? ` <span class="muted">${esc(r.quantization)}</span>` : ""} — ${esc(bits.join(" · ") || "no metrics")}</div>`;
       }).join("");
-      const skipped = (res.skipped || []).map((s) =>
-        `${esc(s.backend)}${s.model ? " · " + esc(s.model) : ""} — ${esc(s.reason)}`).join("<br>");
+      // A skip names the model where there IS one. A roster model with no build for
+      // this backend has no identifier to print — nothing to install, so nothing to
+      // name — and its roster key is the only thing that says WHICH model is absent.
+      const skipped = (res.skipped || []).map((s) => {
+        const who = s.model || s.roster_key || "";
+        return `${esc(s.backend)}${who ? " · " + esc(who) : ""} — ${esc(s.reason)}`;
+      }).join("<br>");
       out.innerHTML = rows
         + (res.pairs_pending && res.pairs_pending.length
           ? `<div class="hint muted" style="margin-top:4px">Not yet measured: ${esc(res.pairs_pending.join(", "))}</div>` : "")
@@ -15209,6 +15214,106 @@
         if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
       }
       _mbPoll();
+    }
+
+    // ---- ONE BUTTON: every AI check, one report ---------------------------- //
+    // Maintainer 2026-08-09: "Can you simplify all AI related diagnostics into one
+    // single button to test everything at once?" A background job, because the
+    // throughput sweep and the live eval take minutes; the button toggles run/stop
+    // rather than disabling, so a multi-minute run never leaves a dead control.
+    let _aiCheckPolling = false;
+
+    function _aiCheckLine(label, body) {
+      return `<div><b>${esc(label)}</b> — ${body}</div>`;
+    }
+
+    function _renderAiCheck(res) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const out = $("aicheck-result");
+      if (!out) return;
+      if (!res) { out.innerHTML = ""; return; }
+      const r = res.reading || {};
+      const rows = [];
+      const b = r.backend || {};
+      rows.push(_aiCheckLine(
+        t("Backend"),
+        b.available
+          ? `${esc(b.serves_with || b.backend || "?")} · ${esc(b.model || "?")}`
+          : `<span class="warn">${esc(b.reason || t("no backend is reachable"))}</span>`,
+      ));
+      const th = r.throughput;
+      if (th) {
+        rows.push(_aiCheckLine(
+          t("Throughput"),
+          `${esc(String(th.best_calls_per_hour))} ${esc(t("per hour"))} `
+          + `${esc(t("at concurrency"))} ${esc(String(th.best_measured_concurrency))} `
+          + `(${esc(t("configured"))} ${esc(String(th.configured_concurrency))})`
+          + `<div class="hint">${esc(th.action || "")}</div>`,
+        ));
+      }
+      const g = r.extraction_gate;
+      if (g && !g.error) {
+        rows.push(_aiCheckLine(
+          t("Extraction gate"),
+          `${esc(t("cleared"))}: ${esc((g.cleared || []).join(", ") || t("none"))}`
+          + ((g.refused || []).length ? ` · ${esc(t("refused"))}: ${esc(g.refused.join(", "))}` : "")
+          + ((g.unmeasured || []).length ? ` · ${esc(t("unmeasured"))}: ${esc(g.unmeasured.join(", "))}` : ""),
+        ));
+      }
+      // Every step, with its own time — including the ones that failed, because a
+      // report from a half-broken machine is most useful when it says which half.
+      const steps = (res.steps || []).map((s) =>
+        `${esc(s.step)} ${s.ok ? "✓" : "✗"} ${esc(String(s.seconds))}s`
+        + (s.ok ? "" : ` <span class="warn">${esc((s.error || "").slice(0, 120))}</span>`),
+      ).join(" · ");
+      rows.push(`<div class="hint" style="margin-top:4px">${steps}</div>`);
+      const sep = (res.not_run_here || []).map((n) =>
+        `${esc(n.name)} — ${esc(n.why)} (${esc(n.where)})`).join("<br>");
+      if (sep) rows.push(`<div class="hint muted" style="margin-top:4px">${t("Not part of this check")}: ${sep}</div>`);
+      if (res.caveat) rows.push(`<div class="card-caveat" style="margin-top:4px">${esc(res.caveat)}</div>`);
+      out.innerHTML = rows.join("");
+    }
+
+    function _paintAiCheck(st) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
+      const btn = $("aicheck-btn"), el = $("aicheck-status");
+      const running = st && st.state === "running";
+      if (btn) {
+        btn.dataset.running = running ? "1" : "0";
+        btn.textContent = running ? t("Stop the AI checks") : t("Run all AI checks");
+      }
+      const p = (st && st.progress) || {};
+      if (el) {
+        el.textContent = running
+          ? `${p.done || 0}/${p.total || "?"} · ${p.detail || ""}`
+          : (st && st.state === "error" ? `${t("failed:")} ${st.error || ""}` : "");
+      }
+      if (!running && st && st.result) _renderAiCheck(st.result);
+    }
+
+    async function _aiCheckPoll() {
+      if (_aiCheckPolling) return;
+      _aiCheckPolling = true;
+      try {
+        for (;;) {
+          const st = await api("/api/diagnostics/ai-check/status");
+          _paintAiCheck(st);
+          if (st.state !== "running") break;
+          await new Promise((r) => setTimeout(r, 2000));
+        }
+      } catch (e) { /* a poll failure must never wedge the button */ }
+      finally { _aiCheckPolling = false; }
+    }
+
+    async function runAiCheck(btn) {
+      const on = btn && btn.dataset.running === "1";
+      try {
+        if (on) await api("/api/diagnostics/ai-check/cancel", { method: "POST" });
+        else await api("/api/diagnostics/ai-check/run", { method: "POST", body: JSON.stringify({}) });
+      } catch (e) {
+        if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
+      }
+      _aiCheckPoll();
     }
 
     // ---- T10 slice 1: the corpora window (keyword-click entry) ---- //

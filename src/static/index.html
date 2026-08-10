@@ -1420,6 +1420,18 @@
         <div id="aic-hw" class="hint" style="margin-top:6px"></div>
       </div>
 
+      <!-- Maintainer ask 2026-08-09: "a collapsed 'details' section giving details about
+           what exactly has been done by the AI background metadata enhancement ... a live
+           feed with details about latest detected keywords, languages, and so forth, and
+           the amount total for each category, and the remaining amount ... article
+           processing per hour (per category + total)." Folded, and FOLDED MEANS NOT
+           FETCHED: the loader runs on expand, and polls only while it is open. -->
+      <details id="ai-activity-box" class="adv-collect" style="margin-top:10px"
+               ontoggle="onAiActivityToggle(this)">
+        <summary class="muted" style="cursor:pointer">Details — what the background AI has been doing</summary>
+        <div id="ai-activity-body" class="hint" style="margin-top:6px"></div>
+      </details>
+
       <div style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:8px">
         <div style="font-weight:600">When you ask — reading and writing for you</div>
         <p class="hint" style="margin:4px 0 0">Summaries of one article or many, translation into your interface language, and synthesis across a set you choose. These only ever run when you press the button, from the reader, the search toolbar or an analysis window. A long article is split and reassembled rather than silently cut, and the method is recorded with the result.</p>
@@ -1714,127 +1726,6 @@
         </div>
         <div id="p0-result" class="small" style="margin-top:6px"></div>
       </div>
-      <!-- KEYWORD-TRIAGE progressive sweep (Section 8, ruled 2026-07-20; B5 2026-07-24
-           Session B: the numeric limit/batch-size inputs are GONE -- an ON/OFF TOGGLE now
-           drives a progressive sweep across ALL head-scope keywords, resumable across a
-           cancel or an app restart via a persisted cursor). NEVER writes the trusted
-           keyword index -- a Claude session verifies the dated log before anything is
-           applied. 2026-07-26 field-remarks fix: no model field (uses the active model,
-           Settings -> AI), never disables (the toggle mirrors the langdetect pattern --
-           painted via data-running, no multi-hour disabled state), and the description
-           is a collapsed detail so the panel reads compactly. Un-keyed English (matches
-           this diagnostics panel). Browser-unverified per fork-3. -->
-      <!-- THE BACKGROUND-AI TOGGLE MOVED to Settings -> AI (2026-08-04 maintainer
-           rework: "There should be a backend AI activation toggle with checkboxes of
-           all possible backend jobs ... and remove the corresponding things from the
-           settings Data & Backup section"). AI work never belonged in a data-safety
-           panel; it now sits beside the model that runs it. The per-sweep EXPORT logs
-           and their manual run buttons stay here, because those are diagnostics
-           artifacts an operator downloads, which is what this panel is for. -->
-      <div id="keyword-triage-box" style="margin-top:10px">
-        <div class="small" style="font-weight:600">Keyword triage -- progressive sweep (Section 8)</div>
-        <details class="adv-collect" style="margin-top:4px">
-          <summary class="muted" style="cursor:pointer">What this does</summary>
-          <div class="hint" style="margin-top:4px">Sweeps EVERY head-scope keyword, in bounded batches, through the active local model (Settings → AI) for a junk/content verdict + kind (person/org/place/other) -- canaries + echo-back validation on every batch. EXPORT-ONLY: appends a dated JSONL log, never the trusted keyword index. A Claude session verifies a sample before any stoplist/kind-override PR. Toggle ON to start (or resume) the sweep; toggle OFF pauses it -- progress is saved either way, so turning it back on continues instead of starting over.</div>
-        </details>
-        <div class="row" style="margin-top:6px">
-          <button id="kt-toggle-btn" onclick="toggleKeywordTriage(this)" data-running="0" title="Toggle the progressive keyword-triage sweep on/off. ON starts (or resumes from the saved cursor) a run across ALL head-scope keywords using the active model; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues.">Start sweep</button>
-          <span id="kt-status" class="small" style="margin-left:6px"></span>
-        </div>
-        <div id="kt-result" class="small" style="margin-top:6px"></div>
-      </div>
-      <!-- SOURCE-TAG progressive sweep (design entry + GO ruling, maintainer 2026-07-20;
-           B5 2026-07-24 Session B: same toggle treatment as keyword triage above) --
-           per-source top keywords -> closed-vocabulary tag classification. EXPORT-ONLY --
-           never writes Source.tags. 2026-07-26 field-remarks fix: same no-model /
-           never-disables / collapsed-description treatment as the keyword-triage box.
-           Un-keyed English (matches this diagnostics panel). Browser-unverified per
-           fork-3. -->
-      <div id="source-tags-box" style="margin-top:10px">
-        <div class="small" style="font-weight:600">Source-tag assignment -- progressive sweep</div>
-        <details class="adv-collect" style="margin-top:4px">
-          <summary class="muted" style="cursor:pointer">What this does</summary>
-          <div class="hint" style="margin-top:4px">Sweeps EVERY source with sufficient evidence, sending its top keywords to the active local model (Settings → AI), which picks ONLY from your corpus's existing tag vocabulary (or 'none') -- canaries + echo-back + closed-vocabulary rejection on every batch. A source below the evidence floor is skipped, never guessed. EXPORT-ONLY: appends a dated JSONL log; Source.tags is never touched. Toggle ON to start (or resume) the sweep; toggle OFF pauses it -- progress is saved either way.</div>
-        </details>
-        <div class="row" style="margin-top:6px">
-          <button id="st-toggle-btn" onclick="toggleSourceTags(this)" data-running="0" title="Toggle the progressive source-tag sweep on/off. ON starts (or resumes from the saved cursor) a run across every source with sufficient evidence using the active model; OFF pauses it at the next safe point between pages -- the partial log and cursor are kept, so toggling ON again continues.">Start sweep</button>
-          <span id="st-status" class="small" style="margin-left:6px"></span>
-        </div>
-        <div id="st-result" class="small" style="margin-top:6px"></div>
-      </div>
-      <!-- PERCEPTION EXTRACTION -- who/where/when as AI-derived candidates (B6,
-           2026-07-24 Session B, ruled -- "AI-augmented article metadata extraction").
-           EVAL-GATED: a live run of the S6.5 perception-eval harness against the
-           active model is the required gate evidence BEFORE extraction runs for a
-           language; a language that fails it (hallucination above the stated floor,
-           or never tested at all) ships DISABLED, surfaced below with why. NEVER
-           writes the trusted article_mentioned_dates/_places/article_entities tables
-           -- EXPORT-ONLY ai_keyword candidates (kinds ai-who/ai-place/ai-date),
-           "AI-derived - unreliable". 2026-07-26 field-remarks fix: same no-model /
-           never-disables / collapsed-description treatment (the harness-run button
-           also no longer disables for its duration). Un-keyed English (matches this
-           diagnostics panel). Browser-unverified per fork-3. -->
-      <div id="perception-extract-box" style="margin-top:10px">
-        <div class="small" style="font-weight:600">Who / where / when extraction (AI-derived candidates)</div>
-        <details class="adv-collect" style="margin-top:4px">
-          <summary class="muted" style="cursor:pointer">What this does</summary>
-          <div class="hint" style="margin-top:4px">Extracts who (persons/organisations), where, and when from each article's text via the active local model -- stored ONLY as labelled "AI-derived · unreliable" candidates, never the trusted rule-based extractors. GATED by a live run of the perception-eval harness against the active model: a language that fails it (too much hallucination, or never tested) is skipped, shown below with why. Toggle ON to start (or resume) the sweep; toggle OFF pauses it -- progress is saved either way.</div>
-        </details>
-        <div class="row" style="margin-top:6px">
-          <button id="pel-run-btn" onclick="runPerceptionEvalLive(this)" title="Run the S6.5 perception-eval harness against the currently active model -- the gate evidence this extraction sweep uses to decide which languages are safe to extract. Bounded (a small synthetic gold set); read-only, no writes.">Run perception-eval harness</button>
-          <span id="pel-status" class="small" style="margin-left:6px"></span>
-        </div>
-        <div id="pel-result" class="small" style="margin-top:6px"></div>
-        <div id="pe-gate-result" class="small" style="margin-top:6px"></div>
-        <div class="row" style="margin-top:6px">
-          <button id="pe-toggle-btn" onclick="togglePerceptionExtract(this)" data-running="0" title="Toggle the progressive who/where/when extraction sweep on/off. ON starts (or resumes from the saved cursor) a run across every article whose language cleared the perception-eval harness using the active model; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues.">Start sweep</button>
-          <span id="pe-status" class="small" style="margin-left:6px"></span>
-        </div>
-        <div id="pe-result" class="small" style="margin-top:6px"></div>
-      </div>
-      <!-- Maintainer ask 2026-08-09: "a collapsed 'details' section giving details about
-           what exactly has been done by the AI background metadata enhancement ... a live
-           feed with details about latest detected keywords, languages, and so forth, and
-           the amount total for each category, and the remaining amount ... article
-           processing per hour (per category + total)." Folded, and FOLDED MEANS NOT
-           FETCHED: the loader runs on expand, and polls only while it is open. -->
-      <details id="ai-activity-box" class="adv-collect" style="margin-top:10px"
-               ontoggle="onAiActivityToggle(this)">
-        <summary class="muted" style="cursor:pointer">Details — what the background AI has been doing</summary>
-        <div id="ai-activity-body" class="hint" style="margin-top:6px"></div>
-      </details>
-      <!-- E-S2 (2026-08-01, rulings 14-16): the COMPARATIVE model bench. Answers
-           "does the ruled default model deserve to stay the default?" with a
-           measurement rather than an opinion: every roster model, on every backend
-           that actually serves it, over the SAME frozen inputs, every metric
-           reported ALONE. It never changes the active model and never downloads
-           weights -- the decision is the maintainer's, made on the verified log.
-           Un-keyed English (matches this diagnostics panel). Browser-unverified
-           per fork-3. -->
-      <div id="model-bench-box" style="margin-top:10px">
-        <div class="small" style="font-weight:600">Comparative model bench</div>
-        <details class="adv-collect" style="margin-top:4px">
-          <summary class="muted" style="cursor:pointer">What this does</summary>
-          <div class="hint" style="margin-top:4px">Runs every roster model over the SAME frozen inputs — a stratified keyword sample, your own closed tag vocabulary, and the reviewed who/where/when gold set — on every backend that actually serves it, and reports five task measurements per model: who/where/when accuracy and hallucination, keyword-triage format validity and throughput, closed-vocabulary tag validity, language detection, and per-shape latency. Every metric stands ALONE: there is no composite, no ranking and no winner column, because the tasks measure different things and a blend would hide which one moved. The inputs are frozen ONCE so that every model answers the same questions — a fresh sample per model would look comparable and measure different work. Nothing here changes your active model.</div>
-        </details>
-        <div class="row" style="margin-top:6px">
-          <button class="secondary" onclick="mbBuildBatch(this)" title="Build and freeze the bench inputs from your corpus: a stratified keyword sample (equal per-language quotas, half from the highest article spread and half from the tail), the top sources' keyword evidence, and your corpus's own closed tag vocabulary. Read-only. Rebuild it and the bench asks a different question, so a run in progress will refuse to resume across the change rather than blend two input sets.">Freeze the bench inputs</button>
-          <button class="secondary" onclick="mbShowRoster(this)" title="Check the requested roster against what each backend actually serves right now. Every tag is matched EXACTLY: an absent tag is refused, never substituted with a close one, because a close tag would report numbers under a model name that never ran.">Check the roster</button>
-          <button class="secondary" onclick="mbAnchorsLoad(this)" title="Start the grading sitting: ~50 keywords drawn FROM the frozen batch, graded junk / content / unsure (press J, C or U on a focused row) with an optional kind. Graded once, reused across every model and every future run — this is what turns 'the models agree' into 'the models are right'.">Grade anchors (~50)</button>
-          <button class="secondary" onclick="mbAnchorsSave(this)" title="Persist the grading sitting. A grade outside junk/content/unsure — or a term graded twice — is refused loudly rather than repaired.">Save anchors</button>
-        </div>
-        <div id="mb-batch" class="small" style="margin-top:6px"></div>
-        <div id="mb-anchors-cov" class="hint muted"></div>
-        <div id="mb-anchors-body"></div>
-        <div class="row" style="margin-top:6px">
-          <button id="mb-run-btn" onclick="mbRun(this)" data-running="0" title="Run the bench as a background job. Resumable PER MODEL: cancelling, a crash or a restart keeps the pairs already measured and continues with the rest. On vLLM only the currently-served model is benched unless you allow the bench to restart the server between models — restarting your server is not a benchmark's decision to make.">Run the bench</button>
-          <span id="mb-status" class="small" style="margin-left:6px"></span>
-          <label class="small" style="margin-left:6px"><input id="mb-switch" type="checkbox"> restart vLLM per model</label>
-          <button class="secondary" onclick="window.open('/api/diagnostics/model-bench/download','_blank')" title="The whole artifact, including every model's per-term answers — the one log to upload for verification (the answers are what a verification session re-judges).">Download the bench log (.json)</button>
-        </div>
-        <div id="mb-result" class="small" style="margin-top:6px"></div>
-        <div id="mb-gates" class="small" style="margin-top:6px"></div>
-      </div>
       <div class="row" style="margin-top:6px">
         <button id="all-diag-btn" onclick="runAllDiagnostics(this)" title="Every diagnostics log in one archive — one click instead of nine. Runs as a BACKGROUND job (so it never freezes the app on a large corpus, unlike the old synchronous build), shows live progress, and downloads when ready. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).">All diagnostics (.zip)</button>
         <span id="all-diag-status" class="small" style="margin-left:6px"></span>
@@ -1844,8 +1735,6 @@
         <!-- TEMPORARY / REMOVABLE diagnostic: delete this button + the /source-quality endpoint once the analyst has used the export. -->
         <button class="secondary" onclick="window.open('/api/diagnostics/source-quality?download=1','_blank')" title="TEMPORARY, removable diagnostic. ONE .zip with everything an analyst needs to decide, per source, whether to EXCLUDE it / OPTIMIZE the extractor / KEEP it: per-article keyword-stat outliers, per-source top-12 keyword fingerprints + furniture share, and a text sample from three independent selectors (a fixed-seed random control + the stat outliers + furniture-flagged sources). Read-only, EXPORT-ONLY, counts-only, no score; private newsletter bodies gated (env). Whole-corpus counts; text heads for the sampled subset only.">Source &amp; article quality (.zip) · TEMP</button>
         <button class="secondary" onclick="window.open('/api/diagnostics/rollup-benchmark','_blank')" title="Builds the keyword-daily rollup in-memory over your corpus and times the windowed keyword aggregation both ways — the live mention scan (the Insights/trends freeze) vs summing the rollup — with the speedup and a parity check. Read-only; the win shows only at real corpus size. Takes a few seconds on a large corpus.">Rollup benchmark (.json)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/llm-bench','_blank')" title="Times your local model on the prompt SHAPES the app actually sends — a small fact bundle, one article for who/where/when, one article for a summary, and a 24,000-character excerpt set for a synthesis — and turns the result into calls per hour, so an AI time budget rests on a measurement instead of a guess. Each shape runs one warmup call (excluded, reported separately, because it carries model load) then a few timed calls at temperature 0. Ollama reports its own durations; vLLM reports none, so those figures are wall-clock — stated per shape. LOOPBACK only: no egress, works in airplane mode. Needs a running model; with none reachable it says so and reports no numbers. Takes a few minutes on a slow machine.">LLM latency bench (.json)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/llm-throughput','_blank')" title="Measures the articles per hour your local model ACTUALLY achieves with 1, 2, 4, 8 and 16 requests in flight, sampling GPU use while it runs. The latency bench beside it times one call and multiplies by the configured concurrency — a multiplication nobody has ever checked, and a GPU sitting at 20% is what an unchecked upper bound looks like. Levels above the running server's own limit measure queueing rather than concurrency, and say so. Loopback only: works in airplane mode. Needs a running model. Takes a few minutes.">AI throughput sweep (.json)</button>
         <button onclick="enrichSources(this)" title="Deduce each source's topic tags from the keywords it publishes in your corpus and add them to the source's tags — local, no network, additive (never overwrites curated tags). This also runs automatically in the background; the button forces it now. The networked Wikidata source-type pass is a separate consented action.">Enrich source tags from corpus</button>
         <button onclick="enrichSourceTypes(this)" title="Fill each source's TYPE (newspaper / broadcaster / news agency / scientific journal / …) from Wikidata, verified against the source's own domain. This one goes ONLINE through the guarded transport — it asks for network consent first and is refused in airplane mode. Bounded per click; click again to continue.">Enrich source types (Wikidata) ↗</button>
         <input id="discover-cc" type="text" style="width:150px" placeholder="countries e.g. ke,ng,br">
@@ -1984,6 +1873,140 @@
           <button class="ghost" onclick="resetCustomPromptForm()">Clear</button>
           <span id="ai-prompt-status" class="hint"></span>
         </div>
+      </div>
+    </section>
+        <!-- AI DIAGNOSTICS (maintainer 2026-08-09: "the diagnostic section ... should be
+         moved in the advanced subtab", and "simplify all AI related diagnostics into one
+         single button to test everything at once"). They lived in Data & backup, which is
+         a data-safety panel; they belong beside the prompts and the model behaviour. The
+         ONE button runs the machine-and-model checks in order and reports each ALONE; the
+         comparative bench keeps its own control below because it runs for hours and is
+         resumable per model, and saying that is better than quietly folding it in. -->
+    <section class="panel">
+      <h2>AI diagnostics</h2>
+      <p class="hint" style="margin-top:0">Everything here runs on your own machine against the model you chose, through loopback only — no egress, and it works in airplane mode. Every number carries its own method and caveat; there is no overall figure and no pass mark.</p>
+      <div class="row" style="margin-top:8px">
+        <button id="aicheck-btn" onclick="runAiCheck(this)" data-running="0" title="Run every AI check this machine can do, in one pass: which backend and model are live, how long each prompt shape takes, how many articles per hour you actually get at rising concurrency (sampling GPU use), the live who/where/when eval that gates extraction per language, and the deterministic harness self-tests. Each result is reported alone — no score. A step that fails records why and the run continues. The comparative model bench is NOT included: it loads every roster model in turn and runs for hours, so it keeps its own button below.">Run all AI checks</button>
+        <span id="aicheck-status" class="small" style="margin-left:6px"></span>
+        <button class="secondary" onclick="window.open('/api/diagnostics/ai-check/download','_blank')" title="Download the newest AI-check report as one .json — the file to attach to a bug report or hand to a verification session.">Download the last AI check (.json)</button>
+      </div>
+      <div id="aicheck-result" class="small" style="margin-top:6px"></div>
+      <details class="adv-collect" style="margin-top:8px">
+        <summary class="muted" style="cursor:pointer">Run one check on its own</summary>
+        <div class="row" style="margin-top:6px">
+          <button class="secondary" onclick="window.open('/api/diagnostics/llm-bench','_blank')" title="Times your local model on the prompt SHAPES the app actually sends — a small fact bundle, one article for who/where/when, one article for a summary, and a 24,000-character excerpt set for a synthesis — and turns the result into calls per hour, so an AI time budget rests on a measurement instead of a guess. Each shape runs one warmup call (excluded, reported separately, because it carries model load) then a few timed calls at temperature 0. Ollama reports its own durations; vLLM reports none, so those figures are wall-clock — stated per shape. LOOPBACK only: no egress, works in airplane mode. Needs a running model; with none reachable it says so and reports no numbers. Takes a few minutes on a slow machine.">LLM latency bench (.json)</button>
+          <button class="secondary" onclick="window.open('/api/diagnostics/llm-throughput','_blank')" title="Measures the articles per hour your local model ACTUALLY achieves with 1, 2, 4, 8 and 16 requests in flight, sampling GPU use while it runs. The latency bench beside it times one call and multiplies by the configured concurrency — a multiplication nobody has ever checked, and a GPU sitting at 20% is what an unchecked upper bound looks like. Levels above the running server's own limit measure queueing rather than concurrency, and say so. Loopback only: works in airplane mode. Needs a running model. Takes a few minutes.">AI throughput sweep (.json)</button>
+        </div>
+      </details>
+    <!-- KEYWORD-TRIAGE progressive sweep (Section 8, ruled 2026-07-20; B5 2026-07-24
+           Session B: the numeric limit/batch-size inputs are GONE -- an ON/OFF TOGGLE now
+           drives a progressive sweep across ALL head-scope keywords, resumable across a
+           cancel or an app restart via a persisted cursor). NEVER writes the trusted
+           keyword index -- a Claude session verifies the dated log before anything is
+           applied. 2026-07-26 field-remarks fix: no model field (uses the active model,
+           Settings -> AI), never disables (the toggle mirrors the langdetect pattern --
+           painted via data-running, no multi-hour disabled state), and the description
+           is a collapsed detail so the panel reads compactly. Un-keyed English (matches
+           this diagnostics panel). Browser-unverified per fork-3. -->
+    <!-- THE BACKGROUND-AI TOGGLE MOVED to Settings -> AI (2026-08-04 maintainer
+           rework: "There should be a backend AI activation toggle with checkboxes of
+           all possible backend jobs ... and remove the corresponding things from the
+           settings Data & Backup section"). AI work never belonged in a data-safety
+           panel; it now sits beside the model that runs it. The per-sweep EXPORT logs
+           and their manual run buttons stay here, because those are diagnostics
+           artifacts an operator downloads, which is what this panel is for. -->
+    <div id="keyword-triage-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">Keyword triage -- progressive sweep (Section 8)</div>
+        <details class="adv-collect" style="margin-top:4px">
+          <summary class="muted" style="cursor:pointer">What this does</summary>
+          <div class="hint" style="margin-top:4px">Sweeps EVERY head-scope keyword, in bounded batches, through the active local model (Settings → AI) for a junk/content verdict + kind (person/org/place/other) -- canaries + echo-back validation on every batch. EXPORT-ONLY: appends a dated JSONL log, never the trusted keyword index. A Claude session verifies a sample before any stoplist/kind-override PR. Toggle ON to start (or resume) the sweep; toggle OFF pauses it -- progress is saved either way, so turning it back on continues instead of starting over.</div>
+        </details>
+        <div class="row" style="margin-top:6px">
+          <button id="kt-toggle-btn" onclick="toggleKeywordTriage(this)" data-running="0" title="Toggle the progressive keyword-triage sweep on/off. ON starts (or resumes from the saved cursor) a run across ALL head-scope keywords using the active model; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues.">Start sweep</button>
+          <span id="kt-status" class="small" style="margin-left:6px"></span>
+        </div>
+      <div id="kt-result" class="small" style="margin-top:6px"></div>
+      </div>
+    <!-- SOURCE-TAG progressive sweep (design entry + GO ruling, maintainer 2026-07-20;
+           B5 2026-07-24 Session B: same toggle treatment as keyword triage above) --
+           per-source top keywords -> closed-vocabulary tag classification. EXPORT-ONLY --
+           never writes Source.tags. 2026-07-26 field-remarks fix: same no-model /
+           never-disables / collapsed-description treatment as the keyword-triage box.
+           Un-keyed English (matches this diagnostics panel). Browser-unverified per
+           fork-3. -->
+    <div id="source-tags-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">Source-tag assignment -- progressive sweep</div>
+        <details class="adv-collect" style="margin-top:4px">
+          <summary class="muted" style="cursor:pointer">What this does</summary>
+          <div class="hint" style="margin-top:4px">Sweeps EVERY source with sufficient evidence, sending its top keywords to the active local model (Settings → AI), which picks ONLY from your corpus's existing tag vocabulary (or 'none') -- canaries + echo-back + closed-vocabulary rejection on every batch. A source below the evidence floor is skipped, never guessed. EXPORT-ONLY: appends a dated JSONL log; Source.tags is never touched. Toggle ON to start (or resume) the sweep; toggle OFF pauses it -- progress is saved either way.</div>
+        </details>
+        <div class="row" style="margin-top:6px">
+          <button id="st-toggle-btn" onclick="toggleSourceTags(this)" data-running="0" title="Toggle the progressive source-tag sweep on/off. ON starts (or resumes from the saved cursor) a run across every source with sufficient evidence using the active model; OFF pauses it at the next safe point between pages -- the partial log and cursor are kept, so toggling ON again continues.">Start sweep</button>
+          <span id="st-status" class="small" style="margin-left:6px"></span>
+        </div>
+      <div id="st-result" class="small" style="margin-top:6px"></div>
+      </div>
+    <!-- PERCEPTION EXTRACTION -- who/where/when as AI-derived candidates (B6,
+           2026-07-24 Session B, ruled -- "AI-augmented article metadata extraction").
+           EVAL-GATED: a live run of the S6.5 perception-eval harness against the
+           active model is the required gate evidence BEFORE extraction runs for a
+           language; a language that fails it (hallucination above the stated floor,
+           or never tested at all) ships DISABLED, surfaced below with why. NEVER
+           writes the trusted article_mentioned_dates/_places/article_entities tables
+           -- EXPORT-ONLY ai_keyword candidates (kinds ai-who/ai-place/ai-date),
+           "AI-derived - unreliable". 2026-07-26 field-remarks fix: same no-model /
+           never-disables / collapsed-description treatment (the harness-run button
+           also no longer disables for its duration). Un-keyed English (matches this
+           diagnostics panel). Browser-unverified per fork-3. -->
+    <div id="perception-extract-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">Who / where / when extraction (AI-derived candidates)</div>
+        <details class="adv-collect" style="margin-top:4px">
+          <summary class="muted" style="cursor:pointer">What this does</summary>
+          <div class="hint" style="margin-top:4px">Extracts who (persons/organisations), where, and when from each article's text via the active local model -- stored ONLY as labelled "AI-derived · unreliable" candidates, never the trusted rule-based extractors. GATED by a live run of the perception-eval harness against the active model: a language that fails it (too much hallucination, or never tested) is skipped, shown below with why. Toggle ON to start (or resume) the sweep; toggle OFF pauses it -- progress is saved either way.</div>
+        </details>
+        <div class="row" style="margin-top:6px">
+          <button id="pel-run-btn" onclick="runPerceptionEvalLive(this)" title="Run the S6.5 perception-eval harness against the currently active model -- the gate evidence this extraction sweep uses to decide which languages are safe to extract. Bounded (a small synthetic gold set); read-only, no writes.">Run perception-eval harness</button>
+          <span id="pel-status" class="small" style="margin-left:6px"></span>
+        </div>
+      <div id="pel-result" class="small" style="margin-top:6px"></div>
+      <div id="pe-gate-result" class="small" style="margin-top:6px"></div>
+        <div class="row" style="margin-top:6px">
+          <button id="pe-toggle-btn" onclick="togglePerceptionExtract(this)" data-running="0" title="Toggle the progressive who/where/when extraction sweep on/off. ON starts (or resumes from the saved cursor) a run across every article whose language cleared the perception-eval harness using the active model; OFF pauses it at the next safe point between batches -- the partial log and cursor are kept, so toggling ON again continues.">Start sweep</button>
+          <span id="pe-status" class="small" style="margin-left:6px"></span>
+        </div>
+      <div id="pe-result" class="small" style="margin-top:6px"></div>
+      </div>
+    <!-- E-S2 (2026-08-01, rulings 14-16): the COMPARATIVE model bench. Answers
+           "does the ruled default model deserve to stay the default?" with a
+           measurement rather than an opinion: every roster model, on every backend
+           that actually serves it, over the SAME frozen inputs, every metric
+           reported ALONE. It never changes the active model and never downloads
+           weights -- the decision is the maintainer's, made on the verified log.
+           Un-keyed English (matches this diagnostics panel). Browser-unverified
+           per fork-3. -->
+    <div id="model-bench-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">Comparative model bench</div>
+        <details class="adv-collect" style="margin-top:4px">
+          <summary class="muted" style="cursor:pointer">What this does</summary>
+          <div class="hint" style="margin-top:4px">Runs every roster model over the SAME frozen inputs — a stratified keyword sample, your own closed tag vocabulary, and the reviewed who/where/when gold set — on every backend that actually serves it, and reports five task measurements per model: who/where/when accuracy and hallucination, keyword-triage format validity and throughput, closed-vocabulary tag validity, language detection, and per-shape latency. Every metric stands ALONE: there is no composite, no ranking and no winner column, because the tasks measure different things and a blend would hide which one moved. The inputs are frozen ONCE so that every model answers the same questions — a fresh sample per model would look comparable and measure different work. Nothing here changes your active model.</div>
+        </details>
+        <div class="row" style="margin-top:6px">
+          <button class="secondary" onclick="mbBuildBatch(this)" title="Build and freeze the bench inputs from your corpus: a stratified keyword sample (equal per-language quotas, half from the highest article spread and half from the tail), the top sources' keyword evidence, and your corpus's own closed tag vocabulary. Read-only. Rebuild it and the bench asks a different question, so a run in progress will refuse to resume across the change rather than blend two input sets.">Freeze the bench inputs</button>
+          <button class="secondary" onclick="mbShowRoster(this)" title="Check the requested roster against what each backend actually serves right now. Every tag is matched EXACTLY: an absent tag is refused, never substituted with a close one, because a close tag would report numbers under a model name that never ran.">Check the roster</button>
+          <button class="secondary" onclick="mbAnchorsLoad(this)" title="Start the grading sitting: ~50 keywords drawn FROM the frozen batch, graded junk / content / unsure (press J, C or U on a focused row) with an optional kind. Graded once, reused across every model and every future run — this is what turns 'the models agree' into 'the models are right'.">Grade anchors (~50)</button>
+          <button class="secondary" onclick="mbAnchorsSave(this)" title="Persist the grading sitting. A grade outside junk/content/unsure — or a term graded twice — is refused loudly rather than repaired.">Save anchors</button>
+        </div>
+      <div id="mb-batch" class="small" style="margin-top:6px"></div>
+      <div id="mb-anchors-cov" class="hint muted"></div>
+      <div id="mb-anchors-body"></div>
+        <div class="row" style="margin-top:6px">
+          <button id="mb-run-btn" onclick="mbRun(this)" data-running="0" title="Run the bench as a background job. Resumable PER MODEL: cancelling, a crash or a restart keeps the pairs already measured and continues with the rest. On vLLM only the currently-served model is benched unless you allow the bench to restart the server between models — restarting your server is not a benchmark's decision to make.">Run the bench</button>
+          <span id="mb-status" class="small" style="margin-left:6px"></span>
+          <label class="small" style="margin-left:6px"><input id="mb-switch" type="checkbox"> restart vLLM per model</label>
+          <button class="secondary" onclick="window.open('/api/diagnostics/model-bench/download','_blank')" title="The whole artifact, including every model's per-term answers — the one log to upload for verification (the answers are what a verification session re-judges).">Download the bench log (.json)</button>
+        </div>
+      <div id="mb-result" class="small" style="margin-top:6px"></div>
+      <div id="mb-gates" class="small" style="margin-top:6px"></div>
       </div>
     </section>
     </details>

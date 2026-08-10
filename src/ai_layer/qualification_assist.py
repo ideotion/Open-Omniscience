@@ -32,6 +32,8 @@ HONESTY BY CONSTRUCTION (mirrors ``src/ai_layer/triage.py``'s doctrine):
 
 from __future__ import annotations
 
+from src.ai_layer.sampling import sweep_options
+
 QUALIFICATION_ASSIST_PROMPT_VERSION = "qualification-assist-v1"
 
 _SYSTEM_PROMPT = (
@@ -87,7 +89,11 @@ def classify_article_for_qualification(
     if not text:
         return None
     result = client.generate(
-        text[:_MAX_CHARS], model=model, system=_SYSTEM_PROMPT, keep_alive=keep_alive
+        text[:_MAX_CHARS],
+        model=model,
+        system=_SYSTEM_PROMPT,
+        options=sweep_options(),
+        keep_alive=keep_alive,
     )
     return parse_verdict(getattr(result, "text", None))
 
@@ -181,7 +187,7 @@ def run_qualification_assist_selftest() -> dict:
     in-app self-test and CI."""
 
     class _StubClient:
-        def generate(self, prompt, *, model, system=None, keep_alive=None):
+        def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
             low = prompt.lower()
             if "storm" in low or "residents" in low:
                 text = "article"

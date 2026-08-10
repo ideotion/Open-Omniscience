@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import re
 
+from src.ai_layer.sampling import sweep_options
+
 # Bump when the prompt materially changes -- the provenance flag that travels
 # with every AI-derived candidate (mirrors LANGDETECT_PROMPT_VERSION).
 PERCEPTION_PROMPT_VERSION = "ai-perception-v1"
@@ -122,7 +124,13 @@ def llm_perception_extract(
 
     budget = budget_chars if budget_chars and budget_chars > 0 else _MAX_CHARS
     sent, truncation = head_truncate(text, budget)
-    result = client.generate(sent, model=model, system=_SYSTEM_PROMPT, keep_alive=keep_alive)
+    result = client.generate(
+        sent,
+        model=model,
+        system=_SYSTEM_PROMPT,
+        options=sweep_options(),
+        keep_alive=keep_alive,
+    )
     out = parse_perception_reply(getattr(result, "text", None))
     if truncation:
         out["truncation"] = truncation

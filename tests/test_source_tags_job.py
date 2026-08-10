@@ -49,7 +49,7 @@ class FakeClient:
     """Tags the real source 'sports' (in-vocabulary); ignores canaries whose
     expected tags are not in this tiny corpus's vocabulary."""
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         lines = []
         for ln in prompt.splitlines():
             ln = ln.strip()
@@ -61,7 +61,7 @@ class FakeClient:
 
 
 class RaisingClient:
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         from src.llm.ollama import LLMUnavailable
 
         raise LLMUnavailable("Ollama not reachable (simulated outage)")
@@ -220,7 +220,7 @@ def test_empty_vocabulary_is_an_honest_no_op_never_sent_to_the_model(db, monkeyp
     called = []
 
     class SpyClient(FakeClient):
-        def generate(self, prompt, *, model, system=None, keep_alive=None):
+        def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
             called.append(prompt)
             return super().generate(prompt, model=model, system=system, keep_alive=keep_alive)
 
@@ -267,7 +267,7 @@ def test_evidence_floor_skip_is_logged_and_never_sent_to_the_model(db, monkeypat
     seen_prompts = []
 
     class SpyClient(FakeClient):
-        def generate(self, prompt, *, model, system=None, keep_alive=None):
+        def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
             seen_prompts.append(prompt)
             return super().generate(prompt, model=model, system=system, keep_alive=keep_alive)
 

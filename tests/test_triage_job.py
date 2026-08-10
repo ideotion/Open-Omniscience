@@ -53,7 +53,7 @@ class FakeResult:
 class FakeClient:
     """Answers every echoed keyword 'content', canaries 'junk' -- happy path."""
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         lines = []
         for ln in prompt.splitlines():
             ln = ln.strip()
@@ -65,7 +65,7 @@ class FakeClient:
 
 
 class RaisingClient:
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         from src.llm.ollama import LLMUnavailable
 
         raise LLMUnavailable("Ollama not reachable (simulated outage)")

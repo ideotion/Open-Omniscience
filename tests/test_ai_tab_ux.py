@@ -147,3 +147,79 @@ def test_the_moved_panels_load_on_expand_not_with_the_subtab():
     )
     assert "loadLlmPrompts()" not in models_line, "the AI subtab must not load the moved panel"
     assert "loadCustomPrompts()" not in models_line
+
+
+# --------------------------------------------------------------------------- #
+#  the AI diagnostics move to Advanced, behind one button
+#  Maintainer 2026-08-09: "the diagnostic section ... should be moved in the advanced
+#  subtab", and "simplify all AI related diagnostics into one single button".
+# --------------------------------------------------------------------------- #
+#: Every AI diagnostic control that used to sit in the Data & backup panel. They move
+#: WHOLE (the Desk lesson) -- a control that vanished in the move is the failure this
+#: pins, not a tidier tab.
+_MOVED_AI_DIAGNOSTICS = (
+    "keyword-triage-box",
+    "source-tags-box",
+    "perception-extract-box",
+    "model-bench-box",
+)
+
+
+def _view_of(anchor: str) -> str:
+    """Which Settings sub-view an element ends up in."""
+    import re
+
+    views = [(m.start(), m.group(1)) for m in re.finditer(r'<div class="set-view" id="([^"]+)"', HTML)]
+    at = HTML.index(anchor)
+    return [name for pos, name in views if pos < at][-1]
+
+
+def test_the_ai_diagnostics_moved_out_of_data_and_backup():
+    for box in _MOVED_AI_DIAGNOSTICS:
+        assert _view_of(f'id="{box}"') == "set-advanced", f"{box} is still outside Advanced"
+    for endpoint in ("/api/diagnostics/llm-bench", "/api/diagnostics/llm-throughput"):
+        assert _view_of(endpoint) == "set-advanced", f"{endpoint}'s button is still outside Advanced"
+
+
+def test_the_general_diagnostics_stayed_where_they_were():
+    """The negative-space twin: this was a move of the AI half, not of the panel.
+
+    The all-diagnostics bundle, the keyword logs and the network verdicts are not AI
+    diagnostics; sweeping them along would be a different, unasked-for change.
+    """
+    assert _view_of('id="all-diag-btn"') == "set-data"
+
+
+def test_the_activity_feed_sits_beside_the_toggle_it_describes():
+    """It reports what the background AI has been doing, so it belongs next to the
+    control that turns the background AI on -- not in a diagnostics panel."""
+    assert _view_of('id="ai-activity-box"') == "set-models"
+    assert _view_of('id="aic-toggle-btn"') == "set-models"
+
+
+def test_one_button_runs_every_ai_check():
+    assert _view_of('id="aicheck-btn"') == "set-advanced"
+    assert 'onclick="runAiCheck(this)"' in HTML
+    body = function_body(APP, "runAiCheck")
+    assert "/api/diagnostics/ai-check/run" in body
+    assert "/api/diagnostics/ai-check/cancel" in body, "a multi-minute run needs a stop"
+
+
+def test_the_one_button_names_the_bench_it_does_not_run():
+    """"Test everything at once" must not silently exclude the longest test.
+
+    The comparative bench keeps its own control because it runs for hours; the button's
+    own explanation says so, so a reader is never left to assume it was covered.
+    """
+    src = strip_comments(HTML)
+    at = src.index('id="aicheck-btn"')
+    title = src[at:src.index(">", at)]
+    assert "model bench" in title.lower() and "NOT included" in title
+
+
+def test_the_check_toggles_instead_of_disabling():
+    """A run takes minutes; a disabled button for that long is a dead control -- the
+    langdetect pattern this project already settled on."""
+    body = function_body(APP, "runAiCheck")
+    assert "dataset.running" in body
+    assert ".disabled = true" not in body

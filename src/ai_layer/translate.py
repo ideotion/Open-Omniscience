@@ -20,6 +20,8 @@ from __future__ import annotations
 
 import re
 
+from src.ai_layer.sampling import sweep_options
+
 # Bump when the prompt changes (provenance flag travels with each tentative result).
 TRANSLATE_PROMPT_VERSION = "kw-translate-v1"
 
@@ -105,7 +107,11 @@ def translate_keyword(
     if not t or not tgt or (source_lang or "").strip().lower() == tgt:
         return None
     result = client.generate(
-        t, model=model, system=build_system(source_lang, target_lang), keep_alive=keep_alive
+        t,
+        model=model,
+        system=build_system(source_lang, target_lang),
+        options=sweep_options(),
+        keep_alive=keep_alive,
     )
     out = parse_translation(getattr(result, "text", None))
     if not out or out.casefold() == t.casefold():

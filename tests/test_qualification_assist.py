@@ -27,7 +27,7 @@ class _FixedReplyClient:
     def __init__(self, reply: str):
         self._reply = reply
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         return _FakeResult(self._reply)
 
 
@@ -35,7 +35,7 @@ class _KeywordAwareClient:
     """Answers based on which canary text is in the prompt, plus 'junk'/'article'
     substrings for real test articles -- lets one client drive a mixed batch."""
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         low = prompt.lower()
         if "storm" in low or "residents" in low:
             return _FakeResult("article")

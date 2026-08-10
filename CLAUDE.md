@@ -10340,6 +10340,44 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     has nothing installed, so the SERVING panel also carries a prerequisite and must still
     be drawn — hiding on `prerequisite` alone trades one dead end for another, and only the
     twin test catches it.
+  - **A CAPABILITY BUILT SO A CALLER COULD USE IT, THAT NO CALLER EVER USED, IS THE
+    DEAD-END SHAPE ONE LEVEL DOWN (2026-08-10, temperature 0):** `vllm_client` learned to
+    map `options` onto OpenAI sampling fields on 2026-07-31 with a comment saying the
+    previous version "dropped it on the floor, so a caller asking for `temperature: 0` got
+    the server's default sampling and never learned otherwise — a silent determinism bug on
+    exactly the backend the GPU path uses." The fix was correct and **no production caller
+    ever passed any options**: all seven constrained-output paths called
+    `generate(prompt, model=, system=, keep_alive=)` and nothing else, so every sweep ran at
+    the server's default 1.0. That is what made twelve perception-eval passes over ONE model
+    and ONE gold set disagree about which languages clear the bar — a gate deciding on
+    sampled coin flips. THE RULE is the recorded "a diagnostic state with no caller in the
+    decision path is a dead end", applied to a CAPABILITY: after fixing a seam so callers
+    *can* ask for something, grep for the callers that now *do*. TWO HONESTY POINTS the fix
+    had to get right: temperature 0 does NOT reduce hallucination (a model invents just as
+    freely under greedy decoding — it invents the *same thing* each time), and it does NOT
+    guarantee bit-identity either, because vLLM's continuous batching changes float
+    reduction order with batch composition; what it buys is that a difference between two
+    runs is a difference in the INPUT or the CODE, never in the dice. And the override must
+    fail toward greedy: a malformed `OO_LLM_SWEEP_TEMPERATURE` falling back to the server
+    default would silently restore the thing being removed. **COROLLARY — A PROTOCOL THAT
+    UNDER-DECLARES A SEAM IS WHERE THE DOUBLES DRIFT:** `LlmBackend.generate` omitted
+    `options`, so 53 test doubles and 3 src stubs did too, and adding one real argument
+    reddened 67 tests — every one of them describing a client that could not exist. Declare
+    the full signature on the Protocol; a structural check has nothing else to bite on.
+  - **A "RUN EVERYTHING" BUTTON MUST NAME WHAT IT DOES NOT RUN (2026-08-10, the one-button
+    AI check):** folding the comparative model bench into "test everything at once" would
+    turn a check into an afternoon (it loads every roster model in turn and is resumable per
+    model precisely because it runs for hours), and leaving it out silently would make
+    "everything" false. The report carries a `not_run_here` block with the name, the reason
+    and where the separate control lives — the same discipline as stating a truncation in a
+    payload rather than only in a log line. TWO MORE THINGS SUCH A RUNNER OWES: every step
+    guarded and TIMED so a half-broken machine still says which half (a step that raises
+    becomes one row with its exception, and the steps after it still measure), and a READING
+    derived from what was measured rather than asserted — here, "the best measured
+    concurrency is at or above the server's own limit, so raising `OO_VLLM_CONCURRENCY` and
+    restarting is the lever" has a NEGATIVE-SPACE TWIN that says the opposite when
+    throughput peaked BELOW the limit. A recommendation that fires in every case is advice,
+    not a reading.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 

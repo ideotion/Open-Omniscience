@@ -51,7 +51,7 @@ class FakeResult:
 class FakeClient:
     """Answers every echoed keyword 'content', canaries 'junk' -- happy path."""
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         lines = []
         for ln in prompt.splitlines():
             ln = ln.strip()
@@ -63,7 +63,7 @@ class FakeClient:
 
 
 class RaisingClient:
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         from src.llm.ollama import LLMUnavailable
 
         raise LLMUnavailable("Ollama not reachable (simulated outage)")
@@ -79,7 +79,7 @@ class FlakyClient:
         self.calls = 0
         self._real = FakeClient()
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         self.calls += 1
         if self.calls <= self._fail_times:
             from src.llm.ollama import LLMUnavailable
@@ -94,7 +94,7 @@ class AlwaysRaisingHTTPErrorClient:
     overflow). Proves the except clause catches LLMError generally, not just
     the LLMUnavailable subclass."""
 
-    def generate(self, prompt, *, model, system=None, keep_alive=None):
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
         from src.llm.ollama import LLMError
 
         raise LLMError("simulated HTTP 500 from the model server")
