@@ -59,7 +59,20 @@ _REFUSAL = re.compile(
     r"multiple|mixed)\b",
     re.IGNORECASE,
 )
-_MAX_TEXT = 4000  # the lead is plenty to identify a language; bound the model's input
+# THE ONE DELIBERATE EXCEPTION to the 2026-08-10 whole-article ruling, stated rather
+# than quietly kept. Every other background sweep now reads the article in full,
+# because its output is an INVENTORY of the text (entities, places, dates, keywords)
+# and an unread half is an unfound half. This one's output is a SINGLE LABEL determined
+# by the text's statistics, and the lead answers it: the rule-based detector beside it
+# (``src.analytics.langdetect``) samples for exactly the same reason. Chunking a 412 KB
+# article into 200 calls to arrive at the same two-letter code would cost 200x for no
+# information.
+#
+# It is a SAMPLE, not a truncation of analysis -- and it is bounded HERE rather than
+# left to the daemon, which is the part that changed: an unbounded prompt is cut by the
+# server at an unknown point, which is a silent truncation nobody chose. Capped by the
+# resolved window too, so the sample always fits.
+_MAX_TEXT = 4000
 
 
 def build_system() -> str:
@@ -93,15 +106,22 @@ def detect_language_llm(
 ) -> str | None:
     """Ask the local model for the language of one article. Returns a KNOWN ISO 639-1
     code or ``None`` (empty text, refusal, or an unrecognised/garbage answer). Raises the
-    client's error if Ollama is unavailable — the caller (the job) decides."""
+    client's error if Ollama is unavailable — the caller (the job) decides.
+
+    Reads a bounded SAMPLE of the lead, for the reason set out at ``_MAX_TEXT`` — the
+    one place in this package where the whole article is deliberately not sent."""
     text = f"{(title or '').strip()}\n\n{(content or '').strip()}".strip()
     if not text:
         return None
+    from src.ai_layer.coverage import sweep_text_budget
+
+    budget, basis = sweep_text_budget(text)
+    sample = min(_MAX_TEXT, budget)
     result = client.generate(
-        text[:_MAX_TEXT],
+        text[:sample],
         model=model,
         system=build_system(),
-        options=sweep_options(),
+        options=sweep_options(num_ctx=basis.get("num_ctx")),
         keep_alive=keep_alive,
     )
     return parse_lang(getattr(result, "text", None))

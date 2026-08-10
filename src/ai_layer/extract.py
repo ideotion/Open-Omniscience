@@ -25,8 +25,11 @@ from src.ai_layer.sampling import sweep_options
 # Prompt provenance — stored on every AI keyword row (bump when this prompt changes).
 EXTRACT_PROMPT_VERSION = "ai-keywords-v1"
 
-# Keep the prompt within a small CPU model's context (mirrors src.api.llm._MAX_CHARS).
-_MAX_CHARS = 6000
+# WHOLE-ARTICLE COVERAGE since 2026-08-10 (maintainer ruling: truncating background
+# sweeps "is not acceptable"). The article is split into parts that each fit the
+# window, every part is extracted, and the term lists are merged ROUND-ROBIN so the
+# ``max_terms`` cap cannot quietly restore the head bias the chunking removes.
+# See src.ai_layer.coverage.
 
 # The English body lives in ONE place (src/llm/prompts_i18n) alongside its eleven
 # translations, so the two can never drift apart -- a second copy here would be a
@@ -75,6 +78,7 @@ def extract_terms(
     max_terms: int = 20,
     keep_alive: str | None = None,
     system: str | None = None,
+    budget_chars: int | None = None,
 ) -> list[str]:
     """Ask the local model for an article's salient terms. Returns a clean list (may
     be empty — an unusable page yields nothing). Raises the client's ``LLMUnavailable``
@@ -83,14 +87,39 @@ def extract_terms(
     A custom ``system`` prompt (a user-defined extractor) overrides the built-in keyword
     instruction; the parsing (one item per line, deduped, bounded) is SHARED, so every
     extractor — built-in or user-defined — yields the same unified, typed AI-metadata
-    shape. ``{max_terms}`` is substituted in whichever system prompt is used."""
+    shape. ``{max_terms}`` is substituted in whichever system prompt is used.
+
+    An article longer than the window is read in PARTS (2026-08-10 ruling) and the term
+    lists merged round-robin, so ``max_terms`` remains a per-article budget spread
+    across the whole article rather than a cap that lands entirely on its opening.
+    ``budget_chars`` is an explicit override; the batch caller does not pass it, because
+    the per-article half of the budget is that article's script (see
+    ``coverage.sweep_text_budget``)."""
     text = (content or "").strip()
     if not text:
         return []
     base = system if (system and system.strip()) else _EXTRACT_SYSTEM
     sys_prompt = base.replace("{max_terms}", str(max_terms))
-    prompt = f"Article title: {title or '(untitled)'}\n\n{text[:_MAX_CHARS]}"
-    result = client.generate(
-        prompt, model=model, system=sys_prompt, options=sweep_options(), keep_alive=keep_alive
-    )
-    return parse_terms(result.text, max_terms=max_terms)
+
+    from src.ai_layer.coverage import merge_items, split_for_sweep, sweep_text_budget
+
+    basis: dict = {}
+    if budget_chars and budget_chars > 0:
+        budget = budget_chars
+    else:
+        budget, basis = sweep_text_budget(text)
+    parts, _coverage = split_for_sweep(text, budget)
+    options = sweep_options(num_ctx=basis.get("num_ctx"))
+
+    head = f"Article title: {title or '(untitled)'}"
+    per_part: list[list[str]] = []
+    for part in parts:
+        result = client.generate(
+            f"{head}\n\n{part}",
+            model=model,
+            system=sys_prompt,
+            options=options,
+            keep_alive=keep_alive,
+        )
+        per_part.append(parse_terms(result.text, max_terms=max_terms))
+    return merge_items(per_part, limit=max_terms)

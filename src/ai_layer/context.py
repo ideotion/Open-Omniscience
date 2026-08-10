@@ -9,15 +9,19 @@ actually exists — roughly the 95th percentile of article length, measured by t
 shipped ``article_length`` diagnostic — and the 1 % tail is handled as a tail rather
 than by taxing the other 99 %.
 
-**What happens to an article that does not fit?** It depends entirely on who asked,
-and conflating the two would be the dishonest move:
+**What happens to an article that does not fit?** Since 2026-08-10 there is ONE
+answer, and it is the same for everybody: the article is split at paragraph (then
+sentence) boundaries into parts that together ARE the article, every part is sent, and
+the parts are combined. What still differs is the COMBINING, because it follows the
+output's shape rather than the asker's identity — a translation is the concatenation
+of its parts' translations, a summary needs a second pass over the part-summaries, a
+set of extracted entities is a union.
 
-* a BACKGROUND sweep head-truncates and RECORDS that it did — "analyzed the first N
-  of M characters" travels with the result, so a thin extraction is never mistaken
-  for a thin article;
-* a USER-DRIVEN summarize or translate NEVER silently truncates. It splits at
-  paragraph boundaries, runs every part, and says so. A translation that quietly
-  stopped at 6,000 characters looks exactly like a complete one.
+The background sweeps used to head-truncate and disclose it. The maintainer retired
+that trade ("it's not acceptable ... otherwise it won't work"), and the reason is worth
+keeping: a disclosure makes a gap visible without filling it, and against a corpus
+averaging ~22 KB an article the gap was most of every long article.
+``src.ai_layer.coverage`` holds the sweep side.
 
 CHARS-TO-TOKENS IS AN ESTIMATE AND IS LABELLED ONE. Tokenizers differ by model and
 by script, and this module has no tokenizer. The ratios below are conservative
@@ -73,6 +77,24 @@ PROMPT_OVERHEAD_TOKENS = 512
 #: would leave the model no room to reply.
 OUTPUT_RESERVE_TOKENS = 1024
 
+#: The same reserve for a CONSTRAINED-OUTPUT sweep, where the reply is not prose and
+#: its length is bounded by the PARSER rather than by the model's inclination:
+#: perception answers three ``;``-separated lines, keyword extraction at most
+#: ``max_terms`` lines of <=80 characters (~1,600 characters ~ 400 Latin tokens), and
+#: the qualification/language classifiers answer one word.
+#:
+#: WHY IT IS WORTH A SEPARATE NUMBER. The reserve is subtracted from a window that may
+#: be small, so on the field machine's vLLM window of 2,048 tokens the prose reserve
+#: left 512 tokens for text — 25% of the window, and 11 calls to read an average
+#: 22 KB article in full. At 512 it is 1,024 tokens, 50%, and 6 calls. (The BIGGER
+#: lever is the window itself: at 8,192 tokens an average article is one call either
+#: way. This one is ours to set; that one is the operator's.)
+#:
+#: FAILS SAFE. A reply that somehow overruns it is cut by the server, which makes it
+#: unparseable, which every sweep's parser already turns into an empty result — a miss,
+#: never an invention.
+SWEEP_OUTPUT_RESERVE_TOKENS = 512
+
 #: The pre-E-S4 constant, kept as the fallback so a machine that can tell us nothing
 #: behaves exactly as it did before rather than getting a guessed budget.
 LEGACY_TEXT_BUDGET_CHARS = 6000
@@ -120,15 +142,24 @@ def estimate_tokens(chars: int, script: str = "latin") -> int:
     return int(max(0, chars) / chars_per_token(script)) if chars else 0
 
 
-def text_budget_chars(num_ctx: int | None, script: str = "latin") -> int:
+def text_budget_chars(
+    num_ctx: int | None,
+    script: str = "latin",
+    *,
+    output_reserve: int = OUTPUT_RESERVE_TOKENS,
+) -> int:
     """How many characters of article text fit alongside the prompt and the answer.
 
     ``None`` (nothing configured) falls back to the pre-E-S4 constant rather than a
     derived guess: a machine that told us nothing should behave as it always did.
+
+    ``output_reserve`` defaults to the PROSE figure, so the user-driven summarize and
+    translate paths are unchanged; a constrained-output sweep passes
+    :data:`SWEEP_OUTPUT_RESERVE_TOKENS`, whose reasoning is at its definition.
     """
     if not num_ctx or num_ctx <= 0:
         return LEGACY_TEXT_BUDGET_CHARS
-    usable = int(num_ctx) - PROMPT_OVERHEAD_TOKENS - OUTPUT_RESERVE_TOKENS
+    usable = int(num_ctx) - PROMPT_OVERHEAD_TOKENS - int(output_reserve)
     if usable <= 0:
         return LEGACY_TEXT_BUDGET_CHARS
     return max(1000, int(usable * chars_per_token(script)))
@@ -261,8 +292,8 @@ def recommend_num_ctx(
     if need > ceiling:
         out["reason"] = (
             f"the corpus wants ~{need} tokens but this machine affords ~{ceiling}; the "
-            "recommendation is the machine's limit, so the longest articles will be "
-            "truncated with disclosure rather than silently overflowing the window"
+            "recommendation is the machine's limit, so the longest articles will be read "
+            "in several parts rather than in one call — complete either way, at more calls"
         )
     else:
         out["reason"] = "covers the corpus's ~p95 article within what the machine affords"
@@ -272,26 +303,13 @@ def recommend_num_ctx(
 # --------------------------------------------------------------------------- #
 #  Fitting text into the budget.
 # --------------------------------------------------------------------------- #
-def head_truncate(text: str, budget_chars: int) -> tuple[str, dict | None]:
-    """Cut ``text`` to the budget and say so — the BACKGROUND-sweep path.
-
-    Returns ``(text, disclosure_or_None)``. The disclosure is the point: an
-    extraction over the first 6,000 characters of a 40,000-character article is not
-    an extraction over the article, and a result that does not say so invites being
-    read as one.
-    """
-    text = text or ""
-    if budget_chars <= 0 or len(text) <= budget_chars:
-        return text, None
-    return text[:budget_chars], {
-        "truncated": True,
-        "analyzed_chars": budget_chars,
-        "total_chars": len(text),
-        "note": (
-            f"analyzed the first {budget_chars} of {len(text)} characters — the rest was "
-            "not seen by the model"
-        ),
-    }
+#  ``head_truncate`` lived here until 2026-08-10 and is GONE, not deprecated. It cut an
+#  article to the budget and returned a disclosure saying so, and the maintainer's
+#  ruling retired the trade it embodied: "articles are truncated for background sweeps,
+#  it's not acceptable ... otherwise it won't work". Deleting it rather than leaving it
+#  unused is the point — with no helper to truncate with, "no sweep truncates" is true
+#  by construction instead of by everyone remembering. Every caller now goes through
+#  ``chunk_text`` and combines the parts (see ``src.ai_layer.coverage``).
 
 
 _PARA = re.compile(r"(?<=\n\n)")
@@ -372,7 +390,6 @@ __all__ = [
     "chunk_text",
     "dominant_script",
     "estimate_tokens",
-    "head_truncate",
     "recommend_num_ctx",
     "text_budget_chars",
 ]

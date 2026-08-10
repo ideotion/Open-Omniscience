@@ -10602,8 +10602,45 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     reports the wasted bytes. The pre-existing test used `config.json` as its filename by
     coincidence and so passed either way — the discriminating fixture is files present,
     config absent.
+  - **A DISCLOSURE IS NOT A FIX — and naming a gap is what makes leaving it feel
+    principled (2026-08-10, the whole-article sweep ruling):** every background sweep
+    cut the article at a hardcoded 6,000 characters, and the perception sweep did it
+    LOUDLY — it returned `analyzed the first 6,000 of 40,000 characters — the rest was
+    not seen by the model`, counted it per run, and had a repo invariant *enforcing*
+    that it disclose. That is the shape of an honest mechanism and it read as one for
+    months; against a corpus averaging ~22 KB an article with a 412 KB tail it meant
+    the AI layer saw the opening of every long article and nothing else. GENERAL FORM:
+    when a mechanism's honesty consists of NAMING a gap, ask separately whether the gap
+    should exist at all. FOUR THINGS THE FIX NEEDED. (a) **The cap is where the bias
+    comes back**: the keyword sweep has a `max_terms` budget, and concatenating the
+    parts' lists then cutting would fill it from the first part or two — reinstating
+    precisely the head bias the chunking removes, while looking like full coverage and
+    passing any test that only checked the parts were sent. Merge ROUND-ROBIN. (b) **A
+    label is not a set**: combining per-part verdicts needs a STATED rule, not a union
+    — here `article` if ANY part reads as one, chosen because it is also the
+    conservative direction for a gate that can DISQUALIFY a source. (c) **Delete the
+    helper, do not deprecate it**: with no `head_truncate` to reach for, "no sweep
+    truncates" holds by construction rather than by everyone remembering. (d) **No cap
+    on parts** — a cap is truncation wearing a different name. And keep the ONE genuine
+    exception STATED: language detection still reads a lead sample, because its output
+    is a single label the lead answers rather than an inventory of the text, and it is
+    now bounded in our code instead of left for the server to cut at an unknown point.
+  - **WHEN HOISTING A COMPUTATION OUT OF A LOOP FOR COST, THE EXPENSIVE INPUT AND THE
+    VARYING INPUT ARE RARELY THE SAME ONE (2026-08-10, a defect in my own first cut,
+    caught pre-push):** the sweep budget has three inputs — the operator's setting (a
+    KV read), the backend's serving window (shells out to `nvidia-smi`), and the
+    article's SCRIPT. Resolving it once per batch fixed the two expensive ones and
+    silently froze the third: a token buys ~4 Latin characters and ~1.2 CJK ones, so a
+    Chinese article sized with a Latin article's ratio gets parts ~3x too big, they
+    overflow the window, and the server truncates them — the exact defect the change
+    existed to remove, reintroduced by the optimisation. Cache the expensive inputs on
+    a shared TTL and resolve the varying one per item. GENERAL FORM: enumerate a
+    hoisted computation's inputs and ask which vary per iteration, rather than assuming
+    the whole computation is loop-invariant because its costly part is.
   - **AN OPTIONAL PARAMETER THAT NO CALLER PASSES IS A POLICY NOBODY IS UNDER
-    (2026-08-10, the context budget):** `llm_perception_extract` takes `budget_chars`,
+    (2026-08-10, the context budget; RESOLVED the same day — the two-sided wiring
+    shipped with the whole-article ruling above):** `llm_perception_extract` takes
+    `budget_chars`,
     falls back to a hardcoded `_MAX_CHARS = 6000`, and **not one caller supplies it** —
     so `src/ai_layer/context.py`, a whole module about sizing the window to the corpus,
     governs the user-driven summarize/translate path and NOTHING in the background

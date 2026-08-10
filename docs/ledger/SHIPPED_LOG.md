@@ -4566,3 +4566,84 @@ data in it. Two status strings, reachable before this change and keyed in none o
 locales, are now keyed by textual insert beside their sibling (+2/−0 per locale), each using
 that locale's own existing "Task manager" term. Full suite 7514 passed / 111 skipped / 0
 failed; ruff clean; mypy 127 = baseline; bandit rc 0; i18n 2783 ×12.
+
+---
+
+## 2026-08-10 — Background sweeps read the whole article
+
+**Maintainer ruling, verbatim:** *"We need to change that articles are truncated for
+background sweeps, it's not acceptable. Background sweeps should process entire
+articles, otherwise it won't work."*
+
+**A DISCLOSURE IS NOT A FIX, and it is why this survived.** Every background sweep cut
+the article at a hardcoded 6,000 characters (4,000 for the qualification classifier).
+The perception sweep did not do this quietly — it returned `analyzed the first 6,000 of
+40,000 characters — the rest was not seen by the model`, counted it per run, and had a
+repo invariant *enforcing* that it disclose. That is exactly the shape of an honest
+mechanism, and it read as one for months. What it was not is a working extraction:
+against a corpus averaging ~22 KB an article with a 412 KB tail, the AI layer saw the
+opening of every long article and nothing else. GENERAL FORM: when a mechanism's
+honesty consists of NAMING a gap, ask separately whether the gap should exist — a
+disclosed gap is still a gap, and the disclosure is what makes leaving it feel
+principled.
+
+**The shape of the fix.** The article is split into parts that each fit the window and
+together ARE the article (`chunk_text`'s exact-coverage property, already built and
+already tested for the user-driven path), every part is sent, and the parts are combined
+by the sweep's OWN output shape: a union for who/where/when and for keywords, and for
+the article/junk label a STATED rule — `article` if ANY part reads as one. The label
+needed a rule rather than a union because it is not a set; the rule chosen is also the
+conservative direction for a gate that can DISQUALIFY a source, since a false *junk*
+removes a working source while a false *article* only leaves a candidate in the queue
+for the auditor's other evidence. There is deliberately NO cap on parts: a cap is
+truncation wearing a different name.
+
+`head_truncate` was **deleted**, not left unused. With no helper to truncate with, "no
+sweep truncates" holds by construction rather than by everyone remembering.
+
+**THE CAP IS WHERE THE BIAS COMES BACK.** The keyword sweep has a `max_terms` budget.
+Concatenating the parts' term lists and cutting at the limit would fill it from the
+first part or two — reinstating precisely the head bias the chunking removes, while
+looking like full coverage and passing any test that only checked the parts were sent.
+The merge is round-robin: one item from each part before any part contributes twice.
+
+**THE BUDGET IS TWO-SIDED — the half that was missing.** `budget_chars` already existed
+on the perception adapter and no caller ever passed it, so every sweep ran at the
+constant regardless of the machine. Wiring the operator's setting straight through would
+have been WORSE than the gap: on the field machine `llm_max_context_length` was 8192
+while vLLM had computed `max_model_len` 2048 from free VRAM, so the "fixed" budget would
+have been ~26,600 characters against a window accepting ~2,000 — every call failing on a
+machine where they currently succeed. It is `min(configured, what the backend will
+actually serve)`, with the second half read from the backend.
+
+**AND THE WINDOW HAS TO BE SENT, not only sized for.** Ollama serves each model's own
+default `num_ctx` unless told otherwise, so sizing a part for a configured 8192 and not
+sending it hands the daemon a prompt it silently cuts — the same silence, one layer
+down, on the backend most installs use. The governing token count now travels as
+`num_ctx`; vLLM's mapper drops the key and reports the drop, which is correct (its
+window is fixed at server start).
+
+**A DEFECT IN MY OWN FIRST CUT, caught before it shipped.** The batch callers resolved
+ONE budget and passed it to every article, to avoid re-probing (the vLLM branch shells
+out to `nvidia-smi`, the settings read hits the encrypted KV store). But the budget has
+THREE inputs and only two of them are per-machine: a token buys ~4 Latin characters and
+~1.2 CJK ones, so a Chinese article sized with a Latin article's ratio gets parts ~3x
+too big — they overflow the window and the server truncates them silently, which is the
+exact defect being removed. Fixed by caching the two expensive inputs on a shared TTL
+and resolving the ratio per article. GENERAL FORM: when hoisting a computation out of a
+loop for cost, enumerate its inputs and check which of them actually vary per iteration
+— the expensive input and the varying input are rarely the same one.
+
+**ONE STATED EXCEPTION.** LLM language detection still reads a bounded lead sample. Its
+output is a single label determined by the text's statistics, and the lead answers it —
+the rule-based detector beside it samples for the same reason, and chunking a 412 KB
+article into 200 calls to arrive at the same two-letter code would cost 200x for no
+information. What changed there is that the bound is now applied HERE and capped by the
+resolved window: an unbounded prompt is cut by the server at an unknown point, which is
+a silent truncation nobody chose.
+
+**Verification.** Mutating `split_for_sweep` to keep only the first part (i.e. reverting
+to a head-cut) fails five guards across all three sweeps; mutating the script resolution
+to a constant fails the CJK guard; re-adding `budget_chars=budget` at a batch call site
+fails the pinning guard. Ruff clean, mypy 127 = baseline, bandit rc 0, i18n 100% with
+both ratchets run separately (569 / 301, unchanged — no frontend touched).

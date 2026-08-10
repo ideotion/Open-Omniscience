@@ -338,7 +338,10 @@ def extract_perception_batch(
     rule-based tables.
 
     Returns a tally: ``{"attempted", "skipped_existing", "gated", "gated_detail",
-    "field_gated", "stored", "who", "where", "when", "aborted", "reason"}``. Since the
+    "field_gated", "multi_part", "parts", "stored", "who", "where", "when", "aborted",
+    "reason"}``. ``multi_part``/``parts`` are the COST of whole-article coverage (how
+    many articles needed several calls, and how many calls in total) — they replaced a
+    ``truncated`` counter on 2026-08-10, when the sweeps stopped truncating. Since the
     per-field gate (E-S3), an article whose language cleared for SOME fields is run and
     only its cleared fields are stored -- ``field_gated`` counts, per field, how many
     articles had that field discarded, so a small ``who`` count beside a large ``where``
@@ -351,6 +354,7 @@ def extract_perception_batch(
     ``max_workers`` bounds per-backend concurrency (B3's seam, ``src.llm.concurrency``)
     -- ``max_workers<=1`` (the Ollama default) is a byte-identical serial loop.
     """
+    from src.ai_layer.coverage import sweep_text_budget
     from src.ai_layer.perception import PERCEPTION_PROMPT_VERSION, llm_perception_extract
     from src.ai_layer.store import record_keywords
     from src.database.models import AiKeyword
@@ -360,11 +364,21 @@ def extract_perception_batch(
     tally: dict = {
         "attempted": 0, "skipped_existing": 0, "gated": 0, "gated_detail": {},
         "field_gated": {f: 0 for f in _FIELDS},
-        "truncated": 0,
+        # Coverage, not truncation: since 2026-08-10 every article is read WHOLE, so
+        # what a run reports is what it COST -- how many were long enough to need
+        # several calls, and how many calls in total. A thin harvest is then
+        # attributable to the model or the corpus, never to an unseen tail.
+        "multi_part": 0, "parts": 0,
         "stored": 0, "who": 0, "where": 0, "when": 0, "aborted": False, "reason": None,
     }
     if not work:
         return tally
+
+    # Warm the shared TTL cache once (the vLLM probe shells out to nvidia-smi and the
+    # settings read hits the encrypted KV store). The per-article budget is still
+    # resolved per article, because its third input is the article's own SCRIPT and a
+    # Latin ratio applied to a CJK article oversizes every part by ~3x.
+    sweep_text_budget(_combined_text(work[0]))
 
     already: set[int] = set()
     if skip_existing:
@@ -402,7 +416,8 @@ def extract_perception_batch(
         results = run_concurrent(
             sub,
             lambda w: llm_perception_extract(
-                client, _combined_text(w), model=model, language=w.language, keep_alive=keep_alive
+                client, _combined_text(w), model=model, language=w.language,
+                keep_alive=keep_alive,
             ),
             max_workers=max_workers,
         )
@@ -418,11 +433,15 @@ def extract_perception_batch(
                 continue
             tally["attempted"] += 1
             out = res.value or {}
-            if out.get("truncation"):
-                # A background sweep may truncate; it may not do so silently. Counted
-                # per run so a thin harvest is attributable to the window rather than
-                # being read as a thin corpus.
-                tally["truncated"] = tally.get("truncated", 0) + 1
+            cov = out.get("coverage") or {}
+            # `cov.get("parts") or 1` would turn a REAL zero (nothing to read) into a
+            # reported call that never happened -- the `.get(key, 0)` family of
+            # fabricated measurement, pointed the other way. Default only when the key
+            # is ABSENT, which is an older payload, not a measured zero.
+            n_parts = cov["parts"] if isinstance(cov.get("parts"), int) else 1
+            tally["parts"] += n_parts
+            if n_parts > 1:
+                tally["multi_part"] += 1
             for fld in _FIELDS:
                 # PER-FIELD gate (E-S3): the three fields arrive from one call, so a
                 # field this language never cleared is DISCARDED here rather than

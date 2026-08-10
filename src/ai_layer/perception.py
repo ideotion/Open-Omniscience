@@ -36,12 +36,16 @@ from src.ai_layer.sampling import sweep_options
 # with every AI-derived candidate (mirrors LANGDETECT_PROMPT_VERSION).
 PERCEPTION_PROMPT_VERSION = "ai-perception-v1"
 
-# Keep the prompt within a small CPU model's context (mirrors src.api.llm._MAX_CHARS /
-# src.ai_layer.extract._MAX_CHARS). Applied in llm_perception_extract itself -- not at a
-# call site -- so the harness and the real per-article extraction job share the EXACT
-# same bounded-input code path (no divergent "prod path" the eval never measured). A
-# no-op for the gold set's short synthetic sentences.
-_MAX_CHARS = 6000
+# WHOLE-ARTICLE COVERAGE since 2026-08-10 (maintainer ruling: truncating background
+# sweeps "is not acceptable ... otherwise it won't work"). The article is split into
+# parts that each fit the window and TOGETHER ARE the article, every part is extracted,
+# and the three field lists are UNIONED across parts -- an entity named halfway down a
+# 40,000-character article is a real mention, and the old head-cut never saw it.
+#
+# Applied in llm_perception_extract itself -- not at a call site -- so the eval harness
+# and the real per-article extraction job share the EXACT same code path (no divergent
+# "prod path" the eval never measured). A no-op for the gold set's short synthetic
+# sentences, which are one part.
 
 _SYSTEM_PROMPT = (
     "You extract facts MENTIONED in the text below -- never invent anything it "
@@ -114,26 +118,42 @@ def llm_perception_extract(
     ``triage.run_triage_batch``). Returns the parsed ``{"who","where","when"}``
     dict; a garbage/unparseable reply yields empty lists, never invented data.
 
-    E-S4 (2026-08-01): an over-budget article is HEAD-TRUNCATED and the result says
-    so under ``truncation`` -- this is a BACKGROUND sweep, where truncating is the
-    right trade, but a thin extraction from the first 6,000 characters of a long
-    article must never be readable as a thin article. (The user-driven summarize and
-    translate paths do NOT truncate at all; they chunk. Different asker, different
-    answer.)"""
-    from src.ai_layer.context import head_truncate
+    2026-08-10 (maintainer ruling): the WHOLE article is read. An article longer than
+    the window is split into parts that together ARE the article, every part is sent,
+    and the three field lists are unioned across parts. The result carries ``coverage``
+    (parts, characters) so a multi-part run is legible -- but there is nothing to
+    disclose about what was skipped, because nothing was.
 
-    budget = budget_chars if budget_chars and budget_chars > 0 else _MAX_CHARS
-    sent, truncation = head_truncate(text, budget)
-    result = client.generate(
-        sent,
-        model=model,
-        system=_SYSTEM_PROMPT,
-        options=sweep_options(),
-        keep_alive=keep_alive,
-    )
-    out = parse_perception_reply(getattr(result, "text", None))
-    if truncation:
-        out["truncation"] = truncation
+    ``budget_chars`` is an explicit override for a caller that already knows the answer.
+    The batch callers deliberately do NOT pass it: the two expensive inputs (the
+    nvidia-smi probe, the settings read) are cached on a shared TTL, but the third is
+    the article's own SCRIPT, and pinning one batch's ratio onto every article oversizes
+    a CJK article's parts by ~3x."""
+    from src.ai_layer.coverage import merge_items, split_for_sweep, sweep_text_budget
+
+    basis: dict = {}
+    if budget_chars and budget_chars > 0:
+        budget = budget_chars
+    else:
+        budget, basis = sweep_text_budget(text)
+
+    parts, coverage = split_for_sweep(text, budget)
+    options = sweep_options(num_ctx=basis.get("num_ctx"))
+    per_part: dict[str, list[list[str]]] = {"who": [], "where": [], "when": []}
+    for part in parts:
+        result = client.generate(
+            part,
+            model=model,
+            system=_SYSTEM_PROMPT,
+            options=options,
+            keep_alive=keep_alive,
+        )
+        parsed = parse_perception_reply(getattr(result, "text", None))
+        for field in ("who", "where", "when"):
+            per_part[field].append(parsed.get(field) or [])
+
+    out: dict = {field: merge_items(per_part[field]) for field in ("who", "where", "when")}
+    out["coverage"] = coverage
     return out
 
 

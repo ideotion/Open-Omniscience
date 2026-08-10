@@ -44,9 +44,17 @@ _SYSTEM_PROMPT = (
     "article or junk. Nothing else -- no punctuation, no explanation."
 )
 
-# Keep the prompt small -- a genre judgement needs far less text than a full
-# who/where/when extraction (mirrors the project's per-feature _MAX_CHARS convention).
-_MAX_CHARS = 4000
+# WHOLE-PAGE COVERAGE since 2026-08-10 (maintainer ruling: truncating background
+# sweeps "is not acceptable"). This one had a failure mode of its own: nav soup sits at
+# the TOP of a page, so a head-only judgement over the first 4,000 characters read the
+# chrome of a real article and could answer "junk" about a page whose narrative body it
+# never saw. The page is now read in full, in parts.
+#
+# THE AGGREGATION IS STATED because a label is not a set: a page reads as an ARTICLE if
+# ANY part does. That is the honest rule for the question actually being asked -- "does
+# this page carry real narrative content" -- and it is the conservative direction for a
+# gate that can DISQUALIFY a source: a false "junk" removes a working source, a false
+# "article" only leaves a candidate in the queue for the auditor's other evidence.
 
 # Fixed, hand-known CANARY pair -- never corpus-derived, so the model cannot learn
 # to special-case them from the batch itself (the triage-run canary convention).
@@ -77,25 +85,54 @@ def parse_verdict(raw: str | None) -> str | None:
 
 
 def classify_article_for_qualification(
-    client, title: str | None, content: str | None, *, model: str, keep_alive: str | None = None
+    client,
+    title: str | None,
+    content: str | None,
+    *,
+    model: str,
+    keep_alive: str | None = None,
+    budget_chars: int | None = None,
 ) -> str | None:
-    """Ask the active backend whether ONE article's text reads as a genuine
-    article or nav-soup. Returns ``"article"``/``"junk"``/``None`` (empty text
-    or an unparseable reply). Raises the client's LLMUnavailable/LLMError up
-    (the caller decides how to handle an outage)."""
+    """Ask the active backend whether ONE page's text reads as a genuine article or
+    nav-soup. Returns ``"article"``/``"junk"``/``None`` (empty text, or no part
+    produced a parseable reply). Raises the client's LLMUnavailable/LLMError up (the
+    caller decides how to handle an outage).
+
+    A page longer than the window is read in parts and the verdicts combined by the
+    rule stated above: ``article`` if ANY part reads as one, ``junk`` only if every
+    parseable part did, ``None`` if none was parseable. A page that fits is one call,
+    unchanged."""
     title = (title or "").strip()
     content = (content or "").strip()
     text = f"{title}\n\n{content}".strip() if title else content
     if not text:
         return None
-    result = client.generate(
-        text[:_MAX_CHARS],
-        model=model,
-        system=_SYSTEM_PROMPT,
-        options=sweep_options(),
-        keep_alive=keep_alive,
-    )
-    return parse_verdict(getattr(result, "text", None))
+
+    from src.ai_layer.coverage import split_for_sweep, sweep_text_budget
+
+    basis: dict = {}
+    if budget_chars and budget_chars > 0:
+        budget = budget_chars
+    else:
+        budget, basis = sweep_text_budget(text)
+    parts, _coverage = split_for_sweep(text, budget)
+    options = sweep_options(num_ctx=basis.get("num_ctx"))
+
+    verdicts: list[str] = []
+    for part in parts:
+        result = client.generate(
+            part,
+            model=model,
+            system=_SYSTEM_PROMPT,
+            options=options,
+            keep_alive=keep_alive,
+        )
+        v = parse_verdict(getattr(result, "text", None))
+        if v is not None:
+            verdicts.append(v)
+    if not verdicts:
+        return None
+    return "article" if "article" in verdicts else "junk"
 
 
 def check_canaries(client, *, model: str, keep_alive: str | None = None) -> dict:
@@ -148,6 +185,14 @@ def propose_qualification_flags(
         .limit(max_articles)
         .all()
     )
+
+    # Warm the shared TTL cache once for the source (the vLLM probe shells out to
+    # nvidia-smi); the per-page budget still resolves per page, since its remaining
+    # input is that page's own script.
+    from src.ai_layer.coverage import sweep_text_budget
+
+    if rows:
+        sweep_text_budget(rows[0][2] or "")
 
     flagged: list[dict] = []
     article_count = junk_count = unparseable_count = 0
