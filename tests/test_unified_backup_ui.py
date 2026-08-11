@@ -313,3 +313,91 @@ def test_llm_models_are_integrated_not_a_separate_panel():
     assert "ux-c-models" in _APP  # export checklist item
     assert "b.models" in _APP  # import scan shows the models blobs
     assert 'models: "models"' in _APP  # import restores the models category (blob_roots mapping)
+
+
+# --------------------------------------------------------------------------- #
+#  Compartmented exports (field ask 2026-08-10)
+#
+#  "add the option to export only models, or only offline maps, or only Wikipedia
+#  dumps (or all three): backups should not force user to backup articles and allow
+#  them to make compartmented backups"
+#
+#  The category checkboxes already existed and the folder-backup engine already took
+#  a `categories` list -- what forced the corpus in was the UI: its checkbox was
+#  rendered `checked disabled`, and _uxRun ran the volumes phase unconditionally.
+# --------------------------------------------------------------------------- #
+def _ux_run_src() -> str:
+    from tests.js_source_helper import function_body, strip_comments
+
+    return strip_comments(function_body(_APP, "_uxRun"))
+
+
+def test_the_corpus_checkbox_can_actually_be_unticked():
+    """THE ask. It was `checked disabled`, so the only way to copy models/maps/dumps was
+    to re-encrypt and re-write the whole corpus beside them."""
+    import re
+
+    from tests.js_source_helper import function_body, strip_comments
+
+    src = strip_comments(function_body(_APP, "_uxLoadInventory"))
+    tag = re.search(r'<input type="checkbox" id="ux-c-corpus"[^>]*>', src)
+    assert tag, "the corpus checkbox is gone from the export inventory"
+    assert "disabled" not in tag.group(0), (
+        "the corpus checkbox is disabled again — a backup once more forces the articles"
+    )
+    assert "checked" in tag.group(0), (
+        "the corpus must still be CHECKED by default: compartmenting is the opt-in, and a "
+        "backup that quietly stopped including the corpus is the dangerous direction"
+    )
+
+
+def test_a_corpus_less_export_skips_the_volumes_phase():
+    import re
+
+    src = _ux_run_src()
+    assert re.search(r"if \(wantCorpus\)\s*\{", src), (
+        "the volumes (corpus) phase is not behind the corpus choice"
+    )
+    # The volumes start must be INSIDE that branch, not merely near it.
+    branch = src[src.index("if (wantCorpus)"):]
+    assert "/api/backup/v2/volumes/start" in branch.split("if (blobs.length)")[0]
+
+
+def test_the_passphrase_is_required_only_when_the_corpus_is_included():
+    """The large-data files are public, re-downloadable blobs copied as-is, so demanding
+    a passphrase for a models-only export asks for a secret that protects nothing."""
+    import re
+
+    src = _ux_run_src()
+    assert re.search(r"if \(wantCorpus && !pass\)", src), (
+        "the passphrase is still demanded for an export that carries no corpus"
+    )
+
+
+def test_an_empty_selection_is_refused_rather_than_written():
+    import re
+
+    src = _ux_run_src()
+    assert re.search(r"!wantCorpus && !blobs\.length", src), (
+        "an export with nothing selected would write a destination folder that looks "
+        "like a backup and holds nothing"
+    )
+
+
+def test_the_corpus_data_safety_gate_survives_the_change():
+    """Deselecting the corpus must not weaken the gate for the case where it IS selected:
+    a corpus the user asked for still cannot be silently skipped behind a success
+    message (the 2026-07-14 field defect)."""
+    src = _ux_run_src()
+    for needle in ('s1.state !== "done"', 's1.mode !== "backup"', "_uxSamePath(s1.dest, dest)"):
+        assert needle in src, f"the corpus data-safety gate lost its {needle!r} check"
+
+
+def test_the_completion_message_names_what_the_backup_actually_holds():
+    """Now that the corpus can be left out, a bare "Backup complete" would let a
+    models-only export read months later as a full one, and the reader has no other way
+    to tell."""
+    src = _ux_run_src()
+    assert 't("Included:")' in src, "the completion line does not say what is in the backup"
+    for label in ('t("Corpus")', 't("LLM models")', 't("Offline maps")', 't("Wikipedia dumps")'):
+        assert f"included.push({label})" in src, f"{label} is never named in the summary"

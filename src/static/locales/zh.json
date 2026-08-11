@@ -1763,6 +1763,8 @@
   "Backing up maps / models / dumps…": "正在备份地图 / 模型 / 转储…",
   "large data": "大数据",
   "Backup complete →": "备份完成 →",
+  "Included:": "包含：",
+  "Choose at least one thing to back up.": "请至少选择一项进行备份。",
   "Backup failed — see console": "备份失败——请查看控制台",
   "Enter a folder to scan.": "请输入要扫描的文件夹。",
   "Scanning…": "正在扫描…",

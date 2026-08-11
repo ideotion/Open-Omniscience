@@ -1763,6 +1763,8 @@
   "Backing up maps / models / dumps…": "Sauvegarde des cartes / modèles / dumps…",
   "large data": "données volumineuses",
   "Backup complete →": "Sauvegarde terminée →",
+  "Included:": "Inclus :",
+  "Choose at least one thing to back up.": "Choisissez au moins un élément à sauvegarder.",
   "Backup failed — see console": "Échec de la sauvegarde — voir la console",
   "Enter a folder to scan.": "Saisissez un dossier à analyser.",
   "Scanning…": "Analyse…",

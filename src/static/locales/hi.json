@@ -1763,6 +1763,8 @@
   "Backing up maps / models / dumps…": "मानचित्र / मॉडल / डंप बैकअप हो रहे हैं…",
   "large data": "बड़ा डेटा",
   "Backup complete →": "बैकअप पूर्ण →",
+  "Included:": "शामिल:",
+  "Choose at least one thing to back up.": "बैकअप के लिए कम से कम एक चीज़ चुनें।",
   "Backup failed — see console": "बैकअप विफल — कंसोल देखें",
   "Enter a folder to scan.": "स्कैन करने के लिए एक फ़ोल्डर दर्ज करें।",
   "Scanning…": "स्कैन हो रहा है…",
