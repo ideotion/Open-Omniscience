@@ -3578,6 +3578,53 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the fix is to edit in BINARY (`read_bytes`/`write_bytes`) so untouched lines stay
     byte-identical, and `git diff --ignore-cr-at-eol --numstat` is what proves it. A
     line ending is content in a file whose diff people read.
+  - **A COVERAGE RATIO OVER A CATALOG MUST NOT COUNT ENTRIES COPIED FROM THE SOURCE
+    LANGUAGE — and the filter that keeps a source's own braces out of a
+    frame-hole check cannot be built from the output (2026-08-11, the bulletin's
+    translation layer):** two fabricated passes, one in the feature and one in my
+    own check for it. (a) A translation catalog keyed on the English sentence can
+    contain `"Stories": "Stories"`, and some of those are legitimate (a proper
+    noun, a unit, `{n} mentions` in French) — so counting them as coverage lets a
+    catalog of pure copies report itself complete, which is the exact shape of a
+    pass on work nobody did. Count them APART and publish the count; a mutation
+    that folds them into coverage then fails by name. (b) The render-integrity
+    check for "a frame hole reached the reader" needs the set of OUR hole names,
+    and my first version built it as `{holes in the frames} | {holes in the
+    output}` — a superset of everything in the output, so the filter could exclude
+    nothing and a publisher who writes `{x}` in a headline would be reported as
+    our bug. Derive the set from the FRAMES the render declared (the translator
+    tracks them), never from the text you are inspecting. TWO MORE POINTS worth
+    keeping. A refused translation must render in ENGLISH rather than raise: a
+    lost `{days}` prints a literal brace to a reader, and a `KeyError` would abort
+    a whole document over one sentence — so it degrades visibly and the integrity
+    check is what catches it. And a REORDERED frame must be honoured, since word
+    order is the entire reason to translate a frame rather than its fragments;
+    compare the hole SETS, never the sequence, and pin both directions.
+  - **A MIXED-LANGUAGE DOCUMENT OWES ITS READER THE REASON, AND NUMBER GROUPING IS
+    A MISREADING RATHER THAN A STYLE NIT (2026-08-11, same slice):** a French
+    bulletin whose caveats are still English is not broken — they are simply
+    untranslated — but a reader cannot tell that from a deliberate quotation, so
+    the document states its own coverage (translated of total) above the first
+    figure, computed AFTER the body so it counts what the body actually asked for.
+    Read the report BEFORE composing that line or a fully-translated document
+    announces a shortfall of exactly one: itself. The number half is the sharper
+    one: `f"{n:,}"` renders 72,225, which in French convention reads as 72.225 —
+    so the document says the grouping is English rather than pretending
+    otherwise. Locale-aware grouping is deliberately NOT done here, because
+    guessing per locale (a dot for German, lakh grouping for Hindi) trades one
+    misreading for another and the fix belongs to the app-wide shared formatter.
+  - **MEASURING TRANSLATION COVERAGE BY RENDERING ALONE REPORTS A WORKLIST COMPLETE
+    WHILE HALF THE SENTENCES HAVE NO ENTRY (2026-08-11, same slice):** a record with
+    no alerts carries no alert caveat, one with no stories carries no story caveat —
+    so the prose the computing modules WRITE INTO a record is a surface no single
+    edition exhibits. Harvest it from source as well (string literals assigned to the
+    record keys the renderer translates), and declare it a CANDIDATE set rather than a
+    total: it misses a sentence composed at runtime from two halves, and it includes
+    method strings that belong to a selftest payload and never reach a document.
+    Corollary on where a hover essay belongs: a 700-character `title=` explaining how
+    to use a report is text nobody reads at the moment they act on it — put it in the
+    report's own payload, which also keeps twelve locales from owing a translation of
+    it, and the i18n ratchet from going red over prose that had a better home.
   - **A CROSS-ARTIFACT REFERENCE IS ONLY AS GOOD AS THE ROUND TRIP, AND A FILE-COUNT
     ASSERTION CANNOT SEE THE HALF THAT BREAKS (2026-08-11, the bulletin's annexes):**
     a report that cites `[0007]` beside a ZIP holding `…_Article_0007.md` has a

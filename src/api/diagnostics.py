@@ -1495,6 +1495,57 @@ def gold_builder_save(body: _GoldBuilderSaveBody) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@router.get("/bulletin-language")
+def bulletin_language(download: bool = Query(False)) -> JSONResponse:
+    """Would a bulletin read in the operator's language, and does it say what the record knows?
+
+    Per locale: how many of the sentences this app writes have a translation, which
+    have none (verbatim, so the report IS the worklist), and which have a broken
+    frame. Beside it, the render-integrity checks that need the same double render —
+    determinism, unresolved frame holes, and every section, article title and
+    reference number in the record found in the document.
+
+    Measured on the newest PERSISTED edition when there is one, and on a synthetic
+    record when there is not; the report says which, because coverage over a
+    synthetic record is a statement about the renderer and coverage over a real one
+    is a statement about a corpus. Read-only: it renders an existing record, so no
+    DB write, no model and no network are involved."""
+    from src.monitoring.bulletin_language import bulletin_language_report, stored_prose
+
+    out = bulletin_language_report()
+    # The prose the computing modules WRITE INTO a record: a single edition cannot
+    # exhibit all of it (a period with no alert carries no alert caveat), so the
+    # worklist would look complete while half the possible sentences had no entry.
+    out["stored_prose"] = {
+        "bulletin": stored_prose(),
+        "card_producers": stored_prose(packages=("briefing",)),
+        "note": (
+            "Harvested from source, not from this edition: these are the sentences the "
+            "computing modules can store in a record and the renderer prints verbatim. A "
+            "candidate set rather than an exact total — it can miss a sentence composed at "
+            "runtime from two halves, and it can include a method string that belongs to a "
+            "selftest payload and never reaches a document."
+        ),
+    }
+    headers = {}
+    if download:
+        fname = f"oo-bulletin-language-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(out, headers=headers)
+
+
+@router.get("/bulletin-language-selftest")
+def bulletin_language_selftest() -> dict:
+    """Prove the translation layer's four properties, with no DB, catalog or model.
+
+    English is identity, a missing translation falls back AND is reported, a frame
+    whose holes were changed is refused rather than printed, and an entry copied
+    from the English is not counted as coverage. Runs anywhere the app runs."""
+    from src.monitoring.bulletin_language import run_bulletin_language_selftest
+
+    return run_bulletin_language_selftest()
+
+
 @router.get("/lemma-preview")
 def lemma_preview(
     top_n: int = Query(500, ge=1, le=5000),
@@ -3479,6 +3530,11 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
             download=False, top_n=100, prose_gate_limit=500, prose_gate_after_id=0, db=db,
         )),
         ("lemma-preview.json", lambda: lemma_preview(top_n=500, db=db)),
+        # The bulletin's own language coverage + the render-integrity checks. Renders a
+        # persisted record (or the synthetic sample when there is none), so it costs no
+        # query and works on a fresh install.
+        ("bulletin-language.json", lambda: bulletin_language(download=False)),
+        ("bulletin-language-selftest.json", lambda: bulletin_language_selftest()),
         ("power-profile.json", lambda: power_profile(profile="optimized", download=False)),
         ("data-dir-persistence.json", lambda: data_dir_persistence_report()),
         ("ir-eval-selftest.json", lambda: ir_eval_selftest(download=False)),
@@ -3685,6 +3741,8 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/run-timeline": "run-timeline.json",
     "/search-timing-selftest": "search-timing-selftest.json",
     "/lemma-preview": "lemma-preview.json",
+    "/bulletin-language": "bulletin-language.json",
+    "/bulletin-language-selftest": "bulletin-language-selftest.json",
     "/home-cards": "home-cards.json",
     "/keyword-engine": "keyword-engine.json",
     "/power-profile": "power-profile.json",

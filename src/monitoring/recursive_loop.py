@@ -62,6 +62,11 @@ LOOP_SELFTESTS: tuple[tuple[str, str, str], ...] = (
         "src.ai_layer.qualification_assist",
         "run_qualification_assist_selftest",
     ),
+    (
+        "bulletin-language-selftest",
+        "src.monitoring.bulletin_language",
+        "run_bulletin_language_selftest",
+    ),
 )
 
 
