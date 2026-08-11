@@ -4647,3 +4647,128 @@ to a head-cut) fails five guards across all three sweeps; mutating the script re
 to a constant fails the CJK guard; re-adding `budget_chars=budget` at a batch call site
 fails the pinning guard. Ruff clean, mypy 127 = baseline, bandit rc 0, i18n 100% with
 both ratchets run separately (569 / 301, unchanged — no frontend touched).
+
+---
+
+## 2026-08-11 — the app's own model store is the one the app looks in
+
+**Field report, verbatim:** *"I notice ollama models did download into the
+/user/home/.ollama folder, yet there is another folder containing ollama models in
+/user/home/open-omniscience/data/models/ollama. I'd prefer if all models were in the
+same place, preferable in the second folder. Ollama should point by default in this
+folder, detect and use those models and download models directly to it."*
+
+**The split was the symptom, and not the expensive part.** Since 2026-08-04 a daemon
+this app spawns is pointed at `data/models/ollama`, so that is where our own pulls land.
+`candidate_stores()` — the function that answers *where are the models* — listed
+`$OLLAMA_MODELS`, `~/.ollama/models` and the Linux service store, and **never that one**.
+So `default_store()` fell through to `~/.ollama` even on a machine where the app folder
+was the only populated store, which reached two places that matter:
+
+* the model **backup** walks `default_store()`, so it enumerated the wrong directory and
+  carried none of the operator's models — successfully, with no hint anything was
+  missing;
+* `store_report()` compared its configured path against that same answer and reported a
+  split that did not exist, pointing at a migration nobody needed.
+
+**Why it survived a year.** The report *printed a plausible split*, which reads as the
+feature working rather than as the detector being wrong. This is the recorded
+"redirecting where new data lands makes existing data invisible" lesson pointing the
+other way: there the probe learned the new location and forgot the old one; here it
+learned neither, and the honest-looking note covered for it.
+
+**The fix, and the hazard the fix creates.** The app store is now a candidate — after an
+explicit `$OLLAMA_MODELS` (a stated choice still wins) and before `~/.ollama` (when both
+hold models, the app folder is the one a daemon we start reads). An empty machine
+targets it too, so a model *restore* lands where our own daemon will look.
+
+Ranking it first converts a detection heuristic into a claim it cannot support: with
+both folders populated it now names the app folder whatever the running daemon is doing,
+so a report trusting it would give a clean bill of health while every pull went
+elsewhere. That needed a **measurement**, not a better heuristic — ask the daemon what it
+has, and see which store holds a model the other does not. Conclusive when the stores
+differ, honestly inconclusive when they are identical or the daemon is empty, and the
+heuristic's own answer is published beside it so a disagreement is visible.
+
+**Downloads.** A pull writes into the store of whichever daemon answers, decided by *its*
+environment when it started, so the only lever the app holds is when none is running. It
+now starts its own there (honouring `OO_LLM_AUTOSTART=0` like every other automatic
+start), and where a foreign daemon is serving it **records where the model really went**
+rather than leaving the operator to find two folders later. Stopping someone else's
+daemon to change a download directory stays out of bounds.
+
+**Two defects of my own, caught before push.** Consolidating resolved its source through
+`default_store()`, which after the re-ranking returned the *destination* — so the
+migrate button answered "nothing to do" in the exact split it exists for; it now reads
+every OTHER store that holds models. And the split state produced no button at all when
+the daemon was measurably reading the app folder, which is the reported case.
+
+**Verification.** Removing the app store from `candidate_stores()` fails six guards.
+Making the report trust the heuristic over the measurement fails the foreign-daemon
+guard. Reverting the set arithmetic — computing "unique to this store" as
+app-vs-the-rest, which subtracts a store's own keys from the union of the others and so
+removes the copy that made a model non-unique — fails the two-other-stores guard. Two of
+my own tests initially passed under the first mutation because `default_store()`'s
+fallback satisfied them with only the app folder seeded; both now seed both locations.
+Ruff clean, mypy 127 = baseline, bandit rc 0, i18n 100 % with all three gates run
+separately (567 / 299, unchanged).
+
+**Not done, and stated rather than implied:** an Ollama daemon managed by systemd or
+launchd cannot be redirected by this app at all — its environment is its own. The report
+and the pull record say so. Writing a systemd drop-in would work and needs elevation and
+consent, so it is a follow-up with a ruling attached, not something to do quietly.
+
+---
+
+## 2026-08-11 — multi-model specialisation: the gate first, then the shapes
+
+Design of record: `docs/design/MULTI_MODEL_SPECIALISATION_2026-08-10.md`.
+
+**Why the gate comes first.** Exactly one cell of the 10 August comparison justifies a
+second model — Qwen3.5 0.8B was 100 % on language ID and 2.4× faster than Ministral, and
+0 % at everything else — and **n was 17**. Building a task-to-model map on seventeen
+single-sentence gold cases would be building a knob for a setup that may turn out to be
+slower. So the harness re-measures language ID at scale before it measures anything else;
+if the advantage does not survive, the answer is "one model", which is a real finding and
+cheaper to act on than the machinery it would have justified.
+
+**There is no gold label in the corpus,** and pretending otherwise would make the whole
+measurement worthless. What is measured at scale is AGREEMENT with two independent
+signals — py3langid's own answer (written only above its confidence floor) and the
+publisher's `<html lang>` — reported apart and never blended, with the subset where the
+two agree with each other as the strongest available reference. Disagreement does not say
+who is right, and the caveat says exactly that. Region subtags are normalised on both
+sides, or `en-US` against a model's `en` would manufacture a disagreement out of nothing;
+a refusal is counted apart from a wrong answer throughout, because the production
+detector treats them differently too.
+
+**The switch is the experiment.** Three shapes over ONE fixed sample: one-model (no
+crossings), task-phased (one crossing per corpus), and the ask's own batch-then-switch
+(two per batch). Switch time is accumulated as its own line — folded into a task's wall
+it would read as "perception got slower", a different finding about a different thing.
+The **initial model load is counted apart from a crossing**: every shape pays it,
+including the baseline, and charging it to the phased shape would make the design doc's
+own arithmetic read as two crossings instead of one.
+
+`one` and `phased` share one loop, deliberately. What separates them is the ASSIGNMENT —
+one maps every task to the same model, so the backend is already current and no switch
+happens — and the absence of a structural difference is itself evidence for the doc's
+prediction that batch size is the wrong knob.
+
+**A refused switch is never recorded as success**, because a run whose hand-overs
+silently failed does less work, finishes sooner, and is the fastest-looking row in the
+table while having measured a model it never loaded.
+
+**The mutation that did not bite, and why it matters more than the ones that did.** I
+wrote that guard, wrote its mutation (`current = want` regardless of the outcome) — and
+all 21 tests passed. The fixture used the split assignment, where the two tasks want
+different models, so the cached "current backend" failed to match on every phase whether
+or not the refusal was recorded: four switches either way. A cache-suppression bug can
+only be discriminated by a scenario where the cache would HIT — the same target requested
+twice in a row, which is the one-model shape. Rewritten there, the mutation fails by
+name.
+
+**Not run here.** This sandbox has no GPU and neither backend installed, so no figure is
+claimed: the harness is built and tested, and the measurement is an operator step on the
+model rig. The task-to-model map is a parameter rather than a Settings knob for the same
+reason.
