@@ -3270,6 +3270,33 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     COROLLARY worth keeping: a bare `<h3>` inherits the browser's `1.17em`, so in any
     design whose own headings are *smaller* than body text, every unstyled sub-heading is
     automatically the loudest thing on the page.
+  - **A PHASE THAT RUNS WHILE NO SUB-UNIT IS IN FLIGHT HAS NO HOST ELEMENT — and the
+    producer's own comment explaining why it must not be silent is why that survives
+    review (2026-08-11, "according to UI, the import is over, but the CPU is still
+    firing 100% on one core"):** an import run does not end when its last item does.
+    `_tune_after_run` then merges the search index — FTS5 `'optimize'`, single-threaded
+    and index-scaled — inside the same exclusive window, so collection stays paused and
+    a second import is refused while every item already reads "Done". The backend was
+    publishing that phase and its comment said outright that without it the run "would
+    sit at 'running' with no item in flight … which reads as a hang". The renderer
+    emitted `st.live` only INSIDE a row whose item is `running`, and by then none is —
+    the fix for the exact failure was written, and had nowhere to render. GENERAL FORM:
+    when a renderer hangs a status off "the currently-running child", ask what publishes
+    status when there is no child; a tail phase, a warm-up and a cleanup all live there.
+    SECOND, INDEPENDENT REASON it could not have shown even given a row: a mirrored
+    sub-job status nests its phase under `progress` while the run's own live dict is
+    flat, so one reader silently served one shape — check both ends of a field two
+    producers write. THIRD, the honest half of the same report: the row said "Importing"
+    beside 100% of items, a job claiming to be finished and working at once. The count
+    was a real measurement and stayed; it was the NAME that was wrong, and that is
+    usually the cheaper thing to fix. FOURTH, from the operator's own question ("if it
+    means pausing the reindex, it's OK"): the post-import re-index drain never consulted
+    the exclusive hold — the third recurrence of "gate every entry point", because
+    `ReindexJobManager` grew `_yield_to_exclusive` and this is a *different, later* entry
+    point. It STOPS rather than parks, because a park can only happen between batches and
+    a single import is a single batch of everything it merged — so parking would never
+    fire on the one shape that matters, while stopping is free against a durable
+    per-article watermark that the queue's own end-of-run drain restarts.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;

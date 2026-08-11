@@ -6777,7 +6777,12 @@
         verify: t("Verifying the merge…"),
         snapshot_working_copy: t("Snapshotting your corpus…"),
         pre_restore_snapshot: t("Snapshotting your corpus…"),
-        swap: t("Committing…") };
+        swap: t("Committing…"),
+        // The import run's OWN tail phase (ImportQueueManager._tune_after_run), not
+        // one of run_restore's stages: an FTS5 'optimize' that runs once after the
+        // last item. It is single-threaded and index-scaled, so on a large corpus it
+        // is minutes of 100%-of-one-core work AFTER every item already reads "Done".
+        tuning: t("Merging the search index…") };
       // verify + restore share the phase names (verifying/reassembling); only a backup
       // uses the write-side names. Default is mode-aware so a verify never falls back to
       // "Backing up…" or shows a raw untranslated phase.
@@ -7399,7 +7404,19 @@
       if (runBtn && st.state === "running") runBtn.disabled = true;
       // The run header: what it is doing overall + the collection statement (ruling 12).
       const head = `${items.filter(i => i.state === "done").length}/${items.length} ${esc(t("imported"))}`;
+      // THE TAIL PHASE HAS TO HAVE A HOME (field report 2026-08-11). A run does not end
+      // when its last item does: _tune_after_run then merges the search index, inside the
+      // same exclusive window, for minutes on a large corpus. The per-item live block
+      // below only renders inside a row whose item is `running`, so with every item
+      // "Done" that phase had nowhere to appear -- the header read "1/1 imported", the
+      // item read "Done", collection was still paused and one core sat at 100%. The
+      // backend was already publishing it; there was simply no element to put it in.
+      const tail = items.some((i) => i.state === "running") ? "" : _uxImLive(st.live, t);
+      const tailLine = (st.state === "running" && tail)
+        ? `<br><span class="note">${esc(t("The import is not finished — a final phase is still running:"))}${tail}</span>`
+        : "";
       note.innerHTML = `<b>${head}</b>${st.elapsed_s != null ? ` · ${esc(_uxImDur(st.elapsed_s))}` : ""}`
+        + tailLine
         + (st.state === "running" && st.collection_paused ? `<br>${esc(t("Background collection is paused for this whole import and resumes when it finishes."))}` : "")
         + (st.state === "interrupted" ? `<br><span class="note err">${esc(t("This import was interrupted when the app stopped. It cannot resume (the passphrase is never stored) — start it again."))}</span>` : "");
       rows.innerHTML = items.map((it) => {
@@ -7419,7 +7436,11 @@
     // The current PHASE's own honest unit (ruling 14) -- never a made-up percentage of
     // the whole run, whose items are different kinds of work over different units.
     function _uxImLive(live, t) {
-      const p = (live && live.progress) || {};
+      // TWO SHAPES, one reader. A sub-job's mirrored status nests its phase under
+      // `progress`; the run's own tail phase (_tune_after_run) is a flat dict with no
+      // sub-job to mirror. Reading only the nested one silently dropped the tail phase
+      // even where it WAS rendered -- a second, independent reason it was invisible.
+      const p = (live && (live.progress || live)) || {};
       if (!p.phase) return "";
       const bits = [esc(_uxVolPhase(p.phase, "restore", t))];
       if (p.phase_index && p.phase_total) bits.push(`${p.phase_index}/${p.phase_total}`);

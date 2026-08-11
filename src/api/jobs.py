@@ -300,11 +300,25 @@ def _import_queue_jobs() -> list[dict]:
     done = int(s.get("items_done") or 0)
     cur = s.get("current") or {}
     label = cur.get("label") or ""
+    # A RUN DOES NOT END WITH ITS LAST ITEM (field report 2026-08-11). After the last
+    # item the queue merges the search index inside the same exclusive window, with no
+    # item in flight -- so `current` is None while `items_done == items_total`, and the
+    # row read "Importing" at 100%: a job simultaneously claiming to be finished and to
+    # be working. The item count is a real measurement and stays; what was wrong was the
+    # NAME, which now says which of the two it is. A fixed string, so the DOM walker can
+    # translate it (an f-string with the item label in it cannot be an exact key).
+    tail = str(((s.get("live") or {}).get("progress") or s.get("live") or {}).get("phase") or "")
+    if label:
+        job_label = f"Importing {label}"
+    elif tail:
+        job_label = "Finishing the import"
+    else:
+        job_label = "Importing"
     return [
         {
             "id": "import-queue",
             "kind": "import",
-            "label": f"Importing {label}" if label else "Importing",
+            "label": job_label,
             "state": "running",
             "progress": (
                 {"done": done, "total": total, "unit": "items",
