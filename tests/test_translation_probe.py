@@ -6,6 +6,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import json
+
 from src.ai_layer import translation_probe as TP
 
 
@@ -184,3 +186,38 @@ def test_the_markdown_puts_the_answers_under_their_question() -> None:
     assert rep["caveat"] in md, "the refusal to score travels with the readable form"
     # The source must be ON the page: a reader judging a translation needs the original.
     assert "**Source**" in md
+
+
+# --------------------------------------------------------------------------- #
+#  The bundle member
+# --------------------------------------------------------------------------- #
+def test_the_bundle_member_yields_the_json_report_not_the_markdown_attachment(monkeypatch, tmp_path):
+    """The `ai.json` regression, one member over. `_all_diagnostics_members` calls this
+    route DIRECTLY, so any FastAPI default it does not pass stays an unresolved sentinel
+    -- and ``Query(False)`` is TRUTHY, which would send every bundle down the markdown
+    branch and put an attachment where a `.json` member belongs.
+
+    THE FIXTURE IS THE POINT: with no saved probe the markdown branch falls back to the
+    same JSONResponse, so the two calls agree and the bug is invisible. A saved report
+    has to exist for the branches to diverge at all -- which is exactly the shape the
+    field bug had (harmless on an empty install, wrong on a used one)."""
+    from src.api import diagnostics as d
+    from src.database.session import SessionLocal
+
+    monkeypatch.setattr(TP, "_dir", lambda: tmp_path)
+    (tmp_path / "oo-translation-probe-20260811-120000.json").write_text(
+        json.dumps({"schema": TP.TRANSLATION_PROBE_SCHEMA, "n_items": 1, "items": []}),
+        encoding="utf-8",
+    )
+    (tmp_path / "oo-translation-probe-20260811-120000.md").write_text("# md", encoding="utf-8")
+
+    with SessionLocal() as db:
+        member = dict(d._all_diagnostics_members(db))["translation-probe.json"]
+        resp = member()
+
+    assert resp.media_type == "application/json", (
+        f"a .json bundle member handed back {resp.media_type!r} -- the markdown branch ran"
+    )
+    assert "content-disposition" not in {k.lower() for k in resp.headers}
+    body = json.loads(bytes(resp.body))
+    assert body["available"] is True and body["n_items"] == 1, body

@@ -3498,7 +3498,7 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("perception-extract-run.json", lambda: perception_extract_last()),
         # The last saved side-by-side TRANSLATION comparison (read-only; never runs a
         # probe -- that is a POST). Carries corpus excerpts, and the payload says so.
-        ("translation-probe.json", lambda: translation_probe_last()),
+        ("translation-probe.json", lambda: translation_probe_last(download=False)),
         # E-S2 (2026-08-01): the newest COMPARATIVE model-bench artifact, summarised
         # (every metric, without the hundreds of per-term answers per pair). Read-only
         # -- running the bench is a heavy operator job, never a bundle member.
