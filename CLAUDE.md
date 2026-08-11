@@ -3642,6 +3642,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     and the guard passed while the use site raised `NameError` — only ruff's F821 caught
     it. Any "module X imports what it uses" assertion has to resolve the binding (ast,
     enclosing scope), or it is satisfied by an import that cannot be seen from the call.
+  - **ADDING A WAIT PAST AN ABORT POINT MAKES THAT ABORT POINT STALE — and the guard that
+    notices will be anchored on a PROXY for the real boundary (2026-08-11, the same
+    change, both halves found after it merged):** the restore's last poll is
+    `_abort_point("swap")`, and the quiescence barrier went in just below it, so the first
+    cut turned a ~0 s inert-Stop window into one of up to **180 s** — on the one control
+    the operator is watching, against a ruling that says a pre-swap Stop aborts NOW. The
+    fix is two halves and the ORDER of the second is the honest part: the wait takes a
+    `should_stop` and returns early (it REPORTS, it never decides), and the abort point is
+    RE-CHECKED after the wait but BEFORE the still-held refusal — otherwise someone who
+    pressed Stop is told "another job is writing to your corpus", naming the wrong cause
+    and sending them hunting a job that is not the reason. Both directions need pinning,
+    because "honour the stop" is one edit from "give up early". **THE SECOND HALF cost a
+    red `main`:** `test_there_is_deliberately_NO_abort_point_after_the_swap` split the
+    source at `with timings.stage("swap"):` — but its own docstring names the rule as
+    "after the atomic **swap**", which is `os.replace`, and the stage entry was only ever a
+    proxy for it. The proxy went wrong the instant the stage gained legitimate PRE-swap
+    work, so a correct abort was reported as a violation. Re-anchoring on the commit point
+    is STRICTLY STRONGER for the property named (it still catches the one unsound thing and
+    no longer fires on the many sound ones) — but note the direction of the reasoning:
+    relax a guard only when its DOCSTRING's property is preserved and you can still fail it
+    on the real violation, which is the mutation to run before touching it. GENERAL FORM:
+    when a guard forbids something "after X", check whether it splits on X or on a landmark
+    that merely used to coincide with X.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
