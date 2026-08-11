@@ -6718,8 +6718,16 @@
         // unticks one (field ask 2026-07-02). Absent categories are disabled.
         const opt = (id, label, d) =>
           `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-${id}" ${(d.count || 0) > 0 ? "checked" : "disabled"}> ${esc(label)} <span class="muted">(${d.count || 0} · ${humanBytes(d.bytes || 0)})</span></label>`;
+        // The corpus is CHECKED by default (a backup still means everything unless the
+        // user says otherwise) but no longer `disabled`: it was un-untickable, so the
+        // only way to copy models/maps/dumps was to re-encrypt and re-write the whole
+        // corpus alongside them (field ask 2026-08-10: "backups should not force user to
+        // backup articles and allow them to make compartmented backups"). The import side
+        // already discovers corpus, large-data and newsletters independently and only
+        // asks for a passphrase when the corpus is among them, so a corpus-less export
+        // restores exactly as it is written.
         box.innerHTML =
-          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-corpus" checked disabled> ${esc(t("Corpus"))} <span class="muted">(${b.articles || 0} ${esc(t("articles"))} · ${b.sources || 0} ${esc(t("sources"))} · ${b.dates || 0} ${esc(t("dates"))} · ${b.keywords || 0} ${esc(t("keywords"))} · ${humanBytes(c.bytes || 0)})</span></label>` +
+          `<label class="switch" style="margin:0"><input type="checkbox" id="ux-c-corpus" checked> ${esc(t("Corpus"))} <span class="muted">(${b.articles || 0} ${esc(t("articles"))} · ${b.sources || 0} ${esc(t("sources"))} · ${b.dates || 0} ${esc(t("dates"))} · ${b.keywords || 0} ${esc(t("keywords"))} · ${humanBytes(c.bytes || 0)})</span></label>` +
           opt("models", t("LLM models"), inv.models || {}) +
           opt("maps", t("Offline maps"), inv.maps || {}) +
           opt("wiki", t("Wikipedia dumps"), inv.wiki || {});
@@ -6951,8 +6959,6 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const dest = (document.getElementById("ux-dest").value || "").trim();
       if (!dest) { toast(t("Enter a destination folder first."), "err"); return; }
-      const pass = document.getElementById("ux-pass").value || "";
-      if (!pass) { toast(t("Enter a passphrase for the encrypted corpus."), "err"); return; }
       const prog = document.getElementById("ux-progress");
       const bar = document.getElementById("ux-bar");
       const pauseBtn = document.getElementById("ux-pause");
@@ -6960,21 +6966,44 @@
       if (document.getElementById("ux-c-models") && document.getElementById("ux-c-models").checked) blobs.push("models");
       if (document.getElementById("ux-c-maps") && document.getElementById("ux-c-maps").checked) blobs.push("osm_regions");
       if (document.getElementById("ux-c-wiki") && document.getElementById("ux-c-wiki").checked) blobs.push("wiki_dumps");
+      // A corpus-less export is now a first-class choice, so neither half is assumed:
+      // refuse an empty selection outright rather than writing a destination folder that
+      // looks like a backup and holds nothing.
+      const cCorpus = document.getElementById("ux-c-corpus");
+      const wantCorpus = !cCorpus || cCorpus.checked;
+      if (!wantCorpus && !blobs.length) {
+        toast(t("Choose at least one thing to back up."), "err"); return;
+      }
+      // The passphrase protects the CORPUS. The large-data files are public,
+      // re-downloadable blobs copied as-is (which is what makes 100 GB feasible), so
+      // demanding one for a models-only export would be asking for a secret that
+      // protects nothing.
+      const pass = document.getElementById("ux-pass").value || "";
+      if (wantCorpus && !pass) {
+        toast(t("Enter a passphrase for the encrypted corpus."), "err"); return;
+      }
       btn.disabled = true;
       if (pauseBtn) { pauseBtn.style.display = ""; pauseBtn.disabled = false; pauseBtn.dataset.mode = "pause"; pauseBtn.textContent = t("Pause"); }
       try {
-        _uxPhase = "volumes";
-        const s1 = await _uxStartThenPoll(
-          () => api("/api/backup/v2/volumes/start", { method: "POST", body: JSON.stringify({ dest, passphrase: pass }) }),
-          "/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Corpus") },
-          { mode: "backup", dest });
-        if (s1 && s1.state === "paused") { _uxShowPaused(prog, bar, pauseBtn, t); btn.disabled = false; return; }
-        // DATA-SAFETY GATE (field 2026-07-14): the large-data (blob) phase is unreachable, and
-        // "Backup complete" is never shown, unless the volumes phase PROVABLY completed as a
-        // `backup` of the corpus into THIS dest. Without this a lost/masked start that adopted an
-        // unrelated live job's "done" would skip the corpus yet print success.
-        if (!s1 || s1.state !== "done" || s1.mode !== "backup" || (s1.dest && !_uxSamePath(s1.dest, dest))) {
-          throw new Error(t("The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete."));
+        if (wantCorpus) {
+          _uxPhase = "volumes";
+          const s1 = await _uxStartThenPoll(
+            () => api("/api/backup/v2/volumes/start", { method: "POST", body: JSON.stringify({ dest, passphrase: pass }) }),
+            "/api/backup/v2/volumes/status", "volumes", { bar, label: prog, prefix: t("Corpus") },
+            { mode: "backup", dest });
+          if (s1 && s1.state === "paused") { _uxShowPaused(prog, bar, pauseBtn, t); btn.disabled = false; return; }
+          // DATA-SAFETY GATE (field 2026-07-14): the large-data (blob) phase is unreachable, and
+          // "Backup complete" is never shown, unless the volumes phase PROVABLY completed as a
+          // `backup` of the corpus into THIS dest. Without this a lost/masked start that adopted an
+          // unrelated live job's "done" would skip the corpus yet print success.
+          //
+          // Deselecting the corpus does NOT weaken this. The gate exists so a corpus the user
+          // ASKED for cannot be silently skipped behind a success message; when they did not ask
+          // for one there is nothing to confirm, and the completion line below says so by name
+          // rather than letting "Backup complete" imply a corpus is in there.
+          if (!s1 || s1.state !== "done" || s1.mode !== "backup" || (s1.dest && !_uxSamePath(s1.dest, dest))) {
+            throw new Error(t("The corpus backup could not be confirmed — aborting before the large-data files so you never get a partial backup that looks complete."));
+          }
         }
         if (blobs.length) {
           _uxPhase = "folder";
@@ -6987,7 +7016,18 @@
         _uxPhase = null;
         if (bar) bar.style.display = "none";
         if (pauseBtn) pauseBtn.style.display = "none";
-        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> ${esc(dest)}`;
+        // Name what is actually in it. Now that the corpus can be left out, "Backup
+        // complete" alone would let a models-only export read months later as a full one
+        // -- the reader has no other way to tell, and that is the expensive direction to
+        // be wrong in.
+        const included = [];
+        if (wantCorpus) included.push(t("Corpus"));
+        if (blobs.includes("models")) included.push(t("LLM models"));
+        if (blobs.includes("osm_regions")) included.push(t("Offline maps"));
+        if (blobs.includes("wiki_dumps")) included.push(t("Wikipedia dumps"));
+        prog.innerHTML = `<b>${esc(t("Backup complete →"))}</b> ${esc(dest)}`
+          + `<div class="muted" style="font-size:12px;margin-top:2px">`
+          + `${esc(t("Included:"))} ${esc(included.join(" · "))}</div>`;
       } catch (e) {
         _uxPhase = null;
         if (bar) bar.style.display = "none";
@@ -7678,6 +7718,10 @@
       // engine" half — never inferred, only what the incoming stamp recorded.
       let qualGained = 0, disqGained = 0, qualKept = 0, qualDisagreed = 0;
       const qualEngines = {};
+      // Metadata a DUPLICATE article contributed (field question 2026-08-10). The
+      // article was not stored again; only fields this corpus never had were filled.
+      let metaEnriched = 0;
+      const metaByColumn = {};
       let deltaBefore = null, deltaAfter = null;
       const extra = [];  // empty/errored newsletters, surfaced honestly
       const detail = [];
@@ -7729,6 +7773,13 @@
           // import actually carried; this line stays the plain count of added sources,
           // qualified or not.
           newSources += (p.sources && p.sources.new) || 0;
+          const pm = p._article_metadata;
+          if (pm) {
+            metaEnriched += pm.articles_enriched || 0;
+            for (const [c, n] of Object.entries(pm.by_column || {})) {
+              metaByColumn[c] = (metaByColumn[c] || 0) + (n || 0);
+            }
+          }
           const pq = p._source_qualification;
           if (pq) {
             qualGained += (pq.introduced_qualified || 0) + (pq.adopted_qualified || 0);
@@ -7856,6 +7907,20 @@
           + `</div>`;
       }
 
+      // Only when something was actually filled: a run that gained nothing says nothing,
+      // rather than showing a 0 that reads as a finding about the backup.
+      let metaBlock = "";
+      if (metaEnriched) {
+        const cols = Object.keys(metaByColumn).sort()
+          .map((c) => `${c} (${num(metaByColumn[c])})`).join(", ");
+        metaBlock =
+          `<div style="margin-top:8px"><div style="font-size:13px">`
+          + esc("\u2713 " + tf("Existing articles that gained metadata: {n}", { n: num(metaEnriched) }))
+          + `</div>`
+          + (cols ? `<div class="muted" style="font-size:12px">${esc(tf("Fields filled: {fields}", { fields: cols }))}</div>` : "")
+          + `</div>`;
+      }
+
       const queueBlock = queueLines.length
         ? `<div class="muted" style="font-size:12px;margin-top:6px">${queueLines.map(esc).join(" · ")}</div>`
         : "";
@@ -7921,7 +7986,7 @@
         `<div class="card" style="margin-top:8px;padding:12px;border-left:3px solid ${head.col}">`
         + `<div style="font-weight:700;font-size:15px">${esc(head.icon)} ${esc(head.text)}</div>`
         + countLine + excludedNote
-        + growLine + headline + bar + typeBlock + extraLine + qualBlock + indexingLine + queueBlock
+        + growLine + headline + bar + typeBlock + extraLine + qualBlock + metaBlock + indexingLine + queueBlock
         + _uxPerItemView(perItem, t, tf)
         + deltaView
         + `<div class="muted" style="font-size:12px;margin-top:6px">${esc(t("Additive restore: nothing in your corpus was replaced or deleted. Duplicates were skipped."))}</div>`
