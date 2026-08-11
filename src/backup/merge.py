@@ -2021,28 +2021,27 @@ def _adopt_article_metadata(con) -> dict:
         rows += max(0, cur.rowcount or 0)
 
     # A source that fits in ONE window runs the statement once and COMMITS NOTHING,
-    # exactly as _insert_tracked does. That symmetry is load-bearing, not tidiness: the
-    # merge suspends the FTS insert trigger with a DROP and restores it in a finally, and
-    # on a failed merge what actually puts the trigger back is SQLite's transactional DDL
-    # rolling the DROP away (the 2026-08-07 finding -- the finally alone cannot, because
-    # the merge rolls back AFTER it runs). Committing here would make the DROP durable, so
-    # the rollback would undo the finally's CREATE instead and a failed merge would leave
-    # the working copy unable to index.
+    # exactly as _insert_tracked does.
     #
-    # THE GUARD for this is test_merge_fts_deferred.py::
-    # test_a_failed_merge_leaves_the_working_copy_able_to_index -- it is what caught the
-    # first cut of this function, and removing the short-circuit below fails it. It lives
-    # there rather than beside this pass because the property belongs to the merge, not to
-    # the adoption; a guard written here that watched for the COMMIT directly was tried
-    # and DELETED, because the trace it installed never saw the merge's own connection and
-    # so passed against the very mutation this comment describes.
+    # THIS USED TO BE LOAD-BEARING AND NO LONGER IS -- recorded rather than deleted,
+    # because the reason it stopped being load-bearing is the interesting part. When this
+    # pass was written, a failed merge got its FTS insert trigger back only from SQLite's
+    # transactional DDL rolling the DROP away, so any COMMIT in between made the DROP
+    # durable and the rollback undid the restoring CREATE instead. Committing here would
+    # have left the working copy unable to index, and the short-circuit was the fix.
     #
-    # KNOWN, PRE-EXISTING, AND NOT FIXED HERE: the same loss already happens on any corpus
-    # large enough for the ARTICLE INSERT to window, since that commits too. Probed on
-    # main with this pass neutered -- the trigger is likewise gone. It fails CLOSED
-    # (verify_copy refuses a copy whose trigger is missing, and a failed merge's working
-    # copy is disposable), so it costs work rather than data, and putting the restore
-    # after the rollback is a change to the trigger contract that deserves its own slice.
+    # That hole is now closed at its root: the merge captures the trigger's DDL before the
+    # transaction opens and re-creates it AFTER the rollback, in autocommit, so the trigger
+    # survives whether or not anything committed. MEASURED after that landed: removing the
+    # short-circuit fails NOTHING -- test_a_failed_merge_leaves_the_working_copy_able_to_index
+    # no longer discriminates for it, because the post-rollback restore repairs what the
+    # mutation breaks. A guard written here that watched for the COMMIT directly was tried
+    # and DELETED earlier for a different reason (its trace never saw the merge's own
+    # connection), so nothing pins this line today.
+    #
+    # It stays because it is still free and still correct -- a single-window pass has no
+    # reason to COMMIT/BEGIN at all -- not because anything depends on it. Anyone deleting
+    # it should know they are trading a small saving, not breaking a contract.
     if hi_max - lo_min <= step:
         _one(lo_min, hi_max)
         return {"articles_enriched": rows, "by_column": by_group}
