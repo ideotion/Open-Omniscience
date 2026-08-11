@@ -416,15 +416,22 @@ def layer_a(
     """
     from src.bulletin.sections import build_sections
 
+    # The masthead is computed FIRST so a section can be scoped by the lens the
+    # document already discloses. country_coverage needs exactly that: it picks its
+    # countries from the masthead's own per-country split, so the section's choice of
+    # countries is the ordering the reader has already seen rather than a second,
+    # unexplained one. (It can resolve its own ordering without this — but then the
+    # two could differ, and its docstring would be claiming otherwise.)
+    head = masthead(session, period)
     sections = build_sections(
-        session, period, rising_limit=rising_limit, target_lang=target_lang
+        session, period, rising_limit=rising_limit, target_lang=target_lang, masthead=head
     )
 
     return {
         "schema": "oo-bulletin-layer-a-1",
         "layer": "A",
         "period": period.to_dict(),
-        "masthead": masthead(session, period),
+        "masthead": head,
         "sections": sections,
         "disclosures": disclosures(session, period),
         "method": (

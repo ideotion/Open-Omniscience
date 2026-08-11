@@ -421,6 +421,72 @@ def _section_groups(section: dict) -> list[tuple[str, list[tuple[str, str]]]]:
     return groups
 
 
+def _coverage_blocks(section: dict) -> list[tuple[str | None, str, list[str]]]:
+    """The country-coverage section as (group, heading, lines) blocks.
+
+    Its shape is nested — a place, then two vantages under it — so it cannot go
+    through ``_section_groups``' flat (subject, description) model. Shared between
+    the two renderers for the same reason that one is.
+
+    The two vantages are printed as two lines under one heading, never merged into
+    a single ranking: a merged list would answer neither question. Each carries its
+    own n, because "from 3 articles" and "from 3,000" are the difference between a
+    finding and an anecdote.
+    """
+    blocks: list[tuple[str | None, str, list[str]]] = []
+
+    def _side(side: dict, what: str) -> str | None:
+        terms = side.get("terms") or []
+        n = side.get("articles") or 0
+        if not terms:
+            return f"*{what}: nothing in this period* (from {_fmt(n)} articles)"
+        listed = ", ".join(
+            f"{t.get('term')} {_fmt(t.get('mentions'))} ({_fmt(t.get('articles'))} art.)"
+            for t in terms
+        )
+        return f"**{what}**, from {_fmt(n)} articles: {listed}"
+
+    def _lines(row: dict) -> list[str]:
+        lines = [f"*{row.get('reading')}*", ""]
+        for key, what in (("local", "Local"), ("international", "International")):
+            line = _side(row.get(key) or {}, what)
+            if line:
+                lines.append(f"- {line}")
+        return lines
+
+    for i, row in enumerate(section.get("countries") or []):
+        head = f"{row.get('name') or row.get('country')} ({row.get('country')})"
+        if row.get("continent"):
+            head += f" · {row['continent']}"
+        blocks.append(("By country" if i == 0 else None, head, _lines(row)))
+
+    for i, row in enumerate(section.get("continents") or []):
+        # "contributing countries: 1" rather than "1 countries here": a count
+        # interpolated into a sentence cannot agree with the noun beside it, and the
+        # label:value form is correct in every language without per-form keys.
+        head = (
+            f"{row.get('continent')} — contributing countries: "
+            f"{_fmt(row.get('countries_contributing'))}"
+        )
+        blocks.append(("By continent" if i == 0 else None, head, _lines(row)))
+    return blocks
+
+
+def _coverage_note(section: dict) -> str | None:
+    """How many countries the document lists, of how many it counted."""
+    total, listed = section.get("countries_total"), section.get("countries_listed")
+    if not isinstance(total, int) or not isinstance(listed, int) or listed >= total:
+        return None
+    # label:value, not a sentence with the count inside it — "the other 1 were
+    # counted" cannot agree with its own noun, and no locale has to be given per-form
+    # keys for a phrasing that never conjugates.
+    return (
+        f"Contributing countries listed here: {listed} of {total}, largest first by "
+        f"the masthead's own split. Counted and not printed: {total - listed}. The "
+        "continent figures below cover every contributing country, including those."
+    )
+
+
 def _md_section(section: dict) -> list[str]:
     key = str(section.get("section", "section")).replace("_", " ")
     out = [f"## {key.capitalize()}", ""]
@@ -435,6 +501,19 @@ def _md_section(section: dict) -> list[str]:
     if w and not w.get("matches_period", True):
         # §12: a section whose window differs from the period must be VISIBLE.
         out += [f"*Window: {w.get('days')} days — not the edition's period.*", ""]
+
+    blocks = _coverage_blocks(section)
+    if blocks:
+        note = _coverage_note(section)
+        if note:
+            out += [f"*{note}*", ""]
+        for group, head, lines in blocks:
+            if group:
+                out += [f"**{group}**", ""]
+            out += [f"### {head}", ""] + lines + [""]
+        if section.get("caveat"):
+            out += [f"> {section['caveat']}", ""]
+        return out
 
     groups = _section_groups(section)
     if not groups:
@@ -570,6 +649,9 @@ main{max-width:44rem;margin:0 auto}
 h1{font-size:1.7rem;line-height:1.25;margin:0 0 .25rem}
 h2{font-size:1.15rem;margin:2.2rem 0 .6rem;padding-bottom:.3rem;border-bottom:1px solid var(--rule)}
 h3{font-size:1rem;margin:1.4rem 0 .4rem}
+/* An unstyled h4 takes the browser's 1em bold, which is the same size as the h3
+   above it — a heading that does not outrank its parent is not a hierarchy. */
+h4{font-size:.94rem;margin:1rem 0 .3rem;color:var(--muted)}
 .lede{color:var(--muted);margin:0 0 1.5rem}
 ul{padding-left:1.2rem}li{margin:.25rem 0}
 .caveat{color:var(--mark);border-left:3px solid var(--mark);padding:.4rem 0 .4rem .8rem;
@@ -697,6 +779,25 @@ def _html_section(section: dict) -> list[str]:
         out.append(
             f'<p class="caveat">Window: {_e(w.get("days"))} days — not the edition\'s period.</p>'
         )
+
+    blocks = _coverage_blocks(section)
+    if blocks:
+        note = _coverage_note(section)
+        if note:
+            out.append(f'<p class="meta">{_e(note)}</p>')
+        for group, head, lines in blocks:
+            if group:
+                out.append(f"<h3>{_e(group)}</h3>")
+            out.append(f"<h4>{_e(head)}</h4>")
+            bullets = [ln[2:] for ln in lines if ln.startswith("- ")]
+            reading = next((ln.strip("*") for ln in lines if ln.startswith("*")), "")
+            if reading:
+                out.append(f'<p class="meta">{_e(reading)}</p>')
+            if bullets:
+                out.append("<ul>" + "".join(f"<li>{_e(b)}</li>" for b in bullets) + "</ul>")
+        if section.get("caveat"):
+            out.append(f'<p class="caveat">{_e(section["caveat"])}</p>')
+        return out
 
     groups = _section_groups(section)
     if not groups:
