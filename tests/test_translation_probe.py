@@ -221,3 +221,25 @@ def test_the_bundle_member_yields_the_json_report_not_the_markdown_attachment(mo
     assert "content-disposition" not in {k.lower() for k in resp.headers}
     body = json.loads(bytes(resp.body))
     assert body["available"] is True and body["n_items"] == 1, body
+
+
+def test_a_person_can_reach_this_without_a_terminal() -> None:
+    """The recorded lesson one level up: a capability whose only caller is an API call
+    is a dead end for the person who asked for it. This probe exists so a reader can
+    compare two translations, so the reader must be able to RUN it and DOWNLOAD it from
+    the app -- scoped to the handler's own body, because a whole-file substring would be
+    satisfied by any other endpoint string in an 18,000-line file."""
+    from tests.js_source_helper import function_body, read_static
+
+    html = read_static("index.html")
+    assert 'id="translation-probe-box"' in html, "no panel"
+    assert 'onclick="tpRun(this)"' in html, "the run button is not wired"
+    assert "/api/diagnostics/translation-probe/last?download=1" in html, (
+        "no way to get the readable file out -- the JSON alone is not what a person reads"
+    )
+
+    body = function_body(read_static("app.js"), "tpRun")
+    assert '"/api/diagnostics/translation-probe"' in body
+    assert "n_articles" in body and "targets_per_source" in body, (
+        "the size controls must reach the request, or they are decoration"
+    )

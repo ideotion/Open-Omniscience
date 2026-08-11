@@ -15384,6 +15384,71 @@
       _mbPoll();
     }
 
+    // ---- Translation comparison (maintainer 2026-08-11) --------------------- //
+    // The bench's translation TASK answers what a machine can decide alone; this
+    // produces the artifact a PERSON reads to compare two translations. It renders
+    // what was asked and how long it took, and refuses to summarise the answers into
+    // a verdict -- the whole point is that the judgement happens in the reading.
+    function _tpRender(res) {
+        const out = $("tp-result");
+        if (!out) return;
+        if (!res) { out.innerHTML = ""; return; }
+        if (res.available === false) {
+          out.innerHTML = `<div class="hint muted">${esc(res.note || res.error || "no comparison yet")}</div>`;
+          return;
+        }
+        const d = res.directions || {};
+        const dirs = Object.keys(d).filter((k) => d[k]).map((k) => `${esc(k)} ${d[k]}`).join(" · ");
+        const langs = (res.languages || []).map(esc).join(", ");
+        const rows = [];
+        rows.push(`<div><b>${res.n_items || 0}</b> passages · ${esc((res.models || []).join(", "))}</div>`);
+        if (dirs) rows.push(`<div class="muted">${dirs}</div>`);
+        if (langs) rows.push(`<div class="muted">source languages: ${langs}</div>`);
+        // Per model: how many answers came back at all, and how long they took. NOT a
+        // quality figure -- a model can answer every item fast and badly.
+        const per = {};
+        (res.items || []).forEach((it) => {
+          (it.answers || []).forEach((a) => {
+            const k = a.model || "?";
+            per[k] = per[k] || { ok: 0, err: 0, ms: 0 };
+            if (a.error) per[k].err += 1; else per[k].ok += 1;
+            per[k].ms += (a.wall_s || 0) * 1000;
+          });
+        });
+        Object.keys(per).sort().forEach((m) => {
+          const p = per[m];
+          const failed = p.err ? ` · <span class="warn">${p.err} failed</span>` : "";
+          rows.push(`<div><b>${esc(m)}</b> — ${p.ok} answered${failed} · `
+            + `${(p.ms / 1000).toFixed(1)}s total</div>`);
+        });
+        rows.push(`<div class="hint" style="margin-top:4px">${esc(res.caveat || "")}</div>`);
+        out.innerHTML = rows.join("");
+    }
+
+    async function tpRun(btn) {
+        const st = $("tp-status");
+        const n = parseInt(($("tp-articles") || {}).value, 10);
+        const tg = parseInt(($("tp-targets") || {}).value, 10);
+        if (btn) btn.disabled = true;
+        if (st) st.textContent = "running — this can take a few minutes";
+        try {
+          const res = await api("/api/diagnostics/translation-probe", {
+            method: "POST",
+            body: JSON.stringify({
+              n_articles: isFinite(n) ? n : 6,
+              targets_per_source: isFinite(tg) ? tg : 3,
+            }),
+          });
+          _tpRender(res);
+          if (st) st.textContent = res && res.available === false ? "nothing to ask" : "done";
+        } catch (e) {
+          if (st) st.textContent = "";
+          if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
+        } finally {
+          if (btn) btn.disabled = false;
+        }
+    }
+
     // ---- ONE BUTTON: every AI check, one report ---------------------------- //
     // Maintainer 2026-08-09: "Can you simplify all AI related diagnostics into one
     // single button to test everything at once?" A background job, because the
