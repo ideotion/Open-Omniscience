@@ -544,22 +544,75 @@ def _fts_insert_suspended(con: sqlite3.Connection):
     pass a working copy whose trigger is missing, so a copy that somehow lost it
     can never be swapped in.
     """
-    row = con.execute(
-        "SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?",
-        (_FTS_INSERT_TRIGGER,),
-    ).fetchone()
-    if not row or not row[0]:
+    ddl = _fts_insert_trigger_ddl(con)
+    if not ddl:
         # No FTS on this corpus (or a build without the trigger): nothing to
         # suspend, and nothing to restore. Never fabricate a trigger we did not
         # find -- creating one here would add indexing to a corpus that had none.
         yield False
         return
-    ddl = row[0]
     con.execute(f"DROP TRIGGER {_FTS_INSERT_TRIGGER}")
     try:
         yield True
     finally:
+        # NOT sufficient on its own when the merge fails -- see
+        # _restore_fts_insert_trigger, which merge_corpus calls AFTER its rollback.
         con.execute(ddl)
+
+
+def _fts_insert_trigger_ddl(con) -> str | None:
+    """The CREATE statement for the FTS insert trigger, or None if this corpus has none.
+
+    Read from ``sqlite_master`` rather than from a copy of fts.py's DDL: a second copy
+    would drift, and this cannot.
+    """
+    row = con.execute(
+        "SELECT sql FROM sqlite_master WHERE type='trigger' AND name=?",
+        (_FTS_INSERT_TRIGGER,),
+    ).fetchone()
+    return row[0] if row and row[0] else None
+
+
+def _restore_fts_insert_trigger(con, ddl: str | None) -> bool:
+    """Put the FTS insert trigger back AFTER a failed merge has rolled back.
+
+    THE BUG THIS EXISTS FOR. ``_suspend_fts_insert_trigger`` restores the trigger in a
+    ``finally``, and for a long time that read as sufficient. It is not, and the 2026-08-07
+    finding already recorded half of why: on a failed merge what actually put the trigger
+    back was SQLite's TRANSACTIONAL DDL rolling the DROP away, not the finally -- the
+    finally's CREATE runs while the transaction is still open, and the merge's own ROLLBACK
+    then undoes it moments later. The two mechanisms happened to cover for each other.
+
+    Windowing broke that. A windowed step COMMITs and reopens (B1/B5), so on any corpus
+    large enough to window -- which is every real field corpus -- the DROP is already
+    durable by the time a later step fails. The rollback can no longer undo it, and it
+    undoes the finally's CREATE instead. Probed directly: force one id per window, fail a
+    step, and the working copy comes back with no FTS insert trigger.
+
+    It failed CLOSED, which is why it stayed hidden: the working copy is disposable, and
+    ``verify_copy`` refuses to pass a copy whose trigger is missing, so a trigger-less copy
+    could never be swapped in. The cost was wasted work and a confusing refusal, not data.
+
+    Called after the ROLLBACK, where ``isolation_level = None`` puts the connection back in
+    autocommit, so the CREATE is durable immediately. Idempotent: it re-reads first and
+    does nothing when the rollback already restored the trigger (the small-corpus case,
+    where nothing ever committed). Best-effort by construction -- a failure here must never
+    replace the exception the operator actually needs to see, and cannot make anything
+    worse than the state it was called to repair.
+
+    Returns True only when it actually created the trigger.
+    """
+    if not ddl:
+        return False
+    try:
+        if _fts_insert_trigger_ddl(con):
+            return False  # the rollback restored it; nothing committed the DROP
+        con.execute(ddl)
+        return True
+    except Exception:  # noqa: BLE001 - never outrank the failure that brought us here
+        _LOG.warning("could not restore the FTS insert trigger after a failed merge",
+                     exc_info=True)
+        return False
 
 
 def _fts_hash_mb() -> int:
@@ -1188,6 +1241,10 @@ def merge_corpus(
             con.execute(f"PRAGMA cache_size=-{int(cache_mb) * 1024}")  # negative = KiB
         except Exception:  # noqa: BLE001 - a tuning PRAGMA must never break a merge
             pass
+    # Captured BEFORE the transaction opens, because the failure path needs it AFTER the
+    # rollback -- by then the trigger may be gone from sqlite_master and its own DDL with
+    # it. See _restore_fts_insert_trigger for why the finally alone does not cover this.
+    fts_trigger_ddl = _fts_insert_trigger_ddl(con)
     try:
         con.execute("PRAGMA foreign_keys=OFF")  # order is FK-safe; checked at the end
         attach(con, staged_corpus, "inc")  # staged members are plaintext by design
@@ -1313,6 +1370,10 @@ def merge_corpus(
         # the abort. A best-effort cleanup must never outrank the cause.
         with suppress(Exception):
             con.execute("ROLLBACK")
+        # AFTER the rollback, never before: the rollback is what undoes the finally's
+        # own CREATE whenever a windowed step already committed the DROP. Idempotent and
+        # best-effort -- it must never replace the failure above.
+        _restore_fts_insert_trigger(con, fts_trigger_ddl)
         raise
     finally:
         con.close()

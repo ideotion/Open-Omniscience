@@ -3075,6 +3075,30 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     `ast.Call` for the `src=` keyword), and add the NEGATIVE-SPACE TWIN asserting an
     unwindowed inline rep still exists somewhere, or "correctly scoped" and "matches
     nothing anywhere" stay indistinguishable.
+  - **TWO MECHANISMS THAT COVER FOR EACH OTHER BOTH FAIL WHEN ONE OF THEM MOVES
+    (2026-08-10, the FTS trigger after a windowed merge):** the entry below records that a
+    merge-level test of the trigger-restoring `finally` proves the ROLLBACK, not the
+    `finally` — SQLite's transactional DDL rolls the DROP away, while the `finally`'s
+    CREATE runs inside the still-open transaction and is undone moments later. That was
+    read as "belt and braces". It was the opposite: ONE working mechanism and one inert
+    one, and which was which depended on nothing committing in between. WINDOWING then
+    committed in between — a windowed step COMMITs and reopens, so on any corpus large
+    enough to window (every real field corpus) the DROP is durable by the time a later
+    step fails, the rollback can no longer undo it, and it undoes the CREATE instead.
+    Both mechanisms fail together and the working copy comes back unable to index.
+    Probed rather than argued: force one id per window, fail a step, trigger gone.
+    THE REASON IT STAYED HIDDEN IS ALSO THE REASON IT WAS CHEAP — it fails CLOSED
+    (`verify_copy` refuses a trigger-less copy, and a failed merge's working copy is
+    disposable), so it cost wasted work and a confusing refusal rather than data; a
+    fail-closed bug has no symptom until someone measures for it. FIX: capture the DDL
+    before the transaction opens and re-create AFTER the rollback, where
+    `isolation_level = None` leaves the connection in autocommit so the CREATE is durable
+    immediately; idempotent, so the small-corpus case where the rollback already restored
+    it is a no-op, and best-effort, so it can never replace the failure that brought it
+    there. GENERAL FORM: when a property is upheld by two mechanisms, find out which one
+    actually holds it and under what precondition — "there are two" is not redundancy if
+    both depend on the same thing, and a change elsewhere (here, committing mid-step for
+    memory reasons) can retire both at once without touching either.
   - **SQLite DDL IS TRANSACTIONAL, so a merge-level test of a `finally` that restores a
     dropped trigger proves the ROLLBACK, not the `finally` (2026-08-07, B6):** the guard
     for "the FTS insert trigger is always restored" passed against the mutation that
