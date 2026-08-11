@@ -419,7 +419,7 @@ def merge_batches(limit: int = 20) -> dict:
 # public, re-downloadable blobs are copied as-is (the encrypted corpus stays in
 # oo-backup-2); the copy is a pausable, task-manager-visible job.
 # --------------------------------------------------------------------------- #
-_FOLDER_CATEGORIES = ("wiki_dumps", "osm_regions", "models")
+_FOLDER_CATEGORIES = ("wiki_dumps", "osm_regions", "models", "hf_models")
 
 
 class FolderBackupBody(BaseModel):
@@ -466,6 +466,7 @@ def folder_backup_plan(body: FolderBackupBody) -> dict:
         include_wiki="wiki_dumps" in cats,
         include_osm="osm_regions" in cats,
         include_models="models" in cats,
+        include_hf="hf_models" in cats,
     )
     per_cat: dict[str, dict] = {}
     for c in cats:
