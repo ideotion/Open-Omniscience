@@ -4647,3 +4647,40 @@ to a head-cut) fails five guards across all three sweeps; mutating the script re
 to a constant fails the CJK guard; re-adding `budget_chars=budget` at a batch call site
 fails the pinning guard. Ruff clean, mypy 127 = baseline, bandit rc 0, i18n 100% with
 both ratchets run separately (569 / 301, unchanged — no frontend touched).
+
+### 2026-08-11 — Settings: Diagnostics moves to Advanced, and a section title outranks its contents
+
+Two maintainer asks in one surface. **The move:** the whole `#diagnostics-panel` left
+Data & backup — which is where a corpus goes in and out — for a new folded
+`<details data-adv="diagnostics">` in Advanced, where the plumbing lives (invariant #8).
+It moved WHOLE, pinned by an absorption guard over nine ids and five endpoint buttons,
+with the negative-space twin that import, the mailbox pull and the newsletter removal
+stayed put. It needs no `_ADV_LOADERS` entry: every report in it is button-driven, so
+folded-must-not-mean-fetched holds by construction, and a test says that adding a loader
+has to be a deliberate edit rather than a refactor. It sits SECOND to last — the existing
+invariant that the Bulletin stays at the very bottom (design record §16) caught the first
+cut, and an existing ruling is honoured rather than overridden.
+
+**The typography**, and the part worth keeping: the reported confusion had a mechanical
+cause neither a code review nor a source grep would surface. `class="small"` is used 35
+times and was **defined nowhere**, so 32 Settings elements rendered at the full 15px body
+size — several of them `font-weight:600` as ad-hoc sub-headings — above section titles set
+to 12.5px in `--muted`; and a bare `<h3>` takes the browser's `1.17em`, so every
+sub-heading shouted over the title it sat under. Both lessons are in the Session-rituals
+list: a class with no rule is a lie the markup keeps telling, and encoding rank as letter
+case is invisible in five of the twelve locales (`uppercase` is a no-op in ar/zh/ja/hi/bn,
+so the old small-caps title degraded to small dim text there). The new scale steps on size
+and weight only — 18 fold / 17 section / 15.5 sub-section / 15 body / 12.5 small / 12 hint
+— and the guard asserts the ORDERING of the declared sizes rather than any number.
+
+Four mutations each redden exactly one test: the `.small` rule removed, `h2` shrunk back
+to 12.5px, `uppercase` reinstated, and one diagnostic left behind in Data & backup. One
+trap caught in my own test on the way: `_view_of` reads the FIRST occurrence, and
+`/api/insights/lunar-correlation` also appears in prose above the first Settings view, so
+the anchor had to become the unique `window.open(...)` call — the recorded
+needle-must-be-unique class, in a test written to check a move.
+
+Scoped to Settings because that is what was asked; the same inversion exists on panels
+elsewhere in the app and is flagged rather than swept in. Two new strings keyed ×12 by
+textual insert (+2/−0 per locale), derived from the existing reviewed "Diagnostics log"
+translations. Every frontend slice here is BROWSER-UNVERIFIED per fork-3.

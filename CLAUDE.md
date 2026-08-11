@@ -3141,6 +3141,35 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     — a CI-shaped accident — so it also got a stub test that reaches it on every platform.
     When a guard fails only on CI, ask whether its branch has any deterministic driver at
     all; if not, the fix is a second test, not a better assertion.
+  - **A CLASS WITH NO RULE IS A LIE THE MARKUP KEEPS TELLING — grep the stylesheet for
+    every hook you are reading, not just the ones you are writing (2026-08-11, "some
+    inner parts of the sections appear bigger or brighter than section titles"):**
+    `class="small"` appears 35 times in `index.html`, 32 of them in Settings, and had
+    **no rule anywhere in the tree** — so every element an author marked small rendered
+    at the full 15px body size, and the several that also carry `font-weight:600` as an
+    ad-hoc sub-heading were therefore *louder* than the `.panel h2` above them (12.5px,
+    `--muted`). Reading the markup told you the opposite of what the screen showed, which
+    is why this survived every review of the HTML: the defect is not in any line you can
+    point at, it is in a line that does not exist. Defining it is a bug fix rather than a
+    restyle — a missing `font-size` can only ever have made text *bigger* than intended,
+    so supplying one can only reduce visual weight and can never overflow a layout. THE
+    GENERAL FORM: before trusting what a class name says an element looks like, confirm
+    the class is defined; and when a report is about relative prominence, measure the
+    computed scale rather than reading the intent off the attributes.
+  - **ENCODING RANK AS LETTER CASE IS INVISIBLE IN FIVE OF THE TWELVE LOCALES (2026-08-11,
+    the same pass):** `.panel h2` said "section title" with `text-transform:uppercase` +
+    `letter-spacing` at 12.5px in `--muted` — a small-caps label, which reads as a heading
+    in Latin script and as **nothing at all** in Arabic, Chinese, Japanese, Hindi and
+    Bengali, where `uppercase` is a no-op. So in five of the twelve locales this ships in,
+    the title degraded to small dim text while every heading below it kept its size and
+    weight. A hierarchy that has to survive translation steps on SIZE and WEIGHT only;
+    case is decoration, never structure. The guard asserts the ORDERING of the declared
+    sizes (fold > section > sub-section > body > small > hint) rather than any particular
+    number, so it fails for the reason it is named — something inside a section grew past
+    the section's own title — and separately forbids a heading from leaning on case again.
+    COROLLARY worth keeping: a bare `<h3>` inherits the browser's `1.17em`, so in any
+    design whose own headings are *smaller* than body text, every unstyled sub-heading is
+    automatically the loudest thing on the page.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
