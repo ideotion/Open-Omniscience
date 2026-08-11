@@ -122,7 +122,13 @@ def test_a_record_that_cannot_say_claims_nothing_either_way():
     assert _is_ratio(mute) is None
     text = render(_edition([mute]), "markdown")
     assert "88 mentions" in text
-    assert "3.2" not in text
+    # NOT `"3.2" not in text`. That was the first draft, and it matched the footer's
+    # generation timestamp — 2026-08-11T09:08:53.267792 contains "3.2" — so the guard
+    # failed whenever the microseconds happened to spell it, roughly one run in eight,
+    # which under random test ordering looked exactly like an order-dependency. A
+    # must-be-absent needle has to be one nothing else in the document can produce.
+    assert "(×" not in text, "no multiple may be claimed for a row that cannot prove one"
+    assert "vs the prior period" not in text
     assert "None" not in text
 
 

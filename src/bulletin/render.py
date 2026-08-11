@@ -127,6 +127,7 @@ def render_markdown(edition: dict) -> str:
         if (edition.get("stories") or {}).get("caveat"):
             out += [f"> {edition['stories']['caveat']}", ""]
 
+    out += _md_worklist(edition)
     out += _md_references(edition)
     out += ["## Methods & caveats", ""]
     if edition.get("method"):
@@ -556,7 +557,7 @@ def _cards_blocks(section: dict) -> list[tuple[str | None, str, list[str]]]:
                 lines.append(f"- Bucket: {card['bucket']}")
             if card.get("method"):
                 lines.append(f"- Method: {card['method']}")
-            arts = card.get("articles") or []
+            arts = card.get("article_rows") or []
             total = card.get("corpus_articles")
             if arts:
                 if isinstance(total, int) and total > len(arts):
@@ -692,6 +693,73 @@ def _md_story(story: dict) -> list[str]:
             if nar.get("fallback_reason"):
                 out += [f"*No model text: {nar['fallback_reason']}.*", ""]
     return out
+
+
+def _worklist_lines(edition: dict) -> list[str]:
+    """Phase 2 as a plan, shared by both renderers. Empty when none is attached.
+
+    It prints only when a caller has attached one, because phase 2 is an OPTION
+    offered after phase 1 exists — that is the whole shape of the two-phase design.
+    The heading says PLAN and the first line says nothing has run, in that order,
+    because a reader skimming headings must not mistake a proposal for a result.
+    """
+    plan = edition.get("ai_worklist") or {}
+    jobs = plan.get("jobs") or []
+    if not plan:
+        return []
+    lines = [
+        "*A PLAN — nothing below has run. Phase 1 above is a complete document "
+        "without any of it.*",
+        "",
+    ]
+    if not jobs:
+        lines += ["Nothing for a local model to add to this edition.", ""]
+        return lines
+    for job in jobs:
+        lines.append(f"**{job.get('what')}**")
+        lines.append("")
+        lines.append(
+            f"- {_fmt(job.get('units'))} unit(s), {_fmt(job.get('calls'))} model call(s)"
+        )
+        if job.get("articles_total") is not None:
+            lines.append(f"- Over {_fmt(job['articles_total'])} articles in total")
+        if job.get("already_done"):
+            lines.append(f"- Already done in this edition: {_fmt(job['already_done'])}")
+        if job.get("already_in_target") is not None:
+            lines.append(f"- Already in the target language: {_fmt(job['already_in_target'])}")
+        if job.get("language_unknown"):
+            lines.append(
+                f"- Language not recorded, so not assumed either way: "
+                f"{_fmt(job['language_unknown'])}"
+            )
+        corpora = job.get("corpora") or []
+        if corpora:
+            head = ", ".join(
+                f"{c.get('label')} ({_fmt(c.get('articles'))})" for c in corpora[:6]
+            )
+            tail = f" … and {len(corpora) - 6} more" if len(corpora) > 6 else ""
+            lines.append(f"- Corpora: {head}{tail}")
+        lines.append(f"- Adds: {job.get('adds')}")
+        lines.append(f"- If skipped: {job.get('if_skipped')}")
+        lines.append("")
+
+    dur = plan.get("duration") or {}
+    total = f"**Total: {_fmt(plan.get('calls_total'))} model call(s).**"
+    if dur.get("known"):
+        mins = (dur.get("seconds") or 0) / 60.0
+        lines += [f"{total} About {mins:.0f} minute(s) — {dur.get('method')}", ""]
+    else:
+        lines += [f"{total} No duration is offered: {dur.get('reason')}", ""]
+    if plan.get("caveat"):
+        lines += [f"> {plan['caveat']}", ""]
+    return lines
+
+
+def _md_worklist(edition: dict) -> list[str]:
+    lines = _worklist_lines(edition)
+    if not lines:
+        return []
+    return ["## What the local AI could add — a plan", ""] + lines
 
 
 def _md_references(edition: dict) -> list[str]:
@@ -860,6 +928,11 @@ def render_html(edition: dict) -> str:
         cav = (edition.get("stories") or {}).get("caveat")
         if cav:
             body.append(f'<p class="caveat">{_e(cav)}</p>')
+
+    plan_lines = _worklist_lines(edition)
+    if plan_lines:
+        body.append("<h2>What the local AI could add — a plan</h2>")
+        body.extend(_html_lines(plan_lines))
 
     top = m.get("top_sources") or []
     if top:

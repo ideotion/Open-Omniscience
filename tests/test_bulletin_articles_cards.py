@@ -136,7 +136,7 @@ def test_an_article_links_to_its_original_and_never_to_a_local_id(corpus, fmt):
             "title": "retraites is rising", "summary": "s", "bucket": "rising",
             "signal": {"metric": "mentions", "value": 7}, "signal_line": "metric mentions",
             "method": "m", "caveat": "c", "n": 7, "corpus_articles": 1,
-            "articles": article_rows(corpus, [1]),
+            "article_rows": article_rows(corpus, [1]),
         }]}],
         "caveat": "cards are as observed at generation",
     }
@@ -147,6 +147,33 @@ def test_an_article_links_to_its_original_and_never_to_a_local_id(corpus, fmt):
     assert "/api/articles/" not in text
     assert "Grève des retraites" in text
     assert "A. Dupont" in text
+
+
+def test_describing_a_storys_articles_does_not_overwrite_its_count(corpus, monkeypatch):
+    """``story["articles"]`` is the article COUNT and always was — the story header
+    prints it. Attaching the described rows under that same key replaced an int with a
+    list, so every story header rendered "— articles", and none of the tests written
+    for the feature could see it: they asserted the deterministic sentence, which is
+    built before the overwrite. One key, two meanings, again.
+    """
+    from src.bulletin.edition import build_edition
+    from src.bulletin.render import render_markdown
+
+    monkeypatch.setattr(
+        "src.bulletin.stories.build_stories",
+        lambda *_a, **_k: {
+            "stories": [{"article_ids": [1], "articles": 1, "distinct_sources": 1,
+                         "sources": ["Le Monde"], "shared_terms": ["retraites"],
+                         "single_source": True}],
+            "stories_found": 1, "stories_shown": 1,
+        },
+    )
+    ed = build_edition(corpus, resolve_period("weekly", end=date(2026, 8, 11)))
+    story = ed["stories"]["stories"][0]
+    assert story["articles"] == 1, "the count must survive"
+    assert isinstance(story["article_rows"], list), "the rows get their own key"
+    assert story["article_rows"][0]["title"] == "Grève des retraites"
+    assert "1 articles" in render_markdown(ed), "and the header still prints the count"
 
 
 # --------------------------------------------------------------------------- #
@@ -190,7 +217,7 @@ def test_a_card_with_no_fixed_article_set_says_why(corpus):
         "types": [{"type": "reading_diet", "cards_found": 1, "cards_shown": 1, "cards": [{
             "title": "your reading diet", "summary": "s", "bucket": "context",
             "signal": {"metric": "share", "value": 0.14}, "signal_line": "metric share",
-            "method": "m", "caveat": "c", "n": 2117, "corpus_articles": 0, "articles": [],
+            "method": "m", "caveat": "c", "n": 2117, "corpus_articles": 0, "article_rows": [],
         }]}],
     }
     text = render({"period": {"cadence": "weekly", "start": "2026-08-04",

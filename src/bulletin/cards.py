@@ -125,7 +125,7 @@ def cards_by_type(
                 # what the document shows. Both counts travel, so a reader can see
                 # that a card built from 115 articles is showing four of them.
                 "corpus_articles": len(ids),
-                "articles": article_rows(
+                "article_rows": article_rows(
                     session,
                     ids,
                     limit=int(articles_per_card),

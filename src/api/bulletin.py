@@ -159,12 +159,51 @@ def _selection(exclude_sections: str, exclude_stories: str) -> dict:
     }
 
 
+@router.get("/editions/{filename}/ai-plan")
+def ai_plan(
+    filename: str,
+    target_lang: str = Query("", description="also plan translating the named articles into this"),
+    per_call_s: float = Query(
+        0.0, description="seconds per model call MEASURED on this machine; 0 = unknown"
+    ),
+    concurrency: int = Query(1, ge=1, le=16, description="lanes the backend would run"),
+) -> dict:
+    """Phase 2, as a plan: what a local model would be asked to do for this edition.
+
+    The maintainer's two-phase design puts this AFTER phase 1 exists — "an option
+    appearing after phase 1 has been produced" — so it is computed from the
+    persisted record rather than offered before there is anything to enhance. It is
+    a read: pure arithmetic over the edition dict, no model, no DB, nothing started.
+
+    ``per_call_s`` must be MEASURED on this machine (Settings → Advanced →
+    Diagnostics → the LLM latency bench). Without it the plan reports the exact
+    call count and refuses a duration, which is the honest answer on hardware
+    nothing has timed.
+    """
+    from src.bulletin.store import read_edition
+    from src.bulletin.worklist import ai_worklist
+
+    _require_gate()
+    try:
+        edition = read_edition(filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="no such edition") from exc
+    return ai_worklist(
+        edition,
+        target_lang=target_lang or None,
+        per_call_s=per_call_s or None,
+        concurrency=concurrency,
+    )
+
+
 @router.get("/editions/{filename}/render")
 def render_edition(
     filename: str,
     fmt: str = Query("html", description="html | markdown"),
     exclude_sections: str = Query("", description="comma-separated section keys to leave out"),
     exclude_stories: str = Query("", description="comma-separated story keys to leave out"),
+    include_plan: bool = Query(False, description="append the phase-2 plan to the document"),
+    target_lang: str = Query("", description="with include_plan: also plan translations"),
 ):
     """Render a persisted edition as a self-contained page or as Markdown.
 
@@ -179,6 +218,14 @@ def render_edition(
 
     Published output carries EXTERNAL identity only — a local article id resolves
     to a different article on a recipient's install, so it never leaves here.
+
+    ``include_plan`` appends phase 2 as a PLAN, clearly labelled as one. It takes no
+    ``per_call_s``, deliberately: a duration is a measurement of THIS machine, and a
+    rendered document travels — a recipient reading "about twelve minutes" would read
+    it as a property of the work rather than of somebody else's hardware. The call
+    count is exact and hardware-independent, so that is what the document states. The
+    JSON route above is where a measured duration belongs, because it answers to the
+    operator sitting in front of the machine it was measured on.
     """
     from fastapi.responses import HTMLResponse, PlainTextResponse
 
@@ -193,6 +240,15 @@ def render_edition(
         raise HTTPException(status_code=404, detail="no such edition") from exc
 
     edition = apply_selection(edition, **_selection(exclude_sections, exclude_stories))
+
+    if include_plan:
+        # AFTER the selection, never before: the plan describes the work for the
+        # document as it will be published, so a section the operator excluded must
+        # not appear in it as work to do. In memory only — the plan is derived FROM
+        # the record and never becomes part of it.
+        from src.bulletin.worklist import ai_worklist
+
+        edition["ai_worklist"] = ai_worklist(edition, target_lang=target_lang or None)
 
     try:
         text = render(edition, fmt)

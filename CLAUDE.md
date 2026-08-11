@@ -3341,6 +3341,81 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     docstring that it is shared "so the two can never drift", which is exactly the argument
     for sharing this one too.
 
+  - **ONE KEY, TWO MEANINGS — THE COUNT AND THE THING COUNTED (2026-08-11, my own bug,
+    caught by a stack trace rather than by any of the tests I had just written):**
+    `story["articles"]` is the article COUNT and always was; the story header prints it.
+    Attaching the newly-described article ROWS under that same key replaced an int with a
+    list, so every story header rendered an em dash — and none of the fourteen tests
+    written for the feature could see it, because they assert the deterministic sentence,
+    which is composed BEFORE the overwrite. It surfaced only when a second consumer
+    (`worklist`) tried to iterate the count. TWO RULES. (a) Before writing a new key into
+    an existing payload, grep for that key: a name that already means a quantity cannot
+    also mean the collection it quantifies (the fix is `article_rows` everywhere, with
+    `corpus_articles` for the count, so one name means one thing across two new modules).
+    (b) A feature's own tests cluster around the feature's own output and will happily
+    step over damage to the payload it shares — the guard that catches this asserts the
+    NEIGHBOURING field still renders, not the new one.
+  - **A BARE DECIMAL AS A "MUST BE ABSENT" NEEDLE MATCHES THE GENERATION TIMESTAMP, WHICH
+    LOOKS EXACTLY LIKE AN ORDER-DEPENDENCY (2026-08-11):** `assert "3.2" not in text` over
+    a rendered document failed about one run in eight, because the footer carries
+    `2026-08-11T09:08:53.267792` and `53.2` contains it. Under `pytest-randomly` that
+    presents as a flaky order-dependent failure and sends you hunting for cross-test
+    pollution; the cause is the CLOCK. This is the recorded "a whole-file substring
+    assertion is only as meaningful as that string's uniqueness" trap meeting the recorded
+    "never compare a hardcoded value against a real-`now` marker" one. Assert the property
+    with a needle nothing else in the document can produce — here `"(×"`, which cannot
+    occur in an ISO timestamp — or scope the assertion to the section.
+  - **A NOTE THAT ONLY PRINTS WHEN THERE IS OUTPUT IS MISSING FROM THE ONE CASE IT EXISTS
+    FOR (2026-08-11, the bulletin's card section):** the truncation note ("the budget
+    stopped further producers, so this is a partial set") was rendered inside the branch
+    that iterates the section's blocks — so a run whose budget stopped EVERY producer
+    produced no blocks, printed "Nothing to report for this period", and the note never
+    appeared. A budget reading as a quiet corpus is precisely the misreading the note was
+    written to prevent. GENERAL FORM: a disclosure about why output is short must be
+    keyed on the section EXISTING, never on it having produced anything — and the
+    same applies to an empty state, which is why both renderers now dispatch on the
+    section's own fields rather than on whether a block list came back non-empty.
+  - **A FEATURE'S OWN TESTS SUPPLY THE INPUT ITS MISSING CALLER WAS SUPPOSED TO, SO A
+    FULLY-TESTED CAPABILITY CAN BE UNREACHABLE (2026-08-11, the bulletin's phase-2
+    worklist):** `ai_worklist` was pure, seventeen tests green, and the renderer read
+    `edition["ai_worklist"]` — but nothing in `src/` ever WROTE that key. Every test
+    set it itself, which is exactly what hid the gap: the tests were the caller. The
+    maintainer's design says phase 2 is "an option appearing after phase 1 has been
+    produced", and it could never appear. This is the recorded dead-end shape (a
+    machine-readable refusal whose flag no caller sends; a tri-state nothing reads)
+    with a new tell worth naming: **when a renderer reads a key, grep for what writes
+    it, and count callers OUTSIDE the test tree.** The fix's own shape carries three
+    rules — compute the derived view from the PERSISTED record rather than attaching
+    it at generation (that is what "after phase 1" means, and it keeps a proposal out
+    of a record of measurements); apply it AFTER the operator's exclusions, since a
+    section they cut must not be offered as work; and do NOT let a
+    measured-on-this-machine duration into an artifact that travels, because a
+    recipient reads "about twelve minutes" as a property of the work rather than of
+    somebody else's hardware — the exact call COUNT is hardware-independent and is
+    what the document states.
+  - **MUTATION-TESTING AN UNTRACKED FILE CANNOT BE UNDONE WITH `git checkout`, AND THE
+    RESTORE FAILS SILENTLY (2026-08-11, same slice):** the house discipline is to
+    neuter the fix and confirm the guard reddens. Doing that to a brand-new module —
+    still `??` in `git status` — and then running `git checkout <path>` leaves the
+    MUTANT in the tree: git errors on a path it has never tracked, and inside a `||`
+    chain that error is swallowed. The two tests went red exactly as predicted, which
+    is precisely what makes it feel finished; a later grep found `"needs": False` still
+    sitting in the source. RULE: `cp` the file aside before mutating it, restore from
+    the copy, and VERIFY the restore (`git status` / re-run the suite green) rather
+    than trusting the revert command — for a tracked file too, since the same `||`
+    swallow applies.
+  - **`read_text()` NORMALISES LINE ENDINGS, SO APPENDING ONE ROW REWROTE SEVEN
+    (2026-08-11, `shipped.csv`):** the recorded "never re-serialise a curated file to
+    edit one entry" lesson has a quieter form than `sort_keys=True`. Python's
+    `read_text()` opens in universal-newline mode, so a `read_text` → edit →
+    `write_text` round-trip silently converts every `\r\n` to `\n` — and this CSV is
+    mixed (643 LF, 9 CRLF, from years of different sessions). One appended row came
+    out as **10 added / 9 deleted**, with seven rows nobody had touched sitting in the
+    diff looking edited. The tell is a numstat whose deletions exceed what you changed;
+    the fix is to edit in BINARY (`read_bytes`/`write_bytes`) so untouched lines stay
+    byte-identical, and `git diff --ignore-cr-at-eol --numstat` is what proves it. A
+    line ending is content in a file whose diff people read.
+
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
   the MEASUREMENT shipped, the two structural changes did NOT — deliberately, and the
