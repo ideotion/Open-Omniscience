@@ -44,6 +44,7 @@ from typing import Any
 
 from src.database.models import (
     Article,
+    ArticleAnalysis,
     ArticleEntity,
     ArticleMentionedDate,
     ArticleMentionedPlace,
@@ -266,6 +267,68 @@ def article_rows(
             }
         )
     return rows
+
+
+def article_bodies(session, article_ids: list[int]) -> dict[int, str]:
+    """The full stored text of each article, for the annexes bundle.
+
+    Kept OUT of ``article_rows`` deliberately: the document carries an excerpt, and a
+    render path that decrypted every full body to show four hundred characters of it
+    would pay the codec for text it throws away. The annexes ask for the whole thing
+    and pay for it there.
+
+    PRESENT-BUT-EMPTY AND ABSENT MEAN DIFFERENT THINGS. An article whose stored text
+    is genuinely empty maps to ``""``; one whose text could not be read — or which is
+    quarantined, or no longer in the corpus — is OMITTED. Collapsing the two would
+    make the caller tell a reader "this could not be read" about an article that
+    simply has no body, which is a different fact.
+    """
+    out: dict[int, str] = {}
+    ids = [int(i) for i in (article_ids or [])]
+    for chunk in _chunks(ids):
+        for art in session.query(Article).filter(
+            Article.id.in_(chunk), Article.quarantined.isnot(True)
+        ):
+            try:
+                out[int(art.id)] = art.get_content() or ""
+            except Exception:  # noqa: BLE001 - one unreadable body never costs the rest
+                _LOG.debug("bulletin: article %s body unreadable", art.id, exc_info=True)
+    return out
+
+
+def article_analyses(session, article_ids: list[int]) -> dict[int, list[dict]]:
+    """Stored model output per article — summaries, translations — with provenance.
+
+    Every row carries the model, the prompt version and when, because a paragraph of
+    model text with no origin cannot be told apart from something the corpus holds.
+    The translation TARGET is recovered from ``prompt_version`` (it is stored as
+    ``translate-v2:French``, provenance with no extra column) through the same parser
+    the article view uses, so a chunked run's ``+chunked-3`` suffix is not read as
+    part of the language.
+    """
+    from src.api.llm import _parse_target_language
+
+    out: dict[int, list[dict]] = {}
+    ids = [int(i) for i in (article_ids or [])]
+    for chunk in _chunks(ids):
+        rows = (
+            session.query(ArticleAnalysis)
+            .filter(ArticleAnalysis.article_id.in_(chunk))
+            .order_by(ArticleAnalysis.article_id, ArticleAnalysis.kind, ArticleAnalysis.id)
+            .all()
+        )
+        for r in rows:
+            out.setdefault(int(r.article_id), []).append(
+                {
+                    "kind": r.kind,
+                    "result": r.result,
+                    "model": r.model,
+                    "prompt_version": r.prompt_version,
+                    "target_language": _parse_target_language(r.prompt_version),
+                    "created_at": _iso(r.created_at),
+                }
+            )
+    return out
 
 
 ARTICLE_CAVEAT = (

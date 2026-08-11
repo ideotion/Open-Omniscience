@@ -3415,6 +3415,26 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the fix is to edit in BINARY (`read_bytes`/`write_bytes`) so untouched lines stay
     byte-identical, and `git diff --ignore-cr-at-eol --numstat` is what proves it. A
     line ending is content in a file whose diff people read.
+  - **A CROSS-ARTIFACT REFERENCE IS ONLY AS GOOD AS THE ROUND TRIP, AND A FILE-COUNT
+    ASSERTION CANNOT SEE THE HALF THAT BREAKS (2026-08-11, the bulletin's annexes):**
+    a report that cites `[0007]` beside a ZIP holding `…_Article_0007.md` has a
+    property no component owns — that the two are the same article — and a reader who
+    follows a reference to the wrong one has no way to notice. TWO RULES. (a) The
+    numbering lives in ONE deterministic function called by BOTH sides, never in each
+    side's own loop: two numberers agree until the day one of them walks a surface the
+    other does not. (b) The test iterates every reference the document actually PRINTS
+    and asserts a file exists that names the same article — `len(namelist()) == 3`
+    passes while the report cites two of them, which is exactly what happened here:
+    the round trip is what surfaced that `story["article_rows"]`, added a slice
+    earlier so "the document can name them", was printed by NEITHER renderer. A
+    cluster of 115 articles arrived as a count with no way in, and the bundle held
+    files nothing cited. GENERAL FORM: when two artifacts must agree, assert the
+    correspondence in the direction a reader travels, not the cardinality of either
+    end. COROLLARY on naming such a pair: derive the name from what the record SAYS
+    it covers (the period), refuse when the record cannot say (never default to
+    today — a bundle called `20260811_…` for a document about last month is a
+    filename that lies), and make a repeat's ordinal a POSITION among siblings rather
+    than a next-free counter, or re-downloading the same artifact renames it.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;

@@ -207,10 +207,12 @@ def render_edition(
 ):
     """Render a persisted edition as a self-contained page or as Markdown.
 
-    Rendering is PURE: the numbers come from the record, so re-rendering cannot
-    change one. That is what makes toggling a producer a re-render rather than a
-    re-computation, and it is why exclusions are applied HERE rather than written
-    back — output is never hand-edited.
+    EVERY FIGURE COMES FROM THE RECORD, so re-rendering cannot change one. That is
+    what makes toggling a producer a re-render rather than a re-computation, and it is
+    why exclusions are applied HERE rather than written back — output is never
+    hand-edited. The one thing rendering adds is the reference numbering, stamped onto
+    the in-memory copy read from disk; it is deterministic and goes nowhere near the
+    file.
 
     An exclusion is stated in the rendered document. The operator chooses what to
     publish, but a reader of a document that silently omits three of its seven
@@ -255,7 +257,11 @@ def render_edition(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    stem = filename.rsplit(".", 1)[0]
+    # The DOWNLOADED name is the report's own, not the record's: the record is
+    # `20260810-OOS-weekly-<id>.json` and the document an operator keeps is
+    # `20260810_OOS_Bulletin_Weekly.md`, which pairs by date and cadence with the
+    # annexes ZIP beside it.
+    stem = _bundle_stem(edition, filename)
     if (fmt or "").strip().lower() == "html":
         return HTMLResponse(
             text, headers={"Content-Disposition": f'inline; filename="{stem}.html"'}
@@ -264,6 +270,82 @@ def render_edition(
         text,
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{stem}.md"'},
+    )
+
+
+def _ordinal(filename: str) -> int:
+    from src.bulletin.annexes import edition_ordinal
+    from src.bulletin.store import list_editions
+
+    return edition_ordinal(filename, list_editions())
+
+
+def _bundle_stem(edition: dict, filename: str) -> str:
+    """The report's own filename stem, from the period the record says it covers.
+
+    A record whose period cannot be read is a 422 rather than a name built from
+    today: a bundle called `20260811_…` for a document about last month is a
+    filename that lies, and an operator keeping a year of them could not notice.
+    """
+    from src.bulletin.annexes import UnnameableEdition, bundle_stem
+
+    try:
+        return bundle_stem(edition, ordinal=_ordinal(filename))
+    except UnnameableEdition as exc:
+        raise HTTPException(status_code=422, detail=f"this edition cannot be named: {exc}") from exc
+
+
+@router.get("/editions/{filename}/annexes")
+def annexes(
+    filename: str,
+    full_text: bool = Query(True, description="carry each article's whole stored text"),
+    exclude_sections: str = Query("", description="the same selection the report was rendered with"),
+    exclude_stories: str = Query(""),
+    db: Session = Depends(get_db),
+):
+    """The report's annexes as a ZIP: one Markdown file per cited article, plus a
+    contents page.
+
+    THE SELECTION MUST MATCH THE REPORT. The reference numbers are assigned over the
+    document as it will be published, so a bundle built without the operator's
+    exclusions would number a different set — `[0007]` in the report would open the
+    wrong article, which is worse than no annexes at all. The same two query params
+    the render route takes are therefore taken here, and the frontend sends both to
+    both.
+
+    This is NOT the evidence archive. That one writes every article in the period to
+    a directory on this machine so the counts can be recomputed, and is measured in
+    gigabytes. This is the citation set of one document, small enough to download.
+    """
+    from fastapi.responses import Response
+
+    from src.bulletin.annexes import UnnameableEdition, build_annexes
+    from src.bulletin.review import apply_selection
+    from src.bulletin.store import read_edition
+
+    _require_gate()
+    try:
+        edition = read_edition(filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="no such edition") from exc
+
+    edition = apply_selection(edition, **_selection(exclude_sections, exclude_stories))
+    try:
+        out = build_annexes(
+            db, edition, ordinal=_ordinal(filename), full_text=bool(full_text)
+        )
+    except UnnameableEdition as exc:
+        raise HTTPException(status_code=422, detail=f"this edition cannot be named: {exc}") from exc
+    return Response(
+        content=out["data"],
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{out["filename"]}"',
+            # The counts a caller cannot read out of a binary body, so a UI can say
+            # what it just handed the operator instead of only that it finished.
+            "X-OO-Annex-Articles": str(out["articles"]),
+            "X-OO-Annex-Files": str(out["files"]),
+        },
     )
 
 

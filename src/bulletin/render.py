@@ -88,8 +88,38 @@ def _title(edition: dict) -> str:
 # --------------------------------------------------------------------------- #
 
 
+def _ref_legend(edition: dict) -> list[str]:
+    """Number the cited articles and explain the numbers, or say nothing.
+
+    ``assign_refs`` is called HERE rather than by the route, and by the annexes
+    builder too. It is deterministic over a record, so two callers cannot produce
+    two numberings — which is the whole reason it is not left to each of them to
+    remember. A record that names no article gets no legend and no numbers, because
+    a legend for a convention the document never uses is furniture.
+    """
+    from src.bulletin.annexes import assign_refs
+
+    n = len(assign_refs(edition))
+    if not n:
+        return []
+    return [
+        f"A number like `[0001]` beside an article is its annex file — {n:,} of them, "
+        "one per article this report cites, in the companion `…_Annexes.zip` with a "
+        "contents page. The number identifies the article, so an article cited twice "
+        "keeps one number.",
+        "",
+    ]
+
+
 def render_markdown(edition: dict) -> str:
-    """The edition as Markdown. Pure; the numbers come from the record."""
+    """The edition as Markdown. Every figure comes from the record.
+
+    ONE side effect, stated rather than left to be found: ``_ref_legend`` stamps a
+    reference number onto each row that names an article, in memory. It is
+    deterministic over a given record and never written back — the routes read a
+    fresh dict from disk — so re-rendering still cannot change a number. The earlier
+    word for this was "pure", which was true of the figures and not of the object.
+    """
     p = edition.get("period") or {}
     m = edition.get("masthead") or {}
     out: list[str] = [f"# {_title(edition)}", ""]
@@ -115,6 +145,7 @@ def render_markdown(edition: dict) -> str:
         out += [line, ""]
     if m.get("caveat"):
         out += [f"> {m['caveat']}", ""]
+    out += _ref_legend(edition)
 
     for section in edition.get("sections") or []:
         out += _md_section(section)
@@ -487,6 +518,11 @@ def _article_lines(row: dict) -> list[str]:
     title = str(row.get("title") or "(untitled)")
     url = row.get("url")
     head = f"[{title}]({url})" if url else title
+    # The reference number, when the record has been numbered. It is the article's
+    # annex filename, so a reader following `[0012]` from here opens exactly one file
+    # — which is why the numbering lives in one place and both sides call it.
+    if row.get("ref"):
+        head = f"`[{row['ref']}]` {head}"
 
     stated = [str(src.get("name") or src.get("domain") or "unknown source")]
     if asserted.get("published_at"):
@@ -692,6 +728,28 @@ def _md_story(story: dict) -> list[str]:
             out += [nar["text"], ""]
             if nar.get("fallback_reason"):
                 out += [f"*No model text: {nar['fallback_reason']}.*", ""]
+    # The story's own articles. They were added to the record so "the document can
+    # name them" and the renderer then did not, so a cluster of 115 arrived as a
+    # count with no way in — and the annexes carried files the report never cited.
+    out += _story_article_lines(story)
+    return out
+
+
+def _story_article_lines(story: dict) -> list[str]:
+    """A story's articles, shared by both renderers so neither can drop them again."""
+    rows = story.get("article_rows") or []
+    if not rows:
+        return []
+    total = story.get("articles")
+    head = (
+        f"Showing {_fmt(len(rows))} of {_fmt(total)}:"
+        if isinstance(total, int) and total > len(rows)
+        else "Articles:"
+    )
+    out = [head, ""]
+    for row in rows:
+        out += _article_lines(row)
+    out.append("")
     return out
 
 
@@ -916,6 +974,9 @@ def render_html(edition: dict) -> str:
         body.append(f'<p class="meta">{_e(line)}</p>')
     if m.get("caveat"):
         body.append(f'<p class="caveat">{_e(m["caveat"])}</p>')
+    for line in _ref_legend(edition):
+        if line:
+            body.append(f'<p class="meta">{_e(line)}</p>')
 
     for section in edition.get("sections") or []:
         body.extend(_html_section(section))
@@ -979,6 +1040,11 @@ def render_html(edition: dict) -> str:
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
 _MD_BOLD = re.compile(r"\*\*([^*]+)\*\*")
+# Deliberately tight: no whitespace and no angle brackets inside a code span, so a
+# pair can never open inside a URL and close in the prose after it. A single stray
+# backtick cannot form a pair on its own, which is the case that would otherwise
+# produce broken markup from a link this document did not write.
+_MD_CODE = re.compile(r"`([^`\s<>]+)`")
 
 
 def _inline(s: str) -> str:
@@ -991,6 +1057,7 @@ def _inline(s: str) -> str:
     the escaped text, where a link's own URL is already entity-safe.
     """
     out = _e(s)
+    out = _MD_CODE.sub(r"<code>\1</code>", out)
     out = _MD_LINK.sub(r'<a href="\2" rel="noopener nofollow">\1</a>', out)
     return _MD_BOLD.sub(r"<strong>\1</strong>", out)
 
@@ -1110,6 +1177,10 @@ def _html_story(story: dict) -> list[str]:
             out.append(f"<p>{_e(nar['text'])}</p>")
             if nar.get("fallback_reason"):
                 out.append(f'<p class="meta">No model text: {_e(nar["fallback_reason"])}.</p>')
+    lines = _story_article_lines(story)
+    if lines:
+        out.append(f'<p class="meta">{_e(lines[0])}</p>')
+        out.extend(_html_lines(lines[1:]))
     return out
 
 
