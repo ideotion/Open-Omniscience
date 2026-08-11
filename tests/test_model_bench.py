@@ -738,3 +738,96 @@ def test_the_source_tags_canary_carries_its_denominator_too(frozen) -> None:
     )
     assert "checked" in out["canary"] and "failed_n" in out["canary"]
     assert out["canary"]["failed_n"] == len(out["canary"]["failed"])
+
+
+# --------------------------------------------------------------------------- #
+#  A backend that answers but cannot serve (2026-08-11)
+# --------------------------------------------------------------------------- #
+#
+# Ollama answered /api/tags perfectly -- so three models resolved and three pairs
+# started -- and every generate returned 500 "llama-server binary not found": its
+# runner was missing from the install. Nine identical task failures were filed under
+# three model names, which reads as "these models failed". The existing guard covers
+# a backend that never came UP; this is the same failure by another route.
+
+
+def _broken_pair() -> dict:
+    err = (
+        "LLMError: Ollama error for model 'x': Server error '500 Internal Server Error' "
+        "— error starting llama-server: llama-server binary not found (checked: /usr/local/lib)"
+    )
+    return {
+        "tasks": {
+            "perception": {"status": "unavailable", "detail": err},
+            "triage": {"status": "error", "detail": err},
+            "source_tags": {"status": "error", "detail": err},
+            "langdetect": {"status": "error", "detail": err},
+            "latency": {"available": True, "shapes": [{"errors": [err]}]},
+        }
+    }
+
+
+def test_a_broken_install_is_recognised_from_a_completed_pair() -> None:
+    # The PROPERTY, not which of two synonymous signatures matched first: pinning the
+    # tuple's order would make a harmless reordering of the list a red test.
+    why = MB._backend_is_broken(_broken_pair())
+    assert why and "llama-server" in why
+
+
+def test_one_failed_task_is_not_a_broken_backend() -> None:
+    """The narrow direction, and the one that protects real models: a single task
+    failing is that task's problem. Only a TOTAL, uniform failure says the backend
+    cannot serve at all."""
+    pair = _broken_pair()
+    pair["tasks"]["triage"] = {"status": "ok", "format_validity": 0.9}
+    assert MB._backend_is_broken(pair) is None
+
+
+def test_a_model_specific_failure_is_never_called_a_broken_backend() -> None:
+    """THE NEGATIVE-SPACE TWIN. "needs more system memory than is available" is a
+    failure OF THIS MODEL — the next, smaller one may load fine. Treating it as an
+    install fault would skip models that would have worked, which is worse than the
+    repetition this saves."""
+    err = "LLMError: model requires more system memory (9.3 GiB) than is available"
+    pair = {"tasks": {k: {"status": "error", "detail": err}
+                      for k in ("perception", "triage", "source_tags", "langdetect")}}
+    assert MB._backend_is_broken(pair) is None
+
+
+def test_a_healthy_pair_is_never_flagged(frozen) -> None:
+    ok = MB.bench_one_pair(
+        _Stub(verdict="content", kind="org"), model="m", backend="ollama", batch=frozen,
+        anchors=None, repeats=1, triage_chunk=50, tasks=("triage",),
+    )
+    assert MB._backend_is_broken(ok) is None
+
+
+def test_the_remaining_models_are_skipped_with_the_install_reason(frozen, monkeypatch) -> None:
+    """The whole point: name it once, and do not re-derive the same non-result under
+    every other model's name."""
+
+    class _Broken:
+        def list_installed(self):
+            return ["a", "b", "c"]
+
+        def generate(self, prompt, **kw):
+            raise RuntimeError(
+                "Ollama error: 500 — error starting llama-server: "
+                "llama-server binary not found (checked: /usr/local/lib/ollama)"
+            )
+
+    out = MB.run_model_bench(
+        None,
+        models=["ollama|a", "ollama|b", "ollama|c"],
+        clients={"ollama": _Broken()},
+        installed_by_backend={"ollama": ["a", "b", "c"]},
+        batch=frozen,
+        tasks=("triage", "langdetect"),
+        persist=False,
+        allow_backend_switch=False,
+    )
+    assert len(out["results"]) == 1, "only the first pair is benched"
+    skipped = [s for s in out["skipped"] if s.get("reason") == "backend-cannot-serve"]
+    assert len(skipped) == 2, "the other two are skipped, not re-run"
+    assert "llama-server" in skipped[0]["detail"], "and the install reason is named"
+    assert "nothing here is a measurement" in skipped[0]["detail"]
