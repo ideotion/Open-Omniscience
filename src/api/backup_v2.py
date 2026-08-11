@@ -786,9 +786,29 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     ctx.set_progress(done=0, total=int(bk.get("articles_pending") or 0), detail="starting")
     out: dict = {"batches": [], "articles_reindexed": 0, "articles_failed": 0, "stopped": False}
     walked = 0
+
+    # YIELD TO AN IMPORT (field report 2026-08-11). An import run claims the machine --
+    # all cores, an enlarged page cache, collection paused -- and this drain is the one
+    # heavy writer that was never told. ``ReindexJobManager`` grew ``_yield_to_exclusive``
+    # for exactly this and THIS job is a different entry point, added later: the standing
+    # lesson is that the entry points added AFTER a "gate every entry point" ruling are
+    # the ones that will be missing, and here it was.
+    #
+    # STOP rather than park, because ``should_stop`` is polled inside the article loop
+    # while a park could only happen BETWEEN batches -- and a single import is a single
+    # batch, so parking would never fire on the one shape that matters. Stopping is free:
+    # the per-article watermark resumes exactly where it left off, and the import queue
+    # restarts the drain at the end of every run, so the work is deferred, never lost.
+    def _yield_to_import() -> bool:
+        return exclusive_window_open()
+
     for b in batches:
-        if ctx.stopping:
+        # Read `stopping` ONCE: re-reading it for the reason would let a cancel that
+        # landed in between relabel a yield as a cancel, or the reverse.
+        stopping = ctx.stopping
+        if stopping or _yield_to_import():
             out["stopped"] = True
+            out["paused_for_import"] = not stopping
             break
         bid = int(b["batch_id"])
         ctx.set_progress(detail=f"import {bid} ({b['articles']} article(s))")
@@ -796,7 +816,9 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         def _progress(done: int, _total: int, _base: int = walked) -> None:
             ctx.set_progress(done=_base + done)
 
-        res = reindex_imported_articles(bid, progress_cb=_progress, should_stop=lambda: ctx.stopping)
+        res = reindex_imported_articles(
+            bid, progress_cb=_progress, should_stop=lambda: ctx.stopping or _yield_to_import()
+        )
         walked += int(b["articles"])
         out["batches"].append({"batch_id": bid, **res})
         out["articles_reindexed"] += int(res.get("reindexed") or 0)
@@ -804,9 +826,14 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     # A cancel during the LAST batch leaves the loop normally, so the top-of-loop check
     # never sees it -- without this, a partial run would report stopped:false and read as
     # a completed drain. reindex_imported_articles takes should_stop, so it genuinely can
-    # return early on the final batch.
+    # return early on the final batch. The same holds for an import window opening
+    # mid-batch, and the two are reported apart: a cancel is the operator's decision, a
+    # yield is ours, and only the second one restarts itself.
     if ctx.stopping:
         out["stopped"] = True
+    elif _yield_to_import():
+        out["stopped"] = True
+        out["paused_for_import"] = True
     # Re-read rather than infer: a batch only leaves the backlog when it was stamped
     # complete, so this reports what is actually LEFT, not what we believe we did.
     after = reindex_backlog()

@@ -1096,8 +1096,16 @@
         let prog = "";
         if (j.progress && j.progress.total) {
           const pct = j.progress.percent || Math.round(100 * j.progress.done / j.progress.total);
+          // EVERY progress was formatted as BYTES, but four producers publish counts
+          // (items/stages/files/articles) -- so a re-index of 700,000 articles read
+          // "700 kB / 1.4 MB" and a one-item import read "1 B / 1 B". The unit was
+          // already travelling with the numbers; nothing read it.
+          const unit = j.progress.unit || "bytes";
+          const amount = unit === "bytes"
+            ? `${_fmtBytes(j.progress.done)} / ${_fmtBytes(j.progress.total)}`
+            : `${fmtNum(j.progress.done, 0)} / ${fmtNum(j.progress.total, 0)} ${esc(t(unit))}`;
           prog = `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>` +
-                 `<div class="muted" style="font-size:11px">${_fmtBytes(j.progress.done)} / ${_fmtBytes(j.progress.total)} · ${pct}%</div>`;
+                 `<div class="muted" style="font-size:11px">${amount} · ${pct}%</div>`;
         }
         const acts = [];
         if (j.id === "collect:current") acts.push(`<button class="tiny danger" title="${esc(t("Stopping collection engages the network kill switch — the app goes offline."))}" onclick="jobCancel('${esc(j.id)}')">${esc(t("Stop"))}</button>`);
@@ -6777,7 +6785,12 @@
         verify: t("Verifying the merge…"),
         snapshot_working_copy: t("Snapshotting your corpus…"),
         pre_restore_snapshot: t("Snapshotting your corpus…"),
-        swap: t("Committing…") };
+        swap: t("Committing…"),
+        // The import run's OWN tail phase (ImportQueueManager._tune_after_run), not
+        // one of run_restore's stages: an FTS5 'optimize' that runs once after the
+        // last item. It is single-threaded and index-scaled, so on a large corpus it
+        // is minutes of 100%-of-one-core work AFTER every item already reads "Done".
+        tuning: t("Merging the search index…") };
       // verify + restore share the phase names (verifying/reassembling); only a backup
       // uses the write-side names. Default is mode-aware so a verify never falls back to
       // "Backing up…" or shows a raw untranslated phase.
@@ -7399,7 +7412,32 @@
       if (runBtn && st.state === "running") runBtn.disabled = true;
       // The run header: what it is doing overall + the collection statement (ruling 12).
       const head = `${items.filter(i => i.state === "done").length}/${items.length} ${esc(t("imported"))}`;
+      // THE TAIL PHASE HAS TO HAVE A HOME (field report 2026-08-11). A run does not end
+      // when its last item does: _tune_after_run then merges the search index, inside the
+      // same exclusive window, for minutes on a large corpus. The per-item live block
+      // below only renders inside a row whose item is `running`, so with every item
+      // "Done" that phase had nowhere to appear -- the header read "1/1 imported", the
+      // item read "Done", collection was still paused and one core sat at 100%. The
+      // backend was already publishing it; there was simply no element to put it in.
+      const tail = items.some((i) => i.state === "running") ? "" : _uxImPhaseBits(st.live, t);
+      const tailLine = (st.state === "running" && tail) ? `<br><span class="note">${tail}</span>` : "";
+      // The RUN's bar counts STAGES, not items: with every item done the item count is
+      // 100% while the search-index merge still holds the machine, and a full bar beside
+      // a run that has not finished is exactly the claim this reports wrongly. `stages_*`
+      // is absent on an older server, and then there is simply no bar — never a fallback
+      // to the item count, which is the number being corrected.
+      const runBar = document.getElementById("ux-imp-bar");
+      if (runBar) {
+        if (st.state === "running" && st.stages_total) {
+          runBar.max = st.stages_total;
+          runBar.value = Math.min(st.stages_done || 0, st.stages_total);
+          runBar.style.display = "";
+        } else {
+          runBar.style.display = "none";
+        }
+      }
       note.innerHTML = `<b>${head}</b>${st.elapsed_s != null ? ` · ${esc(_uxImDur(st.elapsed_s))}` : ""}`
+        + tailLine
         + (st.state === "running" && st.collection_paused ? `<br>${esc(t("Background collection is paused for this whole import and resumes when it finishes."))}` : "")
         + (st.state === "interrupted" ? `<br><span class="note err">${esc(t("This import was interrupted when the app stopped. It cannot resume (the passphrase is never stored) — start it again."))}</span>` : "");
       rows.innerHTML = items.map((it) => {
@@ -7418,8 +7456,12 @@
 
     // The current PHASE's own honest unit (ruling 14) -- never a made-up percentage of
     // the whole run, whose items are different kinds of work over different units.
-    function _uxImLive(live, t) {
-      const p = (live && live.progress) || {};
+    function _uxImPhaseBits(live, t) {
+      // TWO SHAPES, one reader. A sub-job's mirrored status nests its phase under
+      // `progress`; the run's own tail phase (_tune_after_run) is a flat dict with no
+      // sub-job to mirror. Reading only the nested one silently dropped the tail phase
+      // even where it WAS rendered -- a second, independent reason it was invisible.
+      const p = (live && (live.progress || live)) || {};
       if (!p.phase) return "";
       const bits = [esc(_uxVolPhase(p.phase, "restore", t))];
       if (p.phase_index && p.phase_total) bits.push(`${p.phase_index}/${p.phase_total}`);
@@ -7427,7 +7469,15 @@
       if (p.reindex_total) {
         bits.push(`${p.reindex_done || 0}/${p.reindex_total} ${esc(t("articles"))}`);
       }
-      return ` <span class="muted">· ${bits.join(" · ")}</span>`;
+      return bits.join(" · ");
+    }
+
+    function _uxImLive(live, t) {
+      // The per-ITEM form: a trailing clause on that item's own row. The header wants
+      // the same facts without the leading separator, so the bits are shared rather
+      // than the string sliced.
+      const bits = _uxImPhaseBits(live, t);
+      return bits ? ` <span class="muted">· ${bits}</span>` : "";
     }
 
     function _uxImDur(s) {

@@ -2026,6 +2026,8 @@
   "Restore complete.": "Restauración completada.",
   "Merging (additive)…": "Fusionando (aditivo)…",
   "Re-indexing merged articles…": "Reindexando los artículos fusionados…",
+  "Merging the search index…": "Fusionando el índice de búsqueda…",
+  "Finishing the import": "Finalizando la importación",
   "Preparing…": "Preparando…",
   "Choose a destination folder.": "Elija una carpeta de destino.",
   "Choose a folder to restore from.": "Elija una carpeta desde la que restaurar.",
