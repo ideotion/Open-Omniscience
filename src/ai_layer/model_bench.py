@@ -60,7 +60,21 @@ _LOG = logging.getLogger("ai_layer.model_bench")
 MODEL_BENCH_SCHEMA = "oo-model-bench-1"
 BENCH_CURSOR_SCHEMA = "oo-model-bench-cursor-1"
 
-BENCH_TASKS: tuple[str, ...] = ("perception", "triage", "source_tags", "langdetect", "latency")
+BENCH_TASKS: tuple[str, ...] = (
+    "perception", "triage", "source_tags", "langdetect", "translation", "latency",
+)
+
+#: Tasks a MODEL should be asked for, when it should not be asked for all of them.
+#: A translation specialist scored on constrained-output triage returns near-zeros
+#: that mean "wrong tool", not "bad model" -- and a near-zero with no memory of why
+#: is the number that gets misread later (the LFM2.5-Base finding, 2026-08-02). The
+#: absence is DECLARED in the report rather than left to be inferred from a gap.
+MODEL_TASKS: dict[str, tuple[str, ...]] = {
+    # A translation model, benched on translation. Latency rides along because it is
+    # measured from the same calls the other tasks make, and speed is comparable
+    # across models whatever they are for.
+    "translategemma:4b": ("translation", "latency"),
+}
 BENCH_BACKENDS: tuple[str, ...] = ("ollama", "vllm")
 
 #: The ruled roster (ruling 15) as a REQUEST list. Nothing here asserts that a tag
@@ -116,7 +130,16 @@ DEFAULT_ROSTER: tuple[str, ...] = (
     "ollama|mistral:7b",
     "ollama|gemma4:e4b",
     "ollama|qwen3.5:4b",
-    "ollama|granite4.1",
+    # BOTH granite sizes (maintainer 2026-08-11: "benchmark both, there's no reason not
+    # to try"). There is no mechanical reason: the bench loads one model at a time and
+    # unloads between pairs, and 5.3 GB quantised fits the 8 GB card. The bare
+    # "granite4.1" this replaces resolved to granite4.1:latest, which the operator did
+    # not have -- so the exact-tag rule correctly refused it and the model was never
+    # benched at all, while two installed sizes sat unused.
+    "ollama|granite4.1:8b",
+    "ollama|granite4.1:3b",
+    # A translation specialist, scoped to the translation task by MODEL_TASKS.
+    "ollama|translategemma:4b",
 )
 
 #: Models the maintainer named whose EXACT tag could not be verified from this
@@ -504,6 +527,199 @@ def _task_source_tags(client, *, model: str, batch: dict, keep_alive: str | None
     }
 
 
+#: FIXTURE prose, not corpus. Two things make fixed English sources the right input
+#: here. The measurement is about the OUTPUT -- which language came back, and how fast
+#: -- so the source needs only to be real prose of adequate length, and writing source
+#: text in twelve languages would be exactly the fabrication the langdetect task
+#: refuses. And holding them here rather than in the frozen batch keeps every model on
+#: identical input WITHOUT changing the batch schema, so an operator's existing frozen
+#: batch (and its digest) stays valid.
+#:
+#: LENGTH IS LOAD-BEARING: the offline referee refuses under 200 characters rather than
+#: guessing, and a Chinese or Japanese translation is far more compact than its English
+#: source. Sources short enough to be convenient would leave the CJK columns
+#: permanently "unmeasurable" -- an instrument that cannot see the languages most
+#: likely to break. These are sized so a compact translation still clears the floor.
+TRANSLATION_SOURCES: tuple[str, ...] = (
+    "The transport ministry published its annual review on Tuesday, reporting that "
+    "journeys on the regional rail network rose by eleven per cent over the previous "
+    "year while punctuality fell slightly. Officials attributed the increase to lower "
+    "fares introduced in the spring and to the reopening of the coastal line, which "
+    "had been closed for repairs since the previous autumn. The review also noted that "
+    "freight volumes were broadly unchanged, and that maintenance spending had been "
+    "brought forward to reduce the number of unplanned closures. A spokesperson said "
+    "the department would consult local authorities before deciding whether to extend "
+    "the reduced fares beyond the end of the current financial year, and that the "
+    "results of that consultation would be published in full.",
+    "Researchers at the university's marine institute said this week that water "
+    "temperatures recorded at three coastal stations had remained above the seasonal "
+    "average for a fourth consecutive month. The measurements come from instruments "
+    "installed more than twenty years ago, which the team said allowed them to compare "
+    "current conditions with a long record rather than with a single earlier season. "
+    "The institute cautioned that a single run of warm months is not by itself "
+    "evidence of a longer trend, and that the readings would be reviewed alongside "
+    "data from neighbouring countries before any conclusions were drawn. A fuller "
+    "report is expected before the end of the year, and the underlying measurements "
+    "will be made available to other researchers on request.",
+)
+
+#: Targets chosen to span the SCRIPTS a translation can fail on, rather than to cover
+#: every UI language: Latin (fr, id), Cyrillic (ru), Arabic RTL (ar), Han (zh),
+#: Devanagari (hi). A model that handles these handles the shape of the problem; the
+#: remaining UI languages differ by vocabulary, not by writing system.
+TRANSLATION_TARGETS: tuple[tuple[str, str], ...] = (
+    ("fr", "French"),
+    ("ru", "Russian"),
+    ("ar", "Arabic"),
+    ("zh", "Chinese"),
+    ("hi", "Hindi"),
+    ("id", "Indonesian"),
+)
+
+#: The referee refuses below this rather than guessing. Left at the module default on
+#: purpose: lowering it to make more outputs measurable would weaken the only
+#: independent check this task has.
+_XL_MIN_CHARS = 200
+
+
+def _translate_system(target: str) -> str:
+    """The PRODUCTION translate prompt, including an operator's override when there is
+    one -- benching a prompt the app does not use would measure the wrong thing.
+
+    Falls back to the built-in default when settings cannot be read (no database in a
+    test), so the task is drivable without an app.
+    """
+    try:
+        from src.api.llm import _build_prompting
+
+        return _build_prompting("translate", target=target)[0]
+    except Exception:  # noqa: BLE001 - a settings read must not decide whether we can bench
+        from src.api.llm import _apply_target
+        from src.llm.prompts_i18n import prompt_for
+
+        return _apply_target(prompt_for("translate", None), target)
+
+
+def _norm(s: str) -> str:
+    return " ".join((s or "").split()).casefold()
+
+
+def _task_translation(client, *, model: str, keep_alive: str | None) -> dict:
+    """Does the model return the language it was asked for, and how fast.
+
+    WHAT THIS IS NOT: a fidelity score. Measuring whether a translation is *correct*
+    needs reference translations, which this corpus does not have and which cannot be
+    invented here -- a number for adequacy would be fabricated, and a fabricated
+    quality figure is worse than an absent one because it survives into decisions.
+
+    WHAT IT IS: the failure the app's translate feature actually hits. A small model
+    asked for Hindi commonly returns English, or returns the source unchanged, or
+    answers in a third language -- and each of those is decidable offline, by the
+    app's own py3langid detector, which is independent of the model being judged
+    (asking a model to grade its own output would be circular). Every count is
+    reported alone, with its n, per target language.
+    """
+    from src.analytics.langdetect import detect_language, detector_available
+
+    # THE REFEREE ITSELF CAN BE ABSENT. py3langid ships in the [analysis] extra, so
+    # a core install has no language check at all -- and without this flag every
+    # answer lands in "unmeasurable", which reads as "the model's output could not
+    # be read" when the truth is "this install cannot read anything". Two different
+    # facts about two different things must not share one sentinel.
+    referee = detector_available()
+
+    per_target: dict[str, dict] = {}
+    asked = in_target = echoed = unmeasurable = 0
+    src_chars = out_chars = 0
+    wall = 0.0
+    errors: list[str] = []
+    for code, name in TRANSLATION_TARGETS:
+        system = _translate_system(name)
+        bucket = per_target.setdefault(
+            code,
+            {"asked": 0, "in_target": 0, "in_source_language": 0,
+             "other_language": 0, "unmeasurable": 0, "echoed": 0},
+        )
+        for src in TRANSLATION_SOURCES:
+            asked += 1
+            bucket["asked"] += 1
+            t0 = time.monotonic()
+            try:
+                res = client.generate(
+                    src, model=model, system=system,
+                    options={"temperature": 0}, keep_alive=keep_alive,
+                )
+                out = (getattr(res, "text", "") or "").strip()
+            except Exception as exc:  # noqa: BLE001 - a failed call is data
+                if len(errors) < 3:
+                    errors.append(bounded_error(exc, 200))
+                continue
+            finally:
+                wall += time.monotonic() - t0
+            src_chars += len(src)
+            out_chars += len(out)
+            if _norm(out) == _norm(src):
+                echoed += 1
+                bucket["echoed"] += 1
+            got = detect_language(out, min_chars=_XL_MIN_CHARS)
+            if got is None:
+                unmeasurable += 1
+                bucket["unmeasurable"] += 1
+            elif got == code:
+                in_target += 1
+                bucket["in_target"] += 1
+            elif got == "en":
+                bucket["in_source_language"] += 1
+            else:
+                bucket["other_language"] += 1
+    for b in per_target.values():
+        judged = b["asked"] - b["unmeasurable"]
+        # Over what was JUDGED, so an unmeasurable output is neither a pass nor a
+        # failure -- it is a gap in the referee, and saying so is the point.
+        b["in_target_rate"] = round(b["in_target"] / judged, 4) if judged else None
+    return {
+        "status": "ok",
+        "referee": {
+            "available": referee,
+            "reason": (
+                None if referee else
+                "py3langid is not installed (it ships in the [analysis] extra), so the "
+                "output language could not be checked AT ALL on this install. The "
+                "unmeasurable count below is this absence, not the models' answers; "
+                "the speed figures are unaffected, because they do not need a referee."
+            ),
+        },
+        "asked": asked,
+        "in_target": in_target,
+        "unmeasurable": unmeasurable,
+        "echoed": echoed,
+        "in_target_rate": (
+            round(in_target / (asked - unmeasurable), 4) if asked - unmeasurable else None
+        ),
+        "wall_s": round(wall, 3),
+        "source_chars_per_s": round(src_chars / wall, 1) if wall else None,
+        "output_chars_per_s": round(out_chars / wall, 1) if wall else None,
+        "by_target": per_target,
+        "errors": errors,
+        "method": (
+            "The app's PRODUCTION translate prompt (including an operator override, if "
+            f"set) over {len(TRANSLATION_SOURCES)} fixed English sources into "
+            f"{len(TRANSLATION_TARGETS)} target languages spanning six writing systems. "
+            "The output's language is read by the app's own offline py3langid detector, "
+            "which is independent of the model being judged; it refuses below "
+            f"{_XL_MIN_CHARS} characters rather than guessing, and those are counted as "
+            "unmeasurable rather than as failures."
+        ),
+        "caveat": (
+            "This is NOT a measure of translation quality. Whether a translation is "
+            "faithful needs reference translations, which this corpus does not have — "
+            "so no adequacy or fluency figure is reported, because it would be "
+            "invented. What is measured is whether the model produced the language it "
+            "was asked for, whether it returned the source unchanged, and how fast."
+        ),
+    }
+
+
 def _task_langdetect(client, *, model: str, keep_alive: str | None) -> dict:
     """Score language detection against texts whose language is already declared.
 
@@ -640,6 +856,8 @@ def bench_one_pair(
                 res = _task_source_tags(client, model=model, batch=batch, keep_alive=keep_alive)
             elif name == "langdetect":
                 res = _task_langdetect(client, model=model, keep_alive=keep_alive)
+            elif name == "translation":
+                res = _task_translation(client, model=model, keep_alive=keep_alive)
             elif name == "latency":
                 res = _task_latency(client, model=model, backend=backend, repeats=repeats)
             else:
@@ -702,6 +920,68 @@ def _backend_is_broken(pair_result: dict) -> str | None:
         else:
             return None
     return hit
+
+
+def _device_used(client, *, backend: str, model: str) -> dict:
+    """WHICH DEVICE actually served this pair — measured, not assumed.
+
+    THE CONFOUND THIS EXISTS TO EXPOSE (maintainer 2026-08-11): the bench's whole
+    purpose is comparing Ollama with vLLM on the same machine, and Ollama decides at
+    load time whether a model fits the GPU. If it silently falls back to CPU -- a
+    missing CUDA runner in its install, or another process holding the card -- then a
+    row that reads "Ollama is slower" is really "this ran on the CPU", and the
+    conclusion drawn from it would be about the wrong thing entirely. A comparison
+    across two devices is not a comparison of two backends.
+
+    Ollama reports the split itself: ``/api/ps`` gives ``size`` and ``size_vram`` per
+    resident model, so the fraction on the card is a fact we can read rather than a
+    property we have to trust. Read BEFORE the unload, while the model is still
+    resident -- afterwards there is nothing to ask about.
+
+    vLLM needs no probe: it refuses a CPU-only machine outright (``start()``), so a
+    vLLM row that exists at all ran on the GPU. Said explicitly rather than left
+    blank, because a missing field invites the reader to assume the same thing without
+    the reason.
+    """
+    if backend == "vllm":
+        return {
+            "device": "gpu",
+            "basis": "vLLM refuses to start on a CPU-only machine, so a vLLM row ran on the GPU",
+        }
+    if backend != "ollama":
+        return {"device": "unknown", "basis": f"no device probe for backend {backend!r}"}
+    try:
+        resident = client.loaded_models()
+    except Exception as exc:  # noqa: BLE001 - a probe must not fail a completed pair
+        return {"device": "unknown", "basis": bounded_error(exc, 200)}
+    for m in resident or []:
+        if m.get("model") != model:
+            continue
+        vram, size = m.get("vram_bytes"), m.get("size_bytes")
+        if not isinstance(vram, int) or not isinstance(size, int) or size <= 0:
+            return {
+                "device": "unknown",
+                "basis": "Ollama reported the model resident without a readable size split",
+            }
+        share = vram / size
+        # Ollama offloads whole layers, so a partial split is normal and meaningful --
+        # it is reported as its own state rather than rounded to one of the two ends.
+        device = "gpu" if share >= 0.99 else ("cpu" if vram == 0 else "partial")
+        return {
+            "device": device,
+            "vram_bytes": vram,
+            "size_bytes": size,
+            "vram_share": round(share, 4),
+            "basis": "Ollama's own /api/ps size_vram vs size, read while the model was resident",
+        }
+    return {
+        "device": "unknown",
+        "basis": (
+            "the model was no longer resident when the device was probed — Ollama "
+            "unloads on its own keep_alive timer, so this is a gap in the reading, "
+            "not evidence of a device"
+        ),
+    }
 
 
 def _default_unload(client, *, backend: str, model: str) -> dict:
@@ -980,6 +1260,11 @@ def run_model_bench(
                     "the server between models."
                 ),
             }
+        # A model may declare the tasks it is FOR (see MODEL_TASKS). Order is taken
+        # from the run's own task list so a scoped model still runs them in the same
+        # sequence as everything else.
+        scope = MODEL_TASKS.get(model)
+        pair_tasks = tuple(t for t in tasks if t in scope) if scope else tasks
         pair_result = bench_one_pair(
             client,
             model=model,
@@ -988,9 +1273,24 @@ def run_model_bench(
             anchors=anchors,
             repeats=repeats,
             triage_chunk=triage_chunk,
-            tasks=tasks,
+            tasks=pair_tasks,
             ctx=ctx,
         )
+        if scope:
+            # DECLARED, never left as a gap. A model with no triage number must not
+            # read as a model that failed triage -- the reason it has none is that it
+            # was not asked, and that is a different fact.
+            not_asked = [t for t in tasks if t not in pair_tasks]
+            if not_asked:
+                pair_result["tasks_not_asked"] = {
+                    "tasks": not_asked,
+                    "reason": (
+                        f"{model} is benched on {', '.join(pair_tasks)} only. Scoring a "
+                        "specialist on the constrained-output tasks it is not for "
+                        "produces near-zeros that mean 'wrong tool', not 'bad model' — "
+                        "a number that gets misread once its context is gone."
+                    ),
+                }
         if switch_note:
             pair_result["backend_switch"] = switch_note
         # A BACKEND THAT ANSWERS BUT CANNOT SERVE. The guard above catches a backend
@@ -1003,6 +1303,8 @@ def run_model_bench(
         # rather than repeating the same non-result per model.
         if (broken := _backend_is_broken(pair_result)) is not None:
             broken_backends[backend] = broken
+        # BEFORE the unload: afterwards the model is gone and there is nothing to ask.
+        pair_result["device"] = _device_used(client, backend=backend, model=model)
         try:
             pair_result["unload"] = unload(client, backend=backend, model=model)
         except Exception as exc:  # noqa: BLE001
@@ -1279,6 +1581,12 @@ _COMPARABLE: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("source_tags.format_validity", "share 0-1", ("source_tags", "format_validity")),
     ("langdetect.accuracy_over_answered", "share 0-1", ("langdetect", "accuracy_over_answered")),
     ("langdetect.accuracy_over_all", "share 0-1", ("langdetect", "accuracy_over_all")),
+    # Translation: the language the model PRODUCED, and its speed. Deliberately not a
+    # quality figure -- there is none, and there is no path to one without reference
+    # translations (see _task_translation's caveat).
+    ("translation.in_target_rate", "share 0-1", ("translation", "in_target_rate")),
+    ("translation.echoed", "count", ("translation", "echoed")),
+    ("translation.output_chars_per_s", "per second", ("translation", "output_chars_per_s")),
     ("perception.who.recall", "share 0-1", ("perception", "report", "by_field_overall", "who", "recall")),
     ("perception.who.hallucination_rate", "share 0-1", ("perception", "report", "by_field_overall", "who", "hallucination_rate")),
     ("perception.where.recall", "share 0-1", ("perception", "report", "by_field_overall", "where", "recall")),
@@ -1381,6 +1689,34 @@ def same_model_across_backends(results: dict[str, dict]) -> list[dict]:
             unit = next(m[name]["unit"] for m in per_backend.values() if name in m)
             if present:
                 metrics[name] = {"unit": unit, "by_backend": present}
+        # THE DEVICE IS PART OF THE COMPARISON, and when the two sides did not use the
+        # same one it is the LARGEST term in every timing gap. Ollama decides at load
+        # time whether a model fits the card and silently falls back to CPU; vLLM is
+        # always on the GPU. A row where one side ran on the CPU is a comparison of two
+        # DEVICES wearing the names of two backends, and reading "vLLM is faster" off
+        # it would be a conclusion about the wrong thing (maintainer 2026-08-11).
+        devices = {b: (p.get("device") or {}).get("device") for b, p in by_backend.items()}
+        known = {d for d in devices.values() if d and d != "unknown"}
+        mismatch = len(known) > 1
+        caveat = (
+            "Two builds of one model, not one model measured twice: the backends "
+            "quantize the same weights differently (see each side's quantization). A "
+            "gap is a fact about these two artifacts on this machine, and neither "
+            "side is called the winner here."
+        )
+        if mismatch:
+            caveat += (
+                " THESE TWO ROWS RAN ON DIFFERENT DEVICES ("
+                + ", ".join(f"{b}: {d}" for b, d in sorted(devices.items()) if d)
+                + "), so every timing difference below is dominated by that and NOT by "
+                "the backends. This is not a backend comparison until both sides use "
+                "the same device."
+            )
+        elif not known:
+            caveat += (
+                " The device each side used could not be read, so the timings below "
+                "carry an unmeasured confound rather than a known-equal one."
+            )
         rows.append(
             {
                 "roster_key": roster_key,
@@ -1389,16 +1725,14 @@ def same_model_across_backends(results: dict[str, dict]) -> list[dict]:
                         "model": p.get("model"),
                         "quantization": p.get("quantization"),
                         "quantization_note": p.get("quantization_note"),
+                        "device": (p.get("device") or {}).get("device"),
+                        "device_basis": (p.get("device") or {}).get("basis"),
                     }
                     for b, p in sorted(by_backend.items())
                 },
+                "same_device": (None if not known else not mismatch),
                 "metrics": metrics,
-                "caveat": (
-                    "Two builds of one model, not one model measured twice: the backends "
-                    "quantize the same weights differently (see each side's quantization). A "
-                    "gap is a fact about these two artifacts on this machine, and neither "
-                    "side is called the winner here."
-                ),
+                "caveat": caveat,
             }
         )
     return rows

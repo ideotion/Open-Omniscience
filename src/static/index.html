@@ -1917,6 +1917,37 @@
       <div id="mb-result" class="small" style="margin-top:6px"></div>
       <div id="mb-gates" class="small" style="margin-top:6px"></div>
       </div>
+    <!-- Maintainer 2026-08-11: "in order to test quality, we could create a file
+           that I'll send over to you". The bench's translation task answers what a
+           machine can decide alone; QUALITY needs reference translations this corpus
+           does not have, so this produces EVIDENCE and the judgement happens in the
+           reading. Bounded and synchronous, the /ir-eval and /perception-eval-live
+           posture. Un-keyed English (matches this diagnostics panel).
+           Browser-unverified per fork-3. -->
+    <div id="translation-probe-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">Translation comparison</div>
+        <details class="adv-collect" style="margin-top:4px">
+          <summary class="muted" style="cursor:pointer">What this does</summary>
+          <div class="hint" style="margin-top:4px">Asks every installed model to translate the same excerpts of your own articles, and keeps the answers side by side under each passage rather than in per-model lists. It covers all three directions — into English, out of English, and between two foreign languages — because a model that pivots through English internally loses twice, and a probe translating only into English would never see it. Sources are sampled with an equal quota per language, and each excerpt ends at a sentence boundary so no model is penalised for trying to finish a thought.</div>
+        </details>
+        <p class="hint" style="margin-top:6px">No quality score is computed, and none can be: adequacy and fluency need reference translations your corpus does not have. What is measured is the length, the wall time, and whether the answer came back in the language that was asked for — the rest is for a person to read. Note that this file contains excerpts of your own articles.</p>
+        <div class="row" style="margin-top:6px">
+          <div>
+            <label for="tp-articles" title="How many source articles to draw. Small on purpose: this file is read by a person, and a long file is not read.">Articles</label>
+            <input id="tp-articles" type="number" min="1" max="24" value="6" style="width:5em">
+          </div>
+          <div>
+            <label for="tp-targets" title="Target languages per source article. Always English plus at least one third language, so the foreign-to-foreign direction is always asked.">Targets each</label>
+            <input id="tp-targets" type="number" min="1" max="6" value="3" style="width:5em">
+          </div>
+        </div>
+        <div class="row" style="margin-top:6px">
+          <button id="tp-run-btn" onclick="tpRun(this)" title="Runs every installed model over the same passages. Synchronous and bounded, like the other evals here — with several models this can take a few minutes.">Run the comparison</button>
+          <button class="secondary" onclick="window.open('/api/diagnostics/translation-probe/last?download=1','_blank')" title="The readable Markdown rendering of the newest sitting: each source passage with every model's answer underneath it. This is the file to read, and the file to send to someone else.">Download the comparison (.md)</button>
+          <span id="tp-status" class="small" style="margin-left:6px"></span>
+        </div>
+        <div id="tp-result" class="small" style="margin-top:6px"></div>
+      </div>
     </section>
     </details>
 

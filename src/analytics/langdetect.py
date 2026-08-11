@@ -64,6 +64,19 @@ def _get_identifier():
         return _identifier
 
 
+def detector_available() -> bool:
+    """Is the offline model actually loadable here?
+
+    ``detect_language`` answers ``None`` for four different reasons -- library absent,
+    text too short, low confidence, unsupported language -- which is right for a
+    caller that only wants the language. A caller that REPORTS the absence needs to
+    tell "we could not check at all" from "we checked and could not tell", because
+    they are different facts about different things: the first is about this install,
+    the second is about the text. Costs one lazy load, then a flag.
+    """
+    return _get_identifier() is not None
+
+
 def detect_language(
     text: str | None, *, min_chars: int = _MIN_CHARS, min_prob: float = _MIN_PROB
 ) -> str | None:

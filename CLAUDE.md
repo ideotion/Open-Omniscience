@@ -1373,6 +1373,28 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     is load-bearing — `os.register_at_fork` plus a PID guard checked BEFORE the lock, because a
     child blocking on an inherited lock with no owner alive to release it is precisely the
     deadlock the journal exists to diagnose.
+  - **AN OPTIONAL-EXTRA REFEREE HAS TWO ABSENCES, AND THEY MUST NOT SHARE A SENTINEL
+    (2026-08-11, the translation task on the Core-only lane):** the new translation
+    bench judges the output's language with `analytics.langdetect`, whose
+    `detect_language()` returns `None` for four different reasons — library absent,
+    text too short, low confidence, unsupported language. That conflation is CORRECT
+    for a caller that only wants the language, and wrong for one that REPORTS the
+    absence: on a core install (py3langid lives in `[analysis]`) every answer landed
+    in `unmeasurable`, which reads as "the model's output could not be read" when the
+    truth is "this install cannot read anything". Two facts about two different
+    things — the text, and the machine — behind one number. Fixed with a public
+    `detector_available()` plus a `referee: {available, reason}` block that places the
+    blame, and by noting that SPEED is unaffected because it needs no referee: a
+    degrade should surrender only what actually depended on the missing thing.
+    **THE TEST HALF IS A RECURRENCE**, and the ledger already carried it: the 2026-07-10
+    segmenter lesson says to assert against the availability probe, never against an
+    assumed environment. I asserted "French answers read as French" and the Core-only
+    lane failed it against perfectly correct code. When a check depends on an optional
+    extra, the guard skips on the SOURCE OF TRUTH (`detector_available()`), and a
+    second guard — which must still RUN without the extra — asserts the honest
+    degrade. Reproduce the lane locally before pushing: blocking the import in a
+    `builtins.__import__` shim and resetting the module's memoised probe takes two
+    minutes and is the difference between finding this and having CI find it.
   - **A DEGRADE SENTINEL MUST NOT SHARE A KEY WITH A REAL MEASUREMENT (2026-07-29,
     `ai_diagnostics._safe`):** the bundle's per-section guard returned
     `{"available": False, "error": ...}` on a crashed probe — and `resolve_backend()`
