@@ -1161,6 +1161,61 @@ def perception_eval_live_last() -> JSONResponse:
     return JSONResponse(last_perception_eval_live_report())
 
 
+class TranslationProbeBody(BaseModel):
+    models: list[str] | None = Field(
+        default=None,
+        description="backend|model identifiers; defaults to every installed roster pair",
+    )
+    n_articles: int = Field(default=6, ge=1, le=24)
+    targets_per_source: int = Field(default=3, ge=1, le=6)
+
+
+@router.post("/translation-probe")
+def translation_probe(body: TranslationProbeBody) -> JSONResponse:
+    """Translate REAL corpus excerpts with every installed model and keep the answers
+    side by side, for a person to judge (maintainer 2026-08-11).
+
+    Distinct from the bench's translation TASK, which answers what a machine can decide
+    alone (did the model return the language asked for, how fast). Quality needs
+    reference translations this corpus does not have, so nothing here is scored -- the
+    artifact is EVIDENCE, and the judgement happens in the reading.
+
+    Covers all three directions, including foreign-to-foreign, which is where a model
+    that pivots through English internally loses twice. Loopback inference, so this is
+    airplane-safe like every other local-model diagnostic here. Writes a dated JSON
+    record and a readable Markdown rendering of the same sitting."""
+    from src.ai_layer.translation_probe import run_and_persist_translation_probe
+
+    return JSONResponse(
+        run_and_persist_translation_probe(
+            models=body.models,
+            n_articles=body.n_articles,
+            targets_per_source=body.targets_per_source,
+        )
+    )
+
+
+@router.get("/translation-probe/last")
+def translation_probe_last(download: bool = Query(False)) -> Response:
+    """The newest saved comparison (read-only; never runs a probe). ``download=1``
+    returns the READABLE Markdown as an attachment -- that is the form a reader
+    compares two translations in, and the form to send to someone else."""
+    from src.ai_layer.translation_probe import last_translation_probe
+
+    data = last_translation_probe(markdown=download)
+    if not download:
+        return JSONResponse(data)
+    md = data.get("markdown")
+    if not md:
+        return JSONResponse(data)
+    stamp = datetime.now().strftime("%Y%m%d%H%M%S")
+    return Response(
+        content=md,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="oo-translations-{stamp}.md"'},
+    )
+
+
 @router.get("/keyword-triage-selftest")
 def keyword_triage_selftest(download: bool = Query(False)) -> JSONResponse:
     """§8: run the LLM keyword-triage self-test — the measure-before-trust GATE before any real
@@ -3441,6 +3496,9 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # B6.2/B6.3: the last saved who/where/when EXTRACTION sweep summary (read-only;
         # never RUNS a sweep -- that is its own background job, /perception-extract/run).
         ("perception-extract-run.json", lambda: perception_extract_last()),
+        # The last saved side-by-side TRANSLATION comparison (read-only; never runs a
+        # probe -- that is a POST). Carries corpus excerpts, and the payload says so.
+        ("translation-probe.json", lambda: translation_probe_last()),
         # E-S2 (2026-08-01): the newest COMPARATIVE model-bench artifact, summarised
         # (every metric, without the hundreds of per-term answers per pair). Read-only
         # -- running the bench is a heavy operator job, never a bundle member.
@@ -3617,6 +3675,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/ir-eval-selftest": "ir-eval-selftest.json",
     "/perception-eval-selftest": "perception-eval-selftest.json",
     "/perception-eval-live/last": "perception-eval-live.json",
+    "/translation-probe/last": "translation-probe.json",
     "/keyword-triage-selftest": "keyword-triage-selftest.json",
     "/recursive-loop": "recursive-loop.json",
     "/merge": "merge-diag.json",
