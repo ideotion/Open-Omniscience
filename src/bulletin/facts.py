@@ -155,6 +155,14 @@ def _corpus_earliest(session) -> date | None:
         return None
 
 
+# How many contributing sources the reference list names. It was 3 — of 621 in the
+# field edition — which is a podium, not a reference list, and the References section
+# is the one place a reader learns who fed the corpus they are being shown. The
+# separate ``top_3_share`` concentration figure is computed from every source's count
+# and is unaffected by this.
+TOP_SOURCES = 25
+
+
 def masthead(session, period: Period) -> dict:
     """The mandatory masthead (§11): who and what this edition's corpus actually was.
 
@@ -193,7 +201,7 @@ def masthead(session, period: Period) -> dict:
             "articles": n,
             "share": round(n / total, 4) if total else None,
         }
-        for sid, n in ranked[:3]
+        for sid, n in ranked[:TOP_SOURCES]
     ]
 
     # The country and channel splits are the SOURCE's, not a place mentioned in the
@@ -377,7 +385,11 @@ def rising_concepts(
         (res.get("caveat", "") + " ") if res.get("caveat") else ""
     ) + (
         "A ratio, not a significance test: with many terms screened, some ratios are "
-        "high by chance. `scanned` is how many were screened to surface these."
+        "high by chance. `scanned` is how many were screened to surface these. And "
+        "where the prior rate scaled to this window comes to less than one mention "
+        "there is nothing to divide by, so the row reports its recent COUNT instead "
+        "of a ratio — `growth_is_ratio` marks which is which, and a count is not a "
+        "multiple however large it is."
     )
     return res
 
@@ -404,15 +416,22 @@ def layer_a(
     """
     from src.bulletin.sections import build_sections
 
+    # The masthead is computed FIRST so a section can be scoped by the lens the
+    # document already discloses. country_coverage needs exactly that: it picks its
+    # countries from the masthead's own per-country split, so the section's choice of
+    # countries is the ordering the reader has already seen rather than a second,
+    # unexplained one. (It can resolve its own ordering without this — but then the
+    # two could differ, and its docstring would be claiming otherwise.)
+    head = masthead(session, period)
     sections = build_sections(
-        session, period, rising_limit=rising_limit, target_lang=target_lang
+        session, period, rising_limit=rising_limit, target_lang=target_lang, masthead=head
     )
 
     return {
         "schema": "oo-bulletin-layer-a-1",
         "layer": "A",
         "period": period.to_dict(),
-        "masthead": masthead(session, period),
+        "masthead": head,
         "sections": sections,
         "disclosures": disclosures(session, period),
         "method": (

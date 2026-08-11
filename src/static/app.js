@@ -3984,6 +3984,13 @@
     // own helper on the _gwT precedent -- a bare t() here passes node --check and
     // throws a ReferenceError in the browser.
     function _bulT(s) { return (window.OOI18N && OOI18N.t) ? OOI18N.t(s) : s; }
+    // Guarded like _bulT, for the same reason: i18n.js may not have loaded. The
+    // template is the key and the count is data, so the frame can be translated
+    // later without the number ever going through a translation table.
+    function _bulTf(s, vars) {
+      return (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s, vars)
+        : String(s).replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null) ? String(vars[k]) : m);
+    }
     let _bulExcludeSections = new Set();
     let _bulExcludeStories = new Set();
     let _bulFile = null;
@@ -4118,10 +4125,12 @@
         ${stories ? `<h4 style="margin:12px 0 4px">${esc(_bulT("Stories"))}</h4>${stories}` : ""}
         <div class="row" style="gap:8px;margin-top:12px;flex-wrap:wrap">
           <button class="secondary" onclick="bulletinOpen('html')">${esc(_bulT("Preview"))}</button>
-          <button class="secondary" onclick="bulletinOpen('markdown')">${esc(_bulT("Download Markdown"))}</button>
+          <button class="secondary" onclick="bulletinDownloadBundle(this)">${esc(_bulT("Download report + annexes"))}</button>
+          <button class="secondary" onclick="bulletinOpen('markdown')">${esc(_bulT("Report only"))}</button>
           <button onclick="bulletinPublish(this)">${esc(_bulT("Publish"))}</button>
           <div id="bul-pub" class="hint" style="align-self:center"></div>
-        </div>`;
+        </div>
+        <p class="hint">${esc(_bulT("The annexes are one Markdown file per article the report cites, numbered to match, with a contents page. They carry the sources' own text — keep them where you keep the corpus."))}</p>`;
     }
 
     function bulletinToggleSection(key) {
@@ -4138,6 +4147,73 @@
       const q = _bulQuery();
       q.set("fmt", fmt);
       window.open(`/api/bulletin/editions/${encodeURIComponent(_bulFile)}/render?${q}`, "_blank", "noopener");
+    }
+
+    // One click, two files. A browser cannot put two downloads in one response, so
+    // the button fetches both and saves each -- the report and the annexes ZIP whose
+    // reference numbers match it.
+    //
+    // BOTH REQUESTS CARRY THE SAME SELECTION. The reference numbers are assigned over
+    // the document as it will be published, so annexes built without the operator's
+    // exclusions would number a different set and `[0007]` in the report would open
+    // the wrong article. Sending the selection to one and not the other is the whole
+    // failure mode, which is why the query is built once here.
+    async function bulletinDownloadBundle(btn) {
+      if (!_bulFile) return;
+      const out = $("bul-pub");
+      const q = _bulQuery();
+      const base = `/api/bulletin/editions/${encodeURIComponent(_bulFile)}`;
+      btn.disabled = true;
+      if (out) out.textContent = _bulT("Building the annexes…");
+      try {
+        const rq = new URLSearchParams(q); rq.set("fmt", "markdown");
+        const report = await fetch(`${base}/render?${rq}`);
+        await _throwIfNotOk(report);
+        _saveBlob(await report.blob(), _filenameOf(report, "bulletin.md"));
+
+        const zip = await fetch(`${base}/annexes?${q}`);
+        await _throwIfNotOk(zip);
+        const n = zip.headers.get("X-OO-Annex-Articles");
+        _saveBlob(await zip.blob(), _filenameOf(zip, "annexes.zip"));
+        if (out) {
+          out.textContent = n && n !== "0"
+            ? _bulTf("Downloaded: the report and {n} annexed article(s).", {n: n})
+            : _bulT("Downloaded the report. This edition names no articles, so the annexes are empty — regenerate it to populate them.");
+        }
+      } catch (e) {
+        if (out) out.textContent = _bulT("Could not download: ") + e.message;
+      } finally { btn.disabled = false; }
+    }
+
+    // These two fetches are raw rather than through api(), because their bodies are a
+    // document and a ZIP rather than JSON. So the error path has to be re-created —
+    // and it goes through the SAME _apiErrorMessage the rest of the app uses, which
+    // takes a PARSED payload, so a refusal reads as its reason instead of "500".
+    async function _throwIfNotOk(res) {
+      if (res.ok) return;
+      let data = null;
+      try { data = await res.json(); } catch (_) { /* a non-JSON error body is fine */ }
+      throw new Error(_apiErrorMessage(data, res));
+    }
+
+    // The server names these files; it knows the period and the cadence. Reading the
+    // name off Content-Disposition rather than rebuilding it here keeps one namer.
+    function _filenameOf(res, fallback) {
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = /filename="([^"]+)"/.exec(cd);
+      return (m && m[1]) || fallback;
+    }
+
+    function _saveBlob(blob, name) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      // Revoked on a later tick: revoking synchronously can cancel the download in
+      // some browsers before it has read the blob.
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
     }
 
     // Opening from the LIST shows the whole edition. A selection belongs to the

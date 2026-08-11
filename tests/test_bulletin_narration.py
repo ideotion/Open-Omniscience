@@ -296,7 +296,17 @@ def test_the_number_of_stories_narrated_is_bounded_and_the_total_is_reported():
 
 def test_narration_off_leaves_layer_a_byte_identical():
     """Turning narration on must ADD; it must never change a number already there.
-    That asymmetry is what "removable" means in practice."""
+    That asymmetry is what "removable" means in practice.
+
+    AMENDED 2026-08-11, deliberately. This used to assert ``"stories" not in plain``
+    as part of that property. It is not part of it: story clustering is MinHash over
+    stored keywords — no model, no network, deterministic — and it now runs in phase
+    one, where the maintainer's two-phase design puts everything the corpus can answer
+    without a model. Coupling it to narration left the AI-less document with no
+    stories at all. The property that actually matters is unchanged and still asserted
+    below: narration adds a block and sentences, and changes no figure that was
+    already there — including the stories' own counts.
+    """
     from datetime import date, datetime
 
     from sqlalchemy import create_engine
@@ -327,9 +337,29 @@ def test_narration_off_leaves_layer_a_byte_identical():
     narrated = build_edition(s, period, narrate=True, client=_Fake("Nothing to say."))
 
     assert plain["narration_requested"] is False
-    assert "narration" not in plain and "stories" not in plain
+    assert "narration" not in plain, "the model layer is genuinely absent"
     for key in ("masthead", "period", "sections"):
         assert json.dumps(plain[key], default=str) == json.dumps(narrated[key], default=str), key
+
+    # Phase one carries the deterministic clusters.
+    assert "stories" in plain, "story clustering is AI-less and belongs to phase one"
+
+    # And narration changes none of their figures — only adds a `narration` key to
+    # each. This is the same "adds, never changes" property one level deeper, which
+    # the old `"stories" not in plain` assertion could not reach at all.
+    def _facts(edition):
+        return [
+            {k: v for k, v in st.items() if k != "narration"}
+            for st in (edition.get("stories") or {}).get("stories") or []
+        ]
+
+    assert json.dumps(_facts(plain), default=str) == json.dumps(_facts(narrated), default=str)
+
+    # The older, narrower behaviour is still reachable exactly.
+    narrower = build_edition(s, period, narrate=False, cluster_stories=False)
+    assert "stories" not in narrower and "narration" not in narrower
+    for key in ("masthead", "period", "sections"):
+        assert json.dumps(narrower[key], default=str) == json.dumps(plain[key], default=str), key
 
 
 def test_a_clustering_failure_leaves_the_record_intact(monkeypatch):

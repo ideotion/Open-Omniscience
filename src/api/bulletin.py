@@ -159,19 +159,60 @@ def _selection(exclude_sections: str, exclude_stories: str) -> dict:
     }
 
 
+@router.get("/editions/{filename}/ai-plan")
+def ai_plan(
+    filename: str,
+    target_lang: str = Query("", description="also plan translating the named articles into this"),
+    per_call_s: float = Query(
+        0.0, description="seconds per model call MEASURED on this machine; 0 = unknown"
+    ),
+    concurrency: int = Query(1, ge=1, le=16, description="lanes the backend would run"),
+) -> dict:
+    """Phase 2, as a plan: what a local model would be asked to do for this edition.
+
+    The maintainer's two-phase design puts this AFTER phase 1 exists — "an option
+    appearing after phase 1 has been produced" — so it is computed from the
+    persisted record rather than offered before there is anything to enhance. It is
+    a read: pure arithmetic over the edition dict, no model, no DB, nothing started.
+
+    ``per_call_s`` must be MEASURED on this machine (Settings → Advanced →
+    Diagnostics → the LLM latency bench). Without it the plan reports the exact
+    call count and refuses a duration, which is the honest answer on hardware
+    nothing has timed.
+    """
+    from src.bulletin.store import read_edition
+    from src.bulletin.worklist import ai_worklist
+
+    _require_gate()
+    try:
+        edition = read_edition(filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="no such edition") from exc
+    return ai_worklist(
+        edition,
+        target_lang=target_lang or None,
+        per_call_s=per_call_s or None,
+        concurrency=concurrency,
+    )
+
+
 @router.get("/editions/{filename}/render")
 def render_edition(
     filename: str,
     fmt: str = Query("html", description="html | markdown"),
     exclude_sections: str = Query("", description="comma-separated section keys to leave out"),
     exclude_stories: str = Query("", description="comma-separated story keys to leave out"),
+    include_plan: bool = Query(False, description="append the phase-2 plan to the document"),
+    target_lang: str = Query("", description="with include_plan: also plan translations"),
 ):
     """Render a persisted edition as a self-contained page or as Markdown.
 
-    Rendering is PURE: the numbers come from the record, so re-rendering cannot
-    change one. That is what makes toggling a producer a re-render rather than a
-    re-computation, and it is why exclusions are applied HERE rather than written
-    back — output is never hand-edited.
+    EVERY FIGURE COMES FROM THE RECORD, so re-rendering cannot change one. That is
+    what makes toggling a producer a re-render rather than a re-computation, and it is
+    why exclusions are applied HERE rather than written back — output is never
+    hand-edited. The one thing rendering adds is the reference numbering, stamped onto
+    the in-memory copy read from disk; it is deterministic and goes nowhere near the
+    file.
 
     An exclusion is stated in the rendered document. The operator chooses what to
     publish, but a reader of a document that silently omits three of its seven
@@ -179,6 +220,14 @@ def render_edition(
 
     Published output carries EXTERNAL identity only — a local article id resolves
     to a different article on a recipient's install, so it never leaves here.
+
+    ``include_plan`` appends phase 2 as a PLAN, clearly labelled as one. It takes no
+    ``per_call_s``, deliberately: a duration is a measurement of THIS machine, and a
+    rendered document travels — a recipient reading "about twelve minutes" would read
+    it as a property of the work rather than of somebody else's hardware. The call
+    count is exact and hardware-independent, so that is what the document states. The
+    JSON route above is where a measured duration belongs, because it answers to the
+    operator sitting in front of the machine it was measured on.
     """
     from fastapi.responses import HTMLResponse, PlainTextResponse
 
@@ -194,12 +243,25 @@ def render_edition(
 
     edition = apply_selection(edition, **_selection(exclude_sections, exclude_stories))
 
+    if include_plan:
+        # AFTER the selection, never before: the plan describes the work for the
+        # document as it will be published, so a section the operator excluded must
+        # not appear in it as work to do. In memory only — the plan is derived FROM
+        # the record and never becomes part of it.
+        from src.bulletin.worklist import ai_worklist
+
+        edition["ai_worklist"] = ai_worklist(edition, target_lang=target_lang or None)
+
     try:
         text = render(edition, fmt)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    stem = filename.rsplit(".", 1)[0]
+    # The DOWNLOADED name is the report's own, not the record's: the record is
+    # `20260810-OOS-weekly-<id>.json` and the document an operator keeps is
+    # `20260811_OOS_Bulletin_Weekly.md` — the day the bulletin was created, matching
+    # the annexes ZIP beside it.
+    stem = _bundle_stem(edition, filename)
     if (fmt or "").strip().lower() == "html":
         return HTMLResponse(
             text, headers={"Content-Disposition": f'inline; filename="{stem}.html"'}
@@ -208,6 +270,96 @@ def render_edition(
         text,
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{stem}.md"'},
+    )
+
+
+def _ordinal(edition: dict, filename: str) -> int:
+    """Which bulletin of its creation day this is.
+
+    ``list_editions()`` reads the filename for the cadence but the creation date lives
+    INSIDE each record, so the siblings' ``generated_at`` has to be read. Only the
+    same-cadence editions are opened: nothing else can share a stem, so nothing else
+    can affect the position. That keeps a click-time read bounded to the editions that
+    could actually collide rather than to the whole directory.
+    """
+    from src.bulletin.annexes import edition_ordinal
+    from src.bulletin.store import list_editions, read_edition
+
+    mine = str((edition.get("period") or {}).get("cadence") or "").strip().lower()
+    siblings: list[dict] = []
+    for row in list_editions():
+        name = row.get("filename")
+        if not name or str(row.get("cadence") or "").lower() != mine:
+            continue
+        try:
+            rec = edition if name == filename else read_edition(name)
+        except (FileNotFoundError, ValueError):
+            # An unreadable sibling cannot be named either, so it cannot occupy a
+            # position. Skipped rather than guessed at.
+            continue
+        siblings.append(
+            {
+                "filename": name,
+                "cadence": mine,
+                "generated_at": rec.get("generated_at"),
+            }
+        )
+    return edition_ordinal(filename, siblings)
+
+
+def _bundle_stem(edition: dict, filename: str) -> str:
+    from src.bulletin.annexes import bundle_stem
+
+    return bundle_stem(edition, ordinal=_ordinal(edition, filename))
+
+
+@router.get("/editions/{filename}/annexes")
+def annexes(
+    filename: str,
+    full_text: bool = Query(True, description="carry each article's whole stored text"),
+    exclude_sections: str = Query("", description="the same selection the report was rendered with"),
+    exclude_stories: str = Query(""),
+    db: Session = Depends(get_db),
+):
+    """The report's annexes as a ZIP: one Markdown file per cited article, plus a
+    contents page.
+
+    THE SELECTION MUST MATCH THE REPORT. The reference numbers are assigned over the
+    document as it will be published, so a bundle built without the operator's
+    exclusions would number a different set — `[0007]` in the report would open the
+    wrong article, which is worse than no annexes at all. The same two query params
+    the render route takes are therefore taken here, and the frontend sends both to
+    both.
+
+    This is NOT the evidence archive. That one writes every article in the period to
+    a directory on this machine so the counts can be recomputed, and is measured in
+    gigabytes. This is the citation set of one document, small enough to download.
+    """
+    from fastapi.responses import Response
+
+    from src.bulletin.annexes import build_annexes
+    from src.bulletin.review import apply_selection
+    from src.bulletin.store import read_edition
+
+    _require_gate()
+    try:
+        edition = read_edition(filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="no such edition") from exc
+
+    ordinal = _ordinal(edition, filename)
+    edition = apply_selection(edition, **_selection(exclude_sections, exclude_stories))
+    out = build_annexes(db, edition, ordinal=ordinal, full_text=bool(full_text))
+    return Response(
+        content=out["data"],
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f'attachment; filename="{out["filename"]}"',
+            # The counts a caller cannot read out of a binary body, so a UI can say
+            # what it just handed the operator instead of only that it finished.
+            "X-OO-Annex-Articles": str(out["articles"]),
+            "X-OO-Annex-Files": str(out["files"]),
+        },
     )
 
 

@@ -3411,6 +3411,190 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     reporting fix and a behaviour change share one line, ship the disclosure and leave the
     behaviour for its own reviewed slice.
 
+  - **A SENTINEL DOCUMENTED AT THE SOURCE IS STILL A FABRICATION AT THE RENDER BOUNDARY —
+    and a clamp that fires on 19 of 20 rows silently reorders the whole section
+    (2026-08-11, the field bulletin's rising concepts):** `queries.trending` computes
+    `growth = rc / expected if expected >= 1 else float(rc)` and its docstring says so, so
+    nothing there is dishonest. The renderer printed that value as **"×5701.0 vs the prior
+    period"** for a term whose prior was **4**. THREE things follow that the docstring did
+    not. (a) The threshold is on `expected`, not on `prior`, so at a 7-day window over a
+    30-day baseline ANY prior of 4 or fewer lands in the sentinel — "new terms (no prior)"
+    understated its reach by a wide margin, and a docstring that understates a sentinel is
+    how a consumer comes to trust it. (b) Because the sentinel equals the count, the sort
+    key `-growth` degenerates to `-recent`, so a section titled "Rising concepts" ranks by
+    raw volume and the ONE row with a measurable baseline sat **fourteenth, behind thirteen
+    counts wearing a multiplication sign** — a clamp doing all the work does not merely
+    inflate a number, it silently substitutes a different ordering. (c) The caveat under it
+    warned about multiple comparisons, which is a real hazard and not this one, so the page
+    read as disclosed. FIX: the flag travels WITH the value (`growth_is_ratio`, at every
+    site that computes it — the solo path, the ring merge, and `keyword_hover_stats`, which
+    had the same shape one screen away), and the presentation groups rows by what each can
+    support. THREE buckets, not two: the reader predicate has three answers, and an old
+    record carrying neither the flag nor `expected` may not be filed under "no baseline to
+    divide by" — that is a finding, and a row that cannot prove it is a ratio does not get
+    to claim one either way. Editions already on disk render honestly because `expected` is
+    what the flag is computed from. NOTE the frontend prints the same value as `↑{growth}×`
+    at six call sites (Home trend strip, Trends bars, the keyword hover, the supergroup
+    rate) — the same defect, recorded, not fixed in the bulletin PR.
+  - **A JOIN KEY EACH SIDE POPULATES DIFFERENTLY FAILS SILENTLY, AND AN EMPTY RESULT IS
+    INDISTINGUISHABLE FROM "NOBODY TRIED" (2026-08-11, the bulletin's narration layer):**
+    `narrate_story` keyed each paragraph on the EVIDENCE's article ids — only those whose
+    text fit the char budget, 15 of a 115-article cluster in the field — while both
+    consumers looked it up by the STORY's full cluster. So the join missed on every story
+    big enough to be interesting, and because `story["narration"]` merely stayed absent,
+    the failure looked exactly like a story nobody had narrated. THREE consequences, none
+    of which surfaced as an error: the deterministic fallback sentence, which exists so the
+    document is never left with a gap where a model should have been, never rendered though
+    it was sitting in the record; the review screen's per-sentence verdicts came out empty,
+    and those verdicts are that screen's entire stated purpose (design record §13, "a
+    sentence the operator can see was checked is a different thing from a paragraph labelled
+    validated"); and the edition still appended *"the sentences under each story were
+    written by a local model"* on a run where Ollama refused every connection and 0 of 8
+    stories were narrated. FOUR RULES. (a) When two lists could both plausibly be the key,
+    the IDENTITY is the one every consumer joins on; the other keeps its own name
+    (`grounded_in_article_ids` is real provenance — which articles the model could have
+    drawn from — it is simply not the identity). (b) **Three code paths built that paragraph
+    and they disagreed**, so whether the join worked depended on which failure had occurred;
+    a shape assembled in more than one place needs its identity set in one. (c) A dangling
+    join is REPORTED (`attach_gap`), because the whole reason this hid is that absence and
+    failure looked the same. (d) A document's self-description must be built from what
+    HAPPENED — `stories_narrated`, never `narrate=True`. AND THE TEST LESSON, from my own
+    first draft: asserting `"115 articles" in md` to prove the paragraph rendered passed
+    with the join still broken, because the story's own header line prints that count
+    regardless — a "did it render" assertion must name text ONLY the thing under test emits.
+  - **THE RENDERER CAN BE THE BOTTLENECK, AND A TRUNCATED HEAD READS AS THE WHOLE
+    (2026-08-11, same edition):** Layer A computed 114 source countries, 34 languages, seven
+    per-channel volumes and seven daily counts; the document printed 8, 8, none and none,
+    with nothing to say the rest existed. That turns the masthead's own caveat — "a country
+    absent here is a country this corpus did not collect from" — into a claim the page
+    cannot support. A document has to be readable, so the LIST stays bounded; what must be
+    exact and stated is the TOTAL and the remainder ("20 of 114 shown; the other 94 carried
+    20,811"). THE LINE WORTH MOST was one nobody had ever printed: the per-channel split
+    said **407 scientific articles of 72,225**, which explains at a glance why nineteen
+    mitochondrial-fission terms owned the rising section — a fact already computed and
+    thrown away. Two sections additionally carried caveats naming fields the render dropped
+    (the promised untagged count — 17,080 of 12,468,182 mentions carry a topic tag — and the
+    alert magnitudes, places and times), which is the recorded "a caveat may claim only what
+    the data can exhibit" defect recurring in a new module. COROLLARY: the masthead was the
+    one block the two renderers did NOT share, and it had drifted — the HTML page carried
+    four bullet points and none of these lines; the sibling `_section_groups` says in its own
+    docstring that it is shared "so the two can never drift", which is exactly the argument
+    for sharing this one too.
+
+  - **ONE KEY, TWO MEANINGS — THE COUNT AND THE THING COUNTED (2026-08-11, my own bug,
+    caught by a stack trace rather than by any of the tests I had just written):**
+    `story["articles"]` is the article COUNT and always was; the story header prints it.
+    Attaching the newly-described article ROWS under that same key replaced an int with a
+    list, so every story header rendered an em dash — and none of the fourteen tests
+    written for the feature could see it, because they assert the deterministic sentence,
+    which is composed BEFORE the overwrite. It surfaced only when a second consumer
+    (`worklist`) tried to iterate the count. TWO RULES. (a) Before writing a new key into
+    an existing payload, grep for that key: a name that already means a quantity cannot
+    also mean the collection it quantifies (the fix is `article_rows` everywhere, with
+    `corpus_articles` for the count, so one name means one thing across two new modules).
+    (b) A feature's own tests cluster around the feature's own output and will happily
+    step over damage to the payload it shares — the guard that catches this asserts the
+    NEIGHBOURING field still renders, not the new one.
+  - **A BARE DECIMAL AS A "MUST BE ABSENT" NEEDLE MATCHES THE GENERATION TIMESTAMP, WHICH
+    LOOKS EXACTLY LIKE AN ORDER-DEPENDENCY (2026-08-11):** `assert "3.2" not in text` over
+    a rendered document failed about one run in eight, because the footer carries
+    `2026-08-11T09:08:53.267792` and `53.2` contains it. Under `pytest-randomly` that
+    presents as a flaky order-dependent failure and sends you hunting for cross-test
+    pollution; the cause is the CLOCK. This is the recorded "a whole-file substring
+    assertion is only as meaningful as that string's uniqueness" trap meeting the recorded
+    "never compare a hardcoded value against a real-`now` marker" one. Assert the property
+    with a needle nothing else in the document can produce — here `"(×"`, which cannot
+    occur in an ISO timestamp — or scope the assertion to the section.
+  - **A NOTE THAT ONLY PRINTS WHEN THERE IS OUTPUT IS MISSING FROM THE ONE CASE IT EXISTS
+    FOR (2026-08-11, the bulletin's card section):** the truncation note ("the budget
+    stopped further producers, so this is a partial set") was rendered inside the branch
+    that iterates the section's blocks — so a run whose budget stopped EVERY producer
+    produced no blocks, printed "Nothing to report for this period", and the note never
+    appeared. A budget reading as a quiet corpus is precisely the misreading the note was
+    written to prevent. GENERAL FORM: a disclosure about why output is short must be
+    keyed on the section EXISTING, never on it having produced anything — and the
+    same applies to an empty state, which is why both renderers now dispatch on the
+    section's own fields rather than on whether a block list came back non-empty.
+  - **A FEATURE'S OWN TESTS SUPPLY THE INPUT ITS MISSING CALLER WAS SUPPOSED TO, SO A
+    FULLY-TESTED CAPABILITY CAN BE UNREACHABLE (2026-08-11, the bulletin's phase-2
+    worklist):** `ai_worklist` was pure, seventeen tests green, and the renderer read
+    `edition["ai_worklist"]` — but nothing in `src/` ever WROTE that key. Every test
+    set it itself, which is exactly what hid the gap: the tests were the caller. The
+    maintainer's design says phase 2 is "an option appearing after phase 1 has been
+    produced", and it could never appear. This is the recorded dead-end shape (a
+    machine-readable refusal whose flag no caller sends; a tri-state nothing reads)
+    with a new tell worth naming: **when a renderer reads a key, grep for what writes
+    it, and count callers OUTSIDE the test tree.** The fix's own shape carries three
+    rules — compute the derived view from the PERSISTED record rather than attaching
+    it at generation (that is what "after phase 1" means, and it keeps a proposal out
+    of a record of measurements); apply it AFTER the operator's exclusions, since a
+    section they cut must not be offered as work; and do NOT let a
+    measured-on-this-machine duration into an artifact that travels, because a
+    recipient reads "about twelve minutes" as a property of the work rather than of
+    somebody else's hardware — the exact call COUNT is hardware-independent and is
+    what the document states.
+  - **MUTATION-TESTING AN UNTRACKED FILE CANNOT BE UNDONE WITH `git checkout`, AND THE
+    RESTORE FAILS SILENTLY (2026-08-11, same slice):** the house discipline is to
+    neuter the fix and confirm the guard reddens. Doing that to a brand-new module —
+    still `??` in `git status` — and then running `git checkout <path>` leaves the
+    MUTANT in the tree: git errors on a path it has never tracked, and inside a `||`
+    chain that error is swallowed. The two tests went red exactly as predicted, which
+    is precisely what makes it feel finished; a later grep found `"needs": False` still
+    sitting in the source. RULE: `cp` the file aside before mutating it, restore from
+    the copy, and VERIFY the restore (`git status` / re-run the suite green) rather
+    than trusting the revert command — for a tracked file too, since the same `||`
+    swallow applies.
+  - **`read_text()` NORMALISES LINE ENDINGS, SO APPENDING ONE ROW REWROTE SEVEN
+    (2026-08-11, `shipped.csv`):** the recorded "never re-serialise a curated file to
+    edit one entry" lesson has a quieter form than `sort_keys=True`. Python's
+    `read_text()` opens in universal-newline mode, so a `read_text` → edit →
+    `write_text` round-trip silently converts every `\r\n` to `\n` — and this CSV is
+    mixed (643 LF, 9 CRLF, from years of different sessions). One appended row came
+    out as **10 added / 9 deleted**, with seven rows nobody had touched sitting in the
+    diff looking edited. The tell is a numstat whose deletions exceed what you changed;
+    the fix is to edit in BINARY (`read_bytes`/`write_bytes`) so untouched lines stay
+    byte-identical, and `git diff --ignore-cr-at-eol --numstat` is what proves it. A
+    line ending is content in a file whose diff people read.
+  - **A CROSS-ARTIFACT REFERENCE IS ONLY AS GOOD AS THE ROUND TRIP, AND A FILE-COUNT
+    ASSERTION CANNOT SEE THE HALF THAT BREAKS (2026-08-11, the bulletin's annexes):**
+    a report that cites `[0007]` beside a ZIP holding `…_Article_0007.md` has a
+    property no component owns — that the two are the same article — and a reader who
+    follows a reference to the wrong one has no way to notice. TWO RULES. (a) The
+    numbering lives in ONE deterministic function called by BOTH sides, never in each
+    side's own loop: two numberers agree until the day one of them walks a surface the
+    other does not. (b) The test iterates every reference the document actually PRINTS
+    and asserts a file exists that names the same article — `len(namelist()) == 3`
+    passes while the report cites two of them, which is exactly what happened here:
+    the round trip is what surfaced that `story["article_rows"]`, added a slice
+    earlier so "the document can name them", was printed by NEITHER renderer. A
+    cluster of 115 articles arrived as a count with no way in, and the bundle held
+    files nothing cited. GENERAL FORM: when two artifacts must agree, assert the
+    correspondence in the direction a reader travels, not the cardinality of either
+    end. COROLLARY on naming such a pair: derive the name from what the record SAYS
+    it covers (the period), refuse when the record cannot say (never default to
+    today — a bundle called `20260811_…` for a document about last month is a
+    filename that lies), and make a repeat's ordinal a POSITION among siblings rather
+    than a next-free counter, or re-downloading the same artifact renames it.
+  - **A FIXTURE WHERE TWO DATES COINCIDE CANNOT TEST WHICH ONE A NAME USES
+    (2026-08-11, the annexes date rules):** the rule was "an article file is named for
+    its PUBLICATION date, never the day we collected it" — and the mutation that named
+    files by the collection date **passed all 44 tests**, because the fixture published
+    at 09:30 and collected at 10:00 on the same day. Same shape as the recorded
+    bucket-granularity miss: the fixture matched production in every dimension except
+    the one the rule is about. Published 2026-08-05 against collected 2026-08-09, plus
+    one article published in a different YEAR driven through the real bundle, and the
+    mutation fails eleven tests. GENERAL FORM: when a rule picks one of two fields,
+    the fixture must make them DIFFER, and a distinguishing test asserts the loser
+    appears NOWHERE (`not any("20260809" in n for n in names)`) rather than only that
+    the winner appears. TWO COROLLARIES from the same change. (a) A derived name should
+    come from the RECORD's own account of an event (`generated_at`), not from `now()`:
+    a download-time date gives one document two names across two days, and it also
+    breaks an ordinal computed per creation-day, since two editions made weeks apart
+    but downloaded together would share a stem the ordinal cannot separate. (b) When a
+    filename stops being derivable from an identifier the reader holds, the index that
+    matches the two becomes load-bearing — say so in the citing document rather than
+    leaving a reader to construct a name that no longer exists.
+
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
   the MEASUREMENT shipped, the two structural changes did NOT — deliberately, and the

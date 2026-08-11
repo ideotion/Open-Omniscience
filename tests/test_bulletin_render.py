@@ -50,7 +50,15 @@ _EDITION = {
         {
             "section": "rising_concepts",
             "window": {"days": 7, "matches_period": True},
-            "terms": [{"term": "flood", "recent": 88, "growth": 3.2}],
+            # Faithful to what ``queries.trending`` emits: ``expected`` and
+            # ``growth_is_ratio`` always travel with ``growth``, and 88/27.5 == 3.2.
+            # A fixture that omits them describes a row the producer cannot make,
+            # and the renderer is right to refuse to call such a count a multiple.
+            "baseline_days": 30,
+            "terms": [
+                {"term": "flood", "recent": 88, "prior": 118, "expected": 27.5,
+                 "growth": 3.2, "growth_is_ratio": True}
+            ],
             "caveat": "A ratio, not a significance test.",
         },
         {

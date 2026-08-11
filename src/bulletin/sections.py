@@ -634,13 +634,30 @@ def _across(session, period, ctx):
 # ``(session, period, ctx)`` where ctx carries the run's options and any earlier
 # section's output, so a later section can be scoped by an earlier one without
 # recomputing it.
+def _coverage(session, period: Period, ctx: dict) -> dict:
+    from src.bulletin.coverage import build as build_coverage
+
+    return build_coverage(session, period, ctx)
+
+
+def _cards(session, period: Period, ctx: dict) -> dict:
+    from src.bulletin.cards import build as build_cards
+
+    return build_cards(session, period, ctx)
+
+
 SECTIONS: tuple[tuple[str, Any], ...] = (
     ("rising_concepts", _rising),
     ("across_channels", _across),
+    ("country_coverage", _coverage),
     ("by_topic_tag", lambda s, p, _c: by_topic_tag(s, p)),
     ("changes_of_record", lambda s, p, _c: changes_of_record(s, p)),
     ("alerts", lambda s, p, _c: alerts(s, p)),
     ("through_time", lambda s, p, c: through_time(s, p, years_back=c.get("years_back", 5))),
+    # LAST, and deliberately so. It is the slowest (it runs every producer), and it
+    # is the only section whose figures are not the period's — a reader should meet
+    # the period's own record before meeting cards observed at generation time.
+    ("cards", _cards),
 )
 
 
