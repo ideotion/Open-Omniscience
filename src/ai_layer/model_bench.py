@@ -619,7 +619,14 @@ def _task_translation(client, *, model: str, keep_alive: str | None) -> dict:
     (asking a model to grade its own output would be circular). Every count is
     reported alone, with its n, per target language.
     """
-    from src.analytics.langdetect import detect_language
+    from src.analytics.langdetect import detect_language, detector_available
+
+    # THE REFEREE ITSELF CAN BE ABSENT. py3langid ships in the [analysis] extra, so
+    # a core install has no language check at all -- and without this flag every
+    # answer lands in "unmeasurable", which reads as "the model's output could not
+    # be read" when the truth is "this install cannot read anything". Two different
+    # facts about two different things must not share one sentinel.
+    referee = detector_available()
 
     per_target: dict[str, dict] = {}
     asked = in_target = echoed = unmeasurable = 0
@@ -672,6 +679,16 @@ def _task_translation(client, *, model: str, keep_alive: str | None) -> dict:
         b["in_target_rate"] = round(b["in_target"] / judged, 4) if judged else None
     return {
         "status": "ok",
+        "referee": {
+            "available": referee,
+            "reason": (
+                None if referee else
+                "py3langid is not installed (it ships in the [analysis] extra), so the "
+                "output language could not be checked AT ALL on this install. The "
+                "unmeasurable count below is this absence, not the models' answers; "
+                "the speed figures are unaffected, because they do not need a referee."
+            ),
+        },
         "asked": asked,
         "in_target": in_target,
         "unmeasurable": unmeasurable,

@@ -872,6 +872,18 @@ class _Echoer:
         return _R(prompt)
 
 
+def _referee_here() -> bool:
+    """The SOURCE OF TRUTH, not a constant. py3langid ships in the [analysis] extra,
+    so a core install has no referee -- and a test that hardcoded "French reads as
+    French" fails there against perfectly correct code. This is the segmenter lesson
+    (assert against the availability probe, never against an assumed environment) and
+    the Core-only lane is what caught it."""
+    from src.analytics.langdetect import detector_available
+
+    return detector_available()
+
+
+@pytest.mark.skipif(not _referee_here(), reason="py3langid absent: no language referee here")
 def test_translation_reports_the_target_language_it_actually_produced() -> None:
     out = MB._task_translation(_Translator(), model="m", keep_alive=None)
     assert out["status"] == "ok"
@@ -884,6 +896,7 @@ def test_translation_reports_the_target_language_it_actually_produced() -> None:
 
 
 def test_an_echoed_source_is_counted_as_an_echo_not_a_translation() -> None:
+    """Echo detection is string comparison, so it works with or without a referee."""
     """The commonest small-model failure: the source comes back unchanged."""
     out = MB._task_translation(_Echoer(), model="m", keep_alive=None)
     assert out["echoed"] == out["asked"], "every answer was the source verbatim"
@@ -932,11 +945,32 @@ def test_an_unreadable_output_is_unmeasurable_not_a_failure() -> None:
     assert out["in_target_rate"] is None, "a rate over zero judged answers is not 0, it is None"
 
 
+def test_an_absent_referee_is_named_and_not_blamed_on_the_model() -> None:
+    """THE ONE THE CORE-ONLY LANE FOUND. Without py3langid every answer is
+    unmeasurable — and reported bare, that reads as "the model's output could not be
+    read" when the truth is "this install cannot read anything". Two facts about two
+    different things must not share one sentinel."""
+    out = MB._task_translation(_Translator(), model="m", keep_alive=None)
+    ref = out["referee"]
+    assert ref["available"] is _referee_here(), "the flag must reflect the real install"
+    if not ref["available"]:
+        assert out["unmeasurable"] == out["asked"], "nothing can be judged without it"
+        assert "not installed" in ref["reason"]
+        assert "not the models' answers" in ref["reason"], "the blame must be placed"
+        # Speed does not need a referee, so it is still measured and still reported.
+        assert out["output_chars_per_s"] is not None
+    else:
+        assert ref["reason"] is None
+
+
 def test_the_rate_is_taken_over_what_was_JUDGED() -> None:
+    """Arithmetic over the payload's own numbers — true with or without a referee."""
     out = MB._task_translation(_Translator(), model="m", keep_alive=None)
     judged = out["asked"] - out["unmeasurable"]
     if judged:
         assert out["in_target_rate"] == round(out["in_target"] / judged, 4)
+    else:
+        assert out["in_target_rate"] is None, "a rate over nothing judged is None, not 0"
 
 
 def test_the_sources_are_long_enough_for_the_referee_to_have_an_opinion() -> None:
