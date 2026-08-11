@@ -59,22 +59,28 @@ assert(stateTable.indexOf("done:") !== -1, "the state-label table did not extrac
 
 const src = [
   extract("function _uxVolPhase("),
+  extract("function _uxImPhaseBits("),
   extract("function _uxImLive("),
   extract("function _uxImDur("),
   extract("function _uxImDetails("),
   stateTable,
   extract("function _uxImRenderQueue("),
+  extract("function _jobRow("),
+  extract("function _fmtBytes("),
+  extract("function fmtNum("),
   "function esc(s){return String(s==null?'':s).replace(/[&<>\"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',\"'\":'&#39;'}[c]));}",
   "function fmtDateTime(ms){return 'DATE';}",
-  "return { _uxImRenderQueue, _uxImLive, _uxVolPhase };",
+  "function _isDownloadKind(k){return false;}",
+  "function _dlKey(j){return j.id;}",
+  "return { _uxImRenderQueue, _uxImLive, _uxImPhaseBits, _uxVolPhase, _jobRow };",
 ].join("\n");
 
-// A DOM small enough to be obviously faithful: the six elements the renderer asks for.
+// A DOM small enough to be obviously faithful: the elements the renderer asks for.
 const dom = {};
 function resetDom() {
   for (const id of ["ux-imp-queue", "ux-imp-queue-rows", "ux-imp-queue-note",
-                    "ux-imp-stop", "ux-imp-run", "ux-imp-details-body"]) {
-    dom[id] = { innerHTML: "", style: {}, disabled: false };
+                    "ux-imp-stop", "ux-imp-run", "ux-imp-details-body", "ux-imp-bar"]) {
+    dom[id] = { innerHTML: "", style: {}, disabled: false, value: 0, max: 1 };
   }
 }
 const document = { getElementById: (id) => dom[id] || null };
@@ -86,27 +92,27 @@ function render(st) { resetDom(); mod._uxImRenderQueue(st); return dom["ux-imp-q
 const DONE_ITEM = { label: "backup-a", kind: "corpus", state: "done", elapsed_s: 6240, path: "/x" };
 const RUNNING_ITEM = { label: "backup-a", kind: "corpus", state: "running", elapsed_s: 60, path: "/x" };
 const TUNING = { phase: "tuning", own_the_machine: true, detail: "merging the search index after the import" };
-const NOT_FINISHED = "The import is not finished";
 const TUNING_LABEL = "Merging the search index";
+
+// The field shape: one item, done; the search-index merge still running.
+const TAIL_RUN = {
+  state: "running", items: [DONE_ITEM], items_done: 1, items_total: 1,
+  stages_done: 1, stages_total: 2, elapsed_s: 6960, collection_paused: true, live: TUNING,
+};
 
 // --------------------------------------------------------------------------- //
 //  the defect: a run whose items are all done, still working
 // --------------------------------------------------------------------------- //
 test("the tail phase reaches the header when no item is in flight", () => {
-  const note = render({
-    state: "running", items: [DONE_ITEM], items_done: 1, items_total: 1,
-    elapsed_s: 6960, collection_paused: true, live: TUNING,
-  });
-  assert(note.indexOf(NOT_FINISHED) !== -1,
-    "the header must say the run is not finished — this is the reported defect");
+  const note = render(TAIL_RUN);
   assert(note.indexOf(TUNING_LABEL) !== -1,
-    "and it must NAME the phase, not merely assert that one exists");
+    "the header must NAME the phase that is still running — this is the reported defect");
 });
 
 test("the flat live dict is read at all (it has no sub-job to nest under)", () => {
-  // Directly, so a regression in _uxImLive is attributed to _uxImLive rather than
+  // Directly, so a regression in the reader is attributed to the reader rather than
   // reaching us through the renderer as a vague empty header.
-  const flat = mod._uxImLive(TUNING, (s) => s);
+  const flat = mod._uxImPhaseBits(TUNING, (s) => s);
   assert(flat.indexOf(TUNING_LABEL) !== -1, "a flat {phase} live must render its phase");
 });
 
@@ -116,14 +122,41 @@ test("a nested sub-job live still renders (the shape that already worked)", () =
 });
 
 // --------------------------------------------------------------------------- //
+//  the bar: never full while the run is still working
+// --------------------------------------------------------------------------- //
+test("the run bar is short of full while the search index is still merging", () => {
+  render(TAIL_RUN);
+  const bar = dom["ux-imp-bar"];
+  assert(bar.style.display === "", "the bar must be shown while the run is going");
+  assert(bar.max > 0 && bar.value < bar.max,
+    `the bar must not read full while a stage is left (got ${bar.value}/${bar.max})`);
+});
+
+test("the bar counts the stages the server published, inventing nothing", () => {
+  render(TAIL_RUN);
+  assert(dom["ux-imp-bar"].value === 1 && dom["ux-imp-bar"].max === 2,
+    "value and max are the server's own stage counts");
+});
+
+test("an older server with no stage counts gets no bar rather than a wrong one", () => {
+  const st = Object.assign({}, TAIL_RUN);
+  delete st.stages_done; delete st.stages_total;
+  render(st);
+  assert(dom["ux-imp-bar"].style.display === "none",
+    "falling back to the item count would restore the very 100% being corrected");
+});
+
+test("a finished run hides the bar rather than parking it at full", () => {
+  render(Object.assign({}, TAIL_RUN, { state: "done", stages_done: 2, collection_paused: false }));
+  assert(dom["ux-imp-bar"].style.display === "none", "no run, no run bar");
+});
+
+// --------------------------------------------------------------------------- //
 //  the twins: neither a fabricated phase nor a duplicated one
 // --------------------------------------------------------------------------- //
 test("a finished run never claims a phase is still running", () => {
-  const note = render({
-    state: "done", items: [DONE_ITEM], items_done: 1, items_total: 1,
-    elapsed_s: 6960, collection_paused: false, live: TUNING,
-  });
-  assert(note.indexOf(NOT_FINISHED) === -1,
+  const note = render(Object.assign({}, TAIL_RUN, { state: "done", collection_paused: false }));
+  assert(note.indexOf(TUNING_LABEL) === -1,
     "a done run must not inherit the tail line from a stale live dict");
 });
 
@@ -131,22 +164,49 @@ test("an item genuinely in flight keeps its phase in its own row, not the header
   resetDom();
   mod._uxImRenderQueue({
     state: "running", items: [RUNNING_ITEM], items_done: 0, items_total: 1,
-    elapsed_s: 60, collection_paused: true,
+    stages_done: 0, stages_total: 2, elapsed_s: 60, collection_paused: true,
     live: { state: "running", progress: { phase: "merging" } },
   });
   const note = dom["ux-imp-queue-note"].innerHTML;
   const rows = dom["ux-imp-queue-rows"].innerHTML;
-  assert(note.indexOf(NOT_FINISHED) === -1, "the header must not duplicate a running item's phase");
+  assert(note.indexOf("Merging") === -1, "the header must not duplicate a running item's phase");
   assert(rows.indexOf("Merging") !== -1, "the running item's own row still carries it");
 });
 
 test("a running run with no phase at all adds nothing", () => {
-  const note = render({
-    state: "running", items: [DONE_ITEM], items_done: 1, items_total: 1,
-    elapsed_s: 10, collection_paused: true, live: null,
-  });
-  assert(note.indexOf(NOT_FINISHED) === -1,
+  const note = render(Object.assign({}, TAIL_RUN, { live: null }));
+  assert(note.indexOf(TUNING_LABEL) === -1,
     "with no phase published there is nothing to claim — an empty live must stay silent");
+});
+
+// --------------------------------------------------------------------------- //
+//  the task-manager row: counts are counts, bytes are bytes
+// --------------------------------------------------------------------------- //
+test("a counted job renders counts, not bytes", () => {
+  const row = mod._jobRow(
+    { id: "import-queue", kind: "import", label: "Finishing the import", state: "running",
+      progress: { done: 1, total: 2, unit: "stages", percent: 50.0 }, actions: [] },
+    {}, (s) => s);
+  assert(row.indexOf("1 / 2 stages") !== -1, "the unit travelling with the numbers must be used");
+  assert(row.indexOf(" B ") === -1 && row.indexOf(" B<") === -1,
+    "a stage count is not a byte count");
+  assert(row.indexOf("50%") !== -1, "the percentage is the server's own");
+});
+
+test("a byte job still renders bytes", () => {
+  const row = mod._jobRow(
+    { id: "dump:en", kind: "dump", label: "en dump", state: "running",
+      progress: { done: 1048576, total: 4194304, unit: "bytes", percent: 25.0 }, actions: [] },
+    {}, (s) => s);
+  assert(/1(\.0)? MB \/ 4(\.0)? MB/.test(row), `bytes must keep their formatter (got ${row})`);
+});
+
+test("a job with no unit at all is treated as bytes (the historic default)", () => {
+  const row = mod._jobRow(
+    { id: "x", kind: "dump", label: "x", state: "running",
+      progress: { done: 1048576, total: 4194304, percent: 25.0 }, actions: [] },
+    {}, (s) => s);
+  assert(row.indexOf("MB") !== -1, "an absent unit must not change what already shipped");
 });
 
 console.log(`\n${passed} passed`);

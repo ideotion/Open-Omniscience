@@ -1096,8 +1096,16 @@
         let prog = "";
         if (j.progress && j.progress.total) {
           const pct = j.progress.percent || Math.round(100 * j.progress.done / j.progress.total);
+          // EVERY progress was formatted as BYTES, but four producers publish counts
+          // (items/stages/files/articles) -- so a re-index of 700,000 articles read
+          // "700 kB / 1.4 MB" and a one-item import read "1 B / 1 B". The unit was
+          // already travelling with the numbers; nothing read it.
+          const unit = j.progress.unit || "bytes";
+          const amount = unit === "bytes"
+            ? `${_fmtBytes(j.progress.done)} / ${_fmtBytes(j.progress.total)}`
+            : `${fmtNum(j.progress.done, 0)} / ${fmtNum(j.progress.total, 0)} ${esc(t(unit))}`;
           prog = `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>` +
-                 `<div class="muted" style="font-size:11px">${_fmtBytes(j.progress.done)} / ${_fmtBytes(j.progress.total)} · ${pct}%</div>`;
+                 `<div class="muted" style="font-size:11px">${amount} · ${pct}%</div>`;
         }
         const acts = [];
         if (j.id === "collect:current") acts.push(`<button class="tiny danger" title="${esc(t("Stopping collection engages the network kill switch — the app goes offline."))}" onclick="jobCancel('${esc(j.id)}')">${esc(t("Stop"))}</button>`);
@@ -7411,10 +7419,23 @@
       // "Done" that phase had nowhere to appear -- the header read "1/1 imported", the
       // item read "Done", collection was still paused and one core sat at 100%. The
       // backend was already publishing it; there was simply no element to put it in.
-      const tail = items.some((i) => i.state === "running") ? "" : _uxImLive(st.live, t);
-      const tailLine = (st.state === "running" && tail)
-        ? `<br><span class="note">${esc(t("The import is not finished — a final phase is still running:"))}${tail}</span>`
-        : "";
+      const tail = items.some((i) => i.state === "running") ? "" : _uxImPhaseBits(st.live, t);
+      const tailLine = (st.state === "running" && tail) ? `<br><span class="note">${tail}</span>` : "";
+      // The RUN's bar counts STAGES, not items: with every item done the item count is
+      // 100% while the search-index merge still holds the machine, and a full bar beside
+      // a run that has not finished is exactly the claim this reports wrongly. `stages_*`
+      // is absent on an older server, and then there is simply no bar — never a fallback
+      // to the item count, which is the number being corrected.
+      const runBar = document.getElementById("ux-imp-bar");
+      if (runBar) {
+        if (st.state === "running" && st.stages_total) {
+          runBar.max = st.stages_total;
+          runBar.value = Math.min(st.stages_done || 0, st.stages_total);
+          runBar.style.display = "";
+        } else {
+          runBar.style.display = "none";
+        }
+      }
       note.innerHTML = `<b>${head}</b>${st.elapsed_s != null ? ` · ${esc(_uxImDur(st.elapsed_s))}` : ""}`
         + tailLine
         + (st.state === "running" && st.collection_paused ? `<br>${esc(t("Background collection is paused for this whole import and resumes when it finishes."))}` : "")
@@ -7435,7 +7456,7 @@
 
     // The current PHASE's own honest unit (ruling 14) -- never a made-up percentage of
     // the whole run, whose items are different kinds of work over different units.
-    function _uxImLive(live, t) {
+    function _uxImPhaseBits(live, t) {
       // TWO SHAPES, one reader. A sub-job's mirrored status nests its phase under
       // `progress`; the run's own tail phase (_tune_after_run) is a flat dict with no
       // sub-job to mirror. Reading only the nested one silently dropped the tail phase
@@ -7448,7 +7469,15 @@
       if (p.reindex_total) {
         bits.push(`${p.reindex_done || 0}/${p.reindex_total} ${esc(t("articles"))}`);
       }
-      return ` <span class="muted">· ${bits.join(" · ")}</span>`;
+      return bits.join(" · ");
+    }
+
+    function _uxImLive(live, t) {
+      // The per-ITEM form: a trailing clause on that item's own row. The header wants
+      // the same facts without the leading separator, so the bits are shared rather
+      // than the string sliced.
+      const bits = _uxImPhaseBits(live, t);
+      return bits ? ` <span class="muted">· ${bits}</span>` : "";
     }
 
     function _uxImDur(s) {

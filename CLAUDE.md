@@ -3297,6 +3297,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     a single import is a single batch of everything it merged — so parking would never
     fire on the one shape that matters, while stopping is free against a durable
     per-article watermark that the queue's own end-of-run drain restarts.
+  - **A COUNT OF ITEMS IS NOT A COUNT OF THE RUN'S STAGES — and the tail stage is exactly
+    where the two diverge (2026-08-11, the same report's second half):** both progress
+    bars were drawn from `items_done/items_total`, which reaches 100% the moment the last
+    item lands — while the search-index merge is still holding the machine. A full bar
+    beside a run that has not finished is a fabricated completeness, so the DENOMINATOR
+    has to count the work actually left: `stages_total = items + 1`, the +1 being a real
+    final stage, complete once it has RUN (what it *achieved* stays a separate field), and
+    skipped after a Stop so a stopped run correctly never reaches its own end. Publish the
+    stage counts BESIDE the item counts rather than replacing them — the item count was
+    never the wrong number, only the wrong thing to draw a bar from — and when a client
+    finds no stage counts, draw NO bar rather than falling back to the number being
+    corrected. COROLLARY found in the same pass: `_jobRow` formatted EVERY job's progress
+    as bytes, though four producers publish counts (`items`/`files`/`articles`/`stages`),
+    so a 700,000-article re-index read "700 kB / 1.4 MB". The unit was already travelling
+    with the numbers and nothing read it — when a payload carries a unit, the renderer
+    that ignores it will be wrong for every producer that is not the one it was written
+    against.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;

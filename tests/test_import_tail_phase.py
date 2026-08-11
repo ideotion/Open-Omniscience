@@ -54,6 +54,8 @@ def _queue_status(**over) -> dict:
         "live": None,
         "items_done": 1,
         "items_total": 1,
+        "stages_done": 1,
+        "stages_total": 2,
     }
     base.update(over)
     return base
@@ -78,9 +80,13 @@ def test_the_row_names_the_tail_phase_instead_of_importing_at_100_percent(monkey
     jobs = _jobs_with(monkeypatch, _queue_status(live={"phase": "tuning"}))
     assert len(jobs) == 1
     assert jobs[0]["label"] == "Finishing the import"
-    # The item count is a REAL measurement and stays: one of one item is imported. It
-    # was never the wrong number, only the wrong name beside it.
-    assert jobs[0]["progress"]["percent"] == 100.0
+    # THE BAR counts stages, so it cannot read full while a stage is left.
+    prog = jobs[0]["progress"]
+    assert prog["percent"] < 100.0, "a full bar beside a run still holding the machine"
+    assert (prog["done"], prog["total"], prog["unit"]) == (1, 2, "stages")
+    # The item count is a REAL measurement and stays beside it: one of one item IS
+    # imported. It was never the wrong number, only the wrong thing to draw a bar from.
+    assert (jobs[0]["items_done"], jobs[0]["items_total"]) == (1, 1)
 
 
 def test_an_item_in_flight_is_still_named_by_that_item(monkeypatch) -> None:
@@ -106,6 +112,56 @@ def test_the_nested_sub_job_shape_is_read_too(monkeypatch) -> None:
         monkeypatch, _queue_status(live={"state": "running", "progress": {"phase": "tuning"}})
     )
     assert jobs[0]["label"] == "Finishing the import"
+
+
+# --------------------------------------------------------------------------- #
+#  the manager's own stage accounting
+# --------------------------------------------------------------------------- #
+def _queue(tmp_path):
+    from src.backup.import_queue import ImportQueueManager
+
+    return ImportQueueManager(state_path=tmp_path / "q.json")
+
+
+def test_the_search_index_merge_is_counted_as_a_stage(tmp_path) -> None:
+    """The denominator has to include the stage that is actually left, or the bar is
+    full while the run still owns the machine."""
+    mgr = _queue(tmp_path)
+    mgr._items = [{"id": "0-corpus", "kind": "corpus", "state": "done", "started_at": 1.0,
+                   "ended_at": 2.0, "label": "a", "path": "/x", "error": None, "summary": None}]
+    st = mgr.status()
+    assert (st["items_done"], st["items_total"]) == (1, 1), "the item count is unchanged"
+    assert (st["stages_done"], st["stages_total"]) == (1, 2)
+    assert st["stages_done"] < st["stages_total"]
+
+
+def test_the_stage_completes_when_the_tuning_pass_is_over(tmp_path, monkeypatch) -> None:
+    """It counts as done once the pass has RUN — what it achieved is `tuned`, reported
+    separately, so a tuning that failed does not strand the run short of its own end."""
+    mgr = _queue(tmp_path)
+    mgr._items = [{"id": "0-corpus", "kind": "corpus", "state": "done", "started_at": 1.0,
+                   "ended_at": 2.0, "label": "a", "path": "/x", "error": None, "summary": None}]
+
+    def _boom(*_a, **_kw):
+        raise RuntimeError("optimize failed")
+
+    monkeypatch.setattr("src.database.fts.optimize_after_bulk", _boom)
+    mgr._tune_after_run()
+    st = mgr.status()
+    assert st["stages_done"] == st["stages_total"] == 2
+    assert st["tuned"] is None, "and it still reports honestly that it achieved nothing"
+
+
+def test_a_stopped_run_never_reaches_its_own_end(tmp_path) -> None:
+    """The twin. Stop skips the merge, so the stage never runs — and a stopped run
+    reading 100% would be the same fabricated completeness pointing the other way."""
+    mgr = _queue(tmp_path)
+    mgr._items = [{"id": "0-corpus", "kind": "corpus", "state": "done", "started_at": 1.0,
+                   "ended_at": 2.0, "label": "a", "path": "/x", "error": None, "summary": None}]
+    mgr._stop.set()
+    mgr._tune_after_run()
+    st = mgr.status()
+    assert st["stages_done"] == 1 < st["stages_total"] == 2
 
 
 # --------------------------------------------------------------------------- #

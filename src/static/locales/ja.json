@@ -2027,7 +2027,6 @@
   "Merging (additive)…": "統合中（追加のみ）…",
   "Re-indexing merged articles…": "統合された記事を再インデックス中…",
   "Merging the search index…": "検索インデックスを統合中…",
-  "The import is not finished — a final phase is still running:": "インポートはまだ完了していません — 最終フェーズが実行中です:",
   "Finishing the import": "インポートを完了中",
   "Preparing…": "準備中…",
   "Choose a destination folder.": "保存先フォルダーを選択してください。",
