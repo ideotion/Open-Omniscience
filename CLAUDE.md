@@ -3578,6 +3578,53 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the fix is to edit in BINARY (`read_bytes`/`write_bytes`) so untouched lines stay
     byte-identical, and `git diff --ignore-cr-at-eol --numstat` is what proves it. A
     line ending is content in a file whose diff people read.
+  - **A COVERAGE RATIO OVER A CATALOG MUST NOT COUNT ENTRIES COPIED FROM THE SOURCE
+    LANGUAGE — and the filter that keeps a source's own braces out of a
+    frame-hole check cannot be built from the output (2026-08-11, the bulletin's
+    translation layer):** two fabricated passes, one in the feature and one in my
+    own check for it. (a) A translation catalog keyed on the English sentence can
+    contain `"Stories": "Stories"`, and some of those are legitimate (a proper
+    noun, a unit, `{n} mentions` in French) — so counting them as coverage lets a
+    catalog of pure copies report itself complete, which is the exact shape of a
+    pass on work nobody did. Count them APART and publish the count; a mutation
+    that folds them into coverage then fails by name. (b) The render-integrity
+    check for "a frame hole reached the reader" needs the set of OUR hole names,
+    and my first version built it as `{holes in the frames} | {holes in the
+    output}` — a superset of everything in the output, so the filter could exclude
+    nothing and a publisher who writes `{x}` in a headline would be reported as
+    our bug. Derive the set from the FRAMES the render declared (the translator
+    tracks them), never from the text you are inspecting. TWO MORE POINTS worth
+    keeping. A refused translation must render in ENGLISH rather than raise: a
+    lost `{days}` prints a literal brace to a reader, and a `KeyError` would abort
+    a whole document over one sentence — so it degrades visibly and the integrity
+    check is what catches it. And a REORDERED frame must be honoured, since word
+    order is the entire reason to translate a frame rather than its fragments;
+    compare the hole SETS, never the sequence, and pin both directions.
+  - **A MIXED-LANGUAGE DOCUMENT OWES ITS READER THE REASON, AND NUMBER GROUPING IS
+    A MISREADING RATHER THAN A STYLE NIT (2026-08-11, same slice):** a French
+    bulletin whose caveats are still English is not broken — they are simply
+    untranslated — but a reader cannot tell that from a deliberate quotation, so
+    the document states its own coverage (translated of total) above the first
+    figure, computed AFTER the body so it counts what the body actually asked for.
+    Read the report BEFORE composing that line or a fully-translated document
+    announces a shortfall of exactly one: itself. The number half is the sharper
+    one: `f"{n:,}"` renders 72,225, which in French convention reads as 72.225 —
+    so the document says the grouping is English rather than pretending
+    otherwise. Locale-aware grouping is deliberately NOT done here, because
+    guessing per locale (a dot for German, lakh grouping for Hindi) trades one
+    misreading for another and the fix belongs to the app-wide shared formatter.
+  - **MEASURING TRANSLATION COVERAGE BY RENDERING ALONE REPORTS A WORKLIST COMPLETE
+    WHILE HALF THE SENTENCES HAVE NO ENTRY (2026-08-11, same slice):** a record with
+    no alerts carries no alert caveat, one with no stories carries no story caveat —
+    so the prose the computing modules WRITE INTO a record is a surface no single
+    edition exhibits. Harvest it from source as well (string literals assigned to the
+    record keys the renderer translates), and declare it a CANDIDATE set rather than a
+    total: it misses a sentence composed at runtime from two halves, and it includes
+    method strings that belong to a selftest payload and never reach a document.
+    Corollary on where a hover essay belongs: a 700-character `title=` explaining how
+    to use a report is text nobody reads at the moment they act on it — put it in the
+    report's own payload, which also keeps twelve locales from owing a translation of
+    it, and the i18n ratchet from going red over prose that had a better home.
   - **A CROSS-ARTIFACT REFERENCE IS ONLY AS GOOD AS THE ROUND TRIP, AND A FILE-COUNT
     ASSERTION CANNOT SEE THE HALF THAT BREAKS (2026-08-11, the bulletin's annexes):**
     a report that cites `[0007]` beside a ZIP holding `…_Article_0007.md` has a
@@ -3660,6 +3707,54 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     property on EACH; and match the invocation (`python -m pip install`), not the words,
     or a `warn "…skipping pip install…"` message counts as a command. Mutation-checked in
     both directions afterwards.
+  - **THE SINGLE-WRITER GATE IS TAKEN ON FLUSH, SO IT CANNOT PROTECT A FILE-LEVEL SWAP —
+    the second half of the pair is a lease, not a wider use of the gate (2026-08-11, the
+    restore's `os.replace`):** a restore commits with `dispose_engine(); os.replace(...)`,
+    and a thread holding a checked-out connection across that keeps writing to the OLD,
+    now-unlinked inode — silently lost, and worse than lost, because a job with a durable
+    cursor has already advanced PAST those articles so nothing goes back for them.
+    Reaching for the write gate is the obvious move and it does not work: a re-index batch
+    holds a connection through its whole read-and-extract phase holding **no gate at all**,
+    so a swap landing there sends the flush that follows to the orphaned inode with the
+    gate dutifully held. The gate serialises WRITERS; a swap needs to know nobody is
+    holding the FILE. THE PAIR THAT WORKS is two halves neither of which is sufficient:
+    the exclusive window stops a new batch from STARTING, and a lease held across each
+    batch proves none is IN FLIGHT — then the swap waits out whatever had begun and
+    ABORTS on timeout, at the last point where aborting is free and the live corpus is
+    byte-identical. Waiting forever trades a data-loss window for a hang; swapping anyway
+    IS the data loss. TWO DESIGN POINTS worth reusing: a lease must be **observed and
+    never waited on by its holder**, because a job that runs INSIDE the window its own run
+    opened (a queue item) would otherwise deadlock against itself — that is also why the
+    lease wraps the BATCH and not the run, so a parked worker holds nothing and cannot
+    make a restore wait out a job that is deliberately idle. **AND THE GUARD FOR IT MUST
+    CHECK SCOPE, NOT PRESENCE:** the first cut asserted `"from … import corpus_lease"`
+    appeared somewhere in the file, a scripted edit duly placed it in a sibling function,
+    and the guard passed while the use site raised `NameError` — only ruff's F821 caught
+    it. Any "module X imports what it uses" assertion has to resolve the binding (ast,
+    enclosing scope), or it is satisfied by an import that cannot be seen from the call.
+  - **ADDING A WAIT PAST AN ABORT POINT MAKES THAT ABORT POINT STALE — and the guard that
+    notices will be anchored on a PROXY for the real boundary (2026-08-11, the same
+    change, both halves found after it merged):** the restore's last poll is
+    `_abort_point("swap")`, and the quiescence barrier went in just below it, so the first
+    cut turned a ~0 s inert-Stop window into one of up to **180 s** — on the one control
+    the operator is watching, against a ruling that says a pre-swap Stop aborts NOW. The
+    fix is two halves and the ORDER of the second is the honest part: the wait takes a
+    `should_stop` and returns early (it REPORTS, it never decides), and the abort point is
+    RE-CHECKED after the wait but BEFORE the still-held refusal — otherwise someone who
+    pressed Stop is told "another job is writing to your corpus", naming the wrong cause
+    and sending them hunting a job that is not the reason. Both directions need pinning,
+    because "honour the stop" is one edit from "give up early". **THE SECOND HALF cost a
+    red `main`:** `test_there_is_deliberately_NO_abort_point_after_the_swap` split the
+    source at `with timings.stage("swap"):` — but its own docstring names the rule as
+    "after the atomic **swap**", which is `os.replace`, and the stage entry was only ever a
+    proxy for it. The proxy went wrong the instant the stage gained legitimate PRE-swap
+    work, so a correct abort was reported as a violation. Re-anchoring on the commit point
+    is STRICTLY STRONGER for the property named (it still catches the one unsound thing and
+    no longer fires on the many sound ones) — but note the direction of the reasoning:
+    relax a guard only when its DOCSTRING's property is preserved and you can still fail it
+    on the real violation, which is the mutation to run before touching it. GENERAL FORM:
+    when a guard forbids something "after X", check whether it splits on X or on a landmark
+    that merely used to coincide with X.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;

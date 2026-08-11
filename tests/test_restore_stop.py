@@ -125,7 +125,17 @@ def test_there_is_deliberately_NO_abort_point_after_the_swap():
     is asserted rather than left to be "fixed" later by someone reading the list above
     as incomplete."""
     body = _run_restore_source()
-    after_swap = body.split('with timings.stage("swap"):', 1)[1]
+    # ANCHORED ON THE COMMIT POINT, NOT THE STAGE. The rule this test is named for is
+    # about os.replace -- past it there is no undo -- and the stage entry was only ever a
+    # proxy for it. The proxy went wrong the moment the swap stage gained legitimate
+    # PRE-swap work (the corpus-lease quiescence wait, which sits inside the stage because
+    # the wait is real time that stage spends): an abort point between the wait and the
+    # replace is exactly what the ruling requires, and the old split called it a violation.
+    # Splitting here is strictly stronger for the property named -- it still catches the
+    # one thing that would be unsound, and no longer fires on the many things that are not.
+    SWAP = "os.replace(working, target)"
+    assert body.count(SWAP) == 1, "the anchor must be the single commit point, or the split lies"
+    after_swap = body.split(SWAP, 1)[1]
     assert "_abort_point(" not in after_swap, (
         "an abort after the atomic swap would imply an undo that does not exist"
     )

@@ -27,6 +27,16 @@ THREE RULES the renderers enforce, not the caller:
 The HTML is self-contained: no external stylesheet, no font, no script, no
 tracking pixel. A shared document that phones home would tell its recipient's
 network what the operator reads.
+
+LANGUAGE. Every sentence this file composes goes through a ``Translator`` — as a
+whole sentence (``T.t``) or as a frame with named holes (``T.f``), never as
+concatenated fragments, because a fragment is not a keyable unit and cannot be
+translated into a language whose word order differs. The prose the nine computing
+modules STORE in the record (their methods and caveats) is translated at its print
+site by the same exact-match rule, which is why those modules needed no change.
+``lang="en"`` is byte-identical to what this renderer produced before the layer
+existed: ``Translator.t`` returns its input and ``Translator.f`` formats the frame
+it was given.
 """
 
 from __future__ import annotations
@@ -35,6 +45,8 @@ import html
 import re
 from datetime import UTC, datetime
 from typing import Any
+
+from src.bulletin.i18n import Translator
 
 _AI_LABEL = "AI-derived — unreliable"
 
@@ -54,7 +66,7 @@ def _pct(x: Any) -> str:
 
 
 def _listed(
-    rows: list[dict], *, limit: int, label: str, count_key: str = "articles"
+    rows: list[dict], *, limit: int, label: str, count_key: str = "articles", T: Translator
 ) -> tuple[list[dict], str]:
     """The rows a document can carry, and an exact account of the rest.
 
@@ -71,16 +83,25 @@ def _listed(
         return rows, ""
     rest = rows[limit:]
     carried = sum(int(r.get(count_key) or 0) for r in rest)
-    return rows[:limit], (
-        f" ({limit} of {total} shown; the other {total - limit} {label} "
-        f"{_fmt(carried)} in total)"
+    return rows[:limit], T.f(
+        " ({limit} of {total} shown; the other {rest} {label} {carried} in total)",
+        limit=limit,
+        total=total,
+        rest=total - limit,
+        label=label,
+        carried=_fmt(carried),
     )
 
 
-def _title(edition: dict) -> str:
+def _title(edition: dict, T: Translator) -> str:
     p = edition.get("period") or {}
-    cadence = str(p.get("cadence", "period")).capitalize()
-    return f"{cadence} bulletin — {p.get('start', '?')} to {p.get('last_day', '?')}"
+    cadence = T.t(str(p.get("cadence", "period")).capitalize())
+    return T.f(
+        "{cadence} bulletin — {start} to {end}",
+        cadence=cadence,
+        start=p.get("start", "?"),
+        end=p.get("last_day", "?"),
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -88,7 +109,7 @@ def _title(edition: dict) -> str:
 # --------------------------------------------------------------------------- #
 
 
-def _ref_legend(edition: dict) -> list[str]:
+def _ref_legend(edition: dict, T: Translator) -> list[str]:
     """Number the cited articles and explain the numbers, or say nothing.
 
     ``assign_refs`` is called HERE rather than by the route, and by the annexes
@@ -103,16 +124,19 @@ def _ref_legend(edition: dict) -> list[str]:
     if not n:
         return []
     return [
-        f"A number like `[0001]` beside an article is its annex file — {n:,} of them, "
-        "one per article this report cites, in the companion `…_Annexes.zip`. The number "
-        "identifies the article, so an article cited twice keeps one number. Each file is "
-        "named for the day its article was PUBLISHED, not for this report, so look the "
-        "number up in the bundle's contents page to find its filename.",
+        T.f(
+            "A number like `[0001]` beside an article is its annex file — {n} of them, "
+            "one per article this report cites, in the companion `…_Annexes.zip`. The number "
+            "identifies the article, so an article cited twice keeps one number. Each file is "
+            "named for the day its article was PUBLISHED, not for this report, so look the "
+            "number up in the bundle's contents page to find its filename.",
+            n=f"{n:,}",
+        ),
         "",
     ]
 
 
-def render_markdown(edition: dict) -> str:
+def render_markdown(edition: dict, *, lang: str = "en", tr: Translator | None = None) -> str:
     """The edition as Markdown. Every figure comes from the record.
 
     ONE side effect, stated rather than left to be found: ``_ref_legend`` stamps a
@@ -120,65 +144,97 @@ def render_markdown(edition: dict) -> str:
     deterministic over a given record and never written back — the routes read a
     fresh dict from disk — so re-rendering still cannot change a number. The earlier
     word for this was "pure", which was true of the figures and not of the object.
+
+    ``tr`` lets a caller own the translator and read its report afterwards, which is
+    how the bulletin-language diagnostic measures a real edition rather than a guess.
     """
+    T = tr or Translator(lang)
     p = edition.get("period") or {}
     m = edition.get("masthead") or {}
-    out: list[str] = [f"# {_title(edition)}", ""]
+    out: list[str] = [f"# {_title(edition, T)}", ""]
 
     # The framing verb is "what ROSE in this corpus", never "what trended" — and
     # the lens is stated in the same breath, which is the point of the masthead.
     out += [
-        f"What rose in this corpus between **{p.get('start')}** and "
-        f"**{p.get('last_day')}** ({p.get('days')} days).",
+        T.f(
+            "What rose in this corpus between **{start}** and **{end}** ({days} days).",
+            start=p.get("start"),
+            end=p.get("last_day"),
+            days=p.get("days"),
+        ),
         "",
-        "## This corpus, this period",
+    ]
+    # The language line goes HERE, above the first figure, and is written after the
+    # body so it can count what the body actually asked for. A reader meeting an
+    # English caveat under a French heading is owed the reason before the caveat.
+    lang_at = len(out)
+    out += [
+        f"## {T.t('This corpus, this period')}",
         "",
-        f"- **{_fmt(m.get('articles'))}** articles, from **{_fmt(m.get('sources_contributing'))}** "
-        f"sources that actually contributed",
-        f"- The three largest sources carried **{_pct(m.get('top_3_share'))}** of them",
-        f"- Ingest on **{m.get('days_with_ingest', '—')}** of the period's "
-        f"{m.get('period_days', '—')} days",
-        f"- **{_pct(m.get('corpus_share'))}** of a corpus of {_fmt(m.get('corpus_articles'))}",
+        T.f(
+            "- **{articles}** articles, from **{sources}** sources that actually contributed",
+            articles=_fmt(m.get("articles")),
+            sources=_fmt(m.get("sources_contributing")),
+        ),
+        T.f(
+            "- The three largest sources carried **{share}** of them",
+            share=_pct(m.get("top_3_share")),
+        ),
+        T.f(
+            "- Ingest on **{days}** of the period's {total} days",
+            days=m.get("days_with_ingest", "—"),
+            total=m.get("period_days", "—"),
+        ),
+        T.f(
+            "- **{share}** of a corpus of {total}",
+            share=_pct(m.get("corpus_share")),
+            total=_fmt(m.get("corpus_articles")),
+        ),
         "",
     ]
 
-    for line in _masthead_splits(m):
+    for line in _masthead_splits(m, T):
         out += [line, ""]
     if m.get("caveat"):
-        out += [f"> {m['caveat']}", ""]
-    out += _ref_legend(edition)
+        out += [f"> {T.t(m['caveat'])}", ""]
+    out += _ref_legend(edition, T)
 
     for section in edition.get("sections") or []:
-        out += _md_section(section)
+        out += _md_section(section, T)
 
     stories = (edition.get("stories") or {}).get("stories") or []
     if stories:
-        out += ["## Stories", ""]
+        out += [f"## {T.t('Stories')}", ""]
         for s in stories:
-            out += _md_story(s)
+            out += _md_story(s, T)
         if (edition.get("stories") or {}).get("caveat"):
-            out += [f"> {edition['stories']['caveat']}", ""]
+            out += [f"> {T.t(edition['stories']['caveat'])}", ""]
 
-    out += _md_worklist(edition)
-    out += _md_references(edition)
-    out += ["## Methods & caveats", ""]
+    out += _md_worklist(edition, T)
+    out += _md_references(edition, T)
+    out += [f"## {T.t('Methods & caveats')}", ""]
     if edition.get("method"):
-        out += [edition["method"], ""]
+        out += [T.t(edition["method"]), ""]
     if edition.get("caveat"):
-        out += [f"> {edition['caveat']}", ""]
-    out += _md_disclosures(edition)
+        out += [f"> {T.t(edition['caveat'])}", ""]
+    out += _md_disclosures(edition, T)
     out += [
         "---",
         "",
-        f"Generated {edition.get('generated_at') or datetime.now(UTC).isoformat()} "
-        f"by Open Omniscience. Deterministic sections are computed from this "
-        f"operator's own corpus; the record they come from is "
-        f"`{edition.get('filename', 'the edition JSON')}`.",
+        T.f(
+            "Generated {when} by Open Omniscience. Deterministic sections are computed "
+            "from this operator's own corpus; the record they come from is `{record}`.",
+            when=edition.get("generated_at") or datetime.now(UTC).isoformat(),
+            record=edition.get("filename", "the edition JSON"),
+        ),
     ]
+    disclosure = T.disclosure()
+    if disclosure:
+        out[lang_at:lang_at] = [f"*{disclosure}*", ""]
     return "\n".join(out)
 
 
-def _masthead_splits(m: dict) -> list[str]:
+def _masthead_splits(m: dict, T: Translator) -> list[str]:
     """The masthead's per-day, per-channel, per-language and per-country splits.
 
     SHARED, for the reason ``_section_groups`` is: the two renderers had their own
@@ -196,31 +252,40 @@ def _masthead_splits(m: dict) -> list[str]:
     days = m.get("articles_by_day") or []
     if days:
         parts = [f"{str(r['day'])[5:]} {_fmt(r['articles'])}" for r in days]
-        lines.append(f"By day: {', '.join(parts)}.")
+        lines.append(T.f("By day: {parts}.", parts=", ".join(parts)))
 
     channels = m.get("channels") or []
     if channels:
-        shown, tail = _listed(channels, limit=10, label="carried")
-        parts = [f"{r['source_type']} {_fmt(r['articles'])}" for r in shown]
-        lines.append(f"Channels: {', '.join(parts)}{tail}.")
+        shown, tail = _listed(channels, limit=10, label=T.t("carried"), T=T)
+        parts = [f"{T.t(str(r['source_type']))} {_fmt(r['articles'])}" for r in shown]
+        lines.append(T.f("Channels: {parts}{tail}.", parts=", ".join(parts), tail=tail))
 
     langs = m.get("languages") or []
     if langs:
-        shown, tail = _listed(langs, limit=16, label="carried")
-        parts = [f"{r['language'] or 'untagged'} {_fmt(r['articles'])}" for r in shown]
-        lines.append(f"Languages: {', '.join(parts)}{tail}.")
+        shown, tail = _listed(langs, limit=16, label=T.t("carried"), T=T)
+        parts = [f"{r['language'] or T.t('untagged')} {_fmt(r['articles'])}" for r in shown]
+        lines.append(T.f("Languages: {parts}{tail}.", parts=", ".join(parts), tail=tail))
 
     countries = m.get("source_countries") or []
     if countries:
-        shown, tail = _listed(countries, limit=20, label="carried")
+        shown, tail = _listed(countries, limit=20, label=T.t("carried"), T=T)
         parts = [f"{r['country']} {_fmt(r['articles'])}" for r in shown]
         unl = m.get("source_unlocated_articles") or 0
-        unlocated = f"; {_fmt(unl)} from sources with no country recorded" if unl else ""
-        lines.append(f"Source countries: {', '.join(parts)}{tail}{unlocated}.")
+        unlocated = (
+            T.f("; {n} from sources with no country recorded", n=_fmt(unl)) if unl else ""
+        )
+        lines.append(
+            T.f(
+                "Source countries: {parts}{tail}{unlocated}.",
+                parts=", ".join(parts),
+                tail=tail,
+                unlocated=unlocated,
+            )
+        )
     return lines
 
 
-def _channel_of(row: dict) -> str:
+def _channel_of(row: dict, T: Translator) -> str:
     """Where an across-channels row was first seen, ties intact.
 
     A tie is real: two channels can carry a concept on the same day and the
@@ -229,8 +294,11 @@ def _channel_of(row: dict) -> str:
     """
     tied = row.get("channels_tied") or []
     if tied:
-        return f"{', '.join(str(c) for c in tied)} (tied)"
-    return str(row.get("channel") or "no channel recorded")
+        return T.f(
+            "{channels} (tied)", channels=", ".join(T.t(str(c)) for c in tied)
+        )
+    channel = row.get("channel")
+    return T.t(str(channel)) if channel else T.t("no channel recorded")
 
 
 def _is_ratio(row: dict) -> bool | None:
@@ -262,7 +330,7 @@ def _is_ratio(row: dict) -> bool | None:
         return None
 
 
-def _term_row(row: dict, *, baseline_days: Any = None) -> tuple[str, str]:
+def _term_row(row: dict, *, baseline_days: Any = None, T: Translator) -> tuple[str, str]:
     """A ``terms`` row as (term, description), chosen by the row's OWN fields.
 
     TWO sections emit a ``terms`` key with DIFFERENT shapes — rising concepts
@@ -274,30 +342,44 @@ def _term_row(row: dict, *, baseline_days: Any = None) -> tuple[str, str]:
     """
     term = str(row.get("term") or row.get("normalized") or "—")
     if "first_seen" in row:
-        return term, f"first seen {row.get('first_seen')} in {_channel_of(row)}"
+        return term, T.f(
+            "first seen {when} in {channel}",
+            when=row.get("first_seen"),
+            channel=_channel_of(row, T),
+        )
     growth = row.get("growth")
     recent = _fmt(row.get("recent"))
     if growth is None:
         # No ratio computed — say the count and stop, rather than print "×None".
-        return term, f"{recent} mentions"
+        return term, T.f("{n} mentions", n=recent)
     if _is_ratio(row) is False:
         # The sentinel. Say the two counts it stands between and name the reason;
         # the one thing not to do is dress the count as a multiple.
         prior = row.get("prior")
-        window = f"prior {baseline_days} days" if baseline_days else "prior period"
+        window = (
+            T.f("prior {days} days", days=baseline_days) if baseline_days else T.t("prior period")
+        )
         if prior in (0, None):
-            return term, f"{recent} mentions — new in this period, nothing prior to compare"
+            return term, T.f(
+                "{n} mentions — new in this period, nothing prior to compare", n=recent
+            )
         return (
             term,
-            f"{recent} mentions, against {_fmt(prior)} in the {window} — "
-            "too thin a baseline to divide by",
+            T.f(
+                "{n} mentions, against {prior} in the {window} — too thin a baseline to divide by",
+                n=recent,
+                prior=_fmt(prior),
+                window=window,
+            ),
         )
     if _is_ratio(row) is None:
-        return term, f"{recent} mentions"
-    return term, f"{recent} mentions (×{growth} vs the prior period)"
+        return term, T.f("{n} mentions", n=recent)
+    return term, T.f(
+        "{n} mentions (×{growth} vs the prior period)", n=recent, growth=growth
+    )
 
 
-def _section_groups(section: dict) -> list[tuple[str, list[tuple[str, str]]]]:
+def _section_groups(section: dict, T: Translator) -> list[tuple[str, list[tuple[str, str]]]]:
     """A section's body as labelled groups of (subject, description) rows.
 
     Shared by both renderers so the two can never drift, and grouped because a
@@ -325,7 +407,10 @@ def _section_groups(section: dict) -> list[tuple[str, list[tuple[str, str]]]]:
         by_state[_is_ratio(r)].append(r)
     if first_seen:
         groups.append(
-            ("Where each concept appeared first", [_term_row(r) for r in first_seen])
+            (
+                T.t("Where each concept appeared first"),
+                [_term_row(r, T=T) for r in first_seen],
+            )
         )
     for state, label in (
         (True, "Rose against a measurable baseline"),
@@ -336,13 +421,25 @@ def _section_groups(section: dict) -> list[tuple[str, list[tuple[str, str]]]]:
         if picked:
             groups.append(
                 (
-                    f"{label} ({len(picked)} of {len(rising)})",
-                    [_term_row(r, baseline_days=baseline_days) for r in picked],
+                    T.f(
+                        "{label} ({n} of {total})",
+                        label=T.t(label),
+                        n=len(picked),
+                        total=len(rising),
+                    ),
+                    [_term_row(r, baseline_days=baseline_days, T=T) for r in picked],
                 )
             )
 
     topics = [
-        (str(r["topic"]), f"{_fmt(r['articles'])} articles, {_fmt(r.get('mentions'))} mentions")
+        (
+            str(r["topic"]),
+            T.f(
+                "{articles} articles, {mentions} mentions",
+                articles=_fmt(r["articles"]),
+                mentions=_fmt(r.get("mentions")),
+            ),
+        )
         for r in section.get("topics") or []
     ]
     if topics:
@@ -356,35 +453,47 @@ def _section_groups(section: dict) -> list[tuple[str, list[tuple[str, str]]]]:
             share = ""
             try:
                 if total:
-                    share = f" — {_pct(float(section['mentions_tagged']) / float(total))} of them"
+                    share = T.f(
+                        " — {share} of them",
+                        share=_pct(float(section["mentions_tagged"]) / float(total)),
+                    )
             except (TypeError, ValueError, ZeroDivisionError):
                 share = ""
             topics = topics + [
                 (
-                    "Carrying no topic tag",
-                    f"{_fmt(untagged)} mentions of {_fmt(total)}; the table above covers "
-                    f"the tagged remainder{share}",
+                    T.t("Carrying no topic tag"),
+                    T.f(
+                        "{untagged} mentions of {total}; the table above covers the "
+                        "tagged remainder{share}",
+                        untagged=_fmt(untagged),
+                        total=_fmt(total),
+                        share=share,
+                    ),
                 )
             ]
-        groups.append(("By topic", topics))
+        groups.append((T.t("By topic"), topics))
 
     channels = [
-        (str(r["provenance"]), f"first with {_fmt(r['concepts_first_here'])} concept(s)")
+        (
+            T.t(str(r["provenance"])),
+            T.f("first with {n} concept(s)", n=_fmt(r["concepts_first_here"])),
+        )
         for r in section.get("channels") or []
     ]
     if channels:
-        groups.append(("Concepts first seen in each channel", channels))
+        groups.append((T.t("Concepts first seen in each channel"), channels))
 
     events = [
-        (str(r["event_type"]), _fmt(r["events"])) for r in section.get("by_event_type") or []
+        (T.t(str(r["event_type"])), _fmt(r["events"]))
+        for r in section.get("by_event_type") or []
     ]
     if events:
-        groups.append(("By event type", events))
+        groups.append((T.t("By event type"), events))
     providers = [
         (str(r["provider"]), _fmt(r["events"])) for r in section.get("by_provider") or []
     ]
     if providers:
-        groups.append(("By provider", providers))
+        groups.append((T.t("By provider"), providers))
     # "Every field here is what the provider published — magnitude, severity tier,
     # coordinates, time — carried through unchanged and never combined" was the
     # caveat over a list of one number. The examples carry every one of those fields
@@ -393,69 +502,87 @@ def _section_groups(section: dict) -> list[tuple[str, list[tuple[str, str]]]]:
     for r in section.get("examples") or []:
         bits = []
         if r.get("magnitude") is not None:
-            bits.append(f"M {r['magnitude']}")
+            bits.append(T.f("M {magnitude}", magnitude=r["magnitude"]))
         if r.get("severity"):
-            bits.append(str(r["severity"]))
+            bits.append(T.t(str(r["severity"])))
         if r.get("event_time"):
             bits.append(str(r["event_time"])[:16])
         if r.get("provider"):
-            bits.append(f"per {r['provider']}")
+            bits.append(T.f("per {provider}", provider=r["provider"]))
         alerts.append((str(r.get("place") or r.get("title") or "—"), " · ".join(bits) or "—"))
     if alerts:
-        groups.append((f"What the providers reported ({len(alerts)} of {_fmt(section.get('events'))})", alerts))
+        groups.append(
+            (
+                T.f(
+                    "What the providers reported ({n} of {total})",
+                    n=len(alerts),
+                    total=_fmt(section.get("events")),
+                ),
+                alerts,
+            )
+        )
 
     changes = []
     for r in section.get("law_examples") or []:
         bits = [str(r.get("jurisdiction") or "—")]
         if r.get("observed_at"):
-            bits.append(f"observed {str(r['observed_at'])[:10]}")
+            bits.append(T.f("observed {when}", when=str(r["observed_at"])[:10]))
         delta = r.get("delta_bytes")
         if delta is not None:
-            bits.append(f"{_fmt(delta)} bytes changed")
+            bits.append(T.f("{n} bytes changed", n=_fmt(delta)))
         if r.get("flagged"):
-            bits.append("flagged as large")
+            bits.append(T.t("flagged as large"))
         changes.append((str(r.get("title") or "—"), " · ".join(bits)))
     for r in section.get("wiki_examples") or []:
         bits = ["wikipedia"]
         if r.get("observed_at"):
-            bits.append(f"observed {str(r['observed_at'])[:10]}")
+            bits.append(T.f("observed {when}", when=str(r["observed_at"])[:10]))
         if r.get("flagged"):
-            bits.append("flagged as large")
+            bits.append(T.t("flagged as large"))
         changes.append((str(r.get("title") or "—"), " · ".join(bits)))
     if changes:
-        groups.append(("Which documents changed", changes))
+        groups.append((T.t("Which documents changed"), changes))
 
     years = [
-        (str(r["year"]), f"{_fmt(r['articles'])} articles on the same days")
+        (
+            str(r["year"]),
+            T.f("{n} articles on the same days", n=_fmt(r["articles"])),
+        )
         for r in section.get("years") or []
     ]
     if years:
-        groups.append(("By year", years))
+        groups.append((T.t("By year"), years))
 
     counts: list[tuple[str, str]] = []
     if section.get("law_revisions") is not None:
         counts.append(
             (
-                "Law revisions",
-                f"{_fmt(section['law_revisions'])} "
-                f"({_fmt(section.get('law_revisions_flagged'))} flagged as large)",
+                T.t("Law revisions"),
+                T.f(
+                    "{n} ({flagged} flagged as large)",
+                    n=_fmt(section["law_revisions"]),
+                    flagged=_fmt(section.get("law_revisions_flagged")),
+                ),
             )
         )
     if section.get("wiki_revisions") is not None:
         counts.append(
             (
-                "Wikipedia revisions",
-                f"{_fmt(section['wiki_revisions'])} "
-                f"({_fmt(section.get('wiki_revisions_flagged'))} flagged as large)",
+                T.t("Wikipedia revisions"),
+                T.f(
+                    "{n} ({flagged} flagged as large)",
+                    n=_fmt(section["wiki_revisions"]),
+                    flagged=_fmt(section.get("wiki_revisions_flagged")),
+                ),
             )
         )
     if counts:
-        groups.append(("Observed changes", counts))
+        groups.append((T.t("Observed changes"), counts))
 
     return groups
 
 
-def _coverage_blocks(section: dict) -> list[tuple[str | None, str, list[str]]]:
+def _coverage_blocks(section: dict, T: Translator) -> list[tuple[str | None, str, list[str]]]:
     """The country-coverage section as (group, heading, lines) blocks.
 
     Its shape is nested — a place, then two vantages under it — so it cannot go
@@ -473,17 +600,28 @@ def _coverage_blocks(section: dict) -> list[tuple[str | None, str, list[str]]]:
         terms = side.get("terms") or []
         n = side.get("articles") or 0
         if not terms:
-            return f"*{what}: nothing in this period* (from {_fmt(n)} articles)"
+            return T.f(
+                "*{what}: nothing in this period* (from {n} articles)",
+                what=what,
+                n=_fmt(n),
+            )
         listed = ", ".join(
-            f"{t.get('term')} {_fmt(t.get('mentions'))} ({_fmt(t.get('articles'))} art.)"
+            T.f(
+                "{term} {mentions} ({articles} art.)",
+                term=t.get("term"),
+                mentions=_fmt(t.get("mentions")),
+                articles=_fmt(t.get("articles")),
+            )
             for t in terms
         )
-        return f"**{what}**, from {_fmt(n)} articles: {listed}"
+        return T.f(
+            "**{what}**, from {n} articles: {listed}", what=what, n=_fmt(n), listed=listed
+        )
 
     def _lines(row: dict) -> list[str]:
-        lines = [f"*{row.get('reading')}*", ""]
+        lines = [f"*{T.t(row.get('reading'))}*", ""]
         for key, what in (("local", "Local"), ("international", "International")):
-            line = _side(row.get(key) or {}, what)
+            line = _side(row.get(key) or {}, T.t(what))
             if line:
                 lines.append(f"- {line}")
         return lines
@@ -491,22 +629,23 @@ def _coverage_blocks(section: dict) -> list[tuple[str | None, str, list[str]]]:
     for i, row in enumerate(section.get("countries") or []):
         head = f"{row.get('name') or row.get('country')} ({row.get('country')})"
         if row.get("continent"):
-            head += f" · {row['continent']}"
-        blocks.append(("By country" if i == 0 else None, head, _lines(row)))
+            head += f" · {T.t(str(row['continent']))}"
+        blocks.append((T.t("By country") if i == 0 else None, head, _lines(row)))
 
     for i, row in enumerate(section.get("continents") or []):
         # "contributing countries: 1" rather than "1 countries here": a count
         # interpolated into a sentence cannot agree with the noun beside it, and the
         # label:value form is correct in every language without per-form keys.
-        head = (
-            f"{row.get('continent')} — contributing countries: "
-            f"{_fmt(row.get('countries_contributing'))}"
+        head = T.f(
+            "{continent} — contributing countries: {n}",
+            continent=T.t(str(row.get("continent"))),
+            n=_fmt(row.get("countries_contributing")),
         )
-        blocks.append(("By continent" if i == 0 else None, head, _lines(row)))
+        blocks.append((T.t("By continent") if i == 0 else None, head, _lines(row)))
     return blocks
 
 
-def _article_lines(row: dict) -> list[str]:
+def _article_lines(row: dict, T: Translator) -> list[str]:
     """One article as a few lines, with its two classes of fact kept apart.
 
     The URL is the ORIGINAL page. A local article id resolves to a different article
@@ -525,33 +664,44 @@ def _article_lines(row: dict) -> list[str]:
     if row.get("ref"):
         head = f"`[{row['ref']}]` {head}"
 
-    stated = [str(src.get("name") or src.get("domain") or "unknown source")]
+    stated = [str(src.get("name") or src.get("domain") or T.t("unknown source"))]
     if asserted.get("published_at"):
         stated.append(str(asserted["published_at"])[:16])
     if asserted.get("author"):
-        stated.append(f"by {asserted['author']}")
+        stated.append(T.f("by {author}", author=asserted["author"]))
     if asserted.get("language"):
-        stated.append(f"lang {asserted['language']}")
+        stated.append(T.f("lang {code}", code=asserted["language"]))
 
     read = []
     if deduced.get("word_count"):
-        read.append(f"{_fmt(deduced['word_count'])} words")
+        read.append(T.f("{n} words", n=_fmt(deduced["word_count"])))
     if deduced.get("detected_language") and deduced.get("detected_language") != asserted.get(
         "language"
     ):
-        read.append(f"detected {deduced['detected_language']}")
+        read.append(T.f("detected {code}", code=deduced["detected_language"]))
     sent = deduced.get("sentiment") or {}
     if sent.get("label"):
-        read.append(f"tone {sent['label']} ({sent.get('basis')})")
+        read.append(
+            T.f(
+                "tone {label} ({basis})",
+                label=T.t(str(sent["label"])),
+                basis=T.t(str(sent.get("basis"))),
+            )
+        )
 
-    lines = [f"- **{head}**", f"  - Source states: {' · '.join(stated)}"]
+    lines = [
+        f"- **{head}**",
+        T.f("  - Source states: {facts}", facts=" · ".join(stated)),
+    ]
     if read:
-        lines.append(f"  - This app measured: {' · '.join(read)}")
+        lines.append(T.f("  - This app measured: {facts}", facts=" · ".join(read)))
     kws = row.get("keywords") or []
     if kws:
         lines.append(
-            "  - Keywords: "
-            + ", ".join(f"{k.get('term')} ({_fmt(k.get('mentions'))})" for k in kws)
+            T.f(
+                "  - Keywords: {terms}",
+                terms=", ".join(f"{k.get('term')} ({_fmt(k.get('mentions'))})" for k in kws),
+            )
         )
     facets = []
     for key, label in (("places", "Places"), ("entities", "Who"), ("dates", "Dates mentioned")):
@@ -559,11 +709,11 @@ def _article_lines(row: dict) -> list[str]:
         if not vals:
             continue
         if key == "dates":
-            facets.append(f"{label}: " + ", ".join(str(v.get("date")) for v in vals))
+            facets.append(T.t(label) + ": " + ", ".join(str(v.get("date")) for v in vals))
         else:
-            facets.append(f"{label}: " + ", ".join(str(v.get("name")) for v in vals))
+            facets.append(T.t(label) + ": " + ", ".join(str(v.get("name")) for v in vals))
     if facets:
-        lines.append("  - Deduced from the text — " + " · ".join(facets))
+        lines.append(T.f("  - Deduced from the text — {facets}", facets=" · ".join(facets)))
     excerpt = (row.get("excerpt") or "").strip()
     if excerpt:
         tail = "…" if row.get("excerpt_truncated") else ""
@@ -571,66 +721,85 @@ def _article_lines(row: dict) -> list[str]:
     return lines
 
 
-def _cards_blocks(section: dict) -> list[tuple[str | None, str, list[str]]]:
+def _cards_blocks(section: dict, T: Translator) -> list[tuple[str | None, str, list[str]]]:
     """The cards section as (group, heading, lines) blocks, one group per card type."""
     blocks: list[tuple[str | None, str, list[str]]] = []
     for entry in section.get("types") or []:
         card_type = str(entry.get("type") or "?")
         found, shown = entry.get("cards_found"), entry.get("cards_shown")
-        group = f"{card_type.replace('_', ' ')}"
+        group = T.t(card_type.replace("_", " "))
         if isinstance(found, int) and isinstance(shown, int) and found > shown:
-            group += f" — showing {shown} of {found}"
+            group += T.f(" — showing {shown} of {found}", shown=shown, found=found)
         first = True
         for card in entry.get("cards") or []:
             lines: list[str] = []
             if card.get("summary"):
-                lines += [str(card["summary"]), ""]
+                lines += [T.t(str(card["summary"])), ""]
             measured = card.get("signal_line")
             if measured:
-                lines.append(f"- Measured: {measured}")
+                lines.append(T.f("- Measured: {signal}", signal=T.t(str(measured))))
             if card.get("n") is not None:
-                lines.append(f"- n: {_fmt(card.get('n'))}")
+                lines.append(T.f("- n: {n}", n=_fmt(card.get("n"))))
             if card.get("bucket"):
-                lines.append(f"- Bucket: {card['bucket']}")
+                lines.append(T.f("- Bucket: {bucket}", bucket=T.t(str(card["bucket"]))))
             if card.get("method"):
-                lines.append(f"- Method: {card['method']}")
+                lines.append(T.f("- Method: {method}", method=T.t(str(card["method"]))))
             arts = card.get("article_rows") or []
             total = card.get("corpus_articles")
             if arts:
                 if isinstance(total, int) and total > len(arts):
-                    lines += ["", f"**Articles ({len(arts)} of {_fmt(total)} in this card):**", ""]
+                    lines += [
+                        "",
+                        T.f(
+                            "**Articles ({shown} of {total} in this card):**",
+                            shown=len(arts),
+                            total=_fmt(total),
+                        ),
+                        "",
+                    ]
                 else:
-                    lines += ["", f"**Articles ({len(arts)}):**", ""]
+                    lines += ["", T.f("**Articles ({n}):**", n=len(arts)), ""]
                 for a in arts:
-                    lines += _article_lines(a)
+                    lines += _article_lines(a, T)
             elif isinstance(total, int) and total == 0:
-                lines += ["", "*This card's selection is a query or a whole-corpus "
-                          "distribution, so it names no fixed article set.*"]
+                lines += [
+                    "",
+                    "*"
+                    + T.t(
+                        "This card's selection is a query or a whole-corpus distribution, "
+                        "so it names no fixed article set."
+                    )
+                    + "*",
+                ]
             if card.get("caveat"):
-                lines += ["", f"> {card['caveat']}"]
+                lines += ["", f"> {T.t(card['caveat'])}"]
             blocks.append((group if first else None, str(card.get("title") or card_type), lines))
             first = False
     return blocks
 
 
-def _cards_note(section: dict) -> str | None:
+def _cards_note(section: dict, T: Translator) -> str | None:
     """How much of the producer set actually ran."""
     ran, total = section.get("producers_run"), section.get("producers_total")
     bits = []
     if isinstance(ran, int) and isinstance(total, int):
-        bits.append(f"Producers run: {ran} of {total}.")
+        bits.append(T.f("Producers run: {ran} of {total}.", ran=ran, total=total))
     if section.get("truncated"):
         bits.append(
-            "The wall-clock budget stopped further producers, so this is a partial "
-            "set — a short list here is the budget, not a quiet corpus."
+            T.t(
+                "The wall-clock budget stopped further producers, so this is a partial "
+                "set — a short list here is the budget, not a quiet corpus."
+            )
         )
     found, kinds = section.get("cards_found"), section.get("card_types")
     if isinstance(found, int) and isinstance(kinds, int):
-        bits.append(f"Cards surfaced: {_fmt(found)} across {kinds} types.")
+        bits.append(
+            T.f("Cards surfaced: {found} across {kinds} types.", found=_fmt(found), kinds=kinds)
+        )
     return " ".join(bits) or None
 
 
-def _coverage_note(section: dict) -> str | None:
+def _coverage_note(section: dict, T: Translator) -> str | None:
     """How many countries the document lists, of how many it counted."""
     total, listed = section.get("countries_total"), section.get("countries_listed")
     if not isinstance(total, int) or not isinstance(listed, int) or listed >= total:
@@ -638,27 +807,45 @@ def _coverage_note(section: dict) -> str | None:
     # label:value, not a sentence with the count inside it — "the other 1 were
     # counted" cannot agree with its own noun, and no locale has to be given per-form
     # keys for a phrasing that never conjugates.
-    return (
-        f"Contributing countries listed here: {listed} of {total}, largest first by "
-        f"the masthead's own split. Counted and not printed: {total - listed}. The "
-        "continent figures below cover every contributing country, including those."
+    return T.f(
+        "Contributing countries listed here: {listed} of {total}, largest first by the "
+        "masthead's own split. Counted and not printed: {rest}. The continent figures "
+        "below cover every contributing country, including those.",
+        listed=listed,
+        total=total,
+        rest=total - listed,
     )
 
 
-def _md_section(section: dict) -> list[str]:
-    key = str(section.get("section", "section")).replace("_", " ")
-    out = [f"## {key.capitalize()}", ""]
+def _section_heading(section: dict, T: Translator) -> str:
+    """A section's own slug as a heading, translated as a whole label.
+
+    The slug is data (``rising_concepts``); the HEADING is this app's own words, so
+    the humanised English is the key. A locale with no entry gets the English
+    heading, which is the same rule every other sentence follows.
+    """
+    return T.t(str(section.get("section", "section")).replace("_", " ").capitalize())
+
+
+def _md_section(section: dict, T: Translator) -> list[str]:
+    out = [f"## {_section_heading(section, T)}", ""]
     if section.get("error"):
-        out += [f"*This section could not be built: `{section['error']}`.*", ""]
+        out += [
+            T.f("*This section could not be built: `{error}`.*", error=section["error"]),
+            "",
+        ]
         return out
     if section.get("skipped"):
-        out += [f"*Not shown: {section['skipped']}.*", ""]
+        out += [T.f("*Not shown: {reason}.*", reason=T.t(str(section["skipped"]))), ""]
         return out
 
     w = section.get("window") or {}
     if w and not w.get("matches_period", True):
         # §12: a section whose window differs from the period must be VISIBLE.
-        out += [f"*Window: {w.get('days')} days — not the edition's period.*", ""]
+        out += [
+            T.f("*Window: {days} days — not the edition's period.*", days=w.get("days")),
+            "",
+        ]
 
     # The two nested sections carry their own shape and their own note. Keyed on the
     # section's OWN fields rather than on whether it produced any blocks: the case
@@ -668,15 +855,15 @@ def _md_section(section: dict) -> list[str]:
     for owns, blocks, note, empty in (
         (
             "countries" in section or "continents" in section,
-            _coverage_blocks(section),
-            _coverage_note(section),
-            "*No country contributed to this period.*",
+            _coverage_blocks(section, T),
+            _coverage_note(section, T),
+            T.t("No country contributed to this period."),
         ),
         (
             "types" in section,
-            _cards_blocks(section),
-            _cards_note(section),
-            "*No card surfaced from the producers that ran.*",
+            _cards_blocks(section, T),
+            _cards_note(section, T),
+            T.t("No card surfaced from the producers that ran."),
         ),
     ):
         if not owns:
@@ -684,18 +871,18 @@ def _md_section(section: dict) -> list[str]:
         if note:
             out += [f"*{note}*", ""]
         if not blocks:
-            out += [empty, ""]
+            out += [f"*{empty}*", ""]
         for group, head, lines in blocks:
             if group:
                 out += [f"**{group}**", ""]
             out += [f"### {head}", ""] + lines + [""]
         if section.get("caveat"):
-            out += [f"> {section['caveat']}", ""]
+            out += [f"> {T.t(section['caveat'])}", ""]
         return out
 
-    groups = _section_groups(section)
+    groups = _section_groups(section, T)
     if not groups:
-        out.append("*Nothing to report for this period.*")
+        out.append(f"*{T.t('Nothing to report for this period.')}*")
     for label, rows in groups:
         if len(groups) > 1:
             out += [f"**{label}**", ""]
@@ -704,57 +891,69 @@ def _md_section(section: dict) -> list[str]:
             out.append("")
     out.append("")
     if section.get("caveat"):
-        out += [f"> {section['caveat']}", ""]
+        out += [f"> {T.t(section['caveat'])}", ""]
     return out
 
 
-def _md_story(story: dict) -> list[str]:
+def _md_story(story: dict, T: Translator) -> list[str]:
     terms = ", ".join(story.get("shared_terms") or []) or "—"
-    voice = " · **one source only**" if story.get("single_source") else ""
+    voice = f" · **{T.t('one source only')}**" if story.get("single_source") else ""
     out = [
         f"### {terms}",
         "",
-        f"{_fmt(story.get('articles'))} articles · "
-        f"{_fmt(story.get('distinct_sources'))} sources{voice}",
+        T.f(
+            "{articles} articles · {sources} sources{voice}",
+            articles=_fmt(story.get("articles")),
+            sources=_fmt(story.get("distinct_sources")),
+            voice=voice,
+        ),
         "",
     ]
     nar = story.get("narration") or {}
     if nar.get("text"):
         if nar.get("narrated"):
-            mark = f"*{_AI_LABEL}"
+            mark = f"*{T.t(_AI_LABEL)}"
             if nar.get("partial"):
-                mark += "; sentences that named something absent from the sources were removed"
+                mark += "; " + T.t(
+                    "sentences that named something absent from the sources were removed"
+                )
             out += [f"{mark}.*", "", nar["text"], ""]
         else:
             out += [nar["text"], ""]
             if nar.get("fallback_reason"):
-                out += [f"*No model text: {nar['fallback_reason']}.*", ""]
+                out += [
+                    T.f(
+                        "*No model text: {reason}.*",
+                        reason=T.t(str(nar["fallback_reason"])),
+                    ),
+                    "",
+                ]
     # The story's own articles. They were added to the record so "the document can
     # name them" and the renderer then did not, so a cluster of 115 arrived as a
     # count with no way in — and the annexes carried files the report never cited.
-    out += _story_article_lines(story)
+    out += _story_article_lines(story, T)
     return out
 
 
-def _story_article_lines(story: dict) -> list[str]:
+def _story_article_lines(story: dict, T: Translator) -> list[str]:
     """A story's articles, shared by both renderers so neither can drop them again."""
     rows = story.get("article_rows") or []
     if not rows:
         return []
     total = story.get("articles")
     head = (
-        f"Showing {_fmt(len(rows))} of {_fmt(total)}:"
+        T.f("Showing {shown} of {total}:", shown=_fmt(len(rows)), total=_fmt(total))
         if isinstance(total, int) and total > len(rows)
-        else "Articles:"
+        else T.t("Articles:")
     )
     out = [head, ""]
     for row in rows:
-        out += _article_lines(row)
+        out += _article_lines(row, T)
     out.append("")
     return out
 
 
-def _worklist_lines(edition: dict) -> list[str]:
+def _worklist_lines(edition: dict, T: Translator) -> list[str]:
     """Phase 2 as a plan, shared by both renderers. Empty when none is attached.
 
     It prints only when a caller has attached one, because phase 2 is an OPTION
@@ -767,61 +966,101 @@ def _worklist_lines(edition: dict) -> list[str]:
     if not plan:
         return []
     lines = [
-        "*A PLAN — nothing below has run. Phase 1 above is a complete document "
-        "without any of it.*",
+        "*"
+        + T.t(
+            "A PLAN — nothing below has run. Phase 1 above is a complete document "
+            "without any of it."
+        )
+        + "*",
         "",
     ]
     if not jobs:
-        lines += ["Nothing for a local model to add to this edition.", ""]
+        lines += [T.t("Nothing for a local model to add to this edition."), ""]
         return lines
     for job in jobs:
-        lines.append(f"**{job.get('what')}**")
+        lines.append(f"**{T.t(str(job.get('what')))}**")
         lines.append("")
         lines.append(
-            f"- {_fmt(job.get('units'))} unit(s), {_fmt(job.get('calls'))} model call(s)"
+            T.f(
+                "- {units} unit(s), {calls} model call(s)",
+                units=_fmt(job.get("units")),
+                calls=_fmt(job.get("calls")),
+            )
         )
         if job.get("articles_total") is not None:
-            lines.append(f"- Over {_fmt(job['articles_total'])} articles in total")
+            lines.append(
+                T.f("- Over {n} articles in total", n=_fmt(job["articles_total"]))
+            )
         if job.get("already_done"):
-            lines.append(f"- Already done in this edition: {_fmt(job['already_done'])}")
+            lines.append(
+                T.f("- Already done in this edition: {n}", n=_fmt(job["already_done"]))
+            )
         if job.get("already_in_target") is not None:
-            lines.append(f"- Already in the target language: {_fmt(job['already_in_target'])}")
+            lines.append(
+                T.f(
+                    "- Already in the target language: {n}",
+                    n=_fmt(job["already_in_target"]),
+                )
+            )
         if job.get("language_unknown"):
             lines.append(
-                f"- Language not recorded, so not assumed either way: "
-                f"{_fmt(job['language_unknown'])}"
+                T.f(
+                    "- Language not recorded, so not assumed either way: {n}",
+                    n=_fmt(job["language_unknown"]),
+                )
             )
         corpora = job.get("corpora") or []
         if corpora:
             head = ", ".join(
                 f"{c.get('label')} ({_fmt(c.get('articles'))})" for c in corpora[:6]
             )
-            tail = f" … and {len(corpora) - 6} more" if len(corpora) > 6 else ""
-            lines.append(f"- Corpora: {head}{tail}")
-        lines.append(f"- Adds: {job.get('adds')}")
-        lines.append(f"- If skipped: {job.get('if_skipped')}")
+            tail = (
+                T.f(" … and {n} more", n=len(corpora) - 6) if len(corpora) > 6 else ""
+            )
+            lines.append(T.f("- Corpora: {corpora}{tail}", corpora=head, tail=tail))
+        lines.append(T.f("- Adds: {adds}", adds=T.t(str(job.get("adds")))))
+        lines.append(
+            T.f("- If skipped: {cost}", cost=T.t(str(job.get("if_skipped"))))
+        )
         lines.append("")
 
     dur = plan.get("duration") or {}
-    total = f"**Total: {_fmt(plan.get('calls_total'))} model call(s).**"
+    total = T.f(
+        "**Total: {calls} model call(s).**", calls=_fmt(plan.get("calls_total"))
+    )
     if dur.get("known"):
         mins = (dur.get("seconds") or 0) / 60.0
-        lines += [f"{total} About {mins:.0f} minute(s) — {dur.get('method')}", ""]
+        lines += [
+            T.f(
+                "{total} About {minutes} minute(s) — {method}",
+                total=total,
+                minutes=f"{mins:.0f}",
+                method=T.t(str(dur.get("method"))),
+            ),
+            "",
+        ]
     else:
-        lines += [f"{total} No duration is offered: {dur.get('reason')}", ""]
+        lines += [
+            T.f(
+                "{total} No duration is offered: {reason}",
+                total=total,
+                reason=T.t(str(dur.get("reason"))),
+            ),
+            "",
+        ]
     if plan.get("caveat"):
-        lines += [f"> {plan['caveat']}", ""]
+        lines += [f"> {T.t(plan['caveat'])}", ""]
     return lines
 
 
-def _md_worklist(edition: dict) -> list[str]:
-    lines = _worklist_lines(edition)
+def _md_worklist(edition: dict, T: Translator) -> list[str]:
+    lines = _worklist_lines(edition, T)
     if not lines:
         return []
-    return ["## What the local AI could add — a plan", ""] + lines
+    return [f"## {T.t('What the local AI could add — a plan')}", ""] + lines
 
 
-def _md_references(edition: dict) -> list[str]:
+def _md_references(edition: dict, T: Translator) -> list[str]:
     """Sources that contributed — the reference list.
 
     External identity only. A local article id means a different article on a
@@ -830,20 +1069,36 @@ def _md_references(edition: dict) -> list[str]:
     top = (edition.get("masthead") or {}).get("top_sources") or []
     if not top:
         return []
-    out = ["## References", "", "Largest contributors this period:", ""]
+    out = [
+        f"## {T.t('References')}",
+        "",
+        T.t("Largest contributors this period:"),
+        "",
+    ]
     for row in top:
         dom = row.get("domain") or "—"
-        out.append(f"- {row.get('name') or dom} (`{dom}`) — {_fmt(row.get('articles'))} articles")
+        out.append(
+            T.f(
+                "- {name} (`{domain}`) — {n} articles",
+                name=row.get("name") or dom,
+                domain=dom,
+                n=_fmt(row.get("articles")),
+            )
+        )
     out += [
         "",
-        "*Article-level links are omitted on purpose: a local article id resolves to a "
-        "different article on another install.*",
+        "*"
+        + T.t(
+            "Article-level links are omitted on purpose: a local article id resolves "
+            "to a different article on another install."
+        )
+        + "*",
         "",
     ]
     return out
 
 
-def _selection_line(edition: dict) -> str | None:
+def _selection_line(edition: dict, T: Translator) -> str | None:
     """What the operator left out, if anything.
 
     A document that silently omits three of its seven sections reads as complete.
@@ -856,47 +1111,63 @@ def _selection_line(edition: dict) -> str | None:
     st_shown, st_total = sel.get("stories_shown"), sel.get("stories_total")
     parts = []
     if isinstance(shown, int) and isinstance(total, int) and shown < total:
-        parts.append(f"{shown} of {total} sections")
+        parts.append(T.f("{shown} of {total} sections", shown=shown, total=total))
     if isinstance(st_shown, int) and isinstance(st_total, int) and st_shown < st_total:
-        parts.append(f"{st_shown} of {st_total} stories")
+        parts.append(T.f("{shown} of {total} stories", shown=st_shown, total=st_total))
     if not parts:
         return None
-    return (
-        f"This edition shows {' and '.join(parts)}; the rest were excluded by the "
-        "operator before publishing. The record it was rendered from is unchanged."
+    return T.f(
+        "This edition shows {parts}; the rest were excluded by the operator before "
+        "publishing. The record it was rendered from is unchanged.",
+        parts=f" {T.t('and')} ".join(parts),
     )
 
 
-def _md_disclosures(edition: dict) -> list[str]:
+def _md_disclosures(edition: dict, T: Translator) -> list[str]:
     d = edition.get("disclosures") or {}
-    sel = _selection_line(edition)
+    sel = _selection_line(edition, T)
     # An operator's exclusion is a disclosure in its own right, so it prints even
     # when the edition carries no other one — otherwise the one case where the
     # document is least complete is the case where it says least about itself.
     if not d and not sel:
         return []
-    out = ["### What this edition cannot see", ""]
+    out = [f"### {T.t('What this edition cannot see')}", ""]
     if sel:
         out.append(f"- {sel}")
     q = d.get("quarantined_in_period")
     if q:
-        out.append(f"- {_fmt(q)} article(s) in the period are quarantined and excluded throughout.")
+        out.append(
+            T.f(
+                "- {n} article(s) in the period are quarantined and excluded throughout.",
+                n=_fmt(q),
+            )
+        )
     u = d.get("mentions_without_a_date")
     if u:
-        out.append(f"- {_fmt(u)} keyword mention(s) carry no date and are invisible to every window.")
+        out.append(
+            T.f(
+                "- {n} keyword mention(s) carry no date and are invisible to every window.",
+                n=_fmt(u),
+            )
+        )
     backlog = d.get("reindex_backlog") or {}
     if backlog.get("available") and backlog.get("articles_pending"):
         out.append(
-            f"- {_fmt(backlog['articles_pending'])} imported article(s) await re-index, so they "
-            "carry no keywords yet and are missing from every keyword figure here."
+            T.f(
+                "- {n} imported article(s) await re-index, so they carry no keywords yet "
+                "and are missing from every keyword figure here.",
+                n=_fmt(backlog["articles_pending"]),
+            )
         )
     elif backlog.get("available") is False:
-        out.append("- The re-index backlog could not be read — unknown, not zero.")
+        out.append(
+            "- " + T.t("The re-index backlog could not be read — unknown, not zero.")
+        )
     cov = d.get("baseline_coverage") or {}
     if cov.get("complete") is False:
-        out.append(f"- {cov.get('note')}")
+        out.append(f"- {T.t(str(cov.get('note')))}")
     if len(out) == 2:
-        out.append("- Nothing excluded beyond what the methods above state.")
+        out.append("- " + T.t("Nothing excluded beyond what the methods above state."))
     out.append("")
     return out
 
@@ -937,68 +1208,120 @@ def _e(s: Any) -> str:
     return html.escape("" if s is None else str(s), quote=True)
 
 
-def render_html(edition: dict) -> str:
+def _plain(s: Any) -> str:
+    """A value as text, with an absent one absent rather than the word "None".
+
+    ``str.format`` renders ``None`` as ``None``, which reads as a value. Every
+    frame value on the HTML side goes through here because ``_e`` used to do it,
+    and the escaping now happens once, later, over the whole filled sentence.
+    """
+    return "" if s is None else str(s)
+
+
+def render_html(edition: dict, *, lang: str = "en", tr: Translator | None = None) -> str:
     """The edition as ONE self-contained HTML page.
 
     No external stylesheet, font, script or image — a shared document that phones
     home would tell its recipient's network what the operator reads. Light and
     dark are both styled, because a document is read wherever it is opened.
+
+    The page's ``lang`` attribute and its ``dir`` follow the chosen language, so a
+    right-to-left edition is laid out right-to-left by the browser rather than by
+    us guessing at it.
     """
+    T = tr or Translator(lang)
     p = edition.get("period") or {}
     m = edition.get("masthead") or {}
     body: list[str] = []
 
-    body.append(f"<h1>{_e(_title(edition))}</h1>")
+    body.append(f"<h1>{_e(_title(edition, T))}</h1>")
     body.append(
-        f'<p class="lede">What rose in this corpus between {_e(p.get("start"))} and '
-        f'{_e(p.get("last_day"))} — {_e(p.get("days"))} days.</p>'
+        '<p class="lede">'
+        + _e(
+            T.f(
+                "What rose in this corpus between {start} and {end} — {days} days.",
+                start=_plain(p.get("start")),
+                end=_plain(p.get("last_day")),
+                days=_plain(p.get("days")),
+            )
+        )
+        + "</p>"
     )
+    lang_at = len(body)
 
-    body.append("<h2>This corpus, this period</h2><ul>")
+    body.append(f"<h2>{_e(T.t('This corpus, this period'))}</h2><ul>")
     body.append(
-        f"<li><strong>{_fmt(m.get('articles'))}</strong> articles from "
-        f"<strong>{_fmt(m.get('sources_contributing'))}</strong> contributing sources</li>"
+        "<li>"
+        + _inline(
+            T.f(
+                "**{articles}** articles from **{sources}** contributing sources",
+                articles=_fmt(m.get("articles")),
+                sources=_fmt(m.get("sources_contributing")),
+            )
+        )
+        + "</li>"
     )
     body.append(
-        f"<li>The three largest carried <strong>{_pct(m.get('top_3_share'))}</strong></li>"
+        "<li>"
+        + _inline(
+            T.f("The three largest carried **{share}**", share=_pct(m.get("top_3_share")))
+        )
+        + "</li>"
     )
     body.append(
-        f"<li>Ingest on <strong>{_e(m.get('days_with_ingest'))}</strong> of "
-        f"{_e(m.get('period_days'))} days</li>"
+        "<li>"
+        + _inline(
+            T.f(
+                "Ingest on **{days}** of {total} days",
+                days=_plain(m.get("days_with_ingest")),
+                total=_plain(m.get("period_days")),
+            )
+        )
+        + "</li>"
     )
     body.append(
-        f"<li><strong>{_pct(m.get('corpus_share'))}</strong> of a corpus of "
-        f"{_fmt(m.get('corpus_articles'))}</li>"
+        "<li>"
+        + _inline(
+            T.f(
+                "**{share}** of a corpus of {total}",
+                share=_pct(m.get("corpus_share")),
+                total=_fmt(m.get("corpus_articles")),
+            )
+        )
+        + "</li>"
     )
     body.append("</ul>")
-    for line in _masthead_splits(m):
+    for line in _masthead_splits(m, T):
         body.append(f'<p class="meta">{_e(line)}</p>')
     if m.get("caveat"):
-        body.append(f'<p class="caveat">{_e(m["caveat"])}</p>')
-    for line in _ref_legend(edition):
+        body.append(f'<p class="caveat">{_e(T.t(m["caveat"]))}</p>')
+    for line in _ref_legend(edition, T):
         if line:
             body.append(f'<p class="meta">{_e(line)}</p>')
 
     for section in edition.get("sections") or []:
-        body.extend(_html_section(section))
+        body.extend(_html_section(section, T))
 
     stories = (edition.get("stories") or {}).get("stories") or []
     if stories:
-        body.append("<h2>Stories</h2>")
+        body.append(f"<h2>{_e(T.t('Stories'))}</h2>")
         for s in stories:
-            body.extend(_html_story(s))
+            body.extend(_html_story(s, T))
         cav = (edition.get("stories") or {}).get("caveat")
         if cav:
-            body.append(f'<p class="caveat">{_e(cav)}</p>')
+            body.append(f'<p class="caveat">{_e(T.t(cav))}</p>')
 
-    plan_lines = _worklist_lines(edition)
+    plan_lines = _worklist_lines(edition, T)
     if plan_lines:
-        body.append("<h2>What the local AI could add — a plan</h2>")
+        body.append(f"<h2>{_e(T.t('What the local AI could add — a plan'))}</h2>")
         body.extend(_html_lines(plan_lines))
 
     top = m.get("top_sources") or []
     if top:
-        body.append("<h2>References</h2><table><tr><th>Source</th><th>Articles</th></tr>")
+        body.append(
+            f"<h2>{_e(T.t('References'))}</h2><table><tr>"
+            f"<th>{_e(T.t('Source'))}</th><th>{_e(T.t('Articles'))}</th></tr>"
+        )
         for row in top:
             body.append(
                 f"<tr><td>{_e(row.get('name') or row.get('domain'))} "
@@ -1007,36 +1330,57 @@ def render_html(edition: dict) -> str:
             )
         body.append("</table>")
         body.append(
-            '<p class="meta">Article-level links are omitted on purpose: a local article '
-            "id resolves to a different article on another install.</p>"
+            '<p class="meta">'
+            + _e(
+                T.t(
+                    "Article-level links are omitted on purpose: a local article id "
+                    "resolves to a different article on another install."
+                )
+            )
+            + "</p>"
         )
 
-    body.append("<h2>Methods &amp; caveats</h2>")
+    body.append(f"<h2>{_e(T.t('Methods & caveats'))}</h2>")
     if edition.get("method"):
-        body.append(f'<p class="meta">{_e(edition["method"])}</p>')
+        body.append(f'<p class="meta">{_e(T.t(edition["method"]))}</p>')
     if edition.get("caveat"):
-        body.append(f'<p class="caveat">{_e(edition["caveat"])}</p>')
-    for line in _md_disclosures(edition):
+        body.append(f'<p class="caveat">{_e(T.t(edition["caveat"]))}</p>')
+    for line in _md_disclosures(edition, T):
         if line.startswith("- "):
             body.append(f'<p class="meta">{_e(line[2:])}</p>')
         elif line.startswith("### "):
             body.append(f"<h3>{_e(line[4:])}</h3>")
 
     body.append(
-        "<footer>Generated "
-        f"{_e(edition.get('generated_at') or datetime.now(UTC).isoformat())} by Open "
-        "Omniscience from this operator's own corpus. Deterministic sections are computed "
-        f"from the record <code>{_e(edition.get('filename') or 'the edition JSON')}</code>."
-        "</footer>"
+        "<footer>"
+        + _e(
+            T.f(
+                "Generated {when} by Open Omniscience from this operator's own corpus. "
+                "Deterministic sections are computed from the record {record}.",
+                when=edition.get("generated_at") or datetime.now(UTC).isoformat(),
+                record=_plain(edition.get("filename") or "the edition JSON"),
+            )
+        )
+        + "</footer>"
     )
 
+    disclosure = T.disclosure()
+    if disclosure:
+        body.insert(lang_at, f'<p class="meta">{_e(disclosure)}</p>')
+
+    dir_attr = ' dir="rtl"' if T.lang in _RTL else ""
     return (
         "<!doctype html>\n"
-        f'<html lang="en"><head><meta charset="utf-8">'
+        f'<html lang="{_e(T.lang)}"{dir_attr}><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f"<title>{_e(_title(edition))}</title><style>{_CSS}</style></head>"
+        f"<title>{_e(_title(edition, T))}</title><style>{_CSS}</style></head>"
         f"<body><main>{''.join(body)}</main></body></html>\n"
     )
+
+
+#: Right-to-left scripts among the twelve. Arabic is the one the UI ships today;
+#: the set exists so a future addition is one entry rather than a new branch.
+_RTL = frozenset({"ar", "he", "fa", "ur"})
 
 
 _MD_LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
@@ -1098,34 +1442,53 @@ def _html_lines(lines: list[str]) -> list[str]:
     return out
 
 
-def _html_section(section: dict) -> list[str]:
-    key = str(section.get("section", "section")).replace("_", " ").capitalize()
-    out = [f"<h2>{_e(key)}</h2>"]
+def _html_section(section: dict, T: Translator) -> list[str]:
+    out = [f"<h2>{_e(_section_heading(section, T))}</h2>"]
     if section.get("error"):
-        out.append(f'<p class="meta">This section could not be built: {_e(section["error"])}.</p>')
+        out.append(
+            '<p class="meta">'
+            + _e(
+                T.f(
+                    "This section could not be built: {error}.",
+                    error=_plain(section["error"]),
+                )
+            )
+            + "</p>"
+        )
         return out
     if section.get("skipped"):
-        out.append(f'<p class="meta">Not shown: {_e(section["skipped"])}.</p>')
+        out.append(
+            '<p class="meta">'
+            + _e(T.f("Not shown: {reason}.", reason=T.t(str(section["skipped"]))))
+            + "</p>"
+        )
         return out
 
     w = section.get("window") or {}
     if w and not w.get("matches_period", True):
         out.append(
-            f'<p class="caveat">Window: {_e(w.get("days"))} days — not the edition\'s period.</p>'
+            '<p class="caveat">'
+            + _e(
+                T.f(
+                    "Window: {days} days — not the edition's period.",
+                    days=_plain(w.get("days")),
+                )
+            )
+            + "</p>"
         )
 
     for owns, blocks, note, empty in (
         (
             "countries" in section or "continents" in section,
-            _coverage_blocks(section),
-            _coverage_note(section),
-            "No country contributed to this period.",
+            _coverage_blocks(section, T),
+            _coverage_note(section, T),
+            T.t("No country contributed to this period."),
         ),
         (
             "types" in section,
-            _cards_blocks(section),
-            _cards_note(section),
-            "No card surfaced from the producers that ran.",
+            _cards_blocks(section, T),
+            _cards_note(section, T),
+            T.t("No card surfaced from the producers that ran."),
         ),
     ):
         if not owns:
@@ -1140,12 +1503,12 @@ def _html_section(section: dict) -> list[str]:
             out.append(f"<h4>{_e(head)}</h4>")
             out.extend(_html_lines(lines))
         if section.get("caveat"):
-            out.append(f'<p class="caveat">{_e(section["caveat"])}</p>')
+            out.append(f'<p class="caveat">{_e(T.t(section["caveat"]))}</p>')
         return out
 
-    groups = _section_groups(section)
+    groups = _section_groups(section, T)
     if not groups:
-        out.append('<p class="meta">Nothing to report.</p>')
+        out.append(f'<p class="meta">{_e(T.t("Nothing to report."))}</p>')
     for label, rows in groups:
         if len(groups) > 1:
             out.append(f"<h3>{_e(label)}</h3>")
@@ -1154,42 +1517,69 @@ def _html_section(section: dict) -> list[str]:
         )
         out.append(f"<ul>{items}</ul>")
     if section.get("caveat"):
-        out.append(f'<p class="caveat">{_e(section["caveat"])}</p>')
+        out.append(f'<p class="caveat">{_e(T.t(section["caveat"]))}</p>')
     return out
 
 
-def _html_story(story: dict) -> list[str]:
+def _html_story(story: dict, T: Translator) -> list[str]:
     terms = ", ".join(story.get("shared_terms") or []) or "—"
-    voice = " · one source only" if story.get("single_source") else ""
+    voice = f" · {T.t('one source only')}" if story.get("single_source") else ""
     out = [
         f"<h3>{_e(terms)}</h3>",
-        f'<p class="meta">{_fmt(story.get("articles"))} articles · '
-        f'{_fmt(story.get("distinct_sources"))} sources{_e(voice)}</p>',
+        '<p class="meta">'
+        + _e(
+            T.f(
+                "{articles} articles · {sources} sources{voice}",
+                articles=_fmt(story.get("articles")),
+                sources=_fmt(story.get("distinct_sources")),
+                voice=voice,
+            )
+        )
+        + "</p>",
     ]
     nar = story.get("narration") or {}
     if nar.get("text"):
         if nar.get("narrated"):
-            label = _AI_LABEL
+            label = T.t(_AI_LABEL)
             if nar.get("partial"):
-                label += " · sentences naming something absent from the sources were removed"
+                label += " · " + T.t(
+                    "sentences naming something absent from the sources were removed"
+                )
             out.append(f'<p class="ai">{_e(label)}</p>')
             out.append(f'<p class="ai-text">{_e(nar["text"])}</p>')
         else:
             out.append(f"<p>{_e(nar['text'])}</p>")
             if nar.get("fallback_reason"):
-                out.append(f'<p class="meta">No model text: {_e(nar["fallback_reason"])}.</p>')
-    lines = _story_article_lines(story)
+                out.append(
+                    '<p class="meta">'
+                    + _e(
+                        T.f(
+                            "No model text: {reason}.",
+                            reason=T.t(str(nar["fallback_reason"])),
+                        )
+                    )
+                    + "</p>"
+                )
+    lines = _story_article_lines(story, T)
     if lines:
         out.append(f'<p class="meta">{_e(lines[0])}</p>')
         out.extend(_html_lines(lines[1:]))
     return out
 
 
-def render(edition: dict, fmt: str) -> str:
-    """Render ``edition`` as ``markdown`` or ``html``."""
+def render(
+    edition: dict, fmt: str, *, lang: str = "en", tr: Translator | None = None
+) -> str:
+    """Render ``edition`` as ``markdown`` or ``html``, in ``lang``.
+
+    An unknown format still raises rather than guessing, and an unknown LANGUAGE
+    does not: a locale with no catalog renders in English and says so in the
+    document, because refusing to produce a bulletin over a missing translation
+    would be a worse answer than producing one that names its own gap.
+    """
     f = (fmt or "").strip().lower()
     if f in ("md", "markdown"):
-        return render_markdown(edition)
+        return render_markdown(edition, lang=lang, tr=tr)
     if f == "html":
-        return render_html(edition)
+        return render_html(edition, lang=lang, tr=tr)
     raise ValueError(f"unknown format {fmt!r}; known formats: markdown, html")
