@@ -336,11 +336,32 @@ def test_a_source_s_own_braces_are_never_reported_as_our_bug(edition):
 # --------------------------------------------------------------------------- #
 #  the report and the selftest
 # --------------------------------------------------------------------------- #
+def test_english_reports_not_applicable_rather_than_nought_per_cent(edition):
+    """English is the SOURCE. "0 of 166 translated, coverage 0%" reads as an
+    unstarted locale; the honest answer is that there is nothing to translate."""
+    T = Translator("en")
+    render_markdown(edition, tr=T)
+    rep = T.report()
+    assert rep["coverage"] is None
+    assert rep["missing"] == 0
+    assert rep["missing_strings"] == []
+    assert rep["strings_seen"] > 50, "the denominator is still published"
+    assert rep["catalog_present"] is True
+
+
+def test_english_is_neither_started_nor_unstarted_in_the_report(edition):
+    """The twin: a locale list that filed English under "not started" would send a
+    reader to translate the language the renderer is written in."""
+    out = language_report(edition, langs=("en", "fr"))
+    assert "en" not in out["not_started"]
+    assert "en" not in out["started"]
+
+
 def test_the_selftest_passes_and_names_each_property():
     out = run_bulletin_language_selftest()
     assert out["passed"] is True
     assert set(out["checks"]) >= {
-        "english_is_identity",
+        "english_reports_no_gap_and_no_ratio",
         "a_real_translation_is_used",
         "a_broken_frame_is_refused",
         "an_identical_entry_is_not_coverage",

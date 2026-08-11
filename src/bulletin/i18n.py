@@ -224,6 +224,35 @@ class Translator:
             s for s in seen if s not in self._hit and s not in self._same and s not in rejected
         ]
         n = len(seen)
+        if self.is_english:
+            # English is the SOURCE. Every sentence is already in the requested
+            # language, so there is nothing missing and no ratio to report — and the
+            # naive arithmetic below would say "0 of 166 translated, coverage 0%",
+            # which reads as an unstarted locale rather than as the source language.
+            # Not-applicable is the honest third state; the count of sentences seen is
+            # still published, because that IS what the document asks for and it is the
+            # denominator every other locale is measured against.
+            return {
+                "language": "en",
+                "requested": self.requested,
+                "catalog_path": None,
+                "catalog_entries": 0,
+                "catalog_present": True,
+                "strings_seen": n,
+                "translated": n,
+                "identical_to_english": 0,
+                "rejected": 0,
+                "missing": 0,
+                "coverage": None,
+                "missing_strings": [],
+                "identical_strings": [],
+                "rejected_strings": [],
+                "method": (
+                    "English is the source language: the renderer's sentences are written "
+                    "in it, so nothing is translated and nothing is missing. The count of "
+                    "sentences is the denominator every other locale is measured against."
+                ),
+            }
         return {
             "language": self.lang,
             "requested": self.requested,

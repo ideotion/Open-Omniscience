@@ -602,10 +602,15 @@ def run_bulletin_language_selftest() -> dict:
     rep = probe.report()
 
     checks = {
-        "english_is_identity": en_report["translated"] == 0
-        and en_report["missing"] == 0
-        and en_report["coverage"] is None
-        or en_report["language"] == "en",
+        # NOT "or language == en", which an earlier draft of this line had: that clause
+        # is true for every English report, so the whole check could not fail. English
+        # is the SOURCE language, so its report says nothing is missing and there is no
+        # ratio — not-applicable rather than nought per cent.
+        "english_reports_no_gap_and_no_ratio": (
+            en_report["missing"] == 0
+            and en_report["coverage"] is None
+            and en_report["rejected"] == 0
+        ),
         "english_seen_is_counted": en_report["strings_seen"] > 50,
         "a_real_translation_is_used": "Referencias" in md,
         "a_broken_frame_is_refused": any(
