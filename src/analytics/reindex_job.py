@@ -205,6 +205,7 @@ class ReindexJobManager:
                 reconcile_keyword_language,
                 reindex_all_batch,
             )
+            from src.database.corpus_lease import corpus_lease
             from src.database.models import Article
 
             session = (self._session_factory or _default_session)()
@@ -228,14 +229,18 @@ class ReindexJobManager:
                     self._yield_to_exclusive()
                     if self._stop.is_set():
                         break
-                    r = reindex_all_batch(
-                        session,
-                        extractor=extractor,
-                        limit=_BATCH,
-                        after_id=after,
-                        scope=self._scope,
-                        commit_batch=commit_batch,
-                    )
+                    # The lease the atomic swap waits on. Around the BATCH, not the run:
+                    # a parked worker must hold nothing, or a restore would wait out a
+                    # job that is deliberately doing nothing and then refuse.
+                    with corpus_lease("reindex"):
+                        r = reindex_all_batch(
+                            session,
+                            extractor=extractor,
+                            limit=_BATCH,
+                            after_id=after,
+                            scope=self._scope,
+                            commit_batch=commit_batch,
+                        )
                     after = int(r["last_id"])
                     with self._lock:
                         self._tally["reindexed"] = self._tally.get("reindexed", 0) + int(r["reindexed"])

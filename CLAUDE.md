@@ -3617,6 +3617,31 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     filename stops being derivable from an identifier the reader holds, the index that
     matches the two becomes load-bearing — say so in the citing document rather than
     leaving a reader to construct a name that no longer exists.
+  - **THE SINGLE-WRITER GATE IS TAKEN ON FLUSH, SO IT CANNOT PROTECT A FILE-LEVEL SWAP —
+    the second half of the pair is a lease, not a wider use of the gate (2026-08-11, the
+    restore's `os.replace`):** a restore commits with `dispose_engine(); os.replace(...)`,
+    and a thread holding a checked-out connection across that keeps writing to the OLD,
+    now-unlinked inode — silently lost, and worse than lost, because a job with a durable
+    cursor has already advanced PAST those articles so nothing goes back for them.
+    Reaching for the write gate is the obvious move and it does not work: a re-index batch
+    holds a connection through its whole read-and-extract phase holding **no gate at all**,
+    so a swap landing there sends the flush that follows to the orphaned inode with the
+    gate dutifully held. The gate serialises WRITERS; a swap needs to know nobody is
+    holding the FILE. THE PAIR THAT WORKS is two halves neither of which is sufficient:
+    the exclusive window stops a new batch from STARTING, and a lease held across each
+    batch proves none is IN FLIGHT — then the swap waits out whatever had begun and
+    ABORTS on timeout, at the last point where aborting is free and the live corpus is
+    byte-identical. Waiting forever trades a data-loss window for a hang; swapping anyway
+    IS the data loss. TWO DESIGN POINTS worth reusing: a lease must be **observed and
+    never waited on by its holder**, because a job that runs INSIDE the window its own run
+    opened (a queue item) would otherwise deadlock against itself — that is also why the
+    lease wraps the BATCH and not the run, so a parked worker holds nothing and cannot
+    make a restore wait out a job that is deliberately idle. **AND THE GUARD FOR IT MUST
+    CHECK SCOPE, NOT PRESENCE:** the first cut asserted `"from … import corpus_lease"`
+    appeared somewhere in the file, a scripted edit duly placed it in a sibling function,
+    and the guard passed while the use site raised `NameError` — only ruff's F821 caught
+    it. Any "module X imports what it uses" assertion has to resolve the binding (ast,
+    enclosing scope), or it is satisfied by an import that cannot be seen from the call.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;

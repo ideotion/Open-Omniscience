@@ -28,6 +28,7 @@ import threading
 import time
 from pathlib import Path
 
+from src.database.corpus_lease import corpus_lease
 from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS, ingest_emails
 
 _LOG = logging.getLogger("ingest.import_job")
@@ -261,7 +262,12 @@ class NewsletterImportManager:
                         except OSError:
                             unreadable += 1
                     if raws:
-                        tally = ingest_emails(session, source, raws)
+                        # LEASE ONLY -- no yield. This job runs as an ITEM of the import
+                        # queue, inside the window its own run opened, so parking on that
+                        # window would deadlock it against itself. A lease is observed by
+                        # the swap and never waited on by the holder, so it cannot.
+                        with corpus_lease("newsletter-import"):
+                            tally = ingest_emails(session, source, raws)
                     else:
                         tally = {}
                     i += len(chunk)  # the whole chunk is now processed (readable or not)
