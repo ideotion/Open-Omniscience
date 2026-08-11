@@ -1,0 +1,101 @@
+# Build the air-gapped dependency bundle.
+#
+# Manual only: this produces a ~230 MB artifact, so it runs when a human asks for
+# it -- after a dependency change, or when preparing a USB stick for an offline
+# install. See docs/OFFLINE_INSTALL.md.
+#
+# WHY ubuntu-22.04 AND NOT ubuntu-latest: pip picks wheels compatible with the
+# machine doing the picking, so a bundle built on a newer glibc can contain wheels
+# that refuse to install on an older target. 22.04 ships glibc 2.35, which is older
+# than Debian 12 (2.36) and Debian 13 (2.41) -- so what this builds installs on
+# both. Building on a newer runner would quietly narrow that.
+
+name: Offline bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      extras:
+        description: 'Components to bundle (comma-separated; empty = core only)'
+        required: false
+        default: 'analysis,compression,columnar'
+      attach_to_tag:
+        description: 'Optional: attach the zip to this existing release tag (e.g. v0.3.0)'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write   # only so the optional "attach to a release" step can upload
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Build the bundle
+        run: |
+          OO_PYTHON=python3.13 ./scripts/build_offline_bundle.sh \
+            --extras "${{ inputs.extras }}" --zip
+
+      - name: Show what was built
+        run: |
+          # The manifest is the bundle's own description of what it is and what it
+          # is for -- surface it in the log so a maintainer can check the target
+          # platform without downloading 230 MB first.
+          python3 -c "
+          import json, glob
+          m = json.load(open(glob.glob('dist/*/offline-manifest.json')[0]))
+          print('app        :', m['app_version'])
+          print('extras     :', m['extras'] or '(core only)')
+          print('python     :', m['python']['version'], m['python']['abi_tag'])
+          print('platform   :', m['platform'])
+          print('files/bytes:', m['totals'])
+          "
+          ls -lh dist/*.zip
+
+      - name: Verify the bundle installs with no network at all
+        run: |
+          # The whole promise of this artifact is "installs with no network". Prove
+          # it here rather than discovering otherwise on an air-gapped machine:
+          # unset every proxy, point pip at a dead index, and install for real.
+          set -euo pipefail
+          BUNDLE="$(ls -d dist/open-omniscience-offline-*/)"
+          python3.13 -m venv --without-pip /tmp/verify
+          PIP_WHL="$(ls "$BUNDLE"bootstrap/pip-*.whl | head -1)"
+          /tmp/verify/bin/python "$PIP_WHL/pip" install --no-index \
+            --find-links "$BUNDLE"bootstrap pip setuptools wheel
+          /tmp/verify/bin/python -m pip install --no-index --no-build-isolation \
+            --find-links "$BUNDLE"wheels --find-links "$BUNDLE"bootstrap \
+            -e ".[${{ inputs.extras }}]"
+          /tmp/verify/bin/python -c "
+          from src.api.main import app
+          print('offline install verified —', len(app.routes), 'routes')
+          "
+        env:
+          # Any accidental network call fails loudly instead of silently succeeding
+          # and hiding a package the bundle forgot to carry.
+          PIP_NO_INDEX: "1"
+          http_proxy: "http://127.0.0.1:9"
+          https_proxy: "http://127.0.0.1:9"
+
+      - name: Upload the bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: offline-bundle
+          path: dist/*.zip
+          retention-days: 14
+          compression-level: 0   # already a zip; recompressing buys nothing
+
+      - name: Attach to a release
+        if: inputs.attach_to_tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ inputs.attach_to_tag }}" dist/*.zip --clobber

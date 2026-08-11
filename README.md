@@ -301,6 +301,13 @@ a create-passphrase step** (encrypted at rest by default, **no recovery**), then
 tiny [bootstrap](scripts/bootstrap.sh) before piping any script to a shell, or clone
 and run `./install.sh` yourself.)*
 
+**No internet on the target machine?** There is a fully **air-gapped** path: build a
+dependency bundle once on a connected machine, carry it across on a USB stick with the
+repository, and **double-click the offline installer** — no network is touched at any
+point, and no dependencies need to pre-exist on the target. See
+**[docs/OFFLINE_INSTALL.md](docs/OFFLINE_INSTALL.md)**. This changes nothing about the
+one-command install above.
+
 ```bash
 # Local dev (any Linux with Python 3.13):
 python3.13 -m venv .venv && . .venv/bin/activate
