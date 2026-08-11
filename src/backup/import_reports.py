@@ -170,6 +170,20 @@ def render_import_report_markdown(report: dict[str, Any]) -> str:
             )
         lines.append("")
 
+    meta = plan.get("_article_metadata") if isinstance(plan, dict) else None
+    if isinstance(meta, dict) and meta.get("articles_enriched"):
+        lines.append("## Metadata gained from duplicate articles")
+        lines.append("")
+        lines.append(
+            f"- {_fmt_count(meta.get('articles_enriched'))} articles you already had "
+            "gained metadata this corpus had never recorded. The article itself was a "
+            "duplicate and was not stored again; only the missing fields were filled, "
+            "and nothing measured here was overwritten."
+        )
+        for col, n in sorted((meta.get("by_column") or {}).items()):
+            lines.append(f"  - {col}: {_fmt_count(n)}")
+        lines.append("")
+
     qual = plan.get("_source_qualification") if isinstance(plan, dict) else None
     if isinstance(qual, dict):
         gained_q = (qual.get("introduced_qualified") or 0) + (qual.get("adopted_qualified") or 0)

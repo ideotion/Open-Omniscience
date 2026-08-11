@@ -1385,6 +1385,38 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     hiding place for the bug it was built to survive) at the schema level rather than the
     resolver level, and the test that pins it must assert BOTH directions (the happy path still
     publishes a real value; the sad path publishes the sentinel and NOT the measurement key).
+  - **THE SAME "LOCAL WINS DEFENDS AN ABSENCE" DEFECT EXISTS PER-COLUMN, AND THE SPLIT
+    RUNS ALONG TABLES-VS-COLUMNS (2026-08-10, metadata on duplicate articles):** asked
+    whether a redundant article's richer metadata is discarded on import, the measured
+    answer was HALF. `temp.map_articles` joins on HASH, so it maps duplicates onto their
+    local twin and every per-article CHILD table already attaches — AI summaries and
+    translations (`article_analyses`), AI-derived metadata (`ai_keyword`), extracted
+    dates, links. What was dropped is the article's own COLUMNS, because a duplicate
+    takes the `WHERE NOT EXISTS` path and nothing updated the local row: AI enrichment
+    survived and better EXTRACTION did not. Two columns make that more than cosmetic —
+    `server_ip`/`ip_observed_at` is a SOCKET-TIME observation no re-index rebuilds and no
+    re-fetch recovers (a later fetch reaches a different CDN edge), and `published_at` is
+    the better-extractor case exactly, since the date extractor gained CJK/Jalali/relative
+    recall over time. FOUR THINGS WORTH KEEPING. (a) The rule is the qualification rule
+    one level down: fill a local NULL ("never measured here"), never overwrite a local
+    value. (b) **A per-column `COALESCE` is WRONG for columns that are only meaningful
+    together** — it adopts an incoming sentiment LABEL onto a local SCORE whenever the
+    local label happens to be absent, publishing "negative" beside +0.9, a reading no run
+    produced; group such columns under an ANCHOR whose NULL-ness decides the whole group.
+    (c) The UPDATE needs a guard naming the same anchors, or every duplicate is rewritten
+    to store what it already had — at a ~90% duplicate rate that is a full row write per
+    duplicate. (d) **MY OWN PAIR-ATOMICITY TESTS WERE VACUOUS and the mutation check is
+    what said so**: with only sentiment set in the fixture, no anchor fired, the guard
+    skipped the row entirely, and the assertion passed for a reason unrelated to
+    atomicity — a per-column-COALESCE mutant passed all nine tests. The fixture needs an
+    UNRELATED adoptable column (an author) purely to make the row eligible, and an
+    assertion that it really was updated. COST, measured rather than assumed: +27.8 µs
+    per duplicate at field-realistic 22 KB rows (+11.7 µs at 1.8 KB — row size dominates),
+    so ~17 s plaintext over the field's ~617k duplicates, ~41 s applying this machine's
+    measured 2.4× codec ratio. Note the percentage is the misleading unit here: the same
+    measurement reads "+100% of the merge" on a small plaintext fixture whose baseline is
+    unrepresentative, and "+31.6%" at realistic row size — the per-duplicate RATE is what
+    extrapolates.
   - **A "LOCAL WINS" POLICY MUST NOT DEFEND A NON-JUDGEMENT — and a fixture with an EMPTY
     local side cannot tell the two apart (2026-08-10, qualification across a multi-instance
     import):** the 2026-07-24 fix below made the merge carry the qualification stamp, and it
@@ -3087,6 +3119,30 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     `ast.Call` for the `src=` keyword), and add the NEGATIVE-SPACE TWIN asserting an
     unwindowed inline rep still exists somewhere, or "correctly scoped" and "matches
     nothing anywhere" stay indistinguishable.
+  - **TWO MECHANISMS THAT COVER FOR EACH OTHER BOTH FAIL WHEN ONE OF THEM MOVES
+    (2026-08-10, the FTS trigger after a windowed merge):** the entry below records that a
+    merge-level test of the trigger-restoring `finally` proves the ROLLBACK, not the
+    `finally` — SQLite's transactional DDL rolls the DROP away, while the `finally`'s
+    CREATE runs inside the still-open transaction and is undone moments later. That was
+    read as "belt and braces". It was the opposite: ONE working mechanism and one inert
+    one, and which was which depended on nothing committing in between. WINDOWING then
+    committed in between — a windowed step COMMITs and reopens, so on any corpus large
+    enough to window (every real field corpus) the DROP is durable by the time a later
+    step fails, the rollback can no longer undo it, and it undoes the CREATE instead.
+    Both mechanisms fail together and the working copy comes back unable to index.
+    Probed rather than argued: force one id per window, fail a step, trigger gone.
+    THE REASON IT STAYED HIDDEN IS ALSO THE REASON IT WAS CHEAP — it fails CLOSED
+    (`verify_copy` refuses a trigger-less copy, and a failed merge's working copy is
+    disposable), so it cost wasted work and a confusing refusal rather than data; a
+    fail-closed bug has no symptom until someone measures for it. FIX: capture the DDL
+    before the transaction opens and re-create AFTER the rollback, where
+    `isolation_level = None` leaves the connection in autocommit so the CREATE is durable
+    immediately; idempotent, so the small-corpus case where the rollback already restored
+    it is a no-op, and best-effort, so it can never replace the failure that brought it
+    there. GENERAL FORM: when a property is upheld by two mechanisms, find out which one
+    actually holds it and under what precondition — "there are two" is not redundancy if
+    both depend on the same thing, and a change elsewhere (here, committing mid-step for
+    memory reasons) can retire both at once without touching either.
   - **SQLite DDL IS TRANSACTIONAL, so a merge-level test of a `finally` that restores a
     dropped trigger proves the ROLLBACK, not the `finally` (2026-08-07, B6):** the guard
     for "the FTS insert trigger is always restored" passed against the mutation that
@@ -3185,6 +3241,35 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     — a CI-shaped accident — so it also got a stub test that reaches it on every platform.
     When a guard fails only on CI, ask whether its branch has any deterministic driver at
     all; if not, the fix is a second test, not a better assertion.
+  - **A CLASS WITH NO RULE IS A LIE THE MARKUP KEEPS TELLING — grep the stylesheet for
+    every hook you are reading, not just the ones you are writing (2026-08-11, "some
+    inner parts of the sections appear bigger or brighter than section titles"):**
+    `class="small"` appears 35 times in `index.html`, 32 of them in Settings, and had
+    **no rule anywhere in the tree** — so every element an author marked small rendered
+    at the full 15px body size, and the several that also carry `font-weight:600` as an
+    ad-hoc sub-heading were therefore *louder* than the `.panel h2` above them (12.5px,
+    `--muted`). Reading the markup told you the opposite of what the screen showed, which
+    is why this survived every review of the HTML: the defect is not in any line you can
+    point at, it is in a line that does not exist. Defining it is a bug fix rather than a
+    restyle — a missing `font-size` can only ever have made text *bigger* than intended,
+    so supplying one can only reduce visual weight and can never overflow a layout. THE
+    GENERAL FORM: before trusting what a class name says an element looks like, confirm
+    the class is defined; and when a report is about relative prominence, measure the
+    computed scale rather than reading the intent off the attributes.
+  - **ENCODING RANK AS LETTER CASE IS INVISIBLE IN FIVE OF THE TWELVE LOCALES (2026-08-11,
+    the same pass):** `.panel h2` said "section title" with `text-transform:uppercase` +
+    `letter-spacing` at 12.5px in `--muted` — a small-caps label, which reads as a heading
+    in Latin script and as **nothing at all** in Arabic, Chinese, Japanese, Hindi and
+    Bengali, where `uppercase` is a no-op. So in five of the twelve locales this ships in,
+    the title degraded to small dim text while every heading below it kept its size and
+    weight. A hierarchy that has to survive translation steps on SIZE and WEIGHT only;
+    case is decoration, never structure. The guard asserts the ORDERING of the declared
+    sizes (fold > section > sub-section > body > small > hint) rather than any particular
+    number, so it fails for the reason it is named — something inside a section grew past
+    the section's own title — and separately forbids a heading from leaning on case again.
+    COROLLARY worth keeping: a bare `<h3>` inherits the browser's `1.17em`, so in any
+    design whose own headings are *smaller* than body text, every unstyled sub-heading is
+    automatically the loudest thing on the page.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
@@ -10763,6 +10848,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     fabricated result. So the fallback is conditional on the job not running, and a
     `.part` is never served at all — handing a truncated zip to someone already trying to
     diagnose something is the worst available answer.
+  - **A CAPABILITY CAN BE FULLY BUILT AND STILL BE UNREACHABLE BECAUSE OF ONE HTML
+    ATTRIBUTE — and making a mandatory step optional is where its GUARD gets quietly
+    weakened (2026-08-10, compartmented exports):** the ask was "backups should not force
+    user to backup articles", and every piece already existed —
+    `folder_backup._CATEGORIES` has been an arbitrary-subset list since it was written,
+    `FolderBackupManager.start(categories=…)` takes exactly that subset, and the IMPORT
+    side already discovers corpus / large-data / newsletters independently and asks for a
+    passphrase only when the corpus is among them. What made articles mandatory was
+    `<input type="checkbox" id="ux-c-corpus" checked disabled>` plus an unconditional
+    volumes phase in `_uxRun`. GENERAL FORM: when a field ask reads as a feature request,
+    first check whether the engine already does it and the SURFACE is what refuses; the
+    work is then a UI change with a data-safety review rather than a new capability, and
+    knowing which one you are doing changes what you must test. **THE TRAP IN THE OBVIOUS
+    IMPLEMENTATION:** the 2026-07-14 gate ("the blob phase is unreachable unless the
+    volumes phase PROVABLY completed as a `backup` into THIS dest") could be made to
+    tolerate a skipped corpus by relaxing it to `if (wantCorpus && !s1 …) throw` — one
+    word, reads identical, and it ALSO swallows a masked-start failure when the corpus IS
+    requested, which is the exact field defect the gate was built for. Move the whole step
+    AND its guard inside the condition instead: a guard relaxed to accept "the step did
+    not run" cannot distinguish that from "the step ran and failed". THIRD, cheap and
+    easy to miss: **a message's honesty is a function of what it can now describe.**
+    "Backup complete →" was unambiguous while a backup always meant everything; the moment
+    the contents became a choice, the same sentence let a models-only export read months
+    later as a full one, with nothing else in the folder to correct it — so the completion
+    line now NAMES what is in there, and an empty selection is refused outright rather
+    than writing a destination that looks like a backup and holds nothing.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 

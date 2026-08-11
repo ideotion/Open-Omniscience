@@ -516,3 +516,41 @@ def test_verify_without_a_recorder_is_byte_identical(tmp_path) -> None:
     bare = verify_copy(working, staged, batch_id)
     timed = verify_copy(working, staged, batch_id, timings=_Recorder())
     assert bare == timed, "recording changed what verification concluded"
+
+
+def test_a_failed_merge_restores_the_trigger_even_after_a_window_committed(tmp_path) -> None:
+    """The case the test above cannot reach, and the one every real corpus is in.
+
+    ``test_a_failed_merge_leaves_the_working_copy_able_to_index`` passes because nothing
+    committed: SQLite's transactional DDL rolls the DROP away and the trigger comes back.
+    A windowed step COMMITs and reopens (B1/B5), so on any corpus large enough to window
+    the DROP is already durable when a later step fails -- the rollback cannot undo it,
+    and undoes the finally's CREATE instead. Both mechanisms fail together, silently.
+
+    Windowing is forced here rather than fixtured at size, because the property is about
+    a commit having happened, not about how many rows caused it.
+    """
+    working, staged = tmp_path / "w.db", tmp_path / "s.db"
+    _corpus(working, articles=3)
+    _corpus(staged, articles=10, first=2000)
+
+    def boom(con, batch_id, results):
+        raise RuntimeError("step exploded")
+
+    steps = merge_mod._merge_steps()
+    patched = tuple((n, boom if n == "keywords" else f) for n, f in steps)
+    orig_steps, orig_window = merge_mod._merge_steps, merge_mod._window_ids_for
+    merge_mod._merge_steps = lambda: patched
+    # One id per window: every windowed step commits, which is the whole point.
+    merge_mod._window_ids_for = lambda con, src, lo, hi, key="id": 1
+    try:
+        with pytest.raises(Exception, match="step exploded"):
+            merge_corpus(staged, working, _BATCH_META)
+    finally:
+        merge_mod._merge_steps = orig_steps
+        merge_mod._window_ids_for = orig_window
+
+    assert _fts_state(working)["trigger"], (
+        "a windowed merge that failed left the working copy without its FTS insert "
+        "trigger -- the DROP was committed, so the rollback undid the finally's CREATE"
+    )

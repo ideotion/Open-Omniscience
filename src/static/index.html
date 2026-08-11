@@ -1405,7 +1405,7 @@
       <p class="muted" style="margin-top:0">Everything below runs on your own machine, through the model you chose above. Nothing is sent anywhere. AI output is always labelled AI-derived and unreliable, and never enters the trusted keyword index.</p>
 
       <div style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:8px">
-        <div style="font-weight:600">In the background — enriching your corpus</div>
+        <h3 style="margin:0">In the background — enriching your corpus</h3>
         <p class="hint" style="margin:4px 0 8px">Work the app does on its own, a little at a time, while you are not asking for anything: reading what your articles are about and adding metadata the rule-based indexer cannot derive. Each job keeps its own saved position, so switching this off pauses rather than restarts, and anything you start yourself takes priority.</p>
         <div class="row" style="align-items:center;gap:10px">
           <button id="aic-toggle-btn" onclick="toggleAiCoordinator(this)" data-running="0">Turn on background AI</button>
@@ -1433,7 +1433,7 @@
       </details>
 
       <div style="margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:8px">
-        <div style="font-weight:600">When you ask — reading and writing for you</div>
+        <h3 style="margin:0">When you ask — reading and writing for you</h3>
         <p class="hint" style="margin:4px 0 0">Summaries of one article or many, translation into your interface language, and synthesis across a set you choose. These only ever run when you press the button, from the reader, the search toolbar or an analysis window. A long article is split and reassembled rather than silently cut, and the method is recorded with the result.</p>
       </div>
     </section>
@@ -1696,106 +1696,6 @@
     <!-- Large-data folder backup + encrypted volume backup panels removed (Slice 3):
          both are now driven by the unified Export/Import dialogs above. The backend
          engines + endpoints are unchanged; only these redundant panels were collapsed. -->
-    <section class="panel" id="diagnostics-panel">
-      <h2>Diagnostics log</h2>
-      <p class="hint" style="margin-top:0">A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.</p>
-      <!-- Session forensics (E2, #596): the previous-session clean/unclean verdict (with the
-           OOM-inference wording shown verbatim as a caveat), the last unlock's phase timings +
-           -wal size, and the data-dir inventory with orphaned plaintext-staging flagged loudly.
-           Button-driven: the inventory does a recursive on-disk size scan, so it runs on demand
-           (never on every Settings open). No delete button — deletion is destructive and ships
-           with its own confirm flow later. -->
-      <div id="session-forensics-box" style="margin-top:8px">
-        <button class="secondary" onclick="loadSessionForensics(this)" title="Why did the app crash / why was unlock slow / what is filling the disk — the app's own records: the previous session's clean-or-unclean-end verdict, the last unlock's phase timings and -wal size, and the data folder's on-disk inventory with any orphaned backup/restore staging (a leftover decrypted corpus snapshot is flagged). Local only; sizes and app-owned names, never file contents.">Session forensics</button>
-        <div id="session-forensics-out" class="small" style="margin-top:6px"></div>
-      </div>
-      <!-- P0 DATA-SAFETY VALIDATION (S1.2): the push-button v0.2.0 acceptance run. Drives the
-           REAL backup engine against your live corpus, verifies it, probes a STAGED restore + a
-           dry-run merge PREVIEW (your live corpus is only ever READ, never committed), and reads
-           the merged unlock + collector instrumentation into ONE report with a per-check verdict.
-           Un-keyed English (matches this diagnostics panel). Browser-unverified per fork-3. -->
-      <div id="p0-validation-box" style="margin-top:10px">
-        <div class="small" style="font-weight:600">P0 data-safety validation (v0.2.0 acceptance)</div>
-        <div class="hint">Drives the REAL backup engine against your live corpus, verifies it, probes a staged restore with a dry-run merge preview (your live corpus is never replaced or deleted — the restore preview never writes it, and the backup's only touch is a standard WAL checkpoint), and reads the unlock + collector instrumentation — one report, a verdict per check, no composite score. Choose a SEPARATE empty directory (ideally an external drive) as the destination. Full procedure: docs/product/P0_VALIDATION_RUNBOOK.md.</div>
-        <div class="row" style="margin-top:6px">
-          <input id="p0-dest" type="text" style="min-width:280px" placeholder="backup destination dir (a separate empty folder / drive)">
-          <input id="p0-pass" type="password" style="width:200px" placeholder="backup passphrase (never stored)" autocomplete="new-password">
-          <button id="p0-run-btn" onclick="runP0Validation(this)" title="Run the P0 data-safety acceptance checks against your live corpus: back up (streaming, bounded RAM), verify (signed manifest + volume checksums), probe a staged restore + dry-run merge preview (never touches the live corpus), and read the unlock + collector instrumentation. One report, a verdict per check, no score, never a fabricated pass. This is the run the v0.2.0 tag is gated on.">Run P0 validation</button>
-          <button class="secondary" onclick="cancelP0Validation()" title="Stop the running validation at its next safe point; the throwaway restore staging and any partial backup are cleaned up.">Cancel</button>
-          <span id="p0-status" class="small" style="margin-left:6px"></span>
-        </div>
-        <div id="p0-result" class="small" style="margin-top:6px"></div>
-      </div>
-      <div class="row" style="margin-top:6px">
-        <button id="all-diag-btn" onclick="runAllDiagnostics(this)" title="Every diagnostics log in one archive — one click instead of nine. Runs as a BACKGROUND job (so it never freezes the app on a large corpus, unlike the old synchronous build), shows live progress, and downloads when ready. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).">All diagnostics (.zip)</button>
-        <span id="all-diag-status" class="small" style="margin-left:6px"></span>
-        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip','_blank')">Keyword log (.zip)</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip&amp;per_lang=1000000','_blank')" title="Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.">All keywords (.zip)</button>
-        <button onclick="viewKeywordGrowth(this)" title="Plot cumulative distinct keywords against cumulative words added. A curve that bends over = the vocabulary is saturating (healthy); a near-straight line (Heaps β ≈ 1) = new keywords are still minted for almost every word (markup/code/unsegmented junk).">Keyword-growth curve</button>
-        <!-- TEMPORARY / REMOVABLE diagnostic: delete this button + the /source-quality endpoint once the analyst has used the export. -->
-        <button class="secondary" onclick="window.open('/api/diagnostics/source-quality?download=1','_blank')" title="TEMPORARY, removable diagnostic. ONE .zip with everything an analyst needs to decide, per source, whether to EXCLUDE it / OPTIMIZE the extractor / KEEP it: per-article keyword-stat outliers, per-source top-12 keyword fingerprints + furniture share, and a text sample from three independent selectors (a fixed-seed random control + the stat outliers + furniture-flagged sources). Read-only, EXPORT-ONLY, counts-only, no score; private newsletter bodies gated (env). Whole-corpus counts; text heads for the sampled subset only.">Source &amp; article quality (.zip) · TEMP</button>
-        <button class="secondary" onclick="window.open('/api/diagnostics/rollup-benchmark','_blank')" title="Builds the keyword-daily rollup in-memory over your corpus and times the windowed keyword aggregation both ways — the live mention scan (the Insights/trends freeze) vs summing the rollup — with the speedup and a parity check. Read-only; the win shows only at real corpus size. Takes a few seconds on a large corpus.">Rollup benchmark (.json)</button>
-        <button onclick="enrichSources(this)" title="Deduce each source's topic tags from the keywords it publishes in your corpus and add them to the source's tags — local, no network, additive (never overwrites curated tags). This also runs automatically in the background; the button forces it now. The networked Wikidata source-type pass is a separate consented action.">Enrich source tags from corpus</button>
-        <button onclick="enrichSourceTypes(this)" title="Fill each source's TYPE (newspaper / broadcaster / news agency / scientific journal / …) from Wikidata, verified against the source's own domain. This one goes ONLINE through the guarded transport — it asks for network consent first and is refused in airplane mode. Bounded per click; click again to continue.">Enrich source types (Wikidata) ↗</button>
-        <input id="discover-cc" type="text" style="width:150px" placeholder="countries e.g. ke,ng,br">
-        <button onclick="discoverSources(this)" title="DISCOVER new sources (news orgs / institutions with an official website) from Wikidata for the countries you list, and add them DISABLED for review — nothing is scraped until you enable it in Settings → Sources. Goes ONLINE through the guarded transport (consent-gated, airplane-refused). Tip: pick under-represented countries to keep coverage balanced.">Discover new sources (Wikidata) ↗</button>
-        <button onclick="discoverWorld(this)" title="The same Wikidata discovery over EVERY country (~250), as a long background job — one country at a time through the guarded transport, every find added DISABLED for review, nothing scraped until you enable it. RESUMABLE: progress persists per country, so cancelling (task manager), airplane mode or a restart continues where it stopped instead of re-querying the world. Consent-gated, airplane-refused. This also advances AUTOMATICALLY a few countries per online collection pass (scheduler setting world_discovery_per_pass, 0 disables); this button just runs it all now.">Discover sources worldwide (Wikidata) ↗</button>
-        <span id="discover-world-status" class="hint muted"></span>
-      </div>
-      <!-- S5.3: IR gold-set BUILDER — grade real corpus queries 0/1/2 (keyboard 0/1/2 on a
-           focused result) and write the exact ir_eval gold-set file the run below consumes.
-           Closes the measure-before-trust loop for lemmatization + the BM25F default. Un-keyed
-           English (matches this diagnostics panel). Browser-unverified per fork-3. -->
-      <div class="row" style="margin-top:10px">
-        <button class="secondary" onclick="goldBuilderLoad(this)" title="Sample your top corpus keywords + their live search results, then grade each result 0/1/2 (0 irrelevant · 1 relevant · 2 highly relevant; press 0/1/2 on a focused row). Nothing is invented — search history is not stored. Save writes the exact ir_eval gold set the run below scores.">Build an IR gold set (grade queries 0/1/2)</button>
-        <input id="gold-builder-path" type="text" style="min-width:260px" placeholder="save path e.g. /home/you/oo_gold_set.json">
-        <button class="secondary" onclick="goldBuilderSave(this)" title="Write the graded queries as the exact ir_eval gold-set JSON to this server-side path (validated on save). Then point the IR-eval run below at it.">Save gold set</button>
-      </div>
-      <div id="gold-builder-cov" class="hint muted"></div>
-      <div id="gold-builder-body"></div>
-      <!-- S5.4: lemma-conflation PREVIEW — visible review instrument next to the gold-set
-           builder. Shows what lemmatization (OO_FAMILY_LEMMA, ON by default since
-           2026-07-18) MERGES among the top keywords + would-merge counts, each group
-           tagged plural_overlap so the true delta beyond the plural rule is visible; a
-           wrong merge is a note for the _MISLEMMA_DENYLIST, or OO_FAMILY_LEMMA=0 to opt
-           out entirely. -->
-      <div class="row" style="margin-top:8px">
-        <button class="secondary" onclick="loadLemmaPreview(this)" title="Preview what lemmatization (OO_FAMILY_LEMMA, ON by default) MERGES among your top keywords (study/studied -> study). Each group is tagged by whether the plural rule already covers it, so you see the true delta. Review for precision; a wrong merge is a _MISLEMMA_DENYLIST note, or set OO_FAMILY_LEMMA=0 to opt out entirely. Read-only, no score.">Preview lemmatization merges</button>
-      </div>
-      <div id="lemma-preview-body"></div>
-      <div class="row" style="margin-top:6px">
-        <input id="ir-eval-path" type="text" style="min-width:280px" placeholder="gold-set file path (see configs/ir_eval/gold_set.example.json)">
-        <input id="ir-eval-wa" type="text" style="width:120px" placeholder="weights A e.g. 4,1">
-        <input id="ir-eval-wb" type="text" style="width:120px" placeholder="weights B e.g. 1,1">
-        <button class="secondary" onclick="runIrEval()" title="Run the IR retrieval-eval over a human-judged gold set (queries with documents graded 0/1/2; template at configs/ir_eval/gold_set.example.json). Leave the weight boxes empty to score the current BM25F ranking; fill BOTH to A/B two (title,body) weight sets via the conflation delta. Measure-before-trust; metrics only, no score.">Run IR eval over a gold set</button>
-      </div>
-      <div class="hint">The IR retrieval-eval scores the live search against a human-judged gold set — queries with documents graded 0/1/2 (copy the template at configs/ir_eval/gold_set.example.json and fill in your own article ids). With both weight boxes filled it A/Bs two BM25F (title,body) weight sets and reports the recall / precision / nDCG change separately, so the ranking default is chosen on evidence rather than guessed. Per-language, n always stated, never a composite score.</div>
-      <!-- Statistical-signal exploration surfaces (wave 4 I): the read-only endpoints that
-           had no UI. Counts + statistics only, each carries its own method + caveat, never
-           a score. flood/bury also auto-render as Home Leads — this is the explicit dig-in
-           surface. Un-keyed English (matches this diagnostics panel). -->
-      <div class="row" style="margin-top:6px">
-        <button class="secondary" onclick="window.open('/api/signals/fdr-selftest?download=1','_blank')" title="Prove the Benjamini-Hochberg FDR correction (the multiple-testing spine under the flood/bury and lunar screens) on hand-computed fixtures — pass/fail per case, so a regression reddens both this export and CI. No DB, no network, no score.">FDR self-test (.json)</button>
-        <button class="secondary" onclick="window.open('/api/signals/flood','_blank')" title="Sources flooding a single topic far above their OWN history (the flood half of manipulation-pattern card #4). A two-proportion z-test vs the source's own prior share; volume is not importance, so a genuinely big story legitimately dominates. Counts + statistics only, never a score.">Flood signal (.json)</button>
-        <button class="secondary" onclick="window.open('/api/signals/bury','_blank')" title="Sources UNDER-covering a topic that is big across the rest of the corpus (the bury half of card #4). Every (source, broad topic) pair is Benjamini-Hochberg FDR-corrected so screening thousands of pairs cannot manufacture a finding; the innocent explanation (specialization) is stated. 'Absence of a flag is not absence of manipulation.' No score.">Bury signal (.json)</button>
-        <button class="secondary" onclick="window.open('/api/insights/lunar-correlation','_blank')" title="Screen the top keywords' daily coverage against the moon's illuminated fraction, FDR-corrected — a survivor beat multiple-testing, never a bare significant p. Correlation is not causation; the common honest outcome is that nothing survives. Counts + statistics only, no score.">Lunar-correlation screen (.json)</button>
-      </div>
-      <div class="hint">These are the read-only exploration surfaces behind the statistical manipulation-pattern signals. Every one delegates to a pure analytics module and returns its method + caveat verbatim: distinct SOURCES (not article count) measure breadth, the innocent-twin explanation rides every result, and the whole family of comparisons is multiple-testing corrected so many tests cannot manufacture a finding. They name a SHAPE, never a verdict — a microscope, not a detector. Counts + statistics only, never a composite score.</div>
-      <div class="row" style="margin-top:6px">
-        <button onclick="cleanupKeywords(this)" title="Re-index every article with the current engine, then remove the keywords left with no mentions — the recommended order in one action.">Clean up keywords (re-index, then prune)</button>
-        <span id="reindex-all-status" class="muted small"></span>
-      </div>
-      <div class="hint">Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs as a background job you can pause and resume from the task manager — it keeps going if you close this tab and continues where it left off (no more restarting from the beginning). Summaries and translations are left untouched.</div>
-      <div class="hint">Pruning removes keywords that no view references any more — terms left with zero mentions after a re-index drains markup junk or a merge. Pure cleanup that shrinks the keyword count; a keyword with any mention, and any term you curated into a family or group, is never touched. Run it after re-indexing for the biggest effect.</div>
-      <div class="hint">The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.</div>
-      <div class="hint">The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.</div>
-      <div class="hint">The scaling benchmark times the heavy read paths against your real corpus, several runs each, and reports cold vs warm timings per case — so we can check that big corpora stay fast on modest hardware. It records your corpus size, the keyword-counter freshness and the engine mode alongside the numbers so the results are interpretable. Read-only and local; nothing is transmitted.</div>
-      <div class="hint">All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.</div>
-      <div class="hint">The keyword self-test challenges the keyword pre-selection on curated cases — most importantly that the organisation "WHO" stays distinct from the pronoun "who", plus the per-language tweaks (German nouns stay terms, sentence-initial capitals aren't entities, the stopword/weekday batches, the singular/plural family merge, cross-language equivalence groups, and the curated baseline tags). It runs the real pipeline and reports pass/fail per case — share it so a regression is caught early. No corpus content, no network, no scores.</div>
-      <div class="hint">The keyword-engine report measures how the engine is doing over your real corpus: composition, entity precision, cross-language translation coverage (how many top keywords have a group), tag coverage, which languages are fully functional vs degraded (zh/ja aren't segmented), the self-test result, and indicative extraction/query timings. Counts and measured timings only — never a quality score. Send two over time and the difference shows whether an optimization landed.</div>
-      <div class="hint">The date-extraction log shows, per article, the dates the extractor found versus the date-like text it skipped — the evidence for catching more dates. Counts and bounded samples only; local, never transmitted.</div>
-      <div class="hint">The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.</div>
-    </section>
     </div>
 
     <!-- ADVANCED (2026-07-31 Settings review): the plumbing surfaces — collection,
@@ -1853,7 +1753,7 @@
       <p class="muted" style="margin-top:0">Your own AI extractors — each a prompt that pulls one kind of rich metadata from an article (an extension of the built-in who / where / when). Output items are stored as AI-derived metadata of the type you name, shown beside the article and labelled "AI-derived · unreliable", never mixed into the trusted keyword index. Define and manage them here; run them over a selection from the search toolbar or an analysis window (the "Run extractor" action), or automatically on new articles via each extractor's run-on-ingest toggle.</p>
       <div id="ai-prompts-list" class="hint">Loading…</div>
       <div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
-        <div id="ai-prompt-form-title" style="font-weight:600;margin-bottom:6px">Add a custom extractor</div>
+        <h3 id="ai-prompt-form-title" style="margin:0 0 6px">Add a custom extractor</h3>
         <input type="hidden" id="ai-prompt-id">
         <div class="row" style="gap:10px">
           <div style="flex:2"><label for="ai-prompt-label">Name</label>
@@ -2390,6 +2290,119 @@
         <div style="flex:1 1 240px"><label for="ics-url">…or subscribe by URL (webcal / https)</label><input id="ics-url" placeholder="https://example.org/calendar.ics"></div>
         <button class="secondary" onclick="importIcsUrl(this)">Add from URL</button>
       </div>
+    </section>
+    </details>
+
+    <!-- DIAGNOSTICS (maintainer 2026-08-11: "move all diagnostics from the data /
+         backup subtab into a new section in the advanced subtab"). Data & backup is
+         where you move your corpus in and out; a shareable report about how the app
+         sees that corpus is plumbing, and plumbing lives here (invariant #8). The
+         panel moved WHOLE -- every button, every hint. It needs no _ADV_LOADERS entry
+         because nothing in it fetches on open: every report is button-driven, which is
+         the folded-must-not-mean-fetched rule already satisfied by construction.
+         Second to last, not last: the Bulletin is RULED to stay at the very bottom so
+         it can be reached by skipping to the end (design record §16). -->
+    <details class="adv-sec" data-adv="diagnostics">
+      <summary><span class="adv-sec-t">Diagnostics</span> <span class="muted">— logs and reports about this install, generated only when you click</span></summary>
+    <section class="panel" id="diagnostics-panel">
+      <h2>Diagnostics log</h2>
+      <p class="hint" style="margin-top:0">A shareable synthesis of how the app sees your corpus — for improving the next version. Generated only when you click, and only you decide who gets the file.</p>
+      <!-- Session forensics (E2, #596): the previous-session clean/unclean verdict (with the
+           OOM-inference wording shown verbatim as a caveat), the last unlock's phase timings +
+           -wal size, and the data-dir inventory with orphaned plaintext-staging flagged loudly.
+           Button-driven: the inventory does a recursive on-disk size scan, so it runs on demand
+           (never on every Settings open). No delete button — deletion is destructive and ships
+           with its own confirm flow later. -->
+      <div id="session-forensics-box" style="margin-top:8px">
+        <button class="secondary" onclick="loadSessionForensics(this)" title="Why did the app crash / why was unlock slow / what is filling the disk — the app's own records: the previous session's clean-or-unclean-end verdict, the last unlock's phase timings and -wal size, and the data folder's on-disk inventory with any orphaned backup/restore staging (a leftover decrypted corpus snapshot is flagged). Local only; sizes and app-owned names, never file contents.">Session forensics</button>
+        <div id="session-forensics-out" class="small" style="margin-top:6px"></div>
+      </div>
+      <!-- P0 DATA-SAFETY VALIDATION (S1.2): the push-button v0.2.0 acceptance run. Drives the
+           REAL backup engine against your live corpus, verifies it, probes a STAGED restore + a
+           dry-run merge PREVIEW (your live corpus is only ever READ, never committed), and reads
+           the merged unlock + collector instrumentation into ONE report with a per-check verdict.
+           Un-keyed English (matches this diagnostics panel). Browser-unverified per fork-3. -->
+      <div id="p0-validation-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">P0 data-safety validation (v0.2.0 acceptance)</div>
+        <div class="hint">Drives the REAL backup engine against your live corpus, verifies it, probes a staged restore with a dry-run merge preview (your live corpus is never replaced or deleted — the restore preview never writes it, and the backup's only touch is a standard WAL checkpoint), and reads the unlock + collector instrumentation — one report, a verdict per check, no composite score. Choose a SEPARATE empty directory (ideally an external drive) as the destination. Full procedure: docs/product/P0_VALIDATION_RUNBOOK.md.</div>
+        <div class="row" style="margin-top:6px">
+          <input id="p0-dest" type="text" style="min-width:280px" placeholder="backup destination dir (a separate empty folder / drive)">
+          <input id="p0-pass" type="password" style="width:200px" placeholder="backup passphrase (never stored)" autocomplete="new-password">
+          <button id="p0-run-btn" onclick="runP0Validation(this)" title="Run the P0 data-safety acceptance checks against your live corpus: back up (streaming, bounded RAM), verify (signed manifest + volume checksums), probe a staged restore + dry-run merge preview (never touches the live corpus), and read the unlock + collector instrumentation. One report, a verdict per check, no score, never a fabricated pass. This is the run the v0.2.0 tag is gated on.">Run P0 validation</button>
+          <button class="secondary" onclick="cancelP0Validation()" title="Stop the running validation at its next safe point; the throwaway restore staging and any partial backup are cleaned up.">Cancel</button>
+          <span id="p0-status" class="small" style="margin-left:6px"></span>
+        </div>
+        <div id="p0-result" class="small" style="margin-top:6px"></div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <button id="all-diag-btn" onclick="runAllDiagnostics(this)" title="Every diagnostics log in one archive — one click instead of nine. Runs as a BACKGROUND job (so it never freezes the app on a large corpus, unlike the old synchronous build), shows live progress, and downloads when ready. Carries the bounded keyword-log digest (the full keyword dump has its own 'All keywords' button).">All diagnostics (.zip)</button>
+        <span id="all-diag-status" class="small" style="margin-left:6px"></span>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip','_blank')">Keyword log (.zip)</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/keywords?format=zip&amp;per_lang=1000000','_blank')" title="Every keyword in the corpus (not just the top 5000 per language), in one sizeable archive — the ~20 MB cap still applies; if hit, the manifest says has_more and you grab &page=2.">All keywords (.zip)</button>
+        <button onclick="viewKeywordGrowth(this)" title="Plot cumulative distinct keywords against cumulative words added. A curve that bends over = the vocabulary is saturating (healthy); a near-straight line (Heaps β ≈ 1) = new keywords are still minted for almost every word (markup/code/unsegmented junk).">Keyword-growth curve</button>
+        <!-- TEMPORARY / REMOVABLE diagnostic: delete this button + the /source-quality endpoint once the analyst has used the export. -->
+        <button class="secondary" onclick="window.open('/api/diagnostics/source-quality?download=1','_blank')" title="TEMPORARY, removable diagnostic. ONE .zip with everything an analyst needs to decide, per source, whether to EXCLUDE it / OPTIMIZE the extractor / KEEP it: per-article keyword-stat outliers, per-source top-12 keyword fingerprints + furniture share, and a text sample from three independent selectors (a fixed-seed random control + the stat outliers + furniture-flagged sources). Read-only, EXPORT-ONLY, counts-only, no score; private newsletter bodies gated (env). Whole-corpus counts; text heads for the sampled subset only.">Source &amp; article quality (.zip) · TEMP</button>
+        <button class="secondary" onclick="window.open('/api/diagnostics/rollup-benchmark','_blank')" title="Builds the keyword-daily rollup in-memory over your corpus and times the windowed keyword aggregation both ways — the live mention scan (the Insights/trends freeze) vs summing the rollup — with the speedup and a parity check. Read-only; the win shows only at real corpus size. Takes a few seconds on a large corpus.">Rollup benchmark (.json)</button>
+        <button onclick="enrichSources(this)" title="Deduce each source's topic tags from the keywords it publishes in your corpus and add them to the source's tags — local, no network, additive (never overwrites curated tags). This also runs automatically in the background; the button forces it now. The networked Wikidata source-type pass is a separate consented action.">Enrich source tags from corpus</button>
+        <button onclick="enrichSourceTypes(this)" title="Fill each source's TYPE (newspaper / broadcaster / news agency / scientific journal / …) from Wikidata, verified against the source's own domain. This one goes ONLINE through the guarded transport — it asks for network consent first and is refused in airplane mode. Bounded per click; click again to continue.">Enrich source types (Wikidata) ↗</button>
+        <input id="discover-cc" type="text" style="width:150px" placeholder="countries e.g. ke,ng,br">
+        <button onclick="discoverSources(this)" title="DISCOVER new sources (news orgs / institutions with an official website) from Wikidata for the countries you list, and add them DISABLED for review — nothing is scraped until you enable it in Settings → Sources. Goes ONLINE through the guarded transport (consent-gated, airplane-refused). Tip: pick under-represented countries to keep coverage balanced.">Discover new sources (Wikidata) ↗</button>
+        <button onclick="discoverWorld(this)" title="The same Wikidata discovery over EVERY country (~250), as a long background job — one country at a time through the guarded transport, every find added DISABLED for review, nothing scraped until you enable it. RESUMABLE: progress persists per country, so cancelling (task manager), airplane mode or a restart continues where it stopped instead of re-querying the world. Consent-gated, airplane-refused. This also advances AUTOMATICALLY a few countries per online collection pass (scheduler setting world_discovery_per_pass, 0 disables); this button just runs it all now.">Discover sources worldwide (Wikidata) ↗</button>
+        <span id="discover-world-status" class="hint muted"></span>
+      </div>
+      <!-- S5.3: IR gold-set BUILDER — grade real corpus queries 0/1/2 (keyboard 0/1/2 on a
+           focused result) and write the exact ir_eval gold-set file the run below consumes.
+           Closes the measure-before-trust loop for lemmatization + the BM25F default. Un-keyed
+           English (matches this diagnostics panel). Browser-unverified per fork-3. -->
+      <div class="row" style="margin-top:10px">
+        <button class="secondary" onclick="goldBuilderLoad(this)" title="Sample your top corpus keywords + their live search results, then grade each result 0/1/2 (0 irrelevant · 1 relevant · 2 highly relevant; press 0/1/2 on a focused row). Nothing is invented — search history is not stored. Save writes the exact ir_eval gold set the run below scores.">Build an IR gold set (grade queries 0/1/2)</button>
+        <input id="gold-builder-path" type="text" style="min-width:260px" placeholder="save path e.g. /home/you/oo_gold_set.json">
+        <button class="secondary" onclick="goldBuilderSave(this)" title="Write the graded queries as the exact ir_eval gold-set JSON to this server-side path (validated on save). Then point the IR-eval run below at it.">Save gold set</button>
+      </div>
+      <div id="gold-builder-cov" class="hint muted"></div>
+      <div id="gold-builder-body"></div>
+      <!-- S5.4: lemma-conflation PREVIEW — visible review instrument next to the gold-set
+           builder. Shows what lemmatization (OO_FAMILY_LEMMA, ON by default since
+           2026-07-18) MERGES among the top keywords + would-merge counts, each group
+           tagged plural_overlap so the true delta beyond the plural rule is visible; a
+           wrong merge is a note for the _MISLEMMA_DENYLIST, or OO_FAMILY_LEMMA=0 to opt
+           out entirely. -->
+      <div class="row" style="margin-top:8px">
+        <button class="secondary" onclick="loadLemmaPreview(this)" title="Preview what lemmatization (OO_FAMILY_LEMMA, ON by default) MERGES among your top keywords (study/studied -> study). Each group is tagged by whether the plural rule already covers it, so you see the true delta. Review for precision; a wrong merge is a _MISLEMMA_DENYLIST note, or set OO_FAMILY_LEMMA=0 to opt out entirely. Read-only, no score.">Preview lemmatization merges</button>
+      </div>
+      <div id="lemma-preview-body"></div>
+      <div class="row" style="margin-top:6px">
+        <input id="ir-eval-path" type="text" style="min-width:280px" placeholder="gold-set file path (see configs/ir_eval/gold_set.example.json)">
+        <input id="ir-eval-wa" type="text" style="width:120px" placeholder="weights A e.g. 4,1">
+        <input id="ir-eval-wb" type="text" style="width:120px" placeholder="weights B e.g. 1,1">
+        <button class="secondary" onclick="runIrEval()" title="Run the IR retrieval-eval over a human-judged gold set (queries with documents graded 0/1/2; template at configs/ir_eval/gold_set.example.json). Leave the weight boxes empty to score the current BM25F ranking; fill BOTH to A/B two (title,body) weight sets via the conflation delta. Measure-before-trust; metrics only, no score.">Run IR eval over a gold set</button>
+      </div>
+      <div class="hint">The IR retrieval-eval scores the live search against a human-judged gold set — queries with documents graded 0/1/2 (copy the template at configs/ir_eval/gold_set.example.json and fill in your own article ids). With both weight boxes filled it A/Bs two BM25F (title,body) weight sets and reports the recall / precision / nDCG change separately, so the ranking default is chosen on evidence rather than guessed. Per-language, n always stated, never a composite score.</div>
+      <!-- Statistical-signal exploration surfaces (wave 4 I): the read-only endpoints that
+           had no UI. Counts + statistics only, each carries its own method + caveat, never
+           a score. flood/bury also auto-render as Home Leads — this is the explicit dig-in
+           surface. Un-keyed English (matches this diagnostics panel). -->
+      <div class="row" style="margin-top:6px">
+        <button class="secondary" onclick="window.open('/api/signals/fdr-selftest?download=1','_blank')" title="Prove the Benjamini-Hochberg FDR correction (the multiple-testing spine under the flood/bury and lunar screens) on hand-computed fixtures — pass/fail per case, so a regression reddens both this export and CI. No DB, no network, no score.">FDR self-test (.json)</button>
+        <button class="secondary" onclick="window.open('/api/signals/flood','_blank')" title="Sources flooding a single topic far above their OWN history (the flood half of manipulation-pattern card #4). A two-proportion z-test vs the source's own prior share; volume is not importance, so a genuinely big story legitimately dominates. Counts + statistics only, never a score.">Flood signal (.json)</button>
+        <button class="secondary" onclick="window.open('/api/signals/bury','_blank')" title="Sources UNDER-covering a topic that is big across the rest of the corpus (the bury half of card #4). Every (source, broad topic) pair is Benjamini-Hochberg FDR-corrected so screening thousands of pairs cannot manufacture a finding; the innocent explanation (specialization) is stated. 'Absence of a flag is not absence of manipulation.' No score.">Bury signal (.json)</button>
+        <button class="secondary" onclick="window.open('/api/insights/lunar-correlation','_blank')" title="Screen the top keywords' daily coverage against the moon's illuminated fraction, FDR-corrected — a survivor beat multiple-testing, never a bare significant p. Correlation is not causation; the common honest outcome is that nothing survives. Counts + statistics only, no score.">Lunar-correlation screen (.json)</button>
+      </div>
+      <div class="hint">These are the read-only exploration surfaces behind the statistical manipulation-pattern signals. Every one delegates to a pure analytics module and returns its method + caveat verbatim: distinct SOURCES (not article count) measure breadth, the innocent-twin explanation rides every result, and the whole family of comparisons is multiple-testing corrected so many tests cannot manufacture a finding. They name a SHAPE, never a verdict — a microscope, not a detector. Counts + statistics only, never a composite score.</div>
+      <div class="row" style="margin-top:6px">
+        <button onclick="cleanupKeywords(this)" title="Re-index every article with the current engine, then remove the keywords left with no mentions — the recommended order in one action.">Clean up keywords (re-index, then prune)</button>
+        <span id="reindex-all-status" class="muted small"></span>
+      </div>
+      <div class="hint">Re-indexing recomputes keywords, dates/places/entities and sentiment for every article with the current engine — use it after an upgrade to refresh older articles (for example to drain stale CSS/markup keywords from newsletters imported before the markup-stripping fix). Heavy on a large corpus; it runs as a background job you can pause and resume from the task manager — it keeps going if you close this tab and continues where it left off (no more restarting from the beginning). Summaries and translations are left untouched.</div>
+      <div class="hint">Pruning removes keywords that no view references any more — terms left with zero mentions after a re-index drains markup junk or a merge. Pure cleanup that shrinks the keyword count; a keyword with any mention, and any term you curated into a family or group, is never touched. Run it after re-indexing for the biggest effect.</div>
+      <div class="hint">The debug bundle is the full picture for bug reports: runtime facts, scheduler history, every network verdict, what each Load/Refresh click actually did, law/wiki tracking states and the rolling error log — click through the app, then download and share it.</div>
+      <div class="hint">The performance report carries real evidence from this machine: per-endpoint response times from your actual use since the app started, store and memory facts, and a quick timed self-test over the heavy views of your real corpus. Local only; runs in a few seconds and nothing is transmitted.</div>
+      <div class="hint">The scaling benchmark times the heavy read paths against your real corpus, several runs each, and reports cold vs warm timings per case — so we can check that big corpora stay fast on modest hardware. It records your corpus size, the keyword-counter freshness and the engine mode alongside the numbers so the results are interpretable. Read-only and local; nothing is transmitted.</div>
+      <div class="hint">All gathered keywords with real counts, the computed keyword families, your merge/split corrections and super-groups — exactly what keyword-grouping fixes need to see. Counts and structures only, never scores.</div>
+      <div class="hint">The keyword self-test challenges the keyword pre-selection on curated cases — most importantly that the organisation "WHO" stays distinct from the pronoun "who", plus the per-language tweaks (German nouns stay terms, sentence-initial capitals aren't entities, the stopword/weekday batches, the singular/plural family merge, cross-language equivalence groups, and the curated baseline tags). It runs the real pipeline and reports pass/fail per case — share it so a regression is caught early. No corpus content, no network, no scores.</div>
+      <div class="hint">The keyword-engine report measures how the engine is doing over your real corpus: composition, entity precision, cross-language translation coverage (how many top keywords have a group), tag coverage, which languages are fully functional vs degraded (zh/ja aren't segmented), the self-test result, and indicative extraction/query timings. Counts and measured timings only — never a quality score. Send two over time and the difference shows whether an optimization landed.</div>
+      <div class="hint">The date-extraction log shows, per article, the dates the extractor found versus the date-like text it skipped — the evidence for catching more dates. Counts and bounded samples only; local, never transmitted.</div>
+      <div class="hint">The network log holds every robots and reachability verdict for the default sources, market feeds and calendar feeds — share it to help optimize the default install's lists.</div>
     </section>
     </details>
 
