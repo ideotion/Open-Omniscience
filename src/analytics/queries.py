@@ -1495,6 +1495,28 @@ def corpus_coordination(
     }
 
 
+def _growth_of(recent: int, expected: float) -> tuple[float, bool]:
+    """The defined ratio, and whether it actually IS one.
+
+    ``expected < 1`` means the prior rate scaled to this window comes to less than a
+    single mention, so there is no denominator worth dividing by and the recent count
+    is reported in its place. That substitution is a SENTINEL, not a measurement, and
+    it has to be distinguishable from a real ratio by something other than
+    re-deriving it — a consumer that cannot tell them apart prints the count as a
+    multiple. One did: a field edition rendered 5,701 mentions against a prior of 4
+    as "x5701.0 vs the prior period", and 19 of its 20 rows were the same sentinel,
+    which also collapsed the section's ordering to raw volume and buried the single
+    row that had a measurable baseline in 14th place.
+
+    The threshold is on ``expected``, not on ``prior``: at a 7-day window over a
+    30-day baseline any prior of 4 or fewer lands here, so "new term" understates
+    how often this fires.
+    """
+    if expected >= 1:
+        return recent / expected, True
+    return float(recent), False
+
+
 def trending(
     session,
     *,
@@ -1510,8 +1532,10 @@ def trending(
     """Rising keywords: recent volume vs the prior-period rate (a defined ratio).
 
     ``growth`` = recent_count / expected, where expected = (prior_count /
-    baseline_days) * window_days. New terms (no prior) report growth as the recent
-    count. This is a transparent ratio, not a significance test.
+    baseline_days) * window_days. Where ``expected`` falls below 1 there is nothing
+    to divide by, so ``growth`` carries the recent count instead and
+    ``growth_is_ratio`` is False — see :func:`_growth_of`. This is a transparent
+    ratio, not a significance test.
 
     WINDOW WIDTH (fixed 2026-07-31): the recent window is exactly ``window_days``
     days ENDING TODAY INCLUSIVE -- ``[today - (window_days - 1), today]`` -- and the
@@ -1582,15 +1606,15 @@ def trending(
             continue
         pc = int(prior.get(kid, 0) or 0)
         expected = (pc / baseline_days) * window_days
-        growth = rc / expected if expected >= 1 else float(rc)
-        scored.append((kid, rc, pc, round(expected, 2), round(growth, 2)))
+        growth, is_ratio = _growth_of(rc, expected)
+        scored.append((kid, rc, pc, round(expected, 2), round(growth, 2), is_ratio))
     scored.sort(key=lambda x: (-x[4], -x[1]))
 
     is_hidden = _hidden_predicate()
     cap = limit * 4  # headroom so ring members below `limit` still merge
     cand = []
     stored_lang: dict[str, str | None] = {}
-    for kid, rc, pc, expected, growth in scored:
+    for kid, rc, pc, expected, growth, is_ratio in scored:
         kw = session.get(Keyword, kid)
         if kw is None or (kind and kind_of(kw) != kind) or is_hidden(kw.normalized_term):
             continue
@@ -1605,6 +1629,7 @@ def trending(
                 "prior": pc,
                 "expected": expected,
                 "growth": growth,
+                "growth_is_ratio": is_ratio,
             }
         )
         if len(cand) >= cap:
@@ -1626,6 +1651,7 @@ def trending(
         rc = sum(int(m["recent"]) for m in members)
         pc = sum(int(m["prior"]) for m in members)
         exp = (pc / baseline_days) * window_days
+        ring_growth, ring_is_ratio = _growth_of(rc, exp)
         lead = max(members, key=lambda m: m["recent"])
         row = {
             "term": meta.label if meta else ring_id,
@@ -1634,7 +1660,8 @@ def trending(
             "recent": rc,
             "prior": pc,
             "expected": round(exp, 2),
-            "growth": round(rc / exp if exp >= 1 else float(rc), 2),
+            "growth": round(ring_growth, 2),
+            "growth_is_ratio": ring_is_ratio,
             "ring_id": ring_id,
             "language_breakdown": {(lang_of(m["normalized"]) or "?"): int(m["recent"]) for m in members},
             "members": [
@@ -2229,7 +2256,11 @@ def keyword_stats(
     recent = _sum(w_start, today + timedelta(days=1))
     prior = _sum(b_start, w_start)
     expected = (prior / baseline_days) * window_days
-    growth = round(recent / expected, 2) if expected >= 1 else float(recent)
+    # Same defined ratio as trending(), and the same sentinel when there is no
+    # baseline to divide by — so it carries the same flag rather than leaving a
+    # second consumer to re-derive it (or to print a count as a multiple).
+    _g, _is_ratio = _growth_of(recent, expected)
+    growth = round(_g, 2)
     trend_block = {
         "window_days": window_days,
         "baseline_days": baseline_days,

@@ -133,8 +133,17 @@ def narrate_story(
     is never left with a gap where a model should have been.
     """
     ev_text = _evidence_text(evidence)
+    # TWO id lists, because they answer two questions and sharing one key cost the
+    # feature. ``article_ids`` is the STORY's cluster — the identity every consumer
+    # joins on — and it must be the same list whichever path built the paragraph.
+    # It was not: this path used the EVIDENCE's ids, which are only the articles
+    # that fit the char budget (15 of a 115-article cluster in the field), while the
+    # two fallback paths used the story's. So the join in ``edition.build_edition``
+    # and the one in ``review`` both missed on every story large enough to matter,
+    # silently, and the deterministic paragraph below never reached a reader.
     base = {
-        "article_ids": list(evidence.get("article_ids") or []),
+        "article_ids": list(story.get("article_ids") or []),
+        "grounded_in_article_ids": list(evidence.get("article_ids") or []),
         "model": model,
         "backend": backend,
         "prompt_version": NARRATION_PROMPT_VERSION,
@@ -271,6 +280,7 @@ def narrate(
             paragraphs.append(
                 {
                     "article_ids": list(story.get("article_ids") or []),
+                    "grounded_in_article_ids": [],  # nothing was shown to a model
                     "text": deterministic_paragraph(story),
                     "narrated": False,
                     "fallback_reason": f"evidence unavailable: {exc}",
@@ -322,6 +332,7 @@ def _all_deterministic(stories: list[dict], reason: str) -> dict:
         "paragraphs": [
             {
                 "article_ids": list(s.get("article_ids") or []),
+                "grounded_in_article_ids": [],  # no model was reached
                 "text": deterministic_paragraph(s),
                 "narrated": False,
                 "fallback_reason": reason,

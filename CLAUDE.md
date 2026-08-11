@@ -3271,6 +3271,76 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     design whose own headings are *smaller* than body text, every unstyled sub-heading is
     automatically the loudest thing on the page.
 
+  - **A SENTINEL DOCUMENTED AT THE SOURCE IS STILL A FABRICATION AT THE RENDER BOUNDARY —
+    and a clamp that fires on 19 of 20 rows silently reorders the whole section
+    (2026-08-11, the field bulletin's rising concepts):** `queries.trending` computes
+    `growth = rc / expected if expected >= 1 else float(rc)` and its docstring says so, so
+    nothing there is dishonest. The renderer printed that value as **"×5701.0 vs the prior
+    period"** for a term whose prior was **4**. THREE things follow that the docstring did
+    not. (a) The threshold is on `expected`, not on `prior`, so at a 7-day window over a
+    30-day baseline ANY prior of 4 or fewer lands in the sentinel — "new terms (no prior)"
+    understated its reach by a wide margin, and a docstring that understates a sentinel is
+    how a consumer comes to trust it. (b) Because the sentinel equals the count, the sort
+    key `-growth` degenerates to `-recent`, so a section titled "Rising concepts" ranks by
+    raw volume and the ONE row with a measurable baseline sat **fourteenth, behind thirteen
+    counts wearing a multiplication sign** — a clamp doing all the work does not merely
+    inflate a number, it silently substitutes a different ordering. (c) The caveat under it
+    warned about multiple comparisons, which is a real hazard and not this one, so the page
+    read as disclosed. FIX: the flag travels WITH the value (`growth_is_ratio`, at every
+    site that computes it — the solo path, the ring merge, and `keyword_hover_stats`, which
+    had the same shape one screen away), and the presentation groups rows by what each can
+    support. THREE buckets, not two: the reader predicate has three answers, and an old
+    record carrying neither the flag nor `expected` may not be filed under "no baseline to
+    divide by" — that is a finding, and a row that cannot prove it is a ratio does not get
+    to claim one either way. Editions already on disk render honestly because `expected` is
+    what the flag is computed from. NOTE the frontend prints the same value as `↑{growth}×`
+    at six call sites (Home trend strip, Trends bars, the keyword hover, the supergroup
+    rate) — the same defect, recorded, not fixed in the bulletin PR.
+  - **A JOIN KEY EACH SIDE POPULATES DIFFERENTLY FAILS SILENTLY, AND AN EMPTY RESULT IS
+    INDISTINGUISHABLE FROM "NOBODY TRIED" (2026-08-11, the bulletin's narration layer):**
+    `narrate_story` keyed each paragraph on the EVIDENCE's article ids — only those whose
+    text fit the char budget, 15 of a 115-article cluster in the field — while both
+    consumers looked it up by the STORY's full cluster. So the join missed on every story
+    big enough to be interesting, and because `story["narration"]` merely stayed absent,
+    the failure looked exactly like a story nobody had narrated. THREE consequences, none
+    of which surfaced as an error: the deterministic fallback sentence, which exists so the
+    document is never left with a gap where a model should have been, never rendered though
+    it was sitting in the record; the review screen's per-sentence verdicts came out empty,
+    and those verdicts are that screen's entire stated purpose (design record §13, "a
+    sentence the operator can see was checked is a different thing from a paragraph labelled
+    validated"); and the edition still appended *"the sentences under each story were
+    written by a local model"* on a run where Ollama refused every connection and 0 of 8
+    stories were narrated. FOUR RULES. (a) When two lists could both plausibly be the key,
+    the IDENTITY is the one every consumer joins on; the other keeps its own name
+    (`grounded_in_article_ids` is real provenance — which articles the model could have
+    drawn from — it is simply not the identity). (b) **Three code paths built that paragraph
+    and they disagreed**, so whether the join worked depended on which failure had occurred;
+    a shape assembled in more than one place needs its identity set in one. (c) A dangling
+    join is REPORTED (`attach_gap`), because the whole reason this hid is that absence and
+    failure looked the same. (d) A document's self-description must be built from what
+    HAPPENED — `stories_narrated`, never `narrate=True`. AND THE TEST LESSON, from my own
+    first draft: asserting `"115 articles" in md` to prove the paragraph rendered passed
+    with the join still broken, because the story's own header line prints that count
+    regardless — a "did it render" assertion must name text ONLY the thing under test emits.
+  - **THE RENDERER CAN BE THE BOTTLENECK, AND A TRUNCATED HEAD READS AS THE WHOLE
+    (2026-08-11, same edition):** Layer A computed 114 source countries, 34 languages, seven
+    per-channel volumes and seven daily counts; the document printed 8, 8, none and none,
+    with nothing to say the rest existed. That turns the masthead's own caveat — "a country
+    absent here is a country this corpus did not collect from" — into a claim the page
+    cannot support. A document has to be readable, so the LIST stays bounded; what must be
+    exact and stated is the TOTAL and the remainder ("20 of 114 shown; the other 94 carried
+    20,811"). THE LINE WORTH MOST was one nobody had ever printed: the per-channel split
+    said **407 scientific articles of 72,225**, which explains at a glance why nineteen
+    mitochondrial-fission terms owned the rising section — a fact already computed and
+    thrown away. Two sections additionally carried caveats naming fields the render dropped
+    (the promised untagged count — 17,080 of 12,468,182 mentions carry a topic tag — and the
+    alert magnitudes, places and times), which is the recorded "a caveat may claim only what
+    the data can exhibit" defect recurring in a new module. COROLLARY: the masthead was the
+    one block the two renderers did NOT share, and it had drifted — the HTML page carried
+    four bullet points and none of these lines; the sibling `_section_groups` says in its own
+    docstring that it is shared "so the two can never drift", which is exactly the argument
+    for sharing this one too.
+
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
   the MEASUREMENT shipped, the two structural changes did NOT — deliberately, and the

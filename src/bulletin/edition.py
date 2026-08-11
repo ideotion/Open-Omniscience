@@ -86,12 +86,21 @@ def build_edition(
     # Adjacency, not interleaving: each paragraph is attached to its story by the
     # article ids both already carry, so a renderer can place them side by side
     # without either layer having to know the other's shape.
+    #
+    # A DANGLING JOIN IS REPORTED, never absorbed. This join silently produced
+    # nothing for a year because the two sides populated the key differently — the
+    # story's full cluster against the subset the model was shown — and an empty
+    # `story["narration"]` looks exactly like a story nobody tried to narrate. The
+    # key is fixed at the source (narration.narrate_story); the count below is what
+    # makes a future divergence say so instead of vanishing.
     by_ids = {
         tuple(p.get("article_ids") or []): p for p in edition["narration"].get("paragraphs") or []
     }
+    attached = 0
     for story in stories.get("stories") or []:
         para = by_ids.get(tuple(story.get("article_ids") or []))
         if para is not None:
+            attached += 1
             story["narration"] = {
                 "text": para.get("text"),
                 "narrated": para.get("narrated", False),
@@ -100,12 +109,35 @@ def build_edition(
                 "partial": para.get("partial", False),
                 "fallback_reason": para.get("fallback_reason"),
             }
+    shown = len(stories.get("stories") or [])
+    edition["narration"]["paragraphs_attached"] = attached
+    if attached < shown:
+        edition["narration"]["attach_gap"] = (
+            f"{shown - attached} of {shown} stories could not be matched to a paragraph "
+            "by article ids — the two sides disagree about the key, so those stories "
+            "carry no sentence here even though one may have been written."
+        )
 
-    edition["caveat"] = (
-        edition.get("caveat", "")
-        + " This edition carries a narration layer: the sentences under each story were "
-        "written by a local model and kept only because every figure and name in them "
-        "appears in the articles it was shown. They are marked AI-derived and can be "
-        "removed without losing anything the record states."
-    )
+    # What the edition SAYS about its narration is built from what happened, not
+    # from what was requested. The unconditional version claimed "the sentences
+    # under each story were written by a local model" on an edition where the model
+    # was unreachable and nought of eight stories had been narrated.
+    narrated = int(edition["narration"].get("stories_narrated") or 0)
+    if narrated:
+        edition["caveat"] = (
+            edition.get("caveat", "")
+            + f" This edition carries a narration layer over {narrated} of {shown} "
+            "stories: those sentences were written by a local model and kept only "
+            "because every figure and name in them appears in the articles it was "
+            "shown. They are marked AI-derived and can be removed without losing "
+            "anything the record states."
+        )
+    else:
+        edition["caveat"] = (
+            edition.get("caveat", "")
+            + " Narration was requested and produced nothing: no sentence here was "
+            "written by a model. Each story carries a deterministic sentence composed "
+            "from its own counts, and the reason the model produced nothing is "
+            "recorded beside it."
+        )
     return edition
