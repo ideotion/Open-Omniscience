@@ -2185,6 +2185,8 @@
   "After": "以後",
   "New sources": "新しい情報源",
   "Articles awaiting indexing": "まだ索引付け待ちの記事",
+  "Existing articles that gained metadata: {n}": "メタデータを得た既存の記事: {n}",
+  "Fields filled: {fields}": "補完されたフィールド: {fields}",
   "Qualified sources added: {n}": "追加された適格ソース: {n}",
   "Arrived disqualified: {n}": "不適格として到着: {n}",
   "Already judged here, kept: {n}": "ここで判定済み、保持: {n}",

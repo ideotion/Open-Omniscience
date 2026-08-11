@@ -2185,6 +2185,8 @@
   "After": "Après",
   "New sources": "Nouvelles sources",
   "Articles awaiting indexing": "Articles en attente d'indexation",
+  "Existing articles that gained metadata: {n}": "Articles existants ayant gagné des métadonnées : {n}",
+  "Fields filled: {fields}": "Champs complétés : {fields}",
   "Qualified sources added: {n}": "Sources qualifiées ajoutées : {n}",
   "Arrived disqualified: {n}": "Arrivées disqualifiées : {n}",
   "Already judged here, kept: {n}": "Déjà jugées ici, conservées : {n}",

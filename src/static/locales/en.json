@@ -2185,6 +2185,8 @@
   "After": "After",
   "New sources": "New sources",
   "Articles awaiting indexing": "Articles awaiting indexing",
+  "Existing articles that gained metadata: {n}": "Existing articles that gained metadata: {n}",
+  "Fields filled: {fields}": "Fields filled: {fields}",
   "Qualified sources added: {n}": "Qualified sources added: {n}",
   "Arrived disqualified: {n}": "Arrived disqualified: {n}",
   "Already judged here, kept: {n}": "Already judged here, kept: {n}",

@@ -1385,6 +1385,38 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     hiding place for the bug it was built to survive) at the schema level rather than the
     resolver level, and the test that pins it must assert BOTH directions (the happy path still
     publishes a real value; the sad path publishes the sentinel and NOT the measurement key).
+  - **THE SAME "LOCAL WINS DEFENDS AN ABSENCE" DEFECT EXISTS PER-COLUMN, AND THE SPLIT
+    RUNS ALONG TABLES-VS-COLUMNS (2026-08-10, metadata on duplicate articles):** asked
+    whether a redundant article's richer metadata is discarded on import, the measured
+    answer was HALF. `temp.map_articles` joins on HASH, so it maps duplicates onto their
+    local twin and every per-article CHILD table already attaches — AI summaries and
+    translations (`article_analyses`), AI-derived metadata (`ai_keyword`), extracted
+    dates, links. What was dropped is the article's own COLUMNS, because a duplicate
+    takes the `WHERE NOT EXISTS` path and nothing updated the local row: AI enrichment
+    survived and better EXTRACTION did not. Two columns make that more than cosmetic —
+    `server_ip`/`ip_observed_at` is a SOCKET-TIME observation no re-index rebuilds and no
+    re-fetch recovers (a later fetch reaches a different CDN edge), and `published_at` is
+    the better-extractor case exactly, since the date extractor gained CJK/Jalali/relative
+    recall over time. FOUR THINGS WORTH KEEPING. (a) The rule is the qualification rule
+    one level down: fill a local NULL ("never measured here"), never overwrite a local
+    value. (b) **A per-column `COALESCE` is WRONG for columns that are only meaningful
+    together** — it adopts an incoming sentiment LABEL onto a local SCORE whenever the
+    local label happens to be absent, publishing "negative" beside +0.9, a reading no run
+    produced; group such columns under an ANCHOR whose NULL-ness decides the whole group.
+    (c) The UPDATE needs a guard naming the same anchors, or every duplicate is rewritten
+    to store what it already had — at a ~90% duplicate rate that is a full row write per
+    duplicate. (d) **MY OWN PAIR-ATOMICITY TESTS WERE VACUOUS and the mutation check is
+    what said so**: with only sentiment set in the fixture, no anchor fired, the guard
+    skipped the row entirely, and the assertion passed for a reason unrelated to
+    atomicity — a per-column-COALESCE mutant passed all nine tests. The fixture needs an
+    UNRELATED adoptable column (an author) purely to make the row eligible, and an
+    assertion that it really was updated. COST, measured rather than assumed: +27.8 µs
+    per duplicate at field-realistic 22 KB rows (+11.7 µs at 1.8 KB — row size dominates),
+    so ~17 s plaintext over the field's ~617k duplicates, ~41 s applying this machine's
+    measured 2.4× codec ratio. Note the percentage is the misleading unit here: the same
+    measurement reads "+100% of the merge" on a small plaintext fixture whose baseline is
+    unrepresentative, and "+31.6%" at realistic row size — the per-duplicate RATE is what
+    extrapolates.
   - **A "LOCAL WINS" POLICY MUST NOT DEFEND A NON-JUDGEMENT — and a fixture with an EMPTY
     local side cannot tell the two apart (2026-08-10, qualification across a multi-instance
     import):** the 2026-07-24 fix below made the merge carry the qualification stamp, and it

@@ -2185,6 +2185,8 @@
   "After": "পরে",
   "New sources": "নতুন উৎস",
   "Articles awaiting indexing": "নিবন্ধ এখনও ইনডেক্সিং-এর অপেক্ষায়",
+  "Existing articles that gained metadata: {n}": "মেটাডেটা পাওয়া বিদ্যমান নিবন্ধ: {n}",
+  "Fields filled: {fields}": "পূরণ করা ক্ষেত্র: {fields}",
   "Qualified sources added: {n}": "যোগ হওয়া যোগ্য উৎস: {n}",
   "Arrived disqualified: {n}": "অযোগ্য হিসেবে এসেছে: {n}",
   "Already judged here, kept: {n}": "এখানে আগেই বিচার করা, রাখা হয়েছে: {n}",

@@ -2185,6 +2185,8 @@
   "After": "बाद में",
   "New sources": "नए स्रोत",
   "Articles awaiting indexing": "लेख अभी भी इंडेक्सिंग की प्रतीक्षा में",
+  "Existing articles that gained metadata: {n}": "मेटाडेटा प्राप्त करने वाले मौजूदा लेख: {n}",
+  "Fields filled: {fields}": "भरे गए फ़ील्ड: {fields}",
   "Qualified sources added: {n}": "जोड़े गए योग्य स्रोत: {n}",
   "Arrived disqualified: {n}": "अयोग्य के रूप में आए: {n}",
   "Already judged here, kept: {n}": "यहाँ पहले से जाँचे गए, रखे गए: {n}",

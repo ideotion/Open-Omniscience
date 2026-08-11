@@ -7678,6 +7678,10 @@
       // engine" half — never inferred, only what the incoming stamp recorded.
       let qualGained = 0, disqGained = 0, qualKept = 0, qualDisagreed = 0;
       const qualEngines = {};
+      // Metadata a DUPLICATE article contributed (field question 2026-08-10). The
+      // article was not stored again; only fields this corpus never had were filled.
+      let metaEnriched = 0;
+      const metaByColumn = {};
       let deltaBefore = null, deltaAfter = null;
       const extra = [];  // empty/errored newsletters, surfaced honestly
       const detail = [];
@@ -7729,6 +7733,13 @@
           // import actually carried; this line stays the plain count of added sources,
           // qualified or not.
           newSources += (p.sources && p.sources.new) || 0;
+          const pm = p._article_metadata;
+          if (pm) {
+            metaEnriched += pm.articles_enriched || 0;
+            for (const [c, n] of Object.entries(pm.by_column || {})) {
+              metaByColumn[c] = (metaByColumn[c] || 0) + (n || 0);
+            }
+          }
           const pq = p._source_qualification;
           if (pq) {
             qualGained += (pq.introduced_qualified || 0) + (pq.adopted_qualified || 0);
@@ -7856,6 +7867,20 @@
           + `</div>`;
       }
 
+      // Only when something was actually filled: a run that gained nothing says nothing,
+      // rather than showing a 0 that reads as a finding about the backup.
+      let metaBlock = "";
+      if (metaEnriched) {
+        const cols = Object.keys(metaByColumn).sort()
+          .map((c) => `${c} (${num(metaByColumn[c])})`).join(", ");
+        metaBlock =
+          `<div style="margin-top:8px"><div style="font-size:13px">`
+          + esc("\u2713 " + tf("Existing articles that gained metadata: {n}", { n: num(metaEnriched) }))
+          + `</div>`
+          + (cols ? `<div class="muted" style="font-size:12px">${esc(tf("Fields filled: {fields}", { fields: cols }))}</div>` : "")
+          + `</div>`;
+      }
+
       const queueBlock = queueLines.length
         ? `<div class="muted" style="font-size:12px;margin-top:6px">${queueLines.map(esc).join(" · ")}</div>`
         : "";
@@ -7921,7 +7946,7 @@
         `<div class="card" style="margin-top:8px;padding:12px;border-left:3px solid ${head.col}">`
         + `<div style="font-weight:700;font-size:15px">${esc(head.icon)} ${esc(head.text)}</div>`
         + countLine + excludedNote
-        + growLine + headline + bar + typeBlock + extraLine + qualBlock + indexingLine + queueBlock
+        + growLine + headline + bar + typeBlock + extraLine + qualBlock + metaBlock + indexingLine + queueBlock
         + _uxPerItemView(perItem, t, tf)
         + deltaView
         + `<div class="muted" style="font-size:12px;margin-top:6px">${esc(t("Additive restore: nothing in your corpus was replaced or deleted. Duplicates were skipped."))}</div>`
