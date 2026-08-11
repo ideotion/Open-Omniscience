@@ -1004,3 +1004,112 @@ def test_both_granite_sizes_are_asked_for_by_exact_tag() -> None:
     raw = [m.split("|", 1)[1] for m in MB.DEFAULT_ROSTER if m.startswith("ollama|")]
     assert "granite4.1:8b" in raw and "granite4.1:3b" in raw
     assert "granite4.1" not in raw, "the ambiguous bare tag is gone"
+
+
+# --------------------------------------------------------------------------- #
+#  Which DEVICE served the pair (maintainer 2026-08-11)
+# --------------------------------------------------------------------------- #
+#
+# "It works, but it doesn't use the GPU." The bench exists to compare Ollama with
+# vLLM on one machine, and Ollama decides at load time whether a model fits the
+# card. A row where it fell back to the CPU is a comparison of two DEVICES wearing
+# the names of two backends, and "vLLM is faster" read off it is a conclusion about
+# the wrong thing.
+
+
+class _Resident:
+    def __init__(self, vram, size):
+        self._m = [{"model": "m", "vram_bytes": vram, "size_bytes": size}]
+
+    def loaded_models(self):
+        return list(self._m)
+
+
+def test_a_gpu_resident_ollama_model_is_reported_as_gpu() -> None:
+    d = MB._device_used(_Resident(4_000_000_000, 4_000_000_000), backend="ollama", model="m")
+    assert d["device"] == "gpu" and d["vram_share"] == 1.0
+
+
+def test_a_cpu_only_ollama_model_is_reported_as_cpu() -> None:
+    """THE ONE THE FIELD HIT. Zero bytes on the card is not slow — it is a different
+    machine, and the report has to say so."""
+    d = MB._device_used(_Resident(0, 4_000_000_000), backend="ollama", model="m")
+    assert d["device"] == "cpu" and d["vram_share"] == 0.0
+
+
+def test_a_partial_offload_is_its_own_state() -> None:
+    """Ollama offloads whole layers, so a split is normal and meaningful. Rounding it
+    to gpu would overstate, and to cpu would understate."""
+    d = MB._device_used(_Resident(2_000_000_000, 4_000_000_000), backend="ollama", model="m")
+    assert d["device"] == "partial" and d["vram_share"] == 0.5
+
+
+def test_vllm_needs_no_probe_and_says_why() -> None:
+    d = MB._device_used(object(), backend="vllm", model="m")
+    assert d["device"] == "gpu" and "CPU-only" in d["basis"]
+
+
+def test_a_model_no_longer_resident_is_unknown_not_cpu() -> None:
+    """A gap in the READING is not evidence of a device. Calling it cpu would invent
+    the very finding this probe exists to establish."""
+
+    class _Gone:
+        def loaded_models(self):
+            return []
+
+    d = MB._device_used(_Gone(), backend="ollama", model="m")
+    assert d["device"] == "unknown" and "gap in the reading" in d["basis"]
+
+
+def test_a_probe_failure_never_fails_the_pair() -> None:
+    class _Broken:
+        def loaded_models(self):
+            raise RuntimeError("no /api/ps")
+
+    assert MB._device_used(_Broken(), backend="ollama", model="m")["device"] == "unknown"
+
+
+def test_a_cross_device_comparison_refuses_to_be_read_as_a_backend_comparison() -> None:
+    """THE ONE THAT MATTERS. The table is the surface where the wrong conclusion gets
+    drawn, so the warning has to be ON it, not only in the per-pair record."""
+    # REAL pair identifiers that share a roster key -- an invented pair produces no
+    # row at all, and a skipped test is exactly the vacuity this guard is about.
+    results = {
+        "ollama|ministral-3:3b-instruct-2512-q4_K_M": {
+            "backend": "ollama", "model": "ministral-3:3b-instruct-2512-q4_K_M",
+            "device": {"device": "cpu"},
+            "tasks": {"triage": {"status": "ok", "format_validity": 0.9,
+                                 "valid_verdicts_per_s": 0.4}},
+        },
+        "vllm|mistralai/Ministral-3-3B-Instruct-2512": {
+            "backend": "vllm", "model": "mistralai/Ministral-3-3B-Instruct-2512",
+            "device": {"device": "gpu"},
+            "tasks": {"triage": {"status": "ok", "format_validity": 0.9,
+                                 "valid_verdicts_per_s": 12.0}},
+        },
+    }
+    rows = MB.same_model_across_backends(results)
+    assert rows, "the two identifiers must share a roster key, or this proves nothing"
+    row = rows[0]
+    assert row["same_device"] is False
+    assert "DIFFERENT DEVICES" in row["caveat"]
+    assert "not a backend comparison" in row["caveat"]
+    assert row["backends"]["ollama"]["device"] == "cpu"
+
+
+def test_matched_devices_do_not_carry_the_warning() -> None:
+    """The negative-space twin: a warning that fires on a valid comparison would be
+    noise, and noise gets ignored exactly when it matters."""
+    results = {
+        "ollama|ministral-3:3b-instruct-2512-q4_K_M": {
+            "backend": "ollama", "model": "ministral-3:3b-instruct-2512-q4_K_M",
+            "device": {"device": "gpu"}, "tasks": {}},
+        "vllm|mistralai/Ministral-3-3B-Instruct-2512": {
+            "backend": "vllm", "model": "mistralai/Ministral-3-3B-Instruct-2512",
+            "device": {"device": "gpu"}, "tasks": {}},
+    }
+    rows = MB.same_model_across_backends(results)
+    assert rows, "an empty list would satisfy the loop below for free"
+    for row in rows:
+        assert row["same_device"] is True
+        assert "DIFFERENT DEVICES" not in row["caveat"]

@@ -905,6 +905,68 @@ def _backend_is_broken(pair_result: dict) -> str | None:
     return hit
 
 
+def _device_used(client, *, backend: str, model: str) -> dict:
+    """WHICH DEVICE actually served this pair — measured, not assumed.
+
+    THE CONFOUND THIS EXISTS TO EXPOSE (maintainer 2026-08-11): the bench's whole
+    purpose is comparing Ollama with vLLM on the same machine, and Ollama decides at
+    load time whether a model fits the GPU. If it silently falls back to CPU -- a
+    missing CUDA runner in its install, or another process holding the card -- then a
+    row that reads "Ollama is slower" is really "this ran on the CPU", and the
+    conclusion drawn from it would be about the wrong thing entirely. A comparison
+    across two devices is not a comparison of two backends.
+
+    Ollama reports the split itself: ``/api/ps`` gives ``size`` and ``size_vram`` per
+    resident model, so the fraction on the card is a fact we can read rather than a
+    property we have to trust. Read BEFORE the unload, while the model is still
+    resident -- afterwards there is nothing to ask about.
+
+    vLLM needs no probe: it refuses a CPU-only machine outright (``start()``), so a
+    vLLM row that exists at all ran on the GPU. Said explicitly rather than left
+    blank, because a missing field invites the reader to assume the same thing without
+    the reason.
+    """
+    if backend == "vllm":
+        return {
+            "device": "gpu",
+            "basis": "vLLM refuses to start on a CPU-only machine, so a vLLM row ran on the GPU",
+        }
+    if backend != "ollama":
+        return {"device": "unknown", "basis": f"no device probe for backend {backend!r}"}
+    try:
+        resident = client.loaded_models()
+    except Exception as exc:  # noqa: BLE001 - a probe must not fail a completed pair
+        return {"device": "unknown", "basis": bounded_error(exc, 200)}
+    for m in resident or []:
+        if m.get("model") != model:
+            continue
+        vram, size = m.get("vram_bytes"), m.get("size_bytes")
+        if not isinstance(vram, int) or not isinstance(size, int) or size <= 0:
+            return {
+                "device": "unknown",
+                "basis": "Ollama reported the model resident without a readable size split",
+            }
+        share = vram / size
+        # Ollama offloads whole layers, so a partial split is normal and meaningful --
+        # it is reported as its own state rather than rounded to one of the two ends.
+        device = "gpu" if share >= 0.99 else ("cpu" if vram == 0 else "partial")
+        return {
+            "device": device,
+            "vram_bytes": vram,
+            "size_bytes": size,
+            "vram_share": round(share, 4),
+            "basis": "Ollama's own /api/ps size_vram vs size, read while the model was resident",
+        }
+    return {
+        "device": "unknown",
+        "basis": (
+            "the model was no longer resident when the device was probed — Ollama "
+            "unloads on its own keep_alive timer, so this is a gap in the reading, "
+            "not evidence of a device"
+        ),
+    }
+
+
 def _default_unload(client, *, backend: str, model: str) -> dict:
     """Free the model after its pair completes so the next one is not benched with
     two models resident (ruling 16: minimise load/unload churn, but do not measure a
@@ -1224,6 +1286,8 @@ def run_model_bench(
         # rather than repeating the same non-result per model.
         if (broken := _backend_is_broken(pair_result)) is not None:
             broken_backends[backend] = broken
+        # BEFORE the unload: afterwards the model is gone and there is nothing to ask.
+        pair_result["device"] = _device_used(client, backend=backend, model=model)
         try:
             pair_result["unload"] = unload(client, backend=backend, model=model)
         except Exception as exc:  # noqa: BLE001
@@ -1608,6 +1672,34 @@ def same_model_across_backends(results: dict[str, dict]) -> list[dict]:
             unit = next(m[name]["unit"] for m in per_backend.values() if name in m)
             if present:
                 metrics[name] = {"unit": unit, "by_backend": present}
+        # THE DEVICE IS PART OF THE COMPARISON, and when the two sides did not use the
+        # same one it is the LARGEST term in every timing gap. Ollama decides at load
+        # time whether a model fits the card and silently falls back to CPU; vLLM is
+        # always on the GPU. A row where one side ran on the CPU is a comparison of two
+        # DEVICES wearing the names of two backends, and reading "vLLM is faster" off
+        # it would be a conclusion about the wrong thing (maintainer 2026-08-11).
+        devices = {b: (p.get("device") or {}).get("device") for b, p in by_backend.items()}
+        known = {d for d in devices.values() if d and d != "unknown"}
+        mismatch = len(known) > 1
+        caveat = (
+            "Two builds of one model, not one model measured twice: the backends "
+            "quantize the same weights differently (see each side's quantization). A "
+            "gap is a fact about these two artifacts on this machine, and neither "
+            "side is called the winner here."
+        )
+        if mismatch:
+            caveat += (
+                " THESE TWO ROWS RAN ON DIFFERENT DEVICES ("
+                + ", ".join(f"{b}: {d}" for b, d in sorted(devices.items()) if d)
+                + "), so every timing difference below is dominated by that and NOT by "
+                "the backends. This is not a backend comparison until both sides use "
+                "the same device."
+            )
+        elif not known:
+            caveat += (
+                " The device each side used could not be read, so the timings below "
+                "carry an unmeasured confound rather than a known-equal one."
+            )
         rows.append(
             {
                 "roster_key": roster_key,
@@ -1616,16 +1708,14 @@ def same_model_across_backends(results: dict[str, dict]) -> list[dict]:
                         "model": p.get("model"),
                         "quantization": p.get("quantization"),
                         "quantization_note": p.get("quantization_note"),
+                        "device": (p.get("device") or {}).get("device"),
+                        "device_basis": (p.get("device") or {}).get("basis"),
                     }
                     for b, p in sorted(by_backend.items())
                 },
+                "same_device": (None if not known else not mismatch),
                 "metrics": metrics,
-                "caveat": (
-                    "Two builds of one model, not one model measured twice: the backends "
-                    "quantize the same weights differently (see each side's quantization). A "
-                    "gap is a fact about these two artifacts on this machine, and neither "
-                    "side is called the winner here."
-                ),
+                "caveat": caveat,
             }
         )
     return rows

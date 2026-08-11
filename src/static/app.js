@@ -15304,6 +15304,11 @@
           if (xl.echoed) bits.push(`${xl.echoed} echoed the source`);
         }
         if (r.tasks_not_asked) bits.push(`not asked: ${r.tasks_not_asked.tasks.join(", ")}`);
+        // THE DEVICE, on the row. Ollama falling back to the CPU makes every timing
+        // beside it a measurement of a different machine, and the reader has to see
+        // that where they read the numbers — not only in the JSON.
+        const dev = (r.device || {}).device;
+        if (dev && dev !== "gpu") bits.push(dev === "cpu" ? "ran on CPU" : `device: ${dev}`);
         const errs = Object.keys(tk).filter((k) => tk[k] && tk[k].status === "error");
         if (errs.length) bits.push(`errors: ${errs.join(", ")}`);
         return `<div><b>${esc(key)}</b>${r.quantization ? ` <span class="muted">${esc(r.quantization)}</span>` : ""} — ${esc(bits.join(" · ") || "no metrics")}</div>`;
