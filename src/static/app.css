@@ -354,6 +354,12 @@
 
     .muted { color:var(--muted); }
     .hint { font-size:12px; color:var(--muted); margin-top:4px; }
+    /* class="small" had NO rule anywhere in the tree (35 uses, 32 of them in Settings),
+       so every element an author marked small rendered at the full 15px body size — and
+       the several that also carry font-weight:600 as an ad-hoc sub-heading therefore
+       out-shouted the section title above them. Defining it is a bug fix, not a restyle:
+       it can only reduce visual weight, never overflow a layout. */
+    .small { font-size:12.5px; }
     .pill { display:inline-block; padding:1px 9px; border-radius:999px; font-size:12px;
       background:var(--panel2); border:1px solid var(--border); }
     .pill.ok{ color:var(--ok); border-color:color-mix(in srgb,var(--ok) 40%,var(--border)); }
@@ -482,7 +488,7 @@
     .adv-sec[open] > summary::before { transform:rotate(90deg); }
     .adv-sec > summary:hover { color:var(--accent); }
     .adv-sec[open] > summary { border-bottom:1px solid var(--border); }
-    .adv-sec-t { font-weight:600; font-size:13px; }
+    .adv-sec-t { font-weight:700; font-size:18px; color:var(--fg); }
     /* The moved panels keep their own <section class="panel"> chrome; drop the doubled
        border/background so a section does not look like a panel inside a panel. */
     .adv-sec > .panel, .adv-sec .panel { border:0; background:transparent; margin:0;
@@ -1101,6 +1107,30 @@
     .pal-item .pal-sub { margin-left:auto; font-size:11px; color:var(--muted); }
     .pal-item.sel, .pal-item:hover { background:color-mix(in srgb,var(--accent) 16%, transparent); }
     .pal-group { font-size:10.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--muted); padding:10px 12px 4px; }
+
+    /* ---- Settings type scale ---------------------------------------- */
+    /* Maintainer 2026-08-11: "some inner parts of the sections appear bigger or
+       brighter than section titles which is confusing." They did, and by a wide
+       margin: a bare <h3> takes the browser's 1.17em (~17.5px, bold, full --fg)
+       while .panel h2 was 12.5px in --muted, so every sub-heading shouted over the
+       title it sat under. A section's NAME is now the most prominent thing in it.
+
+       The scale steps on SIZE and WEIGHT only, never on text-transform: uppercase
+       does nothing in Arabic, Chinese, Japanese, Hindi or Bengali, so the old
+       small-caps title silently degraded to "small dim text" in five of the twelve
+       locales this ships in — the hierarchy has to survive translation.
+         18   .adv-sec-t   an Advanced fold
+         17   .panel h2    a section
+         15.5 .panel h3    a sub-section
+         15                body prose
+         12.5 .small
+         12   .hint
+       Scoped to Settings because that is what was asked. The same inversion exists
+       on panels elsewhere in the app and can be lifted globally on request. */
+    #tab-settings .panel h2 { font-size:17px; font-weight:700; color:var(--fg);
+      text-transform:none; letter-spacing:0; }
+    #tab-settings .panel h3 { font-size:15.5px; font-weight:700; color:var(--fg);
+      margin:16px 0 6px; }
 
     /* ---- Appearance section (Settings) ------------------------------ */
     /* These used to be scoped under the retired .drawer — the Appearance

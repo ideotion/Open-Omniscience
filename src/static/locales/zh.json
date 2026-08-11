@@ -2563,6 +2563,8 @@
   "Indexing continues in the background: {n} article(s) still to index. Until it finishes they carry no keywords and are absent from analytics.": "索引在后台继续进行：仍有 {n} 篇文章待索引。在完成之前，它们没有关键词，也不会出现在分析中。",
   "Quality gates": "质量关卡",
   "— what counts as an article, what counts as a working source, and what gets scraped": "— 什么算文章，什么算可用来源，以及抓取什么",
+  "Diagnostics": "诊断",
+  "— logs and reports about this install, generated only when you click": "— 关于本次安装的日志和报告，仅在您点击时生成",
   "Two gates run over the same articles: the first asks whether this is an article at all — a nav page, a consent wall or a list of headlines is not one — and the second asks whether a source's extraction is valid, meaning whether what we pull from that site looks like articles.": "两道关卡作用于同一批文章：第一道判断这是否算一篇文章——导航页、同意墙或标题列表都不算——第二道判断某个来源的提取是否有效，也就是我们从该站点取回的内容是否像文章。",
   "Both judge EXTRACTION, never editorial merit: the verdict is a category, never a quality score, and never an opinion about what a source publishes. The first gate feeds the second — an article the first one quarantines is left out of its source's verdict.": "两者判断的都是提取，而非编辑价值：结论是一个类别，不是质量评分，也不是对来源所发布内容的意见。第一道关卡为第二道提供输入——被第一道隔离的文章不计入其来源的结论。",
   "Nothing here is deleted. A quarantined article is kept and excluded from search and analytics; a disqualified source is re-checked on a ladder.": "这里不会删除任何东西。被隔离的文章会保留，只是排除在搜索和分析之外；被取消资格的来源会按递增的时间阶梯重新检查。",

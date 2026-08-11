@@ -181,13 +181,22 @@ def test_the_ai_diagnostics_moved_out_of_data_and_backup():
         assert _view_of(endpoint) == "set-advanced", f"{endpoint}'s button is still outside Advanced"
 
 
-def test_the_general_diagnostics_stayed_where_they_were():
-    """The negative-space twin: this was a move of the AI half, not of the panel.
+def test_the_general_diagnostics_followed_into_advanced():
+    """SUPERSEDED 2026-08-11 and deliberately, which is why it was written this way.
 
-    The all-diagnostics bundle, the keyword logs and the network verdicts are not AI
-    diagnostics; sweeping them along would be a different, unasked-for change.
+    Through 2026-08-09 this asserted the general diagnostics stayed in Data & backup,
+    on the reasoning that the AI move was a move of the AI half and "sweeping them
+    along would be a different, unasked-for change". The maintainer then asked for
+    exactly that change — "move all diagnostics from the data / backup subtab into a
+    new section in the advanced subtab" — so the guard is updated rather than deleted:
+    the AI diagnostics must still not be the only ones there.
+
+    What it pins now is that the two halves ended up TOGETHER. Their whole reason for
+    living in Advanced is the same one, and a future tidy-up that pulls either back
+    into Data & backup has to argue with this test.
     """
-    assert _view_of('id="all-diag-btn"') == "set-data"
+    assert _view_of('id="all-diag-btn"') == "set-advanced"
+    assert _view_of('id="aicheck-btn"') == "set-advanced"
 
 
 def test_the_activity_feed_sits_beside_the_toggle_it_describes():
