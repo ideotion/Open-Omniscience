@@ -32,6 +32,7 @@ network what the operator reads.
 from __future__ import annotations
 
 import html
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -472,6 +473,125 @@ def _coverage_blocks(section: dict) -> list[tuple[str | None, str, list[str]]]:
     return blocks
 
 
+def _article_lines(row: dict) -> list[str]:
+    """One article as a few lines, with its two classes of fact kept apart.
+
+    The URL is the ORIGINAL page. A local article id resolves to a different article
+    on a recipient's install (§12), so the id stays in the JSON record where the
+    operator who owns the corpus can use it, and never becomes a link here.
+    """
+    src = row.get("source") or {}
+    asserted = row.get("asserted") or {}
+    deduced = row.get("deduced") or {}
+    title = str(row.get("title") or "(untitled)")
+    url = row.get("url")
+    head = f"[{title}]({url})" if url else title
+
+    stated = [str(src.get("name") or src.get("domain") or "unknown source")]
+    if asserted.get("published_at"):
+        stated.append(str(asserted["published_at"])[:16])
+    if asserted.get("author"):
+        stated.append(f"by {asserted['author']}")
+    if asserted.get("language"):
+        stated.append(f"lang {asserted['language']}")
+
+    read = []
+    if deduced.get("word_count"):
+        read.append(f"{_fmt(deduced['word_count'])} words")
+    if deduced.get("detected_language") and deduced.get("detected_language") != asserted.get(
+        "language"
+    ):
+        read.append(f"detected {deduced['detected_language']}")
+    sent = deduced.get("sentiment") or {}
+    if sent.get("label"):
+        read.append(f"tone {sent['label']} ({sent.get('basis')})")
+
+    lines = [f"- **{head}**", f"  - Source states: {' · '.join(stated)}"]
+    if read:
+        lines.append(f"  - This app measured: {' · '.join(read)}")
+    kws = row.get("keywords") or []
+    if kws:
+        lines.append(
+            "  - Keywords: "
+            + ", ".join(f"{k.get('term')} ({_fmt(k.get('mentions'))})" for k in kws)
+        )
+    facets = []
+    for key, label in (("places", "Places"), ("entities", "Who"), ("dates", "Dates mentioned")):
+        vals = row.get(key) or []
+        if not vals:
+            continue
+        if key == "dates":
+            facets.append(f"{label}: " + ", ".join(str(v.get("date")) for v in vals))
+        else:
+            facets.append(f"{label}: " + ", ".join(str(v.get("name")) for v in vals))
+    if facets:
+        lines.append("  - Deduced from the text — " + " · ".join(facets))
+    excerpt = (row.get("excerpt") or "").strip()
+    if excerpt:
+        tail = "…" if row.get("excerpt_truncated") else ""
+        lines.append(f"  - > {excerpt}{tail}")
+    return lines
+
+
+def _cards_blocks(section: dict) -> list[tuple[str | None, str, list[str]]]:
+    """The cards section as (group, heading, lines) blocks, one group per card type."""
+    blocks: list[tuple[str | None, str, list[str]]] = []
+    for entry in section.get("types") or []:
+        card_type = str(entry.get("type") or "?")
+        found, shown = entry.get("cards_found"), entry.get("cards_shown")
+        group = f"{card_type.replace('_', ' ')}"
+        if isinstance(found, int) and isinstance(shown, int) and found > shown:
+            group += f" — showing {shown} of {found}"
+        first = True
+        for card in entry.get("cards") or []:
+            lines: list[str] = []
+            if card.get("summary"):
+                lines += [str(card["summary"]), ""]
+            measured = card.get("signal_line")
+            if measured:
+                lines.append(f"- Measured: {measured}")
+            if card.get("n") is not None:
+                lines.append(f"- n: {_fmt(card.get('n'))}")
+            if card.get("bucket"):
+                lines.append(f"- Bucket: {card['bucket']}")
+            if card.get("method"):
+                lines.append(f"- Method: {card['method']}")
+            arts = card.get("articles") or []
+            total = card.get("corpus_articles")
+            if arts:
+                if isinstance(total, int) and total > len(arts):
+                    lines += ["", f"**Articles ({len(arts)} of {_fmt(total)} in this card):**", ""]
+                else:
+                    lines += ["", f"**Articles ({len(arts)}):**", ""]
+                for a in arts:
+                    lines += _article_lines(a)
+            elif isinstance(total, int) and total == 0:
+                lines += ["", "*This card's selection is a query or a whole-corpus "
+                          "distribution, so it names no fixed article set.*"]
+            if card.get("caveat"):
+                lines += ["", f"> {card['caveat']}"]
+            blocks.append((group if first else None, str(card.get("title") or card_type), lines))
+            first = False
+    return blocks
+
+
+def _cards_note(section: dict) -> str | None:
+    """How much of the producer set actually ran."""
+    ran, total = section.get("producers_run"), section.get("producers_total")
+    bits = []
+    if isinstance(ran, int) and isinstance(total, int):
+        bits.append(f"Producers run: {ran} of {total}.")
+    if section.get("truncated"):
+        bits.append(
+            "The wall-clock budget stopped further producers, so this is a partial "
+            "set — a short list here is the budget, not a quiet corpus."
+        )
+    found, kinds = section.get("cards_found"), section.get("card_types")
+    if isinstance(found, int) and isinstance(kinds, int):
+        bits.append(f"Cards surfaced: {_fmt(found)} across {kinds} types.")
+    return " ".join(bits) or None
+
+
 def _coverage_note(section: dict) -> str | None:
     """How many countries the document lists, of how many it counted."""
     total, listed = section.get("countries_total"), section.get("countries_listed")
@@ -502,11 +622,31 @@ def _md_section(section: dict) -> list[str]:
         # §12: a section whose window differs from the period must be VISIBLE.
         out += [f"*Window: {w.get('days')} days — not the edition's period.*", ""]
 
-    blocks = _coverage_blocks(section)
-    if blocks:
-        note = _coverage_note(section)
+    # The two nested sections carry their own shape and their own note. Keyed on the
+    # section's OWN fields rather than on whether it produced any blocks: the case
+    # where the note matters most is a card run whose budget stopped every producer,
+    # and keying on the blocks printed "Nothing to report" over exactly that — a
+    # budget reading as a quiet corpus, which is what the note exists to prevent.
+    for owns, blocks, note, empty in (
+        (
+            "countries" in section or "continents" in section,
+            _coverage_blocks(section),
+            _coverage_note(section),
+            "*No country contributed to this period.*",
+        ),
+        (
+            "types" in section,
+            _cards_blocks(section),
+            _cards_note(section),
+            "*No card surfaced from the producers that ran.*",
+        ),
+    ):
+        if not owns:
+            continue
         if note:
             out += [f"*{note}*", ""]
+        if not blocks:
+            out += [empty, ""]
         for group, head, lines in blocks:
             if group:
                 out += [f"**{group}**", ""]
@@ -764,6 +904,59 @@ def render_html(edition: dict) -> str:
     )
 
 
+_MD_LINK = re.compile(r"\[([^\]]+)\]\(([^)\s]+)\)")
+_MD_BOLD = re.compile(r"\*\*([^*]+)\*\*")
+
+
+def _inline(s: str) -> str:
+    """Escape, then re-admit the three inline forms the block builders emit.
+
+    Deliberately NOT a Markdown parser. The blocks above are shared between the two
+    renderers, so the HTML side has to read the same lines — and the only inline
+    markup in them is a bold run and a link, both written by code in this file. It
+    escapes first, so no input can smuggle markup through; the patterns then match
+    the escaped text, where a link's own URL is already entity-safe.
+    """
+    out = _e(s)
+    out = _MD_LINK.sub(r'<a href="\2" rel="noopener nofollow">\1</a>', out)
+    return _MD_BOLD.sub(r"<strong>\1</strong>", out)
+
+
+def _html_lines(lines: list[str]) -> list[str]:
+    """The shared block lines as HTML: bullets, quotes and paragraphs."""
+    out: list[str] = []
+    bullets: list[str] = []
+
+    def _flush() -> None:
+        if bullets:
+            out.append("<ul>" + "".join(f"<li>{b}</li>" for b in bullets) + "</ul>")
+            bullets.clear()
+
+    for raw in lines:
+        line = raw.rstrip()
+        if not line:
+            _flush()
+            continue
+        stripped = line.lstrip()
+        if stripped.startswith("- >"):
+            # An excerpt inside a bullet: a quote, not a list item.
+            _flush()
+            out.append(f'<blockquote>{_inline(stripped[3:].strip())}</blockquote>')
+        elif stripped.startswith("- "):
+            bullets.append(_inline(stripped[2:]))
+        elif stripped.startswith("> "):
+            _flush()
+            out.append(f'<p class="caveat">{_inline(stripped[2:])}</p>')
+        elif stripped.startswith("*") and stripped.endswith("*") and len(stripped) > 2:
+            _flush()
+            out.append(f'<p class="meta">{_inline(stripped.strip("*"))}</p>')
+        else:
+            _flush()
+            out.append(f"<p>{_inline(stripped)}</p>")
+    _flush()
+    return out
+
+
 def _html_section(section: dict) -> list[str]:
     key = str(section.get("section", "section")).replace("_", " ").capitalize()
     out = [f"<h2>{_e(key)}</h2>"]
@@ -780,21 +973,31 @@ def _html_section(section: dict) -> list[str]:
             f'<p class="caveat">Window: {_e(w.get("days"))} days — not the edition\'s period.</p>'
         )
 
-    blocks = _coverage_blocks(section)
-    if blocks:
-        note = _coverage_note(section)
+    for owns, blocks, note, empty in (
+        (
+            "countries" in section or "continents" in section,
+            _coverage_blocks(section),
+            _coverage_note(section),
+            "No country contributed to this period.",
+        ),
+        (
+            "types" in section,
+            _cards_blocks(section),
+            _cards_note(section),
+            "No card surfaced from the producers that ran.",
+        ),
+    ):
+        if not owns:
+            continue
         if note:
             out.append(f'<p class="meta">{_e(note)}</p>')
+        if not blocks:
+            out.append(f'<p class="meta">{_e(empty)}</p>')
         for group, head, lines in blocks:
             if group:
                 out.append(f"<h3>{_e(group)}</h3>")
             out.append(f"<h4>{_e(head)}</h4>")
-            bullets = [ln[2:] for ln in lines if ln.startswith("- ")]
-            reading = next((ln.strip("*") for ln in lines if ln.startswith("*")), "")
-            if reading:
-                out.append(f'<p class="meta">{_e(reading)}</p>')
-            if bullets:
-                out.append("<ul>" + "".join(f"<li>{_e(b)}</li>" for b in bullets) + "</ul>")
+            out.extend(_html_lines(lines))
         if section.get("caveat"):
             out.append(f'<p class="caveat">{_e(section["caveat"])}</p>')
         return out
