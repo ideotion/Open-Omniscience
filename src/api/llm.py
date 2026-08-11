@@ -1577,17 +1577,25 @@ def llm_model_store() -> dict:
 
 
 @router.post("/model-store/migrate")
-def llm_model_store_migrate() -> dict:
-    """Copy an existing Ollama model store into the app folder.
+def llm_model_store_migrate(reclaim: bool = False) -> dict:
+    """Copy every other Ollama model store into the app folder.
 
-    A COPY. Ollama's store is content-addressed, so a name collision proves the
-    contents match and skipping an existing blob can never lose data; the source is
-    left untouched, and removing it is the operator's own separate step. Local
-    filesystem only -- no network, so no egress gate applies.
+    A COPY by default. Ollama's store is content-addressed, so a name collision proves
+    the contents match and skipping an existing blob can never lose data; the source is
+    left untouched, and removing it is a SEPARATE, explicit step. Local filesystem only
+    -- no network, so no egress gate applies.
+
+    ``reclaim=True`` is that second step, and it is deliberately not the same button.
+    It removes ONLY the files this call confirmed present at the destination, and only
+    after the whole copy succeeded, so an interrupted run leaves the source completely
+    intact -- "move" on a multi-GB store interrupted halfway is how an operator loses
+    both copies. It exists because a copy alone does not answer the ask: the folder the
+    operator wanted emptied is still full afterwards, and doing the deletion silently as
+    part of the copy would be a destructive default nobody chose.
     """
     from src.llm.model_store import migrate_ollama_store
 
-    return migrate_ollama_store()
+    return migrate_ollama_store(delete_source=bool(reclaim))
 
 
 @router.get("/models/catalog")

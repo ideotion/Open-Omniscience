@@ -405,6 +405,39 @@ def test_the_migration_reads_every_other_store(monkeypatch, tmp_path):
     assert (legacy / "blobs" / "sha256-1f6ddf3c8505524f0431c7c64b5b6a0c7dfb83c1bea407829ae71c1a89a1336b").is_file(), "a copy leaves the original"
 
 
+def test_reclaiming_removes_only_what_was_confirmed_copied(monkeypatch, tmp_path):
+    """The second, separate step. A copy alone does not finish the job the ask asked for
+    — the folder the operator wanted emptied is still full — but folding the deletion
+    into the copy would make a destructive step the default, and an interrupted 'move'
+    over a multi-GB store is how both copies get lost."""
+    app = model_store.ollama_store()
+    legacy = tmp_path / "home" / ".ollama" / "models"
+    _seed(legacy, "qwen3.5:0.8b")
+    stray = legacy / "blobs" / ("sha256-" + "f" * 64)
+    stray.write_bytes(b"not referenced by any manifest")
+
+    out = model_store.migrate_ollama_store(delete_source=True)
+    assert out["ok"] is True and out["copied"] == 1
+    assert out["removed"] >= 1
+    assert (app / "manifests" / "registry.ollama.ai" / "library" / "qwen3.5" / "0.8b").is_file()
+    assert stray.is_file(), (
+        "a blob no manifest referenced was never confirmed present at the destination, "
+        "so it is not ours to delete"
+    )
+
+
+def test_a_plain_consolidate_deletes_nothing(tmp_path):
+    """The negative-space twin, and the one that matters most: the default must leave
+    every original where it is."""
+    legacy = tmp_path / "home" / ".ollama" / "models"
+    _seed(legacy, "qwen3.5:0.8b")
+    before = sorted(p.name for p in (legacy / "blobs").iterdir())
+
+    out = model_store.migrate_ollama_store()
+    assert out["copied"] == 1 and out["removed"] == 0
+    assert sorted(p.name for p in (legacy / "blobs").iterdir()) == before
+
+
 def test_already_consolidated_says_so_without_pretending_to_work(tmp_path):
     """The negative-space twin: nothing to do is a real outcome, and must not be
     reported as a copy that happened."""
