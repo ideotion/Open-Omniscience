@@ -3292,6 +3292,71 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     COROLLARY worth keeping: a bare `<h3>` inherits the browser's `1.17em`, so in any
     design whose own headings are *smaller* than body text, every unstyled sub-heading is
     automatically the loudest thing on the page.
+  - **A PHASE THAT RUNS WHILE NO SUB-UNIT IS IN FLIGHT HAS NO HOST ELEMENT — and the
+    producer's own comment explaining why it must not be silent is why that survives
+    review (2026-08-11, "according to UI, the import is over, but the CPU is still
+    firing 100% on one core"):** an import run does not end when its last item does.
+    `_tune_after_run` then merges the search index — FTS5 `'optimize'`, single-threaded
+    and index-scaled — inside the same exclusive window, so collection stays paused and
+    a second import is refused while every item already reads "Done". The backend was
+    publishing that phase and its comment said outright that without it the run "would
+    sit at 'running' with no item in flight … which reads as a hang". The renderer
+    emitted `st.live` only INSIDE a row whose item is `running`, and by then none is —
+    the fix for the exact failure was written, and had nowhere to render. GENERAL FORM:
+    when a renderer hangs a status off "the currently-running child", ask what publishes
+    status when there is no child; a tail phase, a warm-up and a cleanup all live there.
+    SECOND, INDEPENDENT REASON it could not have shown even given a row: a mirrored
+    sub-job status nests its phase under `progress` while the run's own live dict is
+    flat, so one reader silently served one shape — check both ends of a field two
+    producers write. THIRD, the honest half of the same report: the row said "Importing"
+    beside 100% of items, a job claiming to be finished and working at once. The count
+    was a real measurement and stayed; it was the NAME that was wrong, and that is
+    usually the cheaper thing to fix. FOURTH, from the operator's own question ("if it
+    means pausing the reindex, it's OK"): the post-import re-index drain never consulted
+    the exclusive hold — the third recurrence of "gate every entry point", because
+    `ReindexJobManager` grew `_yield_to_exclusive` and this is a *different, later* entry
+    point. It STOPS rather than parks, because a park can only happen between batches and
+    a single import is a single batch of everything it merged — so parking would never
+    fire on the one shape that matters, while stopping is free against a durable
+    per-article watermark that the queue's own end-of-run drain restarts.
+  - **A COUNT OF ITEMS IS NOT A COUNT OF THE RUN'S STAGES — and the tail stage is exactly
+    where the two diverge (2026-08-11, the same report's second half):** both progress
+    bars were drawn from `items_done/items_total`, which reaches 100% the moment the last
+    item lands — while the search-index merge is still holding the machine. A full bar
+    beside a run that has not finished is a fabricated completeness, so the DENOMINATOR
+    has to count the work actually left: `stages_total = items + 1`, the +1 being a real
+    final stage, complete once it has RUN (what it *achieved* stays a separate field), and
+    skipped after a Stop so a stopped run correctly never reaches its own end. Publish the
+    stage counts BESIDE the item counts rather than replacing them — the item count was
+    never the wrong number, only the wrong thing to draw a bar from — and when a client
+    finds no stage counts, draw NO bar rather than falling back to the number being
+    corrected. COROLLARY found in the same pass: `_jobRow` formatted EVERY job's progress
+    as bytes, though four producers publish counts (`items`/`files`/`articles`/`stages`),
+    so a 700,000-article re-index read "700 kB / 1.4 MB". The unit was already travelling
+    with the numbers and nothing read it — when a payload carries a unit, the renderer
+    that ignores it will be wrong for every producer that is not the one it was written
+    against.
+  - **A SECOND STORE FOR THE SAME KIND OF THING IS A SECOND ENUMERATOR NOBODY WROTE —
+    and its layout may be incompatible with a guard you already shipped (2026-08-11,
+    "vLLM models were not saved, only ollama models"):** `collect_model_items` listed the
+    Ollama store and nothing else, so on a machine serving with vLLM the large-data
+    backup carried no weights and still said "Backup complete" — it had copied everything
+    it knew about. That is the 2026-08-11 Ollama-store lesson one store over: when a
+    second backend arrives, every enumerator phrased around the first is now wrong, and
+    it fails by reporting SUCCESS. THE INTERESTING HALF IS THE LAYOUT. A Hugging Face
+    repo keeps its bytes once in `blobs/<sha>` and reaches them by SYMLINK from
+    `snapshots/<rev>/`, so both obvious designs fail: copying both trees stores every
+    multi-GB weight TWICE (the copier opens its source, so it follows the link), and
+    storing the links collides with `restore_folder_backup`'s flat refusal of symlinks —
+    a 2026-07-25 fix for a live-reproduced arbitrary-file copy out of an editable backup
+    folder. The way through is to copy the snapshot entries with the link RESOLVED and
+    skip `blobs/`: one copy, no link anywhere in the artifact, and the restored tree is
+    the layout `huggingface_hub` itself produces where symlinks are unavailable rather
+    than one invented for the occasion. GENERAL FORM: before teaching a backup a new
+    source, check whether that source's on-disk shape is compatible with the guards the
+    restore side already enforces — a design that needs the guard relaxed is the wrong
+    design, not a reason to relax it. And state the residual cost rather than hiding it:
+    two revisions of one repo sharing a blob are stored once per revision.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
