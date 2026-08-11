@@ -22012,9 +22012,20 @@
         html += `<div style="margin-top:2px">Ollama: <code>${esc(r.ollama.configured)}</code>${gb(r.ollama.bytes)}</div>`;
       }
       html += `<div>Hugging Face: <code>${esc(r.huggingface.configured)}</code>${gb(r.huggingface.bytes)}</div>`;
+      // A SPLIT is its own state, and it is the one the operator actually reported
+      // ("models did download into ~/.ollama, yet there is another folder containing
+      // ollama models in .../data/models/ollama"). It is NOT covered by the note above:
+      // when the daemon is measurably reading the app folder, in_app_folder is true and
+      // nothing was said at all, so a second folder full of models stayed orphaned with
+      // no offer to consolidate. The button belongs to either state.
+      if (r.ollama.split_note) {
+        html += `<div class="card-caveat" style="margin-top:4px">${esc(r.ollama.split_note)}</div>`;
+      }
       if (r.ollama.note) {
-        html += `<div class="card-caveat" style="margin-top:4px">${esc(r.ollama.note)}</div>` +
-                `<div style="margin-top:4px"><button class="ghost tiny" onclick="migrateOllamaStore(this)">` +
+        html += `<div class="card-caveat" style="margin-top:4px">${esc(r.ollama.note)}</div>`;
+      }
+      if (r.ollama.note || r.ollama.split_note) {
+        html += `<div style="margin-top:4px"><button class="ghost tiny" onclick="migrateOllamaStore(this)">` +
                 esc(t("Move them into the app folder")) + `</button></div>`;
       }
       // Weights downloaded before the store moved here are still on the disk. Nothing

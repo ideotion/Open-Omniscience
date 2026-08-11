@@ -44,13 +44,39 @@ _LINUX_SERVICE_STORE = Path("/usr/share/ollama/.ollama/models")
 
 def candidate_stores() -> list[Path]:
     """Ordered, de-duplicated candidate model-store locations, most authoritative
-    first: ``$OLLAMA_MODELS`` (explicit), the per-user default ``~/.ollama/models``,
-    and (on Linux) the protected systemd-service location. Used to FIND models even
-    when the user installed Ollama as a service, and to explain where they are."""
+    first: ``$OLLAMA_MODELS`` (explicit), THE APP'S OWN STORE, the per-user default
+    ``~/.ollama/models``, and (on Linux) the protected systemd-service location. Used
+    to FIND models even when the user installed Ollama as a service, and to explain
+    where they are.
+
+    THE APP'S OWN STORE WAS MISSING HERE, and its absence was the whole defect
+    (2026-08-11 field report: "ollama models did download into ~/.ollama, yet there is
+    another folder containing ollama models in .../data/models/ollama"). Since
+    2026-08-04 a daemon this app spawns is pointed at ``data/models/ollama``, so that
+    folder is where our own pulls land — and nothing in this list knew about it. The
+    consequences were not cosmetic:
+
+      * :func:`default_store` fell through to ``~/.ollama/models`` even when the app
+        folder was the ONLY populated store, so the model BACKUP enumerated the wrong
+        directory and silently carried none of the operator's models;
+      * ``model_store.store_report()`` compared its configured path against that same
+        wrong answer and reported a split that did not exist, pointing the operator at
+        a migration they did not need.
+
+    It is listed AFTER ``$OLLAMA_MODELS`` because an explicit operator choice still
+    wins, and BEFORE ``~/.ollama`` because when both hold models the app-owned one is
+    the one our daemon reads.
+    """
     out: list[Path] = []
     env = os.getenv("OLLAMA_MODELS")
     if env:
         out.append(Path(env))
+    try:
+        from src.llm.model_store import ollama_store
+
+        out.append(ollama_store())
+    except Exception:  # noqa: BLE001 - a store list must never fail to build
+        pass
     out.append(Path.home() / ".ollama" / "models")
     if sys.platform.startswith("linux"):
         out.append(_LINUX_SERVICE_STORE)
@@ -79,8 +105,15 @@ def default_store() -> Path:
     ``$OLLAMA_MODELS`` always wins (explicit operator intent). Otherwise we pick the
     first candidate that actually holds READABLE models — so a service install whose
     models live in /usr/share/ollama is found, not silently missed — and fall back to
-    the per-user default ``~/.ollama/models`` (also the writable restore target). We
-    never bundle models in the repo; this only reads/writes the user's OWN store.
+    the APP'S OWN store. We never bundle models in the repo; this only reads/writes
+    the user's OWN store.
+
+    THE FALLBACK IS THE APP FOLDER, not ``~/.ollama``, and that is a change of
+    destination rather than of detection: it is reached only when NO candidate holds
+    any model, i.e. on a machine with nothing to find, where the value's real job is
+    to be the target a model restore writes into. Writing those into the folder a
+    daemon we spawn already reads is the point of the store move; the old fallback put
+    them somewhere our own daemon would not look.
     """
     env = os.getenv("OLLAMA_MODELS")
     if env:
@@ -88,7 +121,12 @@ def default_store() -> Path:
     for p in candidate_stores():
         if _has_manifests(p):
             return p
-    return Path.home() / ".ollama" / "models"
+    try:
+        from src.llm.model_store import ollama_store
+
+        return ollama_store()
+    except Exception:  # noqa: BLE001 - never fail to name a store
+        return Path.home() / ".ollama" / "models"
 
 
 def store_status(store: Path | None = None) -> dict:

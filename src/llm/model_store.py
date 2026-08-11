@@ -138,6 +138,117 @@ def launch_env(base: dict | None = None) -> dict:
     return env
 
 
+def _ref_key(ref: str) -> str:
+    """A manifest ref reduced to the name Ollama itself shows: ``model:tag``.
+
+    On disk a manifest is ``<host>/<namespace>/<model>/<tag>``; ``/api/tags`` answers
+    ``mistral:7b``. Comparing the two needs one common form, and the last component is
+    the only part both always carry. Two models with the same name in different
+    namespaces therefore collide — which is safe HERE, because a collision makes both
+    stores claim the model and the caller's answer falls through to "cannot tell"
+    rather than to a confident wrong store.
+    """
+    return ref.rsplit("/", 1)[-1].strip().lower()
+
+
+def _store_keys(store: Path) -> set[str]:
+    try:
+        from src.backup.ollama_models import list_models
+
+        return {_ref_key(m.ref) for m in list_models(store)}
+    except Exception:  # noqa: BLE001 - a probe must never break the report
+        return set()
+
+
+def serving_store(*, timeout: float = 2.0) -> dict:
+    """Which store the RUNNING daemon is actually reading — measured, not inferred.
+
+    WHY THIS IS NOT A PATH COMPARISON. Ownership cannot answer it: a daemon this app
+    spawned in an earlier run is still alive after a restart and is correctly reported
+    as not-ours, yet it reads the app folder. Nor can "which directory has models",
+    now that both usually do. And getting it wrong in the optimistic direction is the
+    expensive one — claiming the app folder is in use while the operator's pulls land
+    in ``~/.ollama`` is precisely the split this whole module exists to expose.
+
+    So it is decided by EVIDENCE: ask the daemon what it has, and see which store
+    holds a model the other one does not. That is conclusive when the stores differ
+    and honestly inconclusive when they do not — a daemon serving two identical stores
+    is a distinction without a difference, and an empty daemon proves nothing at all.
+
+    ``{"store": str | None, "certain": bool, "basis": str}``.
+    """
+    app = ollama_store()
+    others = []
+    try:
+        from src.backup.ollama_models import candidate_stores
+
+        others = [p for p in candidate_stores() if str(p) != str(app)]
+    except Exception:  # noqa: BLE001
+        others = []
+
+    try:
+        from src.llm.ollama import OllamaClient
+
+        served = {_ref_key(n) for n in OllamaClient(timeout=timeout).list_installed()}
+    except Exception as exc:  # noqa: BLE001 - a stopped daemon is a normal answer
+        return {
+            "store": None,
+            "certain": False,
+            "basis": f"no running daemon to ask ({type(exc).__name__})",
+        }
+    if not served:
+        return {
+            "store": None,
+            "certain": False,
+            "basis": "the running daemon has no models, so it cannot say which store it reads",
+        }
+
+    # Every store paired with its keys, the app's included, so "unique to this one" is
+    # one expression rather than two. Doing it as app-vs-the-rest got the arithmetic
+    # wrong the moment two NON-app stores shared a model: subtracting a store's own
+    # keys from the union of the others also removed the copy that made it non-unique,
+    # so a model present in both ~/.ollama and the service store read as unique to each.
+    all_stores: list[tuple[Path, set[str]]] = [(app, _store_keys(app))]
+    all_stores += [(p, _store_keys(p)) for p in others]
+
+    matches: list[Path] = []
+    for i, (p, keys) in enumerate(all_stores):
+        elsewhere: set[str] = set()
+        for j, (_, other) in enumerate(all_stores):
+            if j != i:
+                elsewhere |= other
+        if served & (keys - elsewhere):
+            matches.append(p)
+
+    if len(matches) == 1:
+        store = matches[0]
+        return {
+            "store": str(store),
+            "certain": True,
+            "basis": (
+                "the running daemon lists a model that only this store holds, so this "
+                "is the store it is reading"
+            ),
+        }
+    if len(matches) > 1:
+        return {
+            "store": None,
+            "certain": False,
+            "basis": (
+                "the running daemon lists models unique to more than one store, which "
+                "no single store explains"
+            ),
+        }
+    return {
+        "store": None,
+        "certain": False,
+        "basis": (
+            "the stores hold the same models, so what the daemon lists cannot "
+            "distinguish them"
+        ),
+    }
+
+
 def _store_size(store: Path) -> int | None:
     """Total bytes under ``store``, or None when it cannot be walked."""
     try:
@@ -161,10 +272,17 @@ def store_report() -> dict:
     configured_ollama = ollama_store()
     configured_hf = hf_home()
     try:
-        detected = ollama_detected()
+        on_disk = ollama_detected()
     except Exception:  # noqa: BLE001 - detection must never break the report
-        detected = configured_ollama
+        on_disk = configured_ollama
 
+    # Measured first, inferred second. The path heuristic answers "which store holds
+    # models", which stopped being the same question as "which store is being read"
+    # the moment the app folder became a candidate: with both populated it names the
+    # app folder whatever the running daemon is doing, and reporting that as the live
+    # answer would turn a real split into a clean bill of health.
+    serving = serving_store()
+    detected = Path(serving["store"]) if serving.get("store") else on_disk
     same = str(detected) == str(configured_ollama)
     out: dict = {
         "root": str(app_models_root()),
@@ -181,6 +299,16 @@ def store_report() -> dict:
             "detected_bytes": _store_size(configured_ollama) if same else _store_size(detected),
             "legacy_bytes": None if same else _store_size(detected),
             "operator_override": bool((os.getenv("OLLAMA_MODELS") or "").strip()),
+            # HOW the answer above was reached, published rather than implied. An
+            # operator deciding whether to migrate several GB deserves to know whether
+            # the app measured which store is in use or merely found models in one.
+            "serving": serving,
+            "on_disk": str(on_disk),
+            "basis": (
+                "measured — " + serving["basis"]
+                if serving.get("store")
+                else "inferred from which store holds models (" + serving["basis"] + ")"
+            ),
         },
         "huggingface": {
             "configured": str(configured_hf),
@@ -205,14 +333,133 @@ def store_report() -> dict:
             f"back to {legacy_hf} and let future downloads land there too. Nothing is "
             "moved or deleted for you."
         )
-    if not same:
-        out["ollama"]["note"] = (
-            f"Models are being read from {detected}, not the app folder. That happens when "
-            "the Ollama daemon was started by something other than this app (systemd, "
-            "launchd, or a terminal) — its environment is its own, so the app's setting "
-            "cannot reach it. Migrate the store, or stop that daemon and let the app start "
-            "one."
+    # Every store that actually holds models, so a split is VISIBLE rather than
+    # something the operator has to notice in a file manager (which is how the
+    # 2026-08-11 report reached us). One list, one look.
+    stores: list[dict] = []
+    try:
+        from src.backup.ollama_models import candidate_stores, list_models
+
+        for p in candidate_stores():
+            models = list_models(p)
+            if not models:
+                continue
+            stores.append(
+                {
+                    "path": str(p),
+                    "models": len(models),
+                    "bytes": _store_size(p),
+                    "is_app_folder": str(p) == str(configured_ollama),
+                }
+            )
+    except Exception:  # noqa: BLE001 - an inventory must never break the report
+        stores = []
+    out["ollama"]["stores"] = stores
+
+    if len(stores) > 1:
+        where = ", ".join(f"{s['path']} ({s['models']})" for s in stores)
+        out["ollama"]["split_note"] = (
+            f"Models are in more than one place: {where}. Copying them into the app "
+            "folder puts every model where a daemon this app starts will find it; the "
+            "copy leaves the originals untouched and removing them stays your own "
+            "separate step."
         )
+    if not same:
+        # The EVIDENCE clause differs with how the answer was reached; the ADVICE does
+        # not, and must not go quiet just because the measurement was inconclusive.
+        # Splitting the whole note by certainty left the commonest case of all — a
+        # foreign daemon and a store with no manifests we can read — saying nothing at
+        # all, which is the one outcome an operator cannot act on.
+        if serving.get("certain"):
+            evidence = (
+                f"Models are being read from {detected}, not the app folder — measured, "
+                "not assumed: the running daemon lists a model only that store holds."
+            )
+        else:
+            evidence = (
+                f"Models were found at {detected} rather than in the app folder, and "
+                "which store the daemon is reading could not be measured "
+                f"({serving['basis']})."
+            )
+        out["ollama"]["note"] = evidence + (
+            " That happens when the Ollama daemon was started by something other than "
+            "this app (systemd, launchd, or a terminal) — its environment is its own, so "
+            "the app's setting cannot reach it. Migrate the store, or stop that daemon "
+            "and let the app start one."
+        )
+    return out
+
+
+def prepare_ollama_pull() -> dict:
+    """Make a pull land in the app folder — as far as that is ours to decide — and say
+    where it will actually land when it is not.
+
+    A pull is an HTTP call to whichever daemon answers the loopback port, and the store
+    it writes into is that daemon's, decided by ITS environment when it started. So the
+    only lever the app has is which daemon is serving, and there is exactly one case
+    where it holds that lever: when none is running yet. Then it starts its own, which
+    :func:`launch_env` points at the app folder, and every subsequent pull lands there.
+
+    When a daemon someone else started is already serving, the app has no lever at all —
+    ``ollama_lifecycle.stop`` refuses foreign daemons on purpose, and restarting the
+    operator's service to change a download directory would be well outside what a model
+    download is allowed to do. What it CAN do is stop the split being silent: this
+    returns the store the pull will really use, so the caller records a destination
+    rather than leaving the operator to find two folders later.
+
+    Never raises, and never blocks a pull: every failure degrades to "we could not
+    arrange it, here is what we know", because a model the operator asked for should
+    download even when we cannot place it where we would prefer.
+    """
+    app = ollama_store()
+    out: dict = {"app_store": str(app), "dest": None, "arranged": False}
+    try:
+        from src.llm import ollama_lifecycle as ol
+
+        if not ol.is_running():
+            if os.getenv("OO_LLM_AUTOSTART", "1").strip().lower() in ("0", "false", "no"):
+                out["reason"] = (
+                    "no Ollama daemon is running and automatic starts are off "
+                    "(OO_LLM_AUTOSTART=0), so the pull will use whatever daemon you start"
+                )
+                return out
+            started = ol.start()
+            if started.get("ready"):
+                # Ours, launched with OLLAMA_MODELS pointed at the app folder.
+                out.update({"dest": str(app), "arranged": True, "started_daemon": True})
+                return out
+            out["reason"] = (
+                "started an Ollama daemon for this pull, but it was not answering yet: "
+                + str(started.get("note") or started.get("reason") or "no reason given")
+            )
+            return out
+        if ol.owns_daemon():
+            out.update({"dest": str(app), "arranged": True, "started_daemon": False})
+            return out
+    except Exception as exc:  # noqa: BLE001 - arranging is best-effort, pulling is not
+        out["reason"] = f"could not arrange the store for this pull ({type(exc).__name__}: {exc})"
+        return out
+
+    # A daemon we did not start is serving. Measure where it reads rather than assuming
+    # the worst: one this app started in an EARLIER run is reported as not-ours (the
+    # handle does not survive a restart) and is nonetheless pointed at the app folder.
+    serving = serving_store()
+    if serving.get("store"):
+        out["dest"] = serving["store"]
+        out["arranged"] = serving["store"] == str(app)
+        if not out["arranged"]:
+            out["reason"] = (
+                f"the running Ollama daemon reads {serving['store']}, so this download "
+                "lands there and not in the app folder. It was started outside this app "
+                "(systemd, launchd, or a terminal), and its environment is its own. Stop "
+                "it and let the app start one to keep every model in the app folder."
+            )
+        return out
+    out["reason"] = (
+        "an Ollama daemon this app did not start is serving, and which store it reads "
+        f"could not be measured ({serving['basis']}), so where this download lands is "
+        "not known here"
+    )
     return out
 
 
@@ -239,12 +486,56 @@ def migrate_ollama_store(
     """
     from src.backup.ollama_models import list_models
 
-    src = Path(source) if source else None
-    if src is None:
-        from src.backup.ollama_models import default_store
-
-        src = default_store()
     dst = Path(dest) if dest else ollama_store()
+
+    if source is None:
+        # EVERY other store that holds models, not ``default_store()``.
+        #
+        # It used to be ``default_store()``, and promoting the app folder to the front
+        # of the candidate list turned that into a silent no-op in the one case this
+        # button exists for: with models in both places the heuristic now names the app
+        # folder, so source == dest and the answer became "nothing to do" while the
+        # operator's other folder sat there untouched. Consolidating means reading every
+        # store that is not the destination, which is also what the ask asked for —
+        # "I'd prefer if all models were in the same place".
+        from src.backup.ollama_models import candidate_stores
+
+        sources = [p for p in candidate_stores() if str(p) != str(dst) and list_models(p)]
+        if not sources:
+            return {
+                "source": None,
+                "dest": str(dst),
+                "copied": 0,
+                "skipped": 0,
+                "bytes": 0,
+                "removed": 0,
+                "ok": True,
+                "reason": "every model is already in the app folder — nothing to copy",
+            }
+        merged: dict = {
+            "dest": str(dst),
+            "copied": 0,
+            "skipped": 0,
+            "bytes": 0,
+            "removed": 0,
+            "ok": True,
+            "sources": [],
+            "models": [],
+        }
+        for s in sources:
+            one = migrate_ollama_store(s, dst, delete_source=delete_source)
+            merged["sources"].append({"source": str(s), **one})
+            for k in ("copied", "skipped", "bytes", "removed"):
+                merged[k] += one.get(k, 0)
+            merged["models"].extend(one.get("models") or [])
+            if not one.get("ok"):
+                # One unreadable store (the protected service dir) must not discard the
+                # copies that DID succeed, nor be reported as a clean run.
+                merged["ok"] = False
+        merged["source"] = ", ".join(str(s) for s in sources)
+        return merged
+
+    src = Path(source)
 
     out: dict = {
         "source": str(src),
