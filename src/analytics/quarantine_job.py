@@ -64,6 +64,7 @@ def default_quarantine_candidates_batch(
     write: bool = False,
     criteria_version: str | None = None,
     article_ids: list[int] | None = None,
+    index_page_tiers: frozenset[int] | set[int] | None = None,
 ) -> dict[str, Any]:
     """The default per-batch WORK FUNCTION: DETECT already-flagged non-article candidates (the
     #659 URL-shape rules via ``classify_non_article``, plus the opt-in NAV-SOUP PROSE GATE for
@@ -86,10 +87,24 @@ def default_quarantine_candidates_batch(
     EXACT, already-bounded set such as a merge/import batch's newly-inserted article ids, not a
     resumable paginated range). ``done`` is always ``True`` in this mode (there is no further
     range to resume); ``last_id`` reports the highest id actually scanned. Purely additive: the
-    ``after_id``/``limit`` range path is completely unchanged when ``article_ids`` is ``None``."""
+    ``after_id``/``limit`` range path is completely unchanged when ``article_ids`` is ``None``.
+
+    ``index_page_tiers`` (2026-08-11, the source-quality export): OPT-IN, default ``None`` =
+    the contract above is byte-unchanged. When given (e.g. ``{1}``), an article the body guard
+    KEEPS is additionally detected when its URL is listing-shaped at one of those tiers -- the
+    population measured at 8.10% of an unbiased random control, of which 36 were hand-read and
+    36/36 were listings. Tier 1 is where a real article is structurally impossible (a homepage
+    has no path segment for a slug); tier 2 is a listing by convention where one could live, so
+    it wants review before a write run rather than a default. The reason string is prefixed
+    ``index_page_tier{n}:`` so a quarantine from this reading is always distinguishable -- and
+    reversible -- separately from the ingest gate's own signals."""
     from src.analytics.criteria_calibration import CRITERIA_VERSION
     from src.database.models import Article
-    from src.ingest.non_article import _ARTICLE_MIN_WORDS, classify_non_article
+    from src.ingest.non_article import (
+        _ARTICLE_MIN_WORDS,
+        classify_index_page,
+        classify_non_article,
+    )
     from src.services.prose_gate import prose_gate_verdict
 
     criteria_version = criteria_version or CRITERIA_VERSION
@@ -108,6 +123,10 @@ def default_quarantine_candidates_batch(
             last_id = max(last_id, int(aid))
             verdict = classify_non_article(url or "", word_count=wc)  # URL-shape rules (text=None)
             signal: str | None = verdict.signal if verdict is not None else None
+            if signal is None and index_page_tiers:
+                idx = classify_index_page(url or "")
+                if idx is not None and idx.tier in index_page_tiers:
+                    signal = f"index_page_tier{idx.tier}:{idx.signal}"
             if signal is None and include_prose_gate and wc is not None and wc >= _ARTICLE_MIN_WORDS:
                 prose_verdict = prose_gate_verdict(content or "", language=lang or detected)
                 signal = prose_verdict.signal if prose_verdict is not None else None
@@ -191,6 +210,7 @@ class QuarantineJobManager:
         self._done = 0  # articles scanned so far (for percent + ETA)
         self._done_at_start = 0  # _done when the current run began (honest run-rate ETA)
         self._tally: dict[str, int] = {}  # quarantined / by-reason / write counts
+        self._index_page_tiers: frozenset[int] = frozenset()
         self._write = False  # dry-run by default; fixed for a run's lifetime, persisted across resumes
         self._error: str | None = None
         self._cancelled = False
@@ -264,12 +284,16 @@ class QuarantineJobManager:
     def start(
         self, *, _session_factory=None, _work_fn=None, _cursor: int = 0, _total: int = 0,
         _done: int = 0, write: bool = False,
+        index_page_tiers: frozenset[int] | set[int] | None = None,
     ) -> dict:
         """Launch the worker. RuntimeError if already running. ``_work_fn`` overrides the default
         batch function (a test seam). ``write`` (default False, dry-run detection only) is fixed
         for this run's lifetime -- ``resume()`` always passes through the SAME mode the run
         started in, never a caller-supplied override, so a paused run can never silently resume
-        in a different mode than it started."""
+        in a different mode than it started. ``index_page_tiers`` (default None = off) is part of
+        that same run-lifetime mode for exactly the same reason: it changes WHICH articles the run
+        detects, so a resume that dropped it would silently narrow the scope mid-run and report
+        the result under one run's name."""
         with self._lock:
             if self._alive():
                 raise RuntimeError("A quarantine job is already running.")
@@ -288,6 +312,7 @@ class QuarantineJobManager:
             # silently reset to the default, even when a paused/errored run's cursor
             # happens to still be 0.
             self._write = bool(write)
+            self._index_page_tiers = frozenset(index_page_tiers or ())
             self._error = None
             self._started_at = time.monotonic()
             self._session_factory = _session_factory
@@ -307,11 +332,13 @@ class QuarantineJobManager:
                 with self._lock:
                     after = self._cursor
                     write = self._write
+                    tiers = self._index_page_tiers
                     self._save()
                 while True:
                     if self._stop.is_set():
                         break
-                    r = work(session, after_id=after, limit=_BATCH, write=write)
+                    r = work(session, after_id=after, limit=_BATCH, write=write,
+                             index_page_tiers=tiers or None)
                     after = int(r["last_id"])
                     with self._lock:
                         self._tally["scanned"] = self._tally.get("scanned", 0) + int(r.get("scanned", 0))
@@ -358,7 +385,9 @@ class QuarantineJobManager:
             cur, tot, done = self._cursor, self._total, self._done
             tally = dict(self._tally)
             w = self._write  # ALWAYS preserve the mode the paused run was in
-        out = self.start(_session_factory=sf, _work_fn=wf, _cursor=cur, _total=tot, _done=done, write=w)
+            tiers = self._index_page_tiers  # ...and every other part of that mode
+        out = self.start(_session_factory=sf, _work_fn=wf, _cursor=cur, _total=tot, _done=done,
+                         write=w, index_page_tiers=tiers)
         with self._lock:
             self._tally = tally
             self._save()

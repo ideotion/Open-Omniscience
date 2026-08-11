@@ -163,6 +163,35 @@ def test_2026_07_01_korean_marathi_stopword_batch_is_collision_free():
         assert latin_content not in added
 
 
+def test_2026_08_11_english_light_verb_batch_and_the_words_it_refused():
+    """The source-quality export of 2026-08-11 showed 41.9% of source fingerprints (101 of
+    the 241 carrying one) spending a top-12 slot on a contentless English word. This batch
+    globalises those -- and the REFUSALS are the load-bearing half.
+
+    ``global_stopwords()`` unions every ``configs/stopwords_extra/*.yml`` file
+    LANGUAGE-AGNOSTICALLY, so a word that is content in ANY corpus language (or in another
+    English sense) must never be added. Eight observed leaks were therefore rejected: nl
+    ``top`` = summit, de/nl ``Post`` = mail, de ``Show`` = a programme, ``access``/``home``/
+    ``life`` are content in their own right, ``right``/``left`` are political direction in a
+    news corpus, and ``put`` is a finance term (the corpus carries finance.yahoo.com).
+    Without this negative half a later session re-reads the same fingerprint export, sees
+    ``top``/``post``/``left`` leaking exactly as loudly, and globalises them -- the whole
+    open-class trap the 2026-07-01 #530 lesson names. Reasoning: PROVENANCE.md.
+    """
+    from src.analytics.extract import global_stopwords
+
+    gs = global_stopwords()
+    for w in ("added", "best", "down", "end", "every", "find", "hours", "look", "read",
+              "set", "went"):
+        assert w in gs, f"{w} was added by the 2026-08-11 batch"
+    for w in ("top", "post", "show", "access", "home", "right", "left", "life", "put"):
+        assert w not in gs, (
+            f"{w!r} was DELIBERATELY refused by the 2026-08-11 collision review -- it is "
+            f"content in some corpus language or English sense. If you are adding it on "
+            f"purpose, update PROVENANCE.md's rejection table with the evidence first."
+        )
+
+
 def test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob():
     """Phase 4.1 (PR #740/#744 remediation) replaced the 370-line in-Python
     ``_EXTRA_STOPWORD_TEXT`` string blob with a loader over
@@ -186,11 +215,28 @@ def test_extra_stopwords_migration_is_byte_identical_to_the_pre_migration_blob()
 
     # Every member must be a str: the YAML-boolean-coercion regression guard.
     assert all(isinstance(w, str) for w in _EXTRA_STOPWORDS)
-    assert len(_EXTRA_STOPWORDS) == 2377
 
-    digest = hashlib.sha256(
-        "\n".join(sorted(_EXTRA_STOPWORDS)).encode("utf-8")
-    ).hexdigest()
+    # Words deliberately ADDED to the data files SINCE the migration. The migration digest
+    # below is taken over the set MINUS these, so the original "representation change only"
+    # guarantee stays provable forever instead of being re-baselined away by the first
+    # legitimate addition -- and every later batch has to declare itself HERE rather than be
+    # absorbed into a fresh digest, where a genuine accidental drop would hide beside it.
+    added_since_migration = frozenset({
+        # source-quality export 2026-08-11: contentless English light verbs / quantifiers
+        # occupying a top-12 slot in 41.9% of source fingerprints.
+        # Evidence + the collision review that REJECTED top/post/show/access/home/right/
+        # left/life/put: configs/stopwords_extra/PROVENANCE.md.
+        "added", "best", "down", "end", "every", "find", "hours", "look", "read", "set",
+        "went",
+    })
+    assert added_since_migration <= _EXTRA_STOPWORDS, (
+        "a declared post-migration addition is missing from the data files"
+    )
+
+    baseline = _EXTRA_STOPWORDS - added_since_migration
+    assert len(baseline) == 2377
+
+    digest = hashlib.sha256("\n".join(sorted(baseline)).encode("utf-8")).hexdigest()
     assert (
         digest
         == "a1a7493a21afb9abfe48eb1f13b323df6ea2cff46a21f03f7c3901f62221fc86"
