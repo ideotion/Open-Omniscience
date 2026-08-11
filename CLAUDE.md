@@ -2913,6 +2913,50 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     — the step's own comment says "lower it in the same PR that adds the keys". Leaving
     the slack invites the next drift to land unseen.
 
+  - **AN ENUMERATOR THAT DOES NOT LIST THE APP'S OWN DEFAULT MAKES THE APP BLIND TO ITS
+    OWN WRITES — and the damage lands somewhere else entirely (2026-08-11, the Ollama
+    store):** the 2026-08-04 move pointed a spawned daemon at `data/models/ollama`, and
+    `candidate_stores()` — the function answering "where are the models" — was never
+    told. So `default_store()` returned `~/.ollama` even when the app folder was the
+    only populated store on the machine. The operator noticed a split; the expensive
+    half was that the same function feeds the model BACKUP, which enumerated the wrong
+    directory and carried NONE of their models **while reporting success**. This is the
+    recorded "redirecting where new data lands makes existing data invisible" lesson
+    **pointing the other way** — there the probe learned the new location and forgot the
+    old one; here it learned neither, and survived a year because `store_report()` printed
+    a plausible split that read as the feature working. RULE: when you redirect where
+    new data lands, the same commit must update every enumerator of where data LIVES, and
+    the test for it must seed BOTH locations — with only the new one populated, a
+    fallback satisfies the assertion and the guard passes whether or not the enumerator
+    learned anything (two of my own tests did exactly that until a mutation exposed them).
+    **THE MIRROR HAZARD IS CREATED BY THE FIX**: ranking the app store first turns a
+    detection heuristic into a claim it cannot support — with both folders populated it
+    names the app folder whatever the running daemon is doing, so a report trusting it
+    would give a clean bill of health while every pull went elsewhere. The answer is a
+    MEASUREMENT, not a better heuristic: ask the daemon what it has and see which store
+    holds a model the other does not — conclusive when the stores differ, honestly
+    inconclusive when they are identical, and publish the heuristic's own answer beside
+    it so the disagreement is visible. COROLLARY, a second self-inflicted defect from
+    the same change: a helper whose default source resolves through the function you
+    just re-ranked can become a **silent no-op** — the consolidate button computed
+    `source = default_store()` and now got the destination, answering "nothing to do" in
+    the exact split it exists for. After re-ranking a resolver, grep for callers that
+    derive a *second* value from it.
+  - **A GUARD OVER A CACHED-STATE CHECK IS VACUOUS UNLESS THE FIXTURE MAKES THE CACHE HIT
+    (2026-08-11, the refused-switch trap):** the specialisation harness must never record
+    a refused model hand-over as success, because a run whose switches silently failed
+    does less work, finishes sooner, and is the fastest-looking row in the table while
+    having measured a model it never loaded. I wrote the guard, wrote the mutation
+    (`current = want` regardless of the outcome) — and **all 21 tests still passed**. The
+    fixture used the split assignment, where the two tasks want DIFFERENT models, so the
+    cached "current backend" failed to match on every phase whether or not the refusal
+    was recorded; 4 switches either way. A cache-suppression bug can only be discriminated
+    by a scenario where the cache would HIT, i.e. the same target requested twice in a
+    row — here the one-model shape, where the second phase must try again precisely
+    because the first hand-over never took. GENERAL FORM: for any "don't record X as
+    done" guard, ask what the recording would SUPPRESS, and build the fixture that
+    reaches the suppressed path; a scenario in which the cache always misses tests the
+    surrounding loop, not the guard.
   - **A BUDGET FOR A LOOP WRAPPED IN BLANKET EXCEPTION ISOLATION CANNOT *BE* AN
     EXCEPTION (2026-08-09, the 69-minute `leads-quality.json`):** an all-diagnostics run
     hung at member 53/55 on a ~1M-article corpus, and the member was **not** unguarded —

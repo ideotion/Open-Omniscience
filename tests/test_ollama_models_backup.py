@@ -49,7 +49,17 @@ def test_list_models_resolves_blobs_and_sizes(tmp_path):
 
 
 def test_default_store_honours_env(tmp_path, monkeypatch):
+    """An explicit operator choice wins; with none set and nothing to find, the answer
+    is the APP's own store.
+
+    That second half changed deliberately on 2026-08-11 (maintainer: "I'd prefer if all
+    models were in the same place, preferable in [the app] folder"). It is reached only
+    when no candidate store holds a model, i.e. where the value's real job is to be the
+    target a model restore writes into — and ``~/.ollama`` is somewhere a daemon this
+    app starts would not look, which is how the split it was reported for begins."""
+    from src.llm.model_store import ollama_store
+
     monkeypatch.setenv("OLLAMA_MODELS", str(tmp_path / "custom"))
     assert default_store() == tmp_path / "custom"
     monkeypatch.delenv("OLLAMA_MODELS", raising=False)
-    assert default_store() == Path.home() / ".ollama" / "models"
+    assert default_store() == ollama_store()

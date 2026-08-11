@@ -91,6 +91,18 @@ class ModelPullManager:
                     return
                 self._active = nxt
                 self._progress = {"model": nxt, "status": "starting", "percent": 0.0}
+            # Where will this land? A pull writes into the store of whichever daemon
+            # answers, so asking first is the only way the answer is known at all — and
+            # when nothing is serving yet, asking is also what puts a daemon pointed at
+            # the app folder there. Best-effort by construction: a model the operator
+            # asked for downloads even when we could not place it where we prefer.
+            dest: dict = {}
+            try:
+                from src.llm.model_store import prepare_ollama_pull
+
+                dest = prepare_ollama_pull()
+            except Exception:  # noqa: BLE001 - never let placement block a download
+                dest = {}
             status, err = "done", None
             try:
                 for prog in self._client().pull(nxt):
@@ -108,6 +120,13 @@ class ModelPullManager:
                 entry = {"model": nxt, "status": status, "at": time.time()}
                 if err:
                     entry["error"] = err
+                # The store this model went into, recorded WITH the pull rather than
+                # re-derived later: by the time anyone asks, the serving daemon may be a
+                # different one, and "where did that model go" would have no answer.
+                if dest.get("dest"):
+                    entry["store"] = dest["dest"]
+                if dest.get("reason"):
+                    entry["store_note"] = dest["reason"]
                 self._history.append(entry)
                 self._history = self._history[-20:]
 

@@ -52,13 +52,35 @@ def test_the_reading_uses_run_levels_own_key():
     assert "x the prompt cost" in r["note"]
 
 
-def test_a_sublinear_cost_is_named_as_such():
-    """The finding an operator acts on: a longer article is usually much cheaper than
-    its length, which is the argument for a bigger window."""
+def test_the_end_to_end_reading_is_self_consistent():
+    """What the timing harness CAN prove on any machine: it produced a reading, and the
+    sentence agrees with the numbers beside it.
+
+    IT CANNOT PROVE WHICH VERDICT. This asserted "Sub-linear" until the macOS runner
+    returned 11.5x wall for 12x prompt against a fixture whose sleeps scale as sqrt(12)
+    = 3.5x — so the measurement was dominated by something other than the fixture, and
+    the guard failed against correct code.
+
+    THE CLAIM I MADE WHEN FIXING ITS TWIN WAS WRONG, and this is the correction: I wrote
+    that overhead "only ever pushes the ratio further under the bar — it cannot
+    manufacture the verdict being asserted here." That holds for a FIXED addend, which
+    compresses a ratio toward 1. It is false for overhead PROPORTIONAL to the input, and
+    this harness has some: `_prompt_of(chars)` builds a prompt per call, so the O(n)
+    work grows with the size being swept and inflates the wall ratio past the fixture's
+    own. A slow shared runner makes that term dominate. Both directions of the verdict
+    are therefore machine-dependent end to end, and both are pinned on the classifier
+    directly instead."""
     out = LC.run_context_bench(
         sizes=(2000, 24000), calls=3, client=_Client(power=0.5), model="m", backend_name="ollama"
     )
-    assert "Sub-linear" in out["reading"]["note"]
+    r = out["reading"]
+    assert r["readable"] is True
+    note = r["note"]
+    assert ("Sub-linear" in note) or ("proportional" in note), "one verdict or the other"
+    assert f"{r['size_ratio']:.0f}x the prompt" in note
+    assert f"{r['latency_ratio']:.1f}x the wall" in note
+    # And the sentence must match the rule it claims to apply, whichever way it went.
+    assert ("Sub-linear" in note) == (r["latency_ratio"] < r["size_ratio"] * 0.8)
 
 
 def test_a_proportional_cost_is_not_called_sub_linear():

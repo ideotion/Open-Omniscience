@@ -22077,10 +22077,29 @@
         html += `<div style="margin-top:2px">Ollama: <code>${esc(r.ollama.configured)}</code>${gb(r.ollama.bytes)}</div>`;
       }
       html += `<div>Hugging Face: <code>${esc(r.huggingface.configured)}</code>${gb(r.huggingface.bytes)}</div>`;
+      // A SPLIT is its own state, and it is the one the operator actually reported
+      // ("models did download into ~/.ollama, yet there is another folder containing
+      // ollama models in .../data/models/ollama"). It is NOT covered by the note above:
+      // when the daemon is measurably reading the app folder, in_app_folder is true and
+      // nothing was said at all, so a second folder full of models stayed orphaned with
+      // no offer to consolidate. The button belongs to either state.
+      if (r.ollama.split_note) {
+        html += `<div class="card-caveat" style="margin-top:4px">${esc(r.ollama.split_note)}</div>`;
+      }
       if (r.ollama.note) {
-        html += `<div class="card-caveat" style="margin-top:4px">${esc(r.ollama.note)}</div>` +
-                `<div style="margin-top:4px"><button class="ghost tiny" onclick="migrateOllamaStore(this)">` +
-                esc(t("Move them into the app folder")) + `</button></div>`;
+        html += `<div class="card-caveat" style="margin-top:4px">${esc(r.ollama.note)}</div>`;
+      }
+      if (r.ollama.note || r.ollama.split_note) {
+        html += `<div style="margin-top:4px"><button class="ghost tiny" onclick="migrateOllamaStore(this)">` +
+                esc(t("Move them into the app folder")) + `</button>`;
+        // The reclaim is a SEPARATE button, and only after a copy has put every model in
+        // the app folder. A copy alone does not finish the job the operator asked for --
+        // the folder they wanted emptied is still full -- but folding the deletion into
+        // the copy would make a destructive step the default, and an interrupted "move"
+        // over a multi-GB store is how both copies get lost.
+        html += ` <button class="ghost tiny" onclick="migrateOllamaStore(this, true)" ` +
+                `title="${esc(t("Deletes only the files confirmed already copied into the app folder. Run the copy first."))}">` +
+                esc(t("…then delete the originals")) + `</button></div>`;
       }
       // Weights downloaded before the store moved here are still on the disk. Nothing
       // said so, so a model an operator already had reported "not downloaded" and its
@@ -22095,14 +22114,19 @@
       box.innerHTML = html;
     }
 
-    async function migrateOllamaStore(btn) {
+    async function migrateOllamaStore(btn, reclaim) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (!confirm(t("Copy the existing models into the app folder? Nothing is deleted — the originals stay where they are until you remove them yourself."))) return;
+      const ask = reclaim
+        ? t("Delete the originals? Only files already confirmed present in the app folder are removed — anything that was not copied stays. This cannot be undone.")
+        : t("Copy the existing models into the app folder? Nothing is deleted — the originals stay where they are until you remove them yourself.");
+      if (!confirm(ask)) return;
       const was = btn ? btn.textContent : "";
-      if (btn) { btn.disabled = true; btn.textContent = t("Copying…"); }
+      if (btn) { btn.disabled = true; btn.textContent = reclaim ? t("Deleting…") : t("Copying…"); }
       try {
-        const r = await api("/api/llm/model-store/migrate", {method: "POST"});
-        toast(r.ok ? t("Copied.") + ` ${r.copied} copied, ${r.skipped} already there.`
+        const r = await api("/api/llm/model-store/migrate" + (reclaim ? "?reclaim=true" : ""), {method: "POST"});
+        toast(r.ok ? (reclaim
+                        ? t("Done.") + ` ${r.copied} copied, ${r.removed} originals removed.`
+                        : t("Copied.") + ` ${r.copied} copied, ${r.skipped} already there.`)
                    : (r.reason || t("Could not copy the models.")), r.ok ? "" : "err");
       } catch (e) {
         toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
