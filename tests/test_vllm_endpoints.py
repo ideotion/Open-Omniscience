@@ -88,12 +88,19 @@ def test_vllm_install_refuses_under_airplane_mode(monkeypatch):
 
 
 def test_vllm_install_starts_a_background_job(monkeypatch):
-    from src.llm import backend as B
+    """This is about the WIRING -- does the endpoint hand the job its arguments --
+    so every resource the preflight consults is stubbed generously, via the one
+    ``_preflight_stub`` helper the sibling tests use.
+
+    It used to hand-roll three of those stubs and read the machine's REAL free disk,
+    which meant it failed on any box under the 15 GB install floor for a reason that
+    has nothing to do with what it asserts (observed: 13.92 GB free mid-suite on a
+    16 GB volume, while the same test passed when run alone). Hand-rolling a SUBSET
+    of a helper's stubs is what let it drift when the preflight grew a disk check;
+    keep the helper, so the next resource check reaches this test too."""
     from src.llm import vllm_lifecycle as V
 
-    monkeypatch.setattr("platform.system", lambda: "Linux")
-    monkeypatch.setattr(B, "detect_gpu", lambda: {"available": True, "vram_mb": 8192})
-    monkeypatch.setattr("src.ingest.kill_switch_active", lambda: False)
+    _preflight_stub(monkeypatch, ram=32 * 1024**3, free=200 * 1024**3)
 
     started_kwargs: dict = {}
     job = L._get_vllm_install_job()
