@@ -1948,9 +1948,9 @@ def _adopt_article_metadata(con) -> dict:
 
     by_group: dict[str, int] = {}
     rows = 0
-    lo = lo_min
-    while lo < hi_max:
-        hi = min(lo + step, hi_max)
+
+    def _one(lo: int, hi: int) -> None:
+        nonlocal rows
         for (anchor, _), n in zip(
             _ADOPTABLE_ARTICLE_COLUMNS, _q(con, count_sql, (lo, hi))[0], strict=True
         ):
@@ -1958,6 +1958,38 @@ def _adopt_article_metadata(con) -> dict:
                 by_group[anchor] = by_group.get(anchor, 0) + int(n)
         cur = con.execute(update_sql, (lo, hi))
         rows += max(0, cur.rowcount or 0)
+
+    # A source that fits in ONE window runs the statement once and COMMITS NOTHING,
+    # exactly as _insert_tracked does. That symmetry is load-bearing, not tidiness: the
+    # merge suspends the FTS insert trigger with a DROP and restores it in a finally, and
+    # on a failed merge what actually puts the trigger back is SQLite's transactional DDL
+    # rolling the DROP away (the 2026-08-07 finding -- the finally alone cannot, because
+    # the merge rolls back AFTER it runs). Committing here would make the DROP durable, so
+    # the rollback would undo the finally's CREATE instead and a failed merge would leave
+    # the working copy unable to index.
+    #
+    # THE GUARD for this is test_merge_fts_deferred.py::
+    # test_a_failed_merge_leaves_the_working_copy_able_to_index -- it is what caught the
+    # first cut of this function, and removing the short-circuit below fails it. It lives
+    # there rather than beside this pass because the property belongs to the merge, not to
+    # the adoption; a guard written here that watched for the COMMIT directly was tried
+    # and DELETED, because the trace it installed never saw the merge's own connection and
+    # so passed against the very mutation this comment describes.
+    #
+    # KNOWN, PRE-EXISTING, AND NOT FIXED HERE: the same loss already happens on any corpus
+    # large enough for the ARTICLE INSERT to window, since that commits too. Probed on
+    # main with this pass neutered -- the trigger is likewise gone. It fails CLOSED
+    # (verify_copy refuses a copy whose trigger is missing, and a failed merge's working
+    # copy is disposable), so it costs work rather than data, and putting the restore
+    # after the rollback is a change to the trigger contract that deserves its own slice.
+    if hi_max - lo_min <= step:
+        _one(lo_min, hi_max)
+        return {"articles_enriched": rows, "by_column": by_group}
+
+    lo = lo_min
+    while lo < hi_max:
+        hi = min(lo + step, hi_max)
+        _one(lo, hi)
         con.execute("COMMIT")
         con.execute("BEGIN IMMEDIATE")
         lo = hi
