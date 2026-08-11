@@ -45,7 +45,7 @@ from pathlib import Path
 
 MANIFEST_NAME = "oo-folder-backup.json"
 BACKUP_SCHEMA = "oo-folder-backup-1"
-_CATEGORIES = ("wiki_dumps", "osm_regions", "models")
+_CATEGORIES = ("wiki_dumps", "osm_regions", "models", "hf_models")
 _COPY_BUF = 4 * 1024 * 1024  # 4 MiB streaming buffer
 _PART_SUFFIX = ".oopart"  # in-progress temp; cleaned + never backed up
 
@@ -57,7 +57,7 @@ _PART_SUFFIX = ".oopart"  # in-progress temp; cleaned + never backed up
 class BackupItem:
     """One file to copy: a category root + a relative path under it + the source file."""
 
-    category: str  # wiki_dumps | osm_regions | models
+    category: str  # wiki_dumps | osm_regions | models | hf_models
     rel: str  # POSIX path under <dest>/<category>/
     src: Path
     size: int
@@ -149,10 +149,17 @@ def _done_download_files(get_mgr: Callable[[], object]) -> list[Path]:
 
 
 def collect_items(
-    *, include_wiki: bool = True, include_osm: bool = True, include_models: bool = True
+    *,
+    include_wiki: bool = True,
+    include_osm: bool = True,
+    include_models: bool = True,
+    include_hf: bool = True,
 ) -> list[BackupItem]:
-    """The completed wiki dumps + OSM extracts + Ollama models eligible for a folder
-    backup. Wiki/OSM come from their download managers' DONE state (partials skipped)."""
+    """The completed wiki dumps + OSM extracts + local model weights eligible for a
+    folder backup. Wiki/OSM come from their download managers' DONE state (partials
+    skipped). Model weights come from BOTH stores — Ollama's and the Hugging Face cache
+    vLLM serves from — because "my models" means the ones this machine can run, not the
+    ones one backend happens to keep."""
     from src.paths import data_dir
 
     items: list[BackupItem] = []
@@ -170,6 +177,8 @@ def collect_items(
         )
     if include_models:
         items += collect_model_items()
+    if include_hf:
+        items += collect_hf_model_items()
     return items
 
 
@@ -209,6 +218,71 @@ def collect_model_items(store: Path | None = None) -> list[BackupItem]:
                 rel = f"blobs/{fn}"
                 items[rel] = BackupItem("models", rel, bp, bp.stat().st_size)
     return list(items.values())
+
+
+#: Files huggingface_hub leaves behind mid-download or for locking. Never model data.
+_HF_SKIP_SUFFIXES = (".incomplete", ".lock", _PART_SUFFIX)
+
+
+def collect_hf_model_items(home: Path | None = None) -> list[BackupItem]:
+    """Items for the Hugging Face weights cache — the models vLLM serves.
+
+    THE GAP THIS CLOSES (field report 2026-08-11: "vLLM models were not saved, only
+    ollama models"). The ``models`` category above enumerates the OLLAMA store and
+    nothing else, so on a machine that serves with vLLM the large-data backup carried
+    no weights at all — and said "Backup complete", because from its own point of view
+    it had copied everything it knew about. Same shape as the 2026-08-11 lesson one
+    store over: an enumerator that does not list a location the app itself writes to
+    makes the app blind to its own data.
+
+    WHY THE SNAPSHOT FILES AND NOT ``blobs/``. An HF repo keeps its bytes once, in
+    ``blobs/<sha>``, and ``snapshots/<rev>/<name>`` is a SYMLINK to it. Backing up both
+    would store every multi-GB weight file TWICE, because :func:`_atomic_copy` opens its
+    source and therefore follows the link. Backing up ``blobs/`` alone would restore
+    bytes nothing can find. So the snapshot entries are copied (resolving the link) and
+    ``blobs/`` is skipped: one copy, and the restored tree is a cache of plain files —
+    which is exactly the layout ``huggingface_hub`` itself produces where symlinks are
+    unavailable, not one invented here.
+
+    THAT CHOICE IS ALSO WHAT KEEPS THE RESTORE SAFE. :func:`restore_folder_backup`
+    REFUSES symlinks outright — a 2026-07-25 fix for a live-reproduced arbitrary-file
+    copy out of an editable backup folder — so storing links and recreating them would
+    have meant reopening that hole for the convenience of a cache layout. Nothing here
+    writes a link, and nothing on the way back reads one.
+
+    HONEST LIMIT: two revisions of one repo that share a blob are stored once per
+    revision. A cache normally holds one revision per model, and the alternative costs
+    the symlink guard, so the duplication is accepted rather than hidden.
+    """
+    from src.llm.model_store import hf_home
+
+    home = home or hf_home()
+    hub = home / "hub"
+    if not hub.is_dir():
+        return []
+    items: list[BackupItem] = []
+    try:
+        repos = sorted(d for d in hub.iterdir() if d.is_dir() and d.name.startswith("models--"))
+    except OSError:
+        return []
+    for repo in repos:
+        # refs/ names which revision is current -- tiny, real files, and without them a
+        # restored cache has weights that nothing resolves to.
+        for sub in ("refs", "snapshots"):
+            root = repo / sub
+            if not root.is_dir():
+                continue
+            for p in sorted(root.rglob("*")):
+                if p.name.endswith(_HF_SKIP_SUFFIXES):
+                    continue
+                try:
+                    if not p.is_file():  # follows the link: a dangling one is not a file
+                        continue
+                    size = p.stat().st_size  # the TARGET's size, which is what gets copied
+                except OSError:
+                    continue
+                items.append(BackupItem("hf_models", f"hub/{p.relative_to(hub).as_posix()}", p, size))
+    return items
 
 
 # --------------------------------------------------------------------------- #
@@ -348,6 +422,14 @@ def restore_folder_backup(
         from src.backup.ollama_models import default_store
 
         tgt.setdefault("models", default_store())
+    if "hf_models" not in tgt:
+        # The Hugging Face cache vLLM is spawned pointed at. A SEPARATE category rather
+        # than a second root under "models": the existing category's on-disk layout IS
+        # the Ollama store root, and folding a second store under it would send an
+        # older backup's manifests/ and blobs/ somewhere new on the way back.
+        from src.llm.model_store import hf_home
+
+        tgt.setdefault("hf_models", hf_home())
 
     restored = skipped = refused_symlinks = 0
     stopped = False
@@ -636,6 +718,7 @@ class FolderBackupManager:
                         include_wiki="wiki_dumps" in cats,
                         include_osm="osm_regions" in cats,
                         include_models="models" in cats,
+                        include_hf="hf_models" in cats,
                     )
                 )
                 need = needed_bytes(destp, items)

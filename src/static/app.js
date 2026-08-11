@@ -1096,8 +1096,16 @@
         let prog = "";
         if (j.progress && j.progress.total) {
           const pct = j.progress.percent || Math.round(100 * j.progress.done / j.progress.total);
+          // EVERY progress was formatted as BYTES, but four producers publish counts
+          // (items/stages/files/articles) -- so a re-index of 700,000 articles read
+          // "700 kB / 1.4 MB" and a one-item import read "1 B / 1 B". The unit was
+          // already travelling with the numbers; nothing read it.
+          const unit = j.progress.unit || "bytes";
+          const amount = unit === "bytes"
+            ? `${_fmtBytes(j.progress.done)} / ${_fmtBytes(j.progress.total)}`
+            : `${fmtNum(j.progress.done, 0)} / ${fmtNum(j.progress.total, 0)} ${esc(t(unit))}`;
           prog = `<div class="cap-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100"><i style="width:${pct}%"></i></div>` +
-                 `<div class="muted" style="font-size:11px">${_fmtBytes(j.progress.done)} / ${_fmtBytes(j.progress.total)} · ${pct}%</div>`;
+                 `<div class="muted" style="font-size:11px">${amount} · ${pct}%</div>`;
         }
         const acts = [];
         if (j.id === "collect:current") acts.push(`<button class="tiny danger" title="${esc(t("Stopping collection engages the network kill switch — the app goes offline."))}" onclick="jobCancel('${esc(j.id)}')">${esc(t("Stop"))}</button>`);
@@ -6721,7 +6729,7 @@
       const c = [];
       if ($("fb-wiki") && $("fb-wiki").checked) c.push("wiki_dumps");
       if ($("fb-osm") && $("fb-osm").checked) c.push("osm_regions");
-      if ($("fb-models") && $("fb-models").checked) c.push("models");
+      if ($("fb-models") && $("fb-models").checked) { c.push("models"); c.push("hf_models"); }
       return c;
     }
     // ---- Unified Export/Backup dialog -------------------------------------- //
@@ -6853,7 +6861,12 @@
         verify: t("Verifying the merge…"),
         snapshot_working_copy: t("Snapshotting your corpus…"),
         pre_restore_snapshot: t("Snapshotting your corpus…"),
-        swap: t("Committing…") };
+        swap: t("Committing…"),
+        // The import run's OWN tail phase (ImportQueueManager._tune_after_run), not
+        // one of run_restore's stages: an FTS5 'optimize' that runs once after the
+        // last item. It is single-threaded and index-scaled, so on a large corpus it
+        // is minutes of 100%-of-one-core work AFTER every item already reads "Done".
+        tuning: t("Merging the search index…") };
       // verify + restore share the phase names (verifying/reassembling); only a backup
       // uses the write-side names. Default is mode-aware so a verify never falls back to
       // "Backing up…" or shows a raw untranslated phase.
@@ -7039,7 +7052,7 @@
       const bar = document.getElementById("ux-bar");
       const pauseBtn = document.getElementById("ux-pause");
       const blobs = [];
-      if (document.getElementById("ux-c-models") && document.getElementById("ux-c-models").checked) blobs.push("models");
+      if (document.getElementById("ux-c-models") && document.getElementById("ux-c-models").checked) { blobs.push("models"); blobs.push("hf_models"); }
       if (document.getElementById("ux-c-maps") && document.getElementById("ux-c-maps").checked) blobs.push("osm_regions");
       if (document.getElementById("ux-c-wiki") && document.getElementById("ux-c-wiki").checked) blobs.push("wiki_dumps");
       // A corpus-less export is now a first-class choice, so neither half is assumed:
@@ -7475,7 +7488,32 @@
       if (runBtn && st.state === "running") runBtn.disabled = true;
       // The run header: what it is doing overall + the collection statement (ruling 12).
       const head = `${items.filter(i => i.state === "done").length}/${items.length} ${esc(t("imported"))}`;
+      // THE TAIL PHASE HAS TO HAVE A HOME (field report 2026-08-11). A run does not end
+      // when its last item does: _tune_after_run then merges the search index, inside the
+      // same exclusive window, for minutes on a large corpus. The per-item live block
+      // below only renders inside a row whose item is `running`, so with every item
+      // "Done" that phase had nowhere to appear -- the header read "1/1 imported", the
+      // item read "Done", collection was still paused and one core sat at 100%. The
+      // backend was already publishing it; there was simply no element to put it in.
+      const tail = items.some((i) => i.state === "running") ? "" : _uxImPhaseBits(st.live, t);
+      const tailLine = (st.state === "running" && tail) ? `<br><span class="note">${tail}</span>` : "";
+      // The RUN's bar counts STAGES, not items: with every item done the item count is
+      // 100% while the search-index merge still holds the machine, and a full bar beside
+      // a run that has not finished is exactly the claim this reports wrongly. `stages_*`
+      // is absent on an older server, and then there is simply no bar — never a fallback
+      // to the item count, which is the number being corrected.
+      const runBar = document.getElementById("ux-imp-bar");
+      if (runBar) {
+        if (st.state === "running" && st.stages_total) {
+          runBar.max = st.stages_total;
+          runBar.value = Math.min(st.stages_done || 0, st.stages_total);
+          runBar.style.display = "";
+        } else {
+          runBar.style.display = "none";
+        }
+      }
       note.innerHTML = `<b>${head}</b>${st.elapsed_s != null ? ` · ${esc(_uxImDur(st.elapsed_s))}` : ""}`
+        + tailLine
         + (st.state === "running" && st.collection_paused ? `<br>${esc(t("Background collection is paused for this whole import and resumes when it finishes."))}` : "")
         + (st.state === "interrupted" ? `<br><span class="note err">${esc(t("This import was interrupted when the app stopped. It cannot resume (the passphrase is never stored) — start it again."))}</span>` : "");
       rows.innerHTML = items.map((it) => {
@@ -7494,8 +7532,12 @@
 
     // The current PHASE's own honest unit (ruling 14) -- never a made-up percentage of
     // the whole run, whose items are different kinds of work over different units.
-    function _uxImLive(live, t) {
-      const p = (live && live.progress) || {};
+    function _uxImPhaseBits(live, t) {
+      // TWO SHAPES, one reader. A sub-job's mirrored status nests its phase under
+      // `progress`; the run's own tail phase (_tune_after_run) is a flat dict with no
+      // sub-job to mirror. Reading only the nested one silently dropped the tail phase
+      // even where it WAS rendered -- a second, independent reason it was invisible.
+      const p = (live && (live.progress || live)) || {};
       if (!p.phase) return "";
       const bits = [esc(_uxVolPhase(p.phase, "restore", t))];
       if (p.phase_index && p.phase_total) bits.push(`${p.phase_index}/${p.phase_total}`);
@@ -7503,7 +7545,15 @@
       if (p.reindex_total) {
         bits.push(`${p.reindex_done || 0}/${p.reindex_total} ${esc(t("articles"))}`);
       }
-      return ` <span class="muted">· ${bits.join(" · ")}</span>`;
+      return bits.join(" · ");
+    }
+
+    function _uxImLive(live, t) {
+      // The per-ITEM form: a trailing clause on that item's own row. The header wants
+      // the same facts without the leading separator, so the bits are shared rather
+      // than the string sliced.
+      const bits = _uxImPhaseBits(live, t);
+      return bits ? ` <span class="muted">· ${bits}</span>` : "";
     }
 
     function _uxImDur(s) {
@@ -15357,11 +15407,34 @@
         const tri = tk.triage || {};
         if (tri.format_validity != null) bits.push(`triage validity ${tri.format_validity}`);
         if (tri.valid_verdicts_per_s != null) bits.push(`${tri.valid_verdicts_per_s}/s`);
-        if (tri.canary && tri.canary.ok === false) bits.push("canary FAILED");
+        // WITH ITS DENOMINATOR. Bare "canary FAILED" read identically for a model
+        // that failed 2 of 36 canary slots and three that failed 36 of 36 — the one
+        // distinction a comparative bench exists to make.
+        if (tri.canary && tri.canary.ok === false) {
+          bits.push(tri.canary.checked
+            ? `canary ${tri.canary.failed_n || 0}/${tri.canary.checked} FAILED`
+            : "canary FAILED");
+        }
         const stg = tk.source_tags || {};
         if (stg.format_validity != null) bits.push(`tags validity ${stg.format_validity}`);
         const ld = tk.langdetect || {};
         if (ld.accuracy_over_all != null) bits.push(`langdetect ${ld.accuracy_over_all} (n=${ld.n})`);
+        const xl = tk.translation || {};
+        if (xl.in_target_rate != null) {
+          // The RATE with what it was taken over, and the unmeasurable count beside
+          // it: an answer the referee refused to read is a gap in the check, not a
+          // failed translation, and the two must not be read as one number.
+          const judged = (xl.asked || 0) - (xl.unmeasurable || 0);
+          bits.push(`translation in-target ${xl.in_target_rate} (${xl.in_target}/${judged})`);
+          if (xl.unmeasurable) bits.push(`${xl.unmeasurable} unmeasurable`);
+          if (xl.echoed) bits.push(`${xl.echoed} echoed the source`);
+        }
+        if (r.tasks_not_asked) bits.push(`not asked: ${r.tasks_not_asked.tasks.join(", ")}`);
+        // THE DEVICE, on the row. Ollama falling back to the CPU makes every timing
+        // beside it a measurement of a different machine, and the reader has to see
+        // that where they read the numbers — not only in the JSON.
+        const dev = (r.device || {}).device;
+        if (dev && dev !== "gpu") bits.push(dev === "cpu" ? "ran on CPU" : `device: ${dev}`);
         const errs = Object.keys(tk).filter((k) => tk[k] && tk[k].status === "error");
         if (errs.length) bits.push(`errors: ${errs.join(", ")}`);
         return `<div><b>${esc(key)}</b>${r.quantization ? ` <span class="muted">${esc(r.quantization)}</span>` : ""} — ${esc(bits.join(" · ") || "no metrics")}</div>`;
@@ -15435,6 +15508,71 @@
         if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
       }
       _mbPoll();
+    }
+
+    // ---- Translation comparison (maintainer 2026-08-11) --------------------- //
+    // The bench's translation TASK answers what a machine can decide alone; this
+    // produces the artifact a PERSON reads to compare two translations. It renders
+    // what was asked and how long it took, and refuses to summarise the answers into
+    // a verdict -- the whole point is that the judgement happens in the reading.
+    function _tpRender(res) {
+        const out = $("tp-result");
+        if (!out) return;
+        if (!res) { out.innerHTML = ""; return; }
+        if (res.available === false) {
+          out.innerHTML = `<div class="hint muted">${esc(res.note || res.error || "no comparison yet")}</div>`;
+          return;
+        }
+        const d = res.directions || {};
+        const dirs = Object.keys(d).filter((k) => d[k]).map((k) => `${esc(k)} ${d[k]}`).join(" · ");
+        const langs = (res.languages || []).map(esc).join(", ");
+        const rows = [];
+        rows.push(`<div><b>${res.n_items || 0}</b> passages · ${esc((res.models || []).join(", "))}</div>`);
+        if (dirs) rows.push(`<div class="muted">${dirs}</div>`);
+        if (langs) rows.push(`<div class="muted">source languages: ${langs}</div>`);
+        // Per model: how many answers came back at all, and how long they took. NOT a
+        // quality figure -- a model can answer every item fast and badly.
+        const per = {};
+        (res.items || []).forEach((it) => {
+          (it.answers || []).forEach((a) => {
+            const k = a.model || "?";
+            per[k] = per[k] || { ok: 0, err: 0, ms: 0 };
+            if (a.error) per[k].err += 1; else per[k].ok += 1;
+            per[k].ms += (a.wall_s || 0) * 1000;
+          });
+        });
+        Object.keys(per).sort().forEach((m) => {
+          const p = per[m];
+          const failed = p.err ? ` · <span class="warn">${p.err} failed</span>` : "";
+          rows.push(`<div><b>${esc(m)}</b> — ${p.ok} answered${failed} · `
+            + `${(p.ms / 1000).toFixed(1)}s total</div>`);
+        });
+        rows.push(`<div class="hint" style="margin-top:4px">${esc(res.caveat || "")}</div>`);
+        out.innerHTML = rows.join("");
+    }
+
+    async function tpRun(btn) {
+        const st = $("tp-status");
+        const n = parseInt(($("tp-articles") || {}).value, 10);
+        const tg = parseInt(($("tp-targets") || {}).value, 10);
+        if (btn) btn.disabled = true;
+        if (st) st.textContent = "running — this can take a few minutes";
+        try {
+          const res = await api("/api/diagnostics/translation-probe", {
+            method: "POST",
+            body: JSON.stringify({
+              n_articles: isFinite(n) ? n : 6,
+              targets_per_source: isFinite(tg) ? tg : 3,
+            }),
+          });
+          _tpRender(res);
+          if (st) st.textContent = res && res.available === false ? "nothing to ask" : "done";
+        } catch (e) {
+          if (st) st.textContent = "";
+          if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
+        } finally {
+          if (btn) btn.disabled = false;
+        }
     }
 
     // ---- ONE BUTTON: every AI check, one report ---------------------------- //

@@ -117,7 +117,8 @@ def test_job_pauses_and_resumes_from_persisted_cursor(tmp_path, monkeypatch):
     _seed(Session)
     mgr = QuarantineJobManager(state_path=tmp_path / "q.json")
 
-    def _one_at_a_time(session, *, after_id=0, limit=1, include_prose_gate=True, write=False):
+    def _one_at_a_time(session, *, after_id=0, limit=1, include_prose_gate=True, write=False,
+                       index_page_tiers=None):
         r = default_quarantine_candidates_batch(session, after_id=after_id, limit=1, write=write)
         return r
 
@@ -244,7 +245,8 @@ def test_resume_preserves_the_write_mode_of_the_paused_run(tmp_path, monkeypatch
     _seed(Session)
     mgr = QuarantineJobManager(state_path=tmp_path / "q.json")
 
-    def _one_at_a_time(session, *, after_id=0, limit=1, include_prose_gate=True, write=False):
+    def _one_at_a_time(session, *, after_id=0, limit=1, include_prose_gate=True, write=False,
+                       index_page_tiers=None):
         return default_quarantine_candidates_batch(session, after_id=after_id, limit=1, write=write)
 
     mgr.start(_session_factory=Session, _work_fn=_one_at_a_time, write=True)
@@ -272,7 +274,8 @@ def test_resume_preserves_dry_run_mode_too(tmp_path, monkeypatch):
     _seed(Session)
     mgr = QuarantineJobManager(state_path=tmp_path / "q.json")
 
-    def _one_at_a_time(session, *, after_id=0, limit=1, include_prose_gate=True, write=False):
+    def _one_at_a_time(session, *, after_id=0, limit=1, include_prose_gate=True, write=False,
+                       index_page_tiers=None):
         return default_quarantine_candidates_batch(session, after_id=after_id, limit=1, write=write)
 
     mgr.start(_session_factory=Session, _work_fn=_one_at_a_time)  # write defaults False
@@ -394,3 +397,63 @@ def test_article_ids_mode_chunks_under_the_sqlite_variable_cap(tmp_path):
         r = default_quarantine_candidates_batch(s, article_ids=ids, write=False)
     assert r["scanned"] == 1500
     assert r["done"] is True
+
+
+def test_the_work_fn_doubles_in_this_file_match_the_real_batch_signature():
+    """A hand-written work-fn double drifts from the function it stands in for, and the drift
+    surfaces as a TypeError raised INSIDE the worker thread -- which the job turns into
+    ``state == "error"``, i.e. a failure that looks like a job bug rather than a stale test.
+    That is exactly how adding ``index_page_tiers`` first presented. Pin the doubles to the
+    real keyword-only parameter set so the next addition reddens HERE, by name."""
+    import inspect
+
+    real = {
+        name for name, p in
+        inspect.signature(default_quarantine_candidates_batch).parameters.items()
+        if p.kind is inspect.Parameter.KEYWORD_ONLY
+    }
+    # every keyword the manager can pass must be accepted by the doubles above
+    manager_passes = {"after_id", "limit", "write", "index_page_tiers"}
+    assert manager_passes <= real, manager_passes - real
+
+    src = inspect.getsource(test_job_pauses_and_resumes_from_persisted_cursor)
+    for kw in manager_passes:
+        assert kw in src, f"the double in this file does not accept {kw!r}"
+
+
+def test_resume_preserves_the_index_page_tier_mode_of_the_paused_run(tmp_path):
+    """``index_page_tiers`` changes WHICH articles a run detects, so it is part of the run's
+    mode exactly like ``write``. A resume that let it fall back to the default would silently
+    narrow the scope half way through and file the result under one run's name -- the 2026-07-23
+    S3.2 lesson ("a resumable job's execution mode must be explicitly re-supplied on resume").
+    Driven through the REAL start/pause/resume path, not by reading the source.
+
+    The pause is requested BY THE WORK FN on its first batch rather than from the test thread,
+    so a paused state is guaranteed rather than raced -- otherwise a fast machine finishes the
+    4-article fixture first, no resume happens, and the test passes while proving nothing about
+    resume at all.
+    """
+    Session = _env(tmp_path)
+    _seed(Session)
+    mgr = QuarantineJobManager(state_path=tmp_path / "q.json")
+    seen: list[frozenset] = []
+
+    def _one_at_a_time(session, *, after_id=0, limit=1, include_prose_gate=True, write=False,
+                       index_page_tiers=None):
+        seen.append(frozenset(index_page_tiers or ()))
+        if len(seen) == 1:
+            mgr.pause()  # deterministic: the loop checks _stop before the next batch
+        return default_quarantine_candidates_batch(
+            session, after_id=after_id, limit=1, write=write,
+            index_page_tiers=index_page_tiers,
+        )
+
+    mgr.start(_session_factory=Session, _work_fn=_one_at_a_time, index_page_tiers={1})
+    _join(mgr)
+    assert mgr.status()["state"] == "paused", mgr.status()
+    assert len(seen) == 1, seen
+
+    mgr.resume()
+    _join(mgr)
+    assert len(seen) > 1, "the resume ran no further batch, so it proves nothing"
+    assert all(t == frozenset({1}) for t in seen), seen

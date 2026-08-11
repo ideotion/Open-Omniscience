@@ -1373,6 +1373,28 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     is load-bearing — `os.register_at_fork` plus a PID guard checked BEFORE the lock, because a
     child blocking on an inherited lock with no owner alive to release it is precisely the
     deadlock the journal exists to diagnose.
+  - **AN OPTIONAL-EXTRA REFEREE HAS TWO ABSENCES, AND THEY MUST NOT SHARE A SENTINEL
+    (2026-08-11, the translation task on the Core-only lane):** the new translation
+    bench judges the output's language with `analytics.langdetect`, whose
+    `detect_language()` returns `None` for four different reasons — library absent,
+    text too short, low confidence, unsupported language. That conflation is CORRECT
+    for a caller that only wants the language, and wrong for one that REPORTS the
+    absence: on a core install (py3langid lives in `[analysis]`) every answer landed
+    in `unmeasurable`, which reads as "the model's output could not be read" when the
+    truth is "this install cannot read anything". Two facts about two different
+    things — the text, and the machine — behind one number. Fixed with a public
+    `detector_available()` plus a `referee: {available, reason}` block that places the
+    blame, and by noting that SPEED is unaffected because it needs no referee: a
+    degrade should surrender only what actually depended on the missing thing.
+    **THE TEST HALF IS A RECURRENCE**, and the ledger already carried it: the 2026-07-10
+    segmenter lesson says to assert against the availability probe, never against an
+    assumed environment. I asserted "French answers read as French" and the Core-only
+    lane failed it against perfectly correct code. When a check depends on an optional
+    extra, the guard skips on the SOURCE OF TRUTH (`detector_available()`), and a
+    second guard — which must still RUN without the extra — asserts the honest
+    degrade. Reproduce the lane locally before pushing: blocking the import in a
+    `builtins.__import__` shim and resetting the module's memoised probe takes two
+    minutes and is the difference between finding this and having CI find it.
   - **A DEGRADE SENTINEL MUST NOT SHARE A KEY WITH A REAL MEASUREMENT (2026-07-29,
     `ai_diagnostics._safe`):** the bundle's per-section guard returned
     `{"available": False, "error": ...}` on a crashed probe — and `resolve_backend()`
@@ -3270,6 +3292,124 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     COROLLARY worth keeping: a bare `<h3>` inherits the browser's `1.17em`, so in any
     design whose own headings are *smaller* than body text, every unstyled sub-heading is
     automatically the loudest thing on the page.
+  - **A PHASE THAT RUNS WHILE NO SUB-UNIT IS IN FLIGHT HAS NO HOST ELEMENT — and the
+    producer's own comment explaining why it must not be silent is why that survives
+    review (2026-08-11, "according to UI, the import is over, but the CPU is still
+    firing 100% on one core"):** an import run does not end when its last item does.
+    `_tune_after_run` then merges the search index — FTS5 `'optimize'`, single-threaded
+    and index-scaled — inside the same exclusive window, so collection stays paused and
+    a second import is refused while every item already reads "Done". The backend was
+    publishing that phase and its comment said outright that without it the run "would
+    sit at 'running' with no item in flight … which reads as a hang". The renderer
+    emitted `st.live` only INSIDE a row whose item is `running`, and by then none is —
+    the fix for the exact failure was written, and had nowhere to render. GENERAL FORM:
+    when a renderer hangs a status off "the currently-running child", ask what publishes
+    status when there is no child; a tail phase, a warm-up and a cleanup all live there.
+    SECOND, INDEPENDENT REASON it could not have shown even given a row: a mirrored
+    sub-job status nests its phase under `progress` while the run's own live dict is
+    flat, so one reader silently served one shape — check both ends of a field two
+    producers write. THIRD, the honest half of the same report: the row said "Importing"
+    beside 100% of items, a job claiming to be finished and working at once. The count
+    was a real measurement and stayed; it was the NAME that was wrong, and that is
+    usually the cheaper thing to fix. FOURTH, from the operator's own question ("if it
+    means pausing the reindex, it's OK"): the post-import re-index drain never consulted
+    the exclusive hold — the third recurrence of "gate every entry point", because
+    `ReindexJobManager` grew `_yield_to_exclusive` and this is a *different, later* entry
+    point. It STOPS rather than parks, because a park can only happen between batches and
+    a single import is a single batch of everything it merged — so parking would never
+    fire on the one shape that matters, while stopping is free against a durable
+    per-article watermark that the queue's own end-of-run drain restarts.
+  - **A COUNT OF ITEMS IS NOT A COUNT OF THE RUN'S STAGES — and the tail stage is exactly
+    where the two diverge (2026-08-11, the same report's second half):** both progress
+    bars were drawn from `items_done/items_total`, which reaches 100% the moment the last
+    item lands — while the search-index merge is still holding the machine. A full bar
+    beside a run that has not finished is a fabricated completeness, so the DENOMINATOR
+    has to count the work actually left: `stages_total = items + 1`, the +1 being a real
+    final stage, complete once it has RUN (what it *achieved* stays a separate field), and
+    skipped after a Stop so a stopped run correctly never reaches its own end. Publish the
+    stage counts BESIDE the item counts rather than replacing them — the item count was
+    never the wrong number, only the wrong thing to draw a bar from — and when a client
+    finds no stage counts, draw NO bar rather than falling back to the number being
+    corrected. COROLLARY found in the same pass: `_jobRow` formatted EVERY job's progress
+    as bytes, though four producers publish counts (`items`/`files`/`articles`/`stages`),
+    so a 700,000-article re-index read "700 kB / 1.4 MB". The unit was already travelling
+    with the numbers and nothing read it — when a payload carries a unit, the renderer
+    that ignores it will be wrong for every producer that is not the one it was written
+    against.
+  - **A SECOND STORE FOR THE SAME KIND OF THING IS A SECOND ENUMERATOR NOBODY WROTE —
+    and its layout may be incompatible with a guard you already shipped (2026-08-11,
+    "vLLM models were not saved, only ollama models"):** `collect_model_items` listed the
+    Ollama store and nothing else, so on a machine serving with vLLM the large-data
+    backup carried no weights and still said "Backup complete" — it had copied everything
+    it knew about. That is the 2026-08-11 Ollama-store lesson one store over: when a
+    second backend arrives, every enumerator phrased around the first is now wrong, and
+    it fails by reporting SUCCESS. THE INTERESTING HALF IS THE LAYOUT. A Hugging Face
+    repo keeps its bytes once in `blobs/<sha>` and reaches them by SYMLINK from
+    `snapshots/<rev>/`, so both obvious designs fail: copying both trees stores every
+    multi-GB weight TWICE (the copier opens its source, so it follows the link), and
+    storing the links collides with `restore_folder_backup`'s flat refusal of symlinks —
+    a 2026-07-25 fix for a live-reproduced arbitrary-file copy out of an editable backup
+    folder. The way through is to copy the snapshot entries with the link RESOLVED and
+    skip `blobs/`: one copy, no link anywhere in the artifact, and the restored tree is
+    the layout `huggingface_hub` itself produces where symlinks are unavailable rather
+    than one invented for the occasion. GENERAL FORM: before teaching a backup a new
+    source, check whether that source's on-disk shape is compatible with the guards the
+    restore side already enforces — a design that needs the guard relaxed is the wrong
+    design, not a reason to relax it. And state the residual cost rather than hiding it:
+    two revisions of one repo sharing a blob are stored once per revision.
+  - **A PERCENTILE OVER A MOSTLY-EMPTY DERIVED TABLE DEGENERATES INTO AN EXISTENCE TEST,
+    AND THE FLAG RATE THEN RESTATES COVERAGE (2026-08-11, the source-quality export):**
+    only **28,639 of 991,686** audited articles (**2.89%**) carried a single keyword
+    mention — 21 languages at exactly zero, en at 5.00%. Every Layer-A ratio is computed
+    over the keyword tables, so each cohort's `mention_density` and `vocab_sparsity` p90
+    were BOTH `0.0`, and the outlier rule `value > p90` became **"has any keyword at
+    all"**. The tell was already in the report and unreadable: `pct_flagged` equalled the
+    indexed share to two decimals in every assessed language **except `unknown`**, the one
+    cohort whose p90 was non-zero — the single divergence proving the mechanism. So the
+    whole bundle (517 pathological articles, the `observed` ranges, the S5 floor question)
+    was calibrating on 2.9% of the corpus while reading as a corpus-wide measurement.
+    GENERAL FORM: a diagnostic built on a DERIVED table must publish that table's COVERAGE
+    beside every rate it derives, because a percentile cannot distinguish "the tail is
+    empty" from "the column is empty" — and where coverage is the smaller number, every
+    threshold in the report is uncalibratable rather than merely unreached. COROLLARY on
+    collinearity: `mention_density` and `vocab_sparsity` share a denominator and are zero
+    together, and selected the SAME 27,772 records (symmetric difference 656, 2.4%) —
+    reporting them as two of four independent dimensions overstates the evidence by one.
+  - **A GUARD'S OWN JUSTIFICATION CAN BE A CASE THE DATA NEVER EXHIBITS — count it before
+    assuming the guard is load-bearing (2026-08-11, the same export):** the article gate
+    keeps any body ≥100 words whatever its URL, so "a genuine article at `/business` or
+    `/tag/gaza` is never dropped". Measured on an unbiased random control, **10.95%** of
+    articles carry a URL the project's OWN rules call a non-article and **8.10%** sit
+    above that guard; **36 of those were hand-read and 36/36 were listings** — section
+    fronts, tag/author archives, homepages, a sitemap. Zero were the protected case. The
+    guard was not defending real articles, it was admitting index pages, and the
+    retroactive scan inherited the same veto and under-reported by ~74%. GENERAL FORM:
+    when a guard exists to protect a scenario, sample the population it actually governs
+    and count how often that scenario occurs; a guard whose protected case is absent is
+    a hole with a rationale attached. **TWO CANDIDATE CORROBORATORS WERE MEASURED AND
+    BOTH REFUTED**, recorded with their numbers: line structure (unterminated-line
+    fraction + median line length) gave 20–43% recall at 10–21% collateral, and "the
+    title reads as a section label" gave a **22.9% false-positive rate on normal URLs —
+    backwards, because for a real article the slug IS the title**. The right answer was
+    not a weaker signal but REVERSIBILITY: route the population to the existing
+    quarantine STAMP rather than the drop. And any rate from a fixed vocabulary
+    (`_SECTION_WORDS`) is a FLOOR — `/astrology` and `/obituaries` are invisible to it —
+    which must be published as such rather than widening the vocabulary to chase them,
+    since widening is the one move that can start condemning real articles.
+  - **A THRESHOLD EXPRESSED AS A FRACTION OF A POPULATION LARGER THAN THE ONE THE
+    STATISTIC CAN BE DRAWN FROM IS UNREACHABLE BY CONSTRUCTION (2026-08-11, the furniture
+    cut):** `ubiquity_cut = 0.3 × len(per_source_top)` counts every AUDITED source (2,224,
+    empty fingerprints included) while cross-source DF can only be drawn from sources that
+    HAVE a top-12 (241) — so the cut sat at 667 against a maximum ATTAINABLE of 241, and
+    `reachable: false` was a fact about the denominator rather than about the terms. The
+    retirement verdict stands on its own independent reasoning; what was missing was that
+    a reader could not tell "nothing is ubiquitous here" from "nothing could have been".
+    Publish `max_attainable` beside any such threshold. AND THE FIX THAT WAS *NOT* MADE is
+    the load-bearing half: re-basing the denominator would change `furniture_share`, which
+    is a soft criterion that can escalate a source from `degraded` to `failing` — a live
+    change to the qualification gate, arriving inside a disclosure-only slice. When a
+    reporting fix and a behaviour change share one line, ship the disclosure and leave the
+    behaviour for its own reviewed slice.
 
   - **A SENTINEL DOCUMENTED AT THE SOURCE IS STILL A FABRICATION AT THE RENDER BOUNDARY —
     and a clamp that fires on 19 of 20 rows silently reorders the whole section
@@ -10972,6 +11112,62 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     fail in opposite directions, and the second one fails loudly on the operator's
     machine rather than quietly on yours. (Recorded with the finding; the correct
     two-sided wiring is not yet built.)
+  - **A DIAGNOSTIC PIPELINE IS AS NARROW AS ITS NARROWEST STAGE — a fix that
+    RECOVERS information can be undone by a bound at the other end of the same
+    pipeline (2026-08-11, the bench run):** the 2026-08-10 "read the response body"
+    fix worked perfectly — every one of ten Ollama failures carried Ollama's own
+    words, `error starting llama-server: llama-server binary not found (checked:` —
+    and `str(exc)[:300]` then cut it exactly there, at the first character of the
+    path list, which is the only part a reader can act on. Of those 300 characters
+    174 were httpx boilerplate plus an **88-character MDN link to a generic HTTP-500
+    explainer**: the least informative text available, occupying 29% of a
+    diagnostic. In the sibling latency task, budget 200, the reason never appeared at
+    all. THE RULE is the recorded one about the vLLM excerpt, one subsystem over —
+    give the thing the window must contain the budget FIRST and buy context with the
+    remainder — but the generalisation is what to check: **after fixing an
+    instrument, follow its output to where it is STORED and see what happens to it
+    there.** The discriminating test is the TIGHT budget, never the generous one: a
+    bigger limit also "fixes" today's message and breaks again on a longer prefix, so
+    the guard asserts the field's real string at 200 characters, where the old
+    head-cut provably cannot pass — and that impossibility is itself a test, or the
+    guard is only a claim about one string. COROLLARY worth its own line: **a
+    boilerplate URL in an error message is negative information under a budget.**
+    httpx appends one to every `HTTPStatusError`; stripping it cost nothing and
+    reclaimed almost a third of the window.
+  - **A STRICT PASS/FAIL OVER N TRIALS IS UNREADABLE AS ONE WORD — publish the
+    breach with its denominator (2026-08-11, same run):** the triage canary is
+    all-or-nothing across every batch, which is correct for a gate whose job is to
+    say "stop trusting this run" — a verdict that softened as a run got longer would
+    be the wrong instrument. But the bench then printed that verdict as the words
+    "canary FAILED" for a model that failed **2 of 36** canary slots and for three
+    that failed **36 of 36**, which is precisely the distinction a comparative bench
+    exists to make. Keep `ok` strict, add `checked` and `failed_n` beside it, and let
+    the reader see 2/36. GENERAL FORM: whenever a boolean is derived by ANDing over a
+    collection, the count is not a nicety — it is the difference between "unusable"
+    and "hiccuped once", and the boolean cannot carry it. TEST NOTE that cost a
+    rewrite: the shared stub answered "content" for every term INCLUDING the
+    canaries, so it already failed every slot and could not discriminate a partial
+    breach from a total one; the guard needs a client that gets the canaries RIGHT,
+    and must assert that client PASSES first, or the partial case proves nothing.
+  - **A CONSTANT TUNED FOR THE DEFAULT CASE BECOMES A BUG THE MOMENT SOMETHING
+    SWEEPS THE CASES (2026-08-11, same run):** `compute_server_args`' 5.0 GB weight
+    footprint is a well-reasoned margin over the DEFAULT model (measured 4.47 GiB) —
+    and `start()` passed it for every model, so a bench sweeping 0.8B to 3.8B sized
+    every KV budget for one model's size. SmolLM3-3B (~6 GB of weights) was told
+    2.63 GB remained after weights and died on "No available memory for the cache
+    blocks". **THE FIX'S ASYMMETRY IS THE WHOLE DESIGN:** apply a measured footprint
+    only when it is LARGER than the assumption. A smaller one would GROW
+    `max_model_len` for every small model — turning starts that work today into
+    starts that might not, to buy context nobody asked for — while a larger one can
+    only shrink the KV budget, the direction that converts a failed start into a
+    working one at a shorter context. So the guard that matters is not "the big model
+    gets less" but "the small model is byte-identical to today". Two riders: an HF
+    repo's `bytes` from `rglob("*")` DOUBLE-COUNTS every weight (snapshot entries are
+    symlinks into `blobs/` and both `is_file()` and `stat()` follow them), so
+    deduplicate by RESOLVED path — a doubled figure that happens to produce a safe
+    answer is not a measurement; and a fixture for this must be SPARSE
+    (`f.truncate(n)`), because writing 6 GB of real zeros fills the sandbox volume
+    and `st_size` is what the code reads anyway.
   - **A SURVEY THAT STARTS SOMETHING IS NOT A SURVEY — and "nobody asked" is not
     "you have none" (2026-08-10, the bench preflight):** the same `survey()` serves an
     endpoint and a diagnostics bundle, and they need opposite behaviour: the endpoint

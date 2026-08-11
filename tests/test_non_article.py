@@ -189,3 +189,106 @@ def test_store_fetched_skips_a_non_article_and_the_switch_bypasses_it(monkeypatc
     with contextlib.suppress(Exception):
         pipeline.store_fetched(s, src, _fake_fetched("https://x.example/news/tag/politics"))
     assert not called  # env off -> the non-article filter is bypassed
+
+
+# --------------------------------------------------------------------------- #
+# Index pages ABOVE the body guard (source-quality export 2026-08-11)
+# --------------------------------------------------------------------------- #
+
+
+def test_index_page_classifier_sees_what_the_body_guard_hides():
+    """The whole point: these URLs carry a SUBSTANTIAL body (they are pages of concatenated
+    real teasers), so ``classify_non_article`` keeps them and every other detector is blind.
+    Real specimens from the 2026-08-11 control set, with their measured word counts."""
+    from src.ingest.non_article import classify_index_page, classify_non_article
+
+    for url, wc in [
+        ("https://lci.fr", 2287),
+        ("https://www.dawn.com/business", 300),
+        ("https://www.nzherald.co.nz/topic/united-states/", 766),
+        ("https://www.levernews.com/tag/midterm-madness/", 106),
+        ("https://vlast.kz/author/248/", 129),
+        ("https://adamtooze.substack.com/sitemap/2026", 596),
+        ("https://icilome.com/page/2/", 1667),
+    ]:
+        assert classify_non_article(url, text="x " * wc, word_count=wc) is None, (
+            f"{url} is kept by the ingest gate — that is the gap being reported"
+        )
+        assert classify_index_page(url) is not None, url
+
+
+def test_index_page_classifier_never_widens_the_non_article_set():
+    """It reports the shapes ``classify_non_article`` ALREADY recognises and nothing else, so
+    it cannot invent a new way to condemn an article. The real-article corpus below is the
+    same negative space the ingest gate is held to."""
+    from src.ingest.non_article import classify_index_page
+
+    for url in [
+        "https://www.sydsvenskan.se/varlden/uppgift-ukrainare-atalas-for-nord-stream-sabotage/",
+        "https://www.irishexaminer.com/world/arid-41234567.html",
+        "https://site.com/category/politics/us-supreme-court-upholds-birthright-citizenship",
+        "https://eastmojo.com/sikkim/2026/07/23/sikkim-4-day-rescue-ends-in-samardung-tunnel/",
+        "https://www.bleepingcomputer.com/news/artificial-intelligence/openai-relaxes-limits",
+        "https://polarresearch.net/index.php/polar/article/view/5169",
+    ]:
+        assert classify_index_page(url) is None, url
+
+
+@pytest.mark.parametrize("url,tier", [
+    # TIER 1 — a real article is structurally impossible: nowhere to put a slug.
+    ("https://lci.fr", 1),
+    ("https://alaraby.co.uk", 1),
+    ("https://icilome.com/page/2/", 1),
+    ("https://news.com/tag/", 1),
+    ("https://example.com/account/login", 1),
+    ("https://calculatedriskblog.com/search", 1),
+    ("https://adamtooze.substack.com/sitemap/2026", 1),
+    # TIER 2 — a listing by convention, where an article COULD live.
+    ("https://www.nzherald.co.nz/topic/united-states/", 2),
+    ("https://www.levernews.com/tag/midterm-madness/", 2),
+    ("https://vlast.kz/author/248/", 2),
+    ("https://www.dawn.com/business", 2),
+    ("https://site.com/print/some-real-story", 2),
+    ("https://www.bleepingcomputer.com/download/qualys-browsercheck/", 2),
+    ("https://www.bmv.com.mx/en/bmv/glossary", 2),
+])
+def test_index_page_tiers_split_by_structural_possibility(url, tier):
+    """The tier is a review-effort split, not a confidence score. Tier 2 exists because a
+    print view, a download page and a glossary entry front REAL body text even though the
+    path is a utility word — putting them in Tier 1 would auto-act on real content."""
+    from src.ingest.non_article import classify_index_page
+
+    v = classify_index_page(url)
+    assert v is not None, url
+    assert v.tier == tier, f"{url} -> tier {v.tier}, expected {tier} ({v.reason})"
+
+
+def test_the_ingest_drop_contract_is_untouched_by_the_index_page_addition():
+    """The load-bearing guarantee of this slice: NOTHING about what ingest DROPS changed. A
+    substantial body at a listing URL is still kept by ``classify_non_article`` — the new
+    classifier is a separate, reporting-only reading that feeds a REVERSIBLE quarantine
+    stamp. If a future change routes ``classify_index_page`` into the ingest drop path, this
+    test is where that decision has to be made deliberately."""
+    from src.ingest.non_article import classify_non_article
+
+    for url in ("https://lci.fr", "https://www.dawn.com/business", "https://news.com/tag/x"):
+        assert classify_non_article(url, text=ARTICLE_TEXT, word_count=240) is None, url
+        # and a THIN body at the same URL is still dropped, exactly as before
+        assert classify_non_article(url, text="Headline one. Headline two.", word_count=4)
+
+
+def test_the_reported_index_page_rate_is_a_FLOOR_not_a_census():
+    """``_SECTION_WORDS`` is a fixed vocabulary, so a section front named outside it is
+    invisible to BOTH classifiers. ``hindustantimes.com/astrology`` (955 words of section
+    blurb + listing, hand-read from the 2026-08-11 control) is the specimen: nothing here
+    recognises it, and that is deliberate — widening the vocabulary to chase it would widen
+    the set of shapes the project can condemn, which is the one thing this addition must not
+    do. So any rate derived from these classifiers is a LOWER BOUND on the real listing
+    population, and must be reported as one."""
+    from src.ingest.non_article import classify_index_page, classify_non_article
+
+    for url in ("https://www.hindustantimes.com/astrology",
+                "https://example.com/horoscopes",
+                "https://example.com/obituaries"):
+        assert classify_non_article(url) is None, url
+        assert classify_index_page(url) is None, url

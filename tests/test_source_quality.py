@@ -15,6 +15,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import json
+from datetime import date
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -404,3 +405,113 @@ def test_read_only_the_report_writes_no_rows():
     assert s.query(Article).count() == before_articles
     assert s.query(Keyword).count() == before_keywords
     assert not s.dirty and not s.new  # the diagnostic added/changed nothing
+
+
+# --------------------------------------------------------------------------- #
+# Index coverage, listing URLs, and the qualification stamp (2026-08-11 export)
+# --------------------------------------------------------------------------- #
+
+
+def _sparse_corpus() -> Session:
+    """A source whose articles are mostly NOT in the keyword index -- the shape of the real
+    2026-08-11 field corpus, where 2.89% of articles carried any mention at all."""
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    s = Session(engine)
+    src = Source(name="S", domain="s.example", source_type="news", language="en", enabled=True,
+                 status="qualified", qualification_criteria_version="v-test")
+    s.add(src)
+    s.flush()
+    k = Keyword(term="election", normalized_term="election")
+    s.add(k)
+    s.flush()
+    for i in range(20):
+        # one real article slug, plus two listing-shaped URLs the body guard would keep
+        url = {0: "https://s.example", 1: "https://s.example/business"}.get(
+            i, f"https://s.example/news/a-real-story-slug-{i}")
+        art = Article(url=url, canonical_url=url, source_id=src.id, content="body " * 200,
+                      hash=f"h{i}", word_count=200, language="en", title=f"t{i}")
+        s.add(art)
+        s.flush()
+        if i < 2:  # only 2 of 20 are indexed
+            s.add(KeywordMention(article_id=art.id, keyword_id=k.id, count=3,
+                                 source_id=src.id, observed_on=date(2026, 7, 1)))
+    s.commit()
+    return s
+
+
+def test_index_coverage_is_published_beside_the_flag_rate():
+    """The 2026-08-11 export's central confusion: every Layer-A ratio is over the keyword
+    tables, so with a sparse index a cohort's mention_density p90 falls to 0.0, "above p90"
+    degenerates into "has any keyword at all", and pct_flagged silently restates coverage.
+    Publishing pct_indexed beside it is what lets a reader tell those two readings apart --
+    on the field export they agreed to two decimals in every assessed language but one."""
+    s = _sparse_corpus()
+    files = sq.build_quality_report_files(s, generated_at="2026-08-11T00:00:00", floor=3)
+    manifest = json.loads(files["manifest.json"])
+    totals = manifest["corpus_totals"]
+    assert totals["articles_keyword_indexed"] == 2
+    assert totals["pct_articles_keyword_indexed"] == 10.0
+
+    plh = json.loads(files["per_language_health.json"])
+    assert plh["en"]["n_indexed"] == 2 and plh["en"]["pct_indexed"] == 10.0
+
+    summary = [json.loads(ln) for ln in
+               files["per_source_summary.jsonl"].decode().splitlines() if ln]
+    assert summary[0]["n_indexed"] == 2 and summary[0]["pct_indexed"] == 10.0
+
+
+def test_per_source_listing_url_rate_works_where_every_keyword_ratio_is_silent():
+    """The point of this column: it is absolute and language-agnostic, computed from a column
+    the pass already reads, so it still says something about a source whose keyword index is
+    empty -- which is exactly when outlier_rate reads 0.0 and looks like a clean bill of
+    health. The fixture's homepage + bare-section URLs are both KEPT by the ingest gate (their
+    bodies are substantial), so nothing else in the bundle can see them."""
+    s = _sparse_corpus()
+    files = sq.build_quality_report_files(s, generated_at="2026-08-11T00:00:00", floor=3)
+    summary = [json.loads(ln) for ln in
+               files["per_source_summary.jsonl"].decode().splitlines() if ln]
+    row = summary[0]
+    assert row["listing_url_count"] == 2, row          # the homepage + /business
+    assert row["listing_url_rate"] == 0.1
+    assert json.loads(files["manifest.json"])["corpus_totals"]["articles_listing_shaped_url"] == 2
+
+    # ...and the ingest gate would have kept both, which is why they are here to be counted.
+    from src.ingest.non_article import classify_non_article
+    for url in ("https://s.example", "https://s.example/business"):
+        assert classify_non_article(url, text="body " * 200, word_count=200) is None
+
+
+def test_the_qualification_stamp_travels_so_the_two_gates_can_be_joined():
+    """Without these columns an analyst cannot ask the obvious question -- do qualified
+    sources actually produce better articles than unqualified ones -- because the article
+    gate's output and the source gate's output never met in one file."""
+    s = _sparse_corpus()
+    files = sq.build_quality_report_files(s, generated_at="2026-08-11T00:00:00", floor=3)
+    row = [json.loads(ln) for ln in
+           files["per_source_summary.jsonl"].decode().splitlines() if ln][0]
+    assert row["qualification_status"] == "qualified"
+    assert row["qualification_criteria_version"] == "v-test"
+    assert "qualified_at" in row  # present and null-safe when never stamped
+
+
+def test_an_unreachable_furniture_cut_says_WHY_it_was_unreachable():
+    """`reachable: false` alone reads as a fact about the data. On the 2026-08-11 export it was
+    a fact about the DENOMINATOR: the cut is a fraction of every AUDITED source (667) while DF
+    can only be drawn from sources that HAVE a fingerprint (241), so it sat above the maximum
+    the corpus could produce whatever the terms did. The flag stays retired either way -- this
+    only stops a zero being read as a clean bill of health."""
+    obs = sq.build_observed(
+        cross_df={"world": 60, "data": 55}, furniture_ubiquity_cut=667, outliers=[],
+        source_to_articles={1: [1, 2, 3]}, n_sources_with_fingerprint=241,
+    )["cross_source_df"]
+    assert obs["reachable"] is False
+    assert obs["max_attainable"] == 241 and obs["n_sources_with_fingerprint"] == 241
+    assert obs["unreachable_by_construction"] is True
+
+    # the negative twin: a cut INSIDE what the corpus could produce is not "by construction"
+    ok = sq.build_observed(
+        cross_df={"world": 60}, furniture_ubiquity_cut=72, outliers=[],
+        source_to_articles={1: [1]}, n_sources_with_fingerprint=241,
+    )["cross_source_df"]
+    assert ok["unreachable_by_construction"] is False

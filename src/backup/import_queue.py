@@ -76,6 +76,11 @@ class ImportQueueManager:
         # What the post-run tuning pass actually did ({"fts", "planner"} bools), or None
         # while a run is still going -- reported, never assumed to have succeeded.
         self._tuned: dict[str, bool] | None = None
+        # Whether that pass has RUN, which is a different question from what it achieved:
+        # it is the last STAGE of the run, so progress is not complete until it is over,
+        # whether it succeeded or not (`_tuned` reports which). Skipped after a Stop, so a
+        # stopped run correctly never reaches its own end.
+        self._tuning_done = False
         # Live progress of the sub-job currently in flight (mirrored, never authored).
         self._live: dict[str, Any] | None = None
         self._load_persisted()
@@ -165,6 +170,7 @@ class ImportQueueManager:
                 raise ValueError("nothing to import")
             self._stop.clear()
             self._items = queued
+            self._tuning_done = False
             self._cursor = -1
             self._passphrase = passphrase or ""
             self._started_at = time.time()
@@ -344,6 +350,9 @@ class ImportQueueManager:
         finally:
             with self._lock:
                 self._live = None
+                # Reached only if the stage actually ran (the Stop check returns above
+                # it), so a stopped run leaves this False and never reads as complete.
+                self._tuning_done = True
 
     def _run_item(self, item: dict) -> dict:
         kind = item["kind"]
@@ -443,6 +452,7 @@ class ImportQueueManager:
             started, ended = self._started_at, self._ended_at
             paused = self._collection_paused
             tuned = self._tuned
+            tuning_done = self._tuning_done
         now = time.time()
         for it in items:
             s, e = it.get("started_at"), it.get("ended_at")
@@ -456,6 +466,15 @@ class ImportQueueManager:
             "live": dict(live) if isinstance(live, dict) else None,
             "items_done": done,
             "items_total": len(items),
+            # STAGES, for anything that draws a BAR. Items alone reach "all done" while
+            # the run is still working -- the search-index merge is a real final stage
+            # inside the same exclusive window, and on a large corpus it is minutes of
+            # it. A bar at 100% beside a run that is still holding the machine is the
+            # kind of number this project does not publish, so the denominator counts
+            # the stage that is actually left. The item COUNT above is untouched: it was
+            # never wrong, it just is not the whole run.
+            "stages_done": done + (1 if tuning_done else 0),
+            "stages_total": len(items) + 1,
             "started_at": started,
             "ended_at": ended,
             "elapsed_s": round((ended or now) - started, 1) if started else None,

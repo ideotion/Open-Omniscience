@@ -9,6 +9,7 @@
 stopwords:
   - according
   - across
+  - added
   - ago
   - almost
   - along
@@ -21,6 +22,7 @@ stopwords:
   - around
   - back
   - bad
+  - best
   - big
   - billion
   - billions
@@ -33,11 +35,15 @@ stopwords:
   - current
   - currently
   - despite
+  - down
   - early
   - eight
+  - end
   - enough
   - even
   - ever
+  - every
+  - find
   - first
   - five
   - found
@@ -57,6 +63,7 @@ stopwords:
   - help
   - hence
   - here
+  - hours
   - however
   - including
   - indeed
@@ -74,6 +81,7 @@ stopwords:
   - liked
   - likes
   - little
+  - look
   - lot
   - lots
   - made
@@ -110,6 +118,7 @@ stopwords:
   - pretty
   - quite
   - rather
+  - read
   - really
   - recent
   - recently
@@ -122,6 +131,7 @@ stopwords:
   - see
   - seen
   - sees
+  - set
   - seven
   - since
   - six
@@ -171,6 +181,7 @@ stopwords:
   - way
   - ways
   - well
+  - went
   - what
   - whatever
   - whereas

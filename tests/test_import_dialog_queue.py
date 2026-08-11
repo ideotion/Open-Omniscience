@@ -90,13 +90,18 @@ def test_an_interrupted_run_says_it_cannot_resume():
 #  the rate is the CURRENT PHASE's own unit (ruling item 14)
 # --------------------------------------------------------------------------- #
 def test_the_live_line_uses_the_phases_own_unit_never_a_whole_run_percentage():
-    body = _fn("_uxImLive")
-    assert "merge_steps" in body and "reindex_total" in body
-    assert "phase_index" in body and "phase_total" in body
-    assert "%" not in body, (
-        "the items are different kinds of work over different units, so a whole-run "
-        "percentage would be a fabricated number"
-    )
+    # The facts moved into _uxImPhaseBits when the header needed them without the
+    # per-row separator; _uxImLive is now the wrapper. The CLAIM is unchanged and is
+    # asserted where the units actually live, plus on the wrapper, so neither half can
+    # acquire a whole-run percentage.
+    bits = _fn("_uxImPhaseBits")
+    assert "merge_steps" in bits and "reindex_total" in bits
+    assert "phase_index" in bits and "phase_total" in bits
+    for body in (bits, _fn("_uxImLive")):
+        assert "%" not in body, (
+            "the items are different kinds of work over different units, so a whole-run "
+            "percentage would be a fabricated number"
+        )
 
 
 # --------------------------------------------------------------------------- #

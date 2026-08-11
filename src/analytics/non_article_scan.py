@@ -64,17 +64,34 @@ def scan_non_article_candidates(
     returned ``prose_gate`` key — see the module docstring. ``prose_gate_limit``/
     ``prose_gate_after_id`` bound/resume that subpass (chunked like a reindex-job batch)."""
     from src.database.models import Article
-    from src.ingest.non_article import classify_non_article
+    from src.ingest.non_article import classify_index_page, classify_non_article
 
     by_reason: Counter[str] = Counter()
     human: dict[str, str] = {}
     samples: dict[str, list[int]] = {}
     scanned = 0
     flagged = 0
+    # ABOVE-GUARD listings (source-quality export 2026-08-11): the same row, the same loop, the
+    # same three columns -- so this costs no extra I/O. Reported under its OWN key with its OWN
+    # denominator; every key above stays byte-identical for existing callers.
+    idx_by_tier: Counter[int] = Counter()
+    idx_by_reason: Counter[str] = Counter()
+    idx_samples: dict[str, list[int]] = {}
     for aid, url, wc in session.query(Article.id, Article.url, Article.word_count):
         scanned += 1
         verdict = classify_non_article(url or "", word_count=wc)  # text=None -> URL-shape rules only
         if verdict is None:
+            # Kept by the body guard. If the URL is nonetheless listing-shaped, this is the
+            # population the guard hides -- 8.10% of the 2026-08-11 field corpus.
+            idx = classify_index_page(url or "")
+            if idx is not None:
+                idx_by_tier[idx.tier] += 1
+                key = f"tier{idx.tier}:{idx.signal}"
+                idx_by_reason[key] += 1
+                human.setdefault(key, idx.reason)
+                s = idx_samples.setdefault(key, [])
+                if len(s) < sample_per_reason:
+                    s.append(int(aid))
             continue
         flagged += 1
         by_reason[verdict.signal] += 1
@@ -107,6 +124,33 @@ def scan_non_article_candidates(
             for sig, cnt in by_reason.most_common()
         ],
         "prose_gate": prose_gate,
+        "index_pages_above_guard": {
+            "n": sum(idx_by_tier.values()),
+            "pct_of_scanned": (round(100.0 * sum(idx_by_tier.values()) / scanned, 2)
+                               if scanned else 0.0),
+            "tier1": idx_by_tier.get(1, 0),
+            "tier2": idx_by_tier.get(2, 0),
+            "by_reason": [
+                {"signal": sig, "reason": human.get(sig, ""), "count": cnt,
+                 "sample_ids": idx_samples.get(sig, [])}
+                for sig, cnt in idx_by_reason.most_common()
+            ],
+            "method": "Articles the body guard KEEPS (word_count >= 100) whose URL is nonetheless "
+                      "listing-shaped by this project's own rules — a section front, tag/author/"
+                      "topic archive, homepage, pagination cursor, sitemap or search page whose "
+                      "body is several real teasers concatenated. Same row, same loop, same three "
+                      "columns as the count above: no extra read, no content decrypt. tier1 = a "
+                      "real article is structurally impossible at that URL; tier2 = a listing by "
+                      "convention where one could in principle live.",
+            "caveat": "DETECTION ONLY and a LOWER BOUND, never a census: _SECTION_WORDS is a fixed "
+                      "vocabulary, so a section front named outside it (/astrology, /obituaries) is "
+                      "invisible here. These are NOT counted in flagged/pct_flagged above — that "
+                      "denominator is the ingest gate's own set, and mixing them would restate one "
+                      "gate's finding as the other's. Nothing is dropped or stamped by this scan; "
+                      "the reversible quarantine is a separate operator action. On the 2026-08-11 "
+                      "field export this population was 8.10% of an unbiased random control, of "
+                      "which 36 were hand-read and 36/36 were listings.",
+        },
         "method": "COUNT-ONLY (id/url/word_count, no content decrypt) — the #659 classify_non_article "
                   "URL-shape rules only (text=None). A substantial stored word_count (>=100) is kept "
                   "whatever the URL; only a thin body proceeds to the URL rules. The opt-in "

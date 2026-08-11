@@ -39,7 +39,7 @@ def _blob_totals() -> dict[str, dict]:
     """Per-category file-blob counts + bytes (only DONE downloads are counted)."""
     from src.backup.folder_backup import collect_items
 
-    items = collect_items(include_wiki=True, include_osm=True, include_models=True)
+    items = collect_items(include_wiki=True, include_osm=True, include_models=True, include_hf=True)
     by_cat: dict[str, dict] = {}
     for it in items:
         c = by_cat.setdefault(it.category, {"count": 0, "bytes": 0})
