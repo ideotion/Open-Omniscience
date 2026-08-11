@@ -286,10 +286,67 @@ def _http_reason(exc: httpx.HTTPStatusError) -> str:
     return body[:_ERR_BODY_MAX] + "…" if len(body) > _ERR_BODY_MAX else body
 
 
+#: The separator between the status line and the server's own words. Public because
+#: :func:`bounded_error` has to find the reason again to protect it from a budget.
+REASON_SEP = " — "
+
+
+def _status_line(exc: httpx.HTTPStatusError) -> str:
+    """httpx's message WITHOUT its trailing "For more information check: <MDN URL>".
+
+    That second line is 88 characters pointing at a generic explainer for the status
+    code -- the least informative text that could occupy space in a diagnostic. It is
+    free in a log and expensive in a bounded field report: at the bench's 300-character
+    budget it was 29% of the whole message, and the reason it displaced was
+    "llama-server binary not found (checked: /usr/loca…", cut exactly where the paths
+    a reader needs would have started (2026-08-11 bench run).
+    """
+    text = str(exc)
+    cut = text.find("\nFor more information check:")
+    return text[:cut] if cut != -1 else text
+
+
 def _http_error_text(exc: httpx.HTTPStatusError) -> str:
     """``<status line> — <the server's reason>``, or just the status line."""
     reason = _http_reason(exc)
-    return f"{exc} — {reason}" if reason else str(exc)
+    line = _status_line(exc)
+    return f"{line}{REASON_SEP}{reason}" if reason else line
+
+
+def bounded_error(exc: BaseException, limit: int = 300) -> str:
+    """``<Type>: <message>`` within ``limit`` characters, REASON FIRST.
+
+    A naive ``str(exc)[:limit]`` spends the budget in the order the message happens to
+    be written, and for an HTTP failure that order is exactly backwards: the status
+    line and the URL come first, the server's explanation last. The 2026-08-11 bench
+    run recorded ten Ollama task failures whose stored detail ended at
+    ``"...llama-server binary not found (checked: /usr/loca"`` -- the diagnosis
+    survived the exception (that fix works) and was then destroyed by the truncation
+    at the other end of the same pipeline. In the latency task, whose budget is 200,
+    the reason did not appear at all.
+
+    So the reason keeps the budget and the context buys what is left. Both halves are
+    elided with "…" rather than cut silently, and a message with no reason separator
+    truncates from the head exactly as before -- this only changes messages that HAVE
+    a reason to protect.
+    """
+    head = f"{type(exc).__name__}: "
+    msg = " ".join(str(exc).split())
+    room = max(1, limit - len(head))
+    if len(msg) <= room:
+        return head + msg
+    if REASON_SEP in msg:
+        context, reason = msg.split(REASON_SEP, 1)
+        # The reason alone fills the budget: keep its START (which names the cause)
+        # and drop the status line entirely. Keeping its tail would preserve the
+        # least useful end of a long traceback.
+        if len(reason) + len(REASON_SEP) >= room:
+            return head + reason[: room - 1] + "…"
+        keep = room - len(reason) - len(REASON_SEP)
+        if len(context) > keep:
+            context = context[: max(0, keep - 1)] + "…"
+        return head + context + REASON_SEP + reason
+    return head + msg[: room - 1] + "…"
 
 
 def _is_loopback_url(url: str) -> bool:

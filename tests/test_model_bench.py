@@ -650,3 +650,91 @@ def test_the_report_states_which_pairs_could_not_run_and_why(frozen) -> None:
     reasons = {(s["backend"], s["reason"]) for s in report["skipped"]}
     assert ("ollama", "not-installed") in reasons
     assert ("vllm", "backend-unreachable") in reasons
+
+
+# --------------------------------------------------------------------------- #
+#  The canary breach carries its denominator (2026-08-11)
+# --------------------------------------------------------------------------- #
+#
+# A field run had Ministral fail 2 of 36 canary slots and three other models fail
+# 36 of 36. All four rendered as the words "canary FAILED". `ok` stays strict --
+# a canary exists to say "stop trusting this run" -- but a bench whose purpose is
+# telling models apart cannot publish the breach without its n.
+
+
+def test_a_canary_breach_is_reported_with_its_denominator(frozen) -> None:
+    out = MB._task_triage(
+        _Stub(verdict="content", kind="org"), model="m", batch=frozen, anchors=None,
+        keep_alive=None, chunk=5,
+    )
+    can = out["canary"]
+    assert can["ok"] is False
+    assert can["checked"] > 0, "the number of canary slots ASKED must be published"
+    assert can["failed_n"] == len(can["failed"])
+    assert can["failed_n"] <= can["checked"], "more failures than slots is impossible"
+    # The denominator has to scale with the run, or it is not a denominator: one
+    # canary pair per batch, and the batch count comes from the chunk size.
+    assert can["checked"] == out["batches"] * 2
+
+
+class _Silent:
+    """Answers nothing at all -- every canary slot fails."""
+
+    def generate(self, prompt, **kw):
+        return _R("")
+
+
+def test_a_partial_canary_breach_is_distinguishable_from_a_total_one(frozen) -> None:
+    """THE ONE THAT MATTERS. Both runs are `ok: False`; only the denominator tells
+    the reader that one model is unusable and the other hiccuped once.
+
+    Note the stub: the shared ``_Stub`` answers "content" for EVERY term including
+    the canaries, so it already fails every slot -- it cannot discriminate here. A
+    partial breach needs a client that gets the canaries RIGHT, which is what the
+    real Ministral run did in 17 of its 18 batches."""
+    from src.ai_layer.triage_job import CANARY_EXPECTED
+
+    class _Honest:
+        """Answers the canaries correctly; everything else is content."""
+
+        def __init__(self, bad_batch: int | None = None):
+            self.bad_batch, self.n = bad_batch, 0
+
+        def generate(self, prompt, **kw):
+            self.n += 1
+            if self.bad_batch is not None and self.n == self.bad_batch:
+                return _R("")
+            lines = []
+            for term in _Stub._listed(prompt):
+                want = CANARY_EXPECTED.get(term, {}).get("verdict") or "content"
+                lines.append(f"{term} :: {want} :: org")
+            return _R("\n".join(lines))
+
+    clean = MB._task_triage(
+        _Honest(), model="m", batch=frozen, anchors=None, keep_alive=None, chunk=5,
+    )["canary"]
+    assert clean["ok"] is True and clean["failed_n"] == 0, (
+        "anti-vacuity: the honest client must PASS, or the partial case below proves nothing"
+    )
+
+    partial = MB._task_triage(
+        _Honest(bad_batch=1), model="m", batch=frozen, anchors=None, keep_alive=None, chunk=5,
+    )["canary"]
+    total = MB._task_triage(
+        _Silent(), model="m", batch=frozen, anchors=None, keep_alive=None, chunk=5,
+    )["canary"]
+
+    assert partial["ok"] is False and total["ok"] is False, "both are breaches"
+    assert partial["failed_n"] == 2, "one dropped batch is one canary pair"
+    assert total["failed_n"] == total["checked"], "a total collapse fails every slot"
+    assert partial["failed_n"] < total["failed_n"], (
+        "and the counts are what separate them -- this is the whole finding, and the "
+        "distinction the bare word FAILED destroyed"
+    )
+
+def test_the_source_tags_canary_carries_its_denominator_too(frozen) -> None:
+    out = MB._task_source_tags(
+        _Stub(verdict="content", kind="org", tag=None), model="m", batch=frozen, keep_alive=None,
+    )
+    assert "checked" in out["canary"] and "failed_n" in out["canary"]
+    assert out["canary"]["failed_n"] == len(out["canary"]["failed"])

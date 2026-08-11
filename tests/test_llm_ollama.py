@@ -21,6 +21,7 @@ from src.api.llm import get_llm_client, get_ollama_client
 from src.api.main import app
 from src.database.models import Article, Base, Source
 from src.database.session import get_db
+from src.llm import ollama
 from src.llm.ollama import LLMError, LLMUnavailable, OllamaClient
 
 
@@ -403,3 +404,83 @@ def test_a_404_still_says_pull_it_rather_than_the_body():
     with pytest.raises(LLMUnavailable) as exc:
         _client_with(handler).generate("hi", model="nope")
     assert "ollama pull nope" in str(exc.value)
+
+# --------------------------------------------------------------------------- #
+# the budget must reach the reason too (2026-08-11)
+# --------------------------------------------------------------------------- #
+#
+# The body-reading fix above worked, and the truncation at the far end of the same
+# pipeline then destroyed what it recovered. A bench run of three Ollama models
+# stored ten task failures whose detail ended at "...binary not found (checked:
+# /usr/loca" -- cut exactly where the paths a reader needs would have started -- and
+# the latency task, whose budget is 200, did not reach the reason at all.
+
+
+_FIELD_MSG = (
+    "Ollama error for model 'qwen3.5:0.8b-q8_0': Server error '500 Internal Server "
+    "Error' for url 'http://127.0.0.1:11434/api/generate' — error starting "
+    "llama-server: llama-server binary not found (checked: /usr/local/lib/ollama, "
+    "/usr/lib/ollama, /opt/ollama/lib)"
+)
+
+
+def test_the_tightest_budget_still_reaches_the_reason():
+    """THE DISCRIMINATING ONE. A generous budget also "fixes" today's message and
+    would break again on a longer prefix or a smaller limit, so the assertion is made
+    where the old code could not possibly pass: 200 characters, the latency task's
+    own budget, which previously did not reach the separator."""
+    out = ollama.bounded_error(LLMError(_FIELD_MSG), 200)
+    assert len(out) <= 200
+    assert "llama-server binary not found" in out, "the cause must survive the budget"
+    assert "/usr/local/lib/ollama" in out, "and so must the first path it names"
+    assert "…" in out, "what was dropped is disclosed, not silently cut"
+
+
+def test_the_old_head_cut_could_not_have_passed_that():
+    """Anti-vacuity: the guard above is only meaningful if the previous behaviour
+    fails it. This IS the previous behaviour, spelled out."""
+    old = f"{type(LLMError(_FIELD_MSG)).__name__}: {_FIELD_MSG}"[:200]
+    assert "llama-server binary not found" not in old
+
+
+def test_context_is_what_gets_elided_not_the_reason():
+    out = ollama.bounded_error(LLMError(_FIELD_MSG), 300)
+    assert out.endswith("/opt/ollama/lib)"), "the reason is kept whole to its end"
+    assert "500 Internal Server" in out, "and the status line still buys what is left"
+
+
+def test_a_reason_longer_than_the_budget_keeps_its_START():
+    """A long reason is head-truncated, never tail-kept: "CUDA out of memory. Tried
+    to allocate..." names the cause in its first clause, and the end of a long
+    traceback is the least useful part of it."""
+    out = ollama.bounded_error(LLMError("ctx — " + "CUDA out of memory. " + "x" * 500), 120)
+    assert out.startswith("LLMError: CUDA out of memory.")
+    assert len(out) <= 120
+
+
+def test_a_message_with_no_reason_truncates_exactly_as_before():
+    """The negative-space twin: this only changes messages that HAVE a reason to
+    protect. One that does not must be untouched in behaviour."""
+    plain = "y" * 500
+    out = ollama.bounded_error(ValueError(plain), 100)
+    assert len(out) == 100
+    assert out.startswith("ValueError: yyy")
+
+
+def test_a_short_message_is_not_decorated():
+    assert ollama.bounded_error(ValueError("nope"), 300) == "ValueError: nope"
+
+
+def test_the_mdn_link_does_not_occupy_the_budget():
+    """httpx appends "For more information check: <MDN URL>" -- 88 characters
+    pointing at a generic explainer for the status code. Free in a log, and at the
+    bench's 300-character budget it was 29% of the message."""
+
+    def handler(request):
+        return httpx.Response(500, json={"error": "llama-server binary not found"})
+
+    with pytest.raises(LLMError) as exc:
+        _client_with(handler).generate("hi", model="m")
+    msg = str(exc.value)
+    assert "developer.mozilla.org" not in msg
+    assert "500" in msg and "llama-server binary not found" in msg

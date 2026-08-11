@@ -10788,6 +10788,62 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     fail in opposite directions, and the second one fails loudly on the operator's
     machine rather than quietly on yours. (Recorded with the finding; the correct
     two-sided wiring is not yet built.)
+  - **A DIAGNOSTIC PIPELINE IS AS NARROW AS ITS NARROWEST STAGE — a fix that
+    RECOVERS information can be undone by a bound at the other end of the same
+    pipeline (2026-08-11, the bench run):** the 2026-08-10 "read the response body"
+    fix worked perfectly — every one of ten Ollama failures carried Ollama's own
+    words, `error starting llama-server: llama-server binary not found (checked:` —
+    and `str(exc)[:300]` then cut it exactly there, at the first character of the
+    path list, which is the only part a reader can act on. Of those 300 characters
+    174 were httpx boilerplate plus an **88-character MDN link to a generic HTTP-500
+    explainer**: the least informative text available, occupying 29% of a
+    diagnostic. In the sibling latency task, budget 200, the reason never appeared at
+    all. THE RULE is the recorded one about the vLLM excerpt, one subsystem over —
+    give the thing the window must contain the budget FIRST and buy context with the
+    remainder — but the generalisation is what to check: **after fixing an
+    instrument, follow its output to where it is STORED and see what happens to it
+    there.** The discriminating test is the TIGHT budget, never the generous one: a
+    bigger limit also "fixes" today's message and breaks again on a longer prefix, so
+    the guard asserts the field's real string at 200 characters, where the old
+    head-cut provably cannot pass — and that impossibility is itself a test, or the
+    guard is only a claim about one string. COROLLARY worth its own line: **a
+    boilerplate URL in an error message is negative information under a budget.**
+    httpx appends one to every `HTTPStatusError`; stripping it cost nothing and
+    reclaimed almost a third of the window.
+  - **A STRICT PASS/FAIL OVER N TRIALS IS UNREADABLE AS ONE WORD — publish the
+    breach with its denominator (2026-08-11, same run):** the triage canary is
+    all-or-nothing across every batch, which is correct for a gate whose job is to
+    say "stop trusting this run" — a verdict that softened as a run got longer would
+    be the wrong instrument. But the bench then printed that verdict as the words
+    "canary FAILED" for a model that failed **2 of 36** canary slots and for three
+    that failed **36 of 36**, which is precisely the distinction a comparative bench
+    exists to make. Keep `ok` strict, add `checked` and `failed_n` beside it, and let
+    the reader see 2/36. GENERAL FORM: whenever a boolean is derived by ANDing over a
+    collection, the count is not a nicety — it is the difference between "unusable"
+    and "hiccuped once", and the boolean cannot carry it. TEST NOTE that cost a
+    rewrite: the shared stub answered "content" for every term INCLUDING the
+    canaries, so it already failed every slot and could not discriminate a partial
+    breach from a total one; the guard needs a client that gets the canaries RIGHT,
+    and must assert that client PASSES first, or the partial case proves nothing.
+  - **A CONSTANT TUNED FOR THE DEFAULT CASE BECOMES A BUG THE MOMENT SOMETHING
+    SWEEPS THE CASES (2026-08-11, same run):** `compute_server_args`' 5.0 GB weight
+    footprint is a well-reasoned margin over the DEFAULT model (measured 4.47 GiB) —
+    and `start()` passed it for every model, so a bench sweeping 0.8B to 3.8B sized
+    every KV budget for one model's size. SmolLM3-3B (~6 GB of weights) was told
+    2.63 GB remained after weights and died on "No available memory for the cache
+    blocks". **THE FIX'S ASYMMETRY IS THE WHOLE DESIGN:** apply a measured footprint
+    only when it is LARGER than the assumption. A smaller one would GROW
+    `max_model_len` for every small model — turning starts that work today into
+    starts that might not, to buy context nobody asked for — while a larger one can
+    only shrink the KV budget, the direction that converts a failed start into a
+    working one at a shorter context. So the guard that matters is not "the big model
+    gets less" but "the small model is byte-identical to today". Two riders: an HF
+    repo's `bytes` from `rglob("*")` DOUBLE-COUNTS every weight (snapshot entries are
+    symlinks into `blobs/` and both `is_file()` and `stat()` follow them), so
+    deduplicate by RESOLVED path — a doubled figure that happens to produce a safe
+    answer is not a measurement; and a fixture for this must be SPARSE
+    (`f.truncate(n)`), because writing 6 GB of real zeros fills the sandbox volume
+    and `st_size` is what the code reads anyway.
   - **A SURVEY THAT STARTS SOMETHING IS NOT A SURVEY — and "nobody asked" is not
     "you have none" (2026-08-10, the bench preflight):** the same `survey()` serves an
     endpoint and a diagnostics bundle, and they need opposite behaviour: the endpoint

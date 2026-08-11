@@ -53,6 +53,7 @@ from datetime import datetime
 from pathlib import Path
 
 from src.ai_layer import bench_batch as BB
+from src.llm.ollama import bounded_error
 
 _LOG = logging.getLogger("ai_layer.model_bench")
 
@@ -347,6 +348,7 @@ def _task_triage(
     keywords_in = verdicts_out = parse_failures = unsure = 0
     wall = 0.0
     canary_failed: list[dict] = []
+    canary_checked = 0
     batches = 0
     for i in range(0, len(items), max(1, chunk)):
         if ctx is not None and getattr(ctx, "stopping", False):
@@ -368,6 +370,7 @@ def _task_triage(
         unsure += pb.unsure_count
         wall += float(out.get("wall_s") or 0.0)
         verdicts.update(pb.verdicts)
+        canary_checked += int(out["canary"].get("checked") or 0)
         canary_failed.extend(out["canary"].get("failed") or [])
     # PER-LANGUAGE (E-S3): the batch is stratified by language precisely so a
     # multilingual roster can be read per language — reporting only a pooled number
@@ -397,7 +400,20 @@ def _task_triage(
         "pct_unsure": T.pct_unsure(unsure, verdicts_out),
         "valid_verdicts_per_s": T.valid_verdicts_per_sec(verdicts_out, wall),
         "by_language": by_language,
-        "canary": {"ok": not canary_failed, "failed": canary_failed},
+        # WITH ITS DENOMINATOR. `ok` stays strict -- a canary exists to say "stop
+        # trusting this run", and a verdict that softens as the run gets longer would
+        # be the wrong instrument. But strict-over-N batches is not readable as one
+        # word: the 2026-08-11 run had Ministral fail 2 of 36 canary slots and three
+        # other models fail 36 of 36, and every one of them rendered as "canary
+        # FAILED". A bench whose whole purpose is telling models apart must not
+        # collapse "hiccuped once in twenty batches" and "never once produced a
+        # parseable canary" into the same verdict.
+        "canary": {
+            "ok": not canary_failed,
+            "checked": canary_checked,
+            "failed_n": len(canary_failed),
+            "failed": canary_failed,
+        },
         "anchor_accuracy": (
             T.anchor_accuracy(verdicts, anchors["anchors"]) if anchors and anchors.get("anchors")
             else {
@@ -474,6 +490,8 @@ def _task_source_tags(client, *, model: str, batch: dict, keep_alive: str | None
         "by_language": by_language,
         "canary": {
             "ok": bool(out["canary"].get("ok", True)),
+            "checked": int(out["canary"].get("checked") or 0),
+            "failed_n": len(out["canary"].get("failed") or []),
             "failed": out["canary"].get("failed") or [],
             "skipped": out["canary"].get("skipped") or [],
         },
@@ -628,7 +646,7 @@ def bench_one_pair(
                 raise ValueError(f"unknown bench task {name!r}")
         except Exception as exc:  # noqa: BLE001 - one task must not end the pair
             _LOG.warning("bench task %s failed for %s/%s", name, backend, model, exc_info=True)
-            res = {"status": "error", "detail": f"{type(exc).__name__}: {exc}"[:300]}
+            res = {"status": "error", "detail": bounded_error(exc, 300)}
         out["tasks"][name] = res
     out["finished_at"] = datetime.now().isoformat(timespec="seconds")
     return out
@@ -647,7 +665,7 @@ def _default_unload(client, *, backend: str, model: str) -> dict:
         client.generate("", model=model, keep_alive="0")
         return {"unloaded": True}
     except Exception as exc:  # noqa: BLE001 - never fail a completed pair over cleanup
-        return {"unloaded": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}
+        return {"unloaded": False, "reason": bounded_error(exc, 200)}
 
 
 def _default_wake(backend: str) -> dict:
@@ -685,7 +703,7 @@ def _default_wake(backend: str) -> dict:
         res = ollama_lifecycle.start()
         return {"woken": bool(res.get("started")), "detail": res}
     except Exception as exc:  # noqa: BLE001 - a daemon that will not start is a reason
-        return {"woken": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}
+        return {"woken": False, "reason": bounded_error(exc, 200)}
 
 
 def _default_switch(*, backend: str, model: str) -> dict:
@@ -907,7 +925,7 @@ def run_model_bench(
         try:
             pair_result["unload"] = unload(client, backend=backend, model=model)
         except Exception as exc:  # noqa: BLE001
-            pair_result["unload"] = {"unloaded": False, "reason": str(exc)[:200]}
+            pair_result["unload"] = {"unloaded": False, "reason": bounded_error(exc, 200)}
         results[pair["key"]] = pair_result
         if persist:
             save_cursor(
@@ -1010,7 +1028,7 @@ def _restore_holder(prior: dict | None, switch) -> dict | None:
             "backend": backend,
             "model": model,
             "restored": False,
-            "reason": f"{type(exc).__name__}: {exc}"[:200],
+            "reason": bounded_error(exc, 200),
         }
 
 
@@ -1437,7 +1455,7 @@ def last_model_bench_report(*, summary: bool = False) -> dict:
     try:
         files = sorted(BB.bench_dir().glob("oo-model-bench-*.json"))
     except Exception as exc:  # noqa: BLE001
-        return {"schema": MODEL_BENCH_SCHEMA, "available": False, "note": str(exc)[:200]}
+        return {"schema": MODEL_BENCH_SCHEMA, "available": False, "note": bounded_error(exc, 200)}
     if not files:
         return {
             "schema": MODEL_BENCH_SCHEMA,
@@ -1451,7 +1469,7 @@ def last_model_bench_report(*, summary: bool = False) -> dict:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001
-        return {"schema": MODEL_BENCH_SCHEMA, "available": False, "note": str(exc)[:200]}
+        return {"schema": MODEL_BENCH_SCHEMA, "available": False, "note": bounded_error(exc, 200)}
     data["available"] = True
     data["filename"] = path.name
     return summarize_report(data) if summary else data

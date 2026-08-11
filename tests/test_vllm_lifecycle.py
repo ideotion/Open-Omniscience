@@ -1815,3 +1815,141 @@ def test_the_installers_own_words_are_bounded(monkeypatch):
         V.run_install_job(FakeCtx(), version="0.26.0", runner=fake_runner)
     tail = str(exc.value).split("said last:", 1)[-1]
     assert len(tail) <= V._ERROR_TAIL_CHARS + 1
+
+
+# --------------------------------------------------------------------------- #
+#  The model's OWN weights size the KV budget (2026-08-11 bench run)
+# --------------------------------------------------------------------------- #
+#
+# compute_server_args' weight_footprint_gb is a margin over the DEFAULT model
+# (4.47 GiB measured, held at 5.0). Every start used it whatever was being loaded,
+# so a bench sweeping 0.8B-3.8B models sized every KV budget for one model: SmolLM3-3B
+# (~6 GB of weights) was told 2.63 GB remained after weights, asked for a context that
+# could not fit, and the engine died on "No available memory for the cache blocks".
+
+
+def _cached_repo(tmp_path, name: str, *, weights_mb: int, extra_mb: int = 0) -> None:
+    """A loadable HF repo whose snapshot entries are SYMLINKS into blobs/ — the real
+    layout, and the reason a naive rglob sum double-counts."""
+    repo = tmp_path / ("models--" + name.replace("/", "--"))
+    blobs, rev = repo / "blobs", repo / "snapshots" / "rev1"
+    blobs.mkdir(parents=True)
+    rev.mkdir(parents=True)
+    (rev / "config.json").write_text("{}", encoding="utf-8")
+    # SPARSE: st_size is the logical length, which is what the measurement reads, so
+    # a 6 GB fixture costs no disk. Writing real zeros filled the sandbox volume.
+    blob = blobs / "sha256-weights"
+    with open(blob, "wb") as f:
+        f.truncate(weights_mb * 1024 * 1024)
+    (rev / "model.safetensors").symlink_to(blob)
+    if extra_mb:
+        big = blobs / "sha256-tokenizer"
+        with open(big, "wb") as f:
+            f.truncate(extra_mb * 1024 * 1024)
+        (rev / "tokenizer.model").symlink_to(big)
+
+
+def test_the_weight_measurement_counts_each_blob_once(monkeypatch, tmp_path):
+    """model_cache_state()["bytes"] sums rglob("*") over the whole repo, and both
+    is_file() and stat() FOLLOW symlinks — so every weight is counted twice, as the
+    blob and as the snapshot link. This is why that field is not reused here."""
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    _cached_repo(tmp_path, "org/model", weights_mb=64)
+
+    doubled = V.model_cache_state("org/model")["bytes"]
+    assert doubled > 100 * 1024 * 1024, "the naive sum really does double-count"
+
+    measured = V.measured_weight_gb("org/model")
+    assert measured == round(64 / 1024, 2), "each blob is counted exactly once"
+
+
+def test_non_weight_files_are_not_counted(monkeypatch, tmp_path):
+    """A tokenizer is megabytes and never becomes VRAM. Counting it would shrink the
+    KV budget for a reason that has nothing to do with the card."""
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    _cached_repo(tmp_path, "org/withextra", weights_mb=64, extra_mb=32)
+    assert V.measured_weight_gb("org/withextra") == round(64 / 1024, 2)
+
+
+def test_an_unmeasurable_model_is_none_never_zero(monkeypatch, tmp_path):
+    """A missing reading is not a reading of zero — zero would hand the whole card to
+    the KV cache and produce exactly the OOM this is meant to prevent."""
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    assert V.measured_weight_gb("org/never-downloaded") is None
+
+
+def test_a_bigger_model_shrinks_the_kv_budget():
+    """The direction that matters: measured 6 GB of weights on a 7.63 GB card must ask
+    for a shorter context than the 5.0 GB assumption did."""
+    card = 8192
+    assumed = V.compute_server_args(card, vram_free_mb=7812)
+    real = V.compute_server_args(card, vram_free_mb=7812, weight_footprint_gb=6.0)
+    assert real["max_model_len"] < assumed["max_model_len"], (
+        "a model bigger than the assumption must get a smaller KV budget, or the "
+        "engine dies on 'No available memory for the cache blocks'"
+    )
+
+
+def test_only_a_LARGER_measurement_is_applied(monkeypatch, tmp_path):
+    """THE ASYMMETRY, and the one that guards against a regression rather than a bug.
+
+    Applying a SMALLER measurement would grow max_model_len for every small model —
+    turning starts that work today into starts that might not, to buy context nobody
+    asked for. So a small model keeps the default budget exactly."""
+    monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
+    _cached_repo(tmp_path, "org/tiny", weights_mb=1600)          # ~1.56 GB, well under 5.0
+    _cached_repo(tmp_path, "org/big", weights_mb=6144)           # 6.0 GB, over it
+
+    tiny = V.measured_weight_gb("org/tiny")
+    big = V.measured_weight_gb("org/big")
+    assert tiny is not None and tiny < V._DEFAULT_WEIGHT_GB
+    assert big is not None and big > V._DEFAULT_WEIGHT_GB
+
+    # Drive the REAL start() through its own injectable popen seam, so the value
+    # asserted is the one the production path computes rather than one a stub chose.
+    V.venv_python().parent.mkdir(parents=True, exist_ok=True)
+    V.venv_python().write_text("#!/bin/sh\n", encoding="utf-8")
+    V._write_marker("0.25.1")
+    monkeypatch.setattr(
+        "src.llm.backend.detect_gpu",
+        lambda: {"available": True, "vram_mb": 8192, "vram_free_mb": 7812},
+    )
+    monkeypatch.setattr(V, "is_running", lambda: False)
+
+    class _FakeProc:
+        def __init__(self):
+            self._dead = False
+
+        def poll(self):
+            return 0 if self._dead else None
+
+        def terminate(self):
+            self._dead = True
+
+        def wait(self, timeout=None):
+            self._dead = True
+            return 0
+
+    argvs: list[list[str]] = []
+
+    def fake_popen(argv, **kw):
+        argvs.append(argv)
+        return _FakeProc()
+
+    V.start("org/tiny", popen=fake_popen)
+    V.stop()
+    V.start("org/big", popen=fake_popen)
+    V.stop()
+
+    def _len_of(argv):
+        return int(argv[argv.index("--max-model-len") + 1])
+
+    assert _len_of(argvs[1]) < _len_of(argvs[0]), (
+        "the 6 GB model must ask for a SHORTER context than the 1.5 GB one — that is "
+        "the whole fix, read off the real command line"
+    )
+    baseline = V.compute_server_args(8192, vram_free_mb=7812)["max_model_len"]
+    assert _len_of(argvs[0]) == baseline, (
+        "and the small model must be UNCHANGED from today's behaviour: growing its "
+        "budget would turn a start that works into one that might not"
+    )
