@@ -16,6 +16,9 @@ one that matches what you need.
   A machine-drafted French mirror lives at
   [`i18n/fr/QUICKSTART.md`](i18n/fr/QUICKSTART.md) (honest-banner convention;
   [`i18n/`](i18n/) is where future translated docs land).
+- **[OFFLINE_INSTALL.md](OFFLINE_INSTALL.md)** — installing on an **air-gapped** machine:
+  build a dependency bundle on a connected computer, carry both across, double-click.
+  Zero network, and nothing needs to pre-exist on the target.
 - **[USER_MANUAL.md](USER_MANUAL.md)** — the complete guide: every tab, control, setting,
   workflow, env var and API area, **plus per-feature deep-dives** (Home briefing, source
   integrity & anti-amplification, shared annotations, insights, the world map &
