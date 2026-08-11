@@ -121,6 +121,35 @@ def test_the_sub_linear_verdict_is_reachable_by_arithmetic_too():
     assert "Sub-linear" in out["note"]
 
 
+def test_the_sentence_never_contradicts_the_number_published_beside_it():
+    """The macOS lane's red (2026-08-11): the note printed "1.0x the wall time" while
+    ``latency_ratio`` published 0.95, and the self-consistency test failed on a machine
+    where nothing was wrong. Two roundings of one quantity -- the field was
+    ``round(raw, 2)`` and the sentence formatted the RAW value -- so they disagreed
+    whenever the raw ratio fell in a band like 0.9549: 0.95 published, "1.0" printed.
+
+    THE FIXTURE IS THE POINT. Every other test here uses clean ratios (12x, 4x) that
+    round identically either way, which is exactly why this survived: the band is
+    narrow and nothing aimed at it. 0.9549 is chosen to sit inside it -- against the
+    old code this asserts "0.9" is in a note that says "1.0"."""
+    rows = [
+        {"prompt_chars": 2000, "n": 3, "call_wall_p50_s": 1.0},
+        {"prompt_chars": 24000, "n": 3, "call_wall_p50_s": 0.9549},
+    ]
+    out = LC._reading(rows, {"tokens": None})
+    assert f"{out['latency_ratio']:.1f}x the wall" in out["note"], (
+        f"note {out['note']!r} disagrees with latency_ratio={out['latency_ratio']}"
+    )
+    assert f"{out['size_ratio']:.0f}x the prompt" in out["note"], (
+        "the size half rounds twice the same way -- fix it with its sibling, or it is "
+        "the same trap waiting for whoever next asserts about it"
+    )
+    # ...and the verdict is decided on the SAME published numbers the reader compares.
+    assert ("Sub-linear" in out["note"]) == (
+        out["latency_ratio"] < out["size_ratio"] * 0.8
+    )
+
+
 def test_prompt_sizes_are_actually_swept():
     c = _Client()
     LC.run_context_bench(

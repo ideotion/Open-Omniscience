@@ -241,10 +241,17 @@ def _reading(rows: list[dict], limit: dict) -> dict:
             "cannot be read from this run"
         )
     if p50_a and p50_b:
-        ratio = p50_b / p50_a
-        span = last["prompt_chars"] / max(1, first["prompt_chars"])
-        out["latency_ratio"] = round(ratio, 2)
-        out["size_ratio"] = round(span, 2)
+        # Round ONCE, publish that, and build the sentence from the PUBLISHED numbers.
+        # An earlier cut published `round(raw, 2)` and formatted the RAW value into the
+        # note, which is two roundings of one quantity: a raw 0.9549 publishes 0.95 and
+        # prints "1.0x the wall time", so the sentence contradicted the field beside it.
+        # Rare, but real -- a macOS CI runner landed in that band (2026-08-11) and the
+        # self-consistency test caught it. Deriving both from `ratio`/`span` makes the
+        # agreement structural rather than something each future edit has to remember.
+        ratio = round(p50_b / p50_a, 2)
+        span = round(last["prompt_chars"] / max(1, first["prompt_chars"]), 2)
+        out["latency_ratio"] = ratio
+        out["size_ratio"] = span
         # Sub-linear is the interesting case and the common one: prompt processing is
         # parallel, so N times the text is usually far less than N times the wall.
         out["note"] = (
