@@ -3617,6 +3617,49 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     filename stops being derivable from an identifier the reader holds, the index that
     matches the two becomes load-bearing — say so in the citing document rather than
     leaving a reader to construct a name that no longer exists.
+  - **THE TWO FACTS THAT MAKE AN AIR-GAPPED DEBIAN INSTALL POSSIBLE — and the one that
+    breaks on the BETTER-equipped machine (2026-08-11, the offline installer, PR #931):**
+    (a) Debian ships the stdlib `ensurepip` in a SEPARATE apt package, so an offline box
+    cannot create a venv the normal way and `install.sh`'s existing fix (apt-install
+    `python3.13-venv`) needs the network it does not have. `python -m venv --without-pip`
+    never imports `ensurepip` at all, and a wheel is a zip with a runnable pip inside
+    (`python /path/pip-X.whl/pip install …`), so pip installs itself from the bundle and
+    the apt package stops mattering — verified by hiding `ensurepip` behind an
+    ImportError-raising shim. (b) **Since Python 3.12, `python -m venv` installs pip and
+    NOTHING ELSE — no setuptools.** An offline editable install must use
+    `--no-build-isolation` (isolation would FETCH a build backend, the one thing that is
+    impossible here), so the backend has to be present already; the online path gets it
+    from its own `--upgrade pip setuptools wheel` step and the offline path has to do the
+    same from the bundle. THE SHAPE WORTH REMEMBERING: this failed on the machine that
+    HAD `ensurepip`, because the no-`ensurepip` fallback already installed setuptools
+    correctly and the main path did not — when a feature has a fallback, the fallback is
+    often the better-tested branch, so test the one you expect to be taken. Two more
+    facts from the same build: `git clone --depth 1` implies `--single-branch`, so an
+    orphan branch carrying a large payload does NOT reach `bootstrap.sh` users; and
+    `pip download --only-binary=:all:` REFUSES a dependency that publishes no wheel
+    (jieba, in `[segmentation]`) — `pip wheel` builds such an sdist into a wheel on the
+    connected machine, so the air-gapped side only ever sees wheels and never needs a
+    compiler.
+  - **NEVER BUILD PROGRAM SOURCE BY INTERPOLATING SHELL VALUES — pass data as data
+    (2026-08-11, the offline bundle's manifest generator):** an unquoted `<<PYEOF`
+    heredoc with `"glibc": "$LIBC"` produced `SyntaxError: unterminated string literal`
+    on a value that measured clean (`2.39`, no newline) in three separate reproductions,
+    including under the same `set -euo pipefail`. I could not prove the trigger, and that
+    is the point: the FIX is not to find which character escaped, it is to stop putting
+    values into a grammar. Quoting the heredoc (`<<'PYEOF'`, no expansion at all) and
+    reading the values from the ENVIRONMENT (`os.environ`) cannot break for any content —
+    the same discipline as bound SQL parameters, one language over. GENERAL FORM: a
+    generator that writes code is a place where data becomes syntax; keep the boundary.
+  - **A GUARD OVER A FUNCTION THAT CONTAINS TWO SIMILAR CALLS IS SATISFIED BY THE WRONG
+    ONE (2026-08-11, the offline no-network guard):** asserting `"--no-index" in body` for
+    `_pip_install_offline` passed with the flag DELETED from the actual install command,
+    because the same function has a second pip call (the build-tools step) that still
+    carried it. This is the recorded non-unique-needle trap one level down — correctly
+    SCOPED to a single function and still vacuous, since uniqueness has to hold WITHIN the
+    slice too. Fold shell line-continuations, extract every invocation, and assert the
+    property on EACH; and match the invocation (`python -m pip install`), not the words,
+    or a `warn "…skipping pip install…"` message counts as a command. Mutation-checked in
+    both directions afterwards.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;

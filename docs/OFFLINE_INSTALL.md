@@ -23,11 +23,35 @@ larger for no benefit, so they travel separately:
 
 | Download | What it is | Size |
 |---|---|---|
-| **The application** | this repository | ~65 MB |
+| **The application** | this repository | ~17 MB zipped (~44 MB extracted) |
 | **The dependency bundle** | every Python package, prepared ahead of time | ~230 MB |
 
 You extract both **side by side** in the same folder, and double-click the
 offline installer. It finds the bundle on its own.
+
+### Where each download comes from
+
+**The application** is GitHub's ordinary **Code → Download ZIP** button (or
+`git clone`). It gives you a folder called `Open-Omniscience-main`. Nothing
+special is needed: GitHub's ZIP preserves the executable bit, so the installer is
+runnable straight out of the archive.
+
+**The dependency bundle is not in the repository** — that is the whole point of
+splitting them, and it means the Download ZIP button does *not* give it to you.
+You produce it once, on a connected machine, in one of two ways:
+
+* **From GitHub, without installing anything** — open the repository's **Actions**
+  tab → **Offline bundle** → **Run workflow**. When it finishes, download the
+  `offline-bundle` artifact from the run page. GitHub wraps workflow artifacts in
+  an extra zip, so you unzip twice: the outer one yields
+  `open-omniscience-offline-linux-x86_64-cp313.zip`, and that is the file you copy
+  to the stick.
+* **On your own machine** — run `./scripts/build_offline_bundle.sh --zip` (below).
+  You get the same folder plus its zip under `dist/`.
+
+If you publish the bundle yourself — as a **release asset** or on a separate
+branch — then it becomes a second ordinary download and neither step above is
+needed again until the dependencies change.
 
 ```
 somewhere-on-the-usb-stick/
