@@ -1763,6 +1763,8 @@
   "Backing up maps / models / dumps…": "جارٍ نسخ الخرائط / النماذج / التفريغات احتياطيًا…",
   "large data": "بيانات كبيرة",
   "Backup complete →": "اكتمل النسخ الاحتياطي →",
+  "Included:": "يتضمّن:",
+  "Choose at least one thing to back up.": "اختر عنصرًا واحدًا على الأقل للنسخ الاحتياطي.",
   "Backup failed — see console": "فشل النسخ الاحتياطي — راجع وحدة التحكم",
   "Enter a folder to scan.": "أدخل مجلدًا لمسحه.",
   "Scanning…": "جارٍ المسح…",

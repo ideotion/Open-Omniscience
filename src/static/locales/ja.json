@@ -1763,6 +1763,8 @@
   "Backing up maps / models / dumps…": "地図／モデル／ダンプをバックアップ中…",
   "large data": "大容量データ",
   "Backup complete →": "バックアップ完了 →",
+  "Included:": "含まれるもの：",
+  "Choose at least one thing to back up.": "バックアップする対象を少なくとも 1 つ選んでください。",
   "Backup failed — see console": "バックアップ失敗 — コンソールを確認",
   "Enter a folder to scan.": "スキャンするフォルダーを入力してください。",
   "Scanning…": "スキャン中…",

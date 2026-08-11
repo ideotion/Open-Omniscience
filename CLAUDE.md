@@ -10775,6 +10775,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     fabricated result. So the fallback is conditional on the job not running, and a
     `.part` is never served at all — handing a truncated zip to someone already trying to
     diagnose something is the worst available answer.
+  - **A CAPABILITY CAN BE FULLY BUILT AND STILL BE UNREACHABLE BECAUSE OF ONE HTML
+    ATTRIBUTE — and making a mandatory step optional is where its GUARD gets quietly
+    weakened (2026-08-10, compartmented exports):** the ask was "backups should not force
+    user to backup articles", and every piece already existed —
+    `folder_backup._CATEGORIES` has been an arbitrary-subset list since it was written,
+    `FolderBackupManager.start(categories=…)` takes exactly that subset, and the IMPORT
+    side already discovers corpus / large-data / newsletters independently and asks for a
+    passphrase only when the corpus is among them. What made articles mandatory was
+    `<input type="checkbox" id="ux-c-corpus" checked disabled>` plus an unconditional
+    volumes phase in `_uxRun`. GENERAL FORM: when a field ask reads as a feature request,
+    first check whether the engine already does it and the SURFACE is what refuses; the
+    work is then a UI change with a data-safety review rather than a new capability, and
+    knowing which one you are doing changes what you must test. **THE TRAP IN THE OBVIOUS
+    IMPLEMENTATION:** the 2026-07-14 gate ("the blob phase is unreachable unless the
+    volumes phase PROVABLY completed as a `backup` into THIS dest") could be made to
+    tolerate a skipped corpus by relaxing it to `if (wantCorpus && !s1 …) throw` — one
+    word, reads identical, and it ALSO swallows a masked-start failure when the corpus IS
+    requested, which is the exact field defect the gate was built for. Move the whole step
+    AND its guard inside the condition instead: a guard relaxed to accept "the step did
+    not run" cannot distinguish that from "the step ran and failed". THIRD, cheap and
+    easy to miss: **a message's honesty is a function of what it can now describe.**
+    "Backup complete →" was unambiguous while a backup always meant everything; the moment
+    the contents became a choice, the same sentence let a models-only export read months
+    later as a full one, with nothing else in the folder to correct it — so the completion
+    line now NAMES what is in there, and an empty selection is refused outright rather
+    than writing a destination that looks like a backup and holds nothing.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
