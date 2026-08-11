@@ -23,6 +23,7 @@ from __future__ import annotations
 import pytest
 
 from src.bulletin.facts import TOP_SOURCES
+from src.bulletin.i18n import Translator
 from src.bulletin.render import _listed, render
 
 _MASTHEAD = {
@@ -78,7 +79,7 @@ def test_both_renderers_carry_the_same_splits(fmt):
 # --------------------------------------------------------------------------- #
 def test_a_long_tail_is_accounted_for_rather_than_dropped():
     rows = [{"country": f"c{i}", "articles": 10} for i in range(30)]
-    shown, tail = _listed(rows, limit=20, label="carried")
+    shown, tail = _listed(rows, limit=20, label="carried", T=Translator("en"))
     assert len(shown) == 20
     assert "20 of 30 shown" in tail
     assert "the other 10" in tail
@@ -88,7 +89,9 @@ def test_a_long_tail_is_accounted_for_rather_than_dropped():
 def test_a_short_list_gets_no_remainder_note():
     """The twin: an over-eager helper would print "(2 of 2 shown; the other 0 …)",
     which invents an absence."""
-    shown, tail = _listed([{"articles": 1}, {"articles": 2}], limit=20, label="carried")
+    shown, tail = _listed(
+        [{"articles": 1}, {"articles": 2}], limit=20, label="carried", T=Translator("en")
+    )
     assert len(shown) == 2
     assert tail == ""
 

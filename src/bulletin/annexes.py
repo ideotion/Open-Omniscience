@@ -472,8 +472,17 @@ def contents_markdown(
     analyses_by_id: dict[int, list[dict]],
     full_text: bool,
     truncated_from: int | None,
+    report_lang: str = "en",
 ) -> str:
-    """The contents page: what is here, how the numbers work, and what is missing."""
+    """The contents page: what is here, how the numbers work, and what is missing.
+
+    ``report_lang`` is the language the REPORT was written in, not this page's. The
+    annexes are still English, and when the two differ this page says so: a reader
+    who asked for a French bulletin and opens an English contents page is owed the
+    reason, and a bundle that stayed quiet about it would read as a bug rather than
+    as an unfinished translation. The article text itself is never translated in
+    either language — it is the publisher's own words.
+    """
     summaries = sum(
         1 for e in index if any(a.get("kind") == "summary" for a in analyses_by_id.get(e["id"], []))
     )
@@ -490,6 +499,18 @@ def contents_markdown(
         "",
         f"> **{DISCLOSURE}**",
         "",
+    ]
+    if (report_lang or "en").split("-")[0].lower() != "en":
+        out += [
+            f"> **This page and the per-article headings are in English**, while the "
+            f"report was written in `{report_lang}`. The annexes have no translation "
+            f"yet — Settings → Advanced → Diagnostics → *Bulletin language & render* "
+            f"reports exactly which sentences are missing. Every article's own text, "
+            f"title and byline are the publisher's words and are never translated here "
+            f"in any language.",
+            "",
+        ]
+    out += [
         "## How the numbering works",
         "",
         "A bracketed number in the report — `[0001]` — is one file here. One number per "
@@ -573,6 +594,7 @@ def build_annexes(
     ordinal: int = 1,
     full_text: bool = True,
     text_budget_bytes: int = DEFAULT_TEXT_BUDGET_BYTES,
+    report_lang: str = "en",
 ) -> dict:
     """Build the annexes ZIP in memory. Returns ``{filename, data, ...}``.
 
@@ -673,6 +695,7 @@ def build_annexes(
                 analyses_by_id=analyses,
                 full_text=full_text,
                 truncated_from=truncated_from,
+                report_lang=report_lang,
             ),
         )
 

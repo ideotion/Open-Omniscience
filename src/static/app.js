@@ -3999,6 +3999,11 @@
       const p = new URLSearchParams();
       if (_bulExcludeSections.size) p.set("exclude_sections", [..._bulExcludeSections].join(","));
       if (_bulExcludeStories.size) p.set("exclude_stories", [..._bulExcludeStories].join(","));
+      // The document is written in the language the operator is READING the app in.
+      // Built here, in the one place both the report and the annexes take their query
+      // from, so the two can never come out in different languages.
+      const lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "en";
+      if (lang && lang !== "en") p.set("lang", lang);
       return p;
     }
 
@@ -14472,6 +14477,50 @@
       }
       btn.textContent = old;
       btn.disabled = false;
+    }
+
+    // The bulletin-language diagnostic. It answers a question about the UI's own
+    // language, so the status line summarises the locale the operator is IN before
+    // offering the file — a per-locale table nobody can read at a glance is what the
+    // download is for.
+    async function bulletinLanguageReport(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s, v) => s.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      const out = $("bul-lang-status");
+      if (btn) btn.disabled = true;
+      if (out) out.textContent = t("Reading the report…");
+      try {
+        const d = await api("/api/diagnostics/bulletin-language");
+        const here = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "en";
+        const mine = (d.languages || []).find((r) => r.language === here);
+        const bits = [];
+        if (mine && mine.coverage != null) {
+          // The numerator and the denominator, not only the share: a percentage with
+          // no n cannot be judged.
+          bits.push(tf("{lang}: {done} of {total} sentences translated",
+            {lang: here, done: mine.translated, total: mine.strings_seen}));
+        } else if (mine) {
+          bits.push(t("English — nothing to translate"));
+        }
+        // A failure COUNT here and the names in the file. The status line is a pointer;
+        // the report is the artifact, and it is where a finding can be acted on.
+        const ri = d.render_integrity || {};
+        const bad = (ri.deterministic === false ? 1 : 0)
+          + (ri.unresolved_placeholders || []).length
+          + (ri.sections_missing_from_document || []).length
+          + (ri.articles_not_printed_total ? 1 : 0)
+          + (ri.dangling_references || []).length;
+        bits.push(bad
+          ? tf("{n} render check(s) failed — the report names each one", {n: bad})
+          : t("every render check passed"));
+        if (d.measured) bits.push(d.measured);
+        if (out) out.textContent = bits.join(" · ");
+        window.open("/api/diagnostics/bulletin-language?download=1", "_blank");
+      } catch (e) {
+        if (out) out.textContent = (e && e.message) ? e.message : t("Could not read the report.");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     }
 
     async function viewKeywordGrowth(btn) {

@@ -204,6 +204,7 @@ def render_edition(
     exclude_stories: str = Query("", description="comma-separated story keys to leave out"),
     include_plan: bool = Query(False, description="append the phase-2 plan to the document"),
     target_lang: str = Query("", description="with include_plan: also plan translations"),
+    lang: str = Query("en", description="the language to WRITE the document in"),
 ):
     """Render a persisted edition as a self-contained page or as Markdown.
 
@@ -231,6 +232,7 @@ def render_edition(
     """
     from fastapi.responses import HTMLResponse, PlainTextResponse
 
+    from src.bulletin.i18n import Translator
     from src.bulletin.render import render
     from src.bulletin.review import apply_selection
     from src.bulletin.store import read_edition
@@ -252,8 +254,13 @@ def render_edition(
 
         edition["ai_worklist"] = ai_worklist(edition, target_lang=target_lang or None)
 
+    # ONE translator for the whole document, so its report describes exactly this
+    # render. A locale with no catalog is not an error: the document comes out in
+    # English and says at the top that it did, which is a better answer than refusing
+    # to produce a bulletin over a missing translation.
+    tr = Translator(lang)
     try:
-        text = render(edition, fmt)
+        text = render(edition, fmt, tr=tr)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -262,14 +269,24 @@ def render_edition(
     # `20260811_OOS_Bulletin_Weekly.md` — the day the bulletin was created, matching
     # the annexes ZIP beside it.
     stem = _bundle_stem(edition, filename)
+    # The language and its coverage travel as headers too, so a caller learns what it
+    # got without parsing the prose — and so a UI can say "written in French, 142 of
+    # 180 sentences" rather than leaving the operator to notice the English.
+    rep = tr.report()
+    lang_headers = {
+        "X-OO-Language": rep["language"],
+        "X-OO-Language-Translated": str(rep["translated"]),
+        "X-OO-Language-Strings": str(rep["strings_seen"]),
+    }
     if (fmt or "").strip().lower() == "html":
         return HTMLResponse(
-            text, headers={"Content-Disposition": f'inline; filename="{stem}.html"'}
+            text,
+            headers={"Content-Disposition": f'inline; filename="{stem}.html"', **lang_headers},
         )
     return PlainTextResponse(
         text,
         media_type="text/markdown; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{stem}.md"'},
+        headers={"Content-Disposition": f'attachment; filename="{stem}.md"', **lang_headers},
     )
 
 
@@ -319,6 +336,7 @@ def annexes(
     full_text: bool = Query(True, description="carry each article's whole stored text"),
     exclude_sections: str = Query("", description="the same selection the report was rendered with"),
     exclude_stories: str = Query(""),
+    lang: str = Query("en", description="the language the REPORT was written in"),
     db: Session = Depends(get_db),
 ):
     """The report's annexes as a ZIP: one Markdown file per cited article, plus a
@@ -349,7 +367,12 @@ def annexes(
 
     ordinal = _ordinal(edition, filename)
     edition = apply_selection(edition, **_selection(exclude_sections, exclude_stories))
-    out = build_annexes(db, edition, ordinal=ordinal, full_text=bool(full_text))
+    # ``lang`` is the language the REPORT was written in. The annexes are English, so
+    # passing it through is not a translation — it is what lets the contents page SAY
+    # the two differ instead of leaving a reader to wonder whether something broke.
+    out = build_annexes(
+        db, edition, ordinal=ordinal, full_text=bool(full_text), report_lang=lang
+    )
     return Response(
         content=out["data"],
         media_type="application/zip",
