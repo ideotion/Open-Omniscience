@@ -3357,6 +3357,59 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     restore side already enforces — a design that needs the guard relaxed is the wrong
     design, not a reason to relax it. And state the residual cost rather than hiding it:
     two revisions of one repo sharing a blob are stored once per revision.
+  - **A PERCENTILE OVER A MOSTLY-EMPTY DERIVED TABLE DEGENERATES INTO AN EXISTENCE TEST,
+    AND THE FLAG RATE THEN RESTATES COVERAGE (2026-08-11, the source-quality export):**
+    only **28,639 of 991,686** audited articles (**2.89%**) carried a single keyword
+    mention — 21 languages at exactly zero, en at 5.00%. Every Layer-A ratio is computed
+    over the keyword tables, so each cohort's `mention_density` and `vocab_sparsity` p90
+    were BOTH `0.0`, and the outlier rule `value > p90` became **"has any keyword at
+    all"**. The tell was already in the report and unreadable: `pct_flagged` equalled the
+    indexed share to two decimals in every assessed language **except `unknown`**, the one
+    cohort whose p90 was non-zero — the single divergence proving the mechanism. So the
+    whole bundle (517 pathological articles, the `observed` ranges, the S5 floor question)
+    was calibrating on 2.9% of the corpus while reading as a corpus-wide measurement.
+    GENERAL FORM: a diagnostic built on a DERIVED table must publish that table's COVERAGE
+    beside every rate it derives, because a percentile cannot distinguish "the tail is
+    empty" from "the column is empty" — and where coverage is the smaller number, every
+    threshold in the report is uncalibratable rather than merely unreached. COROLLARY on
+    collinearity: `mention_density` and `vocab_sparsity` share a denominator and are zero
+    together, and selected the SAME 27,772 records (symmetric difference 656, 2.4%) —
+    reporting them as two of four independent dimensions overstates the evidence by one.
+  - **A GUARD'S OWN JUSTIFICATION CAN BE A CASE THE DATA NEVER EXHIBITS — count it before
+    assuming the guard is load-bearing (2026-08-11, the same export):** the article gate
+    keeps any body ≥100 words whatever its URL, so "a genuine article at `/business` or
+    `/tag/gaza` is never dropped". Measured on an unbiased random control, **10.95%** of
+    articles carry a URL the project's OWN rules call a non-article and **8.10%** sit
+    above that guard; **36 of those were hand-read and 36/36 were listings** — section
+    fronts, tag/author archives, homepages, a sitemap. Zero were the protected case. The
+    guard was not defending real articles, it was admitting index pages, and the
+    retroactive scan inherited the same veto and under-reported by ~74%. GENERAL FORM:
+    when a guard exists to protect a scenario, sample the population it actually governs
+    and count how often that scenario occurs; a guard whose protected case is absent is
+    a hole with a rationale attached. **TWO CANDIDATE CORROBORATORS WERE MEASURED AND
+    BOTH REFUTED**, recorded with their numbers: line structure (unterminated-line
+    fraction + median line length) gave 20–43% recall at 10–21% collateral, and "the
+    title reads as a section label" gave a **22.9% false-positive rate on normal URLs —
+    backwards, because for a real article the slug IS the title**. The right answer was
+    not a weaker signal but REVERSIBILITY: route the population to the existing
+    quarantine STAMP rather than the drop. And any rate from a fixed vocabulary
+    (`_SECTION_WORDS`) is a FLOOR — `/astrology` and `/obituaries` are invisible to it —
+    which must be published as such rather than widening the vocabulary to chase them,
+    since widening is the one move that can start condemning real articles.
+  - **A THRESHOLD EXPRESSED AS A FRACTION OF A POPULATION LARGER THAN THE ONE THE
+    STATISTIC CAN BE DRAWN FROM IS UNREACHABLE BY CONSTRUCTION (2026-08-11, the furniture
+    cut):** `ubiquity_cut = 0.3 × len(per_source_top)` counts every AUDITED source (2,224,
+    empty fingerprints included) while cross-source DF can only be drawn from sources that
+    HAVE a top-12 (241) — so the cut sat at 667 against a maximum ATTAINABLE of 241, and
+    `reachable: false` was a fact about the denominator rather than about the terms. The
+    retirement verdict stands on its own independent reasoning; what was missing was that
+    a reader could not tell "nothing is ubiquitous here" from "nothing could have been".
+    Publish `max_attainable` beside any such threshold. AND THE FIX THAT WAS *NOT* MADE is
+    the load-bearing half: re-basing the denominator would change `furniture_share`, which
+    is a soft criterion that can escalate a source from `degraded` to `failing` — a live
+    change to the qualification gate, arriving inside a disclosure-only slice. When a
+    reporting fix and a behaviour change share one line, ship the disclosure and leave the
+    behaviour for its own reviewed slice.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;

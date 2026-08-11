@@ -46,6 +46,7 @@ from src.analytics.managed import UNSEGMENTED
 from src.catalog.provenance import HAZARD, LAW, NEWSLETTER, STATISTICS, WIKIPEDIA, provenance_of
 from src.database.models import Article, ArticleLink, KeywordMention, Source
 from src.ingest.email import NEWSLETTER_SOURCE_DOMAINS
+from src.ingest.non_article import classify_index_page as _classify_index_page
 
 # Provenance classes a keyword-RATIO audit cannot meaningfully judge (F4, 2026-08-03). These are
 # not scrapes: a hazard record is a provider's own event line, a law document is a statute, a wiki
@@ -123,6 +124,10 @@ class ArticleStat:
     max_single_kw: int
     unsegmented: bool
     metrics: dict[str, float | None] = field(default_factory=dict)
+    # The stored URL, read in the SAME row as word_count/language/source_id, so it costs no
+    # extra I/O. Optional (defaulted) so every existing constructor stays valid; it exists so
+    # the report can count listing-shaped URLs per source without a second corpus scan.
+    url: str | None = None
 
 
 def compute_metrics(
@@ -217,8 +222,8 @@ def collect_article_stats(
         agg[int(aid)] = (int(total or 0), int(distinct or 0), int(mx or 0))
 
     stats: list[ArticleStat] = []
-    for aid, wc, lang, sid in session.query(
-        Article.id, Article.word_count, Article.language, Article.source_id
+    for aid, wc, lang, sid, url in session.query(
+        Article.id, Article.word_count, Article.language, Article.source_id, Article.url
     ).filter(Article.quarantined.isnot(True)):
         if audited_ids is not None and (sid is None or int(sid) not in audited_ids):
             continue
@@ -235,6 +240,7 @@ def collect_article_stats(
                 distinct_keywords=distinct,
                 max_single_kw=mx,
                 unsegmented=unseg,
+                url=url,
                 metrics=compute_metrics(
                     word_count=int(wc) if wc is not None else None,
                     total_mentions=total, distinct_keywords=distinct, max_single_kw=mx,
@@ -290,7 +296,7 @@ def pathology_rate_by_source(
 
 def build_observed(
     *, cross_df: dict[str, int], furniture_ubiquity_cut: int, outliers: Sequence[dict],
-    source_to_articles: dict[int, list[int]],
+    source_to_articles: dict[int, list[int]], n_sources_with_fingerprint: int = 0,
 ) -> dict:
     """The range each threshold was meant to cut, printed beside the threshold.
 
@@ -314,6 +320,19 @@ def build_observed(
             "n_terms": df_stats["n"],
             "threshold": furniture_ubiquity_cut,
             "reachable": bool(df_values) and df_max >= furniture_ubiquity_cut,
+            # WHY it was unreachable, which `reachable: false` alone cannot say. DF counts the
+            # sources whose top-12 holds a term, so it can never exceed the number of sources
+            # that HAVE a top-12 -- while the cut is a fraction of every AUDITED source, empty
+            # fingerprints included. When the keyword index is sparse those two populations
+            # diverge and the cut sits above the maximum the corpus could produce whatever the
+            # data said. On the 2026-08-11 export: 241 fingerprinted against a cut of 667, so
+            # `reachable: false` was a fact about the denominator, not about the terms.
+            "n_sources_with_fingerprint": n_sources_with_fingerprint,
+            "max_attainable": n_sources_with_fingerprint,
+            "unreachable_by_construction": (
+                n_sources_with_fingerprint > 0
+                and furniture_ubiquity_cut > n_sources_with_fingerprint
+            ),
             "source_flag": "retired",
             "note": (
                 "the DF-ubiquity SOURCE FLAG is RETIRED (2026-08-03): it cannot discriminate at "
@@ -323,7 +342,11 @@ def build_observed(
                 "journalism, because DF-ubiquity cannot separate publishing furniture from "
                 "generic content words. The DF numbers below are still real evidence an analyst "
                 "can read; what is withdrawn is the verdict drawn from them. `reachable` says "
-                "whether the cut was inside the observed range at all."
+                "whether the cut was inside the observed range at all -- and when "
+                "`unreachable_by_construction` is true it was not even inside the range the "
+                "corpus COULD produce, because the cut is a fraction of every audited source "
+                "while DF can only be drawn from the ones carrying a fingerprint. Read "
+                "`max_attainable` before reading anything into a zero here."
             ),
         },
         "pathology_rate_per_source": {
@@ -763,6 +786,15 @@ def _readme() -> bytes:
         "## Files\n"
         "- `manifest.json` — generated_at, corpus totals, sources sampled vs skipped, config flags, "
         "method per metric, provenance (deduced · not a verdict), and `observed`.\n\n"
+        "### Read `pct_articles_keyword_indexed` FIRST\n"
+        "Every Layer-A ratio is computed over the keyword tables, so that number is the fraction "
+        "of the corpus this analysis can see at all. If it is low, the rest of the bundle is "
+        "measuring a small, non-random slice: a cohort's `mention_density` and `vocab_sparsity` "
+        "p90 both fall to 0.0, 'above p90' degenerates into 'has any keyword at all', and each "
+        "language's `pct_flagged` becomes a restatement of its `pct_indexed` rather than a "
+        "statement about article quality. Compare those two columns per language before reading "
+        "anything into a flag rate — where they agree, the flag is reporting index coverage. No "
+        "threshold in `observed` can be calibrated while that is true.\n\n"
         "### Read `pathological_articles`, not `outlier_sampling_frame`\n"
         "`pathological_articles` is the finding: the CONJUNCTION (high mention_density AND low "
         "type_token AND high single_kw_dominance) — the nav-DOM 'Share Now ×30' signature, and the "
@@ -777,7 +809,8 @@ def _readme() -> bytes:
         "`cross_source_df.reachable` is false, no term in this corpus can be classified furniture, "
         "so a zero furniture count means the detector never ran rather than that nothing is wrong. "
         "`pathology_rate_per_source` is the distribution the admission gate actually decides on.\n"
-        "- `per_language_health.json` — per language: n, the 4 metric distributions, % flagged, and "
+        "- `per_language_health.json` — per language: n, `pct_indexed` (keyword-index coverage), "
+        "the 4 metric distributions, % flagged, and "
         "whether the language was `assessed`. UNSEGMENTED languages (zh/ja/th) are NOT ASSESSED "
         "(`pct_flagged: null`) — all four keyword-stat metrics are unreliable without a segmenter, "
         "so no article there is flagged (never read that as 'clean'). Doubles as keyword-engine QA "
@@ -786,7 +819,13 @@ def _readme() -> bytes:
         "fingerprint — 'share now / read more / subscribe / cookies' = broken; 'election / "
         "inflation / court' = healthy), source-level stat distributions, furniture share, flagged?\n"
         "- `per_source_summary.jsonl` — per source: article count, outlier rate + dominant outlier "
-        "kind, source_type/country/language, the sampled article refs + which selectors fired.\n"
+        "kind, source_type/country/language, the sampled article refs + which selectors fired, "
+        "`pct_indexed` (how much of this source the ratios above could see), `listing_url_rate` "
+        "(the share of its stored articles whose URL is a section front / tag archive / homepage "
+        "— absolute and language-agnostic, so it still works on a source with no keyword index), "
+        "and the QUALIFICATION STAMP (`qualification_status`/`qualified_at`/"
+        "`qualification_criteria_version`) so the article gate's and the source gate's outputs "
+        "can finally be joined in one file.\n"
         "- `keyword_outliers.jsonl` — one record per Layer-A flagged article: ids, source, language, "
         "flagged dimension(s) with value + baseline + n.\n"
         "- `sample_articles.jsonl` — the Layer-B UNION: metadata + heuristic pre-label + text_head "
@@ -932,7 +971,22 @@ def build_quality_report_files(
         # The rate distribution is over AUDITED sources: an exempt source's 0.0 would pad the
         # distribution with sources that were never eligible to score anything else.
         source_to_articles=audited_to_articles,
+        n_sources_with_fingerprint=sum(1 for t in per_source_top.values() if t),
     )
+
+    # Per-source tallies over the stats pass that ALREADY ran -- no extra query, no decrypt.
+    # `src_listing` uses classify_index_page, which reports only shapes classify_non_article
+    # already recognises, so it can never widen what this project treats as a non-article.
+
+    src_indexed: dict[int, int] = {}
+    src_listing: dict[int, int] = {}
+    for st in stats:
+        if st.source_id is None:
+            continue
+        if st.total_mentions > 0:
+            src_indexed[st.source_id] = src_indexed.get(st.source_id, 0) + 1
+        if st.url and _classify_index_page(st.url) is not None:
+            src_listing[st.source_id] = src_listing.get(st.source_id, 0) + 1
 
     per_source_keywords: list[dict] = []
     per_source_summary: list[dict] = []
@@ -982,6 +1036,29 @@ def build_quality_report_files(
                 round(len(src_outliers) / len(ids), 4) if (ids and sid in audited_ids) else None
             ),
             "dominant_outlier_kind": dominant,
+            # KEYWORD-INDEX COVERAGE for this source. Every ratio above is computed over the
+            # keyword tables, so a source whose articles carry no mentions has an outlier_rate
+            # that describes the INDEX, not the source -- and reads as 0.0, i.e. clean.
+            "n_indexed": src_indexed.get(sid, 0),
+            "pct_indexed": (round(100.0 * src_indexed.get(sid, 0) / len(ids), 2) if ids else 0.0),
+            # LISTING-SHAPED URLs (2026-08-11). Absolute, language-agnostic, and computed from a
+            # column the pass already reads -- so it works on the sources with no keyword index at
+            # all, which is where every ratio above goes silent. A rate, not a verdict: it is the
+            # per-source view the export previously could not give, because one random article per
+            # source cannot measure a per-source rate.
+            "listing_url_count": src_listing.get(sid, 0),
+            "listing_url_rate": (round(src_listing.get(sid, 0) / len(ids), 4) if ids else 0.0),
+            # The QUALIFICATION STAMP, so the two gates' outputs finally meet in one file: an
+            # analyst can ask whether qualified sources actually produce better articles than
+            # unqualified ones. Descriptive columns copied verbatim -- this export never writes.
+            "qualification_status": src.status if src else None,
+            "qualified_at": (
+                src.qualified_at.isoformat()
+                if src is not None and src.qualified_at is not None else None
+            ),
+            "qualification_criteria_version": (
+                src.qualification_criteria_version if src else None
+            ),
             "sampled_articles": [
                 {"article_id": r["article_id"], "selection_method": r["selection_method"]}
                 for r in sample_records if r["source_id"] == sid
@@ -998,8 +1075,21 @@ def build_quality_report_files(
         n = len(arts)
         flagged_here = sum(1 for a in arts if a.article_id in flagged_ids)
         unseg = lang in UNSEGMENTED
+        indexed_here = sum(1 for a in arts if a.total_mentions > 0)
         per_language_health[lang] = {
             "n": n,
+            "n_indexed": indexed_here,
+            # KEYWORD-INDEX COVERAGE — read this BEFORE pct_flagged. All four metrics are
+            # ratios over the keyword tables, so an article with no mentions contributes a
+            # structural zero, not a measurement. When coverage is low the cohort's
+            # mention_density/vocab_sparsity p90 are BOTH 0.0, and "above p90" degenerates
+            # into "has any keyword at all" -- so pct_flagged stops being a statement about
+            # article quality and becomes a restatement of this column. On the 2026-08-11
+            # field export the two agreed to two decimals in every assessed language except
+            # `unknown`, the only cohort whose p90 was non-zero. Publishing coverage beside
+            # the flag rate is what lets a reader tell those two readings apart at a glance
+            # instead of inferring it from the n's of two different distributions.
+            "pct_indexed": round(100.0 * indexed_here / n, 2) if n else 0.0,
             "unsegmented": unseg,
             "assessed": not unseg,
             # NOT-ASSESSED for an unsegmented language: pct_flagged is null (not 0% and not 100%) —
@@ -1030,6 +1120,22 @@ def build_quality_report_files(
             # corpus from a narrower audit.
             "articles": sum(len(ids) for ids in source_to_articles.values()),
             "articles_ratio_audited": len(stats),
+            # KEYWORD-INDEX COVERAGE, corpus-wide. Read this FIRST: every ratio in this bundle
+            # is computed over the keyword tables, so this is the fraction of the corpus the
+            # whole Layer-A analysis can actually see. When it is low, a cohort's
+            # mention_density/vocab_sparsity p90 are both 0.0 and "above p90" degenerates into
+            # "has any keyword at all" -- the flag rate then restates coverage instead of
+            # measuring quality, and no threshold in `observed` can be calibrated on it.
+            "articles_keyword_indexed": sum(1 for s in stats if s.total_mentions > 0),
+            "pct_articles_keyword_indexed": (
+                round(100.0 * sum(1 for s in stats if s.total_mentions > 0) / len(stats), 2)
+                if stats else 0.0
+            ),
+            # Articles whose URL is listing-shaped ABOVE the ingest gate's body guard -- the
+            # population classify_index_page reports. A LOWER BOUND (see its own caveat).
+            "articles_listing_shaped_url": sum(
+                1 for s in stats if s.url and _classify_index_page(s.url) is not None
+            ),
             # THE FINDING. The conjunction (high mention_density AND low type_token AND high
             # single_kw_dominance) is the actual nav-DOM "Share Now x30" signature, and it is
             # the ONLY article-level quantity that feeds an extraction-failure verdict. On the
