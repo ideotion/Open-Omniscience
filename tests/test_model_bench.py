@@ -831,3 +831,176 @@ def test_the_remaining_models_are_skipped_with_the_install_reason(frozen, monkey
     assert len(skipped) == 2, "the other two are skipped, not re-run"
     assert "llama-server" in skipped[0]["detail"], "and the install reason is named"
     assert "nothing here is a measurement" in skipped[0]["detail"]
+
+
+# --------------------------------------------------------------------------- #
+#  Translation (maintainer 2026-08-11)
+# --------------------------------------------------------------------------- #
+#
+# Translation was benched nowhere: not for quality, and not even for speed -- the
+# latency shapes are narration/perception/summary/synthesis. What is measurable
+# without reference translations is whether the model returned the language it was
+# asked for, whether it echoed the source, and how fast.
+
+
+class _Translator:
+    """Answers in the requested target, read off the system prompt."""
+
+    _BY_NAME = {
+        "French": "Le ministère des transports a publié mardi son bilan annuel, indiquant "
+                  "que les trajets sur le réseau ferroviaire régional avaient augmenté de "
+                  "onze pour cent par rapport à l'année précédente tandis que la "
+                  "ponctualité reculait légèrement. Les responsables ont attribué cette "
+                  "hausse à la baisse des tarifs introduite au printemps et à la "
+                  "réouverture de la ligne côtière, fermée pour travaux depuis l'automne.",
+        "Russian": "Министерство транспорта опубликовало во вторник свой годовой обзор, "
+                   "сообщив, что число поездок по региональной железнодорожной сети "
+                   "выросло на одиннадцать процентов по сравнению с предыдущим годом, "
+                   "тогда как пунктуальность несколько снизилась. Чиновники связали рост "
+                   "с понижением тарифов весной и с открытием прибрежной линии.",
+    }
+
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
+        for name, text in self._BY_NAME.items():
+            if name in (system or ""):
+                return _R(text)
+        return _R("x" * 400)  # a long non-answer: measurable, and not the target
+
+
+class _Echoer:
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
+        return _R(prompt)
+
+
+def test_translation_reports_the_target_language_it_actually_produced() -> None:
+    out = MB._task_translation(_Translator(), model="m", keep_alive=None)
+    assert out["status"] == "ok"
+    assert out["asked"] == len(MB.TRANSLATION_SOURCES) * len(MB.TRANSLATION_TARGETS)
+    assert out["by_target"]["fr"]["in_target"] > 0, "French answers must read as French"
+    assert out["by_target"]["ru"]["in_target"] > 0, "Russian answers must read as Russian"
+    # The stub answers only fr/ru; the rest get a long non-answer, which must NOT be
+    # counted as the target.
+    assert out["by_target"]["zh"]["in_target"] == 0
+
+
+def test_an_echoed_source_is_counted_as_an_echo_not_a_translation() -> None:
+    """The commonest small-model failure: the source comes back unchanged."""
+    out = MB._task_translation(_Echoer(), model="m", keep_alive=None)
+    assert out["echoed"] == out["asked"], "every answer was the source verbatim"
+    assert out["in_target"] == 0, "and none of them is a translation"
+    for code, b in out["by_target"].items():
+        if code != "en":
+            assert b["in_target"] == 0
+
+
+def test_no_quality_score_is_invented() -> None:
+    """THE ONE THAT MATTERS. Adequacy and fluency need reference translations this
+    corpus does not have. A number for them would be fabricated -- and a fabricated
+    quality figure is worse than an absent one, because it survives into decisions
+    long after the reason it was invented is forgotten."""
+    out = MB._task_translation(_Translator(), model="m", keep_alive=None)
+
+    def walk(o, path=""):
+        if isinstance(o, dict):
+            for k, v in o.items():
+                low = str(k).lower()
+                assert not any(w in low for w in ("score", "bleu", "quality", "adequacy",
+                                                  "fluency", "rating", "grade")), \
+                    f"a quality-shaped field appeared at {path}.{k}"
+                walk(v, f"{path}.{k}")
+        elif isinstance(o, list):
+            for i, v in enumerate(o):
+                walk(v, f"{path}[{i}]")
+
+    walk(out)
+    assert "NOT a measure of translation quality" in out["caveat"]
+    assert "reference translations" in out["caveat"]
+
+
+def test_an_unreadable_output_is_unmeasurable_not_a_failure() -> None:
+    """The referee refuses below its floor rather than guessing, so a too-short answer
+    is a gap in the CHECK. Counting it as a failed translation would be a fabricated
+    verdict in the other direction."""
+
+    class _Terse:
+        def generate(self, prompt, **kw):
+            return _R("oui")
+
+    out = MB._task_translation(_Terse(), model="m", keep_alive=None)
+    assert out["unmeasurable"] == out["asked"]
+    assert out["in_target"] == 0
+    assert out["in_target_rate"] is None, "a rate over zero judged answers is not 0, it is None"
+
+
+def test_the_rate_is_taken_over_what_was_JUDGED() -> None:
+    out = MB._task_translation(_Translator(), model="m", keep_alive=None)
+    judged = out["asked"] - out["unmeasurable"]
+    if judged:
+        assert out["in_target_rate"] == round(out["in_target"] / judged, 4)
+
+
+def test_the_sources_are_long_enough_for_the_referee_to_have_an_opinion() -> None:
+    """Length is load-bearing: a CJK translation is far more compact than its English
+    source, and sources short enough to be convenient would leave zh/ja permanently
+    unmeasurable -- an instrument blind to the languages most likely to break."""
+    for src in MB.TRANSLATION_SOURCES:
+        assert len(src) > 600, "a compact translation must still clear the 200-char floor"
+
+
+def test_a_failed_call_is_data_not_a_crash() -> None:
+    class _Broken:
+        def generate(self, prompt, **kw):
+            raise RuntimeError("boom")
+
+    out = MB._task_translation(_Broken(), model="m", keep_alive=None)
+    assert out["status"] == "ok" and out["asked"] > 0
+    assert out["errors"] and len(out["errors"]) <= 3, "bounded, and not silent"
+
+
+# --------------------------------------------------------------------------- #
+#  A specialist is benched on what it is FOR, and the absence is declared
+# --------------------------------------------------------------------------- #
+def test_a_specialist_is_scoped_and_its_missing_tasks_are_declared(frozen) -> None:
+    out = MB.run_model_bench(
+        None,
+        models=["ollama|translategemma:4b"],
+        clients={"ollama": _Translator()},
+        installed_by_backend={"ollama": ["translategemma:4b"]},
+        batch=frozen,
+        tasks=("triage", "translation"),
+        persist=False,
+        allow_backend_switch=False,
+    )
+    pair = out["results"]["ollama|translategemma:4b"]
+    assert "translation" in pair["tasks"], "it IS benched on what it is for"
+    assert "triage" not in pair["tasks"], "and not on what it is not"
+    # DECLARED. A model with no triage number must not read as one that failed triage.
+    assert pair["tasks_not_asked"]["tasks"] == ["triage"]
+    assert "wrong tool" in pair["tasks_not_asked"]["reason"]
+
+
+def test_an_unscoped_model_still_runs_every_task(frozen) -> None:
+    """The negative-space twin: scoping is opt-in per model, and everything else is
+    untouched."""
+    out = MB.run_model_bench(
+        None,
+        models=["ollama|mistral:7b"],
+        clients={"ollama": _Stub(verdict="content", kind="org")},
+        installed_by_backend={"ollama": ["mistral:7b"]},
+        batch=frozen,
+        tasks=("triage", "translation"),
+        persist=False,
+        allow_backend_switch=False,
+    )
+    pair = out["results"]["ollama|mistral:7b"]
+    assert set(pair["tasks"]) == {"triage", "translation"}
+    assert "tasks_not_asked" not in pair
+
+
+def test_both_granite_sizes_are_asked_for_by_exact_tag() -> None:
+    """The bare "granite4.1" resolved to granite4.1:latest, which the operator did not
+    have -- so the exact-tag rule refused it and neither installed size was ever
+    benched."""
+    raw = [m.split("|", 1)[1] for m in MB.DEFAULT_ROSTER if m.startswith("ollama|")]
+    assert "granite4.1:8b" in raw and "granite4.1:3b" in raw
+    assert "granite4.1" not in raw, "the ambiguous bare tag is gone"

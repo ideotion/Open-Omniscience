@@ -15293,6 +15293,17 @@
         if (stg.format_validity != null) bits.push(`tags validity ${stg.format_validity}`);
         const ld = tk.langdetect || {};
         if (ld.accuracy_over_all != null) bits.push(`langdetect ${ld.accuracy_over_all} (n=${ld.n})`);
+        const xl = tk.translation || {};
+        if (xl.in_target_rate != null) {
+          // The RATE with what it was taken over, and the unmeasurable count beside
+          // it: an answer the referee refused to read is a gap in the check, not a
+          // failed translation, and the two must not be read as one number.
+          const judged = (xl.asked || 0) - (xl.unmeasurable || 0);
+          bits.push(`translation in-target ${xl.in_target_rate} (${xl.in_target}/${judged})`);
+          if (xl.unmeasurable) bits.push(`${xl.unmeasurable} unmeasurable`);
+          if (xl.echoed) bits.push(`${xl.echoed} echoed the source`);
+        }
+        if (r.tasks_not_asked) bits.push(`not asked: ${r.tasks_not_asked.tasks.join(", ")}`);
         const errs = Object.keys(tk).filter((k) => tk[k] && tk[k].status === "error");
         if (errs.length) bits.push(`errors: ${errs.join(", ")}`);
         return `<div><b>${esc(key)}</b>${r.quantization ? ` <span class="muted">${esc(r.quantization)}</span>` : ""} — ${esc(bits.join(" · ") || "no metrics")}</div>`;
