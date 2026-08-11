@@ -198,3 +198,43 @@ kept for anyone auditing why a given word is a stopword.
 # Korean (ko) — Hangul; connectives/adverbs (하지만=but, 그러나=however, 따라서=therefore):
 # Marathi (mr) — Devanagari; copulas/conjunctions/pronouns/auxiliaries (आहे=is, आणि=and, नाही=not):
 ```
+
+## English light verbs / quantifiers — source-quality export 2026-08-11
+
+Evidence: the `oo-source-quality-2` bundle of 2026-08-11 (1,047,146-article corpus,
+2,247 sources with articles, 241 of them carrying a non-empty top-12 fingerprint).
+**101 of those 241 fingerprints (41.9%) spend at least one top-12 slot on a contentless
+English word** — 4.1% of fingerprint mentions (9,000 of 217,600). The `per_source_keywords`
+fingerprint is the analyst's first read of whether a source is broken, so a wasted slot
+costs legibility out of proportion to the mention volume.
+
+Added (source-fingerprint count in brackets): `down` [29], `every` [16], `set` [15],
+`best` [15], `read` [11], `find` [9], `added` [8], `end` [8], `went` [5], `look` [5],
+`hours` [2]. Same class as the existing block (`according`/`across`/`ago`/`amid`/
+`among`/`back`/`bad`/`big`) — none was present in any `stopwords_extra` file or
+hard-coded in `extract.py`/`stopwords.py` before this batch.
+
+**Collision review — these were observed leaking and DELIBERATELY NOT added**, because
+`global_stopwords()` unions every file here LANGUAGE-AGNOSTICALLY, so a word that is
+content in any corpus language (or in another English sense) must not be globalised:
+
+| rejected | fingerprints | why it stays a keyword |
+|---|---|---|
+| `top` | 13 | nl *top* = summit (`EU-top`) — a topic, not furniture |
+| `post` | 9 | de/nl *Post* = mail/postal service |
+| `show` | 9 | de *Show* is a noun (a programme) |
+| `access` | 9 | content in its own right — "access to water/healthcare" |
+| `home` | 9 | content in housing/homelessness reporting |
+| `right`, `left` | 7, 6 | political direction — unambiguously content in a news corpus |
+| `life` | 13 | content — "life expectancy", "cost of living" |
+| `put` | 4 | en finance: a *put* option (the corpus carries `finance.yahoo.com`) |
+
+The corpus could not corroborate or refute the collisions on its own: no non-English
+source carries any candidate in its fingerprint, but only 241 sources have a fingerprint
+at all and most are English, so that is absence of evidence rather than evidence of
+absence. The rejections above rest on linguistic review, not on the export.
+
+`hidden_set()` unions `global_stopwords()` at QUERY time
+(`src/analytics/filters.py:121`), so this batch is retroactive with no re-index;
+`extract.py:436` also filters at EXTRACTION time, so applying it BEFORE a large
+re-index additionally stops the rows being written at all.
