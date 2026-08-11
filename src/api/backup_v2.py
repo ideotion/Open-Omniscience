@@ -777,6 +777,7 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
     means a stop mid-batch is resumed exactly, never redone from the top.
     """
     from src.backup.merge import reindex_backlog, reindex_imported_articles
+    from src.database.corpus_lease import corpus_lease
 
     bk = reindex_backlog()
     if not bk.get("available"):
@@ -817,9 +818,10 @@ def _reindex_resume_worker(ctx, **_kw) -> dict:
         def _progress(done: int, _total: int, _base: int = walked) -> None:
             ctx.set_progress(done=_base + done)
 
-        res = reindex_imported_articles(
-            bid, progress_cb=_progress, should_stop=lambda: ctx.stopping or _yield_to_import()
-        )
+        with corpus_lease("reindex-resume"):
+            res = reindex_imported_articles(
+                bid, progress_cb=_progress, should_stop=lambda: ctx.stopping or _yield_to_import()
+            )
         walked += int(b["articles"])
         out["batches"].append({"batch_id": bid, **res})
         out["articles_reindexed"] += int(res.get("reindexed") or 0)

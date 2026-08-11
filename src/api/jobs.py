@@ -396,6 +396,13 @@ def _reindex_jobs() -> list[dict]:
     )
     actions = ["pause", "cancel"] if state == "running" else (["resume", "cancel"] if state in ("paused", "failed") else [])
     label = "Re-indexing the corpus" + (" + pruning keywords" if s.get("prune_after") else "")
+    # A PARKED JOB IS RUNNING AND MAKING NO PROGRESS ON PURPOSE. The manager publishes
+    # `parked_for_exclusive` for exactly this row -- its own comment says "without this
+    # the task manager shows 'running' with a frozen counter, which is exactly the
+    # signature of the stall this yielding was added to avoid" -- and this row never read
+    # it, so a deliberate pause and a hang looked identical. Say which one it is.
+    if s.get("parked_for_exclusive"):
+        label = "Paused for an import — " + label[0].lower() + label[1:]
     return [
         {
             "id": "reindex",

@@ -59,6 +59,11 @@ FLOOR_NOTE = "0.0.8 baseline (6ae5766d3136)"
 
 _SAMPLE_LIMIT = 5
 _SNAPSHOT_KEEP = 3
+
+#: How long the swap waits for another job's in-flight batch to finish before refusing.
+#: Generous on purpose: a re-index batch is 300 articles, and the alternative to waiting
+#: is throwing away an import that has already done hours of work.
+_SWAP_QUIESCE_S = 180.0
 # 2026-07-26 hardware diagnostics W5: _prune_snapshots() (below) only fires as a
 # side effect of a LATER restore -- a "keep 3" policy correctly retains all 3
 # forever once no further restore ever happens, which is exactly the diagnosed
@@ -4786,6 +4791,37 @@ def run_restore(
         # further poll exists -- by design, not by omission.
         _abort_point("swap")
         with timings.stage("swap"):
+            # THE SWAP BARRIER (2026-08-11). os.replace has never been covered by the
+            # single-writer gate -- pause_for_exclusive_operation's own docstring says
+            # so -- and the gate cannot cover it: a re-index batch holds a connection
+            # through its whole read-and-extract phase while holding no gate at all, so
+            # a swap landing there sends its later flush to the old, now-unlinked inode.
+            # Lost silently, and worse than lost: a durable cursor has already moved past
+            # those articles, so nothing goes back for them.
+            #
+            # The exclusive window stops any new batch from STARTING; this waits out the
+            # one that had already begun. On timeout the restore ABORTS -- here, at the
+            # last point where aborting is free and the live corpus is byte-identical --
+            # naming who was holding it. Waiting forever would trade a data-loss window
+            # for a hang; swapping anyway would BE the data loss.
+            #
+            # The wait honours a Stop and then RE-CHECKS the abort point, in that order:
+            # this wait sits past `_abort_point("swap")` above, so without both halves a
+            # Stop pressed during it would be ignored for the full timeout and the swap
+            # would commit anyway -- ruling item 15 says a pre-swap Stop aborts NOW. The
+            # re-check must come BEFORE the still_held refusal, or a user who stopped is
+            # told "another job is writing", which is the wrong cause.
+            from src.database.corpus_lease import wait_for_quiescence
+
+            still_held = wait_for_quiescence(_SWAP_QUIESCE_S, should_stop=should_stop)
+            _abort_point("swap")
+            if still_held:
+                raise RestoreAborted(
+                    "another job is still writing to your corpus ("
+                    + ", ".join(still_held)
+                    + f") after waiting {_SWAP_QUIESCE_S:.0f}s — nothing was written to "
+                    "your corpus. Stop that job, or let it finish, and import again."
+                )
             target = live_db_path()
             dispose_engine()
             for suffix in ("-wal", "-shm"):
