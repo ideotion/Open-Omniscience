@@ -3314,6 +3314,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     with the numbers and nothing read it — when a payload carries a unit, the renderer
     that ignores it will be wrong for every producer that is not the one it was written
     against.
+  - **A SECOND STORE FOR THE SAME KIND OF THING IS A SECOND ENUMERATOR NOBODY WROTE —
+    and its layout may be incompatible with a guard you already shipped (2026-08-11,
+    "vLLM models were not saved, only ollama models"):** `collect_model_items` listed the
+    Ollama store and nothing else, so on a machine serving with vLLM the large-data
+    backup carried no weights and still said "Backup complete" — it had copied everything
+    it knew about. That is the 2026-08-11 Ollama-store lesson one store over: when a
+    second backend arrives, every enumerator phrased around the first is now wrong, and
+    it fails by reporting SUCCESS. THE INTERESTING HALF IS THE LAYOUT. A Hugging Face
+    repo keeps its bytes once in `blobs/<sha>` and reaches them by SYMLINK from
+    `snapshots/<rev>/`, so both obvious designs fail: copying both trees stores every
+    multi-GB weight TWICE (the copier opens its source, so it follows the link), and
+    storing the links collides with `restore_folder_backup`'s flat refusal of symlinks —
+    a 2026-07-25 fix for a live-reproduced arbitrary-file copy out of an editable backup
+    folder. The way through is to copy the snapshot entries with the link RESOLVED and
+    skip `blobs/`: one copy, no link anywhere in the artifact, and the restored tree is
+    the layout `huggingface_hub` itself produces where symlinks are unavailable rather
+    than one invented for the occasion. GENERAL FORM: before teaching a backup a new
+    source, check whether that source's on-disk shape is compatible with the guards the
+    restore side already enforces — a design that needs the guard relaxed is the wrong
+    design, not a reason to relax it. And state the residual cost rather than hiding it:
+    two revisions of one repo sharing a blob are stored once per revision.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;

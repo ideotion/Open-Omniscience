@@ -6653,7 +6653,7 @@
       const c = [];
       if ($("fb-wiki") && $("fb-wiki").checked) c.push("wiki_dumps");
       if ($("fb-osm") && $("fb-osm").checked) c.push("osm_regions");
-      if ($("fb-models") && $("fb-models").checked) c.push("models");
+      if ($("fb-models") && $("fb-models").checked) { c.push("models"); c.push("hf_models"); }
       return c;
     }
     // ---- Unified Export/Backup dialog -------------------------------------- //
@@ -6976,7 +6976,7 @@
       const bar = document.getElementById("ux-bar");
       const pauseBtn = document.getElementById("ux-pause");
       const blobs = [];
-      if (document.getElementById("ux-c-models") && document.getElementById("ux-c-models").checked) blobs.push("models");
+      if (document.getElementById("ux-c-models") && document.getElementById("ux-c-models").checked) { blobs.push("models"); blobs.push("hf_models"); }
       if (document.getElementById("ux-c-maps") && document.getElementById("ux-c-maps").checked) blobs.push("osm_regions");
       if (document.getElementById("ux-c-wiki") && document.getElementById("ux-c-wiki").checked) blobs.push("wiki_dumps");
       // A corpus-less export is now a first-class choice, so neither half is assumed:
