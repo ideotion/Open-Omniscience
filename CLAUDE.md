@@ -3435,6 +3435,25 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     today — a bundle called `20260811_…` for a document about last month is a
     filename that lies), and make a repeat's ordinal a POSITION among siblings rather
     than a next-free counter, or re-downloading the same artifact renames it.
+  - **A FIXTURE WHERE TWO DATES COINCIDE CANNOT TEST WHICH ONE A NAME USES
+    (2026-08-11, the annexes date rules):** the rule was "an article file is named for
+    its PUBLICATION date, never the day we collected it" — and the mutation that named
+    files by the collection date **passed all 44 tests**, because the fixture published
+    at 09:30 and collected at 10:00 on the same day. Same shape as the recorded
+    bucket-granularity miss: the fixture matched production in every dimension except
+    the one the rule is about. Published 2026-08-05 against collected 2026-08-09, plus
+    one article published in a different YEAR driven through the real bundle, and the
+    mutation fails eleven tests. GENERAL FORM: when a rule picks one of two fields,
+    the fixture must make them DIFFER, and a distinguishing test asserts the loser
+    appears NOWHERE (`not any("20260809" in n for n in names)`) rather than only that
+    the winner appears. TWO COROLLARIES from the same change. (a) A derived name should
+    come from the RECORD's own account of an event (`generated_at`), not from `now()`:
+    a download-time date gives one document two names across two days, and it also
+    breaks an ordinal computed per creation-day, since two editions made weeks apart
+    but downloaded together would share a stem the ordinal cannot separate. (b) When a
+    filename stops being derivable from an identifier the reader holds, the index that
+    matches the two becomes load-bearing — say so in the citing document rather than
+    leaving a reader to construct a name that no longer exists.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;

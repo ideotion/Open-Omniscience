@@ -39,17 +39,28 @@ import io
 import logging
 import re
 import zipfile
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 from typing import Any
 
 _LOG = logging.getLogger(__name__)
 
 #: The report's own name pattern, and the annexes' — the maintainer's, verbatim.
-#: ``YYYYMMDD`` is the period's LAST DAY, not the day the file was produced, which
-#: is what the edition record already uses (``store.edition_filename``). A weekly
-#: kept for a year then sorts by the week it covers, and the report's name can be
-#: paired with the record it came from. It also means regenerating the same period
-#: yields the same name, which is what the ordinal below is for.
+#: THREE DATES, EACH FROM A DIFFERENT FACT (maintainer, 2026-08-11). They are not
+#: interchangeable and the whole point of separating them is that each answers a
+#: different question a reader might have:
+#:
+#: * the REPORT and the ZIP carry the date the bundle was CREATED — when this
+#:   document came into being, which is what an operator filing it is filing;
+#: * each ARTICLE file carries the article's own PUBLICATION date — asserted by the
+#:   publisher, never the day this app happened to collect it, so a 2019 piece cited
+#:   in a 2026 bulletin reads as 2019;
+#: * the CONTENTS page carries the creation date, because it describes the bundle
+#:   rather than any one article.
+#:
+#: CONSEQUENCE, stated because it changes how the bundle is read: an article's
+#: filename can no longer be derived from its reference number. The contents page
+#: lists the filename against every number for exactly that reason, and the report's
+#: legend says so.
 _CADENCE_LABEL = {
     "daily": "Daily",
     "weekly": "Weekly",
@@ -74,47 +85,47 @@ def _label(cadence: str) -> str:
     return _CADENCE_LABEL.get(c, c.title() or "Period")
 
 
-class UnnameableEdition(ValueError):
-    """The record does not say which period it covers, so it cannot be named.
-
-    Raised rather than defaulted. A bundle named after today when the record is
-    about last month is a filename that lies, and an operator keeping a year of
-    these would have no way to notice.
-    """
+UNDATED = "undated"
 
 
-def period_facts(edition: dict) -> tuple[str, date]:
-    """The cadence and last covered day, read out of the record.
-
-    Deliberately NOT a rebuilt ``Period``. Naming needs two facts, and a ``Period``
-    additionally carries a baseline window whose consistency ``resolve_period`` goes
-    out of its way to make unrepresentable — reconstructing one from a dict would
-    reintroduce exactly the start/end disagreement that module refuses to allow.
-    """
-    p = edition.get("period") or {}
-    cadence = str(p.get("cadence") or "").strip() or "period"
-    raw_last, raw_end = p.get("last_day"), p.get("end")
+def _day(raw: Any) -> date | None:
+    """The date part of an ISO timestamp, or None. Never a guess."""
+    if not raw:
+        return None
     try:
-        if raw_last:
-            return cadence, date.fromisoformat(str(raw_last))
-        if raw_end:
-            # ``end`` is exclusive, so the last covered day is the day before it.
-            return cadence, date.fromisoformat(str(raw_end)) - timedelta(days=1)
-    except (TypeError, ValueError) as exc:
-        raise UnnameableEdition(f"period dates are unreadable: {exc}") from exc
-    raise UnnameableEdition("the record carries no period end")
+        return date.fromisoformat(str(raw)[:10])
+    except (TypeError, ValueError):
+        return None
+
+
+def creation_date(edition: dict) -> date:
+    """The day this bulletin came into being.
+
+    ``generated_at`` is stamped by ``store.persist_edition``, so it is the record's
+    own account of when it was made — and using it rather than ``now()`` is what
+    makes the name STABLE: downloading the same edition next month must not produce a
+    differently-named file, or an operator's archive gains a second copy of one
+    document under two names. It also keeps the ordinal below meaningful, since two
+    editions made on one day share a stem and the ordinal is what separates them; a
+    download-time date would give the same stem to two editions made weeks apart and
+    the ordinal, computed per creation day, could not tell them apart.
+
+    A record with no readable ``generated_at`` falls back to today, which is honest:
+    the bundle genuinely is being created now, and nothing is claimed that is not so.
+    """
+    return _day(edition.get("generated_at")) or datetime.now(UTC).date()
 
 
 def bundle_stem(edition: dict, *, ordinal: int = 1) -> str:
-    """``20260810_OOS_Bulletin_Weekly``, with ``_2`` and up for a repeat.
+    """``20260811_OOS_Bulletin_Weekly``, with ``_2`` and up for a repeat.
 
-    The ordinal is the ONLY thing that distinguishes two bundles for the same period
-    and cadence, which is exactly the "several bulletins produced the same day" case.
-    It is a POSITION, not a next-free counter, so re-downloading an edition always
-    produces the same filename instead of a new one each time.
+    The date is the bundle's CREATION day and the ordinal is what distinguishes two
+    bulletins created on it — the "several bulletins produced the same day" case. It
+    is a POSITION among that day's editions, not a next-free counter, so
+    re-downloading one always produces the same filename.
     """
-    cadence, last_day = period_facts(edition)
-    stem = f"{last_day.strftime('%Y%m%d')}_OOS_Bulletin_{_label(cadence)}"
+    cadence = str((edition.get("period") or {}).get("cadence") or "").strip()
+    stem = f"{creation_date(edition).strftime('%Y%m%d')}_OOS_Bulletin_{_label(cadence)}"
     n = int(ordinal or 1)
     return stem if n <= 1 else f"{stem}_{n}"
 
@@ -128,32 +139,53 @@ def annexes_filename(edition: dict, *, ordinal: int = 1) -> str:
     return f"{bundle_stem(edition, ordinal=ordinal)}_Annexes.zip"
 
 
-def article_filename(last_day: date, ref: str) -> str:
-    """``20260810_Article_0001.md`` — the report's own date stem, so the file
-    visibly belongs to the report that cites it."""
-    return f"{last_day.strftime('%Y%m%d')}_Article_{_SAFE.sub('', str(ref))}.md"
+def contents_filename(edition: dict) -> str:
+    """``20260811_Table_of_Contents.md`` — the creation date, because this file
+    describes the BUNDLE rather than any one article."""
+    return f"{creation_date(edition).strftime('%Y%m%d')}_Table_of_Contents.md"
+
+
+def article_filename(published_at: Any, ref: str) -> str:
+    """``20260805_Article_0001.md`` — the article's own PUBLICATION date.
+
+    Not the day it was collected, and not the bundle's date: a 2019 piece cited in a
+    2026 bulletin reads as 2019, which is a fact about the source rather than about
+    this app's schedule.
+
+    ``published_at`` is what the PUBLISHER asserted and is frequently absent —
+    extraction fails, or a page carries no date. That case is named ``undated``
+    rather than filled with the collection date, because substituting the day we
+    happened to fetch something for the day it was published is exactly the
+    conflation this naming was changed to remove.
+    """
+    day = _day(published_at)
+    stamp = day.strftime("%Y%m%d") if day else UNDATED
+    return f"{stamp}_Article_{_SAFE.sub('', str(ref))}.md"
 
 
 def edition_ordinal(filename: str | None, siblings: list[dict]) -> int:
-    """Which bundle this edition is, among those covering the same period.
+    """Which bundle this edition is, among those CREATED on the same day.
 
-    ``siblings`` is ``store.list_editions()``. The position is taken over SORTED
-    filenames rather than write times: a file's mtime changes when it is touched,
-    and a name that moves under the operator is worse than an arbitrary but fixed
-    order. An edition that was never persisted has no filename and is the first.
+    Each ``siblings`` row needs ``filename``, ``cadence`` and ``generated_at`` —
+    ``store.list_editions()`` supplies the first two from the filename; the third
+    lives inside each record, so the caller reads it (see ``api.bulletin._siblings``,
+    which only opens the same-cadence ones, since nothing else can share a stem).
+
+    The position is taken over SORTED FILENAMES rather than write times: a file's
+    mtime changes when it is touched, and a name that moves under the operator is
+    worse than an arbitrary but fixed order. An edition that was never persisted has
+    no filename and is the first.
     """
     if not filename:
         return 1
     me = next((r for r in siblings if r.get("filename") == filename), None)
     if me is None:
         return 1
-    key = (me.get("covers_through"), me.get("cadence"))
-    if key == (None, None):
-        return 1
+    key = (_day(me.get("generated_at")), me.get("cadence"))
     same = sorted(
         r["filename"]
         for r in siblings
-        if (r.get("covers_through"), r.get("cadence")) == key and r.get("filename")
+        if r.get("filename") and (_day(r.get("generated_at")), r.get("cadence")) == key
     )
     try:
         return same.index(filename) + 1
@@ -437,7 +469,6 @@ def contents_markdown(
     index: list[dict],
     *,
     stem: str,
-    last_day: date,
     analyses_by_id: dict[int, list[dict]],
     full_text: bool,
     truncated_from: int | None,
@@ -461,17 +492,23 @@ def contents_markdown(
         "",
         "## How the numbering works",
         "",
-        f"A bracketed number in the report — `[0001]` — is a file here, named "
-        f"`{article_filename(last_day, '0001')}`. One number per article: an article the "
-        "report cites in two places keeps one number and has one file. The numbers run "
-        "in the order a reader meets them in the report.",
+        "A bracketed number in the report — `[0001]` — is one file here. One number per "
+        "article: an article the report cites in two places keeps one number and has one "
+        "file. The numbers run in the order a reader meets them in the report.",
+        "",
+        "Each file is named for the day its article was **published** — "
+        f"`{article_filename('2026-08-05', '0001')}` — so a piece from years ago reads as "
+        "years ago rather than as the day this bundle was made. An article the publisher "
+        f"gave no date is named `{article_filename(None, '0001')}`; the collection date is "
+        "not substituted for a publication date. So the filename cannot be worked out from "
+        "the number alone, and the table below is where the two are matched.",
         "",
         "## What is in this bundle",
         "",
         _md_kv("Report", f"`{stem}.md`  (downloaded beside this ZIP, not inside it)"),
         _md_kv(
             "Period",
-            f"{p.get('start', '—')} to {p.get('last_day', last_day)} "
+            f"{p.get('start') or '—'} to {p.get('last_day') or '—'} "
             f"({p.get('days', '—')} days)",
         ),
         _md_kv("Cadence", p.get("cadence")),
@@ -522,8 +559,8 @@ def contents_markdown(
         cited = "; ".join(e.get("cited_in") or []) or "—"
         title = str(e.get("title") or "(untitled)").replace("|", "\\|")
         out.append(
-            f"| `{e['ref']}` | `{article_filename(last_day, e['ref'])}` | {title} | "
-            f"{e.get('source') or '—'} | {e.get('published_at') or '—'} | {cited} |"
+            f"| `{e['ref']}` | `{article_filename(e.get('published_at'), e['ref'])}` | "
+            f"{title} | {e.get('source') or '—'} | {e.get('published_at') or '—'} | {cited} |"
         )
     out.append("")
     return "\n".join(out)
@@ -550,7 +587,6 @@ def build_annexes(
     from src.bulletin.articles import article_analyses, article_bodies
 
     index = assign_refs(edition)
-    _cadence, last_day = period_facts(edition)
     stem = bundle_stem(edition, ordinal=ordinal)
     ids = [e["id"] for e in index]
 
@@ -614,7 +650,7 @@ def build_annexes(
                 )
             else:
                 spent += len(body)
-            name = f"{stem}/{article_filename(last_day, entry['ref'])}"
+            name = f"{stem}/{article_filename(entry.get('published_at'), entry['ref'])}"
             zf.writestr(
                 name,
                 article_markdown(
@@ -627,15 +663,13 @@ def build_annexes(
             )
             written.append(name)
 
-        # ``00_`` so it sorts above the articles in every file manager. The contents
-        # page is written LAST because it reports what the loop above actually did.
+        # Written LAST because it reports what the loop above actually did.
         zf.writestr(
-            f"{stem}/00_Table_of_Contents.md",
+            f"{stem}/{contents_filename(edition)}",
             contents_markdown(
                 edition,
                 index,
                 stem=stem,
-                last_day=last_day,
                 analyses_by_id=analyses,
                 full_text=full_text,
                 truncated_from=truncated_from,

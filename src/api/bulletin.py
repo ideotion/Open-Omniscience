@@ -259,8 +259,8 @@ def render_edition(
 
     # The DOWNLOADED name is the report's own, not the record's: the record is
     # `20260810-OOS-weekly-<id>.json` and the document an operator keeps is
-    # `20260810_OOS_Bulletin_Weekly.md`, which pairs by date and cadence with the
-    # annexes ZIP beside it.
+    # `20260811_OOS_Bulletin_Weekly.md` — the day the bulletin was created, matching
+    # the annexes ZIP beside it.
     stem = _bundle_stem(edition, filename)
     if (fmt or "").strip().lower() == "html":
         return HTMLResponse(
@@ -273,26 +273,44 @@ def render_edition(
     )
 
 
-def _ordinal(filename: str) -> int:
-    from src.bulletin.annexes import edition_ordinal
-    from src.bulletin.store import list_editions
+def _ordinal(edition: dict, filename: str) -> int:
+    """Which bulletin of its creation day this is.
 
-    return edition_ordinal(filename, list_editions())
+    ``list_editions()`` reads the filename for the cadence but the creation date lives
+    INSIDE each record, so the siblings' ``generated_at`` has to be read. Only the
+    same-cadence editions are opened: nothing else can share a stem, so nothing else
+    can affect the position. That keeps a click-time read bounded to the editions that
+    could actually collide rather than to the whole directory.
+    """
+    from src.bulletin.annexes import edition_ordinal
+    from src.bulletin.store import list_editions, read_edition
+
+    mine = str((edition.get("period") or {}).get("cadence") or "").strip().lower()
+    siblings: list[dict] = []
+    for row in list_editions():
+        name = row.get("filename")
+        if not name or str(row.get("cadence") or "").lower() != mine:
+            continue
+        try:
+            rec = edition if name == filename else read_edition(name)
+        except (FileNotFoundError, ValueError):
+            # An unreadable sibling cannot be named either, so it cannot occupy a
+            # position. Skipped rather than guessed at.
+            continue
+        siblings.append(
+            {
+                "filename": name,
+                "cadence": mine,
+                "generated_at": rec.get("generated_at"),
+            }
+        )
+    return edition_ordinal(filename, siblings)
 
 
 def _bundle_stem(edition: dict, filename: str) -> str:
-    """The report's own filename stem, from the period the record says it covers.
+    from src.bulletin.annexes import bundle_stem
 
-    A record whose period cannot be read is a 422 rather than a name built from
-    today: a bundle called `20260811_…` for a document about last month is a
-    filename that lies, and an operator keeping a year of them could not notice.
-    """
-    from src.bulletin.annexes import UnnameableEdition, bundle_stem
-
-    try:
-        return bundle_stem(edition, ordinal=_ordinal(filename))
-    except UnnameableEdition as exc:
-        raise HTTPException(status_code=422, detail=f"this edition cannot be named: {exc}") from exc
+    return bundle_stem(edition, ordinal=_ordinal(edition, filename))
 
 
 @router.get("/editions/{filename}/annexes")
@@ -319,7 +337,7 @@ def annexes(
     """
     from fastapi.responses import Response
 
-    from src.bulletin.annexes import UnnameableEdition, build_annexes
+    from src.bulletin.annexes import build_annexes
     from src.bulletin.review import apply_selection
     from src.bulletin.store import read_edition
 
@@ -329,13 +347,9 @@ def annexes(
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="no such edition") from exc
 
+    ordinal = _ordinal(edition, filename)
     edition = apply_selection(edition, **_selection(exclude_sections, exclude_stories))
-    try:
-        out = build_annexes(
-            db, edition, ordinal=_ordinal(filename), full_text=bool(full_text)
-        )
-    except UnnameableEdition as exc:
-        raise HTTPException(status_code=422, detail=f"this edition cannot be named: {exc}") from exc
+    out = build_annexes(db, edition, ordinal=ordinal, full_text=bool(full_text))
     return Response(
         content=out["data"],
         media_type="application/zip",

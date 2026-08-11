@@ -104,9 +104,10 @@ def _ref_legend(edition: dict) -> list[str]:
         return []
     return [
         f"A number like `[0001]` beside an article is its annex file — {n:,} of them, "
-        "one per article this report cites, in the companion `…_Annexes.zip` with a "
-        "contents page. The number identifies the article, so an article cited twice "
-        "keeps one number.",
+        "one per article this report cites, in the companion `…_Annexes.zip`. The number "
+        "identifies the article, so an article cited twice keeps one number. Each file is "
+        "named for the day its article was PUBLISHED, not for this report, so look the "
+        "number up in the bundle's contents page to find its filename.",
         "",
     ]
 
