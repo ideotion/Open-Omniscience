@@ -161,6 +161,80 @@ def classify_non_article(
     return None  # looks like a real article — keep it
 
 
+# --------------------------------------------------------------------------- #
+# Index pages ABOVE the body guard (source-quality export 2026-08-11)
+# --------------------------------------------------------------------------- #
+# The ``_ARTICLE_MIN_WORDS`` guard above exists so a genuine article at ``/business`` or
+# ``/tag/gaza`` is never dropped. The 2026-08-11 export measured what it actually admits on
+# a 1,047,146-article corpus: in an unbiased 2,247-article random control, 10.95% carry a URL
+# this module's OWN rules call a non-article, and 8.10% of the corpus sits ABOVE the guard --
+# so the rule is vetoed on three quarters of the population it was written for. 36 of those
+# above-guard items were read by hand (20 drawn across all shapes, 16 from the riskier Tier 2)
+# and 36/36 were listings: section fronts, tag/author/topic archives, homepages, a sitemap, a
+# search-results page. Zero were the real article the guard protects.
+#
+# The prose gate cannot reach them either: a category front's body is several REAL teaser
+# paragraphs concatenated, so it has ordinary punctuation and ordinary function-word density
+# -- precisely what the gate is built not to fire on.
+#
+# Two corroborating signals were measured on the same export and BOTH REFUTED, recorded so
+# they are not re-chased: line structure (unterminated-line fraction + median line length)
+# gave 20-43% recall at 10-21% collateral, and "the title reads as a section label" gave a
+# 22.9% false-positive rate on normal URLs -- backwards, because for a real article the slug
+# IS the title. So no corroborator is proposed. The asymmetry (a false positive is data loss)
+# is handled by REVERSIBILITY instead: these feed the quarantine STAMP, never a delete, and
+# never this module's ingest-time drop, whose contract is byte-unchanged by this addition.
+#
+# TIERS express how much review the shape needs, not how confident the reading was:
+#   TIER 1 -- a real article is STRUCTURALLY impossible. A homepage has no path segment to
+#             put a slug in; a ``/page/4`` is a pagination cursor; ``/tag/`` with no value
+#             names no subject; an auth/cart/feed/sitemap/search path serves no article body.
+#   TIER 2 -- a listing by convention, where an article COULD in principle live: a taxonomy
+#             segment WITH a value (``/topic/subsea-systems``), a single section word
+#             (``/business``), and the utility words that can front real content (a print
+#             view, a download page, a glossary entry).
+_TIER2_UTILITY = frozenset({"print", "download", "downloads", "glossary"})
+
+
+@dataclass(frozen=True)
+class IndexPageVerdict:
+    """A listing-shaped URL, whatever the body length. ``tier`` is 1 when a real article is
+    structurally impossible at that URL and 2 when one could in principle live there — a
+    review-effort split, never a confidence score."""
+
+    signal: str
+    tier: int
+    reason: str
+
+
+def classify_index_page(url: str) -> IndexPageVerdict | None:
+    """Return a verdict if ``url`` is listing-SHAPED, ignoring the body-length guard entirely.
+
+    Deliberately URL-only: the body is what makes these invisible to every other detector, so
+    consulting it would reintroduce the blind spot. Returns ``None`` for anything
+    :func:`classify_non_article` does not already recognise, so this can never widen the set
+    of shapes the project treats as non-articles — it only reports the ones the guard hides.
+    """
+    verdict = classify_non_article(url)  # word_count/text omitted => pure URL-shape rules
+    if verdict is None:
+        return None
+
+    segments = [s for s in urlparse(url).path.strip("/").lower().split("/") if s]
+    tier = 1
+    if verdict.signal == "url_section":
+        tier = 2
+    elif verdict.signal == "url_taxonomy":
+        # a taxonomy segment with a VALUE could front a real article; a bare '/tag/' cannot.
+        for i, seg in enumerate(segments):
+            if seg in _TAXONOMY_SEGMENTS:
+                tier = 2 if segments[i + 1:] else 1
+                break
+    elif verdict.signal == "url_utility":
+        if any(seg in _TIER2_UTILITY for seg in segments):
+            tier = 2
+    return IndexPageVerdict(verdict.signal, tier, verdict.reason)
+
+
 def skip_non_articles_enabled() -> bool:
     """Whether the ingest path drops non-articles (``OO_SKIP_NON_ARTICLES``, default ON). Set it to
     ``0``/``false`` to keep everything (the filter is fully reversible)."""
