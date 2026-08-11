@@ -42,7 +42,25 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
+from src.database.corpus_lease import corpus_lease
+
 _BATCH = 300  # candidates scanned per loop iteration (mirrors ReindexJobManager's _BATCH)
+
+#: How often a parked job re-checks whether the import still owns the machine.
+_EXCLUSIVE_POLL_S = 5.0
+
+
+def _import_owns_the_machine() -> bool:
+    """True while an import run holds the exclusive window. Best-effort: an
+    unreadable scheduler must never park this job forever."""
+    try:
+        from src.scheduler.runner import exclusive_window_open
+
+        return exclusive_window_open()
+    except Exception:  # noqa: BLE001 - a courtesy check is never load-bearing
+        return False
+
+
 _STATE_FILE = "quarantine_job.json"  # OWN state file -- never touches reindex_job.json
 
 
@@ -337,8 +355,17 @@ class QuarantineJobManager:
                 while True:
                     if self._stop.is_set():
                         break
-                    r = work(session, after_id=after, limit=_BATCH, write=write,
-                             index_page_tiers=tiers or None)
+                    # Stand aside for an import (2026-08-11). This job had no awareness
+                    # of the exclusive window at all -- another entry point added after
+                    # the "gate every entry point" ruling, and so the one it missed. The
+                    # wait is on the stop event, so pause/cancel stay instant while parked.
+                    while not self._stop.is_set() and _import_owns_the_machine():
+                        self._stop.wait(_EXCLUSIVE_POLL_S)
+                    if self._stop.is_set():
+                        break
+                    with corpus_lease("quarantine"):
+                        r = work(session, after_id=after, limit=_BATCH, write=write,
+                                 index_page_tiers=tiers or None)
                     after = int(r["last_id"])
                     with self._lock:
                         self._tally["scanned"] = self._tally.get("scanned", 0) + int(r.get("scanned", 0))

@@ -254,6 +254,30 @@ try_apt_install_venv() {
     "$PY" -c 'import ensurepip' >/dev/null 2>&1
 }
 
+# --------------------------------------------------------------------------- #
+# Offline (air-gapped) install support.
+# --------------------------------------------------------------------------- #
+# OO_OFFLINE_BUNDLE points at a dependency bundle built by
+# scripts/build_offline_bundle.sh. When it is set, every package comes from that
+# folder and pip's index is disabled, so the install makes no network request at
+# all. When it is UNSET -- the normal, connected install -- none of this runs and
+# the behaviour below is exactly what it always was.
+OFFLINE_BUNDLE="${OO_OFFLINE_BUNDLE:-}"
+is_offline() { [ -n "$OFFLINE_BUNDLE" ]; }
+
+# Install pip into a bare venv from the bundle's own wheels. This is what lets an
+# air-gapped Debian box work at all: `ensurepip` lives in a separate apt package
+# there, and apt would need a network. A wheel is a zip with a runnable pip
+# inside, so pip can install itself from one.
+_offline_bootstrap_pip() {
+    local pip_whl
+    pip_whl="$(find "$OFFLINE_BUNDLE/bootstrap" -maxdepth 1 -name 'pip-*.whl' 2>/dev/null | head -1)"
+    [ -n "$pip_whl" ] || die "The offline bundle has no pip wheel in bootstrap/ -- rebuild it with scripts/build_offline_bundle.sh."
+    "$SRC_DIR/.venv/bin/python" "$pip_whl/pip" install --no-index \
+        --find-links "$OFFLINE_BUNDLE/bootstrap" pip setuptools wheel >/dev/null \
+        || die "Could not install pip from the offline bundle."
+}
+
 create_venv() {
     cd "$SRC_DIR"
     if [ ! -d .venv ]; then
@@ -264,6 +288,18 @@ create_venv() {
         if ! "$PY" -c 'import ensurepip' >/dev/null 2>&1; then
             venv_pkg="python3-venv"
             case "$PY" in *3.13*) venv_pkg="python3.13-venv";; esac
+            if is_offline; then
+                # No apt, no network: build the venv without ensurepip and put pip in
+                # ourselves. `venv --without-pip` never imports ensurepip, so a missing
+                # python3-venv package stops mattering.
+                step "Creating virtual environment (.venv) with pip from the offline bundle"
+                "$PY" -m venv --without-pip .venv || die "Could not create the virtual environment."
+                _offline_bootstrap_pip
+                ok "Virtual environment ready (offline)"
+                # shellcheck disable=SC1091
+                . .venv/bin/activate
+                return 0
+            fi
             if try_apt_install_venv "$venv_pkg"; then
                 ok "Installed $venv_pkg"
             else
@@ -291,6 +327,52 @@ create_venv() {
     ok "Virtual environment ready"
 }
 
+# Install everything from the offline bundle. Kept separate from the online path
+# below so the connected install is untouched, and because the failure modes are
+# different: offline there is no network to blame and no point retrying -- a miss
+# means the bundle was built without the component being asked for.
+_pip_install_offline() {
+    local spec="$1" extras="${2-}"
+    say ""
+    say "  ${BOLD}Installing from the offline bundle${RST} -- no network is used."
+    say "    ${DIM}$OFFLINE_BUNDLE${RST}"
+    if [ "${OO_SKIP_PIP:-0}" = "1" ]; then warn "OO_SKIP_PIP=1 -- skipping pip install ($spec)"; return 0; fi
+    local pip_tmp="${XDG_CACHE_HOME:-$HOME/.cache}/oo-pip-build"
+    mkdir -p "$pip_tmp"
+    # Since Python 3.12, `python -m venv` installs pip and NOTHING ELSE -- no
+    # setuptools. The editable install below runs with --no-build-isolation (build
+    # isolation would try to FETCH a build backend, which is exactly what we cannot
+    # do), so the backend has to be here already. The online path gets this from its
+    # own "upgrade pip setuptools wheel" step; offline it comes from the bundle.
+    step "Preparing the build tools (from the bundle)"
+    TMPDIR="$pip_tmp" python -m pip install --no-index \
+        --find-links "$OFFLINE_BUNDLE/bootstrap" --upgrade pip setuptools wheel >/dev/null 2>&1 \
+        || die "Could not install setuptools/wheel from the bundle's bootstrap/ folder."
+    step "Installing the app: $spec"
+    # --no-index: never reach for PyPI, even if a network appears mid-install.
+    # --no-build-isolation: pip would otherwise try to FETCH a fresh build backend
+    #   to build this project; the venv already has setuptools from the bundle.
+    if TMPDIR="$pip_tmp" python -m pip install \
+            --no-index --no-build-isolation \
+            --find-links "$OFFLINE_BUNDLE/wheels" \
+            --find-links "$OFFLINE_BUNDLE/bootstrap" \
+            -e "$spec"; then
+        ok "Python packages installed from the bundle"
+        return 0
+    fi
+    echo ""
+    warn "Could not install from the offline bundle."
+    echo "     Nothing was downloaded -- this is not a network problem."
+    echo "     The usual cause is a bundle that does not match this machine or this"
+    echo "     component selection:"
+    echo "       • built for a different CPU architecture (this machine: $(uname -m))"
+    echo "       • built for a different Python (this venv: $(python -V 2>&1))"
+    echo "       • built without the components being installed here: core${extras:+, $extras}"
+    echo "     Rebuild it on the connected machine and copy it across again:"
+    echo "         scripts/build_offline_bundle.sh --extras \"$extras\""
+    die "Offline installation failed (see above)."
+}
+
 pip_install() {
     local extras="$1" spec=".[$extras]"
     [ -n "$extras" ] || spec="."
@@ -300,6 +382,7 @@ pip_install() {
     if [ -n "$extras" ] && ! printf '%s' "$extras" | grep -qE '^[A-Za-z0-9_.,-]+$'; then
         die "Internal error: invalid component spec '$extras'. Please report this."
     fi
+    if is_offline; then _pip_install_offline "$spec" "$extras"; return; fi
     # Tell the user roughly how much will download before the long step begins.
     print_download_estimate "$extras"
     if [ "${OO_SKIP_PIP:-0}" = "1" ]; then warn "OO_SKIP_PIP=1 -- skipping pip install ($spec)"; return; fi

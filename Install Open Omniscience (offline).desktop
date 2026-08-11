@@ -1,0 +1,15 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Install Open Omniscience (offline)
+GenericName=Offline Installer
+Comment=Install Open Omniscience on a machine with no internet connection
+# %k is this file's own location, so the launcher works from wherever the zip was
+# extracted -- no absolute path can be baked in at packaging time. The ${1#file://}
+# strip handles file managers that hand over a URI instead of a plain path.
+Exec=bash -c 'p="${1#file://}"; cd "$(dirname "$p")" || exit 1; exec ./install-offline.sh' _ %k
+Icon=system-software-install
+Terminal=true
+Categories=Utility;System;
+Keywords=install;offline;airgap;setup;
+StartupNotify=false

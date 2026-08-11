@@ -1463,7 +1463,7 @@
     // The arbitration ASK (ruled): a new heavy task while one runs is offered
     // a choice, never silently piled up. Dumps queue automatically (real
     // queue); collect/import ask proceed-or-wait.
-    async function arbitrate(actionLabel) {
+    async function arbitrate(actionLabel, note) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
       let d; try { d = await api("/api/jobs"); } catch { return true; }
       // Parallel across kinds is the DEFAULT (maintainer-amended): a wiki
@@ -1471,7 +1471,12 @@
       // real DB-writer collision asks.
       if (!d.db_writers_busy) return true;
       const busy = (d.busy_with || []).join(", ");
-      return confirm(`${t("Another network task is running:")} ${busy}\n\n${t("Start anyway? (Cancel waits — the running task keeps the bandwidth and the database writer to itself.)")} ${actionLabel}`);
+      // "network task" was wrong for the collision this actually fires on -- it fires
+      // ONLY on db_writers_busy, and a re-index is not a network task. Re-keyed, not
+      // re-worded around, so the twelve reviewed translations carry the new claim.
+      return confirm(`${t("Another job is writing to the database:")} ${busy}\n\n`
+        + (note ? note + "\n\n" : "")
+        + `${t("Start anyway? (Cancel waits — the running task keeps the bandwidth and the database writer to itself.)")} ${actionLabel}`);
     }
 
     // Task-manager window subtab switch (Tasks / System). The render targets
@@ -7391,6 +7396,11 @@
       if (f.newsletters && cb("ux-i-eml")) items.push({ kind: "newsletters", path: src, label: t("Newsletters") });
       if (!items.length) { toast(t("Nothing selected to import."), "err"); return; }
 
+      // ASK before piling onto a running DB writer (2026-08-11). The Collect button
+      // has always asked; the import never did, so a re-index quietly parked with no
+      // word to the operator about why its counter stopped. The reassurance is the
+      // point of asking here: the honest answer is "yes, and nothing is lost".
+      if (!await arbitrate(t("Import"), t("A running re-index pauses while the import runs and resumes afterwards — nothing is lost."))) return;
       btn.disabled = true;
       const bgBtn = document.getElementById("ux-imp-bg");
       if (bgBtn) bgBtn.style.display = "";
