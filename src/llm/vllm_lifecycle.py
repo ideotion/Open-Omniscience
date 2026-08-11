@@ -1008,11 +1008,16 @@ def _eager_default(vram_mb: int | None) -> bool:
     return (vram_mb / 1024.0) <= _EAGER_MAX_VRAM_GB
 
 
+#: The DEFAULT model's weight footprint (Ministral 3 3B FP8, measured 4.47 GiB), kept
+#: at 5.0 as a conservative margin. Named so `start()` can tell "the assumption" from
+#: "a measurement" instead of comparing against a literal in another function.
+_DEFAULT_WEIGHT_GB = 5.0
+
 def compute_server_args(
     vram_mb: int | None,
     *,
     vram_free_mb: int | None = None,
-    weight_footprint_gb: float = 5.0,
+    weight_footprint_gb: float = _DEFAULT_WEIGHT_GB,
     kv_cache_reserve_frac: float = 0.15,
     max_model_len_override: int | None = None,
     gpu_memory_utilization_override: float | None = None,
@@ -1802,6 +1807,7 @@ def start(
     *,
     max_model_len: int | None = None,
     gpu_memory_utilization: float | None = None,
+    weight_footprint_gb: float | None = None,
     allow_oversized: bool = False,
     popen: Callable[..., subprocess.Popen] | None = None,
 ) -> dict:
@@ -1853,11 +1859,35 @@ def start(
     free_mb = release["free_mb_after"]
     from src.llm.concurrency import concurrency_for
 
+    # THE MODEL'S OWN WEIGHTS, when they can be measured and only when they are
+    # BIGGER than the default assumption (2026-08-11 bench run). ``weight_footprint_gb``
+    # defaults to 5.0 -- a margin over the DEFAULT model, measured at 4.47 GiB -- and
+    # every start used it whatever was being loaded. A bench sweeping 0.8B to 3.8B
+    # models therefore sized every KV budget for one model's size: SmolLM3-3B (~6 GB
+    # of weights) was told 2.63 GB remained after weights, asked for a context that
+    # could not fit, and the engine died on "No available memory for the cache blocks".
+    #
+    # THE ASYMMETRY IS DELIBERATE. Applying a SMALLER measurement would grow
+    # max_model_len for small models -- turning starts that work today into starts
+    # that might not, to buy context nobody asked for. Applying a LARGER one can only
+    # shrink the KV budget, which is the direction that converts a failed start into a
+    # working one at a shorter context. A model that cannot be measured keeps the
+    # default exactly, because a missing reading is not a reading of zero.
+    footprint = weight_footprint_gb if weight_footprint_gb is not None else _DEFAULT_WEIGHT_GB
+    if weight_footprint_gb is None:
+        try:
+            measured_gb = measured_weight_gb(model)
+        except Exception:  # noqa: BLE001 - a start must not fail over a disk read
+            measured_gb = None
+        if measured_gb is not None and measured_gb > footprint:
+            footprint = measured_gb
+
     args = compute_server_args(
         gpu.get("vram_mb"),
         vram_free_mb=free_mb,
         max_model_len_override=max_model_len,
         gpu_memory_utilization_override=gpu_memory_utilization,
+        weight_footprint_gb=footprint,
         # DERIVED, not a second independent knob. The app already bounds how many
         # requests it will have in flight; telling the server the same number stops
         # vLLM's startup profiling sizing an activation peak for a concurrency no
@@ -2632,6 +2662,51 @@ def hf_cache_dir() -> Path:
 #: raises when the directory does not have it. Not our guess at completeness — the
 #: loader's own stated precondition.
 _LOADER_CONFIG_FILES = ("config.json", "params.json")
+
+#: Extensions of the files that become VRAM. Everything else in a repo -- tokenizer,
+#: configs, the README -- is megabytes at most and is deliberately not counted.
+_WEIGHT_SUFFIXES = (".safetensors", ".bin", ".pt", ".pth", ".gguf")
+
+
+def measured_weight_gb(model: str) -> float | None:
+    """GB of weight files on disk for ``model``, or None when it cannot be measured.
+
+    ``model_cache_state()["bytes"]`` cannot be used for this: it sums ``rglob("*")``
+    over the whole repo, and a snapshot entry is a SYMLINK into ``blobs/`` that
+    ``is_file()``/``stat()`` both follow -- so every weight is counted twice, once as
+    the blob and once as the link. A doubled figure that happens to produce a safe
+    answer is not a measurement.
+
+    Counted here: files under the loadable snapshot revision whose suffix is a weight
+    format, deduplicated by RESOLVED path so a blob reached through a link is one file.
+
+    KNOWN TO OVER-COUNT, in the safe direction: a repo shipping both a consolidated
+    checkpoint and its sharded equivalent (Mistral's do) has both on disk while the
+    loader reads one. Over-reserving costs context length; under-reserving costs an
+    OOM at startup, and on a small card the second failure is much worse -- the same
+    asymmetry ``weight_footprint_gb`` already reasons from.
+    """
+    state = model_cache_state(model)
+    if not state.get("cached") or not state.get("path"):
+        return None
+    snaps = Path(state["path"]) / "snapshots"
+    seen: dict[Path, int] = {}
+    try:
+        for rev in snaps.iterdir() if snaps.is_dir() else []:
+            if not rev.is_dir():
+                continue
+            for f in rev.rglob("*"):
+                if f.suffix.lower() not in _WEIGHT_SUFFIXES:
+                    continue
+                try:
+                    real = f.resolve()
+                    seen[real] = real.stat().st_size
+                except OSError:
+                    continue
+    except OSError:
+        return None
+    total = sum(seen.values())
+    return round(total / (1024**3), 2) if total else None
 
 
 def model_cache_state(model: str) -> dict:

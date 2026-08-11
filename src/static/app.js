@@ -15281,7 +15281,14 @@
         const tri = tk.triage || {};
         if (tri.format_validity != null) bits.push(`triage validity ${tri.format_validity}`);
         if (tri.valid_verdicts_per_s != null) bits.push(`${tri.valid_verdicts_per_s}/s`);
-        if (tri.canary && tri.canary.ok === false) bits.push("canary FAILED");
+        // WITH ITS DENOMINATOR. Bare "canary FAILED" read identically for a model
+        // that failed 2 of 36 canary slots and three that failed 36 of 36 — the one
+        // distinction a comparative bench exists to make.
+        if (tri.canary && tri.canary.ok === false) {
+          bits.push(tri.canary.checked
+            ? `canary ${tri.canary.failed_n || 0}/${tri.canary.checked} FAILED`
+            : "canary FAILED");
+        }
         const stg = tk.source_tags || {};
         if (stg.format_validity != null) bits.push(`tags validity ${stg.format_validity}`);
         const ld = tk.langdetect || {};

@@ -47,6 +47,8 @@ import time
 from datetime import UTC, datetime
 from typing import Any
 
+from src.llm.ollama import bounded_error
+
 SCHEMA = "oo-llm-bench-1"
 
 _NS_PER_S = 1_000_000_000
@@ -122,7 +124,7 @@ def _one_call(client, *, model: str, prompt: str, system: str) -> dict:
         return {
             "ok": False,
             "wall_s": round(time.perf_counter() - started, 3),
-            "error": f"{type(exc).__name__}: {str(exc)[:200]}",
+            "error": bounded_error(exc, 200),
         }
     wall = time.perf_counter() - started
     rec: dict[str, Any] = {
