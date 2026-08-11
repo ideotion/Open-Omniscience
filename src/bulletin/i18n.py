@@ -148,6 +148,14 @@ class Translator:
         # from the frames themselves rather than from the output, because a set built
         # from the output would contain every brace in it and could exclude nothing.
         self._holes: set[str] = set()
+        # Sentences a call site KNOWS are producer-composed and carry data (a card
+        # summary interpolates a term, a growth ratio and two counts), so no fixed key
+        # can ever match one. Recorded HERE and not in ``_seen``: left in the coverage
+        # denominator they make every locale under-report forever — a fabricated FAIL,
+        # exactly as dishonest as a fabricated pass — and they land in the catalog stub,
+        # inviting a translation that would match one corpus and read as working.
+        # Counted and published under their own name, never silently dropped.
+        self._data: dict[str, None] = {}
 
     # -- resolution ------------------------------------------------------- #
 
@@ -171,6 +179,24 @@ class Translator:
             return s
         self._hit.setdefault(s, None)
         return got
+
+    def data(self, text: Any) -> str:
+        """A value-bearing sentence this app did not write as a fixed frame.
+
+        Returned unchanged and EXCLUDED from coverage, because no catalog entry can ever
+        match it. This is an accounting decision made at the CALL SITE, which knows what
+        it is holding — never a heuristic over the text (a digit is not proof either way,
+        and guessing would trade one wrong number for another).
+
+        The real fix is upstream: give the producer a keyable frame plus its values, the
+        way ``Card.title_i18n``/``title_vars`` already does for card titles. Until then
+        ``report()`` publishes how many sentences took this path, so the gap is a stated
+        number rather than a silently depressed ratio.
+        """
+        s = "" if text is None else str(text)
+        if s.strip():
+            self._data.setdefault(s, None)
+        return s
 
     def f(self, template: str, /, **values: Any) -> str:
         """A sentence FRAME with ``{named}`` holes, translated then filled.
@@ -247,10 +273,14 @@ class Translator:
                 "missing_strings": [],
                 "identical_strings": [],
                 "rejected_strings": [],
+                "passthrough": len(self._data),
+                "passthrough_examples": list(self._data)[:5],
                 "method": (
                     "English is the source language: the renderer's sentences are written "
                     "in it, so nothing is translated and nothing is missing. The count of "
-                    "sentences is the denominator every other locale is measured against."
+                    "sentences is the denominator every other locale is measured against, "
+                    "and it excludes the producer-composed sentences counted under "
+                    "passthrough (see that field's own note in a non-English report)."
                 ),
             }
         return {
@@ -270,11 +300,26 @@ class Translator:
             "missing_strings": missing,
             "identical_strings": identical,
             "rejected_strings": [{"text": s, "reason": r} for s, r in rejected.items()],
+            # NOT part of strings_seen, and that exclusion is the honest half: a card
+            # summary is composed by its producer around live values ("~3.2x the prior
+            # rate (18 recent vs 5 before)"), so no fixed key can match it and counting
+            # it as missing would depress every locale's coverage forever while inviting
+            # a translation good for one corpus. Published as a number with its reason.
+            "passthrough": len(self._data),
+            "passthrough_examples": list(self._data)[:5],
+            "passthrough_note": (
+                "Sentences a producer composed around live values. They are printed as "
+                "they are, in English, and left OUT of coverage because no fixed catalog "
+                "key can ever match them — not because they are translated. The fix is "
+                "upstream: a keyable frame plus its values, as card TITLES already have."
+            ),
             "method": (
                 "Every sentence this app composes is keyed on its own English text. "
                 "Coverage counts entries that differ from the English; an entry copied "
                 "from the English is counted separately, and one whose placeholders do "
-                "not match its frame is refused and rendered in English."
+                "not match its frame is refused and rendered in English. Producer-"
+                "composed, value-bearing sentences are excluded from the denominator and "
+                "counted under passthrough."
             ),
         }
 

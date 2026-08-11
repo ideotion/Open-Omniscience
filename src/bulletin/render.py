@@ -734,10 +734,26 @@ def _cards_blocks(section: dict, T: Translator) -> list[tuple[str | None, str, l
         for card in entry.get("cards") or []:
             lines: list[str] = []
             if card.get("summary"):
-                lines += [T.t(str(card["summary"])), ""]
-            measured = card.get("signal_line")
+                # A producer composes this around live values, so it is data: printed as
+                # it stands and kept out of the coverage denominator rather than counted
+                # as a missing translation no catalog entry could ever supply.
+                lines += [T.data(str(card["summary"])), ""]
+            pairs = card.get("signal_pairs")
+            if pairs:
+                # The LABEL translates, the VALUE does not. Translating the composed line
+                # (what this did) could never match a key, so the labels stayed English
+                # and the line depressed coverage.
+                measured = " · ".join(
+                    f"{T.t(str(p[0]))} {p[1]}"
+                    for p in pairs
+                    if isinstance(p, (list, tuple)) and len(p) == 2
+                )
+            else:
+                # An edition written before signal_pairs existed carries only the composed
+                # form. It has values in it, so it passes through as data.
+                measured = T.data(str(card.get("signal_line") or ""))
             if measured:
-                lines.append(T.f("- Measured: {signal}", signal=T.t(str(measured))))
+                lines.append(T.f("- Measured: {signal}", signal=measured))
             if card.get("n") is not None:
                 lines.append(T.f("- n: {n}", n=_fmt(card.get("n"))))
             if card.get("bucket"):

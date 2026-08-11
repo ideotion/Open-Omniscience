@@ -436,3 +436,86 @@ def test_a_region_subtagged_locale_finds_its_catalog():
     catalog that exists, which is the store-raw / normalise-on-read convention."""
     assert load_catalog("fr-CA") == load_catalog("fr")
     assert Translator("FR_ca").lang == "fr"
+
+
+# --------------------------------------------------------------------------- #
+#  value-bearing prose: excluded from coverage, and SAID rather than hidden
+#
+#  A producer composes a card summary around live values ("~3.2x the prior rate
+#  (18 recent vs 5 before)"), so no fixed key can ever match one. Counting those as
+#  missing depressed every locale's coverage forever -- a fabricated FAIL, exactly as
+#  dishonest as a fabricated pass -- and put them in the stub, inviting a translation
+#  that would match one corpus and read as working.
+# --------------------------------------------------------------------------- #
+_SUMMARY = "Mentions of “flooding” are running ~3.2× the prior-period rate (18 recent vs 5 before)."
+
+
+def test_a_value_bearing_summary_is_passthrough_and_not_a_missing_translation(edition):
+    T = Translator("zz")
+    T.catalog = {}
+    md = render_markdown(edition, tr=T)
+    rep = T.report()
+    assert _SUMMARY in md, "it must still print -- excluded from coverage, never dropped"
+    assert _SUMMARY not in rep["missing_strings"], (
+        "listing it as missing invites a translation good for exactly one corpus"
+    )
+    assert rep["passthrough"] >= 1 and _SUMMARY in rep["passthrough_examples"]
+
+
+def test_chrome_is_still_counted_while_data_is_not(edition):
+    """The twin, and the one that matters: an exclusion wide enough to swallow real
+    chrome would report a fabricated coverage instead of a fabricated gap."""
+    T = Translator("zz")
+    T.catalog = {}
+    render_markdown(edition, tr=T)
+    rep = T.report()
+    assert "References" in rep["missing_strings"], "a fixed heading is chrome and must count"
+    assert rep["strings_seen"] > 0 and rep["missing"] > 0
+
+
+def test_coverage_denominator_excludes_passthrough_and_the_report_says_so(edition):
+    T = Translator("zz")
+    T.catalog = {}
+    render_markdown(edition, tr=T)
+    rep = T.report()
+    assert rep["passthrough"] >= 1
+    assert "passthrough" in rep["method"], "an exclusion must be stated where the ratio is"
+    assert "keyable frame" in rep["passthrough_note"], "and it must name the real fix"
+
+
+def test_a_signal_label_translates_while_its_value_does_not(edition):
+    """The whole reason to split label from value: welded together, neither could be
+    translated and the composed line sat in the denominator."""
+    T = Translator("zz")
+    T.catalog = {"distinct sources": "sources distinctes"}
+    md = render_markdown(edition, tr=T)
+    assert "sources distinctes 3" in md, "the label translates, the number is untouched"
+    assert "distinct sources 3" not in md
+
+
+def test_english_still_prints_the_measured_line_unchanged(edition):
+    """No output change for the locale every existing edition was written in."""
+    md = render_markdown(edition, lang="en")
+    assert "distinct sources 3 · articles 9" in md
+
+
+def test_an_edition_written_before_signal_pairs_still_prints_its_measured_line(edition):
+    """The fallback, exercised by the reading_diet card, which deliberately carries a
+    composed signal_line and no pairs. It is data, so it passes through rather than
+    pretending a catalog could match it."""
+    legacy = "top three share 0.14 · sources 21"
+    T = Translator("zz")
+    T.catalog = {}
+    md = render_markdown(edition, tr=T)
+    assert legacy in md
+    assert legacy not in T.report()["missing_strings"]
+    assert legacy in T.report()["passthrough_examples"] or T.report()["passthrough"] >= 2
+
+
+def test_the_stub_does_not_invite_a_value_bearing_translation(edition):
+    from src.monitoring.bulletin_language import bulletin_language_report
+
+    rep = bulletin_language_report()
+    for row in rep["languages"]:
+        stub = row.get("catalog_stub") or {}
+        assert _SUMMARY not in stub, f"{row['language']}: the stub must not ask for this"
