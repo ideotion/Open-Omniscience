@@ -74,6 +74,22 @@ def _seed(store: Path, *models: str) -> None:
         (store / "blobs" / f"sha256-{hexv}").write_bytes(b"x" * 32)
 
 
+def _third_store(monkeypatch, path: Path) -> Path:
+    """Make a THIRD candidate store exist on any platform.
+
+    ``candidate_stores()`` appends the systemd-service location only under
+    ``sys.platform.startswith("linux")``, so patching ``_LINUX_SERVICE_STORE`` alone
+    gives a three-store world on Linux and a two-store one everywhere else — which is
+    how three guards about N-store arithmetic passed here and failed on the macOS
+    portability lane. The platform is patched with it, because what these tests are
+    about is the arithmetic over N stores, not which OS contributes the third."""
+    import sys as _sys
+
+    monkeypatch.setattr(bk, "_LINUX_SERVICE_STORE", path)
+    monkeypatch.setattr(_sys, "platform", "linux")
+    return path
+
+
 # ---------------------------------------------------------------------------
 # 1. Detection knows about the app folder at all.
 # ---------------------------------------------------------------------------
@@ -213,8 +229,7 @@ def test_a_model_two_other_stores_share_is_not_unique_to_either(monkeypatch, tmp
     ~/.ollama and the service store read as unique to each, and the answer became a
     confident contradiction instead of an honest 'cannot tell'."""
     legacy = tmp_path / "home" / ".ollama" / "models"
-    service = tmp_path / "svc"
-    monkeypatch.setattr(bk, "_LINUX_SERVICE_STORE", service)
+    service = _third_store(monkeypatch, tmp_path / "svc")
     _seed(model_store.ollama_store(), "mistral:7b")
     _seed(legacy, "shared:1b")
     _seed(service, "shared:1b")
@@ -390,8 +405,7 @@ def test_the_migration_reads_every_other_store(monkeypatch, tmp_path):
     silently inert in the exact split it exists for."""
     app = model_store.ollama_store()
     legacy = tmp_path / "home" / ".ollama" / "models"
-    service = tmp_path / "svc"
-    monkeypatch.setattr(bk, "_LINUX_SERVICE_STORE", service)
+    service = _third_store(monkeypatch, tmp_path / "svc")
     _seed(app, "mistral:7b")
     _seed(legacy, "qwen3.5:0.8b")
     _seed(service, "granite:3b")
@@ -452,8 +466,7 @@ def test_one_unreadable_store_does_not_discard_the_copies_that_worked(monkeypatc
     one — the mid-batch failure shape this project has been bitten by before."""
     app = model_store.ollama_store()
     legacy = tmp_path / "home" / ".ollama" / "models"
-    service = tmp_path / "svc"
-    monkeypatch.setattr(bk, "_LINUX_SERVICE_STORE", service)
+    service = _third_store(monkeypatch, tmp_path / "svc")
     _seed(legacy, "qwen3.5:0.8b")
     _seed(service, "granite:3b")
 
