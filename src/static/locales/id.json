@@ -2185,6 +2185,8 @@
   "After": "Sesudah",
   "New sources": "Sumber baru",
   "Articles awaiting indexing": "Artikel masih menunggu pengindeksan",
+  "Existing articles that gained metadata: {n}": "Artikel yang sudah ada dan memperoleh metadata: {n}",
+  "Fields filled: {fields}": "Bidang yang terisi: {fields}",
   "Qualified sources added: {n}": "Sumber terkualifikasi ditambahkan: {n}",
   "Arrived disqualified: {n}": "Tiba dalam keadaan didiskualifikasi: {n}",
   "Already judged here, kept: {n}": "Sudah dinilai di sini, dipertahankan: {n}",

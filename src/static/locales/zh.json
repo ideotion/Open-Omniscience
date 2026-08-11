@@ -2185,6 +2185,8 @@
   "After": "之后",
   "New sources": "新来源",
   "Articles awaiting indexing": "仍在等待索引的文章",
+  "Existing articles that gained metadata: {n}": "获得元数据的已有文章：{n}",
+  "Fields filled: {fields}": "已填充的字段：{fields}",
   "Qualified sources added: {n}": "已添加的合格来源：{n}",
   "Arrived disqualified: {n}": "到达时已被取消资格：{n}",
   "Already judged here, kept: {n}": "此处已判定并保留：{n}",

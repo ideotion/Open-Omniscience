@@ -2185,6 +2185,8 @@
   "After": "بعد",
   "New sources": "مصادر جديدة",
   "Articles awaiting indexing": "مقالات ما زالت بانتظار الفهرسة",
+  "Existing articles that gained metadata: {n}": "مقالات موجودة اكتسبت بيانات وصفية: {n}",
+  "Fields filled: {fields}": "الحقول المُكمَّلة: {fields}",
   "Qualified sources added: {n}": "مصادر مؤهَّلة أُضيفت: {n}",
   "Arrived disqualified: {n}": "وصلت غير مؤهَّلة: {n}",
   "Already judged here, kept: {n}": "سبق الحكم عليها هنا، أُبقيت: {n}",

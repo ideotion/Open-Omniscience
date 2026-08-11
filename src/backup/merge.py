@@ -1841,6 +1841,129 @@ def _merge_sources(con, batch_id, results) -> None:
     results["sources"] = r
 
 
+#: Article COLUMNS a duplicate may ADOPT from the incoming corpus, grouped so that
+#: columns which are only meaningful together move together. Each group is
+#: ``(anchor, [columns])``: the anchor is the column whose NULL-ness decides the whole
+#: group, so a pair can never end up half-filled (a sentiment label without its score,
+#: an observation time without the IP it belongs to).
+#:
+#: The rule for membership is the one the qualification fix established one level up:
+#: a local NULL here means "never measured on this machine", NOT "measured and found
+#: nothing", so filling it is pure information gain and can never overwrite a local
+#: measurement. Anything where NULL carries a different meaning is excluded below.
+_ADOPTABLE_ARTICLE_COLUMNS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("published_at", ("published_at",)),
+    ("language", ("language",)),
+    ("detected_language", ("detected_language",)),
+    ("author", ("author",)),
+    ("word_count", ("word_count",)),
+    ("reading_time", ("reading_time",)),
+    ("region", ("region",)),
+    ("country", ("country",)),
+    ("content_multihash", ("content_multihash",)),
+    ("sentiment_score", ("sentiment_score", "sentiment_label")),
+    ("server_ip", ("server_ip", "ip_observed_at", "server_ip_reason")),
+)
+
+#: Every other Article column, and why it is NOT adoptable. This exists because the
+#: 2026-08-03 AST column diff found fourteen columns silently dropped by an explicit
+#: allowlist that nobody had compared against the model since it was written. A bare
+#: allowlist fails OPEN and in silence; a completeness test over BOTH sets is what makes
+#: a column added later a loud choice rather than a quiet loss.
+_NOT_ADOPTABLE_ARTICLE_COLUMNS: dict[str, str] = {
+    "id": "primary key",
+    "url": "identity, not metadata: two articles duplicate on HASH and may legitimately "
+           "carry different URLs, so copying one over the other rewrites provenance",
+    "canonical_url": "NOT NULL, so never absent; and same identity argument as url",
+    "source_id": "remapped through temp.map_sources, never copied raw",
+    "title": "content, and content equality is the dedup predicate itself",
+    "content": "content (see title)",
+    "compressed_content": "content (see title)",
+    "hash": "the dedup key",
+    "canon_version": "describes how THIS machine canonicalised its own url",
+    "created_at": "local bookkeeping: when this corpus first stored the row",
+    "updated_at": "local bookkeeping",
+    # The quarantine block is deliberately absent from the adoptable set. It is a
+    # JUDGEMENT carrying its own criteria version, not a measurement, so it belongs to
+    # the qualification family (adopt-if-never-judged, both verdict directions) rather
+    # than the fill-a-NULL family -- a different rule with a different safety argument.
+    # Folding it in here would silently apply the weaker one. Awaiting a ruling.
+    "quarantined": "a judgement, not a measurement -- see the note above",
+    "quarantine_reason": "a judgement (see quarantined)",
+    "quarantine_criteria_version": "a judgement (see quarantined)",
+    "quarantined_at": "a judgement (see quarantined)",
+}
+
+
+def _adopt_article_metadata(con) -> dict:
+    """Fill metadata a DUPLICATE article never had here from the incoming copy.
+
+    Field question 2026-08-10: "in the case I imported a backup with redundant
+    articles, yet they would have more metadata (due for example to AI enrichment, or
+    better metadata extraction engine), the importing process would disregard those
+    redundant articles and dismiss also the enhanced metadata."
+
+    Half right, and the half that was right is the half nothing can rebuild. The
+    per-article CHILD tables already ride ``temp.map_articles``, which joins on HASH and
+    therefore maps duplicates too -- so AI summaries/translations (article_analyses),
+    AI-derived metadata (ai_keyword), extracted dates and links all attach to the local
+    twin already. What was dropped is the article's own COLUMNS, because a duplicate
+    takes the ``WHERE NOT EXISTS`` path and nothing ever updated the local row.
+
+    Two of those columns are not recoverable any other way. ``server_ip`` /
+    ``ip_observed_at`` is a SOCKET-TIME observation: the connection is gone, no
+    re-index rebuilds it, and a re-fetch reaches a different CDN edge or nothing at all.
+    ``published_at`` is the "better extraction engine" case exactly -- the date
+    extractor gained CJK, Jalali and relative-date recall over time, so an older corpus
+    holds NULLs a newer instance has since filled.
+
+    Windowed over ``inc.articles.id`` on the same terms as the article INSERT: at a ~90%
+    duplicate rate this join covers most of the incoming corpus, so an unwindowed
+    statement would hold the whole thing. The UPDATE carries its own guard so it only
+    ever touches rows that would actually change -- without it every duplicate would be
+    rewritten (and journalled) to write back the values it already had.
+    """
+    sets, guards, counts_sql = [], [], []
+    for anchor, cols in _ADOPTABLE_ARTICLE_COLUMNS:
+        for c in cols:
+            # The anchor decides the whole group, so a pair moves together or not at all.
+            sets.append(f'"{c}" = CASE WHEN m."{anchor}" IS NULL THEN i."{c}" ELSE m."{c}" END')
+        guards.append(f'(m."{anchor}" IS NULL AND i."{anchor}" IS NOT NULL)')
+        counts_sql.append(f'SUM(m."{anchor}" IS NULL AND i."{anchor}" IS NOT NULL)')
+
+    where = (
+        " FROM inc.articles i WHERE i.hash = m.hash"
+        " AND i.id > ? AND i.id <= ? AND (" + " OR ".join(guards) + ")"
+    )
+    update_sql = "UPDATE articles AS m SET " + ", ".join(sets) + where  # nosec B608 - every fragment is built from _ADOPTABLE_ARTICLE_COLUMNS, a module constant; the only inputs are bound window bounds
+    count_sql = (
+        "SELECT " + ", ".join(counts_sql)  # nosec B608 - column names come from _ADOPTABLE_ARTICLE_COLUMNS, a module constant; the only inputs are bound window bounds
+        + " FROM articles m JOIN inc.articles i ON i.hash = m.hash"
+        " WHERE i.id > ? AND i.id <= ?"
+    )
+
+    row = _q(con, "SELECT COALESCE(MIN(id), 1) - 1, COALESCE(MAX(id), 0) FROM inc.articles")[0]
+    lo_min, hi_max = int(row[0]), int(row[1])
+    step = _window_ids_for(con, "articles", lo_min, hi_max)
+
+    by_group: dict[str, int] = {}
+    rows = 0
+    lo = lo_min
+    while lo < hi_max:
+        hi = min(lo + step, hi_max)
+        for (anchor, _), n in zip(
+            _ADOPTABLE_ARTICLE_COLUMNS, _q(con, count_sql, (lo, hi))[0], strict=True
+        ):
+            if n:
+                by_group[anchor] = by_group.get(anchor, 0) + int(n)
+        cur = con.execute(update_sql, (lo, hi))
+        rows += max(0, cur.rowcount or 0)
+        con.execute("COMMIT")
+        con.execute("BEGIN IMMEDIATE")
+        lo = hi
+    return {"articles_enriched": rows, "by_column": by_group}
+
+
 def _merge_articles(con, batch_id, results) -> None:
     r = DomainResult()
     # Bit-level duplicate test: same hash AND same content bytes = duplicate; same hash,
@@ -1916,6 +2039,9 @@ def _merge_articles(con, batch_id, results) -> None:
         con, "map_articles",
         "SELECT i.id, m.id FROM inc.articles i JOIN articles m ON m.hash = i.hash",
     )
+    # A duplicate article keeps its local row -- but a column this machine never filled
+    # is not a local value to defend, it is an absence. See _adopt_article_metadata.
+    results["_article_metadata"] = _adopt_article_metadata(con)
     results["articles"] = r
 
 

@@ -2185,6 +2185,8 @@
   "After": "После",
   "New sources": "Новые источники",
   "Articles awaiting indexing": "Статьи, ещё ожидающие индексации",
+  "Existing articles that gained metadata: {n}": "Существующие статьи, получившие метаданные: {n}",
+  "Fields filled: {fields}": "Заполненные поля: {fields}",
   "Qualified sources added: {n}": "Добавлено квалифицированных источников: {n}",
   "Arrived disqualified: {n}": "Прибыло дисквалифицированных: {n}",
   "Already judged here, kept: {n}": "Уже оценено здесь, сохранено: {n}",
