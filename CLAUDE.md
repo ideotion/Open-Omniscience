@@ -3410,6 +3410,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     change to the qualification gate, arriving inside a disclosure-only slice. When a
     reporting fix and a behaviour change share one line, ship the disclosure and leave the
     behaviour for its own reviewed slice.
+  - **A TEST THAT HAND-ROLLS A SUBSET OF A SHARED STUB HELPER DRIFTS THE DAY THE THING IT
+    STUBS GROWS A NEW CHECK — and it then fails naming the MACHINE, not the code
+    (2026-08-11, `test_vllm_install_starts_a_background_job`):** the test asserts WIRING
+    (does the endpoint hand the job its `version`), and it set up `platform.system`,
+    `detect_gpu` and `kill_switch_active` by hand while the file's own `_preflight_stub`
+    sets those THREE PLUS `_total_ram_bytes` and `_free_disk_bytes`. When the install
+    preflight later grew a 15 GB disk floor, the hand-rolled version silently began
+    reading the REAL volume, so it passed or failed on how much scratch space the rest of
+    the suite happened to be holding: green run-alone and green at 16 GB free, red at
+    13.92 GB mid-suite, with a 409 quoting `df` — a failure that reads as an environment
+    problem and is actually a test-hygiene one. It matters past the sandbox, because this
+    fleet includes low-spec laptops that never clear the floor at all. THE DISCRIMINATION
+    WORTH KEEPING, since three sibling tests read the real disk and are RIGHT to: a SHAPE
+    assertion (schema string, key presence, `installed is False`) is indifferent to what
+    the environment says, while a SUCCESS-PATH assertion can be BLOCKED by it — only the
+    second must stub. Proved rather than argued, by making the real `_free_disk_bytes`
+    raise and re-running the file: the fixed test is absent from the failures (it no
+    longer touches the volume), the three shape tests appear (they do, harmlessly, since
+    the real reader returns `None` on unreadable and never raises), and separately the
+    disk floor's own dedicated test still fails by name when the floor is neutered — so
+    stubbing here removed a false failure and no coverage. GENERAL FORM: when a helper
+    exists for a fixture, call it rather than copying part of it; a partial copy is a
+    silent bet that the thing being stubbed will never grow.
 
   - **A SENTINEL DOCUMENTED AT THE SOURCE IS STILL A FABRICATION AT THE RENDER BOUNDARY —
     and a clamp that fires on 19 of 20 rows silently reorders the whole section
