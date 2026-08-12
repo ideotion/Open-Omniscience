@@ -357,6 +357,84 @@ def test_english_is_neither_started_nor_unstarted_in_the_report(edition):
     assert "en" not in out["started"]
 
 
+def _catalog_dir(monkeypatch, tmp_path, catalogs: dict[str, dict[str, str]]):
+    """Point the loader at a catalog directory this test owns."""
+    from src.bulletin import i18n
+
+    for code, data in catalogs.items():
+        (tmp_path / f"{code}.json").write_text(json.dumps(data, ensure_ascii=False), "utf-8")
+    monkeypatch.setattr(i18n, "CATALOG_DIR", tmp_path)
+    i18n._CACHE.clear()
+
+
+def test_a_catalog_with_no_gap_reads_as_complete_even_with_legitimate_identities(
+    edition, monkeypatch, tmp_path
+):
+    """The defect this replaced: coverage counts only entries that DIFFER from the
+    English, so a locale where "Asia" is Asia and "cyclone" is cyclone can never
+    reach 1.0 — and was therefore filed under "started" forever, reporting unfinished
+    work that does not exist. Complete answers the worklist question instead."""
+    T = Translator("zz")
+    render_markdown(edition, tr=T)
+    asked = list(T.report()["missing_strings"])
+    assert asked, "the probe locale must have asked for something"
+    # Every string answered; a handful answered with the English itself, as a real
+    # language legitimately does for a proper noun or a unit.
+    catalog = {s: (s if i % 20 == 0 else f"ZZ {s}") for i, s in enumerate(asked)}
+    identities = sum(1 for k, v in catalog.items() if k == v)
+    assert identities >= 2, "the fixture must actually contain legitimate identities"
+    _catalog_dir(monkeypatch, tmp_path, {"zz": catalog})
+
+    out = language_report(edition, langs=("zz",))
+    row = out["languages"][0]
+    assert row["missing"] == 0 and row["rejected"] == 0
+    assert row["identical_to_english"] == identities
+    assert row["coverage"] < 1.0, "identities keep coverage below one, by design"
+    assert out["complete"] == ["zz"], "a finished catalog must be able to say so"
+    assert "zz" not in out["started"], "finished is not in progress"
+    assert "zz" not in out["not_started"]
+
+
+def test_a_catalog_of_copied_english_is_complete_but_never_fully_translated(
+    edition, monkeypatch, tmp_path
+):
+    """The twin, and the reason coverage keeps its stricter definition: a catalog
+    that copies the source language has no gap, so it IS complete as a worklist —
+    but it must not read as translated. Both numbers are published beside it, so the
+    copy is visible rather than counted as work."""
+    T = Translator("zz")
+    render_markdown(edition, tr=T)
+    asked = list(T.report()["missing_strings"])
+    _catalog_dir(monkeypatch, tmp_path, {"zz": {s: s for s in asked}})
+
+    out = language_report(edition, langs=("zz",))
+    row = out["languages"][0]
+    assert row["missing"] == 0
+    assert out["complete"] == ["zz"]
+    assert out["fully_translated"] == [], "copied English is not a translation"
+    assert row["coverage"] == 0.0
+    assert row["identical_to_english"] == row["strings_seen"], (
+        "the copy is stated at full size, which is what makes it legible"
+    )
+
+
+def test_a_partly_filled_catalog_is_started_and_not_complete(
+    edition, monkeypatch, tmp_path
+):
+    """The third state has to stay distinguishable from the other two, or the fix
+    would have collapsed "half done" into "done"."""
+    T = Translator("zz")
+    render_markdown(edition, tr=T)
+    asked = list(T.report()["missing_strings"])
+    half = {s: f"ZZ {s}" for s in asked[: len(asked) // 2]}
+    _catalog_dir(monkeypatch, tmp_path, {"zz": half})
+
+    out = language_report(edition, langs=("zz",))
+    assert out["languages"][0]["missing"] > 0
+    assert out["started"] == ["zz"]
+    assert out["complete"] == []
+
+
 def test_the_selftest_passes_and_names_each_property():
     out = run_bulletin_language_selftest()
     assert out["passed"] is True

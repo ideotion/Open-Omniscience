@@ -455,10 +455,34 @@ def language_report(edition: dict, *, langs: tuple[str, ...] | None = None) -> d
         },
         "strings_in_document": integrity.get("markdown_bytes") and per_language[0]["strings_seen"],
         "languages": per_language,
+        # TWO different questions, because one word cannot answer both honestly.
+        #
+        # COMPLETE asks the worklist question: does every sentence the renderer asked
+        # for have an entry? That is the one a translator finishes. It deliberately
+        # does NOT require coverage 1.0, because some entries are legitimately
+        # identical to the English — "Asia" in Spanish, "cyclone" in French — so a
+        # genuinely finished catalog can never reach 1.0 and would otherwise be filed
+        # under "started" forever, which reads as unfinished work that does not exist.
+        #
+        # FULLY_TRANSLATED is the stricter form: every entry also DIFFERS from the
+        # English. It is rarely reachable for a real language and is kept because it
+        # is what stops a catalog of copied English reporting itself done — such a
+        # catalog appears under complete, with identical_to_english equal to its size
+        # and coverage 0.0 printed beside it, so the copy is visible rather than
+        # counted as work. Neither list is a substitute for reading those two numbers.
+        "complete": sorted(
+            r["language"] for r in covered if not r["missing"] and not r["rejected"]
+        ),
         "fully_translated": sorted(
             r["language"] for r in covered if r["coverage"] == 1.0 and not r["rejected"]
         ),
-        "started": sorted(r["language"] for r in covered if 0 < (r["coverage"] or 0) < 1.0),
+        # Genuinely partial: something is translated AND something is still missing.
+        # A complete catalog is not "started"; an empty one is not either.
+        "started": sorted(
+            r["language"]
+            for r in covered
+            if 0 < (r["coverage"] or 0) < 1.0 and r["missing"]
+        ),
         "not_started": sorted(
             r["language"] for r in covered if not r["catalog_entries"] and r["language"] != "en"
         ),
