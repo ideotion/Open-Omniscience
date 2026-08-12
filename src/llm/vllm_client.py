@@ -323,9 +323,15 @@ class VllmClient:
                     for k in sorted(dropped)
                 ),
             )
+        # Counted at the SEAM (see src/llm/inflight.py): the pill's "working" state is
+        # a fact about inference actually running, not an enumeration of the callers
+        # that might be running some.
+        from src.llm.inflight import generating
+
         try:
-            resp = self._client.post("/v1/chat/completions", json=payload)
-            resp.raise_for_status()
+            with generating(model, backend="vllm"):
+                resp = self._client.post("/v1/chat/completions", json=payload)
+                resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 raise LLMUnavailable(

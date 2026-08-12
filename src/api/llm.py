@@ -487,6 +487,98 @@ def llm_health(client=Depends(get_llm_client)) -> dict:
         }
 
 
+@router.get("/activity")
+def llm_activity() -> dict:
+    """Is a local model WORKING right now, and on what.
+
+    "Serving" and "working" are different facts and the top-bar pill needs both:
+    a backend that is up and idle, and a backend mid-inference, are the same green
+    today. This is the second half.
+
+    EVERY READ HERE IS IN-MEMORY -- the task registry is a dict behind a lock, the
+    user-batch hold is a counter behind a lock, and the coordinator's status is its
+    own job object. No DB query, no subprocess, no socket. That is the whole reason
+    this can be polled at all: the 2026-07-01 field diagnostics (finding F5) traced
+    an idle-app polling storm to ``/api/scheduler/activity`` hitting the ENCRYPTED
+    store every 2s, ~28.9k times overnight. A poll is only cheap if what it reads is.
+
+    THE EVIDENCE IS STRUCTURAL, not an enumeration. ``inflight()`` counts at the
+    clients' ``generate()`` seam, which every local-model call must cross -- so a
+    caller that did not exist when this was written is covered anyway. Enumerating
+    "the things that run models" would have been wrong the first time somebody added
+    a sweep without thinking of this file.
+
+    The other two signals are for STEADINESS and WORDS, never for the verdict alone.
+    A sweep between two calls has nothing in flight for an instant, and a pill that
+    blinked off in those gaps would be strictly worse than one that did not move; a
+    held batch or a running lane says the work is ongoing across them. They also name
+    what it is doing, which a bare counter cannot.
+    """
+    from src.ai_layer.coordinator import user_batch_active
+    from src.jobs.background import get_job
+    from src.llm.inflight import inflight
+    from src.monitoring.tasks import snapshot
+
+    labels: list[str] = []
+    sources: list[str] = []
+
+    # 1. THE STRUCTURAL ONE: calls actually open at the client seam right now.
+    calls = {"n": 0, "models": [], "backends": [], "oldest_elapsed_s": None}
+    try:
+        calls = inflight()
+        if calls["n"]:
+            sources.append("inflight")
+    except Exception:  # noqa: BLE001 - a status probe must never break the pill
+        pass
+
+    # 2. Per-call work that also named itself (summarize/translate carry a title).
+    try:
+        for t in snapshot():
+            if (t.get("kind") or "") == "llm":
+                if "tasks" not in sources:
+                    sources.append("tasks")
+                labels.append(str(t.get("label") or "").strip())
+    except Exception:  # noqa: BLE001
+        pass
+
+    # 3. A user batch holding the model, or the coordinated background lane -- the
+    #    two spans that persist across the gaps between individual calls.
+    try:
+        hold = user_batch_active()
+        if hold.get("held"):
+            sources.append("user_batch")
+            labels.extend(str(r) for r in (hold.get("holders") or []))
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        job = get_job("ai-coordinator")
+        st = job.status() if job else {}
+        if st.get("state") == "running":
+            sources.append("coordinator")
+            labels.append(str(st.get("detail") or "background AI sweeps"))
+    except Exception:  # noqa: BLE001
+        pass
+
+    labels = [x for x in labels if x]
+    return {
+        "working": bool(sources),
+        # ONE label, because the caller is a hover title on a 46px pill. The count
+        # rides beside it so one label is never read as the whole picture.
+        "label": labels[0] if labels else None,
+        "n_labels": len(labels),
+        "calls_in_flight": calls["n"],
+        "models": calls["models"],
+        "oldest_call_elapsed_s": calls["oldest_elapsed_s"],
+        "sources": sources,
+        "method": (
+            "Counted at the client generate() seam every local-model call crosses, "
+            "plus the batch hold and the coordinated lane so the answer stays steady "
+            "between calls. Elapsed is a measured age, never an estimate of what "
+            "remains -- a model reports no such thing."
+        ),
+    }
+
+
 @router.get("/backend")
 def llm_backend_status() -> dict:
     """The full backend-resolution DECISION + the facts behind it (B1.3) --
