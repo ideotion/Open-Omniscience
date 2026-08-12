@@ -21,6 +21,7 @@ complete, which is the fabricated pass this file exists to prevent.
 from __future__ import annotations
 
 import json
+import re
 
 import pytest
 
@@ -176,6 +177,22 @@ def test_a_fully_translated_document_says_so_without_a_shortfall(edition):
     md = render_markdown(edition, tr=T2)
     assert "was written in" in md
     assert "printed in English" not in md
+
+
+def test_the_reported_disclosure_is_the_one_the_document_printed(edition):
+    """Asking for the line REGISTERS its own frames, so a second call counts them in
+    the total the line quotes: the document said "10 of 166" while the diagnostic's
+    payload — a second call on the same translator — said "10 of 169" about that same
+    document. Two numbers for one claim, in one report."""
+    T = Translator("fr")
+    md = render_markdown(edition, tr=T)
+    printed = T.disclosure()
+    assert printed and f"*{printed}*" in md, "the line under test must be in the document"
+    assert T.disclosure() == printed, "one render owes one answer"
+    # And the diagnostic's payload carries that line, not a re-derivation of it.
+    assert language_report(edition, langs=("fr",))["languages"][0]["disclosure"] == printed
+    # A fresh translator is free to count again — the memo is per render, not global.
+    assert Translator("fr").disclosure() is None, "nothing rendered yet, nothing to say"
 
 
 def test_the_html_page_declares_its_language_and_direction(edition):
@@ -374,9 +391,10 @@ def test_a_catalog_with_no_gap_reads_as_complete_even_with_legitimate_identities
     English, so a locale where "Asia" is Asia and "cyclone" is cyclone can never
     reach 1.0 — and was therefore filed under "started" forever, reporting unfinished
     work that does not exist. Complete answers the worklist question instead."""
-    T = Translator("zz")
-    render_markdown(edition, tr=T)
-    asked = list(T.report()["missing_strings"])
+    # The report's own offered stub, not one run's missing list: a sentence that
+    # appears only once the catalog is good is absent from the latter by construction
+    # (see test_filling_the_offered_stub_leaves_nothing_missing).
+    asked = list(language_report(edition, langs=("zz",))["languages"][0]["catalog_stub"])
     assert asked, "the probe locale must have asked for something"
     # Every string answered; a handful answered with the English itself, as a real
     # language legitimately does for a proper noun or a unit.
@@ -393,6 +411,10 @@ def test_a_catalog_with_no_gap_reads_as_complete_even_with_legitimate_identities
     assert out["complete"] == ["zz"], "a finished catalog must be able to say so"
     assert "zz" not in out["started"], "finished is not in progress"
     assert "zz" not in out["not_started"]
+    # The reason the stricter list is empty, published as a number a reader can check
+    # rather than as a sentence they have to take on trust.
+    assert out["identical_in_complete"] == {"zz": identities}
+    assert out["fully_translated"] == []
 
 
 def test_a_catalog_of_copied_english_is_complete_but_never_fully_translated(
@@ -402,9 +424,7 @@ def test_a_catalog_of_copied_english_is_complete_but_never_fully_translated(
     that copies the source language has no gap, so it IS complete as a worklist —
     but it must not read as translated. Both numbers are published beside it, so the
     copy is visible rather than counted as work."""
-    T = Translator("zz")
-    render_markdown(edition, tr=T)
-    asked = list(T.report()["missing_strings"])
+    asked = list(language_report(edition, langs=("zz",))["languages"][0]["catalog_stub"])
     _catalog_dir(monkeypatch, tmp_path, {"zz": {s: s for s in asked}})
 
     out = language_report(edition, langs=("zz",))
@@ -415,6 +435,69 @@ def test_a_catalog_of_copied_english_is_complete_but_never_fully_translated(
     assert row["coverage"] == 0.0
     assert row["identical_to_english"] == row["strings_seen"], (
         "the copy is stated at full size, which is what makes it legible"
+    )
+    # And the DOCUMENT says it too. The app has no dictionary, so it cannot tell a
+    # legitimate identity from an untranslated copy — it publishes the component and
+    # lets the reader judge, and at full size that reads as what it is.
+    #
+    # The two numbers are read out of the line rather than compared to strings_seen:
+    # the line quotes the total AT COMPOSITION TIME, deliberately excluding its own
+    # frames (see test_the_reported_disclosure_is_the_one_the_document_printed), so
+    # pinning it to the report's later total would pin the drift instead of the claim.
+    quoted = re.search(r"([\d,]+) of ([\d,]+) sentences", row["disclosure"] or "")
+    assert quoted, "a whole-copy must say so in the document, not only in a diagnostic"
+    assert quoted.group(1) == quoted.group(2), (
+        "every sentence answered with the English means the count equals the total"
+    )
+
+
+def test_filling_the_offered_stub_leaves_nothing_missing(edition, monkeypatch, tmp_path):
+    """The stub is what the report tells a translator to fill, so filling it has to be
+    enough — and it was not. A sentence that appears only once the catalog is good
+    (the disclosure line, which reads one way when nothing is missing and another when
+    something is) could never show up in a probe run against an empty catalog, so the
+    stub was permanently one string short and the next report reported the shortfall.
+    The string it omitted was a caveat, which is the class that must exist in every
+    locale. This drives the real loop: take the offered stub, fill it, re-measure."""
+    offered = language_report(edition, langs=("zz",))["languages"][0]
+    assert offered["stub_beyond_missing"] >= 1, (
+        "the fixture only means something while at least one sentence is reachable "
+        "solely behind a branch this run did not take"
+    )
+    # Named directly, so a probe regime cannot be dropped without failing: the two
+    # disclosure lines are mutually exclusive at render time, and a stub that offers
+    # only the one THIS run took is the defect. Substrings, because both are frames
+    # whose holes are filled after translation.
+    stub = offered["catalog_stub"]
+    assert any("was written in {language}" in s for s in stub), (
+        "the complete-catalog line is reachable only once nothing is missing"
+    )
+    assert any("was requested in {language}" in s for s in stub), (
+        "the shortfall line is reachable only while something IS missing"
+    )
+    assert any("spelled the same in both languages" in s for s in stub), (
+        "and the identity count only once a sentence is answered with the English"
+    )
+    _catalog_dir(
+        monkeypatch, tmp_path, {"zz": {s: f"ZZ {s}" for s in offered["catalog_stub"]}}
+    )
+
+    out = language_report(edition, langs=("zz",))
+    row = out["languages"][0]
+    assert row["missing"] == 0, "filling the offered stub must close the gap"
+    assert row["rejected"] == 0
+    assert row["identical_to_english"] == 0
+    assert row["coverage"] == 1.0
+    assert out["complete"] == ["zz"]
+    # The negative-space twin of the identity count. Without it, a field that simply
+    # listed every complete locale would pass every other test here — and would keep
+    # offering "some entries are legitimately identical" as the reason the strict list
+    # is empty for a locale that has no identical entry at all, which is a fabricated
+    # explanation rather than a derived one.
+    assert out["fully_translated"] == ["zz"], "nothing copied, so the strict list holds"
+    assert out["identical_in_complete"] == {}, (
+        "no identity means no reason to publish; an entry here would be a claim the "
+        "data does not support"
     )
 
 
@@ -457,6 +540,10 @@ def test_the_report_carries_a_fillable_stub_and_names_the_file(edition):
     # Every key of the stub is a sentence to translate, and its value is empty so the
     # file can be filled in place rather than transcribed.
     assert set(by_lang["zz"]["catalog_stub"].values()) == {""}
+    # English is the source, so it owes no worklist: an unguarded probe would offer
+    # every sentence in the document as English-to-translate-into-English.
+    assert by_lang["en"]["catalog_stub"] == {}
+    assert by_lang["en"]["stub_beyond_missing"] == 0
     assert "zz" in out["not_started"]
     assert out["render_integrity"]["deterministic"] is True
 

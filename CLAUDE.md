@@ -11538,6 +11538,53 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     later as a full one, with nothing else in the folder to correct it — so the completion
     line now NAMES what is in there, and an empty selection is refused outright rather
     than writing a destination that looks like a backup and holds nothing.
+  - **A "FILL THIS IN" ARTIFACT DERIVED FROM ONE PROBE CANNOT CONTAIN A STRING THAT
+    APPEARS ONLY ONCE IT IS FILLED (2026-08-12, the bulletin catalogs):** the language
+    diagnostic emits a `catalog_stub` and tells a translator, in its own `how_to_use`,
+    that filling it is the job. `disclosure()` prints one line when nothing is missing
+    and a shortfall line otherwise, so a probe against an EMPTY catalog can only ever
+    reach the second — the stub was permanently one string short, and the omitted string
+    was a CAVEAT, the class the informed-consent rule requires in every locale. Filling
+    the stub perfectly then produced a report saying you had missed one. GENERAL FORM:
+    when a diagnostic emits a worklist, enumerate the branches the producer takes based
+    on HOW MUCH IS ALREADY DONE, and render each; a from-empty probe reaches only the
+    not-yet-done branch. TWO SPECIFICS. (a) **The probe must answer IDENTICALLY, not
+    merely differently** — a line reporting how many sentences are spelled the same in
+    both languages exists only when at least one IS, so a probe answering everything
+    with a distinct string misses it too; an identical answer satisfies both "nothing is
+    missing" and "something is identical", which is what makes ONE probe enough. (b) A
+    differing probe was written, MEASURED to discover nothing this renderer does not
+    already reach, and REMOVED with its reason recorded rather than kept as insurance —
+    each probe costs a render per locale, and one that discovers nothing reads as a
+    mechanism when it is not one. Mutation-test each regime and keep only what fails
+    when deleted. COROLLARY the fix walked into: the probe offered the SOURCE language
+    166 sentences to translate into itself, because English's catalog is empty by
+    definition — any "what is missing here" derivation needs the source-language case
+    guarded explicitly.
+  - **ASKING A STATEFUL REPORTER TWICE PRODUCES TWO CLAIMS ABOUT ONE ARTIFACT — and an
+    IDENTICAL entry is not an English remainder (2026-08-12, same slice):** two
+    independent honesty defects in one line. (a) `disclosure()` reads its own report and
+    then composes a sentence, which REGISTERS that sentence's frames — so the second
+    call counts them in the total the sentence quotes: the document printed "10 of 166"
+    and the diagnostic's payload, a second call on the same translator, printed "10 of
+    169" about that same document, under a field named for the document's line. One
+    instance is one render, so it owes one answer; compose once and let a caller wanting
+    a fresh count build a fresh instance. (b) The branch chose the shortfall line from
+    the strict coverage figure, which deliberately EXCLUDES entries a translator
+    answered with the same text — so every finished locale announced "158 of 168 … the
+    rest are printed in English" about ten sentences that were in French, because French
+    spells "articles" and "mentions" the way English does. A fabricated shortfall inside
+    a caveat is exactly as dishonest as a fabricated pass. The English remainder is what
+    the app KNOWS is English (no entry, or a refused frame); the identical count is
+    published as its own component, because the app has no dictionary and cannot tell a
+    legitimate identity from a copy someone never translated — so it states the number
+    and a whole-file copy says "168 of 168", which is self-evident. THE MEASUREMENT
+    KEEPS THE STRICTER DEFINITION: coverage measures translation WORK, which is a
+    different question from what language the reader is holding, and conflating them is
+    what produced the defect. Same family one level up: a `fully_translated` list that
+    requires coverage 1.0 is EMPTY for every genuinely finished locale, so publish the
+    per-locale identical count as the DERIVED reason it is empty — never a static
+    sentence, which would keep explaining an emptiness that had since become reachable.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 

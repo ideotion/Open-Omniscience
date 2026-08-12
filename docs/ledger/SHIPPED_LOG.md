@@ -4810,3 +4810,69 @@ Scoped to Settings because that is what was asked; the same inversion exists on 
 elsewhere in the app and is flagged rather than swept in. Two new strings keyed ×12 by
 textual insert (+2/−0 per locale), derived from the existing reviewed "Diagnostics log"
 translations. Every frontend slice here is BROWSER-UNVERIFIED per fork-3.
+
+## 2026-08-12 — the eleven bulletin catalogs, and three defects the empty ones hid
+
+Filled fr's remaining gap and wrote es de pt ru ar zh ja hi bn id: **289 entries each**,
+every locale mechanically verified — no missing key, no stray key, no empty value, no
+changed placeholder set, no dropped identifier. Two of my own typos were caught that way
+(a full-width comma typed into a Chinese KEY, which can never match a sentence the
+renderer asks for; a duplicated Bengali key whose English side was mistyped), which is
+the only real evidence the checker discriminates. Each identical-to-English entry was
+reviewed rather than counted: `M {magnitude}` is the universal seismic notation, `- n:
+{n}` is a bare symbol, and French genuinely spells "articles" and "mentions" the way
+English does.
+
+Filling them is what exposed the rest. **With the catalogs empty, all three defects below
+were invisible**, which is the shape worth remembering: a feature's honesty layer cannot
+be judged until the feature has data in it.
+
+**(1) The stub the report tells a translator to fill was permanently one string short.**
+`disclosure()` prints "this edition was written in X" when nothing is missing and a
+shortfall line otherwise, so a probe against an empty catalog can only ever reach the
+second — and the string it omitted was a CAVEAT. Filling the stub perfectly produced a
+report saying you had missed one. Fixed with a probe that answers every sentence with the
+English ITSELF: identical rather than merely different, because the line reporting how
+many sentences are spelled the same in both languages exists only when at least one is,
+so a differing probe misses it too. A differing probe was written, measured to discover
+nothing this renderer does not already reach, and removed with its reason recorded rather
+than kept as insurance — each probe costs a render per locale. Mutation matrix: with the
+probe neutered, three tests fail; the two redundant regimes were dropped only after
+measuring that their removal changed nothing. The fix then walked into its own corollary
+— the probe offered ENGLISH 166 sentences to translate into English, because the source
+language's catalog is empty by definition.
+
+**(2) Every finished locale printed a shortfall that did not exist.** The disclosure chose
+its branch from the strict coverage figure, which deliberately excludes entries answered
+with the same text — so French announced "158 of 168 sentences … and the rest are printed
+in English" about ten sentences that were in French. A fabricated shortfall inside a
+caveat is exactly as dishonest as a fabricated pass. The English remainder is what the app
+KNOWS is English (no entry, or a refused frame); the identical count is now published as
+its own component, because the app has no dictionary and cannot tell a legitimate identity
+from a copy nobody translated — so it states the number, and a whole-file copy says "168
+of 168", which is self-evident. `report()`'s coverage keeps the stricter definition: it
+measures translation WORK, a different question from what language the reader is holding,
+and conflating the two is what produced the defect.
+
+**(3) The diagnostic quoted a different number than the document.** Asking for the line
+registers its own frames, so a second call counts them in the total the line quotes: the
+document printed "10 of 166" and the payload — a second call on the same translator —
+printed "10 of 169" about that document, under a field named for the document's line.
+Composed once per instance now; a caller wanting a fresh count builds a fresh translator.
+
+Also split `complete` / `fully_translated` / `started`, because one word could not answer
+both questions honestly: a genuinely finished catalog can never reach coverage 1.0 (some
+entries are legitimately identical) and was filed as unfinished forever, while a catalog
+of copied English must not read as done. `identical_in_complete` publishes the per-locale
+identical count as the DERIVED reason the strict list is empty — never a static sentence,
+which would keep explaining an emptiness that had since become reachable.
+
+Every mechanism mutation-tested, restoring from a `cp` backup rather than `git checkout`
+(the recorded untracked-file trap). ruff clean at CI's own scope, mypy 127 = baseline
+(one error I introduced by widening a return type with a sentinel `object` was fixed by
+using a bool flag instead), bandit clean, i18n 100% and both ratchets unmoved.
+
+**Still open, and stated rather than quietly left:** `src/bulletin/annexes.py` makes ZERO
+translator calls, so the annexes bundle's own chrome — its table of contents, its per-
+article headings — is English inside an otherwise translated edition. That needs its own
+worklist derivation and eleven more translations.
