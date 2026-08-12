@@ -2934,6 +2934,20 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     569, three BELOW the old bar, and the script prints the new floor when it can drop
     — the step's own comment says "lower it in the same PR that adds the keys". Leaving
     the slack invites the next drift to land unseen.
+    **RECURRED 2026-08-12 (PR #945), which says the entry above was missing its
+    MECHANISM: gate 1 passing is not weak evidence about gate 2 — it is NO evidence,
+    by construction.** `--min 100` compares the eleven locale files against `en.json`,
+    so it can only ever see a key that already EXISTS; a brand-new `title=`/label/hint
+    with no key at all is invisible to it and always will be. That is precisely the
+    string gate 2 counts. So the two gates cannot substitute for each other in either
+    direction, and "i18n was green" means nothing unless it names WHICH gate — I added
+    three strings to a panel, watched `--min 100` report 100% across twelve locales,
+    and pushed a tree that was three over the ratchet. The habit that actually works is
+    to run gate 2 whenever a diff touches `index.html`, before the push rather than
+    after CI says so. COROLLARY on the fix: keying the three brought the count back to
+    exactly the bar, so there was no slack to reclaim and the ratchet stayed at 567 —
+    "lower it when it can drop" is not a licence to lower it when it cannot, which
+    would hand the next drift a free slot.
 
   - **AN ENUMERATOR THAT DOES NOT LIST THE APP'S OWN DEFAULT MAKES THE APP BLIND TO ITS
     OWN WRITES — and the damage lands somewhere else entirely (2026-08-11, the Ollama

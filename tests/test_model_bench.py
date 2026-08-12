@@ -1270,3 +1270,61 @@ def test_serving_backend_is_a_read_only_probe(monkeypatch):
 
     M.serving_backend()
     assert started == [], "probing which backend is up must not start one"
+
+
+# --- the worker seam: the mode the button actually posts through ------------- #
+#
+# run_default_model_bench takes **kw, so a roster argument reaching it is SWALLOWED
+# rather than raised -- which is exactly why the worker's drop is load-bearing and
+# why no crash-based test can see it. These two assert the CALL, not the absence of
+# an exception: the button's own promise ("sends nothing that could start, stop or
+# switch a backend") is true only while this holds.
+
+def _worker_spy(monkeypatch):
+    import src.ai_layer.model_bench as M
+    seen: dict = {}
+    monkeypatch.setattr(M, "run_default_model_bench",
+                        lambda ctx, **kw: seen.setdefault("default", kw) or {"ok": 1})
+    monkeypatch.setattr(M, "run_model_bench",
+                        lambda ctx, **kw: seen.setdefault("roster", kw) or {"ok": 2})
+    return seen
+
+
+def test_the_default_mode_drops_the_roster_arguments_it_cannot_honour(monkeypatch):
+    from src.api.diagnostics import _model_bench_worker
+
+    seen = _worker_spy(monkeypatch)
+    _model_bench_worker(
+        None,
+        default_model_only=True,
+        models=["a:1", "b:2"], extra_models=["c:3"],
+        backends=("vllm", "ollama"), allow_backend_switch=True,
+        repeats=3,
+    )
+    assert "roster" not in seen, "the default mode must not reach the roster sweep"
+    kw = seen["default"]
+    for dropped in ("models", "extra_models", "backends", "allow_backend_switch"):
+        assert dropped not in kw, (
+            f"{dropped!r} reached run_default_model_bench, which accepts **kw and would "
+            "swallow it silently -- the button would then be measuring something its "
+            "label and hover text both deny"
+        )
+    assert kw["repeats"] == 3, "a genuinely shared argument must still be passed on"
+
+
+def test_the_roster_mode_still_receives_every_one_of_them(monkeypatch):
+    """The negative-space twin: a drop that fired in BOTH modes would be a silent
+    feature removal, and the assertion above cannot tell the two apart."""
+    from src.api.diagnostics import _model_bench_worker
+
+    seen = _worker_spy(monkeypatch)
+    _model_bench_worker(
+        None,
+        default_model_only=False,
+        models=["a:1"], extra_models=["c:3"],
+        backends=("vllm",), allow_backend_switch=True,
+    )
+    assert "default" not in seen
+    kw = seen["roster"]
+    assert kw["models"] == ["a:1"] and kw["extra_models"] == ["c:3"]
+    assert kw["backends"] == ("vllm",) and kw["allow_backend_switch"] is True
