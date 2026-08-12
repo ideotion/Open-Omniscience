@@ -265,11 +265,60 @@ def record_unlock_timing(record: dict[str, Any]) -> None:
 
 def wal_bytes_before_open() -> int | None:
     """The -wal file size, intended to be read BEFORE the DB is first opened —
-    a large value predicts WAL-recovery time inside the first connection."""
+    a large value predicts WAL-recovery time inside the first connection.
+
+    TWO-state by design (present -> size, everything else -> None). Callers that
+    must tell "there was no WAL" apart from "the size could not be read" read
+    ``wal_state_before_open`` instead; see its docstring for why that matters.
+    """
     try:
         return (data_dir() / f"{_DB_NAME}-wal").stat().st_size
     except OSError:
         return None
+
+
+def wal_state_before_open() -> dict[str, Any]:
+    """The -wal file's state BEFORE the first connection, in THREE states.
+
+    A clean SQLite WAL-mode shutdown checkpoints and REMOVES the -wal file
+    (verified empirically, not assumed). So "absent" is a real measurement —
+    there is no WAL, therefore WAL recovery has nothing to do — and it is NOT
+    the same fact as "the size could not be read at all".
+
+    ``wal_bytes_before_open`` collapses both onto ``None``, and that conflation
+    has a cost: the P0.4 unlock check asks the operator to produce a cold boot
+    after a CLEAN shutdown, which by construction leaves no -wal, so the very
+    boot the bar asks for reports its WAL evidence as an unmeasured gap. Three
+    states let the report say which case it measured.
+    """
+    p = data_dir() / f"{_DB_NAME}-wal"
+    try:
+        return {
+            "bytes": p.stat().st_size,
+            "state": "present",
+            "reason": (
+                "a -wal file was present at open — its frames are replayed inside "
+                "the first connection, so that recovery is part of the unlock timing"
+            ),
+        }
+    except FileNotFoundError:
+        return {
+            "bytes": 0,
+            "state": "absent",
+            "reason": (
+                "no -wal file at open — a clean shutdown checkpoints and removes it, "
+                "so WAL recovery had nothing to do and is NOT part of this timing"
+            ),
+        }
+    except OSError as exc:
+        return {
+            "bytes": None,
+            "state": "unreadable",
+            "reason": (
+                f"the -wal size could not be read ({type(exc).__name__}) — "
+                "unmeasured, never reported as zero"
+            ),
+        }
 
 
 def previous_session_report() -> dict[str, Any]:

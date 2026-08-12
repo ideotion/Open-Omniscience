@@ -3839,6 +3839,31 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     test. `--output-format=concise` makes it real, and the tell is the same one the
     recorded `cmd | tail` lesson names: a check you expect to be interesting never says
     anything interesting.
+  - **A SENTINEL THAT MEANS "NOTHING TO MEASURE" AND "COULD NOT MEASURE" AT ONCE CAN MAKE
+    THE EVIDENCE A GATE ASKS FOR UNREADABLE — and the how-to may be what produces it
+    (2026-08-12, the P0.4 unlock check at >1M articles):** `wal_bytes_before_open()`
+    returns `None` on any `OSError`, and `FileNotFoundError` is one, so an ABSENT `-wal`
+    and an unreadable one shared a value. Absent is not an absence of data: **a clean
+    SQLite WAL-mode close checkpoints and DELETES the `-wal`** (verified with a five-line
+    repro, not assumed), so "no WAL" is the real, informative measurement *nothing to
+    replay* — and it is the NORMAL state after the very cold boot the acceptance bar asks
+    the operator to produce. THE PART WORTH MOST: the check's own how-to told them to
+    "cleanly shut the app down", so following the instructions **guaranteed** the null the
+    report then presented as missing evidence, and two consecutive field runs reported a
+    passing unlock that nobody could bank. The bar compounded it by justifying the cold
+    boot as testing "WAL recovery, the phase that grows with the corpus" — which a clean
+    shutdown by construction never exercises, so the stated reason for the instruction was
+    false about its own mechanism. THREE RULES. (a) For any `None` a report publishes, ask
+    what it means in EACH direction before treating it as a gap — this is the recorded
+    "gate each floor on its own denominator" lesson at the level of a single field, and the
+    `.get(key, 0)` family's mirror (there a default invented a measurement; here a
+    sentinel destroyed one). (b) When a check tells an operator how to produce evidence,
+    trace the instruction to the value it yields — an instruction that reliably produces
+    the unreadable case is worse than no instruction, because it costs a full re-run to
+    learn nothing. (c) Fix it ADDITIVELY where a shipped surface reads the old field: the
+    three-state record lands beside `wal_bytes_before_open`, whose two-state meaning is
+    preserved exactly, so `app.js` and the existing guard stay byte-unchanged and the only
+    thing that changes is what the report can SAY.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
@@ -10295,6 +10320,64 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   at real scale and is the strongest evidence this cycle has produced. Rows 4 and 7 are NOT
   closed by this report — row 4 wants a COMMITTED full import (this was `committed=false`), row 7
   wants a cold boot and a multi-day soak, and the report's own reason strings say so for both.
+  **P0 VALIDATION RUN AT >1M ARTICLES — MAINTAINER, 2026-08-12 (report
+  `oo-p0-validation-20260812093156.json`, app 0.3.0, engine `oo-volumes-2`): 4 pass · 0 fail ·
+  1 not-measurable.** REAL SCALE: **1,048,725 articles / 21.0 GB (20,072 MiB)** — the first run
+  past the 1M mark the 2026-07-30 ruling set as row 3's bar, and **8.3× the 2,522 MiB corpus
+  v0.2.0 was validated at**. The data-safety trio passed again, stronger than before:
+  • **P0.1 backup — bounded RAM held at a third scale.** Peak RSS +284 MB over a 20,072 MiB
+    corpus (**1.4 %**), 58 volumes / 24.0 GB in 758.6 s, gate held 179.6 s, parity available.
+    The property now has three points that all refuse to scale with the corpus: 17.45 % at
+    2.5 GB (v0.2.0), 0.34 % at 16.5 GB, 1.4 % at 21.0 GB. The run-to-run delta varies with
+    whatever else was resident (baseline RSS was 1,521 MB here) — the FRACTION is the signal,
+    and it is flat-to-falling.
+  • **P0.1 verify — clean.** Manifest signature + every data and parity volume checksum, every
+    volume stream-decrypted, member checksums cross-checked; 0 bad, 0 missing, parity tolerance
+    6/6 intact, 122.1 s.
+  • **P0.2 restore — pass FOR WHAT IT TESTED, and it did not test row 4.** Staged round-trip +
+    dry-run merge preview, `committed=false`, live corpus only ever read; quick_check ok, 0 FK
+    violations, FTS 1,048,725 = articles, trigger present, 0 sampled content mismatches, RSS
+    delta **32.1 MB** over a 42.0 GB staged artifact (vs 637 MB on 2026-08-03 — a real
+    improvement). Every table reads `new: 0`, which is the self-restore signature the bar itself
+    names. **The 2026-08-03 merge-completeness work is CONFIRMED SHIPPED by this plan:** the four
+    handler tables now carry real duplicate counts (`stat_figures` 1,156,066 · `stat_subscriptions`
+    37 · `hazard_event_details` 468 · `keyword_tags` 177) and the five that were blocked on an
+    identity ruling (`watches`, `watch_matches`, `ai_custom_prompt`, `ai_keyword`,
+    `law_revision_summaries`) now appear in the plan at 0/0/0 rather than in `_unmerged_tables`,
+    i.e. they have handlers. `_unmerged_tables` is down to the three benign ones the 2026-08-03
+    triage cleared (`derived_meta` per-machine; `article_mentioned_places` 40,681 and
+    `article_entities` 160,142 REBUILT by the post-swap re-index).
+  • **P0.4 unlock — 323 ms vs the 2,000 ms bar**, init_db 321.6 ms. FASTER than the 776.6 ms
+    measured on a SMALLER corpus, which is the tell: unlock tracks the WAL and the migration
+    work, not the article count. See the finding below — this run is what exposed the instrument
+    defect, and after the fix a boot like this one READS as bankable steady-state evidence.
+  • **P0.3 collector — 0 samples, 0 passes, explicitly not-measurable.** Unchanged; the
+    multi-day soak is still owed and no verdict was fabricated in its place.
+  **THE FINDING THIS RUN EXPOSED (fixed same day — shipped.csv row "monitoring/p0-validation"):
+  `wal_bytes_before_open: null` is not a broken instrument and not a missing cold boot — it is
+  two different facts wearing one sentinel.** `wal_bytes_before_open()` returns `None` on any
+  `OSError`, and `FileNotFoundError` is one, so an ABSENT `-wal` (a real measurement: there is no
+  WAL, therefore nothing to replay) was indistinguishable from an unreadable one. Verified
+  empirically rather than assumed: **a clean SQLite WAL-mode close checkpoints and DELETES the
+  `-wal` file**, so absent is the NORMAL state after exactly the cold boot the bar asks for — and
+  the check's own how-to prescribes that clean shutdown, so following the instructions
+  *guaranteed* the null the report then treated as missing evidence. Worse, the bar justified the
+  cold boot as testing "WAL recovery, which is the phase that grows with the corpus", which a
+  clean shutdown by construction never exercises. All three are reporting defects, none touches
+  data safety. Fixed: `wal_state_before_open()` publishes three states with reasons, the legacy
+  field keeps its exact two-state meaning (so `app.js` and the existing guard are byte-unchanged),
+  the P0 pass reason now NAMES which case it measured, and the how-to and bar say what each
+  shutdown kind actually tests. **CONSEQUENCE FOR ROW 7:** its unlock half is not blocked on new
+  data — the maintainer's next run will state, in words, whether the boot it read was a clean
+  cold boot (bankable against the bar) or a WAL replay. The collector half still needs the soak.
+  **ALSO WORTH KNOWING (measured, not a defect):** the report's `incremental_refresh` block shows
+  26 of 58 volumes reused against a note saying a second pass "with no corpus change should reuse
+  most volumes". The corpus DID change — the app was live between passes (the hourly snapshot
+  recorder and the first backup's own WAL checkpoint both write) — so this is the mechanism
+  working, not failing. And near-equal wall time (766.8 s vs 758.6 s) is EXPECTED by construction:
+  `stream_backup` reads and SHA-256s every slice before it can decide reuse, so a refresh always
+  pays the full read; what reuse saves is re-encryption and disk writes (8.15 GB of them here).
+  The note's wording over-promises against a running app; the numbers are fine.
 - **DIAGNOSE-THE-DIAGNOSTICS — the all-diagnostics RUN JOURNAL (maintainer asked 2026-07-20:
   one-click-and-wait must hold at 5M scale, completeness "should be ensured", and each
   member needs begin/end timing — "the police of the police"; INVESTIGATED same turn, build

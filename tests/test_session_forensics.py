@@ -153,6 +153,45 @@ def test_wal_bytes_before_open(dd):
     assert forensics.wal_bytes_before_open() == 777
 
 
+def test_wal_state_before_open_separates_absent_from_unreadable(dd):
+    """Three states, because 'no WAL' and 'could not read the WAL' are different
+    facts and the P0.4 bar turns on which one happened.
+
+    A clean SQLite WAL-mode shutdown REMOVES the -wal file (verified empirically),
+    so 'absent' is the normal state after the very cold boot the bar asks for --
+    reporting it as an unmeasured null is what made that boot unbankable.
+    """
+    absent = forensics.wal_state_before_open()
+    assert absent["state"] == "absent"
+    assert absent["bytes"] == 0  # a real measurement: nothing to replay
+    assert "clean shutdown" in absent["reason"]
+
+    (dd / "open_omniscience.db-wal").write_bytes(b"w" * 777)
+    present = forensics.wal_state_before_open()
+    assert present == {"bytes": 777, "state": "present", "reason": present["reason"]}
+    assert present["state"] == "present" and present["bytes"] == 777
+
+    # The third state stays honestly unmeasured -- never coerced to 0, which would
+    # claim there was no WAL when we simply could not look.
+    import pathlib
+
+    orig = pathlib.Path.stat
+
+    def _boom(self, *a, **kw):
+        # Targeted: only the -wal read fails, so the rest of pathlib keeps working.
+        if self.name.endswith("-wal"):
+            raise PermissionError("nope")
+        return orig(self, *a, **kw)
+
+    try:
+        pathlib.Path.stat = _boom  # type: ignore[method-assign]
+        unreadable = forensics.wal_state_before_open()
+    finally:
+        pathlib.Path.stat = orig  # type: ignore[method-assign]
+    assert unreadable["state"] == "unreadable"
+    assert unreadable["bytes"] is None
+
+
 def test_endpoint_and_bundle_are_wired():
     # Source-level wiring guard (the composed-route lesson): the endpoint exists on
     # the diagnostics router, the debug bundle carries the block, and /all ships the
