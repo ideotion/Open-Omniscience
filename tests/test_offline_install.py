@@ -213,6 +213,34 @@ def test_bundle_is_discovered_as_a_sibling_folder(tmp_path):
     assert "Every file matches its checksum" in out
 
 
+def _bundle_for_app_version(tmp_path, bundle_app: str, folder_app: str):
+    b = _make_bundle(tmp_path, arch=os.uname().machine)
+    m = json.loads((b / "offline-manifest.json").read_text(encoding="utf-8"))
+    m["app_version"] = bundle_app
+    (b / "offline-manifest.json").write_text(json.dumps(m, indent=2, sort_keys=True), encoding="utf-8")
+    app = _fake_app(tmp_path)
+    (app / "pyproject.toml").write_text(f'[project]\nversion = "{folder_app}"\n', encoding="utf-8")
+    r = _run(app / "install-offline.sh", cwd=app, OO_OFFLINE_BUNDLE=str(b))
+    return r.stdout + r.stderr
+
+
+def test_a_bundle_older_than_the_app_warns_but_still_installs(tmp_path):
+    """The published bundle is a ROLLING download, so it can legitimately be older
+    than the app folder beside it. That deserves a warning, not a refusal: most app
+    changes add no dependency, and if one really is missing pip names it loudly."""
+    out = _bundle_for_app_version(tmp_path, bundle_app="0.1.0", folder_app="0.3.0")
+    assert "was built for app version 0.1.0" in out and "0.3.0" in out
+    assert "REACHED_INSTALL_SH" in out, "a version difference must never block the install"
+
+
+def test_a_matching_bundle_says_nothing_about_versions(tmp_path):
+    """Negative-space twin: without this, a script that warned unconditionally would
+    satisfy the test above, and the warning would become noise nobody reads."""
+    out = _bundle_for_app_version(tmp_path, bundle_app="0.3.0", folder_app="0.3.0")
+    assert "was built for app version" not in out
+    assert "REACHED_INSTALL_SH" in out
+
+
 def test_the_components_from_the_manifest_reach_the_installer(tmp_path):
     """The bundle decides what gets installed -- installing components the bundle
     does not carry would fail, and installing fewer would silently ship less."""
