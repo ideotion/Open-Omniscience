@@ -21,6 +21,7 @@ import time
 
 from src.monitoring.llm_throughput import (
     DEFAULT_LEVELS,
+    _ConcurrencyProbe,
     run_throughput_bench,
     run_throughput_selftest,
     summarise_levels,
@@ -62,15 +63,70 @@ def _bench(**kw):
 # --------------------------------------------------------------------------- #
 #  the mechanism
 # --------------------------------------------------------------------------- #
-def test_more_workers_really_finish_the_same_batch_sooner():
-    """The load-bearing one. Without it a serial bench publishes a plausible curve."""
+def test_the_bench_really_runs_its_calls_concurrently():
+    """THE LOAD-BEARING ONE: without it a serial bench publishes a plausible curve.
+
+    This asserted ``parallel_wall < serial_wall`` until 2026-08-12, and that proxy was
+    unsound in BOTH directions. ``run_concurrent`` is a plain for loop at
+    ``max_workers <= 1`` and a ThreadPoolExecutor above it, so the parallel side pays a
+    pool-creation cost the serial side never pays — a FIXED noise term against a fixed
+    signal, not jitter that shrinks as the work grows.
+
+    MEASURED, so the next session does not re-derive it. Under 8x CPU oversubscription
+    (32 spinners on 4 cores) pool creation reached 132 ms against the 120 ms signal, and
+    the shipped configuration failed 2/200 with a worst margin of -500 ms. Raising the
+    signal is NOT the repair here: a 600 ms floor still failed 1/120, because the stall
+    tail is unbounded rather than proportional. And in the other direction it was worse
+    than flaky — against a genuinely serial pool both levels take the same time, so the
+    comparison is near a coin flip and caught the defect it exists to catch only 29/40.
+
+    So the claim is structural instead: with four workers, four calls really were in
+    flight AT ONCE. A stall can delay that moment but cannot make it false. Same
+    reasoning the rate assertion below carries one level down — do not re-derive a
+    discriminating threshold from timings.
+    """
+    probe = _ConcurrencyProbe(parties=4)
+    run_throughput_bench(
+        levels=(4,), calls_per_level=8, client=probe, model="fake", backend_name="vllm"
+    )
+    assert probe.max_in_flight == 4, (
+        f"four workers must put four calls in flight at once, saw {probe.max_in_flight}"
+    )
+    assert not probe.timed_out, "the pool never assembled"
+
+
+def test_a_silently_serial_pool_is_detected_rather_than_read_as_merely_slow(monkeypatch):
+    """NEGATIVE SPACE: the guard above must FAIL when the pool really is serial.
+
+    Without this, ``max_in_flight == 4`` could be satisfied by an instrument that counts
+    something other than genuine overlap, and nothing would say so."""
+    from src.llm import concurrency as conc
+
+    real = conc.run_concurrent
+    monkeypatch.setattr(
+        conc,
+        "run_concurrent",
+        lambda items, fn, *, max_workers=1: real(items, fn, max_workers=1),
+    )
+    # A short rendezvous: this tests the DETECTION, not the production timeout, and a
+    # serial pool pays that timeout exactly once (it opens the gate on giving up).
+    probe = _ConcurrencyProbe(parties=4, timeout=1.0)
+    run_throughput_bench(
+        levels=(4,), calls_per_level=8, client=probe, model="fake", backend_name="vllm"
+    )
+    assert probe.max_in_flight == 1
+    assert probe.timed_out
+
+
+def test_the_published_wall_covers_the_calls_it_reports():
+    """A LOWER bound, so a scheduling stall can only ever satisfy it, never break it.
+
+    This is what survives of the wall-clock claim: the timer measures the real work
+    rather than publishing a fabricated figure."""
     r = _bench(levels=(1, 4), calls_per_level=8)
     by = {lv["concurrency"]: lv for lv in r["levels"]}
-    assert by[4]["batch_wall_s"] < by[1]["batch_wall_s"], (
-        f"4 workers must beat 1: {by[4]['batch_wall_s']}s vs {by[1]['batch_wall_s']}s"
-    )
-    # And the rate must move WITH it, since the rate is the batch's own.
-    assert by[4]["calls_per_hour"] > by[1]["calls_per_hour"]
+    assert by[1]["batch_wall_s"] >= 8 * 0.02 * 0.9
+    assert by[4]["batch_wall_s"] >= 2 * 0.02 * 0.9
 
 
 class _SaturatingClient(_Client):
@@ -85,6 +141,7 @@ class _SaturatingClient(_Client):
         super().__init__(seconds=seconds)
         import threading
 
+        self.lanes = lanes
         self._sem = threading.Semaphore(lanes)
 
     def generate(self, prompt, **kw):
@@ -98,24 +155,27 @@ def test_the_rate_is_measured_not_a_latency_multiplied_by_the_worker_count():
     of a report that says "plenty of headroom" beside a GPU sitting at 20%.
 
     THE LOAD-INDEPENDENT CLAIM IS THE ARITHMETIC ONE, and that ordering is the lesson
-    this test carries. The ratio below is an anti-vacuity companion -- it shows the wrong
-    formula would have answered differently here -- but a ratio THRESHOLD cannot prove
-    anything on a shared test runner: measured under CPU contention, a PERFECTLY-SCALING
-    client reads 0.047-0.101 of its own assumed rate, so any "must be under a half" bar
-    passes for the client it is supposed to distinguish. Do not re-derive a discriminating
-    threshold from timings; the identity is what discriminates.
+    this test carries. Do not re-derive a discriminating threshold from timings; the
+    identity is what discriminates.
 
-    CALIBRATION, recorded so the next session does not re-measure it. At 16 workers over
-    32 calls with 2 real lanes the ratio was 0.083-0.192 under 8 competing spinners and
-    0.061-0.157 under 12 -- against a 0.5 bar, better than 3x margin. The previous shape
-    (8 workers, 16 calls) reached 0.368 in the same harness and 0.52 in a real full-suite
-    run, i.e. it sat inside its own noise. The fixture was made HARDER rather than the bar
-    softer, which is the only legitimate direction when a guard goes red.
+    HISTORY, so the next session does not re-walk it. This carried a ratio bar
+    (``measured < assumed / 2``) as its anti-vacuity companion, calibrated twice: the
+    8-worker/16-call shape reached 0.368 in a contention harness and 0.52 in a real
+    full-suite run, so the fixture was made HARDER (16 workers, 32 calls, 2 lanes),
+    measuring 0.083-0.192 under 8 competing spinners and 0.061-0.157 under 12. It failed
+    anyway — 1/12 at 0.522 under 32 — and the reason is structural rather than a matter
+    of calibration: ``call_wall_p50_s`` is timed PER CALL and includes the semaphore
+    wait, so ``assumed`` and ``measured`` are not independent. Contention inflates p50,
+    ``assumed`` falls toward ``measured``, and the ratio drifts UP toward whatever bar is
+    set. Two quantities that converge by construction cannot be separated by a threshold,
+    so the companion is now (a) a structural cap on the fixture below and (b) a
+    timing-free test that the band can reject the assumed formula's answer at all.
     """
+    client = _SaturatingClient(seconds=0.02, lanes=2)
     r = run_throughput_bench(
         levels=(16,),
         calls_per_level=32,
-        client=_SaturatingClient(seconds=0.02, lanes=2),
+        client=client,
         model="fake",
         backend_name="vllm",
     )
@@ -136,12 +196,47 @@ def test_the_rate_is_measured_not_a_latency_multiplied_by_the_worker_count():
     hi = lv["n"] / (lv["batch_wall_s"] - wall_half) * 3600 + rate_half
     assert lo <= measured <= hi, f"{measured} outside [{lo:.0f}, {hi:.0f}]"
 
-    # ANTI-VACUITY: on this fixture the two formulas genuinely disagree, so the identity
-    # above is not satisfied by both at once.
-    assumed = (3600.0 / lv["call_wall_p50_s"]) * lv["concurrency"]
-    assert measured < assumed / 2, (
-        "with only two real lanes, sixteen workers cannot be twice the measured "
-        f"rate: measured={measured}/h, assumed={round(assumed)}/h"
+    # THE FIXTURE MUST REALLY SATURATE, or the identity above has nothing to discriminate.
+    # Stated as an UPPER bound derived from the semaphore: a `lanes`-lane backend cannot
+    # exceed lanes/seconds however many workers are requested, so contention can only ever
+    # satisfy this — and a fixture that quietly stopped saturating (someone raises `lanes`)
+    # blows through it. This replaced a `measured < assumed / 2` ratio bar on 2026-08-12.
+    #
+    # WHY THE RATIO HAD TO GO, measured rather than assumed. `call_wall_p50_s` is timed
+    # PER CALL and includes the semaphore wait, so `assumed` and `measured` are not
+    # independent: as contention rises the queue inflates p50, `assumed` falls toward
+    # `measured`, and the ratio drifts UP toward whatever bar is set. Across 15 runs under
+    # 32 competing spinners it ran 0.115-0.238, but a tail run reached 0.522 and breached
+    # the 0.5 bar. The two formulas converge by construction, so no bar is safe; the
+    # timing-free companion test below is what now proves the band can reject the wrong
+    # answer.
+    assert lv["concurrency"] >= 4 * client.lanes, (
+        "the fixture must request far more workers than it can serve, or it is not the "
+        f"saturated case: concurrency={lv['concurrency']}, lanes={client.lanes}"
+    )
+    cap = client.lanes / client.seconds * 3600
+    assert measured <= cap * 1.05, (
+        f"{measured}/h exceeds what {client.lanes} lanes can serve ({cap:.0f}/h) — "
+        "this fixture is no longer the saturated one"
+    )
+
+
+def test_the_rate_band_rejects_a_rate_computed_the_assumed_way():
+    """ANTI-VACUITY for the identity above, with NO timing in it at all.
+
+    The identity only means something if the band it checks can actually reject the wrong
+    answer. Both figures here are arithmetic: 32 calls in 0.320 s is 360,000/h, while
+    ``3600/p50 x workers`` over a 2-lane backend answers 2,880,000/h. One must land inside
+    the band and the other outside, on numbers no scheduler can move."""
+    n, wall, p50, workers = 32, 0.320, 0.02, 16
+    lo = n / (wall + 0.0005) * 3600 - 0.5
+    hi = n / (wall - 0.0005) * 3600 + 0.5
+
+    assert lo <= n / wall * 3600 <= hi, "the batch's own arithmetic must be accepted"
+    assumed = (3600.0 / p50) * workers
+    assert not (lo <= assumed <= hi), (
+        f"the assumed formula's answer ({assumed:.0f}/h) must be rejected by the band "
+        f"[{lo:.0f}, {hi:.0f}], or the identity proves nothing"
     )
 
 
