@@ -441,13 +441,112 @@
     }
     #llm.ai-off::after {
       content:""; position:absolute; inset:0; pointer-events:none;
+      /* THE BAR WAS NOT RENDERING AT ALL until 2026-08-12, and had not since the pill
+         gained a title. `.pill.oo-tip-target::after` is the hover convention's 4px corner
+         dot, and every titled element carries that class — the cascade merges per
+         PROPERTY, so `inset:0` overrode the four sides while `width:4px; height:4px;
+         border-radius:50%; opacity:.55` leaked straight in. An absolutely positioned box
+         with left, right AND width all set ignores `right`, so the "corner-to-corner
+         diagonal" resolved to a 4x4 rounded dot at the top-left, at 55% opacity, over
+         which a 50%-stop gradient is invisible. Measured in Chromium, not reasoned about.
+         The maintainer's 2026-08-02 ruling is "red WITH A DIAGONAL BAR", and colour is
+         never the only signal — so the shape has to actually exist. */
+      width:auto; height:auto; border-radius:0; opacity:1;
       /* One diagonal bar corner-to-corner. A gradient rather than a rotated element so
          the pill's rounded clip cuts it cleanly and no layout box is added. */
+      /* Mixed 40% toward --fg. At full --err the bar measured 1.99:1 against the pill it
+         crosses on `solar` -- under the 3:1 non-text bar, i.e. a shape cue that is barely
+         a cue on the lightest themes. This was never noticed because, per the note above,
+         the bar was not rendering at all. 40% is the smallest mix that clears it (3.89:1
+         worst case) and keeps the bar unmistakably red, which the 2026-08-02 ruling is
+         about. Measured across all 16 themes. */
       background:linear-gradient(to top right, transparent calc(50% - 0.9px),
-        color-mix(in srgb, var(--err) 85%, transparent) calc(50% - 0.9px),
-        color-mix(in srgb, var(--err) 85%, transparent) calc(50% + 0.9px),
+        color-mix(in srgb, var(--fg) 40%, var(--err)) calc(50% - 0.9px),
+        color-mix(in srgb, var(--fg) 40%, var(--err)) calc(50% + 0.9px),
         transparent calc(50% + 0.9px));
     }
+    /* STARTING and WORKING (maintainer 2026-08-12: "there's a difference between AI is
+       active and ready, and AI is working"). Two states the pill could not express: a
+       start in flight, and a model mid-inference.
+
+       EVERY ONE OF THESE CARRIES A SHAPE, NOT JUST MOTION AND COLOUR. app.css already
+       disables every animation under `prefers-reduced-motion: reduce` (one global rule
+       near the end of this file), so a state expressed by movement alone would simply
+       VANISH for those readers — and colour alone was never allowed either. So the
+       animation is the top layer over a static cue that reads frozen, in greyscale, and
+       at a glance: a dot under the label while starting, an arc beneath it while
+       working. Colours stay theme-DERIVED via color-mix (a hardcoded hue failed 8/17
+       themes when --caveat was introduced). The label never changes, so the footprint
+       never moves (invariant #3). */
+    #llm.ai-starting {
+      position:relative; overflow:hidden;
+      color:var(--accent);
+      border-color:color-mix(in srgb, var(--accent) 55%, var(--border));
+      background:color-mix(in srgb, var(--accent) 8%, var(--panel2));
+    }
+    /* The breathing tint — slow and low-amplitude, so it reads as "waking up" rather
+       than as an alarm. Its base opacity is what remains when the animation is frozen,
+       which is why it is set on the element and not only inside the keyframes. */
+    #llm.ai-starting::before {
+      content:""; position:absolute; inset:0; pointer-events:none; opacity:.35;
+      background:color-mix(in srgb, var(--accent) 22%, transparent);
+      animation:oo-ai-breathe 1.7s ease-in-out infinite;
+    }
+    /* EVERY PROPERTY THE TIP MARKER SETS IS RESET HERE, DELIBERATELY. `.pill.oo-tip-target
+       ::after` is the hover-convention's 4px corner dot, and the pill carries a title in
+       every state, so it always has that class. The cascade merges per PROPERTY, not per
+       rule: this selector wins on specificity for what it declares, and silently INHERITS
+       what it does not — so omitting `top` would leave the dot pinned to the top-right
+       with a stray 4px width and .55 opacity, nothing like the mark intended. The shipped
+       ai-off rule escapes this only because `inset:0` happens to overwrite all four sides.
+       Verified in Chromium rather than reasoned about. */
+    #llm.ai-starting::after {
+      content:""; position:absolute; inset:auto auto 2px 50%; margin-left:-1.5px;
+      width:3px; height:3px; border-radius:50%; opacity:1;
+      /* Mixed toward --fg, not painted in the state's own hue. MEASURED across all 16
+         themes: the accent alone bottoms out at 2.88:1 on `dawn`, under the 3:1
+         WCAG 1.4.11 bar for a non-text mark, and this mark is the state's ONLY cue once
+         animation is frozen. Pulling it toward --fg lifts the worst case to 4.02:1 while
+         keeping enough of the hue to still read as the starting colour -- the same fix
+         --caveat needed when a fixed hue failed 8 of 17 themes. */
+      background:color-mix(in srgb, var(--fg) 65%, var(--accent));
+      pointer-events:none;
+    }
+    @keyframes oo-ai-breathe { 0%,100% { opacity:.18; } 50% { opacity:.8; } }
+    /* WORKING keeps .pill.ok's green — the backend IS ready, it is simply also busy —
+       and adds an arc beneath the label. The static arc is the cue; the travelling
+       highlight rides on top of it. The pill's 999px radius clips both into a soft
+       lens, which is what keeps this discreet at 46px. */
+    #llm.ai-busy { position:relative; overflow:hidden; }
+    /* The track sits UNDER THE LABEL, inset from both ends — not on the pill's bottom
+       edge, where a first cut put it. Measured in Chromium: against the pill's own 1px
+       border in the same green, an edge-hugging 2px arc was indistinguishable from the
+       border itself, so the state read as plain "ready". Inset, it is unmistakably a
+       mark. Same reset discipline as the starting dot above: `inset` pins all four
+       sides and width/border-radius/opacity are restated, so none of the tip marker's
+       leak in. */
+    #llm.ai-busy::after {
+      content:""; position:absolute; inset:auto 11px 4px 11px;
+      width:auto; height:2px; border-radius:1px; opacity:1;
+      /* Same reasoning as the starting dot: measured, --ok alone tops out at 2.69:1 even
+         at full strength, because the track sits on a pill already tinted in that hue.
+         Mixed toward --fg the worst case is 4.65:1. This is the FROZEN cue, so its
+         legibility is the whole state under prefers-reduced-motion. */
+      background:color-mix(in srgb, var(--fg) 65%, var(--ok));
+      pointer-events:none;
+    }
+    /* The travelling highlight rides that same track, clipped to it by the parent's
+       overflow. Frozen, it rests off the left end and the static track carries the
+       state on its own. */
+    #llm.ai-busy::before {
+      content:""; position:absolute; inset:auto auto 4px -14px;
+      width:14px; height:2px; border-radius:1px; opacity:1;
+      background:linear-gradient(90deg, transparent,
+        color-mix(in srgb, var(--ok) 95%, transparent), transparent);
+      animation:oo-ai-sweep 1.5s linear infinite;
+      pointer-events:none;
+    }
+    @keyframes oo-ai-sweep { to { left:100%; } }
     #health { min-width:110px; }
     @keyframes oo-spin { to { transform:rotate(360deg); } }
     /* Activity & vitals popover (opened from the chip). */

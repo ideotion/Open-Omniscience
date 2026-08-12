@@ -537,9 +537,16 @@ class OllamaClient:
             payload["options"] = options
         if keep_alive is not None:
             payload["keep_alive"] = keep_alive
+        # Counted at the SEAM, not at the call sites: this is the only way into a
+        # local model from here, so "is the AI working?" is answered structurally
+        # rather than by an enumeration of the things that run models. See
+        # src/llm/inflight.py.
+        from src.llm.inflight import generating
+
         try:
-            resp = self._client.post("/api/generate", json=payload)
-            resp.raise_for_status()
+            with generating(model, backend="ollama"):
+                resp = self._client.post("/api/generate", json=payload)
+                resp.raise_for_status()
         except httpx.HTTPStatusError as exc:
             if exc.response.status_code == 404:
                 raise LLMUnavailable(

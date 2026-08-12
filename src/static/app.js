@@ -21358,7 +21358,12 @@
       if (!job) return;
       _bulkActive = job; job.status = "running";
       _bulkRenderQueue();
-      try { await _bulkRunJob(job); }
+      // `aiWorking` paints the pill busy NOW. The server would report this run too
+      // (its generate() calls cross the counted seam), but only at the next poll —
+      // and for work the reader just asked for, "within fifteen seconds" is not
+      // feedback. The server signal still covers the case this cannot see: the run
+      // continuing after the tab is closed.
+      try { await aiWorking(() => _bulkRunJob(job)); }
       finally {
         _bulkActive = null; _bulkJobAbort = null;
         loadLlmHealth();                             // a fresh signal of whether Ollama is up
@@ -21918,10 +21923,51 @@
       openAiSettings();
     }
 
-    // Re-read health a few times after a start: a daemon needs a moment to answer, and
-    // a pill that stayed red until the next poll would read as "it didn't work".
+    // A START IS NOT AN INSTANT, and the watcher has to outlive the thing it watches.
+    //
+    // This used to re-check at 800ms, 2.5s and 6s and then stop -- while the comment
+    // three lines above it said, correctly, that a vLLM engine load "takes tens of
+    // seconds" (it reaches CUDA-graph capture around t+67s). So on every machine where
+    // the start took longer than six seconds the watcher gave up first, the pill stayed
+    // red, and the backend only went green when something ELSE happened to re-check:
+    // opening Settings -> AI, which calls loadLlmHealth() on subtab select. That is the
+    // reported symptom exactly -- "it seems to work, but doesn't turn green, it turns
+    // green only when I go to the setting's AI tab".
+    //
+    // A BOUNDED WATCHER THAT EXITS SILENTLY PUBLISHES ITS OWN TIMEOUT AS THE WORK'S
+    // OUTCOME (the same defect the all-diagnostics watcher had). So this one: is bounded
+    // by what the work actually costs rather than by a number that felt generous once;
+    // backs off instead of hammering; and when it does give up it SAYS SO, because a red
+    // pill left to speak for a start that may still be loading is a fabricated verdict.
+    const _AI_SETTLE_MS = 150000;   // ~2.5 min -- comfortably past a vLLM engine load
+    let _aiSettleCancel = null;
     function _aiPillSettle() {
-      [800, 2500, 6000].forEach((ms) => setTimeout(loadLlmHealth, ms));
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (_aiSettleCancel) _aiSettleCancel();      // one watcher at a time
+      let stopped = false;
+      _aiSettleCancel = () => { stopped = true; };
+      _aiStarting = true;
+      _paintAiPill();                               // the pulse starts immediately
+      const t0 = Date.now();
+      let delay = 700;
+      const done = () => { _aiStarting = false; _aiSettleCancel = null; };
+      const tick = async () => {
+        if (stopped) return;
+        let up = false;
+        try { const h = await api("/api/llm/health"); up = !!(h && h.available); }
+        catch (e) { /* transient -- keep waiting, the bound below is the real limit */ }
+        if (stopped) return;
+        if (up) { done(); loadLlmHealth(); return; }
+        if (Date.now() - t0 >= _AI_SETTLE_MS) {
+          done();
+          loadLlmHealth();                          // paint whatever is actually true
+          toast(t("The local AI has not answered yet. It may still be loading — open AI settings for the details."), "err");
+          return;
+        }
+        delay = Math.min(Math.round(delay * 1.4), 8000);
+        setTimeout(tick, delay);
+      };
+      setTimeout(tick, delay);
     }
 
     // Returns true if a model is present (or a download was started). Offers the
@@ -21945,51 +21991,151 @@
       } catch (e) { /* treat as offline — fall through */ }
       await aiPillStartOrInstall();
     }
-    async function loadLlmHealth() {
+    // ----------------------------------------------------------------------- //
+    //  The pill has FOUR states, not two (maintainer 2026-08-12): "there's a
+    //  difference between AI is active and ready, and AI is working".
+    //
+    //    off       nothing is serving            red + diagonal bar
+    //    starting  a start we asked for is in flight   accent + breathing pulse
+    //    ready     serving, idle                 green, still
+    //    working   serving, mid-inference        green + travelling underline
+    //
+    //  Two rules hold across all four. The LABEL is always the constant "AI", so the
+    //  footprint never moves and nothing to its right shifts (invariant #3). And the
+    //  state is never carried by colour or motion ALONE: each has its own SHAPE, and
+    //  the hover title says it in words -- which is also what keeps the pill readable
+    //  under `prefers-reduced-motion`, where app.css disables every animation outright.
+    // ----------------------------------------------------------------------- //
+    let _aiStarting = false;      // a start we asked for has not settled yet
+    let _aiHealth = null;         // last /api/llm/health payload (null = never read)
+    let _aiBusyLocal = 0;         // inference THIS browser drives -- free, instant
+    let _aiBusyServer = false;    // work the server reported (sweeps, batch holds)
+    let _aiBusyLabel = null;      // what it is working on, for the hover title
+
+    function _aiBusy() { return _aiBusyLocal > 0 || _aiBusyServer; }
+
+    // Bracket anything in this browser that makes a model compute, so the pill
+    // reports it INSTANTLY and without asking the server. The server cannot see a
+    // bulk run driven straight from here anyway (it is a stream this page owns), and
+    // a round trip to learn what we already know would be both slower and pointless.
+    async function aiWorking(fn) {
+      _aiBusyLocal++;
+      _paintAiPill();
+      try { return await fn(); }
+      finally { _aiBusyLocal = Math.max(0, _aiBusyLocal - 1); _paintAiPill(); }
+    }
+
+    function _paintAiPill() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("llm");
       if (!el) return;
       el.style.cursor = "pointer";
       el.onclick = aiPillClick;
-      try {
-        const h = await api("/api/llm/health");
-        if (h.available) {
-          el.className = "pill ok";
-          el.textContent = "AI";   // no model count anymore (maintainer 2026-07-24)
-          el.title = t("AI — click to open AI settings");
-        } else if (h.hardware_practical === false) {
-          // HARDWARE SUITABILITY (2026-07-30): a THIRD state, distinct from
-          // "offline". Starting a backend would not fix this machine, so the pill
-          // must NOT invite that — it points at the disclosure + the override
-          // instead. `=== false` on purpose: `null` means the probe could not
-          // decide, which must fall through to the ordinary offline copy rather
-          // than assert a hardware verdict nothing measured.
-          // Still OFF to the eye (maintainer 2026-08-02: red + crossed when off),
-          // while `warn` keeps this state's own distinct meaning and its title says
-          // WHY it differs from a stopped backend — the layered-disclosure convention.
-          el.className = "pill warn ai-off";
-          el.textContent = "AI";
-          el.title = (h.hardware_reason ? h.hardware_reason + " — " : "")
-            + t("AI features are off by default on this hardware — open AI settings to override");
+      el.textContent = "AI";      // constant footprint, never a count
+
+      // STARTING outranks the last health reading on purpose: we know we just asked
+      // for a start, which makes any earlier "offline" reading stale by definition.
+      // Showing red through a start we ourselves triggered is what made the old pill
+      // read as "it didn't work".
+      if (_aiStarting) {
+        el.className = "pill ai-starting";
+        el.title = t("Starting the local AI… — a model load can take a minute");
+        return;
+      }
+      const h = _aiHealth;
+      if (h && h.available) {
+        if (_aiBusy()) {
+          el.className = "pill ok ai-busy";
+          el.title = (_aiBusyLabel ? _aiBusyLabel + " — " : "")
+            + t("AI is working right now");
         } else {
-          el.className = "pill warn ai-off";
-          el.textContent = "AI";
-          // V4 (2026-07-29): the red pill must name the REAL situation.
-          // `no_backend` means NOTHING is reachable (not merely that the selected
-          // backend is down), so lead with the server's own resolution sentence
-          // (`backend_reason` — English server text, the same class as `h.detail`,
-          // which this line already concatenated) instead of a generic "offline".
-          const why = h.no_backend ? (h.backend_reason || h.detail || "") : (h.detail || "");
-          el.title = (why ? why + " — " : "")
-            + t("AI is offline — click to start it, or open AI settings to install one");
+          el.className = "pill ok";
+          el.title = t("AI — click to open AI settings");
         }
-      } catch (e) {
+        return;
+      }
+      if (h && h.hardware_practical === false) {
+        // HARDWARE SUITABILITY (2026-07-30): a state distinct from "offline".
+        // Starting a backend would not fix this machine, so the pill must NOT
+        // invite that — it points at the disclosure + the override instead.
+        // `=== false` on purpose: `null` means the probe could not decide, which
+        // must fall through to the ordinary offline copy rather than assert a
+        // hardware verdict nothing measured.
+        el.className = "pill warn ai-off";
+        el.title = (h.hardware_reason ? h.hardware_reason + " — " : "")
+          + t("AI features are off by default on this hardware — open AI settings to override");
+        return;
+      }
+      el.className = "pill warn ai-off";
+      if (!h) {
         // The health probe itself failed, so a backend is certainly not serving:
         // showing the neutral pill here would read as "fine" on no evidence.
-        el.className = "pill warn ai-off";
-        el.textContent = "AI";
         el.title = t("AI — click to open AI settings");
+        return;
       }
+      // V4 (2026-07-29): the red pill must name the REAL situation. `no_backend`
+      // means NOTHING is reachable (not merely that the selected backend is down),
+      // so lead with the server's own resolution sentence (`backend_reason` —
+      // English server text, the same class as `h.detail`) instead of a generic
+      // "offline".
+      const why = h.no_backend ? (h.backend_reason || h.detail || "") : (h.detail || "");
+      el.title = (why ? why + " — " : "")
+        + t("AI is offline — click to start it, or open AI settings to install one");
+    }
+
+    // Work the SERVER is doing (background sweeps, a batch holding the model) has to
+    // be asked for -- but only where an answer is possible. Three gates keep this from
+    // becoming the polling storm the 2026-07-01 field diagnostics found (F5: ~28.9k
+    // /api/scheduler/activity calls overnight, contending with the encrypted store):
+    //
+    //   * it does not run at all unless a backend is actually SERVING -- an AI-off
+    //     machine, which is most of them, pays nothing;
+    //   * it stops while the tab is hidden;
+    //   * /api/llm/activity reads only in-memory state (a dict and two counters behind
+    //     locks). No DB, no subprocess, no socket -- which is the property that makes
+    //     polling it defensible at all, and why it is a new endpoint rather than a
+    //     second caller of the heavy activity route.
+    let _aiActPollTimer = null;
+    function _aiActShouldPoll() {
+      return !!(_aiHealth && _aiHealth.available) && !document.hidden;
+    }
+    // Faster while something is running, because the interesting edge is the END of
+    // the work; calm while idle, because nothing is expected to change.
+    function _aiActCadence() { return _aiBusy() ? 4000 : 15000; }
+    function _ensureAiActivityPoll() {
+      if (_aiActPollTimer) { clearTimeout(_aiActPollTimer); _aiActPollTimer = null; }
+      if (!_aiActShouldPoll()) {
+        // The backend went away: drop the server-side claim rather than leaving a
+        // stale "working" on a pill whose backend is gone.
+        if (_aiBusyServer) { _aiBusyServer = false; _aiBusyLabel = null; _paintAiPill(); }
+        return;
+      }
+      const tick = async () => {
+        if (!_aiActShouldPoll()) { _aiActPollTimer = null; return; }
+        try {
+          const a = await api("/api/llm/activity");
+          const was = _aiBusyServer;
+          _aiBusyServer = !!(a && a.working);
+          // A named task ("Translating → German: …") says the most; failing that the
+          // MODEL is still a real fact worth putting in the title, and the counter
+          // alone carries no words. Both come from the same payload — this composes
+          // what is there, it does not invent a label when there is none.
+          _aiBusyLabel = (a && (a.label || (a.models || [])[0])) || null;
+          if (was !== _aiBusyServer) _paintAiPill();
+          else if (_aiBusyServer) _paintAiPill();   // the label may have moved on
+        } catch (e) { /* transient -- keep the last known state, never invent one */ }
+        _aiActPollTimer = setTimeout(tick, _aiActCadence());
+      };
+      tick();
+    }
+
+    async function loadLlmHealth() {
+      const el = $("llm");
+      if (!el) return;
+      try { _aiHealth = await api("/api/llm/health"); }
+      catch (e) { _aiHealth = null; }    // null = the probe failed, never a fake "fine"
+      _paintAiPill();
+      _ensureAiActivityPoll();           // only polls while a backend is actually up
     }
 
     // --------------------------------------------------------------------- //
