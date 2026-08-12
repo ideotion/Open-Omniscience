@@ -3912,7 +3912,19 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     instrumentation added beside it: accumulate seconds as a FLOAT and round only on the
     way out — rounding each batch and summing floors every sub-second batch to zero, and
     over the thousands of batches a million-article run takes a real cost reports as none
-    at all, which is worse than not measuring it.
+    at all, which is worse than not measuring it. **AND THE GATE THAT CAUGHT WHAT THE
+    SUITE COULD NOT:** the last edit of this slice (the scope-aware task shape) appended a
+    5-tuple where an earlier branch appends a 6-tuple, so mypy inferred the element type
+    from whichever branch it saw first and rejected the other — a real error, in my own
+    new code, that CI found and I did not, because after that edit I re-ran the TESTS and
+    not the TYPE GATE. Both are gates; finishing a change means re-running all of them,
+    and the temptation to skip is strongest exactly where the edit "only" changes a tuple.
+    (`tasks: list[Task] = []` fixes it — the alias is a bare `tuple`, so both shapes are
+    valid, which is the point the annotation now documents.) COROLLARY WORTH KEEPING: this
+    sandbox reports **one fewer** mypy error than CI does (48 files vs 49 — one module's
+    import resolves there and not here), so the local number that corresponds to a GREEN
+    ratchet is **126, not the 127 baseline**. Reading 127 locally as "at baseline" ships a
+    red lane; the error itself reproduced here perfectly once the gate was actually run.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;

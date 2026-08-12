@@ -569,7 +569,7 @@ def reindex_articles(
         from src.analytics.corpus_epoch import bump_corpus_epoch
 
         bump_corpus_epoch(session, reason="reindex_articles")
-    from src.analytics.reindex_parallel import ArticleDerivatives, precompute_batch
+    from src.analytics.reindex_parallel import ArticleDerivatives, Task, precompute_batch
     from src.database.write import run_write_with_retry
 
     def _report() -> None:
@@ -774,7 +774,11 @@ def reindex_articles(
         # in-process on any pool trouble -- see reindex_parallel's docstring).
         # ``content_by_id`` is kept so the DB-apply pass reuses the already-
         # decompressed text instead of decompressing every article a second time.
-        tasks = []
+        # Annotated because the two shapes are BOTH valid Tasks: the sixth element is
+        # the optional when/where/who opt-in, and a full re-index appends it while a
+        # keywords-only one does not. Without this, the element type is inferred from
+        # whichever branch appends first and the other is rejected.
+        tasks: list[Task] = []
         content_by_id: dict[int, str] = {}
         _t0 = time.monotonic()
         for art in articles:
