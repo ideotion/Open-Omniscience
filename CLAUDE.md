@@ -3839,6 +3839,31 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     test. `--output-format=concise` makes it real, and the tell is the same one the
     recorded `cmd | tail` lesson names: a check you expect to be interesting never says
     anything interesting.
+  - **A SENTINEL THAT MEANS "NOTHING TO MEASURE" AND "COULD NOT MEASURE" AT ONCE CAN MAKE
+    THE EVIDENCE A GATE ASKS FOR UNREADABLE — and the how-to may be what produces it
+    (2026-08-12, the P0.4 unlock check at >1M articles):** `wal_bytes_before_open()`
+    returns `None` on any `OSError`, and `FileNotFoundError` is one, so an ABSENT `-wal`
+    and an unreadable one shared a value. Absent is not an absence of data: **a clean
+    SQLite WAL-mode close checkpoints and DELETES the `-wal`** (verified with a five-line
+    repro, not assumed), so "no WAL" is the real, informative measurement *nothing to
+    replay* — and it is the NORMAL state after the very cold boot the acceptance bar asks
+    the operator to produce. THE PART WORTH MOST: the check's own how-to told them to
+    "cleanly shut the app down", so following the instructions **guaranteed** the null the
+    report then presented as missing evidence, and two consecutive field runs reported a
+    passing unlock that nobody could bank. The bar compounded it by justifying the cold
+    boot as testing "WAL recovery, the phase that grows with the corpus" — which a clean
+    shutdown by construction never exercises, so the stated reason for the instruction was
+    false about its own mechanism. THREE RULES. (a) For any `None` a report publishes, ask
+    what it means in EACH direction before treating it as a gap — this is the recorded
+    "gate each floor on its own denominator" lesson at the level of a single field, and the
+    `.get(key, 0)` family's mirror (there a default invented a measurement; here a
+    sentinel destroyed one). (b) When a check tells an operator how to produce evidence,
+    trace the instruction to the value it yields — an instruction that reliably produces
+    the unreadable case is worse than no instruction, because it costs a full re-run to
+    learn nothing. (c) Fix it ADDITIVELY where a shipped surface reads the old field: the
+    three-state record lands beside `wal_bytes_before_open`, whose two-state meaning is
+    preserved exactly, so `app.js` and the existing guard stay byte-unchanged and the only
+    thing that changes is what the report can SAY.
   - **A `::after` INHERITS EVERY PROPERTY IT DOES NOT DECLARE FROM A LOWER-SPECIFICITY
     RULE THAT ALSO MATCHES — and a shape can therefore be absent for months with nothing
     to point at (2026-08-12, the AI pill's diagonal bar):** `#llm.ai-off::after` declared
@@ -3878,6 +3903,50 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     redundant. GENERAL FORM: any source guard — in either direction — must read
     comment-stripped source, because the explanation of a rule necessarily contains the
     rule's own vocabulary.
+  - **A TIMING COMPARISON CAN BE UNSOUND IN BOTH DIRECTIONS AT ONCE — and raising the
+    input only repairs the PROPORTIONAL case (2026-08-12, the llm-throughput concurrency
+    check):** the check proving four workers really run in parallel asserted
+    `parallel_wall < serial_wall`, and `run_concurrent` is a plain for loop at
+    `max_workers <= 1` and a ThreadPoolExecutor above it — so the parallel side pays a
+    pool-creation cost the serial side never pays: the noise is a FIXED term against a
+    fixed signal, not jitter that shrinks as the work grows. Measured under 8x CPU
+    oversubscription, pool creation reached **132 ms against the 120 ms signal**, and the
+    shipped configuration failed **2/200** with a worst margin of **-500 ms**. **THE
+    RECORDED WAL REPAIR DOES NOT TRANSFER HERE:** raising the input (50 ms calls, or 16
+    calls) lifted the floor to 600 ms and it STILL failed **1/120**, because the stall
+    tail is unbounded rather than proportional — so no fixed floor is safe, and shipping a
+    bigger constant would have been an unmeasured fix to a defect that survives it. Raise
+    the input when the noise scales with the work; change the CLAIM when it does not.
+    **THE HALF NOBODY MEASURES IS THE FAIL DIRECTION:** against a genuinely serial pool
+    both levels take the same time, so the comparison is near a coin flip and caught the
+    defect it exists to catch only **29/40** times — the guard was worse at its job than
+    at its false alarms, and only a mutation shows that. The replacement is the
+    load-independent claim underneath (a rendezvous proving W calls were in flight AT
+    ONCE: a stall can delay that moment but cannot make it false) — 60/60 under the same
+    contention, and 100% detection of the serial pool. TWO DESIGN POINTS: a rendezvous
+    must GIVE UP ONCE and then open permanently, or a genuinely broken pool pays the
+    timeout per CALL instead of per run; and it must exclude the bench's warmup call
+    explicitly, since that call arrives alone and would otherwise trip the give-up path
+    before the measured level starts. NOTE the propagation failure — this file's own
+    sibling test had already replaced a timing THRESHOLD with an exact identity for the
+    RATE assertion, with a docstring saying "do not re-derive a discriminating threshold
+    from timings", and the concurrency assertion three lines up was left as a timing
+    comparison. A lesson recorded against one assertion does not propagate itself to the
+    one beside it. **THE SOAK THEN FOUND THE THIRD ONE, in that same sibling:** its
+    surviving anti-vacuity ratio (`measured < assumed / 2`) failed 1/12 at **0.522**.
+    `call_wall_p50_s` is timed PER CALL and includes the queue wait, so `assumed =
+    3600/p50 x workers` and `measured = n/wall x 3600` are not independent — as
+    contention rises the queue inflates p50, `assumed` falls toward `measured`, and the
+    ratio drifts UP toward whatever bar is set. **Two quantities that converge by
+    construction cannot be separated by a threshold at all**, however it is calibrated;
+    the repair is a structural cap (a `lanes`-lane backend cannot exceed `lanes/seconds`
+    — an UPPER bound contention can only satisfy) plus a timing-free companion. **AND MY
+    OWN FIRST REPAIR WAS TOO WEAK, caught only by mutation:** asserting the assumed rate
+    falls OUTSIDE the identity's own rounding band sounds exact and proves almost
+    nothing, because a *perfectly-scaling* fixture also differs by far more than a 37/h
+    band — so it passed the `lanes=64` mutation that is precisely the vacuous case.
+    GENERAL FORM: an anti-vacuity assertion needs its own mutation, and the mutation is
+    to feed it the VACUOUS fixture — not the broken one.
   - **TWO HARVEST INSTRUMENTS, EACH BLIND WHERE THE OTHER SEES — so the durable answer is
     neither, it is a guard (2026-08-12, translating the annexes bundle):** collecting every
     sentence a module needs translated, I drove its branches and **missed five** (an
@@ -10355,6 +10424,64 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   at real scale and is the strongest evidence this cycle has produced. Rows 4 and 7 are NOT
   closed by this report — row 4 wants a COMMITTED full import (this was `committed=false`), row 7
   wants a cold boot and a multi-day soak, and the report's own reason strings say so for both.
+  **P0 VALIDATION RUN AT >1M ARTICLES — MAINTAINER, 2026-08-12 (report
+  `oo-p0-validation-20260812093156.json`, app 0.3.0, engine `oo-volumes-2`): 4 pass · 0 fail ·
+  1 not-measurable.** REAL SCALE: **1,048,725 articles / 21.0 GB (20,072 MiB)** — the first run
+  past the 1M mark the 2026-07-30 ruling set as row 3's bar, and **8.3× the 2,522 MiB corpus
+  v0.2.0 was validated at**. The data-safety trio passed again, stronger than before:
+  • **P0.1 backup — bounded RAM held at a third scale.** Peak RSS +284 MB over a 20,072 MiB
+    corpus (**1.4 %**), 58 volumes / 24.0 GB in 758.6 s, gate held 179.6 s, parity available.
+    The property now has three points that all refuse to scale with the corpus: 17.45 % at
+    2.5 GB (v0.2.0), 0.34 % at 16.5 GB, 1.4 % at 21.0 GB. The run-to-run delta varies with
+    whatever else was resident (baseline RSS was 1,521 MB here) — the FRACTION is the signal,
+    and it is flat-to-falling.
+  • **P0.1 verify — clean.** Manifest signature + every data and parity volume checksum, every
+    volume stream-decrypted, member checksums cross-checked; 0 bad, 0 missing, parity tolerance
+    6/6 intact, 122.1 s.
+  • **P0.2 restore — pass FOR WHAT IT TESTED, and it did not test row 4.** Staged round-trip +
+    dry-run merge preview, `committed=false`, live corpus only ever read; quick_check ok, 0 FK
+    violations, FTS 1,048,725 = articles, trigger present, 0 sampled content mismatches, RSS
+    delta **32.1 MB** over a 42.0 GB staged artifact (vs 637 MB on 2026-08-03 — a real
+    improvement). Every table reads `new: 0`, which is the self-restore signature the bar itself
+    names. **The 2026-08-03 merge-completeness work is CONFIRMED SHIPPED by this plan:** the four
+    handler tables now carry real duplicate counts (`stat_figures` 1,156,066 · `stat_subscriptions`
+    37 · `hazard_event_details` 468 · `keyword_tags` 177) and the five that were blocked on an
+    identity ruling (`watches`, `watch_matches`, `ai_custom_prompt`, `ai_keyword`,
+    `law_revision_summaries`) now appear in the plan at 0/0/0 rather than in `_unmerged_tables`,
+    i.e. they have handlers. `_unmerged_tables` is down to the three benign ones the 2026-08-03
+    triage cleared (`derived_meta` per-machine; `article_mentioned_places` 40,681 and
+    `article_entities` 160,142 REBUILT by the post-swap re-index).
+  • **P0.4 unlock — 323 ms vs the 2,000 ms bar**, init_db 321.6 ms. FASTER than the 776.6 ms
+    measured on a SMALLER corpus, which is the tell: unlock tracks the WAL and the migration
+    work, not the article count. See the finding below — this run is what exposed the instrument
+    defect, and after the fix a boot like this one READS as bankable steady-state evidence.
+  • **P0.3 collector — 0 samples, 0 passes, explicitly not-measurable.** Unchanged; the
+    multi-day soak is still owed and no verdict was fabricated in its place.
+  **THE FINDING THIS RUN EXPOSED (fixed same day — shipped.csv row "monitoring/p0-validation"):
+  `wal_bytes_before_open: null` is not a broken instrument and not a missing cold boot — it is
+  two different facts wearing one sentinel.** `wal_bytes_before_open()` returns `None` on any
+  `OSError`, and `FileNotFoundError` is one, so an ABSENT `-wal` (a real measurement: there is no
+  WAL, therefore nothing to replay) was indistinguishable from an unreadable one. Verified
+  empirically rather than assumed: **a clean SQLite WAL-mode close checkpoints and DELETES the
+  `-wal` file**, so absent is the NORMAL state after exactly the cold boot the bar asks for — and
+  the check's own how-to prescribes that clean shutdown, so following the instructions
+  *guaranteed* the null the report then treated as missing evidence. Worse, the bar justified the
+  cold boot as testing "WAL recovery, which is the phase that grows with the corpus", which a
+  clean shutdown by construction never exercises. All three are reporting defects, none touches
+  data safety. Fixed: `wal_state_before_open()` publishes three states with reasons, the legacy
+  field keeps its exact two-state meaning (so `app.js` and the existing guard are byte-unchanged),
+  the P0 pass reason now NAMES which case it measured, and the how-to and bar say what each
+  shutdown kind actually tests. **CONSEQUENCE FOR ROW 7:** its unlock half is not blocked on new
+  data — the maintainer's next run will state, in words, whether the boot it read was a clean
+  cold boot (bankable against the bar) or a WAL replay. The collector half still needs the soak.
+  **ALSO WORTH KNOWING (measured, not a defect):** the report's `incremental_refresh` block shows
+  26 of 58 volumes reused against a note saying a second pass "with no corpus change should reuse
+  most volumes". The corpus DID change — the app was live between passes (the hourly snapshot
+  recorder and the first backup's own WAL checkpoint both write) — so this is the mechanism
+  working, not failing. And near-equal wall time (766.8 s vs 758.6 s) is EXPECTED by construction:
+  `stream_backup` reads and SHA-256s every slice before it can decide reuse, so a refresh always
+  pays the full read; what reuse saves is re-encryption and disk writes (8.15 GB of them here).
+  The note's wording over-promises against a running app; the numbers are fine.
 - **DIAGNOSE-THE-DIAGNOSTICS — the all-diagnostics RUN JOURNAL (maintainer asked 2026-07-20:
   one-click-and-wait must hold at 5M scale, completeness "should be ensured", and each
   member needs begin/end timing — "the police of the police"; INVESTIGATED same turn, build
@@ -11559,6 +11686,51 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     later as a full one, with nothing else in the folder to correct it — so the completion
     line now NAMES what is in there, and an empty selection is refused outright rather
     than writing a destination that looks like a backup and holds nothing.
+  - **A REPORT'S GROUPING IS A RENDERING CHOICE; THE LOOP THAT FILLS IT IS A COST — and
+    letting one follow the other pays the expensive one N times (2026-08-12, "the CPU is
+    loaded 100% (all cores), while gpu is quite often idle"):** the translation probe
+    groups its report by ITEM, correctly, because the comparison a reader makes is "these
+    two answers to the same question". Its loop was written in that same shape — items
+    outer, models inner — so consecutive calls almost always asked a *different* model
+    than the one before, and each of those is a server restart on vLLM or a load on
+    Ollama. Measured by the mutation rather than estimated: **24 handovers instead of 2**
+    on a 12-item, 2-model fixture. THE SECOND-ORDER EFFECT IS WHAT PRODUCED THE REPORTED
+    SYMPTOM: with Ollama's own default `keep_alive`, every model it is cycled through
+    stays resident for five minutes, so a roster of several oversubscribes the card and
+    Ollama spills the overflow onto the CPU — all cores busy, GPU idle. The sibling bench
+    already had the discipline (`_grouped_by_backend`, whose docstring puts a handover at
+    "tens of seconds each way"); the probe never got it. GENERAL FORM: decide the call
+    order from what each step COSTS, then rebuild the presentation order afterwards — a
+    list-of-lists indexed by item is free, and the report comes out byte-identical, which
+    is exactly what the negative-space twin must assert (a fix that reordered the report
+    to match the loop would "pass" the performance test and destroy the artifact).
+  - **NOTHING SERVING IS A STATE, NOT THE ABSENCE OF ONE (2026-08-12, same report: "I did
+    the model benchmark, and noticed the last model didn't unload from memory"):** the
+    bench read the prior GPU holder and handed the card back afterwards — right whenever
+    something WAS serving, and a silent no-op when nothing was, so a run started on an
+    idle machine ended with whatever it had last benched still holding the card (five
+    minutes on Ollama, the server's whole lifetime on vLLM). Restoring "nothing" means
+    RELEASING. This is the recorded `.get(key, 0)`-on-an-omitted-field trap one level up:
+    the empty case is a VALUE, and code that reads it as "no work to do" changes the
+    machine it claimed to leave alone. TWO RIDERS. Put the release in a `finally` — a run
+    that failed half way through has still moved the card, and the operator's machine
+    should not be left on a model the run chose. And give BOTH directions one owner
+    (`arbitration.restore_or_release`), because a bench and a probe that each implement
+    "put it back" will drift, and only one of them will be the one someone tests.
+  - **A DISTINCTION MADE IN THE PAYLOAD IS DESTROYED AT THE RENDER BOUNDARY UNLESS THE
+    RENDERER IS PART OF THE CHANGE (2026-08-12, same slice, found by reading the artifact
+    rather than the diff):** the probe deliberately records a model whose backend never
+    came up as `not asked` rather than as five failures — its own comment says recording
+    refusals "would read as *this model translates badly*, when nothing was ever asked of
+    it" — and `render_comparison_markdown` then printed every one of them as **`_failed:_`**.
+    The markdown is the artifact a person reads and forwards, so the honest half never
+    reached anyone. Two rules: carry the distinction as a FIELD (`asked: False`), never as
+    a substring of the prose a renderer would have to sniff for, since that is one reword
+    away from silently regressing; and write the twin FIRST, because a renderer that
+    softened every error into "not asked" satisfies the new test while hiding the case
+    where the model *was* asked and broke. Same family as "a caveat may claim only what
+    the data can exhibit" and the vLLM excerpt budget — the instrument was right and the
+    last stage threw the answer away.
   - **A "FILL THIS IN" ARTIFACT DERIVED FROM ONE PROBE CANNOT CONTAIN A STRING THAT
     APPEARS ONLY ONCE IT IS FILLED (2026-08-12, the bulletin catalogs):** the language
     diagnostic emits a `catalog_stub` and tells a translator, in its own `how_to_use`,
