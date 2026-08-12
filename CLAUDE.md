@@ -3969,6 +3969,53 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     a set, ask what each enumerating instrument is structurally unable to see, and prefer a
     mechanism that fails on the next addition over a list that was complete once.
 
+  - **A CAPABILITY ADDED FOR ONE OF TWO FUNCTIONS THAT DO THE SAME JOB REACHES ONLY THAT
+    CALLER — and the field report that motivates it will arrive a second time, from the
+    other side (2026-08-12, "re-index + prune keywords is taking days … 1 cpu thread is
+    too slow"):** `reindex_articles` and `reindex_all_batch` both force-re-index a set of
+    articles through `index_article`. The parallel precompute went into the first on
+    2026-07-19, in response to *"a large restore pinned one CPU core for hours while the
+    other cores sat idle"* — and `reindex_all_batch`, which is what the Settings "Clean
+    up keywords" job runs, never even grew a `workers` parameter. So an import used every
+    core and the standalone re-index used one, for the same work, for as long as nobody
+    ran both. THE FIX IS DELEGATION, NOT A SECOND COPY: the window now goes to
+    `reindex_articles`, which also carries the pool-deadlock fix, the retry on a transient
+    lock, the no-loss redo after a batch rollback and the load/precompute/apply split — a
+    second implementation of those would drift, and the drift would be silent.
+    **THREE THINGS THE DELEGATION HAD TO GET RIGHT.** (a) **Do not pass `should_stop`
+    down.** `reindex_articles` can abandon a window part-way, but `reindex_all_batch`
+    returns `last_id` as a RESUME WATERMARK — stamping `ids[-1]` for a window that stopped
+    early skips every article after the stop point permanently. The job stops BETWEEN
+    batches, where the watermark is honest; the guard is a signature assertion, because
+    the tempting symmetry is one edit away. (b) **The parameter that exists on only one
+    side is the silent loss.** `scope` ("keywords" = the fast keyword-only cleanup) had no
+    equivalent on `reindex_articles`; dropping it on the hop passed the ENTIRE SUITE, and
+    a keywords-only run would have quietly become a full one — slower, and rewriting the
+    when/where/who the operator asked it to leave alone. The reason the suite was blind is
+    worth more than the bug: the one test named for this asserts the status STRING the
+    manager sets, never the effect, so *"the job threads scope through"* was true of the
+    label and false of the work. (c) **Assert the PATH the pool reports, not that the call
+    accepts an argument.** `precompute_batch` declines below `_MIN_PARALLEL_BATCH = 16`
+    and for any extractor outside `_RECONSTRUCTIBLE_EXTRACTORS = ("baseline", "spacy")`,
+    so a fix that plumbs `workers` into a window too small, or an extractor the pool
+    refuses, stays single-core while passing every output-equality test. COROLLARY on the
+    instrumentation added beside it: accumulate seconds as a FLOAT and round only on the
+    way out — rounding each batch and summing floors every sub-second batch to zero, and
+    over the thousands of batches a million-article run takes a real cost reports as none
+    at all, which is worse than not measuring it. **AND THE GATE THAT CAUGHT WHAT THE
+    SUITE COULD NOT:** the last edit of this slice (the scope-aware task shape) appended a
+    5-tuple where an earlier branch appends a 6-tuple, so mypy inferred the element type
+    from whichever branch it saw first and rejected the other — a real error, in my own
+    new code, that CI found and I did not, because after that edit I re-ran the TESTS and
+    not the TYPE GATE. Both are gates; finishing a change means re-running all of them,
+    and the temptation to skip is strongest exactly where the edit "only" changes a tuple.
+    (`tasks: list[Task] = []` fixes it — the alias is a bare `tuple`, so both shapes are
+    valid, which is the point the annotation now documents.) COROLLARY WORTH KEEPING: this
+    sandbox reports **one fewer** mypy error than CI does (48 files vs 49 — one module's
+    import resolves there and not here), so the local number that corresponds to a GREEN
+    ratchet is **126, not the 127 baseline**. Reading 127 locally as "at baseline" ships a
+    red lane; the error itself reproduced here perfectly once the gate was actually run.
+
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
   the MEASUREMENT shipped, the two structural changes did NOT — deliberately, and the

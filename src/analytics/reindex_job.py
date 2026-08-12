@@ -223,6 +223,13 @@ class ReindexJobManager:
                     commit_batch = max(1, int(os.getenv("OO_REINDEX_COMMIT_BATCH", "1") or "1"))
                 except ValueError:
                     commit_batch = 1
+                # Seeded from what a previous run already persisted, so a resume CONTINUES
+                # the totals rather than restarting them (the tally is int-only on reload;
+                # this keeps the sub-second remainder for the rest of this process).
+                _phase_s = {
+                    k: float(self._tally.get(k, 0))
+                    for k in ("seconds_loading", "seconds_extracting", "seconds_writing")
+                }
                 while True:
                     if self._stop.is_set():
                         break
@@ -232,6 +239,14 @@ class ReindexJobManager:
                     # The lease the atomic swap waits on. Around the BATCH, not the run:
                     # a parked worker must hold nothing, or a restore would wait out a
                     # job that is deliberately doing nothing and then refuse.
+                    # The measured split, accumulated into the tally so a run that is
+                    # STILL slow says WHICH phase owns it -- extracting (CPU, now
+                    # pooled), writing (the serial DB apply), or loading (bodies through
+                    # the codec). Three very different fixes, and guessing between them
+                    # is what made this single-core for as long as it was. Whole
+                    # seconds: _load_persisted int()s every tally value, so a float
+                    # would silently truncate across a restart anyway.
+                    st: dict = {}
                     with corpus_lease("reindex"):
                         r = reindex_all_batch(
                             session,
@@ -240,11 +255,24 @@ class ReindexJobManager:
                             after_id=after,
                             scope=self._scope,
                             commit_batch=commit_batch,
+                            stats=st,
                         )
                     after = int(r["last_id"])
                     with self._lock:
                         self._tally["reindexed"] = self._tally.get("reindexed", 0) + int(r["reindexed"])
                         self._tally["failed"] = self._tally.get("failed", 0) + int(r["failed"])
+                        for _k, _s in (("seconds_loading", "load_s"),
+                                       ("seconds_extracting", "precompute_s"),
+                                       ("seconds_writing", "apply_s")):
+                            _v = st.get(_s)
+                            if _v is not None:
+                                # Accumulate in FLOAT and round only on the way out.
+                                # Rounding each batch and summing those would floor every
+                                # sub-second batch to 0 -- over the thousands of batches a
+                                # million-article run takes, a real cost would report as
+                                # none at all, which is worse than not measuring it.
+                                _phase_s[_k] += float(_v)
+                                self._tally[_k] = int(round(_phase_s[_k]))
                         self._done += int(r["reindexed"]) + int(r["failed"])
                         self._cursor = after
                         self._save()

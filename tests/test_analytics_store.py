@@ -14,7 +14,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics.extract import BaselineExtractor
-from src.analytics.store import backfill_corpus, index_article
+from src.analytics.store import backfill_corpus, index_article, reindex_all_batch
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
 
 
@@ -184,6 +184,39 @@ def test_keyword_only_scope_produces_identical_keyword_rows_to_full(db):
     index_article(db, a2, extractor=ex, scope="keywords")
     assert _kw_set(db, a1.id) == _kw_set(db, a2.id)
     assert _kw_set(db, a1.id)  # non-empty (the comparison isn't vacuous)
+
+
+def test_the_batch_reindex_honours_keyword_only_scope_through_the_delegation(db):
+    """reindex_all_batch hands its window to reindex_articles (2026-08-12, so the
+    standalone re-index gets the parallel precompute the import path already had), and
+    ``scope`` has to survive that hop.
+
+    THE GUARD EXISTS BECAUSE THE WHOLE SUITE WAS BLIND TO IT: dropping ``scope=scope``
+    from the delegation passed every test, including the one that checks the job
+    "threads scope through" -- which asserts the status STRING the manager sets, not
+    the effect. A keywords-only cleanup would silently have become a full re-index:
+    slower, and rewriting the when/where/who the operator asked it to leave alone.
+    """
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    art = _article(db, "h1", "The WHO warned about climate policy and trade in Paris on 5 March 2024.")
+    ex = BaselineExtractor()
+    index_article(db, art, extractor=ex, scope="full")
+    art.sentiment_score, art.sentiment_label = 0.999, "sentinel"
+    db.commit()
+
+    out = reindex_all_batch(db, extractor=ex, limit=50, scope="keywords")
+    assert out["reindexed"] == 1
+    a = db.get(Article, art.id)
+    assert (a.sentiment_score, a.sentiment_label) == (0.999, "sentinel"), (
+        "scope was lost on the way to reindex_articles: this was a FULL re-index"
+    )
+    assert _kw_set(db, art.id), "and the keyword pass must still have run"
+
+    # The twin, so an over-tight fix that never recomputes anything cannot pass: a
+    # FULL batch re-index through the same delegation DOES move the sentinel.
+    reindex_all_batch(db, extractor=ex, limit=50, scope="full")
+    assert db.get(Article, art.id).sentiment_label != "sentinel"
 
 
 # --- Phase 1.3: batched re-index commits (COLLECTOR_WRITER_BATCHING.md) ------- #
@@ -793,3 +826,52 @@ def test_reindex_articles_loads_a_window_in_chunks_under_the_variable_ceiling(db
     # 7 ids at a chunk of 3 -> 3 + 3 + 1, and no chunk ever exceeds the limit.
     assert chunk_sizes == [3, 3, 1]
     assert max(chunk_sizes) <= 3
+
+
+def test_a_keywords_only_reindex_does_not_precompute_when_where_who(db, monkeypatch):
+    """The pool must not be handed the half the apply pass throws away.
+
+    index_article skips when/where/who under scope="keywords", so precomputing it costs
+    every worker the EXPENSIVE side (~200-300 ms a body against ~36 ms for keywords, per
+    reindex_parallel's own measurement) to produce a result nothing reads. It matters
+    because "Clean up keywords" -- the button behind the field report that motivated
+    parallelising this path at all -- passes scope="keywords", so the wasted work would
+    land on precisely the run being fixed.
+
+    Asserts the TASK SHAPE handed to the pool: the sixth element is the documented
+    opt-in, and its presence is the only difference an output-equality test cannot see.
+    """
+    import src.analytics.store as store_mod
+
+    db.add(Source(name="S", domain="x.test", country="fr"))
+    db.commit()
+    _article(db, "h1", "The WHO warned about climate policy in Paris on 5 March 2024. " * 4)
+
+    seen: list[tuple] = []
+    real = store_mod.precompute_batch if hasattr(store_mod, "precompute_batch") else None
+    assert real is None, "precompute_batch is imported inside the function; patch its home"
+
+    import src.analytics.reindex_parallel as rp
+
+    orig = rp.precompute_batch
+
+    def _spy(tasks, **kw):
+        seen.extend(tasks)
+        return orig(tasks, **kw)
+
+    monkeypatch.setattr(rp, "precompute_batch", _spy)
+    ex = BaselineExtractor()
+
+    reindex_all_batch(db, extractor=ex, limit=50, scope="keywords")
+    assert seen, "the pool was never offered any work"
+    assert all(len(t) == 5 for t in seen), (
+        f"a keywords-only run asked for when/where/who anyway: {[len(t) for t in seen]}"
+    )
+
+    # The twin: a FULL re-index MUST still opt in, or the parallel win it was built for
+    # (the WWW half is the dominant cost) is silently removed from the import path too.
+    seen.clear()
+    reindex_all_batch(db, extractor=ex, limit=50, scope="full")
+    assert seen and all(len(t) == 6 for t in seen), (
+        f"a full re-index stopped precomputing when/where/who: {[len(t) for t in seen]}"
+    )
