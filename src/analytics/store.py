@@ -493,6 +493,7 @@ def reindex_articles(
     article_ids: list[int],
     commit_batch: int = 1,
     workers: int | None = None,
+    scope: str = "full",
     progress_cb: Callable[[int, int], None] | None = None,
     stats: dict | None = None,
     should_stop: Callable[[], bool] | None = None,
@@ -610,6 +611,7 @@ def reindex_articles(
                 article,
                 extractor=extractor,
                 country=article.country,
+                scope=scope,
                 content=content,
                 precomputed_terms=terms,
                 precomputed_sentiment=sentiment,
@@ -684,6 +686,7 @@ def reindex_articles(
                     art,
                     extractor=extractor,
                     country=art.country,
+                    scope=scope,
                     commit=False,
                     content=content_by_id.get(art.id),
                     precomputed_terms=terms,
@@ -791,7 +794,17 @@ def reindex_articles(
                 observed.date().isoformat() if observed else None,
                 None,  # `today`: the store's own default, never a worker's clock
             )
-            tasks.append((art.id, body, art.title or "", lang or "en", lang, www_ctx))
+            if scope == "full":
+                tasks.append((art.id, body, art.title or "", lang or "en", lang, www_ctx))
+            else:
+                # KEYWORDS-ONLY: index_article skips the when/where/who pass entirely, so
+                # precomputing it would hand every worker the EXPENSIVE half (~200-300 ms
+                # a body, against ~36 ms for the keyword half) to produce a result the
+                # apply pass then discards. The sixth element is optional exactly for
+                # this; omitting it is the documented "do not precompute WWW" signal.
+                # It matters because "Clean up keywords" -- the button behind the field
+                # report this parallelisation answers -- is the keywords-only scope.
+                tasks.append((art.id, body, art.title or "", lang or "en", lang))
             content_by_id[art.id] = body
         _load_s += time.monotonic() - _t0
 
@@ -834,6 +847,8 @@ def reindex_all_batch(
     after_id: int = 0,
     scope: str = "full",
     commit_batch: int = 1,
+    workers: int | None = None,
+    stats: dict | None = None,
 ) -> dict:
     """FORCE-re-index a batch of ALL articles (id > ``after_id``), oldest first.
 
@@ -863,108 +878,38 @@ def reindex_all_batch(
         .all()
     )
     ids = [r[0] for r in rows]
-    reindexed = 0
-    failed = 0
-    last_id = after_id
-    commit_batch = max(1, commit_batch)
+    last_id = ids[-1] if ids else after_id
 
-    # Bump the corpus epoch ONCE per non-empty batch: re-index is delete-then-reinsert,
-    # so the disposable columnar rollup must FULL-rebuild rather than incrementally merge
-    # this batch (the D3 double-count guard). Done here (before the loop, no pending
-    # writes) so a partially-failing batch still forces the rebuild. Best-effort.
+    # DELEGATES THE WINDOW to reindex_articles (2026-08-12, field report: "re-index +
+    # prune keywords is taking days ... 1 cpu thread is too slow"). Both functions
+    # force-re-index a set of articles through index_article, and only ONE of them ever
+    # got the parallel precompute -- which was built on 2026-07-19 for the identical
+    # complaint from the import side ("a large restore pinned one CPU core for hours
+    # while the other cores sat idle"). This path is what the Settings "Clean up
+    # keywords" job runs, so the standalone re-index was single-core BY CONSTRUCTION
+    # while an import used every core. Delegating rather than copying the pool in here
+    # keeps ONE implementation: it also inherits the pool-deadlock fix, the retry on a
+    # transient lock, the no-loss redo after a batch rollback, and the load/precompute/
+    # apply split -- a second copy of that would drift, and the drift would be silent.
+    #
+    # DELIBERATELY NO should_stop. reindex_articles can abandon a window part-way, but
+    # ``last_id`` here is a WATERMARK the caller resumes from: stamping ids[-1] for a
+    # window that stopped early would skip every article after the stop point,
+    # permanently. The job stops BETWEEN batches, where the watermark is honest.
+    reindexed = failed = 0
     if ids:
-        from src.analytics.corpus_epoch import bump_corpus_epoch
+        res = reindex_articles(
+            session,
+            extractor=extractor,
+            article_ids=ids,
+            commit_batch=commit_batch,
+            workers=workers,
+            scope=scope,
+            stats=stats,
+        )
+        reindexed = int(res.get("reindexed", 0))
+        failed = int(res.get("failed", 0))
 
-        bump_corpus_epoch(session, reason="reindex_all_batch")
-
-    from src.database.write import run_write_with_retry
-
-    def _reindex_one(aid: int, *, commit: bool) -> bool:
-        """Index one article: True if re-indexed, False if it was missing (deleted
-        mid-run). ``commit=False`` lets a failure PROPAGATE so the batch handler can roll
-        back and redo per-article; ``commit=True`` callers catch to isolate one article."""
-        art = session.get(Article, aid)
-        if art is None:
-            return False
-        index_article(session, art, extractor=extractor, country=art.country, scope=scope, commit=commit)
-        return True
-
-    def _reindex_one_committed_with_retry(aid: int) -> bool:
-        """Like ``_reindex_one(aid, commit=True)``, but retries a transient lock
-        (audit finding 2026-07-17): index_article's own contract explicitly
-        re-raises a lock so a caller's run_write_with_retry can roll back and redo
-        it (see the ingest-path reference implementation, src/ingest/pipeline.py::
-        _maybe_index_keywords) -- the per-article and redo-after-batch-rollback
-        paths below never honoured that contract, so a lock hit during a
-        (commonly long-running, interleaved-with-a-live-scrape) re-index
-        permanently marked the article "failed" instead of retrying (idempotent
-        re-index reproduces the full result, so nothing is lost by retrying)."""
-        missing = {"v": False}
-
-        def _work() -> None:
-            if not _reindex_one(aid, commit=True):
-                missing["v"] = True
-
-        run_write_with_retry(_work, session=session, label=f"reindex_all_batch[{aid}]")
-        return not missing["v"]
-
-    def _redo_committed(aids: list[int]) -> None:
-        """Re-index each article one-at-a-time, COMMITTED — the no-loss fallback after a
-        batch rollback. A bad/exhausted-retry article is isolated (rollback + failed++),
-        never dropping its batch-mates (idempotent re-index reproduces the full result)."""
-        nonlocal reindexed, failed
-        for baid in aids:
-            try:
-                if _reindex_one_committed_with_retry(baid):
-                    reindexed += 1
-            except Exception:  # noqa: BLE001 - isolate one bad/locked article
-                session.rollback()
-                failed += 1
-                _LOG.warning("re-index of article %s failed (redo)", baid, exc_info=True)
-
-    if commit_batch <= 1:
-        for aid in ids:
-            last_id = aid
-            try:
-                if _reindex_one_committed_with_retry(aid):
-                    reindexed += 1
-            except Exception:  # noqa: BLE001 - one bad/exhausted-retry article must not abort the batch
-                session.rollback()
-                failed += 1
-                _LOG.warning("re-index of article %s failed", aid, exc_info=True)
-    else:
-        pending: list[int] = []
-
-        def _flush() -> None:
-            nonlocal reindexed
-            if not pending:
-                return
-            try:
-                session.commit()
-                reindexed += len(pending)
-            except Exception:  # noqa: BLE001 - a lock/collision must not drop batch-mates
-                session.rollback()
-                _redo_committed(list(pending))
-            pending.clear()
-
-        for aid in ids:
-            last_id = aid
-            try:
-                if _reindex_one(aid, commit=False):
-                    pending.append(aid)
-            except Exception:  # noqa: BLE001 - this article corrupted the in-flight batch
-                # Roll back (drops this article's partial work AND the uncommitted batch),
-                # redo the accumulated batch per-article (committed), count this one failed.
-                session.rollback()
-                redo = list(pending)
-                pending.clear()
-                _redo_committed(redo)
-                failed += 1
-                _LOG.warning("re-index of article %s failed (batch)", aid, exc_info=True)
-                continue
-            if len(pending) >= commit_batch:
-                _flush()
-        _flush()
     remaining = (
         session.query(Article.id).filter(Article.id > last_id).count() if ids else 0
     )

@@ -241,3 +241,69 @@ def test_reindex_job_keyword_only_scope(env):
     with Session() as sess:
         indexed = {row[0] for row in sess.query(KeywordMention.article_id).distinct()}
         assert indexed == {a.id for a in sess.query(Article).all()}
+
+
+# --------------------------------------------------------------------------- #
+#  the standalone re-index uses every core, like an import already did
+# --------------------------------------------------------------------------- #
+def test_the_standalone_reindex_precomputes_in_the_pool_not_on_one_core(tmp_path):
+    """Field report 2026-08-12: "re-index + prune keywords ... 1 cpu thread is too slow".
+
+    It was single-core BY CONSTRUCTION. reindex_articles (the IMPORT path) got the
+    parallel precompute on 2026-07-19, for the identical complaint from the restore
+    side; reindex_all_batch -- what the Settings "Clean up keywords" job runs -- had no
+    ``workers`` parameter at all. So this asserts the PATH the pool reports, not merely
+    that the call accepts an argument: a fix that plumbed ``workers`` through to a
+    window too small to parallelise, or to an extractor the pool refuses, would pass
+    every output-equality test while still running on one core.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from src.analytics.extract import get_extractor
+    from src.analytics.store import reindex_all_batch
+    from src.database.models import Article, Base, Source
+
+    engine = create_engine(
+        "sqlite://", connect_args={"check_same_thread": False}, poolclass=StaticPool, future=True
+    )
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, future=True, autoflush=False)
+    with Session() as s:
+        src = Source(name="S", domain="s.test", enabled=True)
+        s.add(src)
+        s.commit()
+        # Comfortably over _MIN_PARALLEL_BATCH (16) -- below it the pool declines by
+        # design, which is correct and would make this test prove nothing.
+        for i in range(24):
+            s.add(Article(source_id=src.id, url=f"https://s.test/{i}", title=f"T{i}",
+                          canonical_url=f"https://s.test/{i}",
+                          content=f"An article about elections and the economy, number {i}. " * 12,
+                          language="en", hash=f"h{i}"))
+        s.commit()
+
+    stats: dict = {}
+    with Session() as s:
+        out = reindex_all_batch(s, extractor=get_extractor("baseline"), limit=300, stats=stats)
+
+    assert out["reindexed"] == 24 and out["failed"] == 0
+    by_path = (stats.get("precompute") or {}).get("by_path") or {}
+    assert by_path, "the delegated path reported no precompute at all"
+    assert "serial" not in by_path, (
+        f"the standalone re-index still precomputed on one core: {by_path}"
+    )
+
+
+def test_the_watermark_is_never_stamped_past_work_that_did_not_happen():
+    """reindex_articles can abandon a window part-way through via should_stop, and
+    ``last_id`` is a RESUME watermark. Stamping ids[-1] for a window that stopped early
+    would skip every article after the stop point permanently -- so this path must not
+    grow a should_stop, however tempting the symmetry. The job stops BETWEEN batches."""
+    import inspect
+
+    from src.analytics.store import reindex_all_batch
+
+    assert "should_stop" not in inspect.signature(reindex_all_batch).parameters, (
+        "an abandoned window would stamp a watermark over articles it never re-indexed"
+    )
