@@ -3878,6 +3878,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     redundant. GENERAL FORM: any source guard — in either direction — must read
     comment-stripped source, because the explanation of a rule necessarily contains the
     rule's own vocabulary.
+  - **TWO HARVEST INSTRUMENTS, EACH BLIND WHERE THE OTHER SEES — so the durable answer is
+    neither, it is a guard (2026-08-12, translating the annexes bundle):** collecting every
+    sentence a module needs translated, I drove its branches and **missed five** (an
+    empty-index paragraph, `No articles`, `(untitled)`, a lexicon-reads-English-only gap, a
+    no-text-included paragraph) — branch-driving cannot reach a branch you did not think to
+    drive. An AST scan of `T.t("literal")` found all five and would have missed the labels
+    `_md_kv(T, label, value)` takes as a **parameter**, which are never literals at the call
+    site. Neither is complete alone, and a union of two incomplete instruments is still a
+    guess about the next string somebody adds. Ship a CI guard that walks the module's own
+    AST and fails naming the string, the locale and the file. THREE SMALLER TRAPS from the
+    same slice. (a) **A key is only reusable where the whole SENTENCE is** — reusing the
+    already-keyed `"Period"` looked free and its French entry is the genitive fragment *"de
+    la période"*, which reads as garbage as a table label; check the target-language value,
+    not just that the key exists. (b) **Never hand a translator a row whose delimiters are
+    load-bearing** — one long pipe-delimited Markdown header is a row a translation destroys
+    by dropping a pipe; translate the words and keep the pipes ours. (c) The returned dict
+    reported 54 chrome strings while its own page printed 53 — the count-drift class again,
+    fixed by recording into an out-parameter BEFORE the line that composes its own count.
+    GENERAL FORM for the headline: when a change's correctness depends on having enumerated
+    a set, ask what each enumerating instrument is structurally unable to see, and prefer a
+    mechanism that fails on the next addition over a list that was complete once.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;

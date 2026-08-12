@@ -587,7 +587,11 @@ def language_report(edition: dict, *, langs: tuple[str, ...] | None = None) -> d
             "with the same numbers in it. They are printed in English, excluded from "
             "coverage, and fixed upstream by giving the producer a keyable frame — the "
             "coverage figure is therefore a share of what CAN be translated, not of the "
-            "whole document."
+            "whole document. SCOPE: every figure here is measured over the REPORT. The "
+            "annexes bundle has its own chrome, written in the same catalogs and covered "
+            "by its own completeness check in the test suite, so a locale that reads as "
+            "complete here is complete there too — but this report does not measure it, "
+            "and saying so is cheaper than a reader assuming either way."
         ),
     }
 

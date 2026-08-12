@@ -622,3 +622,149 @@ def test_the_annexes_route_never_writes_the_numbering_into_the_record(client):
     c.get(f"/api/bulletin/editions/{name}/render?fmt=markdown")
     saved = json.dumps(c.get(f"/api/bulletin/editions/{name}").json())
     assert '"ref"' not in saved
+
+
+# --------------------------------------------------------------------------- #
+#  the bundle is written in the report's language
+# --------------------------------------------------------------------------- #
+def test_the_bundle_follows_the_report_into_its_language(corpus):
+    """The gap this closes: the module made no translator call at all, so a French
+    edition shipped an English annex. Its own contents page said so — which was honest
+    and is now false, so that sentence had to become derived rather than standing."""
+    out = build_annexes(corpus, _edition(), report_lang="fr")
+    files = _unzip(out)
+    toc = files["20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md"]
+    art = files["20260811_OOS_Bulletin_Weekly/20260805_Article_0001.md"]
+
+    assert out["language"] == "fr"
+    assert out["chrome_in_english"] == 0, (
+        "fr is a complete catalog, so nothing on these pages should fall back"
+    )
+    # Headings and labels, on both kinds of page.
+    assert "## Comment fonctionne la numérotation" in toc
+    assert "## Ce que contient cette archive" in toc
+    assert "**Période couverte:**" in toc
+    assert "## Ce que la source a affirmé" in art
+    assert "**Signature:**" in art
+    # The table header is composed here from single words, so its pipes cannot be lost
+    # to a translation; the row count must survive.
+    header = next(line for line in toc.splitlines() if line.startswith("| #"))
+    assert header.count("|") == 7 and "fichier" in header and "titre" in header
+    # And the connector between two dates is inside the frame, not welded in English
+    # between two values — the whole reason the range is one key.
+    assert " to " not in toc.split("**Période couverte:**")[1].split("\n")[0]
+
+
+def test_the_publishers_own_words_are_never_translated(corpus):
+    """The twin, and the line the bundle states in every language: chrome follows the
+    report, the article's own text never does."""
+    files = _unzip(build_annexes(corpus, _edition(), report_lang="fr"))
+    art = files["20260811_OOS_Bulletin_Weekly/20260805_Article_0001.md"]
+    assert art.count("Le corps entier de l'article onze.") == 20, "the body, untouched"
+    # The title comes from the RECORD, not the DB row (the module reads the record so
+    # the annex and the report cannot disagree about an article they both describe).
+    assert "Grève des retraites" in art, "and the publisher's own title"
+    toc = files["20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md"]
+    assert "ne sont jamais traduits ici" in toc, (
+        "stated in every language, because translation is exactly what it denies"
+    )
+
+
+def test_a_locale_with_no_catalog_says_how_much_fell_back(corpus):
+    """The negative-space twin of the zero-fallback assertion. A locale nobody has
+    translated must still BUILD, in English, and must say so with a real count — the
+    sentence it replaced claimed the annexes had no translation whatever the truth."""
+    out = build_annexes(corpus, _edition(), report_lang="zz")
+    toc = _unzip(out)["20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md"]
+    assert out["chrome_in_english"] == out["chrome_strings"] > 20
+    assert "printed in English" in toc
+    assert f"{out['chrome_in_english']:,} of" in toc, "a count, not a bare claim"
+    assert "## How the numbering works" in toc, "and the page is still readable"
+
+
+def test_a_complete_locale_prints_no_shortfall_at_all(corpus):
+    """The half that makes the sentence derived rather than decorative: with nothing
+    falling back there is nothing to disclose, and a page that said otherwise would be
+    carrying a caveat its own data contradicts."""
+    toc = _unzip(build_annexes(corpus, _edition(), report_lang="fr"))[
+        "20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md"
+    ]
+    assert "imprimées en anglais" not in toc
+    assert "printed in English" not in toc
+
+
+def test_english_owes_no_shortfall_line_because_it_is_the_source(corpus):
+    toc = _unzip(build_annexes(corpus, _edition(), report_lang="en"))[
+        "20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md"
+    ]
+    assert "printed in English" not in toc
+    assert "## How the numbering works" in toc
+
+
+def test_every_locale_the_app_ships_builds_a_bundle_with_no_fallback(corpus):
+    """One catalog short of complete is a bundle that quietly reverts to English, and
+    the per-locale count is what makes that visible rather than a thing a reader has to
+    notice. Drives all twelve, because a catalog is per language and so is the gap."""
+    from src.bulletin.i18n import UI_LANGS
+
+    for code in UI_LANGS:
+        out = build_annexes(corpus, _edition(), report_lang=code)
+        assert out["language"] == code, code
+        assert out["chrome_in_english"] == 0, (
+            f"{code}: {out['chrome_in_english']} of {out['chrome_strings']} annex "
+            "sentences fell back to English"
+        )
+
+
+def test_every_sentence_this_module_asks_for_exists_in_every_catalog():
+    """The guard, because a recorded lesson does not propagate itself.
+
+    Adding a `T.t("...")` here without eleven catalog entries makes that sentence
+    English in eleven locales, and nothing else would say so: the bundle still builds,
+    the tests above still pass, and only a reader of a translated annex would notice.
+
+    Read by AST rather than by driving branches. THIS IS THE INSTRUMENT THAT FOUND THE
+    MISS: harvesting by rendering reaches only the branches the harness thought of, and
+    five strings live behind ones it did not — no sentiment, no title, no body, and an
+    edition naming no articles at all. The AST sees them whether or not a fixture does.
+
+    The complement is deliberate, stated, and MEASURED rather than asserted: `_md_kv`
+    translates a label passed as a PARAMETER, so those ~20 labels are invisible here.
+    Deleting one of them (`Byline`) from a single catalog reddens three of the
+    no-fallback tests above, naming the locale and the count — so the complement is
+    real coverage, not a hopeful sentence. Neither instrument is complete alone.
+    """
+    import ast
+    import pathlib
+
+    from src.bulletin import annexes as mod
+    from src.bulletin.i18n import UI_LANGS, load_catalog
+
+    src = pathlib.Path(mod.__file__).read_text(encoding="utf-8")
+    wanted: list[str] = []
+    for node in ast.walk(ast.parse(src)):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("t", "f")
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            wanted.append(node.args[0].value)
+    # The two long constants are passed by NAME, so the parser sees an identifier.
+    for name in ("DISCLOSURE", "_AI_LABEL"):
+        if f"T.t({name})" in src:
+            wanted.append(getattr(mod, name))
+    wanted = list(dict.fromkeys(wanted))
+    assert len(wanted) > 25, "the scan itself must not silently match nothing"
+
+    for code in UI_LANGS:
+        if code == "en":
+            continue  # the source language; a catalog for it would be a copy
+        catalog = load_catalog(code)
+        gap = [s for s in wanted if s not in catalog]
+        assert not gap, (
+            f"{code}: {len(gap)} annex sentence(s) have no {code} entry, so they print "
+            f"in English there. First: {gap[0][:80]!r}"
+        )

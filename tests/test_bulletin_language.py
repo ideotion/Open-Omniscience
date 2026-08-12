@@ -564,27 +564,55 @@ def test_stored_prose_finds_the_caveats_a_single_edition_cannot_exhibit():
 
 
 # --------------------------------------------------------------------------- #
-#  the annexes say when they are not in the report's language
+#  the annexes disclose their own SHORTFALL -- and only when there is one
+#
+#  This replaces a guard whose premise is now false by construction. It asserted that a
+#  bundle built for a French report says it is in English, which was true while the
+#  annexes made no translator calls at all. They now follow the report, so the old
+#  property cannot be restated without asserting the defect.
+#
+#  What SURVIVES is the honesty concern underneath, in a sharper form: the page discloses
+#  what actually fell back, and says nothing when nothing did. Both directions are pinned
+#  here, because a note that fires unconditionally is a fabricated shortfall and a note
+#  that never fires hides a real one.
 # --------------------------------------------------------------------------- #
-def test_the_contents_page_states_when_it_is_not_in_the_reports_language(edition):
+def test_the_contents_page_discloses_a_fallback_and_stays_quiet_without_one(edition):
     from src.bulletin.annexes import assign_refs, contents_markdown
+    from src.bulletin.i18n import Translator
 
     index = assign_refs(edition)
-    en = contents_markdown(
-        edition, index, stem="S", analyses_by_id={}, full_text=True, truncated_from=None
-    )
-    fr = contents_markdown(
-        edition,
-        index,
-        stem="S",
-        analyses_by_id={},
-        full_text=True,
-        truncated_from=None,
-        report_lang="fr",
-    )
-    assert "in English" not in en, "an English report needs no such note"
-    assert "in English" in fr
-    assert "never translated" in fr
+
+    def page(**kw):
+        return contents_markdown(
+            edition,
+            index,
+            stem="S",
+            analyses_by_id={},
+            full_text=True,
+            truncated_from=None,
+            **kw,
+        )
+
+    # No catalog at all: every sentence falls back, so the page owes a count.
+    empty = Translator("zz")
+    empty.catalog = {}
+    short = page(tr=empty)
+    assert "printed in English" in short
+    m = re.search(r"\*\*([\d,]+) of ([\d,]+) sentences on these pages", short)
+    assert m, f"the shortfall must state both numbers, got: {short[:400]!r}"
+    fell_back, seen = (int(g.replace(",", "")) for g in m.groups())
+    # Anti-vacuity: with no catalog the two must be EQUAL and non-trivial. A guard that
+    # only checked the sentence appears would pass on a hardcoded "0 of 0".
+    assert fell_back == seen > 20, (fell_back, seen)
+
+    # French, whose catalog is complete: nothing fell back, so nothing is claimed.
+    assert "printed in English" not in page(report_lang="fr")
+    # English is the source language, so there is no gap to describe.
+    assert "printed in English" not in page()
+
+    # Unconditional in every language, and the one fact translation does not change.
+    for got in (short, page(report_lang="fr"), page()):
+        assert "never translated" in got or "jamais traduit" in got
 
 
 def test_render_dispatch_passes_the_language_through(edition):
