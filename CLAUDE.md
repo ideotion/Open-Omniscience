@@ -3793,6 +3793,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     baseline diff is blind where the baseline is already red" family with a new member, the
     baseline that is stale-red. Corollary worth the same weight: when a red lane on your PR turns
     out to be the base's, check whether it is STILL the base's before writing a line of fix.
+  - **A FIXTURE MISSING A FIELD PRODUCTION ALWAYS STAMPS SENDS THE TEST DOWN A FALLBACK
+    BRANCH, AND A HARDCODED EXPECTATION THEN PINS THE FALLBACK BY ACCIDENT (2026-08-12, the
+    annexes empty-bundle test going red at UTC midnight):** the recorded rule "never compare a
+    hardcoded timestamp against a real-`now` marker" already existed and this still shipped,
+    because the timestamp was never written as a timestamp — it was written as a *filename*.
+    `test_an_edition_naming_no_articles_produces_an_honest_empty_bundle` built the minimal
+    record `{"period": …, "masthead": {}, "sections": []}` and asserted the stem
+    `20260811_OOS_Bulletin_Weekly`. `persist_edition` ALWAYS stamps `generated_at`, so that
+    record cannot occur in the field; without it `creation_date` correctly took its
+    `datetime.now(UTC)` fallback, and the literal in the assertion silently became "today".
+    Green on the day it was written, red every day after — and the sibling tests in the same
+    file all passed, because they use a `_edition()` helper that DOES carry `generated_at`.
+    THE RULE: when a test omits a field, ask which branch the omission selects, not merely
+    whether the object still validates — an incomplete fixture is not a smaller version of a
+    production object, it is a DIFFERENT one, and it exercises the code paths that exist for
+    the cases production does not produce. Repair it by making the fixture faithful (add the
+    field production supplies), never by re-deriving the expectation from the implementation's
+    own clock: `assert creation_date(x) == datetime.now(UTC).date()` cannot fail whatever the
+    fallback returns, so it certifies nothing. Cheap detector, worth running after any date
+    work: `grep -rln "20[0-9]\{6\}" tests/` and, for each hit, check whether the literal is an
+    input the test CREATES (safe) or an expectation compared against something clock-derived
+    (rots). Two of three hits here were the safe kind, which is why the grep alone is not the
+    answer — the question is which side of the assertion the literal sits on.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;

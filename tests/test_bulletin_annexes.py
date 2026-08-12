@@ -506,7 +506,22 @@ def test_the_contents_page_states_that_this_is_other_peoples_text(corpus):
 
 
 def test_an_edition_naming_no_articles_produces_an_honest_empty_bundle(corpus):
-    out = build_annexes(corpus, {"period": dict(_PERIOD), "masthead": {}, "sections": []})
+    # generated_at is present because persist_edition ALWAYS stamps it, so a record
+    # without one does not occur in the field. Omitting it here sent creation_date down
+    # its now() fallback, and the hardcoded stem below then asserted "today" -- green on
+    # the day this was written and red every day after (it broke at the next UTC
+    # midnight). The subject of this test is the empty bundle, never the date, and the
+    # fallback is covered on its own by
+    # test_a_record_with_no_generation_stamp_falls_back_to_today_honestly.
+    out = build_annexes(
+        corpus,
+        {
+            "period": dict(_PERIOD),
+            "generated_at": "2026-08-11T09:00:00+00:00",
+            "masthead": {},
+            "sections": [],
+        },
+    )
     files = _unzip(out)
     assert out["articles"] == 0
     assert list(files) == ["20260811_OOS_Bulletin_Weekly/20260811_Table_of_Contents.md"]
