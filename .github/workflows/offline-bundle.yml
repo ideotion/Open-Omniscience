@@ -19,10 +19,15 @@ on:
         description: 'Components to bundle (comma-separated; empty = core only)'
         required: false
         default: 'analysis,compression,columnar'
-      attach_to_tag:
-        description: 'Optional: attach the zip to this existing release tag (e.g. v0.3.0)'
+      publish:
+        description: 'Publish the zip to the rolling offline-bundle release'
+        type: boolean
         required: false
-        default: ''
+        default: true
+      release_tag:
+        description: 'Rolling release tag to publish to (NOT an app version)'
+        required: false
+        default: 'offline-bundle'
 
 permissions:
   contents: read
@@ -94,8 +99,69 @@ jobs:
           retention-days: 14
           compression-level: 0   # already a zip; recompressing buys nothing
 
-      - name: Attach to a release
-        if: inputs.attach_to_tag != ''
+      - name: Publish to the rolling offline-bundle release
+        if: inputs.publish
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ inputs.attach_to_tag }}" dist/*.zip --clobber
+          TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          ZIP="$(ls dist/*.zip)"
+
+          # Notes are BUILT FROM THE MANIFEST, never hand-written: a rolling asset
+          # that outlives several app commits has to say which commit it was
+          # resolved against, or someone pairs a new app with old dependencies and
+          # only finds out when pip refuses a package that did not exist yet.
+          python3 - "$ZIP" > notes.md <<'PYEOF'
+          import glob, hashlib, json, os, sys
+
+          zip_path = sys.argv[1]
+          m = json.load(open(glob.glob("dist/*/offline-manifest.json")[0]))
+          digest = hashlib.sha256(open(zip_path, "rb").read()).hexdigest()
+          p = m["platform"]
+
+          print(f"""Python dependencies for installing Open Omniscience on a machine with **no
+          internet connection**. See [docs/OFFLINE_INSTALL.md](../blob/main/docs/OFFLINE_INSTALL.md).
+
+          This is **not a release of the application** — it is the companion download for the
+          air-gapped installer, and the tag is rolling: it is replaced whenever the
+          dependencies change, so there is only ever one of it.
+
+          | | |
+          |---|---|
+          | Built for app version | `{m['app_version']}` |
+          | Built from commit | `{os.environ.get('GITHUB_SHA', '')[:12]}` |
+          | Built at | {m['built_at']} |
+          | Platform | {p['kernel']} / {p['arch']}, glibc {p['glibc']} or newer |
+          | Python | {m['python']['version']} ({m['python']['abi_tag']}) |
+          | Components | core, {m['extras'] or '(core only)'} |
+          | Contents | {m['totals']['files']} files, {m['totals']['bytes'] / 1048576:.0f} MB |
+          | `sha256` of the zip | `{digest}` |
+
+          **How to use it:** download the zip below *and* the application
+          (Code -> Download ZIP), extract both **side by side** in one folder, then
+          double-click *Install Open Omniscience (offline)* inside the application folder.
+          The installer verifies every file against the bundle's own checksums before it
+          installs anything, and makes no network request.
+
+          **The one rule:** the wheels are compiled for the platform in the table above.
+          A different CPU architecture will not work — the installer refuses it by name
+          rather than failing halfway. Rebuild with `scripts/build_offline_bundle.sh` on a
+          machine matching your target.""")
+          PYEOF
+
+          # Create on first run, update in place afterwards -- so this is one click
+          # every time, not "create a release, then remember to attach to it".
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --notes-file notes.md --title "Offline dependency bundle"
+            gh release upload "$TAG" "$ZIP" --clobber
+          else
+            # --prerelease so this auxiliary artifact never takes the "Latest release"
+            # badge away from an actual tagged version of the app.
+            gh release create "$TAG" "$ZIP" \
+              --title "Offline dependency bundle" \
+              --notes-file notes.md \
+              --prerelease \
+              --target "$GITHUB_SHA"
+          fi
+          echo "published: $(gh release view "$TAG" --json url --jq .url)"

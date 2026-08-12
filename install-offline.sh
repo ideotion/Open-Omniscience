@@ -148,6 +148,23 @@ if [ -n "$B_ARCH" ] && [ "$B_ARCH" != "$ARCH" ]; then
       scripts/build_offline_bundle.sh"
 fi
 
+# The published bundle is a ROLLING download, so it can legitimately be older than
+# the application folder beside it. Usually that is harmless -- most app changes add
+# no dependency. Say so rather than either ignoring it or refusing: if a package
+# really is missing, pip names it loudly a few seconds later, which is a better
+# error than anything guessed here.
+B_APP="$(manifest_get "$BUNDLE" app_version)"
+# `|| true`: under `set -euo pipefail` a grep that matches nothing exits 1 and would
+# abort the whole installer. An unreadable version is a reason to skip this check,
+# never a reason to stop an install that is otherwise fine.
+APP_VERSION="$(grep -m1 '^version *= *"' "$SRC_DIR/pyproject.toml" 2>/dev/null | sed -E 's/.*"([^"]+)".*/\1/' || true)"
+if [ -n "$B_APP" ] && [ -n "$APP_VERSION" ] && [ "$B_APP" != "$APP_VERSION" ]; then
+    warn "This bundle was built for app version $B_APP; this folder is $APP_VERSION."
+    say  "  ${DIM}Usually fine -- most changes add no new dependency. If one was added since,"
+    say  "  the install below stops and names the missing package. Rebuilding the bundle on"
+    say  "  the connected machine resolves it.${RST}"
+fi
+
 # --------------------------------------------------------------------------- #
 # 3. Prove the bytes survived the trip
 # --------------------------------------------------------------------------- #
