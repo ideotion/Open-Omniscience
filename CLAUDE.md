@@ -11665,6 +11665,51 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     later as a full one, with nothing else in the folder to correct it — so the completion
     line now NAMES what is in there, and an empty selection is refused outright rather
     than writing a destination that looks like a backup and holds nothing.
+  - **A REPORT'S GROUPING IS A RENDERING CHOICE; THE LOOP THAT FILLS IT IS A COST — and
+    letting one follow the other pays the expensive one N times (2026-08-12, "the CPU is
+    loaded 100% (all cores), while gpu is quite often idle"):** the translation probe
+    groups its report by ITEM, correctly, because the comparison a reader makes is "these
+    two answers to the same question". Its loop was written in that same shape — items
+    outer, models inner — so consecutive calls almost always asked a *different* model
+    than the one before, and each of those is a server restart on vLLM or a load on
+    Ollama. Measured by the mutation rather than estimated: **24 handovers instead of 2**
+    on a 12-item, 2-model fixture. THE SECOND-ORDER EFFECT IS WHAT PRODUCED THE REPORTED
+    SYMPTOM: with Ollama's own default `keep_alive`, every model it is cycled through
+    stays resident for five minutes, so a roster of several oversubscribes the card and
+    Ollama spills the overflow onto the CPU — all cores busy, GPU idle. The sibling bench
+    already had the discipline (`_grouped_by_backend`, whose docstring puts a handover at
+    "tens of seconds each way"); the probe never got it. GENERAL FORM: decide the call
+    order from what each step COSTS, then rebuild the presentation order afterwards — a
+    list-of-lists indexed by item is free, and the report comes out byte-identical, which
+    is exactly what the negative-space twin must assert (a fix that reordered the report
+    to match the loop would "pass" the performance test and destroy the artifact).
+  - **NOTHING SERVING IS A STATE, NOT THE ABSENCE OF ONE (2026-08-12, same report: "I did
+    the model benchmark, and noticed the last model didn't unload from memory"):** the
+    bench read the prior GPU holder and handed the card back afterwards — right whenever
+    something WAS serving, and a silent no-op when nothing was, so a run started on an
+    idle machine ended with whatever it had last benched still holding the card (five
+    minutes on Ollama, the server's whole lifetime on vLLM). Restoring "nothing" means
+    RELEASING. This is the recorded `.get(key, 0)`-on-an-omitted-field trap one level up:
+    the empty case is a VALUE, and code that reads it as "no work to do" changes the
+    machine it claimed to leave alone. TWO RIDERS. Put the release in a `finally` — a run
+    that failed half way through has still moved the card, and the operator's machine
+    should not be left on a model the run chose. And give BOTH directions one owner
+    (`arbitration.restore_or_release`), because a bench and a probe that each implement
+    "put it back" will drift, and only one of them will be the one someone tests.
+  - **A DISTINCTION MADE IN THE PAYLOAD IS DESTROYED AT THE RENDER BOUNDARY UNLESS THE
+    RENDERER IS PART OF THE CHANGE (2026-08-12, same slice, found by reading the artifact
+    rather than the diff):** the probe deliberately records a model whose backend never
+    came up as `not asked` rather than as five failures — its own comment says recording
+    refusals "would read as *this model translates badly*, when nothing was ever asked of
+    it" — and `render_comparison_markdown` then printed every one of them as **`_failed:_`**.
+    The markdown is the artifact a person reads and forwards, so the honest half never
+    reached anyone. Two rules: carry the distinction as a FIELD (`asked: False`), never as
+    a substring of the prose a renderer would have to sniff for, since that is one reword
+    away from silently regressing; and write the twin FIRST, because a renderer that
+    softened every error into "not asked" satisfies the new test while hiding the case
+    where the model *was* asked and broke. Same family as "a caveat may claim only what
+    the data can exhibit" and the vLLM excerpt budget — the instrument was right and the
+    last stage threw the answer away.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
