@@ -438,4 +438,78 @@ def _why_not_ready(backend: str, model: str | None = None) -> str:
     return f"unknown backend {backend!r}"
 
 
-__all__ = ["current_holder", "free_vram_mb", "hand_gpu_to", "release_backend"]
+def restore_or_release(prior: dict | None) -> dict:
+    """Put the card back the way ``prior`` found it -- including finding it EMPTY.
+
+    THE CASE THAT WAS MISSING. The bench read the prior holder and handed the card
+    back afterwards, which is right whenever something WAS serving. When nothing was,
+    it returned "nothing to restore" and did nothing -- so a run started from a cold
+    machine ended with whatever it had last benched still holding the card. For Ollama
+    that is five minutes of residency; for vLLM it is the server's whole lifetime.
+    Field report 2026-08-12: "I did the model benchmark, and noticed the last model
+    didn't unload from memory."
+
+    "Nothing was serving" is a state, not the absence of one, and restoring it means
+    RELEASING -- which is why this is not simply a longer ``_restore_holder``.
+
+    Nothing here starts a backend that was not up, and nothing kills a process this
+    app did not spawn: ``release_backend`` drops Ollama's model residency (the daemon
+    is usually the operator's own service and is left running, per the standing
+    no-stop ruling) and stops only an app-spawned vLLM.
+    """
+    backend = (prior or {}).get("backend")
+    if not backend:
+        released = [release_backend(b) for b in ("vllm", "ollama")]
+        did = [r for r in released if r.get("released")]
+        return {
+            "action": "release",
+            "prior": None,
+            "restored": True,
+            "released": [
+                {"backend": r["backend"], "method": r.get("method"), "detail": r.get("detail")}
+                for r in did
+            ],
+            "free_mb_after": free_vram_mb(),
+            "reason": (
+                "nothing was serving before this run, so nothing is serving after it -- "
+                "the models it loaded were released rather than left holding the card"
+                if did
+                else "nothing was serving before this run, and nothing was left holding the card"
+            ),
+        }
+    model = (prior or {}).get("model")
+    if backend == "vllm" and not model:
+        # Restarting on the default would put the machine on a model it was not on,
+        # which is a worse wrong answer than leaving it down: one is a stated gap, the
+        # other is a silent change.
+        return {
+            "action": "none",
+            "prior": prior,
+            "restored": False,
+            "reason": (
+                "a vLLM server was running before this run, but which model it was "
+                "serving could not be read -- restarting it on the default would put "
+                "this machine on a model it was not on, so it was left alone"
+            ),
+        }
+    now = current_holder()
+    if now.get("backend") == backend and (backend != "vllm" or now.get("model") == model):
+        return {"action": "none", "prior": prior, "restored": True,
+                "reason": "the backend that was serving before this run still is"}
+    note = hand_gpu_to(backend, model=model if backend == "vllm" else None)
+    return {
+        "action": "restore",
+        "prior": prior,
+        "restored": bool(note.get("ready")),
+        "reason": note.get("reason"),
+        "detail": note,
+    }
+
+
+__all__ = [
+    "current_holder",
+    "free_vram_mb",
+    "hand_gpu_to",
+    "release_backend",
+    "restore_or_release",
+]

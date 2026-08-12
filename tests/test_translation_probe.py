@@ -243,3 +243,177 @@ def test_a_person_can_reach_this_without_a_terminal() -> None:
     assert "n_articles" in body and "targets_per_source" in body, (
         "the size controls must reach the request, or they are decoration"
     )
+
+
+# --------------------------------------------------------------------------- #
+#  One model at a time -- the field's "CPU 100%, GPU idle"
+#
+#  The report is grouped by ITEM and always was. The CALL order used to follow it
+#  (items outer, models inner), so consecutive calls almost always asked a different
+#  model than the one before: a server restart on vLLM, a load on Ollama, paid per
+#  CALL instead of per MODEL. And with Ollama's own default keep_alive the models it
+#  was cycled through all stay resident, so a roster of several oversubscribes the
+#  card and Ollama spills the overflow onto the CPU.
+# --------------------------------------------------------------------------- #
+class _Recorder:
+    """Records the order models are actually asked in."""
+
+    def __init__(self, calls: list):
+        self.calls = calls
+
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
+        self.calls.append(model)
+
+        class R:
+            text = f"[{model}]"
+            eval_count = 4
+        return R()
+
+
+def _four_item_set() -> dict:
+    return TP.build_translation_set(_articles())
+
+
+def test_all_of_one_models_items_are_asked_before_the_next_model(monkeypatch) -> None:
+    """THE ONE THAT MATTERS. Against the pre-fix loop this interleaved on every item."""
+    calls: list[str] = []
+    client = _Recorder(calls)
+    tset = _four_item_set()
+    assert tset["n_items"] >= 2, "the fixture must have enough items to interleave"
+
+    TP.run_translation_probe(
+        {"ollama": client},
+        models=[("ollama", "model-a"), ("ollama", "model-b")],
+        tset=tset,
+    )
+
+    # Grouped means each model appears as ONE contiguous run.
+    runs = [m for i, m in enumerate(calls) if i == 0 or calls[i - 1] != m]
+    assert len(runs) == len(set(runs)), (
+        "a model was returned to after another one ran -- every one of those is a "
+        f"reload, and on Ollama it also keeps both resident. Call order: {calls}"
+    )
+    assert len(runs) == 2, f"both models must be asked; got runs {runs}"
+
+
+def test_the_report_is_still_grouped_by_item(monkeypatch) -> None:
+    """The negative-space twin: changing the CALL order must not reorder the REPORT.
+    The comparison a reader makes is "these two answers to the same question"."""
+    tset = _four_item_set()
+    rep = TP.run_translation_probe(
+        {"ollama": _Recorder([])},
+        models=[("ollama", "model-a"), ("ollama", "model-b")],
+        tset=tset,
+    )
+    assert rep["n_items"] == tset["n_items"]
+    for i, item in enumerate(rep["items"]):
+        assert [a["model"] for a in item["answers"]] == ["model-a", "model-b"], (
+            f"item {i} lost the side-by-side ordering the report is built on"
+        )
+        assert item["source_language"] and item["target_language"]
+
+
+def test_the_card_is_handed_over_once_per_model_not_once_per_call() -> None:
+    """Per CALL is the whole defect: a handover is a server restart on vLLM and a
+    model load on Ollama, and the bench's own docstring puts it at "tens of seconds
+    each way"."""
+    tset = _four_item_set()
+    switches: list[tuple] = []
+
+    def _switch(*, backend, model):
+        switches.append((backend, model))
+        return {"ready": True}
+
+    TP.run_translation_probe(
+        {"ollama": _Recorder([]), "vllm": _Recorder([])},
+        models=[("ollama", "a"), ("vllm", "b")],
+        tset=tset,
+        allow_backend_switch=True,
+        switch=_switch,
+    )
+    assert switches == [("ollama", "a"), ("vllm", "b")], (
+        f"expected one handover per model, got {len(switches)} for "
+        f"{tset['n_items']} items x 2 models"
+    )
+
+
+def test_arbitration_is_opt_in_so_merely_calling_this_moves_nothing() -> None:
+    """Handing the card over stops and starts servers. A function that does that just
+    by being called makes it a side effect of every test and every other caller -- the
+    same reason the bench defaults its own switch off."""
+    switches: list = []
+    TP.run_translation_probe(
+        {"ollama": _Recorder([])},
+        models=[("ollama", "a")],
+        tset=_four_item_set(),
+        switch=lambda **kw: (switches.append(kw), {"ready": True})[1],
+    )
+    assert switches == [], "the default must not rearrange the operator's machine"
+
+
+def test_a_model_whose_backend_never_came_up_is_not_asked_and_says_so() -> None:
+    """Recording refusals under the model's name would read as "this model translates
+    badly", when nothing was ever asked of it."""
+    tset = _four_item_set()
+    rep = TP.run_translation_probe(
+        {"ollama": _Recorder([])},
+        models=[("ollama", "a")],
+        tset=tset,
+        allow_backend_switch=True,
+        switch=lambda **kw: {"ready": False, "reason": "the server did not start"},
+    )
+    for item in rep["items"]:
+        ans = item["answers"][0]
+        assert ans["translation"] == ""
+        assert ans["asked"] is False, (
+            "the distinction must be a FIELD -- a renderer sniffing the prose for "
+            "'not asked' is one reword away from calling this a failure again"
+        )
+        assert "not asked" in ans["error"] and "did not start" in ans["error"]
+    assert rep["handovers"] == [
+        {"backend": "ollama", "model": "a", "ready": False,
+         "reason": "the server did not start"}
+    ], (
+        "a refused handover is the REASON a model's column is empty; collecting it and "
+        "not publishing it leaves the reader to guess. Got: " + repr(rep.get("handovers"))
+    )
+
+
+def test_a_model_that_was_never_asked_is_not_called_FAILED_in_the_markdown() -> None:
+    """THE RENDER BOUNDARY, which is where the distinction was being thrown away.
+
+    The probe already refuses to record a refused handover as five bad translations --
+    and the markdown, which is the artifact a person actually reads and sends on,
+    labelled every one of them "failed". A model that never got the card has produced
+    no evidence about itself in either direction.
+    """
+    rep = TP.run_translation_probe(
+        {"ollama": _Recorder([])},
+        models=[("ollama", "a")],
+        tset=_four_item_set(),
+        allow_backend_switch=True,
+        switch=lambda **kw: {"ready": False, "reason": "the server did not start"},
+    )
+    md = TP.render_comparison_markdown(rep)
+    assert "_failed:_" not in md, (
+        "nothing was asked of this model, so nothing about it failed -- and 'failed' "
+        "beside a model name is read as a measurement of the model"
+    )
+    assert "not asked" in md and "the server did not start" in md
+    assert "Nothing was measured" in md
+
+
+def test_a_real_failure_is_STILL_called_failed_in_the_markdown() -> None:
+    """The negative-space twin. A fix that softened every error into 'not asked' would
+    satisfy the test above while hiding the case where the model WAS asked and broke."""
+
+    class _Broken:
+        def generate(self, *_a, **_kw):
+            raise RuntimeError("CUDA out of memory")
+
+    rep = TP.run_translation_probe(
+        {"ollama": _Broken()}, models=[("ollama", "a")], tset=_four_item_set(),
+    )
+    assert all(a["asked"] is True for it in rep["items"] for a in it["answers"])
+    md = TP.render_comparison_markdown(rep)
+    assert "_failed:_" in md and "CUDA out of memory" in md

@@ -1371,13 +1371,25 @@ def _prior_holder() -> dict | None:
 def _restore_holder(prior: dict | None, switch) -> dict | None:
     """Hand the card back to whatever held it when the run started.
 
-    Returns None when there was nothing to restore -- either nothing was serving, or
-    the same thing still is. A restore that FAILS is reported rather than swallowed:
-    the operator's machine is now serving something other than what they left it on,
-    and that is worth a sentence.
+    Returns None when the same thing is still serving. A restore that FAILS is
+    reported rather than swallowed: the operator's machine is now serving something
+    other than what they left it on, and that is worth a sentence.
+
+    NOTHING SERVING IS A STATE, NOT THE ABSENCE OF ONE. This used to return None for
+    it, so a run started from a cold machine ended with the last model it benched
+    still holding the card -- five minutes of residency on Ollama, the server's whole
+    lifetime on vLLM. Reported from the field on 2026-08-12 ("the last model didn't
+    unload from memory"), and the reason the sitting that ran next found no GPU and
+    fell back to the CPU. ``arbitration.restore_or_release`` owns both directions now,
+    so the bench and the translation probe cannot drift on it.
     """
     if not prior or not prior.get("backend"):
-        return None
+        try:
+            from src.llm.arbitration import restore_or_release
+
+            return restore_or_release(None)
+        except Exception as exc:  # noqa: BLE001 - a failed release is reported, not raised
+            return {"restored": False, "reason": bounded_error(exc, 200)}
     backend, model = prior["backend"], prior.get("model")
     if backend == "vllm" and not model:
         # We know a vLLM was serving and NOT which model. Restarting it on the default

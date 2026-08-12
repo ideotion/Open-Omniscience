@@ -340,3 +340,92 @@ def test_the_server_is_told_the_concurrency_the_app_will_actually_use(installed_
     V.start("someorg/tiny-1b", popen=lambda argv, **k: seen.setdefault("argv", argv) or _FakeProc())
     argv = seen["argv"]
     assert argv[argv.index("--max-num-seqs") + 1] == str(concurrency_for("vllm"))
+
+
+# --------------------------------------------------------------------------- #
+#  "Nothing was serving" is a state a run has to be able to restore.
+#
+#  Field report 2026-08-12: "I did the model benchmark, and noticed the last model
+#  didn't unload from memory." The bench read the prior holder and handed the card
+#  back afterwards -- correct whenever something WAS serving, and a no-op when
+#  nothing was, which left whatever it had last benched holding the card. On vLLM
+#  that is the server's whole lifetime, so the sitting that ran next found no GPU
+#  and fell back to the CPU.
+# --------------------------------------------------------------------------- #
+def test_a_run_that_found_nothing_serving_leaves_nothing_serving(monkeypatch):
+    """THE ONE THAT MATTERS. Against the pre-fix code this returned "nothing to
+    restore" and released nothing."""
+    from src.llm import arbitration as A
+
+    released: list[str] = []
+    monkeypatch.setattr(
+        A, "release_backend",
+        lambda b: (released.append(b), {"backend": b, "released": True, "method": "test"})[1],
+    )
+    monkeypatch.setattr(A, "free_vram_mb", lambda: 8000)
+
+    out = A.restore_or_release(None)
+
+    assert out["action"] == "release"
+    assert out["restored"] is True
+    assert sorted(released) == ["ollama", "vllm"], (
+        "a cold-start run must release BOTH backends -- releasing only the one it "
+        "happened to end on leaves the other holding the card"
+    )
+    assert "nothing is serving after it" in out["reason"]
+
+
+def test_a_release_that_freed_nothing_says_so_rather_than_claiming_a_gain(monkeypatch):
+    """The negative-space twin: reporting a release that did not happen would be a
+    fabricated tidy-up."""
+    from src.llm import arbitration as A
+
+    monkeypatch.setattr(A, "release_backend", lambda b: {"backend": b, "released": False})
+    monkeypatch.setattr(A, "free_vram_mb", lambda: 8000)
+
+    out = A.restore_or_release(None)
+    assert out["released"] == []
+    assert "nothing was left holding the card" in out["reason"]
+
+
+def test_a_backend_that_WAS_serving_is_handed_back_not_released(monkeypatch):
+    """The other direction, which must not regress: a run that found Ollama serving
+    puts Ollama back, rather than leaving the machine on nothing."""
+    from src.llm import arbitration as A
+
+    handed: list[tuple] = []
+    monkeypatch.setattr(A, "current_holder", lambda: {"backend": "vllm", "model": "x"})
+    monkeypatch.setattr(
+        A, "hand_gpu_to",
+        lambda b, **kw: (handed.append((b, kw.get("model"))), {"ready": True})[1],
+    )
+
+    out = A.restore_or_release({"backend": "ollama", "model": None})
+    assert out["action"] == "restore" and out["restored"] is True
+    assert handed == [("ollama", None)]
+
+
+def test_a_vllm_prior_whose_model_is_unknown_is_left_alone(monkeypatch):
+    """Restarting on the default would put the machine on a model it was not on --
+    a silent change, which is worse than a stated gap."""
+    from src.llm import arbitration as A
+
+    monkeypatch.setattr(A, "hand_gpu_to", lambda b, **kw: pytest.fail("must not guess a model"))
+    out = A.restore_or_release({"backend": "vllm", "model": None})
+    assert out["restored"] is False and "could not be read" in out["reason"]
+
+
+def test_the_bench_no_longer_treats_a_cold_start_as_nothing_to_do(monkeypatch):
+    """The bench's own path, since that is where it was reported."""
+    from src.ai_layer import model_bench as MB
+
+    called: list = []
+    monkeypatch.setattr(
+        "src.llm.arbitration.restore_or_release",
+        lambda prior: (called.append(prior), {"action": "release", "restored": True})[1],
+    )
+    out = MB._restore_holder(None, switch=lambda **kw: pytest.fail("no switch here"))
+    assert called == [None], "a cold-start restore must reach the release path"
+    assert out is not None and out["action"] == "release", (
+        "returning None here is what left the last benched model resident"
+    )
