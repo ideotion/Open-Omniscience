@@ -273,10 +273,17 @@ class _forensic_timer:
         self._t0 = _time.monotonic()
         self._last = self._t0
         self._phases: list[dict] = []
+        self._wal_state: dict | None = None
         try:
-            from src.monitoring.forensics import wal_bytes_before_open
+            from src.monitoring.forensics import wal_state_before_open
 
-            self._wal = wal_bytes_before_open()
+            self._wal_state = wal_state_before_open()
+            # The legacy field keeps its EXACT two-state meaning (present -> size,
+            # absent/unreadable -> None) so existing readers are byte-unchanged; the
+            # three-state record beside it is what tells those two cases apart.
+            self._wal = (
+                self._wal_state["bytes"] if self._wal_state["state"] == "present" else None
+            )
         except Exception:  # noqa: BLE001
             self._wal = None
 
@@ -292,6 +299,7 @@ class _forensic_timer:
             record_unlock_timing(
                 {
                     "wal_bytes_before_open": self._wal,
+                    "wal_state_before_open": self._wal_state,
                     "phases": self._phases,
                     "synchronous_total_ms": round(
                         (self._time.monotonic() - self._t0) * 1000, 1
@@ -299,9 +307,12 @@ class _forensic_timer:
                     "method": (
                         "Wall-clock over the SYNCHRONOUS unlock phases (the wait the "
                         "user actually feels); the background upkeep is tracked "
-                        "separately by startup-status. wal_bytes_before_open read "
-                        "before the first connection — a large WAL predicts recovery "
-                        "time inside init_db."
+                        "separately by startup-status. The -wal state is read before "
+                        "the first connection: a WAL present at open is replayed "
+                        "inside init_db (a large one predicts a slow unlock), while "
+                        "an absent one means a clean prior shutdown left nothing to "
+                        "recover — those are different facts, so they are recorded "
+                        "as different states, never both as null."
                     ),
                 }
             )

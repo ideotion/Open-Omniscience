@@ -137,9 +137,12 @@ def _acceptance_bars() -> dict[str, str]:
         ),
         "p0_4_unlock": (
             "Steady-state unlock < 2 s on the operator's full corpus; any long "
-            "phase visible and honest. Acceptance: a COLD boot on the full corpus "
-            "unlocks under the 2 s bar — a warm re-unlock does not test WAL "
-            "recovery, which is the phase that grows with the corpus."
+            "phase visible and honest. Acceptance: a COLD boot (a fresh process) "
+            "on the full corpus unlocks under the 2 s bar. Which shutdown preceded "
+            "it decides what was measured, so the report states it: a CLEAN "
+            "shutdown checkpoints and REMOVES the -wal, so that boot measures "
+            "steady-state unlock with no WAL to replay; WAL recovery — the phase "
+            "that grows with the corpus — is only exercised after an UNCLEAN end."
         ),
     }
 
@@ -552,8 +555,43 @@ _COLD_BOOT_HOWTO = (
     "button / Ctrl-C), then start it and unlock. The per-phase timing of that cold "
     "boot is recorded automatically; re-run this validation immediately after to "
     "read it. The recorded timing reflects the corpus size AT that boot, so measure "
-    "with the full corpus present."
+    "with the full corpus present. That clean shutdown removes the -wal, so the "
+    "boot after it measures steady-state unlock with no WAL to replay — which is "
+    "the bar. WAL-recovery time is a DIFFERENT measurement, exercised only when a "
+    "session ends uncleanly; the app records it automatically if that ever happens, "
+    "so there is nothing to stage for it here."
 )
+
+
+def _wal_sentence(last_unlock: dict) -> str:
+    """What the recorded -wal state says this unlock timing actually covered.
+
+    Three states, three different facts — an absent WAL is a real measurement
+    (a clean prior shutdown left nothing to replay), NOT the same as a WAL whose
+    size could not be read. Saying which one it was is the difference between a
+    number the operator can bank against the bar and a number they must re-take.
+    """
+    st = last_unlock.get("wal_state_before_open")
+    state = (st or {}).get("state")
+    if state == "present":
+        return (
+            f" A -wal of {int((st or {}).get('bytes') or 0):,} bytes was present at open, "
+            "so this timing INCLUDES replaying it."
+        )
+    if state == "absent":
+        return (
+            " No -wal was present at open — the previous shutdown was clean, so this is "
+            "the steady-state unlock the bar asks for and it does NOT include WAL "
+            "recovery (only an unclean end exercises that)."
+        )
+    if state == "unreadable":
+        return " The -wal size could not be read, so the WAL component is unmeasured."
+    # Older records (or a forensics failure) carry no state at all — say so rather
+    # than let the absence read as either a clean boot or a fault.
+    return (
+        " This record carries no -wal state, so whether WAL recovery was part of it "
+        "is unknown; the next boot records it."
+    )
 
 
 def _unlock_verdict(last_unlock: dict | None) -> dict:
@@ -586,6 +624,7 @@ def _unlock_verdict(last_unlock: dict | None) -> dict:
         "phases": phases,
         "slowest_phase": slowest,
         "wal_bytes_before_open": last_unlock.get("wal_bytes_before_open"),
+        "wal_state_before_open": last_unlock.get("wal_state_before_open"),
         "bar_ms": _UNLOCK_BAR_MS,
         "method": last_unlock.get("method"),
         "how_to_time_next_cold_boot": _COLD_BOOT_HOWTO,
@@ -601,8 +640,7 @@ def _unlock_verdict(last_unlock: dict | None) -> dict:
         return _verdict(
             "pass",
             f"the last boot's synchronous unlock was {total_ms:.0f} ms, under the "
-            f"{_UNLOCK_BAR_MS:.0f} ms bar. Confirm at full scale with a cold boot "
-            "on the complete corpus.",
+            f"{_UNLOCK_BAR_MS:.0f} ms bar." + _wal_sentence(last_unlock),
             measurements,
             bar,
         )
