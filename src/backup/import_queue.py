@@ -431,7 +431,10 @@ class ImportQueueManager:
         from src.ingest.import_job import get_import_manager
 
         mgr = get_import_manager()
-        mgr.start(item["path"])
+        # queued=True: this item runs INSIDE the exclusive window this run already opened,
+        # so it must not stand aside for it. Drop this and the item parks on its own run's
+        # window while _await() below waits on the item -- the queue hangs.
+        mgr.start(item["path"], queued=True)
         st = self._await(mgr.status, mgr.cancel)
         return {"tally": st.get("tally") or {}}
 

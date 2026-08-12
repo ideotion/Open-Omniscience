@@ -3816,6 +3816,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     input the test CREATES (safe) or an expectation compared against something clock-derived
     (rots). Two of three hits here were the safe kind, which is why the grep alone is not the
     answer — the question is which side of the assertion the literal sits on.
+  - **A "MUST BE PRESENT" SOURCE GUARD IS SATISFIED BY THE COMMENT THAT EXPLAINS THE THING
+    IT GUARDS — the recorded trap's mirror, and the worse half (2026-08-12, the import
+    queue's `queued=True`):** the ledger records twice that a "must be GONE" guard trips on
+    the comment recording the removal, and that the fix is to strip comments rather than
+    reword them, because that comment is what a future session reads before undoing the
+    removal. Both entries describe a false RED. The mirror fails the other way: I asserted
+    `"queued=True" in body` over a call site whose own comment opens *"queued=True: this
+    item runs INSIDE the exclusive window…"*, so deleting the argument left the guard
+    GREEN. A guard that fails open is strictly worse than one that fails loudly — nothing
+    ever draws attention to it — and only the mutation caught it; re-reading the test would
+    not have, since the assertion looks exactly right. FIX: assert the CALL, not the text —
+    walk `ast` for the `Call` and check its `keywords` for `arg == "queued"` with a
+    `Constant` `True`. A parser cannot see a comment, so the class closes by construction
+    instead of by remembering to strip. GENERAL FORM: for any guard asserting a token is
+    PRESENT, ask what else in the slice contains that token; the explanation of why it is
+    there is the likeliest answer and it sits directly above the guarded line. COROLLARY
+    from the same hour, same shape one level out: `ruff check … | grep -E "^(src|tests)/"`
+    matched nothing in EITHER direction (ruff's default output does not start lines with
+    the path), so a "does my change add findings?" comparison silently compared empty to
+    empty and read as clean — the false green in the verification harness rather than in a
+    test. `--output-format=concise` makes it real, and the tell is the same one the
+    recorded `cmd | tail` lesson names: a check you expect to be interesting never says
+    anything interesting.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;

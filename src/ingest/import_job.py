@@ -41,6 +41,20 @@ _IMPORT_SOURCE_DOMAIN = NEWSLETTER_SOURCE_DOMAINS[0]  # "newsletters.import.loca
 _IMPORT_SOURCE_NAME = "Imported newsletters (.eml)"
 _STATE_FILE = "newsletter_import.json"
 
+#: How often a parked job re-checks whether a corpus import still owns the machine.
+_EXCLUSIVE_POLL_S = 5.0
+
+
+def _import_owns_the_machine() -> bool:
+    """True while a corpus import run holds the exclusive window. Best-effort: an
+    unreadable scheduler must never park this job forever."""
+    try:
+        from src.scheduler.runner import exclusive_window_open
+
+        return exclusive_window_open()
+    except Exception:  # noqa: BLE001 - a courtesy check is never load-bearing
+        return False
+
 
 def _default_session():
     from src.database.session import SessionLocal
@@ -95,6 +109,11 @@ class NewsletterImportManager:
         self._corpus_before: dict | None = None
         self._error: str | None = None
         self._cancelled = False
+        # Which caller started this run -- see _yield_to_exclusive(). Deliberately NOT
+        # persisted: after an app restart the queue run that opened the window is gone,
+        # so a restored-then-resumed import is standalone, and standalone is the default.
+        self._queued = False
+        self._parked = False  # standing aside for a corpus import (published in status)
         self._started_at: float | None = None
         self._session_factory = None  # test seam
         self._state_path_override = state_path
@@ -167,12 +186,19 @@ class NewsletterImportManager:
         self,
         folder: str,
         *,
+        queued: bool = False,
         _files: list[Path] | None = None,
         _session_factory=None,
         _cursor: int = 0,
     ) -> dict:
         """Validate the folder + launch the worker. RuntimeError if already running,
-        ValueError on a bad folder. ``_cursor`` (resume) is where to continue."""
+        ValueError on a bad folder. ``_cursor`` (resume) is where to continue.
+
+        ``queued`` says WHO started this run, and it decides whether the worker stands
+        aside for a corpus import: an item of the import queue must not (it would park on
+        a window its own run opened), a standalone folder import must. The queue passes it
+        explicitly; everything else is standalone.
+        """
         with self._lock:
             if self._alive():
                 raise RuntimeError("A folder import is already running.")
@@ -183,6 +209,13 @@ class NewsletterImportManager:
             self._stop.clear()
             self._cancelled = False
             self._state = "running"
+            # ALWAYS from THIS call's own parameter, never left to what a previous run put
+            # there: a resumed queue item that silently reverted to standalone would park
+            # on its own run's window and hang the queue behind it. Same shape as the
+            # 2026-07-23 QuarantineJobManager ``write=`` finding -- and resume() below is
+            # the caller that would have dropped it, so it re-supplies it explicitly.
+            self._queued = bool(queued)
+            self._parked = False
             self._folder = str(p)
             self._files = files
             self._cursor = max(0, min(_cursor, len(files)))
@@ -253,6 +286,14 @@ class NewsletterImportManager:
                 while i < len(files):
                     if self._stop.is_set():
                         break
+                    # STAND ASIDE for a corpus import -- before reading the chunk and
+                    # before taking the lease below. Checking the window FIRST is what
+                    # bounds a swap's wait to a single already-started chunk instead of a
+                    # queue of them.
+                    if not self._queued:
+                        self._yield_to_exclusive()
+                        if self._stop.is_set():
+                            break
                     chunk = files[i : i + _FILE_CHUNK]
                     raws: list[bytes] = []
                     unreadable = 0
@@ -262,10 +303,11 @@ class NewsletterImportManager:
                         except OSError:
                             unreadable += 1
                     if raws:
-                        # LEASE ONLY -- no yield. This job runs as an ITEM of the import
-                        # queue, inside the window its own run opened, so parking on that
-                        # window would deadlock it against itself. A lease is observed by
-                        # the swap and never waited on by the holder, so it cannot.
+                        # The lease the atomic swap waits on. Around the CHUNK, not the
+                        # run: a parked worker holds nothing, so a restore never waits out
+                        # a job that is deliberately doing nothing. A lease is only ever
+                        # OBSERVED by the swap and never waited on by its holder, which is
+                        # what lets a queue item take one inside its own run's window.
                         with corpus_lease("newsletter-import"):
                             tally = ingest_emails(session, source, raws)
                     else:
@@ -360,6 +402,33 @@ class NewsletterImportManager:
         finally:
             runlog.end("ended-without-a-recorded-outcome")
 
+    def _yield_to_exclusive(self) -> None:
+        """Block between chunks while a corpus import owns the machine.
+
+        REACHED ONLY ON THE STANDALONE PATH, and that distinction is the whole design.
+        ONE ``_run`` serves two callers: the import QUEUE drives it as one item of a run
+        that has ALREADY opened the exclusive window, and Settings starts it directly. A
+        queue item parking here would wait on a window its own run opened, and the queue
+        would wait on the item -- a genuine deadlock, not a slow path. So the mode is
+        explicit at ``start()``, re-supplied by ``resume()``, and the queue passes it.
+
+        Waiting, not aborting: this job is cursor-persisted, so yielding costs a delay and
+        nothing else. The wait is on ``self._stop``, so pause and cancel stay instant while
+        parked -- a parked job must never be a job you cannot stop.
+        """
+        try:
+            while not self._stop.is_set():
+                if not _import_owns_the_machine():
+                    return
+                with self._lock:
+                    self._parked = True
+                self._stop.wait(_EXCLUSIVE_POLL_S)
+        finally:
+            # ALWAYS clear, on every exit path -- a stuck flag would report the job as
+            # standing aside long after it resumed.
+            with self._lock:
+                self._parked = False
+
     def pause(self) -> None:
         self._stop.set()  # the worker stops between chunks; state -> paused (persisted)
 
@@ -369,9 +438,10 @@ class NewsletterImportManager:
                 raise RuntimeError("Nothing paused to resume.")
             folder, files, sf, cursor = self._folder, list(self._files), self._session_factory, self._cursor
             tally = dict(self._tally)
+            queued = self._queued  # re-supplied EXPLICITLY: see start()'s own note
         if folder is None:
             raise RuntimeError("No previous import to resume.")
-        out = self.start(folder, _files=files, _session_factory=sf, _cursor=cursor)
+        out = self.start(folder, queued=queued, _files=files, _session_factory=sf, _cursor=cursor)
         with self._lock:  # carry the prior tally forward (progress continues)
             self._tally = tally
             self._save()
@@ -406,6 +476,10 @@ class NewsletterImportManager:
                 "eta_seconds": eta_s,
                 "error": self._error,
                 "running": self._alive(),
+                # Running and deliberately making no progress. Published so the task
+                # manager can say WHICH it is: a frozen counter is otherwise the exact
+                # signature of the stall this yielding exists to avoid.
+                "parked_for_exclusive": self._parked,
             }
 
 
