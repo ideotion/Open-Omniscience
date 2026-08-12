@@ -288,3 +288,126 @@ def set_egress_window(body: EgressWindowBody) -> dict:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     ew.close_window()
     return ew.status(with_collector=True)
+
+
+# --------------------------------------------------------------------------- #
+# THE UNATTENDED RUN — one button, armed before a multi-day absence.           #
+#                                                                             #
+# 2026-08-12 field ask: a dedicated slow machine is left running for ~10 days  #
+# on a million-article corpus, and the operator wants ONE control to press     #
+# before leaving. This composes surfaces that already exist rather than adding #
+# a second way to collect: going online IS starting the collector (the ruled   #
+# online-implies-collecting semantics above), and the qualification backlog    #
+# already has a cancellable, memory-guard-aware background job. What is new    #
+# here is (a) doing both from one press, (b) taking one measured safety        #
+# decision first, and (c) arming the expedition log so the absence has a       #
+# record the operator can copy back.                                          #
+# --------------------------------------------------------------------------- #
+
+@router.post("/unattended/start")
+def unattended_start(payload: dict | None = None) -> dict:
+    """Arm an unattended run: go online (which starts continuous collection, per the
+    ruled online-implies-collecting semantics), optionally start the bulk qualification
+    drain, and arm the expedition log.
+
+    This is the ONE control to press before a multi-day absence. It is idempotent --
+    pressing it twice keeps the original start time, because the window a returning
+    operator cares about is the whole absence.
+
+    ``qualify`` (default: decide from the measurement) forces the backlog drain on or
+    off explicitly. The decision and its basis are always recorded in the log, so a run
+    that declined to qualify says so rather than looking like one that simply found
+    nothing to do."""
+    payload = payload or {}
+    force = payload.get("qualify")
+    note = str(payload.get("note") or "")[:200]
+
+    from src.database.session import session_scope
+    from src.ingest import clear_kill_switch, kill_switch_active, note_operator_crossed_online
+    from src.monitoring import expedition
+
+    # 1. Online. Same two calls the top-bar toggle makes, in the same order, so the
+    #    consent semantics and the crossed-online record are identical -- this button
+    #    is a composition of the ruled path, never a second way in.
+    clear_kill_switch()
+    note_operator_crossed_online()
+
+    # 2. Collection. Idempotent; gated exactly like the network toggle.
+    collecting = None
+    if os.getenv("OO_NO_SCHEDULER", "0") != "1":
+        try:
+            from src.scheduler.runner import get_scheduler
+
+            get_scheduler().start()
+            collecting = get_scheduler().is_running()
+        except Exception:  # noqa: BLE001 - a scheduler hiccup must not lose the arming
+            _LOG.warning("unattended start: scheduler start failed", exc_info=True)
+            collecting = False
+
+    # 3. The measured safety decision, then the backlog drain.
+    with session_scope() as db:
+        safety = expedition.qualification_safety(db)
+    if force is not None:
+        safety = {**safety, "safe": bool(force), "basis": "operator override",
+                  "reason": f"operator set qualify={bool(force)} explicitly"}
+
+    qualification = {"started": False, "reason": safety["reason"]}
+    if safety["safe"]:
+        try:
+            from src.api.source_management import _BULK_QUALIFICATION_JOB
+            from src.config.power_profiles import qualification_batch_size
+
+            job = _BULK_QUALIFICATION_JOB.start(batch_size=qualification_batch_size())
+            qualification = {"started": True, "job": job}
+        except RuntimeError:
+            qualification = {"started": False, "reason": "already running"}
+        except Exception as exc:  # noqa: BLE001 - never lose the arming over the drain
+            _LOG.warning("unattended start: bulk qualification failed to start", exc_info=True)
+            qualification = {"started": False, "reason": f"could not start: {type(exc).__name__}"}
+
+    state = expedition.arm(
+        safety={**safety, "bulk_qualification_started": qualification["started"]},
+        note=note,
+    )
+    expedition.record_event(
+        "job-started",
+        "collection online"
+        + ("; bulk qualification started" if qualification["started"]
+           else f"; bulk qualification not started ({qualification.get('reason')})"),
+    )
+    return {
+        "armed": True,
+        "online": not kill_switch_active(),
+        "collecting": collecting,
+        "qualification": qualification,
+        "safety": safety,
+        "started_at": state.get("started_at"),
+    }
+
+
+@router.post("/unattended/stop")
+def unattended_stop(payload: dict | None = None) -> dict:
+    """Disarm the run. Deliberately does NOT stop collection or cancel the drain: the
+    operator may want the record closed while the machine keeps working, and stopping
+    collection already has its own control (the airplane toggle). Nothing is destroyed
+    -- the log stays readable."""
+    from src.monitoring import expedition
+
+    reason = str((payload or {}).get("reason") or "")[:200]
+    expedition.disarm(reason)
+    return {"armed": False}
+
+
+@router.get("/unattended/log")
+def unattended_log(fmt: str = "text") -> dict:
+    """The expedition log. A PLAIN FILE READ plus in-memory state -- it never scans the
+    corpus, so this is safe to press on a slow machine mid-run, with jobs still running.
+
+    ``fmt=text`` (default) returns the copy-pasteable rendering; ``fmt=json`` returns
+    the structured digest."""
+    from src.monitoring import expedition
+
+    d = expedition.digest()
+    if fmt == "json":
+        return d
+    return {"text": expedition.render_text(d)}

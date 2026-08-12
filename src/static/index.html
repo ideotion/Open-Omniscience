@@ -2348,6 +2348,22 @@
         <button class="secondary" onclick="loadSessionForensics(this)" title="Why did the app crash / why was unlock slow / what is filling the disk — the app's own records: the previous session's clean-or-unclean-end verdict, the last unlock's phase timings and -wal size, and the data folder's on-disk inventory with any orphaned backup/restore staging (a leftover decrypted corpus snapshot is flagged). Local only; sizes and app-owned names, never file contents.">Session forensics</button>
         <div id="session-forensics-out" class="small" style="margin-top:6px"></div>
       </div>
+      <!-- UNATTENDED RUN (2026-08-12 field ask): ONE button pressed before a multi-day
+           absence, and ONE that hands back a copy-pasteable log. The log is a plain file
+           read — safe to press mid-run, with jobs still going, on a slow machine.
+           Un-keyed English (matches this diagnostics panel). Browser-unverified per fork-3. -->
+      <div id="unattended-box" style="margin-top:10px">
+        <div class="small" style="font-weight:600">Unattended run (leave it working while you are away)</div>
+        <div class="hint">Goes online (which starts continuous collection), and starts draining the source-qualification backlog if there is enough memory to do it safely — it measures first and says what it decided, rather than risking an out-of-memory kill days into your absence. Then it keeps a small rolling log you can copy back at any point, finished or not. Pressing it twice is harmless: the log keeps your original start time.</div>
+        <div class="row" style="margin-top:6px">
+          <input id="unatt-note" type="text" style="min-width:260px" placeholder="note for the log (optional, e.g. '10-day run, 1M corpus')">
+          <button id="unatt-start-btn" onclick="unattendedStart(this)" title="Arm an unattended run: go online (continuous collection starts), start the bulk source-qualification drain if the measured memory headroom allows it, and begin the expedition log. Idempotent — pressing it again keeps the original start time.">Start unattended run</button>
+          <button class="secondary" onclick="unattendedLog(this)" title="Copy the expedition log. This is a plain file read plus in-memory state — it never scans your corpus, so it is safe to press mid-run on a slow machine while jobs are still running.">Copy log</button>
+          <button class="secondary" onclick="unattendedStop(this)" title="Close the log's record. Deliberately does NOT stop collection or cancel the drain — airplane mode is the control for that. Nothing is destroyed; the log stays readable.">Disarm</button>
+          <span id="unatt-status" class="small" style="margin-left:6px"></span>
+        </div>
+        <textarea id="unatt-log" class="small" style="width:100%;margin-top:6px;min-height:120px;display:none" readonly></textarea>
+      </div>
       <!-- P0 DATA-SAFETY VALIDATION (S1.2): the push-button v0.2.0 acceptance run. Drives the
            REAL backup engine against your live corpus, verifies it, probes a STAGED restore + a
            dry-run merge PREVIEW (your live corpus is only ever READ, never committed), and reads

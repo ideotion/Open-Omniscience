@@ -14645,6 +14645,77 @@
     // moment it is handed to the backend, then polls status and renders the per-check verdicts +
     // the download links. The heavy work runs server-side on the job thread; a 100 GB backup is
     // slow, so the poll ceiling is generous but bounded (never infinite). No score.
+    // ---- Unattended run (2026-08-12 field ask) -------------------------------
+    // ONE button pressed before a multi-day absence, and ONE that hands the log back.
+    // The log call is a plain file read on the server (it never scans the corpus), so
+    // "Copy log" is safe to press mid-run on a slow machine with jobs still going.
+    async function unattendedStart(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("unatt-status");
+      const set = (m) => { if (el) el.textContent = m; };
+      const note = (($("unatt-note") && $("unatt-note").value) || "").trim();
+      if (btn) btn.disabled = true;
+      set(t("Arming…"));
+      try {
+        const r = await api("/api/system/unattended/start", {
+          method: "POST", body: JSON.stringify({ note }),
+        });
+        const q = (r && r.qualification) || {};
+        // Say what it DECIDED, not just that it started — a run that declined to
+        // qualify must read as a decision, never as one that found nothing to do.
+        const qtxt = q.started
+          ? t("source qualification running")
+          : t("source qualification not started") + " — " + (q.reason || "");
+        set(t("Armed.") + " " + t("Collecting") + " · " + qtxt);
+      } catch (e) {
+        set(t("Could not arm:") + " " + ((e && e.message) || ""));
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function unattendedLog(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("unatt-status"); const box = $("unatt-log");
+      const set = (m) => { if (el) el.textContent = m; };
+      if (btn) btn.disabled = true;
+      set(t("Reading…"));
+      try {
+        const r = await api("/api/system/unattended/log");
+        const text = (r && r.text) || "";
+        if (box) { box.style.display = "block"; box.value = text; box.focus(); box.select(); }
+        // Clipboard is best-effort: it needs a secure context and focus, and neither is
+        // guaranteed. The textarea above is the real hand-off — already selected — so a
+        // refused clipboard costs nothing and is never reported as success.
+        let copied = false;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(text);
+            copied = true;
+          }
+        } catch (_e) { copied = false; }
+        set(copied ? t("Copied to the clipboard.") : t("Ready below — select and copy."));
+      } catch (e) {
+        set(t("Could not read the log:") + " " + ((e && e.message) || ""));
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
+    async function unattendedStop(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("unatt-status");
+      if (btn) btn.disabled = true;
+      try {
+        await api("/api/system/unattended/stop", { method: "POST", body: JSON.stringify({}) });
+        if (el) el.textContent = t("Disarmed. Collection is untouched — use airplane mode to stop it.");
+      } catch (e) {
+        if (el) el.textContent = t("Could not disarm:") + " " + ((e && e.message) || "");
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
     async function runP0Validation(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("p0-status"); const out = $("p0-result");

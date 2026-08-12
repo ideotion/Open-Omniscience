@@ -160,6 +160,20 @@ def run_idle_maintenance(*, should_stop: Callable[[], bool] | None = None) -> di
             except Exception:  # noqa: BLE001
                 _LOG.warning("off-peak stat snapshot failed", exc_info=True)
                 out["stat_snapshot"] = {"skipped": "error"}
+            # 2026-08-12 unattended-run ask: refresh the expedition digest right AFTER
+            # the snapshot it reads back from, so the operator's copy-paste log is
+            # never a snapshot stale by an hour. Cheap by construction (bounded index
+            # reads over rows that already exist -- never a corpus scan), and armed
+            # runs only: an unarmed machine writes nothing.
+            try:
+                from src.monitoring import expedition
+
+                if (expedition.digest() or {}).get("armed"):
+                    expedition.refresh(session)
+                    out["expedition"] = {"refreshed": True}
+            except Exception:  # noqa: BLE001 - a log must never break the run it describes
+                _LOG.warning("expedition refresh failed", exc_info=True)
+                out["expedition"] = {"skipped": "error"}
     except Exception:  # noqa: BLE001 - even opening the session must never break the loop
         _LOG.warning("off-peak maintenance could not open a session", exc_info=True)
         return {"skipped": "error"}

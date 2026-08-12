@@ -3948,6 +3948,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     GENERAL FORM: an anti-vacuity assertion needs its own mutation, and the mutation is
     to feed it the VACUOUS fixture — not the broken one.
 
+  - **A COST THAT SCALES WITH THE CORPUS RATHER THAN THE BATCH IS INVISIBLE IN THE KNOB
+    THAT SIZES THE BATCH (2026-08-12, "source validation takes too much time"):**
+    `qualification_per_pass` defaults to 5 and reads like a small, honest budget — judge
+    five candidates a pass. The actual cost of a pass is `per_source_metrics` ->
+    `collect_article_stats`, a `GROUP BY` over the **whole `keyword_mentions` table**
+    plus a full `articles` scan, materialised in Python. That is paid ONCE PER BATCH and
+    tracks the CORPUS, so at a million articles the five candidates are free and the scan
+    is everything. The knob therefore misleads twice: raising it barely costs more, and
+    lowering it barely saves — while the number an operator naturally reaches for to make
+    a slow thing faster is exactly the one that cannot. The bulk job's own docstring had
+    already measured the consequence (42.6k-66.7k candidates at 5/pass = 90+ days) and
+    even named the mechanism in an aside about a concurrency risk, so the finding was
+    sitting in the tree, correctly written down, one level away from the person reading
+    the knob. GENERAL FORM: when a budget parameter does not visibly change the wall
+    time, find what the loop body costs INDEPENDENTLY of the budget before tuning it — and
+    when a per-item budget guards a per-batch fixed cost, say so where the knob is, or
+    every future reader re-derives it. THE FIX SHAPE, recorded and NOT built here: hoist
+    the cohort baselines out of the batch loop (compute once per run, then judge each
+    batch's candidates against them, scoping the per-candidate metrics by `source_id`),
+    which turns O(corpus) per batch into O(corpus) per RUN. It is deliberately unbuilt
+    because it changes the verdict path, and shipping an unreviewed change to a
+    data-safety-adjacent decision immediately before a ten-day unattended run is the
+    wrong trade. COROLLARY worth as much: the same scan materialises ~1M stat objects and
+    a ~1M-entry dict per call, and the memory guard polls only BETWEEN batches — so it
+    cannot interrupt the scan it most needs to. A guard that runs between the expensive
+    things is not a guard on the expensive thing.
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
   the MEASUREMENT shipped, the two structural changes did NOT — deliberately, and the
