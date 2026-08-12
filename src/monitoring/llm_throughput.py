@@ -368,6 +368,17 @@ def run_throughput_bench(
 # --------------------------------------------------------------------------- #
 #  Selftest (recursive-loop harness): the mechanism, with no model anywhere
 # --------------------------------------------------------------------------- #
+class _FakeResponse:
+    """The shape ``_one_call`` reads, with no durations to report."""
+
+    prompt_eval_count = 10
+    eval_count = 20
+    total_duration = None
+    load_duration = None
+    prompt_eval_duration = None
+    eval_duration = None
+
+
 class _FakeClient:
     """A client whose call cost is fixed, so a sweep has a KNOWN right answer.
 
@@ -379,16 +390,80 @@ class _FakeClient:
 
     def generate(self, prompt, *, model="", system=None, options=None, keep_alive=None):
         time.sleep(self.seconds)
+        return _FakeResponse()
 
-        class _R:
-            prompt_eval_count = 10
-            eval_count = 20
-            total_duration = None
-            load_duration = None
-            prompt_eval_duration = None
-            eval_duration = None
 
-        return _R()
+# How long a rendezvous waits for the pool to assemble before concluding it never will.
+# Measured worst assembly of a REAL 4-worker pool under 8x CPU oversubscription: 92 ms.
+# This is ~100x that, so it can only fire when the pool genuinely is not concurrent --
+# and it is paid ONCE per run, not once per call (see _ConcurrencyProbe).
+_RENDEZVOUS_TIMEOUT_S = 10.0
+
+
+class _ConcurrencyProbe:
+    """A client that proves W calls were in flight AT ONCE, without timing anything.
+
+    WHY THIS EXISTS, and why the obvious check was wrong. The property is "four
+    workers really run in parallel", and the natural proxy is
+    ``parallel_wall < serial_wall``. That proxy is unsound on a shared runner:
+    ``run_concurrent`` takes a plain for loop at ``max_workers <= 1`` and a
+    ThreadPoolExecutor above it, so the parallel side pays a pool-creation cost the
+    serial side never pays -- a FIXED noise term against a fixed signal. Measured
+    under 8x CPU oversubscription that term reaches 132 ms against a 120 ms signal,
+    and the shipped configuration failed 2/200 with a worst margin of -500 ms. Raising
+    the signal does not fix it: a 600 ms floor still failed 1/120, because the stall
+    tail is unbounded rather than proportional.
+
+    So this measures the STRUCTURAL fact instead. Each call registers itself; once
+    ``parties`` are simultaneously registered the rendezvous opens and everyone
+    proceeds. A stall can delay that moment but cannot make it false, which is what
+    makes the assertion load-independent -- the same reasoning
+    ``test_the_rate_is_measured_not_a_latency_multiplied_by_the_worker_count``
+    already applies to the rate one level down.
+
+    A genuinely serial pool never assembles, so the rendezvous times out, records it,
+    and opens permanently: the run pays one timeout rather than one per call, and
+    ``max_in_flight`` stays 1, which is the detection.
+    """
+
+    def __init__(
+        self,
+        *,
+        parties: int,
+        warmup_calls: int = 1,
+        timeout: float = _RENDEZVOUS_TIMEOUT_S,
+    ) -> None:
+        # run_throughput_bench issues exactly one warmup call before any level, and it
+        # arrives alone. It is excluded here for the same reason it is excluded from
+        # the numbers; test_the_warmup_is_not_counted_in_any_level pins the count.
+        self.parties = parties
+        self.warmup_calls = warmup_calls
+        self.timeout = timeout
+        self._lock = threading.Lock()
+        self._open = threading.Event()
+        self._in_flight = 0
+        self._seen = 0
+        self.max_in_flight = 0
+        self.timed_out = False
+
+    def generate(self, prompt, *, model="", system=None, options=None, keep_alive=None):
+        with self._lock:
+            self._seen += 1
+            warmup = self._seen <= self.warmup_calls
+            if not warmup:
+                self._in_flight += 1
+                self.max_in_flight = max(self.max_in_flight, self._in_flight)
+                if self._in_flight >= self.parties:
+                    self._open.set()
+        if not warmup:
+            try:
+                if not self._open.wait(timeout=self.timeout):
+                    self.timed_out = True
+                    self._open.set()
+            finally:
+                with self._lock:
+                    self._in_flight -= 1
+        return _FakeResponse()
 
 
 def run_throughput_selftest() -> dict:
@@ -417,12 +492,28 @@ def run_throughput_selftest() -> dict:
         serial.get("failed_n") == 0 and parallel.get("failed_n") == 0,
         detail=f"serial={serial.get('failed_n')} parallel={parallel.get('failed_n')}",
     )
-    # The load-bearing one: four workers must genuinely be faster than one. A bench that
-    # silently ran everything serially would still produce a plausible-looking report.
+    # THE LOAD-BEARING ONE: a bench that silently ran everything serially would still
+    # publish a plausible-looking curve. Proven structurally rather than by comparing
+    # wall clocks -- see _ConcurrencyProbe for why the wall comparison was unsound.
+    probe = _ConcurrencyProbe(parties=4)
+    run_throughput_bench(
+        levels=(4,), calls_per_level=8, client=probe, model="fake", backend_name="vllm"
+    )
     _check(
         "concurrency is really concurrent",
+        probe.max_in_flight == 4,
+        detail=(
+            f"max_in_flight={probe.max_in_flight} of 4"
+            + (" (the pool never assembled)" if probe.timed_out else "")
+        ),
+    )
+    # And the published wall measures the real work rather than being fabricated. A
+    # LOWER bound, so a scheduling stall can only ever satisfy it -- never break it.
+    _check(
+        "the published wall covers the calls it reports",
         bool(serial.get("batch_wall_s")) and bool(parallel.get("batch_wall_s"))
-        and parallel["batch_wall_s"] < serial["batch_wall_s"],
+        and serial["batch_wall_s"] >= 8 * 0.02 * 0.9
+        and parallel["batch_wall_s"] >= 2 * 0.02 * 0.9,
         detail=f"serial={serial.get('batch_wall_s')}s parallel={parallel.get('batch_wall_s')}s",
     )
     _check(
