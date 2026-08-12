@@ -635,10 +635,30 @@ def test_a_restore_that_fails_is_reported_rather_than_swallowed(frozen_batch, mo
     assert report["backend_restored"]["reason"] == "CUDA OOM"
 
 
-def test_nothing_is_restored_when_nothing_was_serving(frozen_batch, monkeypatch):
-    """A machine with no backend up is a legitimate prior state, and must not be
-    restored INTO something it never had."""
+def test_a_cold_start_is_restored_by_RELEASING_what_the_run_loaded(
+    frozen_batch, monkeypatch
+):
+    """A machine with no backend up is a legitimate prior STATE, and restoring it means
+    releasing -- not doing nothing.
+
+    RE-POINTED 2026-08-12, deliberately, from ``test_nothing_is_restored_when_nothing_
+    was_serving``, which asserted ``backend_restored is None``. That was the behaviour
+    the field reported as a defect: "I did the model benchmark, and noticed the last
+    model didn't unload from memory." Reading the prior holder as *nothing to do* left
+    the final benched model resident -- five minutes of Ollama residency, or a vLLM
+    server's whole lifetime -- and the next thing to want the GPU found it occupied.
+
+    The docstring's original premise is PRESERVED and still asserted below: nothing is
+    handed TO a backend that was never up. What changed is that the run cleans up after
+    itself instead of walking away.
+    """
     monkeypatch.setattr(MB, "_prior_holder", lambda: None)
+    released = []
+    monkeypatch.setattr(
+        "src.llm.arbitration.release_backend",
+        lambda b: released.append(b) or {"backend": b, "released": True, "method": "stub"},
+    )
+    handed = []
     report = MB.run_model_bench(
         None,
         models=["ollama|a:1"],
@@ -649,12 +669,31 @@ def test_nothing_is_restored_when_nothing_was_serving(frozen_batch, monkeypatch)
         anchors=None,
         allow_backend_switch=True,
         wake=lambda _b: {"woken": False, "reason": "already running"},
-        switch=lambda **_kw: {"ready": True},
+        switch=lambda *, backend, model: handed.append((backend, model)) or {"ready": True},
         unload=lambda *_a, **_kw: {},
         tasks=("triage",),
         persist=False,
     )
-    assert report["backend_restored"] is None
+    note = report["backend_restored"]
+    assert note is not None, (
+        "a cold start must still REPORT what it did at the end -- silence here is what "
+        "let the last benched model stay resident with nothing saying so"
+    )
+    assert note["action"] == "release", (
+        "the run loaded a model onto an idle machine, so putting the machine back means "
+        "releasing it. Got: " + repr(note)
+    )
+    assert note["prior"] is None and note["restored"] is True
+    assert released == ["vllm", "ollama"], (
+        "both backends are asked to let go -- the run may have loaded either. Got: "
+        + repr(released)
+    )
+    # THE ORIGINAL PROPERTY, unchanged: the only handover is the one the bench itself
+    # needed. A second call here would mean the machine was handed INTO a state it
+    # never had, which is the failure the old test was written to catch.
+    assert handed == [("ollama", "a:1")], (
+        "nothing may be started that was not up before the run. Got: " + repr(handed)
+    )
 
 
 def test_a_pair_that_died_at_the_handover_is_counted_at_the_top_level(frozen_batch):

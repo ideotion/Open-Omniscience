@@ -77,6 +77,35 @@ def test_unlock_under_bar_passes():
     assert "how_to_time_next_cold_boot" in c["measurements"]
 
 
+def test_unlock_pass_states_which_case_the_wal_evidence_covers():
+    """A pass must say what it measured, because the 2026-08-12 field run passed at
+    323 ms with a bare `wal_bytes_before_open: null` and the report could not tell
+    the operator whether that was a clean cold boot (bankable against the bar) or a
+    WAL read that failed. Three states, three different sentences."""
+    base = {"synchronous_total_ms": 12.0, "phases": [{"phase": "init_db", "ms": 12.0}], "at": "x"}
+
+    absent = p0._unlock_verdict({**base, "wal_state_before_open": {"bytes": 0, "state": "absent"}})
+    assert absent["verdict"] == "pass"
+    assert "steady-state" in absent["reason"] and "does NOT include WAL recovery" in absent["reason"]
+
+    present = p0._unlock_verdict(
+        {**base, "wal_state_before_open": {"bytes": 4096, "state": "present"}}
+    )
+    assert present["verdict"] == "pass"
+    assert "INCLUDES replaying it" in present["reason"] and "4,096" in present["reason"]
+
+    unreadable = p0._unlock_verdict(
+        {**base, "wal_state_before_open": {"bytes": None, "state": "unreadable"}}
+    )
+    assert "unmeasured" in unreadable["reason"]
+
+    # An OLD record carrying no state at all must not read as either of the above.
+    legacy = p0._unlock_verdict(base)
+    assert "no -wal state" in legacy["reason"]
+    # ...and the three sentences are genuinely different, or the guard proves nothing.
+    assert len({absent["reason"], present["reason"], unreadable["reason"], legacy["reason"]}) == 4
+
+
 def test_unlock_over_bar_fails_and_names_slowest_phase():
     c = p0._unlock_verdict(
         {

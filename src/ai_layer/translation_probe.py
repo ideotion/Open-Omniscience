@@ -227,27 +227,97 @@ def run_translation_probe(
     tset: dict,
     keep_alive: str | None = None,
     ctx=None,
+    allow_backend_switch: bool = False,
+    switch=None,
 ) -> dict:
     """Translate every frozen item with every model, keeping the answers verbatim.
 
     ``models`` is a list of ``(backend, model)``. Grouped in the report by ITEM, with
     each model's answer beside the others, because the comparison a reader makes is
     "these two answers to the same question", not "this model's list of answers".
-    """
-    from src.ai_layer.model_bench import _translate_system, bounded_error
 
-    results: list[dict] = []
-    total = len(tset.get("items") or []) * max(1, len(models))
+    ONE MODEL AT A TIME, all of its items, then the next. The report is still grouped
+    by item -- that is a rendering decision and it has not changed -- but the CALL
+    order used to follow it, items outer and models inner, so consecutive calls almost
+    always asked a different model than the one before. Two things went wrong with
+    that on a real machine (field report 2026-08-12: "the CPU is loaded 100% (all
+    cores), while gpu is quite often idle"):
+
+      * every call was a model switch. On vLLM a switch is a server restart; on Ollama
+        it is a load. Paying that per CALL rather than per MODEL turns an N-item,
+        M-model sitting into N x M handovers instead of M.
+      * with Ollama's own default keep_alive, the models it was cycled through all
+        STAY resident for five minutes -- so a roster of several oversubscribes the
+        card, and Ollama spills the overflow onto the CPU. All cores busy, GPU idle,
+        exactly as reported.
+
+    The bench already had this discipline (``_grouped_by_backend``, whose docstring
+    puts the cost at "tens of seconds each way"); its sibling probe did not.
+
+    ``allow_backend_switch`` defaults to FALSE for the same reason the bench's does:
+    handing the card over stops and starts servers, and a function that does that
+    merely by being called makes it a side effect of every test and every other caller
+    that drives this path. The entry point (:func:`run_translation_comparison`) opts
+    in, because there the operator asked for a sitting on this machine.
+    """
+    from src.ai_layer.model_bench import _default_switch, _translate_system, bounded_error
+
+    if switch is None:
+        switch = _default_switch
+    items = list(tset.get("items") or [])
+    total = len(items) * max(1, len(models))
     done = 0
-    for item in tset.get("items") or []:
-        answers: list[dict] = []
-        system = _translate_system(LANGUAGE_NAMES[item["target_language"]])
-        for backend, model in models:
+    # answers[item_index] preserves the by-ITEM grouping the report is built on, while
+    # the loop below walks models on the outside.
+    answers: list[list[dict]] = [[] for _ in items]
+    switches: list[dict] = []
+
+    for backend, model in models:
+        if ctx is not None and getattr(ctx, "stopping", False):
+            break
+        client = clients.get(backend)
+        if client is None:
+            continue
+        # Hand the card over ONCE for this model, not once per item. Without this the
+        # probe ran whatever happened to be holding the GPU: on a dual-backend machine
+        # a vLLM pair is refused outright (the client will not answer as a model its
+        # server was not started with) and an Ollama pair runs against VRAM vLLM is
+        # still holding -- which is to say, on the CPU.
+        note = None
+        if allow_backend_switch:
+            try:
+                note = switch(backend=backend, model=model)
+            except Exception as exc:  # noqa: BLE001 - a failed handover is data
+                note = {"ready": False, "reason": bounded_error(exc, 200)}
+            switches.append({"backend": backend, "model": model, **(note or {})})
+            if note is not None and note.get("ready") is False:
+                # Recording five refusals under this model's name would read as "this
+                # model translates badly", when nothing was ever asked of it.
+                for i in range(len(items)):
+                    answers[i].append(
+                        {
+                            "backend": backend,
+                            "model": model,
+                            # A FIELD, not a substring of the prose. The renderer has to
+                            # tell "we asked and it went wrong" from "we never asked",
+                            # and sniffing the error text for "not asked" would be one
+                            # reword away from silently calling this a failure again.
+                            "asked": False,
+                            "translation": "",
+                            "chars": 0,
+                            "wall_s": None,
+                            "error": (
+                                f"not asked: {backend} did not come up for this model "
+                                f"({note.get('reason') or 'no reason reported'})"
+                            )[:300],
+                        }
+                    )
+                done += len(items)
+                continue
+        for i, item in enumerate(items):
             if ctx is not None and getattr(ctx, "stopping", False):
                 break
-            client = clients.get(backend)
-            if client is None:
-                continue
+            system = _translate_system(LANGUAGE_NAMES[item["target_language"]])
             t0 = time.monotonic()
             try:
                 res = client.generate(
@@ -263,17 +333,19 @@ def run_translation_probe(
             if ctx is not None:
                 ctx.set_progress(done=done, total=total,
                                  detail=f"{backend} · {model} · {item['target_language']}")
-            answers.append(
+            answers[i].append(
                 {
                     "backend": backend,
                     "model": model,
+                    "asked": True,
                     "translation": out,
                     "chars": len(out),
                     "wall_s": round(wall, 3),
                     "error": err,
                 }
             )
-        results.append({**{k: v for k, v in item.items()}, "answers": answers})
+
+    results = [{**item, "answers": answers[i]} for i, item in enumerate(items)]
     return {
         "schema": TRANSLATION_PROBE_SCHEMA,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
@@ -282,6 +354,10 @@ def run_translation_probe(
         "n_items": len(results),
         "languages": tset.get("languages"),
         "directions": tset.get("directions"),
+        # What the card actually did, published rather than merely collected: a
+        # handover that was REFUSED is the reason a model's column is empty, and a
+        # reader who can only see the empty column has to guess why.
+        "handovers": switches,
         "items": results,
         "method": (
             "Real corpus excerpts, stratified by language with an EQUAL quota each so a "
@@ -336,6 +412,16 @@ def render_comparison_markdown(report: dict) -> str:
         ]
         for a in item.get("answers") or []:
             head = f"### {a['backend']} | {a['model']}"
+            # NOT ASKED IS NOT FAILED, and this is the boundary where that distinction
+            # was being thrown away. The probe already refuses to record a refused
+            # handover as five bad translations -- and then the markdown, which is the
+            # artifact a person actually reads, labelled every one of them "failed".
+            # A model that was never given the card has produced no evidence about
+            # itself in either direction.
+            if a.get("asked") is False:
+                out += [head, "", f"_not asked — {a.get('error') or 'no reason reported'}_",
+                        "", "_Nothing was measured for this model on this item._", ""]
+                continue
             if a.get("error"):
                 out += [head, "", f"_failed:_ `{a['error']}`", ""]
                 continue
@@ -423,7 +509,32 @@ def run_and_persist_translation_probe(
     else:
         pairs = [(m.split("|", 1)[0], m.split("|", 1)[1]) for m in models if "|" in m]
 
-    out = run_translation_probe(clients, models=pairs, tset=tset, ctx=ctx)
+    # The operator asked for a sitting on THIS machine, so the card is handed to each
+    # model in turn -- the opt-in the low-level function deliberately does not take on
+    # its own. Without it the probe measures whatever happened to be holding the GPU,
+    # which on a dual-backend machine means the CPU.
+    from src.llm.arbitration import current_holder, restore_or_release
+
+    try:
+        prior = current_holder()
+    except Exception:  # noqa: BLE001 - an unreadable prior state is not a crash
+        prior = None
+    try:
+        out = run_translation_probe(
+            clients, models=pairs, tset=tset, ctx=ctx, allow_backend_switch=True
+        )
+    finally:
+        # Leave the machine as it was found -- INCLUDING "nothing was serving", which
+        # is a state a run has to be able to restore rather than a case to skip. In a
+        # `finally` because a run that failed half way through has still moved the
+        # card, and the operator's machine should not be left on a model this probe
+        # chose. Best-effort: a restore that fails is reported, never raised over the
+        # result the run did produce.
+        try:
+            _restore_note = restore_or_release(prior)
+        except Exception as exc:  # noqa: BLE001
+            _restore_note = {"restored": False, "reason": str(exc)[:200]}
+    out["backend_restore"] = _restore_note
     jpath = _export_path("json")
     jpath.write_text(json.dumps(out, indent=1, ensure_ascii=False), encoding="utf-8")
     mpath = jpath.with_suffix(".md")
