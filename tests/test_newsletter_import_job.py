@@ -311,3 +311,110 @@ def test_import_job_completes_successfully_even_if_quarantine_scan_raises(env, m
     with Session() as sess:
         assert sess.query(Article).count() == 1
 
+
+
+# --------------------------------------------------------------------------- #
+#  standing aside for a corpus import -- and the one caller that must not
+# --------------------------------------------------------------------------- #
+def _wait_for(pred, t: float = 5.0) -> bool:
+    """Poll rather than sleep a fixed time: a fixed sleep is either flaky or slow."""
+    import time as _t
+
+    end = _t.monotonic() + t
+    while _t.monotonic() < end:
+        if pred():
+            return True
+        _t.sleep(0.01)
+    return pred()
+
+
+def _window(monkeypatch, held):
+    """Patch the exclusive-window predicate the job reads, and shrink its poll.
+
+    ``_import_owns_the_machine`` imports ``exclusive_window_open`` INSIDE the call, so
+    patching it on the runner module is what the job actually sees.
+    """
+    import src.ingest.import_job as ij
+    import src.scheduler.runner as runner
+
+    monkeypatch.setattr(ij, "_EXCLUSIVE_POLL_S", 0.01)
+    monkeypatch.setattr(runner, "exclusive_window_open", lambda: held["v"])
+
+
+def test_a_standalone_import_stands_aside_for_a_corpus_import(env, monkeypatch):
+    """A restore commits by REPLACING the corpus file. A folder import writing across
+    that swap writes to the old, unlinked inode -- lost silently, and past a cursor that
+    has already advanced. The lease makes the swap WAIT for a chunk already in flight;
+    standing aside is what stops a new one starting."""
+    engine, Session, tmp = env
+    folder = tmp / "nl"
+    folder.mkdir()
+    for i in range(3):
+        _eml(folder, i, f"a genuine newsletter body number {i} about elections")
+    held = {"v": True}
+    _window(monkeypatch, held)
+
+    mgr = _new_mgr(tmp)
+    mgr.start(str(folder), _session_factory=Session)
+    assert _wait_for(lambda: mgr.status()["parked_for_exclusive"]), "it never stood aside"
+    assert mgr.status()["files_done"] == 0
+    with Session() as sess:
+        assert sess.query(Article).count() == 0, "it wrote while a corpus import owned the machine"
+
+    held["v"] = False  # the import finished; the window is clear
+    _join(mgr)
+    s = mgr.status()
+    assert s["state"] == "done" and s["files_done"] == 3, "it never resumed"
+    assert s["parked_for_exclusive"] is False, "a stuck flag reports a working job as parked"
+
+
+def test_a_queue_item_runs_straight_through_the_window_it_is_part_of(env, monkeypatch):
+    """The negative-space twin, and the reason the mode exists at all: the import QUEUE
+    drives this same _run as one ITEM of a run that has ALREADY opened the window. Parking
+    there would wait on a window its own run opened while the queue waits on the item --
+    a deadlock, not a slow path. The window is held for the WHOLE run here."""
+    engine, Session, tmp = env
+    folder = tmp / "nl"
+    folder.mkdir()
+    for i in range(3):
+        _eml(folder, i, f"a genuine newsletter body number {i} about trade")
+    _window(monkeypatch, {"v": True})
+
+    mgr = _new_mgr(tmp)
+    mgr.start(str(folder), queued=True, _session_factory=Session)
+    _join(mgr)
+    s = mgr.status()
+    assert s["state"] == "done" and s["files_done"] == 3, (
+        "a queue item parked on its own run's window -- the queue would hang behind it"
+    )
+    assert s["parked_for_exclusive"] is False
+
+
+def test_resume_re_supplies_the_queued_mode(env, monkeypatch):
+    """resume() calls start(), so a mode left to start()'s DEFAULT silently flips -- the
+    2026-07-23 QuarantineJobManager ``write=`` shape. Here the flip is a deadlock: a
+    resumed queue item would park on the window its own run opened.
+
+    The paused-with-a-cursor state is set directly because that is exactly what
+    ``_load_persisted`` restores an interrupted run into -- a real state, not an invented
+    one -- and reaching it by racing pause() against a running chunk would be flaky."""
+    engine, Session, tmp = env
+    folder = tmp / "nl"
+    folder.mkdir()
+    for i in range(3):
+        _eml(folder, i, f"a genuine newsletter body number {i} about energy")
+    _window(monkeypatch, {"v": True})
+
+    mgr = _new_mgr(tmp)
+    mgr.start(str(folder), queued=True, _session_factory=Session)
+    _join(mgr)
+    assert mgr.status()["state"] == "done"
+
+    with mgr._lock:  # the shape _load_persisted() produces: resumable, part-way through
+        mgr._state = "paused"
+        mgr._cursor = 0
+    mgr.resume()
+    _join(mgr)
+    assert mgr.status()["state"] == "done", (
+        "resume() dropped queued=True, so the resumed item parked on its own run's window"
+    )

@@ -362,11 +362,17 @@ def _import_jobs() -> list[dict]:
     )
     actions = ["pause", "cancel"] if state == "running" else (["resume", "cancel"] if state in ("paused", "failed") else [])
     folder = s.get("folder") or "a folder"
+    label = f"Importing newsletters from {folder}"
+    # Same reading as the re-index row below, worded for a row that is ITSELF an import:
+    # "paused for an import" would read as a contradiction here, and the thing it is
+    # waiting for is specifically a corpus import (a restore/merge holding the window).
+    if s.get("parked_for_exclusive"):
+        label = "Paused for a corpus import — " + label[0].lower() + label[1:]
     return [
         {
             "id": "newsletter-import",
             "kind": "import",
-            "label": f"Importing newsletters from {folder}",
+            "label": label,
             "state": state,
             "progress": prog,
             "eta_seconds": s.get("eta_seconds"),

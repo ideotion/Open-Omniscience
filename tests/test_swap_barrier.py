@@ -239,17 +239,48 @@ def test_every_heavy_corpus_writer_takes_a_lease() -> None:
             )
 
 
-def test_the_newsletter_import_leases_but_never_parks() -> None:
-    """It runs as an ITEM of the import queue, INSIDE the window its own run opened, so
-    parking on that window would deadlock it against itself. The lease is observed by the
-    swap and never waited on by the holder, so it cannot."""
+def test_the_import_queue_starts_its_newsletter_item_as_a_queue_item() -> None:
+    """SUPERSEDES an absence guard here that said this job may never park AT ALL.
+
+    That guard was right about the deadlock and wrong to express it as an absence: ONE
+    ``_run`` serves both the import queue and a standalone folder import from Settings,
+    and only the first is inside a window its own run opened. The standalone one must
+    stand aside, and both directions are now proved BEHAVIOURALLY in
+    tests/test_newsletter_import_job.py -- which is strictly stronger, and survives the
+    capability existing.
+
+    What no test of the manager alone can see is the WIRING, so it is asserted here: drop
+    ``queued=True`` and the item parks on the queue's own window while the queue waits on
+    the item.
+
+    READS THE CALL, NOT THE TEXT. The first cut asserted ``"queued=True" in body`` and
+    PASSED the mutation that drops the argument -- satisfied by the comment above the call
+    explaining why the argument is there. The recorded trap is a "must be gone" guard
+    tripping on the comment that records a removal (a false red); this is its mirror, and
+    the worse one, because a "must be present" guard satisfied by its own explanation
+    fails OPEN and stays green forever. Rewording the comment is not the fix -- that
+    comment is what a future session reads before deleting the argument.
+    """
+    import ast
     from pathlib import Path
 
-    body = Path("src/ingest/import_job.py").read_text(encoding="utf-8")
-    assert "corpus_lease(" in body
-    assert "exclusive_window_open" not in body and "holds_exclusive" not in body, (
-        "yielding here would park a queue item on its own run's window"
+    tree = ast.parse(Path("src/backup/import_queue.py").read_text(encoding="utf-8"))
+    fn = next(
+        (n for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name == "_run_newsletters"),
+        None,
     )
+    assert fn is not None, "_run_newsletters not found"
+    starts = [
+        c
+        for c in ast.walk(fn)
+        if isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute) and c.func.attr == "start"
+    ]
+    assert starts, "the queue no longer starts the import manager here"
+    for call in starts:
+        assert any(
+            k.arg == "queued" and isinstance(k.value, ast.Constant) and k.value.value is True
+            for k in call.keywords
+        ), "a queue item that stands aside waits on a window its own run opened"
 
 
 def test_the_task_manager_says_parked_rather_than_showing_a_frozen_counter(monkeypatch) -> None:
@@ -276,6 +307,29 @@ def test_the_task_manager_says_parked_rather_than_showing_a_frozen_counter(monke
     label = _reindex_jobs()[0]["label"]
     assert not label.startswith("Paused"), "a working job must not be labelled paused"
     assert label.startswith("Re-indexing the corpus")
+
+
+def test_the_standalone_import_row_says_parked_too(monkeypatch) -> None:
+    """The same reading for the folder import, worded for a row that IS an import: what
+    it stands aside for is specifically a CORPUS import, and "paused for an import" on an
+    import row would read as a contradiction."""
+    import src.ingest.import_job as ij
+    from src.api.jobs import _import_jobs
+
+    def _mgr(**over):
+        base = {"state": "running", "running": True, "files_total": 40, "files_done": 3,
+                "percent": 7.5, "folder": "/data/nl", "eta_seconds": None, "tally": {},
+                "error": None, "parked_for_exclusive": False}
+        base.update(over)
+        return type("M", (), {"status": staticmethod(lambda: base)})()
+
+    monkeypatch.setattr(ij, "get_import_manager", lambda: _mgr(parked_for_exclusive=True))
+    assert _import_jobs()[0]["label"].startswith("Paused for a corpus import")
+
+    monkeypatch.setattr(ij, "get_import_manager", lambda: _mgr())
+    label = _import_jobs()[0]["label"]
+    assert not label.startswith("Paused"), "a working job must not be labelled paused"
+    assert label.startswith("Importing newsletters from")
 
 
 def test_the_import_asks_before_piling_onto_a_running_writer() -> None:
