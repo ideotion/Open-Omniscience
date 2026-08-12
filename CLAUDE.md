@@ -3878,6 +3878,50 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     redundant. GENERAL FORM: any source guard — in either direction — must read
     comment-stripped source, because the explanation of a rule necessarily contains the
     rule's own vocabulary.
+  - **A TIMING COMPARISON CAN BE UNSOUND IN BOTH DIRECTIONS AT ONCE — and raising the
+    input only repairs the PROPORTIONAL case (2026-08-12, the llm-throughput concurrency
+    check):** the check proving four workers really run in parallel asserted
+    `parallel_wall < serial_wall`, and `run_concurrent` is a plain for loop at
+    `max_workers <= 1` and a ThreadPoolExecutor above it — so the parallel side pays a
+    pool-creation cost the serial side never pays: the noise is a FIXED term against a
+    fixed signal, not jitter that shrinks as the work grows. Measured under 8x CPU
+    oversubscription, pool creation reached **132 ms against the 120 ms signal**, and the
+    shipped configuration failed **2/200** with a worst margin of **-500 ms**. **THE
+    RECORDED WAL REPAIR DOES NOT TRANSFER HERE:** raising the input (50 ms calls, or 16
+    calls) lifted the floor to 600 ms and it STILL failed **1/120**, because the stall
+    tail is unbounded rather than proportional — so no fixed floor is safe, and shipping a
+    bigger constant would have been an unmeasured fix to a defect that survives it. Raise
+    the input when the noise scales with the work; change the CLAIM when it does not.
+    **THE HALF NOBODY MEASURES IS THE FAIL DIRECTION:** against a genuinely serial pool
+    both levels take the same time, so the comparison is near a coin flip and caught the
+    defect it exists to catch only **29/40** times — the guard was worse at its job than
+    at its false alarms, and only a mutation shows that. The replacement is the
+    load-independent claim underneath (a rendezvous proving W calls were in flight AT
+    ONCE: a stall can delay that moment but cannot make it false) — 60/60 under the same
+    contention, and 100% detection of the serial pool. TWO DESIGN POINTS: a rendezvous
+    must GIVE UP ONCE and then open permanently, or a genuinely broken pool pays the
+    timeout per CALL instead of per run; and it must exclude the bench's warmup call
+    explicitly, since that call arrives alone and would otherwise trip the give-up path
+    before the measured level starts. NOTE the propagation failure — this file's own
+    sibling test had already replaced a timing THRESHOLD with an exact identity for the
+    RATE assertion, with a docstring saying "do not re-derive a discriminating threshold
+    from timings", and the concurrency assertion three lines up was left as a timing
+    comparison. A lesson recorded against one assertion does not propagate itself to the
+    one beside it. **THE SOAK THEN FOUND THE THIRD ONE, in that same sibling:** its
+    surviving anti-vacuity ratio (`measured < assumed / 2`) failed 1/12 at **0.522**.
+    `call_wall_p50_s` is timed PER CALL and includes the queue wait, so `assumed =
+    3600/p50 x workers` and `measured = n/wall x 3600` are not independent — as
+    contention rises the queue inflates p50, `assumed` falls toward `measured`, and the
+    ratio drifts UP toward whatever bar is set. **Two quantities that converge by
+    construction cannot be separated by a threshold at all**, however it is calibrated;
+    the repair is a structural cap (a `lanes`-lane backend cannot exceed `lanes/seconds`
+    — an UPPER bound contention can only satisfy) plus a timing-free companion. **AND MY
+    OWN FIRST REPAIR WAS TOO WEAK, caught only by mutation:** asserting the assumed rate
+    falls OUTSIDE the identity's own rounding band sounds exact and proves almost
+    nothing, because a *perfectly-scaling* fixture also differs by far more than a 37/h
+    band — so it passed the `lanes=64` mutation that is precisely the vacuous case.
+    GENERAL FORM: an anti-vacuity assertion needs its own mutation, and the mutation is
+    to feed it the VACUOUS fixture — not the broken one.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
