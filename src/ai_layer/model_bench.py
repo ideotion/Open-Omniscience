@@ -1902,6 +1902,122 @@ def last_model_bench_report(*, summary: bool = False) -> dict:
     return summarize_report(data) if summary else data
 
 
+def default_model_for(backend: str) -> str:
+    """The app's default model identifier ON ``backend``.
+
+    Two identifiers for one model, because the backends consume different artifacts:
+    Ollama takes a GGUF tag, vLLM a HuggingFace repo. Handing one to the other cannot
+    work — a defect this app has shipped before.
+    """
+    from src.llm.ollama import DEFAULT_MODEL, MINISTRAL_VLLM_MODEL
+
+    return MINISTRAL_VLLM_MODEL if backend == "vllm" else DEFAULT_MODEL
+
+
+def serving_backend() -> dict:
+    """Which backend is up RIGHT NOW, without starting, stopping or switching one.
+
+    RULED 2026-08-12 (maintainer): *"The app has failed to manage both ollama and vllm,
+    so I'll do the managing myself."* So this probe is strictly READ-ONLY. It is the
+    whole difference between this entry point and :func:`run_model_bench`'s roster mode:
+    that one may be asked to hand the card around, this one measures the machine exactly
+    as the operator arranged it and reports what it found.
+
+    Reports vLLM ahead of Ollama when BOTH answer, because on a single card the one
+    holding the allocation is the one actually being measured — and says so in
+    ``also_up`` rather than hiding the ambiguity.
+    """
+    up: list[str] = []
+    try:
+        from src.llm import vllm_lifecycle
+
+        if vllm_lifecycle.is_running():
+            up.append("vllm")
+    except Exception:  # noqa: BLE001 - an unreadable backend is not a running one
+        pass
+    try:
+        from src.llm.ollama_lifecycle import is_running as ollama_running
+
+        if ollama_running():
+            up.append("ollama")
+    except Exception:  # noqa: BLE001
+        pass
+    if not up:
+        return {
+            "backend": None,
+            "also_up": [],
+            "reason": (
+                "no local backend is answering. Start the one you want measured "
+                "(Ollama's service, or vLLM) and run this again — this bench "
+                "deliberately starts nothing itself."
+            ),
+        }
+    return {"backend": up[0], "also_up": up[1:], "reason": None}
+
+
+def run_default_model_bench(ctx, *, tasks: tuple[str, ...] = BENCH_TASKS, **kw) -> dict:
+    """Measure the DEFAULT model, on whichever backend the operator has running.
+
+    WHY THIS EXISTS SEPARATELY FROM THE ROSTER BENCH. The comparison the maintainer
+    actually wants — *is the default model faster on vLLM or on Ollama here* — has never
+    been run, and the roster bench could not answer it: pointed at several models it
+    spends its time on model handovers, and a run that manages backends is measuring its
+    own management as much as the model. This asks one question of one model and changes
+    nothing about the machine.
+
+    THE PROTOCOL IS TWO RUNS, one per backend, compared afterwards. That is why the
+    report leads with ``backend``, ``model`` and the measured ``device``: those three
+    are what makes a pair of reports comparable, and a run that could not say which
+    device it used would produce two numbers nobody can line up. It is also why nothing
+    here starts a backend — if the app chose, the operator would not know which of the
+    two they had measured.
+
+    Refuses honestly rather than half-measuring: nothing serving, or a vLLM serving a
+    model other than the default, comes back ``status: refused`` with the reason. A
+    vLLM serves exactly one model per server, so measuring it against the default's name
+    while it serves something else would file one model's numbers under another's.
+    """
+    found = serving_backend()
+    backend = found["backend"]
+    if backend is None:
+        return {
+            "schema": MODEL_BENCH_SCHEMA,
+            "status": "refused",
+            "reason": "no-backend-running",
+            "detail": found["reason"],
+        }
+    model = default_model_for(backend)
+    out = run_model_bench(
+        ctx,
+        models=[f"{backend}|{model}"],
+        backends=(backend,),
+        tasks=tasks,
+        # NOTHING is managed: no wake, no handover, no restore. With the switch off,
+        # run_model_bench also refuses a vLLM that is serving a different model rather
+        # than measuring it under the wrong name.
+        allow_backend_switch=False,
+        **kw,
+    )
+    out["measured"] = {
+        "backend": backend,
+        "model": model,
+        "also_up": found["also_up"],
+        "managed_by": "operator",
+        "note": (
+            "The default model on the backend that was already running. This run "
+            "started, stopped and switched nothing. Run it once per backend and "
+            "compare the two reports — 'device' says which one actually used the GPU."
+        ),
+    }
+    if found["also_up"]:
+        out["measured"]["caveat"] = (
+            f"{' and '.join(found['also_up'])} was also up during this run and may have "
+            "been holding part of the GPU, so these numbers are for this machine as it "
+            "was configured, not for the backend in isolation."
+        )
+    return out
+
+
 __all__ = [
     "BENCH_BACKENDS",
     "BENCH_TASKS",
@@ -1912,13 +2028,16 @@ __all__ = [
     "bench_one_pair",
     "clear_cursor",
     "comparable_metrics",
+    "default_model_for",
     "last_model_bench_report",
     "load_cursor",
     "pair_key",
     "quantization_of",
     "resolve_pairs",
+    "run_default_model_bench",
     "run_model_bench",
     "same_model_across_backends",
+    "serving_backend",
     "save_report",
     "summarize_report",
 ]
