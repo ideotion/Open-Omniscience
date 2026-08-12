@@ -1147,3 +1147,184 @@ def test_matched_devices_do_not_carry_the_warning() -> None:
     for row in rows:
         assert row["same_device"] is True
         assert "DIFFERENT DEVICES" not in row["caveat"]
+
+
+# --------------------------------------------------------------------------- #
+#  The default-model bench: measure what is running, manage nothing.
+#
+#  RULED 2026-08-12 (maintainer): "The app has failed to manage both ollama and vllm,
+#  so I'll do the managing myself. Adapt the current benchmark so that when I start the
+#  app and point to either an ollama or vLLM backend, it will test all performance
+#  parameters with the default model."
+#
+#  So the load-bearing property is an ABSENCE -- nothing is started, stopped or handed
+#  over -- and an absence needs a test that would notice its opposite.
+# --------------------------------------------------------------------------- #
+def test_the_default_model_bench_starts_stops_and_switches_NOTHING(monkeypatch):
+    """THE ONE THAT MATTERS. The operator arranges the machine; this measures it."""
+    import src.ai_layer.model_bench as M
+
+    moved: list[str] = []
+    monkeypatch.setattr(M, "serving_backend",
+                        lambda: {"backend": "ollama", "also_up": [], "reason": None})
+    for name in ("_default_wake", "_default_switch", "_default_unload", "_prior_holder",
+                 "_restore_holder"):
+        if hasattr(M, name):
+            # Bound as a DEFAULT, not captured: a late-bound `name` would make every
+            # stub report the last one, so a failure would name the wrong function.
+            monkeypatch.setattr(
+                M, name, lambda *a, _n=name, **k: moved.append(_n) or {}
+            )
+    seen: dict = {}
+
+    def _fake_run(ctx, **kw):
+        seen.update(kw)
+        return {"status": "complete", "results": {}}
+
+    monkeypatch.setattr(M, "run_model_bench", _fake_run)
+    out = M.run_default_model_bench(None)
+
+    assert moved == [], f"the bench must not manage the machine; it called {moved}"
+    assert seen["allow_backend_switch"] is False, (
+        "handing the card around is exactly what the operator took over -- a bench that "
+        "switches is measuring its own management"
+    )
+    assert out["measured"]["managed_by"] == "operator"
+
+
+def test_it_measures_ONE_pair_the_default_on_the_running_backend(monkeypatch):
+    import src.ai_layer.model_bench as M
+    from src.llm.ollama import DEFAULT_MODEL, MINISTRAL_VLLM_MODEL
+
+    for backend, want in (("ollama", DEFAULT_MODEL), ("vllm", MINISTRAL_VLLM_MODEL)):
+        monkeypatch.setattr(M, "serving_backend",
+                            lambda b=backend: {"backend": b, "also_up": [], "reason": None})
+        seen: dict = {}
+        monkeypatch.setattr(M, "run_model_bench",
+                            lambda ctx, _s=seen, **kw: _s.update(kw) or {"status": "complete"})
+        out = M.run_default_model_bench(None)
+        assert seen["models"] == [f"{backend}|{want}"], (
+            "the two backends consume different artifacts of the same model -- an "
+            f"Ollama tag handed to vLLM cannot work. Got {seen['models']}"
+        )
+        assert seen["backends"] == (backend,)
+        assert out["measured"]["model"] == want
+
+
+def test_every_performance_parameter_is_measured_by_default(monkeypatch):
+    """"all performance parameters" is the ask; a quietly narrowed task list would
+    produce a report that looks complete and compares less than it claims."""
+    import src.ai_layer.model_bench as M
+
+    monkeypatch.setattr(M, "serving_backend",
+                        lambda: {"backend": "ollama", "also_up": [], "reason": None})
+    seen: dict = {}
+    monkeypatch.setattr(M, "run_model_bench",
+                        lambda ctx, **kw: seen.update(kw) or {"status": "complete"})
+    M.run_default_model_bench(None)
+    assert tuple(seen["tasks"]) == M.BENCH_TASKS
+    assert "latency" in seen["tasks"] and "translation" in seen["tasks"]
+
+
+def test_nothing_running_is_REFUSED_rather_than_half_measured(monkeypatch):
+    import src.ai_layer.model_bench as M
+
+    monkeypatch.setattr(M, "serving_backend",
+                        lambda: {"backend": None, "also_up": [], "reason": "nothing is up"})
+    called = []
+    monkeypatch.setattr(M, "run_model_bench", lambda *a, **k: called.append(1))
+    out = M.run_default_model_bench(None)
+    assert out["status"] == "refused" and out["reason"] == "no-backend-running"
+    assert called == [], "a refusal must not still run the bench"
+
+
+def test_a_second_live_backend_is_DISCLOSED_not_hidden(monkeypatch):
+    """On one card, a second backend holding VRAM is why a number is what it is. The
+    run is still worth having; the reader just has to be told."""
+    import src.ai_layer.model_bench as M
+
+    monkeypatch.setattr(M, "serving_backend",
+                        lambda: {"backend": "vllm", "also_up": ["ollama"], "reason": None})
+    monkeypatch.setattr(M, "run_model_bench", lambda ctx, **kw: {"status": "complete"})
+    out = M.run_default_model_bench(None)
+    assert "ollama" in out["measured"]["caveat"]
+    assert "not for the backend in isolation" in out["measured"]["caveat"]
+
+    # ... and NOT invented when only one is up (the negative-space twin: a caveat that
+    # always fires is noise, and teaches a reader to skip it).
+    monkeypatch.setattr(M, "serving_backend",
+                        lambda: {"backend": "vllm", "also_up": [], "reason": None})
+    out2 = M.run_default_model_bench(None)
+    assert "caveat" not in out2["measured"]
+
+
+def test_serving_backend_is_a_read_only_probe(monkeypatch):
+    """It answers "what is up", never "make something be up"."""
+    import src.llm.vllm_lifecycle as V
+
+    started = []
+    monkeypatch.setattr(V, "is_running", lambda: False)
+    if hasattr(V, "start"):
+        monkeypatch.setattr(V, "start", lambda *a, **k: started.append("vllm") or {})
+    import src.ai_layer.model_bench as M
+
+    M.serving_backend()
+    assert started == [], "probing which backend is up must not start one"
+
+
+# --- the worker seam: the mode the button actually posts through ------------- #
+#
+# run_default_model_bench takes **kw, so a roster argument reaching it is SWALLOWED
+# rather than raised -- which is exactly why the worker's drop is load-bearing and
+# why no crash-based test can see it. These two assert the CALL, not the absence of
+# an exception: the button's own promise ("sends nothing that could start, stop or
+# switch a backend") is true only while this holds.
+
+def _worker_spy(monkeypatch):
+    import src.ai_layer.model_bench as M
+    seen: dict = {}
+    monkeypatch.setattr(M, "run_default_model_bench",
+                        lambda ctx, **kw: seen.setdefault("default", kw) or {"ok": 1})
+    monkeypatch.setattr(M, "run_model_bench",
+                        lambda ctx, **kw: seen.setdefault("roster", kw) or {"ok": 2})
+    return seen
+
+
+def test_the_default_mode_drops_the_roster_arguments_it_cannot_honour(monkeypatch):
+    from src.api.diagnostics import _model_bench_worker
+
+    seen = _worker_spy(monkeypatch)
+    _model_bench_worker(
+        None,
+        default_model_only=True,
+        models=["a:1", "b:2"], extra_models=["c:3"],
+        backends=("vllm", "ollama"), allow_backend_switch=True,
+        repeats=3,
+    )
+    assert "roster" not in seen, "the default mode must not reach the roster sweep"
+    kw = seen["default"]
+    for dropped in ("models", "extra_models", "backends", "allow_backend_switch"):
+        assert dropped not in kw, (
+            f"{dropped!r} reached run_default_model_bench, which accepts **kw and would "
+            "swallow it silently -- the button would then be measuring something its "
+            "label and hover text both deny"
+        )
+    assert kw["repeats"] == 3, "a genuinely shared argument must still be passed on"
+
+
+def test_the_roster_mode_still_receives_every_one_of_them(monkeypatch):
+    """The negative-space twin: a drop that fired in BOTH modes would be a silent
+    feature removal, and the assertion above cannot tell the two apart."""
+    from src.api.diagnostics import _model_bench_worker
+
+    seen = _worker_spy(monkeypatch)
+    _model_bench_worker(
+        None,
+        default_model_only=False,
+        models=["a:1"], extra_models=["c:3"],
+        backends=("vllm",), allow_backend_switch=True,
+    )
+    assert "default" not in seen
+    kw = seen["roster"]
+    assert kw["models"] == ["a:1"] and kw["extra_models"] == ["c:3"]
+    assert kw["backends"] == ("vllm",) and kw["allow_backend_switch"] is True

@@ -2934,6 +2934,20 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     569, three BELOW the old bar, and the script prints the new floor when it can drop
     — the step's own comment says "lower it in the same PR that adds the keys". Leaving
     the slack invites the next drift to land unseen.
+    **RECURRED 2026-08-12 (PR #945), which says the entry above was missing its
+    MECHANISM: gate 1 passing is not weak evidence about gate 2 — it is NO evidence,
+    by construction.** `--min 100` compares the eleven locale files against `en.json`,
+    so it can only ever see a key that already EXISTS; a brand-new `title=`/label/hint
+    with no key at all is invisible to it and always will be. That is precisely the
+    string gate 2 counts. So the two gates cannot substitute for each other in either
+    direction, and "i18n was green" means nothing unless it names WHICH gate — I added
+    three strings to a panel, watched `--min 100` report 100% across twelve locales,
+    and pushed a tree that was three over the ratchet. The habit that actually works is
+    to run gate 2 whenever a diff touches `index.html`, before the push rather than
+    after CI says so. COROLLARY on the fix: keying the three brought the count back to
+    exactly the bar, so there was no slack to reclaim and the ratchet stayed at 567 —
+    "lower it when it can drop" is not a licence to lower it when it cannot, which
+    would hand the next drift a free slot.
 
   - **AN ENUMERATOR THAT DOES NOT LIST THE APP'S OWN DEFAULT MAKES THE APP BLIND TO ITS
     OWN WRITES — and the damage lands somewhere else entirely (2026-08-11, the Ollama
@@ -11757,6 +11771,51 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     where the model *was* asked and broke. Same family as "a caveat may claim only what
     the data can exhibit" and the vLLM excerpt budget — the instrument was right and the
     last stage threw the answer away.
+- **ONE MODEL, MINISTRAL 3 **3B**, THROUGHOUT THE ENTIRE APP (maintainer RULED 2026-08-12,
+  verbatim: "record the decision to use mistral's 3b model throughout the entire app. Drop
+  all others. Keep in the UI the option for users to use their own models (as a buried
+  advanced settings option)"; SUPERSEDES the 2026-07-30 8B default ruling — that entry is a
+  record of how the constant got there, not of what applies):** `DEFAULT_MODEL` is now
+  `MINISTRAL_TAG` (the 3B), so `src/llm/ollama.py`'s Ollama default and `MINISTRAL_VLLM_MODEL`
+  finally name the SAME model. **THE STRUCTURAL REASON OUTLIVES THE EVIDENCE:** until this,
+  the two backends served DIFFERENT models (Ollama 8B, vLLM 3B), so every cross-backend
+  comparison measured two variables at once and an operator moving between backends silently
+  changed model as well as runtime. It also retires the 8B's own footnote — the 8B does not
+  fit 8 GB of VRAM in any published vLLM build, so the previous default could never have been
+  served by both backends on the reference machine. THE EVIDENCE that picked the 3B: a
+  48-item × 14-model FIELD translation probe (the maintainer's own run) put it first on the
+  one thing measurable without reference translations — 98% of answers in the language asked
+  for on vLLM, 97% of them foreign-to-foreign — and it never once committed the disqualifying
+  failure below. AN OPERATOR OVERRIDE STAYS (`OO_LLM_MODEL` / the Settings field): the default
+  is not a menu, but it is also not a cage. REMAINING: the bench roster still lists 8 models
+  and its reduction is its own slice (six roster tests are ABOUT the entries being dropped,
+  so a blind delete would take working guards with it), and the custom-model field still has
+  to be moved to a buried advanced position rather than simply existing.
+- **A MODEL THAT SILENTLY RETURNS THE SOURCE UNCHANGED IS DISQUALIFIED — it is the one
+  translation failure a reader cannot detect (2026-08-12, from the same field probe):**
+  measured over 298 real translations, `translategemma:4b` returned the source VERBATIM on
+  13% of items (ru→en, fr→en, de→en, id→en, ar→es, ar→pt — 0% into English for four of seven
+  source languages) and `gemma3n:e2b-it` on 11%; the Ministral/Granite/Mistral family did it
+  0% of the time. An empty answer or an error is honest — a reader sees a gap and acts. An
+  echo is fluent, well-formed, carries no error, and is invisible to anyone who does not read
+  the source language, so it enters the corpus as a translation and stays. GENERAL FORM: when
+  evaluating any transform (translate, summarise, extract), measure the IDENTITY case
+  explicitly — "did it just hand the input back" is cheap (a normalised similarity ratio), is
+  checkable without reference data, and catches a failure that every quality heuristic built
+  on fluency will rate highly. It is also why the direction of a check matters: to-English
+  looked WORSE than foreign-to-foreign in this run (89% vs 90%) purely because the echoing
+  models fail hardest there.
+- **A MEASUREMENT IS ONLY OVER THE ROWS THAT PRODUCED DATA — a report's model list is not its
+  sample (2026-08-12, reading that probe):** the header named 14 models; **six produced
+  nothing at all** (five vLLM models refused 48/48 because the server serves one model and
+  nothing arbitrated, two Ollama models timed out 48/48 under handover thrash). Anyone reading
+  the header would describe it as a 14-model comparison; it is a 7-model comparison. Two
+  further things that only the FAILURE DISTRIBUTION shows, not the totals: the failures
+  cluster at items 0–3 (the warm-up storm) and, for the largest model, across items 33–47
+  continuously — residency accumulating under Ollama's default `keep_alive` until 7B no
+  longer fit. So when reading any bench artifact, count answered-vs-attempted PER ROW before
+  quoting anything, and look at WHERE the failures fall — a uniform failure rate and a
+  degrading one have different causes and only one of them is about the model.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 

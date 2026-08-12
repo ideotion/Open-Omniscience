@@ -15569,6 +15569,27 @@
       _mbPoll();
     }
 
+    // Measure the DEFAULT model on whichever backend the operator has running.
+    //
+    // RULED 2026-08-12: the operator manages the backends, so this sends nothing that
+    // could start, stop or switch one -- the body carries default_model_only and the
+    // server drops the roster arguments rather than silently ignoring them. Two runs,
+    // one per backend, compared afterwards; each report says which backend and which
+    // device it measured, which is what makes the pair comparable at all.
+    async function mbRunDefault(btn) {
+      const on = btn && btn.dataset.running === "1";
+      try {
+        if (on) await api("/api/diagnostics/model-bench/cancel", { method: "POST" });
+        else await api("/api/diagnostics/model-bench/run", {
+          method: "POST",
+          body: JSON.stringify({ default_model_only: true }),
+        });
+      } catch (e) {
+        if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
+      }
+      _mbPoll();
+    }
+
     // ---- Translation comparison (maintainer 2026-08-11) --------------------- //
     // The bench's translation TASK answers what a machine can decide alone; this
     // produces the artifact a PERSON reads to compare two translations. It renders
