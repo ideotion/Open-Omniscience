@@ -3864,6 +3864,45 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     three-state record lands beside `wal_bytes_before_open`, whose two-state meaning is
     preserved exactly, so `app.js` and the existing guard stay byte-unchanged and the only
     thing that changes is what the report can SAY.
+  - **A `::after` INHERITS EVERY PROPERTY IT DOES NOT DECLARE FROM A LOWER-SPECIFICITY
+    RULE THAT ALSO MATCHES — and a shape can therefore be absent for months with nothing
+    to point at (2026-08-12, the AI pill's diagonal bar):** `#llm.ai-off::after` declared
+    `content`, `position`, `inset:0`, `pointer-events` and a gradient, which looks
+    complete. But `.pill.oo-tip-target::after` is the hover convention's 4px corner dot,
+    and EVERY titled element is given that class by the i18n/tip observer — so the pill
+    always matched both rules. The cascade merges per PROPERTY, not per rule: the id
+    selector won for what it declared and silently inherited `width:4px; height:4px;
+    border-radius:50%; opacity:.55`. An absolutely positioned box with left, right AND
+    width all set ignores `right`, so the maintainer's ruled "red WITH A DIAGONAL BAR"
+    resolved to a 4×4 rounded dot in the top-left corner at 55% opacity, over which a
+    50%-stop gradient is invisible. The bar had not rendered since the pill gained a
+    title, and the state's whole no-colour-alone cue was gone. THREE RULES. (a) When
+    adding a pseudo-element to a component that already has one from a shared
+    convention, enumerate what the OTHER rule sets and restate all of it — `inset` covers
+    four sides and nothing else. (b) Reasoning about this is how it shipped: the computed
+    values settle it in one call (`getComputedStyle(el, '::after')`), and this sandbox has
+    Chromium, so measure. (c) The same pass measured the marks' contrast from RENDERED
+    PIXELS and found the semantic token is often the ceiling — `--ok` tops out at 2.69:1
+    for a mark sitting on a pill already tinted in that hue, under the 3:1 WCAG 1.4.11
+    non-text bar; mixing toward `--fg` (65%) lifts it to 4.65:1 while keeping the hue
+    readable, the same repair `--caveat` and `.ag-cal` needed. A first probe that read
+    `backgroundColor` instead of pixels reported garbage (the mark is a gradient, and
+    `.pill` sets no background so the baseline fell back to white on a dark page) — the
+    recorded lookalike trap, in a stylesheet.
+  - **A "MUST BE PRESENT" SOURCE GUARD IS SATISFIED BY ITS OWN EXPLANATORY COMMENT
+    (2026-08-12, same slice — the recorded trap in mirror image):** the ledger already
+    warns that a "this string must be GONE" guard trips on the comment recording the
+    removal. The positive direction is worse, because it fails silently: the guard added
+    to stop the leak above asserted that each rule declares `width:`/`height:`/
+    `border-radius:`/`opacity:`, and the comment beside the fix quotes
+    `width:4px; height:4px; border-radius:50%; opacity:.55` verbatim to say what leaks —
+    so deleting every real declaration left the guard GREEN. Caught only by mutation.
+    Strip comments before asserting (`re.sub(r"/\*.*?\*/", "", css, flags=re.S)` for CSS,
+    the existing `strip_comments` for JS); rewording the comment is the wrong repair,
+    since it is exactly what a future session reads before deciding the resets are
+    redundant. GENERAL FORM: any source guard — in either direction — must read
+    comment-stripped source, because the explanation of a rule necessarily contains the
+    rule's own vocabulary.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
