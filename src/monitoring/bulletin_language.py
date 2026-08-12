@@ -203,8 +203,19 @@ def sample_edition() -> dict:
                         "cards": [
                             {
                                 "title": "Three sources, one wording",
-                                "summary": "A summary sentence from the producer.",
-                                "signal_line": "distinct sources: 3",
+                                # Faithful to what a real producer emits: composed around
+                                # live values, so no fixed key can match it. It must reach
+                                # the report as PASSTHROUGH, never as a missing translation.
+                                "summary": (
+                                    "Mentions of “flooding” are running ~3.2× the "
+                                    "prior-period rate (18 recent vs 5 before)."
+                                ),
+                                # This card exercises the label-translatable path; the
+                                # reading_diet card below deliberately carries NO pairs, so
+                                # the pre-signal_pairs fallback is exercised too — a fixture
+                                # where both cards had pairs could not tell them apart.
+                                "signal_pairs": [["distinct sources", "3"], ["articles", "9"]],
+                                "signal_line": "distinct sources 3 · articles 9",
                                 "n": 3,
                                 "bucket": "overtold",
                                 "method": "MinHash over stored keywords.",
@@ -221,6 +232,10 @@ def sample_edition() -> dict:
                         "cards": [
                             {
                                 "title": "Your reading leans on a few sources",
+                                # NO signal_pairs on purpose: this is the shape of an
+                                # edition written before pairs existed, so the fallback is
+                                # exercised on every run rather than only in a unit test.
+                                "signal_line": "top three share 0.14 · sources 21",
                                 "corpus_articles": 0,
                                 "method": "A whole-corpus distribution.",
                             }
@@ -454,7 +469,13 @@ def language_report(edition: dict, *, langs: tuple[str, ...] | None = None) -> d
             "{named} holes must keep every hole, in any order — one that loses a hole is "
             "refused at render time and reported under rejected_strings rather than printed. "
             "Words quoted from sources are never in this list: they are data, and translating "
-            "an article is the separate, model-assisted step the bulletin offers as phase 2."
+            "an article is the separate, model-assisted step the bulletin offers as phase 2. "
+            "Neither are the sentences counted under passthrough: a producer composed those "
+            "around live values, so a catalog entry for one would only ever match a corpus "
+            "with the same numbers in it. They are printed in English, excluded from "
+            "coverage, and fixed upstream by giving the producer a keyable frame — the "
+            "coverage figure is therefore a share of what CAN be translated, not of the "
+            "whole document."
         ),
     }
 

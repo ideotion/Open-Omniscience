@@ -3755,6 +3755,44 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     on the real violation, which is the mutation to run before touching it. GENERAL FORM:
     when a guard forbids something "after X", check whether it splits on X or on a landmark
     that merely used to coincide with X.
+  - **A VALUE-BEARING SENTENCE LEFT IN A COVERAGE DENOMINATOR IS A FABRICATED FAIL — and the
+    obvious way to remove it fabricates a pass instead (2026-08-11, the bulletin's own
+    translation coverage):** the layer keys every sentence on its English text, which is what
+    made ~110 stored caveats translatable without touching nine producers. It also swept in two
+    things no key can ever match: a card SUMMARY, which every real producer composes as an
+    f-string around live values (`~3.2× the prior rate (18 recent vs 5 before)`), and the WHOLE
+    composed `signal_line` (`distinct sources 3 · articles 9`). Both counted as *missing*, so
+    coverage under-reported permanently and both landed in the catalog stub, inviting a
+    translation that would match exactly one corpus **and read as working** — the worse half,
+    since a wrong-corpus translation is invisible where a gap is merely low. TWO RULES. (a) Split
+    what is determinate: a label welded to its number can never be keyed, so emit `[label,
+    value]` pairs and translate the LABEL — the labels here had been untranslatable since the
+    layer shipped, not because anyone declined to translate them but because the string they
+    lived in could not exist twice. Add the pairs ALONGSIDE the composed form; editions already
+    on disk carry only the latter and must still render. (b) For what is NOT determinate, exclude
+    it at the CALL SITE, which knows what it is holding, and publish the count with its reason —
+    never by a heuristic over the text. A digit-based filter was refused outright: it would have
+    reported a HIGHER coverage than the truth, and "Phase 1" and a `{n}` frame both carry digits
+    while being perfectly keyable. The mirror mutation is the one to write first — widening the
+    exclusion until it swallows real chrome passes every test about the gap and fails only a test
+    that says *chrome still counts*. NAME THE UPSTREAM FIX in the payload (a keyable frame plus
+    values, which `Card.title_i18n`/`title_vars` already does for titles), or the exclusion reads
+    as the end of the matter rather than as a deferral.
+  - **THE STALE-BASE RULE APPLIES TO A VERIFICATION WORKTREE, NOT ONLY TO A BRANCH CUT
+    (2026-08-11, and it cost a whole duplicate derivation):** the recorded rule says local
+    `origin/main` goes stale within minutes under fast merges, so fetch immediately before
+    `git checkout -B`. I obeyed it for the branch and not for the BASELINE: a CI failure sent me
+    to `git worktree add --detach … origin/main`, which resolved the ref I already had, and the
+    guard duly failed there. That is a correct-looking confirmation of the wrong proposition — it
+    proved the bug existed at a commit that was no longer main, not that it was unfixed — and on
+    that basis I re-derived a fix a parallel session had already landed (identically for the
+    anchor, and strictly stronger for the twin). A stale baseline does not merely risk dropping
+    someone's merge; it MANUFACTURES a "this is main's bug, and nobody has fixed it" verdict,
+    which is exactly the licence needed to build a duplicate. So: fetch before the baseline run,
+    and print the SHA the baseline actually resolved to beside the result — this is the "a
+    baseline diff is blind where the baseline is already red" family with a new member, the
+    baseline that is stale-red. Corollary worth the same weight: when a red lane on your PR turns
+    out to be the base's, check whether it is STILL the base's before writing a line of fix.
 
 ## Open queue (when maintainer says proceed)
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;

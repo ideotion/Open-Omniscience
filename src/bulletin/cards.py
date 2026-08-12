@@ -78,6 +78,27 @@ def _signal_line(signal: dict) -> str:
     return " · ".join(parts)
 
 
+def _signal_pairs(signal: dict) -> list[list[str]]:
+    """The same measurements, UNJOINED: ``[label, value]`` per pair.
+
+    The label is chrome (fixed, keyable, translatable); the value is data. Composing
+    them into one string — what ``_signal_line`` does — welds the two together, and a
+    welded "distinct sources 3" can never match a catalog key, so the labels could not
+    be translated at all and the composed line sat in the coverage denominator forever.
+
+    Kept ALONGSIDE ``signal_line`` rather than replacing it: editions already on disk
+    carry only the composed form, and a renderer must still be able to print those.
+    """
+    if not isinstance(signal, dict):
+        return []
+    out: list[list[str]] = []
+    for k, v in signal.items():
+        if v is None or isinstance(v, (list, dict)):
+            continue
+        out.append([str(k).replace("_", " "), str(v)])
+    return out
+
+
 def cards_by_type(
     session,
     period: Period,
@@ -117,6 +138,7 @@ def cards_by_type(
                 "bucket": c.bucket,
                 "signal": dict(c.signal or {}),
                 "signal_line": _signal_line(c.signal or {}),
+                "signal_pairs": _signal_pairs(c.signal or {}),
                 "method": c.method,
                 "caveat": c.caveat,
                 "n": c.n,
