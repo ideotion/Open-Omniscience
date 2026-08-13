@@ -3519,6 +3519,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     reason unrelated to its claim. It passed the mutation that deletes the early return.
     A negative-space test must make the forbidden path actually AVAILABLE, or it is only
     testing that the code did not crash.
+  - **A RESUMABLE RUN'S FOOTER DESCRIBES ONE INVOCATION; THE FILE DESCRIBES THE RUN — and
+    reading the first as the second reports a week of work as nothing (2026-08-13, the
+    triage log):** a sweep resumes by APPENDING to the same dated log, and the summary
+    footer is written by whichever invocation ended. A field log carried **6,208 batch
+    records under `batches_completed: 0, verdicts_out: 0`** — the last attempt found vLLM
+    down and gave up before its first batch, and its counters are its own. Every reader of
+    the footer alone rendered "0 batches, 0 verdicts", which is not a missing number but a
+    WRONG one, and worse: it reads as a run that judged nothing while days of GPU time sit
+    in the file. THE FIX is to sum the per-batch records the run itself wrote — the file's
+    own account, exact, invocation-independent, and free because the reader already visits
+    every line — and to publish it BESIDE the footer rather than reconciled into it, since
+    the two measure different things and a reader still needs the last attempt's state and
+    error. TWO GENERAL POINTS. (a) Zero is a LEGAL value, so `footer.count != null ?
+    footer.count : file_count` keeps the wrong one — the same trap as defaulting an absent
+    field to 0, wearing a different hat, and it needs a fixture where the footer is
+    genuinely zero to catch. (b) When a state and a total disagree, say which one the
+    sentence is about: "ended on an error" printed beside 6,208 kept batches reads as a
+    contradiction, so an errored footer over a non-empty log names the failed ATTEMPT
+    instead. PROCESS NOTE: this was found by reproducing the field log's exact shape and
+    driving the real page in a browser — the panel's own numbers, not a re-read of the
+    code, are what showed the recovery working.
 
   - **A SENTINEL DOCUMENTED AT THE SOURCE IS STILL A FABRICATION AT THE RENDER BOUNDARY —
     and a clamp that fires on 19 of 20 rows silently reorders the whole section
