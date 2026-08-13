@@ -29,6 +29,40 @@ gets merged without being re-read against the code first.
 > URL, and a partial roster is more dangerous than none: an empty registry fails visibly,
 > a half-filled one computes.
 
+> **STATUS 2026-08-13 — re-run #2. Tasks 3, 4 and 5 are STILL OPEN, and Task 3 will NOT
+> close in a chat session with this tooling. Do not simply run this again.**
+>
+> What it closed: Task 2's `page_meta` question, verbatim `{"page":1,"pages":18,
+> "per_page":1000,"total":17490,"sourceid":"2","lastupdated":"2026-07-13"}` — note the two
+> keys this prompt never asked for, and that `lastupdated` is a publisher-stated vintage.
+> On ordering it established one thing and over-claimed another. SUPPORTED: within a run of
+> entries the sort is alphabetical **by `country.value`**, not by any code — `EAS` ("East
+> Asia & Pacific") precedes `EAP` ("… (excluding high income)"), so **nothing in the ingest
+> may sort by `id` or `iso2Code` and expect a match**. NOT SUPPORTED: the pass also wrote
+> that aggregates are "interleaved among real countries rather than blocked separately", and
+> its own observed page 1 refutes that — it runs AFE, AFW, ARB, CSS, CEB, EAR, EAS, EAP,
+> TEA, which is nine aggregates and no countries, while `"Afghanistan"` sorts *before*
+> `"Africa Eastern and Southern"` and would have led the page if one sort spanned everything.
+> So the aggregates arrive as a leading BLOCK. Treat interleaving as unverified; it changes
+> where a page boundary falls, which is the one thing the pagination work depends on. It
+> independently re-derived Task 7's `AFR`/`A9` finding (already merged) and confirmed the
+> `countryiso3code`, `FCS`/`F1` and MEA corrections. Two facts worth having: `per_page` is
+> a STRING on the `/country` call and an integer on the indicator call, and
+> `"Sub-Saharan Africa "` / `"Latin America & Caribbean "` carry a trailing space in
+> `name` — anything keyed on the NAME silently misses.
+>
+> **Why Task 3 is blocked, structurally.** This tooling only fetches a URL that already
+> appeared verbatim in a prior result or in the pasted prompt, so a URL built by
+> substituting into a `{CODE}` template is REFUSED outright. Worse, varying the query
+> string on a URL that *was* in the prompt did not refuse — it silently served the prompt's
+> version and reported it as the answer. See absolute rule 5, which exists because of it.
+>
+> **The fix is not a better prompt.** Add `api.worldbank.org` to the build sandbox's egress
+> allowlist and the 36 checks become a ten-line loop, `fetched` at the strongest tier with
+> no transcription step — and the same session also settles whether `AFR`/`A9` carries any
+> observations and whether `page=2` works. Failing that, any shell with plain outbound
+> HTTPS does it. A third chat re-run is the one route already known not to work.
+
 ---
 
 You are researching **public statistical data sources** for a local-first, offline
@@ -51,6 +85,16 @@ that will turn it into committed configuration, so precision matters more than c
    source; `https://api.worldbank.org/v2/country?format=json&per_page=400` is.
 4. Where a figure is a **count of things that changes** (how many codes, how many
    members), give the count **and the date you read it**.
+5. **Confirm the URL you were actually served, not the one you asked for.** A fetch tool
+   may silently REWRITE the request. On 2026-08-13 this happened three times: asking for
+   `…&page=2` returned `…&per_page=1000` — page 1 — with no error and no warning, and the
+   pass came within one check of reporting "page=2 returns page 1, pagination is broken at
+   the publisher": confident, wrong, about someone else's API, and undetectable downstream.
+   So for every `fetched` row, read the response's own `destination_url` (or equivalent) and
+   compare it to what you requested. If they differ, the tier is **not** `fetched` — it is
+   `UNVERIFIED`, and say what you were served instead. This rule outranks the others in
+   practice, because a silently-substituted response is the one failure that arrives wearing
+   the strongest tier.
 
 ## Task 1 — World Bank aggregate codes (highest value)
 
@@ -197,7 +241,18 @@ detect. So:
   Finland (2023) and Sweden (2024); the UK leaving the EU (2020).
 - Note any member whose membership is **suspended** rather than ended (several African
   Union members have been), because that is a third state and neither `joined` nor
-  `left` expresses it.
+  `left` expresses it. **A suspension is an EPISODE with a start and possibly an end**, and
+  a member may have more than one: Mali was suspended in 2012 and reinstated in 2013, then
+  suspended again in 2021; Egypt was suspended in 2013 and reinstated in 2014. Give every
+  episode you can source, each with its own dates and URL. (The registry was carrying a
+  single `suspended_from` date, which made suspension permanent once set — Egypt read as
+  suspended in 2026. Corrected 2026-08-13, before this roster was written, so the format
+  below is what it now stores.)
+- **Saudi Arabia in BRICS is not a research gap to close with a better search.** It was
+  invited in the August 2023 Johannesburg declaration, members themselves have reported its
+  accession inconsistently, and BRICS has no accession instrument that creates a citable
+  date. `joined: UNVERIFIED` with a note is the permanent, correct answer — not a to-do for
+  a later pass.
 
 Format each member as the four fields the registry actually stores, so the answer can be
 transcribed without interpretation. Omit a field that does not apply; write `UNVERIFIED`
@@ -213,13 +268,22 @@ BRICS
 
 AFRICAN UNION
   source: <url>
-  ml  joined 2002-07-09  suspended_from 2021-06-01   source <url>
+  eg  joined 2002-07-09  suspended 2013-07-05..2014-06-17            source <url>
+  ml  joined 1963-05-25  suspended 2012-03-23..2013-10-28            source <url>
+                         suspended 2021-06-01..                      source <url>
   ma  joined 2017-01-30  left 1984-11-12 rejoined 2017-01-30 — see note   source <url>
 ```
 
-Use lowercase ISO 3166-1 alpha-2 codes. `suspended_from` is a **third state**: it is
-neither `joined` nor `left`, and a member that is suspended is still a member, so please
-do not resolve it into either — the app models it separately for exactly this reason.
+Use lowercase ISO 3166-1 alpha-2 codes. A suspension is written `suspended START..END`,
+with the END left blank if it has not ended (`2021-06-01..`), and **one line per episode** —
+Mali above shows two. Do not merge two episodes into one range: the gap between them is a
+period when the member was NOT suspended, and merging asserts the opposite.
+
+A suspension is a **third state**: it is neither `joined` nor `left`, and a suspended member
+is still a member, so please do not resolve it into either — the app models it separately for
+exactly this reason. If you can establish that a suspension ended but cannot date the end,
+say that in a note rather than leaving the range open; an open range means "still suspended
+today", which would be a false claim about a current state.
 
 If a country left and later rejoined (Morocco and the OAU/AU is the clean example), say
 so in a note rather than collapsing it to one date range; the registry can hold the

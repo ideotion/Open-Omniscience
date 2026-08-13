@@ -12024,6 +12024,69 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     result — `assert round((180/7)/(300/30), 2) == 2.57` beside the string — because a
     proximity branch (`if prior`) that merely CORRELATES with the real condition will drift
     from it, and the drift is silent everywhere except in the arithmetic.
+  - **A TOOL THAT SILENTLY REWRITES YOUR REQUEST HANDS BACK A CONFIDENT WRONG FINDING
+    WEARING THE STRONGEST TIER — read the URL you were SERVED, never the one you asked for
+    (2026-08-13, the second blocked Governments-data session):** the pass asked for
+    `…NY.GDP.MKTP.CD?format=json&per_page=1000&page=2` and was served
+    `…?format=json&per_page=1000` — page 1 — with no error and no warning, three times over
+    two endpoints. Both responses duly reported `"page":1`. One check of the response's own
+    `destination_url` is the only thing that stopped it publishing *"page=2 returns page 1,
+    pagination is broken at the publisher"*: a confident, wrong, undetectable claim about
+    someone else's API, which would then have justified "fixing" our own working pagination.
+    GENERAL FORM: whenever you attribute an OUTPUT to an INPUT you supplied, verify the tool
+    echoed your input back — this is the `cmd | tail` lesson (a gate reporting on something
+    other than what you ran) at the level of a research finding rather than a shell pipeline,
+    and it is worse, because the fabricated result arrives labelled `fetched`. The same
+    tooling REFUSES a URL built from a `{CODE}` template outright, so the honest conclusion
+    is structural: 36 mechanical checks will never close in that harness, and the fix is an
+    egress allowlist entry, not a better prompt. Now absolute rule 5 of the session prompt.
+    **COROLLARY, from the same report — A RESEARCH PASS'S FACTS AND ITS INFERENCES ARRIVE AT
+    THE SAME CONFIDENCE, AND THE INFERENCES ARE WHERE THE ERRORS ARE.** The report stated an
+    ordering RULE — rows sort by `country.value` "with aggregates INTERLEAVED among real
+    countries rather than blocked separately" — and its own quoted page 1 refutes it: nine
+    aggregates and no countries, while `"Afghanistan"` sorts BEFORE `"Africa Eastern and
+    Southern"` and would have led the page if one sort spanned everything. So the aggregates
+    arrive as a leading block. I had already copied the interleaving claim verbatim into the
+    session prompt before checking it, which is the whole trap: a fetched fact and a
+    one-sentence generalisation drawn from it look identical in a well-written report, and
+    the generalisation is the half that decides where a page boundary falls. Check each
+    stated rule against the evidence printed beside it before it becomes a doc other
+    sessions treat as settled.
+  - **A STATE FIELD THAT CANNOT BE LEFT IS NOT A STATE FIELD — and the obvious end-date fix
+    ships the same defect one layer down (2026-08-13, the bloc registry, settled BEFORE the
+    roster was written):** `Membership.suspended_from` was a single date, and `_active`
+    returned suspended for every year at or after it, so Egypt — suspended from the African
+    Union in July 2013, reinstated in June 2014 — read as suspended in **2026**, and no
+    roster however well sourced could have said otherwise. The trap is that adding
+    `suspended_until` reads like the fix and is not: Mali has been suspended TWICE (2012,
+    reinstated 2013; again 2021), so one interval cannot hold it, and the gap between
+    episodes would be asserted as suspension. RULE: before choosing between a flag, a date,
+    an interval and a LIST of intervals, ask whether the entity can enter the state more than
+    once — the real world usually answers yes, and the cost of asking is zero while the
+    schema is still empty. COROLLARY on timing: this was worth doing precisely because the
+    registry holds no bloc data yet; the same change after several hundred sourced rows land
+    is a migration plus a re-read of every source. And the guard needs BOTH directions — a
+    fix that never reports suspension at all passes every "reinstated members are clear" test
+    while destroying the third state the field exists for.
+  - **A WRONG VERSION NUMBER IN A DOCSTRING IS WORTH CHASING, BECAUSE IT MEANS NOBODY KNOWS
+    WHICH CONTRACT THE CODE IMPLEMENTS (2026-08-13, `parse_sdmx_json`):** the session's
+    correction was pedantic on its face — "SDMX-JSON 2.1" names a version that does not exist
+    (message-format versions are 1.0 and 2.0; 2.0/2.1/3.0 version the information MODEL). But
+    a docstring naming a nonexistent contract means the edges were never checked against any
+    contract, and the edge here was a fabricated figure: an unmapped message resolved every
+    dimension to nothing, and `series_id or ""` / `ref_area or ""` appended the row anyway —
+    a real 2.957e12 with no country, no indicator and no year, which no reader could tell from
+    a fact. A value with no WHERE and no WHEN is not a figure; it is now refused with a loud
+    once-per-parse log, so an unrecognised shape reads as a GAP rather than as anonymous data.
+    TWO PREDICTIONS OF MINE WERE REFUTED BY MEASUREMENT IN THE SAME HOUR, which is the real
+    lesson: I predicted a 2.0 message would parse as silently EMPTY (it parsed as one
+    identity-less row — worse), and I then read my own failing AllDimensions probe as the fix
+    not working when the test payload's observation key was simply wrong. Run the parser;
+    do not reason about it. Also found by following the same thread: which LEVEL a dimension
+    sits at is decided by the request's `dimensionAtObservation`, not by the concept, and
+    OECD's own documented example passes `AllDimensions` — so `ref_area`/`series_id` must be
+    looked up at observation level as well as series level, exactly as `unit`/`adjustment`
+    already were.
 - **A CONTAINMENT GUARD WRITTEN AS A STRING PREFIX CLAIMS THE SIBLINGS TOO — and when the
   guard decides what may be DELETED, that is the whole safety property (2026-08-13, the
   AI-uninstall ownership test):** `_owned_by_app` is the single gate deciding what the new

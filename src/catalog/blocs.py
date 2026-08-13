@@ -16,10 +16,20 @@ is "not computing anything" and is exactly where a stale roster hides.
 
 THREE STATES, not two. ``joined`` and ``left`` cannot express a SUSPENDED member (several
 African Union members have been suspended after coups), and collapsing suspension into
-either one is a false claim about a real situation. ``suspended_from`` is therefore its
-own field, and ``members_as_of`` reports suspended members separately rather than
-silently keeping or dropping them — the caller decides, because the right answer differs
-between "who is in this bloc" and "who is bound by its statistics".
+either one is a false claim about a real situation. Suspension is therefore its own field,
+and ``members_as_of`` reports suspended members separately rather than silently keeping or
+dropping them — the caller decides, because the right answer differs between "who is in
+this bloc" and "who is bound by its statistics".
+
+SUSPENSION IS A LIST OF EPISODES, NOT A DATE (corrected 2026-08-13 — before the roster was
+written rather than after, which is the only cheap time to change this). The first cut
+carried a single ``suspended_from``, and that is a PERMANENT LATCH: ``_active`` returned
+"suspended" for every year at or after it, so Egypt — suspended from the African Union in
+July 2013 and reinstated in June 2014 — read as suspended in 2026, and no roster however
+well sourced could have said otherwise. Adding a single end date would have shipped the
+same defect one layer down, because Mali has been suspended TWICE (2012, reinstated 2013;
+again 2021) and one interval cannot hold two episodes. So each :class:`Suspension` carries
+its own dates and its own source, and an episode with no ``end`` is one that has not ended.
 
 WHAT IS POPULATED HERE, AND WHAT IS DELIBERATELY EMPTY:
 
@@ -62,6 +72,7 @@ __all__ = [
     "BLOC_REGISTRY_AS_OF",
     "Group",
     "Membership",
+    "Suspension",
     "group_names",
     "groups_of_kind",
     "members_as_of",
@@ -78,6 +89,22 @@ _NOT_A_CONTINENT = {"Global"}
 
 
 @dataclass(frozen=True)
+class Suspension:
+    """One suspension EPISODE of one member, with its own sourced dates.
+
+    ``end is None`` means the suspension has not ended — never "the end date could not be
+    sourced". A suspension known to have ended but impossible to date is deliberately not
+    representable: recording it open asserts a member is suspended today when it is not,
+    and inventing an end date is the guess this module exists to refuse. State that case in
+    the group's ``notes`` instead, where a reader can see it.
+    """
+
+    start: str  # ISO date
+    end: str | None = None  # ISO date, or None while the suspension stands
+    source: str | None = None  # the URL these dates were read from
+
+
+@dataclass(frozen=True)
 class Membership:
     """One area's membership of one group, with its own sourced dates.
 
@@ -89,7 +116,10 @@ class Membership:
     area: str
     joined: str | None = None  # ISO date, or None
     left: str | None = None
-    suspended_from: str | None = None
+    #: Suspension EPISODES, in no required order. A member suspended and later reinstated
+    #: carries a closed episode; one suspended twice carries two. The module docstring says
+    #: why this cannot be a single date.
+    suspensions: tuple[Suspension, ...] = ()
     source: str | None = None  # the URL the dates were read from
 
 
@@ -275,18 +305,42 @@ def _year_of(period: str | None) -> int | None:
     return int(head) if head.isdigit() else None
 
 
+def _suspended_in(m: Membership, year: int) -> bool:
+    """Was this member suspended during ``year``?
+
+    Episodes are half-open ``[start, end)`` at YEAR granularity — the convention
+    ``joined``/``left`` already use, so the module has one rule rather than two: the year an
+    episode starts counts as suspended, the year it ends counts as ended. A year label
+    carries no mid-year precision and inventing it would be a fabricated measurement.
+
+    An episode whose ``start`` will not parse suspends nobody. That is a visible gap rather
+    than a claim in either direction; the roster session's per-row source requirement is
+    what catches a malformed date, not this function.
+    """
+    for s in m.suspensions:
+        start = _year_of(s.start)
+        if start is None or year < start:
+            continue
+        end = _year_of(s.end)
+        if end is None or year < end:
+            return True
+    return False
+
+
 def _active(m: Membership, year: int | None) -> tuple[bool, bool]:
     """``(is_member, is_suspended)`` for one membership as of ``year``."""
     if year is None:
-        return (m.left is None, m.suspended_from is not None)
+        # No year asked, so report the state NOW: only an unended episode counts. A closed
+        # episode means this member WAS suspended and is not — exactly the distinction the
+        # single `suspended_from` latch could not make.
+        return (m.left is None, any(s.end is None for s in m.suspensions))
     joined = _year_of(m.joined)
     left = _year_of(m.left)
-    suspended = _year_of(m.suspended_from)
     if joined is not None and year < joined:
         return (False, False)
     if left is not None and year >= left:
         return (False, False)
-    return (True, suspended is not None and year >= suspended)
+    return (True, _suspended_in(m, year))
 
 
 def members_as_of(key: str, period: str | None = None) -> dict:

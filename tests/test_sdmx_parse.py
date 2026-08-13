@@ -357,3 +357,108 @@ def test_a_missing_year_is_a_null_row_not_an_absent_one():
     figs = parse_worldbank(payload, agency="worldbank", extracted_at="2026-08-07T00:00:00Z")
     assert len(figs) == 2
     assert [f.value for f in figs] == [3.0e12, None], "a gap is stored as None, never 0"
+
+
+# --------------------------------------------------------------------------- #
+# SDMX-JSON: an unmapped message must read as a GAP, never as anonymous rows.
+#
+# Found by following up the 2026-08-13 internet session's correction that "SDMX-JSON 2.1"
+# names a version that does not exist. Chasing which contract the parser really implements
+# turned up something worse than a wrong docstring.
+# --------------------------------------------------------------------------- #
+
+
+def _obs_dims(*dims: dict) -> dict:
+    """A data message whose observation dimensions are `dims` and whose series map is flat."""
+    return {
+        "data": {
+            "structure": {"dimensions": {"series": [], "observation": list(dims)}},
+            "dataSets": [{"series": {"": {"observations": {"0:0": [42.0]}}}}],
+        }
+    }
+
+
+def test_an_unmapped_message_shape_yields_no_rows_rather_than_a_value_with_no_identity():
+    """The defect: a 2.0 message carries `data.structures` as a plural ARRAY, which this
+    parser does not read, so every dimension resolved to nothing — and the row was appended
+    anyway with `ref_area or ""`. The result was a REAL number (2.957e12) with no country,
+    no indicator and no year: not a gap, not zero, but a figure no reader could tell was
+    wrong. Dropping it is the only honest answer available without a fetched 2.0 body."""
+    v20 = {
+        "data": {
+            "structures": [
+                {
+                    "dimensions": {
+                        "series": [{"id": "REF_AREA", "values": [{"id": "FR"}]}],
+                        "observation": [{"id": "TIME_PERIOD", "values": [{"id": "2021"}]}],
+                    }
+                }
+            ],
+            "dataSets": [{"series": {"0": {"observations": {"0": [2957000000000.0]}}}}],
+        }
+    }
+    assert parse_sdmx_json(v20, agency="oecd", extracted_at="2026-08-13") == []
+
+
+def test_a_mapped_message_still_parses_its_real_identity():
+    """The negative-space twin. An over-eager refusal would delete real data while looking
+    conservative, and only this direction catches it."""
+    v10 = {
+        "data": {
+            "structure": {
+                "dimensions": {
+                    "series": [
+                        {"id": "REF_AREA", "values": [{"id": "FR"}]},
+                        {"id": "INDICATOR", "values": [{"id": "GDP"}]},
+                    ],
+                    "observation": [{"id": "TIME_PERIOD", "values": [{"id": "2021"}]}],
+                }
+            },
+            "dataSets": [{"series": {"0:0": {"observations": {"0": [2957000000000.0]}}}}],
+        }
+    }
+    rows = parse_sdmx_json(v10, agency="eurostat", extracted_at="2026-08-13")
+    assert [(r.ref_area, r.series_id, r.time_period, r.value) for r in rows] == [
+        ("FR", "GDP", "2021", 2957000000000.0)
+    ]
+
+
+def test_ref_area_is_read_at_observation_level_too_for_dimensionAtObservation_all():
+    """Which LEVEL a dimension sits at is decided by the request's `dimensionAtObservation`,
+    not by the concept — and OECD's own documented example passes `AllDimensions`, which puts
+    every dimension at observation level. Reading ref_area from the series map alone left it
+    empty for a well-formed message, so this mode produced identity-less rows before the
+    refusal and would produce an empty answer after it. The parser already resolved
+    unit/adjustment at both levels; this is the same idiom applied to where and when."""
+    msg = _obs_dims(
+        {"id": "REF_AREA", "values": [{"id": "DE"}, {"id": "FR"}]},
+        {"id": "TIME_PERIOD", "values": [{"id": "2020"}, {"id": "2021"}]},
+    )
+    msg["data"]["dataSets"][0]["series"][""]["observations"] = {"0:0": [42.0], "1:1": [43.0]}
+    rows = parse_sdmx_json(msg, agency="oecd", extracted_at="2026-08-13")
+    assert [(r.ref_area, r.time_period, r.value) for r in rows] == [
+        ("DE", "2020", 42.0),
+        ("FR", "2021", 43.0),
+    ]
+
+
+def test_a_value_with_a_place_but_no_period_is_refused():
+    """Both halves are required. A figure needs a where AND a when; a value with only one of
+    them cannot be attached to anything, so it is not a partial figure — it is not a figure."""
+    msg = _obs_dims({"id": "REF_AREA", "values": [{"id": "DE"}, {"id": "IT"}]})
+    assert parse_sdmx_json(msg, agency="oecd", extracted_at="2026-08-13") == []
+
+
+def test_no_docstring_claims_the_nonexistent_sdmx_json_2_1_version():
+    """SDMX-JSON MESSAGE-FORMAT versions are 1.0 and 2.0; 2.0/2.1/3.0 version the SDMX
+    INFORMATION MODEL. "SDMX-JSON 2.1" conflates the two, so a reader could not tell which
+    contract the parser implements and "written against 2.1" was unanswerable rather than
+    merely wrong. Read comment-stripped-of-nothing on purpose: the correction note below is
+    allowed to quote the bad string, so the guard is scoped to the parser's own docstring."""
+    import inspect
+
+    from src.stats import sdmx
+
+    body = inspect.getdoc(sdmx.parse_sdmx_json) or ""
+    assert "SDMX-JSON 2.1" not in body
+    assert "SDMX-JSON 1.0" in body, "state which contract IS implemented, not merely which is not"

@@ -19,6 +19,7 @@ from src.catalog.blocs import (
     BLOC_REGISTRY_AS_OF,
     Group,
     Membership,
+    Suspension,
     group_names,
     groups_of_kind,
     members_as_of,
@@ -105,7 +106,7 @@ def test_suspension_is_a_third_state_and_is_reported_separately():
     from src.catalog import blocs
 
     blocs._GROUPS["t"] = _bloc(
-        Membership("ml", joined="1963-05-25", suspended_from="2021-06-01"),
+        Membership("ml", joined="1963-05-25", suspensions=(Suspension(start="2021-06-01"),)),
         Membership("gh", joined="1963-05-25"),
     )
     try:
@@ -114,6 +115,100 @@ def test_suspension_is_a_third_state_and_is_reported_separately():
         assert out["suspended"] == ["ml"]
         before = members_as_of("t", "2019")
         assert before["suspended"] == [], "not suspended before the suspension date"
+    finally:
+        del blocs._GROUPS["t"]
+
+
+def test_a_reinstated_member_stops_reading_as_suspended():
+    """The defect this schema was corrected for (2026-08-13). A single `suspended_from` was
+    a PERMANENT LATCH, so Egypt — suspended from the African Union in July 2013 and
+    reinstated in June 2014 — read as suspended in 2026, and no roster however well sourced
+    could have said otherwise.
+
+    Both directions matter. The suspension must still register in its own year, or the fix
+    has traded a permanent suspension for a permanent absence, which is the same class of
+    wrong pointing the other way."""
+    from src.catalog import blocs
+
+    blocs._GROUPS["t"] = _bloc(
+        Membership(
+            "eg",
+            joined="2002-07-09",
+            suspensions=(Suspension(start="2013-07-05", end="2014-06-17"),),
+        ),
+    )
+    try:
+        assert members_as_of("t", "2013")["suspended"] == ["eg"], (
+            "the suspension must register in the year it began"
+        )
+        for year in ("2014", "2020", "2026"):
+            assert members_as_of("t", year)["suspended"] == [], (
+                f"reinstated in 2014, so {year} must not read as suspended"
+            )
+        # Still a member throughout — a suspension is not a departure.
+        assert members_as_of("t", "2026")["members"] == ["eg"]
+    finally:
+        del blocs._GROUPS["t"]
+
+
+def test_two_suspension_episodes_are_held_separately():
+    """Why a single end date would have shipped the same defect one layer down: Mali has
+    been suspended twice (2012, reinstated 2013; again 2021), and one interval cannot hold
+    two episodes. The gap between them must read as NOT suspended."""
+    from src.catalog import blocs
+
+    blocs._GROUPS["t"] = _bloc(
+        Membership(
+            "ml",
+            joined="1963-05-25",
+            suspensions=(
+                Suspension(start="2012-03-23", end="2013-10-28"),
+                Suspension(start="2021-06-01"),
+            ),
+        ),
+    )
+    try:
+        suspended = {y: members_as_of("t", str(y))["suspended"] == ["ml"] for y in (2011, 2012, 2013, 2020, 2021, 2026)}
+        assert suspended == {
+            2011: False,  # before the first episode
+            2012: True,  # first episode
+            2013: False,  # reinstated
+            2020: False,  # the gap between episodes
+            2021: True,  # second episode
+            2026: True,  # still open
+        }, f"episodes not held separately: {suspended}"
+    finally:
+        del blocs._GROUPS["t"]
+
+
+def test_with_no_year_asked_only_an_unended_suspension_counts():
+    """`period=None` means "as the registry currently stands", so a CLOSED episode is
+    history and must not read as a current suspension — the distinction the latch could not
+    make. An open episode still must."""
+    from src.catalog import blocs
+
+    blocs._GROUPS["t"] = _bloc(
+        Membership("eg", suspensions=(Suspension(start="2013-07-05", end="2014-06-17"),)),
+        Membership("ml", suspensions=(Suspension(start="2021-06-01"),)),
+    )
+    try:
+        assert members_as_of("t")["suspended"] == ["ml"]
+    finally:
+        del blocs._GROUPS["t"]
+
+
+def test_an_unparseable_suspension_start_suspends_nobody():
+    """A visible gap rather than a claim in either direction. Suspending every year would
+    fabricate a state from a malformed date; the roster session's per-row source requirement
+    is what catches the typo."""
+    from src.catalog import blocs
+
+    blocs._GROUPS["t"] = _bloc(
+        Membership("ml", joined="1963-05-25", suspensions=(Suspension(start="unknown"),)),
+    )
+    try:
+        assert members_as_of("t", "2022")["suspended"] == []
+        assert members_as_of("t", "2022")["members"] == ["ml"], "still a member"
     finally:
         del blocs._GROUPS["t"]
 
