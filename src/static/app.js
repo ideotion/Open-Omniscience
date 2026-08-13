@@ -5645,9 +5645,9 @@
       // The fused setup box's plan is now stale by construction -- a backend that
       // just appeared removes a step from it.
       if (typeof loadAiSetup === "function") loadAiSetup();
-      // Same reason: the roster's install button is blocked while its backend is
-      // absent, and Ollama just stopped being absent.
-      if (typeof loadBenchRoster === "function") loadBenchRoster("ollama");
+      // Same reason: the model catalogue's download button is blocked while its
+      // backend is absent, and Ollama just stopped being absent.
+      if (typeof loadModelCatalog === "function") loadModelCatalog();
     }
 
     // The default-model install block. Shared so it renders in BOTH panel states --
@@ -5870,23 +5870,106 @@
       const tag = el.value.trim();
       if (tag) pullModel(tag);
     }
-    // Pull a model: a NETWORK action over CLEARNET via the Ollama process (NOT this
-    // app's Tor proxy), so it passes the ONE consent popup (ensureOnline, invariant
-    // #14) and is refused under airplane mode (the backend OllamaClient enforces the
-    // kill switch too). §2.C1: pulls are QUEUED (one at a time) + visible in the task
-    // manager — clicking Pull enqueues + gives instant feedback, never a frozen button.
+    // WHICH BACKEND'S ARTIFACT the operator is being asked for. The two are not
+    // interchangeable -- an Ollama image and a Hugging Face repo -- so an example and a
+    // link for the wrong one is worse than none: it reads as an instruction and ends in
+    // a 404. Read from the server's own provisioning answer (what this machine will
+    // serve with), never guessed from the shape of what they type.
+    //
+    // THE EXAMPLE IS NOT TYPED HERE. It comes from /default-model's own `artifact`,
+    // which resolves through the dated MINISTRAL_AS_OF block — the same source the
+    // registry's freshness check governs. A literal here would be a second copy of a
+    // string the registry owns, and it is the copy an operator reads at the exact
+    // moment they are pasting: an example that has drifted teaches the wrong string.
+    const _CUSTOM_MODEL_HELP = {
+      ollama: {
+        label: "Ollama model tag",
+        linkText: "ollama.com/library",
+        href: "https://ollama.com/library",
+        lead: "Your backend is Ollama, so it downloads images from the Ollama library. Browse them at",
+        form: "Copy the tag exactly as the model page shows it, including the part after the colon — that part is the quantisation, and leaving it off gets you whichever build the library currently points at.",
+      },
+      vllm: {
+        label: "Hugging Face repo id",
+        linkText: "huggingface.co/models",
+        href: "https://huggingface.co/models",
+        lead: "Your backend is vLLM, so it downloads weights from Hugging Face. Browse them at",
+        form: "Copy the repo id from the top of the model page — the owner/name pair, not the full URL. A gated repo will refuse the download until you have accepted its terms on Hugging Face.",
+      },
+    };
+
+    async function loadCustomModelBox() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const intro = $("custom-model-intro");
+      const label = $("custom-model-label");
+      const input = $("llm-pull-tag");
+      if (!intro && !label && !input) return;
+      let backend = null, example = "";
+      try {
+        const d = await api("/api/llm/default-model");
+        backend = d && d.backend;
+        // The shipped model's identifier FOR THIS BACKEND, from the dated source.
+        // Empty rather than invented if the server did not say: no placeholder at all
+        // beats one that might be for the other backend.
+        example = (d && d.artifact) || "";
+      } catch (e) { backend = null; }
+      const h = _CUSTOM_MODEL_HELP[backend];
+      if (!h) {
+        // No backend answer is its own state: filling in one backend's example on a
+        // guess is how an operator ends up typing an Ollama tag into a vLLM field.
+        if (intro) intro.textContent = t("Set up the local AI first — until a backend is chosen, there is no telling which kind of model name to ask you for.");
+        if (label) label.textContent = t("Model name");
+        if (input) input.placeholder = "";
+        return;
+      }
+      if (label) label.textContent = t(h.label);
+      if (input) input.placeholder = example;
+      if (intro) {
+        intro.innerHTML =
+          esc(t(h.lead)) + ' <a href="' + esc(h.href) + '" target="_blank" rel="noopener">' +
+          esc(h.linkText) + " \u2197</a>. " + esc(t(h.form));
+      }
+    }
+
+    // Pull a model: a NETWORK action over CLEARNET via the backend's own downloader
+    // (NOT this app's Tor proxy), so it passes the ONE consent popup (ensureAiEgress,
+    // invariant #14) and is refused under airplane mode (the backend enforces the kill
+    // switch too). §2.C1: pulls are QUEUED (one at a time) + visible in the task
+    // manager — clicking Download enqueues + gives instant feedback, never a frozen
+    // button.
+    //
+    // ROUTED THROUGH /models/pull-custom rather than the Ollama pull queue directly:
+    // that queue only speaks Ollama, so this field was dead on a GPU machine — which is
+    // the machine class most likely to want a model of its own.
     let _llmPullPoll = null;
     async function pullModel(tag) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!tag) return;
-      if (!await ensureAiEgress(t("Pull a local model (downloads over the clear internet via Ollama)"))) return;
+      if (!await ensureAiEgress(t("Download a model you named (over the clear internet)"))) return;
       const prog = $("llm-pull-progress");
       if (prog) prog.textContent = t("Queued") + " " + tag + "…";  // instant feedback
       try {
-        await api("/api/llm/pull/queue", {method: "POST", body: JSON.stringify({model: tag})});
+        const r = await api("/api/llm/models/pull-custom",
+          {method: "POST", body: JSON.stringify({identifier: tag})});
+        // A REFUSAL IS AN ANSWER, not a silent no-op: the shape guard can tell an
+        // operator they have pasted an Ollama tag into a vLLM field, and that sentence
+        // is the whole value of the check.
+        const refused = (r && r.refused) || [];
+        if (refused.length) {
+          if (prog) prog.textContent = refused.map((x) => x.reason || t("refused")).join(" ");
+          return;
+        }
         const el = $("llm-pull-tag"); if (el) el.value = "";
-        _llmPullStartPoll();
-      } catch (e) { if (prog) prog.textContent = t("Pull failed:") + " " + e.message; }
+        if (r && r.backend === "vllm") {
+          // vLLM downloads through its own job, not the Ollama pull queue, so the
+          // Ollama poller would sit on an empty queue and report nothing happening.
+          await _followJob("/api/llm/models/install/status?backend=vllm",
+            (m) => { if (prog) prog.textContent = m; });
+          loadLlmModels();
+        } else {
+          _llmPullStartPoll();
+        }
+      } catch (e) { if (prog) prog.textContent = t("Download failed:") + " " + e.message; }
     }
     async function cancelPull(model) {
       try { await api("/api/llm/pull/cancel", {method: "POST", body: JSON.stringify({model})}); _llmPullRefresh(); }
@@ -15509,21 +15592,6 @@
           ? `<div class="hint muted">${d.normalized_collisions.length} term group(s) differ only by case or accents — matched by exact echo only.</div>` : "");
     }
 
-    async function mbShowRoster(btn) {
-      const out = $("mb-result"); if (btn) btn.disabled = true;
-      try {
-        const d = await api("/api/diagnostics/model-bench/roster");
-        const run = (d.runnable || []).map((p) => esc(p.key)).join(", ") || "none";
-        const skip = (d.skipped || []).map((s) =>
-          `${esc(s.backend)}${s.model ? " · " + esc(s.model) : ""} — ${esc(s.reason)}`).join("<br>");
-        if (out) out.innerHTML = `<div>Runnable: ${run}</div>`
-          + (skip ? `<div class="hint muted" style="margin-top:4px">${skip}</div>` : "")
-          + (d.unresolved_candidates || []).map((c) =>
-            `<div class="hint muted" style="margin-top:4px">${esc(c.named)}: ${esc(c.note)}</div>`).join("");
-      } catch (e) { if (out) out.innerHTML = `<div class="note err">${esc((e && e.message) || String(e))}</div>`; }
-      if (btn) btn.disabled = false;
-    }
-
     async function mbAnchorsLoad(btn) {
       const body = $("mb-anchors-body"); if (!body) return;
       if (btn) btn.disabled = true;
@@ -15594,9 +15662,16 @@
     }
 
     function _mbPaint(st) {
-      const btn = $("mb-run-btn"), el = $("mb-status");
+      // ONE button since the one-model ruling, so the painter targets it directly.
+      // It used to paint a second, comparative control; leaving that id here would
+      // have made the surviving button silently unpaintable — running for tens of
+      // minutes with nothing on screen saying so.
+      const btn = $("mb-default-btn"), el = $("mb-default-status");
       const running = st && st.state === "running";
-      if (btn) { btn.dataset.running = running ? "1" : "0"; btn.textContent = running ? "Stop the bench" : "Run the bench"; }
+      if (btn) {
+        btn.dataset.running = running ? "1" : "0";
+        btn.textContent = running ? "Stop the bench" : "Bench the model (this backend)";
+      }
       const p = (st && st.progress) || {};
       if (el) {
         el.textContent = running
@@ -15706,105 +15781,23 @@
       finally { _mbPolling = false; }
     }
 
-    async function mbRun(btn) {
-      const on = btn && btn.dataset.running === "1";
-      const sw = $("mb-switch");
-      try {
-        if (on) await api("/api/diagnostics/model-bench/cancel", { method: "POST" });
-        else await api("/api/diagnostics/model-bench/run", {
-          method: "POST",
-          body: JSON.stringify({ allow_backend_switch: !!(sw && sw.checked) }),
-        });
-      } catch (e) {
-        if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
-      }
-      _mbPoll();
-    }
-
-    // Measure the DEFAULT model on whichever backend the operator has running.
+    // Measure THE model on whichever backend the operator has running.
     //
     // RULED 2026-08-12: the operator manages the backends, so this sends nothing that
-    // could start, stop or switch one -- the body carries default_model_only and the
-    // server drops the roster arguments rather than silently ignoring them. Two runs,
-    // one per backend, compared afterwards; each report says which backend and which
-    // device it measured, which is what makes the pair comparable at all.
-    async function mbRunDefault(btn) {
+    // could start, stop or switch one. There is no mode flag any more -- with one model
+    // the bench has one mode, and a flag whose only legal value is true is a flag that
+    // will eventually be passed wrongly. Two runs, one per backend, compared afterwards;
+    // each report says which backend and which device it measured, which is what makes
+    // the pair comparable at all.
+    async function mbRun(btn) {
       const on = btn && btn.dataset.running === "1";
       try {
         if (on) await api("/api/diagnostics/model-bench/cancel", { method: "POST" });
-        else await api("/api/diagnostics/model-bench/run", {
-          method: "POST",
-          body: JSON.stringify({ default_model_only: true }),
-        });
+        else await api("/api/diagnostics/model-bench/run", { method: "POST", body: "{}" });
       } catch (e) {
         if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
       }
       _mbPoll();
-    }
-
-    // ---- Translation comparison (maintainer 2026-08-11) --------------------- //
-    // The bench's translation TASK answers what a machine can decide alone; this
-    // produces the artifact a PERSON reads to compare two translations. It renders
-    // what was asked and how long it took, and refuses to summarise the answers into
-    // a verdict -- the whole point is that the judgement happens in the reading.
-    function _tpRender(res) {
-        const out = $("tp-result");
-        if (!out) return;
-        if (!res) { out.innerHTML = ""; return; }
-        if (res.available === false) {
-          out.innerHTML = `<div class="hint muted">${esc(res.note || res.error || "no comparison yet")}</div>`;
-          return;
-        }
-        const d = res.directions || {};
-        const dirs = Object.keys(d).filter((k) => d[k]).map((k) => `${esc(k)} ${d[k]}`).join(" · ");
-        const langs = (res.languages || []).map(esc).join(", ");
-        const rows = [];
-        rows.push(`<div><b>${res.n_items || 0}</b> passages · ${esc((res.models || []).join(", "))}</div>`);
-        if (dirs) rows.push(`<div class="muted">${dirs}</div>`);
-        if (langs) rows.push(`<div class="muted">source languages: ${langs}</div>`);
-        // Per model: how many answers came back at all, and how long they took. NOT a
-        // quality figure -- a model can answer every item fast and badly.
-        const per = {};
-        (res.items || []).forEach((it) => {
-          (it.answers || []).forEach((a) => {
-            const k = a.model || "?";
-            per[k] = per[k] || { ok: 0, err: 0, ms: 0 };
-            if (a.error) per[k].err += 1; else per[k].ok += 1;
-            per[k].ms += (a.wall_s || 0) * 1000;
-          });
-        });
-        Object.keys(per).sort().forEach((m) => {
-          const p = per[m];
-          const failed = p.err ? ` · <span class="warn">${p.err} failed</span>` : "";
-          rows.push(`<div><b>${esc(m)}</b> — ${p.ok} answered${failed} · `
-            + `${(p.ms / 1000).toFixed(1)}s total</div>`);
-        });
-        rows.push(`<div class="hint" style="margin-top:4px">${esc(res.caveat || "")}</div>`);
-        out.innerHTML = rows.join("");
-    }
-
-    async function tpRun(btn) {
-        const st = $("tp-status");
-        const n = parseInt(($("tp-articles") || {}).value, 10);
-        const tg = parseInt(($("tp-targets") || {}).value, 10);
-        if (btn) btn.disabled = true;
-        if (st) st.textContent = "running — this can take a few minutes";
-        try {
-          const res = await api("/api/diagnostics/translation-probe", {
-            method: "POST",
-            body: JSON.stringify({
-              n_articles: isFinite(n) ? n : 6,
-              targets_per_source: isFinite(tg) ? tg : 3,
-            }),
-          });
-          _tpRender(res);
-          if (st) st.textContent = res && res.available === false ? "nothing to ask" : "done";
-        } catch (e) {
-          if (st) st.textContent = "";
-          if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
-        } finally {
-          if (btn) btn.disabled = false;
-        }
     }
 
     // ---- ONE BUTTON: every AI check, one report ---------------------------- //
@@ -15917,36 +15910,18 @@
 
     async function runAiCheck(btn) {
       const on = btn && btn.dataset.running === "1";
-      // The deep run adds the comparative bench: hours rather than minutes, restarting
-      // vLLM between models and taking the GPU from Ollama and back. That is worth one
-      // confirm — it is resumable, so the honest promise is "cancelling keeps what it
-      // measured", not "you can undo this".
+      // The deep run adds the model bench: tens of minutes rather than minutes, running
+      // the frozen batch through the model task by task. That is worth one confirm — it
+      // is resumable, so the honest promise is "cancelling keeps what it measured", not
+      // "you can undo this". It no longer restarts anything: since the one-model ruling
+      // the bench measures whatever backend is already serving and manages nothing, so
+      // there is also no download to survey and consent to first.
       const deep = !on && !!($("aicheck-deep") || {}).checked;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      if (deep && !confirm(t("Benching every model takes hours. It starts a stopped backend, restarts your AI backend between models, and puts the machine back on the one it was serving with. It is resumable: cancelling keeps the models already measured. Start it?"))) return;
-      // Surveyed BEFORE the run, and asked as its own question with its own size. A
-      // deep run that quietly fetched tens of gigabytes because someone ticked "bench
-      // every model" would be a download nobody consented to — and the survey is
-      // cheap, local, and downloads nothing, so there is no reason to guess.
-      let download_missing = false;
-      if (deep) {
-        try {
-          const pv = await api("/api/diagnostics/ai-check/provision");
-          const q = (pv && pv.question) || {};
-          if (q.needs_download) {
-            download_missing = confirm(
-              q.text + "\n\n" +
-              t("Download them now and bench each one as it arrives? Choose Cancel to bench only what is already here."));
-          }
-        } catch (e) {
-          // A survey that could not run is not a reason to refuse the bench: it just
-          // means the run covers what is already on the machine, as it always did.
-          if (typeof toast === "function") toast(t("Could not check which models are on this machine — benching what is already here."), "warn");
-        }
-      }
+      if (deep && !confirm(t("Benching the model takes tens of minutes. It measures whichever backend is already running and starts, stops and switches nothing. It is resumable: cancelling keeps what it measured. Start it?"))) return;
       try {
         if (on) await api("/api/diagnostics/ai-check/cancel", { method: "POST" });
-        else await api("/api/diagnostics/ai-check/run", { method: "POST", body: JSON.stringify({ deep, download_missing }) });
+        else await api("/api/diagnostics/ai-check/run", { method: "POST", body: JSON.stringify({ deep }) });
       } catch (e) {
         if (typeof toast === "function") toast(_apiErrorMessage ? _apiErrorMessage(e) : String(e), "err");
       }
@@ -22414,17 +22389,24 @@
     async function _aiSetupPlan() {
       // Every fact comes from the server. A failed read returns null so the box
       // hides rather than proposing a plan built on a guess.
-      let b, models, dm;
+      let b, dm;
       try {
         b = await api("/api/llm/backend");
-        models = await api("/api/llm/models");
+        dm = await api("/api/llm/default-model");
       } catch (e) { return null; }
-      const gpu = b.gpu || {};
       const vllm = b.vllm || {};
       const oll = b.ollama || {installed: !!b.ollama_available, running: !!b.ollama_available};
-      // vLLM is GPU-first: proposing it on a CPU-only machine would install
-      // several GB into a backend that could never usefully serve here.
-      const target = gpu.available ? "vllm" : "ollama";
+      // THE TARGET IS THE SERVER'S PROVISIONING ANSWER, not a GPU probe read here.
+      //
+      // It used to be `gpu.available ? "vllm" : "ollama"`, which ignores the operator's
+      // explicit choice in Settings entirely -- so switching a GPU machine to Ollama
+      // left this card offering to install vLLM, the backend they had just moved away
+      // from, while saying nothing about the one that was actually missing. That is the
+      // maintainer's own case (2026-08-12: "if a user decides to switch from vLLM to
+      // Ollama and the latter is neither detected nor installed, put the setup tool
+      // back with the missing engine"). /default-model resolves through
+      // _provisioning_backend, which honours the choice.
+      const target = dm && dm.backend === "vllm" ? "vllm" : "ollama";
       const steps = [];
       if (target === "vllm" && !vllm.installed) {
         let s = null;
@@ -22446,13 +22428,23 @@
           download_url: (s.platform && s.platform.download_url) || "https://ollama.com/download",
         });
       }
-      if (!(models.installed || []).length) {
-        try { dm = await api("/api/llm/default-model"); } catch (e) { dm = null; }
-        if (dm && dm.artifact) {
-          steps.push({id: "model", label: "Download the default model",
-                      artifact: dm.artifact, size: dm.size || "", note: dm.mechanism_note || "",
-                      caveats: dm.caveats || []});
-        }
+      // THE MODEL STEP IS TRI-STATE, and reading it as a boolean is what kept this card
+      // on screen for people who were finished (maintainer 2026-08-12: "when the local
+      // AI is properly installed (including ministral download), remove Setup Local AI,
+      // it's pointless"). It used to test `models.installed.length` -- the RUNNING
+      // daemon's list -- so a stopped Ollama reported nothing and the card offered to
+      // re-download a model already on the disk.
+      //
+      // `installed === null` means the probe could not answer, which is NOT "absent".
+      // The honest move there is to propose nothing: a stopped-but-installed backend is
+      // already handled by the hero card above, which says so and offers Start. Once it
+      // starts, the probe answers and this card comes back if the model really is
+      // missing. Offering several GB on an unreadable probe is the trap the store
+      // panel's own note names.
+      if (dm && dm.artifact && dm.installed === false) {
+        steps.push({id: "model", label: "Download the default model",
+                    artifact: dm.artifact, size: dm.size || "", note: dm.mechanism_note || "",
+                    caveats: dm.caveats || []});
       }
       return {target, steps, backend: b, running: target === "vllm" ? !!vllm.running : !!oll.running};
     }
@@ -22782,6 +22774,112 @@
       box.innerHTML = html;
     }
 
+    // ---- Uninstall the local AI (maintainer 2026-08-12) --------------------- //
+    //
+    // THE PLAN IS READ BEFORE THE BUTTON IS DRAWN, and again before it acts, because
+    // the plan IS the consent: how much each backend would free, and which pieces this
+    // app cannot remove. The Ollama program was installed on the system with
+    // administrator rights, so what is offered there is its removal commands, not a
+    // button that pretends to run them.
+    function _gbytes(n) {
+      return (n === null || n === undefined) ? "" : ` (${(n / 1e9).toFixed(1)} GB)`;
+    }
+
+    async function loadAiUninstall() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("ai-uninstall-box");
+      if (!box) return;
+      let plan = null;
+      try { plan = await api("/api/llm/uninstall/plan"); }
+      catch (e) { box.textContent = t("Could not read what is installed."); return; }
+      const installed = plan.installed || [];
+      if (!installed.length) {
+        box.innerHTML = `<div>${esc(t("Nothing to uninstall — no AI backend is installed on this machine."))}</div>`;
+        return;
+      }
+      const rows = (plan.backends || []).filter((b) => b.installed).map((b) => {
+        const name = b.backend === "vllm" ? "vLLM" : "Ollama";
+        const size = b.removable ? esc(_gbytes(b.bytes)) : "";
+        const why = b.removable ? "" :
+          `<div class="card-caveat" style="margin-top:2px">${esc(b.kept_reason || "")}</div>` +
+          ((b.manual_removal || []).length
+            ? `<pre style="white-space:pre-wrap;overflow-x:auto;font-size:12px;margin:4px 0">${esc(b.manual_removal.join("\n"))}</pre>`
+            : "");
+        return `<div style="margin-top:6px"><b>${esc(name)}</b>${size}` +
+          (b.removable ? "" : ` <span class="muted">— ${esc(t("this app cannot remove it"))}</span>`) +
+          `${why}<div style="margin-top:4px">` +
+          `<button class="ghost tiny" onclick="uninstallAi(${esc(JSON.stringify([b.backend]))}, this)">` +
+          `${esc(t("Uninstall"))} ${esc(name)}</button></div></div>`;
+      }).join("");
+      // Offered only when BOTH are here, because that is when it is a different action
+      // rather than a second name for the same one.
+      const both = plan.both_installed
+        ? `<div style="margin-top:8px"><button class="ghost tiny" ` +
+          `onclick="uninstallAi(${esc(JSON.stringify(["vllm", "ollama"]))}, this)">` +
+          `${esc(t("Uninstall both backends"))}</button></div>` : "";
+      const stores = (plan.stores || []).filter((st) => st.exists);
+      const storeRows = stores.length
+        ? `<div style="margin-top:8px">${esc(t("Downloaded models on this machine:"))}` +
+          stores.map((st) =>
+            `<div class="muted"><code>${esc(st.path)}</code>${esc(_gbytes(st.bytes))}` +
+            (st.removable ? "" : ` — ${esc(t("kept"))}`) + `</div>`).join("") + `</div>`
+        : "";
+      box.innerHTML =
+        `<div>${esc(plan.method || "")}</div>` + rows + both + storeRows +
+        `<label class="small" style="display:block;margin-top:8px">` +
+        `<input type="checkbox" id="ai-uninstall-models"> ` +
+        esc(t("also delete the downloaded models in this app's folder")) + `</label>` +
+        `<div id="ai-uninstall-status" class="hint" style="margin-top:6px"></div>`;
+    }
+
+    async function uninstallAi(backends, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const status = $("ai-uninstall-status");
+      const delete_models = !!($("ai-uninstall-models") || {}).checked;
+      // Re-read the plan rather than trusting the one the panel was drawn from: it may
+      // be minutes old, and the numbers in this confirm are what is being consented to.
+      let plan = null;
+      try { plan = await api("/api/llm/uninstall/plan"); } catch (e) { plan = null; }
+      const wanted = (((plan || {}).backends) || []).filter((b) => backends.indexOf(b.backend) >= 0);
+      const lines = wanted.map((b) => {
+        const name = b.backend === "vllm" ? "vLLM" : "Ollama";
+        return b.removable
+          ? `• ${name}${_gbytes(b.bytes)}`
+          : `• ${name} — ${b.kept_reason || t("this app cannot remove it")}`;
+      });
+      if (delete_models) {
+        for (const st of (((plan || {}).stores) || [])) {
+          if (st.exists && st.removable) lines.push(`• ${st.kind}${_gbytes(st.bytes)} — ${st.path}`);
+        }
+      }
+      if (!confirm(t("Uninstall the local AI? This cannot be undone.") + "\n\n" + lines.join("\n"))) return;
+      const was = btn ? btn.textContent : "";
+      if (btn) { btn.disabled = true; btn.textContent = t("Removing…"); }
+      try {
+        const r = await api("/api/llm/uninstall", {
+          method: "POST",
+          body: JSON.stringify({backends, delete_models, confirm: true}),
+        });
+        // WHAT WAS KEPT IS REPORTED AS PROMINENTLY AS WHAT WENT. A button that says
+        // "Uninstalled." whatever happened would leave an operator believing the
+        // program is gone when it is still there and will still be serving next boot.
+        const freed = r.freed_bytes ? _gbytes(r.freed_bytes).trim() : "";
+        let msg = r.complete
+          ? t("Uninstalled.") + (freed ? " " + freed : "")
+          : t("Partly uninstalled.") + (freed ? " " + freed : "");
+        if ((r.kept || []).length) {
+          msg += "\n" + r.kept.map((k) => `• ${k.what}: ${k.reason || ""}`).join("\n");
+        }
+        if (status) { status.style.whiteSpace = "pre-wrap"; status.textContent = msg; }
+      } catch (e) {
+        if (status) status.textContent = t("Uninstall failed:") + " " +
+          (_apiErrorMessage ? _apiErrorMessage(e) : String(e));
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = was; }
+        refreshAiPanels();
+      }
+    }
+
     async function migrateOllamaStore(btn, reclaim) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const ask = reclaim
@@ -22896,7 +22994,7 @@
         if (status) status.textContent = t("Downloading:") + " " + (r.queued || []).join(", ");
         if (r.backend === "ollama") _llmPullStartPoll();
         const st = await _followJob(
-          "/api/llm/bench-roster/status?backend=" + encodeURIComponent(r.backend || ""),
+          "/api/llm/models/install/status?backend=" + encodeURIComponent(r.backend || ""),
           (m) => { if (status) status.textContent = m; });
         if (status) {
           status.textContent = st.state === "error"
@@ -22915,10 +23013,8 @@
     function refreshAiPanels() {
       loadAiHero(); loadAiStore(); loadModelCatalog(); syncAiCoordinator();
       loadAiSetup(); loadAiBackendPanel(); loadVllmStatusPanel();
-      loadOllamaInstall(); loadLlmModels(); loadLlmHealth();
-      // Each panel asks for ITS OWN backend's roster, so the section heading and the
-      // identifiers under it can never disagree.
-      loadBenchRoster("vllm"); loadBenchRoster("ollama");
+      loadOllamaInstall(); loadLlmModels(); loadLlmHealth(); loadCustomModelBox();
+      loadAiUninstall();
     }
 
     async function loadAiBackendPanel() {
@@ -23222,7 +23318,7 @@
         say(t("Installing — this can take several minutes…"));
         await _followJob("/api/llm/vllm/install/status", say);
         loadVllmStatusPanel();
-        loadBenchRoster("vllm");  // the roster's install button unblocks once vLLM exists
+        loadModelCatalog();  // the download button unblocks once vLLM exists
       } catch (e) {
         say("Install: " + e.message);
       } finally {
@@ -23257,166 +23353,6 @@
       finally { if (btn) btn.disabled = false; }
     }
 
-    // --- The comparative-bench roster (maintainer ask 2026-08-02) --------------- //
-    //
-    // One renderer, both panels: the vLLM section shows Hugging Face repos, the Ollama
-    // section shows library tags, and each install button names the backend it is
-    // showing. The alternative -- one shared control that installs "whatever the
-    // machine prefers" -- would let a click under the vLLM heading download Ollama
-    // tags, which is the same routing-vs-provisioning confusion that shipped a real
-    // field bug three days ago.
-    //
-    // EVERY ROW IS RENDERED, including the two with nothing to install for a given
-    // backend. A model absent from a backend is a finding the operator should see,
-    // with what was searched, not a row quietly dropped so the table looks complete.
-    // The tickbox for such a row is disabled, not hidden: the reason is the point.
-    const _BENCH_HOSTS = {vllm: "vllm-bench-box", ollama: "ollama-bench-box"};
-    const _benchTicked = {vllm: null, ollama: null};  // null = "use the roster defaults"
-
-    // FIELD REPORT 2026-08-09: "downloading other models (for benchmark) doesn't seem
-    // to work". BOTH rosters were drawn on every machine, so a GPU box showed the
-    // Ollama panel FIRST -- same heading, same tick-boxes, and a DISABLED button,
-    // because Ollama is not installed there. Ticking models in it and pressing the
-    // button did nothing, which is exactly what was reported.
-    //
-    // A roster is worth drawing when this machine will SERVE with that backend (even
-    // if it still has to be installed -- that panel carries the one honest "install it
-    // first" line) or when the backend is already installed, so the download can
-    // actually happen. A backend that is neither can only ever be a dead duplicate.
-    //
-    // Pure, and named, so both directions can be driven in node: hiding too eagerly
-    // would leave a fresh machine with no bench panel AND no install message, which is
-    // the same defect pointing the other way.
-    function _benchPanelApplies(r) {
-      if (!r) return false;
-      if (r.backend === r.provisioning_backend) return true;  // this machine's own answer
-      return !r.prerequisite;                                 // installed => it can download
-    }
-
-    async function loadBenchRoster(backend) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const host = $(_BENCH_HOSTS[backend]);
-      if (!host) return;
-      let r;
-      try { r = await api("/api/llm/bench-roster?backend=" + encodeURIComponent(backend)); }
-      catch (e) { host.innerHTML = `<p class="muted">${esc(t("Could not read the bench roster."))}</p>`; host.style.display = ""; return; }
-      // Installing the missing backend is offered ONCE, in the Models section above;
-      // this panel reappears the moment it exists, because every install path re-runs
-      // this loader.
-      if (!_benchPanelApplies(r)) {
-        host.innerHTML = ""; host.style.display = "none"; return;
-      }
-      host.style.display = "";
-      const meanings = r.flag_meanings || {};
-      const picked = _benchTicked[backend];
-      const rows = (r.models || []).map((m) => {
-        // The hover carries each flag's full meaning (invariant #17), so the visible
-        // chip stays short without the warning becoming a bare unexplained word.
-        const flags = (m.flags || []).map((f) =>
-          `<span class="pill" title="${esc(meanings[f] || f)}">${esc(f.replace(/_/g, " "))}</span>`).join(" ");
-        const facts = [m.size, m.licence, m.context_length ? `${Number(m.context_length).toLocaleString()} ctx` : null]
-          .filter(Boolean).map(esc).join(" · ");
-        if (!m.installable) {
-          // Never a near-match offered in its place: the searched list is what makes
-          // the absence checkable rather than a shrug.
-          return `<div class="row" style="align-items:start;gap:8px;margin-top:6px;opacity:.85">` +
-            `<input type="checkbox" disabled title="${esc(t("Not published for this backend."))}">` +
-            `<div><strong>${esc(m.label)}</strong> ${flags}` +
-            `<div class="muted">${esc(t("Not available here:"))} ${esc(m.absent_reason || "")}</div>` +
-            (m.searched ? `<div class="hint">${esc(t("Searched:"))} ${esc(m.searched)}</div>` : "") +
-            // An absence somebody can close in one lookup must not read like a dead end.
-            (m.open_question
-              ? `<div class="card-caveat">${esc(t("Unresolved — this would settle it:"))} ${esc(m.open_question)}</div>`
-              : "") +
-            (m.caveat ? `<div class="card-caveat">${esc(m.caveat)}</div>` : "") +
-            `</div></div>`;
-        }
-        const on = picked ? picked.includes(m.key) : m.default_on;
-        // A weaker provenance tier is stated ON the identifier it qualifies. "fetched"
-        // is the norm and says nothing extra; "search-verified" means the acquisition
-        // run named the string but no page fetch was recorded for it, and an operator
-        // about to download several GB is owed that distinction.
-        const prov = m.verification === "fetched" ? "" :
-          ` <span class="pill" title="${esc(t("The acquisition run named this identifier, but no page fetch was recorded for it. It may be wrong; the download will simply fail if it is."))}">${esc(t("search-verified"))}</span>`;
-        return `<div class="row" style="align-items:start;gap:8px;margin-top:6px">` +
-          `<input type="checkbox" class="bench-pick" data-backend="${esc(backend)}" data-key="${esc(m.key)}"${on ? " checked" : ""}>` +
-          `<div><strong>${esc(m.label)}</strong> ${flags}` +
-          `<div class="hint"><code>${esc(m.identifier)}</code>${prov}${facts ? " · " + facts : ""}</div>` +
-          (m.quant_note ? `<div class="hint">${esc(m.quant_note)}</div>` : "") +
-          (m.note ? `<div class="muted">${esc(m.note)}</div>` : "") +
-          `</div></div>`;
-      }).join("");
-      // Alternatives are listed, never pre-ticked and never folded into a row: a
-      // third-party GGUF is a different artefact from the publisher's own model, and
-      // an operator who reaches for one should know that is what they reached for.
-      const alts = (r.alternatives || []).map((a) =>
-        `<div class="hint" style="margin-top:6px">${esc(t("Another way to get"))} <strong>${esc(a.substitutes)}</strong>: ` +
-        `<code>${esc(a.tag)}</code>${a.size ? " · " + esc(a.size) : ""}` +
-        `<div class="card-caveat">${esc(a.caveat || "")}</div>` +
-        `<div class="muted">${esc(t("Paste it into “Pull any model tag” above — it is not ticked for you."))}</div></div>`).join("");
-      const blocked = r.prerequisite
-        ? `<p class="muted">${esc(r.prerequisite === "vllm"
-            ? t("vLLM is not installed yet, and it is what downloads these models. Install it first.")
-            : t("Ollama is not installed yet, and it is what downloads these models. Install it first."))}</p>`
-        : "";
-      host.innerHTML =
-        `<h3 style="margin:0 0 4px">${esc(t("Comparative-bench models"))}</h3>` +
-        `<p class="muted" style="margin:0 0 6px">${esc(t("The model set used to compare backends and sizes on your own corpus. Tick what you want and download them in one go — each is fetched by the backend named below, over the clear internet, never through Tor."))}</p>` +
-        `<p class="hint" style="margin:0 0 6px">${esc(t("For:"))} <strong>${esc(backend === "vllm" ? "vLLM (Hugging Face)" : "Ollama")}</strong>` +
-        ` · ${esc(t("verified"))} ${esc(r.as_of || "")}</p>` +
-        rows + alts +
-        `<div style="margin-top:10px">` +
-        `<button onclick="installBenchModels('${esc(backend)}', this)"${r.prerequisite ? " disabled" : ""}>` +
-        `${esc(t("Download the ticked models"))}</button>` +
-        `<span id="bench-status-${esc(backend)}" class="hint" style="margin-left:8px"></span></div>` +
-        blocked +
-        `<div class="card-caveat" style="margin-top:8px">${esc(r.caveat || "")}</div>` +
-        `<div class="muted">${esc(r.method || "")}</div>`;
-    }
-
-    async function installBenchModels(backend, btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const say = (m) => { const el = $("bench-status-" + backend); if (el) el.textContent = m; };
-      const keys = Array.from(document.querySelectorAll(
-        `.bench-pick[data-backend="${backend}"]:checked`)).map((el) => el.dataset.key);
-      // Remembered across the re-render the install triggers, so a deliberate
-      // un-ticking is not silently undone by the panel refreshing under the operator.
-      _benchTicked[backend] = keys;
-      if (!keys.length) { say(t("Tick at least one model first.")); return; }
-      if (!await ensureAiEgress(t("Download bench models (over the clear internet, not through Tor)"))) {
-        say(t("Download cancelled.")); return;
-      }
-      const was = btn ? btn.textContent : "";
-      if (btn) { btn.disabled = true; btn.textContent = t("Starting…"); }
-      try {
-        const r = await api("/api/llm/bench-roster/install",
-          {method: "POST", body: JSON.stringify({keys, backend})});
-        // Refusals are shown BEFORE the progress line, not after the batch: an
-        // operator who ticked six and gets four downloads is owed an account of six.
-        for (const ref of (r.refused || [])) {
-          toast(`${ref.label || ref.key}: ${ref.reason || t("refused")}`, "err");
-        }
-        if (r.action === "nothing_to_do") { say(t("Nothing to download — every ticked model was refused.")); return; }
-        if (r.action === "busy") { say(t("A model download is already running.")); return; }
-        say(t("Downloading:") + " " + (r.queued || []).join(", "));
-        if (backend === "ollama") _llmPullStartPoll();  // the Downloads section owns the per-model bars
-        const st = await _followJob(
-          "/api/llm/bench-roster/status?backend=" + encodeURIComponent(backend), say);
-        say(st.state === "error" ? (t("Download failed:") + " " + (st.detail || "")) : (st.detail || t("Done.")));
-        loadLlmModels();
-      } catch (e) {
-        say(t("Download failed:") + " " + (e.message || e));
-      } finally {
-        if (btn) { btn.disabled = false; btn.textContent = was || t("Download the ticked models"); }
-      }
-    }
-
-    // E-S4 (2026-08-01, ruling 16): a user-asked summarize/translate never silently
-    // truncates — an over-long article is split at paragraph boundaries and every part
-    // is run. That is a METHOD change, so it is stated: a reader who is not told cannot
-    // tell a two-step hierarchical summary from a single-pass one, and they are not the
-    // same artifact. Composite templates (the S4.5 tf() seam) so the frame translates
-    // x12 while the count stays data.
     function _llmMethodNote(method) {
       if (!method || !method.parts || method.parts < 2) return "";
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : null;

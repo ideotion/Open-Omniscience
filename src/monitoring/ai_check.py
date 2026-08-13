@@ -18,10 +18,10 @@ WHAT IT RUNS, in this order, because each step's failure explains the next one's
    model's doing or the harness's.
 
 WHAT IT DOES NOT RUN, and why saying so matters more than quietly omitting it: the
-COMPARATIVE MODEL BENCH. That one loads every roster model in turn over a frozen input
-set; it is resumable per model precisely because it runs for hours, and folding it in
-here would turn a check into an afternoon. It keeps its own button, and this report
-says where it is rather than leaving a reader to assume "everything" included it.
+MODEL BENCH. That one runs the frozen batch through the model task by task and is
+measured in tens of minutes, so folding it into every quick check would turn a check
+into an afternoon. It is one tick-box away on the same button, and this report says
+where it is rather than leaving a reader to assume "everything" included it.
 
 EVERY STEP IS GUARDED AND TIMED. A step that fails records why and the run continues,
 because the most useful report from a half-broken machine is the one that says which
@@ -52,12 +52,12 @@ AI_CHECK_SCHEMA = "oo-ai-check-1"
 #: no machine can do for the operator — see :func:`not_run_here`.
 SEPARATE_RUNS: tuple[dict, ...] = (
     {
-        "name": "Comparative model bench",
-        "where": "the same button, with 'every model' ticked",
+        "name": "Model bench",
+        "where": "the same button, with 'bench the model' ticked",
         "why": (
-            "It loads every roster model in turn over a frozen input set and is resumable "
-            "per model because it runs for hours. A quick check is minutes, so the two are "
-            "one button with a choice rather than two buttons."
+            "It runs the frozen input set through the model task by task and is resumable, "
+            "because it takes tens of minutes. A quick check is minutes, so the two are one "
+            "button with a choice rather than two buttons."
         ),
     },
 )
@@ -270,50 +270,33 @@ def ensure_frozen_batch(*, refresh: bool = False, db=None) -> dict:
     }
 
 
-def _provisioned_bench(ctx, *, survey_report: dict | None, run_one) -> dict:
-    """Fetch what is missing and bench each model as it lands, not after all of them.
+def _live_bench(ctx, *, repeats: int, refresh_batch: bool) -> dict:
+    """Freeze the inputs if needed, then bench THE model on the backend that is serving.
 
-    The operator asked for this by name: the downloads take longer than the tests, so
-    running them in series leaves the card idle for most of the session. What is
-    already here is benched first, and the rest is pulled on a background thread.
-    """
-    from src.ai_layer.bench_provision import provision_and_bench
-
-    plan = list((survey_report or {}).get("to_fetch") or [])
-    ready = [r for r in ((survey_report or {}).get("models") or []) if r.get("state") == "ready"]
-    return provision_and_bench(plan, ready=ready, bench_one=run_one, ctx=ctx)
-
-
-def _live_bench(ctx, *, models, repeats: int, refresh_batch: bool) -> dict:
-    """Freeze the inputs if needed, then bench every runnable (model, backend) pair.
-
-    ``allow_backend_switch`` is ON here and that is the whole point of the deep run: a
-    vLLM server serves one model, so measuring several means restarting it between
-    them, and on a single-GPU machine it means handing the card back and forth with
-    Ollama. Left off, the run would silently cover one vLLM model out of however many
-    are downloaded.
+    This used to walk a roster and restart the backend between models. The 2026-08-12
+    ruling left one model, so there is nothing to walk and nothing to hand the card
+    around for -- and the maintainer took the managing back in the same message ("the
+    app has failed to manage both ollama and vllm, so I'll do the managing myself"). It
+    now measures what is running, starts and stops nothing, and refuses honestly when
+    nothing is up.
     """
     from src.ai_layer.bench_batch import load_anchors
     from src.ai_layer.coordinator import user_batch_hold
-    from src.ai_layer.model_bench import run_model_bench
+    from src.ai_layer.model_bench import run_default_model_bench
 
     batch = ensure_frozen_batch(refresh=refresh_batch)
     anchors = load_anchors()
-    # THE HOLD IS NOT POLITENESS HERE, it is correctness. This run STOPS AND RESTARTS
-    # the backend between models; a background sweep mid-batch against the server we
-    # are about to kill would fail for a reason that has nothing to do with it, and
-    # its retries would be competing for the card the bench is trying to measure. The
+    # THE HOLD IS NOT POLITENESS HERE, it is correctness. A background sweep running
+    # against the same server would be competing for the card this bench is trying to
+    # measure, and its numbers would be about the contention rather than the model. The
     # coordinator and every background-AI entry point already check this hold (the
-    # 2026-07-24 lesson: a pause that only stops the main loop is incomplete), and
-    # nothing was claiming it for the bench. Released in the context manager's
-    # `finally`, so a raising bench cannot strand the lane.
-    with user_batch_hold("comparative model bench"):
-        report = run_model_bench(
+    # 2026-07-24 lesson: a pause that only stops the main loop is incomplete). Released
+    # in the context manager's `finally`, so a raising bench cannot strand the lane.
+    with user_batch_hold("default model bench"):
+        report = run_default_model_bench(
             _StepCtx(ctx, "bench"),
-            models=models,
             repeats=repeats,
             restart=refresh_batch,
-            allow_backend_switch=True,
         )
     report["frozen_batch_step"] = batch
     report["anchors_available"] = bool(anchors and anchors.get("anchors"))
@@ -322,7 +305,7 @@ def _live_bench(ctx, *, models, repeats: int, refresh_batch: bool) -> dict:
 
 
 def _bench_lines(bench: dict | None) -> dict | None:
-    """What the comparative bench covered, and what it could not.
+    """What the bench covered, and what it could not.
 
     Deliberately NOT a summary of the numbers: those are per model, per task, per
     language, and flattening them into a headline is the composite this bench exists
@@ -337,7 +320,7 @@ def _bench_lines(bench: dict | None) -> dict | None:
     skipped = bench.get("skipped") or []
     by_reason: dict[str, list[str]] = {}
     for s in skipped:
-        label = s.get("model") or s.get("roster_key") or s.get("backend") or "?"
+        label = s.get("model") or s.get("backend") or "?"
         by_reason.setdefault(str(s.get("reason") or "unknown"), []).append(
             f"{s.get('backend')}|{label}"
         )
@@ -346,7 +329,7 @@ def _bench_lines(bench: dict | None) -> dict | None:
         "pairs_measured": bench.get("pairs_run") or [],
         "pairs_pending": bench.get("pairs_pending") or [],
         "skipped_by_reason": {k: sorted(v) for k, v in sorted(by_reason.items())},
-        "same_model_on_both_backends": [row.get("roster_key") for row in cross],
+        "same_model_on_both_backends": [row.get("model_key") for row in cross],
         "frozen_batch": bench.get("frozen_batch_step"),
         "anchor_accuracy": (
             "measured against the graded sitting"
@@ -361,24 +344,6 @@ def _bench_lines(bench: dict | None) -> dict | None:
     }
 
 
-def _live_provision(ctx) -> dict:
-    """Survey what the deep run needs BEFORE it needs it — download nothing.
-
-    Every "why did nothing happen" in the 10 August runs was knowable in seconds: a
-    model that was never fetched, a daemon that was down, a weights directory that was
-    half there. This step puts all of it at the TOP of the report, and its ``question``
-    is what a caller shows the operator before spending gigabytes on their behalf.
-    """
-    from src.ai_layer.bench_provision import survey
-
-    def _wake(backend: str) -> dict:
-        from src.ai_layer.model_bench import _default_wake
-
-        return _default_wake(backend)
-
-    return survey(wake=_wake)
-
-
 def default_step_names(
     *, include_perception: bool = True, include_selftests: bool = True, deep: bool = False
 ) -> list[str]:
@@ -386,9 +351,9 @@ def default_step_names(
 
     A seam rather than a comment: it lets the ORDER be asserted (the bench last, because
     it is the step measured in hours and every cheap step above explains its failures;
-    ``provision`` first, because it is the step that explains an EMPTY bench and costs
-    seconds) without a test driving real inference, which is how a check-composition
-    test ends up touching the corpus and polluting whatever runs after it.
+    it is the step that runs real inference over the frozen batch) without a test
+    driving real inference, which is how a check-composition test ends up touching the
+    corpus and polluting whatever runs after it.
     """
     names = ["facts", "latency", "throughput", "context"]
     if include_perception:
@@ -396,9 +361,6 @@ def default_step_names(
     if include_selftests:
         names.append("selftests")
     if deep:
-        # Before the hours-long step, not after it: an operator who is missing five of
-        # seven models should learn that in the first minute.
-        names.insert(0, "provision")
         names.append("model_bench")
     return names
 
@@ -412,10 +374,8 @@ def run_ai_check(
     include_perception: bool = True,
     include_selftests: bool = True,
     deep: bool = False,
-    bench_models: list[str] | None = None,
     bench_repeats: int = 2,
     refresh_batch: bool = False,
-    download_missing: bool = False,
     steps: dict[str, Callable[[], Any]] | None = None,
 ) -> dict:
     """Run every AI check this machine can do, in one pass, and report each ALONE.
@@ -451,25 +411,14 @@ def run_ai_check(
         # afternoon failing every pair for that one reason. The order lives in
         # ``default_step_names`` so it can be asserted without running anything.
         live: dict[str, Callable[[], Any]] = {
-            "provision": lambda: _live_provision(ctx),
             "facts": _live_facts,
             "latency": lambda: _live_latency(repeats),
             "throughput": lambda: _live_throughput(levels, calls_per_level),
             "context": _live_context,
             "perception_eval": _live_perception,
             "selftests": _live_selftests,
-            "model_bench": lambda: (
-                _provisioned_bench(
-                    ctx,
-                    survey_report=(results.get("provision") or {}).get("report"),
-                    run_one=lambda pairs: _live_bench(
-                        ctx, models=pairs, repeats=bench_repeats, refresh_batch=False
-                    ),
-                )
-                if download_missing
-                else _live_bench(
-                    ctx, models=bench_models, repeats=bench_repeats, refresh_batch=refresh_batch
-                )
+            "model_bench": lambda: _live_bench(
+                ctx, repeats=bench_repeats, refresh_batch=refresh_batch
             ),
         }
         plan = [
@@ -496,8 +445,6 @@ def run_ai_check(
     perception = (results.get("perception_eval") or {}).get("report")
     bench = (results.get("model_bench") or {}).get("report")
 
-    provision = (results.get("provision") or {}).get("report")
-
     failed = [k for k, v in results.items() if not v.get("ok")]
     return {
         "schema": AI_CHECK_SCHEMA,
@@ -507,10 +454,6 @@ def run_ai_check(
         "steps": [results[k] for k, _ in plan if k in results],
         "reading": {
             "backend": _backend_line(facts),
-            # First in the reading as well as first in the plan: an empty bench is
-            # explained here, and the reader should meet the explanation before the
-            # empty result rather than after it.
-            "provisioning": (provision or {}).get("question"),
             "throughput": _throughput_advice(throughput),
             "extraction_gate": _gate_lines(perception),
             "models": _bench_lines(bench),

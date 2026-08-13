@@ -4936,3 +4936,75 @@ scope, mypy 127 = baseline, bandit clean, i18n 100% with both ratchets unmoved.
 reads on screen. Annex coverage is guarded in CI and said so in the diagnostic's own
 `how_to_use`, rather than folded into a `complete` that would then be claiming more than
 it measured.
+
+## 2026-08-13 — one model app-wide, a custom-model field, and an uninstall that says what it kept
+
+**The ruling.** 2026-08-12, maintainer: *"use mistral's 3b model throughout the entire
+app. Drop all others. Keep in the UI the option for users to use their own models (as a
+buried advanced settings option)."* Then, the next day: hide the Setup card once there is
+nothing to set up, put it back if the operator switches to a backend that is not there,
+and add a way to uninstall.
+
+**What went.** 2,899 lines across seven files: `bench_roster` (8 models, per-backend
+resolution, drift reporting), `bench_provision` (the survey that priced what a machine
+lacked), `translation_probe`, their three test files, the `/bench-roster*` endpoints, the
+roster panels and the probe box. Two `AiCheckRunBody` fields — `bench_models` and
+`download_missing` — went with them: the endpoint accepted both, documented both at
+length, and had no machinery behind either.
+
+**What stayed, and why a catalogue survives one model.** `same_model_across_backends` is
+the vLLM-vs-Ollama comparison the maintainer uses, so its identifier map was repointed at
+the one-model catalogue rather than deleted with the roster. The catalogue itself has to
+exist because the two backends take DIFFERENT artifacts — an Ollama image and a Hugging
+Face repo — and neither is derivable from the other, so a catalogue handing both the same
+string would 404 one of them. Both identifiers now come from `MINISTRAL_AS_OF` (a new
+`external_artifacts.yml` entry) rather than being re-typed, which is what makes a stale
+one a freshness failure instead of a failed download.
+
+**Refuse what you can prove wrong; report what you cannot.** For vLLM a colon in the
+custom-model field is a refusal, because a Hugging Face repo id cannot contain one, and
+the reason names the mistake rather than letting the download fail. For Ollama a slash is
+legal — a namespaced tag has one — so nothing is refused beyond `..`, and the honest
+statement moves into prose: a name you type carries none of the shipped model's dated
+verification.
+
+**Uninstall is three categories, because the honest answer differs by category.** What
+this app installed (removed), what the operator installed system-wide (named, refused,
+never touched, with the commands shown), and the downloaded weights (removed only on an
+explicit tick, and only under `data_dir()`). What was kept is reported as prominently as
+what went: a button that says "Uninstalled." whatever happened leaves an operator
+believing a still-serving program is gone.
+
+**Two defects of my own, both before push.** `_owned_by_app` — the single gate deciding
+what may be deleted — first imported `data_dir` from a module that does not export it,
+behind a bare `except`, so every path answered "not ours" and an uninstall would have
+removed nothing while reporting that the operator had chosen all of those locations
+themselves. And it compared with `str.startswith`, which claims a SIBLING whose name
+merely extends the data dir's: `…/open-omniscience-old` starts with `…/open-omniscience`.
+`Path.is_relative_to` compares components. Both pinned, the second by a test that asserts
+the trap is real before asserting the guard defeats it.
+
+A third was found by mutation rather than by reading: `removable: True` for a
+system-installed Ollama survived, because the test monkeypatched `_ollama_state` — the
+function under test. Two tests now drive the real probes.
+
+**i18n.** 33 UI strings ×12, plus 6 that neither ratchet can see, because they live in a
+lookup table and reach `t()` by variable: the field label, the "your backend is X, browse
+them at" lead, and the paragraph on copying an identifier — the entire point of the panel
+the maintainer asked for, and green on every gate while rendering English in eleven
+locales. Four of the 33 are rewordings of already-keyed strings; the predecessors stay as
+orphans, because an orphan is inert while a deletion takes eleven reviewed translations
+with it. Locale files edited as BYTES beside a shared anchor: exactly N added / 0 removed
+per file.
+
+**Verified.** Full suite on py3.13. Untranslatable ratchet 567 → 561, lowered in the same
+change that earns it; unkeyed `t()` held at 298. ruff clean at CI's own scope, mypy 127 =
+baseline, bandit exit 0, `node --check` on every script. Mutations: the negative
+download guard reddens when `download_missing: true` is wired into the run call, and the
+ownership guard reddens when `is_relative_to` reverts to `startswith` — restored from `cp`
+backups, not `git checkout`, and the restore verified.
+
+**Browser-unverified per fork-3.** The uninstall box, the custom-model panel, the
+self-hiding Setup card and the rebuilt bench panel are guarded and syntax-clean, and a
+click-through is owed — particularly the backend-switch case, where the Setup card is
+meant to come back naming the engine that is missing.

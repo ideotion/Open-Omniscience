@@ -197,25 +197,38 @@ def test_the_card_is_handed_over_for_ollama_pairs_too(frozen_batch):
 # --------------------------------------------------------------------------- #
 #  Ollama vs vLLM, same model
 # --------------------------------------------------------------------------- #
-def test_the_same_model_on_two_backends_is_recognised_through_the_roster():
-    """The link is the roster entry, never string similarity: ``Qwen/Qwen3.5-0.8B`` and
-    ``qwen3.5:0.8b-q8_0`` are one model because the roster publishes both."""
+def test_the_same_model_on_two_backends_is_recognised_through_the_catalogue():
+    """The link is the dated catalogue entry, never string similarity: an Ollama image
+    and a Hugging Face repo are one model because one entry publishes both.
+
+    Read from the catalogue rather than hard-coded, so a re-verified identifier moves
+    this test with it instead of leaving a stale string asserting the old one."""
+    from src.llm.model_catalog import DEFAULT_KEY, catalog_for
+
+    oll = catalog_for("ollama")["models"][0]["artifact"]
+    hf = catalog_for("vllm")["models"][0]["artifact"]
+    assert oll != hf, "the two backends take different artifacts; that is why this map exists"
+
     mapping = MB._identifier_to_key()
-    assert mapping.get("vllm|Qwen/Qwen3.5-0.8B") == "qwen35-0-8b"
-    assert mapping.get("ollama|qwen3.5:0.8b-q8_0") == "qwen35-0-8b"
+    assert mapping.get(f"ollama|{oll}") == DEFAULT_KEY
+    assert mapping.get(f"vllm|{hf}") == DEFAULT_KEY
 
 
 def test_both_sides_are_printed_with_their_own_quantization():
+    from src.llm.model_catalog import DEFAULT_KEY, catalog_for
+
+    oll = catalog_for("ollama")["models"][0]["artifact"]
+    hf = catalog_for("vllm")["models"][0]["artifact"]
     results = {
-        "ollama|qwen3.5:0.8b-q8_0": {
+        f"ollama|{oll}": {
             "backend": "ollama",
-            "model": "qwen3.5:0.8b-q8_0",
-            "quantization": "q8_0",
+            "model": oll,
+            "quantization": "q4_K_M",
             "tasks": {"triage": {"format_validity": 0.9}},
         },
-        "vllm|Qwen/Qwen3.5-0.8B": {
+        f"vllm|{hf}": {
             "backend": "vllm",
-            "model": "Qwen/Qwen3.5-0.8B",
+            "model": hf,
             "quantization": None,
             "tasks": {"triage": {"format_validity": 0.95}},
         },
@@ -225,12 +238,12 @@ def test_both_sides_are_printed_with_their_own_quantization():
 
     assert len(rows) == 1
     row = rows[0]
-    assert row["roster_key"] == "qwen35-0-8b"
+    assert row["model_key"] == DEFAULT_KEY
     assert row["metrics"]["triage.format_validity"]["by_backend"] == {
         "ollama": 0.9,
         "vllm": 0.95,
     }
-    assert row["backends"]["ollama"]["quantization"] == "q8_0"
+    assert row["backends"]["ollama"]["quantization"] == "q4_K_M"
     assert "not one model measured twice" in row["caveat"], (
         "the reader must be told these are two builds, or a gap reads as run-to-run noise"
     )
@@ -425,11 +438,12 @@ def test_the_cross_backend_table_carries_the_expanded_latency_rows():
             },
         }
 
+    from src.llm.model_catalog import catalog_for
+
+    oll = catalog_for("ollama")["models"][0]["artifact"]
+    hf = catalog_for("vllm")["models"][0]["artifact"]
     rows = MB.same_model_across_backends(
-        {
-            "ollama|qwen3.5:0.8b-q8_0": pair("ollama", 120),
-            "vllm|Qwen/Qwen3.5-0.8B": pair("vllm", 480),
-        }
+        {f"ollama|{oll}": pair("ollama", 120), f"vllm|{hf}": pair("vllm", 480)}
     )
 
     m = rows[0]["metrics"]

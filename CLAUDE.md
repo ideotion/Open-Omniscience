@@ -12024,6 +12024,41 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     result — `assert round((180/7)/(300/30), 2) == 2.57` beside the string — because a
     proximity branch (`if prior`) that merely CORRELATES with the real condition will drift
     from it, and the drift is silent everywhere except in the arithmetic.
+- **A CONTAINMENT GUARD WRITTEN AS A STRING PREFIX CLAIMS THE SIBLINGS TOO — and when the
+  guard decides what may be DELETED, that is the whole safety property (2026-08-13, the
+  AI-uninstall ownership test):** `_owned_by_app` is the single gate deciding what the new
+  uninstall may remove, and it asked
+  `str(path.resolve()).startswith(str(data_dir().resolve()))`. A prefix is not containment:
+  `…/open-omniscience-old` starts with `…/open-omniscience`, so a DIFFERENT directory —
+  plausibly the operator's own copy of a previous install, sitting right beside the live
+  one — read as ours and would have gone with the models. `Path.is_relative_to` compares
+  path COMPONENTS, so a sibling stays a sibling however it is spelled. The test that pins
+  it asserts the trap is REAL first (`startswith` does say yes) and only then that the
+  guard says no — without that first line it would pass against either implementation.
+  TWO COROLLARIES from the same module, both cheap and both mine. (a) An earlier cut
+  imported `data_dir` from a module that does not export it, behind a **bare except**, so
+  every path answered "not ours": an uninstall that removed nothing while telling the
+  operator, politely and falsely, that they had chosen all of those locations themselves.
+  Failing safe is not the same as working — a guard that cannot tell "outside" from "I
+  could not look" is not a guard, so only the path resolution is guarded now and a broken
+  import raises. (b) A mutation (`removable: True` for a system-installed Ollama) SURVIVED
+  the first test round because the test monkeypatched `_ollama_state` — the very function
+  under test. That is the recorded "a test double injected via a parameter bypasses the
+  production path" trap wearing monkeypatch's clothes: when the thing you are asserting IS
+  the function, the double has to be one level below it.
+- **BOTH i18n RATCHETS ARE BLIND TO A STRING THAT LIVES IN AN OBJECT LITERAL — a green
+  gate is a floor, never a coverage claim (2026-08-13, the custom-model instructions):**
+  the recorded lesson already says gate 1 (`--min 100`) is no evidence about gate 2, by
+  construction. The sharper version: gate 2 infers which strings reach the DOM and gate 3
+  counts `t("literal")` call sites, so a string held in a lookup table and passed through
+  `t(h.lead)` at use is invisible to BOTH. Six such strings — the field label, the "your
+  backend is X, browse them at" lead and the paragraph on how to copy an identifier — were
+  the entire point of the panel the maintainer asked for, and would have rendered English
+  in eleven locales with every gate green and every ratchet unmoved. Keying them moves no
+  number, which is exactly the tell: when a panel's instructions matter, grep the SOURCE
+  for the strings it renders rather than trusting the count. And key only what varies by
+  language — the example identifier is a string to copy verbatim and the link text is a
+  hostname, so both stay untranslated on purpose.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
