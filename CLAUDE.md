@@ -3493,6 +3493,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     rides every batch by design (here the canaries) appears thousands of times and is not a
     corpus judgement — exclude it by name and publish the count, because a silent drop reads
     as "the model never saw them".
+  - **A MOVED PANEL TAKES ITS LOADER WITH IT, AND A RESULT RENDERED ONLY WHILE RUNNING IS
+    ABSENT WHENEVER ANYONE LOOKS (2026-08-13, "can't find your keyword triage button"):**
+    two stacked defects whose common tell is that the panel's own markup was innocent of
+    both — it is static HTML and had been in the tree the whole time, so every source grep
+    for the button, the href, or the panel id found them. (a) The three AI sweep panels
+    moved to Settings → Advanced → AI; their `sync*Toggle()` calls stayed behind on the AI
+    SUBTAB, so opening the section that CONTAINS them never asked whether a run existed.
+    When markup moves between subtabs, grep for what LOADS it, not just for what renders
+    it. (b) `_syncAiSweepToggle` called the renderer only when `state === "running"` — and
+    the renderer is what emits the download links, so after an overnight run finished they
+    did not exist in the DOM at the one moment they are wanted. This is the recorded "a
+    job's in-memory result is not the artifact's existence" lesson at the RENDER layer: the
+    log is on disk, `/last` reads it, and the panel should have too. THREE RULES FROM THE
+    FIX. An absent run renders NOTHING, never a zeroed panel — 0 batches reads as a run
+    that found nothing. The saved state gets its own words rather than being poured into
+    `paused_reason`, which all three renderers turn into the word "paused" — that would
+    relabel an errored run, a fabricated state worse than the empty panel. And the guard is
+    BEHAVIOURAL, because the defect was an absence and no assertion over an href can tell
+    "the string is in the file" from "the string is rendered when someone looks".
+    **THE PROCESS POINT IS THE NEGATIVE-SPACE GUARD THAT WAS ITSELF VACUOUS:** the twin
+    proving a LIVE run is not overwritten left `/last` unstubbed, reasoning that reading it
+    would throw and thereby prove it was not read — but the throw is swallowed by the
+    courtesy try/catch, so the panel stayed empty either way and the assertion passed for a
+    reason unrelated to its claim. It passed the mutation that deletes the early return.
+    A negative-space test must make the forbidden path actually AVAILABLE, or it is only
+    testing that the code did not crash.
 
   - **A SENTINEL DOCUMENTED AT THE SOURCE IS STILL A FABRICATION AT THE RENDER BOUNDARY —
     and a clamp that fires on 19 of 20 rows silently reorders the whole section
