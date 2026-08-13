@@ -11884,6 +11884,48 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   longer fit. So when reading any bench artifact, count answered-vs-attempted PER ROW before
   quoting anything, and look at WHERE the failures fall — a uniform failure rate and a
   degrading one have different causes and only one of them is about the model.
+  - **A FLAG COMPUTED AND NOT PUBLISHED IS INDISTINGUISHABLE FROM A FLAG NOBODY THOUGHT
+    OF — and the comment beside it will say it was published (2026-08-13, the growth
+    sentinel across six chrome sites):** `queries._growth_of` substitutes the recent COUNT
+    into `growth` when the prior rate scaled to the window comes to under one mention, and
+    the bulletin renderer was taught to tell that apart. Six `app.js` sites were not, so
+    the fix looked like a rendering job. It was not: of the three producers, ONE published
+    `growth_is_ratio`. `keyword_stats` computed `_is_ratio` and dropped it — with a comment
+    directly above saying it carried the flag "rather than leaving a second consumer to
+    re-derive it (or to print a count as a multiple)" — and `group_rate` inlined the rule a
+    third time without it. **THE MIRROR DEFECT IS WHY THE ORDER MATTERS:** patching only
+    the renderers would have had them read `undefined` on every row from two of three
+    producers, and a renderer that treats a missing field as "not a ratio" states a
+    sentinel that was never established, which is exactly as dishonest as the fabricated
+    multiple. Publish first, then read. TWO SMALLER GENERALISATIONS. (a) **A leading
+    underscore hides an unused local from every linter**: `_is_ratio` matches ruff's
+    default dummy-variable pattern, so F841 could never have flagged it — a discarded
+    return value named `_x` is invisible to tooling and must be caught by asserting the
+    PAYLOAD instead. (b) **When a fix must not disturb what already worked, split the
+    branch rather than the function**: `growthFallback` returns `null` for a measured
+    ratio, so each of the six sites keeps its own "↑N×" string byte-for-byte and only the
+    wrong branch moved — which also kept both i18n ratchets at zero movement, since no
+    ratio-branch string had to enter a translation table it was never in.
+  - **`growth` WAS ALSO THE BAR MAGNITUDE, so the sentinel did not merely mislabel a row —
+    it erased every other row (2026-08-13, same slice):** the Trends bars took their length
+    from `growth`, so a 5,701-mention sentinel and a ×3.6 ratio shared one scale and every
+    real ratio rounded to a 0% bar. The honest fix is a `null` from the value accessor for
+    a row that has no length on THIS scale, and an EMPTY track rather than the shared
+    `Math.max(2, …)` stub — a 2% bar reads as a very small rate, which is a fabricated
+    smallness where the truth is "no rate at all". The scale is then taken over the rows
+    that genuinely share it. GENERAL FORM: when one field feeds both a label and a
+    geometry, fixing the label leaves the geometry lying, and a chart lies more quietly.
+  - **AN EQUATION THAT SHOWS ITS WORK AND GETS IT WRONG IS WORSE THAN ONE THAT SHOWS NONE
+    (2026-08-13, the Lead card math row, found while measuring the above):** the row
+    branched on `prior` being truthy, but the sentinel fires on `expected < 1` — i.e. on
+    any prior of 4 or fewer at 7-vs-30 days. So a prior of 3 took the ratio branch and
+    printed `(5701 ÷ 7) ÷ (3 ÷ 30) = ×5701` under the label "Growth = recent rate ÷ earlier
+    rate", when that division is **8144.3**. The reader can check it, which is the whole
+    point of a method block, and checking it would show the app contradicting itself. RULE:
+    a displayed derivation owes an assertion that the stated operation produces the stated
+    result — `assert round((180/7)/(300/30), 2) == 2.57` beside the string — because a
+    proximity branch (`if prior`) that merely CORRELATES with the real condition will drift
+    from it, and the drift is silent everywhere except in the arithmetic.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 

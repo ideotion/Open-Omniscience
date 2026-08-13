@@ -2689,7 +2689,7 @@
           return `<div style="flex:1;min-width:180px;padding:6px;border:1px solid var(--border);border-radius:8px">
             <div style="display:flex;align-items:baseline;gap:6px">
               <a href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false' title="${esc(t("Open this keyword's own analysis window"))}">${esc(x.term)}</a>${kwTransHtml(x)}
-              <span class="muted" style="font-size:12px">↑${esc(String(x.growth))}× · ${esc(String(x.recent))}</span>${enlarge}
+              <span class="muted" style="font-size:12px">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span>${enlarge}
             </div>${spark}</div>`;
         }).join("");
         box.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap">${cards}</div>`
@@ -3216,7 +3216,7 @@
       const chips = terms.slice(0, 6).map(x =>
         `<a class="chip tiny" href="#" onclick='openAnalysisFor(${esc(JSON.stringify(x.term))});return false'`
         + ` title="${esc(t("Open this keyword's own analysis window"))}">${esc(x.term)}`
-        + ` <span class="muted">↑${esc(String(x.growth))}× · ${esc(String(x.recent))}</span></a>`).join("");
+        + ` <span class="muted">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent}`)}</span></a>`).join("");
       host.innerHTML = `<div class="ov-trend"><span class="muted">${esc(t("Trending now"))}:</span>${chips}`
         + `<a class="ov-more" href="#" onclick="showTab('insights');return false">${esc(t("More in Insights"))} →</a></div>`
         + (_homeTrendCaveat ? `<div class="hint muted" style="font-size:11px">${esc(_homeTrendCaveat)}</div>` : "");
@@ -13615,7 +13615,8 @@
       // (bounded — never all groups); both summed over the SAME deduped id set the
       // headline total uses, so the chart can never disagree with the number beside it.
       const rateLine = g.rate
-        ? `<div class="hint muted" style="margin-top:2px">↑${esc(String(g.rate.growth))}× (${g.rate.recent} recent · ${g.rate.prior} prior, ${g.rate.window_days}d vs ${g.rate.baseline_days}d)</div>`
+        ? `<div class="hint muted" style="margin-top:2px">${esc(growthFallback(g.rate, {window: true})
+            || `↑${g.rate.growth}× (${g.rate.recent} recent · ${g.rate.prior} prior, ${g.rate.window_days}d vs ${g.rate.baseline_days}d)`)}</div>`
         : "";
       const spark = (g.series && g.series.length)
         ? `<div style="margin-top:6px">${dashChartSvg(g.series.map(p => ({observed_on: p.date, price: p.count})), "")}</div>`
@@ -16448,6 +16449,67 @@
       } catch (e) { $("ins-trend").innerHTML = ""; toast(_failMsg("Explore failed: {error}", e), "err"); }
     }
 
+    // ── The growth sentinel ────────────────────────────────────────────────────
+    // `queries._growth_of` reports the recent COUNT in `growth` when the prior rate
+    // scaled to the window comes to less than one mention: there is no denominator
+    // worth dividing by, so the count is substituted. That substitution is a SENTINEL,
+    // not a measurement, and printed as "↑N×" it is a fabricated magnitude — a field
+    // bulletin rendered 5,701 mentions against a prior of 4 as "×5701.0", and 19 of its
+    // 20 rows were the same sentinel. The bulletin renderer was fixed then; these six
+    // chrome sites were not, and this is the shared reader they go through now.
+    //
+    // Deliberately mirrors `src/bulletin/render.py::_is_ratio`, down to the wording of
+    // the sentences below, so the same quantity reads the same way in the document and
+    // in the chrome. THREE states, because two would force a guess: `null` means the
+    // payload does not say and cannot be asked, and a row that cannot prove it is a
+    // ratio does not get to claim one. Payloads predating the flag still carry
+    // `expected`, which is what the flag is computed FROM, so they are read rather than
+    // guessed at.
+    function growthIsRatio(row) {
+      if (!row) return null;
+      const flag = row.growth_is_ratio;
+      if (flag !== undefined && flag !== null) return !!flag;
+      const exp = row.expected;
+      if (exp === undefined || exp === null) return null;
+      const n = Number(exp);
+      return Number.isFinite(n) ? n >= 1 : null;
+    }
+    // The honest phrase for a row whose `growth` is NOT a measured ratio, or null when
+    // it is — in which case the caller keeps its own existing "↑N×" rendering unchanged.
+    // Splitting it this way is deliberate: only the branch that was WRONG changes, so a
+    // measured ratio still renders byte-for-byte as it does today on all six surfaces,
+    // and no ratio-branch string moves through a translation table it was never in.
+    //
+    // The three sentences are the bulletin's, verbatim, and their translations were
+    // lifted from `configs/bulletin_i18n/` rather than re-drafted — same claim, same
+    // words, whichever surface the reader is on.
+    function growthFallback(row, opts) {
+      opts = opts || {};
+      const isRatio = growthIsRatio(row);
+      if (isRatio === true && row && row.growth != null) return null;
+
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const TF = (s, v) => (window.OOI18N && OOI18N.tf) ? OOI18N.tf(s, v)
+        : String(s).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? String(v[k]) : m);
+      const recent = (row && row.recent != null) ? row.recent : 0;
+      const prior = (row && row.prior != null) ? row.prior : null;
+
+      // Nothing computed, or the row cannot prove it is a ratio: say the count and stop,
+      // rather than print "×undefined" or claim a multiple the row cannot support.
+      if (!row || row.growth == null || isRatio === null) {
+        return TF("{n} mentions", {n: fmtNum(recent)});
+      }
+      // The sentinel. Say the two counts it stands between and name the reason; the one
+      // thing not to do is dress the count as a multiple.
+      if (prior === 0 || prior == null) {
+        return TF("{n} mentions — new in this period, nothing prior to compare", {n: fmtNum(recent)});
+      }
+      const win = (opts.window && row.baseline_days != null)
+        ? TF("prior {days} days", {days: row.baseline_days}) : T("prior period");
+      return TF("{n} mentions, against {prior} in the {window} — too thin a baseline to divide by",
+                {n: fmtNum(recent), prior: fmtNum(prior), window: win});
+    }
+
     // The current UI language as a target for verified keyword translations.
     function uiLangCode() { return (window.OOI18N && OOI18N.current && OOI18N.current()) || "en"; }
     function tgtLangParam() { return "&target_lang=" + encodeURIComponent(uiLangCode()); }
@@ -16688,18 +16750,28 @@
     // never a composite score), the value shown beside it; clicking a bar opens the
     // unified analysis window (trend over time + worldwide spread). The bar is a
     // visual of the count/rate, not a verdict — the number stays explicit.
+    // `valueOf` may return null for a row that HAS no magnitude on this scale — a rising
+    // row whose `growth` is the no-baseline sentinel is a count, not a rate, and drawing
+    // it on the rate scale is what made every real ratio invisible (a 5,701-mention
+    // sentinel beside a ×3.6 ratio). Such a row keeps its place and its honest label and
+    // gets an EMPTY track: no fill at all, rather than the 2% stub, which would read as a
+    // very small rate instead of no rate. The scale is then taken over the rows that
+    // genuinely share it.
     function termBarsHtml(terms, valueOf, labelOf) {
       const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!terms.length) return '<div class="muted">' + esc(T("Nothing yet — index the corpus.")) + "</div>";
-      const max = Math.max(1, ...terms.map(t => Number(valueOf(t)) || 0));
-      return '<div class="term-bars">' + terms.map(t => {
-        const v = Number(valueOf(t)) || 0;
-        const pct = Math.max(2, Math.round((v / max) * 100));
+      const scaled = terms.map(t => valueOf(t)).map(v => (v == null ? null : Number(v)))
+        .map(v => (v != null && Number.isFinite(v)) ? v : null);
+      const max = Math.max(1, ...scaled.filter(v => v != null));
+      return '<div class="term-bars">' + terms.map((t, i) => {
+        const v = scaled[i];
+        const fill = v == null ? ""
+          : `<span class="tb-fill" style="width:${Math.max(2, Math.round((v / max) * 100))}%"></span>`;
         return `<div class="tb-row">
           <button class="tiny danger tb-x" title="exclude this keyword" onclick='excludeKeyword(${esc(JSON.stringify(t.term))})'>✕</button>
           <a class="tb-label" href="#" data-kwstat="${esc(t.term)}" title="${esc(t.term)} — open in analysis (trend + worldwide spread)"
              onclick='openAnalysisFor(${esc(JSON.stringify(t.term))});return false'>${esc(t.term)}</a>
-          <span class="tb-bar" aria-hidden="true"><span class="tb-fill" style="width:${pct}%"></span></span>
+          <span class="tb-bar" aria-hidden="true">${fill}</span>
           <span class="tb-val muted">${esc(labelOf(t))}</span>
         </div>`;
       }).join("") + "</div>";
@@ -16749,8 +16821,11 @@
           api(`/api/insights/top?days=${wd}&${qp()}`),
         ]);
         // #25: clickable horizontal bar graphs (rising by growth rate, top by mentions).
-        $("trd-rising").innerHTML = termBarsHtml(rising.terms, t => t.growth,
-          t => `↑${t.growth}× (${t.recent} recent · ${t.prior} prior)`);
+        // A row whose growth is the no-baseline sentinel is off the rate scale (null) and
+        // says so in words, rather than drawing a count as the longest bar on the chart.
+        $("trd-rising").innerHTML = termBarsHtml(rising.terms,
+          t => (growthIsRatio(t) === true ? t.growth : null),
+          t => growthFallback(t) || `↑${t.growth}× (${t.recent} recent · ${t.prior} prior)`);
         $("trd-top").innerHTML = termBarsHtml(top.terms, t => t.mentions,
           t => `${t.mentions} mentions · ${t.articles} articles`);
         $("trd-method").textContent = rising.method ? "Rising = " + rising.method : "";
@@ -16794,12 +16869,14 @@
             return `<div style="padding:6px 0;border-bottom:1px solid var(--border)">
               <div style="display:flex;align-items:baseline;gap:6px">
                 <a href="#" onclick='pickTerm(${esc(JSON.stringify(x.term))});return false'>${esc(x.term)}</a>
-                <span class="muted" style="font-size:12px">↑${esc(String(x.growth))}× · ${esc(String(x.recent))} recent</span>
+                <span class="muted" style="font-size:12px">${esc(growthFallback(x) || `↑${x.growth}× · ${x.recent} recent`)}</span>
                 <button class="ghost tiny" style="margin-inline-start:auto" onclick="enlargeTrend(${wi},${ti})" title="${esc(t("Enlarge the chart"))}" aria-label="${esc(t("Enlarge the chart"))}">⛶</button>
               </div>${dashChartSvg(pts, "")}</div>`;
           }).join("");
           const rest = terms.filter(x => !Array.isArray(x.series));
-          const restList = rest.length ? termListHtml(rest, t2 => `↑${t2.growth}× · ${t2.recent} recent`) : "";
+          const restList = rest.length
+            ? termListHtml(rest, t2 => growthFallback(t2) || `↑${t2.growth}× · ${t2.recent} recent`)
+            : "";
           return `<div style="flex:1;min-width:240px">${head}${spark}${restList}</div>`;
         }).join("") || `<div class="muted">${esc(t("No rising keywords in this window yet."))}</div>`;
         const note = $("trd-windows-note"); if (note) note.textContent = d.caveat || "";
@@ -23583,7 +23660,11 @@
         if (!d || !d.resolved) return t("Not in your corpus yet — no stats.");
         const bits = [`${d.mentions} ${t("mentions")} · ${d.articles} ${t("articles")}`];
         const tr = d.trend || {};
-        if (tr.recent || tr.prior) bits.push(`${t("trend")} ${tr.growth}× (${tr.window_days}d ${t("vs")} ${tr.baseline_days}d)`);
+        if (tr.recent || tr.prior) {
+          const fb = growthFallback(tr, {window: true});
+          bits.push(fb ? `${t("trend")}: ${fb}`
+                       : `${t("trend")} ${tr.growth}× (${tr.window_days}d ${t("vs")} ${tr.baseline_days}d)`);
+        }
         const co = (d.cooccurrences || []).slice(0, 4).map((c) => c.term).filter(Boolean);
         if (co.length) bits.push(`${t("with")}: ${co.join(", ")}`);
         const head = d.resolved.term || d.term || "";
