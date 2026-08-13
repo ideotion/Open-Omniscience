@@ -156,6 +156,11 @@ class Translator:
         # inviting a translation that would match one corpus and read as working.
         # Counted and published under their own name, never silently dropped.
         self._data: dict[str, None] = {}
+        # The line composed for THIS render, once. A separate flag rather than a
+        # sentinel value, because ``None`` is a legal composed answer (an English
+        # document owes no line) and a falsy check would recompose forever.
+        self._disclosed: str | None = None
+        self._composed = False
 
     # -- resolution ------------------------------------------------------- #
 
@@ -234,6 +239,17 @@ class Translator:
     def frame_holes(self) -> set[str]:
         """The hole names every frame this render declared."""
         return set(self._holes)
+
+    def seen(self) -> list[str]:
+        """Every sentence asked for, in the order first asked.
+
+        ``report()`` publishes the COUNT and the sentences that were missing; a
+        caller building a translator's worklist needs the sentences themselves,
+        including the ones that were answered — a probe run against a catalog that
+        answers everything has no gap to read, and is the only way to reach the
+        renderer's translated-locale paths.
+        """
+        return list(self._seen)
 
     def report(self) -> dict:
         """Everything the diagnostic needs, and nothing derived from a guess.
@@ -330,14 +346,36 @@ class Translator:
         are simply untranslated — but a reader cannot tell that from a deliberate
         quotation unless the document says so. English documents get no line: there
         is nothing to disclose, and adding one would change every existing edition.
+
+        COMPOSED ONCE per instance, and that is not an optimisation. Asking for the
+        line REGISTERS its own frames, so a second call counts them in the total the
+        line quotes: the document printed "10 of 166" while the diagnostic's own
+        payload — a second call on the same translator — printed "10 of 169" about
+        that document. One instance is one render, so it owes one answer; a caller
+        that wants a fresh count builds a fresh translator.
         """
         if self.is_english:
             return None
+        if self._composed:
+            return self._disclosed
+        self._composed = True
         # Read the report BEFORE composing the line, so the line's own frame is not
         # counted in the total it reports. Otherwise a fully-translated document would
         # announce a shortfall of exactly one — itself.
         r = self.report()
-        n, done = r["strings_seen"], r["translated"]
+        n = r["strings_seen"]
+        # An entry a translator answered with the same text IS in the target language:
+        # French spells "articles" and "mentions" the way English does. Counting those
+        # as an English remainder made every finished locale print a shortfall that did
+        # not exist — French announced "158 of 168 … the rest are printed in English"
+        # about ten sentences that were in French — and a fabricated shortfall inside a
+        # caveat is as dishonest as a fabricated pass. The English remainder is what the
+        # app KNOWS is English: a sentence with no entry, and one whose frame was
+        # refused. ``report()``'s coverage keeps the stricter definition on purpose;
+        # that measures translation WORK, which is a different question from what
+        # language the reader is holding.
+        identical = r["identical_to_english"]
+        done = r["translated"] + identical
         if not n:
             return None
         # Numbers are grouped in the English style everywhere, and in French "72,225"
@@ -350,12 +388,25 @@ class Translator:
             "full stop marks the decimal."
         )
         if done >= n and not r["rejected"]:
-            return self.f(
+            line = self.f(
                 "This edition was written in {language}. Words quoted from sources — "
                 "titles, authors, keywords — stay in their own language.",
                 language=self.language_name(),
-            ) + numbers
-        return self.f(
+            )
+            # Stated as a component, never folded into the claim above, because the app
+            # cannot tell a legitimate identity ("Asia") from an entry someone copied
+            # without translating — it has no dictionary. So it publishes the number and
+            # the reader judges: a handful reads as spelling, and a catalog copied whole
+            # says "168 of 168", which is self-evident.
+            if identical:
+                line += " " + self.f(
+                    "{n} of {total} sentences are spelled the same in both languages.",
+                    n=f"{identical:,}",
+                    total=f"{n:,}",
+                )
+            self._disclosed = line + numbers
+            return self._disclosed
+        self._disclosed = self.f(
             "This edition was requested in {language}: {done} of {total} sentences this "
             "app writes have a {language} translation and the rest are printed in "
             "English. Words quoted from sources — titles, authors, keywords — stay in "
@@ -365,6 +416,7 @@ class Translator:
             done=f"{done:,}",
             total=f"{n:,}",
         ) + numbers
+        return self._disclosed
 
     def language_name(self) -> str:
         """The language's own name for itself, per the flags-are-not-languages rule."""

@@ -1896,6 +1896,16 @@
           <div class="hint" style="margin-top:4px">Runs every roster model over the SAME frozen inputs — a stratified keyword sample, your own closed tag vocabulary, and the reviewed who/where/when gold set — on every backend that actually serves it, and reports five task measurements per model: who/where/when accuracy and hallucination, keyword-triage format validity and throughput, closed-vocabulary tag validity, language detection, and per-shape latency. Every metric stands ALONE: there is no composite, no ranking and no winner column, because the tasks measure different things and a blend would hide which one moved. The inputs are frozen ONCE so that every model answers the same questions — a fresh sample per model would look comparable and measure different work. Nothing here changes your active model.</div>
         </details>
         <p class="hint" style="margin-top:6px">Ticking "every model" beside Run all AI checks above does all of this for you: it freezes the inputs on first use, resolves the roster per backend, restarts vLLM between models and hands the GPU back and forth. The only thing it cannot do for you is grade the anchors — that needs a person, because two models agreeing is not either being right.</p>
+        <!-- RULED 2026-08-12 (maintainer): "The app has failed to manage both ollama
+             and vllm, so I'll do the managing myself." This is the primary button
+             because it answers the question that has never been answered — is the
+             default model faster here on vLLM or on Ollama — and it answers it by
+             measuring the machine exactly as the operator arranged it. -->
+        <div class="row" style="margin-top:8px">
+          <button id="mb-default-btn" onclick="mbRunDefault(this)" data-running="0" title="Measure the DEFAULT model on whichever backend is already running, and manage nothing: no start, no stop, no model handover. Run it once with Ollama serving and once with vLLM serving, then compare the two reports — each one records which backend and which device (GPU or CPU) it actually used. Refuses honestly if no backend is up, or if vLLM is serving a different model, rather than filing one model's numbers under another's name.">Bench the default model (this backend)</button>
+          <span id="mb-default-status" class="small" style="margin-left:6px"></span>
+        </div>
+        <div class="hint" style="margin-top:4px">Two runs, one per backend, compared afterwards. Start the backend you want measured yourself — this deliberately starts nothing, because if it chose you would not know which of the two you had measured.</div>
         <div class="row" style="margin-top:6px">
           <button class="secondary" onclick="mbAnchorsLoad(this)" title="Start the grading sitting: ~50 keywords drawn FROM the frozen batch, graded junk / content / unsure (press J, C or U on a focused row) with an optional kind. Graded once, reused across every model and every future run — this is what turns 'the models agree' into 'the models are right'. It is the one step nothing here can do for you.">Grade anchors (~50)</button>
           <button class="secondary" onclick="mbAnchorsSave(this)" title="Persist the grading sitting. A grade outside junk/content/unsure — or a term graded twice — is refused loudly rather than repaired.">Save anchors</button>

@@ -259,12 +259,20 @@ def group_rate(
     recent = _windowed_sum(db, keyword_ids, w_start, hi)
     prior = _windowed_sum(db, keyword_ids, b_start, w_start)
     expected = (prior / baseline_days) * window_days if baseline_days else 0.0
-    growth = recent / expected if expected >= 1 else float(recent)
+    # Routed through queries._growth_of (2026-08-13) so the sentinel rule has ONE
+    # implementation rather than three. This line used to inline it, and inlining is
+    # what let the FLAG go missing: a consumer had no way to tell the recent count
+    # from a real multiple, and the docstring above called the substitution "an
+    # honest floor" -- which is a disclosure standing in for the fact a reader needs.
+    from src.analytics.queries import _growth_of
+
+    growth, is_ratio = _growth_of(recent, expected)
     return {
         "recent": int(recent),
         "prior": int(prior),
         "expected": round(expected, 2),
         "growth": round(growth, 2),
+        "growth_is_ratio": is_ratio,
         "window_days": window_days,
         "baseline_days": baseline_days,
     }
