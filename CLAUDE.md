@@ -4150,6 +4150,50 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     cannot interrupt the scan it most needs to. A guard that runs between the expensive
     things is not a guard on the expensive thing.
 ## Open queue (when maintainer says proceed)
+- **KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING (maintainer 2026-08-13, "let's get this done
+  at my return" — PARKED, nothing further to build; the machinery is shipped and the
+  remaining steps are one operator fetch, one review, one ruling):**
+  **WHAT SHIPPED THIS SESSION (all merged except the last):** the cleanup button continues a
+  paused re-index instead of discarding it + a measured `keywords/h` (#947) · the triage log
+  becomes a language-SCOPED proposal, `propose_stoplist_additions`'s first production caller
+  (#948) · the sweep panels render their saved run and load in the section that holds them
+  (#950) · the panel reports the LOG's totals rather than one failed invocation's (#956, CI
+  green, awaiting merge).
+  **THE OPERATOR STEP (blocks everything else):** on OOS-GPU, from `/home/user/open-omniscience`
+  (their data dir is `<install>/data`, not `~/.local/share`), run
+  `curl -sS -OJ 'http://127.0.0.1:8000/api/diagnostics/keyword-triage/proposal?download=1'`
+  and send the file. The app must be running — the proposal joins each judged term back to
+  the live keyword rows for its language.
+  **THE FIELD RUN'S REAL SHAPE, so it is not re-derived:** their log is
+  `oo-keyword-triage-20260802-133241-630762.jsonl`, **6,208 batch records**, model
+  `mistralai/Ministral-3-3B-Instruct-2512`, prompt `keyword-triage-v1`. Its FOOTER reads
+  `state: error, batches_completed: 0, verdicts_out: 0` — that is the 2026-08-09 invocation
+  which found vLLM down and gave up before its first batch, NOT the run (the resumable-footer
+  lesson above). The earlier live status they quoted (4,883 batches · 131,838 keywords_in ·
+  109,466 verdicts_out · 22,372 missing · 22,575 parse_failures) is one invocation's own
+  tally; `verdicts_out + missing == keywords_in` exactly, so **83% of asked keywords got a
+  verdict and 17% got none** — `parse_failures` overlaps `missing` and is NOT a second 17%.
+  Their log PREDATES the in-log language field, so every entry will be corpus-derived
+  (`language_basis.from_the_live_corpus`).
+  **THE REVIEW, when the file arrives:** read `log.canary_ok_overall` and
+  `judged.repeat_disagreements` FIRST — canary failures invalidate their batches and must be
+  excluded before a single word is discussed; then a stratified re-judgement sample weighted
+  toward non-English; then a scoped batch as a reviewed PR (ai-proposed → claude-verified →
+  maintainer-merged).
+  **THE RULING STILL FORMALLY OPEN — scenario (1) vs (2).** Recommendation on record is
+  **(1): derive a versioned, per-language stoplist into the repo, once, reviewed** — because
+  a stoplist entry is applied at BOTH ends (query-time hiding, reversible by removing the
+  word; index-time exclusion, recoverable only by a full re-index), so an auto-updating
+  stoplist is a partially IRREVERSIBLE corpus-wide deletion with no UI presence, it makes two
+  instances holding the same articles disagree (the reliable-memory pillar), it is a poisoning
+  vector (influence what an instance scrapes → influence what the model calls junk → make a
+  topic unfindable), and it contradicts the standing propose-never-auto-apply rule. (1) also
+  dissolves the maintainer's own transfer worry: the work lives in the repo, not in the
+  database, so it travels to every install. Caveat to state when ruling: a stoplist derived
+  from ONE corpus reflects that corpus's language and source mix — mitigated by putting
+  additions in the language-SCOPED channel (`configs/stopwords_extra/<lang>.yml`, collision-free
+  by construction) and reserving the global channel for words that survive cross-language
+  review.
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
   the MEASUREMENT shipped, the two structural changes did NOT — deliberately, and the
   reasons are findings rather than reluctance):** the queue runs `_drive()` as a strict
