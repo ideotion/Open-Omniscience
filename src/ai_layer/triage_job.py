@@ -56,6 +56,33 @@ KEYWORD_TRIAGE_RUN_HEADER_SCHEMA = "oo-keyword-triage-run-1"  # T.run_header's o
 KEYWORD_TRIAGE_RUN_SUMMARY_SCHEMA = "oo-keyword-triage-run-summary-1"
 KEYWORD_TRIAGE_VERDICTS_SCHEMA = "oo-keyword-triage-verdicts-1"
 
+
+def _verdicts_record(batch_no: int, pb, chunk) -> dict:
+    """The per-batch verdicts record, with each judged term's LANGUAGE beside its verdict.
+
+    The language is what decides whether a stoplist addition is safe: a per-language SCOPED
+    entry is collision-free by construction, a GLOBAL one is not (English "content" is
+    French *content* = happy). Earlier logs carried the verdict alone, so a proposal built
+    from them had to join back to the live keyword rows to find out — which works, and
+    ``triage_proposal`` still does it for those logs, but it makes the artifact depend on a
+    corpus that may since have been pruned or moved to another machine. Carrying it here
+    makes a log self-describing: the run's own evidence travels with the run.
+
+    ONE builder for both call sites (the one-shot batch run and the progressive sweep), so
+    the two record shapes cannot drift apart.
+    """
+    langs = {it.term: it.language for it in chunk if it.language}
+    return {
+        "schema": KEYWORD_TRIAGE_VERDICTS_SCHEMA,
+        "batch": batch_no,
+        "verdicts": pb.verdicts,
+        "missing": pb.missing,
+        # Only the terms actually judged, and only where the corpus HAS a language: an
+        # absent entry means "this keyword carries no language", never a guessed one.
+        "languages": {t: langs[t] for t in pb.verdicts if t in langs},
+    }
+
+
 DEFAULT_BATCH_SIZE = 25
 DEFAULT_LIMIT = 500
 
@@ -214,12 +241,7 @@ def run_keyword_triage_job(
             canary=out["canary"],
             model=model,
         )
-        detail = {
-            "schema": KEYWORD_TRIAGE_VERDICTS_SCHEMA,
-            "batch": i,
-            "verdicts": pb.verdicts,
-            "missing": pb.missing,
-        }
+        detail = _verdicts_record(i, pb, chunk)
         T.export_triage_jsonl(path, [rec, detail])
         totals["keywords_in"] += pb.keywords_in
         totals["verdicts_out"] += pb.verdicts_out
@@ -498,12 +520,7 @@ def run_progressive_triage_job(
             canary=out["canary"],
             model=model,
         )
-        detail = {
-            "schema": KEYWORD_TRIAGE_VERDICTS_SCHEMA,
-            "batch": batches_completed,
-            "verdicts": pb.verdicts,
-            "missing": pb.missing,
-        }
+        detail = _verdicts_record(batches_completed, pb, chunk)
         T.export_triage_jsonl(path, [rec, detail])
         totals["keywords_in"] += pb.keywords_in
         totals["verdicts_out"] += pb.verdicts_out

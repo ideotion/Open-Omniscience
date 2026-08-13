@@ -2827,6 +2827,7 @@
   "articles/h": "लेख/घंटा",
   "Resume the keyword cleanup? It continues from where it stopped — {done} of {total} articles ({percent}%) are already re-indexed.": "कीवर्ड सफ़ाई फिर से शुरू करें? यह वहीं से जारी रहेगी जहाँ रुकी थी — {total} में से {done} लेख ({percent}%) पहले ही पुनः अनुक्रमित हो चुके हैं।",
   "Clean up keywords now? This re-indexes every article with the current engine, then removes the keywords left with no mentions. Heavy on a large corpus; keywords still in use and anything you curated are kept.": "अभी कीवर्ड साफ़ करें? यह वर्तमान इंजन से हर लेख को पुनः अनुक्रमित करता है, फिर उन कीवर्ड को हटाता है जिनका कहीं उल्लेख नहीं बचा। बड़े संग्रह पर यह भारी है; अब भी उपयोग में आ रहे कीवर्ड और आपके द्वारा व्यवस्थित की गई हर चीज़ बनी रहती है।",
+  "Download the stoplist proposal (.json)": "स्टॉपलिस्ट प्रस्ताव डाउनलोड करें (.json)",
   "unused keywords removed": "अप्रयुक्त कीवर्ड हटाए गए",
   "watch only": "केवल वॉच",
   "— create, add, remove, delete": "— बनाएँ, जोड़ें, हटाएँ, मिटाएँ",

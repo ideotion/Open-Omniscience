@@ -2827,6 +2827,7 @@
   "articles/h": "articles/h",
   "Resume the keyword cleanup? It continues from where it stopped — {done} of {total} articles ({percent}%) are already re-indexed.": "Resume the keyword cleanup? It continues from where it stopped — {done} of {total} articles ({percent}%) are already re-indexed.",
   "Clean up keywords now? This re-indexes every article with the current engine, then removes the keywords left with no mentions. Heavy on a large corpus; keywords still in use and anything you curated are kept.": "Clean up keywords now? This re-indexes every article with the current engine, then removes the keywords left with no mentions. Heavy on a large corpus; keywords still in use and anything you curated are kept.",
+  "Download the stoplist proposal (.json)": "Download the stoplist proposal (.json)",
   "unused keywords removed": "unused keywords removed",
   "watch only": "watch only",
   "— create, add, remove, delete": "— create, add, remove, delete",

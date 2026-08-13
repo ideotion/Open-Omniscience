@@ -2827,6 +2827,7 @@
   "articles/h": "Artikel/h",
   "Resume the keyword cleanup? It continues from where it stopped — {done} of {total} articles ({percent}%) are already re-indexed.": "Schlagwort-Bereinigung fortsetzen? Sie macht dort weiter, wo sie aufgehört hat — {done} von {total} Artikeln ({percent} %) sind bereits neu indiziert.",
   "Clean up keywords now? This re-indexes every article with the current engine, then removes the keywords left with no mentions. Heavy on a large corpus; keywords still in use and anything you curated are kept.": "Schlagwörter jetzt bereinigen? Dabei wird jeder Artikel mit der aktuellen Engine neu indiziert und anschließend werden Schlagwörter entfernt, die nirgends mehr vorkommen. Bei einem großen Korpus aufwendig; noch verwendete Schlagwörter und alles von Ihnen Kuratierte bleiben erhalten.",
+  "Download the stoplist proposal (.json)": "Stoppwort-Vorschlag herunterladen (.json)",
   "unused keywords removed": "unbenutzte Schlagwörter entfernt",
   "watch only": "nur beobachten",
   "— create, add, remove, delete": "— erstellen, hinzufügen, entfernen, löschen",

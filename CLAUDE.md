@@ -3471,6 +3471,28 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     committed batch, zeroed on rollback) rather than scaling the article rate by an
     assumed keywords-per-article, and the guard asserts the tallied number equals the
     row count in the database, because `> 0` passes for any fabrication.
+  - **A CAPABILITY WITH NO CALLER PLUS A FIELD THE ARTIFACT DOES NOT CARRY LEAVES A 24-HOUR
+    RUN UNUSABLE — and neither half looks like a defect on its own (2026-08-13, the keyword
+    triage proposal):** `propose_stoplist_additions` / `propose_kind_overrides` were written,
+    tested, and called by nothing outside the test tree — the recorded dead-end shape. That
+    alone reads as an unfinished feature. The second half is what made it expensive: the
+    per-batch verdicts record carried `term -> {verdict, kind}` and NOT the term's LANGUAGE,
+    which is the field the whole decision turns on, because a per-language scoped stoplist
+    entry is collision-free by construction and a global one is not (English "content" is
+    French *content* = happy). So an overnight GPU sweep produced 109,466 verdicts that no
+    code path could turn into a safe proposal, and the missing field would have forced every
+    one of them through the dangerous channel. GENERAL FORM: when a pipeline's last stage has
+    no caller, also check whether its INPUT carries what that stage needs — a stage nobody
+    runs is never told it is missing an argument. THREE RULES from the fix. (a) The join back
+    to live rows is what rescues an existing log, but it is not equivalent: a language
+    recorded IN the run is what the model judged, one read from the corpus now is today's
+    state — publish which basis each entry came from rather than presenting them as one.
+    (b) Anything the join cannot answer is HELD BACK, not guessed: a term existing under
+    several languages, or no longer in the corpus at all. Picking one language would invent
+    precisely the cross-language collision the scoping exists to prevent. (c) A fixture that
+    rides every batch by design (here the canaries) appears thousands of times and is not a
+    corpus judgement — exclude it by name and publish the count, because a silent drop reads
+    as "the model never saw them".
 
   - **A SENTINEL DOCUMENTED AT THE SOURCE IS STILL A FABRICATION AT THE RENDER BOUNDARY —
     and a clamp that fires on 19 of 20 rows silently reorders the whole section

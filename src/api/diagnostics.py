@@ -3543,6 +3543,11 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # Section 8 real run (2026-07-20 ruling): the last saved keyword-triage JSONL run,
         # summarised (read-only; never RUNS a triage -- that is its own background job).
         ("keyword-triage-run.json", lambda: keyword_triage_last()),
+        # The reviewable PROPOSAL built from that run: junk verdicts grouped per language,
+        # with the evidence and what was held back. Cheap (a streamed log read + one
+        # indexed term lookup), read-only, and it applies nothing -- the artifact a human
+        # judges before any stoplist ever changes. Query() default passed EXPLICITLY.
+        ("keyword-triage-proposal.json", lambda: keyword_triage_proposal(download=False, db=db)),
         # The sibling LLM source-tag-assignment run: selftest + last saved summary.
         ("source-tags-selftest.json", lambda: source_tags_selftest(download=False)),
         ("source-tags-run.json", lambda: source_tags_last()),
@@ -3775,6 +3780,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/card-audit": "card-audit.json",  # the DEEP card-system audit (summary depth)
     "/bulletin-preview": "bulletin-weekly.json",  # Bulletin Layer A, weekly period
     "/keyword-triage/last": "keyword-triage-run.json",
+    "/keyword-triage/proposal": "keyword-triage-proposal.json",
     "/llm-throughput-selftest": "llm-throughput-selftest.json",
     "/ai-activity": "ai-activity.json",
     "/ai-activity-selftest": "ai-activity-selftest.json",
@@ -4791,6 +4797,29 @@ def keyword_triage_last() -> JSONResponse:
     from src.ai_layer.triage_job import last_keyword_triage_report
 
     return JSONResponse(last_keyword_triage_report())
+
+
+@router.get("/keyword-triage/proposal")
+def keyword_triage_proposal(
+    download: bool = Query(False), db: Session = Depends(get_db)
+) -> JSONResponse:
+    """The REVIEWABLE artifact built from a finished run: junk verdicts grouped PER
+    LANGUAGE (the collision-free scoped channel), kind overrides, and the evidence behind
+    each proposed term — plus an explicit account of what was held back and why.
+
+    Read-only and model-free: it reads the saved JSONL and joins the judged terms back to
+    the live keyword rows for the language the log does not carry. Nothing is applied —
+    a stoplist entry hides existing mentions at query time AND stops new ones being stored
+    at index time, and only the second is undoable without a full re-index, which is
+    exactly why this stays a proposal a human merges."""
+    from src.ai_layer.triage_proposal import build_triage_proposal
+
+    out = build_triage_proposal(db)
+    headers = {}
+    if download:
+        fname = f"oo-keyword-triage-proposal-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(out, headers=headers)
 
 
 @router.get("/keyword-triage/download")
