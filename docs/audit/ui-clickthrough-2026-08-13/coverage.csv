@@ -1,0 +1,88 @@
+surface,axis,result,note
+state_a_boot,default,verified,"redirected to /unlock, body text length 152"
+state_a_first_launch,language-step-shown,verified,#view-language visible=True
+state_a_first_launch,legal-step-shown,verified,#view-legal visible=True
+state_a_first_launch,legal-accept-enables-on-check,verified,#lg-accept disabled after checking #lg-check: False
+state_a_first_launch,create-step-reached,verified,#view-create visible=True
+state_a_first_launch,short-passphrase-error-path,verified,live Chromium re-verification of the fixed P0
+state_a_first_launch,happy-path-create,verified,reached #tab-home=True
+state_b_guide_wizard,auto-open-on-empty-corpus,verified,#guide-wizard open on boot: True
+state_b_guide_wizard,dismissed-via-gw-close,verified,still open after clicking #gw-close: False
+state_b_home_empty,default,verified,visible=True errors=[] empty_honesty_text=True
+state_c_guide_wizard,auto-open-on-empty-corpus,verified,#guide-wizard open on boot: False
+home_leads,default,verified,
+analysis_window,default,verified,
+post_import_screen,default,partial,not visible
+source_management,default,verified,
+diagnostics_panel,default,verified,
+export_import_dialog,default,verified,
+world_map_server_ips,default,verified,
+governments_law,default,verified,
+settings_ai,default,verified,
+settings_cards,default,verified,
+keyword_supergroups,default,verified,
+agenda_month,default,verified,
+task_manager,default,verified,
+bulletin,default,verified,
+analysis_keywords,an-subtabs,verified,
+analysis_trend,an-subtabs,verified,
+analysis_mindmap,an-subtabs,verified,
+analysis_articles,an-subtabs,verified,
+analysis_www,an-subtabs,verified,
+analysis_links,an-subtabs,verified,
+analysis_related,an-subtabs,verified,
+analysis_sentiment,an-subtabs,verified,
+analysis_sources,an-subtabs,verified,
+analysis_competitive,an-subtabs,verified,
+analysis_advanced,an-subtabs,verified,
+insights_trends,ins-subtabs,verified,
+insights_sources,ins-subtabs,verified,
+insights_families,ins-subtabs,verified,
+insights_supergroups,ins-subtabs,verified,
+insights_map,ins-subtabs,verified,
+insights_convergence,ins-subtabs,verified,
+insights_watches,ins-subtabs,verified,
+insights_lunar,ins-subtabs,verified,
+settings_graphics,set-subtabs,verified,
+settings_general,set-subtabs,verified,
+settings_cards,set-subtabs,verified,
+settings_models,set-subtabs,verified,
+settings_wikipedia,set-subtabs,verified,
+settings_offlinemap,set-subtabs,verified,
+settings_agenda,set-subtabs,verified,
+settings_data,set-subtabs,verified,
+settings_safety,set-subtabs,verified,
+settings_advanced,set-subtabs,verified,
+library_overview,lib-subtabs,verified,
+library_activity,lib-subtabs,verified,
+library_tracked,lib-subtabs,verified,
+library_composition,lib-subtabs,verified,
+library_storage,lib-subtabs,verified,
+library_coverage,lib-subtabs,verified,
+worldmap_coverage,map-lenses,verified,
+worldmap_stories,map-lenses,verified,
+worldmap_places,map-lenses,verified,
+worldmap_servers,map-lenses,verified,
+governments_default_landing,default,verified,lands on subtab='countries'
+insights_map_cjk_keywords,zh-content,verified,sampled 60 pills; long-unsegmented-CJK=0
+contrast_pill.warn,theme=ink,verified,"ratio=7.91:1 fg=(217.0, 164.0, 65.0) bg=(20.0, 24.0, 31.0)"
+contrast_card-caveat,theme=ink,verified,"ratio=9.44:1 fg=(234.0, 180.0, 78.0) bg=(20.0, 24.0, 31.0)"
+contrast_pill.warn,theme=paper,verified,"ratio=5.09:1 fg=(176.0, 74.0, 58.0) bg=(251.0, 248.0, 241.0)"
+contrast_card-caveat,theme=paper,verified,"ratio=6.29:1 fg=(138.0, 77.0, 10.0) bg=(251.0, 248.0, 241.0)"
+contrast_pill.warn,theme=contrast,verified,"ratio=7.13:1 fg=(255.0, 107.0, 107.0) bg=(10.0, 10.0, 10.0)"
+contrast_card-caveat,theme=contrast,verified,"ratio=10.50:1 fg=(234.0, 180.0, 78.0) bg=(10.0, 10.0, 10.0)"
+contrast_pill.warn,theme=mint,verified,"ratio=4.87:1 fg=(179.0, 80.0, 62.0) bg=(248.0, 251.0, 248.0)"
+contrast_card-caveat,theme=mint,verified,"ratio=6.40:1 fg=(138.0, 77.0, 10.0) bg=(248.0, 251.0, 248.0)"
+contrast_pill.warn,theme=dawn,verified,"ratio=4.89:1 fg=(195.0, 64.0, 67.0) bg=(255.0, 250.0, 243.0)"
+contrast_card-caveat,theme=dawn,verified,"ratio=6.43:1 fg=(138.0, 77.0, 10.0) bg=(255.0, 250.0, 243.0)"
+topbar_overflow,375x900,partial,scrollWidth=452 clientWidth=375 offscreen=[]
+topbar_overflow,768x1000,verified,scrollWidth=768 clientWidth=768 offscreen=[]
+topbar_overflow,1024x900,verified,scrollWidth=1024 clientWidth=1024 offscreen=[]
+topbar_overflow,1440x950,verified,scrollWidth=1440 clientWidth=1440 offscreen=[]
+locale_switch,en,verified,dir=ltr errors=[]
+locale_switch,fr,verified,dir=ltr errors=[]
+locale_switch,ar,verified,dir=rtl errors=[]
+locale_switch,zh,verified,dir=ltr errors=[]
+opacity_pseudo_spotcheck,#net-toggle::after,verified,"{'color': 'rgb(140, 149, 166)', 'backgroundColor': 'rgb(91, 157, 217)', 'opacity': '0.55', 'display': 'block', 'visibility': 'visible', 'content': '""""', 'width': '4px', 'height': '4px', 'fontSize': '15px', 'textTransform': 'none', 'position': 'absolute'}"
+opacity_pseudo_spotcheck,.nav-item.adv .badge,verified,"{'color': 'rgb(217, 164, 65)', 'backgroundColor': 'rgba(0, 0, 0, 0)', 'opacity': '1', 'display': 'block', 'visibility': 'visible', 'content': 'normal', 'width': '32.4062px', 'height': '17.5px', 'fontSize': '10px', 'textTransform': 'none', 'position': 'static'}"
+state_c_walk,summary,verified,14 named surfaces + subtab drills + 5 themes + 4 breakpoints + 4 locales

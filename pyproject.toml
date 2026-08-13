@@ -207,6 +207,18 @@ compression = [
     "lz4>=4.3",
 ]
 
+# The REAL browser driver for src/monitoring/ui_walk.py (0.3 gate row 8: the "ui_walk runner
+# STANDING" bar). ui_walk.py itself carries NO browser dependency by design -- its control flow
+# is proven against a fake driver so it can be tested anywhere; PlaywrightUiWalkDriver
+# (src/monitoring/ui_walk_playwright.py) is the build-time decision that scaffold deliberately
+# deferred. This extra pins only the Python client library, not a browser -- point
+# PLAYWRIGHT_BROWSERS_PATH at a pinned Chromium build (never `playwright install`, which fetches
+# one over the network) rather than relying on this extra to provide a browser at all. A core
+# install is unaffected; nothing in the app itself imports this module.
+uiwalk = [
+    "playwright>=1.45",
+]
+
 dev = [
     "pytest>=8.2",
     "pytest-cov>=5.0",

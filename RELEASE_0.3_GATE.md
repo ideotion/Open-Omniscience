@@ -1,5 +1,12 @@
 # RELEASE 0.3 GATE — checkable inventory
 
+**Note (2026-08-13): the ongoing, authoritative row-by-row gate for the `0.3` tag is now
+[`docs/product/RELEASE_0.3_GATE.md`](docs/product/RELEASE_0.3_GATE.md)** — created the same
+day this row-8 entry below was finalized, it is the file a future session should update and
+tick against. This document remains as the point-in-time inventory of the 2026-07-21
+multi-lane session's own contributions (rows 1–7's sub-feature breakdown below is not
+duplicated there); its row 8 cell is kept current below only for continuity.
+
 Status as of 2026-07-21, after an autonomous multi-lane session executing the buildable half of
 "THE 0.3 CLOSE GATE" (`CLAUDE.md` ~line 6648, maintainer-ruled 2026-07-20), and after the
 maintainer merged all ten resulting PRs into `main`. **This document does not itself close any
@@ -33,7 +40,7 @@ time of writing.
 | 5 | Article clean-up: discussed → **maintainer-agreed** → implemented → executed on ≥5M corpus | **Build-only, merged** | Detection merged: [PR #737](https://github.com/ideotion/Open-Omniscience/pull/737) (prose gate + inert quarantine scaffolding + a strategy-draft doc). Agreement and execution are explicitly human/maintainer steps, not attempted |
 | 6 | DB-10 §1b page-size A/B bench (4K vs 16K), ruling made on large-corpus evidence | **Evidence delivered, ruling not yet formalized** | A separate PR (#726, merged same day, not part of this session's lane set) delivered the large-corpus A/B evidence — "16384 wins every dimension at scale, recommendation firm." `CLAUDE.md` records §1a as RULED (2026-07-17) but does not yet carry an explicit §1b RULED bullet — the formal page_size ruling itself appears still open |
 | 7 | v0.2.0 P0 follow-ups: cold-boot unlock at full scale + multi-day live collector soak | **Blocked — hard** | Real hardware, real elapsed time, live network collection — out of scope for an autonomous session entirely, not attempted |
-| 8 | Browser-verification bar: `ui_walk` runner standing, or a defined human click-through | **Build-only, merged** | Harness scaffolding merged: [PR #734](https://github.com/ideotion/Open-Omniscience/pull/734) — explicitly NOT a standing runner (no real browser/AppVM connection); the human click-through alternative remains fully available and untouched |
+| 8 | Browser-verification bar: `ui_walk` runner standing, or a defined human click-through | **Closed against its own literal wording** (see the canonical [`docs/product/RELEASE_0.3_GATE.md`](docs/product/RELEASE_0.3_GATE.md) row 8) | A real Playwright-backed `UiWalkDriver` (`src/monitoring/ui_walk_playwright.py`, 31 passing regression tests) drove a live Chromium against all three test states (virgin/empty/populated, the last on a 450-article corpus seeded through the real `index_article` chokepoint) — see [`docs/audit/UI_CLICKTHROUGH_2026-08-13.md`](docs/audit/UI_CLICKTHROUGH_2026-08-13.md) + [PR #957](https://github.com/ideotion/Open-Omniscience/pull/957). All 5 flagship surfaces stamped; one new P1 found (top bar overflows at 375px — a design-scoped responsive-layout pass, not fixed here) and two 2026-07-22 items re-confirmed still open (Governments-tab default landing, CJK keyword-pill segmentation). **Not full-matrix coverage**: the brief's own fuller §6 ambition (15 named surfaces, 17 themes, 12 locales, an a11y axis) is only partially met — see the canonical gate's row 8 and the report's §4–§6 for the exact reconciliation |
 
 ## Row 1 — sub-feature breakdown (all merged)
 
