@@ -66,6 +66,43 @@ def _is_young(session) -> bool:
     return _corpus_articles(session) < _YOUNG_CORPUS_ARTICLES
 
 
+def _growth_math_row(term: dict, *, prefix: str = "") -> tuple[str, str]:
+    """The math row for a rising term's ``growth`` -- named for what it actually is.
+
+    ``queries._growth_of`` substitutes the recent COUNT into ``growth`` when the prior
+    rate scaled to the window comes to less than one mention. This row printed the
+    substitution as ``x{growth}`` under the label "Growth = recent rate / earlier rate",
+    and its own worked division did not produce the number beside it: at 5,701 recent
+    against 3 prior it showed ``(5701 / 7) / (3 / 30) = x5701`` when that division is
+    8144.3. A math row that shows its work and gets it wrong is worse than one that shows
+    none, because the reader can check it.
+
+    The branch used to be on ``prior`` being truthy, which is the wrong question: the
+    sentinel fires on ``expected < 1``, i.e. on any prior of 4 or fewer at 7-vs-30 days,
+    so a prior of 3 took the ratio branch and claimed a division it had not done.
+    """
+    from src.analytics.queries import _growth_of
+
+    recent, prior = term["recent"], term["prior"]
+    expected = (prior / 30) * 7
+    _, is_ratio = _growth_of(recent, expected)
+    if is_ratio:
+        return (
+            f"{prefix}Growth = recent rate ÷ earlier rate",
+            f"({recent} ÷ 7) ÷ ({prior} ÷ 30) = ×{term['growth']}",
+        )
+    if not prior:
+        return (
+            "Brand-new term — no earlier mentions to compare against",
+            f"{recent} mentions, nothing prior to divide by",
+        )
+    return (
+        "Too thin a baseline to divide by — this is the count, not a multiple",
+        f"{recent} mentions, against {prior} in the 30 days before "
+        f"(≈{round(expected, 2)} expected — under one mention)",
+    )
+
+
 def _small_corpus_note(session) -> str:
     total = _corpus_articles(session)
     return (
@@ -216,14 +253,7 @@ def rising_now(session) -> list[Card]:
         math_rows = [
             ("Mentions in the last 7 days", str(term["recent"])),
             ("Mentions in the 30 days before that", str(term["prior"])),
-            (
-                "Growth = recent rate ÷ earlier rate"
-                if term["prior"]
-                else "Brand-new term — no earlier mentions to compare against",
-                f"({term['recent']} ÷ 7) ÷ ({term['prior']} ÷ 30) = ×{term['growth']}"
-                if term["prior"]
-                else f"×{term['growth']}",
-            ),
+            _growth_math_row(term),
             (
                 "How sure can we be? (95% interval)"
                 if ci
@@ -1191,12 +1221,7 @@ def ip_litigation_pulse(session) -> list[Card]:
         ("IP/legal terms rising in your corpus", str(len(hits))),
         ("Fastest of them: mentions in the last 7 days", str(top["recent"])),
         ("Its mentions in the 30 days before that", str(top["prior"])),
-        (
-            "Its growth = recent rate ÷ earlier rate"
-            if top["prior"]
-            else "Brand-new term — no earlier mentions to compare against",
-            f"×{top['growth']}",
-        ),
+        _growth_math_row(top, prefix="Its "),
         (
             "How sure can we be? (95% interval)" if ci else "Too few mentions for a confidence interval",
             f"×{round(ci.low, 2)} – ×{round(ci.high, 2)}" if ci else "—",

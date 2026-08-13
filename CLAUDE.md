@@ -3961,6 +3961,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     band — so it passed the `lanes=64` mutation that is precisely the vacuous case.
     GENERAL FORM: an anti-vacuity assertion needs its own mutation, and the mutation is
     to feed it the VACUOUS fixture — not the broken one.
+  - **TWO HARVEST INSTRUMENTS, EACH BLIND WHERE THE OTHER SEES — so the durable answer is
+    neither, it is a guard (2026-08-12, translating the annexes bundle):** collecting every
+    sentence a module needs translated, I drove its branches and **missed five** (an
+    empty-index paragraph, `No articles`, `(untitled)`, a lexicon-reads-English-only gap, a
+    no-text-included paragraph) — branch-driving cannot reach a branch you did not think to
+    drive. An AST scan of `T.t("literal")` found all five and would have missed the labels
+    `_md_kv(T, label, value)` takes as a **parameter**, which are never literals at the call
+    site. Neither is complete alone, and a union of two incomplete instruments is still a
+    guess about the next string somebody adds. Ship a CI guard that walks the module's own
+    AST and fails naming the string, the locale and the file. THREE SMALLER TRAPS from the
+    same slice. (a) **A key is only reusable where the whole SENTENCE is** — reusing the
+    already-keyed `"Period"` looked free and its French entry is the genitive fragment *"de
+    la période"*, which reads as garbage as a table label; check the target-language value,
+    not just that the key exists. (b) **Never hand a translator a row whose delimiters are
+    load-bearing** — one long pipe-delimited Markdown header is a row a translation destroys
+    by dropping a pipe; translate the words and keep the pipes ours. (c) The returned dict
+    reported 54 chrome strings while its own page printed 53 — the count-drift class again,
+    fixed by recording into an out-parameter BEFORE the line that composes its own count.
+    GENERAL FORM for the headline: when a change's correctness depends on having enumerated
+    a set, ask what each enumerating instrument is structurally unable to see, and prefer a
+    mechanism that fails on the next addition over a list that was complete once.
 
   - **A CAPABILITY ADDED FOR ONE OF TWO FUNCTIONS THAT DO THE SAME JOB REACHES ONLY THAT
     CALLER — and the field report that motivates it will arrive a second time, from the
@@ -11771,6 +11792,53 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     where the model *was* asked and broke. Same family as "a caveat may claim only what
     the data can exhibit" and the vLLM excerpt budget — the instrument was right and the
     last stage threw the answer away.
+  - **A "FILL THIS IN" ARTIFACT DERIVED FROM ONE PROBE CANNOT CONTAIN A STRING THAT
+    APPEARS ONLY ONCE IT IS FILLED (2026-08-12, the bulletin catalogs):** the language
+    diagnostic emits a `catalog_stub` and tells a translator, in its own `how_to_use`,
+    that filling it is the job. `disclosure()` prints one line when nothing is missing
+    and a shortfall line otherwise, so a probe against an EMPTY catalog can only ever
+    reach the second — the stub was permanently one string short, and the omitted string
+    was a CAVEAT, the class the informed-consent rule requires in every locale. Filling
+    the stub perfectly then produced a report saying you had missed one. GENERAL FORM:
+    when a diagnostic emits a worklist, enumerate the branches the producer takes based
+    on HOW MUCH IS ALREADY DONE, and render each; a from-empty probe reaches only the
+    not-yet-done branch. TWO SPECIFICS. (a) **The probe must answer IDENTICALLY, not
+    merely differently** — a line reporting how many sentences are spelled the same in
+    both languages exists only when at least one IS, so a probe answering everything
+    with a distinct string misses it too; an identical answer satisfies both "nothing is
+    missing" and "something is identical", which is what makes ONE probe enough. (b) A
+    differing probe was written, MEASURED to discover nothing this renderer does not
+    already reach, and REMOVED with its reason recorded rather than kept as insurance —
+    each probe costs a render per locale, and one that discovers nothing reads as a
+    mechanism when it is not one. Mutation-test each regime and keep only what fails
+    when deleted. COROLLARY the fix walked into: the probe offered the SOURCE language
+    166 sentences to translate into itself, because English's catalog is empty by
+    definition — any "what is missing here" derivation needs the source-language case
+    guarded explicitly.
+  - **ASKING A STATEFUL REPORTER TWICE PRODUCES TWO CLAIMS ABOUT ONE ARTIFACT — and an
+    IDENTICAL entry is not an English remainder (2026-08-12, same slice):** two
+    independent honesty defects in one line. (a) `disclosure()` reads its own report and
+    then composes a sentence, which REGISTERS that sentence's frames — so the second
+    call counts them in the total the sentence quotes: the document printed "10 of 166"
+    and the diagnostic's payload, a second call on the same translator, printed "10 of
+    169" about that same document, under a field named for the document's line. One
+    instance is one render, so it owes one answer; compose once and let a caller wanting
+    a fresh count build a fresh instance. (b) The branch chose the shortfall line from
+    the strict coverage figure, which deliberately EXCLUDES entries a translator
+    answered with the same text — so every finished locale announced "158 of 168 … the
+    rest are printed in English" about ten sentences that were in French, because French
+    spells "articles" and "mentions" the way English does. A fabricated shortfall inside
+    a caveat is exactly as dishonest as a fabricated pass. The English remainder is what
+    the app KNOWS is English (no entry, or a refused frame); the identical count is
+    published as its own component, because the app has no dictionary and cannot tell a
+    legitimate identity from a copy someone never translated — so it states the number
+    and a whole-file copy says "168 of 168", which is self-evident. THE MEASUREMENT
+    KEEPS THE STRICTER DEFINITION: coverage measures translation WORK, which is a
+    different question from what language the reader is holding, and conflating them is
+    what produced the defect. Same family one level up: a `fully_translated` list that
+    requires coverage 1.0 is EMPTY for every genuinely finished locale, so publish the
+    per-locale identical count as the DERIVED reason it is empty — never a static
+    sentence, which would keep explaining an emptiness that had since become reachable.
 - **ONE MODEL, MINISTRAL 3 **3B**, THROUGHOUT THE ENTIRE APP (maintainer RULED 2026-08-12,
   verbatim: "record the decision to use mistral's 3b model throughout the entire app. Drop
   all others. Keep in the UI the option for users to use their own models (as a buried
@@ -11816,6 +11884,48 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   longer fit. So when reading any bench artifact, count answered-vs-attempted PER ROW before
   quoting anything, and look at WHERE the failures fall — a uniform failure rate and a
   degrading one have different causes and only one of them is about the model.
+  - **A FLAG COMPUTED AND NOT PUBLISHED IS INDISTINGUISHABLE FROM A FLAG NOBODY THOUGHT
+    OF — and the comment beside it will say it was published (2026-08-13, the growth
+    sentinel across six chrome sites):** `queries._growth_of` substitutes the recent COUNT
+    into `growth` when the prior rate scaled to the window comes to under one mention, and
+    the bulletin renderer was taught to tell that apart. Six `app.js` sites were not, so
+    the fix looked like a rendering job. It was not: of the three producers, ONE published
+    `growth_is_ratio`. `keyword_stats` computed `_is_ratio` and dropped it — with a comment
+    directly above saying it carried the flag "rather than leaving a second consumer to
+    re-derive it (or to print a count as a multiple)" — and `group_rate` inlined the rule a
+    third time without it. **THE MIRROR DEFECT IS WHY THE ORDER MATTERS:** patching only
+    the renderers would have had them read `undefined` on every row from two of three
+    producers, and a renderer that treats a missing field as "not a ratio" states a
+    sentinel that was never established, which is exactly as dishonest as the fabricated
+    multiple. Publish first, then read. TWO SMALLER GENERALISATIONS. (a) **A leading
+    underscore hides an unused local from every linter**: `_is_ratio` matches ruff's
+    default dummy-variable pattern, so F841 could never have flagged it — a discarded
+    return value named `_x` is invisible to tooling and must be caught by asserting the
+    PAYLOAD instead. (b) **When a fix must not disturb what already worked, split the
+    branch rather than the function**: `growthFallback` returns `null` for a measured
+    ratio, so each of the six sites keeps its own "↑N×" string byte-for-byte and only the
+    wrong branch moved — which also kept both i18n ratchets at zero movement, since no
+    ratio-branch string had to enter a translation table it was never in.
+  - **`growth` WAS ALSO THE BAR MAGNITUDE, so the sentinel did not merely mislabel a row —
+    it erased every other row (2026-08-13, same slice):** the Trends bars took their length
+    from `growth`, so a 5,701-mention sentinel and a ×3.6 ratio shared one scale and every
+    real ratio rounded to a 0% bar. The honest fix is a `null` from the value accessor for
+    a row that has no length on THIS scale, and an EMPTY track rather than the shared
+    `Math.max(2, …)` stub — a 2% bar reads as a very small rate, which is a fabricated
+    smallness where the truth is "no rate at all". The scale is then taken over the rows
+    that genuinely share it. GENERAL FORM: when one field feeds both a label and a
+    geometry, fixing the label leaves the geometry lying, and a chart lies more quietly.
+  - **AN EQUATION THAT SHOWS ITS WORK AND GETS IT WRONG IS WORSE THAN ONE THAT SHOWS NONE
+    (2026-08-13, the Lead card math row, found while measuring the above):** the row
+    branched on `prior` being truthy, but the sentinel fires on `expected < 1` — i.e. on
+    any prior of 4 or fewer at 7-vs-30 days. So a prior of 3 took the ratio branch and
+    printed `(5701 ÷ 7) ÷ (3 ÷ 30) = ×5701` under the label "Growth = recent rate ÷ earlier
+    rate", when that division is **8144.3**. The reader can check it, which is the whole
+    point of a method block, and checking it would show the app contradicting itself. RULE:
+    a displayed derivation owes an assertion that the stated operation produces the stated
+    result — `assert round((180/7)/(300/30), 2) == 2.57` beside the string — because a
+    proximity branch (`if prior`) that merely CORRELATES with the real condition will drift
+    from it, and the drift is silent everywhere except in the arithmetic.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 

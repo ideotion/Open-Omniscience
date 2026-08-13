@@ -42,6 +42,8 @@ import zipfile
 from datetime import UTC, date, datetime
 from typing import Any
 
+from src.bulletin.i18n import Translator
+
 _LOG = logging.getLogger(__name__)
 
 #: The report's own name pattern, and the annexes' — the maintainer's, verbatim.
@@ -316,11 +318,17 @@ DISCLOSURE = (
 _AI_LABEL = "AI-derived — unreliable"
 
 
-def _md_kv(label: str, value: Any) -> str:
-    return f"- **{label}:** {value if value not in (None, '', []) else '—'}"
+def _md_kv(T: Translator, label: str, value: Any) -> str:
+    """A label:value line, with the LABEL translated and the value left alone.
+
+    label:value is the shape that survives translation: nothing agrees with an
+    interpolated number, so no locale has to conjugate around a value it cannot see.
+    The value is data — a date, a domain, a count — and is never looked up.
+    """
+    return f"- **{T.t(label)}:** {value if value not in (None, '', []) else '—'}"
 
 
-def _analysis_block(rows: list[dict]) -> list[str]:
+def _analysis_block(T: Translator, rows: list[dict]) -> list[str]:
     """Stored model output for one article, labelled and with its provenance.
 
     An analysis is shown with the model that wrote it, the prompt version and when —
@@ -329,23 +337,29 @@ def _analysis_block(rows: list[dict]) -> list[str]:
     """
     if not rows:
         return []
-    out = ["## " + _AI_LABEL, ""]
+    out = ["## " + T.t(_AI_LABEL), ""]
     out.append(
-        "> Written by a local model, not by the publisher and not by this app's "
-        "deterministic layer. Kept here because you asked for it; it is not evidence "
-        "of anything and the full text below is what the source actually said."
+        "> " + T.t(
+            "Written by a local model, not by the publisher and not by this app's "
+            "deterministic layer. Kept here because you asked for it; it is not evidence "
+            "of anything and the full text below is what the source actually said."
+        )
     )
     out.append("")
     for r in rows:
         kind = str(r.get("kind") or "analysis")
-        head = kind.title()
+        # The KIND is one of a small fixed set this app writes, so it is chrome and
+        # keyable; the target language is the operator's own choice and is data.
+        head = T.t(kind.title())
         if r.get("target_language"):
-            head = f"{head} into {r['target_language']}"
+            head = T.f("{kind} into {language}", kind=head, language=r["target_language"])
         prov = ", ".join(
             p
             for p in (
-                f"model `{r['model']}`" if r.get("model") else None,
-                f"prompt `{r['prompt_version']}`" if r.get("prompt_version") else None,
+                T.f("model {name}", name=f"`{r['model']}`") if r.get("model") else None,
+                T.f("prompt {version}", version=f"`{r['prompt_version']}`")
+                if r.get("prompt_version")
+                else None,
                 str(r["created_at"]) if r.get("created_at") else None,
             )
             if p
@@ -364,6 +378,7 @@ def article_markdown(
     body: str | None,
     analyses: list[dict],
     truncated_reason: str | None = None,
+    tr: Translator | None = None,
 ) -> str:
     """One annex file: the two classes of fact, then the model text, then the source.
 
@@ -373,6 +388,7 @@ def article_markdown(
     the article made; the model's text is third and labelled; the article's own words
     are last and unedited.
     """
+    T = tr or Translator("en")
     ref = str(row.get("ref") or "----")
     src = row.get("source") or {}
     asserted = row.get("asserted") or {}
@@ -380,16 +396,17 @@ def article_markdown(
     sent = deduced.get("sentiment")
 
     out = [
-        f"# {ref} · {row.get('title') or '(untitled)'}",
+        f"# {ref} · {row.get('title') or T.t('(untitled)')}",
         "",
-        f"Annex to **{stem}**, cited there as `[{ref}]`.",
+        T.f("Annex to **{stem}**, cited there as `[{ref}]`.", stem=stem, ref=ref),
         "",
-        "## What the source asserted",
+        "## " + T.t("What the source asserted"),
         "",
-        _md_kv("Published", asserted.get("published_at")),
-        _md_kv("Byline", asserted.get("author")),
-        _md_kv("Declared language", asserted.get("language")),
+        _md_kv(T, "Published", asserted.get("published_at")),
+        _md_kv(T, "Byline", asserted.get("author")),
+        _md_kv(T, "Declared language", asserted.get("language")),
         _md_kv(
+            T,
             "Source",
             " · ".join(
                 str(x) for x in (src.get("name"), src.get("domain"), src.get("country"),
@@ -397,31 +414,41 @@ def article_markdown(
             )
             or "—",
         ),
-        _md_kv("Original", row.get("url")),
+        _md_kv(T, "Original", row.get("url")),
         "",
-        "## What this app deduced",
+        "## " + T.t("What this app deduced"),
         "",
-        "> Measurements over the text, never confirmed. A place name is a surface form "
-        "the extractor does not disambiguate; a mentioned date is a candidate no human "
-        "has checked unless it says otherwise.",
+        "> " + T.t(
+            "Measurements over the text, never confirmed. A place name is a surface form "
+            "the extractor does not disambiguate; a mentioned date is a candidate no human "
+            "has checked unless it says otherwise."
+        ),
         "",
-        _md_kv("Collected", deduced.get("collected_at")),
-        _md_kv("Detected language", deduced.get("detected_language")),
-        _md_kv("Words", deduced.get("word_count")),
-        _md_kv("Reading time (min)", deduced.get("reading_time")),
+        _md_kv(T, "Collected", deduced.get("collected_at")),
+        _md_kv(T, "Detected language", deduced.get("detected_language")),
+        _md_kv(T, "Words", deduced.get("word_count")),
+        _md_kv(T, "Reading time (min)", deduced.get("reading_time")),
         _md_kv(
+            T,
             "Sentiment",
+            # The label and the basis are ours; the score is the measurement. The
+            # ABSENCE has to say why in the reader's language, or an English sentence
+            # in a French annex reads as a broken field rather than as a stated gap.
             f"{sent.get('label')} ({sent.get('score')}) — {sent.get('basis')}"
             if sent
-            else "not measured — the lexicon reads English only, so its absence is not a "
-            "neutral reading",
+            else T.t(
+                "not measured — the lexicon reads English only, so its absence is not a "
+                "neutral reading"
+            ),
         ),
         _md_kv(
+            T,
             "Keywords",
             ", ".join(f"{k.get('term')} ({k.get('mentions')})" for k in row.get("keywords") or [])
             or None,
         ),
         _md_kv(
+            T,
             "Places mentioned",
             ", ".join(
                 f"{p.get('name')}"
@@ -431,6 +458,7 @@ def article_markdown(
             or None,
         ),
         _md_kv(
+            T,
             "Dates mentioned",
             ", ".join(
                 f"{d.get('date')} ({d.get('status')})" for d in row.get("dates") or []
@@ -438,6 +466,7 @@ def article_markdown(
             or None,
         ),
         _md_kv(
+            T,
             "Entities",
             ", ".join(
                 f"{e.get('name')} ({e.get('class')})" for e in row.get("entities") or []
@@ -446,22 +475,60 @@ def article_markdown(
         ),
         "",
     ]
-    out += _analysis_block(analyses)
+    out += _analysis_block(T, analyses)
 
-    out += ["## The article, as stored", ""]
+    out += ["## " + T.t("The article, as stored"), ""]
     if body:
         if truncated_reason:
             out += [f"> {truncated_reason}", ""]
         out += [body.strip(), ""]
     else:
         out += [
-            "*No text is included for this article. It may hold none, its stored text may "
-            "not have been readable, or it may have been quarantined or removed since this "
-            "edition was built — the file is here so the report's reference resolves, and "
-            "the gap is stated rather than left blank.*",
+            "*" + T.t(
+                "No text is included for this article. It may hold none, its stored text "
+                "may not have been readable, or it may have been quarantined or removed "
+                "since this edition was built — the file is here so the report's reference "
+                "resolves, and the gap is stated rather than left blank."
+            ) + "*",
             "",
         ]
     return "\n".join(out)
+
+
+def _shortfall(T: Translator, state: dict | None = None) -> list[str]:
+    """What this bundle owes its reader about its OWN language, or nothing.
+
+    DERIVED, never a standing claim. The sentence this replaced said the annexes had
+    no translation yet; once they had one it would have gone on saying so, and a
+    caveat that is false is worse than none. So it is computed from what the render
+    actually resolved: nothing missing and nothing refused means nothing to disclose.
+
+    Written LAST, after every sentence in the page has been asked for, or it would
+    report a shortfall measured before most of the page existed. English gets no line
+    -- it is the source, so there is no gap to describe.
+    """
+    r = T.report()
+    n = r["strings_seen"]
+    english = 0 if T.is_english else r["missing"] + r["rejected"]
+    # Recorded for the CALLER before the line below registers its own frames. Otherwise
+    # the returned figure counts them and the dict disagrees with the page it describes
+    # by exactly one -- the same drift the report's disclosure line is memoised against.
+    if state is not None:
+        state["chrome_strings"] = n
+        state["chrome_in_english"] = english
+    if T.is_english or not n or not english:
+        return []
+    return [
+        "> " + T.f(
+            "**{n} of {total} sentences on these pages are printed in English**, having "
+            "no {language} translation yet. Settings → Advanced → Diagnostics → *Bulletin "
+            "language & render* names every one of them.",
+            n=f"{english:,}",
+            total=f"{n:,}",
+            language=T.language_name(),
+        ),
+        "",
+    ]
 
 
 def contents_markdown(
@@ -473,15 +540,20 @@ def contents_markdown(
     full_text: bool,
     truncated_from: int | None,
     report_lang: str = "en",
+    tr: Translator | None = None,
+    state: dict | None = None,
 ) -> str:
     """The contents page: what is here, how the numbers work, and what is missing.
 
-    ``report_lang`` is the language the REPORT was written in, not this page's. The
-    annexes are still English, and when the two differ this page says so: a reader
-    who asked for a French bulletin and opens an English contents page is owed the
-    reason, and a bundle that stayed quiet about it would read as a bug rather than
-    as an unfinished translation. The article text itself is never translated in
-    either language — it is the publisher's own words.
+    ``report_lang`` names the language the whole bundle is written in — the annexes
+    follow the report rather than staying English, so the two no longer differ by
+    construction. What this page still owes its reader is the SHORTFALL when one
+    exists, and that sentence is now DERIVED from the translator's own report: a
+    static "the annexes have no translation yet" would keep saying so after they were
+    translated, which is the class of stale claim this module is careful about.
+
+    The article text itself is never translated in any language — it is the
+    publisher's own words, and that stays true whatever the chrome is in.
     """
     summaries = sum(
         1 for e in index if any(a.get("kind") == "summary" for a in analyses_by_id.get(e["id"], []))
@@ -494,87 +566,130 @@ def contents_markdown(
     m = edition.get("masthead") or {}
     p = edition.get("period") or {}
 
+    T = tr or Translator(report_lang)
     out = [
-        f"# Annexes — {stem}",
+        "# " + T.f("Annexes — {stem}", stem=stem),
         "",
-        f"> **{DISCLOSURE}**",
+        f"> **{T.t(DISCLOSURE)}**",
+        "",
+        # Always stated, in every language, because it is the one fact about this
+        # bundle that translation does NOT change: the chrome follows the report, the
+        # publisher's words never do.
+        "> " + T.t(
+            "Every article's own text, title and byline are the publisher's words and "
+            "are never translated here, in any language."
+        ),
         "",
     ]
-    if (report_lang or "en").split("-")[0].lower() != "en":
-        out += [
-            f"> **This page and the per-article headings are in English**, while the "
-            f"report was written in `{report_lang}`. The annexes have no translation "
-            f"yet — Settings → Advanced → Diagnostics → *Bulletin language & render* "
-            f"reports exactly which sentences are missing. Every article's own text, "
-            f"title and byline are the publisher's words and are never translated here "
-            f"in any language.",
-            "",
-        ]
     out += [
-        "## How the numbering works",
+        "## " + T.t("How the numbering works"),
         "",
-        "A bracketed number in the report — `[0001]` — is one file here. One number per "
-        "article: an article the report cites in two places keeps one number and has one "
-        "file. The numbers run in the order a reader meets them in the report.",
-        "",
-        "Each file is named for the day its article was **published** — "
-        f"`{article_filename('2026-08-05', '0001')}` — so a piece from years ago reads as "
-        "years ago rather than as the day this bundle was made. An article the publisher "
-        f"gave no date is named `{article_filename(None, '0001')}`; the collection date is "
-        "not substituted for a publication date. So the filename cannot be worked out from "
-        "the number alone, and the table below is where the two are matched.",
-        "",
-        "## What is in this bundle",
-        "",
-        _md_kv("Report", f"`{stem}.md`  (downloaded beside this ZIP, not inside it)"),
-        _md_kv(
-            "Period",
-            f"{p.get('start') or '—'} to {p.get('last_day') or '—'} "
-            f"({p.get('days', '—')} days)",
+        T.t(
+            "A bracketed number in the report — `[0001]` — is one file here. One number "
+            "per article: an article the report cites in two places keeps one number and "
+            "has one file. The numbers run in the order a reader meets them in the report."
         ),
-        _md_kv("Cadence", p.get("cadence")),
-        _md_kv("Articles cited by the report", f"{len(index):,}"),
+        "",
+        T.f(
+            "Each file is named for the day its article was **published** — `{dated}` — so "
+            "a piece from years ago reads as years ago rather than as the day this bundle "
+            "was made. An article the publisher gave no date is named `{undated}`; the "
+            "collection date is not substituted for a publication date. So the filename "
+            "cannot be worked out from the number alone, and the table below is where the "
+            "two are matched.",
+            dated=article_filename("2026-08-05", "0001"),
+            undated=article_filename(None, "0001"),
+        ),
+        "",
+        "## " + T.t("What is in this bundle"),
+        "",
         _md_kv(
+            T,
+            "Report",
+            f"`{stem}.md`  ({T.t('downloaded beside this ZIP, not inside it')})",
+        ),
+        # "Period covered" rather than "Period": the bare word is already keyed for a
+        # sentence in the report, where at least one locale renders it as a genitive
+        # fragment ("de la période"). A label needs the standalone form, so it needs
+        # its own key -- one English word in two roles cannot share one slot.
+        # ONE frame for the whole range, the way the report's own title does it: the
+        # connector between two dates is a word, and a locale that reads right to left
+        # needs it inside the sentence it is translating rather than welded in English
+        # between two values.
+        _md_kv(
+            T,
+            "Period covered",
+            T.f(
+                "{start} to {last} ({days} days)",
+                start=p.get("start") or "—",
+                last=p.get("last_day") or "—",
+                days=p.get("days", "—"),
+            ),
+        ),
+        # The cadence VALUE is one of a small fixed set this app writes, so it is chrome
+        # and already keyed for the report's own title -- reused rather than re-keyed.
+        _md_kv(T, "Cadence", T.t(str(p.get("cadence") or "").capitalize()) or None),
+        _md_kv(T, "Articles cited by the report", f"{len(index):,}"),
+        _md_kv(
+            T,
             "Out of the period's collected articles",
             f"{m['articles']:,}" if isinstance(m.get("articles"), int) else "—",
         ),
-        _md_kv("With a stored model summary", f"{summaries:,}"),
-        _md_kv("With a stored model translation", f"{translations:,}"),
+        _md_kv(T, "With a stored model summary", f"{summaries:,}"),
+        _md_kv(T, "With a stored model translation", f"{translations:,}"),
         _md_kv(
+            T,
             "Article text",
-            "full stored text"
+            T.t("full stored text")
             if full_text
-            else "EXCERPT ONLY — this bundle was built without full text",
+            else T.t("EXCERPT ONLY — this bundle was built without full text"),
         ),
-        _md_kv("Built", datetime.now(UTC).isoformat()),
+        _md_kv(T, "Built", datetime.now(UTC).isoformat()),
         "",
     ]
     if truncated_from is not None:
         out += [
-            f"> **Not every file carries the full text.** The bundle reached its text "
-            f"budget after {truncated_from:,} articles; the rest carry the excerpt the "
-            f"report shows, and each says so at the top of its own text section. This is "
-            f"stated because a bundle silently holding excerpts where it promised full "
-            f"text would be worse than a large download.",
+            "> " + T.f(
+                "**Not every file carries the full text.** The bundle reached its text "
+                "budget after {n} articles; the rest carry the excerpt the report shows, "
+                "and each says so at the top of its own text section. This is stated "
+                "because a bundle silently holding excerpts where it promised full text "
+                "would be worse than a large download.",
+                n=f"{truncated_from:,}",
+            ),
             "",
         ]
     if not index:
         out += [
-            "## No articles",
+            "## " + T.t("No articles"),
             "",
-            "The report for this period names no articles, so there is nothing to annex. "
-            "That happens when an edition was built before the document carried article "
-            "metadata, or when every section it produced is an aggregate. Regenerating "
-            "the edition will populate it.",
+            T.t(
+                "The report for this period names no articles, so there is nothing to "
+                "annex. That happens when an edition was built before the document carried "
+                "article metadata, or when every section it produced is an aggregate. "
+                "Regenerating the edition will populate it."
+            ),
             "",
         ]
+        out += _shortfall(T, state)
         return "\n".join(out)
 
+    # The header cells are translated ONE WORD AT A TIME and the row is composed here:
+    # a whole-row key would put the table's pipes inside a translation, where one lost
+    # or added bar silently breaks the table for every reader of that locale.
+    head = [
+        "#",
+        T.t("file"),
+        T.t("title"),
+        T.t("source"),
+        T.t("published"),
+        T.t("cited in"),
+    ]
     out += [
-        "## Articles",
+        "## " + T.t("Articles"),
         "",
-        "| # | file | title | source | published | cited in |",
-        "|---|---|---|---|---|---|",
+        "| " + " | ".join(head) + " |",
+        "|" + "---|" * len(head),
     ]
     for e in index:
         cited = "; ".join(e.get("cited_in") or []) or "—"
@@ -584,6 +699,7 @@ def contents_markdown(
             f"{title} | {e.get('source') or '—'} | {e.get('published_at') or '—'} | {cited} |"
         )
     out.append("")
+    out += _shortfall(T, state)
     return "\n".join(out)
 
 
@@ -608,6 +724,10 @@ def build_annexes(
     """
     from src.bulletin.articles import article_analyses, article_bodies
 
+    # ONE translator for the whole bundle. Shared on purpose: the contents page is
+    # written last and its shortfall line counts what the ARTICLE files asked for too,
+    # so a per-file translator would report a gap measured over one file.
+    T = Translator(report_lang)
     index = assign_refs(edition)
     stem = bundle_stem(edition, ordinal=ordinal)
     ids = [e["id"] for e in index]
@@ -634,6 +754,9 @@ def build_annexes(
             if isinstance(row, dict) and row.get("id") is not None:
                 rows_by_id.setdefault(int(row["id"]), row)
 
+    # Filled by the contents page, which is where the shortfall sentence is composed:
+    # the numbers this returns are the ones a reader saw, not a later re-measurement.
+    lang_state: dict[str, int] = {}
     spent = 0
     truncated_from: int | None = None
     written: list[str] = []
@@ -651,13 +774,13 @@ def build_annexes(
                 # possibilities instead of picking one.
                 body = row.get("excerpt") or ""
                 if full_text:
-                    reason = (
+                    reason = T.t(
                         "Excerpt only — the stored text is not in this bundle: it could not "
                         "be read, or the article has been quarantined or removed since this "
                         "edition was built."
                     ) if body else None
                 elif row.get("excerpt_truncated"):
-                    reason = "Excerpt only — this bundle was built without full text."
+                    reason = T.t("Excerpt only — this bundle was built without full text.")
             # Measured in BYTES, not characters. The bound exists to cap memory, and
             # this corpus is strongly non-Anglophone — a character is one to four
             # bytes, so counting characters would make the real ceiling up to four
@@ -666,7 +789,7 @@ def build_annexes(
                 if truncated_from is None:
                     truncated_from = n
                 body = row.get("excerpt") or ""
-                reason = (
+                reason = T.t(
                     "Excerpt only — the bundle reached its text budget before this "
                     "article. The contents page says how many files this affects."
                 )
@@ -681,6 +804,7 @@ def build_annexes(
                     body=body,
                     analyses=analyses.get(aid, []),
                     truncated_reason=reason,
+                    tr=T,
                 ),
             )
             written.append(name)
@@ -696,6 +820,8 @@ def build_annexes(
                 full_text=full_text,
                 truncated_from=truncated_from,
                 report_lang=report_lang,
+                tr=T,
+                state=lang_state,
             ),
         )
 
@@ -709,5 +835,11 @@ def build_annexes(
         "files": len(written) + 1,
         "full_text": bool(full_text),
         "text_truncated_from": truncated_from,
-        "disclosure": DISCLOSURE,
+        "disclosure": T.t(DISCLOSURE),
+        # Measured, not assumed: which language the chrome came out in and how much of
+        # it fell back to English. A caller that wants to tell an operator "your annexes
+        # are French" needs the second number to know whether that is true.
+        "language": T.lang,
+        "chrome_strings": lang_state.get("chrome_strings", 0),
+        "chrome_in_english": lang_state.get("chrome_in_english", 0),
     }

@@ -242,7 +242,11 @@ def test_group_rate_on_empty_id_set_is_all_zero():
         "recent": 0,
         "prior": 0,
         "expected": 0.0,
+        # With no mentions at all there is nothing to divide, so the 0.0 is the count
+        # standing in for a ratio -- flagged as such (2026-08-13) so a renderer cannot
+        # print it as "x0", which would read as a measured collapse to zero.
         "growth": 0.0,
+        "growth_is_ratio": False,
         "window_days": 7,
         "baseline_days": 30,
     }

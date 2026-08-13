@@ -420,6 +420,57 @@ def _article_titles(edition: dict) -> list[str]:
     return list(seen)
 
 
+class _AnsweredIdentically(dict):
+    """A catalog that answers every sentence with the English itself.
+
+    Used ONLY to discover which sentences exist — never to measure anything. The
+    answer keeps every ``{hole}`` by being the frame, so no frame is refused, and it
+    satisfies BOTH "nothing is missing" and "something is spelled the same", which
+    is what makes one probe enough to reach every complete-catalog branch.
+
+    A probe answering everything DIFFERENTLY was written and then removed: measured
+    against this renderer it reached nothing the identical one does not, because the
+    branches it could reach turn on the count of answered sentences, which an
+    identical answer also increments. Recorded so it is not re-added as insurance —
+    a probe that discovers nothing still costs a render per locale, and one kept
+    "just in case" reads as a mechanism when it is not one.
+    """
+
+    def get(self, key: Any, default: Any = None) -> str:  # type: ignore[override]
+        return str(key)
+
+
+def _strings_behind_a_full_catalog(edition: dict, code: str) -> list[str]:
+    """The sentences this edition asks for only once nothing is missing.
+
+    THE BUG THIS EXISTS FOR: a run against an empty catalog cannot see a sentence
+    that appears only when the catalog is good. ``Translator.disclosure`` is exactly
+    that — it prints "this edition was written in X" when nothing is missing and a
+    shortfall line otherwise — so the stub built from one such run was permanently
+    one string short, and the string it omitted was a caveat, the class the
+    informed-consent rule requires in every locale. A translator who filled the stub
+    perfectly was then told they had missed one.
+
+    The complement is NOT rendered here: the sentences a partial catalog reaches are
+    already the caller's ``missing`` list, measured on the real catalog, so re-rendering
+    that regime would cost a render per locale and discover nothing. The two halves are
+    unioned at the call site, where both are visible.
+
+    THE LIMIT, stated rather than implied: one probe reaches every branch that turns on
+    the KIND of answer, because an identical answer satisfies both "nothing is missing"
+    and "something is spelled the same". A branch on WHICH sentence was answered would
+    escape it. None exists today, and a new one would surface as a string the report
+    names as missing while the stub does not offer it — the same shape as the defect
+    above, so the same test guards it.
+    """
+    T = Translator(code)
+    if not T.is_english:
+        T.catalog = _AnsweredIdentically()
+    render_markdown(edition, tr=T)
+    # An answered run has no gap to read, so take the sentences it SAW.
+    return T.seen()
+
+
 # --------------------------------------------------------------------------- #
 #  the report
 # --------------------------------------------------------------------------- #
@@ -436,7 +487,32 @@ def language_report(edition: dict, *, langs: tuple[str, ...] | None = None) -> d
         rep["missing_truncated"] = max(0, len(listed) - MAX_LISTED)
         # The skeleton an author fills in. Emitting it means nobody has to derive
         # the renderer's own vocabulary by reading the renderer.
-        rep["catalog_stub"] = {s: "" for s in listed[:MAX_LISTED]}
+        #
+        # Built from what this edition can REACH, not only from what this run lacked:
+        # a sentence that appears only once the catalog is good is missing from the
+        # second list by construction, so filling the stub used to leave a gap the next
+        # report would then report. The two halves are unioned HERE so both are visible:
+        # ``listed`` is what a partial catalog reaches, measured on the real catalog, and
+        # the probe is what a full one reaches. ``missing`` above is untouched — it is a
+        # measurement of THIS catalog and must stay one.
+        #
+        # English is the SOURCE and owes no worklist: its catalog is empty by
+        # definition, so an unguarded probe would offer every sentence in the document
+        # as English-to-translate-into-English.
+        gap = (
+            []
+            if T.is_english
+            else [
+                s
+                for s in _strings_behind_a_full_catalog(edition, code)
+                if s not in T.catalog and s not in set(listed)
+            ]
+        )
+        rep["catalog_stub"] = {s: "" for s in (listed + gap)[:MAX_LISTED]}
+        # Reachable-but-not-missing entries exist only when a sentence lives behind a
+        # branch this run did not take, so a reader can tell the stub is deliberately
+        # larger than the gap rather than double-counting.
+        rep["stub_beyond_missing"] = len(gap)
         rep["catalog_file"] = str(catalog_path(code))
         rep["sample"] = _sample_lines(md)
         rep["disclosure"] = T.disclosure()
@@ -455,10 +531,46 @@ def language_report(edition: dict, *, langs: tuple[str, ...] | None = None) -> d
         },
         "strings_in_document": integrity.get("markdown_bytes") and per_language[0]["strings_seen"],
         "languages": per_language,
+        # TWO different questions, because one word cannot answer both honestly.
+        #
+        # COMPLETE asks the worklist question: does every sentence the renderer asked
+        # for have an entry? That is the one a translator finishes. It deliberately
+        # does NOT require coverage 1.0, because some entries are legitimately
+        # identical to the English — "Asia" in Spanish, "cyclone" in French — so a
+        # genuinely finished catalog can never reach 1.0 and would otherwise be filed
+        # under "started" forever, which reads as unfinished work that does not exist.
+        #
+        # FULLY_TRANSLATED is the stricter form: every entry also DIFFERS from the
+        # English. It is rarely reachable for a real language and is kept because it
+        # is what stops a catalog of copied English reporting itself done — such a
+        # catalog appears under complete, with identical_to_english equal to its size
+        # and coverage 0.0 printed beside it, so the copy is visible rather than
+        # counted as work. Neither list is a substitute for reading those two numbers.
+        "complete": sorted(
+            r["language"] for r in covered if not r["missing"] and not r["rejected"]
+        ),
         "fully_translated": sorted(
             r["language"] for r in covered if r["coverage"] == 1.0 and not r["rejected"]
         ),
-        "started": sorted(r["language"] for r in covered if 0 < (r["coverage"] or 0) < 1.0),
+        # An empty ``fully_translated`` beside a full ``complete`` is the one pairing a
+        # reader can misread, and the explanation above lives in the source rather than
+        # in the file they downloaded. So it is published as DERIVED data: the count of
+        # identical entries per complete locale, which is both the reason the stricter
+        # list is empty and the number to check that reason against. Computed, never a
+        # static sentence, because a static one would keep claiming this after someone
+        # translated the last copied entry and made the strict list reachable.
+        "identical_in_complete": {
+            r["language"]: r["identical_to_english"]
+            for r in covered
+            if not r["missing"] and not r["rejected"] and r["identical_to_english"]
+        },
+        # Genuinely partial: something is translated AND something is still missing.
+        # A complete catalog is not "started"; an empty one is not either.
+        "started": sorted(
+            r["language"]
+            for r in covered
+            if 0 < (r["coverage"] or 0) < 1.0 and r["missing"]
+        ),
         "not_started": sorted(
             r["language"] for r in covered if not r["catalog_entries"] and r["language"] != "en"
         ),
@@ -475,7 +587,11 @@ def language_report(edition: dict, *, langs: tuple[str, ...] | None = None) -> d
             "with the same numbers in it. They are printed in English, excluded from "
             "coverage, and fixed upstream by giving the producer a keyable frame — the "
             "coverage figure is therefore a share of what CAN be translated, not of the "
-            "whole document."
+            "whole document. SCOPE: every figure here is measured over the REPORT. The "
+            "annexes bundle has its own chrome, written in the same catalogs and covered "
+            "by its own completeness check in the test suite, so a locale that reads as "
+            "complete here is complete there too — but this report does not measure it, "
+            "and saying so is cheaper than a reader assuming either way."
         ),
     }
 

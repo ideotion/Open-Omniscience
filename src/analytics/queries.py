@@ -2208,7 +2208,7 @@ def keyword_stats(
     empty_trend = {
         "window_days": window_days, "baseline_days": baseline_days,
         "recent": 0, "prior": 0, "recent_per_day": 0.0, "prior_per_day": 0.0,
-        "expected": 0.0, "growth": 0.0,
+        "expected": 0.0, "growth": 0.0, "growth_is_ratio": False,
     }
     kw = resolve_keyword(session, term)
     if kw is None:
@@ -2259,7 +2259,13 @@ def keyword_stats(
     # Same defined ratio as trending(), and the same sentinel when there is no
     # baseline to divide by — so it carries the same flag rather than leaving a
     # second consumer to re-derive it (or to print a count as a multiple).
-    _g, _is_ratio = _growth_of(recent, expected)
+    #
+    # The flag was computed here and then NOT published (fixed 2026-08-13): the
+    # comment above claimed the payload carried it while `trend_block` omitted it,
+    # so the hover's one consumer had nothing to read and printed the sentinel as
+    # `Nx`. `_is_ratio` matches ruff's dummy-variable pattern, so an unused-local
+    # rule could never have caught it either.
+    _g, is_ratio = _growth_of(recent, expected)
     growth = round(_g, 2)
     trend_block = {
         "window_days": window_days,
@@ -2270,6 +2276,7 @@ def keyword_stats(
         "prior_per_day": round(prior / baseline_days, 3),
         "expected": round(expected, 2),
         "growth": growth,
+        "growth_is_ratio": is_ratio,
     }
 
     # Top co-occurring keywords (count + PMI), reusing the vetted co-occurrence path.
