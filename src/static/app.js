@@ -14948,7 +14948,12 @@
         + esc((res.totals && res.totals.verdicts_out) || 0)
         + " verdicts, canaries " + (res.canary_ok_overall === false ? "FAILED" : "ok")
         + '<div style="margin-top:4px"><a href="/api/diagnostics/keyword-triage/download" target="_blank">'
-        + t("Download report (.json)").replace(".json", ".jsonl") + "</a></div>";
+        + t("Download report (.json)").replace(".json", ".jsonl") + "</a>"
+        // The raw log is the evidence; the PROPOSAL is what a human can actually judge --
+        // junk verdicts grouped per language, with the counts behind each term. Neither
+        // applies anything: a stoplist entry only ever changes through a reviewed commit.
+        + ' &middot; <a href="/api/diagnostics/keyword-triage/proposal?download=1" target="_blank">'
+        + esc(t("Download the stoplist proposal (.json)")) + "</a></div>";
     }
 
     async function syncKeywordTriageToggle() {

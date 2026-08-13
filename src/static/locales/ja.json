@@ -2827,6 +2827,7 @@
   "articles/h": "記事/時",
   "Resume the keyword cleanup? It continues from where it stopped — {done} of {total} articles ({percent}%) are already re-indexed.": "キーワードの整理を再開しますか？中断した場所から続行します — {total} 件中 {done} 件（{percent}%）の記事は再インデックス済みです。",
   "Clean up keywords now? This re-indexes every article with the current engine, then removes the keywords left with no mentions. Heavy on a large corpus; keywords still in use and anything you curated are kept.": "今すぐキーワードを整理しますか？現在のエンジンで全記事を再インデックスし、どこからも参照されなくなったキーワードを削除します。大きなコーパスでは重い処理です。まだ使われているキーワードと、あなたが整理した内容は保持されます。",
+  "Download the stoplist proposal (.json)": "ストップワード案をダウンロード (.json)",
   "unused keywords removed": "未使用のキーワードを削除しました",
   "watch only": "ウォッチのみ",
   "— create, add, remove, delete": "— 作成・追加・除去・削除",

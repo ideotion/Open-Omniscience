@@ -2827,6 +2827,7 @@
   "articles/h": "artikel/jam",
   "Resume the keyword cleanup? It continues from where it stopped — {done} of {total} articles ({percent}%) are already re-indexed.": "Lanjutkan pembersihan kata kunci? Proses ini berlanjut dari tempat ia berhenti — {done} dari {total} artikel ({percent}%) sudah diindeks ulang.",
   "Clean up keywords now? This re-indexes every article with the current engine, then removes the keywords left with no mentions. Heavy on a large corpus; keywords still in use and anything you curated are kept.": "Bersihkan kata kunci sekarang? Ini mengindeks ulang setiap artikel dengan mesin saat ini, lalu menghapus kata kunci yang tidak lagi disebut di mana pun. Berat pada korpus besar; kata kunci yang masih dipakai dan semua yang Anda kurasi tetap dipertahankan.",
+  "Download the stoplist proposal (.json)": "Unduh usulan daftar henti (.json)",
   "unused keywords removed": "kata kunci tak terpakai dihapus",
   "watch only": "hanya pantau",
   "— create, add, remove, delete": "— buat, tambah, singkirkan, hapus",
