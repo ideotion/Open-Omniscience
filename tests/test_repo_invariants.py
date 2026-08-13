@@ -1395,9 +1395,17 @@ def test_model_download_queue():
     assert 'name="model-pull"' in mgr
     assert '"/pull/queue"' in llm and '"/pull/status"' in llm and '"/pull/cancel"' in llm
     assert "def _model_pull_jobs(" in jobs and '"model-pull:"' in jobs
-    # UI: enqueue (instant feedback) + the downloads section
+    # UI: enqueue (instant feedback) + the downloads section.
+    #
+    # The frontend reaches the queue THROUGH /models/pull-custom since 2026-08-12: with
+    # one model app-wide the free-text field became the "run your own model" path, and
+    # it has to work on vLLM too, where there is no Ollama queue to enqueue into. So the
+    # assertion is that the queue is still DRIVEN and still VISIBLE -- which is what
+    # §2.C1 is about -- rather than that one particular caller POSTs to it directly.
     assert 'id="llm-downloads"' in html
-    assert "/api/llm/pull/queue" in app and "function _llmPullRefresh(" in app
+    assert "/api/llm/models/pull-custom" in app, "the custom-model field must reach a downloader"
+    assert "/api/llm/pull/status" in app and "function _llmPullRefresh(" in app
+    assert "/api/llm/pull/cancel" in app, "a queued pull must stay cancellable from the UI"
 
 
 def test_ollama_binary_installer():

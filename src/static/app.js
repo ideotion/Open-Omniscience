@@ -5861,23 +5861,98 @@
       const tag = el.value.trim();
       if (tag) pullModel(tag);
     }
-    // Pull a model: a NETWORK action over CLEARNET via the Ollama process (NOT this
-    // app's Tor proxy), so it passes the ONE consent popup (ensureOnline, invariant
-    // #14) and is refused under airplane mode (the backend OllamaClient enforces the
-    // kill switch too). §2.C1: pulls are QUEUED (one at a time) + visible in the task
-    // manager — clicking Pull enqueues + gives instant feedback, never a frozen button.
+    // WHICH BACKEND'S ARTIFACT the operator is being asked for. The two are not
+    // interchangeable -- an Ollama image and a Hugging Face repo -- so an example and a
+    // link for the wrong one is worse than none: it reads as an instruction and ends in
+    // a 404. Read from the server's own provisioning answer (what this machine will
+    // serve with), never guessed from the shape of what they type.
+    const _CUSTOM_MODEL_HELP = {
+      ollama: {
+        label: "Ollama model tag",
+        example: "ministral-3:3b-instruct-2512-q4_K_M",
+        linkText: "ollama.com/library",
+        href: "https://ollama.com/library",
+        lead: "Your backend is Ollama, so it downloads images from the Ollama library. Browse them at",
+        form: "Copy the tag exactly as the model page shows it, including the part after the colon — that part is the quantisation, and leaving it off gets you whichever build the library currently points at.",
+      },
+      vllm: {
+        label: "Hugging Face repo id",
+        example: "mistralai/Ministral-3-3B-Instruct-2512",
+        linkText: "huggingface.co/models",
+        href: "https://huggingface.co/models",
+        lead: "Your backend is vLLM, so it downloads weights from Hugging Face. Browse them at",
+        form: "Copy the repo id from the top of the model page — the owner/name pair, not the full URL. A gated repo will refuse the download until you have accepted its terms on Hugging Face.",
+      },
+    };
+
+    async function loadCustomModelBox() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const intro = $("custom-model-intro");
+      const label = $("custom-model-label");
+      const input = $("llm-pull-tag");
+      if (!intro && !label && !input) return;
+      let backend = null;
+      try {
+        const d = await api("/api/llm/default-model");
+        backend = d && d.backend;
+      } catch (e) { backend = null; }
+      const h = _CUSTOM_MODEL_HELP[backend];
+      if (!h) {
+        // No backend answer is its own state: filling in one backend's example on a
+        // guess is how an operator ends up typing an Ollama tag into a vLLM field.
+        if (intro) intro.textContent = t("Set up the local AI first — until a backend is chosen, there is no telling which kind of model name to ask you for.");
+        if (label) label.textContent = t("Model name");
+        if (input) input.placeholder = "";
+        return;
+      }
+      if (label) label.textContent = t(h.label);
+      if (input) input.placeholder = h.example;
+      if (intro) {
+        intro.innerHTML =
+          esc(t(h.lead)) + ' <a href="' + esc(h.href) + '" target="_blank" rel="noopener">' +
+          esc(h.linkText) + " \u2197</a>. " + esc(t(h.form));
+      }
+    }
+
+    // Pull a model: a NETWORK action over CLEARNET via the backend's own downloader
+    // (NOT this app's Tor proxy), so it passes the ONE consent popup (ensureAiEgress,
+    // invariant #14) and is refused under airplane mode (the backend enforces the kill
+    // switch too). §2.C1: pulls are QUEUED (one at a time) + visible in the task
+    // manager — clicking Download enqueues + gives instant feedback, never a frozen
+    // button.
+    //
+    // ROUTED THROUGH /models/pull-custom rather than the Ollama pull queue directly:
+    // that queue only speaks Ollama, so this field was dead on a GPU machine — which is
+    // the machine class most likely to want a model of its own.
     let _llmPullPoll = null;
     async function pullModel(tag) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (!tag) return;
-      if (!await ensureAiEgress(t("Pull a local model (downloads over the clear internet via Ollama)"))) return;
+      if (!await ensureAiEgress(t("Download a model you named (over the clear internet)"))) return;
       const prog = $("llm-pull-progress");
       if (prog) prog.textContent = t("Queued") + " " + tag + "…";  // instant feedback
       try {
-        await api("/api/llm/pull/queue", {method: "POST", body: JSON.stringify({model: tag})});
+        const r = await api("/api/llm/models/pull-custom",
+          {method: "POST", body: JSON.stringify({identifier: tag})});
+        // A REFUSAL IS AN ANSWER, not a silent no-op: the shape guard can tell an
+        // operator they have pasted an Ollama tag into a vLLM field, and that sentence
+        // is the whole value of the check.
+        const refused = (r && r.refused) || [];
+        if (refused.length) {
+          if (prog) prog.textContent = refused.map((x) => x.reason || t("refused")).join(" ");
+          return;
+        }
         const el = $("llm-pull-tag"); if (el) el.value = "";
-        _llmPullStartPoll();
-      } catch (e) { if (prog) prog.textContent = t("Pull failed:") + " " + e.message; }
+        if (r && r.backend === "vllm") {
+          // vLLM downloads through its own job, not the Ollama pull queue, so the
+          // Ollama poller would sit on an empty queue and report nothing happening.
+          await _followJob("/api/llm/models/install/status?backend=vllm",
+            (m) => { if (prog) prog.textContent = m; });
+          loadLlmModels();
+        } else {
+          _llmPullStartPoll();
+        }
+      } catch (e) { if (prog) prog.textContent = t("Download failed:") + " " + e.message; }
     }
     async function cancelPull(model) {
       try { await api("/api/llm/pull/cancel", {method: "POST", body: JSON.stringify({model})}); _llmPullRefresh(); }
@@ -22253,17 +22328,24 @@
     async function _aiSetupPlan() {
       // Every fact comes from the server. A failed read returns null so the box
       // hides rather than proposing a plan built on a guess.
-      let b, models, dm;
+      let b, dm;
       try {
         b = await api("/api/llm/backend");
-        models = await api("/api/llm/models");
+        dm = await api("/api/llm/default-model");
       } catch (e) { return null; }
-      const gpu = b.gpu || {};
       const vllm = b.vllm || {};
       const oll = b.ollama || {installed: !!b.ollama_available, running: !!b.ollama_available};
-      // vLLM is GPU-first: proposing it on a CPU-only machine would install
-      // several GB into a backend that could never usefully serve here.
-      const target = gpu.available ? "vllm" : "ollama";
+      // THE TARGET IS THE SERVER'S PROVISIONING ANSWER, not a GPU probe read here.
+      //
+      // It used to be `gpu.available ? "vllm" : "ollama"`, which ignores the operator's
+      // explicit choice in Settings entirely -- so switching a GPU machine to Ollama
+      // left this card offering to install vLLM, the backend they had just moved away
+      // from, while saying nothing about the one that was actually missing. That is the
+      // maintainer's own case (2026-08-12: "if a user decides to switch from vLLM to
+      // Ollama and the latter is neither detected nor installed, put the setup tool
+      // back with the missing engine"). /default-model resolves through
+      // _provisioning_backend, which honours the choice.
+      const target = dm && dm.backend === "vllm" ? "vllm" : "ollama";
       const steps = [];
       if (target === "vllm" && !vllm.installed) {
         let s = null;
@@ -22285,13 +22367,23 @@
           download_url: (s.platform && s.platform.download_url) || "https://ollama.com/download",
         });
       }
-      if (!(models.installed || []).length) {
-        try { dm = await api("/api/llm/default-model"); } catch (e) { dm = null; }
-        if (dm && dm.artifact) {
-          steps.push({id: "model", label: "Download the default model",
-                      artifact: dm.artifact, size: dm.size || "", note: dm.mechanism_note || "",
-                      caveats: dm.caveats || []});
-        }
+      // THE MODEL STEP IS TRI-STATE, and reading it as a boolean is what kept this card
+      // on screen for people who were finished (maintainer 2026-08-12: "when the local
+      // AI is properly installed (including ministral download), remove Setup Local AI,
+      // it's pointless"). It used to test `models.installed.length` -- the RUNNING
+      // daemon's list -- so a stopped Ollama reported nothing and the card offered to
+      // re-download a model already on the disk.
+      //
+      // `installed === null` means the probe could not answer, which is NOT "absent".
+      // The honest move there is to propose nothing: a stopped-but-installed backend is
+      // already handled by the hero card above, which says so and offers Start. Once it
+      // starts, the probe answers and this card comes back if the model really is
+      // missing. Offering several GB on an unreadable probe is the trap the store
+      // panel's own note names.
+      if (dm && dm.artifact && dm.installed === false) {
+        steps.push({id: "model", label: "Download the default model",
+                    artifact: dm.artifact, size: dm.size || "", note: dm.mechanism_note || "",
+                    caveats: dm.caveats || []});
       }
       return {target, steps, backend: b, running: target === "vllm" ? !!vllm.running : !!oll.running};
     }
@@ -22754,7 +22846,7 @@
     function refreshAiPanels() {
       loadAiHero(); loadAiStore(); loadModelCatalog(); syncAiCoordinator();
       loadAiSetup(); loadAiBackendPanel(); loadVllmStatusPanel();
-      loadOllamaInstall(); loadLlmModels(); loadLlmHealth();
+      loadOllamaInstall(); loadLlmModels(); loadLlmHealth(); loadCustomModelBox();
     }
 
     async function loadAiBackendPanel() {

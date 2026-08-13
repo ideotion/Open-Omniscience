@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.database.fts import SearchQueryError, search_ids
@@ -1782,6 +1782,116 @@ def llm_model_install(req: ModelInstallRequest | None = None) -> dict:
         )
     ok, refused = identifiers_for(backend, body.keys)
     return _queue_downloads(backend, ok, refused)
+
+
+class CustomModelRequest(BaseModel):
+    """A model the OPERATOR named, rather than one this app ships."""
+
+    identifier: str = Field(
+        default="",
+        description=(
+            "an Ollama tag (ministral-3:3b) or a Hugging Face repo id "
+            "(mistralai/Ministral-3-3B-Instruct-2512) — which one depends on the backend"
+        ),
+    )
+    backend: str | None = None
+
+
+#: What each backend's identifier looks like, for the ONE case a wrong shape can be
+#: PROVEN rather than guessed. A Hugging Face repo id never contains a colon; an Ollama
+#: tag routinely does, and ``:latest`` is implied when it does not. So an identifier with
+#: a colon handed to vLLM is an Ollama tag in the wrong box, and saying so beats a
+#: download that 404s ten seconds later.
+#:
+#: The mirror case is NOT symmetrical and is deliberately not refused: ``library/mistral``
+#: is a perfectly good colon-less Ollama tag and ``owner/name`` is a perfectly good repo
+#: id, so a slash proves nothing in that direction. That one goes through and the
+#: backend's own error is reported — refuse what you can prove wrong, report what you
+#: cannot.
+_HF_REPO_RE = re.compile(r"^[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*$")
+
+
+def _custom_identifier_refusal(backend: str, identifier: str) -> str | None:
+    """Why ``identifier`` cannot be what ``backend`` was asked for, or None."""
+    if ".." in identifier:
+        # Never a real tag or repo id, and it is the one shape that would matter if any
+        # of this ever reached a path.
+        return "'..' is never part of a model name."
+    if backend != "vllm":
+        return None
+    if ":" in identifier:
+        return (
+            f"'{identifier}' looks like an Ollama tag, and vLLM downloads Hugging Face "
+            "repositories. Use the owner/name form, for example "
+            "mistralai/Ministral-3-3B-Instruct-2512."
+        )
+    if not _HF_REPO_RE.match(identifier):
+        return (
+            f"'{identifier}' is not a Hugging Face repo id. They are owner/name, for "
+            "example mistralai/Ministral-3-3B-Instruct-2512."
+        )
+    return None
+
+
+@router.post("/models/pull-custom")
+def llm_pull_custom_model(req: CustomModelRequest) -> dict:
+    """Download a model the operator named, in whichever form their backend uses.
+
+    RULED 2026-08-12 (maintainer): one model app-wide, *"keep in the UI the option for
+    users to use their own models"*. This is that option, and the reason it is an
+    endpoint rather than a straight call to the Ollama pull queue is that the two
+    backends take different artifacts: an Ollama image and a Hugging Face repo. A field
+    that only ever queued Ollama tags would be dead on a GPU machine, which is the
+    machine class most likely to want a different model.
+
+    Same egress posture and the same refusal contract as the catalogue download beside
+    it — this is CLEARNET traffic through a process outside this app's Tor routing, so
+    it is refused under the kill switch, and a refusal travels back with its reason
+    rather than as a silent no-op.
+
+    NOTHING HERE IS VERIFIED, and the caller is told so. The catalogue's identifiers sit
+    under a dated registry entry precisely so a stale one is caught by a freshness test;
+    an operator's own string has no such backing, so what this can honestly do is check
+    the SHAPE and let the backend answer for the rest.
+    """
+    from src.ingest.egress_window import PURPOSE_AI_INSTALL, egress_permitted
+
+    identifier = (req.identifier or "").strip()
+    if not identifier:
+        raise HTTPException(status_code=400, detail="No model name was given.")
+    if not egress_permitted(PURPOSE_AI_INSTALL):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Airplane mode is engaged. Downloading models is clearnet traffic "
+                "(Hugging Face / the model registry), so it is refused while offline. "
+                "You can allow the AI install to go online on its own, which does not "
+                "start collecting."
+            ),
+        )
+    pick = _download_backend(req.backend)
+    backend = pick["backend"]
+    if pick["prerequisite"]:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{'vLLM' if backend == 'vllm' else 'Ollama'} is not installed yet, and "
+                "it is what downloads models. Set up the local AI first."
+            ),
+        )
+    refusal = _custom_identifier_refusal(backend, identifier)
+    if refusal:
+        return {
+            "backend": backend,
+            "action": "nothing_to_do",
+            "queued": [],
+            "refused": [{"key": identifier, "label": identifier, "reason": refusal}],
+        }
+    return _queue_downloads(
+        backend,
+        [{"key": identifier, "label": identifier, "identifier": identifier}],
+        [],
+    )
 
 
 @router.get("/activation")

@@ -1450,16 +1450,6 @@
       <div id="llm-downloads" style="display:none;margin-bottom:10px"></div>
       <div id="llm-models-box"><p class="muted">Checking models…</p></div>
       <div id="llm-catalog-box" style="margin-top:10px"></div>
-      <details class="adv-collect" style="margin-top:10px">
-        <summary class="muted" style="cursor:pointer">Pull any other model</summary>
-        <div class="row" style="margin-top:6px;align-items:end">
-          <div style="flex:2"><label for="llm-pull-tag">Model tag or repo id</label>
-            <input id="llm-pull-tag" placeholder="e.g. llama3.2:3b — any tag from ollama.com/library"
-                   onkeydown="if(event.key==='Enter')pullModelFromBox()"></div>
-          <div style="flex:0 0 auto"><button onclick="pullModelFromBox()">Pull</button></div>
-        </div>
-        <div id="llm-pull-progress" class="hint" style="margin-top:8px"></div>
-      </details>
       <div id="llm-install-box" style="display:none;margin-top:10px"></div>
       <div id="vllm-install-box" style="display:none;margin-top:10px"></div>
       <div id="vllm-status-box" style="display:none"></div>
@@ -1712,6 +1702,26 @@
 
     <details class="adv-sec" data-adv="ai">
       <summary><span class="adv-sec-t">AI</span> <span class="muted">— system prompts, model behaviour and your own extractors</span></summary>
+    <!-- RUN YOUR OWN MODEL (maintainer 2026-08-12, with the one-model ruling: "Keep
+         in the UI the option for users to use their own models (as a buried advanced
+         settings option)"). Buried on purpose -- the default is not a menu -- and
+         BACKEND-AWARE, because the two backends take different artifacts: an Ollama
+         image and a Hugging Face repo. The label, the example and the link are filled
+         in by loadCustomModelBox() from the backend that will actually serve, so the
+         instruction is never for the other one. -->
+    <section class="panel">
+      <h2>Run your own model</h2>
+      <p class="muted" style="margin-top:0">This app runs on one model, chosen and measured, and everything else here is tuned for it. You can point it at a different one — nothing stops you, and nothing about it is verified: the shipped model's identifiers sit under a dated check so a stale one is caught before you hit a failed download, and a name you type has no such backing.</p>
+      <div id="custom-model-intro" class="hint" style="margin-top:8px"></div>
+      <div class="row" style="margin-top:6px;align-items:end">
+        <div style="flex:2"><label for="llm-pull-tag" id="custom-model-label">Model name</label>
+          <input id="llm-pull-tag" onkeydown="if(event.key==='Enter')pullModelFromBox()"></div>
+        <div style="flex:0 0 auto"><button onclick="pullModelFromBox()">Download it</button></div>
+      </div>
+      <div id="llm-pull-progress" class="hint" style="margin-top:8px"></div>
+      <p class="card-caveat" style="margin-top:8px">The download goes over the clear internet — not through this app's Tor proxy — so it is refused while airplane mode is on. Once it is here it runs fully offline, like any other model. To make it the one the app uses, set it as the active model above.</p>
+    </section>
+
     <section class="panel">
       <h2>Behaviour &amp; prompts</h2>
       <p class="muted" style="margin-top:0">There are four system prompts — Summary (used for one or many articles), Translation (one or many), Synthesis (one combined output across several), and Keyword extraction (the built-in keyword/entity indexer). They instruct the local model, and the exact prompt used is recorded with every result.</p>
