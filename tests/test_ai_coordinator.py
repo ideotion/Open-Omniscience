@@ -342,3 +342,106 @@ def test_the_shipped_perception_member_is_the_per_item_one() -> None:
     assert "max_workers" in inspect.signature(
         run_progressive_perception_extract_job
     ).parameters, "the member is marked per-item, so its job must take the argument"
+
+
+# --------------------------------------------------------------------------- #
+#  The lane gives the GPU back when it ends (field report 2026-08-13).
+# --------------------------------------------------------------------------- #
+
+
+def _release_spy(monkeypatch):
+    """Record what the lane asks arbitration to release, without touching a backend."""
+    calls: list[str] = []
+
+    def _fake(backend):
+        calls.append(backend)
+        return {"backend": backend, "released": True, "method": "stub"}
+
+    monkeypatch.setattr("src.llm.arbitration.release_backend", _fake)
+    monkeypatch.setenv("OO_LLM_AUTORELEASE", "1")
+    return calls
+
+
+def _lane(monkeypatch):
+    """One trivial member on a named backend -- the lane's own end is what is tested,
+    never a member's behaviour."""
+    monkeypatch.setattr(C, "_member_specs", lambda: [
+        C.Member("a", "A", "ai_sweep_keyword_triage", lambda ctx, model: {}),
+    ])
+    monkeypatch.setattr(C, "_resolve_backend_name", lambda: "ollama")
+    return _Settings(keyword_triage=True)
+
+
+def test_a_finished_lane_releases_the_gpu(monkeypatch):
+    """THE FIELD DEFECT: *"how come the model doesn't automatically unload from vRAM
+    when the AI related jobs are finished or stopped?"* -- it did not, because the lane
+    simply returned. On Ollama the model then lingered for the daemon's own idle
+    default; on vLLM it was held for the lifetime of the server, which nothing stopped."""
+    calls = _release_spy(monkeypatch)
+    cfg = _lane(monkeypatch)
+    out = C.run_coordinator(_Ctx(), model="m", max_turns=1, settings=cfg, sleep=lambda x: None)
+    assert calls, "the lane must give the card back when it ends"
+    assert out["gpu_released"]["released"] is True
+
+
+def test_a_cancelled_lane_releases_too(monkeypatch):
+    """"...or stopped" is the other half of the ask, and it is the case an operator is
+    most likely to be watching the GPU during."""
+    calls = _release_spy(monkeypatch)
+    cfg = _lane(monkeypatch)
+    C.run_coordinator(_Ctx(stop_after=1), model="m", settings=cfg, sleep=lambda x: None)
+    assert calls
+
+
+def test_the_release_never_runs_between_turns(monkeypatch):
+    """THE CONSTRAINT, stated by the maintainer in the same breath: *"we both want to
+    avoid using too much SSD by loading and unloading before every request"*. Releasing
+    per turn would reload the model on the next one -- exactly the thrash being avoided.
+    Many turns, ONE release."""
+    calls = _release_spy(monkeypatch)
+    cfg = _lane(monkeypatch)
+    C.run_coordinator(_Ctx(), model="m", max_turns=4, settings=cfg, sleep=lambda x: None)
+    assert len(calls) == 1, f"one release at the end, not one per turn: {calls}"
+
+
+def test_a_user_batch_holding_the_model_is_never_released_under(monkeypatch):
+    """Releasing while someone's own translate is running would make THEM pay the
+    reload -- the one person actually waiting."""
+    calls = _release_spy(monkeypatch)
+    cfg = _lane(monkeypatch)
+    # `stop_after`, not `max_turns`: the hold branch does not increment `turns` (it
+    # stands down without taking one), so a turn budget can never end a held lane --
+    # which is exactly why this file's other hold test counts progress details too.
+    with C.user_batch_hold("bulk translate"):
+        out = C.run_coordinator(_Ctx(stop_after=2), model="m", settings=cfg, sleep=lambda x: None)
+    assert calls == []
+    assert out["gpu_released"]["released"] is False
+    assert "user batch" in out["gpu_released"]["reason"]
+
+
+def test_the_operator_can_turn_the_release_off(monkeypatch):
+    """An operator who wants the model warm between lanes keeps it. This is also what
+    conftest sets suite-wide, so a test that drives the lane never stops a real
+    backend on a developer's machine."""
+    calls = _release_spy(monkeypatch)
+    cfg = _lane(monkeypatch)
+    monkeypatch.setenv("OO_LLM_AUTORELEASE", "0")
+    out = C.run_coordinator(_Ctx(), model="m", max_turns=1, settings=cfg, sleep=lambda x: None)
+    assert calls == []
+    assert out["gpu_released"]["reason"] == "OO_LLM_AUTORELEASE=0"
+
+
+def test_a_release_that_fails_never_fails_the_run(monkeypatch):
+    """Giving the card back is housekeeping; a run that did real work must not be
+    reported as failed because the housekeeping raised."""
+    monkeypatch.setenv("OO_LLM_AUTORELEASE", "1")
+
+    def _boom(backend):
+        raise RuntimeError("nvidia-smi went missing")
+
+    monkeypatch.setattr("src.llm.arbitration.release_backend", _boom)
+    cfg = _lane(monkeypatch)
+    out = C.run_coordinator(_Ctx(), model="m", max_turns=1, settings=cfg, sleep=lambda x: None)
+    assert out["turns"] >= 1
+    assert out["gpu_released"]["released"] is False
+    assert "RuntimeError" in out["gpu_released"]["reason"]
