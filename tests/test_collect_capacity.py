@@ -286,11 +286,20 @@ def test_from_summary_finds_the_numbers_where_a_real_pass_actually_puts_them(tmp
     monkeypatch.setattr(cp, "_log_path", lambda: tmp_path / "collect_perf.jsonl")
 
     gov = BandwidthGovernor(mode="maximum", w_max=8)
+    # Vitals are INJECTED rather than read from psutil: the contract under test is the
+    # payload's shape, and a live memory reading would make it depend on how much RAM
+    # the CI runner happens to have free (it runs on Linux, macOS and Windows).
     monitor = cp.CollectionMonitor(
-        governor=gov, pass_id="shape-probe", mode="rss", mem_floor_mb=10_000_000.0
+        governor=gov,
+        pass_id="shape-probe",
+        mode="rss",
+        mem_floor_mb=512.0,
+        rate_fn=lambda: 0.0,
+        vitals_fn=lambda: {"cpu_sys_pct": 1.0, "mem_avail_mb": 8.0, "rss_mb": 100.0},
+        writer_stats_fn=lambda: {},
     )
     monitor.start()
-    monitor._tick()  # mem_floor is absurdly high, so this tick reads as mem-low
+    monitor._tick()  # 8 MB available against a 512 MB floor -> unambiguously mem-low
     summary = monitor.stop(result={"articles_stored": 0})
 
     assert summary is not None, "the probe produced no summary at all"
