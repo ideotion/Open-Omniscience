@@ -29,7 +29,7 @@ import subprocess  # noqa: S404 - fixed argv, no shell, 5s timeout (nvidia-smi p
 from collections.abc import Mapping
 from typing import Protocol, runtime_checkable
 
-from src.llm.ollama import GenerationResult, total_ram_gb
+from src.llm.ollama import GenerationResult, reason_first, total_ram_gb
 
 _VALID_OVERRIDES = ("auto", "ollama", "vllm")
 
@@ -1104,10 +1104,13 @@ def outage_detail(
         text = str(error).strip()
         # An exception whose str() is empty (a bare ``raise SomeError``) still has a
         # TYPE, and "ReadTimeout" is a far better clue than "hiccup".
-        base = text[:_DETAIL_LIMIT] if text else type(error).__name__
+        # REASON-FIRST, not a head cut. See `reason_first` for the field report: a
+        # head truncation at this exact limit dropped the clause that named our own
+        # oversized prompt and left a sentence that reads as a fact about the model.
+        base = reason_first(text, _DETAIL_LIMIT) if text else type(error).__name__
     else:
         text = str(error or "").strip()
-        base = text[:_DETAIL_LIMIT] if text else "the local model call failed"
+        base = reason_first(text, _DETAIL_LIMIT) if text else "the local model call failed"
     return f"{base} — {tail}" if tail else base
 
 

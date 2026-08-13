@@ -453,7 +453,7 @@ def run_progressive_source_tags_job(
     from src.database.session import session_scope
     from src.llm.activation import recover_backend
     from src.llm.backend import outage_detail, outage_reason
-    from src.llm.ollama import LLMError
+    from src.llm.ollama import LLMError, is_context_overflow
 
     if session_factory is None:
         session_factory = session_scope
@@ -548,6 +548,8 @@ def run_progressive_source_tags_job(
     complete = False
     batches_this_call = 0
     consecutive_failures = 0
+    # Shrinks when the server says the prompt did not fit -- see the overflow branch.
+    working_batch = max(1, batch_size)
 
     ctx.set_progress(
         done=batches_completed * max(1, batch_size), total=total_estimate, detail="starting…"
@@ -566,7 +568,7 @@ def run_progressive_source_tags_job(
                 top_n=top_n,
                 min_articles=min_articles,
                 min_mentions=min_mentions,
-                limit_sources=batch_size,
+                limit_sources=working_batch,
                 after_domain=cursor,
             )
         if last_domain is None:
@@ -587,6 +589,24 @@ def run_progressive_source_tags_job(
                     keep_alive=keep_alive,
                 )
             except LLMError as exc:
+                # AN OVERSIZED PROMPT IS NOT AN OUTAGE. The comment below already
+                # SUSPECTED this case ("plausibly a context-length overflow given the
+                # uncapped, verbatim, corpus-wide tag vocabulary embedded in the
+                # prompt") and still treated it as a backend that might come back --
+                # so the suspicion was recorded and then paid for at 60s a try. The
+                # cursor is untouched on failure, so halving re-selects the same
+                # sources in a smaller chunk. The VOCABULARY is in every prompt
+                # whatever the batch size, so if one source still does not fit, the
+                # vocabulary is the thing to shrink and the loop stops guessing.
+                if is_context_overflow(exc) and working_batch > 1:
+                    working_batch = max(1, working_batch // 2)
+                    ctx.set_progress(
+                        detail=(
+                            f"the prompt did not fit the model's context window — "
+                            f"retrying with {working_batch} sources per batch"
+                        )
+                    )
+                    continue
                 # LLMUnavailable IS-A LLMError; catching the base class catches both
                 # a hard connection failure/timeout AND a "server answered but with
                 # an HTTP error" case (2026-07-26 field-remarks item 6 -- plausibly a

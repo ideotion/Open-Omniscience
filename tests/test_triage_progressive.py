@@ -427,3 +427,97 @@ def test_progress_reports_batches_and_a_growing_verdict_count(db, tmp_path):
     # every subsequent call reports a strictly-nondecreasing "done" count
     dones = [d for d, _t, _detail in ctx.progress if d is not None]
     assert dones == sorted(dones)
+
+
+# --------------------------------------------------------------------------- #
+#  A context overflow is deterministic, so it is not an outage (2026-08-13).
+# --------------------------------------------------------------------------- #
+
+
+class OverflowUntilSmallEnough:
+    """Refuses the way vLLM refuses, until the batch fits.
+
+    The real 400 body is quoted, because the classifier keys on the SERVER'S WORDS --
+    a stub that invented its own phrasing would test the stub.
+    """
+
+    def __init__(self, *, fits_at: int):
+        self._fits_at = fits_at
+        self.batch_sizes: list[int] = []
+        self._real = FakeClient()
+
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
+        n = sum(1 for ln in prompt.splitlines() if ln.strip().startswith("- "))
+        self.batch_sizes.append(n)
+        if n > self._fits_at:
+            from src.llm.ollama import LLMError
+
+            raise LLMError(
+                "vLLM error: Client error '400 Bad Request' — This model's maximum "
+                f"context length is 2048 tokens. However, you requested {n * 200} tokens."
+            )
+        return self._real.generate(prompt, model=model, system=system, keep_alive=keep_alive)
+
+
+def test_an_oversized_prompt_shrinks_the_batch_instead_of_burning_the_outage_budget(
+    db, tmp_path, monkeypatch
+):
+    """THE FIELD DEFECT. A 400 naming the context length was caught as "the backend
+    might come back": ten retries of the SAME batch, 60s apart, then the whole sweep
+    ended in state=error. The batch cannot get smaller by waiting.
+
+    The cursor is untouched on failure, so halving re-selects the same keywords in a
+    smaller chunk and the sweep completes covering everything.
+    """
+    _seed(db, n=7)
+    _fast_backoff(monkeypatch)
+    # Canaries ride every batch, so a "batch of 4" is 4+2 lines: fits_at=6 means the
+    # 8-keyword prompt is refused and the 4-keyword one is accepted.
+    client = OverflowUntilSmallEnough(fits_at=6)
+
+    res = J.run_progressive_triage_job(
+        FakeCtx(),
+        model="stub:test",
+        batch_size=8,
+        min_articles=1,
+        session_factory=_session_factory(db),
+        client=client,
+        state_path=tmp_path / "state.json",
+    )
+
+    assert res["complete"] is True, "the sweep must finish, not die at state=error"
+    # Every real keyword still judged -- shrinking must not skip anyone.
+    judged = {t for r in _read_jsonl(res["path"])
+              if r.get("schema") == "oo-keyword-triage-verdicts-1"
+              for t in r["verdicts"] if not t.startswith(("cookie", "subscribe"))}
+    assert judged == {f"topic{i}" for i in range(7)}
+
+    # It SHRANK rather than repeating: the first attempt is the big one, and no later
+    # attempt is that size again.
+    assert client.batch_sizes[0] > 6
+    assert all(n <= 6 for n in client.batch_sizes[1:]), client.batch_sizes
+    # And it did not spend the outage budget doing it -- ten identical retries would
+    # be eleven calls at the original size before giving up.
+    assert client.batch_sizes.count(client.batch_sizes[0]) == 1
+
+
+def test_a_genuine_outage_still_retries_rather_than_shrinking(db, tmp_path, monkeypatch):
+    """The twin, and the one that matters most: reading a connection failure as an
+    overflow would shrink the batch against a backend that is simply down, and skip
+    the retry that IS the right answer there. Two transient failures must still be
+    ridden out at the ORIGINAL batch size."""
+    _seed(db, n=4)
+    _fast_backoff(monkeypatch)
+    client = FlakyClient(fail_times=2)
+
+    res = J.run_progressive_triage_job(
+        FakeCtx(),
+        model="stub:test",
+        batch_size=4,
+        min_articles=1,
+        session_factory=_session_factory(db),
+        client=client,
+        state_path=tmp_path / "state.json",
+    )
+    assert res["complete"] is True
+    assert res["totals"]["verdicts_out"] == 4 + 2  # one batch, all four, plus canaries

@@ -1783,6 +1783,54 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the six statements in the step I was looking at and false across all 19. I
     wrote a quantitative claim without counting, in the comment right above the
     code that depended on it.
+  - **A CONSERVATIVE CONSTANT DESCRIBES A POPULATION — once the population is one, it
+    is just a wrong number (2026-08-13, "This model's maximum context length is 2048
+    tokens"):** the operator read that as a claim about the model; it was OUR OWN
+    `--max-model-len`. `compute_server_args` divides a post-weights budget by
+    `_KV_MB_PER_TOKEN = 0.5`, and its own comment said what that is — "a 7B-class fp16
+    multi-head figure" — and, in the next breath, that "a grouped-query model (what we
+    actually ship) costs ~4x less, so this errs toward a SHORTER context". Erring short
+    was CORRECT while eight models of unknown shape could be loaded and a wrong guess
+    meant an OOM at startup. It became a defect the day the roster collapsed to one
+    model whose `config.json` is on the disk: an assumption about a class you can no
+    longer be wrong about is not caution, it is a stale number with a good excuse. The
+    same applies to the sibling `weight_footprint_gb`, whose one-way "apply a measured
+    footprint only when LARGER" rule was justified as refusing "context nobody asked
+    for" — a premise a maintainer can revoke by asking for it. **THE FIX IS TO REPLACE
+    THE CLASS WITH THE INSTANCE, NOT THE CONSTANT WITH A BETTER CONSTANT**: KV bytes per
+    token is exact arithmetic over published config (`2 × layers × kv_heads × head_dim ×
+    dtype bytes`), so there is nothing left to guess. **THE CHECK THAT MAKES THAT
+    TRUSTWORTHY COSTS NOTHING AND SHOULD ALWAYS BE WRITTEN**: feed the new derivation the
+    shape the OLD constant was hand-computed for and assert it rederives that constant
+    exactly — 0.5000 MB/token for 32 layers × 32 heads × 128 dim at fp16. If it does not,
+    one of the two is wrong, and you learn which without a GPU. THREE RIDERS. A quantised
+    checkpoint quantises the WEIGHTS; its KV cache still runs at the compute dtype, so
+    reading "fp8" off a repo NAME under-reserves the cache — the direction that fails at
+    startup. `head_dim` is published precisely because it is not always
+    `hidden_size // num_attention_heads`; deriving it when it is stated is wrong for
+    exactly the models that state it. And the checkpoint's `max_position_embeddings` must
+    cap the result and is allowed to bind BELOW your own floor: vLLM refuses to start
+    above it, so a floor that overrides it converts a working start into a failed one.
+  - **A DETERMINISTIC REFUSAL CAUGHT BY AN OUTAGE HANDLER COSTS THE WHOLE RUN
+    (2026-08-13, same report):** the four sweep loops catch `LLMError` and treat every
+    instance as a backend that might come back — sleep, back off, retry the SAME batch up
+    to ten times. A 400 naming the context length cannot succeed on retry, because
+    nothing about the batch changes; the field run spent ten minutes proving that and
+    then ended the sweep at `state=error`. Worse, the comment in `source_tags_job`
+    already NAMED this case as the likely cause ("plausibly a context-length overflow
+    given the uncapped, verbatim, corpus-wide tag vocabulary embedded in the prompt") and
+    still paid for it at 60s a try — a suspicion recorded next to the code that ignores
+    it. Classify on the SERVER'S WORDS, not the status code: a 400 is also how a backend
+    reports a malformed request, and Ollama reports the same overflow as a 500. The
+    answer is to make the request smaller — the cursor is untouched on failure, so
+    halving the batch re-selects the same items in a smaller chunk, is bounded at ~log2
+    halvings, and costs no outage budget because nothing about the backend is wrong. THE
+    TWIN IS THE ONE THAT MATTERS: misreading a connection failure as an overflow would
+    shrink the batch against a backend that is simply down AND skip the retry that is
+    correct there, so both directions need a test. GENERAL FORM: before adding a failure
+    to a retry loop, ask whether re-sending the identical request could ever produce a
+    different answer; if not, retrying is not resilience, it is a delay before the same
+    failure.
   - **A LOG TAIL IS THE WRONG HALF WHEN THE ROOT CAUSE COMES FROM A CHILD PROCESS
     (2026-08-02, the vLLM start failure):** `server_log_tail` kept the last 8000 bytes
     on the written assumption that "a CUDA OOM puts the actionable numbers at the END".

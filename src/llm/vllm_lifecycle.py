@@ -929,12 +929,40 @@ def start_outcome() -> dict:
 # --------------------------------------------------------------------------- #
 #  Context-size auto-tune (B2.5, ruled: disclosed auto-with-override)
 # --------------------------------------------------------------------------- #
-#: KV-cache cost of ONE context token, in MB -- the constant the context estimate
-#: divides by. Derived, not guessed: 2 (K and V) x 32 layers x 32 heads x 128 head
-#: dim x 2 bytes (fp16) = 512 KB for a 7B-class model with multi-head attention.
-#: A grouped-query model (what we actually ship) costs ~4x less, so this errs toward
-#: a SHORTER context, which is the survivable direction on a small card.
+#: KV-cache cost of ONE context token, in MB -- the FALLBACK the context estimate
+#: divides by when the model's own shape cannot be read. Derived, not guessed:
+#: 2 (K and V) x 32 layers x 32 heads x 128 head dim x 2 bytes (fp16) = 512 KB for a
+#: 7B-class model with multi-head attention.
+#:
+#: THIS IS NO LONGER THE FIRST ANSWER (2026-08-13, maintainer: *"this is the 3B model
+#: version, it's much smaller than the 7b, hence context should be increased accordingly
+#: to ingest longer articles"*). It described a model class this app stopped shipping
+#: when the roster collapsed to one, and the comment that used to sit here said as much:
+#: "a grouped-query model (what we actually ship) costs ~4x less, so this errs toward a
+#: SHORTER context". Erring short was the right call while eight models of unknown shape
+#: could be loaded; with ONE model whose config is on disk, the shape is a fact we can
+#: read rather than a class we have to assume, and assuming costs the operator ~4x the
+#: context on the exact machine the app is designed around.
+#:
+#: :func:`kv_mb_per_token` computes it from the checkpoint; this stays for the model that
+#: cannot be measured, where a missing reading must not become a generous guess.
 _KV_MB_PER_TOKEN = 0.5
+
+#: Bytes per element for the KV cache, by the dtype a checkpoint declares. vLLM stores
+#: the cache in the model's own dtype unless told otherwise (``--kv-cache-dtype``, which
+#: this app does not set), so the checkpoint's ``torch_dtype`` governs.
+#:
+#: NOTE ON QUANTISED WEIGHTS: an FP8 or AWQ checkpoint quantises the WEIGHTS; its KV
+#: cache still runs at the compute dtype the config declares. Reading 1 byte/element off
+#: an "fp8" repo name would under-reserve the cache -- the direction that fails at
+#: startup -- so only an explicit ``torch_dtype`` is honoured and anything unrecognised
+#: falls back to 2 bytes (fp16/bf16), the common case and the safe one.
+_KV_DTYPE_BYTES = {
+    "float32": 4.0, "float": 4.0, "fp32": 4.0,
+    "float16": 2.0, "fp16": 2.0, "half": 2.0,
+    "bfloat16": 2.0, "bf16": 2.0,
+}
+_KV_DTYPE_FALLBACK_BYTES = 2.0
 
 #: Memory left FREE on the card, outside vLLM's own budget, for the CUDA-graph capture
 #: pool and allocator fragmentation.
@@ -1013,11 +1041,34 @@ def _eager_default(vram_mb: int | None) -> bool:
 #: "a measurement" instead of comparing against a literal in another function.
 _DEFAULT_WEIGHT_GB = 5.0
 
+#: Added to a MEASURED weight footprint before it is spent as a budget.
+#:
+#: The measurement is file bytes on disk; a loaded model costs a little more than its
+#: files (the loader's own buffers, CUDA context, non-KV activations that are not the
+#: graph pool). Trusting the bytes exactly is the one way a measured footprint could be
+#: less safe than the conservative default it replaces, so the reading buys context and
+#: this margin keeps the start. A judgement, not a benchmark -- and a small one, because
+#: `_GRAPH_POOL_RESERVE_GB` already holds the large absolute reserve.
+_WEIGHT_LOAD_MARGIN_GB = 0.5
+
+#: The longest single sequence this app will ask a server to accept.
+#:
+#: NOT a limit of the model -- the checkpoint's own ``max_position_embeddings`` binds
+#: separately and can be far larger. This is an APP-side cap, and the reason is
+#: concurrency: ``max_model_len`` bounds ONE sequence while the KV pool is shared, so a
+#: window sized to swallow the largest article in the corpus in a single call would
+#: leave room for barely one request in flight, and the sweeps run several. 32768 tokens
+#: is ~131k characters -- six times this corpus's average article, and enough to read
+#: its 412 KB outlier in four parts rather than two hundred.
+_MAX_CONTEXT_TOKENS = 32768
+
 def compute_server_args(
     vram_mb: int | None,
     *,
     vram_free_mb: int | None = None,
     weight_footprint_gb: float = _DEFAULT_WEIGHT_GB,
+    kv_mb_per_token: float = _KV_MB_PER_TOKEN,
+    model_max_tokens: int | None = None,
     kv_cache_reserve_frac: float = 0.15,
     max_model_len_override: int | None = None,
     gpu_memory_utilization_override: float | None = None,
@@ -1071,8 +1122,14 @@ def compute_server_args(
         f"capped at {_MAX_GPU_UTILIZATION} (vLLM's own default) — the reserve is what CUDA-graph "
         f"capture and fragmentation need, which does not shrink with the card. "
         f"max_model_len = (VRAM − {weight_footprint_gb} GB for weights, less "
-        f"{kv_cache_reserve_frac:.0%} headroom) ÷ {_KV_MB_PER_TOKEN} MB/token (a 7B-class "
-        f"fp16 multi-head figure, deliberately conservative), floored at 2048, capped at 32768. "
+        f"{kv_cache_reserve_frac:.0%} headroom) ÷ {kv_mb_per_token} MB/token "
+        + (
+            "(this model's own layers x KV heads x head dim, read from its config)"
+            if kv_mb_per_token != _KV_MB_PER_TOKEN
+            else "(a 7B-class fp16 multi-head fallback -- this model's own shape "
+            "could not be read)"
+        )
+        + ", floored at 2048, capped at 32768. "
         f"enforce_eager (skip CUDA-graph capture) is set at or below {_EAGER_MAX_VRAM_GB} GB of "
         f"VRAM and left off above it — capture died at 86% of 51 graphs on an 8 GiB card, and "
         f"skipping it costs decode speed rather than a server that never starts."
@@ -1152,10 +1209,13 @@ def compute_server_args(
         # the affordable context by ~1000x, so `est_tokens` came out in the
         # MILLIONS and the 32768 cap silently decided every machine.
         #
-        # 0.5 MB/token stays DELIBERATELY conservative rather than being lowered to
-        # match the shipped 3B model's grouped-query attention (~0.125 MB/token):
-        # over-reserving costs context length while under-reserving costs an OOM at
-        # startup, and on a small card the second failure is much worse.
+        # ...and SUPERSEDED as the first answer 2026-08-13: `kv_mb_per_token` now
+        # arrives computed from the checkpoint's own config when it can be read, so
+        # the conservative class figure governs only the model we cannot measure.
+        # The old note said 0.5 stays "deliberately conservative rather than being
+        # lowered to match the shipped 3B model's grouped-query attention (~0.125
+        # MB/token)" -- which was right while eight models of unknown shape could be
+        # loaded, and is simply wrong when the one model we ship has its shape on disk.
         #
         # KEPT on the post-weights budget rather than re-derived from the new, lower
         # utilization: the field run served 5120 with 24,960 tokens of KV (4.88x
@@ -1167,8 +1227,14 @@ def compute_server_args(
         # process is holding.
         usable_gb = max(0.5, free_gb - weight_footprint_gb)
         kv_gb = usable_gb * (1.0 - kv_cache_reserve_frac)
-        est_tokens = int((kv_gb * 1024) / _KV_MB_PER_TOKEN)
-        max_len = max(2048, min(32768, (est_tokens // 1024) * 1024 or 2048))
+        est_tokens = int((kv_gb * 1024) / max(1e-6, kv_mb_per_token))
+        max_len = max(2048, min(_MAX_CONTEXT_TOKENS, (est_tokens // 1024) * 1024 or 2048))
+        # THE CHECKPOINT'S OWN CEILING BINDS LAST, and it can pull BELOW the 2048
+        # floor: a model that only supports 1024 positions must be asked for 1024, or
+        # vLLM refuses to start at all. The floor protects against an unreadable
+        # budget, not against the model's published limit.
+        if model_max_tokens and model_max_tokens > 0:
+            max_len = min(max_len, model_max_tokens)
     out = {
         "max_model_len": max_len,
         "gpu_memory_utilization": gpu_util,
@@ -1867,20 +1933,39 @@ def start(
     # of weights) was told 2.63 GB remained after weights, asked for a context that
     # could not fit, and the engine died on "No available memory for the cache blocks".
     #
-    # THE ASYMMETRY IS DELIBERATE. Applying a SMALLER measurement would grow
-    # max_model_len for small models -- turning starts that work today into starts
-    # that might not, to buy context nobody asked for. Applying a LARGER one can only
-    # shrink the KV budget, which is the direction that converts a failed start into a
-    # working one at a shorter context. A model that cannot be measured keeps the
-    # default exactly, because a missing reading is not a reading of zero.
+    # THE ASYMMETRY WAS DELIBERATE AND IS NOW SUPERSEDED (2026-08-13, maintainer:
+    # "this is the 3B model version, it's much smaller than the 7b, hence context
+    # should be increased accordingly to ingest longer articles"). It read: applying a
+    # SMALLER measurement would grow max_model_len for small models, "to buy context
+    # nobody asked for". Context is now exactly what is being asked for -- a 2048-token
+    # window cannot carry an article from this corpus, so the sweeps split it into
+    # twenty parts or fail outright -- and the premise has changed underneath it too:
+    # the bench that motivated the one-way rule swept models of unknown shape, and the
+    # roster is now ONE model whose weights are on the disk in front of us.
+    #
+    # WHAT KEEPS IT SAFE IN THE NEW DIRECTION. `measured_weight_gb` is itself
+    # conservative -- it counts every weight file under the revision, so a repo shipping
+    # both a consolidated and a sharded copy (Mistral's do) reports roughly double what
+    # the loader reads. On top of that the measurement is FILE BYTES, and a loaded model
+    # costs a little more, so a margin is added rather than trusting the bytes exactly.
+    # The graph-pool reserve and the KV headroom fraction are untouched and sit on top.
     footprint = weight_footprint_gb if weight_footprint_gb is not None else _DEFAULT_WEIGHT_GB
     if weight_footprint_gb is None:
         try:
             measured_gb = measured_weight_gb(model)
         except Exception:  # noqa: BLE001 - a start must not fail over a disk read
             measured_gb = None
-        if measured_gb is not None and measured_gb > footprint:
-            footprint = measured_gb
+        if measured_gb is not None:
+            footprint = round(measured_gb + _WEIGHT_LOAD_MARGIN_GB, 2)
+
+    # The KV cost of one token, from THIS checkpoint rather than from a model class.
+    # None (unreadable config) keeps the conservative fallback exactly.
+    try:
+        kv = kv_mb_per_token(model)
+    except Exception:  # noqa: BLE001 - a start must not fail over a disk read
+        kv = None
+    kv_mb = kv[0] if kv else _KV_MB_PER_TOKEN
+    model_max = kv[1].get("max_position_embeddings") if kv else None
 
     args = compute_server_args(
         gpu.get("vram_mb"),
@@ -1888,6 +1973,8 @@ def start(
         max_model_len_override=max_model_len,
         gpu_memory_utilization_override=gpu_memory_utilization,
         weight_footprint_gb=footprint,
+        kv_mb_per_token=kv_mb,
+        model_max_tokens=model_max,
         # DERIVED, not a second independent knob. The app already bounds how many
         # requests it will have in flight; telling the server the same number stops
         # vLLM's startup profiling sizing an activation peak for a concurrency no
@@ -2707,6 +2794,108 @@ def measured_weight_gb(model: str) -> float | None:
         return None
     total = sum(seen.values())
     return round(total / (1024**3), 2) if total else None
+
+
+def _loadable_revision(model: str) -> Path | None:
+    """The snapshot revision directory the loader would read, or None."""
+    state = model_cache_state(model)
+    if not state.get("cached") or not state.get("path"):
+        return None
+    snaps = Path(state["path"]) / "snapshots"
+    try:
+        for rev in snaps.iterdir() if snaps.is_dir() else []:
+            if rev.is_dir() and any((rev / name).is_file() for name in _LOADER_CONFIG_FILES):
+                return rev
+    except OSError:
+        return None
+    return None
+
+
+def kv_mb_per_token(model: str) -> tuple[float, dict] | None:
+    """MB of KV cache ONE context token costs for ``model``, from its OWN config.
+
+    Returns ``(mb_per_token, basis)`` or None when the checkpoint's shape cannot be
+    read -- never a guess dressed as a measurement.
+
+    THE ARITHMETIC IS EXACT, not an estimate. A transformer stores one key and one
+    value vector per layer per KV head::
+
+        bytes/token = 2 (K and V) x layers x kv_heads x head_dim x bytes/element
+
+    Every term is published in ``config.json``. That is the whole reason to read it
+    rather than assume a class: :data:`_KV_MB_PER_TOKEN` encodes a 7B-class multi-head
+    model, and the ONE model this app ships is a 3B with grouped-query attention, where
+    ``num_key_value_heads`` is several times smaller than ``num_attention_heads``. The
+    difference is not a rounding matter -- it is the difference between a 2048-token
+    window and a useful one, on the same card.
+
+    WHY THIS IS SAFE TO APPLY DOWNWARD, unlike a smaller guess. The number is derived
+    from the checkpoint that is about to be loaded, so it describes the very cache vLLM
+    will allocate; there is no model class to be wrong about. What it deliberately does
+    NOT model is vLLM's own per-block overhead and any non-KV allocation, which is why
+    the caller keeps its separate reserve fraction and the absolute graph-pool reserve
+    on top -- this replaces a wrong number with a right one, not a budget with none.
+
+    ``head_dim`` is read explicitly when present (newer configs publish it, and it is
+    NOT always ``hidden_size // num_attention_heads``) and derived otherwise.
+    """
+    rev = _loadable_revision(model)
+    if rev is None:
+        return None
+    try:
+        raw = (rev / "config.json").read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        cfg = json.loads(raw)
+    except ValueError:
+        return None
+    if not isinstance(cfg, dict):
+        return None
+    # Some repos nest the transformer config (multimodal wrappers put it under
+    # "text_config"); prefer the nested one when the top level lacks the fields.
+    for key in ("text_config", "language_config"):
+        inner = cfg.get(key)
+        if isinstance(inner, dict) and "num_hidden_layers" in inner:
+            cfg = {**cfg, **inner}
+            break
+
+    def _pos_int(value: object) -> int | None:
+        return int(value) if isinstance(value, int) and value > 0 else None
+
+    layers = _pos_int(cfg.get("num_hidden_layers"))
+    heads = _pos_int(cfg.get("num_attention_heads"))
+    kv_heads = _pos_int(cfg.get("num_key_value_heads")) or heads
+    head_dim = _pos_int(cfg.get("head_dim"))
+    if head_dim is None:
+        hidden = _pos_int(cfg.get("hidden_size"))
+        head_dim = (hidden // heads) if (hidden and heads) else None
+    if not (layers and kv_heads and head_dim):
+        return None
+
+    dtype = str(cfg.get("torch_dtype") or "").strip().lower()
+    elem = _KV_DTYPE_BYTES.get(dtype, _KV_DTYPE_FALLBACK_BYTES)
+    mb = (2 * layers * kv_heads * head_dim * elem) / (1024.0**2)
+    if mb <= 0:
+        return None
+    # 6 places, not fewer: these are exact powers-of-two fractions (2*L*H*D*B / 2^20),
+    # and a small model's figure is small enough that a coarser rounding stops being
+    # the arithmetic and starts being an approximation of it.
+    return round(mb, 6), {
+        "layers": layers,
+        "kv_heads": kv_heads,
+        "attention_heads": heads,
+        "head_dim": head_dim,
+        "kv_dtype": dtype or None,
+        "bytes_per_element": elem,
+        "grouped_query": bool(heads and kv_heads and kv_heads < heads),
+        # The checkpoint's OWN ceiling. vLLM refuses to start when --max-model-len
+        # exceeds it, so a budget that ignores it can compute a window that turns a
+        # working start into a failed one -- and on a long-context model it is the
+        # number that says how much room there is to ask for.
+        "max_position_embeddings": _pos_int(cfg.get("max_position_embeddings")),
+        "source": "the model's own config.json",
+    }
 
 
 def model_cache_state(model: str) -> dict:

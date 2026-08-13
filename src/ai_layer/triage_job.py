@@ -357,7 +357,7 @@ def run_progressive_triage_job(
     from src.database.session import session_scope
     from src.llm.activation import recover_backend
     from src.llm.backend import outage_detail, outage_reason
-    from src.llm.ollama import LLMError  # LLMUnavailable IS-A LLMError; catching the base catches both
+    from src.llm.ollama import LLMError, is_context_overflow  # LLMUnavailable IS-A LLMError; catching the base catches both
 
     if session_factory is None:
         session_factory = session_scope
@@ -419,6 +419,9 @@ def run_progressive_triage_job(
     complete = False
     batches_this_call = 0
     consecutive_failures = 0
+    # The batch size actually in use. Starts at the operator's and SHRINKS when the
+    # server says the prompt did not fit -- see the overflow branch below.
+    working_batch = max(1, batch_size)
 
     ctx.set_progress(
         done=batches_completed * max(1, batch_size), total=total_estimate, detail="starting…"
@@ -432,7 +435,7 @@ def run_progressive_triage_job(
             break  # the per-call budget is spent — a clean bounded end, not a pause
         with session_factory() as session:
             chunk = T.select_triage_batch_after(
-                session, batch_size, min_articles=min_articles, after=cursor
+                session, working_batch, min_articles=min_articles, after=cursor
             )
         if not chunk:
             complete = True
@@ -448,6 +451,23 @@ def run_progressive_triage_job(
                 keep_alive=keep_alive,
             )
         except LLMError as exc:
+            # AN OVERSIZED PROMPT IS NOT AN OUTAGE, and must not be paid for like one.
+            # The backoff below exists for a backend that might come back; a context
+            # overflow is deterministic, so re-sending the SAME batch cannot succeed --
+            # a field run spent ten minutes proving that and then ended the sweep. The
+            # cursor is untouched on failure, so halving the batch and continuing
+            # re-selects the same keywords in a smaller chunk: self-correcting, bounded
+            # at ~log2(batch) halvings, and it costs no outage budget because nothing
+            # about the backend is wrong.
+            if is_context_overflow(exc) and working_batch > 1:
+                working_batch = max(1, working_batch // 2)
+                ctx.set_progress(
+                    detail=(
+                        f"the prompt did not fit the model's context window — "
+                        f"retrying with {working_batch} keywords per batch"
+                    )
+                )
+                continue
             # LLMUnavailable IS-A LLMError (src/llm/ollama.py) -- catching the base
             # class here catches both a hard connection failure/timeout AND a "the
             # server answered but with an HTTP error" case (e.g. a context-length

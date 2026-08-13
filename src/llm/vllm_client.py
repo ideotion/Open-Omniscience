@@ -263,6 +263,33 @@ class VllmClient:
         data = resp.json()
         return [m["id"] for m in (data.get("data") or []) if m.get("id")]
 
+    def served_window(self) -> int | None:
+        """Tokens the RUNNING server will actually accept, or None if unreadable.
+
+        vLLM's model card on ``GET /v1/models`` carries ``max_model_len`` -- the window
+        the engine was started with. We were already calling this endpoint twice and
+        keeping only ``id``, while a caller that needed the window RE-DERIVED it from
+        free VRAM (``coverage._resolve_window``) and labelled the result "derived from
+        VRAM at start". It was not: it re-ran the estimate against the card as it is
+        NOW, and once vLLM is running it has claimed most of that card, so the reading
+        describes a different machine state than the server holds. Two numbers for one
+        quantity, and the one that governs is the server's.
+
+        None on an unreachable server or a card without the field -- never a guess, and
+        the caller keeps its derivation as the fallback.
+        """
+        self._check_kill_switch()
+        try:
+            resp = self._client.get("/v1/models")
+            resp.raise_for_status()
+            for m in resp.json().get("data") or []:
+                n = m.get("max_model_len")
+                if isinstance(n, int) and n > 0:
+                    return n
+        except Exception:  # noqa: BLE001 - advisory read; the caller degrades honestly
+            return None
+        return None
+
     def list_installed_detailed(self) -> list[dict]:
         """Mirrors ``OllamaClient.list_installed_detailed`` shape for the shared
         picker -- vLLM's ``/v1/models`` carries no size/date, so those are honestly

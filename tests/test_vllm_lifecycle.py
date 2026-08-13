@@ -1890,12 +1890,23 @@ def test_a_bigger_model_shrinks_the_kv_budget():
     )
 
 
-def test_only_a_LARGER_measurement_is_applied(monkeypatch, tmp_path):
-    """THE ASYMMETRY, and the one that guards against a regression rather than a bug.
+def test_the_measured_footprint_is_applied_in_both_directions(monkeypatch, tmp_path):
+    """THE ASYMMETRY, SUPERSEDED 2026-08-13 — updated deliberately, not by reflex.
 
-    Applying a SMALLER measurement would grow max_model_len for every small model —
-    turning starts that work today into starts that might not, to buy context nobody
-    asked for. So a small model keeps the default budget exactly."""
+    This test used to be ``test_only_a_LARGER_measurement_is_applied``, and its reason
+    was sound: applying a SMALLER measurement grows max_model_len for small models,
+    "turning starts that work today into starts that might not, TO BUY CONTEXT NOBODY
+    ASKED FOR". The last clause is what changed. The maintainer asked for exactly that
+    context — *"this is the 3B model version, it's much smaller than the 7b, hence
+    context should be increased accordingly to ingest longer articles"* — after a
+    2048-token window made every sweep refuse an article from this corpus.
+
+    The premise moved too: the bench that motivated the one-way rule swept eight models
+    of unknown shape, and the roster is now ONE model whose weights are on the disk.
+
+    WHAT STILL HOLDS, and is asserted below: the bigger model still asks for less (the
+    original fix, untouched), and the smaller model's grown budget is bounded by a
+    stated margin over the measurement rather than by the raw file bytes."""
     monkeypatch.setenv("HF_HUB_CACHE", str(tmp_path))
     _cached_repo(tmp_path, "org/tiny", weights_mb=1600)          # ~1.56 GB, well under 5.0
     _cached_repo(tmp_path, "org/big", weights_mb=6144)           # 6.0 GB, over it
@@ -1949,7 +1960,18 @@ def test_only_a_LARGER_measurement_is_applied(monkeypatch, tmp_path):
         "the whole fix, read off the real command line"
     )
     baseline = V.compute_server_args(8192, vram_free_mb=7812)["max_model_len"]
-    assert _len_of(argvs[0]) == baseline, (
-        "and the small model must be UNCHANGED from today's behaviour: growing its "
-        "budget would turn a start that works into one that might not"
+    assert _len_of(argvs[0]) > baseline, (
+        "the small model must now GET the context its size affords — that is the "
+        "2026-08-13 ruling, and the old assertion pinned the opposite"
     )
+    # ...but bounded by the MEASUREMENT plus its stated margin, never by optimism: the
+    # window is exactly what a 1.56 GB model + `_WEIGHT_LOAD_MARGIN_GB` affords.
+    expected = V.compute_server_args(
+        8192, vram_free_mb=7812, weight_footprint_gb=round(tiny + V._WEIGHT_LOAD_MARGIN_GB, 2)
+    )["max_model_len"]
+    assert _len_of(argvs[0]) == expected
+
+    # And the margin is load-bearing rather than decorative: without it the budget
+    # would be measurably larger, which is the direction that fails at startup.
+    unmargined = V.compute_server_args(8192, vram_free_mb=7812, weight_footprint_gb=tiny)
+    assert unmargined["max_model_len"] > expected
