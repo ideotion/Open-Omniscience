@@ -12177,6 +12177,42 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   for the strings it renders rather than trusting the count. And key only what varies by
   language — the example identifier is a string to copy verbatim and the link text is a
   hostname, so both stay untranslated on purpose.
+- **AN ADAPTIVE CONTROLLER REBUILT AT THE TOP OF EVERY LOOP IS AMNESIAC — it re-learns
+  the same lesson forever, and the descent is the expensive part (2026-08-13, "repeated
+  crashes on a very slow instance"):** `BandwidthGovernor` backs off correctly under
+  memory pressure and, on a 4-core/3.65 GiB box, reached the right answer — one worker.
+  It is also constructed fresh inside `_do_run`, so every pass re-seeded at `w_max` and
+  re-walked the descent: `50->48 mem-low`, new pass, `50->48` again, then 28 linear ticks
+  over **43 s** at 150–300 MB available, then 50 again. Twenty-five hours of that.
+  Nothing was broken in the controller; what was missing was that its output survived
+  nowhere. And the measurement was ALREADY THERE — `CollectionMonitor` records
+  `mem_low_min_permits`, publishes it in the perf log, and no decision path read it (the
+  recorded dead-end shape, in a control loop rather than a status endpoint). GENERAL
+  FORM: when a component adapts at runtime, find the scope that CONSTRUCTS it and ask what
+  happens to its adaptation at that boundary — a controller whose lifetime is one
+  iteration cannot learn across iterations, however good its control law is. THREE DESIGN
+  POINTS. (a) Persist across RESTARTS, not just passes, when the symptom being fixed is
+  itself a restart — otherwise the fix is absent on exactly the machines that need it.
+  (b) A learned ceiling is a memory of pressure, not a verdict: relax it on clean passes
+  and CLEAR the record on arrival at the maximum, so a healthy machine carries no state
+  and a data dir moved to a bigger box heals instead of being pinned. (c) Never predict
+  the ceiling from RAM or core count — that is a fabricated capability claim; the only
+  honest input is what the machine actually did. COROLLARY on the back-off law itself:
+  memory is the one contention signal where overshoot is fatal rather than merely slow,
+  so it earns a MULTIPLICATIVE decrease (6 ticks to the floor, not 25) while writer/CPU
+  saturation stay linear — over-cutting those only wastes capacity.
+- **A MODE-SPECIFIC DEFAULT THAT OVERWRITES AN EXPLICIT ARGUMENT MAKES THE NEXT CALLER A
+  SILENT NO-OP (2026-08-13, same slice):** the governor read
+  `if seed is None: seed = DEFAULT_SEED` and then, unconditionally,
+  `if self.mode == "maximum": seed = self.w_max` — correct for years, because the only
+  caller passed no seed. The moment a caller had something to say, that line threw it
+  away, in **precisely the mode a throughput-tuned install runs in**: the fix above would
+  have shipped, passed its own unit tests, and done nothing on the reporting machine. The
+  shape to grep for is a defaulting block where the "no argument given" branch and the
+  "special case" branch are written as separate statements rather than one conditional —
+  the second silently outranks the caller. Fold the special case INTO the `is None`
+  branch. And pin it with a test named for the mode, since the general
+  "an explicit seed is honoured" case passes in the other mode either way.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
