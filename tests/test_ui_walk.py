@@ -84,7 +84,10 @@ def test_all_green_on_a_fully_working_fake_driver():
 
 
 def test_one_bad_surface_degrades_only_that_step():
-    driver = _FakeDriver(broken_dom_ids={"set-sources"})
+    # "src-table" -- re-anchored 2026-08-13: source management moved from its own top-level
+    # Settings subtab ("set-sources", which no longer exists as a DOM id at all) into a folded
+    # Settings > Advanced > Sources section; see ui_walk.py's FLAGSHIP_SURFACES docstring.
+    driver = _FakeDriver(broken_dom_ids={"src-table"})
     report = run_ui_walk(driver)
     assert report["summary"]["total"] == 5
     assert report["summary"]["passed"] == 4
