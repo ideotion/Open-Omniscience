@@ -1449,21 +1449,8 @@ def default_model_install() -> dict:
     return {**plan, "action": "queued", "result": queued}
 
 
-class BenchRosterInstallRequest(BaseModel):
-    """Which roster models to install. ``keys`` are roster keys, never raw identifiers:
-    a caller cannot smuggle an arbitrary repo through this endpoint, and every string
-    that reaches a download came from the dated roster."""
-
-    keys: list[str] = []
-    #: Which backend to install for. Omitted means "whichever this machine will serve
-    #: with" -- the same provisioning question the default-model button asks. Named
-    #: explicitly by the panels, because the vLLM section and the Ollama section each
-    #: show THEIR OWN roster and must install what they showed.
-    backend: str | None = None
-
-
-def _roster_backend(explicit: str | None) -> dict:
-    """The backend a roster view or install is about, and why.
+def _download_backend(explicit: str | None) -> dict:
+    """The backend a model download is about, and why.
 
     An explicit choice from a panel wins: the vLLM section showing Hugging Face repos
     must not install Ollama tags because the machine happens to prefer Ollama today.
@@ -1488,73 +1475,14 @@ def _roster_backend(explicit: str | None) -> dict:
     return {**pick, "provisioning_backend": pick["backend"]}
 
 
-@router.get("/bench-roster")
-def bench_roster(backend: str | None = None) -> dict:
-    """The comparative-bench roster for whichever backend this machine will serve with.
-
-    Read-only and network-free: it reports what WOULD be installed, including the rows
-    it cannot install, so the panel can be truthful before the operator clicks rather
-    than after. Uses the same provisioning question as the default-model button --
-    what will this machine serve with once set up -- not the routing question, which
-    disqualifies a backend that is merely stopped."""
-    from src.llm.bench_roster import roster_for
-
-    pick = _roster_backend(backend)
-    out = roster_for(pick["backend"])
-    out["chosen_because"] = pick["chosen_because"]
-    out["prerequisite"] = pick["prerequisite"]
-    out["provisioning_backend"] = pick["provisioning_backend"]
-    return out
-
-
-@router.post("/bench-roster/install")
-def bench_roster_install(req: BenchRosterInstallRequest | None = None) -> dict:
-    """Install the selected roster models on the backend that will serve.
-
-    Both paths egress CLEARNET (Hugging Face / the Ollama registry), neither goes
-    through Tor, so both are refused under the kill switch exactly as the single
-    default-model download is.
-
-    REFUSALS TRAVEL WITH THE RESULT. Two of the six models are not published for
-    Ollama, and selecting one returns it in ``refused`` with the reason rather than
-    quietly downloading the four that do exist -- the operator asked for six and is
-    owed an account of six."""
-    from src.ingest.egress_window import PURPOSE_AI_INSTALL, egress_permitted
-    from src.llm.bench_roster import identifiers_for
-
-    if not egress_permitted(PURPOSE_AI_INSTALL):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Airplane mode is engaged. Downloading models is clearnet traffic "
-                "(Hugging Face / the model registry), so it is refused while offline. "
-                "You can allow the AI install to go online on its own, which does not "
-                "start collecting."
-            ),
-        )
-    body = req or BenchRosterInstallRequest()
-    pick = _roster_backend(body.backend)
-    backend = pick["backend"]
-    if pick["prerequisite"]:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"{'vLLM' if backend == 'vllm' else 'Ollama'} is not installed yet, and "
-                "it is what downloads these models. Install it first."
-            ),
-        )
-    ok, refused = identifiers_for(backend, body.keys)
-    return _queue_downloads(backend, ok, refused)
-
-
 def _queue_downloads(backend: str, ok: list[dict], refused: list[dict]) -> dict:
     """Route resolved artifacts to whichever downloader the backend uses.
 
     Extracted (2026-08-04) because the model-catalogue buttons and the bench roster
     ask the SAME question with different lists, and two copies of this routing would
     be two places for the egress posture and the refusal contract to drift. The bench
-    comparison UI is scheduled for removal; this routing is not, because it is what
-    every model download goes through.
+    comparison UI has since been removed (2026-08-12, one model app-wide); this routing
+    was not, because it is what every model download goes through.
 
     ``refused`` is carried through untouched and added to, never replaced: an operator
     who selected four models and can have two is owed an account of four.
@@ -1601,21 +1529,26 @@ def _queue_downloads(backend: str, ok: list[dict], refused: list[dict]) -> dict:
     }
 
 
-@router.get("/bench-roster/status")
-def bench_roster_status(backend: str | None = None) -> dict:
-    """Live state of a roster install, resolved by the SAME question as the install.
+@router.get("/models/install/status")
+def model_install_status(backend: str | None = None) -> dict:
+    """Live state of a model download, resolved by the SAME question as the install.
+
+    Named for what it follows. It used to be ``/bench-roster/status`` because the bench
+    roster was its first caller; the roster went with the 2026-08-12 one-model ruling and
+    the download it reports on did not, so the old name would have been a route claiming
+    to be about a thing that no longer exists.
 
     Not a reuse of ``/default-model/status``: that one resolves the backend from the
-    default-model plan, so a vLLM panel installing on a machine that would otherwise
-    provision Ollama would follow the wrong job and report a stranger's progress as its
-    own. The follower must read the job the install actually started.
+    default-model plan, so a panel installing on a machine that would otherwise
+    provision the other backend would follow the wrong job and report a stranger's
+    progress as its own. The follower must read the job the install actually started.
 
     HONEST SCOPE, because the two backends differ in kind. The vLLM path owns a single
     job, so its state IS this batch's state. The Ollama path enqueues into the shared
     pull queue, so what is reported is THE QUEUE -- which may carry pulls this batch did
     not ask for. ``queue_is_shared`` says which of the two you are reading rather than
     letting a caller assume."""
-    pick = _roster_backend(backend)
+    pick = _download_backend(backend)
     if pick["backend"] == "vllm":
         job = _get_vllm_model_job().status()
         return {"backend": "vllm", "queue_is_shared": False, "job": job, **_job_view(job)}
@@ -1808,7 +1741,7 @@ class ModelInstallRequest(BaseModel):
     """Which catalogue models to download. ``keys`` are catalogue keys, never raw
     identifiers: a caller cannot smuggle an arbitrary repo or tag through this
     endpoint, and every string that reaches a download came from a dated catalogue.
-    Same discipline as ``BenchRosterInstallRequest`` above."""
+    Same discipline as the catalogue resolution above."""
 
     keys: list[str] = []
     backend: str | None = None
@@ -1837,7 +1770,7 @@ def llm_model_install(req: ModelInstallRequest | None = None) -> dict:
             ),
         )
     body = req or ModelInstallRequest()
-    pick = _roster_backend(body.backend)
+    pick = _download_backend(body.backend)
     backend = pick["backend"]
     if pick["prerequisite"]:
         raise HTTPException(
