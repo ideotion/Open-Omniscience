@@ -10501,9 +10501,64 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the one-button diagnostics panel): the compounding "browser-unverified, needs
   click-through" backlog must not tag as measured-and-verified with the flagship UI never
   once rendered.
-  The CHANGES.md 0.3.0 board + this entry are the live gate list; stand up a
-  `RELEASE_0.3_GATE.md` checkable inventory (the RC-gate precedent) when the cycle
-  approaches closure.
+  **THE CHECKABLE INVENTORY NOW EXISTS (2026-08-13):
+  [`docs/product/RELEASE_0.3_GATE.md`](docs/product/RELEASE_0.3_GATE.md) is the tickable
+  board — read IT for row status; this entry stays the ruling of record.** A retroactive
+  [`RELEASE_0.2_GATE.md`](docs/product/RELEASE_0.2_GATE.md) was reconstructed alongside it
+  (marked as after-the-fact — no gate file existed during 0.2) so the two cycles read side
+  by side and the next one inherits a format; it also records the tag-day release-workflow
+  collision that shipped `v0.2.0` with no assets, and the idempotent publish step that
+  protects every later tag. **THREE MAINTAINER RULINGS 2026-08-13:** (a) **ROW 4 IS MOVED TO
+  0.4** — verbatim "Rechecking all sources after the import will take ages. We need to modify
+  v0.3 release conditions and postpone it to v0.4." WHAT 0.3 GIVES UP, stated rather than
+  glossed: the backup/verify/staged-restore trio is already validated at 8.3x the v0.2 scale
+  (P0 2026-08-12, 1,048,725 articles / 21.0 GB), so the data-safety core is NOT what is lost —
+  what is lost is the **committed** write path at scale and the FIELD demonstration that the
+  2026-07-24 merge fix (the dropped qualification stamp that laundered disqualified sources
+  back into the trial queue) holds on a real corpus. A SPLIT WAS PROPOSED AND **DECLINED**
+  (same day, second ruling: "mark it as a necessary step for v0.4, we won't do it today") —
+  the proposal was to keep ONE SMALL COMMITTED backup in 0.3 (minutes, not ages) to preserve
+  the stamps-survive-a-restore demonstration while postponing only the full source re-check;
+  the row moves **UNDIVIDED** and is **REQUIRED in 0.4, not merely deferred**. Recorded in the
+  gate doc's new §5 "Carried to 0.4" — which names the THREE things the run must demonstrate
+  (a committed merge at scale · the admission gate over every source incl. the curated catalog,
+  no grandfathering · the qualification stamp surviving a restore) and the CLOSING CLAUSE that
+  makes it meaningful: a spot-check that a previously-DISQUALIFIED source is still disqualified
+  afterwards, since a pass counting only `qualified` rows cannot see the inversion the row
+  exists to catch. The declined split is kept in that section as a still-available cheaper
+  substitute, so a future session does not re-invent it. GENERAL POINT worth keeping: a
+  postponed data-safety demonstration that nobody writes down becomes one that never happens —
+  a gate that moves a row owes the next gate a written, closable entry, never just a deletion. (b) **ROW 6 IS CLOSED** — DB-10 §1b
+  ratified explicitly ("Let's consider this as finished"); the bench evidence (16384 wins every
+  dimension at scale; the 4K point-lookup win at 3 GB INVERTS at 22 GB, so it was a cache-fit
+  artifact) plus the shipped `connect.py` fresh-file pragmas + the reopen-hazard candidate
+  ladder. By the §1a precedent merging WAS the ratification; this makes it explicit. (c) rows
+  1 and 2 are marked CLOSED against named artifacts (row 1 = the nine program pieces verified
+  present in the tree; row 2 = audit 09 + its ten shipped Action-Plan-D items). **ROW 7'S
+  OPERATOR INSTRUCTIONS ARE WRITTEN** (`P0_VALIDATION_RUNBOOK.md` §8, after a maintainer asked
+  what "cold boot" actually means): it is NOT a fresh install, NOT a fresh update, and NOT an
+  empty database — it is the app process stopped and restarted on the SAME FULL corpus, and a
+  second unlock in a warm process measures nothing. The §7 tag-day checklist is banner-marked
+  historical (0.2-era: pyproject now reads 0.3.0 and the branch rename is obsolete under the
+  permanent `main`). **ROW 8 HAS ITS BRIEF**
+  ([`AUTONOMOUS_SESSION_BRIEF_2026-08-13_UI_CLICKTHROUGH.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-08-13_UI_CLICKTHROUGH.md),
+  maintainer-asked, for an autonomous Sonnet-5 session): implement the REAL `UiWalkDriver`
+  against the existing Protocol (`src/monitoring/ui_walk.py` is 233 lines of scaffold — the
+  Surface model, the Protocol, `UnconnectedDriver` and the gate-row-8 `FLAGSHIP_SURFACES` all
+  exist; no real driver does), then drive the systematic click-through over 15 surfaces x
+  themes/locales/breakpoints/a11y across the three states, composing with (never repeating) the
+  2026-07-22 report's 72 findings. Carries the browser-specific honesty rules as MANDATORY (score
+  the COMPOSITED colour, not the declared token; `getComputedStyle(el,'::after')` for
+  pseudo-element inheritance leaks; greyscale as a browser filter captured MID-interaction; an
+  untested path is not a pass; RTL bidi isolates; `uppercase` is a no-op in 5 of 12 locales) and
+  the 429-storm caveat (one browser per server instance — the 2026-07-22 "384 JS errors" were
+  100% rate-limit console lines and ZERO uncaught exceptions, an artifact of that run's own
+  parallelism). ROW 5's remaining step is a DECISION, and ROW 3 delivers its input:
+  `criteria-calibration.json` is already an all-diagnostics bundle member
+  (`src/api/diagnostics.py:3529`), so the queued diagnostics run CONTAINS the report row 5's
+  execution is gated on — sequence = bundle → session proposes criteria against real specimens
+  → maintainer agrees → operator runs the quarantine pass with `write=True` → re-index clears
+  the junk keywords.
   **P0 VALIDATION RUN ON THE BIG CORPUS — MAINTAINER, 2026-08-03 (report
   `oo-p0-validation-20260803000812.json`, app 0.3.0, engine `oo-volumes-2`): 5 pass · 0 fail ·
   0 not-measurable.** REAL SCALE, stated as measured rather than as the bar's own wording:
