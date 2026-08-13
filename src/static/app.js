@@ -2199,7 +2199,16 @@
       // form -- and having them under the AI tab made the page a console for a reader
       // who only wanted to switch AI on. Nothing is lost: both panels moved WHOLE, and
       // they load on expand rather than with the subtab.
-      ai:       () => { loadLlmPrompts(); loadCustomPrompts(); },
+      // The three progressive-sweep panels live in THIS section too, and their syncs were
+      // left behind on the AI subtab when the markup moved -- so opening the section that
+      // contains them never asked whether a run existed, and the download links (rendered
+      // by the sync) could not appear where the panels actually are. Field report
+      // 2026-08-13: "can't find your keyword triage button". A moved panel takes its
+      // loader with it.
+      ai:       () => {
+        loadLlmPrompts(); loadCustomPrompts();
+        syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle();
+      },
       sources:  () => { loadSrcFacets(); loadManagedSources(); loadCandidates(); },
       // Both quality gates + the scope toggles + the bulk catch-up (absorbed from the
       // Sources section, which now points here — never two homes for one control).
@@ -14928,11 +14937,55 @@
     // correctly instead of the static HTML default, and resumes polling if it is
     // still running -- the same "reflect reality on open" contract as
     // loadLangDetectCount).
+    // A SAVED run rendered from its own log. The three sweeps' footers all carry their
+    // totals at the TOP level (`**totals` spread beside state/batches_completed), and the
+    // three renderers read them variously as `res.X` and `res.totals.X` -- so the footer is
+    // handed back under both, and every value here comes from it. Nothing is invented:
+    // `paused_reason` is deliberately NOT set, because each renderer turns any truthy value
+    // there into the word "paused", which would relabel an errored or cancelled run.
+    function _savedSweepAsResult(last) {
+      const sum = (last && last.summary) || {};
+      return Object.assign({}, sum, {
+        complete: sum.state === "done",
+        batches_completed: (sum.batches_completed != null
+          ? sum.batches_completed : (last && last.batches_logged) || 0),
+        totals: sum,
+      });
+    }
+
+    // What the saved state actually was. "in_progress" from a log we are only reading
+    // because the job is NOT running means a run that never wrote its summary -- said
+    // plainly rather than reused as if it were still going.
+    function _savedSweepStateLine(last, t) {
+      const st = ((last && last.summary) || {}).state || "in_progress";
+      const words = {
+        done: t("last saved run: complete"),
+        cancelled: t("last saved run: stopped"),
+        error: t("last saved run: ended on an error"),
+        in_progress: t("last saved run: interrupted before it wrote a summary"),
+      };
+      return (words[st] || words.in_progress) + (last && last.filename ? " — " + last.filename : "");
+    }
+
     async function _syncAiSweepToggle(job, btnId, statusEl, resultEl, renderFn) {
       let s;
       try { s = await api(`/api/diagnostics/${job}/status`); } catch (e) { return; }
       _paintAiSweepButton(btnId, s.state === "running");
-      if (s.state === "running") _pollAiSweep(job, btnId, statusEl, resultEl, renderFn);
+      if (s.state === "running") { _pollAiSweep(job, btnId, statusEl, resultEl, renderFn); return; }
+      // NOT running -- which is exactly when an operator comes looking for the results.
+      // The job object lives only as long as the process while the log lives on disk, and
+      // rendering only during a run meant the download links did not exist in the DOM at
+      // the one moment they are wanted (field report 2026-08-13: "can't find the button").
+      // `/last` reads the newest log and answers `available:false` honestly when there is
+      // none, so an empty panel still means "no run", never "the run vanished".
+      try {
+        const last = await api(`/api/diagnostics/${job}/last`);
+        if (!last || !last.available || !resultEl) return;
+        const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s2) => s2);
+        renderFn(resultEl, { result: _savedSweepAsResult(last) });
+        resultEl.insertAdjacentHTML(
+          "afterbegin", '<div class="muted">' + esc(_savedSweepStateLine(last, t)) + "</div>");
+      } catch (e) { /* a courtesy read; never block the toggle on it */ }
     }
 
     async function toggleKeywordTriage(btn) {
