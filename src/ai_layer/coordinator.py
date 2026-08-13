@@ -46,6 +46,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import time
 from collections.abc import Iterator
@@ -208,6 +209,51 @@ def _turn_workers(backend: str) -> int:
         return 1
 
 
+def release_after_lane(backend: str) -> dict:
+    """Give the GPU back now that the lane is finished.
+
+    FIELD REPORT 2026-08-13, verbatim: *"how come the model doesn't automatically
+    unload from vRAM when the AI related jobs are finished or stopped? ... we both want
+    to avoid using too much SSD by loading and unloading before every request, but the
+    unloading should be automatic when we stop the AI backend and/or when AI operations
+    are stopped."*
+
+    Both halves of that were true. Stopping a BACKEND already released (``/vllm/stop``
+    stops the server, ``/ollama/stop`` calls ``release_vram``); stopping the WORK
+    released nothing. The lane simply returned, and what it left behind differed by
+    backend in a way an operator has no reason to expect: Ollama's own default drops
+    residency after a few idle minutes, while vLLM holds the card for the lifetime of
+    its server -- so a finished sweep kept several GB indefinitely.
+
+    THE BOUNDARY IS THE POINT. This runs when the lane ENDS -- finished, cancelled, or
+    crashed -- and never between turns or around a request, because loading a model per
+    request is the thrash the maintainer explicitly does not want. A lane that has gone
+    idle-but-ready also keeps the card: for vLLM a release is a server stop, and
+    restarting one costs 60-90 seconds, so releasing on a transient idle would trade a
+    memory saving for a stall on the next article collected.
+
+    ``OO_LLM_AURELEASE`` is not the knob -- ``OO_LLM_AUTORELEASE=0`` is -- and
+    ``conftest`` sets it session-wide for the same reason it sets ``OO_LLM_AUTOSTART``:
+    a production path that ACTS must not act on a developer's own machine merely
+    because a test drove the lane.
+    """
+    if os.getenv("OO_LLM_AUTORELEASE", "1").strip().lower() in ("0", "false", "no"):
+        return {"released": False, "reason": "OO_LLM_AUTORELEASE=0"}
+    # A user's own batch owns the model. Releasing under it would make their translate
+    # reload from disk mid-run -- the exact cost this feature exists to avoid, paid by
+    # the one person actually waiting.
+    hold = user_batch_active()
+    if hold.get("held"):
+        return {"released": False, "reason": "a user batch is holding the model"}
+    try:
+        from src.llm.arbitration import release_backend
+
+        return release_backend(backend)
+    except Exception as exc:  # noqa: BLE001 - a release must never fail the run
+        _LOG.warning("coordinator could not release %s", backend, exc_info=True)
+        return {"released": False, "reason": f"{type(exc).__name__}: {exc}"[:200]}
+
+
 def run_coordinator(
     ctx,
     *,
@@ -240,70 +286,78 @@ def run_coordinator(
         }
 
     done: set[str] = set()
-    while not ctx.stopping:
-        if max_turns is not None and turns >= max_turns:
-            break
-        hold = user_batch_active()
-        if hold["held"]:
-            # A user's own batch owns the model: stand down, keep every cursor,
-            # and say so in the visible detail rather than looking stalled.
-            paused_turns += 1
-            ctx.set_progress(
-                done=turns,
-                detail=f"paused — {', '.join(hold['holders']) or 'a user batch'} is running",
-            )
-            sleep(HELD_SLEEP_S)
-            continue
-        due = [m for m in members if m.key not in done]
-        if not due:
-            ctx.set_progress(done=turns, detail="all enabled sweeps are up to date")
-            sleep(IDLE_SLEEP_S)
-            done.clear()          # re-check later: new articles/keywords may have arrived
-            continue
+    released: dict = {"released": False, "reason": "the lane did not reach its end"}
+    try:
+        while not ctx.stopping:
+            if max_turns is not None and turns >= max_turns:
+                    break
+            hold = user_batch_active()
+            if hold["held"]:
+                # A user's own batch owns the model: stand down, keep every cursor,
+                # and say so in the visible detail rather than looking stalled.
+                paused_turns += 1
+                ctx.set_progress(
+                    done=turns,
+                    detail=f"paused — {', '.join(hold['holders']) or 'a user batch'} is running",
+                )
+                sleep(HELD_SLEEP_S)
+                continue
+            due = [m for m in members if m.key not in done]
+            if not due:
+                ctx.set_progress(done=turns, detail="all enabled sweeps are up to date")
+                sleep(IDLE_SLEEP_S)
+                done.clear()          # re-check later: new articles/keywords may have arrived
+                continue
 
-        turns += 1
+            turns += 1
 
-        # THE LANE'S BUDGET, SPENT RATHER THAN LEFT ON THE TABLE (field report
-        # 2026-08-09: "I see my GPU working only 20%"). Turn-level overlap alone caps
-        # real concurrency at the number of enabled sweeps -- three -- and each member
-        # ran its own items serially, because nothing passed max_workers and its default
-        # is 1. So OO_VLLM_CONCURRENCY, whose own docstring invites the operator to
-        # measure and override it, could not reach the loop that issues the calls.
-        #
-        # The budget is `workers` sequences in flight, which is also what the server was
-        # started with (--max-num-seqs comes from the same concurrency_for). A member
-        # that batches its items spends exactly one; the per-item member gets whatever
-        # remains, so the lane's total matches the budget instead of exceeding it and
-        # queueing.
-        batched = sum(1 for m in due if not m.per_item_concurrency)
-        per_item_workers = max(1, workers - batched)
+            # THE LANE'S BUDGET, SPENT RATHER THAN LEFT ON THE TABLE (field report
+            # 2026-08-09: "I see my GPU working only 20%"). Turn-level overlap alone caps
+            # real concurrency at the number of enabled sweeps -- three -- and each member
+            # ran its own items serially, because nothing passed max_workers and its default
+            # is 1. So OO_VLLM_CONCURRENCY, whose own docstring invites the operator to
+            # measure and override it, could not reach the loop that issues the calls.
+            #
+            # The budget is `workers` sequences in flight, which is also what the server was
+            # started with (--max-num-seqs comes from the same concurrency_for). A member
+            # that batches its items spends exactly one; the per-item member gets whatever
+            # remains, so the lane's total matches the budget instead of exceeding it and
+            # queueing.
+            batched = sum(1 for m in due if not m.per_item_concurrency)
+            per_item_workers = max(1, workers - batched)
 
-        # `_budget` is bound at definition rather than closed over: this function is
-        # handed to a thread pool, and the enclosing name is rebound every turn.
-        def _one(m: Member, _budget: int = per_item_workers) -> tuple[str, dict]:
-            try:
-                kw = {"max_workers": _budget} if m.per_item_concurrency else {}
-                out = m.run(ctx, model=model, **kw) or {}
-            except Exception as exc:  # noqa: BLE001 - one member must never end the lane
-                _LOG.warning("coordinator member %s failed", m.key, exc_info=True)
-                return m.key, {"error": f"{type(exc).__name__}: {exc}"[:200]}
-            return m.key, out
+            # `_budget` is bound at definition rather than closed over: this function is
+            # handed to a thread pool, and the enclosing name is rebound every turn.
+            def _one(m: Member, _budget: int = per_item_workers) -> tuple[str, dict]:
+                try:
+                    kw = {"max_workers": _budget} if m.per_item_concurrency else {}
+                    out = m.run(ctx, model=model, **kw) or {}
+                except Exception as exc:  # noqa: BLE001 - one member must never end the lane
+                    _LOG.warning("coordinator member %s failed", m.key, exc_info=True)
+                    return m.key, {"error": f"{type(exc).__name__}: {exc}"[:200]}
+                return m.key, out
 
-        if workers > 1 and len(due) > 1:
-            from src.llm.concurrency import run_concurrent
+            if workers > 1 and len(due) > 1:
+                from src.llm.concurrency import run_concurrent
 
-            slots = run_concurrent(due, _one, max_workers=min(workers, len(due)))
-            # run_concurrent isolates per item: a raising slot carries ok=False and
-            # must not be read as a result (its member simply did not advance).
-            results = [s.value for s in slots if s.ok and s.value]
-        else:
-            results = [_one(m) for m in due]
+                slots = run_concurrent(due, _one, max_workers=min(workers, len(due)))
+                # run_concurrent isolates per item: a raising slot carries ok=False and
+                # must not be read as a result (its member simply did not advance).
+                results = [s.value for s in slots if s.ok and s.value]
+            else:
+                results = [_one(m) for m in due]
 
-        for key, out in results:
-            per_member[key] = out
-            if out.get("complete"):
-                done.add(key)
-        ctx.set_progress(done=turns, detail=f"turn {turns} — {len(due)} sweep(s) advanced")
+            for key, out in results:
+                per_member[key] = out
+                if out.get("complete"):
+                    done.add(key)
+            ctx.set_progress(done=turns, detail=f"turn {turns} — {len(due)} sweep(s) advanced")
+    finally:
+        # IN A `finally`, so the three ways a lane ends all give the card back: it
+        # finished its members, the operator cancelled it, or a member raised past the
+        # per-member guard. A release that only ran on the clean path would be missing
+        # from the two cases where an operator is most likely to be watching the GPU.
+        released = release_after_lane(backend)
 
     return {
         "backend": backend,
@@ -312,6 +366,10 @@ def run_coordinator(
         "turns": turns,
         "paused_turns": paused_turns,
         "per_member": per_member,
+        # What was actually given back, named rather than assumed: "released" means a
+        # dropped model residency on Ollama and a stopped server on vLLM, and an
+        # operator reading this needs to know which.
+        "gpu_released": released,
         "method": (
             "One background lane runs the ENABLED sweeps round-robin, one bounded batch "
             "each per turn, resuming from each sweep's own persisted cursor. A "

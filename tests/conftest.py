@@ -41,6 +41,12 @@ os.environ.setdefault("OO_NO_SCHEDULER", "1")
 # right in production and would spawn a daemon here on any machine that HAS one
 # installed -- a suite must not leave servers behind. Production default is ON.
 os.environ.setdefault("OO_LLM_AUTOSTART", "0")
+# ...and never STOP one either. The coordinator lane now gives the GPU back when it
+# ends (field report 2026-08-13: a finished sweep left several GB held), which on vLLM
+# means stopping the server. Symmetric to the line above and for the same reason: a
+# test that drives the lane must not reach out and shut down a developer's own backend.
+# Production default is ON.
+os.environ.setdefault("OO_LLM_AUTORELEASE", "0")
 # Never auto-seed the ~3,200-source production catalog during tests. The seed moved
 # into run_deferred_startup on 2026-06-18, so it now fires on EVERY TestClient-context
 # lifespan -- slow, non-hermetic, and its auto-increment Source ids collide with tests
