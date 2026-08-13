@@ -139,6 +139,36 @@ MINISTRAL_VLLM_MODEL = "mistralai/Ministral-3-3B-Instruct-2512"
 # so an operator on the tested version CANNOT run it -- stated rather than discovered
 # through a failed pull.
 MINISTRAL_MIN_OLLAMA = "0.13.1"
+#: When the Ministral identifiers below were last verified on a live page.
+#:
+#: This constant INHERITS the dated-registry duty that ``BENCH_ROSTER_AS_OF`` used to
+#: carry. The roster it lived in held eight models and existed to compare them; the
+#: 2026-08-12 ruling ("Ministral 3 3B throughout the entire app, drop all others") left
+#: it with one row, so the roster went and its one surviving row's provenance came here.
+#:
+#: The duty is unchanged and is the reason this is a constant rather than a comment:
+#: BOTH hosts 403 from the build sandbox, so the session that edits these strings can
+#: never re-verify them, and a stale identifier has to be caught by a freshness test
+#: rather than by an operator's failed download.
+MINISTRAL_AS_OF = "2026-08"
+#: The Hugging Face half of the same model, for vLLM. Ollama serves a q4_K_M image and
+#: vLLM serves safetensors; they are not interchangeable, and neither identifier is
+#: derivable from the other, so both are recorded rather than one being constructed.
+MINISTRAL_HF: dict = {
+    "repo": MINISTRAL_VLLM_MODEL,
+    "verification": "fetched",
+    "gated": False,
+    # Apache-2.0, but the card adds a third-party-rights rider. Recorded because
+    # "Apache-2.0" alone would overstate how unencumbered it is.
+    "licence": "Apache-2.0 (card adds a third-party-rights rider)",
+    "params": "4B total (3.4B language model + 0.4B vision encoder)",
+    "context_length": 262144,
+    "precision": "FP8 by default; a separate BF16 repo exists",
+    "card_url": "https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512",
+    # From search results rather than the file tree — said so, because the two can
+    # differ and the difference is the operator's disk.
+    "size": "~4.67 GB safetensors (from search results, not the file tree)",
+}
 MINISTRAL_SUGGESTION: dict = {
     "tag": MINISTRAL_TAG,
     "size": "~3.0 GB",

@@ -69,21 +69,20 @@ BENCH_TASKS: tuple[str, ...] = (
 #: that mean "wrong tool", not "bad model" -- and a near-zero with no memory of why
 #: is the number that gets misread later (the LFM2.5-Base finding, 2026-08-02). The
 #: absence is DECLARED in the report rather than left to be inferred from a gap.
-MODEL_TASKS: dict[str, tuple[str, ...]] = {
-    # A translation model, benched on translation. Latency rides along because it is
-    # measured from the same calls the other tasks make, and speed is comparable
-    # across models whatever they are for.
-    "translategemma:4b": ("translation", "latency"),
-}
+#:
+#: EMPTY since the 2026-08-12 one-model ruling, and kept rather than deleted because the
+#: seam is what a hand-named model needs: the only entry it ever held was a TRANSLATION
+#: specialist, and a translation specialist is exactly the kind of thing an operator
+#: reaches the custom-model field for. Scoring one of those on keyword triage would
+#: produce a near-zero that means "wrong tool", not "bad model" — the finding this table
+#: exists to prevent.
+MODEL_TASKS: dict[str, tuple[str, ...]] = {}
 BENCH_BACKENDS: tuple[str, ...] = ("ollama", "vllm")
 
-#: The ruled roster (ruling 15) as a REQUEST list. Nothing here asserts that a tag
-#: exists: ``verify_roster`` matches each one EXACTLY against the backend's own
-#: installed list at run time and refuses what is absent. The maintainer's named
-#: LiquidAI candidate is deliberately NOT written in — see ``UNRESOLVED_CANDIDATES``.
-#: The incumbent is read from the app's OWN constants rather than retyped: the whole
-#: point of the bench is to challenge the current default, so a roster that named a
-#: stale tag would be challenging a model nobody runs.
+#: A REQUEST list. Nothing here asserts that a tag exists: ``verify_roster`` matches
+#: each one EXACTLY against the backend's own installed list at run time and refuses
+#: what is absent. The models are read from the app's OWN constants rather than
+#: retyped, so a bench can never measure a tag the app does not actually serve.
 def _incumbents() -> tuple[str, ...]:
     """The models this app actually serves with, each qualified by ITS backend.
 
@@ -94,69 +93,34 @@ def _incumbents() -> tuple[str, ...]:
     try:
         from src.llm.ollama import DEFAULT_MODEL, MINISTRAL_TAG, MINISTRAL_VLLM_MODEL
 
-        return (
-            f"ollama|{DEFAULT_MODEL}",
-            f"ollama|{MINISTRAL_TAG}",
-            f"vllm|{MINISTRAL_VLLM_MODEL}",
+        # DEDUPED, and the duplicate is the normal case rather than a corner: since the
+        # 2026-08-12 ruling DEFAULT_MODEL *is* MINISTRAL_TAG unless the operator set
+        # OO_LLM_MODEL, so the two entries collapse into one and only diverge when
+        # somebody is deliberately running their own model. Both are kept in the source
+        # so an override is still benched beside the shipped tag rather than instead of
+        # it; ``dict.fromkeys`` keeps first-appearance order.
+        return tuple(
+            dict.fromkeys(
+                (
+                    f"ollama|{DEFAULT_MODEL}",
+                    f"ollama|{MINISTRAL_TAG}",
+                    f"vllm|{MINISTRAL_VLLM_MODEL}",
+                )
+            )
         )
     except Exception:  # noqa: BLE001 - a core install still gets a usable roster
         return ()
 
 
-def _downloadable() -> tuple[str, ...]:
-    """The keys of every model the Settings panel can install, in its own order.
-
-    This is the half that was missing. The bench named a set of Ollama tags and the
-    download buttons offered a different set of models, so an operator who ticked four
-    boxes and waited for the weights found the bench asking for four other names --
-    and being told, correctly and uselessly, that they were not installed.
-    """
-    try:
-        from src.llm.bench_roster import BENCH_ROSTER
-
-        return tuple(e["key"] for e in BENCH_ROSTER)
-    except Exception:  # noqa: BLE001 - a core install benches raw tags only
-        return ()
-
-
-DEFAULT_ROSTER: tuple[str, ...] = (
-    *_incumbents(),  # what this machine serves with today
-    *_downloadable(),  # what its own panel can install, resolved per backend
-    # The ruled roster (ruling 15). These are OLLAMA tags -- that is the form the
-    # ruling named them in -- so they are asked of Ollama and of nothing else. They
-    # are kept rather than folded into the roster keys above because the ruling named
-    # these specific models, and a bench that quietly benched different ones would be
-    # answering a question nobody asked.
-    "ollama|mistral:7b",
-    "ollama|gemma4:e4b",
-    "ollama|qwen3.5:4b",
-    # BOTH granite sizes (maintainer 2026-08-11: "benchmark both, there's no reason not
-    # to try"). There is no mechanical reason: the bench loads one model at a time and
-    # unloads between pairs, and 5.3 GB quantised fits the 8 GB card. The bare
-    # "granite4.1" this replaces resolved to granite4.1:latest, which the operator did
-    # not have -- so the exact-tag rule correctly refused it and the model was never
-    # benched at all, while two installed sizes sat unused.
-    "ollama|granite4.1:8b",
-    "ollama|granite4.1:3b",
-    # A translation specialist, scoped to the translation task by MODEL_TASKS.
-    "ollama|translategemma:4b",
-)
-
-#: Models the maintainer named whose EXACT tag could not be verified from this
-#: machine. Writing a guessed tag into the roster would be a fabricated catalog
-#: entry (the burn this project already took once), so the candidate travels as a
-#: note and the operator supplies the verified tag via ``extra_models``.
-UNRESOLVED_CANDIDATES: tuple[dict, ...] = (
-    {
-        "named": "LiquidAI LFM2.5-8B-A1B",
-        "note": (
-            "Named by the maintainer for this bench. Its exact Ollama tag / Hugging Face "
-            "repo has not been verified, so it is not written into the roster as though it "
-            "existed. Verify the tag on the rig, then pass it in `extra_models`; an absent "
-            "tag is refused, never substituted."
-        ),
-    },
-)
+#: What the bench measures when it is not told otherwise: THE model, on whichever
+#: backends are here.
+#:
+#: RULED 2026-08-12 (maintainer): *"use mistral's 3b model throughout the entire app.
+#: Drop all others."* This used to be a roster of eight downloadable models plus six
+#: ruled Ollama tags, because the bench's job was to CHOOSE between them. That choice
+#: has been made, so the comparison the bench still owes is a different one — the same
+#: model on Ollama versus on vLLM — and that is exactly what these two entries are.
+DEFAULT_ROSTER: tuple[str, ...] = _incumbents()
 
 _QUANT_RE = re.compile(r"(?:^|[-_:.])(q\d[_a-z0-9]*|fp\d+|bf\d+|int\d+|awq|gptq)\b", re.IGNORECASE)
 
@@ -179,63 +143,28 @@ def pair_key(backend: str, model: str) -> str:
 
 
 # --------------------------------------------------------------------------- #
-#  Roster resolution.
+#  Pair resolution.
 # --------------------------------------------------------------------------- #
-def _roster_keys() -> set[str]:
-    """The download panel's own keys, or an empty set on a core install."""
-    try:
-        from src.llm.bench_roster import BENCH_ROSTER
-
-        return {e["key"] for e in BENCH_ROSTER}
-    except Exception:  # noqa: BLE001 - a core install benches raw tags only
-        return set()
-
-
 def _wanted_on(backend: str, entries: list[str]) -> tuple[list[str], list[dict]]:
-    """Resolve roster entries to the identifiers to ASK ``backend`` for.
+    """Resolve entries to the identifiers to ASK ``backend`` for.
 
-    Three shapes, because the same model is a different string on each backend and a
+    Two shapes, because the same model is a different string on each backend and a
     bench that ignores that asks Ollama tags of vLLM:
 
-    * a bench-roster KEY (``qwen35-0-8b``) resolves through the download panel's own
-      table, so the bench asks for exactly what the panel installed -- ``Qwen/Qwen3.5-0.8B``
-      on vLLM, ``qwen3.5:0.8b-q8_0`` on Ollama. A key the roster has no build for on
-      this backend is reported with the roster's OWN reason, which is a different fact
-      from "you have not downloaded it";
-    * ``backend|identifier`` asks that backend only. The ruled Ollama tags and the
-      incumbent are written this way: an Ollama tag is not a thing vLLM could ever have
-      installed, so "not-installed on vllm" reads as an instruction the operator cannot
-      follow;
-    * a bare identifier is asked of every backend, unchanged. That is what
-      ``extra_models`` is for -- the operator typed it and we do not know which backend
+    * ``backend|identifier`` asks that backend only. The default model is written this
+      way on both sides: an Ollama tag is not a thing vLLM could ever have installed, so
+      "not-installed on vllm" would read as an instruction the operator cannot follow;
+    * a bare identifier is asked of every backend, unchanged. That is what a
+      hand-supplied model is -- the operator typed it and we do not know which backend
       they meant, so guessing from the string's shape would be inventing a rule.
+
+    A third shape used to exist: a bench-roster KEY resolving through the download
+    panel's table. The roster went with the 2026-08-12 one-model ruling, and with it the
+    only case where an entry was a name for something other than itself.
     """
-    keys = _roster_keys()
     wanted: list[str] = []
     refused: list[dict] = []
-    key_entries = [e for e in entries if e in keys]
-    if key_entries:
-        from src.llm.bench_roster import identifiers_for
-
-        ok, no_build = identifiers_for(backend, key_entries)
-        wanted.extend(r["identifier"] for r in ok)
-        for r in no_build:
-            refused.append(
-                {
-                    "backend": backend,
-                    "model": None,
-                    "roster_key": r["key"],
-                    "reason": "not-published-for-backend",
-                    "detail": (
-                        f"{r.get('label') or r['key']} has no {backend} build in the model "
-                        f"roster: {r.get('reason')}. Nothing to install — this is a gap in "
-                        "what the publisher ships, not a missing download."
-                    ),
-                }
-            )
     for entry in entries:
-        if entry in keys:
-            continue
         if "|" in entry:
             want_backend, _, identifier = entry.partition("|")
             if want_backend == backend and identifier:
@@ -1645,24 +1574,31 @@ def comparable_metrics(pair_result: dict) -> dict:
 
 
 def _identifier_to_key() -> dict[str, str]:
-    """identifier → roster key, per backend, so the same model can be recognised under
+    """identifier → model key, per backend, so the same model can be recognised under
     the two different names its two backends give it.
 
-    This is the ONLY honest link between them: ``Qwen/Qwen3.5-0.8B`` and
-    ``qwen3.5:0.8b-q8_0`` are the same model because the roster says one entry publishes
-    both, not because the strings resemble each other. String-matching them would be the
-    guess this bench refuses everywhere else.
+    This is the ONLY honest link between them: ``mistralai/Ministral-3-3B-Instruct-2512``
+    and ``ministral-3:3b-instruct-2512-q4_K_M`` are the same model because the dated
+    catalogue says one entry publishes both, not because the strings resemble each other.
+    String-matching them would be the guess this bench refuses everywhere else.
+
+    Reads the CATALOGUE rather than the retired bench roster. The two carried the same
+    fact for the default model; the roster carried it for seven others as well, and those
+    went with the 2026-08-12 one-model ruling.
     """
     out: dict[str, str] = {}
     try:
-        from src.llm.bench_roster import BENCH_ROSTER, identifiers_for
+        from src.llm.model_catalog import catalog_for
     except Exception:  # noqa: BLE001 - a core install compares nothing across backends
         return out
-    for entry in BENCH_ROSTER:
-        for backend in BENCH_BACKENDS:
-            ok, _ = identifiers_for(backend, [entry["key"]])
-            for row in ok:
-                out[pair_key(backend, row["identifier"])] = entry["key"]
+    for backend in BENCH_BACKENDS:
+        try:
+            entries = catalog_for(backend).get("models") or []
+        except Exception:  # noqa: BLE001
+            continue
+        for row in entries:
+            if row.get("artifact"):
+                out[pair_key(backend, row["artifact"])] = row["key"]
     return out
 
 
@@ -1678,14 +1614,14 @@ def same_model_across_backends(results: dict[str, dict]) -> list[dict]:
     key_of = _identifier_to_key()
     grouped: dict[str, dict[str, dict]] = {}
     for pair_id, pair in results.items():
-        roster_key = key_of.get(pair_id)
-        if roster_key is None:
+        model_key = key_of.get(pair_id)
+        if model_key is None:
             continue
         backend = pair.get("backend")
         if backend:
-            grouped.setdefault(roster_key, {})[backend] = pair
+            grouped.setdefault(model_key, {})[backend] = pair
     rows: list[dict] = []
-    for roster_key, by_backend in sorted(grouped.items()):
+    for model_key, by_backend in sorted(grouped.items()):
         if len(by_backend) < 2:
             continue  # one side only is not a comparison
         metrics: dict[str, dict] = {}
@@ -1731,7 +1667,7 @@ def same_model_across_backends(results: dict[str, dict]) -> list[dict]:
             )
         rows.append(
             {
-                "roster_key": roster_key,
+                "model_key": model_key,
                 "backends": {
                     b: {
                         "model": p.get("model"),
@@ -1794,7 +1730,6 @@ def assemble_report(
             "n": (anchors or {}).get("n", 0),
         },
         "requested_models": requested,
-        "unresolved_candidates": list(UNRESOLVED_CANDIDATES),
         "pairs_run": [p["key"] for p in runnable if p["key"] in results],
         "pairs_pending": [p["key"] for p in runnable if p["key"] not in results],
         "skipped": skipped,
@@ -2023,7 +1958,6 @@ __all__ = [
     "BENCH_TASKS",
     "DEFAULT_ROSTER",
     "MODEL_BENCH_SCHEMA",
-    "UNRESOLVED_CANDIDATES",
     "assemble_report",
     "bench_one_pair",
     "clear_cursor",

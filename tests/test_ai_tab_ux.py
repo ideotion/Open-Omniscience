@@ -221,15 +221,22 @@ def test_the_one_button_offers_the_bench_rather_than_excluding_it():
     It used to be excluded and said so. What must never happen is the third state --
     included silently, or excluded silently -- so the control names the choice and the
     checkbox's own title says what ticking it costs.
+
+    The cost itself changed with the one-model ruling: the roster bench ran for HOURS
+    because it loaded every model in turn, and the one that replaced it measures the one
+    model on whatever is already serving. So the label must state the cost it has now,
+    not the one it inherited -- an "hours" warning on a tens-of-minutes run is as
+    unreadable as no warning, and in the other direction it would understate.
     """
     src = strip_comments(HTML)
     at = src.index('id="aicheck-btn"')
     title = src[at:src.index(">", at)]
-    assert "comparative bench" in title.lower(), "the button must name what the tick adds"
+    assert "bench" in title.lower(), "the button must name what the tick adds"
 
     box = src.index('id="aicheck-deep"')
     label = src[src.rindex("<label", 0, box):src.index("</label>", box)]
-    assert "hours" in label.lower(), "an hours-long run must say so before it is ticked"
+    assert "hours" not in label.lower(), "the roster's hours are gone; do not inherit them"
+    assert "tens of minutes" in label.lower(), "the real cost, stated before it is ticked"
     assert "resumable" in label.lower(), "and that cancelling keeps what it measured"
 
 
@@ -250,16 +257,24 @@ def test_the_deep_run_is_confirmed_and_the_quick_one_is_not():
 
 
 def test_the_confirm_names_every_way_the_run_rearranges_the_machine():
-    """The deep run does three things to the operator's backends -- it STARTS a stopped
-    one, RESTARTS vLLM between models, and puts the machine BACK afterwards. A confirm
-    that names only the middle one is asking consent for less than it does."""
-    body = strip_comments(function_body(APP, "runAiCheck"))
-    sentence = body[body.index("confirm(t(") : body.index("))) return;")]
+    """It used to name three: the deep run STARTED a stopped backend, RESTARTED vLLM
+    between roster models, and put the machine BACK afterwards. With one model there is
+    nothing to switch between, and the bench deliberately manages nothing -- so the
+    honest count of side effects is now zero, and the confirm says so outright.
 
-    assert "starts a stopped backend" in sentence, "the wake is a side effect too"
-    assert "restarts your AI backend between models" in sentence
-    assert "puts the machine back" in sentence, "the restore is a promise, so it is stated"
+    That is the assertion, and it is not a weaker one: a confirm that stayed silent
+    about backend management would be indistinguishable from the old one that did it,
+    and a future edit re-introducing a handover has to change this sentence to pass.
+    """
+    body = strip_comments(function_body(APP, "runAiCheck"))
+    sentence = body[body.index("confirm(t(") : body.index("))) return;")].lower()
+
+    assert "starts, stops and switches nothing" in sentence, (
+        "the run manages no backend; if that ever changes, the consent must say so first"
+    )
+    assert "already running" in sentence, "it measures what is up, and names that"
     assert "resumable" in sentence, "cancelling keeps what it measured — the honest promise"
+    assert "restarts your ai backend" not in sentence, "an inherited claim it no longer does"
 
 
 def test_the_confirm_sentence_is_translated_in_every_locale():
@@ -309,35 +324,24 @@ def test_the_check_toggles_instead_of_disabling():
     assert ".disabled = true" not in body
 
 
-def test_the_download_is_its_own_question_with_its_own_size():
-    """Ticking "bench every model" is consent to a long RUN, not to fetching tens of
-    gigabytes. The survey is cheap, local and downloads nothing, so there is no reason
-    to infer the second answer from the first."""
-    body = function_body(APP, "runAiCheck")
-    assert "/api/diagnostics/ai-check/provision" in body, "survey before asking"
-    survey_to_ask = body.split("ai-check/provision", 1)[1].split("ai-check/run", 1)[0]
-    assert "needs_download" in survey_to_ask, "the survey's own verdict decides whether to ask"
-    assert "q.text" in survey_to_ask, (
-        "the question carries the survey's own sentence — which holds the size; a "
-        "re-worded prompt here would drop the number the operator is deciding on"
-    )
-    run_call = body.split("/api/diagnostics/ai-check/run", 1)[1][:220]
-    assert "download_missing" in run_call
+def test_the_check_downloads_nothing_and_asks_nobody_to():
+    """Three tests used to live here, and all three were about a roster: a survey that
+    priced the models this machine lacked, a guard so a failed survey still benched what
+    was present, and a default of `download_missing = false` so the confirm was not
+    decorative. With one model app-wide (maintainer ruling 2026-08-12) there is no
+    roster to price, and the survey endpoint is gone with it.
 
-
-def test_a_survey_that_fails_does_not_block_the_bench():
-    """The negative-space twin: an unreachable survey means the run covers what is
-    already on the machine, exactly as it did before the survey existed. Refusing to
-    bench because a preflight failed would be a regression dressed as caution."""
-    body = function_body(APP, "runAiCheck")
-    guarded = body.split("ai-check/provision", 1)[1].split("ai-check/run", 1)[0]
-    assert "catch" in guarded, "the survey is guarded"
-    assert "return" not in guarded.split("catch", 1)[1], (
-        "and its failure path must not bail out of the run"
-    )
-
-
-def test_the_default_is_no_download():
-    """A field that defaults to fetching would make the confirm decorative."""
-    body = function_body(APP, "runAiCheck")
-    assert "let download_missing = false" in body
+    What survives is the property those three were protecting, and it is worth keeping
+    as a NEGATIVE: ticking the box is consent to a long RUN, never to fetching weights.
+    A future edit that wires a download back in behind this checkbox has to fail here
+    first, and it would — the words are the ones a fetch reaches for.
+    """
+    body = strip_comments(function_body(APP, "runAiCheck"))
+    # Anti-vacuity: an all-negative test passes for free over an empty slice, so pin
+    # that the slice is the real function first.
+    assert "/api/diagnostics/ai-check/run" in body, "the slice is the real runAiCheck"
+    for gone in ("provision", "download_missing", "models/install", "pull"):
+        assert gone not in body, (
+            f"runAiCheck reaches for {gone!r} — the one-button check must never turn a "
+            "tick into a multi-gigabyte download"
+        )
