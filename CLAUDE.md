@@ -1841,7 +1841,27 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     guard already refuses by name, but subtracting the reserve made it fire for the
     ordinary state of a card holding a display server — publishing half a gigabyte of
     KV that the utilization had already declined to claim. When you add a term to a
-    subtraction, re-ask what its floor now means.
+    subtraction, re-ask what its floor now means. **THE FIXTURE WAS THEN MADE FAITHFUL
+    TO THE REAL FILE, AND THAT FOUND MORE THAN THE NUMBERS DID:** the published config
+    is MULTIMODAL — the transformer shape sits under `text_config` while the dtype stays
+    at the TOP level, and `vision_config` carries its OWN `num_hidden_layers` (24). A
+    flat fixture exercises none of that, so it cannot catch a reader that merges the
+    wrong block and sizes the KV cache from the vision tower; a mutation doing exactly
+    that passes every flat test and fails four faithful ones. Transcribe the real file
+    rather than the fields you think matter — the STRUCTURE is part of the test. Three
+    further facts from the same verification, recorded so they are not re-derived:
+    `sliding_window` is explicitly **null**, which is what makes the linear formula
+    correct here (a checkpoint declaring a window has its cache CAPPED at that width,
+    so the formula would over-state — the safe direction, but a real limit); the 262144
+    ceiling is **YaRN-extended from a trained 16384**, factor 16, with no quality claim
+    at the top of the range; and the checkpoint is fp8 with `modules_to_not_convert`
+    keeping the vision tower and `lm_head` in bf16, so weights are NOT a clean
+    params×1 byte — while the KV cache stays 2 bytes because `--kv-cache-dtype`
+    defaults to the model's own dtype. The independent verdict — "realistic on 8 GB:
+    16384 at default settings" — sits just above what this code now computes (12288 on
+    an idle card), and the gap has a NAMED reason rather than being unexplained
+    conservatism: the vision tower profiles at image_size 1540 and is the largest
+    transient on a small card, and nothing in the budget accounts for it.
   - **AN EQUATION THAT SHOWS ITS WORK MUST SHOW THE WORK IT DID — and the terms drift
     apart silently because they live in different places (2026-08-13, the same fix):**
     `compute_server_args` publishes a `method` string naming every term it subtracts,

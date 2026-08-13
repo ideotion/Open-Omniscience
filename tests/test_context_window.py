@@ -35,22 +35,63 @@ VLLM_OVERFLOW = (
 )
 
 
-# The SHIPPED model's own published shape, transcribed from its config.json and
-# checked against live sources 2026-08-13 after the maintainer doubted the numbers.
-# Only four of these fields enter the KV formula (layers, kv heads, head dim, dtype);
-# `num_attention_heads` is carried because it is what makes this grouped-query -- 32
-# attention heads sharing 8 KV heads is the 4x saving -- and `hidden_size` is carried
-# precisely because 3072 // 32 = 96 CONTRADICTS the published head_dim of 128. A
-# reader that derived head_dim instead of reading it would under-count this model's
-# cache by 25%, which is the direction that OOMs at startup.
+# The SHIPPED model's own published config, transcribed field-for-field from
+# huggingface.co/mistralai/Ministral-3-3B-Instruct-2512/resolve/main/config.json and
+# cross-checked against its params.json (2026-08-13, after the maintainer doubted the
+# numbers this code derives).
+#
+# THE SHAPE IS FAITHFUL BECAUSE THE SHAPE IS THE TEST. Three things about the real file
+# a flat fixture cannot exercise, and all three are live here:
+#   * it is MULTIMODAL -- the transformer shape lives under `text_config` while the
+#     dtype stays at the TOP level, so the reader must merge one and still find the
+#     other outside it;
+#   * `vision_config` carries its OWN `num_hidden_layers` (24), so a reader that
+#     merged the wrong block would size the cache from the vision tower;
+#   * `head_dim` is 128 while hidden_size // num_attention_heads is 3072 // 32 = 96,
+#     so deriving it under-counts the cache by 25% -- the direction that OOMs.
+# The quantization block is carried for the same reason: FP8 WEIGHTS must not pull the
+# KV element size down with them (vLLM's --kv-cache-dtype defaults to the model dtype).
 MINISTRAL_3B = {
-    "num_hidden_layers": 26,
-    "num_attention_heads": 32,
-    "num_key_value_heads": 8,
-    "head_dim": 128,
-    "hidden_size": 3072,
-    "dtype": "bfloat16",  # NOT `torch_dtype` -- see the test below
-    "max_position_embeddings": 262144,
+    "dtype": "bfloat16",  # top level, and NOT `torch_dtype` -- see the test below
+    "tie_word_embeddings": True,
+    "vocab_size": 131072,
+    "quantization_config": {
+        "quant_method": "fp8",
+        "activation_scheme": "static",
+        "weight_block_size": None,
+        "modules_to_not_convert": ["vision_tower", "multi_modal_projector", "lm_head"],
+    },
+    "text_config": {
+        "num_hidden_layers": 26,
+        "num_attention_heads": 32,
+        "num_key_value_heads": 8,
+        "head_dim": 128,
+        "hidden_size": 3072,
+        "intermediate_size": 9216,
+        # 262144 is YaRN-EXTENDED, not native: factor 16 over an original_max of 16384.
+        # It is still the right hard ceiling (vLLM refuses to start above it), and our
+        # own _MAX_CONTEXT_TOKENS binds far below it either way.
+        "max_position_embeddings": 262144,
+        # EXPLICITLY null: this model does NOT use sliding-window attention, which is
+        # what makes the linear KV formula correct for it all the way up. A checkpoint
+        # that DID declare a window would have its cache capped at that width, so the
+        # formula would over-state -- the safe direction (shorter context, still
+        # starts), but a real limit worth knowing about before trusting the number.
+        "sliding_window": None,
+        "rope_parameters": {
+            "rope_theta": 1000000.0,
+            "rope_type": "yarn",
+            "factor": 16.0,
+            "original_max_position_embeddings": 16384,
+        },
+    },
+    "vision_config": {
+        "model_type": "pixtral",
+        "num_hidden_layers": 24,  # the decoy: NOT the tower the cache is sized from
+        "hidden_size": 1024,
+        "image_size": 1540,
+        "patch_size": 14,
+    },
 }
 # 2 (K+V) x 26 layers x 8 kv heads x 128 head dim x 2 bytes = 106,496 B = 0.1015625 MiB
 MINISTRAL_3B_KV_MB = 0.1015625
@@ -104,6 +145,35 @@ def test_the_shipped_model_lands_on_its_published_figure(tmp_path):
     assert basis["max_position_embeddings"] == 262144
     # ~5x cheaper per token than the class constant: that ratio IS the fix.
     assert mb < V._KV_MB_PER_TOKEN / 4
+
+
+def test_a_multimodal_checkpoint_is_sized_from_its_TEXT_tower(tmp_path):
+    """The decoy in the real file. This checkpoint carries a pixtral `vision_config`
+    with its own `num_hidden_layers` (24) and `hidden_size` (1024) -- so a reader that
+    merged the wrong block, or read the top level after merging nothing, would size the
+    KV cache from the vision tower and be wrong by a factor that no other test here
+    would notice. The text tower's 26 layers are the only ones that hold a KV cache.
+    """
+    root = _snapshot(tmp_path, MINISTRAL_3B)
+    with _with_snapshot(root):
+        _, basis = kv_mb_per_token("mistralai/Ministral-3-3B-Instruct-2512")
+    assert basis["layers"] == 26, "sized from the vision tower, not the text tower"
+    assert basis["kv_heads"] == 8 and basis["head_dim"] == 128
+
+
+def test_fp8_weights_do_not_pull_the_KV_element_size_down_with_them(tmp_path):
+    """The real checkpoint IS fp8 -- `quantization_config.quant_method` says so, and
+    the weights on disk are ~4.67 GB rather than ~7.7 GB because of it. vLLM's
+    --kv-cache-dtype defaults to the model's own dtype, which this file still declares
+    as bfloat16, so the cache costs 2 bytes/element however the weights are stored.
+    Reading 1 byte off the quantization block would halve the reservation, which is the
+    direction that fails at startup rather than the direction that costs context.
+    """
+    root = _snapshot(tmp_path, MINISTRAL_3B)
+    with _with_snapshot(root):
+        mb, basis = kv_mb_per_token("mistralai/Ministral-3-3B-Instruct-2512")
+    assert basis["bytes_per_element"] == 2.0
+    assert mb == pytest.approx(MINISTRAL_3B_KV_MB)
 
 
 def test_the_dtype_field_is_read_under_both_of_its_names(tmp_path):
