@@ -1894,6 +1894,71 @@ def llm_pull_custom_model(req: CustomModelRequest) -> dict:
     )
 
 
+@router.get("/uninstall/plan")
+def llm_uninstall_plan() -> dict:
+    """What removing the local AI would do on THIS machine (read-only, removes nothing).
+
+    Its own endpoint rather than a field on the action, because the answer IS the
+    consent: how many bytes each backend would free, and — the part that matters — which
+    pieces this app cannot remove at all. An operator who presses "uninstall" and is
+    told afterwards that the program is still there has been surprised by something they
+    could have been shown first.
+    """
+    from src.llm.uninstall import uninstall_plan
+
+    return uninstall_plan()
+
+
+class UninstallRequest(BaseModel):
+    """Which backends to remove, and whether the models go with them."""
+
+    backends: list[str] = Field(
+        default_factory=list,
+        description=(
+            "'vllm' and/or 'ollama'. Explicit rather than derived: 'the current backend' "
+            "has three different answers in this app (routing, provisioning, activation) "
+            "and a destructive action must act on the one the operator was shown."
+        ),
+    )
+    delete_models: bool = Field(
+        default=False,
+        description=(
+            "also delete the downloaded weights in this app's own model folders. A store "
+            "you pointed elsewhere is reported, never deleted."
+        ),
+    )
+    confirm: bool = Field(default=False, description="must be true; there is no undo")
+
+
+@router.post("/uninstall")
+def llm_uninstall(req: UninstallRequest) -> dict:
+    """Remove the named backends, and optionally the models.
+
+    Removes only what this app installed — its own vLLM environment and the model
+    folders inside its own data directory. The Ollama program was installed on the
+    system with administrator rights and is reported with the commands to remove it
+    rather than deleted, the same line :func:`ollama_lifecycle.stop` draws for a daemon
+    this app did not spawn.
+
+    LOCAL AND OFFLINE: this deletes files, so there is no egress gate — nothing here
+    reaches the network, and refusing it under airplane mode would block the one
+    operation an offline operator has every reason to run.
+
+    The reply reports what was removed AND what was kept with each reason, and
+    ``complete`` is computed from that rather than asserted.
+    """
+    if not req.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Uninstalling is not undoable, so it needs an explicit confirmation.",
+        )
+    if not req.backends:
+        raise HTTPException(status_code=400, detail="No backend was named.")
+    from src.llm.uninstall import uninstall
+
+    return uninstall(backends=list(req.backends), delete_models=bool(req.delete_models))
+
+
 @router.get("/activation")
 def llm_activation_plan() -> dict:
     """Which backend would be STARTED on this machine, and whether it can be.

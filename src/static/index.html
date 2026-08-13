@@ -1393,6 +1393,15 @@
         <div id="ai-store-box" class="hint" style="margin-top:8px"></div>
         <div id="vllm-action-status" class="hint" style="margin-top:8px"></div>
       </details>
+      <!-- UNINSTALL (maintainer 2026-08-12). Folded, and below the details, because it
+           is the one destructive control on this card. The PLAN is read first and shown
+           in the confirm: what it frees, and what it cannot remove -- the Ollama program
+           was installed on the system with administrator rights and is not this app's to
+           delete, which the operator should learn before pressing, not after. -->
+      <details class="adv-collect" style="margin-top:10px">
+        <summary class="muted" style="cursor:pointer">Uninstall the local AI</summary>
+        <div id="ai-uninstall-box" class="hint" style="margin-top:8px">Checking what is installed…</div>
+      </details>
     </section>
 
     <!-- WHAT THE AI IS FOR, in two parts (maintainer: "divide it into two parts:

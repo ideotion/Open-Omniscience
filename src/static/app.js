@@ -22713,6 +22713,112 @@
       box.innerHTML = html;
     }
 
+    // ---- Uninstall the local AI (maintainer 2026-08-12) --------------------- //
+    //
+    // THE PLAN IS READ BEFORE THE BUTTON IS DRAWN, and again before it acts, because
+    // the plan IS the consent: how much each backend would free, and which pieces this
+    // app cannot remove. The Ollama program was installed on the system with
+    // administrator rights, so what is offered there is its removal commands, not a
+    // button that pretends to run them.
+    function _gbytes(n) {
+      return (n === null || n === undefined) ? "" : ` (${(n / 1e9).toFixed(1)} GB)`;
+    }
+
+    async function loadAiUninstall() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const box = $("ai-uninstall-box");
+      if (!box) return;
+      let plan = null;
+      try { plan = await api("/api/llm/uninstall/plan"); }
+      catch (e) { box.textContent = t("Could not read what is installed."); return; }
+      const installed = plan.installed || [];
+      if (!installed.length) {
+        box.innerHTML = `<div>${esc(t("Nothing to uninstall — no AI backend is installed on this machine."))}</div>`;
+        return;
+      }
+      const rows = (plan.backends || []).filter((b) => b.installed).map((b) => {
+        const name = b.backend === "vllm" ? "vLLM" : "Ollama";
+        const size = b.removable ? esc(_gbytes(b.bytes)) : "";
+        const why = b.removable ? "" :
+          `<div class="card-caveat" style="margin-top:2px">${esc(b.kept_reason || "")}</div>` +
+          ((b.manual_removal || []).length
+            ? `<pre style="white-space:pre-wrap;overflow-x:auto;font-size:12px;margin:4px 0">${esc(b.manual_removal.join("\n"))}</pre>`
+            : "");
+        return `<div style="margin-top:6px"><b>${esc(name)}</b>${size}` +
+          (b.removable ? "" : ` <span class="muted">— ${esc(t("this app cannot remove it"))}</span>`) +
+          `${why}<div style="margin-top:4px">` +
+          `<button class="ghost tiny" onclick="uninstallAi(${esc(JSON.stringify([b.backend]))}, this)">` +
+          `${esc(t("Uninstall"))} ${esc(name)}</button></div></div>`;
+      }).join("");
+      // Offered only when BOTH are here, because that is when it is a different action
+      // rather than a second name for the same one.
+      const both = plan.both_installed
+        ? `<div style="margin-top:8px"><button class="ghost tiny" ` +
+          `onclick="uninstallAi(${esc(JSON.stringify(["vllm", "ollama"]))}, this)">` +
+          `${esc(t("Uninstall both backends"))}</button></div>` : "";
+      const stores = (plan.stores || []).filter((st) => st.exists);
+      const storeRows = stores.length
+        ? `<div style="margin-top:8px">${esc(t("Downloaded models on this machine:"))}` +
+          stores.map((st) =>
+            `<div class="muted"><code>${esc(st.path)}</code>${esc(_gbytes(st.bytes))}` +
+            (st.removable ? "" : ` — ${esc(t("kept"))}`) + `</div>`).join("") + `</div>`
+        : "";
+      box.innerHTML =
+        `<div>${esc(plan.method || "")}</div>` + rows + both + storeRows +
+        `<label class="small" style="display:block;margin-top:8px">` +
+        `<input type="checkbox" id="ai-uninstall-models"> ` +
+        esc(t("also delete the downloaded models in this app's folder")) + `</label>` +
+        `<div id="ai-uninstall-status" class="hint" style="margin-top:6px"></div>`;
+    }
+
+    async function uninstallAi(backends, btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const status = $("ai-uninstall-status");
+      const delete_models = !!($("ai-uninstall-models") || {}).checked;
+      // Re-read the plan rather than trusting the one the panel was drawn from: it may
+      // be minutes old, and the numbers in this confirm are what is being consented to.
+      let plan = null;
+      try { plan = await api("/api/llm/uninstall/plan"); } catch (e) { plan = null; }
+      const wanted = (((plan || {}).backends) || []).filter((b) => backends.indexOf(b.backend) >= 0);
+      const lines = wanted.map((b) => {
+        const name = b.backend === "vllm" ? "vLLM" : "Ollama";
+        return b.removable
+          ? `• ${name}${_gbytes(b.bytes)}`
+          : `• ${name} — ${b.kept_reason || t("this app cannot remove it")}`;
+      });
+      if (delete_models) {
+        for (const st of (((plan || {}).stores) || [])) {
+          if (st.exists && st.removable) lines.push(`• ${st.kind}${_gbytes(st.bytes)} — ${st.path}`);
+        }
+      }
+      if (!confirm(t("Uninstall the local AI? This cannot be undone.") + "\n\n" + lines.join("\n"))) return;
+      const was = btn ? btn.textContent : "";
+      if (btn) { btn.disabled = true; btn.textContent = t("Removing…"); }
+      try {
+        const r = await api("/api/llm/uninstall", {
+          method: "POST",
+          body: JSON.stringify({backends, delete_models, confirm: true}),
+        });
+        // WHAT WAS KEPT IS REPORTED AS PROMINENTLY AS WHAT WENT. A button that says
+        // "Uninstalled." whatever happened would leave an operator believing the
+        // program is gone when it is still there and will still be serving next boot.
+        const freed = r.freed_bytes ? _gbytes(r.freed_bytes).trim() : "";
+        let msg = r.complete
+          ? t("Uninstalled.") + (freed ? " " + freed : "")
+          : t("Partly uninstalled.") + (freed ? " " + freed : "");
+        if ((r.kept || []).length) {
+          msg += "\n" + r.kept.map((k) => `• ${k.what}: ${k.reason || ""}`).join("\n");
+        }
+        if (status) { status.style.whiteSpace = "pre-wrap"; status.textContent = msg; }
+      } catch (e) {
+        if (status) status.textContent = t("Uninstall failed:") + " " +
+          (_apiErrorMessage ? _apiErrorMessage(e) : String(e));
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = was; }
+        refreshAiPanels();
+      }
+    }
+
     async function migrateOllamaStore(btn, reclaim) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const ask = reclaim
@@ -22847,6 +22953,7 @@
       loadAiHero(); loadAiStore(); loadModelCatalog(); syncAiCoordinator();
       loadAiSetup(); loadAiBackendPanel(); loadVllmStatusPanel();
       loadOllamaInstall(); loadLlmModels(); loadLlmHealth(); loadCustomModelBox();
+      loadAiUninstall();
     }
 
     async function loadAiBackendPanel() {
