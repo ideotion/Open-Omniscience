@@ -385,22 +385,71 @@ def bounded_error(exc: BaseException, limit: int = 300) -> str:
     a reason to protect.
     """
     head = f"{type(exc).__name__}: "
-    msg = " ".join(str(exc).split())
-    room = max(1, limit - len(head))
+    return head + reason_first(str(exc), max(1, limit - len(head)))
+
+
+#: Phrases a backend uses when a prompt does not fit its context window. Matched
+#: case-insensitively against the server's own words, which :func:`_http_reason`
+#: already recovers from the response body.
+_CONTEXT_OVERFLOW_MARKERS = (
+    "maximum context length",  # vLLM / OpenAI-compatible
+    "context length exceeded",
+    "reduce the length of the messages",
+    "too many tokens",
+    "exceeds the maximum",
+)
+
+
+def is_context_overflow(error: object) -> bool:
+    """True when a failure means "this prompt is longer than the window".
+
+    THE POINT IS THAT IT IS NOT AN OUTAGE. The sweep loops catch ``LLMError`` and treat
+    every instance as a backend that might come back: they sleep, back off, and retry
+    the SAME batch up to ten times. That is right for a connection refused and wrong
+    here -- an oversized prompt is deterministic, so the same batch re-sent unchanged
+    fails identically, and a field run spent ten minutes proving it before ending the
+    whole sweep in ``state=error``.
+
+    Deliberately matched on the SERVER'S WORDS rather than on the status code: a 400 is
+    also how a backend reports a malformed request, which is a different fault with a
+    different answer, and Ollama reports the same overflow with a 500. The words are
+    what distinguish the case; the code does not.
+    """
+    if error is None:
+        return False
+    text = str(error).lower()
+    return any(marker in text for marker in _CONTEXT_OVERFLOW_MARKERS)
+
+
+def reason_first(message: str, room: int) -> str:
+    """``message`` within ``room`` characters, protecting the part after
+    :data:`REASON_SEP`.
+
+    Split out of :func:`bounded_error` so the RETRY line can use it too. It could not,
+    and the cost was a field report: a vLLM context-length refusal reads
+    ``Client error '400 Bad Request' for url 'http://…/v1/chat/completions' — This
+    model's maximum context length is 2048 tokens. However, you requested 2940 tokens
+    (2616 in the messages, 324 in the completion).`` A head truncation at 200 lands at
+    character 199 -- one past the full stop after "2048 tokens." -- so the operator saw
+    a sentence that reads as a statement about the MODEL and never the clause naming
+    our own prompt as the thing that overflowed. The status line and the URL, which say
+    nothing, kept the whole budget.
+    """
+    msg = " ".join((message or "").split())
     if len(msg) <= room:
-        return head + msg
+        return msg
     if REASON_SEP in msg:
         context, reason = msg.split(REASON_SEP, 1)
         # The reason alone fills the budget: keep its START (which names the cause)
         # and drop the status line entirely. Keeping its tail would preserve the
         # least useful end of a long traceback.
         if len(reason) + len(REASON_SEP) >= room:
-            return head + reason[: room - 1] + "…"
+            return reason[: room - 1] + "…"
         keep = room - len(reason) - len(REASON_SEP)
         if len(context) > keep:
             context = context[: max(0, keep - 1)] + "…"
-        return head + context + REASON_SEP + reason
-    return head + msg[: room - 1] + "…"
+        return context + REASON_SEP + reason
+    return msg[: room - 1] + "…"
 
 
 def _is_loopback_url(url: str) -> bool:

@@ -94,6 +94,30 @@ def _resolve_window(backend_name: str | None) -> dict:
                 "backend": None,
             }
     if name == "vllm":
+        # ASK THE SERVER FIRST. Its model card carries the window it was actually
+        # started with; anything else here is a re-derivation of an estimate against a
+        # card whose free memory the running server has itself changed. The two
+        # diverge in BOTH directions -- a server started while another process held
+        # the card keeps its small window after that process releases, and a
+        # re-derivation run while vLLM is resident reads a nearly-full card -- so the
+        # difference is not a safety margin, it is a wrong number either way. A
+        # prompt sized above the server's real window is refused with a 400, which is
+        # exactly the field failure this replaces.
+        try:
+            from src.llm.vllm_client import VllmClient
+
+            served = VllmClient().served_window()
+            if served:
+                return {
+                    "tokens": int(served),
+                    "source": "the running vLLM server's own max_model_len (/v1/models)",
+                    "backend": "vllm",
+                }
+        except Exception:  # noqa: BLE001 - fall through to the estimate below
+            pass
+        # No server to ask (not started yet, or a build whose model card omits the
+        # field). The estimate is the honest fallback and is LABELLED as one -- it
+        # describes what a start right now would choose, not what is being served.
         try:
             from src.llm.backend import detect_gpu
             from src.llm.vllm_lifecycle import compute_server_args
@@ -106,7 +130,11 @@ def _resolve_window(backend_name: str | None) -> dict:
             n = args.get("max_model_len")
             return {
                 "tokens": int(n) if n else None,
-                "source": "vLLM's computed max_model_len (derived from VRAM at start)",
+                "source": (
+                    "an ESTIMATE from current free VRAM — the running server could not "
+                    "be asked, so this is what a start now would choose, not what is "
+                    "being served"
+                ),
                 "backend": "vllm",
             }
         except Exception as exc:  # noqa: BLE001
