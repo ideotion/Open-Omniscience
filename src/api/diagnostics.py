@@ -2295,6 +2295,19 @@ def performance_report(
             "reality on premium news, NOT asserted as Tor. Counts only, no score."
         ),
     }
+    # Why the collector may be running fewer workers than collect_parallelism allows:
+    # the ceiling this machine demonstrated under memory pressure. Null on any box that
+    # has never backed off, which is the normal state and is NOT the same as a ceiling
+    # of zero. Degrades to an honest absence rather than failing the report.
+    try:
+        from src.scheduler.capacity import state_report as _capacity_report
+        from src.scheduler.settings import load_settings as _load_sched_settings
+
+        collection["learned_concurrency"] = _capacity_report(
+            int(getattr(_load_sched_settings(), "collect_parallelism", 1) or 1)
+        )
+    except Exception as exc:  # noqa: BLE001 - a diagnostic never breaks on a side read
+        collection["learned_concurrency"] = {"available": False, "reason": str(exc)[:160]}
 
     # -- passive latencies: the app's own histograms, real use since boot --- #
     endpoint_latency: list[dict] = []

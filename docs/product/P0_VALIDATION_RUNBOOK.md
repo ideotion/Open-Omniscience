@@ -172,6 +172,15 @@ maintainer channel along with the debug bundle if any check failed.
 
 ## 7. TAG-DAY CHECKLIST (maintainer-only — the tag stays held until this is done)
 
+> **Historical — this section is the `v0.2.0` checklist.** That tag was cut on
+> 2026-07-18 at `5b5452c15`; the record is
+> [`RELEASE_0.2_GATE.md`](RELEASE_0.2_GATE.md), which also carries the
+> release-workflow collision that shipped it with no assets and the idempotent
+> fix that protects later tags. The steps below are kept verbatim as the
+> precedent. **For `0.3`, read [`RELEASE_0.3_GATE.md`](RELEASE_0.3_GATE.md)** —
+> and note two things below no longer apply: `pyproject` now reads `0.3.0`, and
+> the branch rename is obsolete (the default branch is permanently `main`).
+
 Do NOT run this until the report above is green for the data-safety checks and
 unlock/collector were measured (cold boot + soak). The tag and the live run are
 maintainer-only.
@@ -199,3 +208,94 @@ maintainer-only.
 7. **Softening the caveat.** Once the tag lands, the “tag awaits live validation”
    lines in `README` / `CONTRIBUTING` / `CHANGES` / `ROADMAP` can be softened to
    “released”. That edit is a follow-up, not a blocker.
+
+---
+
+## 8. Closing the two carried-forward follow-ups (0.3 gate row 7)
+
+The `v0.2.0` run passed 5/5 but flagged **two of its own results as not-yet-confirmed**.
+They are [`RELEASE_0.3_GATE.md`](RELEASE_0.3_GATE.md) **row 7**, and both are operator runs
+on the full corpus. Do (a) first — it takes minutes.
+
+### 8.1 What "cold boot" means here — and what it does NOT
+
+This phrase has caused real confusion, so it is worth being exact. A cold boot is:
+
+> **Stop the running app completely, then start it again and unlock — on the SAME, FULL
+> corpus.**
+
+It is **none of these**:
+
+| Not this | Why |
+|---|---|
+| A **fresh install** | Reinstalling touches only the code. `data/` is untouched — and a fresh install measured against a fresh corpus would measure nothing, since the bar is about unlock time **at scale**. |
+| A **fresh update** | Same: updating the build does not change what unlock has to open. |
+| An **empty database** | The exact opposite of what is wanted. The bar exists because unlock was once **28.6 s** on a large corpus (a per-boot FTS5 `'rebuild'`). An empty corpus unlocks instantly and proves nothing. |
+| A **second unlock in the same session** | That process is already warm — engine initialised, caches populated. It measures nothing. |
+
+"Cold" means **the app process is cold**: no warm engine, no prior unlock in that process.
+Restarting the app is enough and is what the bar asks for, because it is what a user does
+every day.
+
+**If you want the strictest form**, reboot the machine or VM before starting the app — that
+also empties the OS page cache, so the first reads genuinely come from disk. It is a
+*harder* test than the bar requires. Worth doing once; not required every time.
+
+*(Empirically, unlock is dominated by `init_db`, not by corpus size: 776 ms on a 16.5 GB
+corpus and **323 ms** on a 21.0 GB one. It tracks the WAL and migration work rather than the
+article count, which is why the WAL state below is the part that decides whether a reading
+is bankable.)*
+
+### 8.2 (a) The cold-boot unlock — step by step
+
+1. **Have the full corpus present.** Do not prune or move anything first.
+2. **Stop the app cleanly** — the in-app power button, or `Ctrl-C` in the terminal.
+   *Clean matters:* a clean SQLite WAL-mode close checkpoints and **deletes** the `-wal`,
+   which is what makes the next boot the **steady-state** measurement the bar names.
+   Do not `kill -9`.
+3. *(Optional, stricter)* reboot the machine.
+4. **Start the app and unlock normally.** That boot's per-phase timing is recorded
+   automatically — you do not have to do anything to capture it.
+5. **Re-run the P0 validation immediately** (§2) so the report reads that boot.
+
+**How to know the reading is bankable.** In the report, under P0.4, find
+`wal_state_before_open`:
+
+| `state` | What it means | Bankable? |
+|---|---|---|
+| `absent` | No `-wal` at open — the previous shutdown was clean. **This is the steady-state unlock the bar asks for**, and it does not include WAL recovery. | ✅ **yes — this is the target** |
+| `present` | A `-wal` was there and this timing **includes replaying it**. A different, larger measurement. | Valid data, but not the bar |
+| `unreadable` | The `-wal` could not be read (with the reason). | ❌ re-take |
+
+Before 2026-08-12 an **absent** WAL and an **unreadable** one shared a single `null`, so the
+clean shutdown this runbook prescribes *guaranteed* a null that read as missing evidence.
+That is fixed — the report now names which case it measured.
+
+**A note on the old wording:** an earlier version of the bar justified the cold boot as
+testing "WAL recovery". It does not — a clean shutdown by construction leaves nothing to
+replay. WAL recovery is only exercised when a session ends **uncleanly**, and the app records
+that automatically if it ever happens. **Do not stage an unclean shutdown to produce one**;
+it is a different measurement and not what row 7 asks for.
+
+**Row 7(a) closes when** one report shows P0.4 with `wal_state_before_open.state = "absent"`
+and a total under 2000 ms, taken on the full corpus.
+
+### 8.3 (b) The multi-day collector soak
+
+Mechanics are in **§4** — this only states the bar row 7 holds it to.
+
+The `v0.2.0` reading covered **2 passes**; the 2026-08-12 report shows **0 samples** and
+honestly reports `not-measurable`. The last real reading (2026-07-29/30) covered ~22 h over
+61 passes with no climb, but was 4 days stale by report time.
+
+1. Go online (the one network consent) and let continuous collection run.
+2. Leave it for **at least 72 hours** — the bar says *multi-day*, and 22 h is not.
+3. Re-run the validation **while collection is still running or immediately after**, so the
+   passes fall inside the window P0.3 reads.
+
+**The honest limit stays** (§4): the collect-perf log retains ~2 hours, so P0.3 sees the
+recent window. The durable multi-day signal is the app **surviving** — the memory guard not
+stuck engaged, and the previous session ending cleanly in session forensics. Read both.
+
+**Row 7(b) closes when** one report shows P0.3 with samples spanning ≥ 72 h and no climb
+above the 512 MB floor.

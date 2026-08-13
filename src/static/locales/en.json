@@ -2871,6 +2871,7 @@
   "last saved run: stopped": "last saved run: stopped",
   "last saved run: ended on an error": "last saved run: ended on an error",
   "last saved run: interrupted before it wrote a summary": "last saved run: interrupted before it wrote a summary",
+  "the last attempt on this log failed; the work already logged is kept": "the last attempt on this log failed; the work already logged is kept",
   "unused keywords removed": "unused keywords removed",
   "watch only": "watch only",
   "— create, add, remove, delete": "— create, add, remove, delete",

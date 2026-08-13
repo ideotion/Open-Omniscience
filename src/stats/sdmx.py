@@ -7,7 +7,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 This module turns already-decoded responses from official statistical endpoints into
 provenance-rich :class:`StatFigure` rows. Four shapes are understood today: the World Bank
-API v2 JSON shape, the SDMX-JSON 2.1 "data message" shape (Eurostat / IMF), a tidy (long)
+API v2 JSON shape, the SDMX-JSON "data message" shape (Eurostat / IMF), a tidy (long)
 CSV — e.g. an Our World in Data grapher export — and JSON-stat (the Eurostat new API,
 IRENA, and many national PxWeb endpoints). It is PURE: it takes ``str`` / ``dict`` /
 ``list`` objects a caller has already fetched and decoded and never imports ``requests`` /
@@ -31,8 +31,11 @@ from __future__ import annotations
 
 import csv
 import io
+import logging
 from dataclasses import dataclass
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -134,7 +137,21 @@ def _worldbank_observations(payload: Any) -> list[Any]:
 
 
 # --------------------------------------------------------------------------- #
-# SDMX-JSON 2.1 "data message" (Eurostat / IMF)
+# SDMX-JSON "data message" (Eurostat / IMF)
+#
+# VERSION, stated precisely because the earlier wording named one that does not exist
+# (corrected 2026-08-13). SDMX-JSON MESSAGE-FORMAT versions are 1.0 and 2.0; 2.0, 2.1 and
+# 3.0 are versions of the SDMX INFORMATION MODEL. "SDMX-JSON 2.1" — what these docstrings
+# used to say — conflates the two, so a reader could not tell which contract this parser
+# implements, and "the parser targets 2.1" was unanswerable rather than merely wrong.
+#
+# What is mapped: the layout below — ``data.structure`` (SINGULAR) plus ``data.dataSets`` —
+# which is SDMX-JSON 1.0. A 2.0 message carries ``data.structures`` as a plural ARRAY and is
+# NOT mapped; it now reads as a gap rather than as anonymous rows (see the ref_area/
+# time_period refusal further down). Adding 2.0 wants a real fetched 2.0 body to work
+# against — OECD is documented as serving both from one host, selected by the request's
+# ``format`` parameter, which means a caller can PIN the version instead of sniffing it.
+# That claim is search-only: no 2.0 message body has been read.
 # --------------------------------------------------------------------------- #
 # Dimension ids that name the same concept across producers. Lower-cased on lookup.
 _REF_AREA_DIMS = ("ref_area", "geo", "reporting_area", "area", "country")
@@ -146,7 +163,7 @@ _TIME_DIMS = ("time_period", "time", "time_period_start")
 
 
 def parse_sdmx_json(payload: Any, *, agency: str, extracted_at: str) -> list[StatFigure]:
-    """Parse an SDMX-JSON 2.1 "data message" into figures.
+    """Parse an SDMX-JSON 1.0 "data message" into figures.
 
     Shape (the parts we use)::
 
@@ -169,8 +186,15 @@ def parse_sdmx_json(payload: Any, *, agency: str, extracted_at: str) -> list[Sta
       * ``unit``       ← a UNIT series/observation dimension value, else None
       * ``adjustment`` ← an ADJUSTMENT / s_adj dimension value, else None
 
-    Missing dimensions leave their field ``None`` (never guessed). A present observation
-    cell whose value is null becomes ``value=None`` (a published gap, kept).
+    A dimension may sit at SERIES or OBSERVATION level depending on the request's
+    ``dimensionAtObservation``, so each field is looked up at both, observation first.
+
+    Missing OPTIONAL dimensions leave their field ``None`` (never guessed). A present
+    observation cell whose value is null becomes ``value=None`` (a published gap, kept).
+    But an observation with no resolvable ``ref_area`` or ``time_period`` is DROPPED, not
+    emitted with empty strings: a value with no where and no when is not a figure, and the
+    earlier version's ``ref_area or ""`` turned an unrecognised message into real numbers
+    attached to nothing.
     """
     data = payload.get("data") if isinstance(payload, dict) else None
     if not isinstance(data, dict):
@@ -189,6 +213,7 @@ def parse_sdmx_json(payload: Any, *, agency: str, extracted_at: str) -> list[Sta
         return []
 
     figures: list[StatFigure] = []
+    unmapped = 0
     for dataset in datasets:
         if not isinstance(dataset, dict):
             continue
@@ -217,12 +242,29 @@ def parse_sdmx_json(payload: Any, *, agency: str, extracted_at: str) -> list[Sta
                 # An observation-level UNIT/ADJUSTMENT can override the series one.
                 unit_o = _pick_value_label(obs_resolved, _UNIT_DIMS)
                 adj_o = _pick_value_id(obs_resolved, _ADJ_DIMS)
+                # ...and so can REF_AREA / the indicator: which LEVEL a dimension sits at
+                # is decided by the request's `dimensionAtObservation`, not by the concept.
+                # OECD's own documented example passes `AllDimensions`, which puts every
+                # dimension at observation level, so reading these from the series map
+                # alone left them empty for a perfectly well-formed message.
+                ref_area_o = _pick_value_id(obs_resolved, _REF_AREA_DIMS)
+                series_id_o = _pick_value_id(obs_resolved, _SERIES_DIMS)
+                where = ref_area_o or ref_area
+                when = time_period
+                if not where or not when:
+                    # A value with no WHERE and no WHEN is not an observation. The first cut
+                    # coerced both to "" and appended the row anyway, so an unrecognised
+                    # message shape yielded a REAL number attached to nothing — 2.957e12
+                    # with no country, no indicator and no year, indistinguishable from a
+                    # fact on inspection. An unmapped shape must read as a gap instead.
+                    unmapped += 1
+                    continue
                 figures.append(
                     StatFigure(
                         agency=agency,
-                        series_id=series_id or "",
-                        ref_area=ref_area or "",
-                        time_period=time_period or "",
+                        series_id=series_id_o or series_id or "",
+                        ref_area=where,
+                        time_period=when,
                         value=_obs_value(obs_cell),
                         unit=unit_o or unit,
                         methodology_ref=None,
@@ -231,6 +273,21 @@ def parse_sdmx_json(payload: Any, *, agency: str, extracted_at: str) -> list[Sta
                         extracted_at=extracted_at,
                     )
                 )
+    if unmapped:
+        # Loudly, once per parse rather than per row: a shape we cannot map would otherwise
+        # be indistinguishable from a publisher that returned nothing. The message states
+        # only what it can support — it does NOT claim the whole shape was unreadable, since
+        # dropping every observation and dropping one incomplete row look the same from
+        # here, and the row counts beside each other are what tell them apart.
+        logger.warning(
+            "sdmx-json (%s): dropped %s observation(s) with no resolvable ref_area and/or "
+            "time_period, and parsed %s. A value with no where and no when is not a figure, "
+            "so those are a GAP and not a report of zero. All dropped and none parsed "
+            "usually means the message shape is one this parser does not map.",
+            agency,
+            unmapped,
+            len(figures),
+        )
     return figures
 
 

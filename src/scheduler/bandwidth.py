@@ -111,9 +111,12 @@ class BandwidthGovernor:
         self.target_kbps = max(1, int(target_kbps))
         self.w_max = max(1, int(w_max))
         if seed is None:
-            seed = min(DEFAULT_SEED, self.w_max)
-        if self.mode == "maximum":
-            seed = self.w_max
+            # No explicit seed: maximum mode opens wide, target mode eases in. An
+            # EXPLICIT seed is honoured in both modes — it is a caller that already
+            # knows something about this machine (see scheduler.capacity), and the
+            # old unconditional `maximum` override silently discarded it, which
+            # made the learned ceiling a no-op in exactly the mode that needs it.
+            seed = self.w_max if self.mode == "maximum" else min(DEFAULT_SEED, self.w_max)
         self._sem = _AdjustableSemaphore(max(1, min(int(seed), self.w_max)))
         self._min_interval = max(0.0, float(min_adjust_interval_s))
         self._last_adjust = 0.0
@@ -161,8 +164,19 @@ class BandwidthGovernor:
             reason = (
                 "mem-low" if mem_low else "writer-saturated" if writer_saturated else "cpu-saturated"
             )
-            step = 2 if mem_low else 1
-            new = max(1, cur - step)
+            if mem_low:
+                # Memory is the one contention signal where overshoot is not merely slow
+                # but fatal — the machine thrashes into swap and may be OOM-killed — so it
+                # gets a MULTIPLICATIVE decrease (the standard AIMD discipline) where the
+                # others get a linear step. From 50 that is 6 ticks to the floor instead
+                # of 25, and every tick spent descending is a tick spent AT the pressure
+                # that triggered the descent (measured on a 4-core/3.65 GiB box: 43 s of
+                # 150–300 MB-available thrash to walk 50 → 1, once per pass).
+                # Writer/CPU saturation stay linear on purpose: those cost throughput,
+                # not the machine, and over-cutting them just wastes capacity.
+                new = max(1, cur // 2)
+            else:
+                new = max(1, cur - 1)
             if new != cur:
                 self._sem.set_permits(new)
                 self._last_adjust = now
