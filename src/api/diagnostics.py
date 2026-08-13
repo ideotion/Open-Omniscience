@@ -5101,31 +5101,17 @@ class AiCheckRunBody(BaseModel):
     deep: bool = Field(
         default=False,
         description=(
-            "also run the COMPARATIVE bench over every roster model on every backend "
-            "that serves it, restarting vLLM between models and handing the GPU back "
-            "and forth. Minutes become hours; the frozen inputs are built on first use "
-            "and reused after, so runs stay comparable."
+            "also run the model bench: the frozen input set through the model task by "
+            "task, on whichever backend is already serving. It starts, stops and "
+            "switches nothing. Minutes become tens of minutes; the frozen inputs are "
+            "built on first use and reused after, so runs stay comparable."
         ),
-    )
-    bench_models: list[str] | None = Field(
-        default=None,
-        description="override the roster (bench-roster keys, or backend|identifier)",
     )
     refresh_batch: bool = Field(
         default=False,
         description=(
             "re-sample the frozen bench inputs from the corpus. Changes the questions, so "
             "the run is NOT comparable with earlier ones and starts the bench from scratch."
-        ),
-    )
-    download_missing: bool = Field(
-        default=False,
-        description=(
-            "fetch the roster models this machine does not have, and bench each one as "
-            "it lands. OFF by default and deliberately: this can be tens of gigabytes, "
-            "which is not something to infer from a click on 'run the benchmark'. Call "
-            "GET /ai-check/provision first — it surveys without downloading and returns "
-            "the size, which is the question to put to the operator."
         ),
     )
 
@@ -5174,9 +5160,7 @@ def ai_check_run(body: AiCheckRunBody) -> JSONResponse:
             calls_per_level=body.calls_per_level,
             include_perception=body.include_perception,
             deep=body.deep,
-            bench_models=body.bench_models,
             refresh_batch=body.refresh_batch,
-            download_missing=body.download_missing,
         )
     except RuntimeError as exc:
         st = _AI_CHECK_JOB.status()

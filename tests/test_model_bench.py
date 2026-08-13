@@ -298,38 +298,6 @@ _FIELD_MACHINE = {
 }
 
 
-def test_a_roster_key_resolves_to_each_backends_own_identifier() -> None:
-    """The same model is a different string on each backend.
-
-    ``qwen35-0-8b`` is ``Qwen/Qwen3.5-0.8B`` to vLLM and ``qwen3.5:0.8b-q8_0`` to
-    Ollama; a bench that carried one string to both would ask each backend for the
-    other's name.
-    """
-    runnable, _ = MB.resolve_pairs(
-        models=["qwen35-0-8b"],
-        installed_by_backend={
-            "vllm": ["Qwen/Qwen3.5-0.8B"],
-            "ollama": ["qwen3.5:0.8b-q8_0"],
-        },
-    )
-    assert {p["key"] for p in runnable} == {
-        "vllm|Qwen/Qwen3.5-0.8B",
-        "ollama|qwen3.5:0.8b-q8_0",
-    }
-
-
-def test_the_default_roster_finds_the_models_this_machine_downloaded() -> None:
-    """The field report, as a fixture.
-
-    Every model the operator installed through the panel is benched, under the name
-    the panel installed it as.
-    """
-    runnable, _ = MB.resolve_pairs(
-        models=list(MB.DEFAULT_ROSTER), installed_by_backend=_FIELD_MACHINE
-    )
-    assert {p["model"] for p in runnable} == set(_FIELD_MACHINE["vllm"])
-
-
 def test_no_ollama_tag_is_ever_reported_as_not_installed_on_vllm() -> None:
     """The defect itself: an instruction the operator cannot carry out.
 
@@ -343,36 +311,6 @@ def test_no_ollama_tag_is_ever_reported_as_not_installed_on_vllm() -> None:
     for s in skipped:
         if s["backend"] == "vllm" and s.get("model"):
             assert "/" in s["model"], f"{s['model']!r} is not a Hugging Face repository id"
-
-
-def test_a_model_the_operator_did_not_download_is_still_reported() -> None:
-    """The negative-space twin.
-
-    A fix that made the skipped list empty would be silence, not a fix -- a model that
-    is genuinely absent must still be named, by its real identifier on this backend.
-    """
-    _, skipped = MB.resolve_pairs(
-        models=list(MB.DEFAULT_ROSTER), installed_by_backend=_FIELD_MACHINE
-    )
-    missing = {s["model"] for s in skipped if s["reason"] == "not-installed"}
-    assert "HuggingFaceTB/SmolLM3-3B" in missing
-    assert "LiquidAI/LFM2.5-1.2B-Base" in missing
-
-
-def test_no_build_for_a_backend_is_a_different_fact_from_no_download() -> None:
-    """SmolLM3 has no Ollama tag at all; nobody can install it there.
-
-    Reporting that as "not-installed" would send the operator looking for a download
-    that does not exist.
-    """
-    _, skipped = MB.resolve_pairs(
-        models=["smollm3-3b"],
-        installed_by_backend={"ollama": [], "vllm": []},
-    )
-    by_backend = {s["backend"]: s for s in skipped}
-    assert by_backend["ollama"]["reason"] == "not-published-for-backend"
-    assert by_backend["ollama"]["roster_key"] == "smollm3-3b"
-    assert by_backend["vllm"]["reason"] == "not-installed"
 
 
 def test_a_bare_tag_is_still_asked_of_every_backend() -> None:
@@ -403,62 +341,6 @@ def test_quantization_is_read_off_the_tag_and_never_guessed() -> None:
 
 def _norm(s: str) -> str:
     return "".join(c for c in s.lower() if c.isalnum())
-
-
-def test_an_unresolved_candidate_is_a_note_not_an_invented_tag() -> None:
-    """Writing a guessed tag into the roster would be a fabricated catalog entry.
-
-    The needle is DERIVED from ``UNRESOLVED_CANDIDATES`` rather than hardcoded, because
-    the hardcoded version ("lfm" must not appear) fired on the LFM2.5-1.2B roster keys
-    -- which are a DIFFERENT, page-verified model that the maintainer added on purpose.
-    A substring is only as meaningful as its uniqueness, and that one had stopped
-    testing the property it was named for.
-    """
-    assert any("LFM2.5-8B-A1B" in c["named"] for c in MB.UNRESOLVED_CANDIDATES)
-    entries = [_norm(e) for e in MB.DEFAULT_ROSTER]
-    for candidate in MB.UNRESOLVED_CANDIDATES:
-        # Drop the vendor word: what must never appear is the MODEL nobody verified.
-        needle = _norm(candidate["named"].split(" ", 1)[-1])
-        assert needle, candidate
-        assert not any(needle in e for e in entries), (
-            f"{candidate['named']!r} is unresolved and must travel as a note, "
-            "never as a roster entry"
-        )
-
-
-def test_every_roster_entry_has_a_provenance_and_none_was_hand_typed() -> None:
-    """Three legal shapes, and nothing else.
-
-    This is the anti-fabrication guard the substring above was reaching for. A bench
-    entry is either a key of the verified download roster, a backend-qualified tag from
-    the ruled list, or an incumbent read from the app's own constants -- so a model name
-    cannot enter the bench without somebody having verified it somewhere.
-    """
-    from src.llm.bench_roster import BENCH_ROSTER
-
-    keys = {e["key"] for e in BENCH_ROSTER}
-    for entry in MB.DEFAULT_ROSTER:
-        assert entry in keys or "|" in entry, entry
-        if "|" in entry:
-            backend, _, identifier = entry.partition("|")
-            assert backend in MB.BENCH_BACKENDS, entry
-            assert identifier, entry
-
-
-def test_the_bench_asks_for_what_the_download_panel_installs() -> None:
-    """The two catalogues must not drift apart again.
-
-    They had: the panel offered Qwen3.5-0.8B / Gemma-3n / Phi-4 / LFM2.5 while the bench
-    asked for qwen3.5:4b / gemma4:e4b / mistral:7b / granite4.1, so an operator could
-    download four models through the app and have the bench report all four of its own
-    names as not-installed.
-    """
-    from src.llm.bench_roster import BENCH_ROSTER
-
-    for entry in BENCH_ROSTER:
-        assert entry["key"] in MB.DEFAULT_ROSTER, (
-            f"{entry['key']} can be installed from Settings but the bench never asks for it"
-        )
 
 
 # --------------------------------------------------------------------------- #
@@ -994,25 +876,6 @@ def test_a_failed_call_is_data_not_a_crash() -> None:
 # --------------------------------------------------------------------------- #
 #  A specialist is benched on what it is FOR, and the absence is declared
 # --------------------------------------------------------------------------- #
-def test_a_specialist_is_scoped_and_its_missing_tasks_are_declared(frozen) -> None:
-    out = MB.run_model_bench(
-        None,
-        models=["ollama|translategemma:4b"],
-        clients={"ollama": _Translator()},
-        installed_by_backend={"ollama": ["translategemma:4b"]},
-        batch=frozen,
-        tasks=("triage", "translation"),
-        persist=False,
-        allow_backend_switch=False,
-    )
-    pair = out["results"]["ollama|translategemma:4b"]
-    assert "translation" in pair["tasks"], "it IS benched on what it is for"
-    assert "triage" not in pair["tasks"], "and not on what it is not"
-    # DECLARED. A model with no triage number must not read as one that failed triage.
-    assert pair["tasks_not_asked"]["tasks"] == ["triage"]
-    assert "wrong tool" in pair["tasks_not_asked"]["reason"]
-
-
 def test_an_unscoped_model_still_runs_every_task(frozen) -> None:
     """The negative-space twin: scoping is opt-in per model, and everything else is
     untouched."""
@@ -1029,15 +892,6 @@ def test_an_unscoped_model_still_runs_every_task(frozen) -> None:
     pair = out["results"]["ollama|mistral:7b"]
     assert set(pair["tasks"]) == {"triage", "translation"}
     assert "tasks_not_asked" not in pair
-
-
-def test_both_granite_sizes_are_asked_for_by_exact_tag() -> None:
-    """The bare "granite4.1" resolved to granite4.1:latest, which the operator did not
-    have -- so the exact-tag rule refused it and neither installed size was ever
-    benched."""
-    raw = [m.split("|", 1)[1] for m in MB.DEFAULT_ROSTER if m.startswith("ollama|")]
-    assert "granite4.1:8b" in raw and "granite4.1:3b" in raw
-    assert "granite4.1" not in raw, "the ambiguous bare tag is gone"
 
 
 # --------------------------------------------------------------------------- #
@@ -1280,51 +1134,52 @@ def test_serving_backend_is_a_read_only_probe(monkeypatch):
 # an exception: the button's own promise ("sends nothing that could start, stop or
 # switch a backend") is true only while this holds.
 
-def _worker_spy(monkeypatch):
-    import src.ai_layer.model_bench as M
-    seen: dict = {}
-    monkeypatch.setattr(M, "run_default_model_bench",
-                        lambda ctx, **kw: seen.setdefault("default", kw) or {"ok": 1})
-    monkeypatch.setattr(M, "run_model_bench",
-                        lambda ctx, **kw: seen.setdefault("roster", kw) or {"ok": 2})
-    return seen
+
+# --------------------------------------------------------------------------- #
+#  What survived the roster (2026-08-12, one model app-wide).
+#
+#  Eleven roster-era tests came out with the roster: they were about resolving a
+#  KEY to two per-backend identifiers, about models the operator had not
+#  downloaded, and about a candidate whose tag was never verified. None of those
+#  situations can arise with one shipped model. What replaced them is smaller and
+#  is the part that still has to hold.
+# --------------------------------------------------------------------------- #
+def test_the_default_roster_is_the_one_model_on_both_backends() -> None:
+    """The comparison the bench still owes is Ollama versus vLLM for the SAME model,
+    so the default request list is exactly that pair -- backend-qualified, because an
+    Ollama tag asked of vLLM can only ever answer "not installed" and that answer reads
+    as an instruction nobody can carry out."""
+    from src.llm.ollama import MINISTRAL_TAG, MINISTRAL_VLLM_MODEL
+
+    roster = MB.DEFAULT_ROSTER
+    assert f"ollama|{MINISTRAL_TAG}" in roster
+    assert f"vllm|{MINISTRAL_VLLM_MODEL}" in roster
+    assert len(roster) == len(set(roster)), "the same pair must not be requested twice"
+    # Two entries on a stock install: DEFAULT_MODEL *is* MINISTRAL_TAG unless the
+    # operator set OO_LLM_MODEL, and the duplicate is deduped rather than benched twice.
+    assert len(roster) <= 3
 
 
-def test_the_default_mode_drops_the_roster_arguments_it_cannot_honour(monkeypatch):
-    from src.api.diagnostics import _model_bench_worker
+def test_an_operator_override_is_benched_beside_the_shipped_tag_not_instead_of_it(
+    monkeypatch,
+) -> None:
+    """OO_LLM_MODEL is the supported way to run something else. Someone doing that still
+    wants to see how it compares with what the app ships, so both are requested."""
+    import src.llm.ollama as O
 
-    seen = _worker_spy(monkeypatch)
-    _model_bench_worker(
-        None,
-        default_model_only=True,
-        models=["a:1", "b:2"], extra_models=["c:3"],
-        backends=("vllm", "ollama"), allow_backend_switch=True,
-        repeats=3,
-    )
-    assert "roster" not in seen, "the default mode must not reach the roster sweep"
-    kw = seen["default"]
-    for dropped in ("models", "extra_models", "backends", "allow_backend_switch"):
-        assert dropped not in kw, (
-            f"{dropped!r} reached run_default_model_bench, which accepts **kw and would "
-            "swallow it silently -- the button would then be measuring something its "
-            "label and hover text both deny"
-        )
-    assert kw["repeats"] == 3, "a genuinely shared argument must still be passed on"
+    monkeypatch.setattr(O, "DEFAULT_MODEL", "someone-elses:7b")
+    roster = MB._incumbents()
+    assert "ollama|someone-elses:7b" in roster
+    assert f"ollama|{O.MINISTRAL_TAG}" in roster
 
 
-def test_the_roster_mode_still_receives_every_one_of_them(monkeypatch):
-    """The negative-space twin: a drop that fired in BOTH modes would be a silent
-    feature removal, and the assertion above cannot tell the two apart."""
-    from src.api.diagnostics import _model_bench_worker
+def test_a_backend_qualified_entry_is_asked_of_that_backend_only() -> None:
+    """One of the two entry shapes that survive. The other -- a bare identifier asked of
+    every backend -- is what a hand-typed model is: we do not know which backend the
+    operator meant, and guessing from the string's shape would be inventing a rule."""
+    wanted, refused = MB._wanted_on("ollama", ["ollama|a:1", "vllm|Org/B", "bare-one"])
+    assert wanted == ["a:1", "bare-one"]
+    assert refused == []
 
-    seen = _worker_spy(monkeypatch)
-    _model_bench_worker(
-        None,
-        default_model_only=False,
-        models=["a:1"], extra_models=["c:3"],
-        backends=("vllm",), allow_backend_switch=True,
-    )
-    assert "default" not in seen
-    kw = seen["roster"]
-    assert kw["models"] == ["a:1"] and kw["extra_models"] == ["c:3"]
-    assert kw["backends"] == ("vllm",) and kw["allow_backend_switch"] is True
+    wanted, _ = MB._wanted_on("vllm", ["ollama|a:1", "vllm|Org/B", "bare-one"])
+    assert wanted == ["Org/B", "bare-one"]
