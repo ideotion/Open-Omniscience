@@ -612,6 +612,16 @@ def last_keyword_triage_report() -> dict:
         header: dict = {}
         footer: dict | None = None
         batches = 0
+        # THE FOOTER DESCRIBES ONE INVOCATION; THE FILE DESCRIBES THE RUN. A sweep resumes
+        # by APPENDING to the same dated log, and each invocation's counters start from the
+        # persisted cursor state -- so an invocation that did nothing (the backend was down)
+        # writes a footer of zeros beside thousands of batches of real work. A field log
+        # showed exactly that: 6,208 batch records under a footer reading
+        # `batches_completed: 0, verdicts_out: 0`, which every reader of the footer alone
+        # renders as "this run found nothing". These totals are summed from the per-batch
+        # records the run itself wrote, so they are the FILE's own account, exact and
+        # invocation-independent. Free: the loop already visits every line.
+        logged = {"keywords_in": 0, "verdicts_out": 0, "parse_failures": 0, "missing": 0}
         with path.open(encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
@@ -623,6 +633,8 @@ def last_keyword_triage_report() -> dict:
                     header = rec
                 elif schema == "oo-keyword-triage-batch-1":
                     batches += 1
+                    for k in logged:
+                        logged[k] += int(rec.get(k, 0) or 0)
                 elif schema == KEYWORD_TRIAGE_RUN_SUMMARY_SCHEMA:
                     footer = rec
         return {
@@ -631,6 +643,11 @@ def last_keyword_triage_report() -> dict:
             "filename": path.name,
             "run_header": header,
             "batches_logged": batches,
+            # What the whole file holds, beside what the last invocation reported. Kept as
+            # separate fields rather than reconciled into one number: they measure different
+            # things, and a reader that needs the last attempt's own outcome (its state, its
+            # error) still has it in `summary`.
+            "logged_totals": logged,
             "summary": footer or {"state": "in_progress"},
         }
     except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never 500

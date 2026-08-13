@@ -2871,6 +2871,7 @@
   "last saved run: stopped": "dernière exécution enregistrée : arrêtée",
   "last saved run: ended on an error": "dernière exécution enregistrée : terminée sur une erreur",
   "last saved run: interrupted before it wrote a summary": "dernière exécution enregistrée : interrompue avant d'avoir écrit un récapitulatif",
+  "the last attempt on this log failed; the work already logged is kept": "la dernière tentative sur ce journal a échoué ; le travail déjà enregistré est conservé",
   "unused keywords removed": "mots-clés inutilisés supprimés",
   "watch only": "surveillance seule",
   "— create, add, remove, delete": "— créer, ajouter, retirer, supprimer",

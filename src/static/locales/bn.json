@@ -2871,6 +2871,7 @@
   "last saved run: stopped": "সর্বশেষ সংরক্ষিত রান: থামানো হয়েছে",
   "last saved run: ended on an error": "সর্বশেষ সংরক্ষিত রান: ত্রুটিতে শেষ হয়েছে",
   "last saved run: interrupted before it wrote a summary": "সর্বশেষ সংরক্ষিত রান: সারসংক্ষেপ লেখার আগেই বিঘ্নিত",
+  "the last attempt on this log failed; the work already logged is kept": "এই লগে সর্বশেষ প্রচেষ্টা ব্যর্থ হয়েছে; ইতিমধ্যে নথিভুক্ত কাজ রাখা হয়েছে",
   "unused keywords removed": "অব্যবহৃত কীওয়ার্ড সরানো হয়েছে",
   "watch only": "কেবল ওয়াচ",
   "— create, add, remove, delete": "— তৈরি, যোগ, সরানো, মুছে ফেলা",
