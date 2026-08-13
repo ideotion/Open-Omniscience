@@ -37,6 +37,8 @@ from src.llm.ollama import (
     CATALOG_AS_OF,
     DEFAULT_MODEL,
     DEFAULT_VLLM_MODEL,
+    MINISTRAL_HF,
+    MINISTRAL_SUGGESTION,
     LLMError,
     LLMUnavailable,
     OllamaClient,
@@ -1789,9 +1791,12 @@ class CustomModelRequest(BaseModel):
 
     identifier: str = Field(
         default="",
+        # Both examples read from the dated source, for the same reason the refusals
+        # below do: this description is what a caller reads in the schema, and a
+        # re-typed identifier drifts from the registry entry that governs it.
         description=(
-            "an Ollama tag (ministral-3:3b) or a Hugging Face repo id "
-            "(mistralai/Ministral-3-3B-Instruct-2512) — which one depends on the backend"
+            f"an Ollama tag ({MINISTRAL_SUGGESTION['tag']}) or a Hugging Face repo id "
+            f"({MINISTRAL_HF['repo']}) — which one depends on the backend"
         ),
     )
     backend: str | None = None
@@ -1812,7 +1817,16 @@ _HF_REPO_RE = re.compile(r"^[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*$")
 
 
 def _custom_identifier_refusal(backend: str, identifier: str) -> str | None:
-    """Why ``identifier`` cannot be what ``backend`` was asked for, or None."""
+    """Why ``identifier`` cannot be what ``backend`` was asked for, or None.
+
+    The example in each refusal is READ from the dated source rather than typed here.
+    A refusal's whole job is to show the shape that would have worked, so an example
+    that has drifted from the registry teaches the wrong string at the one moment the
+    operator is copying it.
+    """
+    from src.llm.ollama import MINISTRAL_HF
+
+    example = MINISTRAL_HF["repo"]
     if ".." in identifier:
         # Never a real tag or repo id, and it is the one shape that would matter if any
         # of this ever reached a path.
@@ -1822,13 +1836,12 @@ def _custom_identifier_refusal(backend: str, identifier: str) -> str | None:
     if ":" in identifier:
         return (
             f"'{identifier}' looks like an Ollama tag, and vLLM downloads Hugging Face "
-            "repositories. Use the owner/name form, for example "
-            "mistralai/Ministral-3-3B-Instruct-2512."
+            f"repositories. Use the owner/name form, for example {example}."
         )
     if not _HF_REPO_RE.match(identifier):
         return (
             f"'{identifier}' is not a Hugging Face repo id. They are owner/name, for "
-            "example mistralai/Ministral-3-3B-Instruct-2512."
+            f"example {example}."
         )
     return None
 

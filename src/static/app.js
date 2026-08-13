@@ -5866,10 +5866,15 @@
     // link for the wrong one is worse than none: it reads as an instruction and ends in
     // a 404. Read from the server's own provisioning answer (what this machine will
     // serve with), never guessed from the shape of what they type.
+    //
+    // THE EXAMPLE IS NOT TYPED HERE. It comes from /default-model's own `artifact`,
+    // which resolves through the dated MINISTRAL_AS_OF block — the same source the
+    // registry's freshness check governs. A literal here would be a second copy of a
+    // string the registry owns, and it is the copy an operator reads at the exact
+    // moment they are pasting: an example that has drifted teaches the wrong string.
     const _CUSTOM_MODEL_HELP = {
       ollama: {
         label: "Ollama model tag",
-        example: "ministral-3:3b-instruct-2512-q4_K_M",
         linkText: "ollama.com/library",
         href: "https://ollama.com/library",
         lead: "Your backend is Ollama, so it downloads images from the Ollama library. Browse them at",
@@ -5877,7 +5882,6 @@
       },
       vllm: {
         label: "Hugging Face repo id",
-        example: "mistralai/Ministral-3-3B-Instruct-2512",
         linkText: "huggingface.co/models",
         href: "https://huggingface.co/models",
         lead: "Your backend is vLLM, so it downloads weights from Hugging Face. Browse them at",
@@ -5891,10 +5895,14 @@
       const label = $("custom-model-label");
       const input = $("llm-pull-tag");
       if (!intro && !label && !input) return;
-      let backend = null;
+      let backend = null, example = "";
       try {
         const d = await api("/api/llm/default-model");
         backend = d && d.backend;
+        // The shipped model's identifier FOR THIS BACKEND, from the dated source.
+        // Empty rather than invented if the server did not say: no placeholder at all
+        // beats one that might be for the other backend.
+        example = (d && d.artifact) || "";
       } catch (e) { backend = null; }
       const h = _CUSTOM_MODEL_HELP[backend];
       if (!h) {
@@ -5906,7 +5914,7 @@
         return;
       }
       if (label) label.textContent = t(h.label);
-      if (input) input.placeholder = h.example;
+      if (input) input.placeholder = example;
       if (intro) {
         intro.innerHTML =
           esc(t(h.lead)) + ' <a href="' + esc(h.href) + '" target="_blank" rel="noopener">' +

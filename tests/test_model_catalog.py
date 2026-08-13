@@ -69,6 +69,71 @@ def test_the_module_does_not_hard_code_either_identifier():
         assert literal not in src, f"{literal!r} is re-typed here instead of imported"
 
 
+def test_no_surface_an_operator_copies_from_re_types_an_identifier():
+    """The same rule, applied where it actually costs something.
+
+    The catalogue was clean and three OTHER places were not: two placeholder examples
+    in ``app.js`` and the examples inside the vLLM refusals and the request schema. All
+    three are read at the exact moment an operator is copying a string, so a drifted
+    example teaches the wrong one — and unlike the catalogue's own identifiers, nothing
+    would have caught it: the registry's freshness check governs the dated block, not a
+    copy of it somewhere else.
+
+    Comment-stripped, because the recorded trap is that a "must be absent" guard trips
+    on the comment explaining the absence — and both fixes carry exactly such a comment.
+    """
+    import re
+    from pathlib import Path
+
+    from tests.js_source_helper import strip_comments
+
+    def _no_comments(text: str, *, python: bool) -> str:
+        if python:
+            # Whole-line `#` only: a `#` inside a string is not a comment, and the
+            # docstrings that QUOTE the historical error message are handled by
+            # scoping below rather than by trying to parse them out here.
+            return "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
+        return strip_comments(text)
+
+    js = _no_comments(Path("src/static/app.js").read_text(encoding="utf-8"), python=False)
+    for literal in ("ministral-3:", "mistralai/"):
+        assert literal not in js, (
+            f"{literal!r} is typed into app.js. The example belongs to /default-model's "
+            "`artifact`, which resolves through the dated source."
+        )
+
+    # The API module's own docstrings quote a real historical error message verbatim
+    # ("Model 'mistralai/…' is not installed. Run: ollama pull …"), which is a RECORD of
+    # a bug and must not be reworded — so the scope here is the live code: the request
+    # schema and the refusal builder, sliced by `ast` rather than by a guessed anchor.
+    import ast
+
+    api = Path("src/api/llm.py").read_text(encoding="utf-8")
+    tree = ast.parse(api)
+    lines = api.splitlines()
+    checked = 0
+    for node in ast.walk(tree):
+        name = getattr(node, "name", None)
+        if name not in ("CustomModelRequest", "_custom_identifier_refusal"):
+            continue
+        checked += 1
+        body = "\n".join(lines[node.lineno - 1 : (node.end_lineno or node.lineno)])
+        doc = ast.get_docstring(node) or ""
+        body = body.replace(doc, "") if doc else body
+        body = _no_comments(body, python=True)
+        for literal in ("ministral-3:", "mistralai/"):
+            assert literal not in body, (
+                f"{literal!r} is re-typed in {name}; read it from MINISTRAL_SUGGESTION "
+                "/ MINISTRAL_HF so the registry's dated check governs it"
+            )
+    assert checked == 2, f"expected to slice both surfaces, sliced {checked}"
+
+    # And the positive half: the live code must actually REACH the dated source, or the
+    # absence above is satisfied by a surface that shows no example at all.
+    assert re.search(r"MINISTRAL_SUGGESTION\['tag'\]", api)
+    assert re.search(r"MINISTRAL_HF\['repo'\]", api)
+
+
 def test_an_unknown_backend_falls_back_to_ollama_rather_than_raising():
     """The UI passes whatever the server told it; an unexpected string should degrade to
     the CPU-capable backend, never blow up a settings panel."""
