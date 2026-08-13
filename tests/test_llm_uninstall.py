@@ -71,6 +71,21 @@ def test_a_path_inside_the_app_folder_is_ours_and_one_outside_is_not(app_dir, tm
     assert U._owned_by_app(tmp_path / "elsewhere") is False
 
 
+def test_a_sibling_whose_name_merely_extends_the_data_dir_is_not_ours(app_dir):
+    """The string-prefix trap, and the reason this is a components comparison.
+
+    ``str.startswith`` says yes to ``…/open-omniscience-old`` for a data dir at
+    ``…/open-omniscience`` — a DIFFERENT directory, quite possibly the operator's own
+    copy of a previous install, claimed as ours and deleted. Nothing about the name
+    makes it ours; only containment does.
+    """
+    sibling = app_dir.parent / (app_dir.name + "-old")
+    sibling.mkdir()
+    assert str(sibling).startswith(str(app_dir)), "the trap this test exists for"
+    assert U._owned_by_app(sibling) is False
+    assert U._owned_by_app(sibling / "models" / "ollama") is False
+
+
 def test_the_ownership_test_raises_on_a_broken_import_rather_than_saying_not_ours(
     app_dir, monkeypatch
 ):

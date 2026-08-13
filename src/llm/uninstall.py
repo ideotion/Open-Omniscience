@@ -92,11 +92,18 @@ def _owned_by_app(path: Path) -> bool:
     as working, and a guard that cannot tell "outside the data dir" from "I could not
     look" is not a guard. Only the path resolution is guarded now; a broken import is
     a bug and raises like one.
+
+    COMPARED BY PATH COMPONENTS, never as a string prefix. ``startswith`` — which this
+    used at first — answers True for a SIBLING whose name merely extends the data
+    dir's: ``…/open-omniscience-old`` starts with ``…/open-omniscience`` and would have
+    been claimed as ours and deleted. ``is_relative_to`` compares the parts, so a
+    sibling is a sibling however it is spelled, and the containment this whole module
+    rests on is checkable rather than textual.
     """
     from src.paths import data_dir
 
     try:
-        return str(path.resolve()).startswith(str(Path(data_dir()).resolve()))
+        return path.resolve().is_relative_to(Path(data_dir()).resolve())
     except OSError:  # an unresolvable path is not ours
         return False
 
