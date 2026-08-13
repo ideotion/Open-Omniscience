@@ -46,8 +46,13 @@ def test_contention_backs_off_immediately_regardless_of_interval():
     base = g.permits
     # Writer saturation reduces by 1 even though the damping interval has not passed.
     assert g.observe(0.0, writer_saturated=True, now=1.0) == (base - 1, "writer-saturated")
-    # Memory pressure reduces by 2 and wins over everything.
-    assert g.observe(0.0, mem_low=True, writer_saturated=True, now=1.1) == (base - 3, "mem-low")
+    # Memory pressure wins over everything AND cuts multiplicatively, not by a step:
+    # overshooting memory costs the machine (thrash, then a possible OOM kill), where
+    # overshooting the writer only costs throughput. 19 -> 9, still inside the interval.
+    assert g.observe(0.0, mem_low=True, writer_saturated=True, now=1.1) == (
+        (base - 1) // 2,
+        "mem-low",
+    )
 
 
 def test_permits_never_below_one_or_above_w_max():
