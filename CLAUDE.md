@@ -3447,6 +3447,30 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     stubbing here removed a false failure and no coverage. GENERAL FORM: when a helper
     exists for a fixture, call it rather than copying part of it; a partial copy is a
     silent bet that the thing being stubbed will never grow.
+  - **A RESUMABLE JOB WHOSE ONLY RESUME CONTROL LIVES SOMEWHERE ELSE IS NOT RESUMABLE —
+    and the entry point that defaults a cursor to 0 is what destroys the work
+    (2026-08-13, "just lost 24h of reindexing"):** every piece of the resume worked.
+    `ReindexJobManager` persisted its cursor every 300 articles, `_load_persisted()`
+    restored an interrupted run as `paused`, and `/api/jobs` had a Resume that continued
+    it. What the operator had was the Settings **button**, whose whole path
+    (`cleanupKeywords` → `_startReindexJob` → `POST /reindex-job`) called `start()` with
+    no cursor — and `start()`'s `_cursor: int = 0` default then wrote over a day of work
+    with a silent `max(0, 0)`. I had told them resume worked, and it did; it was simply
+    not reachable from the surface they were on. TWO RULES. (a) **The safe action is the
+    DEFAULT, never a control to find**: `start()` now CONTINUES a compatible paused run
+    unless `restart=True` is passed explicitly, so the destructive reading has to be
+    asked for. (b) **Refusing beats guessing when the paused run is a DIFFERENT one** — a
+    paused full-scope sweep and a requested keywords-only sweep are not the same work, so
+    continuing would misreport what was done and starting over would discard it; the
+    409 names the cursor, the scope and the way out. GENERAL FORM: for any job with a
+    persisted cursor, find every caller of its start path and ask what each passes for
+    that cursor — a default of 0 in one of them is indistinguishable from "start over"
+    at every layer above it, and the loss surfaces only as a progress bar back at zero.
+    COROLLARY on the rate that shipped beside it: publish a measured quantity or none —
+    `keywords_per_hour` counts real `KeywordMention` rows written (banked only on a
+    committed batch, zeroed on rollback) rather than scaling the article rate by an
+    assumed keywords-per-article, and the guard asserts the tallied number equals the
+    row count in the database, because `> 0` passes for any fabrication.
 
   - **A SENTINEL DOCUMENTED AT THE SOURCE IS STILL A FABRICATION AT THE RENDER BOUNDARY —
     and a clamp that fires on 19 of 20 rows silently reorders the whole section

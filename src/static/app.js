@@ -14206,12 +14206,15 @@
     // into the shared span; the work keeps going even if we stop polling, and it is
     // pausable/resumable from the task manager. _reindexAllLoop/_pruneCore stay as the
     // fallback cores (and prune is still a quick client call).
-    async function _startReindexJob(pruneAfter, scope) {
+    async function _startReindexJob(pruneAfter, scope, restart) {
       // scope "keywords" (Phase 1.2) re-does the keyword pass only (~2/3 less work);
-      // "full" also recomputes when/where/who + sentiment.
+      // "full" also recomputes when/where/who + sentiment. `restart` discards a paused
+      // run's progress and begins again -- the backend continues it by default, so this
+      // is only ever sent when the operator chose to start over.
       const sc = scope === "keywords" ? "keywords" : "full";
+      const q = `scope=${sc}&prune_after=${pruneAfter ? "true" : "false"}${restart ? "&restart=true" : ""}`;
       try {
-        await api(`/api/insights/reindex-job?scope=${sc}&prune_after=${pruneAfter ? "true" : "false"}`, { method: "POST" });
+        await api(`/api/insights/reindex-job?${q}`, { method: "POST" });
       } catch (_e) { /* 409 = one already running; fall through and poll it */ }
     }
     async function _pollReindexJob(st, t) {
@@ -14223,6 +14226,10 @@
           const tal = s.tally || {};
           const bits = [`${(tal.reindexed || 0).toLocaleString()} ${t("re-indexed")}`];
           if (s.articles_total) bits.push(`${s.percent || 0}%`);
+          // Speed, so a long run can be estimated rather than guessed at. Both rates
+          // are measurements over THIS run and are absent until real -- never a 0/h.
+          if (s.keywords_per_hour) bits.push(`${Math.round(s.keywords_per_hour).toLocaleString()} ${t("keywords/h")}`);
+          if (s.articles_per_hour) bits.push(`${Math.round(s.articles_per_hour).toLocaleString()} ${t("articles/h")}`);
           if (tal.pruned != null) bits.push(`${(tal.pruned || 0).toLocaleString()} ${t("unused keywords removed")}`);
           if (s.state === "done") bits.push(t("done"));
           else if (s.state === "paused") bits.push(t("paused"));
@@ -14240,7 +14247,22 @@
     // the operator doesn't have to run two buttons and remember the sequence.
     async function cleanupKeywords(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      if (!confirm(t("Clean up keywords now? This re-indexes every article with the current engine, then removes the keywords left with no mentions. Heavy on a large corpus; keywords still in use and anything you curated are kept."))) return;
+      // A PAUSED RUN IS CONTINUED, AND THE CONFIRM SAYS SO. The button used to start
+      // from article 0 whatever was on disk -- a day of work discarded silently (field
+      // report 2026-08-12). The backend now continues by default; this only makes the
+      // click honest about which of the two is about to happen.
+      let paused = null;
+      try {
+        const st0 = await api("/api/insights/reindex-job/status");
+        if (st0 && (st0.state === "paused" || st0.state === "error") && (st0.articles_done || 0) > 0) paused = st0;
+      } catch (_e) { /* status is a courtesy here; never block the action on it */ }
+      const ask = paused
+        ? t("Resume the keyword cleanup? It continues from where it stopped — {done} of {total} articles ({percent}%) are already re-indexed.")
+            .replace("{done}", (paused.articles_done || 0).toLocaleString())
+            .replace("{total}", (paused.articles_total || 0).toLocaleString())
+            .replace("{percent}", String(paused.percent || 0))
+        : t("Clean up keywords now? This re-indexes every article with the current engine, then removes the keywords left with no mentions. Heavy on a large corpus; keywords still in use and anything you curated are kept.");
+      if (!confirm(ask)) return;
       if (btn) btn.disabled = true;
       const st = $("reindex-all-status");
       try {
