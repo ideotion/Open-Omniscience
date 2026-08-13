@@ -399,10 +399,18 @@ def render_text(d: dict[str, Any] | None = None) -> str:
 
 # Scan-memory heuristic. A qualification batch judges its candidates through
 # source_audit.per_source_metrics -> source_quality.collect_article_stats, which
-# materialises roughly one dict entry AND one stat object per article in the whole
-# corpus (src/analytics/source_quality.py). That is an ESTIMATE of its peak, stated
-# as one -- not a measurement of this machine -- and it is the reason the decision
-# below is reported with its basis rather than presented as a fact.
+# materialises one dict entry AND one stat object per article in the WHOLE corpus
+# (src/analytics/source_quality.py) -- each stat carrying its own metrics dict and
+# url string, which is most of the weight.
+#
+# MEASURED 2026-08-13, against the real ArticleStat + compute_metrics rather than a
+# hand-written lookalike: 797 / 795 / 796 bytes per article at n = 50k / 100k / 200k
+# -- flat, so it extrapolates linearly to ~759 MiB of traced allocation at 1M
+# articles. The constant is deliberately left ABOVE that: tracemalloc counts Python
+# allocations, while what the OOM killer reads is RSS, which additionally carries
+# allocator overhead and fragmentation. So this is a measurement-backed figure for
+# the scan, not a measurement of THIS machine's peak -- which is why the decision
+# below still travels with its basis rather than being presented as a fact.
 SCAN_MB_PER_MILLION_ARTICLES = 1000
 SCAN_WORKING_MARGIN_MB = 1000
 
