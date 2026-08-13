@@ -99,6 +99,15 @@ INDICATOR_CATALOG: list[dict] = [
     # Energy & environment
     {"id": "EG.ELC.ACCS.ZS", "label": "Access to electricity (% of population)", "unit": "%", "category": "energy & environment"},
     {"id": "EG.FEC.RNEW.ZS", "label": "Renewable energy consumption (% of total final energy consumption)", "unit": "%", "category": "energy & environment"},
+    # ⚠ AT RISK, and deliberately NOT swapped (2026-08-13 internet session, SEARCH-ONLY).
+    # The Bank now publishes a separate per-capita CO2 series — "Carbon dioxide (CO2)
+    # emissions excluding LULUCF per capita (t CO2e/capita)", EN.GHG.CO2.PC.CE.AR5, sourced
+    # from EDGAR (JRC) and the IEA — while this code's metadata glossary entry still
+    # describes the older CDIAC-to-1990-then-CAIT construction. The code still RESOLVES, so
+    # this is not a clean 404; it is the "returns rows but the series is frozen" case, which
+    # reads exactly like a country that stopped reporting. Two similar identifiers where one
+    # is stale is precisely where a swap is worse than a gap, so the fix is to FETCH BOTH and
+    # compare the returned series before changing anything here.
     {"id": "EN.ATM.CO2E.PC", "label": "CO2 emissions (metric tons per capita)", "unit": "t/capita", "category": "energy & environment"},
     {"id": "AG.LND.FRST.ZS", "label": "Forest area (% of land area)", "unit": "%", "category": "energy & environment"},
     # Connectivity
