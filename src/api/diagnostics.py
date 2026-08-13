@@ -5629,11 +5629,35 @@ class ModelBenchRunBody(BaseModel):
             "Never downloads weights -- a pull stays a consented job."
         ),
     )
+    default_model_only: bool = Field(
+        default=False,
+        description=(
+            "measure the DEFAULT model on whichever backend is already running, and "
+            "manage NOTHING -- no start, no stop, no model handover. This is the "
+            "vLLM-vs-Ollama protocol: run it once per backend and compare the two "
+            "reports. The other fields on this body are ignored in this mode, because "
+            "the pair is derived from what is actually serving."
+        ),
+    )
 
 
-def _model_bench_worker(ctx, **kwargs) -> dict:
-    from src.ai_layer.model_bench import run_model_bench
+def _model_bench_worker(ctx, *, default_model_only: bool = False, **kwargs) -> dict:
+    """Two modes through one job, so both share its cancel, status and resume.
 
+    ``default_model_only`` is the maintainer-ruled protocol (2026-08-12): measure the
+    DEFAULT model on whichever backend the operator has running, managing nothing. The
+    roster mode is the older comparative sweep. They are one job because they produce
+    the same artifact and an operator can only usefully run one at a time.
+    """
+    from src.ai_layer.model_bench import run_default_model_bench, run_model_bench
+
+    if default_model_only:
+        # The roster/backends/switch arguments are meaningless here -- this mode
+        # derives its single pair from what is actually serving -- so they are dropped
+        # rather than passed on to be silently ignored.
+        for key in ("models", "extra_models", "backends", "allow_backend_switch"):
+            kwargs.pop(key, None)
+        return run_default_model_bench(ctx, **kwargs)
     return run_model_bench(ctx, **kwargs)
 
 
@@ -5785,6 +5809,7 @@ def model_bench_run(body: ModelBenchRunBody) -> JSONResponse:
             repeats=body.repeats,
             restart=body.restart,
             allow_backend_switch=body.allow_backend_switch,
+            default_model_only=body.default_model_only,
         )
         st["started"] = True
     except RuntimeError:

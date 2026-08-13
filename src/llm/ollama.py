@@ -183,7 +183,31 @@ MINISTRAL_SUGGESTION: dict = {
 # fresh install. So the verified library tag is the default and the Q5_K_M is one click
 # away in the picker, carrying its own honest status. Promote it here once a real
 # `ollama pull` confirms it.
-DEFAULT_MODEL = os.getenv("OO_LLM_MODEL", "ministral-3:8b-instruct-2512-q4_K_M")
+# RULED 2026-08-12 (maintainer), SUPERSEDING the 2026-07-30 8B ruling recorded above:
+# **Ministral 3 *3B* is the model, throughout the entire app.** The 8B history is kept
+# above because it explains how the constant got here, not because it still applies.
+#
+# WHAT DECIDED IT. A 48-item, 14-model field translation probe (2026-08-12) put the 3B
+# first on the one thing measurable without reference translations — did it answer in
+# the language it was asked for: 98% on vLLM, 97% of them foreign-to-foreign, and zero
+# instances of the disqualifying failure (silently returning the source unchanged, which
+# two Gemma-family models did on 11-13% of items).
+#
+# THE STRUCTURAL REASON, which outlives that measurement: until now this constant was
+# the 8B while the vLLM default below was the 3B, so THE TWO BACKENDS SERVED DIFFERENT
+# MODELS. Every cross-backend comparison was therefore measuring two variables at once,
+# and an operator moving between backends silently changed model as well as runtime. One
+# model on both sides is what makes "is vLLM faster than Ollama here" a question with an
+# answer.
+#
+# It also removes the 8B's own footnote: the 8B does not fit 8 GB of VRAM in any
+# published vLLM build (see MINISTRAL_VLLM_MODEL), so the previous default could never
+# have been served by both backends on the reference machine anyway.
+#
+# An operator who wants something else sets OO_LLM_MODEL or the Settings override; that
+# path is unchanged and is deliberately kept (see the advanced model field in Settings →
+# AI). The DEFAULT is not a menu.
+DEFAULT_MODEL = os.getenv("OO_LLM_MODEL", MINISTRAL_TAG)
 
 # The app's default VLLM model — a SEPARATE identifier, never the Ollama tag above.
 #
