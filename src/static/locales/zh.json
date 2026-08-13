@@ -2871,6 +2871,7 @@
   "last saved run: stopped": "上次保存的运行：已停止",
   "last saved run: ended on an error": "上次保存的运行：因错误结束",
   "last saved run: interrupted before it wrote a summary": "上次保存的运行：在写入摘要前被中断",
+  "the last attempt on this log failed; the work already logged is kept": "该日志的最后一次尝试失败；已记录的工作予以保留",
   "unused keywords removed": "已移除未使用的关键词",
   "watch only": "仅监视",
   "— create, add, remove, delete": "—— 创建、添加、移除、删除",

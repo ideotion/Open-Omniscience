@@ -261,6 +261,77 @@ def test_a_truncated_final_line_does_not_throw_the_whole_run_away(db, tmp_path):
     assert out["stoplist_additions"]["by_language"]["en"] == ["cookie policy"]
 
 
+def test_the_last_report_publishes_the_FILE_s_totals_beside_the_footer_s(tmp_path, monkeypatch):
+    """A sweep resumes by APPENDING to the same dated log, and the footer is written by
+    whichever invocation ended -- so an attempt that found the backend down and gave up
+    before its first batch writes `batches_completed: 0, verdicts_out: 0` beside thousands
+    of batches of real work.
+
+    A field log (2026-08-13) was exactly that: 6,208 batch records under a zeroed error
+    footer. Reading the footer alone renders "0 batches, 0 verdicts" -- not a missing
+    number but a WRONG one, which is worse, because it reads as a run that judged nothing
+    when days of GPU time are sitting in the file. So the reader also sums the per-batch
+    records the run itself wrote: the file's own account, exact and invocation-independent.
+    """
+    from src.ai_layer import triage_job as TJ
+
+    d = tmp_path / "triage"
+    d.mkdir()
+    monkeypatch.setattr(TJ, "_triage_dir", lambda: d)
+    recs = [{"schema": "oo-keyword-triage-run-1", "model": "m"}]
+    for i in range(5):
+        recs.append({
+            "schema": "oo-keyword-triage-batch-1", "keywords_in": 25, "verdicts_out": 22,
+            "parse_failures": 3, "missing": 3,
+        })
+        recs.append(_verdicts(i, {f"t{i}": ("junk", "other")}))
+    recs.append({
+        "schema": "oo-keyword-triage-run-summary-1", "state": "error",
+        "batches_completed": 0, "keywords_in": 0, "verdicts_out": 0,
+        "parse_failures": 0, "missing": 0, "error": "vLLM not reachable",
+    })
+    with (d / "oo-keyword-triage-20260802-133241-630762.jsonl").open("w") as f:
+        for r in recs:
+            f.write(json.dumps(r) + "\n")
+
+    rep = TJ.last_keyword_triage_report()
+
+    assert rep["batches_logged"] == 5
+    assert rep["logged_totals"] == {
+        "keywords_in": 125, "verdicts_out": 110, "parse_failures": 15, "missing": 15,
+    }
+    # The footer is KEPT, not reconciled away: a reader that wants the last attempt's own
+    # outcome still has its state and its error. The two measure different things.
+    assert rep["summary"]["state"] == "error"
+    assert rep["summary"]["verdicts_out"] == 0
+
+
+def test_the_proposal_reads_the_log_not_the_footer_so_a_failed_attempt_loses_nothing(
+    db, tmp_path
+):
+    """The same field shape, end to end. The footer says the run produced nothing; the
+    proposal must still recover every verdict, because it streams the batch records and
+    never consults the footer's counters."""
+    _kw(db, "junkword", "en")
+    log = _log(
+        tmp_path,
+        [
+            {"schema": "oo-keyword-triage-run-1", "model": "m"},
+            _verdicts(0, {"junkword": ("junk", "other")}),
+            {"schema": "oo-keyword-triage-run-summary-1", "state": "error",
+             "batches_completed": 0, "verdicts_out": 0, "error": "vLLM not reachable"},
+        ],
+    )
+
+    out = P.build_triage_proposal(db, path=log)
+
+    assert out["available"] is True
+    assert out["judged"]["distinct_terms"] == 1
+    assert out["stoplist_additions"]["by_language"]["en"] == ["junkword"]
+    # ...and the failed attempt's own state is still reported, never hidden by the recovery.
+    assert out["log"]["run_state"] == "error"
+
+
 def test_the_term_ceiling_is_reported_rather_than_left_to_be_inferred(db, tmp_path):
     """A short proposal and a capped one look identical from the outside. The cap keeps the
     log's PREFIX, which the sweep writes most-widespread-first, and says that it did."""

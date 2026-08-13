@@ -150,17 +150,56 @@ const LAST_DONE = {
   };
   await _syncAiSweepToggle(
     "keyword-triage", "kt-btn", null, el, renderKeywordTriageResult);
-  assert.ok(el.innerHTML.includes("ended on an error"),
-    "an errored saved run must say so");
+  // 12 batches ARE logged, so the error belongs to the last ATTEMPT, not to the run --
+  // saying only "ended on an error" beside 12 batches of kept work reads as a
+  // contradiction. The bare wording is asserted below on a log with nothing in it.
+  assert.ok(el.innerHTML.includes("the last attempt on this log failed"),
+    "an errored footer over a log that DID work must say which of the two failed");
   assert.ok(!el.innerHTML.includes("paused"),
     "an errored run must NEVER be relabelled 'paused' -- the renderer turns any truthy "
     + "paused_reason into that word, so the adapter must not set it");
   assert.ok(!el.innerHTML.includes("sweep complete"),
     "an errored run must not read as complete");
 
+  // --- 4b. THE FIELD SHAPE: a zeroed footer over a log full of real work -------------- //
+  //
+  // A sweep resumes by APPENDING to the same dated log, and the footer is written by
+  // whichever invocation ended. A field log (2026-08-13) carried 6,208 batch records under
+  // `batches_completed: 0, verdicts_out: 0` -- the last attempt found vLLM down and gave up
+  // before its first batch. Reading the footer renders "0 batches, 0 verdicts": not a
+  // missing number but a WRONG one, which is worse, because it reads as a run that judged
+  // nothing when a week of GPU time is sitting in the file.
+  install();
+  apiRoutes["/api/diagnostics/keyword-triage/status"] = { state: "error" };
+  apiRoutes["/api/diagnostics/keyword-triage/last"] = {
+    available: true,
+    filename: "oo-keyword-triage-20260802-133241-630762.jsonl",
+    batches_logged: 6208,
+    logged_totals: {
+      keywords_in: 155200, verdicts_out: 136576, parse_failures: 18624, missing: 18624,
+    },
+    summary: {
+      state: "error", batches_completed: 0, keywords_in: 0, verdicts_out: 0,
+      canary_ok_overall: true, error: "vLLM not reachable",
+    },
+  };
+  await _syncAiSweepToggle(
+    "keyword-triage", "kt-btn", null, el, renderKeywordTriageResult);
+  assert.ok(el.innerHTML.includes("6208"),
+    "the FILE's batch count must show -- the footer's 0 is one failed invocation's own tally");
+  assert.ok(el.innerHTML.includes("136576"),
+    "the FILE's verdict count must show; 0 verdicts would read as a run that found nothing");
+  assert.ok(!/\b0 batches\b/.test(el.innerHTML),
+    "a log holding 6,208 batches must never render as 0 -- zero is a legal value, so "
+    + "preferring the footer whenever it is merely non-null is the absent-field-defaults-"
+    + "to-0 trap wearing a different hat");
+
   // --- 5. the four saved states each say what they were ------------------------------ //
   const t = (s) => s;
-  const say = (state) => _savedSweepStateLine({ summary: { state }, filename: "f.jsonl" }, t);
+  // batches_logged 0: nothing was logged, so the state IS the run's own outcome. With work
+  // in the file the sentence correctly shifts to naming the failed ATTEMPT (group 4 above).
+  const say = (state) =>
+    _savedSweepStateLine({ summary: { state }, filename: "f.jsonl", batches_logged: 0 }, t);
   assert.ok(say("done").includes("complete"));
   assert.ok(say("cancelled").includes("stopped"));
   assert.ok(say("error").includes("error"));
@@ -179,5 +218,5 @@ const LAST_DONE = {
   assert.deepStrictEqual(painted, [["kt-btn", false]],
     "the button must still be painted when the courtesy read of the saved run fails");
 
-  console.log("sweep saved-run panel: 6 groups passed");
+  console.log("sweep saved-run panel: 7 groups passed");
 })().catch((e) => { console.error(e); process.exit(1); });

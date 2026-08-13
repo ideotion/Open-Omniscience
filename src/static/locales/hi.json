@@ -2871,6 +2871,7 @@
   "last saved run: stopped": "अंतिम सहेजा गया रन: रोका गया",
   "last saved run: ended on an error": "अंतिम सहेजा गया रन: त्रुटि के साथ समाप्त",
   "last saved run: interrupted before it wrote a summary": "अंतिम सहेजा गया रन: सारांश लिखने से पहले बाधित",
+  "the last attempt on this log failed; the work already logged is kept": "इस लॉग पर अंतिम प्रयास विफल रहा; पहले से दर्ज किया गया कार्य सुरक्षित रखा गया है",
   "unused keywords removed": "अप्रयुक्त कीवर्ड हटाए गए",
   "watch only": "केवल वॉच",
   "— create, add, remove, delete": "— बनाएँ, जोड़ें, हटाएँ, मिटाएँ",

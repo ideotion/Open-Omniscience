@@ -15028,11 +15028,20 @@
     // there into the word "paused", which would relabel an errored or cancelled run.
     function _savedSweepAsResult(last) {
       const sum = (last && last.summary) || {};
-      return Object.assign({}, sum, {
+      // THE FILE'S TOTALS WIN OVER THE FOOTER'S. A sweep resumes by appending to the same
+      // log, and the footer is written by whichever invocation ended -- so an attempt that
+      // did nothing (the backend was down) leaves `batches_completed: 0, verdicts_out: 0`
+      // sitting under thousands of batches of real work. A field log had exactly that, and
+      // reading the footer rendered "0 batches, 0 verdicts" for 6,208 logged batches: not a
+      // missing number but a wrong one, which is worse, because it reads as a run that
+      // found nothing. Zero is a legal value, so preferring the footer whenever it is
+      // merely non-null is the same trap as defaulting an absent field to 0.
+      const logged = (last && last.logged_totals) || {};
+      const batches = (last && last.batches_logged) || 0;
+      return Object.assign({}, sum, logged, {
         complete: sum.state === "done",
-        batches_completed: (sum.batches_completed != null
-          ? sum.batches_completed : (last && last.batches_logged) || 0),
-        totals: sum,
+        batches_completed: Math.max(batches, sum.batches_completed || 0),
+        totals: Object.assign({}, sum, logged),
       });
     }
 
@@ -15047,7 +15056,15 @@
         error: t("last saved run: ended on an error"),
         in_progress: t("last saved run: interrupted before it wrote a summary"),
       };
-      return (words[st] || words.in_progress) + (last && last.filename ? " — " + last.filename : "");
+      // An ERROR footer over a log that DID work is the common resumable case: the last
+      // attempt failed, the earlier ones did not. Saying only "ended on an error" beside
+      // the file's real totals would read as a contradiction, so the sentence says which
+      // of the two it is describing.
+      let line = words[st] || words.in_progress;
+      if (st !== "done" && ((last && last.batches_logged) || 0) > 0) {
+        line = t("the last attempt on this log failed; the work already logged is kept");
+      }
+      return line + (last && last.filename ? " — " + last.filename : "");
     }
 
     async function _syncAiSweepToggle(job, btnId, statusEl, resultEl, renderFn) {
@@ -15080,7 +15097,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const res = (status && status.result) || {};
       const label = res.complete ? t("sweep complete") : (res.paused_reason ? t("paused") : "");
-      out.innerHTML = esc(label) + " — " + esc(res.batches_completed || 0) + " batches, "
+      out.innerHTML = (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
         + esc((res.totals && res.totals.verdicts_out) || 0)
         + " verdicts, canaries " + (res.canary_ok_overall === false ? "FAILED" : "ok")
         + '<div style="margin-top:4px"><a href="/api/diagnostics/keyword-triage/download" target="_blank">'
@@ -15111,7 +15128,7 @@
       // 2026-07-26 field-remarks item 6: totals.missing (closed-vocabulary rejections)
       // and totals.parse_failures were computed but never rendered -- real work was
       // silently happening while the panel looked like it was doing nothing.
-      out.innerHTML = esc(label) + " — " + esc(res.batches_completed || 0) + " batches, "
+      out.innerHTML = (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
         + esc(totals.assigned_count || 0) + " tagged, "
         + esc(totals.none_count || 0) + " none, " + esc(res.skipped_evidence_floor || 0)
         + " skipped (evidence floor), " + esc(totals.missing || 0) + " rejected (not in your tag vocabulary), "
@@ -15312,7 +15329,7 @@
       const res = (status && status.result) || {};
       const totals = res.totals || {};
       const label = res.complete ? t("sweep complete") : (res.paused_reason ? t("paused") : "");
-      out.innerHTML = esc(label) + " — " + esc(res.batches_completed || 0) + " batches, "
+      out.innerHTML = (label ? esc(label) + " — " : "") + esc(res.batches_completed || 0) + " batches, "
         + esc(totals.stored || 0) + " articles extracted (" + esc(totals.who || 0) + " who, "
         + esc(totals.where || 0) + " where, " + esc(totals.when || 0) + " when), "
         + esc(totals.gated || 0) + " gated, " + esc(totals.skipped_existing || 0) + " already done"
