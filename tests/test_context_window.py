@@ -35,6 +35,27 @@ VLLM_OVERFLOW = (
 )
 
 
+# The SHIPPED model's own published shape, transcribed from its config.json and
+# checked against live sources 2026-08-13 after the maintainer doubted the numbers.
+# Only four of these fields enter the KV formula (layers, kv heads, head dim, dtype);
+# `num_attention_heads` is carried because it is what makes this grouped-query -- 32
+# attention heads sharing 8 KV heads is the 4x saving -- and `hidden_size` is carried
+# precisely because 3072 // 32 = 96 CONTRADICTS the published head_dim of 128. A
+# reader that derived head_dim instead of reading it would under-count this model's
+# cache by 25%, which is the direction that OOMs at startup.
+MINISTRAL_3B = {
+    "num_hidden_layers": 26,
+    "num_attention_heads": 32,
+    "num_key_value_heads": 8,
+    "head_dim": 128,
+    "hidden_size": 3072,
+    "dtype": "bfloat16",  # NOT `torch_dtype` -- see the test below
+    "max_position_embeddings": 262144,
+}
+# 2 (K+V) x 26 layers x 8 kv heads x 128 head dim x 2 bytes = 106,496 B = 0.1015625 MiB
+MINISTRAL_3B_KV_MB = 0.1015625
+
+
 def _snapshot(tmp_path: Path, cfg: dict) -> str:
     rev = tmp_path / "snapshots" / "rev0"
     rev.mkdir(parents=True)
@@ -67,6 +88,44 @@ def test_the_formula_rederives_the_hand_computed_7B_constant(tmp_path):
         mb, basis = kv_mb_per_token("some/7b")
     assert mb == pytest.approx(V._KV_MB_PER_TOKEN)
     assert basis["grouped_query"] is False
+
+
+def test_the_shipped_model_lands_on_its_published_figure(tmp_path):
+    """The other end of the bracket. The test above proves the arithmetic against a
+    hand-computed constant; this one drives it with the REAL config of the one model
+    this app ships, so a future edit that quietly changes the reader is caught against
+    a number verified from the publisher rather than against my own arithmetic."""
+    root = _snapshot(tmp_path, MINISTRAL_3B)
+    with _with_snapshot(root):
+        mb, basis = kv_mb_per_token("mistralai/Ministral-3-3B-Instruct-2512")
+    assert mb == pytest.approx(MINISTRAL_3B_KV_MB)
+    assert basis["head_dim"] == 128, "read, not derived -- 3072 // 32 would be 96"
+    assert basis["bytes_per_element"] == 2.0
+    assert basis["max_position_embeddings"] == 262144
+    # ~5x cheaper per token than the class constant: that ratio IS the fix.
+    assert mb < V._KV_MB_PER_TOKEN / 4
+
+
+def test_the_dtype_field_is_read_under_both_of_its_names(tmp_path):
+    """A REAL BUG this fixture caught. transformers renamed ``torch_dtype`` to
+    ``dtype``, and the shipped model's config carries only the new name -- so a reader
+    that knew the old one alone fell back to a DEFAULT element size on exactly the
+    model it was written for. Silent, because a plausible fallback is indistinguishable
+    from a reading. Both spellings must work, and neither may become a guess.
+
+    THE FIXTURE DECLARES float32 ON PURPOSE, and that is the whole test. bfloat16 is
+    2 bytes and so is the fallback, so a bfloat16 config cannot tell a reader that read
+    the field from one that read nothing -- the first draft here used the shipped
+    model's own dtype and passed against a reader that had never heard of ``dtype``.
+    Only a dtype whose size differs from the fallback discriminates.
+    """
+    for field in ("dtype", "torch_dtype"):
+        cfg = {k: v for k, v in MINISTRAL_3B.items() if k != "dtype"}
+        cfg[field] = "float32"
+        with _with_snapshot(_snapshot(tmp_path / field, cfg)):
+            mb, basis = kv_mb_per_token("some/model")
+        assert basis["bytes_per_element"] == 4.0, f"{field} was not read"
+        assert mb == pytest.approx(MINISTRAL_3B_KV_MB * 2)
 
 
 def test_a_grouped_query_model_costs_several_times_less_and_says_so(tmp_path):
@@ -137,11 +196,30 @@ def test_the_field_machine_stops_hitting_the_2048_floor():
     old = compute_server_args(8192, vram_free_mb=int(5.0 * 1024))
     assert old["max_model_len"] == 2048, "the floor the field report hit"
 
-    new = compute_server_args(
-        8192, vram_free_mb=int(5.0 * 1024), weight_footprint_gb=4.0, kv_mb_per_token=0.1016
+    # Same card, same free memory, the model's REAL cost per token instead of a
+    # 7B-class assumption. The comparison is what the fix bought; the absolute number
+    # is not asserted, because it is a function of the weight margin and the graph
+    # reserve and would pin those constants here rather than the property.
+    for free_gb in (8.0, 7.5):
+        assumed = compute_server_args(8192, vram_free_mb=int(free_gb * 1024))
+        measured = compute_server_args(
+            8192, vram_free_mb=int(free_gb * 1024),
+            kv_mb_per_token=MINISTRAL_3B_KV_MB, model_max_tokens=262144,
+        )
+        assert measured["max_model_len"] > assumed["max_model_len"]
+        assert measured["max_model_len"] >= 8192, "big enough to carry an article"
+        assert "config" in measured["method"]
+
+    # ...and the honest other end: a card with under ~6.5 GB free has nothing left
+    # after the weights and the graph pool, so it goes BACK to the floor. That is not
+    # the reported defect returning -- it is the one case where 2048 was always true,
+    # and publishing more would be a window built on memory the utilization already
+    # declined to claim.
+    tight = compute_server_args(
+        8192, vram_free_mb=int(6.0 * 1024),
+        kv_mb_per_token=MINISTRAL_3B_KV_MB, model_max_tokens=262144,
     )
-    assert new["max_model_len"] >= 8192
-    assert "config" in new["method"]
+    assert tight["max_model_len"] == 2048
 
 
 def test_an_unmeasurable_model_is_byte_identical_to_before():
@@ -150,6 +228,44 @@ def test_an_unmeasurable_model_is_byte_identical_to_before():
     assert compute_server_args(8192, vram_free_mb=8192)["max_model_len"] == 5120
     assert compute_server_args(8192)["max_model_len"] == 5120
     assert compute_server_args(None)["max_model_len"] == 4096
+
+
+def test_the_published_equation_reproduces_the_published_number():
+    """A derivation that shows its work owes the reader that the work is the work.
+
+    The method string names the terms it subtracted; a reader can do the division. If
+    the code subtracts a term the string omits -- as it did the moment the graph-pool
+    reserve came off the KV budget -- the reader checking it finds the app
+    contradicting itself, which is worse than publishing no equation at all.
+    """
+    free_gb, weights, headroom = 7.5, 5.0, 0.15
+    out = compute_server_args(
+        8192, vram_free_mb=int(free_gb * 1024),
+        weight_footprint_gb=weights, kv_mb_per_token=MINISTRAL_3B_KV_MB,
+        model_max_tokens=262144,
+    )
+    reserve = max(V._GRAPH_POOL_RESERVE_GB, 8.0 * 0.10)
+    for term in (f"{free_gb} GB available", f"{weights} GB for weights",
+                 f"{reserve} GB held back", "15% headroom",
+                 f"{MINISTRAL_3B_KV_MB} MB/token", "262144-token limit"):
+        assert term in out["method"], f"the method does not name {term!r}"
+
+    kv_gb = (free_gb - weights - reserve) * (1.0 - headroom)
+    hand = max(2048, min(V._MAX_CONTEXT_TOKENS, (int(kv_gb * 1024 / MINISTRAL_3B_KV_MB) // 1024) * 1024))
+    assert out["max_model_len"] == min(hand, 262144)
+
+
+def test_the_unmeasured_method_does_not_claim_a_subtraction_it_never_made():
+    """The negative-space twin, and the one that keeps the honesty symmetric. The
+    reserve is subtracted ONLY where the KV figure is measured, so naming it on the
+    fallback path would be a fabricated conservatism -- an equation whose hand-computed
+    answer is smaller than the number printed beside it."""
+    out = compute_server_args(8192, vram_free_mb=8192)
+    assert "held back" not in out["method"]
+    assert "checkpoint's own" not in out["method"], "no config was read, so no ceiling"
+    hand = max(2048, min(V._MAX_CONTEXT_TOKENS,
+                         (int((8.0 - 5.0) * 0.85 * 1024 / V._KV_MB_PER_TOKEN) // 1024) * 1024))
+    assert out["max_model_len"] == hand
 
 
 def test_the_window_never_exceeds_what_the_checkpoint_supports():

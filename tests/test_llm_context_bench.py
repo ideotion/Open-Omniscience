@@ -176,6 +176,49 @@ def test_a_size_past_the_serving_limit_is_flagged_not_silently_attempted(monkeyp
     assert "1000 tokens" in out["reading"]["limit_note"]
 
 
+def test_the_serving_limit_is_asked_of_the_server_not_re_derived_here(monkeypatch):
+    """ONE ANSWER to "what window is being served", and this is the guard that keeps it
+    one. This module used to compute its own estimate from whatever VRAM was free at
+    read time and label it "vLLM's computed max_model_len (derived from VRAM at start)"
+    -- a source it did not have: nothing asked the server, so on a card whose free
+    memory had moved it reported a number the server never used, and the bench could
+    disagree with the sweeps about the very window it was measuring.
+
+    Behavioural on purpose. A source grep for the old label would trip on the comment
+    that explains why the label is gone, which is exactly what a future session needs
+    to read before deciding the delegation was a mistake.
+    """
+    from src.ai_layer import coverage as COV
+
+    called: list[str | None] = []
+
+    def _fake(backend_name=None):
+        called.append(backend_name)
+        return {"tokens": 7777, "source": "the running vLLM server's own model card"}
+
+    monkeypatch.setattr(COV, "serving_window_tokens", _fake)
+    out = LC._serving_limit_tokens("vllm")
+    assert called == ["vllm"], "the one resolver was not asked"
+    assert out["tokens"] == 7777, "a locally re-derived estimate was reported instead"
+    assert out["source"] == "the running vLLM server's own model card"
+
+
+def test_a_serving_limit_that_cannot_be_read_never_claims_a_source(monkeypatch):
+    """The negative-space twin. Degrading is fine; degrading while still naming the
+    server as the source is the fabrication -- and it is the shape the old code had,
+    since it printed that label whether or not anything was running."""
+    from src.ai_layer import coverage as COV
+
+    def _boom(backend_name=None):
+        raise RuntimeError("no backend here")
+
+    monkeypatch.setattr(COV, "serving_window_tokens", _boom)
+    out = LC._serving_limit_tokens("vllm")
+    assert out["tokens"] is None
+    assert "could not be read" in out["source"]
+    assert "model card" not in out["source"]
+
+
 def test_coverage_without_a_measured_corpus_is_a_gap_not_a_guess():
     """The half the operator cannot eyeball. Inventing it from a guessed distribution
     would be the most misleading figure in the report."""

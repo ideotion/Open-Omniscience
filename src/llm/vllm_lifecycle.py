@@ -950,12 +950,14 @@ _KV_MB_PER_TOKEN = 0.5
 
 #: Bytes per element for the KV cache, by the dtype a checkpoint declares. vLLM stores
 #: the cache in the model's own dtype unless told otherwise (``--kv-cache-dtype``, which
-#: this app does not set), so the checkpoint's ``torch_dtype`` governs.
+#: this app does not set), so the checkpoint's declared dtype governs -- under EITHER of
+#: its two spellings: transformers renamed ``torch_dtype`` to ``dtype``, and the model
+#: this app ships carries only the new one (see :func:`kv_mb_per_token`).
 #:
 #: NOTE ON QUANTISED WEIGHTS: an FP8 or AWQ checkpoint quantises the WEIGHTS; its KV
 #: cache still runs at the compute dtype the config declares. Reading 1 byte/element off
 #: an "fp8" repo name would under-reserve the cache -- the direction that fails at
-#: startup -- so only an explicit ``torch_dtype`` is honoured and anything unrecognised
+#: startup -- so only an explicitly declared dtype is honoured and anything unrecognised
 #: falls back to 2 bytes (fp16/bf16), the common case and the safe one.
 _KV_DTYPE_BYTES = {
     "float32": 4.0, "float": 4.0, "fp32": 4.0,
@@ -1117,23 +1119,25 @@ def compute_server_args(
     small card the second failure is much worse. An operator who wants the context back
     sets ``weight_footprint_gb`` or ``max_model_len`` directly, and the override wins.
     """
-    method = (
+    # THE METHOD IS COMPOSED IN THREE PARTS, and the middle one is built down in the
+    # derivation, where the numbers it quotes are known. Written as one f-string at the
+    # top it described an arithmetic the code had stopped performing: it named the
+    # weights and the headroom and NOT the graph-pool reserve (subtracted since
+    # 2026-08-13) nor the checkpoint's own ceiling, so a reader who did the division
+    # got a different answer than the one published beside it. A derivation that shows
+    # its work and gets it wrong is worse than one that shows none -- the reader can
+    # check it, and checking it finds the app contradicting itself.
+    util_clause = (
         f"gpu_memory_utilization = 1 − max({_GRAPH_POOL_RESERVE_GB} GB, 10% of VRAM) / VRAM, "
         f"capped at {_MAX_GPU_UTILIZATION} (vLLM's own default) — the reserve is what CUDA-graph "
         f"capture and fragmentation need, which does not shrink with the card. "
-        f"max_model_len = (VRAM − {weight_footprint_gb} GB for weights, less "
-        f"{kv_cache_reserve_frac:.0%} headroom) ÷ {kv_mb_per_token} MB/token "
-        + (
-            "(this model's own layers x KV heads x head dim, read from its config)"
-            if kv_mb_per_token != _KV_MB_PER_TOKEN
-            else "(a 7B-class fp16 multi-head fallback -- this model's own shape "
-            "could not be read)"
-        )
-        + ", floored at 2048, capped at 32768. "
+    )
+    eager_clause = (
         f"enforce_eager (skip CUDA-graph capture) is set at or below {_EAGER_MAX_VRAM_GB} GB of "
         f"VRAM and left off above it — capture died at 86% of 51 graphs on an 8 GiB card, and "
         f"skipping it costs decode speed rather than a server that never starts."
     )
+    len_clause = "max_model_len set by the operator. "
     caveat = (
         "A conservative, DISCLOSED heuristic — not a measured fact. Override "
         "any of these in Settings if the server OOMs or under-uses the GPU."
@@ -1185,9 +1189,13 @@ def compute_server_args(
         # free IS a little less budget); what the threshold governs is whether the
         # operator is told the numbers describe a shared card.
         narrowed = free_gb < vram_gb - _NARROW_MIN_GAP_GB
+    # Bound OUTSIDE the branch below, because the max_model_len derivation subtracts it
+    # too: leaving it inside would make an operator-set gpu_memory_utilization raise
+    # NameError on the very next block -- a start that fails for a reason that has
+    # nothing to do with the override.
+    reserve_gb = max(_GRAPH_POOL_RESERVE_GB, vram_gb * 0.10)
     gpu_util = gpu_memory_utilization_override
     if gpu_util is None:
-        reserve_gb = max(_GRAPH_POOL_RESERVE_GB, vram_gb * 0.10)
         # The RESERVE comes off the free figure, but the FRACTION is still of the total
         # -- that is vLLM's own unit, and mixing the two is how a budget that looks
         # conservative asks for memory nobody has.
@@ -1225,7 +1233,36 @@ def compute_server_args(
         # ...but off the FREE figure when we have one: the weights and the KV cache
         # both have to fit in memory that exists right now, not in memory another
         # process is holding.
-        usable_gb = max(0.5, free_gb - weight_footprint_gb)
+        # THE RESERVE COMES OFF HERE TOO (2026-08-13). The two derivations disagreed:
+        # `gpu_memory_utilization` holds `reserve_gb` back, so vLLM's whole pool is
+        # `free - reserve` and the KV cache lives INSIDE it -- but this line divided
+        # `free - weights`, spending memory the utilization had already refused to
+        # claim. On the reference card that is 1.5 GB the cache never had, ~15,000
+        # tokens of over-estimate at this model's real cost, in the direction that
+        # fails at startup rather than the direction that costs context.
+        #
+        # Subtracted whether or not graphs are captured, because the reserve is held
+        # back either way -- see `_GRAPH_POOL_RESERVE_GB`, which says so and gives the
+        # reason (the pool disappears under eager; fragmentation does not).
+        #
+        # ...but ONLY WHERE THE KV FIGURE IS MEASURED, and that restraint is the point.
+        # Applied to the fallback too, an 8 GB card drops 5120 -> 2048 -- and 5120 is a
+        # number the field has SERVED (24,960 tokens of KV at 4.88x concurrency), so it
+        # is demonstrably not what fails. Tightening it here would be internal
+        # consistency overruling a measurement, which is the one thing the recorded
+        # rule about this function forbids. The fallback is already ~5x over-stating
+        # this model's real cost per token; that slack more than covers the reserve.
+        measured_kv = kv_mb_per_token != _KV_MB_PER_TOKEN
+        spoken_for = weight_footprint_gb + (reserve_gb if measured_kv else 0.0)
+        # FLOORED AT ZERO, NOT AT HALF A GIGABYTE. The old 0.5 floor was unreachable in
+        # practice -- it needed free < weights, which `_refuse_if_the_card_is_taken`
+        # already refuses by name upstream -- and subtracting the reserve made it LIVE,
+        # for the ordinary state of a card holding a display server. There it published
+        # half a gigabyte of KV that the utilization had already declined to claim: a
+        # window computed from memory nobody has. Zero lets the documented 2048 floor
+        # apply and say so, which is the honest reading of "nothing is left over", and
+        # vLLM refuses such a start loudly rather than on our arithmetic.
+        usable_gb = max(0.0, free_gb - spoken_for)
         kv_gb = usable_gb * (1.0 - kv_cache_reserve_frac)
         est_tokens = int((kv_gb * 1024) / max(1e-6, kv_mb_per_token))
         max_len = max(2048, min(_MAX_CONTEXT_TOKENS, (est_tokens // 1024) * 1024 or 2048))
@@ -1235,6 +1272,31 @@ def compute_server_args(
         # budget, not against the model's published limit.
         if model_max_tokens and model_max_tokens > 0:
             max_len = min(max_len, model_max_tokens)
+        # Composed HERE so it quotes the terms this branch actually subtracted --
+        # including the reserve, which only comes off when the KV figure is measured,
+        # and the checkpoint ceiling, which only exists when the config was read.
+        len_clause = (
+            f"max_model_len = ({round(free_gb, 1)} GB available − {weight_footprint_gb} GB "
+            f"for weights"
+            + (f" − {round(reserve_gb, 1)} GB held back for the graph pool" if measured_kv else "")
+            + f", less {kv_cache_reserve_frac:.0%} headroom) ÷ {kv_mb_per_token} MB/token "
+            + (
+                "(this model's own layers x KV heads x head dim, read from its config)"
+                if measured_kv
+                else "(a 7B-class fp16 multi-head fallback -- this model's own shape "
+                "could not be read, so the graph-pool reserve is left in the divisor "
+                "rather than tightening a number the field has served)"
+            )
+            + ", rounded down to a multiple of 1024, floored at 2048, capped at "
+            f"{_MAX_CONTEXT_TOKENS}"
+            + (
+                f", then capped again at the checkpoint's own {model_max_tokens}-token limit"
+                if model_max_tokens and model_max_tokens > 0
+                else ""
+            )
+            + ". "
+        )
+    method = util_clause + len_clause + eager_clause
     out = {
         "max_model_len": max_len,
         "gpu_memory_utilization": gpu_util,
@@ -2873,15 +2935,29 @@ def kv_mb_per_token(model: str) -> tuple[float, dict] | None:
     if not (layers and kv_heads and head_dim):
         return None
 
-    dtype = str(cfg.get("torch_dtype") or "").strip().lower()
+    # BOTH SPELLINGS. Transformers renamed this field, and the model this app ships
+    # uses the NEW one: `Ministral-3-3B-Instruct-2512`'s config.json has no
+    # `torch_dtype` at all -- it carries `"dtype": "bfloat16"` at the top level
+    # (verified against the published file, 2026-08-13). Reading only the old name
+    # returned None here and fell through to the 2-byte fallback, which is the right
+    # answer for THAT model by luck; a checkpoint declaring `"dtype": "float32"` would
+    # have been under-reserved by half, the direction that fails at startup.
+    #
+    # Read from the TOP level too, not just the merged shape block: the shape lives
+    # under `text_config` on a multimodal checkpoint while the dtype stays outside it.
+    dtype = str(cfg.get("torch_dtype") or cfg.get("dtype") or "").strip().lower()
     elem = _KV_DTYPE_BYTES.get(dtype, _KV_DTYPE_FALLBACK_BYTES)
     mb = (2 * layers * kv_heads * head_dim * elem) / (1024.0**2)
     if mb <= 0:
         return None
-    # 6 places, not fewer: these are exact powers-of-two fractions (2*L*H*D*B / 2^20),
-    # and a small model's figure is small enough that a coarser rounding stops being
-    # the arithmetic and starts being an approximation of it.
-    return round(mb, 6), {
+    # NOT ROUNDED, and the two earlier attempts to pick a number of places are why.
+    # This is an integer number of BYTES over 2^20, i.e. an exact dyadic fraction that
+    # a float represents exactly -- so any fixed decimal precision is a guess about how
+    # many places some future checkpoint's shape will need, and both guesses so far
+    # were wrong (5 places truncated 0.015625; 6 truncated the shipped model's own
+    # 0.1015625). Rounding here bought nothing: the value is divided, not displayed,
+    # and where it IS displayed Python prints the shortest exact repr anyway.
+    return mb, {
         "layers": layers,
         "kv_heads": kv_heads,
         "attention_heads": heads,

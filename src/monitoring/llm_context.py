@@ -57,21 +57,19 @@ def _serving_limit_tokens(backend_name: str | None) -> dict:
     below it.
     """
     if backend_name == "vllm":
+        # ONE ANSWER, NOT A THIRD COPY. This used to re-derive the estimate from
+        # whatever VRAM was free AT READ TIME and label it "vLLM's computed
+        # max_model_len (derived from VRAM at start)" -- which it was not: nothing here
+        # asked the server, and a card whose free memory has moved since the start
+        # yields a number the server never used. A bench and a sweep could therefore
+        # disagree about the window the bench was measuring. `serving_window_tokens`
+        # asks the RUNNING server first (its model card carries `max_model_len`) and
+        # falls back to the estimate with a label that says which one it gave.
         try:
-            from src.llm.backend import detect_gpu
-            from src.llm.vllm_lifecycle import compute_server_args
+            from src.ai_layer.coverage import serving_window_tokens
 
-            gpu = detect_gpu() or {}
-            args = (
-                compute_server_args(
-                    gpu.get("vram_mb"), vram_free_mb=gpu.get("vram_free_mb")
-                )
-                or {}
-            )
-            return {
-                "tokens": args.get("max_model_len"),
-                "source": "vLLM's computed max_model_len (derived from VRAM at start)",
-            }
+            out = serving_window_tokens("vllm")
+            return {"tokens": out.get("tokens"), "source": out.get("source")}
         except Exception as exc:  # noqa: BLE001
             return {"tokens": None, "source": f"could not be read ({exc})"}
     try:
