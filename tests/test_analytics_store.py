@@ -707,12 +707,22 @@ def test_reindex_articles_batch_failure_fallback_loses_nothing(db):
                 raise RuntimeError("boom")
             return ex.extract(content, title=title, language=language)
 
-    r = reindex_articles(db, extractor=FlakyExtractor(), article_ids=ids, commit_batch=4, workers=0)
+    stats: dict = {}
+    r = reindex_articles(db, extractor=FlakyExtractor(), article_ids=ids, commit_batch=4,
+                         workers=0, stats=stats)
     assert r == {"reindexed": 5, "failed": 1}
     for aid in ids:
         n = db.query(KeywordMention).filter_by(article_id=aid).count()
         assert n == 0 if aid == bad_id else n > 0  # only the bad one lost its mentions
     assert _stored_counters(db) == _live_counters(db)  # counters exact despite the mid-batch failure
+    # AND THE MENTION COUNTER SURVIVES THE ROLLBACK HONESTLY. This is the one path where
+    # a naive count double-counts: the rollback un-writes the whole staged batch and
+    # _redo_committed then re-writes the survivors, so banking the staged figure as well
+    # would report roughly twice the mentions that exist. The rate built on this counter
+    # would be fabricated, and nothing else in the suite reaches this branch.
+    assert stats["mentions_written"] == db.query(KeywordMention).count(), (
+        "the committed-mention counter drifted from the rows actually in the database"
+    )
 
 
 def test_reindex_articles_missing_id_is_silently_skipped(db):

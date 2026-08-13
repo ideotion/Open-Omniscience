@@ -72,6 +72,7 @@ class ReindexJobManager:
         self._total = 0  # total articles at start (for percent + ETA)
         self._done = 0  # articles processed so far (for percent + ETA)
         self._done_at_start = 0  # _done when the current run began (honest run-rate ETA)
+        self._mentions_at_start = 0  # same, for the keywords/h rate
         self._parked = False  # yielding to an exclusive operation (a restore owns the machine)
         self._tally: dict[str, int] = {}  # reindexed / failed / pruned / kept_curated
         self._error: str | None = None
@@ -161,6 +162,7 @@ class ReindexJobManager:
         *,
         scope: str = "full",
         prune_after: bool = False,
+        restart: bool = False,
         _session_factory=None,
         _extractor=None,
         _cursor: int = 0,
@@ -170,10 +172,38 @@ class ReindexJobManager:
         """Launch the worker. RuntimeError if a re-index is already running. ``scope``
         ("full" | "keywords") selects whether to recompute when/where/who + sentiment
         or keywords only; ``_cursor`` (resume) is the article id to continue AFTER;
-        ``prune_after`` chains the orphan-keyword GC when the pass completes (cleanup)."""
+        ``prune_after`` chains the orphan-keyword GC when the pass completes (cleanup).
+
+        A RESUMABLE RUN IS CONTINUED, NOT SILENTLY DISCARDED (field report 2026-08-12:
+        "I could not resume the keyword reindexing, in consequence the sequence has
+        started all over again. Just lost 24h"). The persistence was never the problem
+        -- an interrupted run restores as paused with its cursor intact. The problem was
+        that ``start()`` defaulted ``_cursor`` to 0, and the ONLY control on the Settings
+        surface calls ``start()``: the button a user reaches for threw away a day of work
+        without a word, while the resume lived in the task manager where nobody looked.
+
+        So the SAFE thing is now the default and the destructive one is explicit:
+        a paused/errored run with the same scope and prune setting is CONTINUED from its
+        cursor; one with DIFFERENT settings is refused by name rather than discarded; and
+        starting over requires ``restart=True``, said out loud.
+        """
         with self._lock:
             if self._alive():
                 raise RuntimeError("A re-index is already running.")
+            resumable = self._cursor > 0 and self._state in ("paused", "error")
+            if resumable and _cursor <= 0 and not restart:
+                if (self._scope == ("keywords" if scope == "keywords" else "full")
+                        and self._prune_after == prune_after):
+                    # Same run, continue it. The tally carries forward for free: the
+                    # _cursor > 0 branch below leaves it alone.
+                    _cursor, _total, _done = self._cursor, self._total, self._done
+                else:
+                    raise RuntimeError(
+                        f"A different re-index is paused at {self._cursor:,} of "
+                        f"{self._total:,} articles (scope {self._scope}"
+                        f"{', pruning' if self._prune_after else ''}). Resume or cancel "
+                        "it first, or start over explicitly to discard that progress."
+                    )
             self._stop.clear()
             self._cancelled = False
             self._state = "running"
@@ -182,6 +212,8 @@ class ReindexJobManager:
             self._cursor = max(0, _cursor)
             self._done = max(0, _done)
             self._done_at_start = self._done
+            # Same discipline as _done_at_start: the rate is over THIS run only.
+            self._mentions_at_start = self._tally.get("mentions_written", 0) if _cursor > 0 else 0
             self._total = max(0, _total)
             if _cursor <= 0:
                 self._tally = {}
@@ -261,6 +293,10 @@ class ReindexJobManager:
                     with self._lock:
                         self._tally["reindexed"] = self._tally.get("reindexed", 0) + int(r["reindexed"])
                         self._tally["failed"] = self._tally.get("failed", 0) + int(r["failed"])
+                        self._tally["mentions_written"] = (
+                            self._tally.get("mentions_written", 0)
+                            + int(st.get("mentions_written", 0) or 0)
+                        )
                         for _k, _s in (("seconds_loading", "load_s"),
                                        ("seconds_extracting", "precompute_s"),
                                        ("seconds_writing", "apply_s")):
@@ -423,11 +459,28 @@ class ReindexJobManager:
             # Honest run-rate ETA: rate over THIS run only (done since it started),
             # so a resume's prior progress never inflates the estimate.
             recent = done - self._done_at_start
-            if self._started_at is not None and recent > 0 and total and done < total:
-                elapsed = max(0.001, time.monotonic() - self._started_at)
-                rate = recent / elapsed  # articles/s (rule of three)
+            elapsed_run = (
+                max(0.001, time.monotonic() - self._started_at)
+                if self._started_at is not None
+                else None
+            )
+            if elapsed_run is not None and recent > 0 and total and done < total:
+                rate = recent / elapsed_run  # articles/s (rule of three)
                 if rate > 0:
                     eta_s = round((total - done) / rate)
+            # SPEED, in both units the operator thinks in (field ask 2026-08-12: "add a
+            # keyword average per hour so users can estimate the current speed"). The
+            # job iterates ARTICLES, so that rate is exact; keywords/h is the mention
+            # rows this run actually wrote over the same window -- a real measurement of
+            # the same work, not the article rate multiplied by an assumed average. Both
+            # over THIS run only (a resume's prior progress would inflate them), and both
+            # None until there is something real to divide -- never a fabricated 0/h.
+            articles_per_hour = keywords_per_hour = None
+            if elapsed_run is not None and recent > 0:
+                articles_per_hour = round(recent / elapsed_run * 3600.0, 1)
+                mentions = self._tally.get("mentions_written", 0) - self._mentions_at_start
+                if mentions > 0:
+                    keywords_per_hour = round(mentions / elapsed_run * 3600.0, 1)
             return {
                 "state": self._state,
                 "articles_total": total,
@@ -435,6 +488,9 @@ class ReindexJobManager:
                 "percent": round(100 * done / total, 1) if total else 0.0,
                 "tally": dict(self._tally),
                 "eta_seconds": eta_s,
+                # Speed in both units the operator thinks in. None until real.
+                "articles_per_hour": articles_per_hour,
+                "keywords_per_hour": keywords_per_hour,
                 "scope": self._scope,
                 "prune_after": self._prune_after,
                 "error": self._error,

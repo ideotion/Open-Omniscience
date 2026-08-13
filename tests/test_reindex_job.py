@@ -307,3 +307,118 @@ def test_the_watermark_is_never_stamped_past_work_that_did_not_happen():
     assert "should_stop" not in inspect.signature(reindex_all_batch).parameters, (
         "an abandoned window would stamp a watermark over articles it never re-indexed"
     )
+
+
+# --------------------------------------------------------------------------- #
+#  a paused run is CONTINUED, never silently discarded
+# --------------------------------------------------------------------------- #
+def _paused_state(tmp, **over):
+    """What an interrupted run leaves on disk. Written directly because that is
+    exactly what _load_persisted reads at app start."""
+    import json
+
+    d = {"cursor": 812345, "total": 1048725, "done": 812345,
+         "tally": {"reindexed": 812345, "failed": 0},
+         "state": "running", "scope": "keywords", "prune_after": True}
+    d.update(over)
+    p = tmp / "rx.json"
+    p.write_text(json.dumps(d), encoding="utf-8")
+    return p
+
+
+def test_the_button_continues_a_paused_run_instead_of_starting_over(tmp_path, env):
+    """Field report 2026-08-12: "I could not resume the keyword reindexing, in
+    consequence the sequence has started all over again. Just lost 24h".
+
+    The persistence was never broken -- an interrupted run restores as paused with its
+    cursor intact. What lost the day is that ``start()`` defaulted the cursor to 0 and
+    the ONLY control on the Settings surface calls ``start()``: the button a user
+    reaches for discarded 812,345 articles of progress without a word, while the resume
+    lived in the task manager where nobody looked. So the safe behaviour cannot depend
+    on finding the right button -- it has to be what the ordinary one does.
+    """
+    Session, _ = env
+    mgr = ReindexJobManager(state_path=_paused_state(tmp_path))
+    assert mgr.status()["state"] == "paused" and mgr._cursor == 812345
+
+    # Exactly what POST /api/insights/reindex-job?scope=keywords&prune_after=true does.
+    mgr.start(scope="keywords", prune_after=True,
+              _session_factory=Session, _extractor=BaselineExtractor())
+    _join(mgr)
+    assert mgr._cursor >= 812345, "the paused run's progress was thrown away"
+    assert mgr.status()["tally"]["reindexed"] >= 812345, "and its tally with it"
+
+
+def test_starting_a_DIFFERENT_run_refuses_rather_than_discarding_the_paused_one(tmp_path, env):
+    """A full re-index is not the paused keywords-only one, so continuing it would be
+    wrong -- but so is silently destroying a day of work. Refuse, by name, with what it
+    would cost, and make starting over something the caller says out loud."""
+    Session, _ = env
+    mgr = ReindexJobManager(state_path=_paused_state(tmp_path))
+    with pytest.raises(RuntimeError) as exc:
+        mgr.start(scope="full", _session_factory=Session, _extractor=BaselineExtractor())
+    msg = str(exc.value)
+    assert "812,345" in msg and "keywords" in msg, f"the refusal must name what is at stake: {msg}"
+
+    # ...and restart=True is the explicit way to discard it.
+    mgr.start(scope="full", restart=True, _session_factory=Session, _extractor=BaselineExtractor())
+    _join(mgr)
+    assert mgr.status()["scope"] == "full"
+
+
+def test_a_finished_or_cancelled_run_is_not_resurrected(tmp_path, env):
+    """The twin. Continuing is right for an INTERRUPTED run; a run the operator
+    cancelled, or one that completed, must start fresh -- otherwise the fix turns into
+    a job that can never be restarted from the beginning."""
+    Session, _ = env
+    mgr = ReindexJobManager(state_path=_paused_state(tmp_path, state="done"))
+    assert mgr._cursor == 0, "a finished run leaves nothing to resume"
+    mgr.start(scope="keywords", prune_after=True,
+              _session_factory=Session, _extractor=BaselineExtractor())
+    _join(mgr)
+    assert mgr.status()["state"] == "done"
+
+    mgr2 = ReindexJobManager(state_path=_paused_state(tmp_path / "b" if False else tmp_path))
+    with mgr2._lock:
+        mgr2._state = "cancelled"
+    mgr2.start(scope="keywords", prune_after=True,
+               _session_factory=Session, _extractor=BaselineExtractor())
+    _join(mgr2)
+    assert mgr2._done_at_start == 0, "a cancelled run must not be silently continued"
+
+
+def test_the_speed_is_reported_in_both_units_and_never_fabricated(env, tmp_path):
+    """Field ask: "add a keyword average per hour so users can estimate the current
+    speed". The job iterates ARTICLES, so that rate is exact; keywords/h is the mention
+    rows the run actually wrote over the same window -- a real measurement of the same
+    work, never the article rate times an assumed average. Both absent until real."""
+    Session, tmp = env
+    _seed(Session, 12)
+    mgr = _new_mgr(tmp)
+    idle = mgr.status()
+    assert idle["articles_per_hour"] is None and idle["keywords_per_hour"] is None, (
+        "a job that has done nothing must not report a rate"
+    )
+
+    mgr.start(_session_factory=Session, _extractor=BaselineExtractor())
+    _join(mgr)
+    s = mgr.status()
+    assert s["state"] == "done"
+    assert s["articles_per_hour"] and s["articles_per_hour"] > 0
+
+    # THE NUMERATOR IS REAL. "> 0" is satisfied by any fabricated number -- a first
+    # draft asserted only that, and a mutant computing keywords/h as articles x an
+    # assumed 12-per-article passed it. Two assertions close that: the counter equals
+    # the mention rows actually in the database, and the reported rate is derived from
+    # THAT counter rather than from the article rate.
+    with Session() as sess:
+        real_rows = sess.query(KeywordMention).count()
+    assert s["tally"]["mentions_written"] == real_rows, (
+        "the counter must be what reached the database, not an estimate"
+    )
+    assert s["keywords_per_hour"] and s["keywords_per_hour"] > 0
+    ratio = s["keywords_per_hour"] / s["articles_per_hour"]
+    expect = real_rows / s["tally"]["reindexed"]
+    assert abs(ratio - expect) < 0.05, (
+        f"keywords/h is not the measured mentions over the same window: {ratio} vs {expect}"
+    )

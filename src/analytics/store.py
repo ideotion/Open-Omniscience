@@ -559,6 +559,10 @@ def reindex_articles(
     # that runs correctly. Keep these two beside ``reindexed``/``failed``, which are
     # accumulators of the same kind and already had to live up here for that reason.
     _apply_index_s = _apply_commit_s = 0.0
+    # Mention rows this call actually COMMITTED -- the numerator of the keywords/h
+    # the job reports. A real measurement of the same work, never the article rate
+    # multiplied by an assumed average per article.
+    mentions_written = 0
     commit_batch = max(1, commit_batch)
 
     # Re-index is delete-then-reinsert, so the disposable columnar rollup must FULL-rebuild
@@ -604,8 +608,9 @@ def reindex_articles(
     def _reindex_one_committed_with_retry(
         article: Article, deriv: ArticleDerivatives | None, content: str | None = None
     ) -> None:
+        nonlocal mentions_written
         terms, sentiment, www = _derived_args(deriv)
-        run_write_with_retry(
+        res = run_write_with_retry(
             lambda: index_article(
                 session,
                 article,
@@ -620,6 +625,10 @@ def reindex_articles(
             session=session,
             label=f"reindex_articles[{article.id}]",
         )
+        # Counted ONLY on the committed paths, so a batch that rolls back and redoes
+        # per-article cannot count its articles twice. A rate is worth having only if
+        # its numerator is what actually reached the database.
+        mentions_written += int((res or {}).get("mentions", 0) or 0)
 
     def _redo_committed(items: list[tuple[Article, ArticleDerivatives | None]]) -> None:
         """One-at-a-time, COMMITTED redo after a batch-commit failure -- mirrors
@@ -660,9 +669,10 @@ def reindex_articles(
             return
 
         pending: list[tuple[Article, ArticleDerivatives | None]] = []
+        staged_mentions = 0  # this batch's mentions, banked only if the commit lands
 
         def _flush() -> None:
-            nonlocal reindexed, _apply_commit_s
+            nonlocal reindexed, _apply_commit_s, mentions_written, staged_mentions
             if not pending:
                 return
             try:
@@ -670,9 +680,13 @@ def reindex_articles(
                 session.commit()
                 _apply_commit_s += time.monotonic() - _t_c
                 reindexed += len(pending)
+                mentions_written += staged_mentions
             except Exception:  # noqa: BLE001 - a lock/collision must not drop batch-mates
                 session.rollback()
+                # The rollback un-wrote every staged mention; _redo_committed counts
+                # what it re-writes, so banking them here too would double-count.
                 _redo_committed(list(pending))
+            staged_mentions = 0
             pending.clear()
             _report()
 
@@ -681,7 +695,7 @@ def reindex_articles(
             terms, sentiment, www = _derived_args(deriv)
             _t_i = time.monotonic()
             try:
-                index_article(
+                _res = index_article(
                     session,
                     art,
                     extractor=extractor,
@@ -694,6 +708,7 @@ def reindex_articles(
                     precomputed_www=www,
                 )
                 pending.append((art, deriv))
+                staged_mentions += int((_res or {}).get("mentions", 0) or 0)
                 _apply_index_s += time.monotonic() - _t_i
             except Exception:  # noqa: BLE001 - this article corrupted the in-flight batch
                 # A rollback here drops THIS article's partial work AND every
@@ -702,6 +717,7 @@ def reindex_articles(
                 # survivors one at a time, COMMITTED, exactly like reindex_all_batch's
                 # proven fallback, rather than silently losing them.
                 session.rollback()
+                staged_mentions = 0  # rolled away with the batch
                 redo = list(pending)
                 pending.clear()
                 _redo_committed(redo)
@@ -838,6 +854,10 @@ def reindex_articles(
             # A rate ONLY when both sides of the division are real. A zero-article or
             # zero-elapsed run reports None -- never a fabricated or infinite rate.
             "articles_per_second": round(done / elapsed, 2) if done and elapsed > 0 else None,
+            # Mention rows this call COMMITTED. Rides `stats` rather than the return for
+            # the reason this out-parameter exists: callers assert the return shape
+            # exactly, and a measurement is not part of the contract.
+            "mentions_written": mentions_written,
         })
 
     return {"reindexed": reindexed, "failed": failed}
