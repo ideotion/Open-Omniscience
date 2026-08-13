@@ -257,13 +257,13 @@ def test_the_bench_reading_says_what_is_in_the_table_not_a_headline_number() -> 
                 {"backend": "vllm", "model": "org/C", "reason": "not-installed"},
                 {"backend": "ollama", "model": "z:1", "reason": "not-installed"},
             ],
-            "same_model_across_backends": [{"roster_key": "qwen35-0-8b"}],
+            "same_model_across_backends": [{"model_key": "ministral-3-3b-instruct-2512"}],
             "anchors_available": True,
         }
     )
     assert line["pairs_measured"] == ["ollama|a:1", "vllm|org/A"]
     assert line["skipped_by_reason"]["not-installed"] == ["ollama|z:1", "vllm|org/B", "vllm|org/C"]
-    assert line["same_model_on_both_backends"] == ["qwen35-0-8b"]
+    assert line["same_model_on_both_backends"] == ["ministral-3-3b-instruct-2512"]
     for key in line:
         assert "overall" not in key and "total" not in key, key
 
@@ -348,30 +348,49 @@ def test_the_endpoint_forwards_every_field_the_worker_accepts() -> None:
     from src.api.diagnostics import AiCheckRunBody
 
     accepted = set(inspect.signature(AC.run_ai_check).parameters)
-    for field in ("deep", "bench_models", "refresh_batch"):
+    for field in ("deep", "refresh_batch"):
         assert field in AiCheckRunBody.model_fields, f"{field} left the endpoint"
         assert field in accepted, f"{field} is sent but {AC.run_ai_check.__name__} ignores it"
+    # BOTH DIRECTIONS, because the named list above only catches one of them. The
+    # 2026-08-12 one-model ruling left `bench_models` and `download_missing` on this body
+    # after the worker stopped accepting them -- a control the API still advertised and
+    # that could no longer do anything, which is precisely the failure this test is
+    # named for, surviving inside the test meant to prevent it.
+    for field in AiCheckRunBody.model_fields:
+        if field == "levels":
+            continue  # parsed into `levels` tuple by the endpoint, not forwarded raw
+        assert field in accepted, (
+            f"the endpoint advertises {field!r} but run_ai_check does not take it: a "
+            "request carrying it would get a 200 and change nothing"
+        )
     assert AiCheckRunBody().deep is False, (
-        "the hours-long run must be opt-in — a default-on deep check would turn one "
-        "click into an afternoon"
+        "the slow run must be opt-in — a default-on deep check would turn one click "
+        "into tens of minutes"
     )
 
 
-def test_the_deep_run_turns_backend_switching_ON(monkeypatch) -> None:
-    """THE LOAD-BEARING FLAG for the whole ask. Left off, a vLLM server serves the one
-    model it was started with, so the run would silently cover ONE model out of however
-    many are downloaded — and report it as though that were the roster."""
+def test_the_deep_run_manages_NOTHING(monkeypatch) -> None:
+    """THE INVERSION, ruled 2026-08-12: "the app has failed to manage both ollama and
+    vllm, so I'll do the managing myself."
+
+    This used to assert the opposite -- that the deep run turned backend switching ON,
+    because with a roster of models a vLLM server serving one of them would otherwise
+    cover one pair out of many. With one model there is nothing to switch BETWEEN, and a
+    run that rearranges the machine measures its own management. It now goes through
+    run_default_model_bench, which measures whatever is serving and starts, stops and
+    hands over nothing."""
     seen: dict = {}
     monkeypatch.setattr(AC, "ensure_frozen_batch", lambda **kw: {"built": False, "digest": "d"})
     monkeypatch.setattr("src.ai_layer.bench_batch.load_anchors", lambda **_kw: None)
     monkeypatch.setattr(
-        "src.ai_layer.model_bench.run_model_bench",
+        "src.ai_layer.model_bench.run_default_model_bench",
         lambda ctx, **kw: seen.update(kw) or {"pairs_run": []},
     )
 
-    out = AC._live_bench(None, models=None, repeats=2, refresh_batch=False)
+    out = AC._live_bench(None, repeats=2, refresh_batch=False)
 
-    assert seen["allow_backend_switch"] is True
+    assert "allow_backend_switch" not in seen, "nothing may ask the bench to restart a server"
+    assert "models" not in seen, "there is no roster to pass"
     assert seen["restart"] is False, "a reused batch resumes; it does not start over"
     assert out["frozen_batch_step"]["digest"] == "d"
     assert out["anchors_available"] is False
@@ -384,33 +403,32 @@ def test_refreshing_the_inputs_restarts_the_bench(monkeypatch) -> None:
     monkeypatch.setattr(AC, "ensure_frozen_batch", lambda **kw: {"built": True, "digest": "new"})
     monkeypatch.setattr("src.ai_layer.bench_batch.load_anchors", lambda **_kw: None)
     monkeypatch.setattr(
-        "src.ai_layer.model_bench.run_model_bench",
+        "src.ai_layer.model_bench.run_default_model_bench",
         lambda ctx, **kw: seen.update(kw) or {},
     )
 
-    AC._live_bench(None, models=None, repeats=1, refresh_batch=True)
+    AC._live_bench(None, repeats=1, refresh_batch=True)
 
     assert seen["restart"] is True
 
 
-def test_the_bench_holds_the_lane_while_it_restarts_the_backend(monkeypatch) -> None:
-    """Correctness, not politeness. The deep run STOPS AND RESTARTS the backend between
-    models; a background sweep mid-batch against the server about to be killed fails for
-    a reason that has nothing to do with it, and its retries then compete for the card
-    the bench is trying to measure. Every background-AI entry point already checks this
-    hold — nothing was claiming it for the bench."""
+def test_the_bench_holds_the_lane_while_it_measures(monkeypatch) -> None:
+    """Correctness, not politeness -- and STILL correctness now that the bench restarts
+    nothing: a background sweep running against the same server competes for the card
+    this bench is trying to measure, so its numbers would be about the contention rather
+    than the model. Every background-AI entry point already checks this hold."""
     from src.ai_layer.coordinator import user_batch_active
 
     seen: list[dict] = []
     monkeypatch.setattr(AC, "ensure_frozen_batch", lambda **_kw: {"digest": "d"})
     monkeypatch.setattr("src.ai_layer.bench_batch.load_anchors", lambda **_kw: None)
     monkeypatch.setattr(
-        "src.ai_layer.model_bench.run_model_bench",
+        "src.ai_layer.model_bench.run_default_model_bench",
         lambda _ctx, **_kw: seen.append(user_batch_active()) or {},
     )
 
     assert user_batch_active()["held"] is False, "nothing should be holding it beforehand"
-    AC._live_bench(None, models=None, repeats=1, refresh_batch=False)
+    AC._live_bench(None, repeats=1, refresh_batch=False)
 
     assert seen[0]["held"] is True, "the lane was not held while the bench ran"
     assert any("bench" in h for h in seen[0]["holders"])
@@ -424,12 +442,12 @@ def test_a_raising_bench_still_releases_the_lane(monkeypatch) -> None:
     monkeypatch.setattr(AC, "ensure_frozen_batch", lambda **_kw: {"digest": "d"})
     monkeypatch.setattr("src.ai_layer.bench_batch.load_anchors", lambda **_kw: None)
     monkeypatch.setattr(
-        "src.ai_layer.model_bench.run_model_bench",
+        "src.ai_layer.model_bench.run_default_model_bench",
         lambda _ctx, **_kw: (_ for _ in ()).throw(RuntimeError("no backend")),
     )
 
     try:
-        AC._live_bench(None, models=None, repeats=1, refresh_batch=False)
+        AC._live_bench(None, repeats=1, refresh_batch=False)
     except RuntimeError:
         pass
     assert user_batch_active()["held"] is False
@@ -438,17 +456,6 @@ def test_a_raising_bench_still_releases_the_lane(monkeypatch) -> None:
 # --------------------------------------------------------------------------- #
 #  provisioning (2026-08-10): survey first, download only when asked
 # --------------------------------------------------------------------------- #
-def test_provision_runs_before_the_bench_not_after():
-    """The step that explains an EMPTY bench costs seconds; the bench costs hours.
-    Learning in minute one that five of seven models are missing is the whole value."""
-    names = AC.default_step_names(deep=True)
-    assert names[0] == "provision"
-    assert names[-1] == "model_bench"
-    assert "provision" not in AC.default_step_names(deep=False), (
-        "a shallow run benches nothing, so it has nothing to provision for"
-    )
-
-
 def test_a_deep_run_never_downloads_unless_asked():
     """Tens of gigabytes must not be inferred from a click on 'run the benchmark'."""
     calls: list[str] = []
@@ -458,26 +465,6 @@ def test_a_deep_run_never_downloads_unless_asked():
     }
     AC.run_ai_check(steps=steps, deep=True)
     assert calls == ["bench"], "the injected plan runs as given; no fetch is implied"
-
-
-def test_the_question_reaches_the_reading():
-    """An empty bench is explained at the top of the report, not left to be inferred
-    from a results dict that is empty for a reason nothing states."""
-    q = {"needs_download": True, "count": 3, "estimated_mb": 5000.0, "text": "3 model(s) …"}
-    out = AC.run_ai_check(
-        steps={"provision": lambda: {"question": q, "to_fetch": [], "models": []}}, deep=True
-    )
-    assert out["reading"]["provisioning"] == q
-
-
-def test_a_failed_provision_step_does_not_stop_the_run():
-    def boom():
-        raise RuntimeError("cache unreadable")
-
-    out = AC.run_ai_check(steps={"provision": boom, "facts": lambda: {"ok": 1}}, deep=True)
-    names = [s["step"] for s in out["steps"]]
-    assert names == ["provision", "facts"]
-    assert out["reading"]["provisioning"] is None, "no survey, no question — never a guessed one"
 
 
 def test_context_is_measured_in_every_run_not_only_the_deep_one():

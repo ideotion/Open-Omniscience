@@ -66,25 +66,27 @@ artifacts:
     freshness: {max_age_months: 12}
     last_verified: "2026-06-17"
 
-  - id: bench-model-roster
-    title: Comparative-bench model roster
+  - id: ministral-identifiers
+    title: Ministral 3 3B identifiers (Ollama tag + Hugging Face repo)
     kind: catalog
     description: >
-      Six models the model-comparison work installs on either backend, with a
-      Hugging Face repo and/or an Ollama tag each, plus the per-entry facts an
-      operator needs BEFORE downloading: gated, base-vs-instruct, licence class,
-      vision-capable, and which quants actually exist. Two of the six are absent
-      from Ollama and are reported absent rather than substituted.
+      The two artifacts of the ONE model this app runs on, after the 2026-08-12
+      ruling ("Ministral 3 3B throughout the entire app, drop all others"). An
+      Ollama q4_K_M image and a Hugging Face safetensors repo: neither identifier
+      is derivable from the other, so both are recorded. Replaces the eight-model
+      comparative-bench roster, which went with the same ruling; this entry
+      inherits its dated-verification duty for the one row that survived.
     upstream: https://huggingface.co + https://ollama.com/library
     check_upstream: >
-      Re-run the acquisition prompt in an internet-connected session. Both hosts
-      403 from the build sandbox, so this roster can NEVER be re-verified by the
-      session that edits it — which is exactly why it is dated and registered.
-    license: per-model (the roster is our metadata; LFM2.5's own licence is UNREAD)
-    pin: {file: src/llm/bench_roster.py, const: BENCH_ROSTER_AS_OF}
+      Open both pages in an internet-connected session. Both hosts 403 from the
+      build sandbox, so these identifiers can NEVER be re-verified by the session
+      that edits them - which is exactly why they are dated and registered.
+    license: Apache-2.0 (the model card adds a third-party-rights rider)
+    pin: {file: src/llm/ollama.py, const: MINISTRAL_AS_OF}
     refresh: >
-      Verify every repo/tag on a live page, then update BENCH_ROSTER +
-      BENCH_ROSTER_AS_OF. Never substitute a near-match for a model that has moved
+      Re-read the tag on ollama.com/library and the repo id on huggingface.co,
+      then update MINISTRAL_TAG / MINISTRAL_VLLM_MODEL / MINISTRAL_HF and
+      MINISTRAL_AS_OF. Never substitute a near-match for a model that has moved
       or vanished; report it absent.
     freshness: {max_age_months: 6}
     last_verified: "2026-08-02"

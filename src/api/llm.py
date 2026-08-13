@@ -26,7 +26,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.database.fts import SearchQueryError, search_ids
@@ -37,6 +37,8 @@ from src.llm.ollama import (
     CATALOG_AS_OF,
     DEFAULT_MODEL,
     DEFAULT_VLLM_MODEL,
+    MINISTRAL_HF,
+    MINISTRAL_SUGGESTION,
     LLMError,
     LLMUnavailable,
     OllamaClient,
@@ -1449,21 +1451,8 @@ def default_model_install() -> dict:
     return {**plan, "action": "queued", "result": queued}
 
 
-class BenchRosterInstallRequest(BaseModel):
-    """Which roster models to install. ``keys`` are roster keys, never raw identifiers:
-    a caller cannot smuggle an arbitrary repo through this endpoint, and every string
-    that reaches a download came from the dated roster."""
-
-    keys: list[str] = []
-    #: Which backend to install for. Omitted means "whichever this machine will serve
-    #: with" -- the same provisioning question the default-model button asks. Named
-    #: explicitly by the panels, because the vLLM section and the Ollama section each
-    #: show THEIR OWN roster and must install what they showed.
-    backend: str | None = None
-
-
-def _roster_backend(explicit: str | None) -> dict:
-    """The backend a roster view or install is about, and why.
+def _download_backend(explicit: str | None) -> dict:
+    """The backend a model download is about, and why.
 
     An explicit choice from a panel wins: the vLLM section showing Hugging Face repos
     must not install Ollama tags because the machine happens to prefer Ollama today.
@@ -1488,73 +1477,14 @@ def _roster_backend(explicit: str | None) -> dict:
     return {**pick, "provisioning_backend": pick["backend"]}
 
 
-@router.get("/bench-roster")
-def bench_roster(backend: str | None = None) -> dict:
-    """The comparative-bench roster for whichever backend this machine will serve with.
-
-    Read-only and network-free: it reports what WOULD be installed, including the rows
-    it cannot install, so the panel can be truthful before the operator clicks rather
-    than after. Uses the same provisioning question as the default-model button --
-    what will this machine serve with once set up -- not the routing question, which
-    disqualifies a backend that is merely stopped."""
-    from src.llm.bench_roster import roster_for
-
-    pick = _roster_backend(backend)
-    out = roster_for(pick["backend"])
-    out["chosen_because"] = pick["chosen_because"]
-    out["prerequisite"] = pick["prerequisite"]
-    out["provisioning_backend"] = pick["provisioning_backend"]
-    return out
-
-
-@router.post("/bench-roster/install")
-def bench_roster_install(req: BenchRosterInstallRequest | None = None) -> dict:
-    """Install the selected roster models on the backend that will serve.
-
-    Both paths egress CLEARNET (Hugging Face / the Ollama registry), neither goes
-    through Tor, so both are refused under the kill switch exactly as the single
-    default-model download is.
-
-    REFUSALS TRAVEL WITH THE RESULT. Two of the six models are not published for
-    Ollama, and selecting one returns it in ``refused`` with the reason rather than
-    quietly downloading the four that do exist -- the operator asked for six and is
-    owed an account of six."""
-    from src.ingest.egress_window import PURPOSE_AI_INSTALL, egress_permitted
-    from src.llm.bench_roster import identifiers_for
-
-    if not egress_permitted(PURPOSE_AI_INSTALL):
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "Airplane mode is engaged. Downloading models is clearnet traffic "
-                "(Hugging Face / the model registry), so it is refused while offline. "
-                "You can allow the AI install to go online on its own, which does not "
-                "start collecting."
-            ),
-        )
-    body = req or BenchRosterInstallRequest()
-    pick = _roster_backend(body.backend)
-    backend = pick["backend"]
-    if pick["prerequisite"]:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"{'vLLM' if backend == 'vllm' else 'Ollama'} is not installed yet, and "
-                "it is what downloads these models. Install it first."
-            ),
-        )
-    ok, refused = identifiers_for(backend, body.keys)
-    return _queue_downloads(backend, ok, refused)
-
-
 def _queue_downloads(backend: str, ok: list[dict], refused: list[dict]) -> dict:
     """Route resolved artifacts to whichever downloader the backend uses.
 
     Extracted (2026-08-04) because the model-catalogue buttons and the bench roster
     ask the SAME question with different lists, and two copies of this routing would
     be two places for the egress posture and the refusal contract to drift. The bench
-    comparison UI is scheduled for removal; this routing is not, because it is what
-    every model download goes through.
+    comparison UI has since been removed (2026-08-12, one model app-wide); this routing
+    was not, because it is what every model download goes through.
 
     ``refused`` is carried through untouched and added to, never replaced: an operator
     who selected four models and can have two is owed an account of four.
@@ -1601,21 +1531,26 @@ def _queue_downloads(backend: str, ok: list[dict], refused: list[dict]) -> dict:
     }
 
 
-@router.get("/bench-roster/status")
-def bench_roster_status(backend: str | None = None) -> dict:
-    """Live state of a roster install, resolved by the SAME question as the install.
+@router.get("/models/install/status")
+def model_install_status(backend: str | None = None) -> dict:
+    """Live state of a model download, resolved by the SAME question as the install.
+
+    Named for what it follows. It used to be ``/bench-roster/status`` because the bench
+    roster was its first caller; the roster went with the 2026-08-12 one-model ruling and
+    the download it reports on did not, so the old name would have been a route claiming
+    to be about a thing that no longer exists.
 
     Not a reuse of ``/default-model/status``: that one resolves the backend from the
-    default-model plan, so a vLLM panel installing on a machine that would otherwise
-    provision Ollama would follow the wrong job and report a stranger's progress as its
-    own. The follower must read the job the install actually started.
+    default-model plan, so a panel installing on a machine that would otherwise
+    provision the other backend would follow the wrong job and report a stranger's
+    progress as its own. The follower must read the job the install actually started.
 
     HONEST SCOPE, because the two backends differ in kind. The vLLM path owns a single
     job, so its state IS this batch's state. The Ollama path enqueues into the shared
     pull queue, so what is reported is THE QUEUE -- which may carry pulls this batch did
     not ask for. ``queue_is_shared`` says which of the two you are reading rather than
     letting a caller assume."""
-    pick = _roster_backend(backend)
+    pick = _download_backend(backend)
     if pick["backend"] == "vllm":
         job = _get_vllm_model_job().status()
         return {"backend": "vllm", "queue_is_shared": False, "job": job, **_job_view(job)}
@@ -1808,7 +1743,7 @@ class ModelInstallRequest(BaseModel):
     """Which catalogue models to download. ``keys`` are catalogue keys, never raw
     identifiers: a caller cannot smuggle an arbitrary repo or tag through this
     endpoint, and every string that reaches a download came from a dated catalogue.
-    Same discipline as ``BenchRosterInstallRequest`` above."""
+    Same discipline as the catalogue resolution above."""
 
     keys: list[str] = []
     backend: str | None = None
@@ -1837,7 +1772,7 @@ def llm_model_install(req: ModelInstallRequest | None = None) -> dict:
             ),
         )
     body = req or ModelInstallRequest()
-    pick = _roster_backend(body.backend)
+    pick = _download_backend(body.backend)
     backend = pick["backend"]
     if pick["prerequisite"]:
         raise HTTPException(
@@ -1849,6 +1784,192 @@ def llm_model_install(req: ModelInstallRequest | None = None) -> dict:
         )
     ok, refused = identifiers_for(backend, body.keys)
     return _queue_downloads(backend, ok, refused)
+
+
+class CustomModelRequest(BaseModel):
+    """A model the OPERATOR named, rather than one this app ships."""
+
+    identifier: str = Field(
+        default="",
+        # Both examples read from the dated source, for the same reason the refusals
+        # below do: this description is what a caller reads in the schema, and a
+        # re-typed identifier drifts from the registry entry that governs it.
+        description=(
+            f"an Ollama tag ({MINISTRAL_SUGGESTION['tag']}) or a Hugging Face repo id "
+            f"({MINISTRAL_HF['repo']}) — which one depends on the backend"
+        ),
+    )
+    backend: str | None = None
+
+
+#: What each backend's identifier looks like, for the ONE case a wrong shape can be
+#: PROVEN rather than guessed. A Hugging Face repo id never contains a colon; an Ollama
+#: tag routinely does, and ``:latest`` is implied when it does not. So an identifier with
+#: a colon handed to vLLM is an Ollama tag in the wrong box, and saying so beats a
+#: download that 404s ten seconds later.
+#:
+#: The mirror case is NOT symmetrical and is deliberately not refused: ``library/mistral``
+#: is a perfectly good colon-less Ollama tag and ``owner/name`` is a perfectly good repo
+#: id, so a slash proves nothing in that direction. That one goes through and the
+#: backend's own error is reported — refuse what you can prove wrong, report what you
+#: cannot.
+_HF_REPO_RE = re.compile(r"^[A-Za-z0-9][\w.-]*/[A-Za-z0-9][\w.-]*$")
+
+
+def _custom_identifier_refusal(backend: str, identifier: str) -> str | None:
+    """Why ``identifier`` cannot be what ``backend`` was asked for, or None.
+
+    The example in each refusal is READ from the dated source rather than typed here.
+    A refusal's whole job is to show the shape that would have worked, so an example
+    that has drifted from the registry teaches the wrong string at the one moment the
+    operator is copying it.
+    """
+    from src.llm.ollama import MINISTRAL_HF
+
+    example = MINISTRAL_HF["repo"]
+    if ".." in identifier:
+        # Never a real tag or repo id, and it is the one shape that would matter if any
+        # of this ever reached a path.
+        return "'..' is never part of a model name."
+    if backend != "vllm":
+        return None
+    if ":" in identifier:
+        return (
+            f"'{identifier}' looks like an Ollama tag, and vLLM downloads Hugging Face "
+            f"repositories. Use the owner/name form, for example {example}."
+        )
+    if not _HF_REPO_RE.match(identifier):
+        return (
+            f"'{identifier}' is not a Hugging Face repo id. They are owner/name, for "
+            f"example {example}."
+        )
+    return None
+
+
+@router.post("/models/pull-custom")
+def llm_pull_custom_model(req: CustomModelRequest) -> dict:
+    """Download a model the operator named, in whichever form their backend uses.
+
+    RULED 2026-08-12 (maintainer): one model app-wide, *"keep in the UI the option for
+    users to use their own models"*. This is that option, and the reason it is an
+    endpoint rather than a straight call to the Ollama pull queue is that the two
+    backends take different artifacts: an Ollama image and a Hugging Face repo. A field
+    that only ever queued Ollama tags would be dead on a GPU machine, which is the
+    machine class most likely to want a different model.
+
+    Same egress posture and the same refusal contract as the catalogue download beside
+    it — this is CLEARNET traffic through a process outside this app's Tor routing, so
+    it is refused under the kill switch, and a refusal travels back with its reason
+    rather than as a silent no-op.
+
+    NOTHING HERE IS VERIFIED, and the caller is told so. The catalogue's identifiers sit
+    under a dated registry entry precisely so a stale one is caught by a freshness test;
+    an operator's own string has no such backing, so what this can honestly do is check
+    the SHAPE and let the backend answer for the rest.
+    """
+    from src.ingest.egress_window import PURPOSE_AI_INSTALL, egress_permitted
+
+    identifier = (req.identifier or "").strip()
+    if not identifier:
+        raise HTTPException(status_code=400, detail="No model name was given.")
+    if not egress_permitted(PURPOSE_AI_INSTALL):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Airplane mode is engaged. Downloading models is clearnet traffic "
+                "(Hugging Face / the model registry), so it is refused while offline. "
+                "You can allow the AI install to go online on its own, which does not "
+                "start collecting."
+            ),
+        )
+    pick = _download_backend(req.backend)
+    backend = pick["backend"]
+    if pick["prerequisite"]:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{'vLLM' if backend == 'vllm' else 'Ollama'} is not installed yet, and "
+                "it is what downloads models. Set up the local AI first."
+            ),
+        )
+    refusal = _custom_identifier_refusal(backend, identifier)
+    if refusal:
+        return {
+            "backend": backend,
+            "action": "nothing_to_do",
+            "queued": [],
+            "refused": [{"key": identifier, "label": identifier, "reason": refusal}],
+        }
+    return _queue_downloads(
+        backend,
+        [{"key": identifier, "label": identifier, "identifier": identifier}],
+        [],
+    )
+
+
+@router.get("/uninstall/plan")
+def llm_uninstall_plan() -> dict:
+    """What removing the local AI would do on THIS machine (read-only, removes nothing).
+
+    Its own endpoint rather than a field on the action, because the answer IS the
+    consent: how many bytes each backend would free, and — the part that matters — which
+    pieces this app cannot remove at all. An operator who presses "uninstall" and is
+    told afterwards that the program is still there has been surprised by something they
+    could have been shown first.
+    """
+    from src.llm.uninstall import uninstall_plan
+
+    return uninstall_plan()
+
+
+class UninstallRequest(BaseModel):
+    """Which backends to remove, and whether the models go with them."""
+
+    backends: list[str] = Field(
+        default_factory=list,
+        description=(
+            "'vllm' and/or 'ollama'. Explicit rather than derived: 'the current backend' "
+            "has three different answers in this app (routing, provisioning, activation) "
+            "and a destructive action must act on the one the operator was shown."
+        ),
+    )
+    delete_models: bool = Field(
+        default=False,
+        description=(
+            "also delete the downloaded weights in this app's own model folders. A store "
+            "you pointed elsewhere is reported, never deleted."
+        ),
+    )
+    confirm: bool = Field(default=False, description="must be true; there is no undo")
+
+
+@router.post("/uninstall")
+def llm_uninstall(req: UninstallRequest) -> dict:
+    """Remove the named backends, and optionally the models.
+
+    Removes only what this app installed — its own vLLM environment and the model
+    folders inside its own data directory. The Ollama program was installed on the
+    system with administrator rights and is reported with the commands to remove it
+    rather than deleted, the same line :func:`ollama_lifecycle.stop` draws for a daemon
+    this app did not spawn.
+
+    LOCAL AND OFFLINE: this deletes files, so there is no egress gate — nothing here
+    reaches the network, and refusing it under airplane mode would block the one
+    operation an offline operator has every reason to run.
+
+    The reply reports what was removed AND what was kept with each reason, and
+    ``complete`` is computed from that rather than asserted.
+    """
+    if not req.confirm:
+        raise HTTPException(
+            status_code=400,
+            detail="Uninstalling is not undoable, so it needs an explicit confirmation.",
+        )
+    if not req.backends:
+        raise HTTPException(status_code=400, detail="No backend was named.")
+    from src.llm.uninstall import uninstall
+
+    return uninstall(backends=list(req.backends), delete_models=bool(req.delete_models))
 
 
 @router.get("/activation")
