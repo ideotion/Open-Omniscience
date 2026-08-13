@@ -27,6 +27,16 @@ def app_dir(tmp_path, monkeypatch):
     (root / "models" / "ollama").mkdir(parents=True)
     (root / "models" / "huggingface").mkdir(parents=True)
     monkeypatch.setattr("src.paths.data_dir", lambda: root)
+    # AND on the CONSUMER, because `model_store` does a module-level
+    # `from src.paths import data_dir`: that binds the function OBJECT into its own
+    # namespace at import time, so patching `src.paths.data_dir` afterwards does not
+    # reach it. Whether it reached it was decided by collection order — run this file
+    # alone and `model_store` is first imported while the patch is live, so it binds
+    # the lambda and everything passes; run anything that imports it first (CI does)
+    # and `ollama_store()` answers with the REAL data dir while `_owned_by_app` checks
+    # against this one, so an app-owned store reports itself unremovable. Same family
+    # as the `sys.modules` note in `_patch_vllm` below: patch where the name is READ.
+    monkeypatch.setattr("src.llm.model_store.data_dir", lambda: root)
     # The store resolvers read the env first, so clear any inherited choice: this
     # fixture is about the DEFAULT (app-owned) locations.
     monkeypatch.delenv("OLLAMA_MODELS", raising=False)
@@ -224,7 +234,7 @@ def test_a_running_vllm_that_cannot_be_stopped_is_not_deleted_under_its_own_serv
     files that no longer exist — a worse state than not uninstalling at all."""
     venv = app_dir / "vllm_venv"
     venv.mkdir()
-    (venv / "pyvenv.cfg").write_text("home = /usr")
+    (venv / "pyvenv.cfg").write_text("home = /usr", encoding="utf-8")
     monkeypatch.setattr(
         U,
         "_vllm_state",
