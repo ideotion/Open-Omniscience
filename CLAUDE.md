@@ -10501,9 +10501,64 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the one-button diagnostics panel): the compounding "browser-unverified, needs
   click-through" backlog must not tag as measured-and-verified with the flagship UI never
   once rendered.
-  The CHANGES.md 0.3.0 board + this entry are the live gate list; stand up a
-  `RELEASE_0.3_GATE.md` checkable inventory (the RC-gate precedent) when the cycle
-  approaches closure.
+  **THE CHECKABLE INVENTORY NOW EXISTS (2026-08-13):
+  [`docs/product/RELEASE_0.3_GATE.md`](docs/product/RELEASE_0.3_GATE.md) is the tickable
+  board — read IT for row status; this entry stays the ruling of record.** A retroactive
+  [`RELEASE_0.2_GATE.md`](docs/product/RELEASE_0.2_GATE.md) was reconstructed alongside it
+  (marked as after-the-fact — no gate file existed during 0.2) so the two cycles read side
+  by side and the next one inherits a format; it also records the tag-day release-workflow
+  collision that shipped `v0.2.0` with no assets, and the idempotent publish step that
+  protects every later tag. **THREE MAINTAINER RULINGS 2026-08-13:** (a) **ROW 4 IS MOVED TO
+  0.4** — verbatim "Rechecking all sources after the import will take ages. We need to modify
+  v0.3 release conditions and postpone it to v0.4." WHAT 0.3 GIVES UP, stated rather than
+  glossed: the backup/verify/staged-restore trio is already validated at 8.3x the v0.2 scale
+  (P0 2026-08-12, 1,048,725 articles / 21.0 GB), so the data-safety core is NOT what is lost —
+  what is lost is the **committed** write path at scale and the FIELD demonstration that the
+  2026-07-24 merge fix (the dropped qualification stamp that laundered disqualified sources
+  back into the trial queue) holds on a real corpus. A SPLIT WAS PROPOSED AND **DECLINED**
+  (same day, second ruling: "mark it as a necessary step for v0.4, we won't do it today") —
+  the proposal was to keep ONE SMALL COMMITTED backup in 0.3 (minutes, not ages) to preserve
+  the stamps-survive-a-restore demonstration while postponing only the full source re-check;
+  the row moves **UNDIVIDED** and is **REQUIRED in 0.4, not merely deferred**. Recorded in the
+  gate doc's new §5 "Carried to 0.4" — which names the THREE things the run must demonstrate
+  (a committed merge at scale · the admission gate over every source incl. the curated catalog,
+  no grandfathering · the qualification stamp surviving a restore) and the CLOSING CLAUSE that
+  makes it meaningful: a spot-check that a previously-DISQUALIFIED source is still disqualified
+  afterwards, since a pass counting only `qualified` rows cannot see the inversion the row
+  exists to catch. The declined split is kept in that section as a still-available cheaper
+  substitute, so a future session does not re-invent it. GENERAL POINT worth keeping: a
+  postponed data-safety demonstration that nobody writes down becomes one that never happens —
+  a gate that moves a row owes the next gate a written, closable entry, never just a deletion. (b) **ROW 6 IS CLOSED** — DB-10 §1b
+  ratified explicitly ("Let's consider this as finished"); the bench evidence (16384 wins every
+  dimension at scale; the 4K point-lookup win at 3 GB INVERTS at 22 GB, so it was a cache-fit
+  artifact) plus the shipped `connect.py` fresh-file pragmas + the reopen-hazard candidate
+  ladder. By the §1a precedent merging WAS the ratification; this makes it explicit. (c) rows
+  1 and 2 are marked CLOSED against named artifacts (row 1 = the nine program pieces verified
+  present in the tree; row 2 = audit 09 + its ten shipped Action-Plan-D items). **ROW 7'S
+  OPERATOR INSTRUCTIONS ARE WRITTEN** (`P0_VALIDATION_RUNBOOK.md` §8, after a maintainer asked
+  what "cold boot" actually means): it is NOT a fresh install, NOT a fresh update, and NOT an
+  empty database — it is the app process stopped and restarted on the SAME FULL corpus, and a
+  second unlock in a warm process measures nothing. The §7 tag-day checklist is banner-marked
+  historical (0.2-era: pyproject now reads 0.3.0 and the branch rename is obsolete under the
+  permanent `main`). **ROW 8 HAS ITS BRIEF**
+  ([`AUTONOMOUS_SESSION_BRIEF_2026-08-13_UI_CLICKTHROUGH.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-08-13_UI_CLICKTHROUGH.md),
+  maintainer-asked, for an autonomous Sonnet-5 session): implement the REAL `UiWalkDriver`
+  against the existing Protocol (`src/monitoring/ui_walk.py` is 233 lines of scaffold — the
+  Surface model, the Protocol, `UnconnectedDriver` and the gate-row-8 `FLAGSHIP_SURFACES` all
+  exist; no real driver does), then drive the systematic click-through over 15 surfaces x
+  themes/locales/breakpoints/a11y across the three states, composing with (never repeating) the
+  2026-07-22 report's 72 findings. Carries the browser-specific honesty rules as MANDATORY (score
+  the COMPOSITED colour, not the declared token; `getComputedStyle(el,'::after')` for
+  pseudo-element inheritance leaks; greyscale as a browser filter captured MID-interaction; an
+  untested path is not a pass; RTL bidi isolates; `uppercase` is a no-op in 5 of 12 locales) and
+  the 429-storm caveat (one browser per server instance — the 2026-07-22 "384 JS errors" were
+  100% rate-limit console lines and ZERO uncaught exceptions, an artifact of that run's own
+  parallelism). ROW 5's remaining step is a DECISION, and ROW 3 delivers its input:
+  `criteria-calibration.json` is already an all-diagnostics bundle member
+  (`src/api/diagnostics.py:3529`), so the queued diagnostics run CONTAINS the report row 5's
+  execution is gated on — sequence = bundle → session proposes criteria against real specimens
+  → maintainer agrees → operator runs the quarantine pass with `write=True` → re-index clears
+  the junk keywords.
   **P0 VALIDATION RUN ON THE BIG CORPUS — MAINTAINER, 2026-08-03 (report
   `oo-p0-validation-20260803000812.json`, app 0.3.0, engine `oo-volumes-2`): 5 pass · 0 fail ·
   0 not-measurable.** REAL SCALE, stated as measured rather than as the bar's own wording:
@@ -12024,6 +12079,69 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     result — `assert round((180/7)/(300/30), 2) == 2.57` beside the string — because a
     proximity branch (`if prior`) that merely CORRELATES with the real condition will drift
     from it, and the drift is silent everywhere except in the arithmetic.
+  - **A TOOL THAT SILENTLY REWRITES YOUR REQUEST HANDS BACK A CONFIDENT WRONG FINDING
+    WEARING THE STRONGEST TIER — read the URL you were SERVED, never the one you asked for
+    (2026-08-13, the second blocked Governments-data session):** the pass asked for
+    `…NY.GDP.MKTP.CD?format=json&per_page=1000&page=2` and was served
+    `…?format=json&per_page=1000` — page 1 — with no error and no warning, three times over
+    two endpoints. Both responses duly reported `"page":1`. One check of the response's own
+    `destination_url` is the only thing that stopped it publishing *"page=2 returns page 1,
+    pagination is broken at the publisher"*: a confident, wrong, undetectable claim about
+    someone else's API, which would then have justified "fixing" our own working pagination.
+    GENERAL FORM: whenever you attribute an OUTPUT to an INPUT you supplied, verify the tool
+    echoed your input back — this is the `cmd | tail` lesson (a gate reporting on something
+    other than what you ran) at the level of a research finding rather than a shell pipeline,
+    and it is worse, because the fabricated result arrives labelled `fetched`. The same
+    tooling REFUSES a URL built from a `{CODE}` template outright, so the honest conclusion
+    is structural: 36 mechanical checks will never close in that harness, and the fix is an
+    egress allowlist entry, not a better prompt. Now absolute rule 5 of the session prompt.
+    **COROLLARY, from the same report — A RESEARCH PASS'S FACTS AND ITS INFERENCES ARRIVE AT
+    THE SAME CONFIDENCE, AND THE INFERENCES ARE WHERE THE ERRORS ARE.** The report stated an
+    ordering RULE — rows sort by `country.value` "with aggregates INTERLEAVED among real
+    countries rather than blocked separately" — and its own quoted page 1 refutes it: nine
+    aggregates and no countries, while `"Afghanistan"` sorts BEFORE `"Africa Eastern and
+    Southern"` and would have led the page if one sort spanned everything. So the aggregates
+    arrive as a leading block. I had already copied the interleaving claim verbatim into the
+    session prompt before checking it, which is the whole trap: a fetched fact and a
+    one-sentence generalisation drawn from it look identical in a well-written report, and
+    the generalisation is the half that decides where a page boundary falls. Check each
+    stated rule against the evidence printed beside it before it becomes a doc other
+    sessions treat as settled.
+  - **A STATE FIELD THAT CANNOT BE LEFT IS NOT A STATE FIELD — and the obvious end-date fix
+    ships the same defect one layer down (2026-08-13, the bloc registry, settled BEFORE the
+    roster was written):** `Membership.suspended_from` was a single date, and `_active`
+    returned suspended for every year at or after it, so Egypt — suspended from the African
+    Union in July 2013, reinstated in June 2014 — read as suspended in **2026**, and no
+    roster however well sourced could have said otherwise. The trap is that adding
+    `suspended_until` reads like the fix and is not: Mali has been suspended TWICE (2012,
+    reinstated 2013; again 2021), so one interval cannot hold it, and the gap between
+    episodes would be asserted as suspension. RULE: before choosing between a flag, a date,
+    an interval and a LIST of intervals, ask whether the entity can enter the state more than
+    once — the real world usually answers yes, and the cost of asking is zero while the
+    schema is still empty. COROLLARY on timing: this was worth doing precisely because the
+    registry holds no bloc data yet; the same change after several hundred sourced rows land
+    is a migration plus a re-read of every source. And the guard needs BOTH directions — a
+    fix that never reports suspension at all passes every "reinstated members are clear" test
+    while destroying the third state the field exists for.
+  - **A WRONG VERSION NUMBER IN A DOCSTRING IS WORTH CHASING, BECAUSE IT MEANS NOBODY KNOWS
+    WHICH CONTRACT THE CODE IMPLEMENTS (2026-08-13, `parse_sdmx_json`):** the session's
+    correction was pedantic on its face — "SDMX-JSON 2.1" names a version that does not exist
+    (message-format versions are 1.0 and 2.0; 2.0/2.1/3.0 version the information MODEL). But
+    a docstring naming a nonexistent contract means the edges were never checked against any
+    contract, and the edge here was a fabricated figure: an unmapped message resolved every
+    dimension to nothing, and `series_id or ""` / `ref_area or ""` appended the row anyway —
+    a real 2.957e12 with no country, no indicator and no year, which no reader could tell from
+    a fact. A value with no WHERE and no WHEN is not a figure; it is now refused with a loud
+    once-per-parse log, so an unrecognised shape reads as a GAP rather than as anonymous data.
+    TWO PREDICTIONS OF MINE WERE REFUTED BY MEASUREMENT IN THE SAME HOUR, which is the real
+    lesson: I predicted a 2.0 message would parse as silently EMPTY (it parsed as one
+    identity-less row — worse), and I then read my own failing AllDimensions probe as the fix
+    not working when the test payload's observation key was simply wrong. Run the parser;
+    do not reason about it. Also found by following the same thread: which LEVEL a dimension
+    sits at is decided by the request's `dimensionAtObservation`, not by the concept, and
+    OECD's own documented example passes `AllDimensions` — so `ref_area`/`series_id` must be
+    looked up at observation level as well as series level, exactly as `unit`/`adjustment`
+    already were.
 - **A CONTAINMENT GUARD WRITTEN AS A STRING PREFIX CLAIMS THE SIBLINGS TOO — and when the
   guard decides what may be DELETED, that is the whole safety property (2026-08-13, the
   AI-uninstall ownership test):** `_owned_by_app` is the single gate deciding what the new
@@ -12059,6 +12177,42 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   for the strings it renders rather than trusting the count. And key only what varies by
   language — the example identifier is a string to copy verbatim and the link text is a
   hostname, so both stay untranslated on purpose.
+- **AN ADAPTIVE CONTROLLER REBUILT AT THE TOP OF EVERY LOOP IS AMNESIAC — it re-learns
+  the same lesson forever, and the descent is the expensive part (2026-08-13, "repeated
+  crashes on a very slow instance"):** `BandwidthGovernor` backs off correctly under
+  memory pressure and, on a 4-core/3.65 GiB box, reached the right answer — one worker.
+  It is also constructed fresh inside `_do_run`, so every pass re-seeded at `w_max` and
+  re-walked the descent: `50->48 mem-low`, new pass, `50->48` again, then 28 linear ticks
+  over **43 s** at 150–300 MB available, then 50 again. Twenty-five hours of that.
+  Nothing was broken in the controller; what was missing was that its output survived
+  nowhere. And the measurement was ALREADY THERE — `CollectionMonitor` records
+  `mem_low_min_permits`, publishes it in the perf log, and no decision path read it (the
+  recorded dead-end shape, in a control loop rather than a status endpoint). GENERAL
+  FORM: when a component adapts at runtime, find the scope that CONSTRUCTS it and ask what
+  happens to its adaptation at that boundary — a controller whose lifetime is one
+  iteration cannot learn across iterations, however good its control law is. THREE DESIGN
+  POINTS. (a) Persist across RESTARTS, not just passes, when the symptom being fixed is
+  itself a restart — otherwise the fix is absent on exactly the machines that need it.
+  (b) A learned ceiling is a memory of pressure, not a verdict: relax it on clean passes
+  and CLEAR the record on arrival at the maximum, so a healthy machine carries no state
+  and a data dir moved to a bigger box heals instead of being pinned. (c) Never predict
+  the ceiling from RAM or core count — that is a fabricated capability claim; the only
+  honest input is what the machine actually did. COROLLARY on the back-off law itself:
+  memory is the one contention signal where overshoot is fatal rather than merely slow,
+  so it earns a MULTIPLICATIVE decrease (6 ticks to the floor, not 25) while writer/CPU
+  saturation stay linear — over-cutting those only wastes capacity.
+- **A MODE-SPECIFIC DEFAULT THAT OVERWRITES AN EXPLICIT ARGUMENT MAKES THE NEXT CALLER A
+  SILENT NO-OP (2026-08-13, same slice):** the governor read
+  `if seed is None: seed = DEFAULT_SEED` and then, unconditionally,
+  `if self.mode == "maximum": seed = self.w_max` — correct for years, because the only
+  caller passed no seed. The moment a caller had something to say, that line threw it
+  away, in **precisely the mode a throughput-tuned install runs in**: the fix above would
+  have shipped, passed its own unit tests, and done nothing on the reporting machine. The
+  shape to grep for is a defaulting block where the "no argument given" branch and the
+  "special case" branch are written as separate statements rather than one conditional —
+  the second silently outranks the caller. Fold the special case INTO the `is None`
+  branch. And pin it with a test named for the mode, since the general
+  "an explicit seed is honoured" case passes in the other mode either way.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 

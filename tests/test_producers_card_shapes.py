@@ -280,3 +280,76 @@ def test_run_all_drops_exact_type_key_duplicates_across_producers():
             (n, p) for (n, p) in registry._REGISTRY
             if n not in ("audit_dup_producer_1", "audit_dup_producer_2")
         ]
+
+
+# --------------------------------------------------------------------------- #
+# The emotion card could never be emitted (2026-08-13, from a field bundle where it
+# had failed 20 times in one session).
+# --------------------------------------------------------------------------- #
+
+
+def test_an_emotion_category_named_trust_is_carried_as_a_value_not_a_key():
+    """`assert_no_score_keys` bans a bare `trust` KEY, which is right — a trust SCORE is
+    exactly what this schema forbids. But "trust" is also one of the eight Plutchik/NRC
+    emotion categories the lexicon ships, and `_counts` seeds every category at 0, so the
+    banned key was present on EVERY call regardless of the text. The card was structurally
+    unemittable, and because the registry isolates producer failures it degraded into a
+    silently missing card rather than anything anyone would notice.
+
+    The trap is asserted REAL first: without that line this passes against both the broken
+    and the fixed shape, which is the whole failure mode of a guard like this."""
+    from src.awareness.emotion import emotion_profile
+    from src.briefing.card import assert_no_score_keys
+
+    prof = emotion_profile(["We trust the report and fear the outcome."])
+    assert "trust" in prof["categories"], "the lexicon must still ship a 'trust' category"
+
+    # 1. The trap is real: the old shape (category names as dict KEYS) is refused.
+    with pytest.raises(CardSchemaError):
+        assert_no_score_keys({"categories": prof["categories"]}, where="signal")
+
+    # 2. The shipped shape (category names as VALUES) passes...
+    shipped = [
+        {"category": name, "hits": hits}
+        for name, hits in sorted(prof["categories"].items(), key=lambda kv: (-kv[1], kv[0]))
+    ]
+    assert_no_score_keys({"categories": shipped}, where="signal")
+
+    # 3. ...and loses nothing, including the category that caused the refusal.
+    assert {c["category"] for c in shipped} == set(prof["categories"])
+    assert any(c["category"] == "trust" for c in shipped)
+
+
+def test_the_emotion_producer_does_not_hand_the_raw_category_dict_to_signal():
+    """Guards the actual call site, since the check above works on a reconstruction. Parses
+    the module and scopes to this producer's own body -- a whole-file search would match the
+    many other producers that legitimately build a `signal` dict."""
+    import ast
+    import pathlib
+
+    tree = ast.parse(pathlib.Path(P.__file__).read_text(encoding="utf-8"))
+    fn = next(
+        n
+        for n in tree.body
+        if isinstance(n, ast.FunctionDef) and n.name == "emotion_profile_card"
+    )
+    signal = next(
+        kw.value
+        for call in ast.walk(fn)
+        if isinstance(call, ast.Call)
+        for kw in call.keywords
+        if kw.arg == "signal"
+    )
+    assert isinstance(signal, ast.Dict)
+    entry = next(
+        v
+        for k, v in zip(signal.keys, signal.values, strict=True)
+        if isinstance(k, ast.Constant) and k.value == "categories"
+    )
+    assert not isinstance(entry, ast.Subscript), (
+        "signal['categories'] must not be the raw prof['categories'] dict -- its keys are "
+        "emotion names, one of which is 'trust', which assert_no_score_keys rejects"
+    )
+    assert isinstance(entry, ast.ListComp), (
+        "expected the list-of-objects shape that carries the category name as a VALUE"
+    )

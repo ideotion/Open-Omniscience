@@ -1162,7 +1162,21 @@ def emotion_profile_card(session) -> list[Card]:
             signal={
                 "metric": "dominant_emotion",
                 "value": prof["dominant"],
-                "categories": prof["categories"],
+                # Category names travel as VALUES, never as dict KEYS (2026-08-13, from a
+                # field bundle: this card had failed 20 times in one session and could NEVER
+                # have been emitted). `assert_no_score_keys` bans a bare `trust` key — which
+                # is correct, a trust SCORE is exactly what this schema forbids — and "trust"
+                # is also one of the eight Plutchik/NRC emotion categories the lexicon ships.
+                # `_counts` seeds every category at 0, so the banned key was present on every
+                # single call regardless of the text. Same shape as the source-auditor fix:
+                # a categorical NAME belongs in a value slot, where no key-walker can mistake
+                # it for a composite score. Ordered by hits so the leading category reads first.
+                "categories": [
+                    {"category": name, "hits": hits}
+                    for name, hits in sorted(
+                        prof["categories"].items(), key=lambda kv: (-kv[1], kv[0])
+                    )
+                ],
                 "lexicon": prof["lexicon_source"],
             },
             method=prof["method"],

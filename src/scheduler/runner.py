@@ -864,12 +864,20 @@ def run_scrape_once(
 
             from src.database.session import session_scope
             from src.monitoring.collect_perf import CollectionMonitor
+            from src.scheduler import capacity as _capacity
             from src.scheduler.bandwidth import BandwidthGovernor
 
+            # Start from what this machine has DEMONSTRATED it can sustain, not from
+            # w_max every time. On any box that has never backed off under memory
+            # pressure this returns w_max and the governor is built exactly as before;
+            # on one that has, it skips a descent it already paid for (and thrashed
+            # through) on the previous pass. The operator's collect_parallelism is
+            # untouched and remains the hard ceiling.
             governor = BandwidthGovernor(
                 mode=getattr(settings, "collect_rate_mode", "target"),
                 target_kbps=getattr(settings, "collect_target_kbps", 500),
                 w_max=w_max,
+                seed=_capacity.seed_for(w_max),
             )
             monitor = CollectionMonitor(
                 governor=governor,
@@ -935,6 +943,21 @@ def run_scrape_once(
                         "collect perf: bottleneck=%s",
                         summary.get("bottleneck", {}).get("verdict"),
                     )
+                    # Carry this pass's demonstrated floor to the next one. Best-effort
+                    # by contract: never let a capacity hint break a finished pass.
+                    # from_summary owns where the two numbers live in the payload — they
+                    # are nested under "bottleneck", and reading them from the top level
+                    # yields None for both, which is silently indistinguishable from a
+                    # pass that reported nothing.
+                    try:
+                        _ticks, _floor = _capacity.from_summary(summary)
+                        _capacity.record_pass(
+                            w_max=w_max,
+                            mem_low_ticks=_ticks,
+                            mem_low_min_permits=_floor,
+                        )
+                    except Exception:  # noqa: BLE001 - a hint is never worth a failure
+                        _LOG.debug("collect capacity: could not record this pass")
         else:
             from src.scheduler import memguard as _memguard
 
