@@ -31,15 +31,45 @@ WHAT THIS MODULE IS NOT (read before treating gate row 8 as satisfied):
 
 The five flagship surfaces (CLAUDE.md gate row 8, verbatim order) are anchored to the actual
 ``src/static/index.html`` single-page-app structure so a future real driver has concrete
-targets, not guesses:
+targets, not guesses. **Re-verified 2026-08-13 against the current tree** (the UI moved twice
+since this module was written -- the 2026-07-31 Settings restructure and the 2026-08-11/12
+Advanced-subtab foldout move -- confirming the module's own warning that a surface's anchor can
+go stale between sessions). **A SECOND re-verification the SAME day (this time by actually
+driving a real browser, not just grepping for a DOM id) found the first pass had NOT gone far
+enough**: ``#tab-analyze`` and Settings' panel both exist as DOM ids, but NEITHER has a
+``.nav-item[data-tab=...]`` sidebar button to reach them any more -- the sidebar carries only
+home/insights/timemap/law/agenda/indices/library (confirmed via ``grep 'class="nav-item"'``);
+Settings opens via a dedicated gear button in the sidebar footer
+(``button[onclick="showTab('settings')"]``), and the analysis window has NO static click target
+at all -- it is reached exclusively by spawning a search (``openAnalysisFor(query)``, the same
+function a keyword-chip click or the omnibar's Enter invokes; ``_anSpawn`` dedupes by query so
+repeated calls with the same ``search_query`` reuse one tab rather than accumulating). A driver
+that assumed ``nav_tab`` always means "click a sidebar nav-item" would silently time out on
+these two -- exactly the lesson CLAUDE.md's own record keeps naming ("re-derive a defect's
+mechanism from the code before patching what a report names"; here, the DOM-id check alone was
+the shallow pass a real click-through was needed to catch):
   * Home/Leads          -> nav tab "home" (``#tab-home``, the Leads carousel + briefing feed)
-  * the analysis window -> nav tab "analyze" (``#tab-analyze``)
+  * the analysis window -> nav tab "analyze" (``#tab-analyze``), opened via
+    ``openAnalysisFor(surface.search_query)`` -- NOT a nav-item click (see above)
   * the post-import screen -> the current import-summary render target (``#ux-imp-summary``,
-    ``app.js:_renderImportSummary``); the DEDICATED post-import redesign is itself still
-    PENDING (CLAUDE.md "POST-IMPORT RESULTS SCREEN"), so this anchors the surface that exists
-    today and must be re-pointed when that redesign ships.
-  * source management   -> Settings subtab "sources" (``#set-sources``)
-  * the one-button diagnostics panel -> Settings subtab "data" (``#diagnostics-panel``)
+    ``app.js:_renderImportSummary``), reached via Settings -> Data & backup -> the "Import..."
+    button (``openUnifiedImport()``) which opens the top-level ``<dialog id="ux-import">`` (NOT
+    nested under the Library tab, which is where an earlier session guessed it lived -- the
+    dialog was deliberately moved to top level in the 2026-07-31 restructure because a
+    ``<dialog>`` inside a ``display:none`` ancestor never renders even via ``showModal()``, per
+    that PR's own comment at index.html). The DEDICATED post-import redesign (CLAUDE.md
+    "POST-IMPORT RESULTS SCREEN") is itself still PENDING, so this anchors the surface that
+    exists today and must be re-pointed again when that redesign ships.
+  * source management   -> Settings subtab "advanced", section "sources" (``#src-table``). The
+    "Sources" panel moved off its own top-level Settings subtab into a folded
+    ``<details data-adv="sources">`` inside Advanced on 2026-07-31/08-11 (invariant #8:
+    acquisition plumbing folds away); the previous ``#set-sources`` anchor no longer exists as a
+    DOM id at all.
+  * the one-button diagnostics panel -> Settings subtab "advanced", section "diagnostics"
+    (``#diagnostics-panel`` -- the id itself is unchanged, but it moved from being a direct
+    child of a top-level Settings subtab into the same folded-``<details>`` grammar as sources,
+    on 2026-08-11 per that commit's own comment: "move all diagnostics from the data / backup
+    subtab into a new section in the advanced subtab").
 """
 
 from __future__ import annotations
@@ -56,14 +86,47 @@ SCHEMA = "oo-ui-walk-1"
 
 @dataclass(frozen=True)
 class Surface:
-    """One flagship surface to visit. ``nav_tab``/``dom_id`` are the concrete anchors a real
-    driver would use (a data-tab click, then a visibility check on the DOM id) — kept here so a
-    real driver drops in without this module guessing at selectors."""
+    """One surface to visit. The fields are the concrete anchors a real driver needs to reach
+    it inside the SPA's nested nav grammar (top-level tab -> relocated subtab strip -> a folded
+    Settings->Advanced ``<details>`` section -> an optional trigger click to open a dialog), so
+    a real driver drops in without guessing at selectors. Only ``id``/``label``/``dom_id`` are
+    required; everything else defaults to "not needed for this surface".
+
+    ``nav_tab``        the tab identifier this surface lives under. For most tabs this IS a
+                        ``.nav-item[data-tab]`` value (home/insights/timemap/law/agenda/indices/
+                        library); "analyze" and "settings" are special-cased by a real driver
+                        (neither has a sidebar nav-item any more -- see the module docstring)
+                        but keep the SAME identifier here since it still names which tab/panel
+                        is being reached. Leave empty when ``url`` is used instead (a surface
+                        reached by direct navigation, e.g. the standalone reader or /tasks).
+    ``search_query``    for ``nav_tab="analyze"`` ONLY: the query passed to
+                        ``openAnalysisFor(query)``, the function that actually opens the
+                        analysis window (there is no other click path). Empty string (the
+                        default) opens the window unfiltered -- the whole seeded corpus,
+                        never dependent on one language's vocabulary matching.
+    ``subtab``          a ``data-tab`` value inside the RELOCATED ``#subtab-strip`` for this
+                        ``nav_tab`` (``_relocateSubtabs`` in app.js moves the tab's own
+                        ``ooSubtabs`` nav container into that one shared strip on every
+                        ``showTab`` -- so a real driver always looks there, never at the
+                        subtab's original nested location).
+    ``advanced_section`` a Settings->Advanced ``data-adv`` value: the ``<details>`` foldout to
+                        expand (folded-must-not-mean-fetched, so a real driver must click its
+                        ``<summary>`` before the section's content is visible at all).
+    ``trigger``          an optional CSS selector to click AFTER navigating (e.g. an "Import..."
+                        button that opens a top-level ``<dialog>``).
+    ``url``             an absolute path to navigate to directly instead of clicking the SPA
+                        nav (the standalone reader, ``/tasks``).
+    """
 
     id: str
     label: str
-    nav_tab: str
     dom_id: str
+    nav_tab: str = ""
+    search_query: str = ""
+    subtab: str = ""
+    advanced_section: str = ""
+    trigger: str = ""
+    url: str = ""
     note: str = ""
 
 
@@ -74,27 +137,124 @@ FLAGSHIP_SURFACES: tuple[Surface, ...] = (
     Surface(
         "post_import_screen",
         "The post-import screen",
-        nav_tab="library",
+        nav_tab="settings",
+        subtab="data",
+        trigger='button[onclick="openUnifiedImport()"]',
         dom_id="ux-imp-summary",
         note=(
-            "anchors the CURRENT import-summary render target (app.js:_renderImportSummary); "
-            "the dedicated post-import redesign (CLAUDE.md) is still pending -- re-point this "
-            "surface's dom_id when that ships"
+            "the dialog opens with an EMPTY summary until an import actually completes -- "
+            "is_visible() here only proves the surface is reachable, not that a real import "
+            "rendered; the dedicated post-import redesign (CLAUDE.md) is still pending"
         ),
     ),
     Surface(
         "source_management",
         "Source management",
         nav_tab="settings",
-        dom_id="set-sources",
-        note="Settings > Sources subtab",
+        subtab="advanced",
+        advanced_section="sources",
+        dom_id="src-table",
+        note="Settings > Advanced > Sources (folded; moved off its own subtab 2026-07-31/08-11)",
     ),
     Surface(
         "diagnostics_panel",
         "The one-button diagnostics panel",
         nav_tab="settings",
+        subtab="advanced",
+        advanced_section="diagnostics",
         dom_id="diagnostics-panel",
-        note="Settings > Data & backup subtab",
+        note="Settings > Advanced > Diagnostics (folded; moved off Data & backup 2026-08-11)",
+    ),
+)
+
+
+# Backlog surfaces from the click-through brief's coverage table (2026-08-13), each anchored the
+# same way -- named because the brief calls them out by role, not because this is exhaustive.
+# Deeper drilling (e.g. every analysis/settings subtab) is done by the walk script building
+# ad-hoc Surface instances from the same `nav_tab`/`subtab`/`advanced_section` grammar; this
+# tuple only fixes the coordinates for surfaces that need something beyond a plain subtab click.
+BACKLOG_SURFACES: tuple[Surface, ...] = (
+    Surface(
+        "export_import_dialog",
+        "Export / Import (unified dialog)",
+        nav_tab="settings",
+        subtab="data",
+        trigger='button[onclick="openUnifiedExport()"]',
+        dom_id="ux-export",
+        note="the compartmented-export ask -- verify articles are no longer a forced checkbox",
+    ),
+    Surface(
+        "world_map_server_ips",
+        "World map -- Server IPs lens",
+        nav_tab="timemap",
+        # #oomap-lenses is its own nav, separate from the relocated #subtab-strip
+        # mechanism every other tab uses -- so the lens switch is a `trigger` click on
+        # its own button, never a `subtab`. The real render target is the sibling
+        # `#oo-coverage-map`, not `#oomap-lens-bar` (which stays permanently empty).
+        trigger='#oomap-lenses button[data-tab="servers"]',
+        dom_id="oo-coverage-map",
+        note="the Server-IP choropleth layer -- never rendered per the ledger's backlog list",
+    ),
+    Surface(
+        "governments_law",
+        "Governments -> Law",
+        nav_tab="law",
+        subtab="law",
+        dom_id="gov-law",
+        note="known-open item: the tab defaults to Countries, not Law, on every fresh load",
+    ),
+    Surface(
+        "settings_ai",
+        "Settings -> AI (the pill's third state, backend panel, roster install)",
+        nav_tab="settings",
+        subtab="models",
+        dom_id="set-models",
+    ),
+    Surface(
+        "settings_cards",
+        "Settings -> Cards (the 37 Lead producers, safe ranges)",
+        nav_tab="settings",
+        subtab="cards",
+        dom_id="set-cards",
+    ),
+    Surface(
+        "keyword_supergroups",
+        "Settings -> Advanced -> Keywords (group/super-group curation, the concept map)",
+        nav_tab="settings",
+        subtab="advanced",
+        advanced_section="keywords",
+        # `#kx-keywords` is a DRILL-DOWN target -- loadKeywordExplorer() (the section's
+        # first loader) explicitly clears it and leaves it empty until the user clicks
+        # a facet chip (kxShowTag), so checking it reports a false "not visible" on a
+        # perfectly healthy section -- found live 2026-08-13, confirmed via a direct
+        # DOM dump: `#kx-facets` (591 chars of real facet chips) and `#sgc-list` (the
+        # super-group curation cards -- "the concept map" this Surface's own label
+        # names) both render substantial real content on the SAME open, only
+        # `#kx-keywords` stays at 0 chars by design. `#sgc-list` is the anchor that
+        # actually matches the label.
+        dom_id="sgc-list",
+    ),
+    Surface(
+        "agenda_month",
+        "Agenda -- month grid, glyphs, deduced events",
+        nav_tab="agenda",
+        subtab="month",
+        dom_id="agenda-month",
+    ),
+    Surface(
+        "task_manager",
+        "Task manager -- Active / Queue / System / Schedule",
+        url="/tasks",
+        dom_id="tm-tabs",
+        note="a standalone static page (not the SPA nav) -- its own tm-tabs use data-panel",
+    ),
+    Surface(
+        "bulletin",
+        "Bulletin -- review screen + the Settings section",
+        nav_tab="settings",
+        subtab="advanced",
+        advanced_section="bulletin",
+        dom_id="bulletin-panel",
     ),
 )
 
