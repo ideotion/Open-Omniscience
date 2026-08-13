@@ -65,7 +65,7 @@ worldmap_places,map-lenses,verified,
 worldmap_servers,map-lenses,verified,
 governments_default_landing,default,verified,lands on subtab='countries'
 insights_map_cjk_keywords,zh-content,verified,sampled 60 pills; long-unsegmented-CJK=0
-contrast_pill.warn,theme=ink,verified,"ratio=5.35:1 fg=(217.0, 108.0, 108.0) bg=(20.0, 24.0, 31.0)"
+contrast_pill.warn,theme=ink,verified,"ratio=7.91:1 fg=(217.0, 164.0, 65.0) bg=(20.0, 24.0, 31.0)"
 contrast_card-caveat,theme=ink,verified,"ratio=9.44:1 fg=(234.0, 180.0, 78.0) bg=(20.0, 24.0, 31.0)"
 contrast_pill.warn,theme=paper,verified,"ratio=5.09:1 fg=(176.0, 74.0, 58.0) bg=(251.0, 248.0, 241.0)"
 contrast_card-caveat,theme=paper,verified,"ratio=6.29:1 fg=(138.0, 77.0, 10.0) bg=(251.0, 248.0, 241.0)"
@@ -80,8 +80,9 @@ topbar_overflow,768x1000,verified,scrollWidth=768 clientWidth=768 offscreen=[]
 topbar_overflow,1024x900,verified,scrollWidth=1024 clientWidth=1024 offscreen=[]
 topbar_overflow,1440x950,verified,scrollWidth=1440 clientWidth=1440 offscreen=[]
 locale_switch,en,verified,dir=ltr errors=[]
+locale_switch,fr,verified,dir=ltr errors=[]
 locale_switch,ar,verified,dir=rtl errors=[]
 locale_switch,zh,verified,dir=ltr errors=[]
 opacity_pseudo_spotcheck,#net-toggle::after,verified,"{'color': 'rgb(140, 149, 166)', 'backgroundColor': 'rgb(91, 157, 217)', 'opacity': '0.55', 'display': 'block', 'visibility': 'visible', 'content': '""""', 'width': '4px', 'height': '4px', 'fontSize': '15px', 'textTransform': 'none', 'position': 'absolute'}"
 opacity_pseudo_spotcheck,.nav-item.adv .badge,verified,"{'color': 'rgb(217, 164, 65)', 'backgroundColor': 'rgba(0, 0, 0, 0)', 'opacity': '1', 'display': 'block', 'visibility': 'visible', 'content': 'normal', 'width': '32.4062px', 'height': '17.5px', 'fontSize': '10px', 'textTransform': 'none', 'position': 'static'}"
-state_c_walk,summary,verified,14 named surfaces + subtab drills + 5 themes + 4 breakpoints + 3 locales
+state_c_walk,summary,verified,14 named surfaces + subtab drills + 5 themes + 4 breakpoints + 4 locales

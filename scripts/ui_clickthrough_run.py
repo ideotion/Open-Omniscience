@@ -41,7 +41,7 @@ STATE_B_URL = "http://127.0.0.1:8002"
 STATE_C_URL = "http://127.0.0.1:8000"
 
 THEMES_TO_CHECK = ["ink", "paper", "contrast", "mint", "dawn"]  # default + the light-theme cluster
-LOCALES_TO_CHECK = ["en", "ar", "zh"]
+LOCALES_TO_CHECK = ["en", "fr", "ar", "zh"]  # the brief's own stated minimum (2026-08-13 brief §6)
 BREAKPOINTS = [(375, 900), (768, 1000), (1024, 900), (1440, 950)]
 
 
@@ -108,6 +108,33 @@ def _log(msg: str) -> None:
     print(f"[{datetime.now(UTC).strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
+def _wait_for_server(url: str, *, timeout_s: float = 20.0) -> bool:
+    # A bounded HTTP readiness poll before driving a state. Found live 2026-08-13: launching
+    # all three uvicorn instances nearly simultaneously (the normal setup shape for this
+    # script's own three states) can leave one still mid-startup (catalog seeding, DB init)
+    # when a walk immediately navigates to it -- the server answers something, but the SPA's
+    # own client-side view-toggle JS (unlock.html's language -> legal -> create sequence) can
+    # race that startup work and read as not-yet-visible at the walk's fixed settle timeouts.
+    # Isolated re-verification against a WARM, already-launched state A (same code, same
+    # server, no other concurrent launches) reproduced ZERO of that flakiness -- 100% verified
+    # on every step -- confirming this is a harness readiness gap, not an app defect. A plain
+    # HTTP poll (never a browser navigation) is cheap and keeps this mechanical/safe per the
+    # fix policy; it does not touch the app itself.
+    import urllib.error
+    import urllib.request
+
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=2) as resp:  # noqa: S310
+                if resp.status < 500:
+                    return True
+        except (urllib.error.URLError, OSError, TimeoutError):
+            pass
+        time.sleep(0.5)
+    return False
+
+
 # ------------------------------------------------------------------------------------------ #
 # STATE A -- virgin (first-launch lifecycle)
 # ------------------------------------------------------------------------------------------ #
@@ -117,7 +144,21 @@ def investigate_state_a(pw, report: Report, shots: Path) -> None:
     try:
         page = browser.new_page(viewport={"width": 1280, "height": 900})
         page.goto(STATE_A_URL + "/", wait_until="domcontentloaded")
-        page.wait_for_timeout(300)
+        # A bounded wait for the client-side view-toggle JS to settle on ITS first view,
+        # rather than a fixed sleep -- found live 2026-08-13: under contention from other
+        # concurrently-launched app instances, a fixed 300ms could fire before unlock.html's
+        # own init script had finished picking between view-language/view-legal/view-create/
+        # view-unlock, reading a real (later-visible) view as absent. `:visible` here is
+        # Playwright's own extension, not a bare CSS selector -- it excludes `.hidden`
+        # elements by construction, so this never forces a view open early, it only waits
+        # for whichever one the app itself is about to show.
+        with contextlib.suppress(Exception):
+            page.wait_for_selector(
+                "#view-language:visible, #view-legal:visible, #view-create:visible, "
+                "#view-unlock:visible, #view-open:visible",
+                timeout=5000,
+            )
+        page.wait_for_timeout(150)
         page.screenshot(path=str(shots / "state-a-01-boot.png"), full_page=True)
 
         # The REAL first-launch sequence (unlock.html): view-language -> view-legal ->
@@ -139,7 +180,9 @@ def investigate_state_a(pw, report: Report, shots: Path) -> None:
         )
         if lang_step_visible:
             page.click(".lang-btn")  # the first language button (English)
-            page.wait_for_timeout(300)
+            with contextlib.suppress(Exception):
+                page.wait_for_selector("#view-legal:visible", timeout=3000)
+            page.wait_for_timeout(150)
 
         legal_step_visible = _safe_visible(page, "#view-legal")
         report.add_coverage(
@@ -159,7 +202,9 @@ def investigate_state_a(pw, report: Report, shots: Path) -> None:
             )
             if accept_enabled:
                 page.click("#lg-accept")
-                page.wait_for_timeout(400)
+                with contextlib.suppress(Exception):
+                    page.wait_for_selector("#view-create:visible", timeout=3000)
+                page.wait_for_timeout(150)
 
         page.screenshot(path=str(shots / "state-a-02-after-legal.png"), full_page=True)
 
@@ -746,6 +791,13 @@ def main() -> None:
     shots.mkdir(parents=True, exist_ok=True)
 
     report = Report()
+    for label, url in (("A", STATE_A_URL), ("B", STATE_B_URL), ("C", STATE_C_URL)):
+        if not _wait_for_server(url):
+            _log(f"WARNING: state {label} ({url}) did not answer within the readiness "
+                 f"timeout -- proceeding anyway, but its results may read as false negatives.")
+        else:
+            _log(f"state {label} ({url}) is warm")
+
     with sync_playwright() as pw:
         investigate_state_a(pw, report, shots)
         investigate_state_b(pw, report, shots)
