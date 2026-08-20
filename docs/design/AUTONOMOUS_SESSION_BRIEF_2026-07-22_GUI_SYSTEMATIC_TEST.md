@@ -1,8 +1,9 @@
 # AUTONOMOUS SESSION BRIEF — SYSTEMATIC GUI TEST & CRITICAL REVIEW (2026-07-22)
 
 **Status:** brief of record, execution PENDING.
-**Executes toward:** `RELEASE_0.3_GATE.md` row 8 (the browser-verification bar — the
-file sits at the REPO ROOT, not under `docs/`) and the accumulated fork-3
+**Executes toward:** [`RELEASE_0.3_GATE.md`](../product/RELEASE_0.3_GATE.md) row 8 (the
+browser-verification bar — the board sat at the repo root when this brief was written; it
+was absorbed into `docs/product/` on 2026-08-13) and the accumulated fork-3
 "browser-unverified, needs click-through" backlog.
 **Composes with (do not duplicate):** `src/monitoring/ui_walk.py` (the injectable
 row-8 walk harness — wire a real driver into its `UiWalkDriver` seam where it fits),
