@@ -186,7 +186,12 @@ columnar = [
 # alone if this is absent (and labels itself honestly); installing this upgrades
 # new signatures to hybrid Ed25519 + ML-DSA (FIPS 204) for quantum resistance.
 pqc = [
-    "pqcrypto>=0.3.4",
+    # <1.0: pqcrypto 1.0.0 renamed generate_keypair -> keygen (typed keys, *_SIZE
+    # constants) and breaks src/custody/signing.py at import of the ml_dsa_65 API.
+    # Adapting to the 1.x API is its own reviewed slice (old 0.x keys must still
+    # verify); until then the ceiling keeps the lane green — the same
+    # unpinned-tool drift class as the bandit/mypy pins.
+    "pqcrypto>=0.3.4,<1.0",
 ]
 
 # Independent "existed no later than T" timestamping via OpenTimestamps (anchors
