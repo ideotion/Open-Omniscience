@@ -259,6 +259,34 @@ BACKLOG_SURFACES: tuple[Surface, ...] = (
 )
 
 
+def reader_surface(article_id: int) -> Surface:
+    """The standalone offline READER for one article — the 2026-08-13 report's single
+    largest named-surface gap (§4 row 13: "not covered at all"). The reader is a
+    server-rendered page at ``/api/articles/{id}/view``, NOT part of the SPA, so it is
+    reached via the ``url`` navigation path (the same grammar ``/tasks`` uses), never a
+    ``nav_tab`` click. A Surface cannot carry the article id statically (ids are
+    per-corpus), so this is a FACTORY the walk script calls with a real id discovered
+    from the corpus under test — consistent with the ad-hoc-Surface convention the
+    subtab drills already use.
+
+    ``dom_id`` anchors on ``rp-read`` — the Read pane (``src/api/main.py`` renders the
+    tab bar as ``.rtab[data-rtab=...]`` buttons over ``#rp-<key>`` panes; ``read`` is
+    the default-active pane, so it is the one that must be non-empty on load). The tab
+    DRILL (every ``data-rtab``, the two-class provenance groups ``.mgrp`` /
+    ``.mgrp.deduced`` / ``.mgrp.ai-derived``, the Loaded-language pane) is the walk
+    script's job, same as every other sub-capability drill."""
+    return Surface(
+        "reader",
+        "Reader — tabs, provenance classes, Loaded-language",
+        url=f"/api/articles/{article_id}/view",
+        dom_id="rp-read",
+        note=(
+            "standalone server-rendered page (never the SPA nav); the id comes from the "
+            "corpus under test at run time via this factory"
+        ),
+    )
+
+
 class UiWalkDriver(Protocol):
     """The seam a real browser plugs into. No implementation lives in this module: a real
     driver (Playwright's Firefox channel, or a thin ``firefox --headless`` wrapper -- a
