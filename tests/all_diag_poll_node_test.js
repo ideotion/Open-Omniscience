@@ -24,8 +24,9 @@ const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
 
-const APP = fs.readFileSync(
-  path.join(__dirname, "..", "src", "static", "app.js"), "utf8");
+// The engine is several ordered modules since 2026-08-20 (S-3); the helper reads the
+// module list out of index.html, so this suite cannot come to read a subset of it.
+const APP = require("./app_source.js").appJs();
 
 function functionBody(src, name) {
   const at = src.indexOf("function " + name + "(");

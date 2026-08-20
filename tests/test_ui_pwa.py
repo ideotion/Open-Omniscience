@@ -64,5 +64,19 @@ def test_service_worker_caches_only_the_static_shell_never_api():
     assert "fetch(req)" in sw and "caches.match(req)" in sw
     # only successful basic 200s are cached (never opaque/error)
     assert 'res.status === 200 && res.type === "basic"' in sw
-    # old cache versions are purged on activate
-    assert 'caches.delete(k)' in sw and 'oo-shell-v1' in sw
+    # Old cache versions are purged on activate. Assert the PROPERTY, not the version
+    # literal: this used to read `'oo-shell-v1' in sw`, which pinned the number the
+    # cache happened to carry the day the test was written. Bumping the version is the
+    # CORRECT response to a changed SHELL list -- without it an offline client keeps
+    # serving the previous list -- so the old assertion turned a right action into a
+    # red test, and the property it meant to check (anything not the current cache is
+    # deleted) held the whole time.
+    assert "caches.delete(k)" in sw
+    assert "keys.filter((k) => k !== CACHE)" in sw, (
+        "the activate purge must delete every cache that is not the CURRENT one; "
+        "a purge keyed on specific old names leaves the next version's cache behind"
+    )
+    assert re.search(r'const CACHE = "oo-shell-v\d+";', sw), (
+        "the shell cache name must carry a version, or a changed SHELL list cannot be "
+        "rolled out to a client that is already offline"
+    )

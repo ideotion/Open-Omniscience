@@ -32,14 +32,16 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.js_source_helper import read_static
+
 # index.html's JS/CSS were externalised into cached app.js/app.css (audit PR H), so
 # the UI source the assertions grep is the three files together (a MOVE, not a loss).
+# The engine became several ordered modules on 2026-08-20 (S-3); read_static resolves
+# "app.js" to all of them. The `if exists()` guard this used to carry was the hazard:
+# it dropped a file it could not find rather than failing, so the engine went unread
+# and only the POSITIVE assertions noticed.
 _STATIC_DIR = Path(__file__).resolve().parents[1] / "src" / "static"
-_HTML = "\n".join(
-    (_STATIC_DIR / f).read_text(encoding="utf-8")
-    for f in ("index.html", "app.js", "app.css")
-    if (_STATIC_DIR / f).exists()
-)
+_HTML = "\n".join(read_static(f) for f in ("index.html", "app.js", "app.css"))
 
 
 def test_single_file_create_is_removed_backups_go_through_unified_export():
