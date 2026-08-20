@@ -2982,6 +2982,10 @@
       // the card left-accent (--fam) so the feed stays scannable in "All", and echoed
       // as a dot in the family subtab. "All cards" is the default lens (a single
       // prioritised feed); the families are a lens, never a wall (§5).
+      // The server's OWN family label, remembered per stable bucket key so a card's
+      // provenance can carry it (ruling 16) without app.js keeping a second copy of
+      // BUCKET_LABELS that could drift from the Python one.
+      data.buckets.forEach(b => { if (b && b.bucket) _famLabels[b.bucket] = b.label || ""; });
       const html = data.buckets.map((b, bi) => {
         b.cards.forEach(c => { _briefCards[c.id] = c; });
         const cards = b.cards.map(cardHtml).join("");
@@ -3031,6 +3035,8 @@
     //
     // This CHANGES today's Home colours, which is the point -- ruling 14 accepts a new
     // palette in exchange for one that stops moving.
+    // bucket key -> the family label the SERVER sent (filled by renderBriefing).
+    const _famLabels = {};
     const FAM_HUE = {
       rising: 145, watch: 55, overtold: 25, context: 175,
       investigate: 205, undertold: 265, trust: 300, debunk: 340,
@@ -3117,8 +3123,8 @@
       const aq = cardAnalyzeQuery(c);
       const aIds = (Array.isArray(c.article_ids) && c.article_ids.length) ? c.article_ids : null;
       const action = aIds
-        ? `openCardCorpus(${esc(JSON.stringify(aIds))}, ${esc(JSON.stringify(aq))})`
-        : `openCardCorpusQuery(${esc(JSON.stringify(aq))})`;
+        ? `openCardCorpus(${esc(JSON.stringify(aIds))}, ${esc(JSON.stringify(aq))}, null, ${esc(JSON.stringify(cardProvenance(c)))})`
+        : `openCardCorpusQuery(${esc(JSON.stringify(aq))}, null, ${esc(JSON.stringify(cardProvenance(c)))})`;
       // the CAVEAT rides EVERY rotated face — a timed rotation never hides it (#23 + the brief).
       const caveat = c.caveat ? `<p class="card-caveat">${esc(c.caveat)}</p>` : "";
       face.innerHTML =
@@ -3325,24 +3331,97 @@
     // tab the SPA hydrates from the URL (boot handler below), so the analysis lives
     // outside the current view. Exact set when the card carries article_ids, else the
     // seed query (the diagnostic flags any card whose query loses its corpus).
-    function openCardCorpus(ids, label, tab) {
+    // ---- LEAD PROVENANCE TRANSPORT (rulings 15/16) ---------------------------- //
+    //
+    // Ruling 16: the WHOLE provenance travels with a card into its analysis window --
+    // the card, its family, the producer, the trigger, the method and the caveat.
+    // TRANSPORT, never a new measurement: every field below is read off the card the
+    // reader actually clicked and carried verbatim.
+    //
+    // Carried through localStorage under a one-shot token, not in the URL, because the
+    // analysis opens in a NEW BROWSER TAB: sessionStorage does not cross tabs, and the
+    // method + caveat + trigger math are whole sentences and rows, which would make an
+    // unwieldy URL and can exceed length limits. The token is single-use -- the reading
+    // tab deletes the entry as soon as it has it -- and a sweep bounds what a tab that
+    // never opened can leave behind, so this can never grow without limit.
+    const _AN_PROV_PREFIX = "oo.an.prov.";
+    const _AN_PROV_KEEP = 8;        // most recent handoffs retained by the sweep
+    const _AN_PROV_MAX_AGE_MS = 36e5;   // and nothing older than an hour survives it
+    // The six fields ruling 16 names, read off the card. `bucket` is the STABLE family
+    // key (the label is translated at render time, and the hue is derived from the key),
+    // and `type` IS the producer identity -- one producer emits one card type.
+    function cardProvenance(c) {
+      if (!c) return null;
+      return {
+        card: cardTitle(c) || c.title || "",
+        bucket: c.bucket || "",
+        // The family's display label, taken from the server's own briefing payload at
+        // the moment the card is rendered. Carried rather than looked up on arrival:
+        // the analysis opens in a NEW browser tab, which may never have loaded Home and
+        // so would have no label table at all.
+        family: (c.bucket && _famLabels[c.bucket]) || "",
+        producer: c.type || "",
+        trigger: c.trigger || null,
+        method: c.method || "",
+        caveat: c.caveat || "",
+      };
+    }
+    function _anProvSweep() {
+      try {
+        const now = Date.now();
+        const mine = [];
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k && k.indexOf(_AN_PROV_PREFIX) === 0) mine.push(k);
+        }
+        // Newest first: the token's tail is the creation time in base 36.
+        mine.sort().reverse();
+        mine.forEach((k, idx) => {
+          const born = parseInt(String(k.slice(_AN_PROV_PREFIX.length)).split("-")[0], 36);
+          const stale = !Number.isFinite(born) || (now - born) > _AN_PROV_MAX_AGE_MS;
+          if (idx >= _AN_PROV_KEEP || stale) localStorage.removeItem(k);
+        });
+      } catch (_e) { /* private mode / quota -- a colour-and-caption feature never blocks a click */ }
+    }
+    function _anProvStash(prov) {
+      if (!prov) return "";
+      try {
+        const token = Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+        localStorage.setItem(_AN_PROV_PREFIX + token, JSON.stringify(prov));
+        _anProvSweep();
+        return token;
+      } catch (_e) { return ""; }   // no storage -> the window still opens, just without the header
+    }
+    function _anProvTake(token) {
+      if (!token) return null;
+      try {
+        const raw = localStorage.getItem(_AN_PROV_PREFIX + token);
+        localStorage.removeItem(_AN_PROV_PREFIX + token);   // single use
+        return raw ? JSON.parse(raw) : null;
+      } catch (_e) { return null; }
+    }
+    function openCardCorpus(ids, label, tab, prov) {
       const p = new URLSearchParams();
       p.set("corpus", (ids || []).join(","));
       if (label) p.set("label", label);
       if (tab) p.set("tab", tab);   // item #5: land the new window on the type's best subtab
+      const token = _anProvStash(prov);
+      if (token) p.set("prov", token);
       _openCorpusUrlOnce("/?" + p.toString());
     }
     // Open a query's analysis window in a NEW BROWSER TAB (field remark 9: search +
     // Enter should open a new tab). A fresh SPA boot hydrates ?analyze= via
     // _hydrateCardCorpus() → openAnalysisFor(), so the new tab lands on the same
     // analysis. Shared by the home-card flip and the omnibar/palette Enter.
-    function openAnalysisInNewTab(q, tab) {
+    function openAnalysisInNewTab(q, tab, prov) {
       const p = new URLSearchParams();
       p.set("analyze", q || "");
       if (tab) p.set("tab", tab);   // optional deep-link subtab (item #5); omnibar Enter omits it
+      const token = _anProvStash(prov);
+      if (token) p.set("prov", token);
       _openCorpusUrlOnce("/?" + p.toString());
     }
-    function openCardCorpusQuery(q, tab) { openAnalysisInNewTab(q, tab); }
+    function openCardCorpusQuery(q, tab, prov) { openAnalysisInNewTab(q, tab, prov); }
     // Route a Lead to the most useful analysis subtab for its type (item #5): a rising
     // keyword -> its Trend; a coordination/near-dup/framing Lead -> Related; a reading-diet
     // or coverage Lead -> Sources; a space-time convergence -> When/Where/Who. Anything
@@ -3423,9 +3502,11 @@
       const _aq = cardAnalyzeQuery(c);
       const _aIds = (Array.isArray(c.article_ids) && c.article_ids.length) ? c.article_ids : null;
       const _tab = cardSubtab(c);   // item #5: the most useful analysis subtab for this Lead's type
+      // Ruling 16: the whole provenance travels with the card into its analysis window.
+      const _prov = cardProvenance(c);
       const _openCorpus = _aIds
-        ? `openCardCorpus(${esc(JSON.stringify(_aIds))}, ${esc(JSON.stringify(_aq))}, ${esc(JSON.stringify(_tab))})`
-        : `openCardCorpusQuery(${esc(JSON.stringify(_aq))}, ${esc(JSON.stringify(_tab))})`;
+        ? `openCardCorpus(${esc(JSON.stringify(_aIds))}, ${esc(JSON.stringify(_aq))}, ${esc(JSON.stringify(_tab))}, ${esc(JSON.stringify(_prov))})`
+        : `openCardCorpusQuery(${esc(JSON.stringify(_aq))}, ${esc(JSON.stringify(_tab))}, ${esc(JSON.stringify(_prov))})`;
       const openBtn = _aq
         ? `<button class="lead-open" onclick="${_openCorpus}" title="${esc(t("Open this Lead's corpus in a new window"))}">${esc(t("Open corpus"))} ↗</button>`
         : "";
@@ -20165,6 +20246,9 @@
           ids: tb.kind === "ids" ? (tb.ids || []).slice(0, 5000) : null,
           commodity: tb.commodity || null, src: tb.src || "", lang: tb.lang || "",
           from: tb.from || "", to: tb.to || "",
+          // Ruling 16: the Lead's provenance is part of the seed, so a reload does not
+          // silently drop the header and leave the analysis looking self-originated.
+          prov: tb.prov || null,
         }));
         localStorage.setItem(_AN_TABS_KEY, JSON.stringify({tabs: slim, active: _anActiveId}));
       } catch (_e) { /* private mode — tabs just won't persist */ }
@@ -20193,8 +20277,63 @@
       $("an-adv-to").value = tb.to || "";
       $("an-query").textContent = tb.label ? `“${tb.label}”` : (tb.query ? `“${tb.query}”` : t("(the selected article set)"));
       $("an-adv-note").textContent = (tb.kind === "ids") ? t("Showing the exact article set behind this Lead.") : "";
+      _anRenderProvenance(tb.prov || null);
       loadAnalysis(anParams());
       if (_anSubtabs) _anSubtabs.select("overview"); else anSelectTab("overview");   // generic landing (Q1)
+    }
+    // The PERSISTENT provenance header (ruling 15). Sits above the subtabs, so it stays
+    // on screen whichever subtab the reader is on -- an analysis opened from a Lead
+    // should never lose track of which Lead, and on what basis, it came from.
+    //
+    // Every field is the CARD'S OWN, carried verbatim (ruling 16). Nothing here is
+    // recomputed, so the header can never disagree with the card that produced it.
+    // A missing field is simply omitted: an analysis opened from a search has no card
+    // provenance at all and the whole header stays hidden, because attributing a search
+    // to a producer that never ran would be a fabricated attribution.
+    function _anRenderProvenance(prov) {
+      const host = $("an-prov"); if (!host) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      if (!prov || !(prov.card || prov.producer || prov.method || prov.caveat)) {
+        host.hidden = true; host.innerHTML = ""; host.style.removeProperty("--fam");
+        return;
+      }
+      // The family colour comes from the same famHue as Home, keyed on the same stable
+      // bucket name, so a Lead and its analysis are recognisably the same family.
+      if (prov.bucket) host.style.setProperty("--fam", famHue(prov.bucket));
+      else host.style.removeProperty("--fam");
+      const famLabel = prov.family || prov.bucket || "";
+      const bits = [];
+      if (famLabel) {
+        bits.push(`<span class="an-prov-fam"><span class="fam-dot"`
+          + `${prov.bucket ? ` style="background:${famHue(prov.bucket)}"` : ""}></span>`
+          + `${esc(t(famLabel))}</span>`);
+      }
+      if (prov.producer) {
+        // The producer identity, shown as the card TYPE the reader already saw on the
+        // card's own chip -- same vocabulary on both surfaces.
+        bits.push(`<span class="chip">${esc(String(prov.producer).replace(/_/g, " "))}</span>`);
+      }
+      // The trigger's plain sentence is ONE constant per card type (keyable), and each
+      // math row is a constant label + a language-neutral value -- so both translate.
+      const mathRows = ((prov.trigger && prov.trigger.math) || []).map(r =>
+        `<tr><td>${esc(t(r.label))}</td><td class="why-val">${esc(r.value)}</td></tr>`).join("");
+      const why = (prov.trigger && prov.trigger.plain)
+        ? `<p class="why-plain">${esc(t(prov.trigger.plain))}</p>` : "";
+      const math = mathRows
+        ? `<details class="card-info"><summary>${esc(t("The exact math"))}</summary>`
+          + `<table class="why-math">${mathRows}</table></details>` : "";
+      // The CAVEAT is visible by default here, exactly as on the card's back face --
+      // never behind the details toggle (invariant #23).
+      const caveat = prov.caveat ? `<p class="card-caveat">${esc(t(prov.caveat))}</p>` : "";
+      const method = prov.method
+        ? `<div class="mc"><b>${esc(t("Method"))}:</b> ${esc(t(prov.method))}</div>` : "";
+      host.innerHTML = `<div class="an-prov-top">`
+        + `<span class="an-prov-from">${esc(t("From this Lead"))}:</span> `
+        + `<b class="an-prov-card">${esc(prov.card || "")}</b> ${bits.join(" ")}</div>`
+        + caveat + method
+        + ((why || math) ? `<div class="why-mathlabel">${esc(t("Why am I seeing this?"))}</div>` : "")
+        + why + math;
+      host.hidden = false;
     }
     function _anActivate(id) {
       const tb = _anTabs.find(x => x.id === id); if (!tb) return;
@@ -20219,6 +20358,7 @@
       // No tabs: the surface is a launcher (the empty singleton #an is retired).
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _anIds = null; _anCommodity = null; $("an-query").textContent = "";
+      _anRenderProvenance(null);
       const ov = $("an-overview");
       if (ov) ov.innerHTML = `<div class="muted">${esc(t("Search above, or open a Lead or keyword, to start an analysis. Each opens its own tab here."))}</div>`;
       if (_anSubtabs) _anSubtabs.select("overview"); else anSelectTab("overview");
@@ -20242,14 +20382,16 @@
     }
     // Open the analysis window over an EXACT article set (echo / convergence / a card's
     // precise selection). The corpus is exactly these ids, not a re-run search.
-    function openAnalysisForIds(ids, label) {
-      _anSpawn({kind: "ids", ids: Array.isArray(ids) ? ids.slice(0, 5000) : [], label: label || "", query: ""});
+    function openAnalysisForIds(ids, label, prov) {
+      _anSpawn({kind: "ids", ids: Array.isArray(ids) ? ids.slice(0, 5000) : [], label: label || "",
+                query: "", prov: prov || null});
     }
     // Open the analysis window seeded with a query (omnibar Enter, keyword/card click).
     // A commodity click carries {commodity:{symbol,name,unit}} for the Price subtab.
     function openAnalysisFor(query, opts) {
       const q = (query || "").trim();
-      _anSpawn({kind: "query", query: q, label: q, commodity: (opts && opts.commodity) || null});
+      _anSpawn({kind: "query", query: q, label: q, commodity: (opts && opts.commodity) || null,
+                prov: (opts && opts.prov) || null});
     }
     // Retired #corpus-win modal -> a keyword now spawns its own analysis tab (one
     // surface). All openCorpus call sites get the spawn behaviour for free.
@@ -23890,11 +24032,15 @@
         const corpus = sp.get("corpus"), analyze = sp.get("analyze");
         if (!corpus && !analyze) return;
         showTab("analyze", false);
+        // Ruling 16: the Lead's provenance travels with the deep link (a one-shot
+        // localStorage token, taken and deleted here) so the new window can show WHICH
+        // Lead it came from and on what basis. Absent -> no header, never an invented one.
+        const prov = _anProvTake(sp.get("prov"));
         if (corpus) {
           const ids = corpus.split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0);
-          if (ids.length) openAnalysisForIds(ids, sp.get("label") || "");
+          if (ids.length) openAnalysisForIds(ids, sp.get("label") || "", prov);
         } else if (analyze) {
-          openAnalysisFor(analyze);
+          openAnalysisFor(analyze, prov ? {prov} : undefined);
         }
         // Deep-link a specific analysis subtab (?tab=keywords from an in-article
         // keyword click). _anSubtabs is wired just AFTER this IIFE, so stash the

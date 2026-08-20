@@ -1021,6 +1021,26 @@
     /* THEME-3 (2026-06-19): the spawned analysis-tab strip — a multi-document workspace
        of named, closeable tabs over the one analysis render area. */
     .an-tabstrip { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 8px; }
+
+    /* PERSISTENT LEAD-PROVENANCE HEADER in the analysis window (rulings 15/16).
+       Sits above the subtabs so it stays on screen whichever subtab is open. The left
+       accent uses --fam, the SAME family hue Home paints (famHue, keyed on the stable
+       bucket name), so a Lead and its analysis read as the same family.
+       --fam has a theme-derived fallback rather than a hardcoded hue: this renders on
+       all 17 themes, and a fixed colour would fail some of them (the recorded
+       --caveat/--warn contrast lesson). No `opacity` anywhere in this block: element
+       opacity composites the WHOLE element over what is behind it, so a dimmed caveat
+       is scored against a background it never actually has -- the .ag-cal defect. */
+    .an-prov-head { border-inline-start:3px solid var(--fam, var(--accent));
+      background:var(--panel2); border-radius:6px; padding:8px 10px; margin:0 0 8px; }
+    .an-prov-top { display:flex; flex-wrap:wrap; gap:6px; align-items:baseline; }
+    .an-prov-from { color:var(--muted); font-size:11.5px; }
+    .an-prov-card { font-size:13px; }
+    .an-prov-fam { display:inline-flex; align-items:center; gap:5px; font-size:11.5px;
+      color:var(--muted); }
+    .an-prov-head .fam-dot { display:inline-block; width:8px; height:8px;
+      border-radius:50%; background:var(--fam, var(--accent)); }
+    .an-prov-head .why-math { margin-top:4px; }
     .an-tab { display:inline-flex; align-items:center; border:1px solid var(--border);
       border-radius:8px 8px 0 0; background:var(--panel2); overflow:hidden; }
     .an-tab.active { border-color:var(--accent); background:var(--panel); }

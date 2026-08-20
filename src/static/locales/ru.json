@@ -1084,6 +1084,7 @@
   "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.": "reliability_score — это метаданные происхождения, которые вы, оператор, задаёте для каждого источника. Приложение никогда их не вычисляет, не задаёт по умолчанию и не выводит из текста статей; оно никогда не строит из них зацепку или оценку.",
   "Open in analysis — the article selection behind this Lead": "Открыть в анализе — подборка статей за этой зацепкой",
   "Showing the exact article set behind this Lead.": "Показан точный набор статей за этой зацепкой.",
+  "From this Lead": "По этой зацепке",
   "Rising — three windows": "Растущие — три окна",
   "Past 24h": "Последние 24 ч",
   "Past week": "Прошлая неделя",

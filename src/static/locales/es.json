@@ -1084,6 +1084,7 @@
   "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.": "reliability_score es un metadato de procedencia que usted, el operador, asigna por fuente. La aplicación nunca lo calcula, ni le da un valor por defecto, ni lo deriva del texto de los artículos, y nunca construye una pista o puntuación a partir de él.",
   "Open in analysis — the article selection behind this Lead": "Abrir en análisis — la selección de artículos detrás de esta pista",
   "Showing the exact article set behind this Lead.": "Mostrando el conjunto exacto de artículos detrás de esta pista.",
+  "From this Lead": "Desde esta pista",
   "Rising — three windows": "En aumento — tres ventanas",
   "Past 24h": "Últimas 24 h",
   "Past week": "Última semana",

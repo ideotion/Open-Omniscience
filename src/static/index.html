@@ -373,6 +373,15 @@
            spawns a NAMED, closeable, persisted tab over this one render area (replaces
            the singleton + the retired #corpus-win modal). -->
       <div id="an-tabstrip" class="an-tabstrip" role="tablist" style="display:none"></div>
+      <!-- PERSISTENT PROVENANCE HEADER (rulings 15/16, field feedback 2026-08-07).
+           When an analysis is opened FROM a Lead, the whole provenance travels with it
+           -- the card, its family, the producer, the trigger, the method and the caveat
+           -- and is shown here, ABOVE the subtabs, so it stays on screen whichever
+           subtab the reader is on. Transport, never a new measurement: every value is
+           the card's own, carried verbatim. Hidden for an analysis that did NOT come
+           from a Lead (a search has no card provenance, and inventing one would be a
+           fabricated attribution). Filled by _anRenderProvenance. -->
+      <div id="an-prov" class="an-prov-head" hidden></div>
       <div class="phead"><h2>Analysis</h2><span class="sp"></span>
         <span id="an-query" class="hint" style="margin:0"></span></div>
       <p class="hint" style="margin-top:0">Analytics over the articles your search matched — counts only, never a verdict. <span>Text only — images, audio and video aren't analysed.</span></p>

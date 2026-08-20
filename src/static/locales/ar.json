@@ -1084,6 +1084,7 @@
   "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.": "reliability_score هي بيانات وصفية للمصدر تُحدِّدها أنت (المُشغِّل) لكل مصدر. لا يحسبها التطبيق أبدًا، ولا يضع لها قيمة افتراضية، ولا يستنتجها من نص المقالات، ولا يبني منها خيط أو تقييمًا.",
   "Open in analysis — the article selection behind this Lead": "افتح في التحليل — مجموعة المقالات وراء هذه الخيط",
   "Showing the exact article set behind this Lead.": "عرض مجموعة المقالات الدقيقة وراء هذه الخيط.",
+  "From this Lead": "من هذا الخيط",
   "Rising — three windows": "في صعود — ثلاث نوافذ",
   "Past 24h": "آخر 24 ساعة",
   "Past week": "الأسبوع الماضي",

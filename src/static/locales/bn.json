@@ -1084,6 +1084,7 @@
   "reliability_score is operator-set provenance metadata you assert per source. The app never computes, defaults, or derives it from article data, and never builds a Lead or score from it.": "reliability_score একটি উৎস-মেটাডেটা যা আপনি (অপারেটর) প্রতিটি উৎসের জন্য নির্ধারণ করেন। অ্যাপটি কখনও এটি গণনা করে না, ডিফল্ট মান দেয় না, নিবন্ধের লেখা থেকে অনুমান করে না, এবং এটি থেকে কোনো সূত্র বা স্কোর তৈরি করে না।",
   "Open in analysis — the article selection behind this Lead": "বিশ্লেষণে খুলুন — এই সূত্রের পেছনের নিবন্ধ নির্বাচন",
   "Showing the exact article set behind this Lead.": "এই সূত্রের পেছনের সঠিক নিবন্ধ সেট দেখানো হচ্ছে।",
+  "From this Lead": "এই সূত্র থেকে",
   "Rising — three windows": "বাড়ছে — তিনটি উইন্ডো",
   "Past 24h": "গত ২৪ ঘণ্টা",
   "Past week": "গত সপ্তাহ",
