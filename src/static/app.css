@@ -435,7 +435,16 @@
        exactly as .pill.err does. */
     #llm.ai-off {
       position:relative; overflow:hidden;
-      color:var(--err);
+      /* The "AI" LABEL at raw var(--err) failed WCAG AA 4.5:1 text contrast against this
+         rule's own 8%-err pill tint on 13 of 17 themes (worst: solar 2.41:1, dawn 3.80,
+         sepia 3.94 — computed per theme from the declared tokens, 2026-08-20 matrix run;
+         found once the theme axis widened past the 5 themes earlier runs checked). Same
+         repair as the diagonal bar below and the marks (2026-08-12): mix toward --fg,
+         theme-DERIVED, never a hardcoded hue. 55% is the smallest 5-point step clearing
+         4.5:1 on every theme (worst case 4.82:1 on solar); the red hue survives, and the
+         STATE was never colour-only anyway — the diagonal bar and the hover title carry
+         it (the 2026-08-02 ruling's own bar). */
+      color:color-mix(in srgb, var(--fg) 55%, var(--err));
       border-color:color-mix(in srgb, var(--err) 55%, var(--border));
       background:color-mix(in srgb, var(--err) 8%, var(--panel2));
     }
@@ -1346,6 +1355,16 @@
          is the phone behaviour — the nav cluster stays together, the hint drops to
          its own line. */
       #agenda-monthbar { flex-wrap:wrap !important; }
+      /* Data tables in the Settings > Advanced sections scroll INSIDE their own box at
+         phone width (the repo-wide wide-content rule: the page body never scrolls
+         horizontally). Found by the 2026-08-20 flagship-375 walk on source_management:
+         #src-table already sits in an overflow:auto wrapper (index.html), but the
+         discovery-candidates table in #candidates-list does not, and its 443px
+         min-content widened the whole page to 478 in a 375 viewport. `display:block`
+         on the table is this stylesheet's own .prose-table convention for a
+         self-scrolling table; scoped to the .adv-sec sections (covers every current
+         and future advanced-section table; a table already wrapped is unaffected). */
+      details.adv-sec table { display:block; overflow-x:auto; max-width:100%; }
     }
     @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
 

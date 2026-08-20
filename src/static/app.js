@@ -4709,8 +4709,15 @@
       return AG.events.filter(e =>
         (!cat || e.category === cat) && (!country || e.country === country) &&
         (!tag || (e.tags||[]).includes(tag)) &&
-        // imported events were explicitly imported -> always shown (bypass subscribed-only)
-        (!subOnly || e.imported || (e.sources || [e.calendar]).some(s => subs.has(s))));
+        // imported events were explicitly imported -> always shown (bypass subscribed-only).
+        // DEDUCED events bypass too (2026-08-20 matrix walk): they are derived from the
+        // user's OWN corpus (mapDeducedToAgenda, "like imported events", 2026-06-16) and
+        // their synthetic "deduced" calendar can never be subscribed — so with
+        // #agenda-subonly defaulting CHECKED they were invisible in EVERY view at default
+        // settings while the category filter still offered "deduced" as an empty lens.
+        // The never-confirmed pill + note stay on every row; this only stops the default
+        // filter suppressing a category it cannot admit.
+        (!subOnly || e.imported || e.deduced || (e.sources || [e.calendar]).some(s => subs.has(s))));
     }
     function agShowDay(d) { AGV.day = d; renderAgenda(); }
     // T11: the astronomy layer (Meeus, computed locally) — moon glyphs in the
@@ -23701,7 +23708,14 @@
     // bubble re-reads the live translated title, so language switches apply.
     (function ooTipInit() {
       const tip = document.createElement("div"); tip.id = "oo-tip";
-      tip.setAttribute("role", "tooltip"); document.body.appendChild(tip);
+      tip.setAttribute("role", "tooltip");
+      // Idle the bubble sits EMPTY at opacity:0 — still in the accessibility tree, so a
+      // role=tooltip with no accessible name is exposed on every page (axe serious
+      // aria-tooltip-name, found by the 2026-08-20 a11y walk on 3 surfaces — one
+      // element, one fix). Hidden-from-AT while idle; show()/hide() toggle it, so when
+      // visible its textContent IS its accessible name.
+      tip.setAttribute("aria-hidden", "true");
+      document.body.appendChild(tip);
       const mark = (root) => {
         (root.querySelectorAll ? root.querySelectorAll("[title]") : []).forEach((el) => {
           if ((el.getAttribute("title") || "").trim()) el.classList.add("oo-tip-target");
@@ -23719,11 +23733,13 @@
         cur = el; tip.textContent = text;
         tip.style.left = Math.min(x + 12, window.innerWidth - 346) + "px";
         tip.style.top = Math.min(y + 14, window.innerHeight - tip.offsetHeight - 12) + "px";
+        tip.removeAttribute("aria-hidden");
         tip.classList.add("show");
       }
       function hide() {
         if (cur && cur.dataset.ooTip != null) { cur.setAttribute("title", cur.dataset.ooTip); }
         cur = null; tip.classList.remove("show");
+        tip.setAttribute("aria-hidden", "true");
       }
       document.addEventListener("mouseover", (e) => {
         const el = e.target.closest && e.target.closest(".oo-tip-target");

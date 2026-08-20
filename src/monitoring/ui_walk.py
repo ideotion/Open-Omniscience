@@ -140,11 +140,16 @@ FLAGSHIP_SURFACES: tuple[Surface, ...] = (
         nav_tab="settings",
         subtab="data",
         trigger='button[onclick="openUnifiedImport()"]',
-        dom_id="ux-imp-summary",
+        dom_id="ux-import",
         note=(
-            "the dialog opens with an EMPTY summary until an import actually completes -- "
-            "is_visible() here only proves the surface is reachable, not that a real import "
-            "rendered; the dedicated post-import redesign (CLAUDE.md) is still pending"
+            "dom_id is the import DIALOG, deliberately: #ux-imp-summary (the 2026-08-13 "
+            "anchor) is empty by construction until an import completes, and Playwright "
+            "reads an empty zero-size div as not-visible, so anchoring there fails the "
+            "reachability walk on every state that has not just imported (the 2026-08-13 "
+            "run's recorded P0 was exactly this surface). This flagship row claims "
+            "REACHABILITY; the real post-import CONTENT is claimed by the state-D import "
+            "fixture walk (investigate_state_d_import), which runs a genuine volume-backup "
+            "import and asserts the redesigned summary's own markers"
         ),
     ),
     Surface(

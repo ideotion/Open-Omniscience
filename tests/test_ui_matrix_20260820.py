@@ -143,3 +143,58 @@ def test_t1_base_topbar_invariants_untouched() -> None:
     assert re.search(r"#health\s*\{\s*min-width:110px", stripped)
     topbar_rule = stripped.split(".topbar {", 1)[1].split("}", 1)[0]
     assert "flex-wrap:wrap" in topbar_rule.replace(" ", "")
+
+
+def test_t1_phone_advanced_section_tables_self_scroll() -> None:
+    """The flagship-375 walk (2026-08-20 clean run) found source_management widening the
+    page to 478px in a 375 viewport: the discovery-candidates table has no overflow
+    wrapper (#src-table does), so its 443px min-content scrolled the BODY — the repo-wide
+    rule is that wide content scrolls inside its own container, never the page. The phone
+    block's generic rule makes every Settings>Advanced section table a self-scrolling
+    block (the stylesheet's own .prose-table convention)."""
+    block = _phone_topbar_block()
+    flat = block.replace(" ", "")
+    assert "details.adv-sectable{display:block" in flat and "overflow-x:auto" in flat, (
+        "advanced-section tables must self-scroll at phone width — without this the "
+        "candidates table's min-content scrolls the whole page (measured 478px at 375)"
+    )
+
+
+def test_agenda_deduced_events_bypass_the_subscribed_only_filter() -> None:
+    """Found by the 2026-08-20 agenda-provenance drill: #agenda-subonly defaults CHECKED
+    and agFiltered's bypass named only `imported`, so corpus-DEDUCED events — whose
+    synthetic "deduced" calendar can never be subscribed — were invisible in every agenda
+    view at default settings while the category filter still offered "deduced" as an
+    empty lens. The 2026-06-16 design maps them "like imported events"; the bypass must
+    carry both. Sliced by the SHARED brace-matching helper (the slicing-discipline
+    ratchet's own prescribed shape) and comment-stripped (the fix's comment quotes the
+    vocabulary in both directions)."""
+    from tests.js_source_helper import function_body, read_static, strip_comments
+
+    body = strip_comments(function_body(read_static("app.js"), "agFiltered"))
+    flat = body.replace(" ", "")
+    assert "e.imported||e.deduced||" in flat, (
+        "agFiltered's subscribed-only bypass must cover DEDUCED events beside imported "
+        "ones — without it the default-checked filter hides the whole deduced category "
+        "(its synthetic calendar cannot be subscribed), verified live 2026-08-20"
+    )
+
+
+def test_ai_pill_off_label_text_is_fg_mixed_never_raw_err() -> None:
+    """The 2026-08-20 matrix run's theme-axis widening (5 -> 17 themes) found the ai-off
+    "AI" label at raw var(--err) below WCAG AA 4.5:1 against the pill's own 8%-err tint
+    on 13 of 17 themes (worst solar 2.41:1). The repair is the established theme-derived
+    mix toward --fg (the same one the diagonal bar and the state marks carry); 55% is the
+    measured smallest 5-point step clearing 4.5:1 on every theme (worst 4.82:1, solar).
+    Comment-stripped source, block-scoped: the rule's own comment quotes both the old and
+    the new value, so a whole-file or comment-inclusive assertion would pass against a
+    revert (the recorded must-be-present-guard trap)."""
+    stripped = _strip_css_comments(_css())
+    block = stripped.split("#llm.ai-off {", 1)[1].split("}", 1)[0].replace(" ", "")
+    assert "color:color-mix(insrgb,var(--fg)55%,var(--err))" in block, (
+        "#llm.ai-off's label colour must stay the measured 55% fg-mix — raw var(--err) "
+        "fails AA text contrast on 13 of 17 themes against this rule's own pill tint"
+    )
+    assert "color:var(--err)" not in block, (
+        "raw var(--err) must not return as the ai-off label colour (2.41:1 on solar)"
+    )
