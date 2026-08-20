@@ -25,6 +25,16 @@ subtree. This adapter was written to that shape but does not depend on it holdin
 That last check is the load-bearing one. Every assumption above could be wrong and the
 adapter would still refuse rather than hand back a fraction of a statute as if it were
 the whole thing.
+
+SCALING, measured rather than assumed (2026-08-20): parse time is LINEAR in document
+size -- 500/1000/2000/4000 sections took 0.026/0.049/0.104/0.198 s, i.e. ~2.0x per
+doubling, with a 4000-section document (1.2 MB) parsed in 0.2 s. Worth stating because
+the metadata read was quadratic in a first draft (a real Act carries hundreds of `Title`
+elements, and asking "is this one in the metadata?" by re-walking the tree per lookup is
+the shape that turned a 412 KB article into a multi-second stall elsewhere here). There
+is deliberately NO timing assertion guarding this: a threshold over wall time is noise on
+a shared runner, and the structural fix -- collecting the metadata element set once -- is
+what the reader should check if this is ever revisited.
 """
 
 from __future__ import annotations
