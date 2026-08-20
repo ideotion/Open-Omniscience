@@ -34,6 +34,7 @@ HTTP API) and troubleshooting.
 2. [The 60-second tour](#2-the-60-second-tour)
 3. [The tools, one by one](#3-the-tools-one-by-one)
    - [Home](#30-home) · [Activity & Task manager](#30a-activity--the-task-manager) ·
+     [Feed](#30b-feed) ·
      [Search](#31-search) · [Collect](#32-collect) ·
      [Sources](#33-sources) · [Library](#34-library) · [Markets](#35-markets) ·
      [Indices](#35a-indices) · [Insights](#36-insights) ·
@@ -343,6 +344,40 @@ background, from any tab.
     of the top bar.)*
 - The window reads **live from the systems that own the work**, so it can never
   disagree with what is actually happening — no shadow state.
+
+### 3.0b Feed
+
+**What it's for:** reading your corpus as a **stream** rather than as a set of measured
+signals. Home tells you what stood out; the Feed just hands you articles, one after the
+other, and lets you scroll.
+
+- **Two orders, both stated.** **Newest first** is publication date, newest at the top.
+  **Shuffled** is a fixed order chosen by a **seed**: the position of an article depends
+  on its id and that seed and **nothing else**. Every page carries its own method line
+  saying which of the two you are reading.
+- **The shuffle is a browse aid, not a recommender.** There is **no engagement scoring
+  of any kind** — nothing measures what you opened, how long you stayed, or what you
+  skipped, and **no reading history is kept or consulted**. Two people with the same
+  seed and the same corpus see the same order. That sentence is part of the method text
+  the page prints, so it cannot quietly stop being true.
+- **What is left out, counted.** The Feed shows articles that are **not quarantined**
+  and whose **source has been qualified**. Both exclusions are **counted exactly** and
+  shown on the first page, so a short feed on a full corpus reads as *"your sources have
+  not been qualified yet"* — which is actionable — rather than as *"you have nothing"*,
+  which would be false. Those two counts describe the corpus rather than the page, so
+  they are computed once and do not change as you scroll.
+- **Where you stopped.** Scrolling keeps its place across sessions by storing **one
+  position marker** in your browser — a seed and a single cursor, never a list of what
+  you read. **Settings → General → Feed scrolling history** has the two controls:
+  **Reshuffle** (a new seed, a new order, back to the start) and **Start from the top**
+  (same order, position cleared).
+- **The honest gap in each order.** Collection keeps running while you scroll, and each
+  order misses newly-arrived articles differently: in **Shuffled** they can fall *below*
+  the point you have reached (reshuffling reaches them), and in **Newest first** they
+  arrive *above* it (returning to the top reaches them). The page says which applies.
+- **Each card** shows the title, source, date, and the article's **own top three
+  keywords** — the keywords of that article, not of whatever you searched. **Read more**
+  expands the summary **in place**; the title opens the article in the local reader.
 
 ### 3.1 Search
 

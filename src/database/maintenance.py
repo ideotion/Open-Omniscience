@@ -68,6 +68,17 @@ HOT_INDEXES: dict[str, str] = {
         "CREATE INDEX IF NOT EXISTS idx_article_top_keyword ON articles "
         "(top_keyword_count, top_keyword_id)"
     ),
+    # COVERING index for the Feed's admissibility scan. Its shuffled order is an
+    # expression over `id`, so nothing can index the ORDER -- every page walks the whole
+    # admissible set, and these three columns are the entire walk (the quarantine filter,
+    # the source_id the qualification join rides, and the id the key is computed from).
+    # Index-only instead of a row read per candidate: measured 314 ms -> 35 ms per page on
+    # a synthetic 200,000-article corpus, and worth more on the encrypted store, where a
+    # row read is also a decrypt. Byte-identical to migration 6933c8d7c7b0.
+    "idx_article_feed_scan": (
+        "CREATE INDEX IF NOT EXISTS idx_article_feed_scan ON articles "
+        "(quarantined, source_id, id)"
+    ),
     # Expression index on the article "observed date" = coalesce(published_at,
     # created_at) (field-test 2026-07-08 Item 8 P0, the single biggest cost).
     # The corpus date-range probe `min(coalesce(..)), max(coalesce(..))` and the
@@ -147,6 +158,7 @@ _INDEX_REQUIRES: dict[str, tuple[str, tuple[str, ...]]] = {
     "idx_article_created_lang": ("articles", ("detected_language",)),
     "idx_article_quarantined": ("articles", ("quarantined",)),
     "idx_article_top_keyword": ("articles", ("top_keyword_count", "top_keyword_id")),
+    "idx_article_feed_scan": ("articles", ("quarantined", "source_id", "id")),
 }
 
 

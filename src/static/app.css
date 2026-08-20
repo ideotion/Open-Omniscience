@@ -1077,6 +1077,15 @@
     /* Staged (not-yet-applied) selection in the Articles-subtab source/language filter
        (2026-07-20 ruling, item 3) -- same chip, a filled state for the pending pick. */
     .an-facet[aria-pressed="true"] { background:var(--accent); color:var(--accent-fg,#fff); border-color:var(--accent); }
+    /* FEED CARDS (rulings 8-13). A reading column, so it is bounded in WIDTH rather than
+       stretched to the panel: long lines are what makes a wall of text unreadable, and a
+       feed is the one surface here whose whole job is being read. Sized in ch so the
+       measure follows the reader's own font size rather than a pixel guess. */
+    .feed-card { max-width:78ch; padding:12px 0; border-bottom:1px solid var(--border-soft); }
+    .feed-t { margin:0 0 2px; }
+    .feed-meta { font-size:12px; margin-bottom:6px; }
+    .feed-kw { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:6px; }
+    .feed-x { margin:0 0 6px; white-space:pre-wrap; }
     /* SORTABLE COLUMN HEADERS (ruling 21). A real <button> inside the <th> so it is
        keyboard-reachable and announces its pressed state; it inherits the th's own
        typography rather than re-stating it, so the header row still reads as a header

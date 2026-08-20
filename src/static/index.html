@@ -53,6 +53,10 @@
            reachable here (also via the command palette + showTab deep-links). -->
       <nav class="nav-groups flat" id="navGroups" aria-label="Primary">
         <button class="nav-item" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg><span>Home</span></button>
+        <!-- FEED (rulings 13/40, field feedback 2026-08-07): its own sidebar tab, next to
+             Home, because it is the other thing you do with a corpus -- read it. Home is a
+             launchpad of Leads; this is the articles themselves. -->
+        <button class="nav-item" data-tab="feed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h10M4 10h10M4 15h7"/><rect x="16" y="4" width="4" height="4" rx="1"/><rect x="16" y="12" width="4" height="4" rx="1"/></svg><span>Feed</span></button>
         <!-- Search AND Analysis retired from the sidebar (ruled 2026-06-20): analyses run
              via search (the omnibar/palette -> a spawned analysis window) or by clicking into
              the other tabs. #tab-analyze + #tab-search stay registered and reachable via
@@ -470,6 +474,22 @@
       <div id="bulk-llm-an" class="bulk-llm" style="display:none;margin-top:8px"></div>
       <div id="bulk-queue-an" class="bulk-queue" style="margin-top:8px"></div>
     </section>
+    </div>
+
+    <!-- ============================= FEED ============================= -->
+    <!-- Rulings 8-13, 40-41. The corpus as a reading surface: everything by default, in
+         an order nothing chose for you, each card carrying its own top keywords and
+         expanding in place. The order controls and the counts are rendered by app.js;
+         only the shell is static, because every part of it depends on what the endpoint
+         reports about THIS corpus. -->
+    <div class="tab-page" id="tab-feed">
+      <section class="panel">
+        <h2>Feed</h2>
+        <div id="feed-controls"></div>
+        <div id="feed-note" class="hint"></div>
+        <div id="feed-list"></div>
+        <div id="feed-more"></div>
+      </section>
     </div>
 
     <!-- ============================ INGEST ============================ -->
@@ -1347,6 +1367,18 @@
         </div>
       </div>
 
+
+      <h3 style="margin-bottom:6px">Feed scrolling history</h3>
+      <p class="muted" style="margin-top:0">The Feed remembers two things and nothing else: which order it drew, and how far down it you have scrolled. It keeps no record of which articles you read — there is no reading history in your corpus, in a backup, or anywhere else. Both are stored on this device only.</p>
+      <div class="row">
+        <!-- Same two actions as the Feed's own controls, and deliberately the same two
+             SENTENCES: one wording per action, translated once, so the button here and
+             the button there cannot come to describe the same thing differently. -->
+        <button class="secondary" type="button" onclick="feedReshuffle()"
+                title="Draw a new order and start again from the top.">Reshuffle</button>
+        <button class="secondary" type="button" onclick="feedClearSeen()"
+                title="Keep this order and start again from the top.">Start from the top</button>
+      </div>
 
       <h3 style="margin-bottom:6px">First-launch guide</h3>
       <p class="muted" style="margin-top:0">The one-time guided welcome that introduces the app and helps you go online for your first collection (your language and passphrase are chosen on the unlock screen). You can re-open it anytime, or have it show again the next time the app loads.</p>

@@ -1856,6 +1856,7 @@
     // -- Tab navigation ----------------------------------------------------- //
     const TAB_LOADERS = {
       home: loadHome,
+      feed: () => { _wireFeed(); },   // rulings 13/40: the corpus as a reading surface
       search: buildSearchTimeScope,   // mount the ooTimeScope date-range control once
       indices: loadIndices,
       markets: loadMarkets,
@@ -2467,6 +2468,198 @@
         `${esc(t("Automatic collection"))}: <span class="pill ${running ? "ok" : ""}">${esc(t(running ? "running" : "stopped"))}</span> ` +
         `· <span class="muted">${esc(priv)}</span>`;
     }
+    // ======================= FEED (rulings 8-13, 40-41) =======================
+    // The corpus as a reading surface. Everything by default, in an order nothing chose
+    // for you, cards carrying their own top keywords and expanding in place.
+    //
+    // SEEN/UNSEEN IS TWO NUMBERS, NOT A READING LOG. The shuffled order is a permutation,
+    // so "everything I have scrolled past" is exactly "every key below where I am" -- the
+    // seed plus a watermark. Both live here, in localStorage, and neither the server nor
+    // the corpus nor a backup ever holds a record of which articles were read. A reading
+    // history is a surveillance artifact for the people this app is for; the cheapest way
+    // not to leak one is not to have one.
+    const _FEED_SEED_KEY = "oo.feed.seed";
+    const _FEED_MARK_KEY = "oo.feed.mark";     // the cursor reached, per order
+    const _FEED_ORDER_KEY = "oo.feed.order";
+    let _feedBusy = false, _feedDone = false, _feedHeld = null;
+
+    function _feedSeed() {
+      // Persisted per session (ruling 8): a seed drawn fresh on every load would reshuffle
+      // under the reader's feet and show the same articles again. A LARGE random value --
+      // the endpoint spreads it anyway, but there is no reason to hand it a small one.
+      let s = 0;
+      try { s = parseInt(localStorage.getItem(_FEED_SEED_KEY) || "0", 10) || 0; } catch (e) { s = 0; }
+      if (!s) {
+        s = Math.floor(Math.random() * 2147483646) + 1;
+        try { localStorage.setItem(_FEED_SEED_KEY, String(s)); } catch (e) { /* private mode: a fresh order each load */ }
+      }
+      return s;
+    }
+    function _feedOrder() {
+      try { return localStorage.getItem(_FEED_ORDER_KEY) === "recent" ? "recent" : "shuffled"; }
+      catch (e) { return "shuffled"; }
+    }
+    function _feedMark(order) {
+      try { return localStorage.getItem(_FEED_MARK_KEY + "." + order) || ""; } catch (e) { return ""; }
+    }
+    function _feedSetMark(order, cursor) {
+      try {
+        if (cursor) localStorage.setItem(_FEED_MARK_KEY + "." + order, cursor);
+        else localStorage.removeItem(_FEED_MARK_KEY + "." + order);
+      } catch (e) { /* nothing to remember is a worse feed, never a broken one */ }
+    }
+    // Ruling 41: BOTH resets, because they are different asks. Reshuffle = a new order,
+    // from the top. Clear seen = the same order, from the top. Neither touches an article.
+    function feedReshuffle() {
+      try { localStorage.removeItem(_FEED_SEED_KEY); } catch (e) { /* ignore */ }
+      _feedSetMark("shuffled", ""); _feedSetMark("recent", "");
+      if ($("feed-list")) { _feedRestart(); }
+    }
+    function feedClearSeen() {
+      _feedSetMark("shuffled", ""); _feedSetMark("recent", "");
+      if ($("feed-list")) { _feedRestart(); }
+    }
+    function _feedSetOrder(order) {
+      try { localStorage.setItem(_FEED_ORDER_KEY, order); } catch (e) { /* ignore */ }
+      _feedRestart();
+    }
+    function _feedRestart() {
+      _feedDone = false; _feedHeld = null;
+      const list = $("feed-list"); if (list) list.innerHTML = "";
+      loadFeed(true);
+    }
+
+    function _feedControls() {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const host = $("feed-controls"); if (!host) return;
+      const order = _feedOrder();
+      const btn = (v, label, tip) =>
+        `<button class="tiny${order === v ? "" : " ghost"}" aria-pressed="${order === v}" `
+        + `onclick="_feedSetOrder('${v}')" title="${esc(tip)}">${esc(label)}</button>`;
+      host.innerHTML =
+        `<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:6px">`
+        + `<span class="muted" style="font-size:.85em">${esc(t("Order"))}:</span>`
+        + btn("shuffled", t("Shuffled"), t("A fixed order chosen by a seed — it uses each article's id and that seed and nothing else."))
+        + btn("recent", t("Newest first"), t("By publication date, newest first."))
+        + `<button class="tiny ghost" style="margin-inline-start:8px" onclick="feedReshuffle()" `
+        + `title="${esc(t("Draw a new order and start again from the top."))}">${esc(t("Reshuffle"))}</button>`
+        + `<button class="tiny ghost" onclick="feedClearSeen()" `
+        + `title="${esc(t("Keep this order and start again from the top."))}">${esc(t("Start from the top"))}</button>`
+        + `</div>`;
+    }
+
+    function _feedCard(a) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const kws = (a.keywords || []).map(k =>
+        `<button type="button" class="an-facet" onclick="openAnalysisFor(${esc(JSON.stringify(k.term))})" `
+        + `title="${esc(t("Mentions in this article — open this keyword's corpus."))}">`
+        + `${esc(k.term)} <span class="muted">${k.count}</span></button>`).join(" ");
+      const when = (a.published_at || "").slice(0, 10);
+      const lang = a.language || a.detected_language || "";
+      // Ruling 12: expanding is a class toggle over text ALREADY in the payload -- a feed
+      // that fetches on every "read more" stutters, and a reader who opened one card has
+      // not asked to wait.
+      const more = (a.excerpt_full || "").length > (a.excerpt || "").length;
+      return `<article class="feed-card" data-aid="${a.id}">`
+        + `<h3 class="feed-t"><a href="${esc(a.reader_url)}" target="_blank" rel="noopener">`
+        + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a></h3>`
+        + `<div class="feed-meta muted">${esc(a.source || "")}`
+        + (when ? ` · ${esc(when)}` : "")
+        + (lang ? ` · ${esc(String(lang).toUpperCase())}` : "")
+        + (a.provenance ? ` · ${esc(t(a.provenance))}` : "")
+        + `</div>`
+        + (kws ? `<div class="feed-kw">${kws}</div>` : "")
+        + `<p class="feed-x" data-short="${esc(a.excerpt || "")}" data-full="${esc(a.excerpt_full || "")}">`
+        + `${esc(a.excerpt || "")}${more ? "…" : ""}</p>`
+        + (more
+            ? `<button class="tiny ghost" onclick="_feedExpand(this)">${esc(t("Read more"))}</button> `
+            : "")
+        + (a.truncated
+            ? `<span class="muted" style="font-size:.85em">${esc(t("This is the opening of the article — open it to read the rest."))}</span>`
+            : "")
+        + `</article>`;
+    }
+    function _feedExpand(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const card = btn.closest(".feed-card"); if (!card) return;
+      const p = card.querySelector(".feed-x"); if (!p) return;
+      const open = p.dataset.open === "1";
+      p.textContent = open ? p.dataset.short + "…" : p.dataset.full;
+      p.dataset.open = open ? "" : "1";
+      btn.textContent = t(open ? "Read more" : "Show less");
+    }
+
+    async function loadFeed(reset) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const list = $("feed-list"); if (!list || _feedBusy || (_feedDone && !reset)) return;
+      _feedBusy = true;
+      _feedControls();
+      const order = _feedOrder();
+      const more = $("feed-more");
+      if (more) more.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
+      try {
+        const p = new URLSearchParams({ order, limit: "20" });
+        if (order === "shuffled") p.set("seed", String(_feedSeed()));
+        const mark = reset ? "" : _feedMark(order);
+        if (mark) p.set("after", mark);
+        const d = await api("/api/feed?" + p.toString());
+        if (d.held_back) _feedHeld = d.held_back;
+        list.insertAdjacentHTML("beforeend", (d.results || []).map(_feedCard).join(""));
+        _feedSetMark(order, d.next_cursor || "");
+        _feedDone = !d.has_more || !d.next_cursor;
+        _feedNote(d);
+        if (more) {
+          more.innerHTML = _feedDone
+            ? `<div class="muted" style="margin:10px 0">${esc(t("That is the end of this pass."))}</div>`
+            : `<button class="tiny" onclick="loadFeed(false)">${esc(t("Load more"))}</button>`;
+        }
+      } catch (e) {
+        if (more) more.innerHTML = `<div class="note err">${esc((e && e.message) || t("The feed could not load."))}</div>`;
+      } finally { _feedBusy = false; }
+    }
+
+    // The note above the list. It carries the method + the caveat the endpoint sends (both
+    // orders miss articles that arrive mid-scroll, in opposite directions) and, when the
+    // feed is shorter than the corpus, WHY -- an empty column with no explanation reads as
+    // "you have collected nothing", which on a corpus whose qualification pass has not run
+    // is simply false.
+    function _feedNote(d) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const el = $("feed-note"); if (!el) return;
+      let h = `<span class="muted">${esc(d.method || "")}</span>`;
+      if (d.caveat) h += `<div class="card-caveat">${esc(d.caveat)}</div>`;
+      const held = _feedHeld;
+      if (held && (held.quarantined || held.source_not_qualified)) {
+        const bits = [];
+        if (held.source_not_qualified) {
+          bits.push(t("{n} held back: their source has not been qualified yet")
+            .replace("{n}", held.source_not_qualified.toLocaleString()));
+        }
+        if (held.quarantined) {
+          bits.push(t("{n} held back as quarantined")
+            .replace("{n}", held.quarantined.toLocaleString()));
+        }
+        h += `<div class="card-caveat">${esc(bits.join(" · "))}</div>`;
+      }
+      el.innerHTML = h;
+    }
+
+    // Infinite scroll, ONE observer on the sentinel -- no scroll handler, no polling, and
+    // it only ever fires while the Feed tab is the visible one.
+    let _feedObs = null;
+    function _wireFeed() {
+      _feedControls();
+      const list = $("feed-list");
+      if (list && !list.children.length) loadFeed(true);
+      const more = $("feed-more");
+      if (more && !_feedObs && window.IntersectionObserver) {
+        _feedObs = new IntersectionObserver((entries) => {
+          if (entries.some(e => e.isIntersecting)) loadFeed(false);
+        }, { rootMargin: "400px" });
+        _feedObs.observe(more);
+      }
+    }
+
     async function loadHome() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       try { const s = await api("/api/database/stats"); renderHomeStats(s.counts); }
