@@ -4446,6 +4446,46 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   "computed" — states its membership vintage. • (46) Tier-2 publisher order: OECD+IMF → AfDB →
   regional bodies. • (47) **BOTH continents AND World Bank regions as two lenses, and not only
   averages — cumulative TOTALS too.**
+  **LAW RULINGS 34-37 — STATUS 2026-08-20 (a law session executed against them; the staleness
+  guard changed the plan three times, so read this before re-opening any of them):**
+  • **(36) + (37) were ALREADY SHIPPED** on 2026-08-07 (`analytics/law` row) with both-direction
+  tests — `tests/test_legislative_furniture.py` (a shouted PART is not an ORGANIZATION; the
+  lowercase content word survives) and `tests/test_place_longest_match.py` (Northern Ireland is
+  the UK, and the Republic still resolves; South Sudan, South China Sea). NOT rebuilt.
+  • **(35) IS STRUCTURALLY DONE and its literal form is IMPOSSIBLE.** `check_document` already
+  re-reads a tracked document's own baseline through the strip stage on its next successful poll,
+  re-baselines, and deliberately records NO revision (a fabricated flagged amendment on a legal
+  audit trail is worse than the chrome) — `tests/test_law_re_extraction.py`. A retroactive job
+  over "stored raw copies" cannot exist: `baseline_text`/`full_text` hold the NORMALISED TEXT, and
+  `raw_html` is a local variable in `check_document` that is never persisted. The declarations the
+  strip reads are gone by then, so re-running it over stored text is not possible, and a
+  text-level chrome REMOVER is exactly the heuristic `test_boilerplate_strip.py` refuses on the
+  record because it would eat an Act's section headings. THE REAL RESIDUAL GAP was that the heal
+  is INVISIBLE — nothing said which documents had had it, and a portal that cannot be fetched
+  never heals. Closed by the law-ingest diagnostic + a `re_extracted` verdict (ruling 35
+  succeeding had been classifying as `other`).
+  • **(34a) adapter: OFFLINE HALF SHIPPED, LIVE HALF BLOCKED ON EGRESS.** `src/law/adapters/`
+  reads CLML into addressable provisions with three non-collapsing dates, plus an experimental
+  per-section diff. The ENUMERATION half is not built: `legislation.gov.uk`, `eur-lex.europa.eu`
+  and `gesetze-im-internet.de` all answer `CONNECT tunnel failed, response 403` through the agent
+  proxy (re-verified 2026-08-20; first recorded 2026-07-24), so no endpoint shape could be
+  confirmed and none was invented. The fixtures are HAND-AUTHORED and labelled as such in
+  `tests/fixtures/law/PROVENANCE.md`. WHAT THIS BUYS AND WHAT IT DOES NOT: the adapter is built to
+  survive being wrong about the schema (local-name matching, unknown elements reported with their
+  text KEPT, an unrecognised root refused rather than half-parsed, and a text-recovery floor that
+  refuses when too little of the body was understood — the one check that holds if every schema
+  assumption is wrong), but NOTHING here is evidence that it reads the live service correctly.
+  That needs ONE document fetched on a machine with egress; `law_ingest_report`'s `structured`
+  block is the instrument that will say so per document, and reports `documents_captured: 0` today
+  rather than running a mechanism over an empty set.
+  • **(34c) diagnostic SHIPPED**, re-scoped honestly: the literal "re-parse stored XML" has no
+  subject until (34a)'s live half lands, so the report measures what EXISTS (the heal state above)
+  and states the XML half's subject count instead of pretending to one.
+  • **OPERATOR STEP, the only one blocking the rest:** on a networked machine, fetch one
+  `legislation.gov.uk` CLML document (`.../data.xml`) and run it through `parse_clml`. If it
+  parses at/above the recovery floor with an empty `unknown_elements`, the schema assumptions
+  hold; if not, the report NAMES what it did not understand, which is the whole point of building
+  it that way. Only after that is the enumeration worth building.
   **THE LOAD-BEARING DESIGN RAIL (derived from ruling 47, recorded so it is not lost):
   AGGREGATION IS INDICATOR-AWARE.** An **extensive** indicator (population, GDP, GDP-PPP, labour
   force) may be SUMMED; an **intensive** one (every `%`, `per N`, `years`, `index`,

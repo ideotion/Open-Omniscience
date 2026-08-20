@@ -2887,6 +2887,38 @@ def law_coverage(
     return JSONResponse(body)
 
 
+@router.get("/law-ingest")
+def law_ingest(
+    download: bool = Query(False), db: Session = Depends(get_db)
+) -> JSONResponse:
+    """Law-ingest reliability (ruling 34c, field feedback 2026-08-07).
+
+    The 2026-08-07 law fixes are self-healing and invisible: the strip stage re-reads a
+    tracked document's baseline on its next successful poll, and the corpus sync clears a
+    publication date that was really a poll date. Both are correct; neither is reported
+    anywhere, so "has this actually reached all 23 documents?" had no answer -- and the
+    documents most likely to be missed are the ones whose portal cannot be fetched.
+
+    Read-only and network-free: every field comes from stored data or a bundled fixture.
+    See ``src.law.ingest_report`` for why chrome residue is NOT a pre-strip detector.
+    With ``download=1`` it returns as a dated attachment."""
+    from src.law.ingest_report import law_ingest_report
+
+    payload = law_ingest_report(db)
+    body = envelope(
+        kind="law-ingest",
+        query={},
+        count=payload.get("documents", 0),
+        payload=payload,
+    )
+    if download:
+        fname = f"oo-law-ingest-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+        return JSONResponse(
+            body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+        )
+    return JSONResponse(body)
+
+
 @router.get("/storage-footprint")
 def storage_footprint_report(download: bool = Query(False)) -> JSONResponse:
     """The COMPLETE on-disk footprint across ALL app stores, ITEMIZED per component (A12b):
@@ -3540,6 +3572,10 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # S5 (law-vertical brief 2026-07-17): per-jurisdiction law-tracking coverage/
         # freshness — "is law working?" answered by one JSON, in the bundle by default.
         ("law-coverage.json", lambda: law_coverage(download=False, db=db)),
+        # Ruling 34c (2026-08-07): did the law fixes actually reach the data? The strip
+        # re-read and the poll-date clear both heal quietly on a document's next
+        # successful poll, so an unreachable portal never heals and nothing said so.
+        ("law-ingest.json", lambda: law_ingest(download=False, db=db)),
         # S6.1 (Leads-calibration, 2026-07-18): the CURRENT Home Leads feed as a
         # bounded, real-facts report — the measurement loop for the card system.
         ("leads-quality.json", lambda: leads_quality(download=False, db=db)),
@@ -3714,6 +3750,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/debug-bundle": "debug-bundle.json",
     "/p0-validation/last": "p0-validation.json",
     "/law-coverage": "law-coverage.json",  # S5 of the law-vertical brief 2026-07-17
+    "/law-ingest": "law-ingest.json",  # ruling 34c (field feedback 2026-08-07)
     "/leads-quality": "leads-quality.json",  # S6.1 of the Leads-calibration brief 2026-07-18
     "/card-audit": "card-audit.json",  # the DEEP card-system audit (summary depth)
     "/bulletin-preview": "bulletin-weekly.json",  # Bulletin Layer A, weekly period
