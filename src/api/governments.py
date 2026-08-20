@@ -24,11 +24,11 @@ from sqlalchemy.orm import Session
 from src.catalog import aggregates as aggs
 from src.catalog import blocs
 from src.catalog.countries import classify_ref_area, to_iso2, to_iso3
+from src.database.models import StatFigure as StatFigureRow
 from src.database.session import get_db, session_scope
 from src.jobs.background import BackgroundJob, register_job
 from src.stats import aggregate
 from src.stats import indicators as ind
-from src.database.models import StatFigure as StatFigureRow
 from src.stats.store import list_figures
 
 logger = logging.getLogger(__name__)
