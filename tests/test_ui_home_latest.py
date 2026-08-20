@@ -18,11 +18,11 @@ from __future__ import annotations
 from pathlib import Path
 
 from tests.test_repo_invariants import _ui_source
-from tests.js_source_helper import assert_absent
+from tests.js_source_helper import app_js, assert_absent
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 _HTML = (_STATIC / "index.html").read_text(encoding="utf-8")
-_JS = (_STATIC / "app.js").read_text(encoding="utf-8")
+_JS = app_js()
 _UI = _ui_source()
 
 

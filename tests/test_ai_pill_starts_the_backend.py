@@ -22,12 +22,9 @@ BROWSER-UNVERIFIED (fork-3): source guards + node --check, no click-through.
 
 from __future__ import annotations
 
-from pathlib import Path
-from tests.js_source_helper import function_body
+from tests.js_source_helper import app_js, function_body
 
-_APP = (Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_text(
-    encoding="utf-8"
-)
+_APP = app_js()
 
 
 def _fn(name: str) -> str:

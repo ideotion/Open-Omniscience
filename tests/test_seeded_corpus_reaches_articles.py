@@ -177,10 +177,10 @@ def test_every_api_articles_caller_goes_through_the_translation():
     /api/articles or its export must be matched by one _articleQuery call, so adding a
     caller without the translation makes the two counts disagree.
     """
-    app_js = strip_comments(read_static("app.js"))
-    call_sites = re.findall(r'"/api/articles(?:/export)?\?" \+ ', app_js)
-    uses = re.findall(r"_articleQuery\(", app_js)
-    definitions = re.findall(r"function _articleQuery\(", app_js)
+    app = strip_comments(read_static("app.js"))
+    call_sites = re.findall(r'"/api/articles(?:/export)?\?" \+ ', app)
+    uses = re.findall(r"_articleQuery\(", app)
+    definitions = re.findall(r"function _articleQuery\(", app)
     assert call_sites, "expected to find the /api/articles call sites"
     assert len(definitions) == 1, "one helper only, or callers can diverge again"
     assert len(uses) - len(definitions) == len(call_sites), (

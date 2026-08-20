@@ -24,6 +24,7 @@ from src.catalog.qualification import STATUS_QUALIFIED, STATUS_UNQUALIFIED
 from src.catalog.qualify_job import initial_backlog_estimate, run_bulk_qualification
 from src.database.models import Article, Base, Source
 from src.ingest import activate_kill_switch, clear_kill_switch
+from tests.js_source_helper import app_js
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -380,7 +381,7 @@ def test_an_explicit_batch_size_always_wins_over_the_power_profile(monkeypatch):
 
 def test_bulk_qualification_wiring_composes_end_to_end():
     api_src = (_ROOT / "src" / "api" / "source_management.py").read_text("utf-8")
-    js_src = (_ROOT / "src" / "static" / "app.js").read_text("utf-8")
+    js_src = app_js()
     html_src = (_ROOT / "src" / "static" / "index.html").read_text("utf-8")
 
     prefix = re.search(r'APIRouter\(prefix="([^"]+)"', api_src).group(1)

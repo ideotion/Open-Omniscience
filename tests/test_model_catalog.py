@@ -85,7 +85,7 @@ def test_no_surface_an_operator_copies_from_re_types_an_identifier():
     import re
     from pathlib import Path
 
-    from tests.js_source_helper import strip_comments
+    from tests.js_source_helper import app_js, strip_comments
 
     def _no_comments(text: str, *, python: bool) -> str:
         if python:
@@ -95,7 +95,7 @@ def test_no_surface_an_operator_copies_from_re_types_an_identifier():
             return "\n".join(ln for ln in text.splitlines() if not ln.lstrip().startswith("#"))
         return strip_comments(text)
 
-    js = _no_comments(Path("src/static/app.js").read_text(encoding="utf-8"), python=False)
+    js = _no_comments(app_js(), python=False)
     for literal in ("ministral-3:", "mistralai/"):
         assert literal not in js, (
             f"{literal!r} is typed into app.js. The example belongs to /default-model's "

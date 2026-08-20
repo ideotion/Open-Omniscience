@@ -24,6 +24,7 @@ from sqlalchemy.orm import sessionmaker
 from src.catalog.discover_job import advance_world_discovery, load_state, run_world_discovery
 from src.database.models import Base, Source
 from src.ingest import activate_kill_switch, clear_kill_switch
+from tests.js_source_helper import app_js
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -320,7 +321,7 @@ def test_scheduler_ride_along_wiring_and_setting():
 
 def test_world_discovery_wiring_composes_end_to_end():
     api_src = (_ROOT / "src" / "api" / "diagnostics.py").read_text("utf-8")
-    js_src = (_ROOT / "src" / "static" / "app.js").read_text("utf-8")
+    js_src = app_js()
     html_src = (_ROOT / "src" / "static" / "index.html").read_text("utf-8")
 
     prefix = re.search(r'APIRouter\(prefix="([^"]+)"', api_src).group(1)

@@ -19,10 +19,10 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 from pathlib import Path
-from tests.js_source_helper import function_body as _slice
+from tests.js_source_helper import app_js, function_body as _slice
 
 _ROOT = Path(__file__).resolve().parent.parent
-_APP_JS = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+_APP_JS = app_js()
 _STREAM = (_ROOT / "src" / "backup" / "stream_backup.py").read_text(encoding="utf-8")
 
 

@@ -13,6 +13,7 @@ every new user-facing string is keyed in ALL 12 locales (i18n stays 100%).
 
 import json
 from pathlib import Path
+from tests.js_source_helper import app_js
 
 _ROOT = Path(__file__).resolve().parent.parent
 _STATIC = _ROOT / "src" / "static"
@@ -24,7 +25,7 @@ def _html() -> str:
 
 
 def _app() -> str:
-    return (_STATIC / "app.js").read_text(encoding="utf-8")
+    return app_js()
 
 
 # The user-facing strings this feature introduces (must be keyed in every locale).

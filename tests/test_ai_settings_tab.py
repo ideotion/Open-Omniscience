@@ -22,10 +22,10 @@ import re
 from pathlib import Path
 
 import pytest
-from tests.js_source_helper import function_body
+from tests.js_source_helper import app_js, function_body
 
 _ROOT = Path(__file__).resolve().parents[1] / "src" / "static"
-_APP = (_ROOT / "app.js").read_text(encoding="utf-8")
+_APP = app_js()
 _HTML = (_ROOT / "index.html").read_text(encoding="utf-8")
 
 

@@ -15,14 +15,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from tests.js_source_helper import function_body
+from tests.js_source_helper import app_js, function_body
 
 _ROOT = Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
 
 
 def _app() -> str:
-    return (_STATIC / "app.js").read_text(encoding="utf-8")
+    return app_js()
 
 
 def _fn_body(src: str, name: str) -> str:

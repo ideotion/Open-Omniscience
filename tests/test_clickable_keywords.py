@@ -22,6 +22,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 from pathlib import Path
+from tests.js_source_helper import app_js
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 
@@ -75,7 +76,7 @@ def test_reader_css_styles_the_clickable_keywords():
 
 
 def test_spa_hydrates_the_keyword_deep_link_onto_the_keywords_subtab():
-    js = _read("app.js")
+    js = app_js()
     # The boot handler reads ?tab=, validates the panel exists, and stashes it;
     # it is applied once the analysis subtab component is wired.
     assert 'sp.get("tab")' in js

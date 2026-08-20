@@ -25,15 +25,15 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.js_source_helper import app_js
 
 _ROOT = Path(__file__).resolve().parents[1]
-_APP = _ROOT / "src" / "static" / "app.js"
 
 
 def _setup_chain() -> str:
     """The body of the one-button setup runner, scoped so a 'must await' guard
     cannot be satisfied by an unrelated await elsewhere in an 18k-line file."""
-    src = _APP.read_text(encoding="utf-8")
+    src = app_js()
     at = src.index('if (step.id === "install-vllm")')
     end = src.index('say(t("Starting the local AI…"))', at)
     return src[at:end]
@@ -73,7 +73,7 @@ def test_the_setup_chain_awaits_the_model_download_too():
 
 def test_progress_is_reported_as_a_real_step_count_never_a_fake_percentage():
     chain = _setup_chain()
-    src = _APP.read_text(encoding="utf-8")
+    src = app_js()
     assert "Step {i} of {n}" in src, (
         "the plan is a known finite list, so step i of N is a REAL count"
     )

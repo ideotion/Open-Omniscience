@@ -24,6 +24,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.js_source_helper import app_js
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -47,7 +48,7 @@ def test_the_install_button_can_reach_the_acknowledged_retry():
     """Source guard for the wiring the node test drives: without a caller that
     sends ``acknowledge_low_resources``, the endpoint's acknowledgeable-409 branch
     is unreachable from the UI and the preflight warning becomes a dead end."""
-    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "async function _vllmInstallStart()" in app, \
         "the acknowledge-aware start helper must exist"
     fn = app.split("async function _vllmInstallStart() {", 1)[1].split("\n    }\n", 1)[0]
