@@ -12391,6 +12391,53 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the second silently outranks the caller. Fold the special case INTO the `is None`
   branch. And pin it with a test named for the mode, since the general
   "an explicit seed is honoured" case passes in the other mode either way.
+- **NARROWING A BOUND MAKES EVERY COMPARISON AGAINST THE OLD BOUND UNREACHABLE — and the
+  one that mattered had no test at all (2026-08-20, capping the collector ramp):** the
+  learned ceiling was made a soft cap on the governor's ramp, so `permits` can no longer
+  reach `w_max` on a constrained machine. `CollectionMonitor._classify` decides
+  `network-or-source-bound` on `self._peak_permits >= w_max` — which silently became
+  IMPOSSIBLE there, so every such pass would have fallen through to
+  `target-met-or-headroom`, claiming headroom on precisely the machines that have already
+  proved they have none. GENERAL FORM: when you narrow a limit, grep for everything that
+  COMPARES against the old one; a `>=` against a value the code can no longer produce is a
+  dead branch that reads as a passing condition. The comparison must move to whatever the
+  new effective bound is (`ramp_ceiling`), not stay on the nominal one. THE PROCESS POINT:
+  four mutations were run and three reddened by name; the fourth found NO test — the
+  classifier branch was unguarded, and the gap was visible only because the mutation
+  matrix was run at all rather than assumed. A mutation that reddens nothing is a finding.
+- **A "NO OPINION" RETURN EXPRESSED AS A CONCRETE DEFAULT SILENTLY OVERRIDES THE CALLER'S
+  OWN CONTEXT-DEPENDENT DEFAULT — the exact mirror of the entry above it (2026-08-20, the
+  target-mode seed regression, shipped in #955 and caught one PR later):** `seed_for`
+  returned `w_max` when nothing had been measured, which looks like a harmless identity —
+  and the runner passes it EXPLICITLY, so it stopped being a default and became an
+  argument. `BandwidthGovernor`'s own default is mode-dependent (`maximum` opens at
+  `w_max`, `target` eases in from `DEFAULT_SEED`), so target mode began starting at 50
+  instead of 25 on machines this module was supposed to leave untouched. **It was
+  invisible in `maximum` mode, where the two values are the same number** — which is why
+  it passed review, its own tests, and a full suite. The fix is to return `None`: absence
+  of a measurement is not a measurement, and handing back the caller's own default value
+  is not the same as declining to answer. GENERAL FORM: a helper that can have nothing to
+  say must say NOTHING (`None`), never guess the value the caller would have used — and
+  when a byte-identical claim is made about "unaffected machines", check it in EVERY mode
+  the code branches on, since the mode where two values coincide will hide the defect.
+- **AN UNBOUNDED DEPENDENCY IS A SCHEDULED OUTAGE, AND THE FIX MUST SEPARATE A RENAME FROM
+  A MIGRATION (2026-08-20, pqcrypto 1.0.0):** `pqcrypto>=0.3.4` in the `[pqc]` extra had no
+  upper bound, so when 1.0.0 published (2026-08-15) CI resolved it and 14 custody-signing
+  and annotation tests died on `AttributeError: module 'pqcrypto.sign.ml_dsa_65' has no
+  attribute 'generate_keypair'` — the whole repository blocked, on a commit that touched
+  none of it. THREE THINGS WORTH KEEPING. (a) Establish it is drift, not your diff, from
+  EVIDENCE and not plausibility: the changed-file list shares nothing with the failing
+  lane, the last COMPLETED default-branch run predates the release, and both workflow
+  lanes failed identically on one SHA (which also rules out a flake — the recorded push-vs-
+  PR A/B). (b) Verify the repair rather than reasoning about the constraint: a throwaway
+  venv showed `<1.0` resolves to 0.4.0, which still exposes `generate_keypair` and
+  completes a sign/verify round trip — and note that locally these tests SKIP when the
+  extra is absent, so the pin is confirmable only in CI. (c) **1.0.0 is not a rename.**
+  `generate_keypair` became `keygen` AND the module now returns `PublicKey`/`SecretKey`
+  objects instead of raw bytes, while `src/custody/signing.py` PERSISTS those keys — so
+  adapting reaches stored key material in the tamper-evidence path and belongs behind the
+  EXTERNAL_DEPENDENCIES upgrade checklist, not in an unrelated PR at speed. Put the reason
+  in the constraint comment, or the next reader simply widens the bound.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
