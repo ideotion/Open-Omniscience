@@ -36,7 +36,7 @@ import os
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .merkle_tree import MerkleTree, compute_merkle_root
 
@@ -238,6 +238,22 @@ class ProvenanceLedger:
 
         self.connection.commit()
 
+    @property
+    def _conn(self) -> sqlite3.Connection:
+        """The live connection, for the methods that require an OPEN ledger.
+
+        ``connection`` is Optional only because :meth:`close` nulls it as a
+        use-after-close tripwire; every method below runs against an open ledger
+        and has always assumed so. This accessor states that assumption in ONE
+        place instead of thirteen.
+
+        Deliberately NOT a guard: it returns whatever ``connection`` holds, so a
+        closed ledger still raises ``AttributeError`` on the following attribute
+        access, byte-for-byte the behaviour before this property existed. Turning
+        it into a raise would be a nicer error and a different one.
+        """
+        return cast(sqlite3.Connection, self.connection)
+
     def add_data(
         self,
         data_id: str,
@@ -265,7 +281,7 @@ class ProvenanceLedger:
         data_json = json.dumps(data, sort_keys=True) if data is not None else None
         metadata_json = json.dumps(metadata or {})
 
-        cursor = self.connection.cursor()
+        cursor = self._conn.cursor()
         cursor.execute(
             """
             INSERT INTO data_entries 
@@ -284,7 +300,7 @@ class ProvenanceLedger:
             ),
         )
 
-        self.connection.commit()
+        self._conn.commit()
         return provenance
 
     def add_data_batch(
@@ -310,7 +326,7 @@ class ProvenanceLedger:
         tree = MerkleTree(data_list)
 
         # Store Merkle tree
-        cursor = self.connection.cursor()
+        cursor = self._conn.cursor()
         cursor.execute(
             """
             INSERT INTO merkle_trees (root_hash, num_leaves, height, created_at, description)
@@ -325,13 +341,17 @@ class ProvenanceLedger:
             ),
         )
 
-        merkle_tree_id = cursor.lastrowid
+        # `lastrowid` is `int | None` because it is None before any INSERT on the
+        # cursor (and after a non-INSERT statement). The INSERT directly above is
+        # what sets it, so an int is the DB-API guarantee here, not an assumption
+        # about our data -- stated rather than silently returned as Optional.
+        merkle_tree_id = cast(int, cursor.lastrowid)
 
         # Add individual data entries
         for data_id, data, source, metadata in data_items:
             self.add_data(data_id, data, source, metadata, merkle_tree_id)
 
-        self.connection.commit()
+        self._conn.commit()
         return merkle_tree_id
 
     def get_data_provenance(self, data_id: str) -> DataProvenance | None:
@@ -344,7 +364,7 @@ class ProvenanceLedger:
         Returns:
             DataProvenance object or None if not found
         """
-        cursor = self.connection.cursor()
+        cursor = self._conn.cursor()
         cursor.execute(
             """
             SELECT id, original_hash, current_hash, source, metadata_json, timestamp
@@ -377,7 +397,7 @@ class ProvenanceLedger:
         Returns:
             Dictionary with tree information or None if not found
         """
-        cursor = self.connection.cursor()
+        cursor = self._conn.cursor()
         cursor.execute(
             """
             SELECT id, root_hash, num_leaves, height, created_at, description
@@ -409,7 +429,7 @@ class ProvenanceLedger:
         Returns:
             List of DataProvenance objects
         """
-        cursor = self.connection.cursor()
+        cursor = self._conn.cursor()
         cursor.execute(
             """
             SELECT id, original_hash, current_hash, source, metadata_json, timestamp
@@ -473,7 +493,7 @@ class ProvenanceLedger:
         data_list = []
         for entry in data_entries:
             # We need to retrieve the actual data to recompute the hash
-            cursor = self.connection.cursor()
+            cursor = self._conn.cursor()
             cursor.execute("SELECT data_json FROM data_entries WHERE id = ?", (entry.data_id,))
             row = cursor.fetchone()
             if row and row[0]:
@@ -515,7 +535,7 @@ class ProvenanceLedger:
             return False
 
         previous_hash = provenance.current_hash
-        cursor = self.connection.cursor()
+        cursor = self._conn.cursor()
 
         # If new data is provided, update the hash
         if new_data is not None:
@@ -546,7 +566,7 @@ class ProvenanceLedger:
             (data_id, action, user_id, timestamp, previous_hash, new_hash, metadata_json),
         )
 
-        self.connection.commit()
+        self._conn.commit()
         return True
 
     def get_custody_chain(self, data_id: str) -> list[dict[str, Any]]:
@@ -559,7 +579,7 @@ class ProvenanceLedger:
         Returns:
             List of custody records in chronological order
         """
-        cursor = self.connection.cursor()
+        cursor = self._conn.cursor()
         cursor.execute(
             """
             SELECT action, user_id, timestamp, previous_hash, new_hash, metadata_json
@@ -598,7 +618,7 @@ class ProvenanceLedger:
         Returns:
             List of DataProvenance objects
         """
-        cursor = self.connection.cursor()
+        cursor = self._conn.cursor()
         query = """
             SELECT id, original_hash, current_hash, source, metadata_json, timestamp
             FROM data_entries
@@ -633,7 +653,7 @@ class ProvenanceLedger:
         Returns:
             List of Merkle tree information dictionaries
         """
-        cursor = self.connection.cursor()
+        cursor = self._conn.cursor()
         query = """
             SELECT id, root_hash, num_leaves, height, created_at, description
             FROM merkle_trees
@@ -730,8 +750,11 @@ if __name__ == "__main__":
         batch_id = ledger.add_data_batch(data_items, "Test batch")
         print(f"Created batch with ID: {batch_id}")
 
-        # Get Merkle tree info
+        # Get Merkle tree info. Both lookups below return Optional (the id may not
+        # exist); the demo should show a caller HANDLING that, not ignoring it.
         tree_info = ledger.get_merkle_tree(batch_id)
+        if tree_info is None:
+            raise SystemExit(f"batch {batch_id} was not stored -- ledger is inconsistent")
         print(f"Merkle tree root hash: {tree_info['root_hash']}")
         print(f"Number of leaves: {tree_info['num_leaves']}")
 
@@ -741,6 +764,8 @@ if __name__ == "__main__":
 
         # Get data provenance
         provenance = ledger.get_data_provenance("doc1")
+        if provenance is None:
+            raise SystemExit("doc1 was not stored -- ledger is inconsistent")
         print(f"Data provenance for doc1: {provenance}")
 
         # Record custody change
@@ -764,6 +789,8 @@ if __name__ == "__main__":
 
         # Get current provenance
         current_provenance = ledger.get_data_provenance("doc1")
+        if current_provenance is None:
+            raise SystemExit("doc1 disappeared after the custody change")
         is_current_valid = ledger.verify_data_integrity("doc1", current_provenance.current_hash)
         print(f"Current data integrity: {'VALID' if is_current_valid else 'INVALID'}")
 
