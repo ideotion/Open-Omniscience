@@ -2977,15 +2977,15 @@
           background while you're online — there's nothing to start by hand.</p></div>`;
         return;
       }
-      // Family-type colors: a deterministic hue per bucket, applied as the card
-      // left-accent (--fam) so the feed stays scannable in "All", and echoed as a
-      // dot in the family subtab. "All cards" is the default lens (a single
+      // Family-type colors: see famHue -- keyed on the family's STABLE name, so a
+      // family keeps its colour as the set of non-empty families changes. Applied as
+      // the card left-accent (--fam) so the feed stays scannable in "All", and echoed
+      // as a dot in the family subtab. "All cards" is the default lens (a single
       // prioritised feed); the families are a lens, never a wall (§5).
-      const famHue = bi => `hsl(${(bi * 53) % 360} 60% 55%)`;
       const html = data.buckets.map((b, bi) => {
         b.cards.forEach(c => { _briefCards[c.id] = c; });
         const cards = b.cards.map(cardHtml).join("");
-        return `<div class="brief-bucket" data-fam="${bi}" style="--fam:${famHue(bi)}">`
+        return `<div class="brief-bucket" data-fam="${bi}" style="--fam:${famHue(b.bucket)}">`
           + `<h3>${esc(b.label)} <span class="ct">· ${b.cards.length}</span></h3>`
           + `<div class="cards">${cards}</div></div>`;
       }).join("");
@@ -2996,11 +2996,11 @@
       // Settings restructure removed when it deleted the Leads preview. "All
       // Leads" keeps the full feed; nothing is lost, the wall is just no longer
       // the first thing you meet.
-      const ovHtml = _overviewHtml(data, famHue, t);
+      const ovHtml = _overviewHtml(data, t);
       const famTabs = `<button class="active" data-tab="__ov">${esc(t("Overview"))}</button>`
         + `<button data-tab="__all">${esc(t("All Leads"))}</button>`
         + data.buckets.map((b, bi) =>
-            `<button data-tab="${bi}"><span class="fam-dot" style="background:${famHue(bi)}"></span>${esc(b.label)}</button>`).join("")
+            `<button data-tab="${bi}"><span class="fam-dot" style="background:${famHue(b.bucket)}"></span>${esc(b.label)}</button>`).join("")
         + _homePanelTabsHtml(t);
       feed.innerHTML = banner
         + `<nav class="tabs home-fam" id="home-fam-subtabs">${famTabs}</nav>`
@@ -3009,8 +3009,46 @@
       selectHomeFamily(_homeTabKey);
       _renderOverviewTrends();
     }
+    // FAMILY IDENTITY COLOUR (ruling 14, field feedback 2026-08-07).
+    //
+    // Was `bi => hsl((bi * 53) % 360 ...)` -- keyed on the family's POSITION in the
+    // rendered list. Position is not identity: a family with no cards this pass is
+    // omitted, so every family after it shifts up and changes colour. The colour
+    // therefore moved for reasons that had nothing to do with the family, which makes
+    // it useless as the thing it is for -- recognising a family at a glance.
+    //
+    // Keyed on `bucket`, the STABLE machine key ("rising", "overtold", ...), never on:
+    //   * the index -- the defect above;
+    //   * `label` -- that is the TRANSLATED display string, so hashing it would give a
+    //     French reader different colours from an English one for the same families.
+    //
+    // Curated table + hash fallback, exactly like agCatHue below: the eight shipped
+    // families get hand-picked hues that are pairwise separable (>= 30 degrees apart --
+    // a hash alone can place two families a few degrees from each other, and "these two
+    // look the same" is the whole failure being fixed), while a family added later still
+    // gets a deterministic colour with no code change. Colour is decorative and
+    // reinforcing: the label is always present and remains the real identifier.
+    //
+    // This CHANGES today's Home colours, which is the point -- ruling 14 accepts a new
+    // palette in exchange for one that stops moving.
+    const FAM_HUE = {
+      rising: 145, watch: 55, overtold: 25, context: 175,
+      investigate: 205, undertold: 265, trust: 300, debunk: 340,
+    };
+    function famHue(name) {
+      const key = String(name == null ? "" : name);
+      let h = FAM_HUE[key];
+      if (h == null) {
+        // Same 31-multiplier walk as agCatHue, so the two surfaces derive an unknown
+        // key's hue the same way rather than each inventing an arithmetic.
+        let n = 0;
+        for (let i = 0; i < key.length; i++) n = (n * 31 + key.charCodeAt(i)) >>> 0;
+        h = n % 360;
+      }
+      return `hsl(${h} 60% 55%)`;
+    }
     // The Overview lens: TOP-1 card per family, in the feed's own disclosed order.
-    function _overviewHtml(data, famHue, t) {
+    function _overviewHtml(data, t) {
       const tops = data.buckets.map((b, bi) => {
         const c = (b.cards || [])[0];
         if (!c) return "";
@@ -3018,8 +3056,8 @@
         // actions), plus the disclosed reason it leads its family.
         const why = c.order_explain
           ? `<div class="ov-why" title="${esc(c.order_explain)}">${esc(c.order_explain)}</div>` : "";
-        return `<div class="ov-item" style="--fam:${famHue(bi)}">`
-          + `<h4 class="ov-fam"><span class="fam-dot" style="background:${famHue(bi)}"></span>${esc(b.label)}`
+        return `<div class="ov-item" style="--fam:${famHue(b.bucket)}">`
+          + `<h4 class="ov-fam"><span class="fam-dot" style="background:${famHue(b.bucket)}"></span>${esc(b.label)}`
           + ` <a href="#" class="ov-more" onclick='selectHomeFamily(${esc(JSON.stringify(String(bi)))});return false'>`
           + `${esc(t("all {n}").replace("{n}", String((b.cards || []).length)))} →</a></h4>`
           + `<div class="cards">${cardHtml(c)}</div>${why}</div>`;
