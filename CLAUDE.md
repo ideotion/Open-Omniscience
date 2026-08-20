@@ -5356,7 +5356,7 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   (precedented already — Session A 2026-07-24 shipped exactly this for the langdetect job; reuse
   that template) applied uniformly across all three progressive-sweep jobs, never conflate
   paused/done. (8) **KEEP both `p0_validation.py` and `pagesize_bench.py` — do NOT remove.** P0:
-  `RELEASE_0.3_GATE.md` rows 4+7 and this ledger's own "0.3 CLOSE GATE" row 7 are CURRENTLY OPEN
+  `docs/product/RELEASE_0.3_GATE.md` rows 4+7 and this ledger's own "0.3 CLOSE GATE" row 7 are CURRENTLY OPEN
   and explicitly require re-running it (cold-boot unlock at full scale + a multi-day collector
   soak); it's also a named live KPI source (K3, `V1_PATHWAY_2026-07-14.md`). Pagesize-bench: its
   `rebuild_at_pragmas()` is now PRODUCTION-CODE-COUPLED — `src/database/connect.py:84-98,329-333`
@@ -10721,7 +10721,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   once rendered.
   **THE CHECKABLE INVENTORY NOW EXISTS (2026-08-13):
   [`docs/product/RELEASE_0.3_GATE.md`](docs/product/RELEASE_0.3_GATE.md) is the tickable
-  board — read IT for row status; this entry stays the ruling of record.** A retroactive
+  board — read IT for row status; this entry stays the ruling of record.**
+  ⚠ **AND IT WAS THE SECOND ONE (found + fixed 2026-08-13, same day): a
+  `RELEASE_0.3_GATE.md` ALREADY EXISTED AT THE REPO ROOT** (created 2026-08-04 by #738, the
+  multi-lane session that built the autonomously-actionable half of the gate). The session
+  that stood up the `docs/product/` board searched `docs/` and reasoned from the
+  `RELEASE_0.1_RC_GATE.md` precedent that `docs/product/` was the home — and never looked at
+  the repo root. The two boards diverged immediately (the root one still read row 6 as
+  "ruling not yet formalized" and row 3 against the WITHDRAWN 5M bar), and PR #957 then
+  correctly updated the one it found, so row 8 would have been marked done on one board and
+  open on the other. ABSORBED into the `docs/product/` board (its durable content is §6 —
+  the PR-by-PR evidence for row 1, the self-disclosed LOOP_SELFTESTS regression, and the
+  reusable `.gitattributes merge=union` ordering fact); the root file is REMOVED; every
+  reference re-pointed. **THE LESSON, which the tree already contained: the 2026-07-22 GUI
+  brief said in its own header that the board "sits at the REPO ROOT, not under `docs/`" —
+  so a `grep -rn RELEASE_0.3_GATE` before creating a file by that name would have caught it,
+  and a convention-based guess about where a doc "should" live is not a check that it does
+  not already exist elsewhere.** A retroactive
   [`RELEASE_0.2_GATE.md`](docs/product/RELEASE_0.2_GATE.md) was reconstructed alongside it
   (marked as after-the-fact — no gate file existed during 0.2) so the two cycles read side
   by side and the next one inherits a format; it also records the tag-day release-workflow

@@ -601,7 +601,8 @@ me, if not, remove entirely."
 Two currently-**open** gate conditions in this repo's own governing documents explicitly require
 re-running this exact tool:
 
-- `RELEASE_0.3_GATE.md` (repo root, dated 2026-07-21) row 7: *"v0.2.0 P0 follow-ups: cold-boot
+- `RELEASE_0.3_GATE.md` (as of 2026-07-21; that board was absorbed 2026-08-13 into
+  [`docs/product/RELEASE_0.3_GATE.md`](../product/RELEASE_0.3_GATE.md) §6) row 7: *"v0.2.0 P0 follow-ups: cold-boot
   unlock at full scale + multi-day live collector soak | Blocked — hard | ...out of scope for an
   autonomous session entirely, not attempted"*; row 4: *"Full DB import re-checking ALL sources at
   scale (doubles as backup/restore-at-scale validation) | Blocked — hard"*.
