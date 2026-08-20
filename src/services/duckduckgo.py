@@ -62,7 +62,7 @@ class DuckDuckGoSearch:
 
     # Rate limiting
     MIN_DELAY_SECONDS = 2.0  # Minimum delay between requests
-    last_request_time = 0
+    last_request_time: float = 0  # set from time.time() -- seconds, not a whole number
 
     # Common RSS feed patterns
     RSS_PATTERNS = [

@@ -80,7 +80,9 @@ def load_consent() -> dict | None:
 def is_accepted(version: str = CONSENT_DOC_VERSION) -> bool:
     """True iff a stored record accepts exactly ``version``."""
     record = load_consent()
-    return bool(record) and record.get("version") == version
+    # `is not None` rather than bool(): identical outcome (an empty record has no
+    # "version" either), and it narrows the Optional for the .get() that follows.
+    return record is not None and record.get("version") == version
 
 
 def needs_acceptance(version: str = CONSENT_DOC_VERSION) -> bool:

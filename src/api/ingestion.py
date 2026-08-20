@@ -235,7 +235,12 @@ async def import_newsletters(request: Request, db: Session = Depends(get_db)) ->
                 f"set, import from a folder instead. ({exc})"
             ),
         ) from exc
-    files = [v for v in form.getlist("files") if hasattr(v, "filename")]
+    from starlette.datastructures import UploadFile
+
+    # isinstance rather than hasattr("filename"): the same set of objects (only
+    # UploadFile has that attribute), and it narrows the UploadFile | str union
+    # for the .read() below.
+    files = [v for v in form.getlist("files") if isinstance(v, UploadFile)]
     raws: list[bytes] = []
     skipped_non_eml = 0
     for f in files:

@@ -32,6 +32,7 @@ import logging
 import os
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from src.paths import data_dir
 
@@ -73,7 +74,7 @@ def _step_done(step: str) -> bool:
 
 
 def _run_step(step: str, fn) -> None:
-    rec = {"step": step, "at": datetime.now(UTC).isoformat(timespec="seconds")}
+    rec: dict[str, Any] = {"step": step, "at": datetime.now(UTC).isoformat(timespec="seconds")}
     try:
         rec["result"] = fn()
         rec["ok"] = True

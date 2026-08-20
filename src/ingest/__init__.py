@@ -751,7 +751,13 @@ class EthicalFetcher:
                     with self._host_state_guard:
                         self._last_request[parsed.netloc] = self._now()
 
-                if transient is None and response.status_code not in _RETRYABLE_STATUS:
+                # transient is None <=> _http_get returned, i.e. `response` is set.
+                # Spelled out because that pairing lives in the try/except above.
+                if (
+                    transient is None
+                    and response is not None
+                    and response.status_code not in _RETRYABLE_STATUS
+                ):
                     break  # got a definitive (success or non-retryable) response
 
                 if attempt >= self.max_retries:

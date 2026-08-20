@@ -410,8 +410,10 @@ def _check_extraction(c: Challenge) -> list[str]:
     from src.analytics.extract import BaselineExtractor
 
     kind: dict[str, str] = {}
-    for t in BaselineExtractor().extract(c.text, language=c.language):
-        kind[t.normalized] = t.kind
+    # `extracted`, not `t`: `t` is reused below as a plain expected-term string, and
+    # one name holding two types in one function is what the checker tripped on.
+    for extracted in BaselineExtractor().extract(c.text, language=c.language):
+        kind[extracted.normalized] = extracted.kind
 
     fails: list[str] = []
     for e in c.entity:

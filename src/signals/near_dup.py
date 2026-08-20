@@ -39,7 +39,9 @@ _AB_BOUND = 1 << 31
 try:  # optional accelerator (the analysis extra); identical math either way
     import numpy as _np
 except ImportError:  # pragma: no cover - exercised on core-only installs
-    _np = None
+    # The optional-accelerator idiom: the name is a module when present and None
+    # when absent, which no single annotation expresses.
+    _np = None  # type: ignore[assignment]
 
 _WORD_RE = re.compile(r"\w+", re.UNICODE)
 

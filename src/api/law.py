@@ -381,7 +381,7 @@ def summarize_law_revision(revision_id: int, db: Session = Depends(get_db)) -> d
     return {"status": result.get("status"), "detail": result.get("detail"), "ai_summary": ai_summary}
 
 
-def _diff_to_html(diff: str, _esc) -> str:
+def _diff_to_html(diff: str | None, _esc) -> str:
     """Colourise a stored unified diff (+ added / - removed) for the reader."""
     rows = []
     for ln in (diff or "").splitlines():

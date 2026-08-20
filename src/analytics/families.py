@@ -33,6 +33,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 try:  # optional ([analysis] extra); display-time lemmatization degrades to a no-op when absent
     import simplemma as _simplemma
@@ -403,9 +404,13 @@ def build_families(items: list[dict], overrides: dict[str, dict] | None = None) 
             union(parents.pop(), a)
 
     # Final grouping: overridden forms group by family_key; the rest by auto-union.
-    groups: dict[tuple, list[dict]] = {}
+    # tuple[str, Any]: the key is ("ov", family_key) or ("auto", <root index>), so the
+    # second slot is a str in one construction and an int in the other.
+    groups: dict[tuple[str, Any], list[dict]] = {}
     for i, r in enumerate(recs):
-        gkey = ("ov", r["ov"]["family_key"]) if r["ov"] else ("auto", find(i))
+        gkey: tuple[str, Any] = (
+            ("ov", r["ov"]["family_key"]) if r["ov"] else ("auto", find(i))
+        )
         groups.setdefault(gkey, []).append(r)
 
     families: list[Family] = []

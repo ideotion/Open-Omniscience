@@ -36,6 +36,7 @@ from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
+from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -1165,6 +1166,11 @@ def _query_articles(
         # FTS path's Python casefold (otherwise SQLite's binary collation sorts all
         # capitals before lowercase — "Zeta" before "apple").
         q = q.outerjoin(Source, Article.source_id == Source.id)
+        # The branches yield a CollationClause for the text columns and an
+        # InstrumentedAttribute for the rest. Those share a base, but SQLAlchemy's
+        # generics are invariant, so no common parameterisation accepts both; only
+        # .desc()/.asc() are ever called on it.
+        order_col: Any
         order_col = Source.name.collate("NOCASE")
     elif sort_by == "title":
         order_col = Article.title.collate("NOCASE")

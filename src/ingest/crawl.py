@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+from typing import cast
 from urllib.parse import urldefrag, urljoin, urlparse
 
 from bs4 import BeautifulSoup
@@ -114,7 +115,9 @@ def _harvest_links(html: str, base_url: str) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for a in soup.find_all("a", href=True):
-        href = a["href"].strip()
+        # bs4 types every attribute as `str | AttributeValueList` because a few
+        # (class, rel) are multi-valued. href is not one of them.
+        href = cast(str, a["href"]).strip()
         if not href or href.startswith(("#", "mailto:", "javascript:", "tel:")):
             continue
         absolute, _frag = urldefrag(urljoin(base_url, href))

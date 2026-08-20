@@ -60,6 +60,14 @@ def live_db_path() -> Path:
             f"deployment uses {engine.url.get_backend_name()!r}. Use the backend's "
             "native dump tool (e.g. pg_dump) instead."
         )
+    # `url.database` is None for a pure in-memory SQLite URL ("sqlite://"), which has
+    # no file to snapshot. Named here rather than left to fail as `Path(None)` deep in
+    # a backup run -- the same shape as the non-SQLite refusal above.
+    if engine.url.database is None:
+        raise BackupError(
+            "This deployment uses an in-memory SQLite database, which has no file to "
+            "back up. Point OO_DATA_DIR at a real database first."
+        )
     return Path(engine.url.database).resolve()
 
 
