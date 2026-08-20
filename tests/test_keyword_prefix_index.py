@@ -23,11 +23,14 @@ from __future__ import annotations
 
 import sqlite3
 
-import pytest
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 
-pytest.importorskip("sqlalchemy")
+# No ``importorskip("sqlalchemy")`` here, deliberately. It is a CORE dependency, not an
+# extra, so a guard would trade a loud collection error on a broken install for a silent
+# skip that reads as "nothing to check here". (An earlier cut of this file carried one
+# BELOW the imports above, where it could never fire at all -- the very class of dead
+# guard this file's own third test exists to prevent.)
 
 NOCASE_INDEX = (
     "CREATE INDEX IF NOT EXISTS idx_keyword_normterm_nocase "
