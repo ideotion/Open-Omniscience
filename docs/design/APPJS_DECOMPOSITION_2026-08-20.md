@@ -230,6 +230,75 @@ under CDP CPU throttling, median of N cold loads in fresh contexts (no code-cach
 | Navigation errors | **0** | **0** |
 | Resolving globals | **1393** | **1393** |
 
+### Result, measured after
+
+Every wave, both states, no exceptions:
+
+| | State B (empty) | State C (populated) |
+|---|---|---|
+| Steps walked | 59 | 59 |
+| `pageerror` | **0** | **0** |
+| Navigation errors | **0** | **0** |
+| Resolving globals | **1393** | **1393** |
+
+Seven walks — baseline, the `TAB_LOADERS` prep, waves 1–5, and a control walk against the
+**pre-split** tree run last, after everything else.
+
+**On the step count, which is 52 in some runs and 59 in others:** the seven that come and go are
+all `tab_indices/<continent>` subtabs, and the control walk produced **both numbers from the same
+server against the same data in a single run**. So it is a race in the WALKER — whether
+`loadIndices()`'s fetch has populated the subtab strip by the time the walker reads it — and not
+a property of the code under test. Recorded rather than smoothed over, because it means this
+instrument cannot support a "the same N steps were walked" claim. What it does support is the
+three invariants, which held in all fourteen state-runs without exception: zero `pageerror`, zero
+navigation errors, and the same 1393 globals resolving.
+
+**Byte-parity, final state:** the concatenation of the seventeen modules in load order, headers
+stripped, is SHA-identical to the pre-split file — `1dd504f9db740da4dbab7a2807ba5325`, 1,470,728
+characters. That is the primary bar and it holds end to end.
+
+**The i18n gates were checked for an UNCHANGED count, not a green verdict.** Both JS ratchets are
+maxima, so an audit that had gone blind to the modules would report a LOWER count, pass more
+comfortably, and print *"the ratchet can now be lowered"*. `561 / 298` at every wave, with all
+seventeen modules in the per-file breakdown.
+
+### Parse/compile: measured, controlled, and smaller than it first looked
+
+Chrome's `Performance.getMetrics` → `ScriptDuration`, interleaved A/B (A, B, A, B …) so that
+drift on the machine lands on both sides, fresh browser context per load so no code cache carries
+over, median of N. Both sides serve **byte-identical JavaScript** — in fact the split side serves
+20,812 bytes MORE, the seventeen module headers — so any difference is packaging, not content.
+
+| Run | Throttle | Cores | pre-split | split | Δ (split − pre-split) | within noise |
+|---|---|---|---|---|---|---|
+| headline | 6× | 4 | 380.7 ms | 233.1 ms | **−147.6 ms (−38.8 %)** | no |
+| C2 swapped order | 6× | 4 | 355.2 ms | 282.5 ms | −72.7 ms (−25.7 %) | no |
+| C3 worktree vs worktree | 6× | 4 | 360.7 ms | 282.1 ms | −78.6 ms (−21.8 %) | no |
+| **C5 pinned to 2 cores** | 6× | **2** | 333.8 ms | 275.3 ms | **−58.5 ms (−17.5 %)** | no |
+| **C4 no throttle** | 1× | 4 | 68.6 ms | 83.4 ms | **+14.8 ms (+21.6 %)** | no |
+| C1 A/A control | 6× | 4 | — | — | +1.9 ms (+0.7 %) | **yes** |
+
+**The controls are what make the headline readable.** C1 (the split measured against itself)
+lands inside noise, so the harness does not favour a position. C2 swaps the order and the sign
+flips with it, so it is not an ordering artifact. C3 replaces the main repo's server with a
+second worktree server, so it is not that one process. Those three say the effect is real and
+belongs to the tree.
+
+**C4 and C5 are what make it honest.** Remove the CPU throttle and the direction REVERSES: the
+split is 14.8 ms slower, the fixed cost of sixteen extra requests and sixteen extra compile
+set-ups, which a fast main thread notices because it has no compile work worth moving. Pin the
+browser to two cores — the closest thing here to a field VM — and the win survives but drops to
+17.5 %. Both facts point the same way: the gain is not "less to parse" (the bytes are identical);
+it is compile work moving off a throttled main thread onto background threads that the throttle
+does not touch, and it shrinks with the number of cores available to receive it.
+
+So the defensible claim is narrow: **on a machine whose main thread is slow relative to its
+spare cores, the split measurably reduces main-thread script time — 17.5 % at two cores here —
+and on a fast machine it costs about 15 ms.** Even C5 flatters the field case, because the two
+pinned cores render while the SERVER runs unpinned on the others; a real 2-core VM does both.
+The number to quote to a field operator is "roughly a sixth off script time on a weak CPU, or a
+little worse on a fast one", not the headline.
+
 ### Scope, stated honestly
 
 Chromium in a remote sandbox, states **B** and **C**. State A (virgin) is deliberately absent: it
@@ -273,5 +342,18 @@ half-migrated global scope is the one state in which the byte-parity guarantee d
 * **577 inline handlers naming 413 distinct globals** is the measured blocker for ES modules,
   and the number to watch if that path is ever wanted. It has grown since the 2026-07-28 audit
   measured 556.
+* **The parse/compile premise was half right.** S-3 was written around "the real cost is
+  parse/compile on the 2-core field VMs". Splitting does help there, and it is not because there
+  is less to parse — the bytes are identical and the split side ships slightly more. It is
+  compile work relocating off the main thread, which is why the effect inverts on a fast machine.
+* **The walker's step count is not stable** (52 vs 59, both from one run against one server), so
+  it cannot carry a same-step-count claim. The seven flapping steps are one tab's subtabs, which
+  names the fix if anyone wants it: wait on the Indices subtab strip rather than on a timeout.
+* **Fifteen node suites read `app.js` with their own `readFileSync`** and were invisible to the
+  Python-shaped migration sweep. `tests/app_source.js` is now the one reader, and it derives the
+  module list from `index.html` for the same reason the Python helper does.
+* **`test_ui_pwa` asserted the cache-name literal `oo-shell-v1`**, so the first legitimate
+  version bump — which a changed SHELL list REQUIRES — turned a correct action into a red test.
+  It now asserts the purge mechanism instead.
 * **The ROADMAP's S-3 figures were stale** (21,300 lines / 1,046 functions vs 23,896 / 1,089
   function declarations today). Updated by this work.

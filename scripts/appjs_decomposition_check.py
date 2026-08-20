@@ -219,6 +219,78 @@ def measure_parse(url: str, *, throttle: int, loads: int) -> dict:
     }
 
 
+def measure_ab(url_a: str, url_b: str, *, throttle: int, loads: int) -> dict:
+    """Interleaved A/B of script cost between two live instances.
+
+    INTERLEAVED deliberately. Measuring A for N loads and then B for N loads compares
+    two different moments as much as two different trees: anything else happening on
+    the machine drifts between them and lands entirely on one side. Alternating A, B,
+    A, B ... spreads that drift across both, so the DIFFERENCE stays attributable to
+    the thing being compared.
+
+    ``ScriptDuration`` is total script time -- parse, compile AND execute -- not parse
+    alone; Chrome does not expose the parse bucket through getMetrics. Since both sides
+    run byte-identical code, any difference is attributable to how it is packaged, but
+    the absolute number is not "parse cost" and must not be reported as such.
+    """
+    from playwright.sync_api import sync_playwright
+
+    samples: dict[str, list[float]] = {"a": [], "b": []}
+    reqs: dict[str, int] = {}
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(executable_path=_chromium_path())
+        for _ in range(loads):
+            for key, url in (("a", url_a), ("b", url_b)):
+                ctx = browser.new_context()   # fresh: no code cache carry-over
+                page = ctx.new_page()
+                cdp = ctx.new_cdp_session(page)
+                cdp.send("Performance.enable")
+                if throttle > 1:
+                    cdp.send("Emulation.setCPUThrottlingRate", {"rate": throttle})
+                n = {"c": 0}
+                page.on(
+                    "response",
+                    lambda r, n=n: n.__setitem__("c", n["c"] + 1)
+                    if ("/static/" in r.url and r.url.endswith(".js"))
+                    else None,
+                )
+                page.goto(url + "/", wait_until="load")
+                page.wait_for_timeout(500)
+                samples[key].append(_script_duration_ms(page, cdp))
+                reqs[key] = n["c"]
+                ctx.close()
+        browser.close()
+
+    def stat(v: list[float]) -> dict:
+        return {
+            "n": len(v),
+            "median_ms": round(statistics.median(v), 1),
+            "mean_ms": round(statistics.fmean(v), 1),
+            "stdev_ms": round(statistics.stdev(v), 1) if len(v) > 1 else 0.0,
+            "min_ms": round(min(v), 1),
+            "max_ms": round(max(v), 1),
+        }
+
+    a, b = stat(samples["a"]), stat(samples["b"])
+    delta = b["median_ms"] - a["median_ms"]
+    # A difference smaller than the spread of either side is not a result.
+    noise = max(a["stdev_ms"], b["stdev_ms"])
+    return {
+        "throttle_x": throttle,
+        "a": {"url": url_a, "js_requests": reqs.get("a"), **a},
+        "b": {"url": url_b, "js_requests": reqs.get("b"), **b},
+        "delta_median_ms": round(delta, 1),
+        "delta_pct": round(100.0 * delta / a["median_ms"], 1) if a["median_ms"] else None,
+        "within_noise": abs(delta) < noise,
+        "note": (
+            "ScriptDuration is parse + compile + EXECUTE, not parse alone. Both sides run "
+            "byte-identical code, so a difference is attributable to packaging -- but if "
+            "within_noise is true there is no measured difference to report."
+        ),
+        "samples": {k: [round(x, 1) for x in v] for k, v in samples.items()},
+    }
+
+
 def walk_state(name: str, url: str, candidates: list[str], shots: Path | None) -> dict:
     from playwright.sync_api import sync_playwright
 
@@ -311,6 +383,7 @@ def main() -> None:
     ap.add_argument("--out", type=Path)
     ap.add_argument("--shots", type=Path)
     ap.add_argument("--measure", action="store_true")
+    ap.add_argument("--measure-ab", nargs=2, metavar=("URL_A", "URL_B"))
     ap.add_argument("--throttle", type=int, default=6)
     ap.add_argument("--loads", type=int, default=5)
     ap.add_argument("--state-b", default=STATE_B_URL)
@@ -319,6 +392,21 @@ def main() -> None:
 
     if args.emit_candidates:
         print(json.dumps(emit_candidates(), indent=1))
+        return
+
+    if args.measure_ab:
+        out = {
+            "schema": "oo-appjs-parse-ab-1",
+            "at": datetime.now(UTC).isoformat(timespec="seconds"),
+            **measure_ab(
+                args.measure_ab[0], args.measure_ab[1],
+                throttle=args.throttle, loads=args.loads,
+            ),
+        }
+        print(json.dumps({k: v for k, v in out.items() if k != "samples"}, indent=1))
+        if args.out:
+            args.out.parent.mkdir(parents=True, exist_ok=True)
+            args.out.write_text(json.dumps(out, indent=1))
         return
 
     if args.measure:
