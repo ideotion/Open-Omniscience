@@ -124,9 +124,13 @@ def test_stat_time_series_chart_surface():
     html = (base / "index.html").read_text(encoding="utf-8")
     app = app_js()
     ooviz = (base / "ooviz.js").read_text(encoding="utf-8")
-    # ooViz is loaded as a global BEFORE app.js (so window.ooViz exists when app.js runs).
+    # ooViz is loaded as a global BEFORE the engine (so window.ooViz exists when it runs).
+    # Anchored on the FIRST engine module: app.js is now 17 ordered modules (S-3), and a
+    # literal "/static/app.js" here would have gone missing rather than gone wrong.
     assert "/static/ooviz.js" in html, "ooviz.js must be loaded by index.html"
-    assert html.index("/static/ooviz.js") < html.index("/static/app.js"), "ooviz before app.js"
+    assert html.index("/static/ooviz.js") < html.index(f"/static/{app_modules()[0]}"), (
+        "ooviz must load before the UI engine"
+    )
     # The chart controls + container.
     assert 'id="statfig-chart"' in html, "the chart container must exist"
     assert 'id="statfig-view-area"' in html, "the area input must exist"
@@ -2648,14 +2652,15 @@ def test_ui_invariants():
     assert '<link rel="stylesheet" href="/static/app.css">' in raw, (
         "index.html must link the externalised stylesheet (PR H)"
     )
-    assert '<script src="/static/app.js"></script>' in raw, (
-        "index.html must load the externalised app.js (PR H)"
-    )
+    for _m in app_modules():
+        assert f'<script src="/static/{_m}"></script>' in raw, (
+            f"index.html must load the externalised engine module {_m} (PR H; S-3 split)"
+        )
     assert "<style>" not in raw and "\n  <script>\n" not in raw, (
         "no inline <style>/<script> may remain in index.html (PR H decomposition)"
     )
-    assert raw.index("/static/i18n.js") < raw.index("/static/app.js"), (
-        "i18n.js must still load before app.js (load order preserved)"
+    assert raw.index("/static/i18n.js") < raw.index(f"/static/{app_modules()[0]}"), (
+        "i18n.js must still load before the UI engine (load order preserved)"
     )
     # 27. Offline-map (Group M) download manager in Settings: a region picker over
     #     /api/geo/regions + a resumable download-job table over /api/geo/downloads,
@@ -4419,8 +4424,12 @@ def test_search_timescope():
     assert 'p.set("start_date", sel.from)' in html, "the control's 'from' must feed start_date"
     assert 'p.set("end_date", sel.to)' in html, "the control's 'to' must feed end_date"
     assert "searchTimeScopeParams(p)" in html, "searchParams() must forward the time-scope window"
-    # mounted lazily on first Search-tab open (TAB_LOADERS), idempotent
-    assert "search: buildSearchTimeScope" in html, (
+    # mounted lazily on first Search-tab open (TAB_LOADERS), idempotent. Matched
+    # independently of the call shape: every TAB_LOADERS entry became an arrow when
+    # the engine was split into modules (S-3, 2026-08-20), since a bare reference is
+    # resolved when the table is BUILT and so depends on same-script hoisting. Which
+    # loader the Search tab mounts -- the property this guard is about -- is unchanged.
+    assert re.search(r"search:\s*(?:\(\)\s*=>\s*)?buildSearchTimeScope\b", html), (
         "the Search tab loader must mount the time-scope control"
     )
 
