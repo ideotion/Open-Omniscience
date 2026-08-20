@@ -115,3 +115,53 @@ def test_categories_statistics_and_frequencies_respond():
             r = client.get(path, params={"text": _TEXT})
             assert r.status_code == 200, f"{path} -> {r.status_code}"
             assert r.json().get("success", True) is not False
+
+
+# --------------------------------------------------------------------------- #
+# 2026-08-20 additions (quality-ratchet session, TEST-05 residue): the honest
+# failure paths framing never had, and the four keyword routes WP4 left out.
+# --------------------------------------------------------------------------- #
+
+
+def test_framing_limit_bounds_are_validated():
+    """limit is declared ge=2, le=1000 — both sides must 422, not clamp
+    silently (the floor is 2, not 1: a one-article "comparison" is not one)."""
+    with TestClient(app) as client:
+        assert client.get("/api/framing", params={"limit": 1}).status_code == 422
+        assert client.get("/api/framing", params={"limit": 2000}).status_code == 422
+
+
+def test_framing_zero_match_query_returns_the_full_empty_shape():
+    """A query matching nothing is a REAL answer (200 + zeros), never a 404 —
+    and the payload must still carry every disclosure field, so a consumer
+    reading analyzed_n/capped never KeyErrors on an empty corpus."""
+    with TestClient(app) as client:
+        r = client.get(
+            "/api/framing", params={"query": f"zz{uuid.uuid4().hex[:12]}"}
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["sources_compared"] == 0
+        assert body["total_articles"] == 0
+        assert body["framing"] == []
+        for key in ("shared_terms", "caveat", "analyzed_n", "total_n", "capped"):
+            assert key in body, f"empty framing payload dropped {key!r}"
+
+
+def test_top_phrases_categorize_and_process_respond():
+    """The four keyword_management routes WP4 left uncovered at HTTP level."""
+    with TestClient(app) as client:
+        for path, params in (
+            ("/api/keywords/top", {"text": _TEXT}),
+            ("/api/keywords/phrases", {"text": _TEXT}),
+            ("/api/keywords/process", {"text": _TEXT}),
+            ("/api/keywords/categorize", {"keywords": ["water", "treaty"]}),
+        ):
+            r = client.get(path, params=params)
+            assert r.status_code == 200, f"{path} -> {r.status_code}"
+            assert r.json()["success"] is True, f"{path} reported failure"
+
+
+def test_top_requires_text_param():
+    with TestClient(app) as client:
+        assert client.get("/api/keywords/top").status_code == 422
