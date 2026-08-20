@@ -129,17 +129,19 @@ def wiki_status(db: Session = Depends(get_db)) -> dict:
 
 @router.get("/pages")
 def list_pages(db: Session = Depends(get_db)) -> dict:
-    counts = dict(
-        db.query(WikiRevision.page_id, func.count(WikiRevision.id))
+    counts: dict[int, int] = {
+        page_id: n
+        for page_id, n in db.query(WikiRevision.page_id, func.count(WikiRevision.id))
         .group_by(WikiRevision.page_id)
         .all()
-    )
-    flagged = dict(
-        db.query(WikiRevision.page_id, func.count(WikiRevision.id))
+    }
+    flagged: dict[int, int] = {
+        page_id: n
+        for page_id, n in db.query(WikiRevision.page_id, func.count(WikiRevision.id))
         .filter_by(flagged=True)
         .group_by(WikiRevision.page_id)
         .all()
-    )
+    }
     pages = db.query(WikiPage).order_by(WikiPage.wiki, WikiPage.title).all()
     return {
         "count": len(pages),
