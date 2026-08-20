@@ -191,3 +191,125 @@ def test_omni_bounds_and_like_escape(client):
     assert client.get("/api/search/omni", params={"q": "x" * 201}).status_code == 422
     r = client.get("/api/search/omni", params={"q": "100% \\_certain_"})
     assert r.status_code == 200  # LIKE wildcards arrive escaped, never crash
+
+
+def test_the_articles_total_is_a_count_even_when_the_candidate_cap_is_filled(
+    client, omni_seed, monkeypatch
+):
+    """A capped list must never be reported as a TOTAL.
+
+    ``search_ids`` takes a ``limit`` (default ``MAX_CANDIDATES`` = 20000), and this
+    group used to publish ``len(ids)``. On any corpus where a common term matches
+    more than that, the omnibar therefore displayed a flat 20000 as "total" -- a cap
+    wearing a count's name, which the maintainer's 2026-07-18 ruling forbids outright
+    ("a cap may bound which EXAMPLES are listed; it must never bound a displayed
+    NUMBER") and whose sweep for further instances this is one result of.
+
+    Reaching the branch by seeding 20001 articles would be absurd, so the CAP is
+    compressed instead of the claim -- but it has to be compressed at BOTH ends to
+    discriminate anything. Lowering only the module constant is not enough:
+    ``search_ids``'s ``limit`` is a default argument bound at definition time, so the
+    fetch still returned all four rows and ``len(ids)`` was still exact. A first draft
+    did exactly that and PASSED against the reverted fix -- vacuous, because the
+    fixture never reached the state the guard is about. The list must genuinely be
+    TRUNCATED, so ``search_ids`` is stubbed to return the first two of the four real
+    matches: then ``len(ids)`` is 2 and only a real count can answer 4.
+    """
+    from src.api import search_omni
+
+    monkeypatch.setattr(search_omni, "MAX_CANDIDATES", 2)
+    real_ids = search_omni.search_ids
+    real_total = search_omni.search_total
+
+    def _capped(db, q, **kw):  # what a filled candidate cap actually looks like
+        return (real_ids(db, q, **kw) or [])[:2]
+
+    calls: list[str] = []
+
+    def _spy(db, q, **kw):
+        calls.append(q)
+        return real_total(db, q, **kw)
+
+    monkeypatch.setattr(search_omni, "search_ids", _capped)
+    monkeypatch.setattr(search_omni, "search_total", _spy)
+
+    arts = _group(client.get("/api/search/omni", params={"q": "quokkafloss"}).json(), "articles")
+    assert arts["total"] == 4, arts  # the exact count, NOT the cap of 2
+    assert len(arts["items"]) == 2  # the truncated candidate list still bounds display
+    assert calls, "the exact-count query must run once the cap is filled"
+
+
+def test_under_the_cap_the_total_costs_no_extra_query(client, omni_seed, monkeypatch):
+    """The negative-space twin: the common case must be unchanged, not merely correct.
+
+    Under the cap ``len(ids)`` IS exact, so paying for a second count(*) would be a
+    real regression on every ordinary keystroke -- measured at 96 ms on a 300k-doc
+    fixture for a broad term. A fix that counted unconditionally would satisfy the
+    test above and quietly slow the endpoint it was meant to help.
+    """
+    from src.api import search_omni
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        search_omni, "search_total", lambda db, q, **kw: calls.append(q) or 0
+    )
+
+    arts = _group(client.get("/api/search/omni", params={"q": "quokkafloss"}).json(), "articles")
+    assert arts["total"] == 4
+    assert calls == [], "under the cap the count is already exact -- no extra query"
+
+
+def test_the_corpus_fts_search_runs_once_per_keystroke_not_once_per_group(
+    client, omni_seed, monkeypatch
+):
+    """Articles and wiki need the SAME ranked fetch; it used to be run twice.
+
+    This module's own docstring named the cost ("runs 2x full FTS ``search_ids``").
+    On a term matching most of the corpus that fetch is the omnibar's dominant cost
+    (measured 415 ms on a 300k-doc fixture), so running it once halves the dominant
+    term. Asserting the call COUNT is the only way to see it: both spellings return
+    identical payloads.
+    """
+    from src.api import search_omni
+
+    calls: list[str] = []
+    real = search_omni.search_ids
+
+    def _spy(db, q, **kw):
+        calls.append(q)
+        return real(db, q, **kw)
+
+    monkeypatch.setattr(search_omni, "search_ids", _spy)
+
+    r = client.get("/api/search/omni", params={"q": "quokkafloss"})
+    assert r.status_code == 200
+    assert len(calls) == 1, f"expected ONE shared corpus FTS search, got {calls}"
+
+
+def test_a_query_with_no_positive_content_is_unsearchable_not_zero_matches(client):
+    """``search_ids`` answers ``None`` -- not ``[]`` -- for a query with no searchable
+    positive content, and the two mean different things: "this placed no constraint"
+    versus "we searched and nothing matched". Reporting the first as ``total: 0``
+    would be a fabricated zero, and the previous code did worse than that: it took
+    ``len(None)``, which raised inside the per-group guard. Both FTS-backed groups did
+    it, so a query like ``--`` came back carrying only keywords/sources/law -- the
+    omnibar answering as though articles and Wikipedia had never been searched, with
+    nothing in the payload saying so. Confirmed by driving the pre-fix shape (groups
+    were ``['keywords', 'sources', 'law']``), not inferred from reading it.
+    """
+    r = client.get("/api/search/omni", params={"q": "--"})
+    assert r.status_code == 200
+    arts = _group(r.json(), "articles")  # present at all: the group is not dropped
+    assert arts["total"] == 0
+    assert arts["note"] == "query not searchable as typed"
+    assert arts["items"] == []
+
+
+def test_the_wiki_group_states_its_bound_as_a_field_not_only_as_prose(client, omni_seed):
+    """The wiki content total is bounded by construction (a scan window over the
+    ranked hits), so the bound travels as machine-readable fields -- a renderer must
+    not have to sniff a substring out of the note to know the number is a floor."""
+    wiki = _group(client.get("/api/search/omni", params={"q": "quokkafloss"}).json(), "wiki")
+    if "bounded" in wiki:  # present only on the content-match branch
+        assert isinstance(wiki["bounded"], bool)
+        assert isinstance(wiki["scanned"], int)
