@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- HAND-AUTHORED FIXTURE. See PROVENANCE.md: not a captured response. -->
+<Legislation xmlns="http://www.legislation.gov.uk/namespaces/legislation"
+             xmlns:ukm="http://www.legislation.gov.uk/namespaces/metadata"
+             xmlns:dct="http://purl.org/dc/terms/">
+  <ukm:Metadata>
+    <Title>Example Measurement Act 2018</Title>
+    <ukm:PrimaryMetadata>
+      <ukm:Year Value="2018"/>
+      <ukm:Number Value="12"/>
+      <ukm:EnactmentDate Date="2018-05-23"/>
+    </ukm:PrimaryMetadata>
+    <dct:valid>2026-01-01</dct:valid>
+  </ukm:Metadata>
+  <Primary>
+    <Body>
+      <Part>
+        <Number>Part 1</Number>
+        <Title>Preliminary</Title>
+        <P1group>
+          <Title>Overview of this Act</Title>
+          <P1>
+            <Pnumber>1</Pnumber>
+            <P1para>
+              <Text>This Act makes provision about the measurement of things.</Text>
+            </P1para>
+          </P1>
+        </P1group>
+        <P1group>
+          <Title>Interpretation</Title>
+          <P1>
+            <Pnumber>2</Pnumber>
+            <P1para>
+              <Text>In this Act, "thing" means a thing capable of being measured.</Text>
+            </P1para>
+            <P2>
+              <Pnumber>2</Pnumber>
+              <P2para>
+                <Text>A reference to measurement includes estimation.</Text>
+              </P2para>
+            </P2>
+          </P1>
+        </P1group>
+      </Part>
+      <Part>
+        <Number>Part 2</Number>
+        <Title>Measurement</Title>
+        <P1group>
+          <Title>Duty to measure</Title>
+          <P1>
+            <Pnumber>3</Pnumber>
+            <P1para>
+              <Text>A responsible person must measure each thing in their charge.</Text>
+            </P1para>
+          </P1>
+        </P1group>
+      </Part>
+    </Body>
+  </Primary>
+</Legislation>
