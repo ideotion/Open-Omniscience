@@ -1978,6 +1978,22 @@ _NOT_ADOPTABLE_ARTICLE_COLUMNS: dict[str, str] = {
     "quarantine_reason": "a judgement (see quarantined)",
     "quarantine_criteria_version": "a judgement (see quarantined)",
     "quarantined_at": "a judgement (see quarantined)",
+    # THE OWN-TOP-KEYWORD PRECOMPUTE (rulings 23/38/39). Not adoptable, and the reason is
+    # NOT the usual "a local NULL here is a real judgement": a local NULL genuinely does
+    # mean "never computed". It is that the incoming values cannot be READ here.
+    #   * top_keyword_id is an id in the INCOMING corpus's keyword space. temp.map_keywords
+    #     could translate it, but this runs in the articles step, before that map exists --
+    #     and adopting the raw id would point a local article at whatever local keyword
+    #     happens to hold that number, which is a fabricated attribution, not a gap.
+    #   * all three are derived from keyword_mentions, which the merge deliberately does
+    #     NOT copy (2026-07-29 option (a)): the post-swap re-index produces the mentions
+    #     from the article text. Adopting the summary of rows that do not exist locally
+    #     would state a top keyword with no evidence behind it.
+    # The re-index that produces the mentions writes all three in the same pass, so the
+    # NULL is filled from LOCAL evidence rather than adopted from a foreign id space.
+    "top_keyword_id": "an id in the incoming corpus's keyword space, and map_keywords does not exist yet in the articles step; the post-swap re-index recomputes it locally",
+    "top_keyword_count": "derived from keyword_mentions, which the merge deliberately does not copy; the post-swap re-index recomputes it locally",
+    "top_keyword_tied_n": "derived from keyword_mentions, which the merge deliberately does not copy; the post-swap re-index recomputes it locally",
 }
 
 
