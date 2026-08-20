@@ -2945,5 +2945,6 @@
   "Members reporting this indicator: {reported} of {members}": "上报该指标的成员：{members} 个中的 {reported} 个",
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "上报成员间的区间（{n}）：从 {min}（{minArea}）到 {max}（{maxArea}）",
   "missing: {who}": "缺失：{who}",
-  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "部分结果——已计入成员：{members} 个中的 {reported} 个。缺失：{who}。这并非该组别的数值，且下游无从分辨二者；缺失成员会随导出结果一并保留。"
+  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "部分结果——已计入成员：{members} 个中的 {reported} 个。缺失：{who}。这并非该组别的数值，且下游无从分辨二者；缺失成员会随导出结果一并保留。",
+  "… and {n} more": "… 另有 {n} 个"
 }

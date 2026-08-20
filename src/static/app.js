@@ -5116,6 +5116,22 @@
       return `<div class="muted">${esc(t("Country data loads automatically in the background when online — or use “Load standard country data” to fetch it now."))}</div>`;
     }
 
+    // A long member list is INFORMATION OVERFLOW, not a caveat to hide. The
+    // non-negotiable's own answer is LAYERING: the sentence and the counts stay
+    // visible, and the full roster rides the translated #oo-tip hover (invariant #17).
+    // Ruling 44 is satisfied regardless — the missing members travel in the PAYLOAD,
+    // which is what an export quotes; this only decides how many fit on one screen.
+    function _govNames(codes, head) {
+      const all = (codes || []).map(c => String(c).toUpperCase());
+      head = head || 8;
+      return {
+        full: all.join(", "),
+        short: all.length > head
+          ? all.slice(0, head).join(", ") + " " + _govTf("… and {n} more", {n: all.length - head})
+          : all.join(", "),
+      };
+    }
+
     // ---- Compare subtab (ruling 4) ---- //
     // Two countries, every curated indicator, side by side. DISPLAY only: nothing here
     // is derived, so the only way to get it wrong is to render a gap as a value.
@@ -5381,14 +5397,14 @@
       const override = (!cov.complete && missing.length && !allowIncomplete)
         ? `<div class="gov-grp-override">
              <button type="button" class="secondary tiny" onclick="renderGovGroup(true)">${esc(t("Compute over the members that did report"))}</button>
-             <span class="muted">${esc(_govTf("missing: {who}", {who: missing.join(", ").toUpperCase()}))}</span>
+             <span class="muted" title="${esc(_govNames(missing).full)}">${esc(_govTf("missing: {who}", {who: _govNames(missing).short}))}</span>
            </div>`
         : "";
       const partial = (!cov.complete && allowIncomplete)
-        ? `<div class="card-caveat">` + esc(_govTf(
+        ? `<div class="card-caveat" title="${esc(_govNames(missing).full)}">` + esc(_govTf(
             "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.",
             {reported: cov.reported || 0, members: cov.members || 0,
-             who: missing.join(", ").toUpperCase()})) + `</div>`
+             who: _govNames(missing).short})) + `</div>`
         : "";
 
       const period = d.aggregate && d.aggregate.period;

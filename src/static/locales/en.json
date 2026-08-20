@@ -2945,5 +2945,6 @@
   "Members reporting this indicator: {reported} of {members}": "Members reporting this indicator: {reported} of {members}",
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})",
   "missing: {who}": "missing: {who}",
-  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result."
+  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.",
+  "… and {n} more": "… and {n} more"
 }

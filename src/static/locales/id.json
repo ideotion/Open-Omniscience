@@ -2945,5 +2945,6 @@
   "Members reporting this indicator: {reported} of {members}": "Anggota yang melaporkan indikator ini: {reported} dari {members}",
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "Rentang antaranggota pelapor ({n}): {min} ({minArea}) hingga {max} ({maxArea})",
   "missing: {who}": "tidak ada: {who}",
-  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "SEBAGIAN — anggota yang dihitung: {reported} dari {members}. Tidak ada: {who}. Ini bukan angka kelompok tersebut dan tidak ada proses hilir yang dapat membedakannya; anggota yang hilang ikut serta dalam hasil yang diekspor."
+  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "SEBAGIAN — anggota yang dihitung: {reported} dari {members}. Tidak ada: {who}. Ini bukan angka kelompok tersebut dan tidak ada proses hilir yang dapat membedakannya; anggota yang hilang ikut serta dalam hasil yang diekspor.",
+  "… and {n} more": "… dan {n} lainnya"
 }

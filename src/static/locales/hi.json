@@ -2945,5 +2945,6 @@
   "Members reporting this indicator: {reported} of {members}": "इस संकेतक की रिपोर्ट करने वाले सदस्य: {members} में से {reported}",
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "रिपोर्ट करने वाले सदस्यों में परिसर ({n}): {min} ({minArea}) से {max} ({maxArea}) तक",
   "missing: {who}": "अनुपस्थित: {who}",
-  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "आंशिक — परिकलित सदस्य: {members} में से {reported}। अनुपस्थित: {who}। यह समूह का आँकड़ा नहीं है और आगे की कोई प्रणाली इसे उससे अलग नहीं कर सकती; अनुपस्थित सदस्य निर्यात किए गए परिणाम के साथ जाते हैं।"
+  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "आंशिक — परिकलित सदस्य: {members} में से {reported}। अनुपस्थित: {who}। यह समूह का आँकड़ा नहीं है और आगे की कोई प्रणाली इसे उससे अलग नहीं कर सकती; अनुपस्थित सदस्य निर्यात किए गए परिणाम के साथ जाते हैं।",
+  "… and {n} more": "… और {n} अन्य"
 }

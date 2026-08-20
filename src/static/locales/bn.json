@@ -2945,5 +2945,6 @@
   "Members reporting this indicator: {reported} of {members}": "এই সূচক প্রতিবেদনকারী সদস্য: {members}-এর মধ্যে {reported}",
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "প্রতিবেদনকারী সদস্যদের মধ্যে পরিসর ({n}): {min} ({minArea}) থেকে {max} ({maxArea})",
   "missing: {who}": "অনুপস্থিত: {who}",
-  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "আংশিক — গণনাকৃত সদস্য: {members}-এর মধ্যে {reported}। অনুপস্থিত: {who}। এটি গোষ্ঠীর সংখ্যা নয় এবং পরবর্তী কোনো ধাপ এর পার্থক্য বুঝতে পারে না; অনুপস্থিত সদস্যরা রপ্তানি করা ফলাফলের সঙ্গে যায়।"
+  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "আংশিক — গণনাকৃত সদস্য: {members}-এর মধ্যে {reported}। অনুপস্থিত: {who}। এটি গোষ্ঠীর সংখ্যা নয় এবং পরবর্তী কোনো ধাপ এর পার্থক্য বুঝতে পারে না; অনুপস্থিত সদস্যরা রপ্তানি করা ফলাফলের সঙ্গে যায়।",
+  "… and {n} more": "… এবং আরও {n}"
 }

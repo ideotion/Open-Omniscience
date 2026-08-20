@@ -2945,5 +2945,6 @@
   "Members reporting this indicator: {reported} of {members}": "Membres déclarant cet indicateur : {reported} sur {members}",
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "Écart entre les membres déclarants ({n}) : de {min} ({minArea}) à {max} ({maxArea})",
   "missing: {who}": "manquants : {who}",
-  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "PARTIEL — membres pris en compte : {reported} sur {members}. Manquants : {who}. Ce n'est pas le chiffre du groupe et rien en aval ne peut l'en distinguer ; les membres manquants accompagnent le résultat exporté."
+  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "PARTIEL — membres pris en compte : {reported} sur {members}. Manquants : {who}. Ce n'est pas le chiffre du groupe et rien en aval ne peut l'en distinguer ; les membres manquants accompagnent le résultat exporté.",
+  "… and {n} more": "… et {n} de plus"
 }

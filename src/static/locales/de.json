@@ -2945,5 +2945,6 @@
   "Members reporting this indicator: {reported} of {members}": "Mitglieder mit Meldung zu diesem Indikator: {reported} von {members}",
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "Spanne über die meldenden Mitglieder ({n}): {min} ({minArea}) bis {max} ({maxArea})",
   "missing: {who}": "fehlend: {who}",
-  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "TEILWEISE — einbezogene Mitglieder: {reported} von {members}. Fehlend: {who}. Das ist nicht der Wert der Gruppe, und nachgelagert lässt sich der Unterschied nicht erkennen; die fehlenden Mitglieder reisen mit dem exportierten Ergebnis mit."
+  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "TEILWEISE — einbezogene Mitglieder: {reported} von {members}. Fehlend: {who}. Das ist nicht der Wert der Gruppe, und nachgelagert lässt sich der Unterschied nicht erkennen; die fehlenden Mitglieder reisen mit dem exportierten Ergebnis mit.",
+  "… and {n} more": "… und {n} weitere"
 }

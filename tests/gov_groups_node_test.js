@@ -53,7 +53,7 @@ const box = {};
 new Function(
   "esc", "fmtNum", "window",
   extract("_govGroupHtml") + "\n" + extract("_govFmt") + "\n" +
-  extract("_govCompact") + "\n" + extract("_govTf") + "\n" +
+  extract("_govCompact") + "\n" + extract("_govTf") + "\n" + extract("_govNames") + "\n" +
   "this._govGroupHtml = _govGroupHtml;"
 ).call(box,
   (s) => String(s == null ? "" : s)

@@ -155,3 +155,56 @@ def test_the_country_route_serves_an_aggregate_but_never_calls_it_a_country(clie
     assert d["kind"] == "aggregate"
     assert d["iso2"] is None
     assert client.get("/api/governments/country/FRA").json()["kind"] == "country"
+
+
+# --------------------------------------------------------------------------- #
+# The listing must not read the corpus to answer a question about its INDEX
+# --------------------------------------------------------------------------- #
+
+
+def test_the_listing_never_materialises_the_figure_table():
+    """`has_data` asks which areas exist, not what their values are.
+
+    Answering it by reading every figure measured **1.47 s against 51k rows** on a
+    synthetic corpus (15 ms after this fix), and that cost tracks the corpus — a full
+    World Bank load is ~640k figures, so the listing would have become unusable at
+    exactly the scale it is for. Caught by driving the real page in a browser, where
+    the picker rendered empty because the fetch had not returned yet.
+
+    Asserted on the statements the REAL function emits rather than on a timing, which
+    would be a flake on a shared runner: a query that selects the VALUE column is
+    reading rows, whatever it costs on the day it runs.
+    """
+    from sqlalchemy import create_engine, event
+    from sqlalchemy.orm import sessionmaker
+
+    from src.api.governments import list_aggregates
+
+    engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                           poolclass=StaticPool, future=True)
+    Base.metadata.create_all(engine)
+    s = sessionmaker(bind=engine, future=True)()
+    s.add_all([_fig("WLD", "NY.GDP.MKTP.CD", y, 1.0e12) for y in range(1990, 2025)])
+    s.commit()
+
+    seen: list[str] = []
+
+    @event.listens_for(engine, "before_cursor_execute")
+    def _cap(conn, cursor, statement, params, ctx, many):  # noqa: ANN001
+        if "stat_figures" in statement.lower():
+            seen.append(" ".join(statement.split()))
+
+    out = list_aggregates(db=s)
+    s.close()
+
+    assert seen, "guard against an implementation that queries nothing satisfying this"
+    assert any("distinct" in q.lower() for q in seen), (
+        f"the area set must come from a DISTINCT, not a scan of rows: {seen}"
+    )
+    for q in seen:
+        assert "stat_figures.value" not in q, (
+            f"the listing read figure VALUES it does not use: {q}"
+        )
+    # ...and it still answers correctly, or the speed bought nothing.
+    rows = {a["code"]: a for a in out["aggregates"]}
+    assert rows["WLD"]["has_data"] is True and rows["ECS"]["has_data"] is False

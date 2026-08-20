@@ -635,7 +635,15 @@
     .gov-cmp { width:100%; border-collapse:collapse; font-size:13px; }
     .gov-cmp th, .gov-cmp td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--border); }
     .gov-cmp thead th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
-    .gov-cmp tbody th { font-weight:400; color:var(--muted); max-width:340px; }
+    /* text-transform is RESTATED, not inherited: the app-wide `th` rule sets
+       uppercase, which is right for a short column label and wrong for a full
+       indicator name ("Maternal mortality ratio (modelled estimate, per 100,000 live
+       births)"). It is also a no-op in five of the twelve locales this ships in, so
+       leaning on it makes the same table read differently by language for no reason.
+       Same leak as a ::after inheriting from a lower-specificity rule that also
+       matches — enumerate what the other rule sets, do not assume it is not there. */
+    .gov-cmp tbody th { font-weight:400; color:var(--muted); max-width:340px;
+      text-transform:none; letter-spacing:normal; }
     .gov-cmp-v { font-weight:600; }
     .gov-cmp-cat th { font-size:11px; text-transform:capitalize; color:var(--fg);
       background:var(--panel2); font-weight:600; letter-spacing:.02em; }

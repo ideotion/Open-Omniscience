@@ -2945,5 +2945,6 @@
   "Members reporting this indicator: {reported} of {members}": "Участников, отчитавшихся по показателю: {reported} из {members}",
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "Разброс по отчитавшимся участникам ({n}): от {min} ({minArea}) до {max} ({maxArea})",
   "missing: {who}": "отсутствуют: {who}",
-  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "ЧАСТИЧНО — учтено участников: {reported} из {members}. Отсутствуют: {who}. Это не показатель группы, и ниже по цепочке отличить его невозможно; отсутствующие участники передаются вместе с экспортированным результатом."
+  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "ЧАСТИЧНО — учтено участников: {reported} из {members}. Отсутствуют: {who}. Это не показатель группы, и ниже по цепочке отличить его невозможно; отсутствующие участники передаются вместе с экспортированным результатом.",
+  "… and {n} more": "… и ещё {n}"
 }

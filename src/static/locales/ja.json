@@ -2945,5 +2945,6 @@
   "Members reporting this indicator: {reported} of {members}": "この指標を報告した構成国: {members} 中 {reported}",
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "報告した構成国間の幅 ({n}): {min} ({minArea}) から {max} ({maxArea})",
   "missing: {who}": "欠落: {who}",
-  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "部分的 — 計算対象の構成国: {members} 中 {reported}。欠落: {who}。これはグループの値ではなく、下流ではその違いを判別できません。欠落した構成国は書き出した結果に付随します。"
+  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "部分的 — 計算対象の構成国: {members} 中 {reported}。欠落: {who}。これはグループの値ではなく、下流ではその違いを判別できません。欠落した構成国は書き出した結果に付随します。",
+  "… and {n} more": "… ほか {n} 件"
 }

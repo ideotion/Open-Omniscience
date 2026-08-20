@@ -2945,5 +2945,6 @@
   "Members reporting this indicator: {reported} of {members}": "الأعضاء المبلِّغون عن هذا المؤشر: {reported} من {members}",
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "المدى بين الأعضاء المبلِّغين ({n}): من {min} ({minArea}) إلى {max} ({maxArea})",
   "missing: {who}": "ناقص: {who}",
-  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "جزئي — الأعضاء المحسوبون: {reported} من {members}. الناقص: {who}. هذا ليس رقم المجموعة، ولا شيء لاحقًا يمكنه التمييز بينهما؛ والأعضاء الناقصون يرافقون النتيجة المُصدَّرة."
+  "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "جزئي — الأعضاء المحسوبون: {reported} من {members}. الناقص: {who}. هذا ليس رقم المجموعة، ولا شيء لاحقًا يمكنه التمييز بينهما؛ والأعضاء الناقصون يرافقون النتيجة المُصدَّرة.",
+  "… and {n} more": "… و{n} أخرى"
 }
