@@ -111,7 +111,7 @@ setup page at `/unlock`, in three steps **before the app opens**:
    one stable secret, like a user ID, with **no recovery and no decryption
    alternative** — a lost passphrase costs re-collection time, because the corpus is
    rebuilt from the web. Full rationale and the honest threat model are under
-   [Settings → Safety](#39-settings).
+   [Settings → Advanced → Safety](#39-settings).
 
 On **later launches** the store is already created, so you go straight to a single
 **unlock** prompt for the same passphrase. Headless/scripted runs supply it with
@@ -849,7 +849,7 @@ changes. It has three subtabs:
 
 ### 3.8 Evidence & custody
 
-*(Reached from **Settings → Safety** — "Chain of custody" is the panel heading; it left
+*(Reached from **Settings → Advanced → Safety** — "Chain of custody" is the panel heading; it left
 the sidebar in the content-first rework.)*
 
 **What it's for:** proving — to a sceptical third party, offline — that your corpus
@@ -893,7 +893,7 @@ this tab dummy-proof and largely automatic is captured in
 
 ### 3.8a Source integrity
 
-*(The source-integrity desk moved into **Settings → Safety → "Open the source-integrity
+*(The source-integrity desk moved into **Settings → Advanced → Safety → "Open the source-integrity
 desk"**; coordination is also surfaced automatically now — as Home Leads, in the analysis
 window's **Related** view, and as inline "N copies = one voice" badges on article lists
 and the reader.)*
@@ -922,15 +922,20 @@ bake in bias and silence small, foreign, new or dissident sources. Full guide:
 ### 3.9 Settings
 
 **What it's for:** preferences, the acquisition surfaces, and maintenance — organized
-into sections via a sub-nav: **Graphics · General · AI · Wikipedia · OpenStreetMap ·
-Agenda · Data & backup · Safety · Advanced**.
+into **nine** sections via a sub-nav: **Graphics · General · Cards · AI · Wikipedia ·
+OpenStreetMap · Agenda · Data & backup · Advanced**.
 Open Settings from the **button at the bottom of the sidebar**; the command palette also
 jumps straight here. Everything is stored locally; no telemetry.
 
 Everyday use needs none of **Advanced**: collection plumbing, source management, keyword
-curation, the statistics-producer directory and the calendar-feed catalogue all live
-there, in **folded sections that only load their data once you open one** (the source
-catalogue alone can hold tens of thousands of rows). **Collect** and **Sources** are
+curation, the statistics-producer directory, the calendar-feed catalogue, the diagnostics
+desk, **Safety** and **Uninstall & wipe** all live there, in **folded sections that only
+load their data once you open one** (the source catalogue alone can hold tens of thousands
+of rows). Safety used to be its own subtab; it is now the second-to-last Advanced section,
+with the two irreversible actions — **Panic wipe** and **Uninstall the app** — split out
+into a section of their own (**Uninstall & wipe**) so neither can be reached by mistake
+while you are reading about encryption. Nothing was lost in either move: every control
+that was on the Safety subtab is still there, under the same headings. **Collect** and **Sources** are
 documented above ([3.2](#32-collect-in-settings--collect),
 [3.3](#33-sources-in-settings--sources)) and are reached through Advanced;
 **Wikipedia** ([3.7](#37-wikipedia-in-settings--wikipedia)) keeps its own section.
@@ -1111,8 +1116,8 @@ Official **figures** are not here at all — they are data, so they live under
 
   The same panel also runs local **source enrichment** (deduce topic tags from your
   corpus) and consented **Wikidata** passes (source types, new-source discovery).
-- **Safety & at-risk use:** tools for journalists working under pressure, each
-  labelled with its **honest limit**:
+- **Safety & at-risk use (Advanced → Safety):** tools for journalists working under
+  pressure, each labelled with its **honest limit**:
   - **At-rest encryption (default for new corpora).** New databases are
     SQLCipher-4-encrypted on disk: at every start the app asks for **THE
     passphrase** — one stable secret, like a user ID (`OO_DB_PASSPHRASE` for
@@ -1120,7 +1125,7 @@ Official **figures** are not here at all — they are data, so they live under
     alternative**: a lost passphrase costs re-collection time, because the
     corpus is rebuilt from the web — it holds nothing personal beyond what was
     scraped and deduced from public sources. Existing plaintext corpora keep
-    working untouched; **Settings → Safety → "Encrypt this corpus…"** converts
+    working untouched; **Settings → Advanced → Safety → "Encrypt this corpus…"** converts
     one *in place* (explicit consent, full verification before the swap, and a
     deliberate plaintext snapshot kept as your escape hatch — delete it once
     you've unlocked successfully). The **doctor** (`GET /api/system/doctor`,
@@ -1151,6 +1156,9 @@ Official **figures** are not here at all — they are data, so they live under
     User-Agent) or *Protected* (generic User-Agent routed through a proxy **you** run,
     e.g. Tor). Protected mode **cannot guarantee anonymity** — you must run and trust
     the proxy yourself; it refuses to enable without a proxy URL.
+  The two **irreversible** actions live one section further down, under **Advanced →
+  Uninstall & wipe**, deliberately away from everything above:
+
   - **Panic wipe** — irreversibly deletes the corpus, keys and caches on this machine
     (double-confirmed). **Limit:** overwrite-in-place does *not* guarantee
     unrecoverability on SSD/flash — for that, use full-disk encryption (LUKS/Qubes/Tails)
@@ -1819,7 +1827,7 @@ Anti-amplification is **never** a silent transform the app performs and you mere
   members; reverting reproduces the raw equal counts **exactly**. *No collapse is ever
   applied without your explicit action* — enforced by a test.
 
-This is the **source-integrity desk** (Settings → Safety → "Open the source-integrity
+This is the **source-integrity desk** (Settings → Advanced → Safety → "Open the source-integrity
 desk"): *Scan for coordination* lists proposed actors with their evidence (shared text,
 lockstep timing, shared host); *Apply collapse* / *Expand (revert)* are yours to choose.
 The echo-chamber Leads on Home carry the same *Collapse to one actor* action.
@@ -1916,7 +1924,7 @@ This is **web-of-trust, not proof of correctness**: trusting an author means "I 
 see their assertions," not "their assertions are true." Dissent between trusted authors
 is surfaced for you to judge, never resolved for you.
 
-### Using it (the source-integrity desk — Settings → Safety)
+### Using it (the source-integrity desk — Settings → Advanced → Safety)
 
 1. **Author** annotations (target + kind + value) under *Shared annotations*.
 2. **Export signed bundle** → a JSON file you can publish or share.
@@ -2535,16 +2543,16 @@ candidates** panel (Settings → Sources), runs are capped by the scheduler's di
 recorded in the run log, and a Home card tells you when candidates await review.
 **Promote** creates a *disabled* source you still have to enable; **Dismiss** is remembered
 and never re-suggested. The DuckDuckGo-powered topic search remains separate, **off by
-default**, and gated behind Settings → Safety (see below).
+default**, and gated behind Settings → Advanced → Safety (see below).
 
-## External topic discovery is opt-in (Settings → Safety)
+## External topic discovery is opt-in (Settings → Advanced → Safety)
 
 *Discover by topic* is the one feature that **sends a free-text search query to a search
 engine**: it sends your topic query to DuckDuckGo. (Other online actions — collection,
 market/stats fetches, Ollama pulls, OpenTimestamps — are each consented and named too;
 this is the one that transmits a query you typed.) It is **disabled by default** and
 refuses with an honest
-message until you enable **Settings → Safety → External topic discovery** ("Your query
+message until you enable **Settings → Advanced → Safety → External topic discovery** ("Your query
 leaves this machine"). Discovering RSS feeds for sources you added yourself stays on the
 local ethical-fetch path and is not affected.
 

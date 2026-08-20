@@ -2179,7 +2179,6 @@
       if (cat === "cards") loadCardCatalog();     // the Leads catalogue (PR-7): lazy, one loopback read
       if (cat === "wikipedia") loadWiki();            // moved Wikipedia tracking onShow (dumps load via loadSettings)
       if (cat === "offlinemap") loadOsmMap();         // OSM offline-map region downloads (Group M)
-      if (cat === "safety") { loadAtRestState(); onUninstallMode(); }  // at-rest attestation + uninstall preview
       // The newsletter/PDF import panels moved into Data & backup (2026-07-31). Both
       // calls are cheap and loopback-only -- a count query and a job-status poll -- so
       // they load with the subtab rather than needing the Advanced lazy treatment.
@@ -2210,6 +2209,16 @@
         syncKeywordTriageToggle(); syncSourceTagsToggle(); syncPerceptionExtractToggle();
       },
       sources:  () => { loadSrcFacets(); loadManagedSources(); loadCandidates(); },
+      // SAFETY, folded in from its retired subtab (rulings 26/42). Its loaders came WITH
+      // it: on the subtab they ran on select, and here they run on EXPAND -- folded must
+      // not mean fetched. loadAtRestState is a loopback read of the store's encryption
+      // state; it is cheap, but running it because someone opened Advanced to change a
+      // scheduler knob is still work nobody asked for.
+      safety:   () => { loadAtRestState(); },
+      // UNINSTALL & WIPE, its own section (ruling 26). onUninstallMode paints the preview
+      // of what the CURRENT mode would delete -- it must run before the panel is read, or
+      // the reader sees an empty preview beside an irreversible button.
+      uninstall: () => { onUninstallMode(); },
       // Both quality gates + the scope toggles + the bulk catch-up (absorbed from the
       // Sources section, which now points here — never two homes for one control).
       qualification: () => { loadQualificationGates(); loadQualifyBulk(); },

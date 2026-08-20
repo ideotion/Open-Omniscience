@@ -1272,7 +1272,6 @@
         <button data-tab="offlinemap">OpenStreetMap</button>
         <button data-tab="agenda">Agenda</button>
         <button data-tab="data">Data &amp; backup</button>
-        <button data-tab="safety">Safety</button>
         <button data-tab="advanced">Advanced</button>
       </nav>
 
@@ -2459,45 +2458,15 @@
     </section>
     </details>
 
-    <!-- The Bulletin (design record §16): a folded section at the VERY BOTTOM of
-         Advanced, so it can be reached by skipping to the end. Folded by default
-         and discreet — and folded does not mean fetched: its loader fires on
-         EXPAND like every other section here. -->
-    <details class="adv-sec" data-adv="bulletin">
-      <summary><span class="adv-sec-t">Bulletin</span> <span class="muted">— a periodic document built from this corpus</span></summary>
-    <section class="panel" id="bulletin-panel">
-      <h2>Bulletin</h2>
-      <p class="hint" style="margin-top:0"><span>A document covering one closed period — what rose in <em>this corpus</em>, which sources carried it, and everything the period could not see. It is built from exact counts, so it is the record rather than a summary of it.</span>
-        <span>Nothing here touches the network. The document is a <strong>draft</strong> until you publish it, and publishing only stamps it: you are the byline, not the machine.</span></p>
-      <div id="bulletin-gate" class="hint" style="margin-top:8px">Checking whether this machine can build one…</div>
-      <div id="bulletin-controls" hidden>
-        <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px">
-          <div><label for="bul-cadence">Period</label><select id="bul-cadence">
-            <option value="daily">Daily</option>
-            <option value="weekly" selected>Weekly</option>
-            <option value="monthly">Monthly</option>
-            <option value="trimester">Trimester</option>
-            <option value="semester">Semester</option>
-            <option value="yearly">Yearly</option>
-          </select></div>
-          <label class="row" style="gap:6px;align-items:center" title="Adds a paragraph per story, written by the local model and kept only where every figure and name in it appears in the articles the model was shown. Off by default; the document is complete without it.">
-            <input id="bul-narrate" type="checkbox"> <span>Add the narration layer</span></label>
-          <button id="bul-generate" onclick="bulletinGenerate(this)">Build a draft</button>
-          <div id="bulletin-status" class="hint" style="align-self:end"></div>
-        </div>
-        <div id="bulletin-list" style="margin-top:12px"><div class="muted">Loading editions…</div></div>
-        <div id="bulletin-review" style="margin-top:14px"></div>
-      </div>
-    </section>
-    </details>
-</div>
-
-
-
-    <!-- =========================== LIBRARY =========================== -->
-
-    <div class="set-view" id="set-safety" style="display:none">
-    <!-- ============================ SAFETY (Theme 2) ================= -->
+    <!-- SAFETY, folded into Advanced (rulings 26/42, field feedback 2026-08-07). It was
+         its own subtab; the end state is nine, so it becomes a SECTION here. Everything
+         it carried moved WHOLE -- source integrity, evidence & custody, at-rest
+         encryption, database maintenance, corpus fixity, fetch mode and external
+         discovery -- with every id unchanged, so no deep link or test anchor breaks.
+         Panic wipe and Uninstall are deliberately NOT in here: ruling 26 gives them
+         their own section, immediately below. -->
+    <details class="adv-sec" data-adv="safety">
+      <summary><span class="adv-sec-t">Safety &amp; at-risk use</span> <span class="muted">— at-rest encryption, integrity, fetch mode; for journalists working under pressure</span></summary>
     <section class="panel">
       <div class="phead"><h2>Source integrity</h2></div>
       <p class="muted" style="margin-top:0">Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.</p>
@@ -2593,7 +2562,51 @@
       </div>
       <div id="discovery-external-result" class="hint"></div>
 
-      <hr>
+    </details>
+
+    <!-- UNINSTALL &amp; WIPE -- its OWN section, never nested inside Safety (ruling 26).
+         The reason is not tidiness: panic wipe must not become hard to reach, because
+         the person who needs it may need it in a hurry. A top-level section is one click
+         from the Advanced subtab; a subsection inside another fold is two, and the
+         second one is not obvious. Kept LAST so it is never mistaken for an ordinary
+         setting, and marked so it reads as destructive before it is opened. -->
+    <details class="adv-sec adv-sec-danger" data-adv="uninstall">
+      <summary><span class="adv-sec-t">Uninstall &amp; wipe</span> <span class="muted">— irreversible: destroy the key and remove this install</span></summary>
+    <section class="panel" id="uninstall-panel">
+      <div class="phead"><h2>Uninstall &amp; wipe</h2>    <!-- The Bulletin (design record §16): a folded section at the VERY BOTTOM of
+         Advanced, so it can be reached by skipping to the end. Folded by default
+         and discreet — and folded does not mean fetched: its loader fires on
+         EXPAND like every other section here. -->
+    <details class="adv-sec" data-adv="bulletin">
+      <summary><span class="adv-sec-t">Bulletin</span> <span class="muted">— a periodic document built from this corpus</span></summary>
+    <section class="panel" id="bulletin-panel">
+      <h2>Bulletin</h2>
+      <p class="hint" style="margin-top:0"><span>A document covering one closed period — what rose in <em>this corpus</em>, which sources carried it, and everything the period could not see. It is built from exact counts, so it is the record rather than a summary of it.</span>
+        <span>Nothing here touches the network. The document is a <strong>draft</strong> until you publish it, and publishing only stamps it: you are the byline, not the machine.</span></p>
+      <div id="bulletin-gate" class="hint" style="margin-top:8px">Checking whether this machine can build one…</div>
+      <div id="bulletin-controls" hidden>
+        <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px">
+          <div><label for="bul-cadence">Period</label><select id="bul-cadence">
+            <option value="daily">Daily</option>
+            <option value="weekly" selected>Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="trimester">Trimester</option>
+            <option value="semester">Semester</option>
+            <option value="yearly">Yearly</option>
+          </select></div>
+          <label class="row" style="gap:6px;align-items:center" title="Adds a paragraph per story, written by the local model and kept only where every figure and name in it appears in the articles the model was shown. Off by default; the document is complete without it.">
+            <input id="bul-narrate" type="checkbox"> <span>Add the narration layer</span></label>
+          <button id="bul-generate" onclick="bulletinGenerate(this)">Build a draft</button>
+          <div id="bulletin-status" class="hint" style="align-self:end"></div>
+        </div>
+        <div id="bulletin-list" style="margin-top:12px"><div class="muted">Loading editions…</div></div>
+        <div id="bulletin-review" style="margin-top:14px"></div>
+      </div>
+    </section>
+    </details>
+
+</div>
+      <p class="muted" style="margin-top:0">Both actions below are irreversible. Read each note before pressing.</p>
       <h3 style="margin-bottom:6px; color:var(--err)">Panic wipe</h3>
       <p class="muted" style="margin-top:0">Irreversibly destroys the corpus's encryption key (crypto-erase) and removes the data, keys and caches on this machine — the encrypted store becomes permanently unrecoverable at any size, then the app must be restarted. This cannot be undone. You'll be offered an optional full free-space overwrite afterward as defence-in-depth (that pass alone does not guarantee erasure on SSD/flash/copy-on-write disks — the real guarantee is the destroyed key).</p>
       <button class="danger" onclick="panicWipe()">Wipe everything now</button>
@@ -2633,7 +2646,14 @@
       </div>
       <div id="uninstall-result" class="hint"></div>
     </section>
-    </div>
+    </details>
+
+</div>
+
+
+
+    <!-- =========================== LIBRARY =========================== -->
+
     </div>
 
     <!-- ============================ HELP / DOCS ====================== -->
