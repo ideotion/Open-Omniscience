@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
 from sqlalchemy import insert
@@ -36,6 +36,48 @@ _LOG = logging.getLogger(__name__)
 # matching the catalog's languages — "The Moscow Times" also matches as
 # "moscow times").
 _LEADING_ARTICLES = {"the", "le", "la", "les", "el", "los", "las", "die", "der", "das", "il", "al"}
+
+
+def top_keyword_of(contrib: Mapping[int, int]) -> tuple[int | None, int | None, int | None]:
+    """This article's OWN top keyword, from its (keyword_id -> occurrences) map.
+
+    Returns ``(representative_keyword_id, top_count, tied_n)`` for
+    ``Article.top_keyword_id`` / ``top_keyword_count`` / ``top_keyword_tied_n``.
+
+    PURE + total: no I/O, no session, no ordering assumption about ``contrib``. It is
+    called from ``index_article`` with the map that function has ALREADY built to write
+    the mention rows, so the whole precompute costs no extra query.
+
+    THE HONESTY RULE THIS FUNCTION IMPLEMENTS, and the reason it is one function rather
+    than an inline ``max()``:
+
+      * ``top_count`` is the highest occurrence count reached by any single keyword. It
+        is a measurement and is always safe to publish.
+      * ``tied_n`` is how many keywords reached it. When that is more than 1 the article
+        HAS no single top keyword, and any single answer would be a fabricated ranking.
+      * ``keyword_id`` is therefore a deterministic REPRESENTATIVE -- the lowest id in the
+        top set -- never a winner. "Lowest id" is chosen only because it is stable and
+        reproducible (the same corpus yields the same answer twice, and a re-index does
+        not silently reshuffle the Articles-tab sort); it carries no meaning of its own.
+        A caller that renders the id without ``tied_n`` beside it is stating something
+        the counts do not support.
+
+    An empty map (an article with no keywords) returns ``(None, None, None)`` -- "no
+    keywords", which readers must keep distinct from a NULL meaning "never computed"
+    (an article indexed before these columns existed). Both are None here because this
+    function only ever describes an article it has just seen; the never-computed case is
+    the DB default and never reaches this code.
+
+    Zero and negative counts are ignored: an occurrence count of 0 is not evidence of a
+    top keyword, so a map of only-zero entries is treated as no keywords at all rather
+    than manufacturing a top keyword with no occurrences behind it.
+    """
+    positive = {kid: n for kid, n in contrib.items() if int(n) > 0}
+    if not positive:
+        return (None, None, None)
+    top = max(positive.values())
+    tied = [kid for kid, n in positive.items() if n == top]
+    return (min(tied), int(top), len(tied))
 
 
 def _self_name_forms(source) -> set[str]:
@@ -359,6 +401,20 @@ def index_article(
         # for session.execute(insert()/update()/delete()), the same hook that
         # already protects index_article's KeywordMention bulk .delete() above).
         session.execute(insert(KeywordMention), mention_rows)
+
+    # THE ARTICLE'S OWN TOP KEYWORD (rulings 23/38/39). Pure arithmetic over the map we
+    # just built -- no query, no second pass, and no chance of disagreeing with the
+    # mention rows, because it is derived from the very numbers that produced them.
+    # Written in BOTH scopes: the top keyword is a keyword fact, so a keyword-only
+    # cleanup must refresh it too or the column would silently describe a previous
+    # extractor generation. Set unconditionally (never `or`-guarded): an article whose
+    # keywords were all suppressed this pass must go BACK to NULL rather than keep a
+    # stale top keyword that no mention row supports any more.
+    (
+        article.top_keyword_id,
+        article.top_keyword_count,
+        article.top_keyword_tied_n,
+    ) = top_keyword_of(new_contrib)
 
     # Keep the denormalised counters exact for THIS article's net change.
     _apply_keyword_counter_deltas(session, old_contrib, new_contrib)

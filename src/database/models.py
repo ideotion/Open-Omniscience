@@ -675,6 +675,49 @@ class Article(Base):
     quarantine_criteria_version: Mapped[str | None] = mapped_column(String(40))
     quarantined_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    # THE ARTICLE'S OWN TOP KEYWORD (rulings 23/38/39, field feedback 2026-08-07).
+    # A PRECOMPUTE, not a new measurement: index_article already holds this article's
+    # per-keyword occurrence totals in memory when it writes the mention rows, so these
+    # three columns cost zero extra queries. They exist because the Articles tab must
+    # SORT ~1M rows by "this article's own top keyword", which a per-row query cannot do.
+    #
+    # Additive + nullable, exactly like detected_language/quarantined above: an article
+    # indexed before these columns existed simply has NULL ("never computed"), which every
+    # reader treats as "unknown", never as "no keywords". A re-index fills it forward.
+    #
+    #   * top_keyword_count -- the highest per-article occurrence count any one keyword
+    #     reached in this article. The verifiable evidence number; NULL when the article
+    #     has no keywords at all.
+    #   * top_keyword_tied_n -- HOW MANY keywords reached that count. 1 = unambiguous.
+    #   * top_keyword_id -- a deterministic REPRESENTATIVE of the top set (the lowest
+    #     keyword id among those at the max), NEVER "the winner". When tied_n > 1 the
+    #     article genuinely has no single top keyword, and picking one would fabricate a
+    #     ranking the counts do not support -- so every reader MUST render this id
+    #     together with tied_n (see `src.analytics.store.top_keyword_of`, which is the one
+    #     place the rule is implemented, and the Articles-tab column, which shows
+    #     "term +N tied").
+    #
+    # SHAPE DECISION (recorded for ruling 39, "ties store BOTH"): the tied keywords are
+    # not stored as an id LIST. A wide tie is the COMMON shape, not a corner case -- an
+    # article whose keywords each occur once has a tie as wide as its whole vocabulary
+    # (hundreds), so an id list would be either unbounded or silently truncated, and this
+    # project does not truncate a stored answer. Storing the tie's SIZE keeps the column
+    # bounded, makes the tie impossible to hide behind a fabricated winner, and leaves
+    # every tied keyword renderable: a reader that wants the full tied set reads it from
+    # keyword_mentions for the VISIBLE rows only (bounded + batched, the same read the
+    # Feed already performs for its per-article top three).
+    # NO ForeignKey constraint, deliberately, following the KeywordMention.source_id
+    # precedent above: SQLite cannot add a constraint to an existing table without
+    # rebuilding it, and rebuilding `articles` is a multi-GB, multi-hour operation on a
+    # field corpus -- exactly what an additive migration exists to avoid. Declaring the
+    # constraint on the model anyway would mean a fresh create_all store HAS it and every
+    # upgraded store does NOT: one model, two real schemas, which is the drift the
+    # migration gate correctly refuses. The value is written only by index_article, from
+    # a keyword id it has just resolved in the same transaction, never from input.
+    top_keyword_id: Mapped[int | None] = mapped_column(Integer)
+    top_keyword_count: Mapped[int | None] = mapped_column(Integer)
+    top_keyword_tied_n: Mapped[int | None] = mapped_column(Integer)
+
     # Relationship to source
     source = relationship("Source", back_populates="articles")
 
@@ -741,6 +784,14 @@ class Article(Base):
         # one are never pooled). Mirrored in migration 7b1e4a93c26d and in
         # src/database/maintenance.py HOT_INDEXES (installs that skip `make migrate`).
         Index("idx_article_created_lang", "created_at", "language", "detected_language"),
+        # Sort key for the Articles tab's "top keyword" column (rulings 21/23). Leads with
+        # top_keyword_count because that is what the column sorts on; top_keyword_id rides
+        # along so grouping/lookup by the representative keyword stays index-only rather
+        # than fetching the ~35 KB article row to read one integer (the recorded SQLCipher
+        # column-order trap that idx_article_source_sentiment and ix_article_observed
+        # already fixed for their own shapes). Mirrored in migration 3f9c17ab42de and in
+        # src/database/maintenance.py HOT_INDEXES (installs that skip `make migrate`).
+        Index("idx_article_top_keyword", "top_keyword_count", "top_keyword_id"),
     )
 
     @property
@@ -1816,6 +1867,16 @@ class KeywordMention(Base):
         # INDEX") range scan. Counters are corpus-wide; the per-day trend window
         # needs THIS. Also in maintenance.HOT_INDEXES + migration b4c5d6e7f8a9.
         Index("ix_mention_date_keyword", "observed_on", "keyword_id", "count"),
+        # Covering index for the PER-ARTICLE top-keyword reads (Feed ruling 10: each post
+        # shows its own top three; Articles tab: the full tied set for the visible rows).
+        # Both are `SELECT keyword_id, count WHERE article_id IN (...) ORDER BY count DESC`
+        # over one PAGE of articles. ix_mention_article finds the rows by article_id but
+        # then reads the heap page for `count` and `keyword_id` -- a SQLCipher decrypt per
+        # mention row, and an article carries tens of them, so a 20-row page costs hundreds
+        # of decrypts. Carrying both columns makes it index-only. This is also what keeps
+        # the Feed off the keyword_mentions -> articles join the recorded codec trap names.
+        # Mirrored in migration 3f9c17ab42de + maintenance.HOT_INDEXES.
+        Index("ix_mention_article_count", "article_id", "count", "keyword_id"),
     )
 
     def __repr__(self) -> str:
