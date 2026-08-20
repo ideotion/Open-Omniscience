@@ -14,8 +14,10 @@ records requested sleeps and advances time deterministically; no real sleeping.
 
 from __future__ import annotations
 
+import pytest
+import requests
 
-from src.ingest import EthicalFetcher
+from src.ingest import EthicalFetcher, FetchFailed
 
 
 class _Resp:
@@ -112,3 +114,55 @@ def test_delays_are_tracked_per_host():
     f.fetch("https://one.example/a")
     f.fetch("https://two.example/a")  # different host: no delay owed
     assert clock.sleeps == []
+
+
+# --------------------------------------------------------------------------- #
+# 2026-08-20 additions (quality-ratchet session): the two properties the file
+# did not yet pin — the SHIPPED default is polite, and the politeness stamp
+# survives a transport failure.
+# --------------------------------------------------------------------------- #
+
+
+def test_shipped_default_politeness_is_on(monkeypatch):
+    """Politeness must be ON by default — a zeroed default ships an impolite
+    fetcher to every install, which no timing test above can see (they all set
+    min_interval_s explicitly). >= 1.0 pins the courtesy floor, not an exact
+    calibration; raise it deliberately, never drop it below 1s."""
+    monkeypatch.delenv("OO_FETCH_MIN_INTERVAL", raising=False)
+    assert EthicalFetcher(session=_Session()).min_interval_s >= 1.0
+
+    from src.safety.fetcher import make_fetcher
+
+    assert make_fetcher(session=_Session()).min_interval_s >= 1.0
+
+
+class _FailFirstPageSession(_Session):
+    """Serves robots.txt normally; the FIRST page fetch raises a transport
+    error, later ones succeed."""
+
+    def __init__(self):
+        super().__init__()
+        self._failed = False
+
+    def get(self, url, timeout=None, allow_redirects=True, **kwargs):
+        if not url.endswith("/robots.txt") and not self._failed:
+            self._failed = True
+            raise requests.ConnectionError("simulated transport failure")
+        return super().get(url, timeout=timeout, allow_redirects=allow_redirects, **kwargs)
+
+
+def test_politeness_stamp_lands_even_when_transport_fails():
+    """The per-host timestamp is written in a ``finally`` around the HTTP call,
+    so a host that just refused us is still owed the full courtesy interval —
+    an error must never become a licence to hammer. Deleting that ``finally``
+    stamp makes the second fetch sleep nothing and reddens this test."""
+    f, clock = _fetcher(_FailFirstPageSession(), min_interval_s=5.0, max_retries=0)
+
+    with pytest.raises(FetchFailed):
+        f.fetch("https://example.com/a")
+    assert clock.sleeps == []  # first contact: no delay owed, even on failure
+
+    clock.advance(1.0)  # 1s passes; 4s of the 5s interval remain
+    f.fetch("https://example.com/b")
+    assert len(clock.sleeps) == 1
+    assert abs(clock.sleeps[0] - 4.0) < 1e-9
