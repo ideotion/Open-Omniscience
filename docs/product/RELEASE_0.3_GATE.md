@@ -42,17 +42,23 @@ stretch target for a future session, not a blocker to the tag.
 
 The 2026-07-20 program, each piece verified present in the tree on 2026-08-13:
 
-| Piece | Where | Verified |
-|---|---|---|
-| Qualification lifecycle (admission gate · stamp · job · re-qualification ladder) | `src/catalog/qualification.py` | ✅ |
-| Newsletter links → sources | `src/privacy/link_sanitizer.py` → `article_links` | ✅ |
-| Airplane / Ollama gate split (loopback inference works offline) | `src/llm/ollama.py` | ✅ |
-| Source-IP surfacing | `Article.server_ip`, rendered in `src/api/main.py` | ✅ |
-| Discovery trail · citations tally · corpus filters | `src/discovery/cited_sources.py` | ✅ |
-| Nav-soup prose gate | `src/services/prose_gate.py`, wired at `src/ingest/non_article.py:124` | ✅ |
-| Post-import delta screen + persisted reports | import report + `_uxCorpusDeltaView` | ✅ |
-| LLM triage / tag runs with the Claude-verification chain | `src/ai_layer/triage.py`, progressive sweeps | ✅ |
-| Docs↔app reciprocity (USER_MANUAL chapters) | `docs/USER_MANUAL.md` §3.3, §3.9 | ✅ (2026-07-25) |
+| Piece | Where | Built in | Verified |
+|---|---|---|---|
+| Qualification lifecycle (admission gate · stamp · job · re-qualification ladder) | `src/catalog/qualification.py` | [#732](https://github.com/ideotion/Open-Omniscience/pull/732) | ✅ |
+| Newsletter links → sources | `src/privacy/link_sanitizer.py` → `article_links` | [#733](https://github.com/ideotion/Open-Omniscience/pull/733) | ✅ |
+| Airplane / Ollama gate split (loopback inference works offline) | `src/llm/ollama.py` | [#730](https://github.com/ideotion/Open-Omniscience/pull/730) | ✅ |
+| Source-IP surfacing | `Article.server_ip`, rendered in `src/api/main.py` | [#733](https://github.com/ideotion/Open-Omniscience/pull/733) | ✅ |
+| Discovery trail · citations tally · corpus filters | `src/discovery/cited_sources.py` | [#736](https://github.com/ideotion/Open-Omniscience/pull/736) | ✅ |
+| Nav-soup prose gate | `src/services/prose_gate.py`, wired at `src/ingest/non_article.py:124` | [#737](https://github.com/ideotion/Open-Omniscience/pull/737) | ✅ |
+| Post-import delta screen + persisted reports | import report + `_uxCorpusDeltaView` | [#731](https://github.com/ideotion/Open-Omniscience/pull/731) | ✅ |
+| LLM triage / tag runs with the Claude-verification chain | `src/ai_layer/triage.py`, progressive sweeps | [#735](https://github.com/ideotion/Open-Omniscience/pull/735) | ✅ |
+| Docs↔app reciprocity (USER_MANUAL chapters) | `docs/USER_MANUAL.md` §3.3, §3.9 | audit-09 fix-forward | ✅ (2026-07-25) |
+
+Two columns, because they answer different questions: **Built in** is where the code
+landed and can be re-read as a diff; **Where** is where it lives now and can be re-run.
+The 2026-07-21 session that shipped eight of these recorded its own PR-by-PR notes — they
+are preserved in §6, including the one gap it disclosed against itself (the last row was
+*not* done that session, and closed four days later).
 
 **The double-check clause was earned, not assumed.** This row's own wording — *field-confirmed,
 not merely merged* — caught a real defect on 2026-07-24: the qualification lifecycle was
@@ -288,6 +294,7 @@ for a future session, not a condition of this cycle.
 | 2026-08-13 | Row 6 **closed** — §1b ratified explicitly | maintainer |
 | 2026-08-13 | Rows 1 and 2 marked closed against named artifacts; this file created | session |
 | 2026-08-13 | Row 8 **closed** against its own literal wording — the standing Playwright `ui_walk` runner shipped, drove all three test states, all 5 flagship surfaces stamped, every P0/P1 fixed-or-recorded; the fuller 15-surface/17-theme/12-locale/a11y matrix from the brief's §6 is explicitly NOT fully covered and is recorded as a stretch target, not a condition of this row | session |
+| 2026-08-13 | A **second** gate board (repo root, 2026-08-04) found and **absorbed** into §6; the root file removed. This file is the only 0.3 board | session |
 
 ---
 
@@ -350,3 +357,53 @@ disqualified afterwards. That last clause is the whole point — a pass that onl
 **Cheaper substitute, if 0.4 also finds the full run too slow:** a *small* committed backup
 demonstrates (1) and (3) in minutes; only (2) genuinely needs the full corpus. Recorded so
 the option does not have to be re-invented — declined for 0.3, still available later.
+
+---
+
+## 6. Appendix — the 2026-07-21 session record (absorbed)
+
+> **Absorbed 2026-08-13.** This was a *second* `RELEASE_0.3_GATE.md`, at the repo **root**,
+> created 2026-08-04 ([#738](https://github.com/ideotion/Open-Omniscience/pull/738)) by the
+> multi-lane session that built the autonomously-actionable half of the gate. This file was
+> then created on 2026-08-13 without noticing it, leaving the repo with two boards that
+> immediately began to disagree — the root one still read row 6 as *"ruling not yet
+> formalized"* and row 3 against the withdrawn 5M bar. The row-8 session
+> ([#957](https://github.com/ideotion/Open-Omniscience/pull/957)) spotted the split and did
+> the right half of the fix: it pointed the root file's header at this one as authoritative,
+> and noted that the root's row-1 sub-feature breakdown *"is not duplicated there"*. This
+> section is what makes that no longer true, and therefore what makes deleting the file safe.
+> **§1 is the live board and supersedes the status column that file carried.** What is kept
+> below is the part that does not go stale: the evidence, the disclosed gaps, and one
+> genuinely reusable merge fact.
+
+**The honesty boundary that session set for itself** — worth keeping verbatim, because it is
+the same bar §1 uses: every PR went *built → self-tested (pytest/ruff/mypy/i18n) →
+independently code-reviewed → merged*. None of that is field-confirmed, browser-verified, or
+run at scale; those bars belong to the maintainer or a later session.
+
+**It disclosed a regression against itself.** [#737](https://github.com/ideotion/Open-Omniscience/pull/737)
+added a `run_prose_gate_selftest` harness without registering it in `recursive_loop.py`'s
+`LOOP_SELFTESTS`, which `tests/test_recursive_loop.py` enforces — so `main` broke after it
+merged. Not a merge conflict: a real gap the PR's own targeted tests did not cover. Recorded
+there as *"fixed in #739, still open at the time of writing"*; **#739 has since merged** —
+verified 2026-08-13, `recursive_loop.py:59` carries the entry.
+
+**The merge fact worth reusing.** Ten PRs from one session all appended to the same
+append-only `docs/ledger/shipped.csv` from the same base, so every merge after the first
+would have conflicted there. The fix was `.gitattributes` (`docs/ledger/shipped.csv
+merge=union`) — **and the ordering is the load-bearing part**: the attribute only helps once
+it is already on the side being merged *into*, so the very first PR to introduce it cannot
+benefit from its own fix. Two structural conflicts (not appends) were resolved by re-basing
+rather than hand-editing: `test_repo_invariants.py` between #727 and #735, and all 12 locale
+files between #736 and #731. All ten merged cleanly in the recorded order, confirming it held.
+
+**What that session deliberately did not attempt** — all still true, and all still open or
+moved: any run at real corpus scale (rows 3, 4), executing the clean-up or making the
+page-size ruling (rows 5, 6 — both maintainer-gated at the time; row 6 has since closed),
+the soak and cold-boot (row 7), and claiming the `ui_walk` runner standing (row 8).
+
+**Outstanding item it surfaced**, independent of this gate and still queued:
+[#728](https://github.com/ideotion/Open-Omniscience/pull/728) — a findings brief from a real
+475K-article diagnostics export (two endpoints with a severe p95/p99 tail, a missing hard-link
+on "rising" Home Lead cards, an unexplained 2026-07-11 stall cluster, five sources at 100%
+outlier rate).
