@@ -72,7 +72,13 @@ class ConfidenceInterval:
     method: str
     standard_error: float | None = None
     degrees_of_freedom: float | None = None
-    sample_size: int | None = None
+    # float, not int, because odds_ratio_ci/relative_risk_ci pass the cell total
+    # AFTER the Haldane-Anscombe correction, which adds 0.5 to each of the four
+    # cells -- so a 100-observation table reports 102.0 whenever a zero cell
+    # triggers it. Every other producer passes a genuine int. This annotation
+    # describes what the code emits today; whether a CORRECTED total should be
+    # called the sample size at all is a separate question (see PARKED.md).
+    sample_size: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """Convert to dictionary."""
@@ -128,7 +134,13 @@ class ConfidenceIntervals:
             )
 
     def _get_critical_value(
-        self, distribution: str, confidence_level: float, df: float | None = None
+        self,
+        distribution: str,
+        confidence_level: float,
+        # The 'f' branch below unpacks `df` (`*df`): an F distribution needs a PAIR
+        # of degrees of freedom, so a float is only valid for 't'/'chi2'. The
+        # annotation said float and the branch has always required a pair.
+        df: float | tuple[float, float] | None = None,
     ) -> float:
         """
         Get critical value for a given distribution and confidence level.
@@ -156,6 +168,8 @@ class ConfidenceIntervals:
         elif distribution == "f":
             if df is None:
                 raise ValueError("Degrees of freedom required for f-distribution")
+            if not isinstance(df, tuple):
+                raise ValueError("The f-distribution needs a (dfn, dfd) pair of freedoms")
             return f_dist.ppf(1 - alpha / 2, *df)
         else:
             raise ValueError(f"Unknown distribution: {distribution}")
@@ -698,7 +712,10 @@ class ConfidenceIntervals:
     # ==================== ODDS RATIO AND RELATIVE RISK ====================
 
     def odds_ratio_ci(
-        self, a: int, b: int, c: int, d: int, confidence_level: float = 0.95
+        # float, not int: the cells arrive as counts, but the Haldane-Anscombe
+        # correction below rebinds them to x+0.5, so the function genuinely works in
+        # floats. int callers are unaffected (an int is a float to the type checker).
+        self, a: float, b: float, c: float, d: float, confidence_level: float = 0.95
     ) -> ConfidenceInterval:
         """
         Confidence interval for odds ratio (2x2 contingency table).
@@ -744,7 +761,9 @@ class ConfidenceIntervals:
         )
 
     def relative_risk_ci(
-        self, a: int, b: int, c: int, d: int, confidence_level: float = 0.95
+        # float for the same reason as odds_ratio_ci: the continuity correction
+        # rebinds the cells to x+0.5.
+        self, a: float, b: float, c: float, d: float, confidence_level: float = 0.95
     ) -> ConfidenceInterval:
         """
         Confidence interval for relative risk (2x2 contingency table).
