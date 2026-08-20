@@ -68,26 +68,33 @@ workaround invented for the split — it is the pattern the file already uses ev
 **Zero TDZ references** is the stronger half of this result: it is what makes cutting between any
 two top-level statements safe for `const`/`let`, which cannot be hoisted at all.
 
-### 2.3 ES modules are not viable here — **413 globals** say so
+### 2.3 ES modules are not viable here — **394 names** say so
 
 The brief asks for native ES modules *if and only if* they verify clean. They do not, and the
 reason is structural rather than a limitation of the harness.
 
-The SPA drives itself through inline handlers: **311** `on*="…"` attributes in `index.html` and
-**266** more generated inside `app.js` template strings — **577** in total, naming **413 distinct
-functions**. An inline handler resolves its callee against the **global** scope and nothing else.
-ES modules are module-scoped, so every one of those 413 names would need an explicit
-`window.X = X` re-export, hand-maintained forever, with a missing entry failing only as a dead
-click in a browser. `src/static/guis/boot.js` corroborates this independently: it polls for the
-`showTab` **global** to know when app.js has booted.
+The SPA drives itself through inline handlers. Counting `on[a-z]+="…"` attributes: **316** in
+`index.html` (240 `onclick`, 44 `onchange`, 17 `onkeydown`, 14 `oninput`, 1 `ontoggle`) and
+**270** more generated inside the engine's template strings — **586** in total, calling **412
+distinct identifiers**, of which **394 are top-level declarations of the engine itself**.
+
+An inline handler resolves its callee against the **global** scope and nothing else. ES modules
+are module-scoped, so each of those 394 names would need an explicit `window.X = X` re-export,
+hand-maintained forever, with a missing entry failing only as a dead click in a browser.
+`src/static/guis/boot.js` corroborates this independently: it polls for the `showTab` **global**
+to know when the engine has booted.
+
+(An earlier draft of this section said 311 / 577 / 413. Those came from a looser regex run
+before the split; the figures above are the precise recount, decomposed so anyone can reproduce
+them.)
 
 **Decision: ordered plain `<script>` tags, one shared global scope, exactly as today.** No
 bundler, no build step, no CDN, no import maps. This preserves the dependency-free loopback
 posture the project requires, and — see §3 — it also buys a verification property that a
 module rewrite could not offer.
 
-Retiring the 577 inline handlers is a real and separate piece of work (the ledger already tracks
-it as browser-verify-gated debt, measured at 556 in the 2026-07-28 GUI audit and at 577 now). It
+Retiring the 586 inline handlers is a real and separate piece of work (the ledger already tracks
+it as browser-verify-gated debt, measured at 556 in the 2026-07-28 GUI audit and at 586 now). It
 is a prerequisite for ES modules, not part of this change.
 
 ---
@@ -209,7 +216,8 @@ answers three questions per wave.
 
 **1. Do all the globals still resolve?** The baseline run records which names actually resolve
 **in the browser** (a `typeof` through an indirect `eval`, which reaches the global *lexical*
-environment — a bare `window[name]` lookup would miss all 302 top-level `const`s). Every later
+environment — a bare `window[name]` lookup would miss all 302 top-level lexical declarations,
+120 `const` and 182 `let`). Every later
 run diffs against that frozen set. A module that fails to load, a slice that lost a declaration,
 or a load-order mistake surfaces as a **named missing global**, not as a mystery dead click.
 
@@ -307,7 +315,7 @@ Surfaces verified here graduate to **"Chromium-verified (remote sandbox) · awai
 pass"** — never the Gecko-verified (VM) bar, and never a substitute for the maintainer's own pass.
 
 A green run proves the app boots, every tab and subtab renders, and every global still resolves.
-It does not prove that every one of the 577 inline handlers still does the right thing when
+It does not prove that every one of the 586 inline handlers still does the right thing when
 clicked; byte-parity is what covers that, which is why byte-parity is the primary bar and the
 browser walk is the check on the things byte-parity cannot cover.
 
@@ -339,7 +347,8 @@ half-migrated global scope is the one state in which the byte-parity guarantee d
 * **`TAB_LOADERS` was the only hoisting-dependent construct in 23,896 lines** — and the four
   registries beside it already had the safe shape. The inconsistency, not the pattern, was the
   problem.
-* **577 inline handlers naming 413 distinct globals** is the measured blocker for ES modules,
+* **586 inline handlers calling 412 distinct identifiers, 394 of them engine top-level names**,
+  is the measured blocker for ES modules,
   and the number to watch if that path is ever wanted. It has grown since the 2026-07-28 audit
   measured 556.
 * **The parse/compile premise was half right.** S-3 was written around "the real cost is

@@ -147,7 +147,8 @@ def _resolving_globals(page, candidates: list[str]) -> list[str]:
     ``typeof`` inside an indirect eval reaches the global LEXICAL environment too, which a
     bare ``window[name]`` lookup does not: a top-level ``const``/``let`` in a classic script
     is a global binding but never a ``window`` property. Checking only ``window`` would
-    silently drop every ``const`` in the file — 302 of them — from the bar.
+    silently drop every top-level lexical declaration — 302 of them, 120 ``const`` and
+    182 ``let`` — from the bar.
     """
     return page.evaluate(
         """(names) => names.filter((n) => {
