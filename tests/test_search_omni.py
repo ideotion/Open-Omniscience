@@ -186,6 +186,41 @@ def test_omni_half_typed_boolean_is_not_an_error(client, omni_seed):
     assert "note" in arts
 
 
+@pytest.mark.parametrize("q", ["NOT foo", "...", "!!!"])
+def test_omni_query_with_no_positive_content_is_empty_not_a_500(client, omni_seed, q):
+    """A purely-negative or punctuation-only query must answer, not crash.
+
+    ``search_ids`` returns ``None`` for "no positive content to search" -- DISTINCT
+    from ``[]`` "searched, matched nothing" (``fts.build_match``). Two omnibar group
+    helpers consumed that ``None`` unguarded: ``len(ids)`` in the articles group and
+    ``ids[:cap]`` in the wiki group, both raising ``TypeError`` -> HTTP 500 on the
+    flagship search bar for a Boolean the UI's own hint advertises. Found by the mypy
+    paydown and live-reproduced 2026-08-20 before the fix.
+
+    Asserted through the real endpoint because the claim is about what a user gets,
+    not about a helper's return value.
+    """
+    r = client.get("/api/search/omni", params={"q": q})
+    assert r.status_code == 200, f"{q!r} must not 500: {r.text[:300]}"
+    d = r.json()
+    arts = _group(d, "articles")
+    assert arts["total"] == 0 and arts["items"] == []
+    assert arts["note"], "an empty answer must SAY why it is empty"
+    # The wiki group's own None path (a different crash: a slice, not len()).
+    assert _group(d, "wiki")["total"] == 0
+
+
+def test_omni_still_answers_a_real_query(client, omni_seed):
+    """The negative-space twin of the test above.
+
+    A guard that returned "no searchable terms" for EVERY query would satisfy the
+    no-500 assertion while silently emptying the omnibar. This pins the other
+    direction: real positive content still reaches its articles.
+    """
+    arts = _group(client.get("/api/search/omni", params={"q": "quokkafloss"}).json(), "articles")
+    assert arts["total"] == 4 and len(arts["items"]) == 3
+
+
 def test_omni_bounds_and_like_escape(client):
     assert client.get("/api/search/omni", params={"q": "a"}).status_code == 422
     assert client.get("/api/search/omni", params={"q": "x" * 201}).status_code == 422
