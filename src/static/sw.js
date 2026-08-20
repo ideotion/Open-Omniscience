@@ -18,9 +18,12 @@
    guard declined "/" regardless). What remains is honest: an offline cache of the
    shell ASSETS, which is what the SHELL list below actually contains. */
 
-const CACHE = "oo-shell-v2";
+const CACHE = "oo-shell-v3";
 const SHELL = [
   "/static/app.js",
+  "/static/app-map.js",
+  "/static/app-analysis.js",
+  "/static/app-ai-tools.js",
   "/static/app-boot.js",
   "/static/app.css",
   "/static/i18n.js",
