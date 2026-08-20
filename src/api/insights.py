@@ -17,6 +17,7 @@ import itertools
 import logging
 import os as _os
 import threading as _threading
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any, cast
 
@@ -1428,7 +1429,10 @@ def warm_cache(db: Session) -> dict:
     # D5: bind-qualify the warm keys with THIS session's engine, exactly as the endpoints do
     # (_deadlined), so a warmed value is a HIT for the same production engine — and never
     # warms a key a request on a different engine would read (the P0-4 dead-warm trap avoided).
-    specs: list[tuple[str, object]] = []
+    # `Callable[..., Any]`, not `Callable[[], Any]`: every spec is CALLED with no
+    # arguments, but each lambda carries `lim=lim, st=st` default parameters -- the
+    # late-binding capture idiom -- so its signature is not zero-arity.
+    specs: list[tuple[str, Callable[..., Any]]] = []
     for lim, st in (WARM_TRENDING_HOME, WARM_TRENDING_INSIGHTS):
         specs.append(
             (
@@ -2190,7 +2194,7 @@ def list_rings() -> dict:
     rings come from the config files, not the corpus — no DB."""
     from src.analytics.equivalence import load_rings
 
-    rings = [
+    rings: list[dict[str, Any]] = [
         {
             "id": r.id,
             "members": [f"{lg}:{t}" for lg, t in r.members],
