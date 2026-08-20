@@ -3062,6 +3062,68 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     "lower it when it can drop" is not a licence to lower it when it cannot, which
     would hand the next drift a free slot.
 
+  - **A TERM WHOSE COUNT EQUALS THE ARTICLE COUNT IS A FACT ABOUT THE CHANNEL, NOT ABOUT
+    THE CORPUS — and the argument FOR keeping it will already be written into the code
+    and a passing test (2026-08-20, official-statistics series as Articles):** ruling
+    5/30/31 makes each series an ordinary Article, so ~9,800 templated documents enter
+    the shared keyword index. The body carried `{agency} · {series_id}`, two facts a
+    reader might plausibly search for, once each; the module docstring said the
+    producer's name "is exactly what ruling 30 asks for" and that the code had to stay
+    because "dropping it from the body would remove it from FTS too". Measured over 1,298
+    real series with the real extractor, that line was **a THIRD of the channel's entire
+    term volume** (30,358 -> 20,372) and held ranks #1/#2/#3 — `world`, `bank`,
+    `world bank` at 1,298 each, i.e. exactly one per article. Both halves of the argument
+    were wrong differently: a per-article constant ranks by how much of ONE THING you
+    have, and the code was never searchable in the keyword index at all, because the
+    tokenizer splits `SP.DYN.LE00.IN` on its dots and indexes `dyn`/`le00`/`totl` — the
+    DEBRIS of an identifier. **THE TELL IS THE ARITHMETIC: when a term's mention count
+    equals the article count to the unit, it is scaffolding, whatever it says.** Two
+    riders. (a) **Re-measure AFTER the change, not only before:** removing the line also
+    collapsed the near-dup clustering that had motivated the audit — 9 clusters with a
+    biggest of 36 down to 7 with a biggest of 3 — so the boilerplate was MANUFACTURING
+    the similarity, not riding it, which no amount of reasoning predicted. (b) State the
+    loss and CHECK the replacement: FTS covers `title, content` only, so `?query=World
+    Bank` and `?query=SP.DYN.LE00.IN` now return 0, and `?source=…` / `?tags=statistics`
+    were each verified to return all 1,298 rather than assumed to.
+
+  - **A GUARD CAN BE READING THE PRODUCER'S OWN TEXT AND CALLING IT YOURS (2026-08-20,
+    the same slice):** stripping the metadata line left a body of bare numbers — a value
+    without its unit — so `({unit})` was appended and guarded with `"(years)" in body`.
+    The mutation that DELETES the unit **passed**, because the World Bank's own label is
+    "Life expectancy at birth (years)" (26 of the catalog's 36 read that way), so the
+    shipped code would have printed "(years) (years)" while the test read the producer's
+    parenthetical and reported success. GENERAL FORM: when your output CONCATENATES your
+    text with someone else's, a fixture in which the two are indistinguishable cannot
+    test which one produced the result — split the assertions by which source is supposed
+    to supply it. The repair also has to key on the OTHER party's convention rather than
+    a similarity heuristic: a substring check was measured and rejected because labels
+    spell units out in words while the unit field uses symbols ("current US$" vs "USD",
+    "metric tons per capita" vs "t/capita"), so it missed four of ten and re-introduced
+    the doubling on exactly those.
+
+  - **AN IDENTITY FALLBACK FOR A TEMPLATE IS A BROKEN FRAME, AND A HARNESS THAT DOUBLES
+    THE i18n HELPERS CANNOT SEE IT (2026-08-20, same slice):** a new handler opened with
+    `const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x)`, so before i18n
+    loads a `tf("{created} new · …", vars)` renders the literal `{created}` to the
+    reader — the broken frame the composite-string rule forbids. `_govTf` did it
+    correctly thirty lines up, and a grep afterwards found this was the ONLY `((x) => x)`
+    template fallback in 20,000 lines, i.e. the file's own convention was already right
+    and I had written past it. What caught it was that the node harness EXTRACTS the real
+    helpers from `app.js` rather than stubbing them; an identity double would have agreed
+    with the defect. Reach for the module's existing helper before writing a fallback,
+    and extract rather than double whatever the code under test calls.
+
+  - **A SCRIPTED CLICK IS NOT A CLICK, AND A FALSE NEGATIVE FROM ONE IS INDISTINGUISHABLE
+    FROM A DEFECT (2026-08-20, verifying the publish-anyway override):** driving the
+    control with `eval_on_selector_all("#gov-grp-body button", "els => els[0].click()")`
+    produced no request, no re-render and six standing refusals — which reads exactly
+    like "the override is broken", and the instinct on seeing it is to go and fix code
+    that is already correct. A real `page.click()` on the same selector fired it
+    immediately: `allow_incomplete=true` on the wire, all six strategies computed, and
+    the panel labelled itself `PARTIAL — members computed: 2 of 42` with the missing
+    members named. Use the framework's own click; and when a UI check fails, rule out the
+    harness before believing the finding.
+
   - **AN ENUMERATOR THAT DOES NOT LIST THE APP'S OWN DEFAULT MAKES THE APP BLIND TO ITS
     OWN WRITES — and the damage lands somewhere else entirely (2026-08-11, the Ollama
     store):** the 2026-08-04 move pointed a spawned daemon at `data/models/ollama`, and

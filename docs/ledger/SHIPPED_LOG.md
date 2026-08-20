@@ -5008,3 +5008,83 @@ backups, not `git checkout`, and the restore verified.
 self-hiding Setup card and the rebuilt bench panel are guarded and syntax-clean, and a
 click-through is owed — particularly the backend-switch case, where the Setup card is
 meant to come back naming the engine that is missing.
+
+## 2026-08-20 — the statistics rulings, and the metadata line that was a third of the corpus
+
+The 2026-08-07 field feedback produced 47 maintainer rulings; this closed the statistics
+half of them. Most of it is ordinary surface work (an aggregates view, a two-country
+compare, two aggregation lenses, a strategies panel, membership vintage). Three findings
+are worth keeping.
+
+**A METADATA LINE THAT LOOKED LIKE TWO HARMLESS FACTS WAS A THIRD OF THE CHANNEL'S TERM
+VOLUME — and the case FOR keeping it was written into the code and the tests before the
+measurement refuted it.** Ruling 5/30/31 makes each official-statistics series an
+ordinary Article, so ~9,800 templated documents enter the shared keyword index. The body
+carried `{agency} · {series_id}`, and both the module docstring and a passing test argued
+for it: the producer's name "is exactly what ruling 30 asks for", and the series code had
+to stay because "dropping it from the body would remove it from FTS too". Measured over
+1,298 real series with the real extractor:
+
+    with the line     30,358 term emissions   #1 world · #2 bank · #3 world bank
+                                              (1,298 each = one per article), #6 totl,
+                                              #9 gdp world bank, #14 population world bank
+    without it        20,372 term emissions   #1 gdp · total · population · rate · income ·
+                                              capita · expenditure · births · labour force
+
+Both halves of the argument were wrong, in different ways. The producer's name recurs
+once per article BY CONSTRUCTION, so its count tracks the CHANNEL's size and nothing
+about the corpus — a term whose rank is a function of how much of this one thing you
+have. And the code was never searchable in the keyword index at all: the tokenizer
+splits `SP.DYN.LE00.IN` on its dots, so what is indexed is `dyn`/`le00`/`totl`/`mktp` —
+the DEBRIS of an identifier rather than the identifier. A code-kept variant was measured
+too (23,868 emissions, `totl` still #3) rather than assumed.
+
+**THE UNPREDICTED SECOND WIN, and the reason to re-measure after a change rather than
+only before it:** removing the line also collapsed the near-duplicate clustering that had
+motivated looking in the first place — 9 clusters with a biggest of 36 members down to 7
+with a biggest of 3, at both production thresholds. The boilerplate was not riding the
+similarity, it was MANUFACTURING it. (The structural protection holds regardless and is
+what the test pins: one synthetic source per agency against a three-distinct-source gate,
+so 0 clusters span even 2 sources.)
+
+**WHAT IT LOSES IS STATED, AND BOTH REPLACEMENTS WERE CHECKED.** FTS covers `title,
+content` only, so two free-text matches go: `?query=World Bank` and
+`?query=SP.DYN.LE00.IN` now return 0. Verified against the same 1,298 that
+`?source=Official statistics (World Bank)` and `?tags=statistics` each return all of
+them, and that every subject search is unchanged (life expectancy France 1, GDP China 12,
+population Brazil 6, Gini index 18) — an exact filter answering exactly the question a
+text match answered approximately.
+
+**A MUTATION TEST CAUGHT ME ASSERTING THE PRODUCER'S OWN PARENTHETICAL AND CALLING IT
+MINE.** Removing the metadata line left a body of bare numbers, which is a value without
+its unit, so I appended `({unit})` unconditionally. It measured cheap (+367 emissions,
++1.8%, nothing new in the top 15) and its guard asserted `"(years)" in body`. The
+mutation that DELETES the unit passed. The reason is that the World Bank's own label is
+"Life expectancy at birth (years)" — 26 of the catalog's 36 read that way — so the guard
+was reading the producer's text, and the shipped code would have printed "(years)
+(years)". The rule that replaced it keys on the producer's own convention (a trailing
+parenthetical qualifies the measure; 3 of 36 have none and get the unit stated), and the
+test is now split by whether the label already carries one, because **a fixture in which
+the two sources are indistinguishable cannot test which one produced the text.** A
+substring check was measured and rejected: labels spell units out in words while the unit
+field uses symbols ("current US$" vs "USD", "metric tons per capita" vs "t/capita"), so
+it would have missed four of ten and re-introduced the doubling on exactly those.
+
+**AN IDENTITY FALLBACK FOR A TEMPLATE IS A BROKEN FRAME, AND IT WAS THE ONLY ONE IN THE
+FILE.** The new control's handler opened with
+`const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x)` — so before i18n
+loads, a `tf("{created} new · …", vars)` renders the literal `{created}` to the reader.
+`_govTf` already did it correctly thirty lines up, and a grep afterwards found this was
+the sole `((x) => x)` template fallback in 20,000 lines. The node suite caught it because
+its harness EXTRACTS the real helpers instead of doubling them; an identity double would
+have hidden precisely this.
+
+**AND THE BROWSER LESSON: a scripted click is not a click.** Driving the publish-anyway
+override with `eval_on_selector_all("#gov-grp-body button", "els => els[0].click()")`
+changed nothing on screen and read exactly like a broken override — no request, no
+re-render, six refusals still standing. A real `page.click()` on the same selector fired
+it: the request went out with `allow_incomplete=true`, all six strategies computed, and
+the panel labelled itself `PARTIAL — members computed: 2 of 42` and named the missing
+members. Drive controls with the framework's own click; a false negative from a dispatch
+quirk is indistinguishable from a defect, and the instinct on seeing it is to "fix" code
+that was already correct.
