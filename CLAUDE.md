@@ -1811,6 +1811,71 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     exactly the models that state it. And the checkpoint's `max_position_embeddings` must
     cap the result and is allowed to bind BELOW your own floor: vLLM refuses to start
     above it, so a floor that overrides it converts a working start into a failed one.
+    **THE MAINTAINER THEN DOUBTED THE NUMBER AND WAS RIGHT TO — verifying it against
+    the publisher found two defects the arithmetic could not (2026-08-13, same day):**
+    the figure I published (0.1016 MB/token) came from a shape I had GUESSED, and the
+    live config matched it on all three fields that enter the formula. A lucky guess,
+    not a sound one, and the luck hid two real things. (a) **transformers renamed
+    `torch_dtype` to `dtype`**, and the shipped checkpoint carries only the new name —
+    so the reader fell through to its 2-byte FALLBACK on exactly the model it was
+    written for, which is bfloat16's size, so the output was correct and the mechanism
+    was dead. A `"dtype": "float32"` checkpoint would have been under-reserved by half.
+    That also makes the guard's fixture load-bearing: a bfloat16 config cannot
+    discriminate a reader that read the field from one that read nothing, and my first
+    test used bfloat16 and duly passed against the broken reader — **only a dtype whose
+    size differs from the fallback tests anything**. (b) The reserve `gpu_memory_
+    utilization` holds back was NOT subtracted from the KV budget, so the two
+    derivations disagreed by 1.5 GB — vLLM's pool is `free − reserve` and the cache
+    lives inside it. Fixing that had its own twin: applied to the UNMEASURED fallback
+    it drops an 8 GB card 5120 → 2048, and 5120 is a number the field has served, so
+    the subtraction is gated on the KV figure being measured. THE PUBLISHED CONFIG,
+    recorded so it is never re-derived: 26 layers · 32 attention heads · **8 KV heads**
+    · **head_dim 128** (`hidden_size` 3072 ÷ 32 = 96, so deriving it under-counts by
+    25%) · bfloat16 · `max_position_embeddings` 262144 ⇒ **0.1015625 MiB/token**, ~5×
+    cheaper than the class constant. TWO SMALLER RIDERS. Those figures are exact dyadic
+    fractions (bytes ÷ 2²⁰), so **any** fixed decimal rounding truncates some of them —
+    I picked a precision twice and was wrong twice (5 places lost 0.015625, 6 lost
+    0.1015625) before noticing the value is divided, never displayed, and needs no
+    rounding at all. And a clamp that was unreachable can be made LIVE by a change
+    elsewhere: `max(0.5, free − weights)` needed `free < weights`, which an upstream
+    guard already refuses by name, but subtracting the reserve made it fire for the
+    ordinary state of a card holding a display server — publishing half a gigabyte of
+    KV that the utilization had already declined to claim. When you add a term to a
+    subtraction, re-ask what its floor now means. **THE FIXTURE WAS THEN MADE FAITHFUL
+    TO THE REAL FILE, AND THAT FOUND MORE THAN THE NUMBERS DID:** the published config
+    is MULTIMODAL — the transformer shape sits under `text_config` while the dtype stays
+    at the TOP level, and `vision_config` carries its OWN `num_hidden_layers` (24). A
+    flat fixture exercises none of that, so it cannot catch a reader that merges the
+    wrong block and sizes the KV cache from the vision tower; a mutation doing exactly
+    that passes every flat test and fails four faithful ones. Transcribe the real file
+    rather than the fields you think matter — the STRUCTURE is part of the test. Three
+    further facts from the same verification, recorded so they are not re-derived:
+    `sliding_window` is explicitly **null**, which is what makes the linear formula
+    correct here (a checkpoint declaring a window has its cache CAPPED at that width,
+    so the formula would over-state — the safe direction, but a real limit); the 262144
+    ceiling is **YaRN-extended from a trained 16384**, factor 16, with no quality claim
+    at the top of the range; and the checkpoint is fp8 with `modules_to_not_convert`
+    keeping the vision tower and `lm_head` in bf16, so weights are NOT a clean
+    params×1 byte — while the KV cache stays 2 bytes because `--kv-cache-dtype`
+    defaults to the model's own dtype. The independent verdict — "realistic on 8 GB:
+    16384 at default settings" — sits just above what this code now computes (12288 on
+    an idle card), and the gap has a NAMED reason rather than being unexplained
+    conservatism: the vision tower profiles at image_size 1540 and is the largest
+    transient on a small card, and nothing in the budget accounts for it.
+  - **AN EQUATION THAT SHOWS ITS WORK MUST SHOW THE WORK IT DID — and the terms drift
+    apart silently because they live in different places (2026-08-13, the same fix):**
+    `compute_server_args` publishes a `method` string naming every term it subtracts,
+    which is the right instinct and is why the defect above was findable at all. It was
+    built as one f-string at the TOP of the function while the derivation happens 130
+    lines DOWN, so the moment the reserve and the checkpoint ceiling entered the
+    arithmetic the published equation stopped reproducing its own number — a reader
+    doing the division got a different answer, which is worse than publishing no
+    equation. The fix is structural, not editorial: compose the clause WHERE the
+    numbers are known, so a term cannot enter the code without entering the sentence.
+    Pin it with an assertion that hand-computes from the printed terms and equals the
+    printed result, plus the negative-space twin that the fallback path does NOT name a
+    subtraction it never made — a method that claims extra conservatism is a fabricated
+    caveat, the same defect pointing the other way.
   - **A DETERMINISTIC REFUSAL CAUGHT BY AN OUTAGE HANDLER COSTS THE WHOLE RUN
     (2026-08-13, same report):** the four sweep loops catch `LLMError` and treat every
     instance as a backend that might come back — sleep, back off, retry the SAME batch up
