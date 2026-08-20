@@ -6,9 +6,9 @@
 
    PART OF THE UI ENGINE. src/static/app.js was decomposed into ordered modules
    (structural debt S-3; docs/design/APPJS_DECOMPOSITION_2026-08-20.md). They share
-   ONE global scope -- there is no module system here, and 413 globals are named by
-   inline on*= handlers that can resolve against nothing else -- and they load in the
-   order index.html lists them, with app-boot.js last.
+   ONE global scope -- there is no module system here, and 394 of these top-level names
+   are called by inline on*= handlers, which resolve against the global scope and
+   nothing else -- and they load in the order index.html lists them, boot last.
 
    The split was a pure CONTIGUOUS slice, verified at the split commit by
    concatenating the modules in load order and reproducing the pre-split file byte
