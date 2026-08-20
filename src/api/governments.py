@@ -486,6 +486,99 @@ def load_standard_status() -> dict:
     return _GOV_JOB.status()
 
 
+# --------------------------------------------------------------------------- #
+# Series-as-Articles (rulings 5, 30, 31) — the corpus half of the Governments tab
+# --------------------------------------------------------------------------- #
+
+
+def _series_corpus_worker(ctx, *, agency: str, batch: int) -> dict:
+    """Materialise stored series as corpus Articles, in bounded batches.
+
+    LOCAL ONLY — this reads the figure store and writes Articles; nothing here goes near
+    a socket, so there is no consent gate and airplane mode is irrelevant to it.
+
+    Commits per BATCH rather than per run, for the reason the load-standard worker does:
+    the single-writer gate is released between batches so collection interleaves instead
+    of waiting out a walk of ~9,800 series. Cancellable between series; because the
+    upsert is idempotent on the content hash, a cancelled run plus a re-run costs one
+    SELECT per already-materialised series and can never double-write.
+    """
+    from src.analytics.extract import BaselineExtractor
+    from src.stats import series_corpus as sc
+
+    extractor = BaselineExtractor()
+    start = 0
+    totals = {"created": 0, "updated": 0, "unchanged": 0, "skipped": 0, "examined": 0}
+    complete = False
+    with session_scope() as db:
+        total = len(sc.series_keys(db, agency=agency))
+        ctx.set_progress(done=0, total=total, detail="starting")
+        while True:
+            if ctx.stopping:
+                break
+            out = sc.sync_series_corpus(
+                db, agency=agency, extractor=extractor, limit=batch, start=start,
+                should_stop=lambda: ctx.stopping,
+            )
+            for k in totals:
+                totals[k] += out.get(k, 0)
+            db.commit()          # release the writer gate between batches
+            start = out["next_start"]
+            ctx.set_progress(done=start, total=out["total_series"],
+                             detail=f"{start} of {out['total_series']} series")
+            if out.get("complete") or out["examined"] == 0:
+                complete = bool(out.get("complete"))
+                break
+    return {
+        "agency": agency,
+        **totals,
+        # Honest: did it walk the whole set, or stop early? A cancelled run says so
+        # rather than reporting the tally it happened to reach as a finished one.
+        "complete": complete,
+        "caveat": (
+            "Each series is one Article under the `statistics` provenance class, so it "
+            "is searchable and filterable like any other — and can be excluded from a "
+            "corpus-wide figure that should not contain it. " + _CAVEAT
+        ),
+    }
+
+
+_SERIES_CORPUS_JOB = register_job(
+    BackgroundJob(
+        "governments-series-corpus", "Indexing statistics series into the corpus",
+        _series_corpus_worker, is_writer=True, cancellable=True,
+    )
+)
+
+
+class SeriesCorpusBody(BaseModel):
+    agency: str = "worldbank"
+    batch: int = 100
+
+
+@router.post("/series-corpus")
+def series_corpus_start(body: SeriesCorpusBody | None = None) -> dict:
+    """Index the stored statistics series into the corpus as Articles (rulings 5/30/31).
+
+    Local, no network. Idempotent: re-running over unchanged series is a no-op, so this
+    is safe to press twice and safe to schedule. Poll ``/series-corpus/status`` or the
+    task manager.
+    """
+    agency = ((body.agency if body else None) or "worldbank").strip().lower()
+    batch = max(1, min(1000, (body.batch if body else None) or 100))
+    try:
+        return {"started": True, "job": _SERIES_CORPUS_JOB.start(agency=agency, batch=batch)}
+    except RuntimeError:
+        # Already running — return the live status rather than 409 (idempotent button).
+        return {"started": False, "job": _SERIES_CORPUS_JOB.status()}
+
+
+@router.get("/series-corpus/status")
+def series_corpus_status() -> dict:
+    """Live status of the series-into-corpus indexing job."""
+    return _SERIES_CORPUS_JOB.status()
+
+
 def advance_country_data(session: Session, *, per_pass: int = 2) -> dict:
     """Scheduler ride-along (2026-07-24 field-feedback Session A §2, ruled): bootstrap
     the curated country-indicator catalog AUTOMATICALLY in the background, a few
