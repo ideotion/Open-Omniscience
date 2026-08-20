@@ -4473,8 +4473,9 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   WB indicator codes live · confirm the shape of WB page 1 · the BRICS Joint Statistical
   Publication · AfDB/UNECA continental endpoints · OECD/IMF SDMX message-version verification ·
   bloc membership sourcing with dates.
-  **⚠ ALL OF IT IS GATED ON ONE EGRESS ALLOWLIST ENTRY, and a fourth chat/shell attempt before
-  that is knowably wasted (2026-08-20, re-run #3).** Three sessions have now failed this list
+  **⚠ TWO ROUTES WORK AND NEITHER IS ANOTHER SANDBOXED SESSION: one egress allowlist entry, or
+  the operator's own networked machine. A fourth attempt in a sandbox before that is knowably
+  wasted (2026-08-20, re-run #3).** Three sessions have now failed this list
   through three different tool surfaces — unreachable API (08-07), URLs that could not be built
   and were silently substituted (08-13), and refusal at the TCP layer in a full shell (08-20) —
   so the variable was never the prompt. The gateway is an ALLOWLIST: `pypi.org`/`github.com`

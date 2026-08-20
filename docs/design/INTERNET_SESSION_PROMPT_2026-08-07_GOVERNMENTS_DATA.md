@@ -65,7 +65,8 @@ gets merged without being re-read against the code first.
 
 > **STATUS 2026-08-20 — re-run #3, in a SHELL. Every task above is still open, and this
 > run settles WHY: the blocker is not the tooling, it is the egress policy. Do not run a
-> fourth attempt anywhere until `api.worldbank.org` is allowlisted.**
+> fourth attempt IN A SANDBOXED SESSION until the hosts are allowlisted — but an operator's
+> OWN networked machine was always a working route and still is.**
 >
 > Re-run #2 concluded that "any shell with plain outbound HTTPS does it". This run WAS
 > that shell — a sandbox with `curl`, Python 3.13 and no chat-tool URL restrictions — and
