@@ -2946,5 +2946,14 @@
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "上报成员间的区间（{n}）：从 {min}（{minArea}）到 {max}（{maxArea}）",
   "missing: {who}": "缺失：{who}",
   "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "部分结果——已计入成员：{members} 个中的 {reported} 个。缺失：{who}。这并非该组别的数值，且下游无从分辨二者；缺失成员会随导出结果一并保留。",
-  "… and {n} more": "… 另有 {n} 个"
+  "… and {n} more": "… 另有 {n} 个",
+  "A figure nobody can find is not really in your corpus. This materialises each stored series as an ordinary Article, so search, trending, Leads and the Feed reach it with no separate search box to remember. One Article per indicator per country, updated in place -- a restated figure never adds a near-copy, so running this twice costs nothing. They are labelled \"Official statistics\" and stay filterable in or out of any view. Local only: it reads figures already stored and makes no network request.": "无人能找到的数字，实际上并不在你的语料库里。此操作会把每个已存储的序列生成为一篇普通文章：搜索、趋势、线索和信息流都能触及它，无需另外记住一个搜索框。每个指标每个国家一篇文章，就地更新——修订后的数字绝不会新增近似副本，因此重复运行不会有任何代价。它们标注为「官方统计」，并始终可筛选，可在任何视图中纳入或排除。仅本地：只读取已存储的数字，不发起任何网络请求。",
+  "Add series to the corpus": "将序列加入语料库",
+  "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "让每个已存储的序列都能通过普通搜索找到：每个指标每个国家一篇文章，包含所保存的每一年。仅本地——只读取你已有的数字，不下载任何内容。",
+  "Indexing series…": "正在索引序列…",
+  "Still indexing — follow it in the task manager.": "仍在索引中 — 请在任务管理器中跟踪。",
+  "Indexing series: {detail}": "正在索引序列：{detail}",
+  "Indexing failed: {error}": "索引失败：{error}",
+  "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} 篇新增 · {updated} 篇更新 · {unchanged} 篇已是最新 — 在结束前停止；再按一次可从中断处继续。",
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} 篇新增 · {updated} 篇更新 · {unchanged} 篇已是最新 — 所有已存储的序列现已进入语料库。"
 }

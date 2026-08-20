@@ -2946,5 +2946,14 @@
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})",
   "missing: {who}": "missing: {who}",
   "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.",
-  "… and {n} more": "… and {n} more"
+  "… and {n} more": "… and {n} more",
+  "A figure nobody can find is not really in your corpus. This materialises each stored series as an ordinary Article, so search, trending, Leads and the Feed reach it with no separate search box to remember. One Article per indicator per country, updated in place -- a restated figure never adds a near-copy, so running this twice costs nothing. They are labelled \"Official statistics\" and stay filterable in or out of any view. Local only: it reads figures already stored and makes no network request.": "A figure nobody can find is not really in your corpus. This materialises each stored series as an ordinary Article, so search, trending, Leads and the Feed reach it with no separate search box to remember. One Article per indicator per country, updated in place -- a restated figure never adds a near-copy, so running this twice costs nothing. They are labelled \"Official statistics\" and stay filterable in or out of any view. Local only: it reads figures already stored and makes no network request.",
+  "Add series to the corpus": "Add series to the corpus",
+  "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.",
+  "Indexing series…": "Indexing series…",
+  "Still indexing — follow it in the task manager.": "Still indexing — follow it in the task manager.",
+  "Indexing series: {detail}": "Indexing series: {detail}",
+  "Indexing failed: {error}": "Indexing failed: {error}",
+  "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.",
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus."
 }

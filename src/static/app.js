@@ -20015,6 +20015,68 @@
       } catch (e) { toast(_failMsg("Refresh failed: {error}", e), "err"); }
     }
 
+    // -- Materialise stored statistics series as corpus Articles (rulings 5/30/31) -- //
+    // NOT ensureOnline-gated, deliberately: this reads figures ALREADY stored and makes
+    // no network request, so asking for the network consent would teach the user that
+    // the popup means nothing. The endpoint is idempotent, so the button is safe to
+    // press twice -- pressing it while a run is in flight attaches to that run rather
+    // than starting a second one.
+    async function runSeriesCorpus() {
+      // _govT / _govTf, not a local fallback: an identity fallback for a TEMPLATE
+      // renders the literal "{created}" to the reader when i18n has not loaded, which
+      // is exactly the broken frame the composite-string rule forbids. A node test
+      // caught this in the first cut of this function -- it was the only identity
+      // fallback in the file, and these two helpers already do it correctly.
+      const t = _govT, tf = _govTf;
+      const btn = $("statcorpus-run"), msg = $("statcorpus-msg");
+      if (!msg) return;
+      if (btn) btn.disabled = true;
+      msg.textContent = t("Starting…");
+      try {
+        await api("/api/governments/series-corpus", {
+          method: "POST", body: JSON.stringify({ agency: "worldbank" }),
+        });
+        // Poll to a terminal state. The tally is only meaningful once the walk ends, so
+        // while it runs we show the job's own progress rather than a partial count that
+        // would read as a final one.
+        for (let i = 0; i < 3600; i++) {
+          const st = await api("/api/governments/series-corpus/status");
+          const state = st.state || "";
+          if (state === "running") {
+            const p = st.progress || {};
+            msg.textContent = p.detail
+              ? tf("Indexing series: {detail}", { detail: p.detail })
+              : t("Indexing series…");
+            await new Promise(r => setTimeout(r, 2000));
+            continue;
+          }
+          if (state === "error") {
+            msg.textContent = tf("Indexing failed: {error}", { error: st.error || t("unknown") });
+            return;
+          }
+          const r = st.result || {};
+          // A run that was cancelled is NOT reported as finished: it says how far it got
+          // and that there is more, so a partial walk can never read as a complete one.
+          // WHOLE sentences, not a tally glued to a fragment with " — ": a fragment has
+          // no grammar to translate, and every locale would have to re-guess the join.
+          const vars = {
+            created: r.created || 0, updated: r.updated || 0, unchanged: r.unchanged || 0,
+          };
+          msg.textContent = r.complete === false
+            ? tf("{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.", vars)
+            : tf("{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.", vars);
+          return;
+        }
+        // The watcher gave up before the job did. Say so rather than leaving the last
+        // progress line standing, which would read as a stall.
+        msg.textContent = t("Still indexing — follow it in the task manager.");
+      } catch (e) {
+        msg.textContent = _failMsg("Indexing failed: {error}", e);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
     // -- Read a page from a downloaded dump (T14: local, zero network) ------- //
     async function loadReadableDumps() {
       const sel = $("dumpread-wiki"); if (!sel) return;

@@ -2946,5 +2946,14 @@
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "Разброс по отчитавшимся участникам ({n}): от {min} ({minArea}) до {max} ({maxArea})",
   "missing: {who}": "отсутствуют: {who}",
   "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "ЧАСТИЧНО — учтено участников: {reported} из {members}. Отсутствуют: {who}. Это не показатель группы, и ниже по цепочке отличить его невозможно; отсутствующие участники передаются вместе с экспортированным результатом.",
-  "… and {n} more": "… и ещё {n}"
+  "… and {n} more": "… и ещё {n}",
+  "A figure nobody can find is not really in your corpus. This materialises each stored series as an ordinary Article, so search, trending, Leads and the Feed reach it with no separate search box to remember. One Article per indicator per country, updated in place -- a restated figure never adds a near-copy, so running this twice costs nothing. They are labelled \"Official statistics\" and stay filterable in or out of any view. Local only: it reads figures already stored and makes no network request.": "Цифра, которую невозможно найти, по существу отсутствует в вашем корпусе. Это действие создаёт из каждого сохранённого ряда обычную статью: её находят поиск, тренды, зацепки и лента — без отдельного поля поиска, которое нужно помнить. Одна статья на показатель и страну, обновляемая на месте: пересмотренная цифра никогда не добавляет почти-дубликат, поэтому повторный запуск ничего не стоит. Они помечены как «Официальная статистика» и остаются фильтруемыми — их можно включить в любое представление или исключить из него. Только локально: читаются уже сохранённые цифры, сетевые запросы не выполняются.",
+  "Add series to the corpus": "Добавить ряды в корпус",
+  "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "Сделать каждый сохранённый ряд находимым обычным поиском: одна статья на показатель и страну, со всеми хранимыми годами. Только локально — читаются уже имеющиеся цифры, ничего не загружается.",
+  "Indexing series…": "Индексация рядов…",
+  "Still indexing — follow it in the task manager.": "Индексация ещё идёт — следите за ней в диспетчере задач.",
+  "Indexing series: {detail}": "Индексация рядов: {detail}",
+  "Indexing failed: {error}": "Индексация не удалась: {error}",
+  "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} новых · {updated} обновлено · {unchanged} уже актуальны — остановлено до конца; нажмите ещё раз, чтобы продолжить с места остановки.",
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} новых · {updated} обновлено · {unchanged} уже актуальны — все сохранённые ряды теперь в корпусе."
 }

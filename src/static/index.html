@@ -823,6 +823,14 @@
         <div style="overflow:auto;margin-top:10px" id="statfig-tri"></div>
         <div style="margin-top:14px">
           <div class="row" style="align-items:center;justify-content:space-between">
+            <h3 style="margin:0;font-size:12px">Add series to the corpus</h3>
+            <button class="secondary" id="statcorpus-run" onclick="runSeriesCorpus()" title="Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.">Add series to the corpus</button>
+          </div>
+          <p class="hint" style="margin-top:2px">A figure nobody can find is not really in your corpus. This materialises each stored series as an ordinary Article, so search, trending, Leads and the Feed reach it with no separate search box to remember. One Article per indicator per country, updated in place -- a restated figure never adds a near-copy, so running this twice costs nothing. They are labelled "Official statistics" and stay filterable in or out of any view. Local only: it reads figures already stored and makes no network request.</p>
+          <div id="statcorpus-msg" class="hint" role="status" aria-live="polite" style="margin-top:6px"></div>
+        </div>
+        <div style="margin-top:14px">
+          <div class="row" style="align-items:center;justify-content:space-between">
             <h3 style="margin:0;font-size:12px">Revision anomalies</h3>
             <button class="secondary" onclick="loadRevisionAnomalies()" title="Flag a stored figure whose newest vintage moved a past value unusually far for that series' own revision history — retrospective, no score.">Check revision anomalies</button>
           </div>

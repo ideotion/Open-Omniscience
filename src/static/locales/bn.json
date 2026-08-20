@@ -2946,5 +2946,14 @@
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "প্রতিবেদনকারী সদস্যদের মধ্যে পরিসর ({n}): {min} ({minArea}) থেকে {max} ({maxArea})",
   "missing: {who}": "অনুপস্থিত: {who}",
   "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "আংশিক — গণনাকৃত সদস্য: {members}-এর মধ্যে {reported}। অনুপস্থিত: {who}। এটি গোষ্ঠীর সংখ্যা নয় এবং পরবর্তী কোনো ধাপ এর পার্থক্য বুঝতে পারে না; অনুপস্থিত সদস্যরা রপ্তানি করা ফলাফলের সঙ্গে যায়।",
-  "… and {n} more": "… এবং আরও {n}"
+  "… and {n} more": "… এবং আরও {n}",
+  "A figure nobody can find is not really in your corpus. This materialises each stored series as an ordinary Article, so search, trending, Leads and the Feed reach it with no separate search box to remember. One Article per indicator per country, updated in place -- a restated figure never adds a near-copy, so running this twice costs nothing. They are labelled \"Official statistics\" and stay filterable in or out of any view. Local only: it reads figures already stored and makes no network request.": "যে সংখ্যা কেউ খুঁজে পায় না, তা আসলে আপনার কর্পাসে নেই। এই কাজটি সংরক্ষিত প্রতিটি সিরিজকে একটি সাধারণ নিবন্ধ হিসেবে তৈরি করে: অনুসন্ধান, প্রবণতা, সূত্র ও ফিড সেটিতে পৌঁছয়, আলাদা কোনো অনুসন্ধান-ঘর মনে রাখতে হয় না। প্রতি সূচক ও প্রতি দেশে একটি নিবন্ধ, জায়গাতেই হালনাগাদ হয় — সংশোধিত সংখ্যা কখনও প্রায়-অনুলিপি যোগ করে না, তাই দ্বিতীয়বার চালাতে কোনো খরচ নেই। এগুলিতে «সরকারি পরিসংখ্যান» লেখা থাকে এবং ছাঁকা যায়, যেকোনো দৃশ্যে অন্তর্ভুক্ত বা বাদ দেওয়া যায়। কেবল স্থানীয়: এটি আগে থেকে সংরক্ষিত সংখ্যা পড়ে, কোনো নেটওয়ার্ক অনুরোধ করে না।",
+  "Add series to the corpus": "সিরিজ কর্পাসে যোগ করুন",
+  "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "সংরক্ষিত প্রতিটি সিরিজকে সাধারণ অনুসন্ধানে খুঁজে পাওয়ার উপযোগী করুন: প্রতি সূচক ও প্রতি দেশে একটি নিবন্ধ, রক্ষিত প্রতিটি বছর সহ। কেবল স্থানীয় — এটি আপনার কাছে ইতিমধ্যে থাকা সংখ্যা পড়ে, কিছুই নামায় না।",
+  "Indexing series…": "সিরিজ সূচিবদ্ধ করা হচ্ছে…",
+  "Still indexing — follow it in the task manager.": "এখনও সূচিবদ্ধ হচ্ছে — কাজ ব্যবস্থাপকে এটি অনুসরণ করুন।",
+  "Indexing series: {detail}": "সিরিজ সূচিবদ্ধ করা হচ্ছে: {detail}",
+  "Indexing failed: {error}": "সূচিবদ্ধকরণ ব্যর্থ: {error}",
+  "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created}টি নতুন · {updated}টি হালনাগাদ · {unchanged}টি আগে থেকেই হালনাগাদ — শেষ হওয়ার আগেই থেমেছে; যেখানে থেমেছিল সেখান থেকে চালিয়ে যেতে আবার চাপুন।",
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created}টি নতুন · {updated}টি হালনাগাদ · {unchanged}টি আগে থেকেই হালনাগাদ — সংরক্ষিত সব সিরিজ এখন কর্পাসে আছে।"
 }

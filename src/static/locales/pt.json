@@ -2946,5 +2946,14 @@
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "Amplitude entre os membros que reportam ({n}): de {min} ({minArea}) a {max} ({maxArea})",
   "missing: {who}": "em falta: {who}",
   "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "PARCIAL — membros considerados: {reported} de {members}. Em falta: {who}. Este não é o valor do grupo e nada a jusante consegue distingui-lo de um; os membros em falta acompanham o resultado exportado.",
-  "… and {n} more": "… e mais {n}"
+  "… and {n} more": "… e mais {n}",
+  "A figure nobody can find is not really in your corpus. This materialises each stored series as an ordinary Article, so search, trending, Leads and the Feed reach it with no separate search box to remember. One Article per indicator per country, updated in place -- a restated figure never adds a near-copy, so running this twice costs nothing. They are labelled \"Official statistics\" and stay filterable in or out of any view. Local only: it reads figures already stored and makes no network request.": "Um número que ninguém consegue encontrar não está realmente no seu corpus. Esta ação materializa cada série armazenada como um artigo comum: a pesquisa, as tendências, as pistas e o fluxo chegam até ela, sem um campo de pesquisa separado para memorizar. Um artigo por indicador e por país, atualizado no lugar — um número revisto nunca acrescenta um quase duplicado, por isso repetir esta ação não custa nada. Levam a menção «Estatísticas oficiais» e continuam filtráveis, para incluir ou excluir de qualquer vista. Apenas local: lê números já armazenados e não faz qualquer pedido de rede.",
+  "Add series to the corpus": "Adicionar as séries ao corpus",
+  "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "Tornar cada série armazenada localizável na pesquisa comum: um artigo por indicador e por país, com todos os anos guardados. Apenas local — lê números que já tem e não descarrega nada.",
+  "Indexing series…": "A indexar as séries…",
+  "Still indexing — follow it in the task manager.": "Ainda a indexar — acompanhe no gestor de tarefas.",
+  "Indexing series: {detail}": "A indexar as séries: {detail}",
+  "Indexing failed: {error}": "A indexação falhou: {error}",
+  "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} novas · {updated} atualizadas · {unchanged} já em dia — parou antes do fim; prima novamente para continuar de onde ficou.",
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} novas · {updated} atualizadas · {unchanged} já em dia — todas as séries armazenadas estão agora no corpus."
 }

@@ -2946,5 +2946,14 @@
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "Rentang antaranggota pelapor ({n}): {min} ({minArea}) hingga {max} ({maxArea})",
   "missing: {who}": "tidak ada: {who}",
   "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "SEBAGIAN — anggota yang dihitung: {reported} dari {members}. Tidak ada: {who}. Ini bukan angka kelompok tersebut dan tidak ada proses hilir yang dapat membedakannya; anggota yang hilang ikut serta dalam hasil yang diekspor.",
-  "… and {n} more": "… dan {n} lainnya"
+  "… and {n} more": "… dan {n} lainnya",
+  "A figure nobody can find is not really in your corpus. This materialises each stored series as an ordinary Article, so search, trending, Leads and the Feed reach it with no separate search box to remember. One Article per indicator per country, updated in place -- a restated figure never adds a near-copy, so running this twice costs nothing. They are labelled \"Official statistics\" and stay filterable in or out of any view. Local only: it reads figures already stored and makes no network request.": "Angka yang tak bisa ditemukan siapa pun sebenarnya tidak ada dalam korpus Anda. Tindakan ini mewujudkan setiap seri tersimpan sebagai Artikel biasa: pencarian, tren, petunjuk, dan Feed menjangkaunya, tanpa kotak pencarian terpisah yang harus diingat. Satu Artikel per indikator per negara, diperbarui di tempat — angka yang direvisi tidak pernah menambah nyaris-duplikat, jadi menjalankannya dua kali tidak memakan biaya. Semuanya berlabel «Statistik resmi» dan tetap dapat disaring, untuk dimasukkan ke atau dikeluarkan dari tampilan mana pun. Hanya lokal: membaca angka yang sudah tersimpan dan tidak membuat permintaan jaringan.",
+  "Add series to the corpus": "Tambahkan seri ke korpus",
+  "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "Jadikan setiap seri tersimpan dapat ditemukan lewat pencarian biasa: satu Artikel per indikator per negara, memuat setiap tahun yang disimpan. Hanya lokal — membaca angka yang sudah Anda miliki dan tidak mengunduh apa pun.",
+  "Indexing series…": "Mengindeks seri…",
+  "Still indexing — follow it in the task manager.": "Masih mengindeks — ikuti di pengelola tugas.",
+  "Indexing series: {detail}": "Mengindeks seri: {detail}",
+  "Indexing failed: {error}": "Pengindeksan gagal: {error}",
+  "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} baru · {updated} diperbarui · {unchanged} sudah mutakhir — berhenti sebelum selesai; tekan lagi untuk melanjutkan dari titik terakhir.",
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} baru · {updated} diperbarui · {unchanged} sudah mutakhir — semua seri tersimpan kini ada dalam korpus."
 }

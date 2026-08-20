@@ -827,13 +827,43 @@ edition picker above keeps the full list.
 
 **What it's for:** the **Governments** sidebar tab (the code anchor stays `law`, the
 label is "Governments") gathers per-country official data and tracks how the **law**
-changes. It has three subtabs:
+changes. It has six subtabs:
 
 - **Countries** — per-country **official statistics** from the World Bank (GDP,
   population, life expectancy, labour, public finance + common indices). **Load standard
   country data** fetches them (online, consent-gated). Each value is a producer's
   published figure, **never a credibility score**; a **missing value is a published gap,
-  not zero**; producers are shown, **never averaged**.
+  not zero**; producers are shown, **never averaged**. Every figure carries its unit, and
+  each indicator's hover explains what it measures — two that read as errors and are not:
+  mobile subscriptions can exceed 100 per 100 people (people hold several SIMs) and gross
+  school enrollment can exceed 100% (it counts repeaters and over-age pupils).
+- **Compare** — two countries side by side, every indicator as an aligned row. This is a
+  **display**, not a calculation: it shows each country's own latest published figure and
+  the year it belongs to, and where one country has no figure the cell reads as a **gap**.
+  It never subtracts, ranks or scores the pair — the comparison is yours to make.
+- **Groups** — aggregates and blocs, in two **lenses** you switch between:
+  - *Published* shows the aggregates the producer itself publishes (the World Bank's
+    "High income", "Sub-Saharan Africa", "European Union" and so on). A curated shortlist
+    opens first; **Show all** expands to the full set. These are the producer's own
+    figures, not ours. **World Bank regions are not continents** — "Sub-Saharan Africa"
+    excludes Egypt, Libya, Tunisia, Algeria and Morocco, which sit in its Middle East &
+    North Africa region, so this lens has **no continental-Africa figure at all** and says
+    so rather than assembling one that would look official.
+  - *Computed* aggregates member countries ourselves, and shows **several strategies side
+    by side** (population-weighted mean, simple mean, GDP-weighted, median, and a total
+    where one is meaningful) so you can see how much the answer depends on the method
+    rather than being handed one number. Nothing is ranked and no strategy is called
+    best. A **total** is offered only for indicators where summing means something
+    (population, GDP, labour force); for a percentage, a rate or a life expectancy it is
+    **refused with the reason shown**, because adding up percentages produces a number no
+    one measured. Every figure states its **coverage** and its **spread** (min/max/n) —
+    a bloc headline hiding a ten-fold range is true and misleading, so the range travels
+    with it. Where members are missing the aggregate is **refused by default**; you can
+    publish anyway, and the result is then labelled partial and names exactly which
+    members are missing. Bloc membership changes over time (BRICS was five members until
+    2024; the EU lost the UK in 2020), so every bloc figure states the **membership
+    vintage** it was computed against, and a bloc whose roster we cannot source yet says
+    that plainly instead of showing a figure.
 - **Map** — an **ooMap choropleth** of a selectable indicator with a year/history
   selector; click a country to open its detail in the Countries subtab.
 - **Law** — tracking the **law** (statutes, gazettes, IP records) from official sources
@@ -846,6 +876,32 @@ changes. It has three subtabs:
   legal changes** lists them (jurisdiction · title · Δ bytes · reasons) with the diff and
   a link to the official source. The briefing also surfaces a **model-legislation** Lead
   when near-identical text appears across jurisdictions.
+- **Statistics** — the producer directory and the raw vintaged figures behind the other
+  subtabs, plus **Add series to the corpus** (below).
+
+**Statistics in ordinary search.** A figure nobody can find is not really in your corpus,
+so each **series** — one indicator for one country, across every year held — can also be
+materialised as an ordinary **Article**. It then travels the normal paths: search finds
+"life expectancy France", its words reach trending and Leads, and it appears in the Feed
+like anything else, with no special search box to remember. Four things are worth knowing:
+
+- It is **one Article per indicator per country**, not one per revision. A restated 1991
+  figure updates the existing Article rather than adding a near-copy, so re-running the
+  job costs nothing and adds nothing.
+- The Articles are **labelled as what they are** — the source reads "Official statistics
+  (World Bank)" and the provenance class is `statistics` — so you can filter them in or
+  out of any view, and the coordination checks that look for many outlets repeating one
+  another cannot mistake thousands of same-shaped rows for agreement.
+- The body deliberately says **only the subject and the figures**, with a **published gap
+  shown as a gap**. Repeating the producer's name and the machine series code on every
+  one of ~9,800 Articles put "World Bank" at the very top of the whole corpus's keyword
+  ranking — scaffolding outranking what your corpus is actually about — so it does not.
+- To find them **by producer** rather than by subject, filter on the source or the
+  `statistics` tag; to look one up **by series code**, use the Statistics subtab, which
+  answers exactly rather than by text match.
+
+Materialising them is a background job you start from **Governments → Statistics**; it is
+resumable, cancellable, and does not hold up collection.
 
 ### 3.8 Evidence & custody
 

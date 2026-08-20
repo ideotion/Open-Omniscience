@@ -2946,5 +2946,14 @@
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "रिपोर्ट करने वाले सदस्यों में परिसर ({n}): {min} ({minArea}) से {max} ({maxArea}) तक",
   "missing: {who}": "अनुपस्थित: {who}",
   "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "आंशिक — परिकलित सदस्य: {members} में से {reported}। अनुपस्थित: {who}। यह समूह का आँकड़ा नहीं है और आगे की कोई प्रणाली इसे उससे अलग नहीं कर सकती; अनुपस्थित सदस्य निर्यात किए गए परिणाम के साथ जाते हैं।",
-  "… and {n} more": "… और {n} अन्य"
+  "… and {n} more": "… और {n} अन्य",
+  "A figure nobody can find is not really in your corpus. This materialises each stored series as an ordinary Article, so search, trending, Leads and the Feed reach it with no separate search box to remember. One Article per indicator per country, updated in place -- a restated figure never adds a near-copy, so running this twice costs nothing. They are labelled \"Official statistics\" and stay filterable in or out of any view. Local only: it reads figures already stored and makes no network request.": "जो आँकड़ा कोई खोज ही न सके, वह वास्तव में आपके संग्रह में है ही नहीं। यह क्रिया प्रत्येक संग्रहीत शृंखला को एक सामान्य लेख के रूप में बनाती है: खोज, रुझान, सुराग और फ़ीड उस तक पहुँचते हैं, और अलग से कोई खोज-बॉक्स याद रखना नहीं पड़ता। प्रति संकेतक, प्रति देश एक लेख, वहीं अद्यतन होता है — संशोधित आँकड़ा कभी लगभग-प्रतिलिपि नहीं जोड़ता, इसलिए इसे दोबारा चलाने की कोई लागत नहीं। इन पर «आधिकारिक सांख्यिकी» अंकित रहता है और ये छानने योग्य बने रहते हैं, किसी भी दृश्य में शामिल या बाहर किए जा सकते हैं। केवल स्थानीय: यह पहले से संग्रहीत आँकड़े पढ़ता है और कोई नेटवर्क अनुरोध नहीं करता।",
+  "Add series to the corpus": "शृंखलाएँ संग्रह में जोड़ें",
+  "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "प्रत्येक संग्रहीत शृंखला को सामान्य खोज से खोजने योग्य बनाएँ: प्रति संकेतक, प्रति देश एक लेख, जिसमें रखा गया हर वर्ष शामिल है। केवल स्थानीय — यह आपके पास पहले से मौजूद आँकड़े पढ़ता है और कुछ भी डाउनलोड नहीं करता।",
+  "Indexing series…": "शृंखलाएँ अनुक्रमित की जा रही हैं…",
+  "Still indexing — follow it in the task manager.": "अनुक्रमण अब भी जारी है — इसे कार्य प्रबंधक में देखें।",
+  "Indexing series: {detail}": "शृंखलाएँ अनुक्रमित की जा रही हैं: {detail}",
+  "Indexing failed: {error}": "अनुक्रमण विफल: {error}",
+  "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} नए · {updated} अद्यतन · {unchanged} पहले से अद्यतन — अंत से पहले रुक गया; जहाँ छूटा था वहीं से जारी रखने के लिए इसे फिर दबाएँ।",
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} नए · {updated} अद्यतन · {unchanged} पहले से अद्यतन — सभी संग्रहीत शृंखलाएँ अब संग्रह में हैं।"
 }

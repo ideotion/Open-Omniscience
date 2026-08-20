@@ -2946,5 +2946,14 @@
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "報告した構成国間の幅 ({n}): {min} ({minArea}) から {max} ({maxArea})",
   "missing: {who}": "欠落: {who}",
   "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "部分的 — 計算対象の構成国: {members} 中 {reported}。欠落: {who}。これはグループの値ではなく、下流ではその違いを判別できません。欠落した構成国は書き出した結果に付随します。",
-  "… and {n} more": "… ほか {n} 件"
+  "… and {n} more": "… ほか {n} 件",
+  "A figure nobody can find is not really in your corpus. This materialises each stored series as an ordinary Article, so search, trending, Leads and the Feed reach it with no separate search box to remember. One Article per indicator per country, updated in place -- a restated figure never adds a near-copy, so running this twice costs nothing. They are labelled \"Official statistics\" and stay filterable in or out of any view. Local only: it reads figures already stored and makes no network request.": "誰も見つけられない数値は、実質的にコーパスに入っていません。この操作は、保存済みの各系列を通常の記事として実体化します。検索・トレンド・手がかり・フィードがそこに届き、別途覚えるべき検索欄は不要です。指標ごと・国ごとに1記事で、その場で更新されます。改訂値がほぼ同一の複製を増やすことはないため、繰り返し実行しても無駄がありません。これらは「公式統計」と表示され、常に絞り込み可能で、どの表示にも含めたり除いたりできます。ローカルのみ：保存済みの数値を読むだけで、ネットワーク要求は一切行いません。",
+  "Add series to the corpus": "系列をコーパスに追加",
+  "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "保存済みの各系列を通常の検索で見つけられるようにします。指標ごと・国ごとに1記事、保持しているすべての年を収録します。ローカルのみ — 既にある数値を読むだけで、何も取得しません。",
+  "Indexing series…": "系列をインデックス中…",
+  "Still indexing — follow it in the task manager.": "まだインデックス中です — タスクマネージャーで確認してください。",
+  "Indexing series: {detail}": "系列をインデックス中：{detail}",
+  "Indexing failed: {error}": "インデックス作成に失敗しました：{error}",
+  "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "新規 {created} · 更新 {updated} · 既に最新 {unchanged} — 最後まで行かずに停止しました。もう一度押すと中断した箇所から続行します。",
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "新規 {created} · 更新 {updated} · 既に最新 {unchanged} — 保存済みのすべての系列がコーパスに入りました。"
 }

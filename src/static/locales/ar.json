@@ -2946,5 +2946,14 @@
   "Range across reporting members ({n}): {min} ({minArea}) to {max} ({maxArea})": "المدى بين الأعضاء المبلِّغين ({n}): من {min} ({minArea}) إلى {max} ({maxArea})",
   "missing: {who}": "ناقص: {who}",
   "PARTIAL — members computed: {reported} of {members}. Missing: {who}. This is not the group's figure and nothing downstream can tell the difference from one; the missing members travel with the exported result.": "جزئي — الأعضاء المحسوبون: {reported} من {members}. الناقص: {who}. هذا ليس رقم المجموعة، ولا شيء لاحقًا يمكنه التمييز بينهما؛ والأعضاء الناقصون يرافقون النتيجة المُصدَّرة.",
-  "… and {n} more": "… و{n} أخرى"
+  "… and {n} more": "… و{n} أخرى",
+  "A figure nobody can find is not really in your corpus. This materialises each stored series as an ordinary Article, so search, trending, Leads and the Feed reach it with no separate search box to remember. One Article per indicator per country, updated in place -- a restated figure never adds a near-copy, so running this twice costs nothing. They are labelled \"Official statistics\" and stay filterable in or out of any view. Local only: it reads figures already stored and makes no network request.": "الرقم الذي لا يستطيع أحد العثور عليه ليس موجودًا حقًا في مجموعتك. يحوّل هذا الإجراء كل سلسلة مخزَّنة إلى مقال عادي، فيصل إليه البحث والاتجاهات والخيوط والتدفق دون حقل بحث منفصل يجب تذكّره. مقال واحد لكل مؤشر ولكل بلد، يُحدَّث في مكانه — الرقم المُنقَّح لا يضيف أبدًا نسخة شبه مطابقة، لذا فإن تكرار التشغيل لا يكلّف شيئًا. تحمل هذه المقالات وسم «إحصاءات رسمية» وتبقى قابلة للتصفية، لإدراجها في أي عرض أو استبعادها منه. محلي فقط: يقرأ أرقامًا مخزَّنة سلفًا ولا يُجري أي طلب شبكي.",
+  "Add series to the corpus": "إضافة السلاسل إلى المجموعة",
+  "Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.": "جعل كل سلسلة مخزَّنة قابلة للعثور عليها بالبحث العادي: مقال واحد لكل مؤشر ولكل بلد، يحمل كل سنة محفوظة. محلي فقط — يقرأ أرقامًا لديك بالفعل ولا يجلب شيئًا.",
+  "Indexing series…": "جارٍ فهرسة السلاسل…",
+  "Still indexing — follow it in the task manager.": "لا تزال الفهرسة جارية — تابِعها في مدير المهام.",
+  "Indexing series: {detail}": "فهرسة السلاسل: {detail}",
+  "Indexing failed: {error}": "فشلت الفهرسة: {error}",
+  "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} جديدة · {updated} محدَّثة · {unchanged} محدَّثة سلفًا — توقّف قبل النهاية؛ اضغط مرة أخرى للمتابعة من حيث توقّف.",
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} جديدة · {updated} محدَّثة · {unchanged} محدَّثة سلفًا — كل السلاسل المخزَّنة أصبحت الآن في المجموعة."
 }
