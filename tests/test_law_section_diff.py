@@ -146,3 +146,29 @@ def test_counts_are_stated_and_no_field_is_score_shaped():
     assert not [k for k in d if any(b in k.lower() for b in banned)]
     for change in d["changes"]:
         assert not [k for k in change if any(b in k.lower() for b in banned)]
+
+
+def test_a_duplicate_address_is_counted_rather_than_silently_dropped():
+    """Two provisions numbered identically cannot both be compared by address.
+
+    Keeping the first is safe; saying nothing about the second is not, because then
+    `unchanged + touched` falls short of the provision count for a reason no reader can
+    see. The count makes the shortfall visible.
+    """
+    doc = _doc(
+        ("1", "Overview", "First."),
+        ("1", "Overview again", "Second, same number."),
+        ("2", "Duty", "Third."),
+    )
+    d = diff_provisions(doc, doc)
+    assert d.provisions_before == 3
+    assert d.unchanged + d.touched == 2  # only two distinct addresses to compare
+    assert d.duplicate_identifiers == 2  # one on each side, and both are stated
+    assert d.as_dict()["duplicate_identifiers"] == 2
+
+
+def test_a_document_with_unique_addresses_reports_no_duplicates():
+    """The twin: an over-eager counter would flag every ordinary document."""
+    d = diff_provisions(BASE, BASE)
+    assert d.duplicate_identifiers == 0
+    assert d.unchanged + d.touched == d.provisions_before

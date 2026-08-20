@@ -69,6 +69,10 @@ class SectionDiff:
     unchanged: int = 0
     provisions_before: int = 0
     provisions_after: int = 0
+    # Provisions that shared an address with an earlier one and so were not compared.
+    # Published rather than absorbed: without it, `unchanged + touched` can be less than
+    # the provision count for a reason the reader cannot see.
+    duplicate_identifiers: int = 0
 
     @property
     def touched(self) -> int:
@@ -86,6 +90,7 @@ class SectionDiff:
             "provisions_after": self.provisions_after,
             "unchanged": self.unchanged,
             "touched": self.touched,
+            "duplicate_identifiers": self.duplicate_identifiers,
             "by_status": dict(sorted(self.by_status().items())),
             "changes": [c.as_dict() for c in self.changes],
             "method": (
@@ -98,28 +103,37 @@ class SectionDiff:
                 "A provision that is renumbered AND amended in the same revision appears "
                 "as one removal plus one addition, because matching it to its former self "
                 "would mean guessing which of two differently-numbered provisions is "
-                "\"the same one, edited\". Experimental, and additive: the document-level "
-                "text diff is unchanged and still decides whether a revision is recorded."
+                "\"the same one, edited\". `duplicate_identifiers` counts provisions that "
+                "shared an address with an earlier one and were therefore not compared, so "
+                "`unchanged + touched` falling short of the provision count is visible rather "
+                "than silent. Experimental, and additive: the document-level text diff is "
+                "unchanged and still decides whether a revision is recorded."
             ),
         }
 
 
-def _index(doc: ParsedLaw) -> dict[str, Provision]:
-    """Provisions by identifier.
+def _index(doc: ParsedLaw) -> tuple[dict[str, Provision], int]:
+    """Provisions by identifier, plus how many shared an identifier with an earlier one.
 
-    A duplicate identifier (two provisions the document numbers identically) would
-    silently overwrite: keep the FIRST and leave the later one to surface as an
-    add/remove rather than replacing a provision the reader can cite.
+    Two provisions the document numbers identically cannot both be compared by address.
+    Keeping the first is the safe half; the honest half is COUNTING the rest, because
+    otherwise the diff quietly compares fewer provisions than the document has and
+    nothing in the output says so. The count is published as `duplicate_identifiers`.
     """
     out: dict[str, Provision] = {}
+    duplicates = 0
     for p in doc.provisions:
-        out.setdefault(p.identifier, p)
-    return out
+        if p.identifier in out:
+            duplicates += 1
+            continue
+        out[p.identifier] = p
+    return out, duplicates
 
 
 def diff_provisions(before: ParsedLaw, after: ParsedLaw) -> SectionDiff:
     """Which provisions were added, removed, changed or moved."""
-    old, new = _index(before), _index(after)
+    old, dup_before = _index(before)
+    new, dup_after = _index(after)
     changes: list[ProvisionChange] = []
     unchanged = 0
 
@@ -191,4 +205,5 @@ def diff_provisions(before: ParsedLaw, after: ParsedLaw) -> SectionDiff:
         unchanged=unchanged,
         provisions_before=len(before.provisions),
         provisions_after=len(after.provisions),
+        duplicate_identifiers=dup_before + dup_after,
     )
