@@ -326,7 +326,7 @@ class LinkExtractor:
                         logger.debug(f"Skipping malformed link URL {url!r}: {e}")
                         continue
 
-                    link_info = {
+                    link_info: dict[str, Any] = {
                         "url": url,
                         "normalized_url": normalized_url,
                         "link_text": link_text.strip() if link_text else "",
@@ -568,13 +568,13 @@ class LinkExtractor:
         external_links = total_links - internal_links
 
         # Count link types
-        link_types = {}
+        link_types: dict[str, int] = {}
         for link in links:
             link_type = link.get("link_type", "unknown")
             link_types[link_type] = link_types.get(link_type, 0) + 1
 
         # Count domains
-        domains = {}
+        domains: dict[str, int] = {}
         for link in links:
             domain = link.get("domain", "unknown")
             domains[domain] = domains.get(domain, 0) + 1

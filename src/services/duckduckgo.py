@@ -510,7 +510,7 @@ class DuckDuckGoSearch:
             - rss_urls: List of discovered RSS feed URLs
             - relevance: Relevance score (0-1)
         """
-        sources = []
+        sources: list[dict] = []
         seen_domains = set()
 
         # Build search query

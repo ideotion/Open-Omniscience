@@ -492,9 +492,9 @@ class ProvenanceLedger:
         self,
         data_id: str,
         action: str,
-        user_id: str = None,
+        user_id: str | None = None,
         new_data: Any = None,
-        metadata: dict[str, Any] = None,
+        metadata: dict[str, Any] | None = None,
     ) -> bool:
         """
         Record a change in custody or modification of data.
@@ -588,7 +588,7 @@ class ProvenanceLedger:
 
         return results
 
-    def get_all_data_entries(self, limit: int = None) -> list[DataProvenance]:
+    def get_all_data_entries(self, limit: int | None = None) -> list[DataProvenance]:
         """
         Get all data entries in the ledger.
 
@@ -623,7 +623,7 @@ class ProvenanceLedger:
 
         return results
 
-    def get_all_merkle_trees(self, limit: int = None) -> list[dict[str, Any]]:
+    def get_all_merkle_trees(self, limit: int | None = None) -> list[dict[str, Any]]:
         """
         Get all Merkle trees in the ledger.
 
