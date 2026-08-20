@@ -270,6 +270,26 @@ artifacts:
     # correctly NOT re-vendored. Re-check next time the issue flags a newer upstream.
     last_verified: "2026-07-16"
 
+  - id: vendored-axe-core
+    title: axe-core (vendored, browser-harness a11y engine)
+    kind: vendored-binary
+    description: >
+      Deque axe-core v4.13.0 vendored for the ui_walk browser harness's a11y axis
+      (0.3 gate row 8, the 2026-08-20 matrix session): PlaywrightUiWalkDriver.run_axe()
+      injects it into the page under test. HARNESS tooling only — lives under
+      scripts/vendor/, never src/static/ (nothing serves it; the app has no dependency
+      on it); vendored per the local-first/no-CDN posture so the harness never fetches
+      tooling over the network at run time. Tarball verified against the npm registry's
+      own attested digests (sha1 + sha512 integrity) before extraction.
+    upstream: https://github.com/dequelabs/axe-core (npm tarball axe-core-4.13.0.tgz)
+    check_upstream: "watch dequelabs/axe-core releases; refresh on rule-set or security fixes"
+    license: MPL-2.0 (GPL-3.0-compatible via its secondary-license clause; LICENSE vendored alongside)
+    pin: {path: scripts/vendor/axe-core/axe.min.js, sha256: "c24f097bd2f451d4f933e8bc7d8d539f8672a2ebcb5cc9f9f3eec8ca9470a0c1"}
+    refresh: "re-fetch the pinned npm tarball, verify the registry's attested digests, re-vendor axe.min.js + LICENSE, update this sha256"
+    freshness: {policy: on-security}
+    upstream_check: {github: "dequelabs/axe-core", type: release, current: "v4.13.0"}
+    last_verified: "2026-08-20"
+
   - id: natural-earth-geometry
     title: Natural Earth coastline + country polygons
     kind: vendored-data
