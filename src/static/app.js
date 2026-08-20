@@ -1854,20 +1854,28 @@
     const LOCKED = new Set(["home","settings","help"]);
 
     // -- Tab navigation ----------------------------------------------------- //
+    // Every entry is an ARROW, never a bare function reference. A bare reference is
+    // evaluated when this object literal is BUILT, so it depends on the loader having
+    // been hoisted -- which holds only while the whole UI engine is one script. The
+    // arrow defers the lookup to the click, so load order stops mattering. This is the
+    // shape _ADV_LOADERS, _LIB_VIEW_LOADERS, LIVE and this table's own `library:` entry
+    // already use; the twelve bare references here were the only construct in the file
+    // that reached forward across the module split (measured: 12 forward refs, all here,
+    // and zero TDZ references anywhere -- docs/design/APPJS_DECOMPOSITION_2026-08-20.md).
     const TAB_LOADERS = {
-      home: loadHome,
-      search: buildSearchTimeScope,   // mount the ooTimeScope date-range control once
-      indices: loadIndices,
-      markets: loadMarkets,
-      insights: loadInsights,
-      timemap: loadOoMapCoverage,   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
-      law: loadGovernments,   // Governments tab (Countries · Map · Law subtabs)
-      agenda: loadAgenda,
+      home: () => loadHome(),
+      search: () => buildSearchTimeScope(),   // mount the ooTimeScope date-range control once
+      indices: () => loadIndices(),
+      markets: () => loadMarkets(),
+      insights: () => loadInsights(),
+      timemap: () => loadOoMapCoverage(),   // slice 5b: the Map tab is now the unified ooMap (the temporal map was folded in + retired)
+      law: () => loadGovernments(),   // Governments tab (Countries · Map · Law subtabs)
+      agenda: () => loadAgenda(),
       library: () => { _wireLibraryViews(); },  // per-view lazy loaders (2026-08-01 ruling 9); stats ride the live poller (startLive)
-      custody: loadCustody,
-      integrity: loadIntegrity,
-      settings: loadSettings,
-      help: loadDocs,
+      custody: () => loadCustody(),
+      integrity: () => loadIntegrity(),
+      settings: () => loadSettings(),
+      help: () => loadDocs(),
     };
     const _loaded = new Set();
 
