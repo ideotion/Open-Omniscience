@@ -5,12 +5,37 @@ phase where relevant. Nothing here is a Critical/High safety or invariant defect
 in Phase 3). This is the backlog the Phase 6 roadmap draws from.
 
 ## Maintainability / typing
-- **`Mapped[]` ORM migration** (MAINT-03): migrate `src/database/models.py` from legacy
-  `Column(...)` to SQLAlchemy 2.0 `Mapped[...]` / `mapped_column()`. This is the real fix for ~103
-  of the ~300 mypy errors (the `Column[int]`-vs-`int` false positives). XL effort; do it as one
-  focused PR, then flip mypy to a blocking CI gate.
-- **`print()` → logger** (MAINT-04): ~50 remaining live `print()` calls (cache.py, duckduckgo.py,
-  crypto/provenance.py) → structured `structlog` loggers.
+- **`Mapped[]` ORM migration** (MAINT-03): **DONE 2026-08-20 — the gate is blocking; nothing left
+  to do here.** The entry's own plan was "do it as one focused PR, then flip mypy to a blocking CI
+  gate", and both halves have now happened, in two separate passes:
+  - The *migration itself had already landed* before the session that closed this out. Measured on
+    `main`: `src/database/models.py` carries 490 `Mapped[...]` and 490 `mapped_column(...)`, a
+    `class Base(DeclarativeBase)`, and 9 remaining `Column(...)` — all nine inside the two
+    `Table()` association constructs (`source_group_association`,
+    `article_keyword_association`), which are *correct* as `Table()` and were never in scope.
+    models.py itself reports zero mypy errors. That work cut mypy **303 → 128**; fixing two real
+    latent bugs it exposed (the 429 handler's `retry_after`, `escape(None)`) took it to **127**.
+  - The remaining **127 → 0** was the 2026-08-20 paydown, across the 48 files that still carried
+    errors — `models.py` was not among them and was not touched. With the residue at zero the
+    ratchet had nothing left to count, so `ci.yml`'s `Type-check ratchet (mypy)` became a plain
+    blocking `python -m mypy src/`.
+  - Measured before/after, CI-verbatim with the pinned mypy 2.3.0 and a cleared `.mypy_cache`:
+    **127 errors in 48 files → 0 errors in 475 source files**, rc 0.
+  - Two riders worth keeping. The paydown was behaviour-neutral except for **two defensive checks
+    added in paths that already failed, only worse** (a non-Ed25519 evidence key now raises where
+    it used to fail later as a confusing signing error; an in-memory SQLite URL now raises
+    `BackupError` instead of `Path(None)`), and it fixed **one live user-reachable 500** on the
+    omnibar (`search_ids` returns `None` for a query with no positive content, e.g. `NOT foo`, and
+    the caller took `len()` of it). And a question is left open rather than silently decided:
+    `ConfidenceInterval.sample_size` is typed `float | None` because the Haldane–Anscombe
+    correction makes the emitted total genuinely fractional — the type now matches the value, but
+    whether a *corrected* total should be published under that name is a statistics call, not a
+    typing one, so the value is unchanged and the wart is recorded in the module.
+- **`print()` → logger** (MAINT-04): remaining live `print()` calls → structured `structlog`
+  loggers. Re-measured 2026-08-20 while passing through: **72** statement-position `print(` in
+  `src/`, not "~50", and the file list here is stale — `src/discovery/duckduckgo.py` no longer
+  exists (the live ones are `src/utils/cache.py` 17, `src/crypto/provenance.py` 10, the rest
+  spread). Counted, not fixed; the count is the scope, not the estimate.
 - **Remaining ruff E402** (MAINT-02 remainder): the test `sys.path` hacks and the GPL-header +
   module-docstring import pattern. Low value; consider per-file `# noqa` or a ruff per-file-ignore.
 
