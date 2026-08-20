@@ -105,11 +105,25 @@ class BandwidthGovernor:
         target_kbps: int = 500,
         w_max: int = 50,
         seed: int | None = None,
+        ramp_ceiling: int | None = None,
         min_adjust_interval_s: float = DEFAULT_MIN_ADJUST_INTERVAL_S,
     ) -> None:
         self.mode = mode if mode in VALID_RATE_MODES else "target"
         self.target_kbps = max(1, int(target_kbps))
         self.w_max = max(1, int(w_max))
+        # A SOFT ceiling on the upward ramp, distinct from the hard ``w_max``. Without
+        # it the learned ceiling (scheduler.capacity) would bound only where a pass
+        # STARTS: the ramp would climb back toward w_max within the same pass, overshoot
+        # the capacity the machine just demonstrated, and re-trigger the pressure the
+        # seed existed to avoid. Capping it here moves the probing entirely BETWEEN
+        # passes, where capacity's own relaxation raises the ceiling one controlled step
+        # after a pass that saw no pressure. Defaults to w_max, so a caller that knows
+        # nothing about this machine gets exactly the previous behaviour.
+        self.ramp_ceiling = (
+            self.w_max
+            if ramp_ceiling is None
+            else max(1, min(int(ramp_ceiling), self.w_max))
+        )
         if seed is None:
             # No explicit seed: maximum mode opens wide, target mode eases in. An
             # EXPLICIT seed is honoured in both modes — it is a caller that already
@@ -188,18 +202,30 @@ class BandwidthGovernor:
             self._last_reason = "settling"
             return cur, "settling"
 
+        # The ramp climbs to the SOFT ceiling, never past it. When no ceiling was
+        # learned it IS w_max, so both branches below are unchanged for any machine
+        # that has never backed off under memory pressure.
+        top = self.ramp_ceiling
+        held_by_learned = top < self.w_max
         if self.mode == "maximum":
-            if cur < self.w_max:
-                new = min(self.w_max, cur + 2)
+            if cur < top:
+                new = min(top, cur + 2)
                 reason = "ramp-max"
             else:
-                new, reason = cur, "at-ceiling"
+                # Name WHICH ceiling is holding: reporting "at-ceiling" while sitting at
+                # 4 of a configured 50 would read as the operator's setting being met.
+                new = cur
+                reason = "at-learned-ceiling" if held_by_learned else "at-ceiling"
         else:  # target
             lo, hi = self.target_kbps * 0.9, self.target_kbps * 1.1
-            if measured_kbps < lo and cur < self.w_max:
-                new, reason = min(self.w_max, cur + 1), "below-target"
+            if measured_kbps < lo and cur < top:
+                new, reason = min(top, cur + 1), "below-target"
             elif measured_kbps > hi and cur > 1:
                 new, reason = max(1, cur - 1), "above-target"
+            elif measured_kbps < lo and held_by_learned and cur >= top:
+                # Below target AND unable to climb: "in-band" would claim the rate is
+                # where it should be, which is the opposite of what is happening.
+                new, reason = cur, "at-learned-ceiling"
             else:
                 new, reason = cur, "in-band"
 

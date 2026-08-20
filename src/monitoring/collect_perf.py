@@ -446,6 +446,11 @@ class CollectionMonitor:
             writer_wait_delta = round(self._writer_wait_last - self._writer_wait_start, 3)
         target = getattr(self._gov, "target_kbps", 0)
         w_max = getattr(self._gov, "w_max", 0)
+        # "As wide as we were ALLOWED to run" is the ramp's ceiling, which a machine
+        # with a learned memory ceiling holds below w_max — compare against that, or
+        # the network-or-source-bound verdict silently becomes unreachable on exactly
+        # those machines and every pass reports "headroom" it does not have.
+        ramp_top = getattr(self._gov, "ramp_ceiling", None) or w_max
         mode = getattr(self._gov, "mode", "target")
 
         if self._min_mem_avail is not None and self._min_mem_avail < self._mem_floor:
@@ -454,7 +459,12 @@ class CollectionMonitor:
             verdict = "writer-bound"
         elif self._max_cpu_sys >= 90.0:
             verdict = "cpu-bound"
-        elif mode == "target" and target and avg_rate < target * 0.8 and self._peak_permits >= w_max:
+        elif (
+            mode == "target"
+            and target
+            and avg_rate < target * 0.8
+            and self._peak_permits >= ramp_top
+        ):
             verdict = "network-or-source-bound"
         else:
             verdict = "target-met-or-headroom"
