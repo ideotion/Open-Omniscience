@@ -18,6 +18,9 @@ not hide inside corpus-wide figures that should be able to exclude it.
 
 from __future__ import annotations
 
+import re
+from pathlib import Path
+
 import pytest
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
@@ -404,10 +407,24 @@ def test_the_endpoints_are_composed_where_the_caller_expects_them():
 
     # APIRouter stores the COMPOSED path on the route, so the prefix is already in
     # it — prepending it again is how this test failed on correct code the first time.
+    # router.routes (the router's OWN definitions), never app.routes: a positive
+    # assertion against the shared mutable app singleton is what made an earlier route
+    # guard flaky in CI and never reproducible locally.
     paths = {r.path for r in router.routes}
     assert router.prefix == "/api/governments"
     assert "/api/governments/series-corpus" in paths
     assert "/api/governments/series-corpus/status" in paths
+
+    # ...and the CALLER asks for exactly those. Asserting only that the backend defines
+    # a route proves nothing about whether anything reaches it — a /api/backup/... vs
+    # /api/backup/v2/... mismatch 404'd in the field with both halves individually
+    # correct, which is why the frontend side is checked here rather than trusted.
+    app_js = (Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_text(
+        encoding="utf-8"
+    )
+    called = set(re.findall(r'api\(\s*"(/api/governments/series-corpus[^"]*)"', app_js))
+    assert called, "no frontend caller reaches the endpoint — a job nobody can start"
+    assert called <= paths, f"the UI calls routes the router does not define: {called - paths}"
 
 
 def test_the_job_is_a_writer_and_is_cancellable():
