@@ -484,3 +484,23 @@ def test_the_chronological_order_refuses_the_source_driven_join(client):
         )
     finally:
         event.remove(engine, "before_cursor_execute", _cap)
+
+
+def test_feed_restart_race_node_suite() -> None:
+    """Drives tests/feed_restart_node_test.js -- the restart-while-loading race.
+
+    A separate suite because the property is about the INTERLEAVING of two in-flight
+    requests, which needs the real async function rather than an endpoint call.
+    """
+    import subprocess
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    proc = subprocess.run(
+        ["node", str(root / "tests" / "feed_restart_node_test.js")],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert "ok" in proc.stdout

@@ -2482,6 +2482,10 @@
     const _FEED_MARK_KEY = "oo.feed.mark";     // the cursor reached, per order
     const _FEED_ORDER_KEY = "oo.feed.order";
     let _feedBusy = false, _feedDone = false, _feedHeld = null;
+    // Bumped by every restart (reshuffle, start-from-the-top, order switch). A page
+    // that was already in flight when one of those happened belongs to the ORDER the
+    // reader just left, so it is discarded on arrival rather than appended.
+    let _feedGen = 0;
 
     function _feedSeed() {
       // Persisted per session (ruling 8): a seed drawn fresh on every load would reshuffle
@@ -2524,6 +2528,9 @@
       _feedRestart();
     }
     function _feedRestart() {
+      // The bump must come FIRST: it is what lets loadFeed run while a page is still in
+      // flight without the two of them racing to append.
+      _feedGen++; _feedBusy = false;
       _feedDone = false; _feedHeld = null;
       const list = $("feed-list"); if (list) list.innerHTML = "";
       loadFeed(true);
@@ -2593,6 +2600,7 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const list = $("feed-list"); if (!list || _feedBusy || (_feedDone && !reset)) return;
       _feedBusy = true;
+      const gen = _feedGen;
       _feedControls();
       const order = _feedOrder();
       const more = $("feed-more");
@@ -2603,6 +2611,13 @@
         const mark = reset ? "" : _feedMark(order);
         if (mark) p.set("after", mark);
         const d = await api("/api/feed?" + p.toString());
+        // A RESTART HAPPENED WHILE THIS WAS IN FLIGHT. Appending now would put rows from
+        // the order the reader left into the order they chose, and -- worse -- write this
+        // page's cursor over the cleared mark, so the next scroll would send the NEW seed
+        // with a cursor from the OLD permutation and silently skip everything between
+        // them. Skipping is the one thing a keyset walk over a bijection is supposed to
+        // make impossible, so this page is dropped instead.
+        if (gen !== _feedGen) return;
         if (d.held_back) _feedHeld = d.held_back;
         list.insertAdjacentHTML("beforeend", (d.results || []).map(_feedCard).join(""));
         _feedSetMark(order, d.next_cursor || "");
@@ -2614,8 +2629,16 @@
             : `<button class="tiny" onclick="loadFeed(false)">${esc(t("Load more"))}</button>`;
         }
       } catch (e) {
-        if (more) more.innerHTML = `<div class="note err">${esc((e && e.message) || t("The feed could not load."))}</div>`;
-      } finally { _feedBusy = false; }
+        // Same reason as the discard above: a page the reader has already navigated away
+        // from must not report ITS failure over the walk that replaced it.
+        if (gen === _feedGen && more) {
+          more.innerHTML = `<div class="note err">${esc((e && e.message) || t("The feed could not load."))}</div>`;
+        }
+      } finally {
+        // Only the CURRENT walk may release the flag: a discarded page returning late
+        // would otherwise clear the busy flag of the walk that replaced it.
+        if (gen === _feedGen) _feedBusy = false;
+      }
     }
 
     // The note above the list. It carries the method + the caveat the endpoint sends (both
