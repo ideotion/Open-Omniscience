@@ -16,6 +16,7 @@ import re
 from pathlib import Path
 
 from tests.js_source_helper import assert_absent as _assert_js_absent
+from tests.js_source_helper import css_rule as _css_rule
 from tests.js_source_helper import assert_present as _assert_js_present
 from tests.js_source_helper import function_body as _js_function_body
 from tests.js_source_helper import python_function_source as _py_function_source
@@ -769,27 +770,61 @@ def test_world_map_osm_admin_boundary_choropleth():
     )
 
 
-def test_analysis_articles_per_row_summarize_translate():
-    """Track C: the analysis Articles list offers a PER-ARTICLE Summarize / Translate
-    (the single-article complement to the bulk LLM run). Reuses the existing
-    single-article endpoints (loopback Ollama), renders the result INLINE labelled
-    AI-derived / unreliable with model provenance, and NEVER touches the trusted
-    keyword index (the rows live in article_analyses). Browser-unverified."""
+def test_per_article_summarize_translate_moved_to_the_reader():
+    """Ruling 22 (2026-08-07): the per-row Summarize / Translate buttons leave the
+    analysis Articles list, because the READER already carries both.
+
+    This SUPERSEDES the Track-C guard that pinned those buttons into every row. That
+    guard was right for its ask and is being updated deliberately, not deleted: what it
+    was really protecting is that the CAPABILITY exists somewhere honest, so that is
+    what this asserts now -- the Desk lesson, which allows a retirement only once the
+    replacement demonstrably absorbs it. If the reader's tabs ever go away, this fails.
+    """
     html = _ui_source()  # index.html + app.js + app.css
-    # per-row buttons wired to the handler
-    assert "anArticleLlm(${a.id},'summarize',this)" in html and "anArticleLlm(${a.id},'translate',this)" in html, (
-        "each article row must offer Summarize + Translate"
+    # 1. GONE from the list, handler included -- an orphaned handler reads as still-wired.
+    assert "anArticleLlm" not in html, (
+        "the per-row Summarize / Translate handler must go with its buttons"
     )
-    assert "async function anArticleLlm(" in html, "the per-article LLM handler must exist"
-    # it calls the existing single-article endpoints (not the keyword index)
-    assert "`/api/llm/articles/${id}/${op}`" in html, "must POST the single-article summarize/translate endpoint"
-    # the result is labelled AI-derived / unreliable (honesty by construction)
-    assert "AI summary — unreliable, verify against the source." in html
-    assert "AI translation — unreliable, verify against the source." in html
-    # the backend endpoints it relies on exist + store to article_analyses (never KeywordMention)
+    # 2. ABSORBED by the reader: its own Summary + Translation tabs, lazy-loaded.
+    reader_html = (_ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
+    for tab in ("summary", "translation"):
+        assert f'data-rtab="{tab}"' in reader_html, f"the reader must keep its {tab} tab"
+        assert f'data-lazy="{tab}"' in reader_html, f"the reader's {tab} pane must load on demand"
+    # 3. ...driving the SAME single-article endpoints, still storing to article_analyses
+    #    and never the trusted keyword index.
+    reader_js = (_ROOT / "src" / "static" / "reader.js").read_text(encoding="utf-8")
+    assert "/summarize" in reader_js and "/translate" in reader_js
     llm = (_ROOT / "src" / "api" / "llm.py").read_text(encoding="utf-8")
     assert '"/articles/{article_id}/summarize"' in llm and '"/articles/{article_id}/translate"' in llm
     assert "ArticleAnalysis(" in llm, "single-article results store in article_analyses, not the keyword index"
+    # 4. The BULK actions are a different tool and were not part of the ruling.
+    assert "bulkLlm('summarize','an')" in html and "bulkLlm('translate','an')" in html
+
+
+def test_the_source_arrow_column_moved_to_the_reader():
+    """Ruling 22's other half: the ``source ↗`` column leaves the Articles list.
+
+    Invariant #6 says no bare "official source ↗" shortcut anywhere -- an external
+    original is reached through a LOCAL page whose outbound link's visible text IS the
+    full URL. The reader is exactly that page, so this is the column arriving where the
+    invariant already wanted it, not a capability being dropped."""
+    # SCOPED to the renderer it is about. The same needle occurs in the cited-sources
+    # drill (a different surface, not covered by this ruling), so a whole-file search
+    # would fail against correct code -- the recorded non-unique-needle trap.
+    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    body = _js_function_body(app, "_anLoadArticles")
+    assert "source ↗" not in _strip_js_comments(body), (
+        "the per-row source arrow must be gone from the Articles list"
+    )
+    main = (_ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
+    assert "Original source: <a class='ext src-link' href='" in main, (
+        "the reader must still show the original URL"
+    )
+    # ...and its visible text is the url itself (invariant #6), not a bare arrow.
+    at = main.index("Original source: <a class='ext src-link' href='")
+    assert "_html.escape(safe_src)}</a>" in main[at : at + 400], (
+        "the outbound link's visible text must BE the full URL"
+    )
 
 
 def test_world_map_server_location_layer():
@@ -1476,21 +1511,61 @@ def test_newsletter_import_perf_and_upload_cap():
     assert "_MAX_UPLOAD_FILES" in ing and "request.form(max_files=" in ing
 
 
-def test_advanced_search_sort_by_metadata():
-    """Brief §2.D ('important'): /api/articles can sort by a metadata field (date|source|
-    title|language) — an honest ordering, never a relevance/quality score — surfaced as a
-    Sort control in the Advanced-search panel."""
+def test_search_sort_by_metadata_lives_with_the_list_it_orders():
+    """Brief §2.D ('important') + ruling 20 (2026-08-07): /api/articles can sort by a
+    metadata field — an honest ordering, never a relevance/quality score — and the
+    control now sits in the ARTICLES subtab, with the list it orders, instead of in
+    Advanced three subtabs away.
+
+    The field set is read from the module rather than matched as a literal, so adding an
+    honest new ordering does not fail this; what it still forbids is a field whose NAME
+    claims a score or a ranking.
+    """
     main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
     # backend: the params + the valid-field set + case-insensitive alphabetical
-    assert "sort_by:" in main and "sort_dir:" in main and "_SORT_FIELDS" in main
+    assert "sort_by:" in main and "sort_dir:" in main
     assert 'collate("NOCASE")' in main  # case-insensitive alphabetical, both paths agree
-    # no score: the sort fields are pure metadata
-    assert '{"date", "source", "title", "language"}' in main
-    # UI: the sort + order selects + they feed the query
-    assert 'id="an-adv-sort"' in html and 'id="an-adv-dir"' in html
+    from src.api.main import _SORT_FIELDS
+
+    assert {"date", "source", "title", "language"} <= _SORT_FIELDS
+    for f in _SORT_FIELDS:
+        assert not any(bad in f for bad in ("score", "rank", "rating", "grade", "quality")), (
+            f"sort field {f!r} names a judgement; sorting orders real metadata only"
+        )
+    # UI: exactly ONE sort control in the window (a move, never a duplicate)...
+    assert html.count('id="an-adv-sort"') == 1 and html.count('id="an-adv-dir"') == 1
+    # ...and it is in the Articles panel, not the Advanced one.
+    art = html.index('id="an-articles"')
+    adv = html.index('id="an-advanced"')
+    assert art < html.index('id="an-adv-sort"') < adv, (
+        "the sort control must sit inside the Articles panel (ruling 20)"
+    )
     assert 'p.set("sort_by"' in app and 'p.set("sort_dir"' in app
+
+
+def test_article_columns_are_sortable_headers():
+    """Ruling 21: a column header IS the sort control. It has to be a real button (so it
+    is keyboard-reachable and announces its state), it must drive the SAME two fields the
+    select drives -- two controls with independent opinions is what this replaced -- and
+    its active state may not be carried by colour alone."""
+    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+    th = _js_function_body(app, "_anTh")
+    assert "<button" in th and 'aria-pressed' in th, "a header must be a real, stateful button"
+    assert "_anSortBy(" in th
+    by = _js_function_body(app, "_anSortBy")
+    for field in ('$("an-adv-sort")', '$("an-adv-dir")'):
+        assert field in by, "the header must drive the SAME control the select drives"
+    # the arrow is a CHARACTER, so the active column survives greyscale and colour-vision
+    # differences; colour only reinforces it.
+    assert "↑" in th and "↓" in th
+    rule = _css_rule(css, ".an-th")
+    assert "opacity" not in rule, (
+        "no opacity: it composites the element over its parent and makes any contrast "
+        "figure a fiction (the recorded .ag-cal lesson)"
+    )
 
 
 def test_articles_provenance_toggle_and_keyword_count():

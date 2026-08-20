@@ -29,11 +29,29 @@ def test_card_subtab_map_exists_with_expected_routes():
 
 
 def test_openers_accept_and_pass_a_tab():
-    assert "function openCardCorpus(ids, label, tab)" in _JS
-    assert "function openAnalysisInNewTab(q, tab)" in _JS
+    """The routed subtab must survive every hop from the card to the window.
+
+    Asserted on the PARAMETER NAMES rather than on a verbatim signature: ruling 16 gave
+    these openers a further argument (the Lead's provenance), and a literal-signature
+    anchor fails on a change that adds to the chain without breaking anything in it --
+    the recorded stale-anchor trap. What still fails, correctly, is `tab` disappearing
+    from any hop.
+    """
+    import re
+
+    def _params(name: str) -> list[str]:
+        m = re.search(r"function\s+" + name + r"\s*\(([^)]*)\)", _JS)
+        assert m, f"{name} not found in app.js -- was it renamed?"
+        return [p.strip().split("=")[0].strip() for p in m.group(1).split(",") if p.strip()]
+
+    assert _params("openCardCorpus")[:3] == ["ids", "label", "tab"]
+    assert _params("openAnalysisInNewTab")[:2] == ["q", "tab"]
+    assert _params("openCardCorpusQuery")[:2] == ["q", "tab"]
     assert 'p.set("tab", tab)' in _JS
     # the omnibar Enter still works (tab optional): openCardCorpusQuery forwards it
-    assert "function openCardCorpusQuery(q, tab) { openAnalysisInNewTab(q, tab); }" in _JS
+    from tests.js_source_helper import function_body
+
+    assert "openAnalysisInNewTab(q, tab" in function_body(_JS, "openCardCorpusQuery")
 
 
 def test_cardhtml_passes_the_routed_subtab():

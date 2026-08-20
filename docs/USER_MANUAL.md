@@ -410,10 +410,29 @@ was computed over. The subtabs are:
   window, with sparse stretches shown honestly as bars + an early-corpus caveat rather
   than a faked curve).
 - **Mindmap** — a deterministic radial keyword map (centre → arms, always outward).
-- **Articles** — the member articles (paginated), each opening in the **offline reader**,
-  whose own tab bar is **Read · Summary · Translation · Keywords · Mindmap · Sentiment ·
-  Related · Source · Links** (Summary/Translation use the local model; near-identical
-  copies are badged "N copies = one voice").
+- **Articles** — the member articles (paginated). Columns: **Title · Source ·
+  Published · Top keyword**, and every column header is the **sort control** — click one
+  to order by it, click it again to reverse; the arrow marks the column in force. Names
+  open A–Z, dates and counts open on the largest first. The same choice is in the
+  **Sort by / Order** selects above the list, because they are the same two fields: there
+  is exactly one sort in this window, so nothing can quietly override your choice. *(The
+  sort used to live in **Advanced**, three subtabs from the only list that reads it.)*
+
+  **Top keyword** is this article's OWN most-mentioned keyword with its count, worked out
+  when the article was indexed — a different question from the *searched* keyword's count,
+  which is the separate `↕ "term" count` button. Where several keywords tie at that count
+  the row says **tied**, because the one named is simply the first of them and calling it
+  the top keyword would assert a ranking the count never made. An article the re-index has
+  not reached yet shows **—**, never a 0: it is missing a measurement, not missing
+  keywords.
+
+  Each row opens in the **offline reader**, whose own tab bar is **Read · Summary ·
+  Translation · Keywords · Mindmap · Sentiment · Related · Source · Links** — that is
+  where you read it, see its **original source** (the link's visible text is the full
+  URL), and run **Summary / Translation** on the local model. Those three used to be
+  repeated as a per-row arrow and two per-row buttons; they moved to the one page that
+  can actually show the result. Bulk **Summarize all / Translate all** are unchanged in
+  the action row below. Near-identical copies are badged "N copies = one voice".
 - **When/Where/Who** — the dates, places and people/orgs the set mentions, as clickable
   **facets**; clicking a value **drills** into just the articles mentioning it (a refined
   analysis window). Deduced from text, never confirmed.
@@ -430,9 +449,8 @@ was computed over. The subtabs are:
 - **Price** — *(only when the window was seeded from a commodity)* the price curve
   overlaid on your corpus coverage on a shared time axis (co-occurrence, never causation),
   each series on its own real-unit scale.
-- **Advanced** — scope the set by **source · language · date range**, and **sort** by
-  date / source / title / language (an honest metadata ordering, never a relevance
-  score); a "Filtered" chip and summary show what's active.
+- **Advanced** — scope the set by **source · language · date range**; a "Filtered" chip
+  and summary show what's active. (Sorting moved to the Articles tab, above.)
 
 The action row carries **Methods appendix**, **Export signed evidence**, **Synthesize
 results** (the member-selection window), and queued **Summarize all / Translate all / Run

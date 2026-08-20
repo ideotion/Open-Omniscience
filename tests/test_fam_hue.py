@@ -17,7 +17,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from tests.js_source_helper import read_static, strip_comments
+from tests.js_source_helper import function_body, object_literal, read_static, strip_comments
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -25,15 +25,19 @@ _ROOT = Path(__file__).resolve().parents[1]
 def _render_briefing_and_overview() -> str:
     """The two functions that paint a family colour, COMMENT-STRIPPED.
 
+    Sliced BY NAME through the shared helper, not by "everything between these two
+    landmarks": a region bounded by the next declaration someone happens to remember
+    sweeps in whatever is written between them, which is how a guard ends up reading
+    code it says nothing about.
+
     Stripped because the fix's own comments necessarily quote the removed
     ``famHue(bi)`` form to explain what changed -- the recorded trap where a
     "must be gone" guard is satisfied by the explanation of the rule it guards.
     """
-    app = strip_comments(read_static("app.js"))
-    start = app.index("function renderBriefing(")
-    end = app.index("function selectHomeFamily(")
-    assert end > start, "renderBriefing/_overviewHtml moved -- re-anchor this test"
-    return app[start:end]
+    app = read_static("app.js")
+    return strip_comments(
+        function_body(app, "renderBriefing") + "\n" + function_body(app, "_overviewHtml")
+    )
 
 
 def test_every_family_colour_is_keyed_on_the_stable_bucket_name() -> None:
@@ -61,8 +65,7 @@ def test_the_curated_table_covers_every_shipped_family() -> None:
     cannot guarantee two families are visually separable, which is the point."""
     from src.briefing.card import BUCKETS
 
-    app = read_static("app.js")
-    table = app.split("const FAM_HUE = {", 1)[1].split("}", 1)[0]
+    table = object_literal(read_static("app.js"), "FAM_HUE")
     missing = [b for b in BUCKETS if f"{b}:" not in table]
     assert not missing, f"families with no curated hue: {missing}"
 

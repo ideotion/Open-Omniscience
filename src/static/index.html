@@ -407,7 +407,30 @@
       </div>
       <div class="an-panel" id="an-trend" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-mindmap" style="display:none;margin-top:10px;overflow:auto"></div>
-      <div class="an-panel" id="an-articles" style="display:none;margin-top:10px;overflow:auto"></div>
+      <div class="an-panel" id="an-articles" style="display:none;margin-top:10px;overflow:auto">
+        <!-- Sorting lives HERE, with the list it orders (ruling 20). It used to sit in
+             Advanced, three subtabs away from the only view that reads it. The ids are
+             the ones Advanced used, so nothing was duplicated: there is exactly one
+             sort control in this window, and the column headers below drive these same
+             two fields rather than keeping a second opinion. -->
+        <div class="an-sortbar" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:6px">
+          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Sort by</span>
+            <select id="an-adv-sort" style="max-width:170px" onchange="_anSortChanged()">
+              <option value="">Relevance / recency</option>
+              <option value="date">Date</option>
+              <option value="source">Source</option>
+              <option value="title">Title (A–Z)</option>
+              <option value="language">Language</option>
+              <option value="top_keyword">Top keyword count</option>
+            </select></label>
+          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Order</span>
+            <select id="an-adv-dir" style="max-width:130px" onchange="_anSortChanged()">
+              <option value="desc">Descending</option>
+              <option value="asc">Ascending</option>
+            </select></label>
+        </div>
+        <div id="an-art-list"></div>
+      </div>
       <div class="an-panel" id="an-www" style="display:none;margin-top:10px"></div>
       <div class="an-panel" id="an-links" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-related" style="display:none;margin-top:10px;overflow:auto"></div>
@@ -428,19 +451,6 @@
             <input id="an-adv-from" type="date"></label>
           <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">To</span>
             <input id="an-adv-to" type="date"></label>
-          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Sort by</span>
-            <select id="an-adv-sort" style="max-width:150px">
-              <option value="">Relevance / recency</option>
-              <option value="date">Date</option>
-              <option value="source">Source</option>
-              <option value="title">Title (A–Z)</option>
-              <option value="language">Language</option>
-            </select></label>
-          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Order</span>
-            <select id="an-adv-dir" style="max-width:130px">
-              <option value="desc">Descending</option>
-              <option value="asc">Ascending</option>
-            </select></label>
           <button class="primary" onclick="anRunAdvanced()">Run analysis</button>
         </div>
         <div id="an-adv-note" class="muted" style="margin-top:8px"></div>

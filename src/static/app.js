@@ -21053,7 +21053,31 @@
     }
     function _anToggleKwSort() {
       _anKwSort = !_anKwSort;
+      // ONE visible sort at a time. The searched-keyword count and the column sort
+      // answer different questions and the request can only carry one, so turning this
+      // on clears the header/select choice rather than silently overriding it -- two
+      // controls that disagree while one quietly wins is the shape this move was
+      // supposed to remove, not relocate.
+      if (_anKwSort) { const sb = $("an-adv-sort"); if (sb) sb.value = ""; }
       if (_anArtParams) _anLoadArticles(_anArtParams, 0);
+    }
+    // The sort controls now live in the Articles subtab (ruling 20) and are read LIVE by
+    // _anLoadArticles, so changing one re-orders the LIST without re-running the whole
+    // analysis -- the other subtabs do not read sort at all, and re-fetching six of them
+    // to change a column order would be work nobody asked for.
+    function _anSortChanged() {
+      _anKwSort = false;                       // the select/headers win once touched
+      if (_anArtParams) _anLoadArticles(_anArtParams, 0);
+    }
+    // A column header IS the sort control (ruling 21): clicking cycles this column
+    // ascending/descending, and the arrow in the header says which way, so the header
+    // and the select can never show different answers -- they are the same two fields.
+    function _anSortBy(field) {
+      const sb = $("an-adv-sort"), dr = $("an-adv-dir");
+      if (!sb || !dr) return;
+      if (sb.value === field) dr.value = (dr.value === "asc") ? "desc" : "asc";
+      else { sb.value = field; dr.value = (field === "title" || field === "language" || field === "source") ? "asc" : "desc"; }
+      _anSortChanged();
     }
     function _anArtControls(d) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -21185,8 +21209,22 @@
       return q;
     }
 
+    // A sortable column header. `field` is the /api/articles sort_by value; the arrow
+    // reflects the LIVE control state, so the header row is a readout of the sort as
+    // well as the way to change it.
+    function _anTh(field, label) {
+      const sb = $("an-adv-sort"), dr = $("an-adv-dir");
+      const on = sb && sb.value === field;
+      const arrow = on ? ((dr && dr.value === "asc") ? " ↑" : " ↓") : "";
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      return `<th><button type="button" class="an-th" aria-pressed="${!!on}" `
+        + `onclick="_anSortBy('${field}')" title="${esc(t("Sort by this column"))}">`
+        + `${esc(label)}${arrow}</button></th>`;
+    }
     async function _anLoadArticles(p, page) {
-      const arts = $("an-articles"); if (!arts) return;
+      // The list renders into an-art-list, INSIDE an-articles -- the sort bar above it
+      // is static markup and must survive a re-render (it is what triggered this one).
+      const arts = $("an-art-list") || $("an-articles"); if (!arts) return;
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       _anArtParams = p; _anArtPage = Math.max(0, page | 0);
       arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
@@ -21195,6 +21233,12 @@
         q.set("limit", String(_AN_ART_PAGE));
         q.set("offset", String(_anArtPage * _AN_ART_PAGE));
         if (_anProvenance) q.set("provenance", _anProvenance);
+        // Read the sort from the controls rather than from the captured params: `p` was
+        // snapshotted when the corpus loaded, so a params-only read would order by
+        // whatever was chosen THEN and silently ignore the header just clicked.
+        const _sb = $("an-adv-sort") && $("an-adv-sort").value;
+        if (_sb) { q.set("sort_by", _sb); q.set("sort_dir", ($("an-adv-dir") && $("an-adv-dir").value) || "desc"); }
+        else { q.delete("sort_by"); q.delete("sort_dir"); }
         if (_anKwSort) { q.set("sort_by", "keyword_count"); q.set("sort_dir", "desc"); }
         const d = await api("/api/articles?" + q.toString());
         _anKwForCount = d.keyword_for_count || "";
@@ -21207,21 +21251,42 @@
           const badge = (kwc && a.keyword_count != null)
             ? ` <span class="muted" style="font-size:.82em" title="${esc(t("Mentions of") + " “" + kwc + "” " + t("in this article"))}">×${a.keyword_count}</span>`
             : "";
+          // The article's OWN top keyword (ruling 23/38/39), precomputed at index time.
+          // A tie is SHOWN as a tie: several keywords share that count and the one named
+          // is the lowest-id among them, so calling it "the" top keyword would assert a
+          // ranking the count never made. An article the re-index has not reached yet has
+          // no value at all -- rendered as an em dash, never as a 0, which would read as
+          // "measured, and it has no keywords".
+          let top = '<span class="muted">—</span>';
+          if (a.top_keyword) {
+            const tied = (a.top_keyword_tied_n || 1) > 1;
+            const tip = tied
+              ? t("{n} keywords are tied at this count in this article — this is one of them, not a winner.").replace("{n}", a.top_keyword_tied_n)
+              : t("This article's most-mentioned keyword, counted when it was indexed.");
+            top = `<span title="${esc(tip)}">${esc(a.top_keyword)}`
+              + ` <span class="muted">×${a.top_keyword_count}</span>`
+              + (tied ? ` <span class="muted">${esc(t("tied"))}</span>` : "")
+              + `</span>`;
+          }
           return `<tr data-aid="${a.id}"><td><a href="/api/articles/${a.id}/view" target="_blank" rel="noopener">`
           + `${esc(a.title) || '<span class="muted">(untitled)</span>'}</a>${badge}</td>`
           + `<td>${esc(a.source || "")}${_anToneChip(a)}</td><td class="muted">${esc((a.published_at || "").slice(0, 10))}</td>`
-          + `<td>${a.url ? extLink(a.url, "source ↗", "muted") : ""}</td>`
-          + `<td style="white-space:nowrap">`
-          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'summarize',this)" title="${esc(t("Summarize this article with the local model — stored, labelled AI-derived, never the keyword index."))}">${esc(t("Summarize"))}</button> `
-          + `<button class="tiny ghost" onclick="anArticleLlm(${a.id},'translate',this)" title="${esc(t("Translate this article into the interface language with the local model."))}">${esc(t("Translate"))}</button></td></tr>`;
+          + `<td>${top}</td></tr>`;
         }).join("");
         const pager = _anArtPager(total, pages);
+        // RULING 22: the "source ↗" column and the per-row Summarize / Translate buttons
+        // are gone -- the reader carries both (its "Original source:" line shows the FULL
+        // url, and its Summary / Translation tabs run the same local model on the same
+        // article), so this is an absorption, not a removal. Nothing was lost: the bulk
+        // Summarize all / Translate all actions are untouched in the export bar below.
         arts.innerHTML = _anArtControls(d)
           + `<div id="an-art-facets"></div>`
-          + `<div class="hint">${total.toLocaleString()} ${esc(t("Articles"))} <span class="muted">· ${esc(t("Summarize / Translate run a local model per article — results are stored, labelled AI-derived, and never touch the keyword index."))}</span></div>`
+          + `<div class="hint">${total.toLocaleString()} ${esc(t("Articles"))} <span class="muted">· ${esc(t("Open an article to read it, see its original source, and summarize or translate it."))}</span></div>`
           + pager
-          + `<table style="margin-top:6px"><tr><th>${esc(t("Title"))}</th><th>${esc(t("Source"))}</th>`
-          + `<th>${esc(t("Published"))}</th><th></th><th>${esc(t("AI"))}</th></tr>${rows}</table>`
+          + `<table style="margin-top:6px"><tr>`
+          + _anTh("title", t("Title")) + _anTh("source", t("Source"))
+          + _anTh("date", t("Published")) + _anTh("top_keyword", t("Top keyword"))
+          + `</tr>${rows}</table>`
           + pager;
         annotateArticleDups(p, arts);   // inline "1 voice" near-dup badges (non-blocking, PR 3)
         _anRenderArtFacetChips();   // redraw from already-fetched facet data (sync, no network)
@@ -21229,7 +21294,7 @@
     }
     async function loadAnalysis(p) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const kw = $("an-keywords"), arts = $("an-articles");
+      const kw = $("an-keywords"), arts = $("an-art-list") || $("an-articles");
       kw.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       arts.innerHTML = `<div class="muted">${esc(t("Loading…"))}</div>`;
       _anProvenance = ""; _anKwSort = false; _anKwForCount = "";   // fresh corpus -> reset the Articles-list lenses
@@ -21890,44 +21955,6 @@
           + `</div>`;
       }
       conts.forEach((c) => { c.innerHTML = html; });
-    }
-
-    // Per-article Summarize / Translate from the analysis Articles list (the
-    // single-article complement to bulkLlm). Reuses the existing single-article
-    // endpoints (loopback Ollama — no network consent; airplane refuses at the
-    // client). The result renders INLINE beneath the row, labelled AI-derived /
-    // unreliable with its model + prompt provenance, and is stored in
-    // article_analyses — NEVER the trusted keyword index (the reader's Summary /
-    // Translation tabs read the same rows). op = "summarize" | "translate".
-    async function anArticleLlm(id, op, btn) {
-      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      const row = btn && btn.closest ? btn.closest("tr") : null; if (!row) return;
-      const prev = btn.textContent; btn.disabled = true; btn.textContent = t("Working…");
-      // a sibling result row right under the article (reuse on repeat clicks)
-      let res = row.nextElementSibling;
-      if (!res || !res.classList || !res.classList.contains("an-llm-res")) {
-        res = document.createElement("tr"); res.className = "an-llm-res";
-        res.innerHTML = `<td colspan="5"></td>`;
-        row.parentNode.insertBefore(res, row.nextSibling);
-      }
-      const cell = res.firstChild;
-      cell.innerHTML = `<span class="muted">${esc(t("Working…"))}</span>`;
-      try {
-        const body = op === "translate" ? { target_language: _uiLangName() } : { output_language: _uiLangName() };
-        const d = await api(`/api/llm/articles/${id}/${op}`, { method: "POST", body: JSON.stringify(body) });
-        const text = (d && d.result) || "";
-        const prov = [d && d.model, d && d.prompt_version].filter(Boolean).join(" · ");
-        const label = op === "translate"
-          ? t("AI translation — unreliable, verify against the source.")
-          : t("AI summary — unreliable, verify against the source.");
-        cell.innerHTML = `<div class="card-caveat">${esc(label)}${prov ? ` <span class="muted">· ${esc(prov)}</span>` : ""}</div>`
-          + `<div style="white-space:pre-wrap;margin-top:4px">${esc(text)}</div>`;
-      } catch (e) {
-        cell.innerHTML = `<span class="note err">${esc((e && e.message) || t("The local model is unavailable."))}</span>`;
-      } finally {
-        btn.disabled = false; btn.textContent = prev;
-        loadLlmHealth();   // a fresh signal of whether Ollama is up
-      }
     }
 
     // --- Run a user-defined custom extractor over the analysis OR search selection (the
