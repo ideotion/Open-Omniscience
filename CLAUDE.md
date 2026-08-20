@@ -4262,6 +4262,44 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     a ~1M-entry dict per call, and the memory guard polls only BETWEEN batches — so it
     cannot interrupt the scan it most needs to. A guard that runs between the expensive
     things is not a guard on the expensive thing.
+  - **A WALK'S INSTRUMENT PASSES OR FAILS FOR REASONS ABOUT THE INSTRUMENT — five
+    lookalikes from one matrix run, and the axis-widening payoff that justified it
+    (2026-08-20, gate row 8's stretch expansion):** (a) `querySelector(".pill.warn")`
+    measured the AI PILL — an element that carries those classes for footprint styling
+    while its STATE rules override the colour per state — and filed a P1 naming the
+    `--warn-fg` token whose fix was intact (5.78:1 on the theme it accused); the first
+    match of a class selector can be an element whose classes mean something else, so
+    exclude it (`:not(#llm)`) and measure the state label as its OWN claim. (b) A
+    surface anchored on a BY-CONSTRUCTION-EMPTY element (`#ux-imp-summary` before any
+    import) reads not-visible and fails the reachability walk it was meant to serve —
+    anchor reachability on the container, and let a dedicated fixture (state D's real
+    import) claim the content. (c) A breakpoint walk that NAVIGATES at 375px tests
+    navigation-at-375 — a different claim, and one the sidebar legitimately fails below
+    600px per invariant #2's own floor — so the settings-gear click times out and three
+    of five flagship surfaces read blocked; navigate at desktop width, then measure the
+    OPENED surface at the target width. (d) A specimen-search that derives a CSS
+    selector from tag/class hands the reader the DOCUMENT'S first `td`, not the
+    specimen's — the recorded non-unique-needle trap as a selector; tag the found node
+    with a probe attribute and address that. (e) A sidecar API probe shares 127.0.0.1
+    with the harness's own browser, so the app's rate limiter (a feature under test)
+    can 429 it past any polite backoff — read ids from the DOM the browser already
+    rendered. PLUS the f-string continuation trap that produced two of the five: in a
+    multi-line `page.evaluate(f"... {{ ..." "... }}")` the PLAIN-string continuation
+    line's `}}` stays a literal `}}` (only f-strings collapse braces), a JS
+    SyntaxError — and after fixing it in one evaluate it was found AGAIN in a sibling
+    drill in the same file, the recorded fixing-a-property-in-one-place failure. THE
+    PAYOFF THAT MAKES THE MATRIX WORTH ITS COST: widening the theme axis 5 → 17 found
+    the AI pill's ai-off label at raw `var(--err)` below AA text contrast on 13 of 17
+    themes (worst solar 2.41:1 against the pill's own 8%-err tint) — invisible to every
+    earlier 5-theme run; the repair is the recorded mix-toward-`--fg` pattern (55% =
+    the smallest 5-point step clearing 4.5:1 on every theme, worst 4.82:1), and the
+    state was never colour-only (the diagonal bar + hover title carry it). And the
+    deduced-events find is the same family app-side: `#agenda-subonly` defaults CHECKED
+    and its bypass named only `imported`, so the corpus-DEDUCED category — whose
+    synthetic calendar can never be subscribed — was invisible in every agenda view at
+    default settings while the category filter still OFFERED "deduced" as an empty
+    lens; a filter must never offer a category its default state structurally
+    suppresses.
 ## Open queue (when maintainer says proceed)
 - **KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING (maintainer 2026-08-13, "let's get this done
   at my return" — PARKED, nothing further to build; the machinery is shipped and the
@@ -10747,7 +10785,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   untested path is not a pass; RTL bidi isolates; `uppercase` is a no-op in 5 of 12 locales) and
   the 429-storm caveat (one browser per server instance — the 2026-07-22 "384 JS errors" were
   100% rate-limit console lines and ZERO uncaught exceptions, an artifact of that run's own
-  parallelism). ROW 5's remaining step is a DECISION, and ROW 3 delivers its input:
+  parallelism). **THE ROW-8 STRETCH MATRIX EXECUTED 2026-08-20** (the row itself closed
+  2026-08-13 against its literal bar; this discharges the recorded stretch target —
+  `docs/audit/UI_CLICKTHROUGH_2026-08-20.md` + the 4 shipped.csv rows): the 375px P1 FIXED
+  (runner's flagship-375 walk green ×5), a state-D REAL-import fixture (post-import content
+  path, 6/6 redesign markers), the Reader drilled, ALL 17 themes (found+fixed the AI pill's
+  ai-off label below AA on 13/17 — the 55% fg-mix), five lens drills (found+fixed
+  corpus-deduced agenda events invisible at default filters), the a11y axis (axe-core
+  4.13.0 vendored+registered; #oo-tip aria-hidden lifecycle fix; 5 P2s filed), and 5 of the
+  9 honesty rules standing as instruments; still open there: the 12-locale sweep (4
+  covered), rule 9 (adversarial screenshot reading), and the Gecko/AppVM bar — every stamp
+  stays "Chromium-verified (remote sandbox) · awaiting human UX pass".
+  ROW 5's remaining step is a DECISION, and ROW 3 delivers its input:
   `criteria-calibration.json` is already an all-diagnostics bundle member
   (`src/api/diagnostics.py:3529`), so the queued diagnostics run CONTAINS the report row 5's
   execution is gated on — sequence = bundle → session proposes criteria against real specimens
