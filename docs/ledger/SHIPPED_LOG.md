@@ -5008,3 +5008,110 @@ backups, not `git checkout`, and the restore verified.
 self-hiding Setup card and the rebuilt bench panel are guarded and syntax-clean, and a
 click-through is owed — particularly the backend-switch case, where the Setup card is
 meant to come back naming the engine that is missing.
+
+
+---
+
+## 2026-08-20 — the omnibar's two slow paths, a capped total, and an instrument for the next stall
+
+The 2026-07-21 field brief listed seven findings. **Five were already closed and one had
+its premise retracted**, which is the first thing worth recording: that brief's own
+banner, three weeks old, read "still fully unaddressed", and item 1's map-coverage half,
+item 2 and item 5's building blocks had all landed within days of it being written. The
+incoming session brief inherited the staleness and repeated it. Verdicts were taken from
+the code, with anchors, and written back into the brief so the next reader hits them at
+the point of the claim.
+
+**The retraction is the one to remember.** Item 6 named five sources at 100%
+`outlier_rate` and reasoned that such a rate "is much more consistent with broken
+extraction than with legitimately atypical content". The auditor's own arithmetic had
+made that unsafe: `robust_stats` p90 is nearest-rank, so a cohort with zero spread has
+p90 exactly 0.0, `value > p90` degenerates to `value > 0`, and one pathological article in
+~2,000 scores 100%. Fixed 2026-08-02. Building the proposed hand-check tool would have
+been building on a withdrawn signal, so it was not built. The general form: the staleness
+guard is usually run as *is this already built* — it also needs running as *is the
+measurement this rests on still one the code would produce today*, because fixing an
+instrument silently retracts every finding it reported.
+
+**The omnibar keyword group.** `normalized_term LIKE 'abc%'` per debounced keystroke, over
+~5M keys, twice — a count and an ordered top-3. SQLite rewrites a prefix LIKE into a range
+scan only when the index collation matches the LIKE case-sensitivity, and with
+`case_sensitive_like` off (the default) that means NOCASE; `idx_keyword_normalized_term`
+is BINARY, so the rewrite could never fire. A NOCASE index turns both into range
+SEARCHes: **126.7 ms → 0.02 ms** and **140.8 ms → 0.22 ms** at 2M rows.
+
+**That index is characterised and NOT shipped**, and the reason is worth more than the
+index. Wiring it into the boot self-heal alone flipped `alembic_stamp_align`'s verdict
+to `schema-behind`: that check compares the LIVE schema against the MODELS, so an index
+the self-heal creates and no model declares reads as drift — which is why every existing
+`HOT_INDEXES` entry carries a "mirrored on the model + migration" comment, a line I had
+read as tidiness. Mirroring it does not resolve it either: `COLLATE NOCASE` makes it an
+EXPRESSION index, and alembic's autogenerate cannot compare those — it warns that the
+dialect "should either skip expression indexes or provide a custom implementation" and
+then reports a permanent spurious "changed index". So this needs a migrations-layer
+decision, which is another lane's territory this wave. It is handed over with its DDL,
+its measurement, its blocker and its tests, and the test that used to assert
+registration now pins the *current* state so it fails the day somebody wires it.
+
+Two things I had wrong by recall and fixed by measuring, which is the transferable part. I
+"remembered" that an `ESCAPE` clause disqualifies the LIKE optimization — it does not,
+through SQLite 3.45. And the first bench omitted `idx_keyword_frequency`, so the planner
+took a different pre-fix path and the before-number moved once the table's real index set
+was present. The recorded *a standalone SQL probe is a lookalike* lesson has a third axis
+beyond table stats and ANALYZE state: **the rest of the table's indexes**. The shipped
+plans were then taken from the statements the production path actually emits, captured
+with a `before_cursor_execute` listener. Note also the vocabulary: the pre-fix count read
+`SCAN … USING COVERING INDEX`, which this repo's own classifier calls healthy — index-only
+is not bounded, and a full traversal of a covering index over 5M rows is still full.
+
+**The capped total.** `total: len(ids)`, where `search_ids` carries `limit=20000`. On any
+corpus where a common term matches more, the omnibar published a flat 20000 as a count —
+another instance of exactly what the 2026-07-18 ruling banned and asked a sweep for. The
+shape to grep for is not a visible `.limit(n)` at the call site but a **helper whose own
+signature caps**, read by a caller treating the returned length as a measurement. The fix
+is free in the common case (under the cap `len(ids)` IS exact) and pays for a count only
+when the list actually filled — the only case where its length was ever a lie. **Stated
+plainly: this is not a speedup.** A broad term costs 438 ms against 415 ms on a 300k-doc
+fixture, +5.6%, for a right number instead of a wrong one.
+
+The test for it was vacuous first, and the reason generalises: compressing the module
+constant does not reach the branch, because the helper's `limit` is a **default argument
+bound at definition time** — the fetch still returned every row, `len(ids)` was still
+exact, and the guard passed against the reverted fix. The list has to be genuinely
+truncated.
+
+**Two more in the same endpoint.** Articles and wiki each ran the same ranked FTS fetch —
+this module's own docstring admitted the cost — so it now runs once per keystroke. And
+`search_ids` answers `None`, not `[]`, for a query with no positive content; both groups
+took `len()` of it, so a query like `--` raised inside the per-group guard and came back
+carrying only keywords, sources and law. The omnibar answered as though articles and
+Wikipedia had never been searched, with nothing in the payload saying so. Confirmed by
+driving the pre-fix shape rather than inferring it — and it was worse than first written
+up, which is why the write-up changed: I had said the articles group, and it is both.
+
+**Stall attribution (item 3).** The 2026-07-11 cluster is not answerable retroactively —
+`collect_perf` keeps roughly one pass, the latency reservoir is a rolling sample, and the
+evidence had aged out before the export was read. So the deliverable is the instrument,
+not the answer. Any request over `OO_STALL_THRESHOLD_MS` is filed with a point-in-time
+reading of the three things that can hold this app's single worker — the writer gate, the
+event loop, the slow-query log — plus the cause classes those readings SUPPORT. Classes
+are a LIST, because a long synchronous write jams the gate *and* blocks the loop and
+picking one discards the half that explains the other. `undetermined` is a real verdict,
+reached whenever the evidence supports nothing, never a bucket absorbing the remainder.
+Hooked at `latency.record()`, outside its lock, since the readings take other modules'
+locks. Verified before wiring that `write_gate.stats()` cannot block behind a long write:
+an instrument that blocks on the pathology it measures is worse than none.
+
+**Verified.** Full suite on py3.13 in a real venv — endpoint tests RAN rather than being
+deferred to CI, after `pip install --upgrade cffi` cleared the recorded pyo3 panic.
+ruff clean at CI's own scope, mypy 124 (0 in the changed files), bandit exit 0, the
+diagnostics completeness ratchet green with the new member. `test_doctor_healthy_returns_zero`
+fails in the subset — reproduced on clean `main` with the changes stashed and passing
+alone, i.e. the documented `TestClient` lifespan order-pollution, not this wave.
+
+Mutations, all restored from `cp` backups with the restore verified: reverting the exact
+total, counting unconditionally, un-sharing the FTS, and the four classifier conditions.
+One survived at first — "an unreadable instrument is a gap" — because the fixture returned
+only `{available, reason}` and so could not discriminate; a probe that populates some
+fields and *then* fails is the case the check exists for, and the fixture now carries
+stale numbers beside `available: false`.
