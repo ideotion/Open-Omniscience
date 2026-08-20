@@ -626,6 +626,43 @@
        chart fills its cell at a legible size (field feedback 2026-08-07, item 8). */
     .gov-ind-spark { margin-top:6px; }
     .gov-ind-spark svg { width:100%; height:auto; aspect-ratio:300/120; }
+
+    /* Compare (ruling 4) and Groups (rulings 32/43/44/45/47), field feedback 2026-08-07.
+       Every colour here is theme-DERIVED (color-mix over the existing tokens) rather than
+       a fixed hue: a hardcoded value has failed WCAG AA on the light themes twice in this
+       project (--caveat 8/17, --warn 6/17), and a token that is mixed toward --fg tracks
+       whatever the active theme sets. */
+    .gov-cmp { width:100%; border-collapse:collapse; font-size:13px; }
+    .gov-cmp th, .gov-cmp td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--border); }
+    .gov-cmp thead th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+    .gov-cmp tbody th { font-weight:400; color:var(--muted); max-width:340px; }
+    .gov-cmp-v { font-weight:600; }
+    .gov-cmp-cat th { font-size:11px; text-transform:capitalize; color:var(--fg);
+      background:var(--panel2); font-weight:600; letter-spacing:.02em; }
+    /* A published gap. Muted, never styled as a zero or as an error. */
+    .gov-cmp-gap { color:var(--muted); }
+
+    #gov-lens { gap:8px; align-items:center; }
+    #gov-lens button[aria-pressed="true"] { border-color:var(--accent);
+      background:color-mix(in srgb, var(--accent) 16%, var(--panel2)); }
+    .gov-agg-head, .gov-grp-head { font-size:14px; margin-bottom:6px; }
+    .gov-grp-vintage, .gov-grp-cov, .gov-grp-spread { font-size:11px; color:var(--muted); margin-bottom:4px; }
+    .gov-grp-override { margin:8px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:11px; }
+    .gov-strat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; margin-top:10px; }
+    .gov-strat { border:1px solid var(--border); border-radius:8px; padding:9px 11px; background:var(--panel2); }
+    /* The default strategy is a starting VIEW, so it gets a quiet accent border and the
+       word "opens here" — never a tick, a crown or a first position, all of which read
+       as a winner among strategies this app deliberately refuses to rank. */
+    .gov-strat-default { border-color:var(--accent); }
+    /* A refused strategy is DASHED, never dimmed. Its whole content is the REASON it
+       was refused, which is the sentence the reader most needs; element opacity would
+       composite that text toward the panel and is what made .ag-cal fail AA on 16 of 17
+       themes. The explicit 1 is a guard against a future "grey it out". */
+    .gov-strat-refused { opacity:1; border-style:dashed; }
+    .gov-strat-label { font-size:11px; color:var(--muted); }
+    .gov-strat-val { font-size:18px; font-weight:600; margin-top:3px; }
+    .gov-strat-basis { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    .gov-strat-why { font-size:10px; color:var(--muted); line-height:1.4; margin-top:4px; }
     .vitals-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
     .vitals-pop .vr { display:flex; align-items:center; justify-content:space-between; gap:10px;
       padding:4px 0; border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); }
