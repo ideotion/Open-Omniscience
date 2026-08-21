@@ -19,7 +19,6 @@ not hide inside corpus-wide figures that should be able to exclude it.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, func, select
