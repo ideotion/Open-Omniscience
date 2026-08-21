@@ -502,14 +502,16 @@ def keyword_log(
 
             # Article -> source, the same codec-free way (covering index on
             # source_id), for the per-source concentration diagnostic below.
-            art_src: dict[int, int] = dict(
-                db.execute(text("SELECT id, source_id FROM articles")).fetchall()
-            )
-            src_articles: dict[int, int] = dict(
-                db.execute(
+            art_src: dict[int, int] = {
+                aid: sid
+                for aid, sid in db.execute(text("SELECT id, source_id FROM articles")).fetchall()
+            }
+            src_articles: dict[int, int] = {
+                sid: n
+                for sid, n in db.execute(
                     text("SELECT source_id, COUNT(*) FROM articles GROUP BY source_id")
                 ).fetchall()
-            )
+            }
 
             # Dominant signature language per keyword from ONE index-only scan
             # of (keyword_id, article_id), ordered so each keyword's counts can
@@ -597,9 +599,10 @@ def keyword_log(
 
             # Stored-language fallback for keywords with no mentions (kept from
             # the previous contract: they export with zero counts, quota applies).
-            stored_lang: dict[int, str | None] = dict(
-                db.execute(text("SELECT id, language FROM keywords")).fetchall()
-            )
+            stored_lang: dict[int, str | None] = {
+                kid: lang
+                for kid, lang in db.execute(text("SELECT id, language FROM keywords")).fetchall()
+            }
 
             # Totals, mentions-desc — from the ONE mention scan above (no second
             # GROUP BY scan); the quota decides survivors ON THE FLY, so the
@@ -688,11 +691,12 @@ def keyword_log(
             sids = sorted({s["source_id"] for s in suspects})
             if sids:
                 marks = ",".join(str(int(i)) for i in sids)
-                src_names = dict(
-                    db.execute(
+                src_names = {
+                    sid: name
+                    for sid, name in db.execute(
                         text(f"SELECT id, name FROM sources WHERE id IN ({marks})")  # nosec B608 - interpolant is a joined list of int()-cast ids built in this function, never input
                     ).fetchall()
-                )
+                }
             per_source_concentration = [
                 {
                     "term": meta.get(s["keyword_id"], ("?",))[0],
@@ -2887,6 +2891,38 @@ def law_coverage(
     return JSONResponse(body)
 
 
+@router.get("/law-ingest")
+def law_ingest(
+    download: bool = Query(False), db: Session = Depends(get_db)
+) -> JSONResponse:
+    """Law-ingest reliability (ruling 34c, field feedback 2026-08-07).
+
+    The 2026-08-07 law fixes are self-healing and invisible: the strip stage re-reads a
+    tracked document's baseline on its next successful poll, and the corpus sync clears a
+    publication date that was really a poll date. Both are correct; neither is reported
+    anywhere, so "has this actually reached all 23 documents?" had no answer -- and the
+    documents most likely to be missed are the ones whose portal cannot be fetched.
+
+    Read-only and network-free: every field comes from stored data or a bundled fixture.
+    See ``src.law.ingest_report`` for why chrome residue is NOT a pre-strip detector.
+    With ``download=1`` it returns as a dated attachment."""
+    from src.law.ingest_report import law_ingest_report
+
+    payload = law_ingest_report(db)
+    body = envelope(
+        kind="law-ingest",
+        query={},
+        count=payload.get("documents", 0),
+        payload=payload,
+    )
+    if download:
+        fname = f"oo-law-ingest-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+        return JSONResponse(
+            body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+        )
+    return JSONResponse(body)
+
+
 @router.get("/storage-footprint")
 def storage_footprint_report(download: bool = Query(False)) -> JSONResponse:
     """The COMPLETE on-disk footprint across ALL app stores, ITEMIZED per component (A12b):
@@ -2956,6 +2992,23 @@ def request_latency() -> dict:
     from src.monitoring.latency import summary as _summary
 
     return _summary()
+
+
+@router.get("/stall-forensics")
+def stall_forensics_report(limit: int = Query(50, ge=1, le=200)) -> dict:
+    """Requests that blew the stall budget, each with what the machine was doing.
+
+    The 2026-07-21 field brief recorded a cluster of multi-hour requests and 503s on
+    one afternoon and could not say why: the instruments that would have known are
+    windowed, so the evidence had aged out before anyone read the export. This log
+    takes the reading AT the stall -- single-writer gate, event loop, slowest
+    statement -- and files the cause classes those readings support. Correlation,
+    never proof: a stall none of the three can see is filed ``undetermined`` rather
+    than assigned to the nearest class. In-memory and bounded; a restart empties it.
+    """
+    from src.monitoring.stall_forensics import report as _report
+
+    return _report(limit=limit)
 
 
 @router.get("/slow-queries")
@@ -3402,6 +3455,9 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("freshness.json", lambda: external_freshness()),
         # Recursive-augmentation logs #1-#5 (maintainer 2026-07-02).
         ("request-latency.json", lambda: request_latency()),
+        # Cause attribution for the requests the latency log shows as stalls. Cheap:
+        # an in-memory ring read, no DB work, so it needs no deadline of its own.
+        ("stall-forensics.json", lambda: stall_forensics_report(limit=200)),
         ("slow-queries.json", lambda: slow_queries(explain=1, db=db)),
         ("schema-drift.json", lambda: schema_drift_report(db=db)),
         ("corpus-integrity.json", lambda: corpus_integrity_report(sample=500, full=0, db=db)),
@@ -3540,6 +3596,10 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # S5 (law-vertical brief 2026-07-17): per-jurisdiction law-tracking coverage/
         # freshness — "is law working?" answered by one JSON, in the bundle by default.
         ("law-coverage.json", lambda: law_coverage(download=False, db=db)),
+        # Ruling 34c (2026-08-07): did the law fixes actually reach the data? The strip
+        # re-read and the poll-date clear both heal quietly on a document's next
+        # successful poll, so an unreachable portal never heals and nothing said so.
+        ("law-ingest.json", lambda: law_ingest(download=False, db=db)),
         # S6.1 (Leads-calibration, 2026-07-18): the CURRENT Home Leads feed as a
         # bounded, real-facts report — the measurement loop for the card system.
         ("leads-quality.json", lambda: leads_quality(download=False, db=db)),
@@ -3708,12 +3768,14 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/storage-composition": "storage-composition.json",
     "/frontend-errors": "frontend-errors.json",
     "/request-latency": "request-latency.json",
+    "/stall-forensics": "stall-forensics.json",
     "/slow-queries": "slow-queries.json",
     "/schema-drift": "schema-drift.json",
     "/integrity": "corpus-integrity.json",
     "/debug-bundle": "debug-bundle.json",
     "/p0-validation/last": "p0-validation.json",
     "/law-coverage": "law-coverage.json",  # S5 of the law-vertical brief 2026-07-17
+    "/law-ingest": "law-ingest.json",  # ruling 34c (field feedback 2026-08-07)
     "/leads-quality": "leads-quality.json",  # S6.1 of the Leads-calibration brief 2026-07-18
     "/card-audit": "card-audit.json",  # the DEEP card-system audit (summary depth)
     "/bulletin-preview": "bulletin-weekly.json",  # Bulletin Layer A, weekly period

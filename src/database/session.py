@@ -206,6 +206,7 @@ def init_db() -> None:
         ensure_keyword_extractor_column,
         ensure_keyword_mention_source_column,
         ensure_article_quarantine_columns,
+        ensure_article_top_keyword_columns,
         ensure_law_document_language_columns,
         ensure_law_text_columns,
         ensure_merge_batch_source_digest,
@@ -236,6 +237,10 @@ def init_db() -> None:
 
     # Secondary/deduced language column (field §2.6; self-heal, populates forward).
     ensure_article_detected_language_column(engine)
+
+    # Own-top-keyword precompute columns (rulings 23/38/39; self-heal, no backfill) --
+    # BEFORE ensure_hot_indexes, whose idx_article_top_keyword is built over them.
+    ensure_article_top_keyword_columns(engine)
 
     # Denormalised keyword_mentions.source_id (flood/bury card; self-heal, no backfill).
     ensure_keyword_mention_source_column(engine)

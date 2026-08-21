@@ -39,8 +39,57 @@ from pathlib import Path
 _STATIC = Path(__file__).resolve().parent.parent / "src" / "static"
 
 
+def app_modules() -> list[str]:
+    """The app's JS module file names, in the order ``index.html`` loads them.
+
+    Read from ``index.html`` itself rather than kept as a list here, for the same
+    reason the i18n scope guard exists: a hand-maintained list drifts from the
+    thing it claims to describe, silently. Whatever the browser loads is what a
+    source assertion is entitled to see.
+    """
+    html = (_STATIC / "index.html").read_text(encoding="utf-8")
+    return [
+        m.group(1)
+        for m in re.finditer(r'<script src="/static/(app(?:-[a-z0-9-]+)?\.js)"', html)
+    ]
+
+
+def app_js() -> str:
+    """The whole UI engine's source, as one string.
+
+    ``src/static/app.js`` was decomposed into ordered modules (S-3, 2026-08-20 --
+    ``docs/design/APPJS_DECOMPOSITION_2026-08-20.md``). The split is a pure
+    CONTIGUOUS slice: the concatenation of the modules, in load order, is
+    byte-identical to the file that preceded it. So for a test asserting against
+    source, this string is the exact semantic equivalent of the old single file.
+
+    WHY THIS MATTERS MORE THAN CONVENIENCE. 151 test sites read that file, and
+    161 test files assert against JavaScript source. A test that kept reading one
+    module would still FAIL LOUDLY on a positive assertion -- but a NEGATIVE one
+    (``assert_absent``, ``X not in app``) would pass **for free**, against a file
+    that no longer contains the thing it is checking. That is precisely the
+    vacuity failure this module exists to end, and the split would have
+    reintroduced it at 151 sites at once, silently. Reading the engine as a whole
+    keeps every assertion, positive and negative, exactly as meaningful as it was.
+
+    Joined with ``""`` -- each module keeps its own trailing newline, so the
+    concatenation is byte-exact rather than newline-shifted, and any ``.index()``
+    offset or line count a caller computes stays consistent with the browser's view.
+    """
+    mods = app_modules()
+    assert mods, "index.html loads no app module -- the script tags moved or were renamed"
+    return "".join((_STATIC / m).read_text(encoding="utf-8") for m in mods)
+
+
 def read_static(name: str) -> str:
-    """The text of a file under src/static (app.js, reader.js, index.html...)."""
+    """The text of a file under src/static (reader.js, index.html...).
+
+    ``"app.js"`` is accepted as the name of the UI ENGINE, which is now several
+    ordered modules rather than one file, and returns :func:`app_js`. Callers mean
+    "the engine's source" whenever they ask for it, and that is what they get.
+    """
+    if name == "app.js":
+        return app_js()
     return (_STATIC / name).read_text(encoding="utf-8")
 
 

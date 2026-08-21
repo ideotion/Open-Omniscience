@@ -14,10 +14,11 @@ string-assertion wiring guard over the static assets (browser-unverified per for
 from __future__ import annotations
 
 from pathlib import Path
+from tests.js_source_helper import app_js
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 _HTML = (_STATIC / "index.html").read_text(encoding="utf-8")
-_JS = (_STATIC / "app.js").read_text(encoding="utf-8")
+_JS = app_js()
 
 
 def test_ring_map_hosts_exist():

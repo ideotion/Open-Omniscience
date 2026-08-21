@@ -3062,6 +3062,68 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     "lower it when it can drop" is not a licence to lower it when it cannot, which
     would hand the next drift a free slot.
 
+  - **A TERM WHOSE COUNT EQUALS THE ARTICLE COUNT IS A FACT ABOUT THE CHANNEL, NOT ABOUT
+    THE CORPUS — and the argument FOR keeping it will already be written into the code
+    and a passing test (2026-08-20, official-statistics series as Articles):** ruling
+    5/30/31 makes each series an ordinary Article, so ~9,800 templated documents enter
+    the shared keyword index. The body carried `{agency} · {series_id}`, two facts a
+    reader might plausibly search for, once each; the module docstring said the
+    producer's name "is exactly what ruling 30 asks for" and that the code had to stay
+    because "dropping it from the body would remove it from FTS too". Measured over 1,298
+    real series with the real extractor, that line was **a THIRD of the channel's entire
+    term volume** (30,358 -> 20,372) and held ranks #1/#2/#3 — `world`, `bank`,
+    `world bank` at 1,298 each, i.e. exactly one per article. Both halves of the argument
+    were wrong differently: a per-article constant ranks by how much of ONE THING you
+    have, and the code was never searchable in the keyword index at all, because the
+    tokenizer splits `SP.DYN.LE00.IN` on its dots and indexes `dyn`/`le00`/`totl` — the
+    DEBRIS of an identifier. **THE TELL IS THE ARITHMETIC: when a term's mention count
+    equals the article count to the unit, it is scaffolding, whatever it says.** Two
+    riders. (a) **Re-measure AFTER the change, not only before:** removing the line also
+    collapsed the near-dup clustering that had motivated the audit — 9 clusters with a
+    biggest of 36 down to 7 with a biggest of 3 — so the boilerplate was MANUFACTURING
+    the similarity, not riding it, which no amount of reasoning predicted. (b) State the
+    loss and CHECK the replacement: FTS covers `title, content` only, so `?query=World
+    Bank` and `?query=SP.DYN.LE00.IN` now return 0, and `?source=…` / `?tags=statistics`
+    were each verified to return all 1,298 rather than assumed to.
+
+  - **A GUARD CAN BE READING THE PRODUCER'S OWN TEXT AND CALLING IT YOURS (2026-08-20,
+    the same slice):** stripping the metadata line left a body of bare numbers — a value
+    without its unit — so `({unit})` was appended and guarded with `"(years)" in body`.
+    The mutation that DELETES the unit **passed**, because the World Bank's own label is
+    "Life expectancy at birth (years)" (26 of the catalog's 36 read that way), so the
+    shipped code would have printed "(years) (years)" while the test read the producer's
+    parenthetical and reported success. GENERAL FORM: when your output CONCATENATES your
+    text with someone else's, a fixture in which the two are indistinguishable cannot
+    test which one produced the result — split the assertions by which source is supposed
+    to supply it. The repair also has to key on the OTHER party's convention rather than
+    a similarity heuristic: a substring check was measured and rejected because labels
+    spell units out in words while the unit field uses symbols ("current US$" vs "USD",
+    "metric tons per capita" vs "t/capita"), so it missed four of ten and re-introduced
+    the doubling on exactly those.
+
+  - **AN IDENTITY FALLBACK FOR A TEMPLATE IS A BROKEN FRAME, AND A HARNESS THAT DOUBLES
+    THE i18n HELPERS CANNOT SEE IT (2026-08-20, same slice):** a new handler opened with
+    `const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x)`, so before i18n
+    loads a `tf("{created} new · …", vars)` renders the literal `{created}` to the
+    reader — the broken frame the composite-string rule forbids. `_govTf` did it
+    correctly thirty lines up, and a grep afterwards found this was the ONLY `((x) => x)`
+    template fallback in 20,000 lines, i.e. the file's own convention was already right
+    and I had written past it. What caught it was that the node harness EXTRACTS the real
+    helpers from `app.js` rather than stubbing them; an identity double would have agreed
+    with the defect. Reach for the module's existing helper before writing a fallback,
+    and extract rather than double whatever the code under test calls.
+
+  - **A SCRIPTED CLICK IS NOT A CLICK, AND A FALSE NEGATIVE FROM ONE IS INDISTINGUISHABLE
+    FROM A DEFECT (2026-08-20, verifying the publish-anyway override):** driving the
+    control with `eval_on_selector_all("#gov-grp-body button", "els => els[0].click()")`
+    produced no request, no re-render and six standing refusals — which reads exactly
+    like "the override is broken", and the instinct on seeing it is to go and fix code
+    that is already correct. A real `page.click()` on the same selector fired it
+    immediately: `allow_incomplete=true` on the wire, all six strategies computed, and
+    the panel labelled itself `PARTIAL — members computed: 2 of 42` with the missing
+    members named. Use the framework's own click; and when a UI check fails, rule out the
+    harness before believing the finding.
+
   - **AN ENUMERATOR THAT DOES NOT LIST THE APP'S OWN DEFAULT MAKES THE APP BLIND TO ITS
     OWN WRITES — and the damage lands somewhere else entirely (2026-08-11, the Ollama
     store):** the 2026-08-04 move pointed a spawned daemon at `data/models/ollama`, and
@@ -4262,6 +4324,209 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     a ~1M-entry dict per call, and the memory guard polls only BETWEEN batches — so it
     cannot interrupt the scan it most needs to. A guard that runs between the expensive
     things is not a guard on the expensive thing.
+  - **SQLite's LIKE OPTIMIZATION NEEDS A `COLLATE NOCASE` INDEX, AND A "SCAN … USING
+    COVERING INDEX" IS WHAT ITS ABSENCE LOOKS LIKE (2026-08-20, the omnibar keyword
+    group):** `x LIKE 'abc%'` is rewritten into a range scan only when the indexed
+    column's collation matches the LIKE case-sensitivity — and since
+    `case_sensitive_like` is OFF by default, that means the index must be NOCASE. The
+    keywords table's index is BINARY, so the rewrite could never fire and every
+    debounced omnibar keystroke traversed all ~5M keys, twice. Measured at 2M rows:
+    126.7 ms → 0.02 ms (count) and 140.8 ms → 0.22 ms (top-3). **TWO THINGS I GOT WRONG
+    BY RECALL AND FIXED BY MEASURING**, which is the transferable half: I "remembered"
+    that an `ESCAPE` clause disqualifies the optimization — it does NOT, at least
+    through SQLite 3.45; and my first bench omitted `idx_keyword_frequency`, so the
+    planner picked a different pre-fix path and the before-number moved once the
+    table's REAL index set was present. The recorded "a standalone SQL probe is a
+    lookalike" lesson has a third axis beyond stats and ANALYZE state: **the rest of
+    the table's indexes.** Reproduce the index set, then capture the statements the
+    production path emits (`before_cursor_execute`) and EXPLAIN those. And note the
+    plan vocabulary: the pre-fix count read `SCAN … USING COVERING INDEX`, which the
+    repo's own classifier calls healthy — index-only is not the same as bounded, and a
+    full traversal of a covering index over 5M rows is still a full traversal.
+    **THE INDEX IS CHARACTERISED AND NOT SHIPPED, and the reason is the durable half:
+    an entry in `HOT_INDEXES` is not optional-to-mirror on its model.** Wiring the
+    self-heal alone flipped `alembic_stamp_align`'s verdict to `schema-behind`, because
+    that check compares the LIVE schema against the MODELS and an index the boot
+    self-heal creates but no model declares reads as drift — which is why every
+    existing entry in that dict carries a "mirrored on the model + migration" comment.
+    Mirroring it does not resolve it either: **`COLLATE NOCASE` makes it an EXPRESSION
+    index, and alembic's autogenerate cannot compare those** — it warns "should either
+    skip expression indexes or provide a custom implementation" and then reports a
+    permanent spurious "changed index". So a NOCASE/expression index needs a
+    migrations-layer decision (an `include_object` exclusion or equivalent), not just a
+    DDL string. GENERAL FORM: before adding to a boot-self-heal index dict, check what
+    ELSE compares the live schema to the models — the dict is not a free-standing
+    performance knob, it is one of three places that must agree.
+  - **THE "NEVER CAPPED FIGURES" SWEEP HAS MORE INSTANCES, AND THE ONE THAT BITES IS A
+    `limit=` DEFAULT (2026-08-20, the omnibar articles total):** the 2026-07-18 ruling
+    asked for a sweep for "any other displayed figure that is secretly a cap". Here it
+    was `total: len(ids)` where `ids = search_ids(...)` and `search_ids` carries
+    `limit=_MAX_CANDIDATES` (20000) — so on any corpus where a common term matches more,
+    the omnibar published a flat 20000 as a count. The shape to grep for is not
+    `.limit(n)` at the call site (which is visible) but a **helper whose own signature
+    caps**, read by a caller that treats the returned length as a measurement. THE FIX
+    IS FREE IN THE COMMON CASE: under the cap `len(ids)` IS exact, so only a list that
+    actually FILLED the cap pays for a count — which is also the only list whose length
+    was ever a lie. **AND STATE THE COST HONESTLY: this is not a speedup.** Measured on
+    a 300k-doc FTS fixture, a broad term costs 438 ms against 415 ms, +5.6% for a right
+    number instead of a wrong one — worth it, and not something to dress as performance
+    work. **THE TEST TRAP, which cost a vacuous guard:** compressing the module CONSTANT
+    is not enough to reach the branch, because the helper's `limit` is a DEFAULT
+    ARGUMENT bound at definition time — the fetch still returned every row, `len(ids)`
+    was still exact, and the first draft passed against the reverted fix. The list must
+    genuinely be truncated.
+  - **A FINDING CAN BE RETRACTED BY A LATER FIX — re-check a brief's PREMISE, not just
+    whether its item is done (2026-08-20, the five 100%-outlier sources):** the
+    2026-07-21 field brief named five sources at 100% `outlier_rate` and reasoned that
+    "a 100% rate across a real sample is much more consistent with broken extraction",
+    proposing they be hand-checked. That inference was made unsafe by the auditor's own
+    arithmetic: `robust_stats` p90 is nearest-rank, so on a cohort with zero spread p90
+    IS 0.0, the tail test `value > p90` degenerates to `value > 0`, and ONE pathological
+    article in ~2,000 scores 100%. Root-caused and fixed 2026-08-02. Building the
+    proposed tool would have been building on a withdrawn signal. GENERAL FORM: the
+    staleness guard is usually run as "is this already built?" — run it also as "is the
+    MEASUREMENT this item rests on still one the code would produce today?", because a
+    fix to an instrument silently retracts every finding that instrument reported. Same
+    pass, same brief: five of its seven items were already closed and its own
+    three-week-old banner said "still fully unaddressed", so a status line ages faster
+    than the finding it describes.
+  - **A WALK'S INSTRUMENT PASSES OR FAILS FOR REASONS ABOUT THE INSTRUMENT — five
+    lookalikes from one matrix run, and the axis-widening payoff that justified it
+    (2026-08-20, gate row 8's stretch expansion):** (a) `querySelector(".pill.warn")`
+    measured the AI PILL — an element that carries those classes for footprint styling
+    while its STATE rules override the colour per state — and filed a P1 naming the
+    `--warn-fg` token whose fix was intact (5.78:1 on the theme it accused); the first
+    match of a class selector can be an element whose classes mean something else, so
+    exclude it (`:not(#llm)`) and measure the state label as its OWN claim. (b) A
+    surface anchored on a BY-CONSTRUCTION-EMPTY element (`#ux-imp-summary` before any
+    import) reads not-visible and fails the reachability walk it was meant to serve —
+    anchor reachability on the container, and let a dedicated fixture (state D's real
+    import) claim the content. (c) A breakpoint walk that NAVIGATES at 375px tests
+    navigation-at-375 — a different claim, and one the sidebar legitimately fails below
+    600px per invariant #2's own floor — so the settings-gear click times out and three
+    of five flagship surfaces read blocked; navigate at desktop width, then measure the
+    OPENED surface at the target width. (d) A specimen-search that derives a CSS
+    selector from tag/class hands the reader the DOCUMENT'S first `td`, not the
+    specimen's — the recorded non-unique-needle trap as a selector; tag the found node
+    with a probe attribute and address that. (e) A sidecar API probe shares 127.0.0.1
+    with the harness's own browser, so the app's rate limiter (a feature under test)
+    can 429 it past any polite backoff — read ids from the DOM the browser already
+    rendered. PLUS the f-string continuation trap that produced two of the five: in a
+    multi-line `page.evaluate(f"... {{ ..." "... }}")` the PLAIN-string continuation
+    line's `}}` stays a literal `}}` (only f-strings collapse braces), a JS
+    SyntaxError — and after fixing it in one evaluate it was found AGAIN in a sibling
+    drill in the same file, the recorded fixing-a-property-in-one-place failure. THE
+    PAYOFF THAT MAKES THE MATRIX WORTH ITS COST: widening the theme axis 5 → 17 found
+    the AI pill's ai-off label at raw `var(--err)` below AA text contrast on 13 of 17
+    themes (worst solar 2.41:1 against the pill's own 8%-err tint) — invisible to every
+    earlier 5-theme run; the repair is the recorded mix-toward-`--fg` pattern (55% =
+    the smallest 5-point step clearing 4.5:1 on every theme, worst 4.82:1), and the
+    state was never colour-only (the diagonal bar + hover title carry it). And the
+    deduced-events find is the same family app-side: `#agenda-subonly` defaults CHECKED
+    and its bypass named only `imported`, so the corpus-DEDUCED category — whose
+    synthetic calendar can never be subscribed — was invisible in every agenda view at
+    default settings while the category filter still OFFERED "deduced" as an empty
+    lens; a filter must never offer a category its default state structurally
+    suppresses.
+  - **A MAX-GATE RATCHET CANNOT DETECT ITS OWN INSTRUMENT GOING BLIND — check the count is
+    UNCHANGED, never merely under the bar (2026-08-20, splitting the UI engine past the i18n
+    scope):** the two JS i18n ratchets are maxima (`--max-untranslatable 561`,
+    `--max-unkeyed-t-calls 298`), and finding I-1 already records this instrument once reading a
+    green 100% while pointed at the wrong file. Splitting `app.js` into 17 modules pointed it at
+    the wrong file AGAIN — and this time the failure would have passed more comfortably than
+    success: fewer files scanned means fewer strings found means a LOWER count, under the bar,
+    with the script printing *"the ratchet can now be lowered"*, which reads as progress. The
+    direction of a max-gate is exactly backwards for detecting blindness. So the check that
+    means anything is that the count is IDENTICAL — 561/298 at every wave, with every module
+    present in the per-file breakdown — not that the gate is green. GENERAL FORM: for any
+    ratchet expressed as a maximum over a measured population, a SHRINKING POPULATION and an
+    IMPROVING CODEBASE produce the same movement, so a change that alters WHAT IS MEASURED owes
+    a same-count check rather than a same-verdict one.
+  - **SPLITTING A FILE THAT TESTS ASSERT AGAINST TURNS EVERY NEGATIVE ASSERTION VACUOUS, AT
+    EVERY SITE AT ONCE (2026-08-20):** 80 test files now read the UI engine through the one helper, at 216
+    call sites. After a split, a POSITIVE assertion (`"function X" in app`) fails
+    loudly and gets fixed; a NEGATIVE one (`assert_absent`, `X not in app`) passes FOR FREE
+    against a file that no longer contains the thing it checks — the exact vacuity failure
+    `js_source_helper` exists to end, reintroduced at 151 sites in one commit and silently. The
+    fix is a helper returning the CONCATENATION of the modules in load order, read from
+    `index.html` so it cannot drift; because the split is a contiguous slice, that string is the
+    semantic equivalent of the old file and every assertion keeps exactly its old meaning. THE
+    QUIETER HALF: one reader wrapped its read in `if path.exists()` and SKIPPED the engine
+    rather than failing — a guard that turns a missing file into a smaller scope is the same
+    hazard wearing a safety belt, and only that file's POSITIVE assertions noticed.
+  - **`T == "\n".join(lines)`, SO A NON-FINAL SLICE OWES EXACTLY ONE SEPARATOR — and adding it
+    conditionally loses a newline whenever the slice ends on a BLANK line (2026-08-20):**
+    splitting a file into contiguous slices looks like pure bookkeeping, and the obvious
+    `if not text.endswith("\n"): text += "\n"` is wrong: when the slice's last line is empty the
+    join ALREADY ends in a newline representing that blank line's own terminator, so the
+    separator is never added and one byte vanishes at the seam. Caught on the FIRST run by a
+    concatenation-must-be-byte-identical check, in seconds, with the exact byte offset. GENERAL
+    FORM: when a change is supposed to move bytes without altering them, make the
+    identity check the first thing that runs — it is total (nothing can hide from it), it
+    localises (it names the offset), and it cannot be satisfied vacuously the way a test over
+    the result can.
+  - **A MIGRATION KEYED TO THE INSTRUMENT'S LANGUAGE MISSES EVERY READER IN ANOTHER ONE
+    (2026-08-20, the fifteen node suites):** the brief named `tests/js_source_helper.py` as the
+    thing to migrate source-asserting tests through, so I swept Python and reported the
+    migration done. Fifteen `*_node_test.js` suites read the SAME file with their own
+    `fs.readFileSync(path.join(__dirname, "..", "src", "static", "app.js"))`, were invisible to
+    a Python-shaped search, and broke together the moment the file stopped existing. That they
+    broke LOUDLY is the good case and not luck — each extracts a function BY NAME and asserts it
+    was found, so an empty read is a failed assertion rather than a suite quietly testing
+    nothing; the ratchet that every node suite has a driver is what made them run at all. TWO
+    RULES. (a) When a change invalidates a way of READING something, enumerate the readers by
+    what they READ (grep the path, the filename, the URL), never by the helper you intend them
+    to use — the helper's language is your search's blind spot. (b) The fix is the same helper
+    one language over, reading the module list out of `index.html` rather than hard-coding it,
+    because fifteen hand-rolled copies of a path are precisely the debt the slicing ratchet
+    exists to count.
+  - **A TEST THAT ASSERTS A VERSION LITERAL PINS THE NUMBER, NOT THE PROPERTY — and it turns the
+    CORRECT response to a change into a red lane (2026-08-20, `oo-shell-v1`):** the service
+    worker's guard read `assert 'caches.delete(k)' in sw and 'oo-shell-v1' in sw` under the
+    comment *"old cache versions are purged on activate"*. Changing the precached SHELL list
+    REQUIRES bumping the cache name — without it a client that is already offline keeps serving
+    the previous list, which is the one thing an offline shell must never do — so the first
+    legitimate bump made the test red while the property it named held perfectly the whole time.
+    Assert the mechanism instead: `caches.delete(k)`, the purge keyed on `k !== CACHE` (a purge
+    naming specific old versions leaves the next one behind), and that the name carries a
+    version at all. Both mutations fail; the literal caught neither. GENERAL FORM: when a guard
+    quotes a value that is expected to CHANGE, it is anchored on a landmark that merely
+    coincided with the property once — the same family as a guard splitting source on a landmark
+    that used to coincide with the commit point.
+  - **A CPU THROTTLE EMULATES A SLOW MAIN THREAD, NOT A SMALL MACHINE — and the difference is
+    the whole result (2026-08-20, measuring what splitting the UI engine bought):** splitting
+    `app.js` into seventeen modules measured **−38.8 %** main-thread script time under 6× CPU
+    throttling, which is the number I would have reported. Three controls said the effect was
+    real — an A/A run landed inside noise, swapping the order flipped the sign, a second server
+    on a second worktree reproduced it — and two more said what it actually was. Removing the
+    throttle **REVERSED** it (+21.6 %, 14.8 ms slower: sixteen extra requests and compile
+    set-ups, which a fast main thread notices because it has no work worth moving). Pinning the
+    browser to two cores cut it to −17.5 %. Both sides serve BYTE-IDENTICAL JavaScript — the
+    split side ships 20,812 bytes MORE — so "less to parse" was never the mechanism: compile
+    work relocates onto background threads that `Emulation.setCPUThrottlingRate` does not
+    throttle, and the win is therefore proportional to the spare cores available to receive it.
+    THREE RULES. (a) Name the mechanism before quoting the number: a packaging change that
+    cannot reduce total bytes cannot be reducing parse cost, so a large "parse" win is evidence
+    of RELOCATION and relocation depends on the machine. (b) A throttle knob and a core count
+    are different axes, and a profile that throttles one while leaving the other generous is the
+    most favourable case for anything that moves work sideways — the recorded "a probe's data
+    distribution is part of the lookalike" trap with CORE COUNT as the varying axis. (c) An A/A
+    control costs one extra run and is what separates "the harness has a position bias" from "the
+    change did something"; it is the cheapest control available and the one that makes every
+    other number readable.
+  - **A WALKER WHOSE STEP COUNT VARIES CANNOT CARRY A SAME-STEP-COUNT CLAIM — find out before
+    explaining it (2026-08-20):** the browser walk reported 52 steps at baseline and 59 from the
+    next run onward, and I wrote a plausible sentence into the evidence section saying the count
+    rose because the walker reaches more subtabs once the corpus is populated. It was invented.
+    A control walk against the PRE-SPLIT tree produced **both numbers in a single run, from one
+    server against one data directory** — so the seven flapping steps (all one tab's continent
+    subtabs) are a race on whether that tab's fetch has populated the subtab strip when the
+    walker reads it, and nothing to do with populated-versus-empty or with the code under test.
+    GENERAL FORM: when a measurement moves and you can think of a reason, that reason is a
+    hypothesis with a cheap test attached — run the old code again. And an instrument that varies
+    run to run still supports the invariants it holds exactly (zero `pageerror`, the same 1393
+    globals, in all fourteen state-runs); it just cannot support the one that varies, and saying
+    which is which is what keeps the evidence section evidence.
 ## Open queue (when maintainer says proceed)
 - **KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING (maintainer 2026-08-13, "let's get this done
   at my return" — PARKED, nothing further to build; the machinery is shipped and the
@@ -4446,6 +4711,46 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   "computed" — states its membership vintage. • (46) Tier-2 publisher order: OECD+IMF → AfDB →
   regional bodies. • (47) **BOTH continents AND World Bank regions as two lenses, and not only
   averages — cumulative TOTALS too.**
+  **LAW RULINGS 34-37 — STATUS 2026-08-20 (a law session executed against them; the staleness
+  guard changed the plan three times, so read this before re-opening any of them):**
+  • **(36) + (37) were ALREADY SHIPPED** on 2026-08-07 (`analytics/law` row) with both-direction
+  tests — `tests/test_legislative_furniture.py` (a shouted PART is not an ORGANIZATION; the
+  lowercase content word survives) and `tests/test_place_longest_match.py` (Northern Ireland is
+  the UK, and the Republic still resolves; South Sudan, South China Sea). NOT rebuilt.
+  • **(35) IS STRUCTURALLY DONE and its literal form is IMPOSSIBLE.** `check_document` already
+  re-reads a tracked document's own baseline through the strip stage on its next successful poll,
+  re-baselines, and deliberately records NO revision (a fabricated flagged amendment on a legal
+  audit trail is worse than the chrome) — `tests/test_law_re_extraction.py`. A retroactive job
+  over "stored raw copies" cannot exist: `baseline_text`/`full_text` hold the NORMALISED TEXT, and
+  `raw_html` is a local variable in `check_document` that is never persisted. The declarations the
+  strip reads are gone by then, so re-running it over stored text is not possible, and a
+  text-level chrome REMOVER is exactly the heuristic `test_boilerplate_strip.py` refuses on the
+  record because it would eat an Act's section headings. THE REAL RESIDUAL GAP was that the heal
+  is INVISIBLE — nothing said which documents had had it, and a portal that cannot be fetched
+  never heals. Closed by the law-ingest diagnostic + a `re_extracted` verdict (ruling 35
+  succeeding had been classifying as `other`).
+  • **(34a) adapter: OFFLINE HALF SHIPPED, LIVE HALF BLOCKED ON EGRESS.** `src/law/adapters/`
+  reads CLML into addressable provisions with three non-collapsing dates, plus an experimental
+  per-section diff. The ENUMERATION half is not built: `legislation.gov.uk`, `eur-lex.europa.eu`
+  and `gesetze-im-internet.de` all answer `CONNECT tunnel failed, response 403` through the agent
+  proxy (re-verified 2026-08-20; first recorded 2026-07-24), so no endpoint shape could be
+  confirmed and none was invented. The fixtures are HAND-AUTHORED and labelled as such in
+  `tests/fixtures/law/PROVENANCE.md`. WHAT THIS BUYS AND WHAT IT DOES NOT: the adapter is built to
+  survive being wrong about the schema (local-name matching, unknown elements reported with their
+  text KEPT, an unrecognised root refused rather than half-parsed, and a text-recovery floor that
+  refuses when too little of the body was understood — the one check that holds if every schema
+  assumption is wrong), but NOTHING here is evidence that it reads the live service correctly.
+  That needs ONE document fetched on a machine with egress; `law_ingest_report`'s `structured`
+  block is the instrument that will say so per document, and reports `documents_captured: 0` today
+  rather than running a mechanism over an empty set.
+  • **(34c) diagnostic SHIPPED**, re-scoped honestly: the literal "re-parse stored XML" has no
+  subject until (34a)'s live half lands, so the report measures what EXISTS (the heal state above)
+  and states the XML half's subject count instead of pretending to one.
+  • **OPERATOR STEP, the only one blocking the rest:** on a networked machine, fetch one
+  `legislation.gov.uk` CLML document (`.../data.xml`) and run it through `parse_clml`. If it
+  parses at/above the recovery floor with an empty `unknown_elements`, the schema assumptions
+  hold; if not, the report NAMES what it did not understand, which is the whole point of building
+  it that way. Only after that is the enumeration worth building.
   **THE LOAD-BEARING DESIGN RAIL (derived from ruling 47, recorded so it is not lost):
   AGGREGATION IS INDICATOR-AWARE.** An **extensive** indicator (population, GDP, GDP-PPP, labour
   force) may be SUMMED; an **intensive** one (every `%`, `per N`, `years`, `index`,
@@ -4473,6 +4778,74 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   WB indicator codes live · confirm the shape of WB page 1 · the BRICS Joint Statistical
   Publication · AfDB/UNECA continental endpoints · OECD/IMF SDMX message-version verification ·
   bloc membership sourcing with dates.
+  **⚠ TWO ROUTES WORK AND NEITHER IS ANOTHER SANDBOXED SESSION: one egress allowlist entry, or
+  the operator's own networked machine. A fourth attempt in a sandbox before that is knowably
+  wasted (2026-08-20, re-run #3).** Three sessions have now failed this list
+  through three different tool surfaces — unreachable API (08-07), URLs that could not be built
+  and were silently substituted (08-13), and refusal at the TCP layer in a full shell (08-20) —
+  so the variable was never the prompt. The gateway is an ALLOWLIST: `pypi.org`/`github.com`
+  pass; `api.worldbank.org`, `data.worldbank.org`, `sdmx.oecd.org`, `api.imf.org`,
+  `www.legislation.gov.uk`, `www.afdb.org`, `data.uneca.org`, `au.int`, `www.opec.org`,
+  `asean.org`, `www.nato.int`, `en.wikipedia.org` all answer `CONNECT` 403 with
+  `"selective": false` (a global policy no tool routes around). Adding those hosts unblocks the
+  Governments list AND the law vertical's S6 adapter shapes at once. The WB half is then ONE
+  command — `scripts/verify_worldbank_indicators.py` checks all 36 catalog codes, refuses the
+  `fetched` tier on a served-vs-requested URL mismatch, and separates a wrong code from an area
+  that simply does not report it. The bloc rosters (Task 4) still want their own session with
+  live fetch: the search channel that DOES work returned four incompatible Saudi-in-BRICS states
+  in one query — see the interested-party lesson in Session rituals.
+  **STATISTICS SIDE EXECUTED 2026-08-20 (branch `ideotion/inspiring-hawking-t9jsfm`, one draft
+  PR onto `main`; per-slice detail = the six 2026-08-20 `docs/ledger/shipped.csv` rows).
+  PER-RULING STATUS, so a later session does not re-derive it:**
+  • **1b + 32 — SHIPPED.** Aggregates have their own surface; `classify_ref_area` decides what
+    appears where, asserted in BOTH directions (a country surface shows zero aggregates AND the
+    aggregates view zero countries — a filter hiding only one of the two leaves the other lying).
+    Curated shortlist of 16 → "show all" 77. `GET /aggregate/{code}` 404s a country BY NAME.
+  • **4 — SHIPPED.** Two-country side by side, all indicators as aligned rows, `_govFmt` units,
+    gaps as gaps, PER-SIDE YEARS (two countries rarely share a latest year, so a bare pair would
+    silently compare 2019 against 2023). Derives nothing: no difference, ratio, ranking or winner.
+  • **43 + 44 — SHIPPED.** Every strategy side by side; refuse-by-default on incomplete coverage;
+    the publish-anyway override carries `missing_members` in the PAYLOAD, not only in the UI;
+    spread (min/max/n) beside every central figure.
+  • **45 — SHIPPED.** Membership vintage stated on every bloc surface; an unpopulated bloc renders
+    its reason with no figure.
+  • **47 — SHIPPED.** Both lenses (WB-published and computed), never blended. Extensive indicators
+    offer totals; intensive ones are REFUSED with the engine's reason, and the test proves a summed
+    percentage cannot be obtained FROM THE API rather than merely being hidden in the UI. The WB
+    lens states honestly that it has no continental-Africa figure at all.
+  • **5 + 30 + 31 — SHIPPED.** One Article per indicator×country through `index_article`, upserted
+    on the content hash, `statistics` provenance class, background job, NO schema change (so the
+    Lane-2 migration fence was never approached).
+  • **6 + 33 — ALREADY EXISTED, verified not rebuilt** (all-years storage; the ride-along).
+  • **G5 — ALREADY FIXED**, reproduced then confirmed; its guard was re-anchored onto `_govIndCard`
+    after the card renderer was hoisted, since leaving it on the old function would have reported a
+    correct gate as absent.
+  **THREE THINGS THIS SESSION FOUND THAT THE BRIEF DID NOT ASK FOR, recorded because each is a
+  defect rather than a feature:** (a) `/country/{iso3}` silently truncated history to 30 points with
+  nothing saying so — a fabricated completeness, now reported in both directions; (b) `/aggregates`
+  read every stored figure to answer "which of these has data", measured at 1.47 s in the browser and
+  replaced with a DISTINCT covering-index scan, EXPLAIN-confirmed and pinned by a statement-SHAPE
+  test rather than a timing; (c) an ALL-CAPS CSS inheritance leak and an unreadable 54-name list,
+  both found by reading pixels rather than code.
+  **THE MEASUREMENT WORTH KEEPING (the T6 skeptic lens, and it REFUTED my own first cut):** the
+  series body carried `{agency} · {series_id}` — two facts a reader might plausibly search for, once
+  each. Over 1,298 real series that line was **a THIRD of the channel's entire term volume** and
+  ranked #1/#2/#3 (`world`, `bank`, `world bank` at 1,298 each = exactly one per article, a count
+  that tracks the CHANNEL's size and nothing about the corpus). The series code was never searchable
+  in the keyword index either — the tokenizer splits `SP.DYN.LE00.IN` on its dots, so what is indexed
+  is `dyn`/`le00`, the DEBRIS of an identifier. Removing both left `gdp · total · population · rate ·
+  income · capita · expenditure · births · labour force`. **AN UNPREDICTED SECOND WIN:** it also
+  shrank the near-dup clustering that motivated the lens in the first place — 9 clusters with a
+  biggest of 36 members down to 7 with a biggest of 3 — so the boilerplate was MANUFACTURING the
+  similarity, not merely riding it. Coordination stays impossible by construction regardless (one
+  source per agency against a three-distinct-source gate; 0 clusters span even 2 sources at either
+  production threshold).
+  **REMAINING / HONEST BOARD:** every frontend slice is BROWSER-DRIVEN here (Chromium, zero page and
+  zero console errors across the six subtabs, the compare rows, both lenses, the refusal paths and
+  the new corpus control in English and French) but that is NOT the maintainer click-through —
+  "Chromium-verified (remote sandbox) · awaiting human UX pass", never field-confirmed. The
+  networked half of the 2026-08-07 rulings is untouched and still operator-gated (the list above).
+  The LAW side of the 47 rulings (34/35/36/37) is not this lane's territory and was not touched.
 - **MERGE STEP 3 IS STILL UNEXPLAINED — and the leading hypothesis is now REFUTED, so do
   not re-chase it (2026-08-06, from the field beat ring of `imp-20260805T032610Z-477e83`):**
   a second 24 h import died at the same place. WHAT THE BEAT PROVES: the merge entered step
@@ -10747,7 +11120,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   untested path is not a pass; RTL bidi isolates; `uppercase` is a no-op in 5 of 12 locales) and
   the 429-storm caveat (one browser per server instance — the 2026-07-22 "384 JS errors" were
   100% rate-limit console lines and ZERO uncaught exceptions, an artifact of that run's own
-  parallelism). ROW 5's remaining step is a DECISION, and ROW 3 delivers its input:
+  parallelism). **THE ROW-8 STRETCH MATRIX EXECUTED 2026-08-20** (the row itself closed
+  2026-08-13 against its literal bar; this discharges the recorded stretch target —
+  `docs/audit/UI_CLICKTHROUGH_2026-08-20.md` + the 4 shipped.csv rows): the 375px P1 FIXED
+  (runner's flagship-375 walk green ×5), a state-D REAL-import fixture (post-import content
+  path, 6/6 redesign markers), the Reader drilled, ALL 17 themes (found+fixed the AI pill's
+  ai-off label below AA on 13/17 — the 55% fg-mix), five lens drills (found+fixed
+  corpus-deduced agenda events invisible at default filters), the a11y axis (axe-core
+  4.13.0 vendored+registered; #oo-tip aria-hidden lifecycle fix; 5 P2s filed), and 5 of the
+  9 honesty rules standing as instruments; still open there: the 12-locale sweep (4
+  covered), rule 9 (adversarial screenshot reading), and the Gecko/AppVM bar — every stamp
+  stays "Chromium-verified (remote sandbox) · awaiting human UX pass".
+  ROW 5's remaining step is a DECISION, and ROW 3 delivers its input:
   `criteria-calibration.json` is already an all-diagnostics bundle member
   (`src/api/diagnostics.py:3529`), so the queued diagnostics run CONTAINS the report row 5's
   execution is gated on — sequence = bundle → session proposes criteria against real specimens
@@ -12336,6 +12720,35 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     OECD's own documented example passes `AllDimensions` — so `ref_area`/`series_id` must be
     looked up at observation level as well as series level, exactly as `unit`/`adjustment`
     already were.
+  - **THE PUBLISHER'S OWN PAGE IS AN INTERESTED PARTY FOR A MEMBERSHIP FACT — and when
+    three sessions fail the same task through three different tools, stop rewriting the
+    prompt and characterise the ENVIRONMENT (2026-08-20, the Governments/law networked
+    pass):** two things from one blocked session, and the second is the one that keeps
+    being paid for. (a) The tier model calls `search-verified` "stated on the publisher's
+    own page", which is normally the strong tier. For a MEMBERSHIP or affiliation fact the
+    organisation is a PARTY to the claim: one search returned four mutually incompatible
+    states for Saudi Arabia in BRICS — joined 2024-01-01, *"the BRICS website shows Saudi
+    Arabia as a member, it has yet to join, according to sources with direct knowledge"*,
+    "still assessing" (Bloomberg 2025-01), and joined 2025-07 — with the bloc's OWN page
+    the most confident and the least reliable, because it has an incentive to count an
+    invitee. So a roster page corroborates membership and cannot settle a CONTESTED one;
+    that needs the acceding state's own statement, and where none exists the honest answer
+    is permanently UNVERIFIED rather than a to-do for a better search. The general form: ask
+    who BENEFITS from the fact before treating its publisher as authoritative on it.
+    (b) The same session was briefed as "on a networked machine" and reached none of its 14
+    publisher hosts — an allowlist gateway, `pypi.org` and `github.com` through, every
+    publisher refused at `CONNECT` with `"selective": false`, i.e. a policy no tool in the
+    session can route around. That is the THIRD consecutive failure of the same task through
+    a third tool surface (2026-08-07 could not reach the API; 2026-08-13 could not construct
+    the URLs and was silently served the wrong ones; 2026-08-20 was refused at the TCP
+    layer). Each session had reasoned about its own tooling and written a better prompt for
+    the next one. The variable was never the prompt, and the cheap test that would have said
+    so at the START of any of them is four seconds of `curl -o /dev/null -w '%{http_code}'`
+    against the target hosts, plus one against a host known to work so a total failure is
+    distinguishable from a blocked one. Do that probe FIRST in any session whose value
+    depends on reaching a named external host, and report a convergence as a finding about
+    the environment — with the per-host evidence an operator can act on — rather than as
+    another failed attempt.
 - **A CONTAINMENT GUARD WRITTEN AS A STRING PREFIX CLAIMS THE SIBLINGS TOO — and when the
   guard decides what may be DELETED, that is the whole safety property (2026-08-13, the
   AI-uninstall ownership test):** `_owned_by_app` is the single gate deciding what the new
@@ -12407,6 +12820,53 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   the second silently outranks the caller. Fold the special case INTO the `is None`
   branch. And pin it with a test named for the mode, since the general
   "an explicit seed is honoured" case passes in the other mode either way.
+- **NARROWING A BOUND MAKES EVERY COMPARISON AGAINST THE OLD BOUND UNREACHABLE — and the
+  one that mattered had no test at all (2026-08-20, capping the collector ramp):** the
+  learned ceiling was made a soft cap on the governor's ramp, so `permits` can no longer
+  reach `w_max` on a constrained machine. `CollectionMonitor._classify` decides
+  `network-or-source-bound` on `self._peak_permits >= w_max` — which silently became
+  IMPOSSIBLE there, so every such pass would have fallen through to
+  `target-met-or-headroom`, claiming headroom on precisely the machines that have already
+  proved they have none. GENERAL FORM: when you narrow a limit, grep for everything that
+  COMPARES against the old one; a `>=` against a value the code can no longer produce is a
+  dead branch that reads as a passing condition. The comparison must move to whatever the
+  new effective bound is (`ramp_ceiling`), not stay on the nominal one. THE PROCESS POINT:
+  four mutations were run and three reddened by name; the fourth found NO test — the
+  classifier branch was unguarded, and the gap was visible only because the mutation
+  matrix was run at all rather than assumed. A mutation that reddens nothing is a finding.
+- **A "NO OPINION" RETURN EXPRESSED AS A CONCRETE DEFAULT SILENTLY OVERRIDES THE CALLER'S
+  OWN CONTEXT-DEPENDENT DEFAULT — the exact mirror of the entry above it (2026-08-20, the
+  target-mode seed regression, shipped in #955 and caught one PR later):** `seed_for`
+  returned `w_max` when nothing had been measured, which looks like a harmless identity —
+  and the runner passes it EXPLICITLY, so it stopped being a default and became an
+  argument. `BandwidthGovernor`'s own default is mode-dependent (`maximum` opens at
+  `w_max`, `target` eases in from `DEFAULT_SEED`), so target mode began starting at 50
+  instead of 25 on machines this module was supposed to leave untouched. **It was
+  invisible in `maximum` mode, where the two values are the same number** — which is why
+  it passed review, its own tests, and a full suite. The fix is to return `None`: absence
+  of a measurement is not a measurement, and handing back the caller's own default value
+  is not the same as declining to answer. GENERAL FORM: a helper that can have nothing to
+  say must say NOTHING (`None`), never guess the value the caller would have used — and
+  when a byte-identical claim is made about "unaffected machines", check it in EVERY mode
+  the code branches on, since the mode where two values coincide will hide the defect.
+- **AN UNBOUNDED DEPENDENCY IS A SCHEDULED OUTAGE, AND THE FIX MUST SEPARATE A RENAME FROM
+  A MIGRATION (2026-08-20, pqcrypto 1.0.0):** `pqcrypto>=0.3.4` in the `[pqc]` extra had no
+  upper bound, so when 1.0.0 published (2026-08-15) CI resolved it and 14 custody-signing
+  and annotation tests died on `AttributeError: module 'pqcrypto.sign.ml_dsa_65' has no
+  attribute 'generate_keypair'` — the whole repository blocked, on a commit that touched
+  none of it. THREE THINGS WORTH KEEPING. (a) Establish it is drift, not your diff, from
+  EVIDENCE and not plausibility: the changed-file list shares nothing with the failing
+  lane, the last COMPLETED default-branch run predates the release, and both workflow
+  lanes failed identically on one SHA (which also rules out a flake — the recorded push-vs-
+  PR A/B). (b) Verify the repair rather than reasoning about the constraint: a throwaway
+  venv showed `<1.0` resolves to 0.4.0, which still exposes `generate_keypair` and
+  completes a sign/verify round trip — and note that locally these tests SKIP when the
+  extra is absent, so the pin is confirmable only in CI. (c) **1.0.0 is not a rename.**
+  `generate_keypair` became `keygen` AND the module now returns `PublicKey`/`SecretKey`
+  objects instead of raw bytes, while `src/custody/signing.py` PERSISTS those keys — so
+  adapting reaches stored key material in the tamper-evidence path and belongs behind the
+  EXTERNAL_DEPENDENCIES upgrade checklist, not in an unrelated PR at speed. Put the reason
+  in the constraint comment, or the next reader simply widens the bound.
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 

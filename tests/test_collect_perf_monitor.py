@@ -126,6 +126,27 @@ def test_classifier_network_or_source_bound(tmp_path, monkeypatch):
     assert summary["bottleneck"]["verdict"] == "network-or-source-bound"
 
 
+def test_network_bound_stays_reachable_when_a_learned_ceiling_caps_the_ramp(
+    tmp_path, monkeypatch
+):
+    """"As wide as we were ALLOWED to run" is the ramp ceiling, not w_max.
+
+    A machine with a learned memory ceiling can never reach w_max by construction, so
+    comparing peak_permits against w_max makes this verdict unreachable there — and the
+    pass then reports "target-met-or-headroom", claiming headroom it does not have on
+    the one class of machine that has already proved it has none.
+    """
+    monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    g = BandwidthGovernor(
+        mode="target", target_kbps=500, w_max=50, seed=2, ramp_ceiling=2
+    )
+    mon = _monitor(governor=g, rate=50.0, vitals=_HEALTHY_VITALS, writer=_IDLE_WRITER)
+    for _ in range(3):
+        mon._tick()
+    summary = mon._write_summary(None)
+    assert summary["bottleneck"]["verdict"] == "network-or-source-bound"
+
+
 def test_classifier_target_met(tmp_path, monkeypatch):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
     g = BandwidthGovernor(mode="target", target_kbps=500, w_max=8)

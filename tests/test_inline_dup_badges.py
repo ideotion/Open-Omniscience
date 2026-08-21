@@ -12,9 +12,9 @@ the Related subtab's coordination data. Browser-unverified -> static guard.
 
 from __future__ import annotations
 
-from pathlib import Path
+from tests.js_source_helper import app_js
 
-_JS = (Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_text(encoding="utf-8")
+_JS = app_js()
 
 
 def test_badge_helper_exists_and_is_wired_into_the_articles_list():

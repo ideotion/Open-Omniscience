@@ -15,9 +15,10 @@ fetch storm), loopback-only (airplane-safe). Pure string-assertion wiring guard
 from __future__ import annotations
 
 from pathlib import Path
+from tests.js_source_helper import app_js
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
-_JS = (_STATIC / "app.js").read_text(encoding="utf-8")
+_JS = app_js()
 _READER = (_STATIC / "reader.js").read_text(encoding="utf-8")
 
 

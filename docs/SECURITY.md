@@ -15,7 +15,7 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
 - **One documented exception, now opt-in** (audit finding ETH-02, gated in 0.0.8 per
   RM-03): *Discover by topic* sends your topic query to **DuckDuckGo** (an external
   service) to find candidate outlets. It is **disabled by default** — the endpoint
-  refuses with an honest message until you knowingly enable it in **Settings → Safety →
+  refuses with an honest message until you knowingly enable it in **Settings → Advanced → Safety →
   External topic discovery**, which states plainly that the query leaves your machine
   (`OO_DISCOVERY_EXTERNAL=1` for headless use). It is strictly user-triggered — never
   part of ingestion, the scheduler, or any default path. (The browser-rendered `/docs` Swagger page also
@@ -95,7 +95,7 @@ Open Omniscience targets a **single local user** on a **Qubes OS Debian AppVM**:
   is fully bound. `bleach` allowlist for any HTML; `bcrypt` required for hashing
   (no silent fallback). `sanitize_url` strips whitespace before scheme checks.
 
-## At-risk-user safety (Settings → Safety)
+## At-risk-user safety (Settings → Advanced → Safety, and → Uninstall & wipe)
 
 For journalists working under pressure. Each tool states its honest limit — we never
 imply a protection we cannot deliver.
@@ -105,8 +105,9 @@ imply a protection we cannot deliver.
   audited primitives used elsewhere — no bespoke crypto. A wrong passphrase or any tampering
   fails *loudly* (`EncryptionError`); a correctly-decrypted but non-Open-Omniscience payload
   is refused before it can overwrite the corpus.
-- **Panic wipe** (`src/safety/panic.py`): best-effort overwrite-then-delete of the whole data
-  dir, requiring an explicit confirmation. **Honest limit:** overwrite-in-place does *not*
+- **Panic wipe** (`src/safety/panic.py`, under **Advanced → Uninstall & wipe** — kept in a
+  section of its own, apart from the tools above, because it cannot be undone):
+  best-effort overwrite-then-delete of the whole data dir, requiring an explicit confirmation. **Honest limit:** overwrite-in-place does *not*
   guarantee unrecoverability on SSD/flash or copy-on-write filesystems — only full-disk
   encryption (LUKS/Qubes/Tails) plus key destruction does. Also exposed as a `panic` CLI and
   an `--ephemeral` mode (RAM-only data dir, wiped on process exit).

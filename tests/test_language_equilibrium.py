@@ -22,6 +22,7 @@ from sqlalchemy.orm import sessionmaker
 from src.database.models import Article, Base, Source
 from src.scheduler import equilibrium as EQ
 from src.scheduler import settings as S
+from tests.js_source_helper import app_js
 
 # --- pure: normalize_target / language_pace --------------------------------- #
 
@@ -182,8 +183,8 @@ def test_lever_is_opt_in_non_exclusionary_and_wired():
     assert '"/equilibrium"' in api or "'/equilibrium'" in api, (
         "the read-only /api/scheduler/equilibrium endpoint must exist"
     )
-    app_js = (root / "src/static/app.js").read_text(encoding="utf-8")
-    assert "/api/scheduler/equilibrium" in app_js and "_renderEquilibrium(" in app_js, (
+    app = app_js()
+    assert "/api/scheduler/equilibrium" in app and "_renderEquilibrium(" in app, (
         "the Coverage subtab must surface the equilibrium state (read-only)"
     )
 

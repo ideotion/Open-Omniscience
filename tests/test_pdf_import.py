@@ -21,6 +21,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.database.models import Article, Base, KeywordMention, Source
 from src.ingest.pdf import pdf_available
+from tests.js_source_helper import app_js
 from src.ingest.pdf_import import (
     PDF_IMPORT_SOURCE_DOMAIN,
     count_imported_pdfs,
@@ -126,7 +127,7 @@ def test_pdf_import_ui_is_wired():
     + handlers + endpoint URL are present, so a rename can't silently orphan the UI."""
     root = Path(__file__).resolve().parents[1] / "src" / "static"
     html = (root / "index.html").read_text(encoding="utf-8")
-    js = (root / "app.js").read_text(encoding="utf-8")
+    js = app_js()
     assert 'id="pdf-files"' in html and 'onclick="importPdfs(this)"' in html
     assert 'onclick="importPdfFolder(this)"' in html
     assert "function importPdfs(" in js and "function importPdfFolder(" in js

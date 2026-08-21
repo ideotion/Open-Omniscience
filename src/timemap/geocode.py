@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from src.catalog.cities import build_index, load_cities, lookup
+from src.catalog.cities import City, build_index, load_cities, lookup
 
 
 @lru_cache(maxsize=1)
@@ -30,12 +30,12 @@ def _index() -> dict:
 @lru_cache(maxsize=1)
 def _country_point() -> dict:
     """ISO country code -> its most-populous gazetteer city (a stand-in centroid)."""
-    best: dict[str, object] = {}
+    best: dict[str, City] = {}
     for c in load_cities():
         if not c.country:
             continue
         cur = best.get(c.country)
-        if cur is None or (c.population or 0) > (cur.population or 0):  # type: ignore[union-attr]
+        if cur is None or (c.population or 0) > (cur.population or 0):
             best[c.country] = c
     return best
 

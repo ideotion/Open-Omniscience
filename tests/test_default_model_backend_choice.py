@@ -35,6 +35,7 @@ import pytest
 
 import src.api.llm as L
 import src.llm.backend as B
+from tests.js_source_helper import app_js
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -323,7 +324,7 @@ def test_idle_is_its_own_answer_and_not_folded_into_done():
 def _model_step() -> str:
     """The model step of the setup chain, sliced to its own branch so a guard here
     cannot be satisfied by an unrelated line elsewhere in an 18k-line file."""
-    src = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    src = app_js()
     at = src.index('} else if (step.id === "model")')
     return src[at : src.index('say(t("Starting the local AI…"))', at)]
 

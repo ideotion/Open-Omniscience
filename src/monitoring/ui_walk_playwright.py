@@ -336,6 +336,241 @@ class PlaywrightUiWalkDriver:
         result = self.page.evaluate(script, [selector, pseudo])
         return dict(result) if result else {}
 
+    # -- the 2026-08-20 matrix additions: a11y + honesty-rule instruments ------------------ #
+    # Each is a GENERIC capability (no app-specific selector baked in) so the walk script
+    # composes them per surface, and each is proven on a hermetic set_content() fixture in
+    # tests/test_ui_walk_playwright.py before being trusted against the live SPA.
+
+    def emulate_contrast(self, mode: str | None) -> None:
+        """Emulate the ``prefers-contrast`` media feature (``'more'`` /
+        ``'no-preference'``; ``None`` clears the emulation) — the browser-level switch
+        the app.css ``@media (prefers-contrast: more)`` block (GUI-audit G-3 fix)
+        responds to. Passing a literal ``None`` through to Playwright is a NO-OP that
+        silently keeps the previous emulation (probed live 2026-08-20 — an instrument
+        whose reset does nothing would leave every later check running under the
+        emulation it claimed to clear), so ``None`` is translated to a real reset
+        token here. Both ``'null'`` and ``'no-override'`` behaviorally clear the
+        emulation on this pinned Playwright (probed live, matchMedia read back);
+        ``'null'`` is the one its own type stub declares, so it is the one used."""
+        if mode is None:
+            self.page.emulate_media(contrast="null")
+        elif mode == "more":
+            self.page.emulate_media(contrast="more")
+        elif mode == "no-preference":
+            self.page.emulate_media(contrast="no-preference")
+        else:  # an unknown token must fail loudly, never silently keep the old state
+            raise ValueError(f"unsupported prefers-contrast mode: {mode!r}")
+
+    def keyboard_traversal(self, max_tabs: int = 40) -> list[dict]:
+        """Tab through the page recording each focus stop: identity, whether the stop is
+        inside the viewport, and whether focus is VISIBLY indicated (computed outline or
+        box-shadow while focused — the browser's default ring counts; ``outline:none``
+        with no replacement does not). Stops early when focus returns to the first
+        focused element (a full cycle) or leaves the document. The caller judges the
+        chain: a repeated single element is a trap; a critical control absent from the
+        chain is unreachable by keyboard."""
+        chain: list[dict] = []
+        first_key: str | None = None
+        for i in range(max_tabs):
+            self.page.keyboard.press("Tab")
+            info = self.page.evaluate(
+                """
+                () => {
+                  const el = document.activeElement;
+                  if (!el || el === document.body) return {tag: 'body'};
+                  const cs = getComputedStyle(el);
+                  const r = el.getBoundingClientRect();
+                  const outlineVisible = cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) > 0;
+                  const shadowVisible = cs.boxShadow && cs.boxShadow !== 'none';
+                  return {
+                    tag: el.tagName.toLowerCase(), id: el.id || '',
+                    cls: String(el.className || '').slice(0, 60),
+                    text: (el.textContent || el.getAttribute('aria-label') || '').trim().slice(0, 40),
+                    in_viewport: r.right > 0 && r.left < document.documentElement.clientWidth
+                                 && r.bottom > 0 && r.top < document.documentElement.clientHeight,
+                    focus_indicated: !!(outlineVisible || shadowVisible),
+                  };
+                }
+                """
+            )
+            key = f"{info.get('tag')}#{info.get('id')}.{info.get('cls')}|{info.get('text')}"
+            if first_key is None:
+                first_key = key
+            elif key == first_key and i > 0:
+                break
+            chain.append(info)
+        return chain
+
+    def run_axe(self, axe_source: str, *, scope: str | None = None) -> dict:
+        """Inject the VENDORED axe-core source (never a CDN fetch — the caller reads the
+        pinned local file; this method only ever receives its bytes) and run
+        ``axe.run()``, returning a serialisable summary: one row per violation with its
+        id, impact, help text, node count and up to 5 target selectors. ``scope``
+        restricts the audit to one subtree."""
+        already = self.page.evaluate("() => typeof window.axe !== 'undefined'")
+        if not already:
+            self.page.add_script_tag(content=axe_source)
+        return self.page.evaluate(
+            """
+            async (scope) => {
+              const target = scope ? document.querySelector(scope) : document;
+              if (!target) return {error: 'scope not found: ' + scope, violations: []};
+              const r = await axe.run(target, {resultTypes: ['violations']});
+              return {violations: r.violations.map(v => ({
+                id: v.id, impact: v.impact || '', help: v.help, nodes: v.nodes.length,
+                targets: v.nodes.slice(0, 5).map(n => n.target.join(' ')),
+              }))};
+            }
+            """,
+            scope,
+        )
+
+    def char_x_positions(self, selector: str, substring: str) -> list[float] | None:
+        """The rendered x position (left edge) of EACH CHARACTER of ``substring`` inside
+        the first text node under ``selector`` that contains it — the RTL bidi-isolate
+        instrument (the recorded lesson: in Arabic an interpolated ISO timestamp renders
+        with the year at the wrong end, a MISREAD date; the check is per-character
+        rendered positions, never eyeballing). Returns None when the substring is not
+        found in any text node under the selector."""
+        return self.page.evaluate(
+            """
+            ([sel, sub]) => {
+              const root = document.querySelector(sel);
+              if (!root) return null;
+              const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+              let node;
+              while ((node = walker.nextNode())) {
+                const idx = node.textContent.indexOf(sub);
+                if (idx < 0) continue;
+                const el = node.parentElement;
+                if (!el || !(el.offsetWidth || el.offsetHeight)) continue;
+                const xs = [];
+                for (let i = 0; i < sub.length; i++) {
+                  const range = document.createRange();
+                  range.setStart(node, idx + i);
+                  range.setEnd(node, idx + i + 1);
+                  const rects = range.getClientRects();
+                  if (!rects.length) return null;
+                  xs.push(rects[0].left);
+                }
+                return xs;
+              }
+              return null;
+            }
+            """,
+            [selector, substring],
+        )
+
+    def undefined_classes(self, *, max_report: int = 200) -> list[dict]:
+        """Class names USED in the live DOM with NO rule in any readable stylesheet — the
+        "a class with no rule is a lie the markup keeps telling" sweep (the recorded
+        ``class=\"small\"`` lesson: 35 uses, zero rules, and the markup read as styled).
+        Walks every same-document stylesheet INCLUDING nested grouping rules (media
+        queries). A hit is a REPORT, not a verdict: many classes are legitimate JS/state
+        hooks — the caller triages which names IMPLY presentation. Cross-origin sheets
+        (none in this app) are skipped silently rather than crashing the sweep."""
+        return self.page.evaluate(
+            """
+            (maxReport) => {
+              const styled = new Set();
+              const collect = (rules) => {
+                for (const rule of rules) {
+                  try {
+                    if (rule.selectorText) {
+                      for (const m of rule.selectorText.matchAll(/\\.([A-Za-z0-9_-]+)/g))
+                        styled.add(m[1]);
+                    }
+                    if (rule.cssRules) collect(rule.cssRules);
+                  } catch (e) { /* one bad rule never aborts the sweep */ }
+                }
+              };
+              for (const sheet of document.styleSheets) {
+                try { collect(sheet.cssRules); } catch (e) { /* cross-origin: skip */ }
+              }
+              const used = new Map();
+              for (const el of document.querySelectorAll('[class]')) {
+                const cls = el.className.baseVal !== undefined ? el.className.baseVal : el.className;
+                for (const c of String(cls).split(/\\s+/)) {
+                  if (!c || styled.has(c)) continue;
+                  if (!used.has(c)) used.set(c, {cls: c, count: 0, example: ''});
+                  const entry = used.get(c);
+                  entry.count += 1;
+                  if (!entry.example) {
+                    entry.example = '<' + el.tagName.toLowerCase()
+                      + (el.id ? '#' + el.id : '') + '>';
+                  }
+                }
+              }
+              return Array.from(used.values())
+                .sort((a, b) => b.count - a.count).slice(0, maxReport);
+            }
+            """,
+            max_report,
+        )
+
+    def visible_text_nodes(self, *, limit: int = 3000) -> list[str]:
+        """Every VISIBLE text node's normalized text, bounded — the i18n exact-match
+        walker's raw material (the engine translates a text node only when its whole
+        normalized value matches a key, so a label welded to its value can never key;
+        the caller compares these against the locale maps)."""
+        return self.page.evaluate(
+            """
+            (limit) => {
+              const out = [];
+              const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+              let node;
+              while ((node = walker.nextNode()) && out.length < limit) {
+                const text = node.textContent.replace(/\\s+/g, ' ').trim();
+                if (!text) continue;
+                const el = node.parentElement;
+                if (!el) continue;
+                if (['SCRIPT', 'STYLE', 'NOSCRIPT'].includes(el.tagName)) continue;
+                if (!(el.offsetWidth || el.offsetHeight || el.getClientRects().length)) continue;
+                out.push(text);
+              }
+              return out;
+            }
+            """,
+            limit,
+        )
+
+    def uppercase_reliance_audit(self, *, body_selector: str = "body") -> list[dict]:
+        """Elements whose computed ``text-transform`` is uppercase AND whose size/weight/
+        color do not differ from body text — i.e. whose visual rank is carried by CASE
+        ALONE, which is a no-op in five of the twelve locales (ar/zh/ja/hi/bn — the
+        recorded panel-h2 lesson: rank must be carried by size and weight). Elements
+        that also differ in size or weight are NOT reported: their hierarchy survives
+        translation, and reporting them would be the over-eager mirror."""
+        return self.page.evaluate(
+            """
+            (bodySel) => {
+              const body = document.querySelector(bodySel) || document.body;
+              const base = getComputedStyle(body);
+              const baseSize = parseFloat(base.fontSize);
+              const out = [];
+              for (const el of document.querySelectorAll('*')) {
+                if (!(el.offsetWidth || el.offsetHeight)) continue;
+                const cs = getComputedStyle(el);
+                if (cs.textTransform !== 'uppercase') continue;
+                const text = (el.textContent || '').trim();
+                if (!text || el.children.length > 2) continue;
+                const size = parseFloat(cs.fontSize);
+                const weight = parseInt(cs.fontWeight, 10) || 400;
+                const baseWeight = parseInt(base.fontWeight, 10) || 400;
+                const sizeDiffers = Math.abs(size - baseSize) >= 1;
+                const weightDiffers = Math.abs(weight - baseWeight) >= 100;
+                if (!sizeDiffers && !weightDiffers) {
+                  out.push({tag: el.tagName.toLowerCase(), id: el.id || '',
+                            cls: String(el.className || '').slice(0, 50),
+                            text: text.slice(0, 40), fontSize: size, fontWeight: weight});
+                }
+              }
+              return out.slice(0, 80);
+            }
+            """,
+            body_selector,
+        )
+
     def console_error_summary(self) -> dict[str, int]:
         """The honesty-critical split the 2026-07-22 report's own methodology caveat demands:
         real uncaught exceptions vs. console.error noise, counted separately, never blended into

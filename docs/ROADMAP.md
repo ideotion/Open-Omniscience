@@ -100,7 +100,7 @@ instrumentation into one report with a per-check verdict. The live RUN and the
 | Item | What | Status |
 |---|---|---|
 | **P1.1** | **Death-spiral fix**: server-side deadlines + client single-flight polling + a concurrency cap (requests stacked without cancellation; one endpoint was in-flight 217 s) | ✅ shipped (the `heavy.py` admission guard + honest 429 client retry); the last uncovered reads — integrity profile/actors/prominence/fixity — are now guarded too (#628) |
-| **P1.2** | Job-ify heavy sync handlers (enrich-source-types 8.5 min · governments 2.9 min · diagnostics `/all` 36 min — all background jobs now; heavy reads guarded) | ✅ largely shipped — **S2.4 sweep (2026-07-12): `corpus-www`/`corpus-sentiment` CONFIRMED already `_deadlined`**; the sweep then guarded the previously-raw corpus-scaled reads — the 8 raw insights endpoints (who/where/convergences/ring-countries/source-laundering/recycled-claims/reading-diet-by-type/keyword-tags-keywords), the 6 cache-only ones upgraded to `_deadlined` (4 manipulation cards + source-types + map-coverage), the per-keystroke `omni` (degraded-not-429 so the omnibar never blanks), and the link OOM-risk endpoints (stats/top-cited/articles-by-link/citation-graph whole-table materializations, now deadline-bounded). **Carry-over** (on-demand, not polled — lower snappy priority): `source_io/sources` (real fix = a maintained per-Source counter), `framing` (cap only), `monitoring/anomalies` + `commodity/correlation` (grouped-SQL rewrite), `link/corpus`+`shared` (already corpus-bounded via `_resolve_corpus` cap). |
+| **P1.2** | Job-ify heavy sync handlers (enrich-source-types 8.5 min · governments 2.9 min · diagnostics `/all` 36 min — all background jobs now; heavy reads guarded) | ✅ largely shipped — **S2.4 sweep (2026-07-12): `corpus-www`/`corpus-sentiment` CONFIRMED already `_deadlined`**; the sweep then guarded the previously-raw corpus-scaled reads — the 8 raw insights endpoints (who/where/convergences/ring-countries/source-laundering/recycled-claims/reading-diet-by-type/keyword-tags-keywords), the 6 cache-only ones upgraded to `_deadlined` (4 manipulation cards + source-types + map-coverage), the per-keystroke `omni` (degraded-not-429 so the omnibar never blanks), and the link OOM-risk endpoints (stats/top-cited/articles-by-link/citation-graph whole-table materializations, now deadline-bounded). **Carry-over** (on-demand, not polled — lower snappy priority): ~~`framing` (cap only)~~ ✅ shipped S10 (`analyzed_n`/`total_n`/`capped` disclosure), ~~`monitoring/anomalies` + `commodity/correlation` (grouped-SQL rewrite)~~ ✅ shipped S9 (`api/monitoring.py:66` groups on `substr(published_at,1,10)`; `api/commodity.py:161` is index-fed), `link/corpus`+`shared` (already corpus-bounded via `_resolve_corpus` cap). **Still open:** `source_io/sources` — the real fix is a maintained per-Source counter with its own reconcile + envelope, which needs an additive `Source` column and so belongs with whoever owns `models.py`/migrations (re-verified open 2026-08-20). |
 | **P1.3** | `count(*)` from maintained counters (`SELECT count(*) FROM keyword_mentions` = 724 ms × 172 = 124 s) | ✅ **swept (S2.3, 2026-07-12)** — audit verdict: the maintained keyword counters (`Keyword.mention_count`/`article_count` + `reconcile_keyword_counters` slice-sweep + `counter_envelope`) + the data-version count caches (`/status`, Database/Library stats) are the reference impl and the 3 hottest corpus aggregations already route through counters. The one genuine hot-path residue — the **unfiltered `/api/articles` browse `COUNT(*)`** — is now served from a data-aware `PRAGMA data_version` cache (`_browse_total_cached`, S2.5; stays EXACT, invalidates on any write). **Carry-over:** the reader per-source article count (needs a NEW maintained `Source` counter — a bigger change with its own reconcile+envelope); a corpus-wide `/status` keyword/mention counter is DELIBERATELY gated (needs the basis bound to the corpus epoch, not the reconcile watermark — the queries.status docstring). |
 | **P1.4** | `/insights/latest` (40 s @ 268 K → near-dup bounded) | ✅ shipped — re-measure on next field export |
 | **P1.5** | Storage-composition diagnostic | ✅ shipped (dbstat-limited on encrypted store) + the itemized all-stores footprint (A12b/B14 ⏳ #625) |
@@ -301,15 +301,36 @@ without a browser and a runnable suite in the same session.
 |---|---|---|---|---|
 | S-1 | `src/api/diagnostics.py` holds **108 routes / 150 functions in 5,276 lines** — 18 % of the app's 607 endpoints in one module | 108 `@router.*` decorators; next-largest router is `insights.py` at 70 | A split touches the all-diagnostics bundle, its completeness ratchet, and the tests that slice this file by source anchors | `tests/js_source_helper.py` landing first (done 2026-08-04), so anchor-based tests survive a move |
 | S-2 | **1,865 function-level `from src.…` imports across 241 of 445 files (54 %)**; only 49 carry a circular-import comment | grep of imports indented ≥4 spaces | Cannot distinguish deliberate lazy-loading (deferring `duckdb` via `columnar` serves the lean-boot goal) from undocumented cycle-breaking without resolving each | An import-graph probe reporting true cycles, so the legitimate lazy imports can be annotated and the rest hoisted |
-| S-3 | `src/static/app.js` is **21,300 lines / 1,046 functions in a single indented global scope**; shell totals 1.72 MB | `wc -l`; `grep -cE '^\s*(async )?function'` | Served from loopback, so payload size is nearly free — the real cost is parse/compile on the 2-core field VMs. Splitting it browser-unverified is the interleaved-shared-helper hazard | A standing browser harness (R3 / `ui_walk`), which is also 0.3 gate row 8 |
+| S-3 | ~~a single 23,896-line indented global scope~~ **DONE 2026-08-20** — `src/static/app.js` is now **17 ordered modules**, split with byte-identical concatenation and verified in a browser | seam map, evidence and the measured numbers: [`docs/design/APPJS_DECOMPOSITION_2026-08-20.md`](design/APPJS_DECOMPOSITION_2026-08-20.md) | — | — |
 
 | S-4 | **233 hand-rolled source-slicing sites** across the test tree, and **588 UI strings / 307 `t()` literals** with no `en.json` key | AST walk in `test_source_slicing_discipline`; `i18n_report.py --audit-chrome` | None is a defect — each is real debt now *measured* rather than invisible, and each is held by a ratchet that may only fall. The slicing sites were reported as **0** until 2026-08-04, when the detector turned out to be keyed to five helper names | Ordinary attrition: migrate a slice to `tests/js_source_helper`, or key a string ×12, and lower the ratchet in the same PR — the tooling prints the new floor |
 
-**Honest note on S-3:** the usual fix (`defer` on the script tags) buys little — they already sit
-at the end of `<body>`, so they do not block first paint. The measurable cost is JS
-parse/compile on weak CPUs, which only splitting or lazy-loading addresses. `guis/boot.js` in
-`<head>` *is* render-blocking, but it is 6 KB and exists to avoid a flash of the default skin —
-that trade is correct.
+**Honest note on S-3 (closed 2026-08-20).** The row is done, and the premise it was written
+around — "the real cost is parse/compile on the 2-core field VMs" — turned out to be **half
+right, for a reason the row did not name**.
+
+Measured with Chrome's own `Performance.getMetrics`, interleaved A/B, fresh context per load,
+both sides serving byte-identical JavaScript (the split side in fact ships 20,812 bytes *more*):
+**−38.8 %** main-thread script time on a 6×-throttled 4-core profile, **−17.5 %** with the
+browser pinned to two cores, and **+21.6 % — i.e. 14.8 ms slower — with no throttle at all.**
+An A/A control lands inside noise, an order swap flips the sign, and a second server on a second
+worktree reproduces it, so the effect is real and belongs to the tree.
+
+It is not "less to parse", because the bytes are identical. It is compile work moving off a
+throttled main thread onto background threads the throttle does not reach — which is why it
+inverts on a fast machine and why it shrinks as cores do. The claim worth carrying forward is
+narrow: **roughly a sixth off script time on a weak CPU, a little worse on a fast one.** The
+larger, genuinely retired debt is structural: 23,896 lines in one indented global scope is not
+reviewable, and now it is seventeen named modules with a duplicate-name guard across them.
+
+Lazy loading — a tab's module fetched on first visit — is the change that would cut bytes rather
+than relocate work, and the decomposition is its prerequisite; it is now cheap to try one module
+at a time.
+
+The original note still stands: `defer` on the script tags buys little — they already sit at the
+end of `<body>`, so they do not block first paint. `guis/boot.js` in `<head>` *is*
+render-blocking, but it is 6 KB and exists to avoid a flash of the default skin — that trade is
+correct.
 
 **Related, and awaiting a ruling:** the ledger's own size is measured and proposed on in
 [`docs/design/LEDGER_RESTRUCTURE_PROPOSAL_2026-08-04.md`](design/LEDGER_RESTRUCTURE_PROPOSAL_2026-08-04.md)

@@ -147,25 +147,24 @@ jobs:
       - name: Test (pytest)
         run: python -m pytest -q
 
-      # Type-check ratchet (0.0.8 WP7 / MAINT-03): the Mapped[] ORM migration cut
-      # mypy from 303 to 128 errors. The gate fails only if the count RISES above
-      # the baseline -- new code must not add type errors; tighten the number as
-      # the long tail is paid down (target: 0, then a plain blocking `mypy src/`).
-      # mypy is PINNED (pyproject [dev]) so the count is deterministic: an
-      # unpinned floor let a newer mypy report 129 > 128 and redden every PR
-      # through no code change. Baseline lowered 128 -> 127 after fixing two
-      # real latent bugs (429 handler retry_after, escape(None)).
-      - name: Type-check ratchet (mypy)
-        env:
-          MYPY_BASELINE: "127"
-        run: |
-          count=$(python -m mypy src/ 2>/dev/null | grep -c " error: " || true)
-          echo "mypy errors: $count (baseline: $MYPY_BASELINE)"
-          if [ "$count" -gt "$MYPY_BASELINE" ]; then
-            echo "::error::mypy error count rose above the baseline ($count > $MYPY_BASELINE)"
-            python -m mypy src/ | tail -40
-            exit 1
-          fi
+      # Type check (0.0.8 WP7 / MAINT-03), BLOCKING since 2026-08-20.
+      #
+      # History, because the number mattered for two years: the Mapped[] ORM
+      # migration cut mypy from 303 to 128; fixing two real latent bugs (429
+      # handler retry_after, escape(None)) took it to 127; the 2026-08-20 paydown
+      # took the remaining 127 to 0 and the ratchet became the plain blocking run
+      # this comment had named as the target all along.
+      #
+      # mypy stays PINNED in pyproject [dev]. That mattered under the ratchet (an
+      # unpinned floor once let a newer mypy report 129 > 128 and redden every PR
+      # through no code change) and it matters MORE now: at zero, any new
+      # diagnostic in a newer release is an immediate red lane. Bump deliberately.
+      #
+      # If this ever needs to go back to a ratchet, restore the counting form
+      # rather than raising a threshold quietly -- a number in this file is a
+      # statement about how much debt exists, and it should only ever fall.
+      - name: Type check (mypy, BLOCKING)
+        run: python -m mypy src/
 
       # Blocking security gates (v0.0.7 audit): both are clean today, so any
       # failure is a real regression or a freshly published CVE worth seeing.

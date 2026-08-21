@@ -23,8 +23,9 @@ import time
 from pathlib import Path
 
 from src.backup.volume_job import _RESTORE_MANAGER_PHASES, VolumeBackupManager
+from tests.js_source_helper import app_js
 
-_APP_JS = Path(__file__).resolve().parents[1] / "src" / "static" / "app.js"
+_STATIC_DIR = Path(__file__).resolve().parents[1] / "src" / "static"
 
 
 def _wait(mgr: VolumeBackupManager, timeout: float = 5.0) -> dict:
@@ -37,7 +38,7 @@ def _wait(mgr: VolumeBackupManager, timeout: float = 5.0) -> dict:
 def _js_function(name: str) -> str:
     """One function's body, so an assertion cannot be satisfied by an identical
     fragment somewhere else in an 18k-line file."""
-    src = _APP_JS.read_text(encoding="utf-8")
+    src = app_js()
     start = src.index(f"function {name}(")
     nxt = re.search(r"\n    (?:async )?function ", src[start + 10 :])
     return src[start : start + 10 + nxt.start()] if nxt else src[start:]
@@ -197,7 +198,7 @@ def test_the_phase_template_is_keyed_in_every_locale():
     alone would redden the --min 100 gate for the other eleven."""
     import json
 
-    loc = _APP_JS.parent / "locales"
+    loc = _STATIC_DIR / "locales"
     files = sorted(loc.glob("*.json"))
     assert len(files) == 12, f"expected 12 locales, found {len(files)}"
     for f in files:

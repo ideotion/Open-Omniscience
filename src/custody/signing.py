@@ -36,6 +36,7 @@ import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import cast
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import serialization
@@ -282,7 +283,14 @@ class HybridSigner:
             return {
                 "algorithm": "hybrid",
                 "ed25519": {"sig": ed_sig, "pub": ed_pub},
-                "ml_dsa": {"variant": _MLDSA_VARIANT, "sig": ml_sig, "pub": self._mldsa_pk.hex()},
+                # `_mldsa_pk` and `_mldsa_sk` are assigned as ONE pair by
+                # _load_or_create_mldsa, so the `_sk is not None` guard above settles
+                # both; the checker cannot tie two attributes together.
+                "ml_dsa": {
+                    "variant": _MLDSA_VARIANT,
+                    "sig": ml_sig,
+                    "pub": cast(bytes, self._mldsa_pk).hex(),
+                },
             }
         return {"algorithm": "ed25519", "ed25519": {"sig": ed_sig, "pub": ed_pub}}
 

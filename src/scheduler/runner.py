@@ -673,9 +673,13 @@ def run_scrape_once(
 
     # Law mode tracks watched legal documents (baseline/diff/flag), not sources.
     if settings.mode == "law":
-        from src.law.track import track_watched
+        # Aliased: src.wiki.track exports a `track_watched` too, with a different
+        # signature, and this function already imports that one for the wiki branch.
+        # Python rebinds per import at runtime, so both calls worked -- but one name
+        # for two functions is a trap for the next reader as much as for the checker.
+        from src.law.track import track_watched as track_watched_law
 
-        res = track_watched(session, fetcher, limit_documents=settings.max_sources_per_run)
+        res = track_watched_law(session, fetcher, limit_documents=settings.max_sources_per_run)
         finished = datetime.now(UTC)
         return {
             "mode": "law",
@@ -873,11 +877,20 @@ def run_scrape_once(
             # on one that has, it skips a descent it already paid for (and thrashed
             # through) on the previous pass. The operator's collect_parallelism is
             # untouched and remains the hard ceiling.
+            # None on a machine that has never shown memory pressure, which leaves BOTH
+            # the seed and the ramp ceiling at the governor's own defaults.
+            _learned = _capacity.seed_for(w_max)
             governor = BandwidthGovernor(
                 mode=getattr(settings, "collect_rate_mode", "target"),
                 target_kbps=getattr(settings, "collect_target_kbps", 500),
                 w_max=w_max,
-                seed=_capacity.seed_for(w_max),
+                seed=_learned,
+                # The ceiling bounds the RAMP too, not just the starting point: without
+                # this the governor climbs back toward w_max inside the same pass,
+                # overshoots the capacity the machine just demonstrated, and re-triggers
+                # the pressure. Probing for more headroom happens BETWEEN passes, where
+                # capacity relaxes the ceiling one doubling after a clean pass.
+                ramp_ceiling=_learned,
             )
             monitor = CollectionMonitor(
                 governor=governor,

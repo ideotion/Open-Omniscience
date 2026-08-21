@@ -54,6 +54,7 @@ from slowapi.util import get_remote_address
 
 # Import database models and session
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.operators import ColumnOperators
 
 # Router wiring (every include_router call) lives in _wiring.py (audit PR H).
 from src.api._wiring import wire
@@ -840,7 +841,12 @@ def _structured_filters(
 # Advanced-search sorting (brief §2.D, "important" — thinner corpus creation): order
 # articles by a chosen METADATA field instead of always recency/relevance. These are
 # honest orderings of real metadata, never a relevance/quality score.
-_SORT_FIELDS = {"date", "source", "title", "language"}
+_SORT_FIELDS = {"date", "source", "title", "language", "top_keyword"}
+# "top_keyword" orders by Article.top_keyword_count -- the PRECOMPUTED count of the
+# article's OWN most-mentioned keyword (rulings 23/38/39), which is a different
+# question from _KEYWORD_COUNT_SORT below: that one counts the keyword you SEARCHED
+# for, this one counts whichever keyword this article talks about most. Both are
+# real counts; neither is a relevance or quality score.
 # "keyword_count" is a separate sort (it needs the resolved-keyword count map, below),
 # only meaningful when the query resolves to a stored keyword.
 _KEYWORD_COUNT_SORT = "keyword_count"
@@ -900,7 +906,50 @@ def _keyword_counts(session, keyword_id: int | None, article_ids) -> dict:
     return out
 
 
-def _article_row(a, *, keyword_count: int | None = None) -> dict:
+def _top_keyword_fields(a, top_terms: dict[int, str] | None) -> dict:
+    """The three top-keyword fields, emitted together or all null.
+
+    The term is what makes the count checkable, so an unresolvable id (the keyword was
+    pruned after this article was indexed) reports NO top keyword rather than a count
+    with nothing to attach it to.
+    """
+    kid = a.top_keyword_id
+    term = (top_terms or {}).get(kid) if kid is not None else None
+    if term is None:
+        return {"top_keyword": None, "top_keyword_count": None, "top_keyword_tied_n": None}
+    return {
+        "top_keyword": term,
+        "top_keyword_count": a.top_keyword_count,
+        "top_keyword_tied_n": a.top_keyword_tied_n,
+    }
+
+
+def _top_keyword_terms(session, articles) -> dict[int, str]:
+    """``{keyword_id: term}`` for the top keywords of THESE articles only.
+
+    One small indexed lookup over the page's distinct ids -- never a join from articles
+    to keywords, which would drag whole article rows (content first in column order)
+    back through the SQLCipher codec for one short string. Absent ids simply do not
+    appear: a keyword the pruner has since removed leaves the pair unresolvable, and
+    :func:`_article_row` reports that as no top keyword rather than as a bare number.
+    """
+    ids = {a.top_keyword_id for a in articles if a.top_keyword_id is not None}
+    if not ids:
+        return {}
+    from src.database.models import Keyword
+
+    out: dict[int, str] = {}
+    id_list = sorted(ids)
+    for i in range(0, len(id_list), _FTS_ID_CHUNK):
+        chunk = id_list[i : i + _FTS_ID_CHUNK]
+        for kid, term in session.query(Keyword.id, Keyword.term).filter(Keyword.id.in_(chunk)):
+            out[kid] = term
+    return out
+
+
+def _article_row(
+    a, *, keyword_count: int | None = None, top_terms: dict[int, str] | None = None
+) -> dict:
     """The canonical /api/articles result dict (shared by the FTS, browse + ids paths).
 
     ``provenance`` is the descriptive content-provenance class (a channel, never a
@@ -933,6 +982,14 @@ def _article_row(a, *, keyword_count: int | None = None) -> dict:
         "sentiment_label": a.sentiment_label,
         # Per-article frequency of the searched keyword (null when none resolved).
         "keyword_count": keyword_count,
+        # THIS article's own most-mentioned keyword (rulings 23/38/39), precomputed at
+        # index time. The three fields are only meaningful TOGETHER, so they are emitted
+        # together or not at all: a count with no term is a number a reader cannot check,
+        # and the term alone hides how thin the evidence is. `top_keyword_tied_n` > 1 says
+        # several keywords share that count and the one named here is simply the
+        # lowest-id of them -- an arbitrary pick among equals, which the UI must show as a
+        # tie rather than as a winner.
+        **_top_keyword_fields(a, top_terms),
         "content": (a.content[:500] + "...")
         if a.content and len(a.content) > 500
         else (a.content or ""),
@@ -942,6 +999,11 @@ def _article_row(a, *, keyword_count: int | None = None) -> dict:
 
 def _python_sort_key(sort_by: str):
     """Key for sorting fetched Article rows (the FTS path) by a metadata field."""
+    if sort_by == "top_keyword":
+        # A never-indexed article has no top keyword at all. It sorts as 0 rather than
+        # being dropped -- the list is a corpus, not a leaderboard, and an article the
+        # re-index has not reached yet is missing a MEASUREMENT, not missing keywords.
+        return lambda a: (a.top_keyword_count or 0)
     if sort_by == "title":
         return lambda a: (a.title or "").casefold()
     if sort_by == "language":
@@ -960,6 +1022,8 @@ def _fts_id_sort_key(sort_by: str):
         return lambda r: (r[1] or "").casefold()
     if sort_by == "language":
         return lambda r: (r[1] or "")
+    if sort_by == "top_keyword":
+        return lambda r: (r[1] or 0)
     return lambda r: (r[1].replace(tzinfo=None) if r[1] else datetime.min)  # date
 
 
@@ -1045,8 +1109,8 @@ def _query_articles(
 
     Text search uses SQLite FTS5 (real Boolean AND/OR/NOT, phrases, parenthesised
     precedence) and orders results by relevance; otherwise results are ordered by
-    recency. ``sort_by`` (date|source|title|language|keyword_count) overrides that order
-    with a metadata ordering (``sort_dir`` asc|desc, default desc). ``provenance`` narrows
+    recency. ``sort_by`` (date|source|title|language|top_keyword|keyword_count) overrides that
+    order with a metadata ordering (``sort_dir`` asc|desc, default desc). ``provenance`` narrows
     to one content-provenance class; ``source_type`` narrows to one raw source channel.
     ``keyword_id`` enables the ``keyword_count`` sort (the resolved keyword's per-article
     mentions). ``limit=None`` returns every match.
@@ -1095,6 +1159,7 @@ def _query_articles(
                 "title": Article.title,
                 "language": Article.language,
                 "date": Article.published_at,
+                "top_keyword": Article.top_keyword_count,
             }[sort_by]
             id_q = session.query(Article.id, _col)
         else:  # relevance | keyword_count -> id only
@@ -1160,6 +1225,13 @@ def _query_articles(
         total = q.count()  # filtered: bounded by the filter, computed live
     else:
         total = _browse_total_cached(session)  # S2.3: data-aware cached corpus COUNT(*)
+    # Annotated because the branches are genuinely different SQLAlchemy types (a
+    # CollationClause for the two text columns, a mapped attribute for the rest) and
+    # inference takes whichever branch it reads first, then rejects every other one.
+    # They share a base, but SQLAlchemy's generics are invariant, so no common
+    # PARAMETERISED type accepts both -- ColumnOperators works precisely because it is
+    # the un-parameterised operator base, and only .desc()/.asc() are called here.
+    order_col: ColumnOperators
     if sort_by == "source":
         # COLLATE NOCASE so alphabetical order is case-insensitive AND matches the
         # FTS path's Python casefold (otherwise SQLite's binary collation sorts all
@@ -1170,6 +1242,8 @@ def _query_articles(
         order_col = Article.title.collate("NOCASE")
     elif sort_by == "language":
         order_col = Article.language
+    elif sort_by == "top_keyword":
+        order_col = Article.top_keyword_count
     else:  # date / default
         order_col = Article.published_at
     q = q.order_by(order_col.desc() if descending else order_col.asc(), Article.id.desc())
@@ -1216,9 +1290,11 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
     - source_type: Narrow to one raw source channel (news|newsletter|wiki|statistics|
       law|market|discovery|...) -- an asserted descriptive fact, never a quality score.
       Not a fixed enum; an unknown value returns no results (never a 400).
-    - sort_by: Order by a metadata field (date|source|title|language) or by
-      keyword_count (the searched keyword's per-article mentions, when the query is a
-      stored keyword). Default: relevance for a text query, else recency. Never a score.
+    - sort_by: Order by a metadata field (date|source|title|language), by top_keyword
+      (how often THIS article's own most-mentioned keyword appears in it -- precomputed
+      at index time), or by keyword_count (the SEARCHED keyword's per-article mentions,
+      when the query is a stored keyword). The last two answer different questions and
+      are never mixed. Default: relevance for a text query, else recency. Never a score.
     - sort_dir: asc|desc (default desc).
     - limit: Maximum number of results to return (default: 100).
     - offset: Offset for pagination (default: 0).
@@ -1299,7 +1375,10 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
                 == source_type
             ]
         cmap = _keyword_counts(db, kw_id, [a.id for a in ordered])
-        results = [_article_row(a, keyword_count=cmap.get(a.id)) for a in ordered]
+        tmap = _top_keyword_terms(db, ordered)
+        results = [
+            _article_row(a, keyword_count=cmap.get(a.id), top_terms=tmap) for a in ordered
+        ]
         return {
             "total": len(ordered),
             "limit": limit,
@@ -1328,7 +1407,10 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
     # Per-article keyword count for the displayed page only (a cheap mentions-only
     # lookup over <=`limit` ids); null per row when no keyword resolved.
     cmap = _keyword_counts(db, kw_id, [a.id for a in articles])
-    results = [_article_row(a, keyword_count=cmap.get(a.id)) for a in articles]
+    tmap = _top_keyword_terms(db, articles)
+    results = [
+        _article_row(a, keyword_count=cmap.get(a.id), top_terms=tmap) for a in articles
+    ]
 
     return {
         "total": total,

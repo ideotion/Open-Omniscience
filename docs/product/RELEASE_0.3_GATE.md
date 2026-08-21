@@ -30,9 +30,11 @@ no evidence.
 | 8 | Browser-verification bar | session | **CLOSED** (2026-08-13) |
 
 Three rows remain: **3, 5, 7.** Rows 3 and 5 are one operator action apart (§2.5);
-row 7 is two boots and a soak. Row 8 closed against its own literal wording, but its
-report's §4–§6 name a substantially larger matrix than this cycle covered — recorded as a
-stretch target for a future session, not a blocker to the tag.
+row 7 is two boots and a soak. Row 8 closed against its own literal wording; the larger
+matrix its report's §4–§6 recorded as a stretch target was then **executed 2026-08-20**
+(`docs/audit/UI_CLICKTHROUGH_2026-08-20.md` — all 17 themes, the Reader surface, a real
+import fixture, the a11y axis with vendored axe-core, five lens drills, five standing
+honesty-rule checks; 171 of 179 coverage rows verified, zero new P0/P1 outstanding).
 
 ---
 
@@ -279,6 +281,30 @@ list. None of this was silently dropped — it is why this row closes against it
 bar rather than against the brief's fuller ambition, which is recorded as a stretch target
 for a future session, not a condition of this cycle.
 
+**The stretch target was executed 2026-08-20** (a dedicated matrix-expansion session, report
+[`docs/audit/UI_CLICKTHROUGH_2026-08-20.md`](../audit/UI_CLICKTHROUGH_2026-08-20.md) ·
+[`findings.csv`](../audit/ui-clickthrough-2026-08-20/findings.csv) ·
+[`coverage.csv`](../audit/ui-clickthrough-2026-08-20/coverage.csv)). What it added over the
+row-closing run, per the 2026-08-13 report's own §8 order: the **375px top-bar overflow
+(P1) fixed** with before/after evidence and the runner's 375px flagship walk green on all
+five surfaces; a **fourth test state (D)** exercising the post-import screen's real content
+path through an actual volumes-backup import (never the live corpus); the **Reader**
+surface fully drilled (11 tabs, provenance classes, Loaded-language); the theme axis at
+**all 17 themes** — which found and fixed the AI pill's ai-off label below AA on 13 of 17;
+five **lens/sub-panel drills** (world-map sub-controls, the task manager's five sub-panels,
+the AI pill's painted states, Bulletin gate→override→generate→review, Agenda provenance —
+finding and fixing corpus-deduced events invisible at default filter settings); the **a11y
+axis** from scratch (axe-core 4.13.0 vendored + sha256-registered, keyboard-only traversal,
+`prefers-contrast`; one serious finding fixed app-side, five P2s filed); and **5 of the 9**
+honesty-rule checks now standing as automated instruments (greyscale mid-interaction from
+pixels, RTL by rendered x-position, uppercase-no-op across five locales, exact-text-node
+i18n walking, the class-with-no-rule sweep) with a sixth practiced manually. 179 coverage
+rows (171 verified · 6 partial · 2 blocked), 23 findings (15 POSITIVE · 7 P2 filed · 1 P1
+re-check of a known-open item), **zero new P0/P1 outstanding**. Still out of scope, stated
+there: the 12-locale full sweep (4 covered), adversarial screenshot reading (rule 9), and
+the AppVM/Gecko bar — every stamp remains "Chromium-verified (remote sandbox) · awaiting
+human UX pass".
+
 ---
 
 ## 3. Amendment log
@@ -295,6 +321,7 @@ for a future session, not a condition of this cycle.
 | 2026-08-13 | Rows 1 and 2 marked closed against named artifacts; this file created | session |
 | 2026-08-13 | Row 8 **closed** against its own literal wording — the standing Playwright `ui_walk` runner shipped, drove all three test states, all 5 flagship surfaces stamped, every P0/P1 fixed-or-recorded; the fuller 15-surface/17-theme/12-locale/a11y matrix from the brief's §6 is explicitly NOT fully covered and is recorded as a stretch target, not a condition of this row | session |
 | 2026-08-13 | A **second** gate board (repo root, 2026-08-04) found and **absorbed** into §6; the root file removed. This file is the only 0.3 board | session |
+| 2026-08-20 | Row 8's **stretch matrix executed** — 375px P1 fixed, state-D import fixture, Reader drilled, all 17 themes (ai-off AA fix), five lens drills (agenda deduced-events fix), a11y axis (axe vendored; #oo-tip fix), 5 of 9 honesty rules automated; `docs/audit/UI_CLICKTHROUGH_2026-08-20.md`. The row was already closed; this discharges the recorded stretch target | session |
 
 ---
 
@@ -310,11 +337,12 @@ Recorded so a future reader does not mistake absence for oversight:
   lane stays observation-only.
 - **Tor-exit-resolve** — assessed, zero code, ruling-gated.
 - **The 5M-scale diagnostics** — deferred with row 3's amendment, not abandoned.
-- **Row 8's fuller matrix** (the brief's §6: 15 named surfaces × 17 themes × 12 locales × an
-  a11y axis) — the row closed against its own literal, narrower wording; the standalone
-  Reader surface, the a11y axis, and full theme/locale coverage are unbuilt. Full itemization
-  in [`docs/audit/UI_CLICKTHROUGH_2026-08-13.md`](../audit/UI_CLICKTHROUGH_2026-08-13.md) §4–§6
-  and §8's ordered follow-up list.
+- **Row 8's fuller matrix** — **largely discharged 2026-08-20**
+  ([`docs/audit/UI_CLICKTHROUGH_2026-08-20.md`](../audit/UI_CLICKTHROUGH_2026-08-20.md)):
+  the Reader surface, all 17 themes, the a11y axis, the import fixture, and 5 of 9
+  honesty-rule checks now stand. Still outside any gate: the 12-locale full sweep (4
+  covered), adversarial screenshot reading, and the AppVM/**Gecko** verification bar —
+  every stamp is Chromium-in-sandbox, awaiting a human UX pass.
 
 ---
 

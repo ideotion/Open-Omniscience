@@ -15,7 +15,9 @@ import ast
 import re
 from pathlib import Path
 
+from tests.js_source_helper import app_js, app_modules
 from tests.js_source_helper import assert_absent as _assert_js_absent
+from tests.js_source_helper import css_rule as _css_rule
 from tests.js_source_helper import assert_present as _assert_js_present
 from tests.js_source_helper import function_body as _js_function_body
 from tests.js_source_helper import python_function_source as _py_function_source
@@ -86,11 +88,15 @@ def _ui_source() -> str:
     appended after the markup, so markup-scoped splits still resolve to the markup
     region while whole-source / JS-marker-scoped assertions see the script too."""
     base = _SRC / "static"
-    parts = [(base / "index.html").read_text(encoding="utf-8")]
-    for extra in ("app.js", "app.css"):
-        p = base / extra
-        if p.exists():
-            parts.append(p.read_text(encoding="utf-8"))
+    # app_js() is the whole UI ENGINE -- the ordered modules app.js was split into
+    # (S-3, 2026-08-20). Read unconditionally: the previous .exists() guard would
+    # have silently dropped the engine once app.js stopped being a single file, and
+    # every negative assertion built on this source would then have passed for free.
+    parts = [
+        (base / "index.html").read_text(encoding="utf-8"),
+        app_js(),
+        (base / "app.css").read_text(encoding="utf-8"),
+    ]
     return "\n".join(parts)
 
 
@@ -117,11 +123,15 @@ def test_stat_time_series_chart_surface():
     per fork-3 — node-checked + grep-guarded here."""
     base = _SRC / "static"
     html = (base / "index.html").read_text(encoding="utf-8")
-    app = (base / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     ooviz = (base / "ooviz.js").read_text(encoding="utf-8")
-    # ooViz is loaded as a global BEFORE app.js (so window.ooViz exists when app.js runs).
+    # ooViz is loaded as a global BEFORE the engine (so window.ooViz exists when it runs).
+    # Anchored on the FIRST engine module: app.js is now 17 ordered modules (S-3), and a
+    # literal "/static/app.js" here would have gone missing rather than gone wrong.
     assert "/static/ooviz.js" in html, "ooviz.js must be loaded by index.html"
-    assert html.index("/static/ooviz.js") < html.index("/static/app.js"), "ooviz before app.js"
+    assert html.index("/static/ooviz.js") < html.index(f"/static/{app_modules()[0]}"), (
+        "ooviz must load before the UI engine"
+    )
     # The chart controls + container.
     assert 'id="statfig-chart"' in html, "the chart container must exist"
     assert 'id="statfig-view-area"' in html, "the area input must exist"
@@ -173,7 +183,7 @@ def test_stats_choropleth_map_surface():
     grep-guarded here)."""
     base = _SRC / "static"
     html = (base / "index.html").read_text(encoding="utf-8")
-    app = (base / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # Controls + host in the Statistics panel.
     assert 'id="statfig-map"' in html, "the map host must exist"
     assert 'id="statfig-map-level"' in html, "the level (count/total) toggle must exist"
@@ -192,7 +202,7 @@ def test_live_language_switch_rerenders_cldr_name_surfaces():
     emits an 'oo:langchange' event; app.js listens and re-renders the map (+ sources)."""
     base = _SRC / "static"
     i18n = (base / "i18n.js").read_text(encoding="utf-8")
-    app = (base / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "oo:langchange" in i18n, "setLang no longer emits the language-change event"
     assert 'CustomEvent("oo:langchange"' in i18n
     assert 'addEventListener("oo:langchange"' in app, "app.js does not listen for the lang switch"
@@ -207,7 +217,7 @@ def test_analysis_window_per_query_spawns_tabs_and_retires_corpus_modal():
     Overview screen; the legacy #corpus-win modal is RETIRED (openCorpus now spawns a
     tab). One analysis surface (ruling: 'retire both')."""
     base = _SRC / "static"
-    app = (base / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     html = (base / "index.html").read_text(encoding="utf-8")
     # The spawned-tab strip + machinery.
     assert 'id="an-tabstrip"' in html, "the analysis-tab strip is missing"
@@ -231,7 +241,7 @@ def test_trends_render_as_clickable_bar_graphs():
     """Field test 2026-06-19 #25: the rising/top Trends are clickable horizontal BAR
     graphs (bar length ∝ the real count/rate, value shown — no score), and clicking a
     bar opens the unified analysis window (trend + worldwide spread)."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "function termBarsHtml(terms, valueOf, labelOf)" in app
     assert 'termBarsHtml(rising.terms' in app and 'termBarsHtml(top.terms' in app, (
         "the rising/top Trends must render as bar graphs (#25)"
@@ -243,7 +253,7 @@ def test_trends_render_as_clickable_bar_graphs():
 def test_world_map_fullscreen_uses_the_fullscreen_api():
     """Field test 2026-06-19 #12 (THEME-2): the map ⛶ control uses the real Fullscreen
     API (with a CSS fallback + Esc/click exit), not just a CSS .mm-big toggle."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     big = app.split('else if (a === "big")', 1)[1].split("else {", 1)[0]
     assert "requestFullscreen" in big and "exitFullscreen" in big, (
         "the map fullscreen control must use the Fullscreen API"
@@ -268,7 +278,7 @@ def test_prune_unused_keywords_action_is_discoverable():
     assert "/prune-keywords" in api, "the prune endpoint must be registered"
     er = (_SRC / "analytics" / "engine_report.py").read_text(encoding="utf-8")
     assert "mention_distribution" in er, "the report must surface the mention distribution"
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "_pruneCore(" in app and "/api/insights/prune-keywords" in app
     # The one-click "clean up" chains re-index THEN prune (the recommended order) so
     # the operator runs one action, reusing the confirm-free cores.
@@ -289,7 +299,7 @@ def test_reindex_whole_corpus_action_is_discoverable():
     assert "/reindex-all" in api, "the reindex-all endpoint must be registered"
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     assert "cleanupKeywords(" in html, "a discoverable re-index button must exist"
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "_reindexAllLoop(" in app and "/api/insights/reindex-all" in app
 
 
@@ -312,7 +322,7 @@ def test_reindex_background_job_is_wired():
     assert '("collect", "import", "reindex", "quarantine")' in jobs
     # cancel/resume routed to the owning manager
     assert 'job_id == "reindex"' in jobs and "get_reindex_manager()" in jobs
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "_startReindexJob(" in app and "_pollReindexJob(" in app
     assert "/api/insights/reindex-job" in app
     # The Settings button drives the background job. reindexAllCorpus/pruneKeywords were
@@ -387,7 +397,7 @@ def test_ir_eval_harness_is_wired():
     )
     # the Diagnostics-panel control that drives it (path + optional A/B weights -> a click)
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    appjs = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    appjs = app_js()
     assert 'id="ir-eval-path"' in html and "runIrEval(" in html, (
         "the Diagnostics panel must wire the IR-eval gold-set control"
     )
@@ -429,7 +439,7 @@ def test_p0_validation_kit_is_wired():
     assert "is_writer=False" in api  # it never commits the live corpus
     # the Diagnostics-panel control (dest + passphrase -> a click) + the JS handlers.
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    appjs = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    appjs = app_js()
     assert 'id="p0-dest"' in html and 'id="p0-pass"' in html and "runP0Validation(" in html
     assert "function runP0Validation(" in appjs and "/api/diagnostics/p0-validation" in appjs
     # the runbook the panel hint points at exists.
@@ -446,7 +456,7 @@ def test_render_p0_result_does_not_shadow_the_real_html_escaper():
     an XSS sink: verdict labels, reasons, and the summary note). Regression guard:
     the function must rely on the real module-level esc() (top of file) instead of
     redeclaring/shadowing one."""
-    appjs = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    appjs = app_js()
     start = appjs.index("function renderP0Result(")
     end = appjs.index("\n    }\n", start)
     body = appjs[start:end]
@@ -471,7 +481,7 @@ def test_dump_and_osm_pollers_clear_before_set():
     stacked one independent 3s poller per start/click -- a polling-storm repeat of
     the 2026-06-27/07-01 item-F5 family. Regression guard: both pollers must
     clear-before-set, matching the three known-good pollers' shape exactly."""
-    appjs = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    appjs = app_js()
 
     def _fn_body(marker: str) -> str:
         start = appjs.index(marker)
@@ -561,7 +571,7 @@ def test_lemma_conflation_indicator_is_wired_conservative_and_flagged():
     lemmatization (conflated_by=["lemma"]) shows a small, honest, reversible marker in the
     Insights -> Families list -- browser-unverified per fork-3/Q6a, so this pins the wiring
     rather than a rendered screenshot."""
-    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    js = app_js()
     assert "conflated by lemma" in js
     assert 'f.conflated_by || []).includes("lemma")' in js
 
@@ -603,7 +613,7 @@ def test_articles_endpoint_serialises_stored_sentiment():
     assert '"detected_language": a.detected_language' in main, (
         "the shared row must expose the secondary/deduced language (§2.6)"
     )
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "function _anToneChip(" in app and "_anToneChip(a)" in app, (
         "the analysis Articles list must render the tone / deduced-language chip"
     )
@@ -620,7 +630,7 @@ def test_downloaded_dump_title_search_exists():
     assert "scan_cap" in dr and '"capped"' in dr, "the scan must be bounded + report capping"
     api = (_SRC / "api" / "wiki.py").read_text(encoding="utf-8")
     assert "/dumps/search" in api, "the dump search endpoint must be registered"
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "function dumpSearchTitles(" in app and "/api/wiki/dumps/search" in app, (
         "the Settings dump reader must offer a title search"
     )
@@ -631,7 +641,7 @@ def test_guided_wizard_language_step_consolidated():
     (unlock.html) + a permanent top-bar switcher always changes it, so the guided
     wizard no longer carries a redundant language step. The lang DOM/helper stay
     (unreachable) per the Desk lesson — nothing silently lost."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # The wizard flow must NOT contain a "lang" step (dropped §2.5). S4.7 later slotted the
     # real "sources" step, so guard on the ABSENCE of "lang", not an exact array.
     steps = app[app.index("const _GW_STEPS = [") : app.index("];", app.index("const _GW_STEPS = [")) + 2]
@@ -644,7 +654,7 @@ def test_offline_map_queued_rows_can_be_reordered():
     """§2.3 (autonomous 2026-06-21): the Settings → Offline-map row list lets the
     operator reorder QUEUED region downloads (the same prioritisation control the
     task manager already offers), optimistically + persisted via the geo endpoint."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "async function osmMove(key, dir)" in app, "an osmMove reorder helper must exist"
     assert "/api/geo/downloads/reorder" in app, "reorder must persist via the geo endpoint"
     # The queued row renders ↑/↓ controls calling osmMove.
@@ -662,7 +672,7 @@ def test_world_map_near_time_capped_log_slider_and_no_download_confirm():
     is capped to a TIGHT fixed window (it used the slider's span/12 ~166y, linking events
     decades apart); the time slider is LOGARITHMIC-by-age (recent gets most travel); and
     the offline-map download has no redundant confirm (ensureOnline stays the only gate)."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "const _OOMAP_NEAR_YEARS = 2;" in app, "the near-time co-occurrence cap is gone"
     assert "Math.min(win || _OOMAP_NEAR_YEARS, _OOMAP_NEAR_YEARS)" in app
     assert "Math.pow(_LOGB, 1 - frac)" in app, "the time slider is no longer logarithmic"
@@ -689,7 +699,7 @@ def test_world_map_shapes_labels_and_click_country():
     colour alone; (b) dynamic non-overlapping country labels (greedy declutter,
     constant on-screen size, re-laid-out on zoom, opt-in toggle); (c) click a
     country → its coverage breakdown (counts only, the VADER caveat on tone)."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # (a) shape by certainty class, colour by kind
     assert "function _ooSigClass(s)" in app and "function _ooSigMarker(" in app, (
         "the signal shape helpers (certainty class → circle/triangle/diamond) must exist"
@@ -769,27 +779,61 @@ def test_world_map_osm_admin_boundary_choropleth():
     )
 
 
-def test_analysis_articles_per_row_summarize_translate():
-    """Track C: the analysis Articles list offers a PER-ARTICLE Summarize / Translate
-    (the single-article complement to the bulk LLM run). Reuses the existing
-    single-article endpoints (loopback Ollama), renders the result INLINE labelled
-    AI-derived / unreliable with model provenance, and NEVER touches the trusted
-    keyword index (the rows live in article_analyses). Browser-unverified."""
+def test_per_article_summarize_translate_moved_to_the_reader():
+    """Ruling 22 (2026-08-07): the per-row Summarize / Translate buttons leave the
+    analysis Articles list, because the READER already carries both.
+
+    This SUPERSEDES the Track-C guard that pinned those buttons into every row. That
+    guard was right for its ask and is being updated deliberately, not deleted: what it
+    was really protecting is that the CAPABILITY exists somewhere honest, so that is
+    what this asserts now -- the Desk lesson, which allows a retirement only once the
+    replacement demonstrably absorbs it. If the reader's tabs ever go away, this fails.
+    """
     html = _ui_source()  # index.html + app.js + app.css
-    # per-row buttons wired to the handler
-    assert "anArticleLlm(${a.id},'summarize',this)" in html and "anArticleLlm(${a.id},'translate',this)" in html, (
-        "each article row must offer Summarize + Translate"
+    # 1. GONE from the list, handler included -- an orphaned handler reads as still-wired.
+    assert "anArticleLlm" not in html, (
+        "the per-row Summarize / Translate handler must go with its buttons"
     )
-    assert "async function anArticleLlm(" in html, "the per-article LLM handler must exist"
-    # it calls the existing single-article endpoints (not the keyword index)
-    assert "`/api/llm/articles/${id}/${op}`" in html, "must POST the single-article summarize/translate endpoint"
-    # the result is labelled AI-derived / unreliable (honesty by construction)
-    assert "AI summary — unreliable, verify against the source." in html
-    assert "AI translation — unreliable, verify against the source." in html
-    # the backend endpoints it relies on exist + store to article_analyses (never KeywordMention)
+    # 2. ABSORBED by the reader: its own Summary + Translation tabs, lazy-loaded.
+    reader_html = (_ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
+    for tab in ("summary", "translation"):
+        assert f'data-rtab="{tab}"' in reader_html, f"the reader must keep its {tab} tab"
+        assert f'data-lazy="{tab}"' in reader_html, f"the reader's {tab} pane must load on demand"
+    # 3. ...driving the SAME single-article endpoints, still storing to article_analyses
+    #    and never the trusted keyword index.
+    reader_js = (_ROOT / "src" / "static" / "reader.js").read_text(encoding="utf-8")
+    assert "/summarize" in reader_js and "/translate" in reader_js
     llm = (_ROOT / "src" / "api" / "llm.py").read_text(encoding="utf-8")
     assert '"/articles/{article_id}/summarize"' in llm and '"/articles/{article_id}/translate"' in llm
     assert "ArticleAnalysis(" in llm, "single-article results store in article_analyses, not the keyword index"
+    # 4. The BULK actions are a different tool and were not part of the ruling.
+    assert "bulkLlm('summarize','an')" in html and "bulkLlm('translate','an')" in html
+
+
+def test_the_source_arrow_column_moved_to_the_reader():
+    """Ruling 22's other half: the ``source ↗`` column leaves the Articles list.
+
+    Invariant #6 says no bare "official source ↗" shortcut anywhere -- an external
+    original is reached through a LOCAL page whose outbound link's visible text IS the
+    full URL. The reader is exactly that page, so this is the column arriving where the
+    invariant already wanted it, not a capability being dropped."""
+    # SCOPED to the renderer it is about. The same needle occurs in the cited-sources
+    # drill (a different surface, not covered by this ruling), so a whole-file search
+    # would fail against correct code -- the recorded non-unique-needle trap.
+    app = app_js()  # the UI ENGINE (ordered modules since the S-3 decomposition)
+    body = _js_function_body(app, "_anLoadArticles")
+    assert "source ↗" not in _strip_js_comments(body), (
+        "the per-row source arrow must be gone from the Articles list"
+    )
+    main = (_ROOT / "src" / "api" / "main.py").read_text(encoding="utf-8")
+    assert "Original source: <a class='ext src-link' href='" in main, (
+        "the reader must still show the original URL"
+    )
+    # ...and its visible text is the url itself (invariant #6), not a bare arrow.
+    at = main.index("Original source: <a class='ext src-link' href='")
+    assert "_html.escape(safe_src)}</a>" in main[at : at + 400], (
+        "the outbound link's visible text must BE the full URL"
+    )
 
 
 def test_world_map_server_location_layer():
@@ -831,7 +875,7 @@ def test_language_codes_shown_as_full_names_via_cldr():
     """Field test 2026-06-19 #52/#53 (THEME-4): show the full language NAME (CLDR via
     Intl.DisplayNames), not a bare 2-letter code, wherever a language is displayed
     (sources table/meta, source profile, translation provenance)."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "function ooLangName(code, fallback)" in app, "the ooLangName CLDR helper is gone"
     assert 'new Intl.DisplayNames([ui], { type: "language" })' in app
     # Applied at the sources table language cell (re-renders live on oo:langchange).
@@ -844,7 +888,7 @@ def test_network_polish_go_online_green_dynamic_title_and_panic_i18n():
     translatable."""
     base = _SRC / "static"
     css = (base / "app.css").read_text(encoding="utf-8")
-    app = (base / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     i18n = (base / "i18n.js").read_text(encoding="utf-8")
     html = (base / "index.html").read_text(encoding="utf-8")
     # #O-5: go-on (online) is green (--ok), not the accent.
@@ -864,7 +908,7 @@ def test_oosubtabs_queries_buttons_live_and_markets_keep_selection():
     nav rebuilds its buttons on every render, so the wired-once click handler painted
     detached buttons. ooSubtabs must query buttons LIVE, and the markets board must
     preserve the selected category across re-renders."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     oo = app.split("function ooSubtabs(", 1)[1].split("return { select: select", 1)[0]
     assert "const buttons = () =>" in oo, "ooSubtabs no longer queries its buttons live"
     assert "const btns = Array.prototype.slice.call(nav.querySelectorAll" not in oo, (
@@ -927,7 +971,7 @@ def test_ai_pill_is_backend_agnostic_no_count_and_offers_start_or_install():
     Settings -> AI; clicking RED tries to start the preferred installed backend
     (vLLM first) before falling back to the install/Settings path -- never a
     silent re-check only."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert 'el.textContent = "AI"' in app, (
         "the AI pill must read just 'AI' (no model count, maintainer 2026-07-24)"
     )
@@ -997,7 +1041,7 @@ def test_triage_and_source_tags_are_progressive_toggles_not_numeric_one_shots():
     assert 'onclick="runKeywordTriage(this)"' not in html
     assert 'onclick="runSourceTags(this)"' not in html
 
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "async function toggleKeywordTriage(" in app and "async function toggleSourceTags(" in app
     assert "syncKeywordTriageToggle" in app and "syncSourceTagsToggle" in app, (
         "the toggle label must re-sync with the real job state when the AI subtab opens"
@@ -1038,7 +1082,7 @@ def test_ai_sweep_toggles_never_hold_disabled_across_the_poll_and_have_no_model_
     was REMOVED is only as strong as the scope it searches, per this project's
     own S4.1 lesson) so an unrelated legitimate `btn.disabled` elsewhere in
     app.js can never mask a real regression here."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
 
     def _next_decl(text: str) -> int:
         cands = [
@@ -1127,7 +1171,7 @@ def test_perception_extraction_is_eval_gated_and_never_touches_the_trusted_table
     html = _ui_source()
     assert 'id="pe-toggle-btn"' in html, "the extraction sweep must be a toggle, matching B5's convention"
 
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "async function togglePerceptionExtract(" in app
     assert "syncPerceptionExtractToggle" in app and "loadPerceptionGate" in app, (
         "the toggle + the language-gate preview must both refresh when the AI subtab opens"
@@ -1170,7 +1214,7 @@ def test_advanced_search_language_is_a_flag_dropdown():
     html = _ui_source()
     assert '<select id="an-adv-lang"' in html, "the Advanced language field must be a <select>"
     assert '<input id="an-adv-lang"' not in html, "the old free-text language input must be gone"
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "function _anFillLangSelect()" in app and "of LANGS_12" in app, (
         "the language <select> must be populated from LANGS_12 (flag + native name)"
     )
@@ -1183,7 +1227,7 @@ def test_facet_subtabs_relocated_to_top_strip():
     html = _ui_source()
     assert 'class="chrome"' in html and 'id="subtab-strip"' in html, "the chrome + subtab strip must exist"
     assert ".chrome { position:sticky; top:0" in html, "the chrome must pin the status bar + strip at the top"
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "function _relocateSubtabs(" in app and "_relocateSubtabs(name)" in app, (
         "showTab must relocate the active tab's facet subtabs into the strip"
     )
@@ -1195,7 +1239,7 @@ def test_analysis_articles_paginated():
     """Maintainer field test 2026-06-20: the analysis Articles list is PAGINATED — a
     1000-result search is browsable with Prev/Next + 'Page X of Y' controls shown BOTH
     above and below the list (/api/articles already supports limit+offset)."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "function _anLoadArticles(" in app and "function _anArtGo(" in app and "_anArtPager(" in app
     assert 'q.set("offset"' in app and 'q.set("limit"' in app, "pagination must fetch by limit+offset"
     assert "_anLoadArticles(p, 0)" in app, "loadAnalysis must use the paginated loader"
@@ -1209,7 +1253,7 @@ def test_synthesis_opens_a_window_with_selection_metadata_and_export():
     by relevance) and lets the user pick, (2) shows the full corpus of synthesized
     articles WITH metadata, (3) is exportable/copyable, (4) writes in the UI language."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # the dialog window exists with a title + actions slot + body
     assert 'id="synth-window"' in html and 'id="synth-win-body"' in html
     assert 'id="synth-win-actions"' in html and 'id="synth-win-title"' in html
@@ -1240,7 +1284,7 @@ def test_bulk_translate_summary_runs_are_queued():
     new batch can be added while one is ongoing; they run ONE AT A TIME, each snapshots
     its selection, and the queue is visible with per-job cancel in a persistent panel."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # persistent queue containers (survive the config panel / extractor reusing the mount)
     assert 'id="bulk-queue-search"' in html and 'id="bulk-queue-an"' in html
     # queue machinery
@@ -1261,7 +1305,7 @@ def test_task_manager_reorder_moves_rows_optimistically():
     manager must VISUALLY move the row immediately — not wait for the backend round-trip
     or the next poll. Both task managers (in-app + the standalone /tasks page) renumber
     the cached queue and REPAINT before the POST, then reconcile."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     tm = (_SRC / "static" / "taskmanager.html").read_text(encoding="utf-8")
     # in-app: a paint-from-cache path + jobMove repaints before awaiting the reorder POST
     assert "function _paintJobs(" in app, "render-from-cache path for an instant move"
@@ -1281,7 +1325,7 @@ def test_offline_map_merged_list_state_and_planet_skips_downloaded():
     downloads into ONE state-aware list (not-downloaded/queued/downloading%/paused/done),
     download clicks give instant feedback, and 'Whole planet' downloads only the
     continents you DON'T already have (never re-fetches downloaded parts)."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # ONE merged list: loadOsmMap fetches BOTH endpoints and joins by code
     lm = app[app.index("async function loadOsmMap("):]
     lm = lm[: lm.index("\n    }")]
@@ -1351,7 +1395,7 @@ def test_remove_imported_newsletters_live_action():
     tickbox alone never removes them) — closing the 'replace the faulty ones' loop. The
     confirm-required endpoint + the Settings button/handler + the 'back up first' nudge."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     ing = (_SRC / "api" / "ingestion.py").read_text(encoding="utf-8")
     email = (_SRC / "ingest" / "email.py").read_text(encoding="utf-8")
     # backend: the count + confirm-required remove endpoints
@@ -1373,7 +1417,7 @@ def test_filtered_indicator_and_tag_autobackfill():
     """Brief §2.D: when filters/sort are active the analysis window shows a 'Filtered'
     scope chip (honest place — filters are analysis-scoped). §3.H: the Keywords explorer
     auto-applies baseline tags once when it opens empty (the auto-index pattern)."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # §2.D the active-filters indicator
     assert "function _anFilterSummary(" in app
     assert 't("Filtered")' in app
@@ -1386,7 +1430,7 @@ def test_model_download_queue():
     rest queue, each cancellable — Ollama's pull is not resumable so cancel, not pause).
     The AI tab enqueues with instant feedback + a live downloads/status section."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     llm = (_SRC / "api" / "llm.py").read_text(encoding="utf-8")
     jobs = (_SRC / "api" / "jobs.py").read_text(encoding="utf-8")
     mgr = (_SRC / "llm" / "pull_queue.py").read_text(encoding="utf-8")
@@ -1417,7 +1461,7 @@ def test_ollama_binary_installer():
     inst = (_SRC / "llm" / "installer.py").read_text(encoding="utf-8")
     llm = (_SRC / "api" / "llm.py").read_text(encoding="utf-8")
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # the verified core: resolve+verify against GitHub's attested digest, refuse mismatch
     assert "def resolve_and_verify(" in inst and "def prepare_installer(" in inst
     assert "class InstallerVerificationError" in inst and "hashlib.sha256" in inst
@@ -1445,7 +1489,7 @@ def test_newsletter_folder_import_job():
     ingest_emails; resume is idempotent (content-hash dedup + a PERSISTED cursor that
     survives an app restart)."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     ing = (_SRC / "api" / "ingestion.py").read_text(encoding="utf-8")
     jobs = (_SRC / "api" / "jobs.py").read_text(encoding="utf-8")
     job = (_SRC / "ingest" / "import_job.py").read_text(encoding="utf-8")
@@ -1476,21 +1520,61 @@ def test_newsletter_import_perf_and_upload_cap():
     assert "_MAX_UPLOAD_FILES" in ing and "request.form(max_files=" in ing
 
 
-def test_advanced_search_sort_by_metadata():
-    """Brief §2.D ('important'): /api/articles can sort by a metadata field (date|source|
-    title|language) — an honest ordering, never a relevance/quality score — surfaced as a
-    Sort control in the Advanced-search panel."""
+def test_search_sort_by_metadata_lives_with_the_list_it_orders():
+    """Brief §2.D ('important') + ruling 20 (2026-08-07): /api/articles can sort by a
+    metadata field — an honest ordering, never a relevance/quality score — and the
+    control now sits in the ARTICLES subtab, with the list it orders, instead of in
+    Advanced three subtabs away.
+
+    The field set is read from the module rather than matched as a literal, so adding an
+    honest new ordering does not fail this; what it still forbids is a field whose NAME
+    claims a score or a ranking.
+    """
     main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # backend: the params + the valid-field set + case-insensitive alphabetical
-    assert "sort_by:" in main and "sort_dir:" in main and "_SORT_FIELDS" in main
+    assert "sort_by:" in main and "sort_dir:" in main
     assert 'collate("NOCASE")' in main  # case-insensitive alphabetical, both paths agree
-    # no score: the sort fields are pure metadata
-    assert '{"date", "source", "title", "language"}' in main
-    # UI: the sort + order selects + they feed the query
-    assert 'id="an-adv-sort"' in html and 'id="an-adv-dir"' in html
+    from src.api.main import _SORT_FIELDS
+
+    assert {"date", "source", "title", "language"} <= _SORT_FIELDS
+    for f in _SORT_FIELDS:
+        assert not any(bad in f for bad in ("score", "rank", "rating", "grade", "quality")), (
+            f"sort field {f!r} names a judgement; sorting orders real metadata only"
+        )
+    # UI: exactly ONE sort control in the window (a move, never a duplicate)...
+    assert html.count('id="an-adv-sort"') == 1 and html.count('id="an-adv-dir"') == 1
+    # ...and it is in the Articles panel, not the Advanced one.
+    art = html.index('id="an-articles"')
+    adv = html.index('id="an-advanced"')
+    assert art < html.index('id="an-adv-sort"') < adv, (
+        "the sort control must sit inside the Articles panel (ruling 20)"
+    )
     assert 'p.set("sort_by"' in app and 'p.set("sort_dir"' in app
+
+
+def test_article_columns_are_sortable_headers():
+    """Ruling 21: a column header IS the sort control. It has to be a real button (so it
+    is keyboard-reachable and announces its state), it must drive the SAME two fields the
+    select drives -- two controls with independent opinions is what this replaced -- and
+    its active state may not be carried by colour alone."""
+    app = app_js()  # the UI ENGINE (ordered modules since the S-3 decomposition)
+    css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
+    th = _js_function_body(app, "_anTh")
+    assert "<button" in th and 'aria-pressed' in th, "a header must be a real, stateful button"
+    assert "_anSortBy(" in th
+    by = _js_function_body(app, "_anSortBy")
+    for field in ('$("an-adv-sort")', '$("an-adv-dir")'):
+        assert field in by, "the header must drive the SAME control the select drives"
+    # the arrow is a CHARACTER, so the active column survives greyscale and colour-vision
+    # differences; colour only reinforces it.
+    assert "↑" in th and "↓" in th
+    rule = _css_rule(css, ".an-th")
+    assert "opacity" not in rule, (
+        "no opacity: it composites the element over its parent and makes any contrast "
+        "figure a fiction (the recorded .ag-cal lesson)"
+    )
 
 
 def test_articles_provenance_toggle_and_keyword_count():
@@ -1500,7 +1584,7 @@ def test_articles_provenance_toggle_and_keyword_count():
     keyword), optionally sorting by it. Cheap by construction: a source-level filter + a
     keyword_mentions-only count (never the keyword_mentions->articles decrypt join)."""
     main = (_SRC / "api" / "main.py").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     prov = (_SRC / "catalog" / "provenance.py").read_text(encoding="utf-8")
     # provenance is a descriptive class derived from the source, explicitly NOT a score
     assert "def provenance_of(" in prov and "never a score" in prov
@@ -1525,7 +1609,7 @@ def test_cited_secondary_sources_auto_integration():
     lib = (_SRC / "discovery" / "cited_sources.py").read_text(encoding="utf-8")
     prov = (_SRC / "catalog" / "provenance.py").read_text(encoding="utf-8")
     sm = (_SRC / "api" / "source_management.py").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
     # the cited provenance CLASS is in the closed set (a channel, never a score)
     assert 'CITED = "cited"' in prov and "CITED" in prov.split("PROVENANCE_CLASSES")[1]
@@ -1548,7 +1632,7 @@ def test_large_data_folder_backup():
     directory — too big for the in-memory encrypted oo-backup-2. Pausable job + endpoints
     + the Settings panel; the corpus stays in the encrypted backup (these copied as-is)."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     bk = (_SRC / "api" / "backup_v2.py").read_text(encoding="utf-8")
     jobs = (_SRC / "api" / "jobs.py").read_text(encoding="utf-8")
     lib = (_SRC / "backup" / "folder_backup.py").read_text(encoding="utf-8")
@@ -1576,7 +1660,7 @@ def test_gui_shutdown_button_and_endpoint():
     that confirms, then stops the server (the GUI equivalent of Ctrl-C) — NOT uninstall
     or panic (data untouched)."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     sysapi = (_SRC / "api" / "system.py").read_text(encoding="utf-8")
     assert 'id="app-shutdown"' in html and 'onclick="appShutdown()"' in html
     assert "async function appShutdown(" in app and "/api/system/shutdown" in app
@@ -1599,7 +1683,7 @@ def test_uninstall_and_shutdown_replace_ui_with_terminal_overlay():
     """Maintainer 2026-06-21: after uninstall (and shutdown) the browser must not keep
     showing a clickable app against a dead server. Both replace the UI with a full-screen
     terminal overlay (blocking the dead tabs) + a best-effort window.close()."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "function _terminalOverlay(" in app
     assert "window.close()" in app, "best-effort close (works only for script-opened tabs)"
     # both the shutdown button and the uninstall flow use it
@@ -1616,7 +1700,7 @@ def test_airplane_flash_feedback_is_consistent_everywhere():
     feedback everywhere. The app fires a direction-aware full-screen #net-flash
     (.go-on/.go-off, animated in the shared app.css); the standalone /tasks page must
     fire the same flash when engaging airplane (the toggle that happens there)."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     tm = (_SRC / "static" / "taskmanager.html").read_text(encoding="utf-8")
     css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
     assert "#net-flash" in css and ".go-off" in css and "@keyframes netflash" in css
@@ -1632,7 +1716,7 @@ def test_airplane_toggle_gives_instant_feedback():
     react INSTANTLY: an optimistic button repaint + the flash + a brief 'Entering airplane
     mode' pop-up fire BEFORE the background POST, and a failed POST reverts honestly (we are
     NOT actually offline)."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
     assert "function _airplanePopup(" in app and "Entering airplane mode" in app
     assert ".net-popup" in css and "net-popup-ok" in css  # the pop-up (auto-dismiss + OK/backdrop close)
@@ -1788,7 +1872,7 @@ def test_toast_messages_stay_on_screen():
     seconds and pause while the user is reading them (maintainer-asked 2026-07-10). Guards
     against a regression to a too-short fixed auto-dismiss. The single ``toast()`` function in
     app.js drives every bottom-right message, so asserting on it covers the whole SPA."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "function toast(msg" in app, "the single bottom-right toast() function must exist"
     # errors/warnings linger longer than the default, and a hard minimum floor prevents flashes
     assert 'kind === "err" ? 9000' in app, "error toasts must linger longer than the default"
@@ -2643,14 +2727,15 @@ def test_ui_invariants():
     assert '<link rel="stylesheet" href="/static/app.css">' in raw, (
         "index.html must link the externalised stylesheet (PR H)"
     )
-    assert '<script src="/static/app.js"></script>' in raw, (
-        "index.html must load the externalised app.js (PR H)"
-    )
+    for _m in app_modules():
+        assert f'<script src="/static/{_m}"></script>' in raw, (
+            f"index.html must load the externalised engine module {_m} (PR H; S-3 split)"
+        )
     assert "<style>" not in raw and "\n  <script>\n" not in raw, (
         "no inline <style>/<script> may remain in index.html (PR H decomposition)"
     )
-    assert raw.index("/static/i18n.js") < raw.index("/static/app.js"), (
-        "i18n.js must still load before app.js (load order preserved)"
+    assert raw.index("/static/i18n.js") < raw.index(f"/static/{app_modules()[0]}"), (
+        "i18n.js must still load before the UI engine (load order preserved)"
     )
     # 27. Offline-map (Group M) download manager in Settings: a region picker over
     #     /api/geo/regions + a resumable download-job table over /api/geo/downloads,
@@ -3049,7 +3134,7 @@ def test_net_coach_never_places_above_the_topbar_row():
     live: at both 1400px (room to the right, "left" branch) and 900px (no room, "below"
     branch forced), all four buttons independently resolve document.elementFromPoint() to
     themselves while the coach is showing."""
-    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    js = app_js()
     fn = js.split("function _placeCoach() {", 1)[1].split("\n    }\n", 1)[0]
     assert "top = b.top - gap - h" not in fn, (
         "the old always-fails-near-the-topbar fallback (place above the single button, "
@@ -3392,7 +3477,13 @@ def test_agenda_merges_imported_events_as_filterable_class():
     assert "imported: true" in html, (
         "imported events must carry the imported:true provenance flag (their filterable class)"
     )
-    assert "e.imported || (e.sources" in html, "imported events must bypass the subscribed-only filter"
+    # 2026-08-20: the bypass gained `e.deduced` beside `e.imported` — corpus-DEDUCED
+    # events' synthetic calendar can never be subscribed, so without the second flag the
+    # default-checked filter hid the whole deduced category (the matrix run's agenda
+    # drill; guarded in tests/test_ui_matrix_20260820.py). The imported half is unchanged.
+    assert "e.imported || e.deduced || (e.sources" in html, (
+        "imported events must bypass the subscribed-only filter"
+    )
     import json
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
     assert "imported" in en, "the 'imported' category label must be keyed ×12"
@@ -4056,7 +4147,7 @@ def test_recursive_augmentation_logs_are_wired():
     """The 5 recursive-augmentation diagnostic logs (maintainer 2026-07-02) are wired:
     frontend error capture in the UI + the backend endpoints in the diagnostics router
     + all five ride the debug bundle and the all-diagnostics archive."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # log #1: the frontend captures window.onerror / unhandledrejection / failed fetch
     assert 'addEventListener("error"' in app and 'addEventListener("unhandledrejection"' in app, (
         "the UI must capture JS errors + unhandled rejections"
@@ -4222,7 +4313,14 @@ def test_temporal_map_retired_into_ooMap():
         assert gone not in html, f"the retired temporal-map panel must not ship: {gone}"
 
     # 2) The Map tab now drives the unified ooMap directly (not the temporal loader).
-    assert "timemap: loadOoMapCoverage," in html, "the Map tab must route to the unified ooMap"
+    #    Matched WITHOUT the trailing comma and independently of the call shape: every
+    #    TAB_LOADERS entry became an arrow when the engine was split into modules
+    #    (S-3, 2026-08-20), because a bare reference is resolved when the table is BUILT
+    #    and so depends on the loader being hoisted into the same script. The property
+    #    this guard is about -- which loader the Map tab routes to -- is unchanged.
+    assert re.search(r"timemap:\s*(?:\(\)\s*=>\s*)?loadOoMapCoverage\b", html), (
+        "the Map tab must route to the unified ooMap"
+    )
 
     # 3) ABSORBED capabilities survive on ooMap (the Desk lesson):
     #    - the mentioned-PLACES overlay (was the temporal mention layer) reuses the
@@ -4407,8 +4505,12 @@ def test_search_timescope():
     assert 'p.set("start_date", sel.from)' in html, "the control's 'from' must feed start_date"
     assert 'p.set("end_date", sel.to)' in html, "the control's 'to' must feed end_date"
     assert "searchTimeScopeParams(p)" in html, "searchParams() must forward the time-scope window"
-    # mounted lazily on first Search-tab open (TAB_LOADERS), idempotent
-    assert "search: buildSearchTimeScope" in html, (
+    # mounted lazily on first Search-tab open (TAB_LOADERS), idempotent. Matched
+    # independently of the call shape: every TAB_LOADERS entry became an arrow when
+    # the engine was split into modules (S-3, 2026-08-20), since a bare reference is
+    # resolved when the table is BUILT and so depends on same-script hoisting. Which
+    # loader the Search tab mounts -- the property this guard is about -- is unchanged.
+    assert re.search(r"search:\s*(?:\(\)\s*=>\s*)?buildSearchTimeScope\b", html), (
         "the Search tab loader must mount the time-scope control"
     )
 
@@ -4840,7 +4942,7 @@ def test_families_kind_filter_and_taxonomy_honesty():
     assert '"non_term"' in api_src, "non_term must be an accepted kind value on the endpoint"
 
     # the Insights read-only view no longer client-filters by kind after the fetch (the bug)
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     fam_view = app[app.index("async function loadFamilies(") : app.index("async function loadFamilyCuration(")]
     assert 'filter(f => f.kind !== "term")' not in fam_view, (
         "a client-side filter-after-limit is exactly the bug this fix replaces"
@@ -4873,7 +4975,7 @@ def test_family_curation_relocated_to_settings_and_single_member_guarded():
     assert 'onclick="familyMerge()"' in set_section
     assert 'id="fam-overrides"' in set_section, "the overrides list rides along (nothing lost)"
 
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     cur = app[app.index("async function loadFamilyCuration(") : app.index("async function familySplit(")]
     assert "f.variants > 1 || f.ring_id || f.manual" in cur, (
         "the relocated review list must show ONLY rows where a decision exists"
@@ -5060,7 +5162,7 @@ def test_circle_grammar_level_marking_is_wired_and_contrast_verified():
     import re
 
     css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
-    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    js = app_js()
 
     # (a) theme-derived variables, never a hardcoded hex hue.
     assert "--lvl-group:color-mix(in srgb, var(--accent)" in css.replace("\n", "")
@@ -5191,7 +5293,7 @@ def test_concept_map_two_tier_browse_and_clickable_countries():
     import json
 
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    js = app_js()
 
     # The old flat dropdown is GONE; the new two-tier browse scaffolding is present.
     assert 'id="sg-ringmap-pick"' not in html, "the flat 540-item dropdown must be removed"
@@ -5289,7 +5391,7 @@ def test_task_manager_shows_pass_phase_and_upcoming_sources():
     import json as _json
 
     tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
-    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     for src, name in ((tm, "taskmanager.html"), (app, "app.js")):
         # Phase mapping keyed off a.phase, gated on a.active (not a bare 'idle').
         assert "a.phase" in src, f"{name}: must read the pass phase from activity"
@@ -5324,7 +5426,7 @@ def test_task_manager_displays_actual_language_and_tag_strata():
     from the bounded sample plan_preview already fetched — no new unbounded scan on the
     hot poll). The backend plan_preview must emit the strata."""
     tm = (_ROOT / "src" / "static" / "taskmanager.html").read_text(encoding="utf-8")
-    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     for src, name in ((tm, "taskmanager.html"), (app, "app.js")):
         assert "plan.strata" in src, f"{name}: must read the actual strata from the plan"
         assert 'st.languages' in src and 'st.tags' in src, (
@@ -5350,7 +5452,7 @@ def test_sidebar_is_a_flat_list_without_section_headers():
     the hide-a-tab feature are removed. Every tab stays present + reachable (invariant
     #2: lists all tabs)."""
     html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     nav = html.split('id="navGroups"', 1)[1].split("</nav>", 1)[0]
     # No section-header markup left in the live nav (comments may mention them).
     assert '<div class="gl">' not in nav and '<div class="nav-group"' not in nav, (
@@ -5378,7 +5480,7 @@ def test_world_law_renamed_governments_with_subtabs():
     import json as _json
 
     html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # Nav relabelled (anchor stays data-tab="law").
     assert '<span>Governments</span>' in html and 'data-tab="law"' in html
     # The 3 subtabs + their panes.
@@ -5412,7 +5514,7 @@ def test_custody_dissolved_from_sidebar_but_reachable_from_settings():
     Safety — but the Desk lesson holds: the page + tools stay, reachable from Settings
     (a showTab('custody') button) and the command palette (custody is in NAV)."""
     html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     nav = html.split('id="navGroups"', 1)[1].split("</nav>", 1)[0]
     assert 'data-tab="custody"' not in nav, "the custody sidebar button must be removed"
     # Reachable from Settings → Safety + preserved (the page + the save action stay).
@@ -5429,7 +5531,7 @@ def test_sources_have_multi_select_dropdown_filters():
     toggle and the free-text title search kept. Backend: a cheap facets endpoint + the
     list endpoints accept comma-separated OR-within multi-values."""
     html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # The four multi-select <details> dropdowns + the tag any/all toggle + kept search.
     for el in ("src-msel-language", "src-msel-country", "src-msel-source_type", "src-msel-tag"):
         assert f'id="{el}"' in html, f"missing multi-select dropdown {el}"
@@ -5580,7 +5682,7 @@ def test_no_app_function_calls_i18n_t_without_binding_it():
     excluding the legitimate `terms.map(t => …)` loop-variable use."""
     import re
 
-    src = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    src = app_js()
     lines = src.split("\n")
     func_re = re.compile(r"^\s*(async\s+)?function\s+(\w+)\s*\(([^)]*)\)")
     offenders: list[str] = []
@@ -5627,7 +5729,7 @@ def test_keyword_filter_shows_the_builtin_stoplist():
     assert 'id="kf-builtin-view"' in html and 'id="kf-builtin-q"' in html, (
         "the keyword-filtering panel must show a searchable built-in-stoplist view"
     )
-    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "loadBuiltinStoplist" in app and "/api/insights/filter/builtin" in app
 
 
@@ -5825,7 +5927,7 @@ def test_auto_index_insights_is_throttled_not_a_per_tick_storm():
     each batch a heavy write contending with the live scrape. autoIndexInsights now runs
     ONE bounded pass (<=40 batches, not the old 500) then cools down, and stops on a
     genuinely stuck backlog — so the 6 s poll can no longer storm the writer."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # The function gained a cooldown gate so a poll within the window is a no-op.
     assert "_autoIndexCooldownUntil" in app, "auto-index lost its cooldown throttle"
     assert "if (Date.now() < _autoIndexCooldownUntil) return;" in app, (
@@ -5848,7 +5950,7 @@ def test_warm_cache_keys_match_the_trending_windows_requests():
 
     from src.api.insights import WARM_TRENDING_HOME, WARM_TRENDING_INSIGHTS
 
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     shapes = set()
     for m in re.finditer(r"/api/insights/trending-windows\?limit=(\d+)&series_top=(\d+)", app):
         shapes.add((int(m.group(1)), int(m.group(2))))
@@ -5870,7 +5972,7 @@ def test_auto_update_note_removed_and_country_names_localized():
     assert "Updates automatically in the background." not in html, (
         "the redundant auto-update note is back (#15)"
     )
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # The source-profile "Country:" fact + the map-mention readout show the localized
     # name, not the raw uppercased 2-letter code.
     assert 'ooRegionName(meta.country, meta.country.toUpperCase())' in app
@@ -5882,7 +5984,7 @@ def test_server_side_folder_picker_wired():
     traversal-safe /api/fs/list backs a folder picker wired into the folder-backup
     destination + the .eml folder-import path inputs (folders only, never file names)."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # Browse buttons on the server-side path inputs + the picker dialog. The
     # standalone folder-backup destination was folded into the unified Export/Import
     # dialog (2026-07-01): ux-dest = the export destination, ux-imp-src = the import
@@ -6097,7 +6199,7 @@ def test_vitals_poll_backs_off_when_panel_closed():
     keeps its OWN ``_adaptivePoll``, so this must not touch it."""
     import re
 
-    src = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    src = app_js()
     m = re.search(r"function _vitalsCadence\(\)\s*\{\s*return _vitalsOpen \? (\d+) : (\d+)", src)
     assert m, "_vitalsCadence() must exist and branch on _vitalsOpen (panel-open vs chip-only)"
     open_ms, closed_ms = int(m.group(1)), int(m.group(2))
@@ -6250,7 +6352,7 @@ def test_ring_translation_breakdown_rides_the_hover():
     rides the #oo-tip LAYERED hover (the title attribute) on the Trends/Home rows — visible on
     demand, never crowding the visible row (invariant #17). kwTransHtml reads
     row.language_breakdown into its title, never into the row text."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     start = app.index("function kwTransHtml(")
     kw = app[start : app.index("function kwTentativeHtml(", start)]
     assert "row.language_breakdown" in kw, "the breakdown must feed kwTransHtml"
@@ -6270,7 +6372,7 @@ def test_home_overview_absorbs_the_retired_leads_carousel():
     on the removed ids), until a browser-verified deletion pass, exactly as the temporal
     map was retired."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # RETIRED: the markup and the call sites are gone.
     assert 'id="home-carousel-panel"' not in html and 'id="home-carousel"' not in html, (
         "the carousel markup must be retired, not merely hidden"
@@ -6307,7 +6409,7 @@ def test_home_panels_are_subtabs_not_a_stack():
     empty states untouched -- only visibility moves), and Trending folds into Overview as
     a compact row. A panel with nothing to show keeps its own `hidden`, so a tab is never
     offered onto an empty room."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "_HOME_PANEL_TABS" in app and "function _syncHomeSubtabs(" in app
     for pid in ("home-recent-panel", "home-latest-panel", "home-channels-panel"):
         assert pid in app, f"{pid} must be wired as a subtab"
@@ -6332,7 +6434,7 @@ def test_omnibar_analysis_window_absorbs_the_insights_bar_capabilities():
     corpus-landscape AND the RELOCATABLE shared #mm-kit mindmap component, so the actual hide is
     gated on a browser-verified untangling (recorded as the S4.4 carry-over)."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # the #an subtab panels exist for each absorbed lens
     assert 'id="an-trend"' in html and 'id="an-mindmap"' in html and 'id="an-keywords"' in html
     # trend + associations flow into #an (renderAnTrend)
@@ -6358,7 +6460,7 @@ def test_i18n_composite_strings_and_translatable_card_titles():
     via tf; the English `title` stays the fallback. The `rising` reference producer emits one,
     and the template key exists in ALL 12 locales (so --min 100 stays green)."""
     i18n = (_SRC / "static" / "i18n.js").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # (a) the engine exposes tf(): template lookup + {named} interpolation, exported
     assert "function tf(s, vars)" in i18n
     assert "map[s] == null ? s : map[s]" in i18n and "replace(/\\{(\\w+)\\}/g" in i18n
@@ -6391,7 +6493,7 @@ def test_guided_wizard_sources_by_theme_step():
     language_equilibrium (a cadence lever that ORDERS, never excludes). The language step is
     already consolidated out (§2.5) — the flow is [sources, finish]."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     # the step DOM exists (theme picker + language-emphasis group)
     assert 'data-step="sources"' in html and 'id="gw-themes"' in html and 'id="gw-emph-langs"' in html
     # the flow is sources -> finish (language step already dropped)
@@ -6426,7 +6528,7 @@ def test_usgs_minerals_supply_surface_is_supply_not_prices():
     assert "def minerals_supply_summary(" in store and '"available"' in store
     api = (_SRC / "api" / "stats.py").read_text(encoding="utf-8")
     assert '"/minerals-supply"' in api
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     ms = app[app.index("async function loadMineralsSupply(") : app.index("async function loadMineralsSupply(") + 1400]
     assert "/api/stats/minerals-supply" in ms and "d.available" in ms and "d.reason" in ms
     assert "supply data, not prices" in ms.lower()
@@ -6469,7 +6571,7 @@ def test_ir_gold_set_builder_writes_validated_gold_and_closes_the_loop():
     assert "top_terms" in gb and "search history is not stored" in gb, "real queries, never invented"
     diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
     assert '"/gold-builder/sample"' in diag and '"/gold-builder/save"' in diag
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "function goldBuilderLoad(" in app and "function goldBuilderSave(" in app
     assert "/api/diagnostics/gold-builder/sample" in app and "/api/diagnostics/gold-builder/save" in app
     assert "function goldBuilderKey(" in app and 'ev.key === "0"' in app, "keyboard-speed grading"
@@ -6485,7 +6587,7 @@ def test_lemma_preview_is_surfaced_in_the_diagnostics_panel():
     assert "def lemma_preview_report(" in er, "the focused (no full-report) preview function"
     diag = (_SRC / "api" / "diagnostics.py").read_text(encoding="utf-8")
     assert '"/lemma-preview"' in diag
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     lp = app[app.index("async function loadLemmaPreview(") : app.index("async function loadLemmaPreview(") + 2600]
     assert "/api/diagnostics/lemma-preview" in lp and "_MISLEMMA_DENYLIST" in lp
     assert "candidate_groups" in lp and "keywords_that_would_merge" in lp
@@ -6645,7 +6747,7 @@ def test_vacuum_button_has_a_real_size_gate():
     (small size -> no prompt; large size -> the real GB + the derived
     seconds-range shown; cancel -> the API is never called; unknown size -> the
     honest fallback caveat) — this is the fast source-grep companion."""
-    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    js = app_js()
     assert "let _dbFileBytes = null;" in js
     assert "_dbFileBytes = (st.file && st.file.bytes != null) ? st.file.bytes : null;" in js
     assert "function _confirmVacuum()" in js
@@ -6672,7 +6774,7 @@ def test_agenda_dated_instances_place_in_their_own_year_and_show_provenance():
     2025 movable feast projected onto 2026). Dated instances place via
     next_occurrence ONLY. Plus: imported events must name their feed (visible
     provenance — "the source should be clear")."""
-    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
 
     imported = app.split("function mapImportedToAgenda")[1].split("function mapDeducedToAgenda")[0]
     deduced = app.split("function mapDeducedToAgenda")[1][:1600]  # the mapper body
@@ -6697,7 +6799,7 @@ def test_rate_mode_knob_in_top_bar_and_maximum_default():
     accent .rate-max class + the needle rotation, and the Settings speed slider
     stays in sync via applySchedConfig."""
     html = _ui_source()
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     settings_src = (_SRC / "scheduler" / "settings.py").read_text(encoding="utf-8")
 
     # Backend default: maximum (target mode + its 500 KiB/s knob stay available).
@@ -6745,7 +6847,7 @@ def test_analysis_tab_restore_runs_before_the_deep_link_hydration():
     just-spawned tab before the restore ever reads it. Fix: restore FIRST, so the
     deep-linked seed is ADDED (via _anSpawn's dedup-by-key reuse) to the restored set
     instead of clobbering it."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     restore_at = app.index("_anRestoreTabs();")
     hydrate_at = app.index("(function _hydrateCardCorpus() {")
     assert restore_at < hydrate_at, \
@@ -6763,7 +6865,7 @@ def test_corpus_window_open_is_debounced_against_double_clicks():
     tabs for the same corpus. Fixed with a shared _openCorpusUrlOnce() debounce (a
     same-URL open within 700ms is swallowed) that both call sites route through
     instead of calling window.open() directly."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "function _openCorpusUrlOnce(url)" in app, "the shared debounce helper must exist"
     debounce_fn = app.split("function _openCorpusUrlOnce(url) {", 1)[1].split("\n    }\n", 1)[0]
     assert "_lastCorpusOpenUrl" in debounce_fn and "_lastCorpusOpenAt" in debounce_fn
@@ -6788,7 +6890,7 @@ def test_saving_unrelated_settings_never_silently_overwrites_a_named_theme():
     tracking which bucket syncThemeSelect() last assigned (_lastSyncedThemeBucket) and
     only re-applying the select's value in saveSettings() when it has actually CHANGED
     since -- i.e. the user picked a different bucket in General themselves."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "_lastSyncedThemeBucket" in app, "the last-synced-bucket tracker must exist"
 
     sync_fn = _js_function_body(app, "syncThemeSelect")
@@ -6836,7 +6938,7 @@ def test_popstate_closes_every_open_dialog():
     (wired to "cancel" too). Fixed by dispatching a synthetic "cancel" event (the
     same signal Escape sends) BEFORE the force-close, so every dialog's own
     resolve/cleanup path runs first."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert 'new Event("cancel", {cancelable: true})' in app, \
         "a synthetic cancel must be dispatched so each dialog's own resolve/cleanup runs"
     assert 'document.querySelectorAll("dialog[open]").forEach((d) => {' in app, \
@@ -6882,7 +6984,7 @@ def test_api_error_handles_a_pydantic_validation_array_detail():
     an Array detail is joined from each item's .msg (or JSON.stringify as a
     fallback); a plain string detail (or none at all) must render BYTE-IDENTICALLY
     to the old expression."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "function _apiErrorMessage(data, res)" in app, "the shared helper must exist"
     fn = app.split("function _apiErrorMessage(data, res) {", 1)[1].split("\n    }\n", 1)[0]
     assert "Array.isArray(d)" in fn, "it must specifically branch on an Array detail"
@@ -6916,7 +7018,7 @@ def test_api_error_handles_an_object_detail_and_carries_it_to_the_caller():
     and ``api()`` must attach the structured ``detail``/``status`` to the thrown
     Error so a caller can act on a machine-readable refusal without re-parsing
     the message."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     fn = app.split("function _apiErrorMessage(data, res) {", 1)[1].split("\n    }\n", 1)[0]
     assert 'typeof d === "object"' in fn, \
         "the helper must branch on a plain-object detail, not only on an Array"
@@ -6938,7 +7040,7 @@ def test_home_briefing_re_renders_on_language_switch():
     in that same listener, gated on _lastBriefGen (only once the briefing has
     actually loaded at least once, so a fresh boot never fires an unnecessary
     fetch before Home was ever opened)."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     listener = app.split('document.addEventListener("oo:langchange", () => {', 1)[1] \
                   .split("\n    });\n", 1)[0]
     assert "_lastBriefGen !== null" in listener, \
@@ -6955,7 +7057,7 @@ def test_insights_landscape_kind_group_labels_are_translated():
     UI language. Fixed by wrapping the label in esc(t(...)), matching the
     surrounding code's escaping convention, plus keying the 4 labels that were not
     already translatable ("Places" alone already had a key) across all 12 locales."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     fn = app.split("async function loadLandscape(force) {", 1)[1].split("\n    }\n", 1)[0]
     assert "esc(t(g.label))" in fn, \
         "the column header must render through esc(t(...)), matching the surrounding code"
@@ -7186,7 +7288,7 @@ def test_evidence_links_underlined_and_use_the_shared_extlink_class():
     always prefixing the "ext-link" class in extLink() and giving that class a
     permanent underline in CSS, removing the two inline text-decoration:none
     overrides that would otherwise have defeated it."""
-    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    js = app_js()
     css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
 
     fn = js.split("function extLink(url, label, cls, style) {", 1)[1].split("\n    }\n", 1)[0]
@@ -7214,7 +7316,7 @@ def test_lead_card_flip_trigger_is_not_nested_inside_an_interactive_role():
     all plain text), and giving the back's own "Back" hint its own small,
     explicitly-scoped <button> instead of relying on the whole (button/link-hosting)
     back face being itself a button."""
-    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    js = app_js()
     card_html = _js_function_body(js, "cardHtml")
 
     # The outer container is a plain, non-interactive group wrapper -- exact-string
@@ -7274,7 +7376,7 @@ def test_governments_law_pointer_shows_both_tracked_and_baselined():
     baselined'). Since the two concepts are legitimately distinct, the pointer now
     shows BOTH numbers, matching that established wording exactly rather than
     collapsing to one misleading word."""
-    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    js = app_js()
     fn = js.split("async function loadLawPointer() {", 1)[1].split("\n    }\n", 1)[0]
 
     # documents (the real tracked-document count) and tracked (the API's own,
@@ -7374,7 +7476,7 @@ def test_home_recent_panel_unhides_on_error_too():
     SUCCESS paths -- the honest empty state and the populated rows -- toggled it
     visible) -- so a genuine fetch failure silently disappeared instead of showing
     its own honest message."""
-    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    js = app_js()
     fn = js.split("async function loadHomeRecentList(tag) {", 1)[1].split("\n    }\n", 1)[0]
 
     catch_block = fn.split("} catch (e) {", 1)[1]
@@ -7407,7 +7509,7 @@ def test_chart_enlarge_scale_hint_and_caveat_cannot_disagree_or_evict_each_other
     the mode can neither stale nor evict. A caller whose caveat IS a mode statement passes
     none, because HINTS already says it.
     """
-    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    js = app_js()
     fn = js.split("function chartEnlarge(title, seriesList, caveat, opts) {", 1)[1].split(
         "\n    function _chartEnlargeExtra", 1)[0]
 
@@ -7447,7 +7549,7 @@ def test_worldmap_fullscreen_targets_host_so_legend_and_caveat_stay_visible():
     while fullscreen. `host` (the caller's dedicated map container, e.g.
     #oo-coverage-map) already wraps .oomap-wrap AND .oomap-legend AND the method/
     caveat and nothing unrelated, so fullscreen now targets `host` instead."""
-    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    js = app_js()
     fn = _js_function_body(js, "_wireOoMap")
 
     # The three fullscreen call sites must all resolve against `host` directly,
@@ -7482,7 +7584,7 @@ def test_markdown_bold_span_survives_a_source_line_break():
     Joining the raw lines into ONE string per paragraph/blockquote BEFORE
     running inline() lets the regex see the whole span regardless of which
     source line it was wrapped on."""
-    js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    js = app_js()
     fn = _js_function_body(js, "mdToHtml")
 
     # Paragraphs: inline() must run on the WHOLE joined string, never per-line.
@@ -7514,8 +7616,9 @@ def test_markdown_bold_span_survives_a_source_line_break():
 
     # Byte-level sanity: the fix must be an ESCAPED source-text sequence, never an
     # actual embedded NUL byte in the file.
-    raw_bytes = (_SRC / "static" / "app.js").read_bytes()
-    assert b"\x00" not in raw_bytes, "app.js must never contain a literal NUL byte"
+    for _mod in app_modules():
+        raw_bytes = (_SRC / "static" / _mod).read_bytes()
+        assert b"\x00" not in raw_bytes, f"{_mod} must never contain a literal NUL byte"
 
     # Runtime proof (mirrors mdToHtml's own regex set exactly): a bold span
     # spanning two lines renders as ONE correctly-wrapped <strong>, not a garbled
@@ -7571,7 +7674,7 @@ def test_library_graphs_wired_and_downloaded_section_compressed():
     is compressed into the established collapsed-by-default <details class="adv-collect">
     disclosure (item 5). Wired via the /api/library/history endpoint (S2 backend)."""
     html = _ui_source()
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
 
     # Three dedicated graph host sections exist in the Library tab, each with its
     # own panel (Activity / Wikipedia tracked / Law tracked -- item 5's ask for
@@ -7612,7 +7715,7 @@ def test_library_qualification_tile_window_switcher_hide_flat_auto_log():
     same default window), hide-flat collapsing an all-zero/no-data series to a
     one-line note, and auto-log10 on a large cross-series spread — never
     multi-axis for same-unit series (the honest-viz dual-axis rejection)."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     snap = (_SRC / "database" / "snapshots.py").read_text(encoding="utf-8")
 
     # backend: the 4 filtered metrics exist, aligned with database.py's own
@@ -7717,7 +7820,7 @@ def test_law_ai_change_summaries_are_a_labelled_linked_layer():
     assert prefix_m and path_m
     assert prefix_m.group(1) + path_m.group(1) == "/api/law/revisions/{revision_id}/summarize"
 
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "function lawAiSummaryHtml(" in app
     assert "function lawSummarize(" in app
     assert "/api/law/revisions/${revId}/summarize" in app
@@ -7973,7 +8076,7 @@ def test_hazards_are_ingested_as_articles_with_a_home_strip_and_map_rings():
     # (were being fetched and DROPPED before), a per-item map deep link, and an
     # internal-article link that only appears once article_id is real (never a
     # broken/fabricated link).
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     assert "function _hazardStripItem(h)" in app
     assert "const HAZARD_GLYPH = {" in app
     assert "h.article_id != null" in app
@@ -8080,7 +8183,7 @@ def test_calendar_chip_contrast_and_toggle_state():
         "--chip-off must be DERIVED from the theme's own --fg/--muted, never a fixed hue"
     )
     # state must not be conveyed by colour alone
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
     chip = app.split('class="ag-cal', 1)[1][:400]
     assert "aria-pressed" in chip, "a subscribe toggle must announce its state"
 
@@ -8238,7 +8341,7 @@ def test_the_ai_install_egress_window_is_wired_and_states_its_limit():
     is structural; only the AI-install gates are exempted.
     """
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app_js = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
 
     # 1. Its OWN consent dialog -- not #net-consent, because this is not going online.
     assert 'id="ai-egress-consent"' in html, "the window needs its own consent dialog"
@@ -8263,35 +8366,35 @@ def test_the_ai_install_egress_window_is_wired_and_states_its_limit():
 
     # 3. A persistent, visible indication while it is open, with a working close.
     assert 'id="egress-window-bar"' in html, "an open window must be visible app-wide"
-    assert "_paintEgressWindow" in app_js and "closeEgressWindow" in app_js
+    assert "_paintEgressWindow" in app and "closeEgressWindow" in app
 
     # 4. It must never ride the online path. _postGoOnline stays the ONE place that
     #    POSTs /api/system/network (invariant #14 + tests/test_network_consent.py).
-    assert app_js.count("JSON.stringify({online:true})") == 1, (
+    assert app.count("JSON.stringify({online:true})") == 1, (
         "_postGoOnline must remain the ONE place that flips the app online; the "
         "egress window is a third state and must never POST /api/system/network"
     )
-    assert '"/api/system/egress-window"' in app_js
+    assert '"/api/system/egress-window"' in app
     for fn in ("_openEgressWindow", "closeEgressWindow", "ensureAiEgress"):
-        body = app_js.split(f"function {fn}(", 1)[1].split("\n    async function", 1)[0]
+        body = app.split(f"function {fn}(", 1)[1].split("\n    async function", 1)[0]
         assert "/api/system/network" not in body or "method" not in body.split(
             "/api/system/network", 1
         )[1].split("\n", 1)[0], f"{fn} must not POST the network endpoint"
 
     # 5. The AI install paths ask for a WINDOW, not full online.
-    assert "ensureAiEgress(" in app_js
+    assert "ensureAiEgress(" in app
     for anchor in ("async function installVllm", "async function prepareOllamaInstall"):
-        assert anchor in app_js, anchor
+        assert anchor in app, anchor
     # installVllm previously called ensureOnline and DISCARDED the result, so
     # declining the consent did not stop the install. Pin the fix.
-    install_vllm = app_js.split("async function installVllm", 1)[1].split("\n    async function", 1)[0]
+    install_vllm = app.split("async function installVllm", 1)[1].split("\n    async function", 1)[0]
     assert "if (!await ensureAiEgress(" in install_vllm, (
         "installVllm must ACT on the consent result, not discard it"
     )
 
     # 6. The airplane button must not keep asserting "every new network request will
     #    be refused" while a window is open -- that sentence is false during one.
-    assert "except the AI install you allowed" in app_js, (
+    assert "except the AI install you allowed" in app, (
         "the airplane hover must tell the truth while a window is open"
     )
 
@@ -8306,7 +8409,7 @@ def test_the_ai_install_egress_window_is_wired_and_states_its_limit():
     #    sites and would stay green with this gate deleted (this project's own S4.1
     #    lesson -- a removal guard is only as strong as the scope it searches).
     for fn in ("prepareOllamaInstall", "runOllamaInstall"):
-        body = _js_function_body(app_js, fn)
+        body = _js_function_body(app, fn)
         assert "if (!await ensureAiEgress(" in body, (
             f"{fn} must ask for a window and act on the answer"
         )
@@ -8315,7 +8418,7 @@ def test_the_ai_install_egress_window_is_wired_and_states_its_limit():
     #    flight runs in a child process this app cannot stop -- exactly what the
     #    consent dialog said when the window opened -- so "can no longer reach the
     #    network" would contradict it three clicks later.
-    close_body = _js_function_body(app_js, "closeEgressWindow")
+    close_body = _js_function_body(app, "closeEgressWindow")
     # Comment-STRIPPED: the comment explaining why the old wording is gone has to
     # quote it, so a raw search fails against correct code -- on its own
     # explanation. Dropping whole-line // comments leaves a URL inside a string
@@ -8336,7 +8439,7 @@ def test_the_ai_install_egress_window_is_wired_and_states_its_limit():
     #    was last WRITTEN, never bar.innerHTML (the browser normalises markup on
     #    read-back, so that comparison never matches and the guard silently does
     #    nothing).
-    paint = app_js.split("function _paintEgressWindow(", 1)[1].split(
+    paint = app.split("function _paintEgressWindow(", 1)[1].split(
         "\n    // Poll only WHILE", 1
     )[0]
     assert "_egressBarHtml === html" in paint and "bar.innerHTML === html" not in paint, (
@@ -8364,7 +8467,7 @@ def test_library_is_five_subtab_views_with_lazy_loaders():
     tab open -- "folded must not mean fetched", so opening the Library no longer pays
     for the recursive storage walk and the coverage map up front."""
     html = (_SRC / "static" / "index.html").read_text(encoding="utf-8")
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()
 
     assert 'id="library-views"' in html, "the Library subtab nav must exist"
     for key in ("overview", "activity", "tracked", "storage", "coverage"):
@@ -8694,9 +8797,7 @@ def test_the_ai_store_panel_leads_with_the_path_in_use():
     which writes to its OWN OLLAMA_MODELS — but the panel's headline line printed the
     app's configured path and the app's configured size, so the numbers pointed away
     from the answer and the folder had to be found in a file manager."""
-    app = (Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_text(
-        encoding="utf-8"
-    )
+    app = app_js()
     body = _js_function_body(app, "loadAiStore")
     assert "r.ollama.in_app_folder === false" in body, "the two cases must be told apart"
     assert "r.ollama.detected" in body and "r.ollama.detected_bytes" in body, (

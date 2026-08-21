@@ -435,7 +435,16 @@
        exactly as .pill.err does. */
     #llm.ai-off {
       position:relative; overflow:hidden;
-      color:var(--err);
+      /* The "AI" LABEL at raw var(--err) failed WCAG AA 4.5:1 text contrast against this
+         rule's own 8%-err pill tint on 13 of 17 themes (worst: solar 2.41:1, dawn 3.80,
+         sepia 3.94 — computed per theme from the declared tokens, 2026-08-20 matrix run;
+         found once the theme axis widened past the 5 themes earlier runs checked). Same
+         repair as the diagonal bar below and the marks (2026-08-12): mix toward --fg,
+         theme-DERIVED, never a hardcoded hue. 55% is the smallest 5-point step clearing
+         4.5:1 on every theme (worst case 4.82:1 on solar); the red hue survives, and the
+         STATE was never colour-only anyway — the diagonal bar and the hover title carry
+         it (the 2026-08-02 ruling's own bar). */
+      color:color-mix(in srgb, var(--fg) 55%, var(--err));
       border-color:color-mix(in srgb, var(--err) 55%, var(--border));
       background:color-mix(in srgb, var(--err) 8%, var(--panel2));
     }
@@ -593,6 +602,16 @@
     .adv-sec > .panel, .adv-sec .panel { border:0; background:transparent; margin:0;
       padding:12px 14px; }
 
+    /* UNINSTALL & WIPE (ruling 26): its own top-level section, marked so it reads as
+       destructive BEFORE it is opened -- the reader should not have to expand it to
+       learn what it does. The accent is the theme's own --err, never a hardcoded red:
+       a fixed hue fails some of the seventeen themes (the recorded --caveat/--warn
+       contrast lesson), and --err is already the palette's danger colour on each.
+       Colour is REINFORCING only -- the summary says "irreversible" in words, so the
+       warning survives a greyscale render and a colour-vision difference. */
+    .adv-sec-danger { border-color:var(--err); }
+    .adv-sec-danger > summary .adv-sec-t { color:var(--err); }
+
     /* Multi-select dropdown filter (#23): a native <details> disclosure of checkboxes —
        no positioning/click-outside JS, works across all themes via the palette vars. */
     .msel { position:relative; display:inline-block; }
@@ -626,6 +645,51 @@
        chart fills its cell at a legible size (field feedback 2026-08-07, item 8). */
     .gov-ind-spark { margin-top:6px; }
     .gov-ind-spark svg { width:100%; height:auto; aspect-ratio:300/120; }
+
+    /* Compare (ruling 4) and Groups (rulings 32/43/44/45/47), field feedback 2026-08-07.
+       Every colour here is theme-DERIVED (color-mix over the existing tokens) rather than
+       a fixed hue: a hardcoded value has failed WCAG AA on the light themes twice in this
+       project (--caveat 8/17, --warn 6/17), and a token that is mixed toward --fg tracks
+       whatever the active theme sets. */
+    .gov-cmp { width:100%; border-collapse:collapse; font-size:13px; }
+    .gov-cmp th, .gov-cmp td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--border); }
+    .gov-cmp thead th { font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.03em; }
+    /* text-transform is RESTATED, not inherited: the app-wide `th` rule sets
+       uppercase, which is right for a short column label and wrong for a full
+       indicator name ("Maternal mortality ratio (modelled estimate, per 100,000 live
+       births)"). It is also a no-op in five of the twelve locales this ships in, so
+       leaning on it makes the same table read differently by language for no reason.
+       Same leak as a ::after inheriting from a lower-specificity rule that also
+       matches — enumerate what the other rule sets, do not assume it is not there. */
+    .gov-cmp tbody th { font-weight:400; color:var(--muted); max-width:340px;
+      text-transform:none; letter-spacing:normal; }
+    .gov-cmp-v { font-weight:600; }
+    .gov-cmp-cat th { font-size:11px; text-transform:capitalize; color:var(--fg);
+      background:var(--panel2); font-weight:600; letter-spacing:.02em; }
+    /* A published gap. Muted, never styled as a zero or as an error. */
+    .gov-cmp-gap { color:var(--muted); }
+
+    #gov-lens { gap:8px; align-items:center; }
+    #gov-lens button[aria-pressed="true"] { border-color:var(--accent);
+      background:color-mix(in srgb, var(--accent) 16%, var(--panel2)); }
+    .gov-agg-head, .gov-grp-head { font-size:14px; margin-bottom:6px; }
+    .gov-grp-vintage, .gov-grp-cov, .gov-grp-spread { font-size:11px; color:var(--muted); margin-bottom:4px; }
+    .gov-grp-override { margin:8px 0; display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:11px; }
+    .gov-strat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; margin-top:10px; }
+    .gov-strat { border:1px solid var(--border); border-radius:8px; padding:9px 11px; background:var(--panel2); }
+    /* The default strategy is a starting VIEW, so it gets a quiet accent border and the
+       word "opens here" — never a tick, a crown or a first position, all of which read
+       as a winner among strategies this app deliberately refuses to rank. */
+    .gov-strat-default { border-color:var(--accent); }
+    /* A refused strategy is DASHED, never dimmed. Its whole content is the REASON it
+       was refused, which is the sentence the reader most needs; element opacity would
+       composite that text toward the panel and is what made .ag-cal fail AA on 16 of 17
+       themes. The explicit 1 is a guard against a future "grey it out". */
+    .gov-strat-refused { opacity:1; border-style:dashed; }
+    .gov-strat-label { font-size:11px; color:var(--muted); }
+    .gov-strat-val { font-size:18px; font-weight:600; margin-top:3px; }
+    .gov-strat-basis { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+    .gov-strat-why { font-size:10px; color:var(--muted); line-height:1.4; margin-top:4px; }
     .vitals-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:4px; }
     .vitals-pop .vr { display:flex; align-items:center; justify-content:space-between; gap:10px;
       padding:4px 0; border-top:1px solid color-mix(in srgb,var(--border) 60%,transparent); }
@@ -1021,6 +1085,26 @@
     /* THEME-3 (2026-06-19): the spawned analysis-tab strip — a multi-document workspace
        of named, closeable tabs over the one analysis render area. */
     .an-tabstrip { display:flex; flex-wrap:wrap; gap:4px; margin:0 0 8px; }
+
+    /* PERSISTENT LEAD-PROVENANCE HEADER in the analysis window (rulings 15/16).
+       Sits above the subtabs so it stays on screen whichever subtab is open. The left
+       accent uses --fam, the SAME family hue Home paints (famHue, keyed on the stable
+       bucket name), so a Lead and its analysis read as the same family.
+       --fam has a theme-derived fallback rather than a hardcoded hue: this renders on
+       all 17 themes, and a fixed colour would fail some of them (the recorded
+       --caveat/--warn contrast lesson). No `opacity` anywhere in this block: element
+       opacity composites the WHOLE element over what is behind it, so a dimmed caveat
+       is scored against a background it never actually has -- the .ag-cal defect. */
+    .an-prov-head { border-inline-start:3px solid var(--fam, var(--accent));
+      background:var(--panel2); border-radius:6px; padding:8px 10px; margin:0 0 8px; }
+    .an-prov-top { display:flex; flex-wrap:wrap; gap:6px; align-items:baseline; }
+    .an-prov-from { color:var(--muted); font-size:11.5px; }
+    .an-prov-card { font-size:13px; }
+    .an-prov-fam { display:inline-flex; align-items:center; gap:5px; font-size:11.5px;
+      color:var(--muted); }
+    .an-prov-head .fam-dot { display:inline-block; width:8px; height:8px;
+      border-radius:50%; background:var(--fam, var(--accent)); }
+    .an-prov-head .why-math { margin-top:4px; }
     .an-tab { display:inline-flex; align-items:center; border:1px solid var(--border);
       border-radius:8px 8px 0 0; background:var(--panel2); overflow:hidden; }
     .an-tab.active { border-color:var(--accent); background:var(--panel); }
@@ -1047,6 +1131,27 @@
     /* Staged (not-yet-applied) selection in the Articles-subtab source/language filter
        (2026-07-20 ruling, item 3) -- same chip, a filled state for the pending pick. */
     .an-facet[aria-pressed="true"] { background:var(--accent); color:var(--accent-fg,#fff); border-color:var(--accent); }
+    /* FEED CARDS (rulings 8-13). A reading column, so it is bounded in WIDTH rather than
+       stretched to the panel: long lines are what makes a wall of text unreadable, and a
+       feed is the one surface here whose whole job is being read. Sized in ch so the
+       measure follows the reader's own font size rather than a pixel guess. */
+    .feed-card { max-width:78ch; padding:12px 0; border-bottom:1px solid var(--border-soft); }
+    .feed-t { margin:0 0 2px; }
+    .feed-meta { font-size:12px; margin-bottom:6px; }
+    .feed-kw { display:flex; gap:4px; flex-wrap:wrap; margin-bottom:6px; }
+    .feed-x { margin:0 0 6px; white-space:pre-wrap; }
+    /* SORTABLE COLUMN HEADERS (ruling 21). A real <button> inside the <th> so it is
+       keyboard-reachable and announces its pressed state; it inherits the th's own
+       typography rather than re-stating it, so the header row still reads as a header
+       and not as a toolbar. The ACTIVE column is marked by the arrow character in the
+       label -- state survives greyscale and colour-vision differences -- and the accent
+       colour only reinforces it. No `opacity`: dimming an element composites it over
+       its parent and makes any contrast figure a fiction (the recorded .ag-cal lesson). */
+    .an-th { font:inherit; color:inherit; letter-spacing:inherit; text-transform:inherit;
+      background:none; border:0; padding:0; cursor:pointer; text-align:inherit; }
+    .an-th:hover { color:var(--fg); }
+    .an-th:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+    .an-th[aria-pressed="true"] { color:var(--accent); }
     /* Offline-map regions as a LIST, not a dropdown (#15): every region visible at once. */
     .osm-region-list { max-height:340px; overflow:auto; border:1px solid var(--border); border-radius:8px; }
     .osm-region-row { display:flex; align-items:center; justify-content:space-between; gap:10px;
@@ -1289,6 +1394,73 @@
       .scrim { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:55; }
       #hamburger { display:inline-flex; }
       .doc-layout { grid-template-columns:1fr; }
+    }
+    /* Phone-width top bar (<=600px, the same breakpoint the sidebar already treats as
+       mobile). 2026-08-20 matrix session T1: at 375x900 the ONE universal horizontal
+       overflow on EVERY surface was #statusCluster's nowrap min-content — measured
+       434px: the activity chip's reserved 160px .act-host slot + #health's 110px
+       constant footprint + #llm's 46px + gaps — present exactly while the activity
+       chip is visible (an idle page reads clean, which is why the symptom looked
+       intermittent, and why the 2026-08-13 report's attribution to "the bar's
+       contents" cumulatively was imprecise: .topbar itself wraps fine; the cluster
+       inside it could not). Strategy: COLLAPSE the informational footprints to
+       SMALLER CONSTANTS and let the cluster wrap internally — never hide or remove a
+       control (controls are commitments; everything here is a status readout whose
+       full detail lives in the task manager). The phone footprints stay FIXED sizes,
+       so invariant #3's real property — a text change never reflows its neighbours —
+       holds at every breakpoint; only the constant differs per breakpoint. #health
+       ellipsizes ("checking…" truncates for a moment at boot; "healthy" fits whole)
+       with the full text still on its #oo-tip hover title. Verified live at 375x900
+       with the activity chip visible: documentElement.scrollWidth == clientWidth and
+       all four core controls (#net-toggle #lang-switch #tm-open #app-shutdown)
+       on-screen — the 2026-08-20 report's T1 evidence. */
+    @media (max-width:600px) {
+      /* Every tab page is a single-column grid with an IMPLICIT auto column, and an
+         auto grid track is CONTENT-sized — so any panel whose intrinsic width
+         exceeds the viewport silently widens the whole page instead of clamping
+         (measured: the Agenda panel's grid track resolved to 486px in a 375px
+         viewport purely from its controls' intrinsic widths). minmax(0,1fr) pins
+         the track to the container; content wider than that now wraps or scrolls
+         inside its own box instead of scrolling the PAGE. Phone-scoped: at wider
+         viewports the auto track never exceeds the container in practice, and the
+         narrower scope keeps this pass design-scoped as briefed. */
+      .tab-page.active { grid-template-columns:minmax(0, 1fr); }
+      .status-cluster { flex-wrap:wrap; min-width:0; }
+      .act-host { width:96px; }
+      #health { min-width:0; max-width:88px; overflow:hidden; text-overflow:ellipsis;
+        white-space:nowrap; }
+      /* .row > div's 140px min-width (two-up plus a select's intrinsic width) forced
+         a ~350px row min-content at a 375px viewport (measured). min-width:0 is the
+         flexbox escape hatch; with the tab-page grid track pinned above, the row then
+         resolves inside the panel and the controls squeeze/wrap instead of widening
+         the page. NOTE for the next session: `contain:inline-size` here looks like a
+         stronger fix and is a TRAP — it zeroes any wrapper whose flex-basis is auto
+         with no grow (`flex:0 0 auto`, the Insights Explore-button wrapper), and the
+         un-containable button then protrudes from a 0px box (measured live before
+         this comment replaced that version). */
+      .row > div { min-width:0; }
+      /* A <select>/<input> sizes to its intrinsic content and never shrinks below it
+         (the Agenda country picker measured 452px intrinsic); with the wrapper now
+         allowed to shrink, a percentage max-width clamps the control's render to the
+         resolved box. The dropdown's option list is a native popup and renders
+         full-width regardless. */
+      .row select, .row input { max-width:100%; }
+      /* The Agenda month bar carries a deliberate inline flex-wrap:nowrap (the
+         ‹ month › cluster reads as one unit on a desktop); at phone width its
+         trailing hint span protruded 106px past the viewport (measured). Wrapping
+         is the phone behaviour — the nav cluster stays together, the hint drops to
+         its own line. */
+      #agenda-monthbar { flex-wrap:wrap !important; }
+      /* Data tables in the Settings > Advanced sections scroll INSIDE their own box at
+         phone width (the repo-wide wide-content rule: the page body never scrolls
+         horizontally). Found by the 2026-08-20 flagship-375 walk on source_management:
+         #src-table already sits in an overflow:auto wrapper (index.html), but the
+         discovery-candidates table in #candidates-list does not, and its 443px
+         min-content widened the whole page to 478 in a 375 viewport. `display:block`
+         on the table is this stylesheet's own .prose-table convention for a
+         self-scrolling table; scoped to the .adv-sec sections (covers every current
+         and future advanced-section table; a table already wrapped is unaffected). */
+      details.adv-sec table { display:block; overflow-x:auto; max-width:100%; }
     }
     @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
 

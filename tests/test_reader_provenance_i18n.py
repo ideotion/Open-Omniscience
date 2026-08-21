@@ -28,11 +28,11 @@ import re
 from pathlib import Path
 
 import pytest
+from tests.js_source_helper import app_js
 
 _ROOT = Path(__file__).resolve().parent.parent
 _LOCALES = _ROOT / "src" / "static" / "locales"
 _MAIN = _ROOT / "src" / "api" / "main.py"
-_APP_JS = _ROOT / "src" / "static" / "app.js"
 
 # The labels that carry the reliability claim, plus the reader chrome around
 # them. Each must be a key in EVERY locale or it renders English-only.
@@ -100,7 +100,7 @@ def test_failure_toasts_use_the_translatable_frame_not_concatenation():
     concatenation) AND unreachable by t() (no lookup happens), so it is
     permanently English however many keys exist.
     """
-    src = _APP_JS.read_text(encoding="utf-8")
+    src = app_js()
     leftovers = re.findall(r'toast\("[^"]*failed: "\s*\+', src)
     assert not leftovers, (
         f"{len(leftovers)} concatenated failure toast(s) remain: {leftovers[:3]} "
@@ -112,7 +112,7 @@ def test_every_failure_template_is_keyed_and_keeps_its_placeholder():
     """Each _failMsg template needs a key x12, and every translation must
     keep {error} — a dropped placeholder silently swallows the detail the
     user needs to act on."""
-    src = _APP_JS.read_text(encoding="utf-8")
+    src = app_js()
     templates = sorted(set(re.findall(r'_failMsg\("([^"]+)"', src)))
     assert templates, "no _failMsg call sites found -- did the helper get renamed?"
 
@@ -134,7 +134,7 @@ def test_failmsg_helper_does_not_depend_on_the_bare_global():
     browser aliases window properties into global scope; it throws in a
     module scope and makes the helper untestable.
     """
-    src = _APP_JS.read_text(encoding="utf-8")
+    src = app_js()
     body = src.split("function _failMsg(", 1)[1].split("\n    }", 1)[0]
     assert "window.OOI18N" in body, "_failMsg must reach i18n via window.OOI18N"
     assert not re.search(r"[^.\w]OOI18N\.", body), (

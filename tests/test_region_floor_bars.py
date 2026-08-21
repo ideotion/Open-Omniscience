@@ -21,10 +21,9 @@ from __future__ import annotations
 import json
 import re
 from pathlib import Path
-from tests.js_source_helper import function_body
+from tests.js_source_helper import app_js, function_body
 
 _ROOT = Path(__file__).resolve().parent.parent
-_APP_JS = _ROOT / "src" / "static" / "app.js"
 _LOCALES = _ROOT / "src" / "static" / "locales"
 
 _NEW_STRINGS = (
@@ -37,7 +36,7 @@ _NEW_STRINGS = (
 
 def _body(fn_name: str) -> str:
     """One function's own body, brace-matched (tests.js_source_helper)."""
-    return function_body(_APP_JS.read_text(encoding="utf-8"), fn_name)
+    return function_body(app_js(), fn_name)
 
 
 def test_the_bars_are_added_beside_the_table_not_instead_of_it():

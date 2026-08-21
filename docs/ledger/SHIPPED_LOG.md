@@ -5008,3 +5008,339 @@ backups, not `git checkout`, and the restore verified.
 self-hiding Setup card and the rebuilt bench panel are guarded and syntax-clean, and a
 click-through is owed — particularly the backend-switch case, where the Setup card is
 meant to come back naming the engine that is missing.
+
+
+---
+
+## 2026-08-20 — the omnibar's two slow paths, a capped total, and an instrument for the next stall
+
+The 2026-07-21 field brief listed seven findings. **Five were already closed and one had
+its premise retracted**, which is the first thing worth recording: that brief's own
+banner, three weeks old, read "still fully unaddressed", and item 1's map-coverage half,
+item 2 and item 5's building blocks had all landed within days of it being written. The
+incoming session brief inherited the staleness and repeated it. Verdicts were taken from
+the code, with anchors, and written back into the brief so the next reader hits them at
+the point of the claim.
+
+**The retraction is the one to remember.** Item 6 named five sources at 100%
+`outlier_rate` and reasoned that such a rate "is much more consistent with broken
+extraction than with legitimately atypical content". The auditor's own arithmetic had
+made that unsafe: `robust_stats` p90 is nearest-rank, so a cohort with zero spread has
+p90 exactly 0.0, `value > p90` degenerates to `value > 0`, and one pathological article in
+~2,000 scores 100%. Fixed 2026-08-02. Building the proposed hand-check tool would have
+been building on a withdrawn signal, so it was not built. The general form: the staleness
+guard is usually run as *is this already built* — it also needs running as *is the
+measurement this rests on still one the code would produce today*, because fixing an
+instrument silently retracts every finding it reported.
+
+**The omnibar keyword group.** `normalized_term LIKE 'abc%'` per debounced keystroke, over
+~5M keys, twice — a count and an ordered top-3. SQLite rewrites a prefix LIKE into a range
+scan only when the index collation matches the LIKE case-sensitivity, and with
+`case_sensitive_like` off (the default) that means NOCASE; `idx_keyword_normalized_term`
+is BINARY, so the rewrite could never fire. A NOCASE index turns both into range
+SEARCHes: **126.7 ms → 0.02 ms** and **140.8 ms → 0.22 ms** at 2M rows.
+
+**That index is characterised and NOT shipped**, and the reason is worth more than the
+index. Wiring it into the boot self-heal alone flipped `alembic_stamp_align`'s verdict
+to `schema-behind`: that check compares the LIVE schema against the MODELS, so an index
+the self-heal creates and no model declares reads as drift — which is why every existing
+`HOT_INDEXES` entry carries a "mirrored on the model + migration" comment, a line I had
+read as tidiness. Mirroring it does not resolve it either: `COLLATE NOCASE` makes it an
+EXPRESSION index, and alembic's autogenerate cannot compare those — it warns that the
+dialect "should either skip expression indexes or provide a custom implementation" and
+then reports a permanent spurious "changed index". So this needs a migrations-layer
+decision, which is another lane's territory this wave. It is handed over with its DDL,
+its measurement, its blocker and its tests, and the test that used to assert
+registration now pins the *current* state so it fails the day somebody wires it.
+
+Two things I had wrong by recall and fixed by measuring, which is the transferable part. I
+"remembered" that an `ESCAPE` clause disqualifies the LIKE optimization — it does not,
+through SQLite 3.45. And the first bench omitted `idx_keyword_frequency`, so the planner
+took a different pre-fix path and the before-number moved once the table's real index set
+was present. The recorded *a standalone SQL probe is a lookalike* lesson has a third axis
+beyond table stats and ANALYZE state: **the rest of the table's indexes**. The shipped
+plans were then taken from the statements the production path actually emits, captured
+with a `before_cursor_execute` listener. Note also the vocabulary: the pre-fix count read
+`SCAN … USING COVERING INDEX`, which this repo's own classifier calls healthy — index-only
+is not bounded, and a full traversal of a covering index over 5M rows is still full.
+
+**The capped total.** `total: len(ids)`, where `search_ids` carries `limit=20000`. On any
+corpus where a common term matches more, the omnibar published a flat 20000 as a count —
+another instance of exactly what the 2026-07-18 ruling banned and asked a sweep for. The
+shape to grep for is not a visible `.limit(n)` at the call site but a **helper whose own
+signature caps**, read by a caller treating the returned length as a measurement. The fix
+is free in the common case (under the cap `len(ids)` IS exact) and pays for a count only
+when the list actually filled — the only case where its length was ever a lie. **Stated
+plainly: this is not a speedup.** A broad term costs 438 ms against 415 ms on a 300k-doc
+fixture, +5.6%, for a right number instead of a wrong one.
+
+The test for it was vacuous first, and the reason generalises: compressing the module
+constant does not reach the branch, because the helper's `limit` is a **default argument
+bound at definition time** — the fetch still returned every row, `len(ids)` was still
+exact, and the guard passed against the reverted fix. The list has to be genuinely
+truncated.
+
+**Two more in the same endpoint.** Articles and wiki each ran the same ranked FTS fetch —
+this module's own docstring admitted the cost — so it now runs once per keystroke. And
+`search_ids` answers `None`, not `[]`, for a query with no positive content; both groups
+took `len()` of it, so a query like `--` raised inside the per-group guard and came back
+carrying only keywords, sources and law. The omnibar answered as though articles and
+Wikipedia had never been searched, with nothing in the payload saying so. Confirmed by
+driving the pre-fix shape rather than inferring it — and it was worse than first written
+up, which is why the write-up changed: I had said the articles group, and it is both.
+
+**Stall attribution (item 3).** The 2026-07-11 cluster is not answerable retroactively —
+`collect_perf` keeps roughly one pass, the latency reservoir is a rolling sample, and the
+evidence had aged out before the export was read. So the deliverable is the instrument,
+not the answer. Any request over `OO_STALL_THRESHOLD_MS` is filed with a point-in-time
+reading of the three things that can hold this app's single worker — the writer gate, the
+event loop, the slow-query log — plus the cause classes those readings SUPPORT. Classes
+are a LIST, because a long synchronous write jams the gate *and* blocks the loop and
+picking one discards the half that explains the other. `undetermined` is a real verdict,
+reached whenever the evidence supports nothing, never a bucket absorbing the remainder.
+Hooked at `latency.record()`, outside its lock, since the readings take other modules'
+locks. Verified before wiring that `write_gate.stats()` cannot block behind a long write:
+an instrument that blocks on the pathology it measures is worse than none.
+
+**Verified.** Full suite on py3.13 in a real venv — endpoint tests RAN rather than being
+deferred to CI, after `pip install --upgrade cffi` cleared the recorded pyo3 panic.
+ruff clean at CI's own scope, mypy 124 (0 in the changed files), bandit exit 0, the
+diagnostics completeness ratchet green with the new member. `test_doctor_healthy_returns_zero`
+fails in the subset — reproduced on clean `main` with the changes stashed and passing
+alone, i.e. the documented `TestClient` lifespan order-pollution, not this wave.
+
+Mutations, all restored from `cp` backups with the restore verified: reverting the exact
+total, counting unconditionally, un-sharing the FTS, and the four classifier conditions.
+One survived at first — "an unreadable instrument is a gap" — because the fixture returned
+only `{available, reason}` and so could not discriminate; a probe that populates some
+fields and *then* fails is the case the check exists for, and the fixture now carries
+stale numbers beside `available: false`.
+## 2026-08-20 — the statistics rulings, and the metadata line that was a third of the corpus
+
+The 2026-08-07 field feedback produced 47 maintainer rulings; this closed the statistics
+half of them. Most of it is ordinary surface work (an aggregates view, a two-country
+compare, two aggregation lenses, a strategies panel, membership vintage). Three findings
+are worth keeping.
+
+**A METADATA LINE THAT LOOKED LIKE TWO HARMLESS FACTS WAS A THIRD OF THE CHANNEL'S TERM
+VOLUME — and the case FOR keeping it was written into the code and the tests before the
+measurement refuted it.** Ruling 5/30/31 makes each official-statistics series an
+ordinary Article, so ~9,800 templated documents enter the shared keyword index. The body
+carried `{agency} · {series_id}`, and both the module docstring and a passing test argued
+for it: the producer's name "is exactly what ruling 30 asks for", and the series code had
+to stay because "dropping it from the body would remove it from FTS too". Measured over
+1,298 real series with the real extractor:
+
+    with the line     30,358 term emissions   #1 world · #2 bank · #3 world bank
+                                              (1,298 each = one per article), #6 totl,
+                                              #9 gdp world bank, #14 population world bank
+    without it        20,372 term emissions   #1 gdp · total · population · rate · income ·
+                                              capita · expenditure · births · labour force
+
+Both halves of the argument were wrong, in different ways. The producer's name recurs
+once per article BY CONSTRUCTION, so its count tracks the CHANNEL's size and nothing
+about the corpus — a term whose rank is a function of how much of this one thing you
+have. And the code was never searchable in the keyword index at all: the tokenizer
+splits `SP.DYN.LE00.IN` on its dots, so what is indexed is `dyn`/`le00`/`totl`/`mktp` —
+the DEBRIS of an identifier rather than the identifier. A code-kept variant was measured
+too (23,868 emissions, `totl` still #3) rather than assumed.
+
+**THE UNPREDICTED SECOND WIN, and the reason to re-measure after a change rather than
+only before it:** removing the line also collapsed the near-duplicate clustering that had
+motivated looking in the first place — 9 clusters with a biggest of 36 members down to 7
+with a biggest of 3, at both production thresholds. The boilerplate was not riding the
+similarity, it was MANUFACTURING it. (The structural protection holds regardless and is
+what the test pins: one synthetic source per agency against a three-distinct-source gate,
+so 0 clusters span even 2 sources.)
+
+**WHAT IT LOSES IS STATED, AND BOTH REPLACEMENTS WERE CHECKED.** FTS covers `title,
+content` only, so two free-text matches go: `?query=World Bank` and
+`?query=SP.DYN.LE00.IN` now return 0. Verified against the same 1,298 that
+`?source=Official statistics (World Bank)` and `?tags=statistics` each return all of
+them, and that every subject search is unchanged (life expectancy France 1, GDP China 12,
+population Brazil 6, Gini index 18) — an exact filter answering exactly the question a
+text match answered approximately.
+
+**A MUTATION TEST CAUGHT ME ASSERTING THE PRODUCER'S OWN PARENTHETICAL AND CALLING IT
+MINE.** Removing the metadata line left a body of bare numbers, which is a value without
+its unit, so I appended `({unit})` unconditionally. It measured cheap (+367 emissions,
++1.8%, nothing new in the top 15) and its guard asserted `"(years)" in body`. The
+mutation that DELETES the unit passed. The reason is that the World Bank's own label is
+"Life expectancy at birth (years)" — 26 of the catalog's 36 read that way — so the guard
+was reading the producer's text, and the shipped code would have printed "(years)
+(years)". The rule that replaced it keys on the producer's own convention (a trailing
+parenthetical qualifies the measure; 3 of 36 have none and get the unit stated), and the
+test is now split by whether the label already carries one, because **a fixture in which
+the two sources are indistinguishable cannot test which one produced the text.** A
+substring check was measured and rejected: labels spell units out in words while the unit
+field uses symbols ("current US$" vs "USD", "metric tons per capita" vs "t/capita"), so
+it would have missed four of ten and re-introduced the doubling on exactly those.
+
+**AN IDENTITY FALLBACK FOR A TEMPLATE IS A BROKEN FRAME, AND IT WAS THE ONLY ONE IN THE
+FILE.** The new control's handler opened with
+`const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x)` — so before i18n
+loads, a `tf("{created} new · …", vars)` renders the literal `{created}` to the reader.
+`_govTf` already did it correctly thirty lines up, and a grep afterwards found this was
+the sole `((x) => x)` template fallback in 20,000 lines. The node suite caught it because
+its harness EXTRACTS the real helpers instead of doubling them; an identity double would
+have hidden precisely this.
+
+**AND THE BROWSER LESSON: a scripted click is not a click.** Driving the publish-anyway
+override with `eval_on_selector_all("#gov-grp-body button", "els => els[0].click()")`
+changed nothing on screen and read exactly like a broken override — no request, no
+re-render, six refusals still standing. A real `page.click()` on the same selector fired
+it: the request went out with `allow_incomplete=true`, all six strategies computed, and
+the panel labelled itself `PARTIAL — members computed: 2 of 42` and named the missing
+members. Drive controls with the framework's own click; a false negative from a dispatch
+quirk is indistinguishable from a defect, and the instinct on seeing it is to "fix" code
+that was already correct.
+## 2026-08-20 — the browser-verification matrix expansion: five harness lookalikes, and the payoff that justified the axes
+
+The gate-row-8 stretch matrix ran end to end — four test states (virgin · empty ·
+453-article seeded corpus · a REAL volumes-backup import into a fresh data dir), 53 steps,
+179 coverage rows, all 17 themes, the Reader, the a11y axis, five lens drills, five
+standing honesty-rule checks — and the durable lesson is that A WALK'S INSTRUMENT PASSES
+OR FAILS FOR REASONS ABOUT THE INSTRUMENT. Five lookalikes from one run:
+
+(a) `querySelector(".pill.warn")` measured the AI PILL — an element that carries those
+classes for footprint styling while its STATE rules override the colour per state — and
+filed a P1 naming the `--warn-fg` token whose fix was intact (5.78:1 on the theme it
+accused). The first match of a class selector can be an element whose classes mean
+something else; exclude it (`:not(#llm)`) and measure the state label as its OWN claim.
+(b) A surface anchored on a BY-CONSTRUCTION-EMPTY element (`#ux-imp-summary` before any
+import) reads not-visible and fails the reachability walk it was meant to serve — anchor
+reachability on the container, and let a dedicated fixture (state D's real import) claim
+the content. (c) A breakpoint walk that NAVIGATES at 375px tests navigation-at-375 — a
+different claim, and one the sidebar legitimately fails below 600px per invariant #2's own
+floor — so the settings-gear click times out and three of five flagship surfaces read
+blocked; navigate at desktop width, then measure the OPENED surface at the target width.
+(d) A specimen-search that derives a CSS selector from tag/class hands the reader the
+DOCUMENT'S first `td`, not the specimen's — the recorded non-unique-needle trap as a
+selector; tag the found node with a probe attribute and address that. (e) A sidecar API
+probe shares 127.0.0.1 with the harness's own browser, so the app's rate limiter (a
+feature under test) can 429 it past any polite backoff — read ids from the DOM the browser
+already rendered.
+
+Plus the f-string continuation trap that produced two of the five hours lost: in a
+multi-line `page.evaluate(f"... {{ ..." "... }}")` the PLAIN-string continuation line's
+`}}` stays a literal `}}` (only f-strings collapse braces) — a JS SyntaxError; and after
+fixing it in one evaluate the same shape was found AGAIN in a sibling drill in the same
+file, the recorded fixing-a-property-in-one-place failure.
+
+THE PAYOFF THAT MAKES A MATRIX WORTH ITS COST: widening the theme axis 5 → 17 found the
+AI pill's ai-off label at raw `var(--err)` below AA text contrast on 13 of 17 themes
+(worst solar 2.41:1 against the pill's own 8%-err tint) — invisible to every earlier
+5-theme run. The repair is the recorded mix-toward-`--fg` pattern (55% = the smallest
+5-point step clearing 4.5:1 on every theme, worst 4.82:1); the state was never colour-only
+(the diagonal bar + hover title carry it). And the deduced-events find is the same family
+app-side: `#agenda-subonly` defaults CHECKED and its bypass named only `imported`, so the
+corpus-DEDUCED category — whose synthetic calendar can never be subscribed — was invisible
+in every agenda view at default settings while the category filter still OFFERED "deduced"
+as an empty lens. A filter must never offer a category its default state structurally
+suppresses.
+
+Also probed empirically rather than assumed: Playwright's `emulate_media(contrast=None)`
+is a silent NO-OP (None means "leave unchanged"), and BOTH reset tokens — the stub-typed
+`"null"` and `"no-override"` — behaviorally clear the emulation; the driver's
+`emulate_contrast` now branches explicitly and records the probe in its docstring.
+### 2026-08-20 — S-3: `src/static/app.js` becomes 17 ordered modules
+
+  - **A MAX-GATE RATCHET CANNOT DETECT ITS OWN INSTRUMENT GOING BLIND — check the count is
+    UNCHANGED, never merely under the bar (2026-08-20, splitting the UI engine past the i18n
+    scope):** the two JS i18n ratchets are maxima (`--max-untranslatable 561`,
+    `--max-unkeyed-t-calls 298`), and finding I-1 already records this instrument once reading a
+    green 100% while pointed at the wrong file. Splitting `app.js` into 17 modules pointed it at
+    the wrong file AGAIN — and this time the failure would have passed more comfortably than
+    success: fewer files scanned means fewer strings found means a LOWER count, under the bar,
+    with the script printing *"the ratchet can now be lowered"*, which reads as progress. The
+    direction of a max-gate is exactly backwards for detecting blindness. So the check that
+    means anything is that the count is IDENTICAL — 561/298 at every wave, with every module
+    present in the per-file breakdown — not that the gate is green. GENERAL FORM: for any
+    ratchet expressed as a maximum over a measured population, a SHRINKING POPULATION and an
+    IMPROVING CODEBASE produce the same movement, so a change that alters WHAT IS MEASURED owes
+    a same-count check rather than a same-verdict one.
+  - **SPLITTING A FILE THAT TESTS ASSERT AGAINST TURNS EVERY NEGATIVE ASSERTION VACUOUS, AT
+    EVERY SITE AT ONCE (2026-08-20):** 80 test files now read the UI engine through the one helper, at 216
+    call sites. After a split, a POSITIVE assertion (`"function X" in app`) fails
+    loudly and gets fixed; a NEGATIVE one (`assert_absent`, `X not in app`) passes FOR FREE
+    against a file that no longer contains the thing it checks — the exact vacuity failure
+    `js_source_helper` exists to end, reintroduced at 151 sites in one commit and silently. The
+    fix is a helper returning the CONCATENATION of the modules in load order, read from
+    `index.html` so it cannot drift; because the split is a contiguous slice, that string is the
+    semantic equivalent of the old file and every assertion keeps exactly its old meaning. THE
+    QUIETER HALF: one reader wrapped its read in `if path.exists()` and SKIPPED the engine
+    rather than failing — a guard that turns a missing file into a smaller scope is the same
+    hazard wearing a safety belt, and only that file's POSITIVE assertions noticed.
+  - **`T == "\n".join(lines)`, SO A NON-FINAL SLICE OWES EXACTLY ONE SEPARATOR — and adding it
+    conditionally loses a newline whenever the slice ends on a BLANK line (2026-08-20):**
+    splitting a file into contiguous slices looks like pure bookkeeping, and the obvious
+    `if not text.endswith("\n"): text += "\n"` is wrong: when the slice's last line is empty the
+    join ALREADY ends in a newline representing that blank line's own terminator, so the
+    separator is never added and one byte vanishes at the seam. Caught on the FIRST run by a
+    concatenation-must-be-byte-identical check, in seconds, with the exact byte offset. GENERAL
+    FORM: when a change is supposed to move bytes without altering them, make the
+    identity check the first thing that runs — it is total (nothing can hide from it), it
+    localises (it names the offset), and it cannot be satisfied vacuously the way a test over
+    the result can.
+  - **A MIGRATION KEYED TO THE INSTRUMENT'S LANGUAGE MISSES EVERY READER IN ANOTHER ONE
+    (2026-08-20, the fifteen node suites):** the brief named `tests/js_source_helper.py` as the
+    thing to migrate source-asserting tests through, so I swept Python and reported the
+    migration done. Fifteen `*_node_test.js` suites read the SAME file with their own
+    `fs.readFileSync(path.join(__dirname, "..", "src", "static", "app.js"))`, were invisible to
+    a Python-shaped search, and broke together the moment the file stopped existing. That they
+    broke LOUDLY is the good case and not luck — each extracts a function BY NAME and asserts it
+    was found, so an empty read is a failed assertion rather than a suite quietly testing
+    nothing; the ratchet that every node suite has a driver is what made them run at all. TWO
+    RULES. (a) When a change invalidates a way of READING something, enumerate the readers by
+    what they READ (grep the path, the filename, the URL), never by the helper you intend them
+    to use — the helper's language is your search's blind spot. (b) The fix is the same helper
+    one language over, reading the module list out of `index.html` rather than hard-coding it,
+    because fifteen hand-rolled copies of a path are precisely the debt the slicing ratchet
+    exists to count.
+  - **A TEST THAT ASSERTS A VERSION LITERAL PINS THE NUMBER, NOT THE PROPERTY — and it turns the
+    CORRECT response to a change into a red lane (2026-08-20, `oo-shell-v1`):** the service
+    worker's guard read `assert 'caches.delete(k)' in sw and 'oo-shell-v1' in sw` under the
+    comment *"old cache versions are purged on activate"*. Changing the precached SHELL list
+    REQUIRES bumping the cache name — without it a client that is already offline keeps serving
+    the previous list, which is the one thing an offline shell must never do — so the first
+    legitimate bump made the test red while the property it named held perfectly the whole time.
+    Assert the mechanism instead: `caches.delete(k)`, the purge keyed on `k !== CACHE` (a purge
+    naming specific old versions leaves the next one behind), and that the name carries a
+    version at all. Both mutations fail; the literal caught neither. GENERAL FORM: when a guard
+    quotes a value that is expected to CHANGE, it is anchored on a landmark that merely
+    coincided with the property once — the same family as a guard splitting source on a landmark
+    that used to coincide with the commit point.
+  - **A CPU THROTTLE EMULATES A SLOW MAIN THREAD, NOT A SMALL MACHINE — and the difference is
+    the whole result (2026-08-20, measuring what splitting the UI engine bought):** splitting
+    `app.js` into seventeen modules measured **−38.8 %** main-thread script time under 6× CPU
+    throttling, which is the number I would have reported. Three controls said the effect was
+    real — an A/A run landed inside noise, swapping the order flipped the sign, a second server
+    on a second worktree reproduced it — and two more said what it actually was. Removing the
+    throttle **REVERSED** it (+21.6 %, 14.8 ms slower: sixteen extra requests and compile
+    set-ups, which a fast main thread notices because it has no work worth moving). Pinning the
+    browser to two cores cut it to −17.5 %. Both sides serve BYTE-IDENTICAL JavaScript — the
+    split side ships 20,812 bytes MORE — so "less to parse" was never the mechanism: compile
+    work relocates onto background threads that `Emulation.setCPUThrottlingRate` does not
+    throttle, and the win is therefore proportional to the spare cores available to receive it.
+    THREE RULES. (a) Name the mechanism before quoting the number: a packaging change that
+    cannot reduce total bytes cannot be reducing parse cost, so a large "parse" win is evidence
+    of RELOCATION and relocation depends on the machine. (b) A throttle knob and a core count
+    are different axes, and a profile that throttles one while leaving the other generous is the
+    most favourable case for anything that moves work sideways — the recorded "a probe's data
+    distribution is part of the lookalike" trap with CORE COUNT as the varying axis. (c) An A/A
+    control costs one extra run and is what separates "the harness has a position bias" from "the
+    change did something"; it is the cheapest control available and the one that makes every
+    other number readable.
+  - **A WALKER WHOSE STEP COUNT VARIES CANNOT CARRY A SAME-STEP-COUNT CLAIM — find out before
+    explaining it (2026-08-20):** the browser walk reported 52 steps at baseline and 59 from the
+    next run onward, and I wrote a plausible sentence into the evidence section saying the count
+    rose because the walker reaches more subtabs once the corpus is populated. It was invented.
+    A control walk against the PRE-SPLIT tree produced **both numbers in a single run, from one
+    server against one data directory** — so the seven flapping steps (all one tab's continent
+    subtabs) are a race on whether that tab's fetch has populated the subtab strip when the
+    walker reads it, and nothing to do with populated-versus-empty or with the code under test.
+    GENERAL FORM: when a measurement moves and you can think of a reason, that reason is a
+    hypothesis with a cheap test attached — run the old code again. And an instrument that varies
+    run to run still supports the invariants it holds exactly (zero `pageerror`, the same 1393
+    globals, in all fourteen state-runs); it just cannot support the one that varies, and saying
+    which is which is what keeps the evidence section evidence.

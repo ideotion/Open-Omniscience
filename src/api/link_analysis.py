@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
+from typing import Any, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import desc, func
@@ -116,14 +117,12 @@ def top_cited(
             dom = registrable_domain(nu)
             if dom:
                 by_domain[dom].add(aid)
-        items = sorted(
-            (
-                {"domain": d, "citations": len(ids)}
-                for d, ids in by_domain.items()
-                if len(ids) >= min_citations
-            ),
-            key=lambda x: -x["citations"],
-        )[:limit]
+        rows: list[dict[str, Any]] = [
+            {"domain": d, "citations": len(ids)}
+            for d, ids in by_domain.items()
+            if len(ids) >= min_citations
+        ]
+        items = sorted(rows, key=lambda x: -x["citations"])[:limit]
         return {"by": "domain", "window_days": window_days, "items": items}
 
     return guarded_read(db, key, _compute)
@@ -242,7 +241,11 @@ def articles_by_link(
                 .all()
             ]
         else:
-            dom = domain.strip().lower()
+            # The endpoint refuses "neither url nor domain" above, so reaching the
+            # else branch means `domain` is set. Stated with a cast (zero runtime)
+            # rather than an assert, which `python -O` strips: the guarantee comes
+            # from the guard outside this closure, not from a check repeated here.
+            dom = cast(str, domain).strip().lower()
             match = {"domain": dom}
             # LIKE pre-filter, then exact registrable-domain check (avoids false hits).
             ids = sorted(

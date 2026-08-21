@@ -34,6 +34,7 @@ HTTP API) and troubleshooting.
 2. [The 60-second tour](#2-the-60-second-tour)
 3. [The tools, one by one](#3-the-tools-one-by-one)
    - [Home](#30-home) · [Activity & Task manager](#30a-activity--the-task-manager) ·
+     [Feed](#30b-feed) ·
      [Search](#31-search) · [Collect](#32-collect) ·
      [Sources](#33-sources) · [Library](#34-library) · [Markets](#35-markets) ·
      [Indices](#35a-indices) · [Insights](#36-insights) ·
@@ -111,7 +112,7 @@ setup page at `/unlock`, in three steps **before the app opens**:
    one stable secret, like a user ID, with **no recovery and no decryption
    alternative** — a lost passphrase costs re-collection time, because the corpus is
    rebuilt from the web. Full rationale and the honest threat model are under
-   [Settings → Safety](#39-settings).
+   [Settings → Advanced → Safety](#39-settings).
 
 On **later launches** the store is already created, so you go straight to a single
 **unlock** prompt for the same passphrase. Headless/scripted runs supply it with
@@ -344,6 +345,40 @@ background, from any tab.
 - The window reads **live from the systems that own the work**, so it can never
   disagree with what is actually happening — no shadow state.
 
+### 3.0b Feed
+
+**What it's for:** reading your corpus as a **stream** rather than as a set of measured
+signals. Home tells you what stood out; the Feed just hands you articles, one after the
+other, and lets you scroll.
+
+- **Two orders, both stated.** **Newest first** is publication date, newest at the top.
+  **Shuffled** is a fixed order chosen by a **seed**: the position of an article depends
+  on its id and that seed and **nothing else**. Every page carries its own method line
+  saying which of the two you are reading.
+- **The shuffle is a browse aid, not a recommender.** There is **no engagement scoring
+  of any kind** — nothing measures what you opened, how long you stayed, or what you
+  skipped, and **no reading history is kept or consulted**. Two people with the same
+  seed and the same corpus see the same order. That sentence is part of the method text
+  the page prints, so it cannot quietly stop being true.
+- **What is left out, counted.** The Feed shows articles that are **not quarantined**
+  and whose **source has been qualified**. Both exclusions are **counted exactly** and
+  shown on the first page, so a short feed on a full corpus reads as *"your sources have
+  not been qualified yet"* — which is actionable — rather than as *"you have nothing"*,
+  which would be false. Those two counts describe the corpus rather than the page, so
+  they are computed once and do not change as you scroll.
+- **Where you stopped.** Scrolling keeps its place across sessions by storing **one
+  position marker** in your browser — a seed and a single cursor, never a list of what
+  you read. **Settings → General → Feed scrolling history** has the two controls:
+  **Reshuffle** (a new seed, a new order, back to the start) and **Start from the top**
+  (same order, position cleared).
+- **The honest gap in each order.** Collection keeps running while you scroll, and each
+  order misses newly-arrived articles differently: in **Shuffled** they can fall *below*
+  the point you have reached (reshuffling reaches them), and in **Newest first** they
+  arrive *above* it (returning to the top reaches them). The page says which applies.
+- **Each card** shows the title, source, date, and the article's **own top three
+  keywords** — the keywords of that article, not of whatever you searched. **Read more**
+  expands the summary **in place**; the title opens the article in the local reader.
+
 ### 3.1 Search
 
 **What it's for:** finding articles in your corpus.
@@ -410,10 +445,29 @@ was computed over. The subtabs are:
   window, with sparse stretches shown honestly as bars + an early-corpus caveat rather
   than a faked curve).
 - **Mindmap** — a deterministic radial keyword map (centre → arms, always outward).
-- **Articles** — the member articles (paginated), each opening in the **offline reader**,
-  whose own tab bar is **Read · Summary · Translation · Keywords · Mindmap · Sentiment ·
-  Related · Source · Links** (Summary/Translation use the local model; near-identical
-  copies are badged "N copies = one voice").
+- **Articles** — the member articles (paginated). Columns: **Title · Source ·
+  Published · Top keyword**, and every column header is the **sort control** — click one
+  to order by it, click it again to reverse; the arrow marks the column in force. Names
+  open A–Z, dates and counts open on the largest first. The same choice is in the
+  **Sort by / Order** selects above the list, because they are the same two fields: there
+  is exactly one sort in this window, so nothing can quietly override your choice. *(The
+  sort used to live in **Advanced**, three subtabs from the only list that reads it.)*
+
+  **Top keyword** is this article's OWN most-mentioned keyword with its count, worked out
+  when the article was indexed — a different question from the *searched* keyword's count,
+  which is the separate `↕ "term" count` button. Where several keywords tie at that count
+  the row says **tied**, because the one named is simply the first of them and calling it
+  the top keyword would assert a ranking the count never made. An article the re-index has
+  not reached yet shows **—**, never a 0: it is missing a measurement, not missing
+  keywords.
+
+  Each row opens in the **offline reader**, whose own tab bar is **Read · Summary ·
+  Translation · Keywords · Mindmap · Sentiment · Related · Source · Links** — that is
+  where you read it, see its **original source** (the link's visible text is the full
+  URL), and run **Summary / Translation** on the local model. Those three used to be
+  repeated as a per-row arrow and two per-row buttons; they moved to the one page that
+  can actually show the result. Bulk **Summarize all / Translate all** are unchanged in
+  the action row below. Near-identical copies are badged "N copies = one voice".
 - **When/Where/Who** — the dates, places and people/orgs the set mentions, as clickable
   **facets**; clicking a value **drills** into just the articles mentioning it (a refined
   analysis window). Deduced from text, never confirmed.
@@ -430,9 +484,8 @@ was computed over. The subtabs are:
 - **Price** — *(only when the window was seeded from a commodity)* the price curve
   overlaid on your corpus coverage on a shared time axis (co-occurrence, never causation),
   each series on its own real-unit scale.
-- **Advanced** — scope the set by **source · language · date range**, and **sort** by
-  date / source / title / language (an honest metadata ordering, never a relevance
-  score); a "Filtered" chip and summary show what's active.
+- **Advanced** — scope the set by **source · language · date range**; a "Filtered" chip
+  and summary show what's active. (Sorting moved to the Articles tab, above.)
 
 The action row carries **Methods appendix**, **Export signed evidence**, **Synthesize
 results** (the member-selection window), and queued **Summarize all / Translate all / Run
@@ -827,13 +880,43 @@ edition picker above keeps the full list.
 
 **What it's for:** the **Governments** sidebar tab (the code anchor stays `law`, the
 label is "Governments") gathers per-country official data and tracks how the **law**
-changes. It has three subtabs:
+changes. It has six subtabs:
 
 - **Countries** — per-country **official statistics** from the World Bank (GDP,
   population, life expectancy, labour, public finance + common indices). **Load standard
   country data** fetches them (online, consent-gated). Each value is a producer's
   published figure, **never a credibility score**; a **missing value is a published gap,
-  not zero**; producers are shown, **never averaged**.
+  not zero**; producers are shown, **never averaged**. Every figure carries its unit, and
+  each indicator's hover explains what it measures — two that read as errors and are not:
+  mobile subscriptions can exceed 100 per 100 people (people hold several SIMs) and gross
+  school enrollment can exceed 100% (it counts repeaters and over-age pupils).
+- **Compare** — two countries side by side, every indicator as an aligned row. This is a
+  **display**, not a calculation: it shows each country's own latest published figure and
+  the year it belongs to, and where one country has no figure the cell reads as a **gap**.
+  It never subtracts, ranks or scores the pair — the comparison is yours to make.
+- **Groups** — aggregates and blocs, in two **lenses** you switch between:
+  - *Published* shows the aggregates the producer itself publishes (the World Bank's
+    "High income", "Sub-Saharan Africa", "European Union" and so on). A curated shortlist
+    opens first; **Show all** expands to the full set. These are the producer's own
+    figures, not ours. **World Bank regions are not continents** — "Sub-Saharan Africa"
+    excludes Egypt, Libya, Tunisia, Algeria and Morocco, which sit in its Middle East &
+    North Africa region, so this lens has **no continental-Africa figure at all** and says
+    so rather than assembling one that would look official.
+  - *Computed* aggregates member countries ourselves, and shows **several strategies side
+    by side** (population-weighted mean, simple mean, GDP-weighted, median, and a total
+    where one is meaningful) so you can see how much the answer depends on the method
+    rather than being handed one number. Nothing is ranked and no strategy is called
+    best. A **total** is offered only for indicators where summing means something
+    (population, GDP, labour force); for a percentage, a rate or a life expectancy it is
+    **refused with the reason shown**, because adding up percentages produces a number no
+    one measured. Every figure states its **coverage** and its **spread** (min/max/n) —
+    a bloc headline hiding a ten-fold range is true and misleading, so the range travels
+    with it. Where members are missing the aggregate is **refused by default**; you can
+    publish anyway, and the result is then labelled partial and names exactly which
+    members are missing. Bloc membership changes over time (BRICS was five members until
+    2024; the EU lost the UK in 2020), so every bloc figure states the **membership
+    vintage** it was computed against, and a bloc whose roster we cannot source yet says
+    that plainly instead of showing a figure.
 - **Map** — an **ooMap choropleth** of a selectable indicator with a year/history
   selector; click a country to open its detail in the Countries subtab.
 - **Law** — tracking the **law** (statutes, gazettes, IP records) from official sources
@@ -846,10 +929,36 @@ changes. It has three subtabs:
   legal changes** lists them (jurisdiction · title · Δ bytes · reasons) with the diff and
   a link to the official source. The briefing also surfaces a **model-legislation** Lead
   when near-identical text appears across jurisdictions.
+- **Statistics** — the producer directory and the raw vintaged figures behind the other
+  subtabs, plus **Add series to the corpus** (below).
+
+**Statistics in ordinary search.** A figure nobody can find is not really in your corpus,
+so each **series** — one indicator for one country, across every year held — can also be
+materialised as an ordinary **Article**. It then travels the normal paths: search finds
+"life expectancy France", its words reach trending and Leads, and it appears in the Feed
+like anything else, with no special search box to remember. Four things are worth knowing:
+
+- It is **one Article per indicator per country**, not one per revision. A restated 1991
+  figure updates the existing Article rather than adding a near-copy, so re-running the
+  job costs nothing and adds nothing.
+- The Articles are **labelled as what they are** — the source reads "Official statistics
+  (World Bank)" and the provenance class is `statistics` — so you can filter them in or
+  out of any view, and the coordination checks that look for many outlets repeating one
+  another cannot mistake thousands of same-shaped rows for agreement.
+- The body deliberately says **only the subject and the figures**, with a **published gap
+  shown as a gap**. Repeating the producer's name and the machine series code on every
+  one of ~9,800 Articles put "World Bank" at the very top of the whole corpus's keyword
+  ranking — scaffolding outranking what your corpus is actually about — so it does not.
+- To find them **by producer** rather than by subject, filter on the source or the
+  `statistics` tag; to look one up **by series code**, use the Statistics subtab, which
+  answers exactly rather than by text match.
+
+Materialising them is a background job you start from **Governments → Statistics**; it is
+resumable, cancellable, and does not hold up collection.
 
 ### 3.8 Evidence & custody
 
-*(Reached from **Settings → Safety** — "Chain of custody" is the panel heading; it left
+*(Reached from **Settings → Advanced → Safety** — "Chain of custody" is the panel heading; it left
 the sidebar in the content-first rework.)*
 
 **What it's for:** proving — to a sceptical third party, offline — that your corpus
@@ -893,7 +1002,7 @@ this tab dummy-proof and largely automatic is captured in
 
 ### 3.8a Source integrity
 
-*(The source-integrity desk moved into **Settings → Safety → "Open the source-integrity
+*(The source-integrity desk moved into **Settings → Advanced → Safety → "Open the source-integrity
 desk"**; coordination is also surfaced automatically now — as Home Leads, in the analysis
 window's **Related** view, and as inline "N copies = one voice" badges on article lists
 and the reader.)*
@@ -922,15 +1031,20 @@ bake in bias and silence small, foreign, new or dissident sources. Full guide:
 ### 3.9 Settings
 
 **What it's for:** preferences, the acquisition surfaces, and maintenance — organized
-into sections via a sub-nav: **Graphics · General · AI · Wikipedia · OpenStreetMap ·
-Agenda · Data & backup · Safety · Advanced**.
+into **nine** sections via a sub-nav: **Graphics · General · Cards · AI · Wikipedia ·
+OpenStreetMap · Agenda · Data & backup · Advanced**.
 Open Settings from the **button at the bottom of the sidebar**; the command palette also
 jumps straight here. Everything is stored locally; no telemetry.
 
 Everyday use needs none of **Advanced**: collection plumbing, source management, keyword
-curation, the statistics-producer directory and the calendar-feed catalogue all live
-there, in **folded sections that only load their data once you open one** (the source
-catalogue alone can hold tens of thousands of rows). **Collect** and **Sources** are
+curation, the statistics-producer directory, the calendar-feed catalogue, the diagnostics
+desk, **Safety** and **Uninstall & wipe** all live there, in **folded sections that only
+load their data once you open one** (the source catalogue alone can hold tens of thousands
+of rows). Safety used to be its own subtab; it is now the second-to-last Advanced section,
+with the two irreversible actions — **Panic wipe** and **Uninstall the app** — split out
+into a section of their own (**Uninstall & wipe**) so neither can be reached by mistake
+while you are reading about encryption. Nothing was lost in either move: every control
+that was on the Safety subtab is still there, under the same headings. **Collect** and **Sources** are
 documented above ([3.2](#32-collect-in-settings--collect),
 [3.3](#33-sources-in-settings--sources)) and are reached through Advanced;
 **Wikipedia** ([3.7](#37-wikipedia-in-settings--wikipedia)) keeps its own section.
@@ -1111,8 +1225,8 @@ Official **figures** are not here at all — they are data, so they live under
 
   The same panel also runs local **source enrichment** (deduce topic tags from your
   corpus) and consented **Wikidata** passes (source types, new-source discovery).
-- **Safety & at-risk use:** tools for journalists working under pressure, each
-  labelled with its **honest limit**:
+- **Safety & at-risk use (Advanced → Safety):** tools for journalists working under
+  pressure, each labelled with its **honest limit**:
   - **At-rest encryption (default for new corpora).** New databases are
     SQLCipher-4-encrypted on disk: at every start the app asks for **THE
     passphrase** — one stable secret, like a user ID (`OO_DB_PASSPHRASE` for
@@ -1120,7 +1234,7 @@ Official **figures** are not here at all — they are data, so they live under
     alternative**: a lost passphrase costs re-collection time, because the
     corpus is rebuilt from the web — it holds nothing personal beyond what was
     scraped and deduced from public sources. Existing plaintext corpora keep
-    working untouched; **Settings → Safety → "Encrypt this corpus…"** converts
+    working untouched; **Settings → Advanced → Safety → "Encrypt this corpus…"** converts
     one *in place* (explicit consent, full verification before the swap, and a
     deliberate plaintext snapshot kept as your escape hatch — delete it once
     you've unlocked successfully). The **doctor** (`GET /api/system/doctor`,
@@ -1151,6 +1265,9 @@ Official **figures** are not here at all — they are data, so they live under
     User-Agent) or *Protected* (generic User-Agent routed through a proxy **you** run,
     e.g. Tor). Protected mode **cannot guarantee anonymity** — you must run and trust
     the proxy yourself; it refuses to enable without a proxy URL.
+  The two **irreversible** actions live one section further down, under **Advanced →
+  Uninstall & wipe**, deliberately away from everything above:
+
   - **Panic wipe** — irreversibly deletes the corpus, keys and caches on this machine
     (double-confirmed). **Limit:** overwrite-in-place does *not* guarantee
     unrecoverability on SSD/flash — for that, use full-disk encryption (LUKS/Qubes/Tails)
@@ -1819,7 +1936,7 @@ Anti-amplification is **never** a silent transform the app performs and you mere
   members; reverting reproduces the raw equal counts **exactly**. *No collapse is ever
   applied without your explicit action* — enforced by a test.
 
-This is the **source-integrity desk** (Settings → Safety → "Open the source-integrity
+This is the **source-integrity desk** (Settings → Advanced → Safety → "Open the source-integrity
 desk"): *Scan for coordination* lists proposed actors with their evidence (shared text,
 lockstep timing, shared host); *Apply collapse* / *Expand (revert)* are yours to choose.
 The echo-chamber Leads on Home carry the same *Collapse to one actor* action.
@@ -1916,7 +2033,7 @@ This is **web-of-trust, not proof of correctness**: trusting an author means "I 
 see their assertions," not "their assertions are true." Dissent between trusted authors
 is surfaced for you to judge, never resolved for you.
 
-### Using it (the source-integrity desk — Settings → Safety)
+### Using it (the source-integrity desk — Settings → Advanced → Safety)
 
 1. **Author** annotations (target + kind + value) under *Shared annotations*.
 2. **Export signed bundle** → a JSON file you can publish or share.
@@ -2143,6 +2260,62 @@ Run it from the **Governments tab → Law subtab** ("Track changes now") or on t
 background scheduler (`law` mode). All fetching is through the **ethical,
 robots-fail-closed** path.
 
+### Reading a law from the publisher's own XML (structured sources)
+
+A web page has to be *reconstructed* into text: strip the navigation, the search form,
+the cookie banner, and hope what is left is the Act. That works, and it is what the
+tracker does for most sources — but the stored copy of one UK Act once opened with the
+portal's own search form, and everything derived from it (a "Personal Acts" person, a
+"PART" organisation) came from text that was never in the Act.
+
+Where a publisher serves its **own XML**, none of that applies: there is no page chrome
+in the file, because the file is not a page. Open Omniscience can read
+`legislation.gov.uk`'s CLML directly, which additionally gives two things a page cannot:
+
+- **Provisions with citable addresses.** Each section is read with the Part/Chapter path
+  above it, so a change can be reported as *"section 12 of Part 2 changed"* rather than
+  as a count of bytes. Sections are matched by that address and never by position —
+  otherwise inserting one section would report the whole rest of the Act as amended.
+- **Dates that mean what they say.** Enactment, consolidation point, and the date *we*
+  fetched it are three separate fields with no fallback between them. A date the document
+  does not state is shown as unknown, never filled in from another one. (This is why a
+  tracked law shows no publication date unless the document itself supplies one: the only
+  date available was the day we polled the page, and a poll date is not a publication
+  date.)
+
+The per-section comparison is **additive and experimental**: the ordinary text diff still
+decides whether a revision is recorded and still carries the large-change flag. And one
+limit is stated rather than smoothed over — a section that is *renumbered and rewritten*
+in the same amendment is reported as one removal plus one addition, because matching it to
+its former self would mean guessing which of two differently-numbered sections is "the
+same one, edited".
+
+**What is not there yet:** nothing yet fetches those XML documents automatically. Reading
+a jurisdiction's full legal corpus means walking the publisher's own list of it (the UK
+lists every Act; France lists 76 codes), and that enumeration is not built. Until it is,
+the tracked set stays the curated one, and the coverage report honestly says
+"coverage unknown" rather than presenting a tracked-document count as if it were the
+whole corpus.
+
+### Checking that the law fixes reached your data
+
+Two law fixes heal **quietly, on a document's next successful fetch**: page chrome is
+re-read out of a stored baseline, and a publication date that was really a poll date is
+cleared. Both are correct — and a document whose portal is unreachable never heals, which
+is exactly the case worth knowing about.
+
+The **law-ingest** report (in the all-diagnostics bundle, or on its own) answers that from
+stored data with no network call: how many tracked documents have had the re-read, how
+many are still waiting, and whether any law article still carries a publication date it
+should not.
+
+It also reports **chrome residue** — navigation text still present in a stored body. Read
+that as a *measurement*, not a verdict: the chrome strip deliberately removes only what
+the markup declares to be chrome and leaves the rest, because a text-matching rule would
+also delete an Act's own section headings. Residue after a correct re-read is expected;
+the number tells you how much undeclared chrome is in your corpus, and the marker list is
+a floor, so zero means "none of these", never "no chrome".
+
 ### Briefing cards from the law corpus
 
 - **Law changed** (watch) — a flagged change to a tracked legal document.
@@ -2172,8 +2345,10 @@ keyword analytics work over it like any other source.
   each is respected, attributed, with provenance stored, robots fail-closed (as for news).
 - **Scope honestly.** "Every country" is the north star, not v1: the catalog is broad but
   curated, and change-tracking is by normalised-text diff (consolidated-text portals give
-  the cleanest signal). Structured formats (Akoma Ntoso / ELI) per-edit diffs are the next
-  refinement; the tool says which it has.
+  the cleanest signal). Where a publisher serves structured XML, per-section diffs are
+  available (see above) — CLML today; Akoma Ntoso / ELI are not yet read. The tool says
+  which it has for each document, and refuses to guess: a document it cannot parse
+  structurally keeps the text diff rather than being reported as if it had sections.
 - **Translation** (via the local LLM) is a separate, clearly-labelled aid — never an
   authoritative legal translation.
 
@@ -2535,16 +2710,16 @@ candidates** panel (Settings → Sources), runs are capped by the scheduler's di
 recorded in the run log, and a Home card tells you when candidates await review.
 **Promote** creates a *disabled* source you still have to enable; **Dismiss** is remembered
 and never re-suggested. The DuckDuckGo-powered topic search remains separate, **off by
-default**, and gated behind Settings → Safety (see below).
+default**, and gated behind Settings → Advanced → Safety (see below).
 
-## External topic discovery is opt-in (Settings → Safety)
+## External topic discovery is opt-in (Settings → Advanced → Safety)
 
 *Discover by topic* is the one feature that **sends a free-text search query to a search
 engine**: it sends your topic query to DuckDuckGo. (Other online actions — collection,
 market/stats fetches, Ollama pulls, OpenTimestamps — are each consented and named too;
 this is the one that transmits a query you typed.) It is **disabled by default** and
 refuses with an honest
-message until you enable **Settings → Safety → External topic discovery** ("Your query
+message until you enable **Settings → Advanced → Safety → External topic discovery** ("Your query
 leaves this machine"). Discovering RSS feeds for sources you added yourself stays on the
 local ethical-fetch path and is not affected.
 

@@ -141,7 +141,7 @@ class KeywordExtractor:
         return text_result
 
     def categorize_keywords(self, keywords):
-        categories = {category: [] for category in self.keyword_categories}
+        categories: dict[str, list] = {category: [] for category in self.keyword_categories}
         uncategorized = []
 
         for keyword in keywords:

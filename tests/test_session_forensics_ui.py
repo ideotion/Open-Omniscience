@@ -16,12 +16,17 @@ import json
 import re
 from pathlib import Path
 
+from tests.js_source_helper import read_static
+
 _ROOT = Path(__file__).resolve().parents[1]
 _STATIC = _ROOT / "src" / "static"
 
-
-def _read(name: str) -> str:
-    return (_STATIC / name).read_text(encoding="utf-8")
+# "app.js" is the UI ENGINE, which is several ordered modules since 2026-08-20
+# (S-3). read_static resolves that name to all of them; reading the path directly
+# would raise here, and a reader that SKIPPED a missing file would be worse -- every
+# assertion below is positive, so it would fail loudly, but a negative one would pass
+# for free. Route the name through the one helper that knows the module list.
+_read = read_static
 
 
 def test_forensics_button_wired_in_diagnostics_panel() -> None:

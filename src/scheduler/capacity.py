@@ -105,16 +105,22 @@ def _save(state_path: Path, payload: dict | None) -> None:
         _LOG.debug("collect capacity: could not persist state at %s", state_path)
 
 
-def seed_for(w_max: int, state_path: Path | None = None) -> int:
-    """The permit count the next pass should start from, clamped to ``[1, w_max]``.
+def seed_for(w_max: int, state_path: Path | None = None) -> int | None:
+    """The permit count the next pass should start from, clamped to ``[1, w_max]``, or
+    ``None`` when this machine has never shown memory pressure.
 
-    Returns ``w_max`` unchanged when nothing was ever recorded, which is what makes this
-    a no-op on any machine that has not demonstrated memory pressure.
+    ``None`` means "no opinion", NOT ``w_max``. The distinction is load-bearing: the
+    governor's own default depends on its rate mode (``maximum`` opens at ``w_max``,
+    ``target`` eases in from ``DEFAULT_SEED``), so returning ``w_max`` here would have
+    silently started target mode wide open -- a real behaviour change on machines this
+    module is supposed to leave completely alone. Handing back ``None`` lets the caller
+    keep its own default and makes the no-op property true by construction rather than
+    by coincidence.
     """
     w_max = max(1, int(w_max))
     stored = load_ceiling(state_path)
     if stored is None:
-        return w_max
+        return None
     return max(1, min(stored, w_max))
 
 
@@ -206,15 +212,22 @@ def from_summary(summary: dict | None) -> tuple[int | None, int | None]:
 def state_report(w_max: int, state_path: Path | None = None) -> dict:
     """Read-only view for diagnostics. No score -- one measured count and its provenance."""
     stored = load_ceiling(state_path)
+    configured = max(1, int(w_max))
     return {
         "schema": SCHEMA,
-        "configured_max_workers": max(1, int(w_max)),
+        "configured_max_workers": configured,
         "learned_ceiling": stored,
-        "seed_next_pass": seed_for(w_max, state_path),
+        # What the collector's upward ramp may actually reach next pass. Deliberately
+        # NOT a predicted starting permit count: with no ceiling recorded the starting
+        # point is the governor's own rate-mode default, which this module does not
+        # know and will not guess.
+        "ramp_capped_at": configured if stored is None else min(stored, configured),
         "measured": stored is not None,
         "method": (
             "learned_ceiling is null until this machine has actually backed off under "
-            "memory pressure; until then the collector starts every pass at the "
-            "configured maximum, exactly as it always has."
+            "memory pressure; until then the collector runs exactly as it always has, "
+            "starting and ramping to the configured maximum. Once measured, it both "
+            "starts each pass there AND may not ramp above it — the ceiling rises one "
+            "doubling after any pass that sees no pressure."
         ),
     }

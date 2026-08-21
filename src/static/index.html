@@ -53,6 +53,10 @@
            reachable here (also via the command palette + showTab deep-links). -->
       <nav class="nav-groups flat" id="navGroups" aria-label="Primary">
         <button class="nav-item" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/><path d="M9 20v-6h6v6"/></svg><span>Home</span></button>
+        <!-- FEED (rulings 13/40, field feedback 2026-08-07): its own sidebar tab, next to
+             Home, because it is the other thing you do with a corpus -- read it. Home is a
+             launchpad of Leads; this is the articles themselves. -->
+        <button class="nav-item" data-tab="feed"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h10M4 10h10M4 15h7"/><rect x="16" y="4" width="4" height="4" rx="1"/><rect x="16" y="12" width="4" height="4" rx="1"/></svg><span>Feed</span></button>
         <!-- Search AND Analysis retired from the sidebar (ruled 2026-06-20): analyses run
              via search (the omnibar/palette -> a spawned analysis window) or by clicking into
              the other tabs. #tab-analyze + #tab-search stay registered and reachable via
@@ -373,6 +377,15 @@
            spawns a NAMED, closeable, persisted tab over this one render area (replaces
            the singleton + the retired #corpus-win modal). -->
       <div id="an-tabstrip" class="an-tabstrip" role="tablist" style="display:none"></div>
+      <!-- PERSISTENT PROVENANCE HEADER (rulings 15/16, field feedback 2026-08-07).
+           When an analysis is opened FROM a Lead, the whole provenance travels with it
+           -- the card, its family, the producer, the trigger, the method and the caveat
+           -- and is shown here, ABOVE the subtabs, so it stays on screen whichever
+           subtab the reader is on. Transport, never a new measurement: every value is
+           the card's own, carried verbatim. Hidden for an analysis that did NOT come
+           from a Lead (a search has no card provenance, and inventing one would be a
+           fabricated attribution). Filled by _anRenderProvenance. -->
+      <div id="an-prov" class="an-prov-head" hidden></div>
       <div class="phead"><h2>Analysis</h2><span class="sp"></span>
         <span id="an-query" class="hint" style="margin:0"></span></div>
       <p class="hint" style="margin-top:0">Analytics over the articles your search matched — counts only, never a verdict. <span>Text only — images, audio and video aren't analysed.</span></p>
@@ -398,7 +411,30 @@
       </div>
       <div class="an-panel" id="an-trend" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-mindmap" style="display:none;margin-top:10px;overflow:auto"></div>
-      <div class="an-panel" id="an-articles" style="display:none;margin-top:10px;overflow:auto"></div>
+      <div class="an-panel" id="an-articles" style="display:none;margin-top:10px;overflow:auto">
+        <!-- Sorting lives HERE, with the list it orders (ruling 20). It used to sit in
+             Advanced, three subtabs away from the only view that reads it. The ids are
+             the ones Advanced used, so nothing was duplicated: there is exactly one
+             sort control in this window, and the column headers below drive these same
+             two fields rather than keeping a second opinion. -->
+        <div class="an-sortbar" style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;margin-bottom:6px">
+          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Sort by</span>
+            <select id="an-adv-sort" style="max-width:170px" onchange="_anSortChanged()">
+              <option value="">Relevance / recency</option>
+              <option value="date">Date</option>
+              <option value="source">Source</option>
+              <option value="title">Title (A–Z)</option>
+              <option value="language">Language</option>
+              <option value="top_keyword">Top keyword count</option>
+            </select></label>
+          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Order</span>
+            <select id="an-adv-dir" style="max-width:130px" onchange="_anSortChanged()">
+              <option value="desc">Descending</option>
+              <option value="asc">Ascending</option>
+            </select></label>
+        </div>
+        <div id="an-art-list"></div>
+      </div>
       <div class="an-panel" id="an-www" style="display:none;margin-top:10px"></div>
       <div class="an-panel" id="an-links" style="display:none;margin-top:10px;overflow:auto"></div>
       <div class="an-panel" id="an-related" style="display:none;margin-top:10px;overflow:auto"></div>
@@ -419,19 +455,6 @@
             <input id="an-adv-from" type="date"></label>
           <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">To</span>
             <input id="an-adv-to" type="date"></label>
-          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Sort by</span>
-            <select id="an-adv-sort" style="max-width:150px">
-              <option value="">Relevance / recency</option>
-              <option value="date">Date</option>
-              <option value="source">Source</option>
-              <option value="title">Title (A–Z)</option>
-              <option value="language">Language</option>
-            </select></label>
-          <label style="display:flex;flex-direction:column;gap:2px"><span class="muted">Order</span>
-            <select id="an-adv-dir" style="max-width:130px">
-              <option value="desc">Descending</option>
-              <option value="asc">Ascending</option>
-            </select></label>
           <button class="primary" onclick="anRunAdvanced()">Run analysis</button>
         </div>
         <div id="an-adv-note" class="muted" style="margin-top:8px"></div>
@@ -451,6 +474,22 @@
       <div id="bulk-llm-an" class="bulk-llm" style="display:none;margin-top:8px"></div>
       <div id="bulk-queue-an" class="bulk-queue" style="margin-top:8px"></div>
     </section>
+    </div>
+
+    <!-- ============================= FEED ============================= -->
+    <!-- Rulings 8-13, 40-41. The corpus as a reading surface: everything by default, in
+         an order nothing chose for you, each card carrying its own top keywords and
+         expanding in place. The order controls and the counts are rendered by app.js;
+         only the shell is static, because every part of it depends on what the endpoint
+         reports about THIS corpus. -->
+    <div class="tab-page" id="tab-feed">
+      <section class="panel">
+        <h2>Feed</h2>
+        <div id="feed-controls"></div>
+        <div id="feed-note" class="hint"></div>
+        <div id="feed-list"></div>
+        <div id="feed-more"></div>
+      </section>
     </div>
 
     <!-- ============================ INGEST ============================ -->
@@ -624,6 +663,8 @@
     <div class="tab-page" id="tab-law">
       <nav class="tabs" id="gov-subtabs" role="tablist" aria-label="Governments sections">
         <button class="active" data-tab="countries">Countries</button>
+        <button data-tab="compare">Compare</button>
+        <button data-tab="groups">Groups</button>
         <button data-tab="map">Map</button>
         <button data-tab="law">Law</button>
         <button data-tab="statistics">Statistics</button>
@@ -648,6 +689,72 @@
           <div class="row"><div style="flex:1;max-width:360px"><label for="gov-country">Country</label>
             <select id="gov-country" onchange="loadGovCountry(this.value)"></select></div></div>
           <div id="gov-country-data" style="margin-top:12px"><div class="muted">Loading…</div></div>
+        </section>
+      </div>
+
+      <!-- Compare: ruling 4 (field feedback 2026-08-07) — two countries side by
+           side across every curated indicator. Display only: no figure on this
+           surface is derived, so there is nothing here to get wrong beyond showing
+           a gap as a gap. It reuses the SAME indicator grid as the Countries view
+           rather than inventing a second layout. -->
+      <div class="gov-view" id="gov-compare" style="display:none">
+        <section class="panel">
+          <div class="phead"><h2>Compare two countries</h2><span class="sp"></span></div>
+          <p class="hint">Every curated indicator for two countries, side by side, each
+            with its own latest year. Nothing here is computed or combined: a difference
+            between two producers' figures for two different years would not be a
+            comparison, so each value carries the year it was published for. Where one
+            side has no figure, that is a published gap and is shown as one — never zero.</p>
+          <div class="row">
+            <div style="flex:1;max-width:280px"><label for="gov-cmp-a">First country</label>
+              <select id="gov-cmp-a" onchange="renderGovCompare()"></select></div>
+            <div style="flex:1;max-width:280px"><label for="gov-cmp-b">Second country</label>
+              <select id="gov-cmp-b" onchange="renderGovCompare()"></select></div>
+          </div>
+          <div id="gov-cmp-body" style="margin-top:12px"></div>
+        </section>
+      </div>
+
+      <!-- Groups: rulings 32, 43, 44, 45 and 47. TWO lenses, and the split is the
+           point rather than a filing convenience — one shows the producer's OWN
+           published aggregates, the other computes from member countries and shows
+           every honest strategy side by side. They differ (World Bank "Sub-Saharan
+           Africa" excludes North Africa, so that lens has no continental-Africa
+           figure at all), which is exactly why ruling 47 asked for both. -->
+      <div class="gov-view" id="gov-groups" style="display:none">
+        <section class="panel">
+          <div class="phead"><h2>Groups of countries</h2><span class="sp"></span></div>
+          <div class="row" id="gov-lens" role="group" aria-label="Which kind of group figure">
+            <button type="button" class="secondary" data-lens="published" aria-pressed="true"
+              onclick="showGovLens('published')"
+              title="The World Bank's own published aggregates — World, the income groups, its seven regions. One figure, from the producer, exactly as published. These are NOT continents.">Published by the producer</button>
+            <button type="button" class="secondary" data-lens="computed" aria-pressed="false"
+              onclick="showGovLens('computed')"
+              title="Computed here from member countries, every strategy side by side so you can compare them rather than trust one. Continents are ours; a group with no sourced membership dates is listed and refused rather than guessed.">Computed from members</button>
+          </div>
+
+          <div id="gov-lens-published" style="margin-top:12px">
+            <p class="hint" id="gov-agg-note"></p>
+            <div class="row"><div style="flex:1;max-width:360px"><label for="gov-agg-pick">Aggregate</label>
+              <select id="gov-agg-pick" onchange="loadGovAggregate(this.value)"></select></div>
+              <div style="align-self:end"><button type="button" class="secondary tiny" id="gov-agg-all"
+                onclick="govToggleAllAggregates(this)" aria-pressed="false">Show all</button></div></div>
+            <div id="gov-agg-body" style="margin-top:12px"></div>
+          </div>
+
+          <div id="gov-lens-computed" style="display:none;margin-top:12px">
+            <p class="hint" id="gov-grp-note"></p>
+            <div class="row">
+              <div style="flex:1;max-width:300px"><label for="gov-grp-pick">Group</label>
+                <select id="gov-grp-pick" onchange="renderGovGroup()"></select></div>
+              <div style="flex:1;max-width:300px"><label for="gov-grp-ind">Indicator</label>
+                <select id="gov-grp-ind" onchange="renderGovGroup()"></select></div>
+              <div><label for="gov-grp-year">Year</label>
+                <input id="gov-grp-year" type="text" inputmode="numeric" placeholder="latest"
+                  style="max-width:110px" onchange="renderGovGroup()"></div>
+            </div>
+            <div id="gov-grp-body" style="margin-top:12px"></div>
+          </div>
         </section>
       </div>
 
@@ -753,6 +860,14 @@
         <div id="statfig-map" style="margin-top:6px"></div>
         <div style="overflow:auto;margin-top:10px" id="statfig-table"></div>
         <div style="overflow:auto;margin-top:10px" id="statfig-tri"></div>
+        <div style="margin-top:14px">
+          <div class="row" style="align-items:center;justify-content:space-between">
+            <h3 style="margin:0;font-size:12px">Add series to the corpus</h3>
+            <button class="secondary" id="statcorpus-run" onclick="runSeriesCorpus()" title="Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.">Add series to the corpus</button>
+          </div>
+          <p class="hint" style="margin-top:2px">A figure nobody can find is not really in your corpus. This materialises each stored series as an ordinary Article, so search, trending, Leads and the Feed reach it with no separate search box to remember. One Article per indicator per country, updated in place -- a restated figure never adds a near-copy, so running this twice costs nothing. They are labelled "Official statistics" and stay filterable in or out of any view. Local only: it reads figures already stored and makes no network request.</p>
+          <div id="statcorpus-msg" class="hint" role="status" aria-live="polite" style="margin-top:6px"></div>
+        </div>
         <div style="margin-top:14px">
           <div class="row" style="align-items:center;justify-content:space-between">
             <h3 style="margin:0;font-size:12px">Revision anomalies</h3>
@@ -1263,7 +1378,6 @@
         <button data-tab="offlinemap">OpenStreetMap</button>
         <button data-tab="agenda">Agenda</button>
         <button data-tab="data">Data &amp; backup</button>
-        <button data-tab="safety">Safety</button>
         <button data-tab="advanced">Advanced</button>
       </nav>
 
@@ -1329,6 +1443,18 @@
         </div>
       </div>
 
+
+      <h3 style="margin-bottom:6px">Feed scrolling history</h3>
+      <p class="muted" style="margin-top:0">The Feed remembers two things and nothing else: which order it drew, and how far down it you have scrolled. It keeps no record of which articles you read — there is no reading history in your corpus, in a backup, or anywhere else. Both are stored on this device only.</p>
+      <div class="row">
+        <!-- Same two actions as the Feed's own controls, and deliberately the same two
+             SENTENCES: one wording per action, translated once, so the button here and
+             the button there cannot come to describe the same thing differently. -->
+        <button class="secondary" type="button" onclick="feedReshuffle()"
+                title="Draw a new order and start again from the top.">Reshuffle</button>
+        <button class="secondary" type="button" onclick="feedClearSeen()"
+                title="Keep this order and start again from the top.">Start from the top</button>
+      </div>
 
       <h3 style="margin-bottom:6px">First-launch guide</h3>
       <p class="muted" style="margin-top:0">The one-time guided welcome that introduces the app and helps you go online for your first collection (your language and passphrase are chosen on the unlock screen). You can re-open it anytime, or have it show again the next time the app loads.</p>
@@ -2450,45 +2576,15 @@
     </section>
     </details>
 
-    <!-- The Bulletin (design record §16): a folded section at the VERY BOTTOM of
-         Advanced, so it can be reached by skipping to the end. Folded by default
-         and discreet — and folded does not mean fetched: its loader fires on
-         EXPAND like every other section here. -->
-    <details class="adv-sec" data-adv="bulletin">
-      <summary><span class="adv-sec-t">Bulletin</span> <span class="muted">— a periodic document built from this corpus</span></summary>
-    <section class="panel" id="bulletin-panel">
-      <h2>Bulletin</h2>
-      <p class="hint" style="margin-top:0"><span>A document covering one closed period — what rose in <em>this corpus</em>, which sources carried it, and everything the period could not see. It is built from exact counts, so it is the record rather than a summary of it.</span>
-        <span>Nothing here touches the network. The document is a <strong>draft</strong> until you publish it, and publishing only stamps it: you are the byline, not the machine.</span></p>
-      <div id="bulletin-gate" class="hint" style="margin-top:8px">Checking whether this machine can build one…</div>
-      <div id="bulletin-controls" hidden>
-        <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px">
-          <div><label for="bul-cadence">Period</label><select id="bul-cadence">
-            <option value="daily">Daily</option>
-            <option value="weekly" selected>Weekly</option>
-            <option value="monthly">Monthly</option>
-            <option value="trimester">Trimester</option>
-            <option value="semester">Semester</option>
-            <option value="yearly">Yearly</option>
-          </select></div>
-          <label class="row" style="gap:6px;align-items:center" title="Adds a paragraph per story, written by the local model and kept only where every figure and name in it appears in the articles the model was shown. Off by default; the document is complete without it.">
-            <input id="bul-narrate" type="checkbox"> <span>Add the narration layer</span></label>
-          <button id="bul-generate" onclick="bulletinGenerate(this)">Build a draft</button>
-          <div id="bulletin-status" class="hint" style="align-self:end"></div>
-        </div>
-        <div id="bulletin-list" style="margin-top:12px"><div class="muted">Loading editions…</div></div>
-        <div id="bulletin-review" style="margin-top:14px"></div>
-      </div>
-    </section>
-    </details>
-</div>
-
-
-
-    <!-- =========================== LIBRARY =========================== -->
-
-    <div class="set-view" id="set-safety" style="display:none">
-    <!-- ============================ SAFETY (Theme 2) ================= -->
+    <!-- SAFETY, folded into Advanced (rulings 26/42, field feedback 2026-08-07). It was
+         its own subtab; the end state is nine, so it becomes a SECTION here. Everything
+         it carried moved WHOLE -- source integrity, evidence & custody, at-rest
+         encryption, database maintenance, corpus fixity, fetch mode and external
+         discovery -- with every id unchanged, so no deep link or test anchor breaks.
+         Panic wipe and Uninstall are deliberately NOT in here: ruling 26 gives them
+         their own section, immediately below. -->
+    <details class="adv-sec" data-adv="safety">
+      <summary><span class="adv-sec-t">Safety &amp; at-risk use</span> <span class="muted">— at-rest encryption, integrity, fetch mode; for journalists working under pressure</span></summary>
     <section class="panel">
       <div class="phead"><h2>Source integrity</h2></div>
       <p class="muted" style="margin-top:0">Coordination is surfaced automatically now — as Leads, in the analysis window's Related view, and inline on article lists and the reader. Open the manual desk to collapse a coordinated network to one voice, look up a source profile, or manage web-of-trust annotations.</p>
@@ -2584,7 +2680,51 @@
       </div>
       <div id="discovery-external-result" class="hint"></div>
 
-      <hr>
+    </details>
+
+    <!-- UNINSTALL &amp; WIPE -- its OWN section, never nested inside Safety (ruling 26).
+         The reason is not tidiness: panic wipe must not become hard to reach, because
+         the person who needs it may need it in a hurry. A top-level section is one click
+         from the Advanced subtab; a subsection inside another fold is two, and the
+         second one is not obvious. Kept LAST so it is never mistaken for an ordinary
+         setting, and marked so it reads as destructive before it is opened. -->
+    <details class="adv-sec adv-sec-danger" data-adv="uninstall">
+      <summary><span class="adv-sec-t">Uninstall &amp; wipe</span> <span class="muted">— irreversible: destroy the key and remove this install</span></summary>
+    <section class="panel" id="uninstall-panel">
+      <div class="phead"><h2>Uninstall &amp; wipe</h2>    <!-- The Bulletin (design record §16): a folded section at the VERY BOTTOM of
+         Advanced, so it can be reached by skipping to the end. Folded by default
+         and discreet — and folded does not mean fetched: its loader fires on
+         EXPAND like every other section here. -->
+    <details class="adv-sec" data-adv="bulletin">
+      <summary><span class="adv-sec-t">Bulletin</span> <span class="muted">— a periodic document built from this corpus</span></summary>
+    <section class="panel" id="bulletin-panel">
+      <h2>Bulletin</h2>
+      <p class="hint" style="margin-top:0"><span>A document covering one closed period — what rose in <em>this corpus</em>, which sources carried it, and everything the period could not see. It is built from exact counts, so it is the record rather than a summary of it.</span>
+        <span>Nothing here touches the network. The document is a <strong>draft</strong> until you publish it, and publishing only stamps it: you are the byline, not the machine.</span></p>
+      <div id="bulletin-gate" class="hint" style="margin-top:8px">Checking whether this machine can build one…</div>
+      <div id="bulletin-controls" hidden>
+        <div class="row" style="gap:8px;align-items:end;flex-wrap:wrap;margin-top:10px">
+          <div><label for="bul-cadence">Period</label><select id="bul-cadence">
+            <option value="daily">Daily</option>
+            <option value="weekly" selected>Weekly</option>
+            <option value="monthly">Monthly</option>
+            <option value="trimester">Trimester</option>
+            <option value="semester">Semester</option>
+            <option value="yearly">Yearly</option>
+          </select></div>
+          <label class="row" style="gap:6px;align-items:center" title="Adds a paragraph per story, written by the local model and kept only where every figure and name in it appears in the articles the model was shown. Off by default; the document is complete without it.">
+            <input id="bul-narrate" type="checkbox"> <span>Add the narration layer</span></label>
+          <button id="bul-generate" onclick="bulletinGenerate(this)">Build a draft</button>
+          <div id="bulletin-status" class="hint" style="align-self:end"></div>
+        </div>
+        <div id="bulletin-list" style="margin-top:12px"><div class="muted">Loading editions…</div></div>
+        <div id="bulletin-review" style="margin-top:14px"></div>
+      </div>
+    </section>
+    </details>
+
+</div>
+      <p class="muted" style="margin-top:0">Both actions below are irreversible. Read each note before pressing.</p>
       <h3 style="margin-bottom:6px; color:var(--err)">Panic wipe</h3>
       <p class="muted" style="margin-top:0">Irreversibly destroys the corpus's encryption key (crypto-erase) and removes the data, keys and caches on this machine — the encrypted store becomes permanently unrecoverable at any size, then the app must be restarted. This cannot be undone. You'll be offered an optional full free-space overwrite afterward as defence-in-depth (that pass alone does not guarantee erasure on SSD/flash/copy-on-write disks — the real guarantee is the destroyed key).</p>
       <button class="danger" onclick="panicWipe()">Wipe everything now</button>
@@ -2624,7 +2764,14 @@
       </div>
       <div id="uninstall-result" class="hint"></div>
     </section>
-    </div>
+    </details>
+
+</div>
+
+
+
+    <!-- =========================== LIBRARY =========================== -->
+
     </div>
 
     <!-- ============================ HELP / DOCS ====================== -->
@@ -2999,7 +3146,23 @@
   <script src="/static/osmpbf.js"></script>
   <!-- ooViz: zero-dependency honest-chart primitives (loaded before app.js as window.ooViz) -->
   <script src="/static/ooviz.js"></script>
-  <script src="/static/app.js"></script>
+  <script src="/static/app-core.js"></script>
+  <script src="/static/app-shell.js"></script>
+  <script src="/static/app-home.js"></script>
+  <script src="/static/app-agenda.js"></script>
+  <script src="/static/app-gov-law.js"></script>
+  <script src="/static/app-settings.js"></script>
+  <script src="/static/app-backup.js"></script>
+  <script src="/static/app-library.js"></script>
+  <script src="/static/app-sources.js"></script>
+  <script src="/static/app-markets.js"></script>
+  <script src="/static/app-insights.js"></script>
+  <script src="/static/app-diagnostics.js"></script>
+  <script src="/static/app-corpus.js"></script>
+  <script src="/static/app-map.js"></script>
+  <script src="/static/app-analysis.js"></script>
+  <script src="/static/app-ai-tools.js"></script>
+  <script src="/static/app-boot.js"></script>
   <!-- Settings -> GUIs gallery renderer (loads after app.js; called by showSetCat). -->
   <script src="/static/guis/gallery.js"></script>
   <!-- PWA: register the offline shell service worker (item #69). External file (no inline

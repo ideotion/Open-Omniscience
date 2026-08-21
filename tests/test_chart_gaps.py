@@ -27,10 +27,10 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from tests.js_source_helper import function_body as _slice
+from tests.js_source_helper import app_js, function_body as _slice
 
 _ROOT = Path(__file__).resolve().parents[1]
-_APP = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+_APP = app_js()
 _LOCALES = _ROOT / "src" / "static" / "locales"
 
 _GAP_NOTE = "The line breaks where nothing was recorded — a gap is not a zero."

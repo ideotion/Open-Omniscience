@@ -11,10 +11,9 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
-from pathlib import Path
-from tests.js_source_helper import function_body
+from tests.js_source_helper import app_js, function_body
 
-_JS = Path("src/static/app.js").read_text(encoding="utf-8")
+_JS = app_js()
 
 
 def test_picker_functions_and_controls_are_wired():

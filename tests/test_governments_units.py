@@ -186,7 +186,12 @@ def test_the_chart_is_gated_on_plotted_points_not_raw_series():
 
     Gating on the raw length is how a single point reached the renderer at all.
     """
-    body = function_body(read_static("app.js"), "loadGovCountry")
+    # Anchored on _govIndCard, which OWNS this gate since the card renderer was hoisted
+    # out of loadGovCountry (2026-08-20) so Compare and the aggregate view could reuse it
+    # rather than growing two more copies. Re-anchoring keeps the property this docstring
+    # names testable; leaving it on the old function would have reported a correct gate
+    # as absent, which is the stale-anchor family this project has been bitten by twice.
+    body = function_body(read_static("app.js"), "_govIndCard")
     assert "pts.length > 1" in body, body[:400]
 
 
@@ -230,7 +235,7 @@ def test_the_two_misreadable_indicators_carry_a_definition():
 
 
 def test_the_note_reaches_the_card_as_a_hover():
-    body = function_body(read_static("app.js"), "loadGovCountry")
+    body = function_body(read_static("app.js"), "_govIndCard")   # hoisted; see above
     assert "ind.note" in body and "title=" in body, (
         "the definition must ride the #oo-tip hover convention (invariant #17)"
     )

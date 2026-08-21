@@ -558,3 +558,182 @@ def test_computed_style_can_read_a_pseudo_element():
         d.page.set_content(html)
         style = d.computed_style("#target", pseudo="::after")
         assert style["width"] == "4px"  # inherited from .b, invisible in #target's own rule
+
+
+# ---------------------------------------------------------------------------------------- #
+# The 2026-08-20 matrix additions: a11y + honesty-rule instruments. Each capability is
+# proven here on a hermetic fixture BEFORE being trusted against the live SPA — and each
+# fixture is built to DISCRIMINATE (the anti-vacuity discipline: a check that cannot fail
+# against the defect it names proves nothing).
+# ---------------------------------------------------------------------------------------- #
+
+_AXE_PATH = Path(__file__).resolve().parents[1] / "scripts" / "vendor" / "axe-core" / "axe.min.js"
+
+
+def test_keyboard_traversal_records_focus_chain_and_discriminates_focus_visibility():
+    # Three focusable controls: one keeps the browser's default focus ring (counts as
+    # indicated), one strips it with outline:none AND no replacement (must read as NOT
+    # indicated), one replaces it with a box-shadow (indicated again). The discriminating
+    # fixture is the outline:none one — without it this test would pass against a
+    # traversal that hardcodes focus_indicated=true.
+    html = (
+        "<!doctype html><html><head><style>"
+        "#stripped:focus{outline:none}"
+        "#shadowed:focus{outline:none;box-shadow:0 0 0 3px red}"
+        "</style></head><body>"
+        "<button id='ringed'>a</button>"
+        "<button id='stripped'>b</button>"
+        "<button id='shadowed'>c</button>"
+        "</body></html>"
+    )
+    with _new_driver() as d:
+        d.page.set_content(html)
+        chain = d.keyboard_traversal(max_tabs=6)
+        by_id = {c.get("id"): c for c in chain if c.get("id")}
+        assert {"ringed", "stripped", "shadowed"} <= set(by_id), chain
+        assert by_id["ringed"]["focus_indicated"] is True
+        assert by_id["stripped"]["focus_indicated"] is False, (
+            "outline:none with no replacement must read as focus-NOT-indicated -- this is "
+            "the discriminating case"
+        )
+        assert by_id["shadowed"]["focus_indicated"] is True
+
+
+def test_run_axe_finds_a_known_violation_and_a_clean_scope_reads_clean():
+    # An <img> with no alt is axe's textbook violation (image-alt). The clean sibling
+    # scope is the negative-space twin: an audit that reports violations everywhere is as
+    # useless as one that reports none.
+    assert _AXE_PATH.exists(), "the vendored axe-core file must be committed alongside this test"
+    axe_source = _AXE_PATH.read_text(encoding="utf-8")
+    html = (
+        "<!doctype html><html><head><title>t</title></head><body>"
+        "<main id='dirty'><img src='x.png'></main>"
+        "<section id='clean' aria-label='clean'><p>hello</p></section>"
+        "</body></html>"
+    )
+    with _new_driver() as d:
+        d.page.set_content(html)
+        dirty = d.run_axe(axe_source, scope="#dirty")
+        ids = {v["id"] for v in dirty["violations"]}
+        assert "image-alt" in ids, dirty
+        clean = d.run_axe(axe_source, scope="#clean")
+        assert not any(v["id"] == "image-alt" for v in clean["violations"])
+
+
+def test_char_x_positions_reads_per_character_rendered_order():
+    # LTR: the characters of a date run must come back with monotonically increasing x.
+    html = "<!doctype html><html><body><div id='x'>on 2026-08-20 it ran</div></body></html>"
+    with _new_driver() as d:
+        d.page.set_content(html)
+        xs = d.char_x_positions("#x", "2026-08-20")
+        assert xs is not None and len(xs) == 10
+        assert all(b > a for a, b in zip(xs, xs[1:], strict=False)), xs
+        assert d.char_x_positions("#x", "not-there") is None
+
+
+def test_char_x_positions_discriminates_a_missing_bidi_isolate_in_rtl():
+    # The recorded lesson: in an RTL context a punctuation-joined LTR run (an ISO
+    # timestamp WITH its numeric utc offset) renders REORDERED unless wrapped in
+    # U+2068 (FSI) ... U+2069 (PDI). The pair below is the discriminating fixture: the
+    # same timestamp, once bare and once isolated. The instrument must show the bare
+    # one's characters out of visual order and the isolated one's in order — if
+    # Chromium rendered both in order, this check could never catch the defect it is
+    # named for and must be reworked, not shipped.
+    stamp = "2026-08-13T09:08:53-07:00"
+    html = (
+        "<!doctype html><html><body>"
+        f"<div dir='rtl' id='bare'>تحديث {stamp} آخر</div>"
+        f"<div dir='rtl' id='isolated'>تحديث ⁨{stamp}⁩ آخر</div>"
+        "</body></html>"
+    )
+    with _new_driver() as d:
+        d.page.set_content(html)
+        bare = d.char_x_positions("#bare", stamp)
+        isolated = d.char_x_positions("#isolated", stamp)
+        assert bare is not None and isolated is not None
+        assert all(b > a for a, b in zip(isolated, isolated[1:], strict=False)), (
+            "the ISOLATED run must render in logical (monotonic-x) order",
+            isolated,
+        )
+        assert not all(b > a for a, b in zip(bare, bare[1:], strict=False)), (
+            "the BARE run must render visibly reordered in RTL, or this instrument "
+            "cannot discriminate the defect it exists for",
+            bare,
+        )
+
+
+def test_undefined_classes_reports_the_ghost_and_not_the_styled_ones():
+    html = (
+        "<!doctype html><html><head><style>"
+        ".styled{color:red}"
+        "@media (max-width:9999px){ .medial{color:blue} }"
+        "</style></head><body>"
+        "<div class='styled ghost medial'>x</div><span class='ghost'>y</span>"
+        "</body></html>"
+    )
+    with _new_driver() as d:
+        d.page.set_content(html)
+        rows = d.undefined_classes()
+        by_cls = {r["cls"]: r for r in rows}
+        assert "ghost" in by_cls and by_cls["ghost"]["count"] == 2
+        assert "styled" not in by_cls
+        assert "medial" not in by_cls, (
+            "a class styled only inside a nested @media rule must count as styled -- the "
+            "sweep walks grouping rules"
+        )
+
+
+def test_visible_text_nodes_excludes_hidden_and_script_text():
+    html = (
+        "<!doctype html><html><body>"
+        "<p>visible words</p>"
+        "<p style='display:none'>hidden words</p>"
+        "<script>var scriptWords = 1;</script>"
+        "</body></html>"
+    )
+    with _new_driver() as d:
+        d.page.set_content(html)
+        texts = d.visible_text_nodes()
+        assert "visible words" in texts
+        assert not any("hidden words" in t for t in texts)
+        assert not any("scriptWords" in t for t in texts)
+
+
+def test_uppercase_reliance_audit_reports_case_only_rank_and_spares_sized_weighted():
+    # The discriminating pair: same-size same-weight uppercase (reported: its rank is
+    # case alone, a no-op in ar/zh/ja/hi/bn) vs uppercase that ALSO steps on size+weight
+    # (spared: its hierarchy survives translation). Reporting the second would be the
+    # over-eager mirror.
+    html = (
+        "<!doctype html><html><head><style>body{font-size:15px;font-weight:400}"
+        "#caseonly{text-transform:uppercase}"
+        "#realrank{text-transform:uppercase;font-size:19px;font-weight:700}"
+        "</style></head><body>"
+        "<div id='caseonly'>section label</div>"
+        "<div id='realrank'>real heading</div>"
+        "</body></html>"
+    )
+    with _new_driver() as d:
+        d.page.set_content(html)
+        rows = d.uppercase_reliance_audit()
+        ids = {r["id"] for r in rows}
+        assert "caseonly" in ids
+        assert "realrank" not in ids
+
+
+def test_emulate_contrast_switches_the_prefers_contrast_media_feature():
+    html = (
+        "<!doctype html><html><head><style>"
+        "#x{border:1px solid black}"
+        "@media (prefers-contrast: more){ #x{border-width:3px} }"
+        "</style></head><body><div id='x'>x</div></body></html>"
+    )
+    with _new_driver() as d:
+        d.page.set_content(html)
+        assert d.computed_style("#x")["width"] is not None  # sanity: element exists
+        base = d.page.eval_on_selector("#x", "el => getComputedStyle(el).borderTopWidth")
+        d.emulate_contrast("more")
+        more = d.page.eval_on_selector("#x", "el => getComputedStyle(el).borderTopWidth")
+        d.emulate_contrast(None)
+        reset = d.page.eval_on_selector("#x", "el => getComputedStyle(el).borderTopWidth")
+        assert base == "1px" and more == "3px" and reset == "1px"

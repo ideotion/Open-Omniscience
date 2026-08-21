@@ -31,14 +31,14 @@ import re
 from pathlib import Path
 
 import pytest
+from tests.js_source_helper import app_js
 
 _ROOT = Path(__file__).resolve().parents[1]
-_APP_JS = _ROOT / "src" / "static" / "app.js"
 
 
 @pytest.fixture(scope="module")
 def app() -> str:
-    return _APP_JS.read_text(encoding="utf-8")
+    return app_js()
 
 
 def _region(src: str, start_marker: str, end_marker: str) -> str:

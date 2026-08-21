@@ -1714,7 +1714,9 @@ def llm_model_catalog(backend: str | None = None) -> dict:
     have: set[str] | None = None
     if chosen == "ollama":
         try:
-            have = {m.get("tag") for m in OllamaClient().list_installed_detailed()}
+            # A model row with no "tag" contributes nothing: `have` is only ever used
+            # for `m["artifact"] in have`, and None can never match an artifact id.
+            have = {t for m in OllamaClient().list_installed_detailed() if (t := m.get("tag"))}
         except LLMUnavailable:
             have = None  # the daemon is down: unknown, NOT "none installed"
     for m in out["models"]:

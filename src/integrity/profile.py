@@ -87,7 +87,7 @@ def source_profile(session, source_name: str, *, days: int = _PROFILE_DAYS) -> d
     docs = [(str(aid), (content or title or "")) for aid, _sid, content, title in corpus]
     scores = novelty_scores(docs)
     own_ids = {str(a.id) for a in arts}
-    ratios = [scores[i].ratio for i in own_ids if i in scores and scores[i].ratio is not None]
+    ratios = [r for i in own_ids if i in scores and (r := scores[i].ratio) is not None]
     mean_novelty = sum(ratios) / len(ratios) if ratios else None
     dimensions["novelty"] = {
         "mean_ratio": None if mean_novelty is None else round(mean_novelty, 3),

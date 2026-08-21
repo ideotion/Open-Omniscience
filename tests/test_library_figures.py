@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from src.api.database import _compute_figures
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+from tests.js_source_helper import app_js
 
 
 def _corpus(session: Session, now: datetime) -> None:
@@ -69,20 +70,17 @@ def test_compute_figures_empty_corpus_is_honest():
 
 
 def test_figures_endpoint_registered_and_wired_into_the_library_tab():
-    import pathlib
 
     from src.api.database import router
 
     assert "/api/database/figures" in [r.path for r in router.routes]
-    app_js = (
-        pathlib.Path(__file__).resolve().parents[1] / "src" / "static" / "app.js"
-    ).read_text(encoding="utf-8")
+    app = app_js()
     # the Library overview fetches the figures endpoint and renders the four tiles
-    assert "/api/database/figures" in app_js
+    assert "/api/database/figures" in app
     for label in (
         "Avg words / article",
         "Avg keywords / article",
         "Articles / day (avg since first)",
         "Articles / hour (last 24h)",
     ):
-        assert label in app_js, label
+        assert label in app, label

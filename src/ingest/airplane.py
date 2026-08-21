@@ -71,6 +71,8 @@ import http.client
 import ipaddress
 import os
 import socket
+from collections.abc import Callable
+from typing import Any, cast
 
 from src.ingest import kill_switch_active
 from src.ingest.egress_window import any_window_open, socket_exempt_here
@@ -150,7 +152,9 @@ _orig_getaddrinfo = socket.getaddrinfo
 _orig_create_connection = socket.create_connection
 _orig_connect = socket.socket.connect
 _orig_connect_ex = socket.socket.connect_ex
-_orig_tunnel = http.client.HTTPConnection._tunnel
+# _tunnel is a private stdlib method typeshed does not declare; capturing and
+# restoring it is the whole point of this backstop.
+_orig_tunnel = http.client.HTTPConnection._tunnel  # type: ignore[attr-defined]
 _orig_socks_connect = _pysocks.socksocket.connect if _pysocks is not None else None
 
 _installed = False
@@ -204,7 +208,9 @@ def _guarded_socks_connect(self, dest_pair, *args, **kwargs):  # type: ignore[no
     one, before the proxy TCP connect (already guarded) even happens.
     """
     _guard(_addr_host(dest_pair))
-    return _orig_socks_connect(self, dest_pair, *args, **kwargs)
+    # Only installed when the real connect exists (see install_...), so this is
+    # never the None branch -- the checker cannot see that from here.
+    return cast(Callable[..., Any], _orig_socks_connect)(self, dest_pair, *args, **kwargs)
 
 
 def install_airplane_socket_guard() -> bool:
@@ -222,7 +228,7 @@ def install_airplane_socket_guard() -> bool:
     socket.create_connection = _guarded_create_connection  # type: ignore[assignment]
     socket.socket.connect = _guarded_connect  # type: ignore[assignment]
     socket.socket.connect_ex = _guarded_connect_ex  # type: ignore[assignment]
-    http.client.HTTPConnection._tunnel = _guarded_tunnel  # type: ignore[assignment]
+    http.client.HTTPConnection._tunnel = _guarded_tunnel  # type: ignore[attr-defined]
     if _orig_socks_connect is not None:
         _pysocks.socksocket.connect = _guarded_socks_connect  # type: ignore[union-attr]
     _installed = True
@@ -238,7 +244,7 @@ def uninstall_airplane_socket_guard() -> None:
     socket.create_connection = _orig_create_connection  # type: ignore[assignment]
     socket.socket.connect = _orig_connect  # type: ignore[assignment]
     socket.socket.connect_ex = _orig_connect_ex  # type: ignore[assignment]
-    http.client.HTTPConnection._tunnel = _orig_tunnel  # type: ignore[assignment]
+    http.client.HTTPConnection._tunnel = _orig_tunnel  # type: ignore[attr-defined]
     if _orig_socks_connect is not None:
         _pysocks.socksocket.connect = _orig_socks_connect  # type: ignore[union-attr]
     _installed = False

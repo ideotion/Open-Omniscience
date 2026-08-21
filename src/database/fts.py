@@ -501,6 +501,21 @@ def fts_status(session: Session) -> dict:
 # Generous for a single-user corpus; prevents pathological memory use.
 _MAX_CANDIDATES = 20000
 
+#: The same bound, public: a caller that reports a MATCH TOTAL needs to know whether the
+#: list it holds hit the cap (in which case ``len(ids)`` is the cap, not a count) — see
+#: :func:`search_total`.
+MAX_CANDIDATES = _MAX_CANDIDATES
+
+#: The quarantine gate, shared by :func:`search_ids` and :func:`search_total` so the two
+#: can never describe different sets. A correlated EXISTS on the articles PK: one index
+#: probe per matched row, no chunking around SQLite's ~999-variable ceiling, and (verified
+#: against a real FTS5 table) it leaves the bm25 ordering byte-identical. ``IS NOT 1``
+#: keeps a NULL (never judged) row, exactly like ``Article.quarantined.isnot(True)``.
+_QUARANTINE_GATE = (
+    " AND EXISTS (SELECT 1 FROM articles a WHERE a.id = article_fts.rowid"
+    " AND a.quarantined IS NOT 1)"
+)
+
 
 def _bm25_weights() -> tuple[float, float]:
     """BM25F per-column weights (title, body) — keyword-engine P5.1. FTS5's bm25() weights
@@ -557,12 +572,7 @@ def search_ids(
     if match is None:
         return None
     wt, wb = weights if weights is not None else _bm25_weights()
-    gate = (
-        " AND EXISTS (SELECT 1 FROM articles a WHERE a.id = article_fts.rowid"
-        " AND a.quarantined IS NOT 1)"
-        if exclude_quarantined
-        else ""
-    )
+    gate = _QUARANTINE_GATE if exclude_quarantined else ""
     # `gate` is one of the two constant fragments chosen just above -- never a
     # caller-supplied value, and every value is bound. bandit attributes B608 to the
     # first line of the concatenation, so the marker belongs HERE and not on the
@@ -577,3 +587,44 @@ def search_ids(
         {"q": match, "wt": wt, "wb": wb, "lim": limit},
     ).fetchall()
     return [r[0] for r in rows]
+
+
+def search_total(
+    session: Session,
+    query: str | None,
+    *,
+    exclude_quarantined: bool = False,
+) -> int | None:
+    """The EXACT number of articles matching ``query`` — no cap, no ranking.
+
+    WHY THIS EXISTS: :func:`search_ids` takes a ``limit`` (default
+    :data:`MAX_CANDIDATES`), so a caller that reports ``len(ids)`` as a match TOTAL
+    publishes the CAP as a count the moment the query matches more than that. The
+    maintainer's 2026-07-18 ruling is explicit — "a cap may bound which EXAMPLES are
+    listed; it must never bound a displayed NUMBER" — and asked for a sweep for any
+    other displayed figure that is secretly a cap. The omnibar's articles group was
+    one (it reported a flat 20000 on any broad query over a large corpus).
+
+    Counting is much cheaper than ranking because no bm25 score is computed and
+    nothing is sorted: measured on a 300k-doc FTS5 fixture with a term matching
+    essentially the whole corpus, ``count(*)`` is **96 ms** against **415 ms** for
+    the capped ranked fetch it supplements.
+
+    ``None`` mirrors :func:`search_ids`: "no text constraint", distinct from ``0``
+    ("searched, matched nothing"). The quarantine gate is the SAME shared fragment
+    :func:`search_ids` uses, so the count can never describe a different set than
+    the rows — the property ``source_type_facets`` once claimed and did not keep.
+    """
+    match = build_match(query)
+    if match is None:
+        return None
+    gate = _QUARANTINE_GATE if exclude_quarantined else ""
+    # As in search_ids: `gate` is one of two CONSTANT fragments, never caller-supplied,
+    # and the only value is a bound :param. bandit attributes B608 to the first line of
+    # the concatenation, so the marker belongs here.
+    sql = (
+        "SELECT count(*) FROM article_fts WHERE article_fts MATCH :q"  # nosec B608 - only the constant `gate` fragment above is concatenated; the query is a bound :param
+        + gate
+    )
+    row = session.execute(text(sql), {"q": match}).fetchone()
+    return int(row[0]) if row else 0

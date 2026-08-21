@@ -53,7 +53,15 @@ def test_diagnostics_lives_in_its_own_advanced_section():
     assert 'data-adv="diagnostics"' in HTML, "it needs the foldable Advanced wrapper"
     # and it is genuinely a SECTION of Advanced, not loose markup after the last one
     adv = HTML[HTML.index('id="set-advanced"'):]
-    adv = adv[: adv.index('<div class="set-view"')]
+    # Bounded by the next TAB PAGE, not the next set-view. Advanced is now the LAST
+    # Settings view (rulings 26/42 folded Safety into it and retired that subtab), so
+    # "the next set-view" no longer occurs and this slice raised rather than failing --
+    # a stale ANCHOR, not a broken property. The tab-page that follows Settings (Help)
+    # provably occurs, so the slice still ends where Advanced ends, and the assertions
+    # below are unchanged: a diagnostics panel left loose after the last section still
+    # fails them.
+    _end = adv.find('<div class="tab-page"')
+    adv = adv[:_end] if _end != -1 else adv
     sec = adv[adv.index('data-adv="diagnostics"'):]
     assert '<section class="panel" id="diagnostics-panel">' in sec
     assert sec.index("</details>") > sec.index('id="diagnostics-panel"'), (

@@ -22,6 +22,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import cast
 
 # Major wire agencies (lowercase tokens). Attribution to a wire is a strong signal that a
 # piece is *derivative* of the wire's original reporting.
@@ -148,7 +149,12 @@ def trace_lineage(docs: list[dict]) -> LineageResult:
         for d in docs
     ]
     # Dated first (ascending), then undated (stable).
-    dated = sorted([i for i in items if i.published_at], key=lambda i: i.published_at)
+    dated = sorted(
+        [i for i in items if i.published_at],
+        # The comprehension one line up is the guarantee; the checker cannot carry a
+        # narrowing from a filter into a key function, so it is stated here.
+        key=lambda i: cast(datetime, i.published_at),
+    )
     undated = [i for i in items if not i.published_at]
     chain = dated + undated
     primary = chain[0] if chain else None

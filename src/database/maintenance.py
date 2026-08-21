@@ -51,6 +51,34 @@ HOT_INDEXES: dict[str, str] = {
         "CREATE INDEX IF NOT EXISTS ix_mention_date_keyword ON keyword_mentions "
         "(observed_on, keyword_id, count)"
     ),
+    # Covering index for the PER-ARTICLE top-keyword reads (Feed ruling 10, and the
+    # tied set the Articles tab shows for its visible rows): "keyword_id, count WHERE
+    # article_id IN (one page)". ix_mention_article alone finds the rows then reads the
+    # heap page for count/keyword_id -- a decrypt per mention row under SQLCipher, and an
+    # article carries tens of them. Byte-identical to migration 3f9c17ab42de.
+    "ix_mention_article_count": (
+        "CREATE INDEX IF NOT EXISTS ix_mention_article_count ON keyword_mentions "
+        "(article_id, count, keyword_id)"
+    ),
+    # Sort key for the Articles tab's own-top-keyword column. Created here only when the
+    # columns already exist -- see ensure_hot_indexes' guard; a CREATE INDEX over a
+    # missing column is an error, and on a store that has not yet self-healed the columns
+    # this index must simply wait for the next boot rather than abort the whole pass.
+    "idx_article_top_keyword": (
+        "CREATE INDEX IF NOT EXISTS idx_article_top_keyword ON articles "
+        "(top_keyword_count, top_keyword_id)"
+    ),
+    # COVERING index for the Feed's admissibility scan. Its shuffled order is an
+    # expression over `id`, so nothing can index the ORDER -- every page walks the whole
+    # admissible set, and these three columns are the entire walk (the quarantine filter,
+    # the source_id the qualification join rides, and the id the key is computed from).
+    # Index-only instead of a row read per candidate: measured 314 ms -> 35 ms per page on
+    # a synthetic 200,000-article corpus, and worth more on the encrypted store, where a
+    # row read is also a decrypt. Byte-identical to migration 6933c8d7c7b0.
+    "idx_article_feed_scan": (
+        "CREATE INDEX IF NOT EXISTS idx_article_feed_scan ON articles "
+        "(quarantined, source_id, id)"
+    ),
     # Expression index on the article "observed date" = coalesce(published_at,
     # created_at) (field-test 2026-07-08 Item 8 P0, the single biggest cost).
     # The corpus date-range probe `min(coalesce(..)), max(coalesce(..))` and the
@@ -114,12 +142,73 @@ HOT_INDEXES: dict[str, str] = {
     ),
 }
 
+# --------------------------------------------------------------------------- #
+# PROPOSED, deliberately NOT wired: idx_keyword_normterm_nocase
+# --------------------------------------------------------------------------- #
+# The omnibar's keyword group (src/api/search_omni.py:_keywords_group) runs a PREFIX
+# match, `normalized_term LIKE 'abc%'`, per debounced keystroke. SQLite rewrites that
+# into a range scan only when the indexed column's collation matches the LIKE
+# case-sensitivity -- and with `case_sensitive_like` off (the default) that means
+# NOCASE. `idx_keyword_normalized_term` is BINARY, so the rewrite can never fire and
+# the query reads EVERY key. On the field corpus that is ~5M keys, twice per keystroke.
+#
+#   CREATE INDEX idx_keyword_normterm_nocase ON keywords (normalized_term COLLATE NOCASE)
+#
+# MEASURED on a 2,000,000-row fixture carrying this table's REAL index set (plaintext;
+# the SQLCipher codec multiplies it -- this machine has measured 2.4x):
+#   before  count(*)  SCAN ... USING COVERING INDEX   126.7 ms
+#           top-3     full traversal + TEMP B-TREE    140.8 ms
+#   after   count(*)  SEARCH ... (term>? AND term<?)    0.02 ms
+#           top-3     SEARCH ... (term>? AND term<?)    0.22 ms
+# Characterised by tests/test_keyword_prefix_index.py against the statements the
+# PRODUCTION path emits, in both directions.
+#
+# WHY IT IS NOT IN THE DICT ABOVE, which is the part worth reading. Every entry there
+# is mirrored on its model, and that is not tidiness: `alembic_stamp_align` compares
+# the live schema against the models, so an index the self-heal creates but the model
+# does not declare reads as schema DRIFT and flips the stamp verdict to
+# "schema-behind" (reproduced -- it is what caught this). Mirroring it does not fix
+# that either: `COLLATE NOCASE` makes it an EXPRESSION index, and alembic's
+# autogenerate cannot compare those --
+#   "Generating approximate signature for index ... The dialect implementation should
+#    either skip expression indexes or provide a custom implementation"
+# -- after which it reports a permanent spurious "changed index". So shipping this
+# needs a migrations-layer decision (an `include_object` exclusion, or an equivalent),
+# which belongs to whoever owns models.py/migrations rather than to a perf pass.
+# Two honest limits on the numbers above, for whoever picks it up: WHICH full
+# traversal the planner takes before the fix varies with table statistics and with the
+# exact ORDER BY form (a bare table scan and a full index scan were both measured), so
+# the tests assert only the range-SEARCH-vs-full-traversal distinction; and a very
+# broad prefix still sorts all its matches by frequency (a 1-char prefix measured
+# 119 ms even after the fix), though the endpoint's own `min_length=2` keeps the
+# realistic worst case near 4 ms.
+
+
+# Indexes here that are built over a column added by one of the additive self-heal
+# helpers below, rather than by the original schema. On a store that has not yet been
+# self-healed the column is simply absent for one boot, and CREATE INDEX over a missing
+# column is an ERROR -- which, inside the single transaction ensure_hot_indexes opens,
+# would abort EVERY index in this map and then propagate out of init_db, i.e. one
+# not-yet-healed column would take the whole boot down. The callers all run the column
+# self-heal first, so this is defence in depth for any that is ever added that does not.
+#
+# Declared explicitly per index rather than wrapping the loop in try/except: a genuine
+# DDL error (a typo, a corrupt store) must still surface loudly. Only "the column is not
+# there yet", a state we know is transient, is allowed to skip.
+_INDEX_REQUIRES: dict[str, tuple[str, tuple[str, ...]]] = {
+    "idx_article_created_lang": ("articles", ("detected_language",)),
+    "idx_article_quarantined": ("articles", ("quarantined",)),
+    "idx_article_top_keyword": ("articles", ("top_keyword_count", "top_keyword_id")),
+    "idx_article_feed_scan": ("articles", ("quarantined", "source_id", "id")),
+}
+
 
 def ensure_hot_indexes(engine: Engine) -> list[str]:
     """Create any missing hot-path indexes (idempotent). Returns those created."""
     if engine.url.get_backend_name() != "sqlite":
         return []
     created: list[str] = []
+    skipped: list[str] = []
     with engine.begin() as conn:
         existing = {
             r[0]
@@ -127,10 +216,27 @@ def ensure_hot_indexes(engine: Engine) -> list[str]:
                 text("SELECT name FROM sqlite_master WHERE type='index'")
             ).fetchall()
         }
+        cols_of: dict[str, set[str]] = {}
         for name, ddl in HOT_INDEXES.items():
-            if name not in existing:
-                conn.execute(text(ddl))
-                created.append(name)
+            if name in existing:
+                continue
+            need = _INDEX_REQUIRES.get(name)
+            if need is not None:
+                table, columns = need
+                if table not in cols_of:
+                    cols_of[table] = {
+                        r[1]
+                        for r in conn.execute(text(f"PRAGMA table_info({table})")).fetchall()  # noqa: S608  # nosec B608 - table name is a literal from the module-level _INDEX_REQUIRES map, never input
+                    }
+                if not set(columns).issubset(cols_of[table]):
+                    skipped.append(name)
+                    continue
+            conn.execute(text(ddl))
+            created.append(name)
+    if skipped:
+        _LOG.info(
+            "deferred hot-path index(es) until their column(s) exist: " + ", ".join(skipped)
+        )
     if created:
         _LOG.info(f"created hot-path index(es): {', '.join(created)}")
     return created
@@ -371,6 +477,43 @@ def ensure_article_quarantine_columns(engine: Engine) -> list[str]:
                 added.append(name)
     if added:
         _LOG.info(f"added articles quarantine column(s): {', '.join(added)}")
+    return added
+
+
+# THE ARTICLE'S OWN TOP KEYWORD (rulings 23/38/39, field feedback 2026-08-07). Additive
+# + NULLABLE with NO backfill: an existing article keeps NULL, which means "never
+# computed" and is deliberately distinct from "no keywords" -- index_article fills it
+# forward at ingest, and a re-index fills an existing corpus. Same self-heal pattern as
+# the quarantine / detected_language columns above, because not every install runs alembic.
+_ARTICLE_TOP_KEYWORD_COLUMNS: dict[str, str] = {
+    "top_keyword_id": "ALTER TABLE articles ADD COLUMN top_keyword_id INTEGER",
+    "top_keyword_count": "ALTER TABLE articles ADD COLUMN top_keyword_count INTEGER",
+    "top_keyword_tied_n": "ALTER TABLE articles ADD COLUMN top_keyword_tied_n INTEGER",
+}
+
+
+def ensure_article_top_keyword_columns(engine: Engine) -> list[str]:
+    """Self-heal the articles top-keyword precompute columns (idempotent, additive).
+
+    Must run BEFORE ensure_hot_indexes, which builds idx_article_top_keyword over them.
+    No backfill (see the module note above). No-op on a fresh DB / non-sqlite / missing
+    table."""
+    if engine.url.get_backend_name() != "sqlite":
+        return []
+    added: list[str] = []
+    with engine.begin() as conn:
+        has_table = conn.execute(
+            text("SELECT name FROM sqlite_master WHERE type='table' AND name='articles'")
+        ).fetchone()
+        if not has_table:
+            return []
+        existing = {r[1] for r in conn.execute(text("PRAGMA table_info(articles)")).fetchall()}
+        for name, ddl in _ARTICLE_TOP_KEYWORD_COLUMNS.items():
+            if name not in existing:
+                conn.execute(text(ddl))
+                added.append(name)
+    if added:
+        _LOG.info(f"added articles top-keyword column(s): {', '.join(added)}")
     return added
 
 

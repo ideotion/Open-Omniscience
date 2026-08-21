@@ -1516,6 +1516,26 @@ _MERGE_COLUMN_INTENTIONALLY_OMITTED: dict[str, str] = {
     # Listed rather than left undeclared precisely so the next reader does not "fix" a
     # column that is already handled.
     "keyword_categories.parent_id": "self-FK; remapped by a dedicated UPDATE after map_kwcat is built",
+    # (d) DERIVED FROM ROWS THIS MERGE DELIBERATELY DOES NOT COPY. The article's own top
+    # keyword (rulings 23/38/39) is computed from that article's keyword_mentions -- and
+    # `_merge_keyword_mentions` deliberately copies NONE of them (maintainer ruling
+    # 2026-07-29 option (a)): the post-swap re-index produces the mentions from the
+    # article text instead. Carrying the precompute would therefore state a top keyword
+    # for which no local mention row exists, and top_keyword_id would additionally be an
+    # id from the INCOMING corpus's keyword space -- `temp.map_keywords` is not even built
+    # until after `_merge_articles` runs, so it could not be remapped in this statement
+    # even if we wanted to. The re-index that produces the mentions writes these three
+    # columns in the same pass (src.analytics.store.index_article), so they arrive
+    # correct, from local evidence, without a merge handler.
+    #
+    # Safe to leave to the re-index under the 2026-08-03 rule -- a derived column may be
+    # rebuilt rather than merged ONLY while it carries no human decision -- which these
+    # do not: they are arithmetic over occurrence counts, with no confirm/reject state
+    # (contrast article_mentioned_dates, which IS merged precisely because it carries the
+    # operator's own confirm/reject verdicts).
+    "articles.top_keyword_id": "derived from keyword_mentions, which the merge deliberately does not copy; the post-swap re-index recomputes it from local evidence",
+    "articles.top_keyword_count": "derived from keyword_mentions, which the merge deliberately does not copy; the post-swap re-index recomputes it from local evidence",
+    "articles.top_keyword_tied_n": "derived from keyword_mentions, which the merge deliberately does not copy; the post-swap re-index recomputes it from local evidence",
 }
 
 
@@ -1958,6 +1978,22 @@ _NOT_ADOPTABLE_ARTICLE_COLUMNS: dict[str, str] = {
     "quarantine_reason": "a judgement (see quarantined)",
     "quarantine_criteria_version": "a judgement (see quarantined)",
     "quarantined_at": "a judgement (see quarantined)",
+    # THE OWN-TOP-KEYWORD PRECOMPUTE (rulings 23/38/39). Not adoptable, and the reason is
+    # NOT the usual "a local NULL here is a real judgement": a local NULL genuinely does
+    # mean "never computed". It is that the incoming values cannot be READ here.
+    #   * top_keyword_id is an id in the INCOMING corpus's keyword space. temp.map_keywords
+    #     could translate it, but this runs in the articles step, before that map exists --
+    #     and adopting the raw id would point a local article at whatever local keyword
+    #     happens to hold that number, which is a fabricated attribution, not a gap.
+    #   * all three are derived from keyword_mentions, which the merge deliberately does
+    #     NOT copy (2026-07-29 option (a)): the post-swap re-index produces the mentions
+    #     from the article text. Adopting the summary of rows that do not exist locally
+    #     would state a top keyword with no evidence behind it.
+    # The re-index that produces the mentions writes all three in the same pass, so the
+    # NULL is filled from LOCAL evidence rather than adopted from a foreign id space.
+    "top_keyword_id": "an id in the incoming corpus's keyword space, and map_keywords does not exist yet in the articles step; the post-swap re-index recomputes it locally",
+    "top_keyword_count": "derived from keyword_mentions, which the merge deliberately does not copy; the post-swap re-index recomputes it locally",
+    "top_keyword_tied_n": "derived from keyword_mentions, which the merge deliberately does not copy; the post-swap re-index recomputes it locally",
 }
 
 

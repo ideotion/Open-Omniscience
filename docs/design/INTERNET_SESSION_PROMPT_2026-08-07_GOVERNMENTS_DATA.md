@@ -63,6 +63,77 @@ gets merged without being re-read against the code first.
 > observations and whether `page=2` works. Failing that, any shell with plain outbound
 > HTTPS does it. A third chat re-run is the one route already known not to work.
 
+> **STATUS 2026-08-20 — re-run #3, in a SHELL. Every task above is still open, and this
+> run settles WHY: the blocker is not the tooling, it is the egress policy. Do not run a
+> fourth attempt IN A SANDBOXED SESSION until the hosts are allowlisted — but an operator's
+> OWN networked machine was always a working route and still is.**
+>
+> Re-run #2 concluded that "any shell with plain outbound HTTPS does it". This run WAS
+> that shell — a sandbox with `curl`, Python 3.13 and no chat-tool URL restrictions — and
+> it reached none of the publishers. The gateway is an ALLOWLIST, not a denylist, and no
+> publisher host is on it:
+>
+> | reachable | denied (HTTP 000, `CONNECT` refused) |
+> |---|---|
+> | `pypi.org` 200 · `github.com` · `raw.githubusercontent.com` | `api.worldbank.org` · `data.worldbank.org` · `sdmx.oecd.org` · `api.imf.org` · `www.legislation.gov.uk` · `en.wikipedia.org` · `www.afdb.org` · `data.uneca.org` · `www.opec.org` · `asean.org` · `au.int` · `www.nato.int` · `european-union.europa.eu` · `dataportal.opendataforafrica.org` |
+>
+> The proxy names the cause itself, per host, verbatim: `{"kind":"connect_rejected",`
+> `"detail":"gateway answered 403 to CONNECT (policy denial or upstream failure)"}`, with
+> `"selective": false` — a global policy, not a per-tool scope, so no tool in the session
+> can route around it. `WebFetch` returns a structured `EGRESS_BLOCKED` for the same hosts.
+> `WebSearch` DOES work — evidently a different channel from the sandbox proxy, though that
+> mechanism is an inference from the two behaving differently, not something measured. It is
+> the one capability three sessions have now had in common — and §"the Saudi demonstration"
+> below is why it is not a substitute.
+>
+> **One observation NOT to misread, because Task 6 invites exactly this mistake.** The
+> legacy IMF endpoint `dataservices.imf.org` did not merely get refused — it failed to
+> RESOLVE (`curl: (6) Could not resolve host`), a different error from the 403s above. That
+> is NOT evidence the legacy service has been retired: DNS is proxied here too, so a
+> resolution failure says something about this sandbox and nothing about the IMF. Task 6's
+> question about what happened to that endpoint remains entirely open.
+>
+> **So the finding is a convergence, not another failure.** Three sessions, three different
+> tool surfaces, one cause: 08-07 could not reach the API; 08-13 could not construct the
+> URLs and was silently served the wrong ones; 08-20 was refused at the TCP layer. Prompt
+> quality was never the variable. One egress allowlist entry closes Task 3 in about a
+> minute — see below — and unblocks 5, 6, 7 and the law shapes at the same time.
+>
+> **What shipped instead of the data.** `scripts/verify_worldbank_indicators.py` turns
+> Task 3 from a 36-row transcription exercise into one command, and encodes the two
+> lessons this prompt learned the expensive way so they cannot be re-learned:
+> it reads the codes from `src/stats/indicators.py` (so the list cannot drift from what
+> the app ships), it **compares the URL it was SERVED against the one it REQUESTED and
+> refuses the `fetched` tier when they differ** (absolute rule 5, as code rather than as a
+> warning), and it separates `DEAD-INVALID` (the API rejected the code — the code is
+> wrong) from `EMPTY` (a valid code this area does not report — re-run with
+> `--country WLD`). It also flags a divergence between the API's own indicator name and
+> our catalog label, which is the `EN.ATM.CO2E.PC` case the catalog already carries a
+> warning about. Twelve offline tests; the three guards mutation-checked.
+>
+> **THE SAUDI DEMONSTRATION — why Task 4 was NOT built from search, and a new rule.**
+> Task 4's rosters are search-answerable in principle, and this run had working search.
+> It was not attempted, because a single probe showed what such a pass would produce. ONE
+> search returned FOUR mutually incompatible states for Saudi Arabia in BRICS, each stated
+> with confidence: joined `2024-01-01` (aggregators); *"the BRICS website shows Saudi
+> Arabia as a member, it has yet to join, according to sources with direct knowledge"*
+> (CFR); *"Saudi Arabia Is Still Assessing BRICS Membership, Minister Says"* (Bloomberg,
+> 2025-01-20); and *"in July 2025, Saudi Arabia formally became a full member"*. A roster
+> session taking the first result writes `sa joined 2024-01-01` — the exact fabrication
+> this prompt's own standing ruling exists to forbid — and it would look completely
+> ordinary in review.
+>
+> The generalisable half is worse, and it AMENDS the tier definitions above: here the
+> **publisher's own page is the LEAST reliable source, not the strongest**. `search-verified`
+> is defined as "stated on the publisher's own page", which is normally the bar; for a
+> membership fact the organisation is an INTERESTED PARTY, and BRICS lists an invitee it
+> has an incentive to count. So for Task 4, a bloc's own roster page corroborates
+> membership and cannot settle a CONTESTED one — that needs the acceding state's own
+> statement, and where none exists the answer is permanently `joined: UNVERIFIED`.
+>
+> Task 4 remains worth its own session, with live fetch, and its own review pass.
+
+
 ---
 
 You are researching **public statistical data sources** for a local-first, offline

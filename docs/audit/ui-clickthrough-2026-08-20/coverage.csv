@@ -1,0 +1,180 @@
+surface,axis,result,note
+state_a_boot,default,verified,"redirected to /unlock, body text length 152"
+state_a_first_launch,language-step-shown,verified,#view-language visible=True
+state_a_first_launch,legal-step-shown,verified,#view-legal visible=True
+state_a_first_launch,legal-accept-enables-on-check,verified,#lg-accept disabled after checking #lg-check: False
+state_a_first_launch,create-step-reached,verified,#view-create visible=True
+state_a_first_launch,short-passphrase-error-path,verified,live Chromium re-verification of the fixed P0
+state_a_first_launch,happy-path-create,verified,reached #tab-home=True
+state_b_guide_wizard,auto-open-on-empty-corpus,verified,#guide-wizard open on boot: True
+state_b_guide_wizard,dismissed-via-gw-close,verified,still open after clicking #gw-close: False
+state_b_home_empty,default,verified,visible=True errors=[] empty_honesty_text=True
+state_c_guide_wizard,auto-open-on-empty-corpus,verified,#guide-wizard open on boot: False
+home_leads,default,verified,
+analysis_window,default,verified,
+post_import_screen,default,verified,
+source_management,default,verified,
+diagnostics_panel,default,verified,
+export_import_dialog,default,verified,
+world_map_server_ips,default,verified,
+governments_law,default,verified,
+settings_ai,default,verified,
+settings_cards,default,verified,
+keyword_supergroups,default,verified,
+agenda_month,default,verified,
+task_manager,default,verified,
+bulletin,default,verified,
+analysis_keywords,an-subtabs,verified,
+analysis_trend,an-subtabs,verified,
+analysis_mindmap,an-subtabs,verified,
+analysis_articles,an-subtabs,verified,
+analysis_www,an-subtabs,verified,
+analysis_links,an-subtabs,verified,
+analysis_related,an-subtabs,verified,
+analysis_sentiment,an-subtabs,verified,
+analysis_sources,an-subtabs,verified,
+analysis_competitive,an-subtabs,verified,
+analysis_advanced,an-subtabs,verified,
+insights_trends,ins-subtabs,verified,
+insights_sources,ins-subtabs,verified,
+insights_families,ins-subtabs,verified,
+insights_supergroups,ins-subtabs,verified,
+insights_map,ins-subtabs,verified,
+insights_convergence,ins-subtabs,verified,
+insights_watches,ins-subtabs,verified,
+insights_lunar,ins-subtabs,verified,
+settings_graphics,set-subtabs,verified,
+settings_general,set-subtabs,verified,
+settings_cards,set-subtabs,verified,
+settings_models,set-subtabs,verified,
+settings_wikipedia,set-subtabs,verified,
+settings_offlinemap,set-subtabs,verified,
+settings_agenda,set-subtabs,verified,
+settings_data,set-subtabs,verified,
+settings_safety,set-subtabs,verified,
+settings_advanced,set-subtabs,verified,
+library_overview,lib-subtabs,verified,
+library_activity,lib-subtabs,verified,
+library_tracked,lib-subtabs,verified,
+library_composition,lib-subtabs,verified,
+library_storage,lib-subtabs,verified,
+library_coverage,lib-subtabs,verified,
+worldmap_coverage,map-lenses,verified,
+worldmap_stories,map-lenses,verified,
+worldmap_places,map-lenses,verified,
+worldmap_servers,map-lenses,verified,
+governments_default_landing,default,verified,lands on subtab='countries'
+insights_map_cjk_keywords,zh-content,verified,sampled 60 pills; long-unsegmented-CJK=0
+contrast_pill.warn,theme=ink,verified,"ratio=7.91:1 fg=(217.0, 164.0, 65.0) bg=(20.0, 24.0, 31.0)"
+contrast_card-caveat,theme=ink,verified,"ratio=9.44:1 fg=(234.0, 180.0, 78.0) bg=(20.0, 24.0, 31.0)"
+contrast_pill.warn,theme=slate,verified,"ratio=7.68:1 fg=(217.0, 164.0, 65.0) bg=(22.0, 27.0, 35.0)"
+contrast_card-caveat,theme=slate,verified,"ratio=9.17:1 fg=(234.0, 180.0, 78.0) bg=(22.0, 27.0, 35.0)"
+contrast_pill.warn,theme=midnight,verified,"ratio=8.04:1 fg=(217.0, 164.0, 65.0) bg=(16.0, 20.0, 46.0)"
+contrast_card-caveat,theme=midnight,verified,"ratio=9.59:1 fg=(234.0, 180.0, 78.0) bg=(16.0, 20.0, 46.0)"
+contrast_pill.warn,theme=arctic,verified,"ratio=7.62:1 fg=(217.0, 164.0, 65.0) bg=(23.0, 28.0, 34.0)"
+contrast_card-caveat,theme=arctic,verified,"ratio=9.09:1 fg=(234.0, 180.0, 78.0) bg=(23.0, 28.0, 34.0)"
+contrast_pill.warn,theme=cyber,verified,"ratio=8.35:1 fg=(217.0, 164.0, 65.0) bg=(13.0, 17.0, 32.0)"
+contrast_card-caveat,theme=cyber,verified,"ratio=9.96:1 fg=(234.0, 180.0, 78.0) bg=(13.0, 17.0, 32.0)"
+contrast_pill.warn,theme=forest,verified,"ratio=7.88:1 fg=(217.0, 164.0, 65.0) bg=(19.0, 26.0, 20.0)"
+contrast_card-caveat,theme=forest,verified,"ratio=9.39:1 fg=(234.0, 180.0, 78.0) bg=(19.0, 26.0, 20.0)"
+contrast_pill.warn,theme=aubergine,verified,"ratio=7.98:1 fg=(217.0, 164.0, 65.0) bg=(26.0, 20.0, 36.0)"
+contrast_card-caveat,theme=aubergine,verified,"ratio=9.52:1 fg=(234.0, 180.0, 78.0) bg=(26.0, 20.0, 36.0)"
+contrast_pill.warn,theme=garnet,verified,"ratio=7.96:1 fg=(217.0, 164.0, 65.0) bg=(31.0, 20.0, 25.0)"
+contrast_card-caveat,theme=garnet,verified,"ratio=9.50:1 fg=(234.0, 180.0, 78.0) bg=(31.0, 20.0, 25.0)"
+contrast_pill.warn,theme=solar,verified,"ratio=5.78:1 fg=(217.0, 164.0, 65.0) bg=(7.0, 54.0, 66.0)"
+contrast_card-caveat,theme=solar,verified,"ratio=6.89:1 fg=(234.0, 180.0, 78.0) bg=(7.0, 54.0, 66.0)"
+contrast_pill.warn,theme=sepia,verified,"ratio=7.17:1 fg=(217.0, 164.0, 65.0) bg=(38.0, 32.0, 25.0)"
+contrast_card-caveat,theme=sepia,verified,"ratio=8.55:1 fg=(234.0, 180.0, 78.0) bg=(38.0, 32.0, 25.0)"
+contrast_pill.warn,theme=terminal,verified,"ratio=8.52:1 fg=(217.0, 164.0, 65.0) bg=(10.0, 16.0, 19.0)"
+contrast_card-caveat,theme=terminal,verified,"ratio=10.16:1 fg=(234.0, 180.0, 78.0) bg=(10.0, 16.0, 19.0)"
+contrast_pill.warn,theme=contrast,verified,"ratio=13.83:1 fg=(255.0, 212.0, 0.0) bg=(10.0, 10.0, 10.0)"
+contrast_card-caveat,theme=contrast,verified,"ratio=10.50:1 fg=(234.0, 180.0, 78.0) bg=(10.0, 10.0, 10.0)"
+contrast_pill.warn,theme=light,verified,"ratio=7.97:1 fg=(122.0, 67.0, 8.0) bg=(255.0, 255.0, 255.0)"
+contrast_card-caveat,theme=light,verified,"ratio=6.67:1 fg=(138.0, 77.0, 10.0) bg=(255.0, 255.0, 255.0)"
+contrast_pill.warn,theme=mist,verified,"ratio=7.63:1 fg=(122.0, 67.0, 8.0) bg=(249.0, 250.0, 252.0)"
+contrast_card-caveat,theme=mist,verified,"ratio=6.39:1 fg=(138.0, 77.0, 10.0) bg=(249.0, 250.0, 252.0)"
+contrast_pill.warn,theme=dawn,verified,"ratio=7.68:1 fg=(122.0, 67.0, 8.0) bg=(255.0, 250.0, 243.0)"
+contrast_card-caveat,theme=dawn,verified,"ratio=6.43:1 fg=(138.0, 77.0, 10.0) bg=(255.0, 250.0, 243.0)"
+contrast_pill.warn,theme=mint,verified,"ratio=7.65:1 fg=(122.0, 67.0, 8.0) bg=(248.0, 251.0, 248.0)"
+contrast_card-caveat,theme=mint,verified,"ratio=6.40:1 fg=(138.0, 77.0, 10.0) bg=(248.0, 251.0, 248.0)"
+contrast_pill.warn,theme=paper,verified,"ratio=7.52:1 fg=(122.0, 67.0, 8.0) bg=(251.0, 248.0, 241.0)"
+contrast_card-caveat,theme=paper,verified,"ratio=6.29:1 fg=(138.0, 77.0, 10.0) bg=(251.0, 248.0, 241.0)"
+topbar_overflow,375x900,verified,scrollWidth=375 clientWidth=375 offscreen=[] (activity chip forced visible via its own toggle attribute)
+topbar_overflow,768x1000,verified,scrollWidth=768 clientWidth=768 offscreen=[] (activity chip forced visible via its own toggle attribute)
+topbar_overflow,1024x900,verified,scrollWidth=1024 clientWidth=1024 offscreen=[] (activity chip forced visible via its own toggle attribute)
+topbar_overflow,1440x950,verified,scrollWidth=1440 clientWidth=1440 offscreen=[] (activity chip forced visible via its own toggle attribute)
+topbar_overflow_home_leads,375x900,verified,scrollWidth=375 clientWidth=375 offscreen=[] (activity chip forced visible via its own toggle attribute)
+topbar_overflow_analysis_window,375x900,verified,scrollWidth=375 clientWidth=375 offscreen=[] (activity chip forced visible via its own toggle attribute)
+topbar_overflow_post_import_screen,375x900,verified,scrollWidth=375 clientWidth=375 offscreen=[] (activity chip forced visible via its own toggle attribute)
+topbar_overflow_source_management,375x900,verified,scrollWidth=375 clientWidth=375 offscreen=[] (activity chip forced visible via its own toggle attribute)
+topbar_overflow_diagnostics_panel,375x900,verified,scrollWidth=375 clientWidth=375 offscreen=[] (activity chip forced visible via its own toggle attribute)
+locale_switch,en,verified,dir=ltr errors=[]
+locale_switch,fr,verified,dir=ltr errors=[]
+locale_switch,ar,verified,dir=rtl errors=[]
+locale_switch,zh,verified,dir=ltr errors=[]
+opacity_pseudo_spotcheck,#net-toggle::after,verified,"{'color': 'rgb(140, 149, 166)', 'backgroundColor': 'rgb(91, 157, 217)', 'opacity': '0.55', 'display': 'block', 'visibility': 'visible', 'content': '""""', 'width': '4px', 'height': '4px', 'fontSize': '15px', 'textTransform': 'none', 'position': 'absolute'}"
+opacity_pseudo_spotcheck,.nav-item.adv .badge,verified,"{'color': 'rgb(217, 164, 65)', 'backgroundColor': 'rgba(0, 0, 0, 0)', 'opacity': '1', 'display': 'block', 'visibility': 'visible', 'content': 'normal', 'width': '32.4062px', 'height': '17.5px', 'fontSize': '10px', 'textTransform': 'none', 'position': 'static'}"
+reader,default,verified,article_id=134 visible=True errors=[]
+reader,provenance-classes,verified,"groups=['From the source', 'Deduced by this app — less reliable'] (the AI-derived third class renders only when ai_keyword rows exist for the article; absent here = honest, not a defect: present=False)"
+reader,tab-read,verified,pane visible=True errors=[] first-words='FROM THE SOURCE\nSource\nDE Regional Herald de\nAuthor\nStaff Wr'
+reader,tab-summary,verified,pane visible=True errors=[] first-words='Loading…'
+reader,tab-translation,verified,pane visible=True errors=[] first-words='Loading…'
+reader,tab-keywords,verified,pane visible=True errors=[] first-words='KEYWORDS IN THIS ARTICLE\n\nClick any keyword to analyse it ac'
+reader,tab-mindmap,verified,pane visible=True errors=[] first-words='Loading…'
+reader,tab-sentiment,verified,pane visible=True errors=[] first-words='Loading…'
+reader,tab-subjectivity,verified,pane visible=True errors=[] first-words='Loading…'
+reader,tab-related,verified,pane visible=True errors=[] first-words='Related in your corpus\n\nRanked by shared extracted keywords '
+reader,tab-source,verified,pane visible=True errors=[] first-words='Source profile\nName\nDE Regional Herald de\nDomain\nherald-de-d'
+reader,tab-links,verified,pane visible=True errors=[] first-words='No external links are recorded in your stored copy.'
+worldmap_controls,dimension-sources,verified,map innerHTML 162554->162554 errors=[]
+worldmap_controls,dimension-articles,verified,map innerHTML 162554->162693 errors=[]
+worldmap_controls,dimension-keywords,verified,map innerHTML 162693->162787 errors=[]
+worldmap_controls,dimension-sentiment,verified,map innerHTML 162787->156571 errors=[]
+worldmap_controls,granularity-continent,verified,aria-pressed=true map_len=158484
+worldmap_controls,granularity-country,verified,aria-pressed=true map_len=156571
+worldmap_controls,places-overlay,verified,deduced-places caveat visible with the layer: True
+worldmap_controls,signals-layer,verified,focus slider rendered with the layer: True
+worldmap_controls,signals-focus-slider,verified,5x ArrowLeft on the slider; map innerHTML 172355->172354 errors=[]
+task_manager,panel-inventory,verified,"current panels=['processes', 'performance', 'queue', 'schedule', 'history'] (the ledger's Active/Queue/System/Schedule naming predates the current page; anchors followed, rename recorded)"
+task_manager,panel-processes,verified,"visible=True others_hidden=True first-words='Nothing active right now — running jobs (a collection pass, '"
+task_manager,panel-performance,verified,visible=True others_hidden=True first-words='CPU\n18.9%\n4 cores · 18 threads\nMEMORY\n982.0 MB\nresident set '
+task_manager,panel-queue,verified,visible=True others_hidden=True first-words='QUEUE\nThe queue is empty — downloads waiting their turn appe'
+task_manager,panel-schedule,verified,visible=True others_hidden=True first-words='COLLECTION\nState\nstopped\nCurrent pass\nidle — no pass in flig'
+task_manager,panel-history,verified,visible=True others_hidden=True first-words='ONLINE SESSIONS\nNo completed sessions yet — each finished co'
+settings_ai_pill,live-state,partial,"class='pill warn' -> unpainted (the status poll never painted a state class within 12s — an honest unknown, never read as serving)"
+settings_ai_pill,state-ai-starting,blocked,"unreachable without a local backend on this sandbox — recorded honestly, never forced via a class edit (that would fabricate a state)"
+settings_ai_pill,state-serving,blocked,"unreachable without a local backend on this sandbox — recorded honestly, never forced via a class edit (that would fabricate a state)"
+settings_ai_panels,backend-panel,verified,panel names its prerequisite/backend state: True (len=2177)
+bulletin,hardware-gate,verified,gate says: 'Checking whether this machine can build one…'; controls hidden=False
+bulletin,override-reveals-controls,verified,llm_allow_impractical_hw=true reveals the controls: True
+bulletin,generate-edition,verified,list after generate: 'COVERS THROUGH\tPERIOD\t\n2026-08-19\tweekly\t\nReview\nOpen\nDelete\n\n2026-08-19\tweekly\t\nReview\nOpen\nDelete\n'
+bulletin,review-screen,verified,review length=1037 opened=True
+bulletin,override-restored,verified,llm_allow_impractical_hw flipped back to false — no later check runs under a mutated setting
+agenda_glyphs,month-grid,verified,"{'moons': 2, 'moons_titled': 2, 'seasons': 0, 'seasons_titled': 0} (titles carry method+accuracy — the informed-consent hover)"
+agenda_deduced,list-view-pills,verified,deduced-pill n=1 titled=1 sample=['3 articles mention this date deduced  deduced · never confirmed'] (seeded specimen: 3 articles / 2 sources naming 2026-10-12)
+a11y_axe_home,axe-core-4.13,partial,3 violations (1 serious/critical): color-contrast[serious]x6; heading-order[moderate]x1; page-has-heading-one[moderate]x1
+a11y_axe_settings-models,axe-core-4.13,verified,2 violations (0 serious/critical): page-has-heading-one[moderate]x1; region[moderate]x1
+a11y_axe_agenda,axe-core-4.13,partial,3 violations (1 serious/critical): link-in-text-block[serious]x124; page-has-heading-one[moderate]x1; region[moderate]x1
+a11y_axe_analysis,axe-core-4.13,partial,3 violations (1 serious/critical): nested-interactive[serious]x1; page-has-heading-one[moderate]x1; region[moderate]x12
+a11y_axe_tasks,axe-core-4.13,partial,4 violations (1 serious/critical): color-contrast[serious]x3; landmark-one-main[moderate]x1; page-has-heading-one[moderate]x1; region[moderate]x4
+a11y_axe_reader,axe-core-4.13,partial,4 violations (1 serious/critical): color-contrast[serious]x2; heading-order[moderate]x1; landmark-one-main[moderate]x1; region[moderate]x4
+a11y_keyboard_home,tab-traversal,verified,"40 stops, 11 distinct, focus-not-indicated=0 []"
+a11y_keyboard_reader,tab-traversal,verified,"22 stops, 4 distinct, focus-not-indicated=0 []"
+a11y_prefers_contrast,emulated-more,verified,"base={'hint_color': 'rgb(140, 149, 166)', 'icon_border': '1px'} more={'hint_color': 'rgb(232, 235, 240)', 'icon_border': '1px'} — the app.css (prefers-contrast: more) block applies"
+honesty_class_no_rule,sweep,verified,"15 used-but-unstyled class names across 4 surfaces (7 presentational-looking); top: ag-evtitlex153, an-panelx13, adv-collectx12, set-viewx10, ins-viewx9, bk-contextx6, tm-panelx5, gov-viewx4, bulk-llmx2, bulk-queuex2, primaryx1, an-exportx1"
+honesty_greyscale_middrag,ins-trend-brush,verified,"band luminance delta=16.7 vs null=0.3 (band=52.2, outside L/R=35.3/35.6) — the selection band IS visible without colour, measured from rendered pixels mid-drag"
+honesty_rtl_bidi,rtl_home,verified,"run='2025-08-27' in [data-oo-rtl-probe=""1""] — per-char x monotonic (logical order preserved: isolates working)"
+honesty_rtl_bidi,rtl_bulletin,verified,"run='2026-08-19' in [data-oo-rtl-probe=""1""] — per-char x monotonic (logical order preserved: isolates working)"
+honesty_uppercase_noop,ar-zh-ja-hi-bn,verified,"case-ONLY-rank elements per locale: {'ar': 0, 'zh': 0, 'ja': 0, 'hi': 0, 'bn': 0}; distinct specimens: none — every uppercase element also steps on size or weight, so hierarchy survives translation"
+honesty_i18n_exact_node,fr,verified,0 distinct keyed-in-fr strings still rendering as their EXACT English value under fr (welded/frozen/unwalked nodes); specimens: 
+state_c_walk,summary,verified,14 named surfaces + subtab drills + 17 themes + 4 breakpoints (+ flagship-375 walk) + 4 locales + reader/lens/a11y/honesty drills (T3/T5/T6/T7)
+state_d_guide_wizard,auto-open-on-empty-corpus,verified,#guide-wizard open on boot: True
+state_d_guide_wizard,dismissed-via-gw-close,verified,still open after clicking #gw-close: False
+post_import_content,scan-finds-corpus,verified,"Restore corpus backup (encrypted volumes — additive, nothing you already have is overwritten · 2 volumes)"
+post_import_content,articles-first-headline,verified,
+post_import_content,labeled-all-types-rowsum,verified,
+post_import_content,before-after-delta,verified,
+post_import_content,qualification-carried,verified,
+post_import_content,work-induced-indexing,verified,
+post_import_content,additive-statement,verified,
+post_import_content,default,verified,summary length=721; first line: '✓ Import successful'

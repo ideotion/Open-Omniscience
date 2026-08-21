@@ -16,11 +16,11 @@ static guard matters).
 from __future__ import annotations
 
 from pathlib import Path
-from tests.js_source_helper import function_body, strip_comments
+from tests.js_source_helper import app_js, function_body, strip_comments
 
 _ROOT = Path(__file__).resolve().parents[1]
 _HTML = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
-_JS = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+_JS = app_js()
 
 
 def test_trend_subtab_is_wired_into_the_analysis_window():

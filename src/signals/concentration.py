@@ -27,6 +27,7 @@ value when the input is too small or degenerate (all-equal / empty) — they say
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 _CAVEAT = (
@@ -101,7 +102,11 @@ def top_share(values: list[float], top_n: int) -> float | None:
 
 
 def concentration(
-    counts: dict[str, float] | list[float],
+    # Mapping/Sequence rather than dict/list: dict is INVARIANT in its value type,
+    # so a `dict[str, int]` of article counts -- what every caller in the briefing
+    # actually holds -- was not a `dict[str, float]`. Mapping is covariant, and the
+    # body only ever reads.
+    counts: Mapping[str, float] | Sequence[float],
     *,
     top_n: int = 3,
     method: str = "Gini coefficient + top-N share over actor totals",
@@ -113,6 +118,9 @@ def concentration(
     (or ``None``) are dropped: an actor that contributed nothing is not an actor in
     this measurement.
     """
+    # The label is None for the bare-list form -- the docstring's "a bare list of
+    # values", where there is no label to name who concentrates.
+    items: list[tuple[str | None, float]]
     if isinstance(counts, dict):
         items = [(str(k), float(v)) for k, v in counts.items() if v]
     else:

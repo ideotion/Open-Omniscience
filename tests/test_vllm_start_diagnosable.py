@@ -28,6 +28,7 @@ import subprocess
 import pytest
 
 import src.llm.vllm_lifecycle as V
+from tests.js_source_helper import app_js
 
 
 @pytest.fixture()
@@ -199,11 +200,8 @@ def test_the_panel_renders_the_head_and_not_only_the_tail():
     """Keeping both ends in the payload is worth nothing if the UI still shows one.
     Scoped to the vLLM status panel's own renderer so an unrelated `lg.tail` elsewhere
     cannot satisfy it."""
-    from pathlib import Path
 
-    app = (Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_text(
-        encoding="utf-8"
-    )
+    app = app_js()
     at = app.index("const lg = s.server_log || {};")
     block = app[at : app.index("box.innerHTML =", at)]
     assert "lg.head" in block, "the root cause of a startup failure lives in the head"

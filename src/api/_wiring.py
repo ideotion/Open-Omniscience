@@ -40,6 +40,7 @@ def wire(app) -> None:
     from src.api.database import router as database_router
     from src.api.diagnostics import router as diagnostics_router
     from src.api.events import router as events_router
+    from src.api.feed import router as feed_router
     from src.api.files import router as files_router
     from src.api.geo import router as geo_router
     from src.api.governments import router as governments_router
@@ -82,6 +83,7 @@ def wire(app) -> None:
         quarantine_router,
         database_router,
         library_router,
+        feed_router,
         backup_v2_router,
         settings_router,
         scheduler_router,

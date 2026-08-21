@@ -28,7 +28,9 @@ from email.message import Message
 from email.utils import getaddresses, parsedate_to_datetime
 from html import unescape
 from pathlib import Path
+from typing import cast
 
+from sqlalchemy import Table
 from sqlalchemy.orm import Session
 
 from src.database.models import Article, Source
@@ -82,10 +84,13 @@ def _decode_part(part: Message) -> str:
     if payload is None:
         return ""
     charset = part.get_content_charset() or "utf-8"
+    # get_payload(decode=True) returns bytes (or None, handled above); typeshed's
+    # overloads cannot express that, so the union it infers includes Message.
+    raw = cast(bytes, payload)
     try:
-        return payload.decode(charset, errors="replace")
+        return raw.decode(charset, errors="replace")
     except (LookupError, ValueError):
-        return payload.decode("utf-8", errors="replace")
+        return raw.decode("utf-8", errors="replace")
 
 
 def _strip_html(html_text: str) -> str:
@@ -741,12 +746,15 @@ def delete_imported_newsletters(session: Session) -> dict:
         for t in Base.metadata.sorted_tables
         if t.name != "articles" and "article_id" in t.columns
     ]
+    # `__table__` is typed FromClause on the declarative base (a class may map to
+    # any selectable); this one is a real Table, which is what carries .delete().
+    articles_tbl = cast(Table, Article.__table__)
     with write_lock():
         for lo in range(0, len(art_ids), 900):  # under SQLite's 999-variable cap
             chunk = art_ids[lo : lo + 900]
             for t in dep_tables:
                 session.execute(t.delete().where(t.c.article_id.in_(chunk)))
-            session.execute(Article.__table__.delete().where(Article.__table__.c.id.in_(chunk)))
+            session.execute(articles_tbl.delete().where(articles_tbl.c.id.in_(chunk)))
         session.commit()
 
     # The bulk delete didn't go through index_article, so the denormalised

@@ -20,14 +20,14 @@ import subprocess
 from pathlib import Path
 
 import pytest
-from tests.js_source_helper import css_rule, function_body, python_function_source, read_static
+from tests.js_source_helper import app_js, css_rule, function_body, python_function_source, read_static
 
 _ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope="module")
 def js() -> str:
-    return (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    return app_js()
 
 
 @pytest.fixture(scope="module")

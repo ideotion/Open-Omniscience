@@ -514,9 +514,12 @@ class OllamaClient:
         timeout: float = 120.0,
         client: httpx.Client | None = None,
     ):
-        self.base_url = (base_url or os.getenv("OO_OLLAMA_URL", "http://127.0.0.1:11434")).rstrip(
-            "/"
-        )
+        # The getenv default is bound to a named local rather than inlined: mypy 2.3
+        # types `x or os.getenv(k, "d")` as `str | None` even though the two-argument
+        # getenv cannot return None. Same call, same value, same empty-string
+        # semantics -- only the checker's view changes.
+        env_url: str = os.getenv("OO_OLLAMA_URL", "http://127.0.0.1:11434")
+        self.base_url = (base_url or env_url).rstrip("/")
         self.timeout = timeout
         # Enforce loopback only when WE open the socket. An injected client (tests)
         # may use a MockTransport with a non-loopback nominal URL and never egress.

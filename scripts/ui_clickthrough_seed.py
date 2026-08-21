@@ -639,20 +639,132 @@ def seed_populated_corpus(session, *, rng_seed: int = 20260813) -> dict:
     session.commit()
     tally["provenance_samples"] = 4  # law, wiki, newsletter, hazard
 
+    # -- a DEDUCED-future-event specimen (2026-08-20, the T5 agenda drill) ---------------- #
+    # The agenda's deduced layer (timemap/datestore.upcoming_deduced) surfaces a FUTURE date
+    # mentioned by >= 2 distinct articles within 120 days. Without a specimen the drill can
+    # only report "blocked: no deduced event in the corpus" -- an untested path is not a
+    # pass, so the specimen is seeded THROUGH the real extractor (index_article stores the
+    # mentioned date with snippet provenance; nothing is hand-inserted into
+    # article_mentioned_dates). Three articles, two sources, one explicit future date.
+    fut_bodies = [
+        (
+            sources["en"][0],
+            "The regional planning board confirmed that the public hearing on the harbour "
+            "dredging permits will be held on 12 October 2026 at the civic centre. "
+            "Residents of the low-lying districts are encouraged to register in advance, "
+            "officials said, as seating for the session is limited and demand is expected "
+            "to be high given the months of debate over the port expansion. The hearing "
+            "will take written submissions as well, and the board pledged to publish every "
+            "submission it receives alongside the minutes of the session itself, so that "
+            "the record of the decision remains open to public scrutiny afterwards.",
+        ),
+        (
+            sources["en"][1],
+            "Campaign groups on both sides of the port expansion argument said they would "
+            "attend the hearing scheduled for 12 October 2026, with the fishing "
+            "cooperative planning to present its own survey of wetland impacts. The "
+            "cooperative's chair said the survey covered three seasons of observations "
+            "along the affected shoreline and would be released publicly a week before "
+            "the session. A spokesperson for the shipping consortium said the company "
+            "welcomed the scrutiny and would answer every question the panel put to it "
+            "during the session, however long that took.",
+        ),
+        (
+            sources["en"][0],
+            "A procedural note published by the clerk's office confirmed the 12 October "
+            "2026 date for the dredging hearing and set out how members of the public can "
+            "submit evidence. Submissions close one week before the session, the note "
+            "said, and any material received after the deadline will be carried over to a "
+            "follow-up session if one is required. The clerk also confirmed that the "
+            "session will be recorded and that the recording will be published unedited "
+            "within three working days, in line with the board's open-proceedings policy "
+            "adopted earlier this year after criticism of closed-door planning decisions.",
+        ),
+    ]
+    for k, (src, body) in enumerate(fut_bodies):
+        a = Article(
+            url=f"https://{src.domain}/hearing-note-{k}",
+            canonical_url=f"https://{src.domain}/hearing-note-{k}",
+            source_id=src.id, title=f"Dredging hearing note {k + 1}", content=body,
+            published_at=datetime(2026, 7, 20 + k, tzinfo=UTC), language="en",
+            hash=_hash_for(body, f"future-event-{k}"), word_count=len(body.split()),
+            created_at=datetime(2026, 7, 20 + k, tzinfo=UTC),
+        )
+        session.add(a)
+        session.commit()
+        index_article(session, a, extractor=extractor, country=src.country)
+    session.commit()
+    tally["deduced_future_event_articles"] = len(fut_bodies)
+
+    return tally
+
+
+def seed_mini_corpus(session, *, rng_seed: int = 20260820) -> dict:
+    """A SMALL corpus (the import-fixture SOURCE, T2 of the 2026-08-20 matrix session):
+    ~24 articles across 4 languages, seeded through the SAME ``index_article`` chokepoint as
+    the full state-C corpus. This corpus is backed up with the app's own volume-backup
+    engine and then imported into a FRESH instance through the real Import dialog, so the
+    post-import screen renders a REAL run's summary — never a fabricated fixture payload.
+    Small on purpose: the import drill's subject is the post-import SCREEN, not scale
+    (scale is P0-validation territory, already measured elsewhere)."""
+    from src.analytics.extract import get_extractor
+    from src.analytics.store import index_article
+    from src.database.models import Article, Source
+
+    rng = random.Random(rng_seed)
+    extractor = get_extractor("baseline")
+    tally: dict[str, int] = {}
+    n = 0
+    for lang in ("en", "fr", "de", "zh"):
+        src = Source(
+            name=f"Mini {lang.upper()} Wire", domain=f"mini-{lang}.example",
+            language=lang, country={"en": "us", "fr": "fr", "de": "de", "zh": "cn"}[lang],
+            source_type="news", tags="news", status="qualified", enabled=True,
+            qualified_at=datetime.now(UTC), qualification_criteria_version="v1",
+        )
+        session.add(src)
+        session.flush()
+        paragraphs = LANG_PARAGRAPHS[lang]
+        for i in range(6):
+            topic, body = paragraphs[i % len(paragraphs)]
+            content = body + f" [mini-{lang}-{topic}-{i}]"
+            published = _rand_date(rng, date(2025, 1, 1), date(2026, 7, 1))
+            a = Article(
+                url=f"https://{src.domain}/{topic}-{i}",
+                canonical_url=f"https://{src.domain}/{topic}-{i}",
+                source_id=src.id, title=f"Mini {topic} {i} — {lang}", content=content,
+                published_at=published, language=lang,
+                hash=_hash_for(content, f"mini-{lang}-{i}"),
+                word_count=len(content.split()), created_at=published, updated_at=published,
+            )
+            session.add(a)
+            session.commit()
+            index_article(session, a, extractor=extractor, country=src.country)
+            n += 1
+    tally["mini_articles"] = n
     return tally
 
 
 def main() -> None:
+    import argparse
+
     from src.database.session import SessionLocal, init_db
+
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--mini", action="store_true",
+        help="seed the SMALL import-fixture source corpus instead of the full state C",
+    )
+    args = ap.parse_args()
 
     init_db()
     session = SessionLocal()
     try:
-        tally = seed_populated_corpus(session)
+        tally = seed_mini_corpus(session) if args.mini else seed_populated_corpus(session)
         session.commit()
     finally:
         session.close()
-    print("ui_clickthrough_seed: STATE C seeded.")
+    print(f"ui_clickthrough_seed: {'MINI import-source' if args.mini else 'STATE C'} seeded.")
     for k, v in tally.items():
         print(f"  {k}: {v}")
 
