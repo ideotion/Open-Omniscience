@@ -29,10 +29,13 @@ def state(tmp_path):
 # --------------------------------------------------------------------------- #
 
 
-def test_a_machine_that_never_saw_pressure_seeds_at_the_configured_max(state):
+def test_a_machine_that_never_saw_pressure_has_no_opinion_about_the_seed(state):
+    """None, never w_max. Returning w_max would start TARGET mode wide open instead of
+    easing in from DEFAULT_SEED — a real behaviour change on machines this module is
+    supposed to leave alone, and one that looks identical in maximum mode."""
     assert not state.exists()
     assert capacity.load_ceiling(state) is None
-    assert capacity.seed_for(50, state) == 50
+    assert capacity.seed_for(50, state) is None
 
 
 def test_a_clean_pass_on_an_unrecorded_machine_writes_nothing_at_all(state):
@@ -48,7 +51,7 @@ def test_many_clean_passes_never_start_lowering_a_healthy_machine(state):
         capacity.record_pass(
             w_max=50, mem_low_ticks=0, mem_low_min_permits=None, state_path=state
         )
-    assert capacity.seed_for(50, state) == 50
+    assert capacity.seed_for(50, state) is None
     assert not state.exists()
 
 
@@ -108,7 +111,7 @@ def test_clean_passes_relax_the_ceiling_and_then_clear_it(state):
             break
     assert seen == [2, 4, 8, 16, 32, None], seen
     assert not state.exists(), "back at the configured max -> carry no state"
-    assert capacity.seed_for(50, state) == 50
+    assert capacity.seed_for(50, state) is None
 
 
 def test_a_data_dir_moved_to_a_bigger_machine_heals_rather_than_pinning_it(state):
@@ -119,7 +122,7 @@ def test_a_data_dir_moved_to_a_bigger_machine_heals_rather_than_pinning_it(state
         capacity.record_pass(
             w_max=50, mem_low_ticks=0, mem_low_min_permits=None, state_path=state
         )
-    assert capacity.seed_for(50, state) == 50
+    assert capacity.seed_for(50, state) is None
 
 
 # --------------------------------------------------------------------------- #
@@ -130,7 +133,7 @@ def test_a_data_dir_moved_to_a_bigger_machine_heals_rather_than_pinning_it(state
 def test_a_corrupt_state_file_degrades_to_no_ceiling(state):
     state.write_text("{not json", "utf-8")
     assert capacity.load_ceiling(state) is None
-    assert capacity.seed_for(50, state) == 50
+    assert capacity.seed_for(50, state) is None
 
 
 @pytest.mark.parametrize("bad", [0, -3, "12", 1.5, True, None])
@@ -157,7 +160,7 @@ def test_the_report_separates_never_measured_from_measured_one(state):
     unmeasured = capacity.state_report(50, state)
     assert unmeasured["learned_ceiling"] is None
     assert unmeasured["measured"] is False
-    assert unmeasured["seed_next_pass"] == 50
+    assert unmeasured["ramp_capped_at"] == 50
 
     capacity.record_pass(w_max=50, mem_low_ticks=28, mem_low_min_permits=1, state_path=state)
     measured = capacity.state_report(50, state)
@@ -232,6 +235,71 @@ def test_memory_pressure_never_drives_permits_below_one():
         assert gov.observe(0.0, mem_low=True)[0] == 1
 
 
+def test_an_unmeasured_machine_keeps_its_rate_modes_own_starting_point():
+    """The regression this contract exists to prevent: seed_for once returned w_max on
+    an unmeasured machine, and the runner passes it explicitly, so target mode started
+    wide open at 50 instead of easing in from DEFAULT_SEED. Invisible in maximum mode,
+    where both values are the same number."""
+    assert BandwidthGovernor(mode="target", w_max=50, seed=None).permits == DEFAULT_SEED
+    assert BandwidthGovernor(mode="maximum", w_max=50, seed=None).permits == 50
+
+
+# --------------------------------------------------------------------------- #
+#  The ramp cap. The ceiling bounds where a pass GOES, not just where it starts.
+# --------------------------------------------------------------------------- #
+
+
+def test_the_ramp_stops_at_the_learned_ceiling_instead_of_climbing_to_w_max():
+    gov = BandwidthGovernor(mode="maximum", w_max=50, seed=2, ramp_ceiling=6)
+    seen = []
+    for i in range(12):
+        seen.append(gov.observe(0.0, now=float(i) * 10.0)[0])
+    assert max(seen) == 6, seen
+    assert gov.observe(0.0, now=500.0) == (6, "at-learned-ceiling")
+
+
+def test_with_no_ceiling_the_ramp_still_reaches_w_max_and_says_at_ceiling():
+    gov = BandwidthGovernor(mode="maximum", w_max=8, seed=2)
+    for i in range(12):
+        gov.observe(0.0, now=float(i) * 10.0)
+    assert gov.permits == 8
+    assert gov.observe(0.0, now=500.0) == (8, "at-ceiling")
+
+
+def test_a_ceiling_at_or_above_w_max_is_indistinguishable_from_none():
+    """Clamped, and still reports the plain reason — the learned wording must not appear
+    when nothing is actually being held back."""
+    gov = BandwidthGovernor(mode="maximum", w_max=8, seed=8, ramp_ceiling=99)
+    assert gov.ramp_ceiling == 8
+    assert gov.observe(0.0, now=500.0) == (8, "at-ceiling")
+
+
+def test_the_ramp_recovers_within_a_pass_but_only_back_to_the_ceiling():
+    """A mid-pass dip must not strand the pass at the floor — it climbs back to where
+    the pass began, and no further."""
+    gov = BandwidthGovernor(mode="maximum", w_max=50, seed=8, ramp_ceiling=8)
+    assert gov.observe(0.0, mem_low=True, now=1.0)[0] == 4  # pressure halves it
+    for i in range(10):
+        gov.observe(0.0, now=10.0 + i * 10.0)  # pressure gone; ramp back up
+    assert gov.permits == 8
+
+
+def test_target_mode_below_target_also_stops_at_the_learned_ceiling():
+    gov = BandwidthGovernor(mode="target", target_kbps=500, w_max=50, seed=2, ramp_ceiling=5)
+    for i in range(20):
+        gov.observe(1.0, now=float(i) * 10.0)  # 1 KiB/s: forever below target
+    assert gov.permits == 5
+    # ...and says so, rather than "in-band", which would claim the rate is fine.
+    assert gov.observe(1.0, now=500.0) == (5, "at-learned-ceiling")
+
+
+def test_target_mode_without_a_ceiling_keeps_its_original_reasons():
+    gov = BandwidthGovernor(mode="target", target_kbps=500, w_max=4, seed=4)
+    assert gov.observe(1.0, now=100.0) == (4, "in-band")
+    assert gov.observe(10_000.0, now=200.0) == (3, "above-target")
+    assert gov.observe(1.0, now=300.0) == (4, "below-target")
+
+
 # --------------------------------------------------------------------------- #
 #  The wiring. Parsed, never grepped: the runner's own comments at both call
 #  sites contain the words "capacity" and "seed", so any substring assertion
@@ -259,17 +327,45 @@ def test_the_runner_seeds_the_governor_from_the_learned_ceiling():
         and n.func.id == "BandwidthGovernor"
     ]
     assert calls, "the runner no longer constructs a BandwidthGovernor"
+
+    tree = _runner_tree()
+
+    def _is_seed_for(node) -> bool:
+        return isinstance(node, ast.Call) and getattr(node.func, "attr", None) == "seed_for"
+
+    # Local names bound from a seed_for(...) call, so the guard follows the binding
+    # instead of demanding the call appear inline at the keyword.
+    bound = {
+        t.id
+        for n in ast.walk(tree)
+        if isinstance(n, ast.Assign) and _is_seed_for(n.value)
+        for t in n.targets
+        if isinstance(t, ast.Name)
+    }
+
+    def _from_learned_ceiling(node) -> bool:
+        return _is_seed_for(node) or (isinstance(node, ast.Name) and node.id in bound)
+
     for call in calls:
-        seed = next((kw for kw in call.keywords if kw.arg == "seed"), None)
-        assert seed is not None, (
+        kwargs = {kw.arg: kw.value for kw in call.keywords}
+        assert "seed" in kwargs, (
             "the collection governor is built without seed= — every pass would "
             "restart at w_max and re-walk the descent this module exists to remember"
         )
-        # ...and the seed must come from the learned ceiling, not a literal.
-        assert isinstance(seed.value, ast.Call), ast.dump(seed.value)
-        assert (
-            getattr(seed.value.func, "attr", None) == "seed_for"
-        ), ast.dump(seed.value.func)
+        assert "ramp_ceiling" in kwargs, (
+            "the governor is built without ramp_ceiling= — the learned ceiling would "
+            "bound only where a pass STARTS, and the ramp would climb back toward "
+            "w_max inside the same pass and re-trigger the pressure"
+        )
+        for name in ("seed", "ramp_ceiling"):
+            assert _from_learned_ceiling(kwargs[name]), f"{name}: {ast.dump(kwargs[name])}"
+        # Both must be the SAME value: a pass seeded at one level and allowed to ramp
+        # to another is not the behaviour either argument describes.
+        seed_src = getattr(kwargs["seed"], "id", None)
+        ramp_src = getattr(kwargs["ramp_ceiling"], "id", None)
+        assert seed_src is not None and seed_src == ramp_src, (
+            "seed and ramp_ceiling must come from one binding of the learned ceiling"
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -353,7 +449,7 @@ def test_the_reader_gets_a_real_answer_on_this_machine():
     )
     assert report["schema"] == capacity.SCHEMA
     assert report["configured_max_workers"] >= 1
-    assert report["seed_next_pass"] >= 1
+    assert report["ramp_capped_at"] >= 1
 
 
 def test_the_runner_records_each_finished_pass():

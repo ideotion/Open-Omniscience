@@ -873,11 +873,20 @@ def run_scrape_once(
             # on one that has, it skips a descent it already paid for (and thrashed
             # through) on the previous pass. The operator's collect_parallelism is
             # untouched and remains the hard ceiling.
+            # None on a machine that has never shown memory pressure, which leaves BOTH
+            # the seed and the ramp ceiling at the governor's own defaults.
+            _learned = _capacity.seed_for(w_max)
             governor = BandwidthGovernor(
                 mode=getattr(settings, "collect_rate_mode", "target"),
                 target_kbps=getattr(settings, "collect_target_kbps", 500),
                 w_max=w_max,
-                seed=_capacity.seed_for(w_max),
+                seed=_learned,
+                # The ceiling bounds the RAMP too, not just the starting point: without
+                # this the governor climbs back toward w_max inside the same pass,
+                # overshoots the capacity the machine just demonstrated, and re-triggers
+                # the pressure. Probing for more headroom happens BETWEEN passes, where
+                # capacity relaxes the ceiling one doubling after a clean pass.
+                ramp_ceiling=_learned,
             )
             monitor = CollectionMonitor(
                 governor=governor,
