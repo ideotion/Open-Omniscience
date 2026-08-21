@@ -36,7 +36,6 @@ from datetime import UTC, datetime
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
-from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -1229,17 +1228,15 @@ def _query_articles(
     # Annotated because the branches are genuinely different SQLAlchemy types (a
     # CollationClause for the two text columns, a mapped attribute for the rest) and
     # inference takes whichever branch it reads first, then rejects every other one.
+    # They share a base, but SQLAlchemy's generics are invariant, so no common
+    # PARAMETERISED type accepts both -- ColumnOperators works precisely because it is
+    # the un-parameterised operator base, and only .desc()/.asc() are called here.
     order_col: ColumnOperators
     if sort_by == "source":
         # COLLATE NOCASE so alphabetical order is case-insensitive AND matches the
         # FTS path's Python casefold (otherwise SQLite's binary collation sorts all
         # capitals before lowercase — "Zeta" before "apple").
         q = q.outerjoin(Source, Article.source_id == Source.id)
-        # The branches yield a CollationClause for the text columns and an
-        # InstrumentedAttribute for the rest. Those share a base, but SQLAlchemy's
-        # generics are invariant, so no common parameterisation accepts both; only
-        # .desc()/.asc() are ever called on it.
-        order_col: Any
         order_col = Source.name.collate("NOCASE")
     elif sort_by == "title":
         order_col = Article.title.collate("NOCASE")
