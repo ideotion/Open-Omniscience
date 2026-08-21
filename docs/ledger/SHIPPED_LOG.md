@@ -5243,3 +5243,104 @@ Also probed empirically rather than assumed: Playwright's `emulate_media(contras
 is a silent NO-OP (None means "leave unchanged"), and BOTH reset tokens — the stub-typed
 `"null"` and `"no-override"` — behaviorally clear the emulation; the driver's
 `emulate_contrast` now branches explicitly and records the probe in its docstring.
+### 2026-08-20 — S-3: `src/static/app.js` becomes 17 ordered modules
+
+  - **A MAX-GATE RATCHET CANNOT DETECT ITS OWN INSTRUMENT GOING BLIND — check the count is
+    UNCHANGED, never merely under the bar (2026-08-20, splitting the UI engine past the i18n
+    scope):** the two JS i18n ratchets are maxima (`--max-untranslatable 561`,
+    `--max-unkeyed-t-calls 298`), and finding I-1 already records this instrument once reading a
+    green 100% while pointed at the wrong file. Splitting `app.js` into 17 modules pointed it at
+    the wrong file AGAIN — and this time the failure would have passed more comfortably than
+    success: fewer files scanned means fewer strings found means a LOWER count, under the bar,
+    with the script printing *"the ratchet can now be lowered"*, which reads as progress. The
+    direction of a max-gate is exactly backwards for detecting blindness. So the check that
+    means anything is that the count is IDENTICAL — 561/298 at every wave, with every module
+    present in the per-file breakdown — not that the gate is green. GENERAL FORM: for any
+    ratchet expressed as a maximum over a measured population, a SHRINKING POPULATION and an
+    IMPROVING CODEBASE produce the same movement, so a change that alters WHAT IS MEASURED owes
+    a same-count check rather than a same-verdict one.
+  - **SPLITTING A FILE THAT TESTS ASSERT AGAINST TURNS EVERY NEGATIVE ASSERTION VACUOUS, AT
+    EVERY SITE AT ONCE (2026-08-20):** 80 test files now read the UI engine through the one helper, at 216
+    call sites. After a split, a POSITIVE assertion (`"function X" in app`) fails
+    loudly and gets fixed; a NEGATIVE one (`assert_absent`, `X not in app`) passes FOR FREE
+    against a file that no longer contains the thing it checks — the exact vacuity failure
+    `js_source_helper` exists to end, reintroduced at 151 sites in one commit and silently. The
+    fix is a helper returning the CONCATENATION of the modules in load order, read from
+    `index.html` so it cannot drift; because the split is a contiguous slice, that string is the
+    semantic equivalent of the old file and every assertion keeps exactly its old meaning. THE
+    QUIETER HALF: one reader wrapped its read in `if path.exists()` and SKIPPED the engine
+    rather than failing — a guard that turns a missing file into a smaller scope is the same
+    hazard wearing a safety belt, and only that file's POSITIVE assertions noticed.
+  - **`T == "\n".join(lines)`, SO A NON-FINAL SLICE OWES EXACTLY ONE SEPARATOR — and adding it
+    conditionally loses a newline whenever the slice ends on a BLANK line (2026-08-20):**
+    splitting a file into contiguous slices looks like pure bookkeeping, and the obvious
+    `if not text.endswith("\n"): text += "\n"` is wrong: when the slice's last line is empty the
+    join ALREADY ends in a newline representing that blank line's own terminator, so the
+    separator is never added and one byte vanishes at the seam. Caught on the FIRST run by a
+    concatenation-must-be-byte-identical check, in seconds, with the exact byte offset. GENERAL
+    FORM: when a change is supposed to move bytes without altering them, make the
+    identity check the first thing that runs — it is total (nothing can hide from it), it
+    localises (it names the offset), and it cannot be satisfied vacuously the way a test over
+    the result can.
+  - **A MIGRATION KEYED TO THE INSTRUMENT'S LANGUAGE MISSES EVERY READER IN ANOTHER ONE
+    (2026-08-20, the fifteen node suites):** the brief named `tests/js_source_helper.py` as the
+    thing to migrate source-asserting tests through, so I swept Python and reported the
+    migration done. Fifteen `*_node_test.js` suites read the SAME file with their own
+    `fs.readFileSync(path.join(__dirname, "..", "src", "static", "app.js"))`, were invisible to
+    a Python-shaped search, and broke together the moment the file stopped existing. That they
+    broke LOUDLY is the good case and not luck — each extracts a function BY NAME and asserts it
+    was found, so an empty read is a failed assertion rather than a suite quietly testing
+    nothing; the ratchet that every node suite has a driver is what made them run at all. TWO
+    RULES. (a) When a change invalidates a way of READING something, enumerate the readers by
+    what they READ (grep the path, the filename, the URL), never by the helper you intend them
+    to use — the helper's language is your search's blind spot. (b) The fix is the same helper
+    one language over, reading the module list out of `index.html` rather than hard-coding it,
+    because fifteen hand-rolled copies of a path are precisely the debt the slicing ratchet
+    exists to count.
+  - **A TEST THAT ASSERTS A VERSION LITERAL PINS THE NUMBER, NOT THE PROPERTY — and it turns the
+    CORRECT response to a change into a red lane (2026-08-20, `oo-shell-v1`):** the service
+    worker's guard read `assert 'caches.delete(k)' in sw and 'oo-shell-v1' in sw` under the
+    comment *"old cache versions are purged on activate"*. Changing the precached SHELL list
+    REQUIRES bumping the cache name — without it a client that is already offline keeps serving
+    the previous list, which is the one thing an offline shell must never do — so the first
+    legitimate bump made the test red while the property it named held perfectly the whole time.
+    Assert the mechanism instead: `caches.delete(k)`, the purge keyed on `k !== CACHE` (a purge
+    naming specific old versions leaves the next one behind), and that the name carries a
+    version at all. Both mutations fail; the literal caught neither. GENERAL FORM: when a guard
+    quotes a value that is expected to CHANGE, it is anchored on a landmark that merely
+    coincided with the property once — the same family as a guard splitting source on a landmark
+    that used to coincide with the commit point.
+  - **A CPU THROTTLE EMULATES A SLOW MAIN THREAD, NOT A SMALL MACHINE — and the difference is
+    the whole result (2026-08-20, measuring what splitting the UI engine bought):** splitting
+    `app.js` into seventeen modules measured **−38.8 %** main-thread script time under 6× CPU
+    throttling, which is the number I would have reported. Three controls said the effect was
+    real — an A/A run landed inside noise, swapping the order flipped the sign, a second server
+    on a second worktree reproduced it — and two more said what it actually was. Removing the
+    throttle **REVERSED** it (+21.6 %, 14.8 ms slower: sixteen extra requests and compile
+    set-ups, which a fast main thread notices because it has no work worth moving). Pinning the
+    browser to two cores cut it to −17.5 %. Both sides serve BYTE-IDENTICAL JavaScript — the
+    split side ships 20,812 bytes MORE — so "less to parse" was never the mechanism: compile
+    work relocates onto background threads that `Emulation.setCPUThrottlingRate` does not
+    throttle, and the win is therefore proportional to the spare cores available to receive it.
+    THREE RULES. (a) Name the mechanism before quoting the number: a packaging change that
+    cannot reduce total bytes cannot be reducing parse cost, so a large "parse" win is evidence
+    of RELOCATION and relocation depends on the machine. (b) A throttle knob and a core count
+    are different axes, and a profile that throttles one while leaving the other generous is the
+    most favourable case for anything that moves work sideways — the recorded "a probe's data
+    distribution is part of the lookalike" trap with CORE COUNT as the varying axis. (c) An A/A
+    control costs one extra run and is what separates "the harness has a position bias" from "the
+    change did something"; it is the cheapest control available and the one that makes every
+    other number readable.
+  - **A WALKER WHOSE STEP COUNT VARIES CANNOT CARRY A SAME-STEP-COUNT CLAIM — find out before
+    explaining it (2026-08-20):** the browser walk reported 52 steps at baseline and 59 from the
+    next run onward, and I wrote a plausible sentence into the evidence section saying the count
+    rose because the walker reaches more subtabs once the corpus is populated. It was invented.
+    A control walk against the PRE-SPLIT tree produced **both numbers in a single run, from one
+    server against one data directory** — so the seven flapping steps (all one tab's continent
+    subtabs) are a race on whether that tab's fetch has populated the subtab strip when the
+    walker reads it, and nothing to do with populated-versus-empty or with the code under test.
+    GENERAL FORM: when a measurement moves and you can think of a reason, that reason is a
+    hypothesis with a cheap test attached — run the old code again. And an instrument that varies
+    run to run still supports the invariants it holds exactly (zero `pageerror`, the same 1393
+    globals, in all fourteen state-runs); it just cannot support the one that varies, and saying
+    which is which is what keeps the evidence section evidence.

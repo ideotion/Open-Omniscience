@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from tests.js_source_helper import app_js
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
-_APP = (_STATIC / "app.js").read_text(encoding="utf-8")
+_APP = app_js()
 _HTML = (_STATIC / "index.html").read_text(encoding="utf-8")
 _LOCALES = _STATIC / "locales"
 _LANGS = ["en", "ar", "bn", "de", "es", "fr", "hi", "id", "ja", "pt", "ru", "zh"]

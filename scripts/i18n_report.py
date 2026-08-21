@@ -86,7 +86,25 @@ class _ChromeExtractor(HTMLParser):
 # against en.json and never touches these paths); it only lets the REPORT see
 # what the engine actually renders.
 _AUX_HTML = ("taskmanager.html", "unlock.html", "investigate.html")
-_AUX_JS = ("app.js", "reader.js")
+
+
+def _aux_js() -> tuple[str, ...]:
+    """The JS surfaces the audit reads: every app module, plus reader.js.
+
+    The UI engine is no longer one file -- app.js was decomposed into ordered
+    modules (S-3, docs/design/APPJS_DECOMPOSITION_2026-08-20.md) -- so this list
+    is READ FROM index.html rather than hard-coded. That is finding I-1's own
+    lesson applied to its own fix: a hand-kept list drifts from the thing it
+    describes, and here the drift would silently re-blind both JS ratchets to
+    ~22k lines of engine, which is exactly the failure this scope exists to end.
+    """
+    html = _UI.read_text(encoding="utf-8")
+    mods = [
+        m.group(1)
+        for m in re.finditer(r'<script src="/static/(app(?:-[a-z-]+)?\.js)"', html)
+    ]
+    assert mods, "index.html loads no app module -- the script tags moved or were renamed"
+    return (*mods, "reader.js")
 
 # String shapes in JS that reach the DOM (and so are translatable by i18n.js
 # if a key exists). Deliberately conservative: a shape that could match a
@@ -151,10 +169,9 @@ def unkeyed_t_calls() -> dict:
     en_keys = _keys(_load(_LOCALES / "en.json"))
     sites = 0
     unkeyed: set[str] = set()
-    for name in _AUX_JS:
+    for name in _aux_js():
         path = _static_dir() / name
-        if not path.exists():
-            continue
+        assert path.exists(), f"{name} is listed by index.html but missing from src/static"
         text = path.read_text(encoding="utf-8")
         for rx in _T_CALL:
             for m in rx.finditer(text):
@@ -182,10 +199,9 @@ def audit_chrome() -> dict:
         per_file[name] = len(aux.texts)
         texts |= aux.texts
 
-    for name in _AUX_JS:
+    for name in _aux_js():
         path = _static_dir() / name
-        if not path.exists():
-            continue
+        assert path.exists(), f"{name} is listed by index.html but missing from src/static"
         found = _js_chrome(path.read_text(encoding="utf-8"))
         per_file[name] = len(found)
         texts |= found

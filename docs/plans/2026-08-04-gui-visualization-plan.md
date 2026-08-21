@@ -141,7 +141,7 @@ returned as `HTMLResponse`, or a string concatenated server-side.
 
 | File | Size | What it is |
 |---|---|---|
-| `src/static/app.js` | 21,301 lines / 1.3 MB | The entire SPA engine, one classic (non-module) script |
+| `src/static/app-*.js` | 17 modules, 24,244 lines / 1.4 MB total | The SPA engine, ordered classic (non-module) scripts. Was one 21,301-line `app.js` when this plan was written; split 2026-08-20 (S-3) with zero behaviour change, so every line citation below still names real code, at a different file and offset — resolve by symbol name, not by line |
 | `src/static/index.html` | 2,865 lines | The SPA shell; 7 `<script>` blocks |
 | `src/static/app.css` | 93 KB | The design system + all 17 themes |
 | `src/static/ooviz.js` | 24 KB | Zero-dependency chart *primitives* (math only, DOM-free) |

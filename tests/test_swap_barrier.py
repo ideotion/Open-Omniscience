@@ -335,11 +335,10 @@ def test_the_standalone_import_row_says_parked_too(monkeypatch) -> None:
 def test_the_import_asks_before_piling_onto_a_running_writer() -> None:
     """The Collect button has always asked; the import never did, so a re-index quietly
     parked with no word about why its counter stopped."""
-    from pathlib import Path
 
-    from tests.js_source_helper import function_body, strip_comments
+    from tests.js_source_helper import app_js, function_body, strip_comments
 
-    app = Path("src/static/app.js").read_text(encoding="utf-8")
+    app = app_js()
     run = strip_comments(function_body(app, "_uxImRun"))
     assert "arbitrate(" in run, "the import must consult the arbitration ask"
     assert "import-queue/start" in run
@@ -357,9 +356,9 @@ def test_the_arbitration_no_longer_calls_a_db_collision_a_network_task() -> None
     import json
     from pathlib import Path
 
-    from tests.js_source_helper import function_body, strip_comments
+    from tests.js_source_helper import app_js, function_body, strip_comments
 
-    app = Path("src/static/app.js").read_text(encoding="utf-8")
+    app = app_js()
     arb = strip_comments(function_body(app, "arbitrate"))
     assert "Another network task is running:" not in arb
     assert "Another job is writing to the database:" in arb

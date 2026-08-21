@@ -15,10 +15,11 @@ This guards that dissolution-without-loss.
 from __future__ import annotations
 
 from pathlib import Path
+from tests.js_source_helper import app_js
 
 _ROOT = Path(__file__).resolve().parents[1]
 _HTML = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
-_JS = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+_JS = app_js()
 
 
 def test_integrity_left_the_sidebar():

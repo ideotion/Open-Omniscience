@@ -31,13 +31,20 @@ from pathlib import Path
 
 import pytest
 
+from tests.js_source_helper import app_modules
+
 _ROOT = Path(__file__).resolve().parent.parent
 _SCRIPT = _ROOT / "scripts" / "i18n_report.py"
 _STATIC = _ROOT / "src" / "static"
 
 # Every surface that renders user-visible chrome and must therefore be in
-# scope. app.js is the load-bearing one -- it is the UI engine.
-_MUST_SCAN = ("index.html", "app.js", "reader.js",
+# scope. The UI ENGINE is the load-bearing one -- and it is no longer one file:
+# app.js was decomposed into ordered modules (S-3, 2026-08-20), so the engine's
+# modules are read from index.html rather than named here. A hard-coded "app.js"
+# would have kept passing against the one remaining slice while the other
+# sixteen went unscanned -- finding I-1 all over again, in its own guard.
+_ENGINE_MODULES = tuple(app_modules())
+_MUST_SCAN = ("index.html", *_ENGINE_MODULES, "reader.js",
               "taskmanager.html", "unlock.html", "investigate.html")
 
 
@@ -65,17 +72,23 @@ def test_audit_scans_every_chrome_bearing_surface(name):
 
 
 def test_the_engine_contributes_a_substantial_share():
-    """app.js must not silently drop to a token count.
+    """The UI engine must not silently drop to a token count.
 
     A regex-based extractor can degrade to near-zero without erroring (a
     changed quoting style, a refactor to template literals). Anchoring on a
-    floor makes that visible instead of reading as "app.js is now clean".
+    floor makes that visible instead of reading as "the engine is now clean".
+
+    The floor is over the engine AS A WHOLE, summed across its modules: a
+    per-module floor would be wrong (a small module legitimately carries few
+    strings) and would have to be re-tuned every time a boundary moves.
     """
     per_file = _module().audit_chrome().get("per_file", {})
-    assert per_file.get("app.js", 0) >= 100, (
-        f"app.js yielded only {per_file.get('app.js')} chrome strings -- it is "
-        "an 18k-line UI engine, so this almost certainly means the extractor "
-        "shapes stopped matching rather than that the file became translatable"
+    total = sum(per_file.get(m, 0) for m in _ENGINE_MODULES)
+    assert total >= 100, (
+        f"the UI engine yielded only {total} chrome strings across "
+        f"{len(_ENGINE_MODULES)} module(s) -- it is a ~24k-line engine, so this "
+        "almost certainly means the extractor shapes stopped matching rather "
+        "than that it became translatable"
     )
 
 

@@ -23,9 +23,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from tests.js_source_helper import app_js
 
 _ROOT = Path(__file__).resolve().parents[1]
-_APP_JS = _ROOT / "src" / "static" / "app.js"
 
 # (start year, start month, shift in months, expected [year, month])
 _CASES = [
@@ -40,7 +40,7 @@ _CASES = [
 
 
 def _extract_agMonthShift() -> str:
-    src = _APP_JS.read_text(encoding="utf-8")
+    src = app_js()
     start = src.index("function agMonthShift(d) {")
     end = src.index("\n    }\n", start) + len("\n    }\n")
     return src[start:end]

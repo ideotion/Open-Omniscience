@@ -42,15 +42,18 @@ live. The default stays the reference and the guarded baseline.
 
 ## 2. Architecture (how, without losing anything)
 
-- **Shared-core shells.** `app.js` renders by element id (`$('briefing-feed')`,
+- **Shared-core shells.** The UI engine renders by element id (`$('briefing-feed')`,
   `getElementById('home-stats')`, …). Each alternative is a *scoped skin*
   (`html[data-ui="<id>"] …`) — plus, for two of them, a thin interaction layer —
   that reuses **100% of the existing render logic and endpoints**. Nothing is
   re-implemented, so *no functionality is lost* by construction.
-- **Sandbox, not a fork.** The three canonical files (`index.html`, `app.js`,
-  `app.css`) are untouched except for a tiny additive hook (the gallery boot
-  script + the Settings → GUIs subtab). The default interface stays the
-  invariant-guarded reference and remains the default.
+- **Sandbox, not a fork.** The canonical shell (`index.html`, `app.css`, and the
+  ordered `app-*.js` modules — one file until 2026-08-20, see
+  [`APPJS_DECOMPOSITION_2026-08-20.md`](../design/APPJS_DECOMPOSITION_2026-08-20.md))
+  is untouched except for a tiny additive hook (the gallery boot script + the
+  Settings → GUIs subtab). The default interface stays the invariant-guarded
+  reference and remains the default. The decomposition changed no behaviour and
+  no DOM, so every skin above is unaffected by it.
 - **Honesty preserved by construction.** Because every alternative restyles the
   *same DOM*, the ethical non-negotiables travel with it: caveats stay visible,
   the network-consent popup is unchanged, no interface invents a score, and the

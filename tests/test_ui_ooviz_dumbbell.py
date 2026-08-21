@@ -14,10 +14,10 @@ string-assertion wiring guard (browser-unverified per fork-3).
 from __future__ import annotations
 
 from pathlib import Path
-from tests.js_source_helper import function_body
+from tests.js_source_helper import app_js, function_body
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
-_JS = (_STATIC / "app.js").read_text(encoding="utf-8")
+_JS = app_js()
 
 
 def test_dumbbell_uses_ooviz_primitives():

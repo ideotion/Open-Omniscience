@@ -21,6 +21,7 @@ from sqlalchemy.orm import sessionmaker
 
 from src.analytics.queries import corpus_coordination
 from src.database.models import Article, Base, Source
+from tests.js_source_helper import app_js
 
 _ROOT = Path(__file__).resolve().parents[1]
 
@@ -96,7 +97,7 @@ def test_empty_corpus_is_honest():
 
 
 def test_related_subtab_is_wired_and_branches_into_a_new_corpus():
-    js = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    js = app_js()
     html = (_ROOT / "src" / "static" / "index.html").read_text(encoding="utf-8")
     assert 'data-tab="related"' in html and 'id="an-related"' in html
     assert "function renderAnRelated" in js and "function branchFromRelated" in js

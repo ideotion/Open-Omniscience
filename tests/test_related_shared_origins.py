@@ -14,9 +14,9 @@ matters.
 
 from __future__ import annotations
 
-from pathlib import Path
+from tests.js_source_helper import app_js
 
-_JS = (Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_text(encoding="utf-8")
+_JS = app_js()
 
 
 def test_shared_origins_section_reuses_existing_link_endpoints():

@@ -19,10 +19,11 @@ with it rather than being weakened to keep passing.
 from __future__ import annotations
 
 from pathlib import Path
+from tests.js_source_helper import app_js
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 _HTML = (_STATIC / "index.html").read_text(encoding="utf-8")
-_JS = (_STATIC / "app.js").read_text(encoding="utf-8")
+_JS = app_js()
 
 
 def test_get_signal_buttons_present():

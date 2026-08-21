@@ -13,14 +13,21 @@ REPLACES so the unlock screen never sits in the back stack.
 from __future__ import annotations
 
 from pathlib import Path
+from tests.js_source_helper import app_js
 
 _STATIC = Path(__file__).resolve().parents[1] / "src" / "static"
 # index.html's JS was externalised into cached app.js (audit PR H); the tab-nav
 # history logic now lives there, so read both (a MOVE, not a loss).
+# app_js() is the whole UI ENGINE (the ordered modules app.js was split into,
+# S-3 2026-08-20) -- never one file behind an .exists() guard, which would have
+# quietly dropped the engine here and let every "must be absent" assertion below
+# pass against source that no longer contains what it checks.
 _INDEX = "\n".join(
-    (_STATIC / f).read_text(encoding="utf-8")
-    for f in ("index.html", "app.js", "app.css")
-    if (_STATIC / f).exists()
+    [
+        (_STATIC / "index.html").read_text(encoding="utf-8"),
+        app_js(),
+        (_STATIC / "app.css").read_text(encoding="utf-8"),
+    ]
 )
 _UNLOCK = (_STATIC / "unlock.html").read_text(encoding="utf-8")
 

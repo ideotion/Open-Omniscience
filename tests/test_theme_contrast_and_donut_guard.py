@@ -30,10 +30,10 @@ import re
 from pathlib import Path
 
 import pytest
+from tests.js_source_helper import app_js
 
 _ROOT = Path(__file__).resolve().parent.parent
 _CSS = _ROOT / "src" / "static" / "app.css"
-_APP_JS = _ROOT / "src" / "static" / "app.js"
 
 # role -> (variable, minimum ratio, why)
 _ROLES = (
@@ -135,7 +135,7 @@ def test_donut_falls_back_to_bars_past_the_framework_s_slice_limit():
     <=4-5 slices ... otherwise bars", and "many-slice pie" is on its REJECT
     list. ooDonut had no guard and its only caller feeds it an unbounded
     language set."""
-    src = _APP_JS.read_text(encoding="utf-8")
+    src = app_js()
     assert "_DONUT_MAX_SLICES" in src, "the slice-count guard is gone"
     limit = re.search(r"_DONUT_MAX_SLICES\s*=\s*(\d+)", src)
     assert limit and int(limit.group(1)) <= 5, (
@@ -155,7 +155,7 @@ def test_the_donut_fallback_never_truncates_categories():
     The bars path must render every item it is handed -- no slice(), no
     top-N, no silent "and N more".
     """
-    src = _APP_JS.read_text(encoding="utf-8")
+    src = app_js()
     body = src.split("function _ooShareBars(", 1)[1].split("\n    }", 1)[0]
     assert "items.map(" in body, "the fallback must render every item"
     assert ".slice(" not in body, (
