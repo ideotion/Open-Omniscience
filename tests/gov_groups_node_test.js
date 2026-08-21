@@ -22,8 +22,9 @@
 const fs = require("fs");
 const path = require("path");
 
-const APP = fs.readFileSync(
-  path.join(__dirname, "..", "src", "static", "app.js"), "utf-8");
+// The UI engine is ordered modules since the S-3 decomposition; ask the shared
+// helper, which reads the module list out of index.html and cannot drift.
+const APP = require("./app_source.js").appJs();
 
 let passed = 0;
 function assert(cond, msg) { if (!cond) { console.error("FAIL: " + msg); process.exit(1); } }

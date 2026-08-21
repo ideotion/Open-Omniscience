@@ -19,7 +19,9 @@ const fs = require("fs");
 const path = require("path");
 const assert = require("assert");
 
-const APP = fs.readFileSync(path.join(__dirname, "..", "src", "static", "app.js"), "utf8");
+// The UI engine is ordered modules since the S-3 decomposition; ask the shared
+// helper, which reads the module list out of index.html and cannot drift.
+const APP = require("./app_source.js").appJs();
 
 function extract(name) {
   // Scan to the signature's balanced parens, THEN take the body brace, so a `{}` in a

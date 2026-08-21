@@ -419,9 +419,11 @@ def test_the_endpoints_are_composed_where_the_caller_expects_them():
     # a route proves nothing about whether anything reaches it — a /api/backup/... vs
     # /api/backup/v2/... mismatch 404'd in the field with both halves individually
     # correct, which is why the frontend side is checked here rather than trusted.
-    app_js = (Path(__file__).resolve().parents[1] / "src" / "static" / "app.js").read_text(
-        encoding="utf-8"
-    )
+    # The UI engine is ordered modules since the S-3 decomposition, so ask the shared
+    # helper for "the engine's source" rather than naming a file that no longer exists.
+    from tests.js_source_helper import read_static
+
+    app_js = read_static("app.js")
     called = set(re.findall(r'api\(\s*"(/api/governments/series-corpus[^"]*)"', app_js))
     assert called, "no frontend caller reaches the endpoint — a job nobody can start"
     assert called <= paths, f"the UI calls routes the router does not define: {called - paths}"

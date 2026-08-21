@@ -12,7 +12,9 @@
 const fs = require("fs");
 const path = require("path");
 
-const APP = fs.readFileSync(path.join(__dirname, "..", "src", "static", "app.js"), "utf8");
+// The UI engine is ordered modules since the S-3 decomposition; ask the shared
+// helper, which reads the module list out of index.html and cannot drift.
+const APP = require("./app_source.js").appJs();
 
 /** Extract a top-level function, brace-matching from its BODY brace.
  *  Starting at the first `{` after the name would stop at a default-parameter `{}`

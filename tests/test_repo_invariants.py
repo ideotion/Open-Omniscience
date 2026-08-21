@@ -820,7 +820,7 @@ def test_the_source_arrow_column_moved_to_the_reader():
     # SCOPED to the renderer it is about. The same needle occurs in the cited-sources
     # drill (a different surface, not covered by this ruling), so a whole-file search
     # would fail against correct code -- the recorded non-unique-needle trap.
-    app = (_ROOT / "src" / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()  # the UI ENGINE (ordered modules since the S-3 decomposition)
     body = _js_function_body(app, "_anLoadArticles")
     assert "source ↗" not in _strip_js_comments(body), (
         "the per-row source arrow must be gone from the Articles list"
@@ -1559,7 +1559,7 @@ def test_article_columns_are_sortable_headers():
     is keyboard-reachable and announces its state), it must drive the SAME two fields the
     select drives -- two controls with independent opinions is what this replaced -- and
     its active state may not be carried by colour alone."""
-    app = (_SRC / "static" / "app.js").read_text(encoding="utf-8")
+    app = app_js()  # the UI ENGINE (ordered modules since the S-3 decomposition)
     css = (_SRC / "static" / "app.css").read_text(encoding="utf-8")
     th = _js_function_body(app, "_anTh")
     assert "<button" in th and 'aria-pressed' in th, "a header must be a real, stateful button"
