@@ -49,7 +49,16 @@ def load_or_create_signing_key(path: Path | None = None) -> Ed25519PrivateKey:
     """Load the persistent Ed25519 signing key, creating it on first use."""
     path = path or _default_key_path()
     if path.exists():
-        return serialization.load_pem_private_key(path.read_bytes(), password=None)
+        key = serialization.load_pem_private_key(path.read_bytes(), password=None)
+        # load_pem_private_key returns whatever the FILE holds. This app only ever
+        # writes Ed25519 here, but a foreign key placed at this path used to be
+        # returned as-is and fail later, somewhere else, as a signing error.
+        if not isinstance(key, Ed25519PrivateKey):
+            raise ValueError(
+                f"{path} does not hold an Ed25519 private key (found "
+                f"{type(key).__name__}); evidence bundles are signed with Ed25519."
+            )
+        return key
     key = Ed25519PrivateKey.generate()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(
@@ -167,6 +176,13 @@ def verify_bundle(bundle: dict, *, trusted_public_key: str | None = None) -> tup
         return False, "merkle root mismatch (an item was altered/added/removed)"
 
     # 2. Verify the signature over the canonical manifest bytes.
+    # A missing/non-string public key already reached the same verdict via the
+    # TypeError that bytes.fromhex raises below; checking it here reports the same
+    # thing without relying on an exception to classify it. Placed AFTER the Merkle
+    # step so a bundle that is broken in both ways still reports the Merkle failure
+    # first, exactly as before.
+    if not isinstance(bundle_key, str):
+        return False, "malformed signature or public key"
     try:
         pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(bundle_key))
         pub.verify(bytes.fromhex(bundle["signature"]), canonical_bytes(manifest))

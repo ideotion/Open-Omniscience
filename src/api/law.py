@@ -120,11 +120,12 @@ def _doc_dict(doc: LawDocument, *, revisions: int = 0, flagged: int = 0) -> dict
 @router.get("/status")
 def law_status(db: Session = Depends(get_db)) -> dict:
     """Coverage overview: documents per jurisdiction + change/flag totals."""
-    by_jur = dict(
-        db.query(LawDocument.jurisdiction, func.count(LawDocument.id))
+    by_jur: dict[str, int] = {
+        jur: n
+        for jur, n in db.query(LawDocument.jurisdiction, func.count(LawDocument.id))
         .group_by(LawDocument.jurisdiction)
         .all()
-    )
+    }
     last_checked = db.query(func.max(LawDocument.last_checked_at)).scalar()
     return {
         "documents": db.query(func.count(LawDocument.id)).scalar() or 0,
@@ -156,17 +157,19 @@ def law_documents(
     if jurisdiction:
         q = q.filter(LawDocument.jurisdiction == jurisdiction)
     docs = q.order_by(LawDocument.jurisdiction, LawDocument.id).all()
-    rev_counts = dict(
-        db.query(LawRevision.document_id, func.count(LawRevision.id))
+    rev_counts: dict[int, int] = {
+        doc_id: n
+        for doc_id, n in db.query(LawRevision.document_id, func.count(LawRevision.id))
         .group_by(LawRevision.document_id)
         .all()
-    )
-    flag_counts = dict(
-        db.query(LawRevision.document_id, func.count(LawRevision.id))
+    }
+    flag_counts: dict[int, int] = {
+        doc_id: n
+        for doc_id, n in db.query(LawRevision.document_id, func.count(LawRevision.id))
         .filter_by(flagged=True)
         .group_by(LawRevision.document_id)
         .all()
-    )
+    }
     return {
         "caveat": _CAVEAT,
         "documents": [
@@ -384,7 +387,7 @@ def summarize_law_revision(revision_id: int, db: Session = Depends(get_db)) -> d
     return {"status": result.get("status"), "detail": result.get("detail"), "ai_summary": ai_summary}
 
 
-def _diff_to_html(diff: str, _esc) -> str:
+def _diff_to_html(diff: str | None, _esc) -> str:
     """Colourise a stored unified diff (+ added / - removed) for the reader."""
     rows = []
     for ln in (diff or "").splitlines():

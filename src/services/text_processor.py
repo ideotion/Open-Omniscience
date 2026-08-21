@@ -156,7 +156,7 @@ class TextProcessor:
             text = self.normalize_text(text)
         words = self.tokenize(text)
         words = self.remove_stopwords(words, language)
-        freq = {}
+        freq: dict[str, int] = {}
         for word in words:
             freq[word] = freq.get(word, 0) + 1
         return freq

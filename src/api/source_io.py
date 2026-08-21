@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from src.catalog.csv_io import (
     EXPORT_COLUMNS,
@@ -101,7 +102,10 @@ def list_sources(
     # S6: read the MAINTAINED per-source counter instead of an O(articles) join.
     base = db.query(Source)
 
-    filters = []
+    # The list mixes BinaryExpression, BooleanClauseList and ColumnElement -- every
+    # SQLAlchemy filter shape. ColumnElement[bool] is their common supertype; the
+    # bare list inferred whichever landed first.
+    filters: list[ColumnElement[bool]] = []
     if q:
         like = f"%{q.strip()}%"
         filters.append(

@@ -17,6 +17,7 @@ from collections import Counter
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
+from typing import cast
 
 import yaml
 
@@ -202,7 +203,14 @@ def _next_occurrence(
         if not _in_active_range(year, origin_year, until_year):
             continue
         try:
-            d = nth_weekday(year, int(month), weekday, week) if floating else date(year, int(month), int(day))
+            # The same condition as `floating` above, spelled out: a narrowing cannot
+            # travel through an intermediate boolean, so `weekday`/`week`/`day` stay
+            # Optional to the checker at the point they are used.
+            d = (
+                nth_weekday(year, int(month), weekday, week)
+                if weekday is not None and week is not None
+                else date(year, int(month), int(cast(int, day)))
+            )
         except (ValueError, TypeError):
             # Audit finding 2026-07-17: a fixed-date event whose day doesn't exist in
             # THIS particular year (e.g. a Feb 29 "leap day" entry, in a non-leap

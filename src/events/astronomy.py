@@ -23,6 +23,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from math import floor, pi, sin
+from typing import Any
 
 _METHOD = (
     "Meeus, Astronomical Algorithms (2nd ed.) ch. 49: mean lunar phase + "
@@ -204,7 +205,7 @@ def _jde_season(year: int, which: str) -> float:
 
 def seasons_for_year(year: int) -> dict:
     """The four season points of a year (UTC), hemisphere-neutrally named."""
-    out = {"year": year, "seasons": [], "method": _METHOD.replace("ch. 49", "ch. 27"),
+    out: dict[str, Any] = {"year": year, "seasons": [], "method": _METHOD.replace("ch. 49", "ch. 27"),
            "accuracy": _ACCURACY,
            "naming": (
                "astronomical names only — 'June solstice', never 'summer "

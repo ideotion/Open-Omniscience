@@ -24,6 +24,7 @@ import traceback
 from collections import Counter
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 from src.paths import data_dir
 
@@ -223,7 +224,7 @@ def note_frontend_error(
             if len(_frontend_last) > _FRONTEND_KEYS_CAP:
                 _frontend_last.clear()
             _frontend_last[k] = now
-        entry = {
+        entry: dict[str, Any] = {
             "at": datetime.now(UTC).isoformat(timespec="seconds"),
             "level": _FRONTEND_LEVEL,
             "logger": "frontend",

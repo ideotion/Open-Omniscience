@@ -79,8 +79,13 @@ def card_click_diagnostics(session) -> dict:
                 # Must match what clicking the card actually loads: the producers'
                 # own article selection excludes quarantined rows, so counting them
                 # here would report a MISMATCH the user never sees.
+                # `search_ids` returns None when the seed has no positive content to
+                # search (punctuation-only / purely negative) -- distinct from []
+                # "matched nothing", but both mean the click reproduces NO corpus, which
+                # is exactly the MISMATCH this diagnostic exists to report. `or []`
+                # keeps that a reported 0 instead of a TypeError that would abort the run.
                 search_n = (
-                    len(search_ids(session, seed, exclude_quarantined=True)) if seed else 0
+                    len(search_ids(session, seed, exclude_quarantined=True) or []) if seed else 0
                 )
             except SearchQueryError as exc:
                 err = str(exc)

@@ -77,7 +77,9 @@ class TestResult:
     test_name: str
     statistic: float
     p_value: float
-    degrees_of_freedom: float | None = None
+    # A one-way ANOVA reports a PAIR (between, within); every other test reports a
+    # scalar. The field carried both already -- it only said float.
+    degrees_of_freedom: float | tuple[float, float] | None = None
     effect_size: float | None = None
     confidence_interval: tuple[float, float] | None = None
     sample_size: int | None = None

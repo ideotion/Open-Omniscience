@@ -55,6 +55,16 @@ def _articles_group(db: Session, q: str) -> dict:
         except SearchQueryError:
             return {"kind": "articles", "items": [], "total": 0,
                     "note": "query not searchable as typed"}
+    if ids is None:
+        # `search_ids` returns None for "no positive content to search" -- a
+        # purely-negative or punctuation-only query ("NOT foo", "...") -- which is
+        # DISTINCT from [] "searched, matched nothing". Live-reproduced 2026-08-20:
+        # falling through left `len(ids)` below raising TypeError, i.e. a 500 on the
+        # omnibar for a Boolean the UI's own hint advertises. The omnibar must never
+        # blank OR 500: answer with the same honest empty payload as the unparseable
+        # case above, and say which of the two it was.
+        return {"kind": "articles", "items": [], "total": 0,
+                "note": "query has no searchable terms"}
     rows = []
     if ids:
         top = ids[:_PER_GROUP]
@@ -199,6 +209,13 @@ def _wiki_group(db: Session, q: str) -> dict:
             ids = search_ids(db, '"' + q.replace('"', " ") + '"', exclude_quarantined=True)
         except SearchQueryError:
             ids = []
+    # `None` = "no positive content to search" ("NOT foo", "...") -- DISTINCT from []
+    # "searched, matched nothing". Either way there are no CONTENT hits, so normalise
+    # to [] and let the watched-page TITLE catalog below answer, exactly as the
+    # unparseable branch above already chooses to. Live-reproduced 2026-08-20: without
+    # this the slice below raised TypeError, i.e. a 500 on the omnibar.
+    if ids is None:
+        ids = []
     window = ids[:_WIKI_SCAN_CAP]
     content_items: list[dict] = []
     content_total = 0

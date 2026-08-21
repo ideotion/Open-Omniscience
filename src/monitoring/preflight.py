@@ -24,6 +24,7 @@ import json
 import logging
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
@@ -171,7 +172,7 @@ def preflight_sources(session, fetcher=None, *, limit: int = _DEFAULT_LIMIT) -> 
         for rec in records:
             f.write(json.dumps(rec, sort_keys=True) + "\n")
 
-    summary = {
+    summary: dict[str, Any] = {
         "checked": len(records),
         "ok": sum(1 for r in records if r["verdict"] == "ok"),
         "robots_denied": sorted(r["domain"] for r in records if r["verdict"] == "robots_denied"),

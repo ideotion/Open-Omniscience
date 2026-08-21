@@ -182,8 +182,13 @@ def scan_import_folder(
 
     if blob_roots:
         agg: dict[str, dict] = {}
-        for cats in blob_roots.values():
-            for k, tot in cats.items():
+        # `root_cats`, not `cats`: the name `cats` is already bound above to
+        # _read_folder_manifest's `{catdir: (count, bytes)}` TUPLE mapping, and one
+        # name holding two shapes in one function scope is what made the checker read
+        # `tot` as a tuple here. Runtime never confused them (the bindings do not
+        # overlap in time); the reader and the checker both did.
+        for root_cats in blob_roots.values():
+            for k, tot in root_cats.items():
                 a = agg.setdefault(k, {"count": 0, "bytes": 0})
                 a["count"] += tot["count"]
                 a["bytes"] += tot["bytes"]
@@ -191,10 +196,10 @@ def scan_import_folder(
         found["blob_roots"] = [
             {
                 "root": rd,
-                "categories": [_CATKEY_TO_DIR[k] for k in cats],
-                **cats,
+                "categories": [_CATKEY_TO_DIR[k] for k in root_cats],
+                **root_cats,
             }
-            for rd, cats in sorted(blob_roots.items())
+            for rd, root_cats in sorted(blob_roots.items())
         ]
 
     if eml:

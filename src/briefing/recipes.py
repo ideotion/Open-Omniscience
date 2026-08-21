@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from src.briefing.card import Card
 
@@ -374,7 +375,7 @@ def source_candidates_waiting(session) -> list[Card]:
     ]
 
 
-RECIPE_PRODUCERS: tuple[tuple[str, object], ...] = (
+RECIPE_PRODUCERS: tuple[tuple[str, Any], ...] = (
     ("promises_due", promises_due),
     ("edit_war_burst", edit_war_burst),
     ("region_gone_quiet", region_gone_quiet),

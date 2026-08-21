@@ -14,6 +14,7 @@ pure layer). A source that isn't there is simply absent, never faked.
 from __future__ import annotations
 
 from datetime import date
+from typing import Any, cast
 
 from src.timemap import year_float
 from src.timemap.anchors import load_anchors
@@ -101,7 +102,7 @@ def article_mentions_to_signals(
         if not g:
             continue
         title = (r.get("title") or "").strip() or "(untitled article)"
-        anchor = r.get("published")
+        anchor: Any = r.get("published")
         anchor = anchor.date() if hasattr(anchor, "date") and not isinstance(anchor, date) else anchor
         for c in extract_dates(
             r.get("content") or "",
@@ -216,7 +217,8 @@ def collect(
     for s in signals:
         if kinds and s.get("kind") not in kinds:
             continue
-        if not _in_window(s.get("t"), start, end):
+        # Every signal source guarantees "t" -- the sort below indexes it directly.
+        if not _in_window(cast(float, s.get("t")), start, end):
             continue
         out.append(s)
     out.sort(key=lambda s: s["t"])

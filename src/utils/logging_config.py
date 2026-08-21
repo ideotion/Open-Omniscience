@@ -38,7 +38,9 @@ AUDIT_DIR = Path(__file__).parent.parent.parent / "audit"
 AUDIT_DIR.mkdir(exist_ok=True, parents=True)
 
 
-def setup_logging(name: str, log_file: str = None, level: int = logging.INFO) -> logging.Logger:
+def setup_logging(
+    name: str, log_file: str | None = None, level: int = logging.INFO
+) -> logging.Logger:
     """
     Set up a logger with file and console handlers.
 
@@ -89,7 +91,7 @@ def setup_logging(name: str, log_file: str = None, level: int = logging.INFO) ->
     return logger
 
 
-def log_audit_trail(action: str, details: dict, user: str = None):
+def log_audit_trail(action: str, details: dict, user: str | None = None):
     """
     Log an action to the central audit trail file.
 

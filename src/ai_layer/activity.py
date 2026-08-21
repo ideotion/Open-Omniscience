@@ -235,7 +235,7 @@ def _source_tags_activity(directory: Path, *, tail_bytes: int, recent: int) -> d
     records = read_tail_records(log, tail_bytes=tail_bytes)
     batches = [r for r in records if r.get("schema") == "oo-source-tags-batch-1"]
     out["rates"] = rates_from_batches(batches, item_key="sources_in")
-    found = []
+    found: list[dict] = []
     for rec in reversed(records):
         if rec.get("schema") != "oo-source-tags-detail-1" or len(found) >= recent:
             continue

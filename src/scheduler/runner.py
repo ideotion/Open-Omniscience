@@ -673,9 +673,13 @@ def run_scrape_once(
 
     # Law mode tracks watched legal documents (baseline/diff/flag), not sources.
     if settings.mode == "law":
-        from src.law.track import track_watched
+        # Aliased: src.wiki.track exports a `track_watched` too, with a different
+        # signature, and this function already imports that one for the wiki branch.
+        # Python rebinds per import at runtime, so both calls worked -- but one name
+        # for two functions is a trap for the next reader as much as for the checker.
+        from src.law.track import track_watched as track_watched_law
 
-        res = track_watched(session, fetcher, limit_documents=settings.max_sources_per_run)
+        res = track_watched_law(session, fetcher, limit_documents=settings.max_sources_per_run)
         finished = datetime.now(UTC)
         return {
             "mode": "law",

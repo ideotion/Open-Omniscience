@@ -114,7 +114,9 @@ class CoordinationResult:
         }
 
 
-def _median(values: list[float]) -> float | None:
+def _median(values: list[float | None]) -> float | None:
+    # The body has always filtered None (span_hours is Optional -- "None if
+    # unknown"), so Optional is what this takes; the annotation said otherwise.
     vals = sorted(v for v in values if v is not None)
     if not vals:
         return None
@@ -179,7 +181,12 @@ def detect_coordination(
             source_events.setdefault(s, []).append(ev)
         for i in range(len(ev.sources)):
             for j in range(i + 1, len(ev.sources)):
-                key = tuple(sorted((ev.sources[i], ev.sources[j])))
+                # An explicit ordered PAIR rather than tuple(sorted(...)): the two
+                # are identical for two elements, but sorted() returns a variadic
+                # tuple[str, ...] which is not the tuple[str, str] this dict is keyed
+                # by. Same key, same order, stated arity.
+                s_i, s_j = ev.sources[i], ev.sources[j]
+                key = (s_i, s_j) if s_i <= s_j else (s_j, s_i)
                 pair_counts[key] = pair_counts.get(key, 0) + 1
 
     edges = {pair for pair, c in pair_counts.items() if c >= min_shared_stories}
@@ -205,7 +212,7 @@ def detect_coordination(
         comp_sources = sorted(comp)
         comp_events = [ev for ev in events if any(s in comp for s in ev.sources)]
         docs = sorted({d for ev in comp_events for d in ev.documents})
-        hosts = sorted({by_id[d].get("host") for d in docs if by_id[d].get("host")})
+        hosts = sorted({h for d in docs if (h := by_id[d].get("host"))})
         actors.append(
             Actor(
                 sources=comp_sources,

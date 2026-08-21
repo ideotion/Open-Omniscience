@@ -80,7 +80,14 @@ class SourceManager:
         """Close the session if it was created by this manager."""
         if self._owns_session and self.session:
             self.session.close()
-            self.session = None
+            # Deliberately narrow: `self.session` is a live Session for the whole
+            # useful life of the manager, and every one of the ~50 query sites
+            # relies on that. Nulling it here is a use-after-close TRIPWIRE (the
+            # next call raises instead of querying a closed session), not a
+            # legitimate state the rest of the class must narrow for -- widening
+            # the attribute to `Session | None` would push ~50 union-attr errors
+            # onto correct code to describe a state it never sees.
+            self.session = None  # type: ignore[assignment]
 
     def __enter__(self):
         """Context manager entry."""
@@ -104,7 +111,7 @@ class SourceManager:
         """Get a source by its name."""
         return self.session.query(Source).filter_by(name=name).first()
 
-    def get_all_sources(self, limit: int = None, offset: int = 0) -> list[Source]:
+    def get_all_sources(self, limit: int | None = None, offset: int = 0) -> list[Source]:
         """Get all sources with optional pagination."""
         query = self.session.query(Source)
         if limit:
@@ -383,7 +390,7 @@ class SourceManager:
         """Get a group by its name."""
         return self.session.query(SourceGroup).filter_by(name=name).first()
 
-    def get_all_groups(self, limit: int = None, offset: int = 0) -> list[SourceGroup]:
+    def get_all_groups(self, limit: int | None = None, offset: int = 0) -> list[SourceGroup]:
         """Get all groups with optional pagination."""
         query = self.session.query(SourceGroup)
         if limit:
@@ -871,7 +878,9 @@ class SourceManager:
 
     # ==================== SOURCE DISCOVERY ====================
 
-    def discover_rss_feeds(self, source_ids: list[int] = None, timeout: int = 10) -> list[dict]:
+    def discover_rss_feeds(
+        self, source_ids: list[int] | None = None, timeout: int = 10
+    ) -> list[dict]:
         """
         Discover RSS feeds for sources that don't have them.
 
@@ -935,7 +944,7 @@ class SourceManager:
         return DuckDuckGoSearch.discover_sources_by_topic(topic, max_sources, **kwargs)
 
     def add_discovered_sources(
-        self, discovered_sources: list[dict], group_name: str = None
+        self, discovered_sources: list[dict], group_name: str | None = None
     ) -> list[Source]:
         """
         Add discovered sources to the database.
@@ -1041,7 +1050,7 @@ class SourceManager:
         logger.info(f"Imported sources: {added} added, {updated} updated, {skipped} skipped")
         return {"added": added, "updated": updated, "skipped": skipped}
 
-    def export_sources_to_yaml(self, file_path: str, group_id: int = None) -> int:
+    def export_sources_to_yaml(self, file_path: str, group_id: int | None = None) -> int:
         """
         Export sources to a YAML file.
 
@@ -1104,7 +1113,7 @@ class SourceManager:
             priority_counts[f"priority_{priority}"] = count
 
         # Count by tags
-        all_tags = {}
+        all_tags: dict[str, int] = {}
         sources = self.session.query(Source).all()
         for source in sources:
             if source.tags:

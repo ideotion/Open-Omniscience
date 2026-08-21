@@ -502,14 +502,16 @@ def keyword_log(
 
             # Article -> source, the same codec-free way (covering index on
             # source_id), for the per-source concentration diagnostic below.
-            art_src: dict[int, int] = dict(
-                db.execute(text("SELECT id, source_id FROM articles")).fetchall()
-            )
-            src_articles: dict[int, int] = dict(
-                db.execute(
+            art_src: dict[int, int] = {
+                aid: sid
+                for aid, sid in db.execute(text("SELECT id, source_id FROM articles")).fetchall()
+            }
+            src_articles: dict[int, int] = {
+                sid: n
+                for sid, n in db.execute(
                     text("SELECT source_id, COUNT(*) FROM articles GROUP BY source_id")
                 ).fetchall()
-            )
+            }
 
             # Dominant signature language per keyword from ONE index-only scan
             # of (keyword_id, article_id), ordered so each keyword's counts can
@@ -597,9 +599,10 @@ def keyword_log(
 
             # Stored-language fallback for keywords with no mentions (kept from
             # the previous contract: they export with zero counts, quota applies).
-            stored_lang: dict[int, str | None] = dict(
-                db.execute(text("SELECT id, language FROM keywords")).fetchall()
-            )
+            stored_lang: dict[int, str | None] = {
+                kid: lang
+                for kid, lang in db.execute(text("SELECT id, language FROM keywords")).fetchall()
+            }
 
             # Totals, mentions-desc — from the ONE mention scan above (no second
             # GROUP BY scan); the quota decides survivors ON THE FLY, so the
@@ -688,11 +691,12 @@ def keyword_log(
             sids = sorted({s["source_id"] for s in suspects})
             if sids:
                 marks = ",".join(str(int(i)) for i in sids)
-                src_names = dict(
-                    db.execute(
+                src_names = {
+                    sid: name
+                    for sid, name in db.execute(
                         text(f"SELECT id, name FROM sources WHERE id IN ({marks})")  # nosec B608 - interpolant is a joined list of int()-cast ids built in this function, never input
                     ).fetchall()
-                )
+                }
             per_source_concentration = [
                 {
                     "term": meta.get(s["keyword_id"], ("?",))[0],

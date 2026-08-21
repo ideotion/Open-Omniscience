@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import logging
+from typing import Any
 
 from src.integrity.actors import corpus_actors
 from src.signals.near_dup import near_duplicate_clusters
@@ -219,7 +220,7 @@ def story_prominence(
         # with the same key used to populate novelty_of above (F-002: a string sort here
         # vs an int sort there mis-keyed the lookup, defaulting novelty to 1.0).
         rep = min(members, key=int)
-        item = {
+        item: dict[str, Any] = {
             "representative": rep,
             "title": title_of[rep],
             "articles": len(members),
