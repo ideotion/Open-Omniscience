@@ -10,6 +10,7 @@ root; none are needed for normal app use. Network-touching scripts say so.
 | `seed_sources.py` | Seed the curated source catalogs into the DB (idempotent). | no |
 | `catalog_coverage_report.py` | The 0.0.9 catalog-balance acceptance metric: global + per-region coverage vs `configs/catalog_targets.yml`, named gaps, concentration guards. | no |
 | `build_world_news_catalog.py` | Generate `configs/world_news_sources.yml` from Wikidata per country (see the runbook in `docs/ROADMAP.md`). | Wikidata |
+| `verify_worldbank_indicators.py` | Check every curated World Bank indicator code in `src/stats/indicators.py` against the live API — reports `OK` / `EMPTY` (valid code, this area does not report it) / `DEAD-INVALID` (the API rejected the code) and refuses the `fetched` tier when the URL served differs from the one requested. Needs `api.worldbank.org` reachable — see the STATUS block in `docs/design/INTERNET_SESSION_PROMPT_2026-08-07_GOVERNMENTS_DATA.md`. | World Bank API |
 | `build_city_gazetteer.py` | Build the bundled city gazetteer. | Wikidata |
 | `build_world_outline.py` | Rebuild the bundled Natural-Earth coastline outline. | download |
 | `i18n_report.py` | Locale completeness report; `--audit-chrome` diffs every UI text node against `en.json` (the long-tail number). | no |

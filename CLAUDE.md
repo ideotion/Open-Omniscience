@@ -4513,6 +4513,22 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   WB indicator codes live · confirm the shape of WB page 1 · the BRICS Joint Statistical
   Publication · AfDB/UNECA continental endpoints · OECD/IMF SDMX message-version verification ·
   bloc membership sourcing with dates.
+  **⚠ TWO ROUTES WORK AND NEITHER IS ANOTHER SANDBOXED SESSION: one egress allowlist entry, or
+  the operator's own networked machine. A fourth attempt in a sandbox before that is knowably
+  wasted (2026-08-20, re-run #3).** Three sessions have now failed this list
+  through three different tool surfaces — unreachable API (08-07), URLs that could not be built
+  and were silently substituted (08-13), and refusal at the TCP layer in a full shell (08-20) —
+  so the variable was never the prompt. The gateway is an ALLOWLIST: `pypi.org`/`github.com`
+  pass; `api.worldbank.org`, `data.worldbank.org`, `sdmx.oecd.org`, `api.imf.org`,
+  `www.legislation.gov.uk`, `www.afdb.org`, `data.uneca.org`, `au.int`, `www.opec.org`,
+  `asean.org`, `www.nato.int`, `en.wikipedia.org` all answer `CONNECT` 403 with
+  `"selective": false` (a global policy no tool routes around). Adding those hosts unblocks the
+  Governments list AND the law vertical's S6 adapter shapes at once. The WB half is then ONE
+  command — `scripts/verify_worldbank_indicators.py` checks all 36 catalog codes, refuses the
+  `fetched` tier on a served-vs-requested URL mismatch, and separates a wrong code from an area
+  that simply does not report it. The bloc rosters (Task 4) still want their own session with
+  live fetch: the search channel that DOES work returned four incompatible Saudi-in-BRICS states
+  in one query — see the interested-party lesson in Session rituals.
 - **MERGE STEP 3 IS STILL UNEXPLAINED — and the leading hypothesis is now REFUTED, so do
   not re-chase it (2026-08-06, from the field beat ring of `imp-20260805T032610Z-477e83`):**
   a second 24 h import died at the same place. WHAT THE BEAT PROVES: the merge entered step
@@ -12376,6 +12392,35 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     OECD's own documented example passes `AllDimensions` — so `ref_area`/`series_id` must be
     looked up at observation level as well as series level, exactly as `unit`/`adjustment`
     already were.
+  - **THE PUBLISHER'S OWN PAGE IS AN INTERESTED PARTY FOR A MEMBERSHIP FACT — and when
+    three sessions fail the same task through three different tools, stop rewriting the
+    prompt and characterise the ENVIRONMENT (2026-08-20, the Governments/law networked
+    pass):** two things from one blocked session, and the second is the one that keeps
+    being paid for. (a) The tier model calls `search-verified` "stated on the publisher's
+    own page", which is normally the strong tier. For a MEMBERSHIP or affiliation fact the
+    organisation is a PARTY to the claim: one search returned four mutually incompatible
+    states for Saudi Arabia in BRICS — joined 2024-01-01, *"the BRICS website shows Saudi
+    Arabia as a member, it has yet to join, according to sources with direct knowledge"*,
+    "still assessing" (Bloomberg 2025-01), and joined 2025-07 — with the bloc's OWN page
+    the most confident and the least reliable, because it has an incentive to count an
+    invitee. So a roster page corroborates membership and cannot settle a CONTESTED one;
+    that needs the acceding state's own statement, and where none exists the honest answer
+    is permanently UNVERIFIED rather than a to-do for a better search. The general form: ask
+    who BENEFITS from the fact before treating its publisher as authoritative on it.
+    (b) The same session was briefed as "on a networked machine" and reached none of its 14
+    publisher hosts — an allowlist gateway, `pypi.org` and `github.com` through, every
+    publisher refused at `CONNECT` with `"selective": false`, i.e. a policy no tool in the
+    session can route around. That is the THIRD consecutive failure of the same task through
+    a third tool surface (2026-08-07 could not reach the API; 2026-08-13 could not construct
+    the URLs and was silently served the wrong ones; 2026-08-20 was refused at the TCP
+    layer). Each session had reasoned about its own tooling and written a better prompt for
+    the next one. The variable was never the prompt, and the cheap test that would have said
+    so at the START of any of them is four seconds of `curl -o /dev/null -w '%{http_code}'`
+    against the target hosts, plus one against a host known to work so a total failure is
+    distinguishable from a blocked one. Do that probe FIRST in any session whose value
+    depends on reaching a named external host, and report a convergence as a finding about
+    the environment — with the per-host evidence an operator can act on — rather than as
+    another failed attempt.
 - **A CONTAINMENT GUARD WRITTEN AS A STRING PREFIX CLAIMS THE SIBLINGS TOO — and when the
   guard decides what may be DELETED, that is the whole safety property (2026-08-13, the
   AI-uninstall ownership test):** `_owned_by_app` is the single gate deciding what the new

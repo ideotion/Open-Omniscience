@@ -230,6 +230,22 @@ name the changed articles. **Acceptance per adapter: enumerate a real collection
 acts as corpus Articles, a re-fetch is idempotent, a changed consolidated version produces a
 revision; negative-space tests (malformed XML, empty act, robots-blocked) pinned.**
 
+
+> **S6 STATUS 2026-08-20 — the adapter SHAPES are still unverified, and a networked
+> session cannot currently fix that.** A pass tasked with fetching the
+> `legislation.gov.uk` data-API forms (CLML `/data.xml`, point-in-time `/{date}/data.xml`,
+> the `data.feed` enumeration endpoints, robots posture) found `www.legislation.gov.uk`
+> EGRESS-DENIED at the gateway — `CONNECT` refused with 403, the same global allowlist
+> policy that blocks `api.worldbank.org`, `sdmx.oecd.org` and `api.imf.org`. Evidence and
+> the per-host table are in the 2026-08-20 STATUS block of
+> `docs/design/INTERNET_SESSION_PROMPT_2026-08-07_GOVERNMENTS_DATA.md`.
+>
+> This does NOT change S6's own rule — an adapter's endpoints must be LIVE-VERIFIED by the
+> session that commits them, never search-verified — so building the UK adapter is still
+> gated on the same allowlist entry the Governments work needs. Add
+> `www.legislation.gov.uk` to it at the same time; the two lanes are blocked on one thing.
+
+
 ### S7 — Gazettes as streams (P2) — size S
 Verify (live) which seeded legal portals expose real RSS/Atom (BOE, Dziennik Ustaw, Federal
 Register, EUR-Lex OJ daily…), fix their `Source` rows to carry the working feed URL, and confirm
