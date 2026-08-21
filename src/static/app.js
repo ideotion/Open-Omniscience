@@ -5618,6 +5618,7 @@
     const _LAW_VERDICT_PILL = {
       never_checked: "", robots_blocked: "warn", error: "warn", empty: "warn",
       changed: "ok", reverted: "", baselined: "ok", unchanged: "", other: "",
+      re_extracted: "ok",
     };
     function lawVerdictBadge(x) {
       const tr = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
@@ -5625,7 +5626,7 @@
         never_checked: tr("not checked yet"), robots_blocked: tr("robots-blocked"),
         error: tr("fetch error"), empty: tr("no usable text"), changed: tr("changed"),
         reverted: tr("reverted"), baselined: tr("baselined"), unchanged: tr("unchanged"),
-        other: tr("other"),
+        other: tr("other"), re_extracted: tr("re-read by us"),
       };
       const cls = _LAW_VERDICT_PILL[x.verdict] || "";
       const label = labels[x.verdict] || x.verdict;

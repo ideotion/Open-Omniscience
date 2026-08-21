@@ -2248,6 +2248,7 @@
   "reverted": "zurückgesetzt",
   "baselined": "Basisversion erfasst",
   "unchanged": "unverändert",
+  "re-read by us": "von uns neu gelesen",
   "Never fetched yet.": "Noch nie abgerufen.",
   "Legal changes": "Rechtsänderungen",
   "Track a document by URL": "Ein Dokument per URL verfolgen",

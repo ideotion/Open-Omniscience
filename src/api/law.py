@@ -43,6 +43,12 @@ def _verdict_of(last_status: str | None) -> str:
         return "error"
     if "no usable text" in s or "too short" in s or s.startswith("empty") or "scanned" in s:
         return "empty"
+    if s.startswith("re-read with"):
+        # The strip stage re-read this document's own baseline: the extractor changed,
+        # the law did not. Without this it fell through to "other" -- so the one outcome
+        # that means ruling 35 SUCCEEDED read as the one that means we do not know what
+        # happened, on exactly the surface built to show whether it had.
+        return "re_extracted"
     if s.startswith("changed ("):
         return "changed"
     if "reverted" in s:

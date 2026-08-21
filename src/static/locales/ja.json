@@ -2248,6 +2248,7 @@
   "reverted": "復元済み",
   "baselined": "ベースライン取得済み",
   "unchanged": "変更なし",
+  "re-read by us": "当方で再読み取り",
   "Never fetched yet.": "まだ取得されていません。",
   "Legal changes": "法令の変更",
   "Track a document by URL": "URLでドキュメントを追跡",

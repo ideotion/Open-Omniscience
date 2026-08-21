@@ -2204,6 +2204,62 @@ Run it from the **Governments tab → Law subtab** ("Track changes now") or on t
 background scheduler (`law` mode). All fetching is through the **ethical,
 robots-fail-closed** path.
 
+### Reading a law from the publisher's own XML (structured sources)
+
+A web page has to be *reconstructed* into text: strip the navigation, the search form,
+the cookie banner, and hope what is left is the Act. That works, and it is what the
+tracker does for most sources — but the stored copy of one UK Act once opened with the
+portal's own search form, and everything derived from it (a "Personal Acts" person, a
+"PART" organisation) came from text that was never in the Act.
+
+Where a publisher serves its **own XML**, none of that applies: there is no page chrome
+in the file, because the file is not a page. Open Omniscience can read
+`legislation.gov.uk`'s CLML directly, which additionally gives two things a page cannot:
+
+- **Provisions with citable addresses.** Each section is read with the Part/Chapter path
+  above it, so a change can be reported as *"section 12 of Part 2 changed"* rather than
+  as a count of bytes. Sections are matched by that address and never by position —
+  otherwise inserting one section would report the whole rest of the Act as amended.
+- **Dates that mean what they say.** Enactment, consolidation point, and the date *we*
+  fetched it are three separate fields with no fallback between them. A date the document
+  does not state is shown as unknown, never filled in from another one. (This is why a
+  tracked law shows no publication date unless the document itself supplies one: the only
+  date available was the day we polled the page, and a poll date is not a publication
+  date.)
+
+The per-section comparison is **additive and experimental**: the ordinary text diff still
+decides whether a revision is recorded and still carries the large-change flag. And one
+limit is stated rather than smoothed over — a section that is *renumbered and rewritten*
+in the same amendment is reported as one removal plus one addition, because matching it to
+its former self would mean guessing which of two differently-numbered sections is "the
+same one, edited".
+
+**What is not there yet:** nothing yet fetches those XML documents automatically. Reading
+a jurisdiction's full legal corpus means walking the publisher's own list of it (the UK
+lists every Act; France lists 76 codes), and that enumeration is not built. Until it is,
+the tracked set stays the curated one, and the coverage report honestly says
+"coverage unknown" rather than presenting a tracked-document count as if it were the
+whole corpus.
+
+### Checking that the law fixes reached your data
+
+Two law fixes heal **quietly, on a document's next successful fetch**: page chrome is
+re-read out of a stored baseline, and a publication date that was really a poll date is
+cleared. Both are correct — and a document whose portal is unreachable never heals, which
+is exactly the case worth knowing about.
+
+The **law-ingest** report (in the all-diagnostics bundle, or on its own) answers that from
+stored data with no network call: how many tracked documents have had the re-read, how
+many are still waiting, and whether any law article still carries a publication date it
+should not.
+
+It also reports **chrome residue** — navigation text still present in a stored body. Read
+that as a *measurement*, not a verdict: the chrome strip deliberately removes only what
+the markup declares to be chrome and leaves the rest, because a text-matching rule would
+also delete an Act's own section headings. Residue after a correct re-read is expected;
+the number tells you how much undeclared chrome is in your corpus, and the marker list is
+a floor, so zero means "none of these", never "no chrome".
+
 ### Briefing cards from the law corpus
 
 - **Law changed** (watch) — a flagged change to a tracked legal document.
@@ -2233,8 +2289,10 @@ keyword analytics work over it like any other source.
   each is respected, attributed, with provenance stored, robots fail-closed (as for news).
 - **Scope honestly.** "Every country" is the north star, not v1: the catalog is broad but
   curated, and change-tracking is by normalised-text diff (consolidated-text portals give
-  the cleanest signal). Structured formats (Akoma Ntoso / ELI) per-edit diffs are the next
-  refinement; the tool says which it has.
+  the cleanest signal). Where a publisher serves structured XML, per-section diffs are
+  available (see above) — CLML today; Akoma Ntoso / ELI are not yet read. The tool says
+  which it has for each document, and refuses to guess: a document it cannot parse
+  structurally keeps the text diff rather than being reported as if it had sections.
 - **Translation** (via the local LLM) is a separate, clearly-labelled aid — never an
   authoritative legal translation.
 
