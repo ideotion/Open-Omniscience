@@ -189,11 +189,12 @@ pqc = [
     # Upper-bounded on purpose. pqcrypto 1.0.0 (2026-08-15) is a breaking API change:
     # ``generate_keypair`` became ``keygen`` and the module now returns ``PublicKey`` /
     # ``SecretKey`` objects rather than raw bytes, so src/custody/signing.py — which
-    # PERSISTS those keys — needs a reviewed migration, not a rename. With no upper
-    # bound CI resolved 1.0.0 the moment it shipped and every signing test failed with
-    # AttributeError. Verified here: <1.0 resolves to 0.4.0, which has generate_keypair
-    # and completes a sign/verify round trip. Lifting this bound means doing the
-    # migration per docs/maintenance/EXTERNAL_DEPENDENCIES.md, not just widening it.
+    # PERSISTS those keys — needs a reviewed migration, not a rename (old 0.x keys must
+    # still verify). With no upper bound CI resolved 1.0.0 the moment it shipped and every
+    # signing test failed with AttributeError. Verified here: <1.0 resolves to 0.4.0, which
+    # has generate_keypair and completes a sign/verify round trip. Same unpinned-tool drift
+    # class as the bandit/mypy pins. Lifting this bound means doing the migration per
+    # docs/maintenance/EXTERNAL_DEPENDENCIES.md, not just widening it.
     "pqcrypto>=0.3.4,<1.0",
 ]
 
@@ -293,6 +294,54 @@ ignore = [
     "B008",   # Depends() in arg defaults is the idiomatic FastAPI pattern
     "UP042",  # (str, Enum) is intentional for JSON-serialisable enums
 ]
+
+# E402 (import-not-at-top) carve-out for the LEGACY HEADER PATTERN only (MAINT-02
+# remainder, quality-ratchet session 2026-08-20): these files open with the GPL
+# header as one string literal followed by a SECOND bare module-description
+# string (plus, in a few, an early setup_logging()/sys.path line the mock
+# targets of older tests depend on), so every import after it flags E402 — 164
+# findings, a third of the advisory lane, none of them actionable without
+# rewriting file headers across the tree. The list is CLOSED and was generated
+# from measurement, not intent: it may only SHRINK (merge a file's two header
+# strings into one docstring and delete its line here). New files put imports
+# at the top and never join it — E402 stays live for the other ~440 files.
+[tool.ruff.lint.per-file-ignores]
+"src/__init__.py" = ["E402"]
+"src/ai_layer/extract.py" = ["E402"]
+"src/analysis/confidence_intervals.py" = ["E402"]
+"src/analysis/statistical_tests.py" = ["E402"]
+"src/api/keyword_analysis.py" = ["E402"]
+"src/api/keyword_management.py" = ["E402"]
+"src/api/main.py" = ["E402"]
+"src/api/source_management.py" = ["E402"]
+"src/crypto/__init__.py" = ["E402"]
+"src/crypto/merkle_tree.py" = ["E402"]
+"src/crypto/provenance.py" = ["E402"]
+"src/database/models.py" = ["E402"]
+"src/database/source_manager.py" = ["E402"]
+"src/ingest/pipeline.py" = ["E402"]
+"src/services/__init__.py" = ["E402"]
+"src/services/article_intelligence.py" = ["E402"]
+"src/services/duckduckgo.py" = ["E402"]
+"src/services/keyword_extractor.py" = ["E402"]
+"src/services/link_analyzer/extractor.py" = ["E402"]
+"src/services/stopwords.py" = ["E402"]
+"src/services/text_processor.py" = ["E402"]
+"src/utils/__init__.py" = ["E402"]
+"src/utils/cache.py" = ["E402"]
+"src/utils/compression.py" = ["E402"]
+"src/utils/logging_config.py" = ["E402"]
+"src/utils/security.py" = ["E402"]
+"src/utils/url_utils.py" = ["E402"]
+"tests/test_cache.py" = ["E402"]
+"tests/test_confidence_intervals.py" = ["E402"]
+"tests/test_duckduckgo.py" = ["E402"]
+"tests/test_merkle_tree.py" = ["E402"]
+"tests/test_provenance.py" = ["E402"]
+"tests/test_security.py" = ["E402"]
+"tests/test_source_manager.py" = ["E402"]
+"tests/test_statistical_tests.py" = ["E402"]
+"tests/test_url_utils.py" = ["E402"]
 
 [tool.mypy]
 python_version = "3.13"

@@ -26,7 +26,7 @@ _MAIN = (_API / "main.py").read_text(encoding="utf-8")
 _WIRING = (_API / "_wiring.py").read_text(encoding="utf-8")
 
 # A spread of routers that must be wired (their modules + a known GET path each).
-_SPINE = ["system", "briefing", "scheduler", "wiki", "jobs", "unlock",
+_SPINE = ["system", "briefing", "scheduler", "wiki", "jobs", "unlock", "llm",
           "source_management", "search_omni", "timemap", "reporting", "custody", "safety", "library"]
 
 
@@ -48,6 +48,15 @@ def test_wiring_module_imports_and_includes_each_router():
     assert "from src.api.commodity import router" in _WIRING, (
         "_wiring must preserve the optional [analysis] router block"
     )
+    # The other two optional-[analysis] routers (framing / keyword_management) are
+    # anchored the same way as commodity — they cannot join _SPINE because a
+    # core-only install legitimately does not mount them.
+    assert "from src.api.framing import router" in _WIRING, (
+        "_wiring must import the optional framing router"
+    )
+    assert "from src.api.keyword_management import router" in _WIRING, (
+        "_wiring must import the optional keyword_management router"
+    )
 
 
 def test_every_wired_router_defines_routes():
@@ -62,5 +71,6 @@ def test_wired_endpoints_dispatch_not_404():
     endpoint from several routers dispatches (any status but 404 = the route exists).
     This is an HTTP call through the app (robust), not an app.routes singleton read."""
     c = TestClient(app)
-    for path in ("/api/scheduler/status", "/api/system/network", "/api/briefing"):
+    for path in ("/api/scheduler/status", "/api/system/network", "/api/briefing",
+                 "/api/llm/prompts"):
         assert c.get(path).status_code != 404, f"{path} is not wired (got 404)"
