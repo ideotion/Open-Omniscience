@@ -18,10 +18,13 @@ import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.catalog import aggregates as aggs
 from src.catalog import blocs
-from src.catalog.countries import to_iso2, to_iso3
+from src.catalog.countries import classify_ref_area, to_iso2, to_iso3
+from src.database.models import StatFigure as StatFigureRow
 from src.database.session import get_db, session_scope
 from src.jobs.background import BackgroundJob, register_job
 from src.stats import aggregate
@@ -212,6 +215,50 @@ def group_aggregate(
     return {"group": roster, "aggregate": result, "caveat": _CAVEAT}
 
 
+def _area_indicators(db: Session, ref_area: str, history: int) -> dict:
+    """Every curated indicator for ONE ref_area — a country OR a published aggregate.
+
+    The shape is identical for both because the DATA is identical: a producer's stored
+    series either way. What differs is the claim the caller is making about the area, and
+    that is the caller's to state — which is why this helper does not guess a `kind`.
+    """
+    figs = _figures(db, ref_area=ref_area)
+    by_series: dict[str, list[dict]] = {}
+    for f in figs:
+        by_series.setdefault(f.get("series_id") or "", []).append(f)
+    out: list[dict] = []
+    shown = max(1, history)
+    truncated: list[str] = []
+    for meta in ind.INDICATOR_CATALOG:
+        rows = sorted(
+            (f for f in by_series.get(meta["id"], []) if f.get("time_period")),
+            key=lambda f: str(f["time_period"]),
+        )
+        series = [{"year": str(f["time_period"]), "value": f.get("value")} for f in rows]
+        # latest = the most recent NON-NULL value (a published gap doesn't mask the value)
+        latest = next((s for s in reversed(series) if s["value"] is not None), None)
+        if len(series) > shown:
+            truncated.append(meta["id"])
+        out.append({
+            **meta,
+            "latest": latest,                       # {year, value} or None
+            # How many periods are STORED, against however many this response carries.
+            # Ruling 6 stores every year the producer publishes, and `history` is a
+            # DISPLAY bound on top of that — but a bound nobody states is indistinguishable
+            # from a producer whose series simply starts later, which is the reading a
+            # sparkline invites. The count travels in the payload rather than only in a
+            # log line, so an export can be read correctly too.
+            "series_stored": len(series),
+            "series": series[-shown:] if series else [],
+        })
+    return {
+        "indicators": out,
+        # Emitted always (the limit is a fact about this response); `truncated` is empty
+        # when nothing was cut, so a surface can only claim a shortfall that happened.
+        "history": {"limit": shown, "truncated": sorted(truncated)},
+    }
+
+
 @router.get("/country/{iso}")
 def country_data(iso: str, history: int = 30, db: Session = Depends(get_db)) -> dict:
     """All curated indicators for ONE country: the latest value + a bounded history
@@ -221,25 +268,107 @@ def country_data(iso: str, history: int = 30, db: Session = Depends(get_db)) -> 
     iso3 = to_iso3(iso) or (iso or "").strip().upper()
     if not iso3:
         raise HTTPException(status_code=422, detail="a country ISO code is required")
-    figs = _figures(db, ref_area=iso3)
-    by_series: dict[str, list[dict]] = {}
-    for f in figs:
-        by_series.setdefault(f.get("series_id") or "", []).append(f)
-    out: list[dict] = []
-    for meta in ind.INDICATOR_CATALOG:
-        rows = sorted(
-            (f for f in by_series.get(meta["id"], []) if f.get("time_period")),
-            key=lambda f: str(f["time_period"]),
+    body = _area_indicators(db, iso3, history)
+    # Ruling 1(b): an aggregate reached through the COUNTRY route is served (the figures
+    # are real and a bookmark should not 404) but never silently presented as a country.
+    # `classify_ref_area` is the three-state answer, so an unrecognised code says
+    # "unknown" rather than being promoted to a nation.
+    return {
+        "country": iso3,
+        "iso2": to_iso2(iso3),
+        "kind": classify_ref_area(iso3),
+        **body,
+        "caveat": _CAVEAT,
+    }
+
+
+_AGG_CAVEAT = (
+    "These are the World Bank's OWN published aggregates, not figures this app computed "
+    "from member countries. The Bank's regions are not continents — Sub-Saharan Africa "
+    "excludes Egypt, Libya, Tunisia, Algeria and Morocco, which it files under Middle "
+    "East & North Africa — so there is no continental-Africa figure in this lens. Use "
+    "the computed lens for one, and expect the two to differ."
+)
+
+
+@router.get("/aggregates")
+def list_aggregates(db: Session = Depends(get_db)) -> dict:
+    """The published aggregates the producer defines — the shortlist and the full set.
+
+    Ruling 32: a curated shortlist by default with "show all" behind one control, so the
+    default view is readable without hiding the rest. ``shortlist`` is a DATA flag on the
+    registry entry, not a ranking, and the full list ships in the same payload — the UI
+    expands rather than re-fetching, and nothing is reachable only through a second call.
+
+    ``has_data`` reports whether this store actually holds a figure for the aggregate,
+    because "the World Bank publishes no figure for this" and "this install has not
+    fetched it yet" are different facts and a reader cannot tell them apart from an empty
+    row. It is a fact about THIS corpus, and says so.
+    """
+    # DISTINCT over the ref_area column, never a materialisation of every figure. The
+    # question is only "which areas does this store hold anything for", and reading the
+    # whole table to answer it measured 1.47 s against 51k rows on a synthetic corpus —
+    # a cost that tracks the corpus, so a full World Bank load (~640k figures) makes the
+    # listing unusable. This rides the existing `ix_stat_figures_series` / uniqueness
+    # index as an index-only scan and needs no migration.
+    held = {
+        (row[0] or "").upper()
+        for row in db.execute(select(StatFigureRow.ref_area).distinct()).all()
+    }
+    out = [
+        {
+            "code": a.iso3,
+            "iso2": a.iso2,
+            "name": a.name,
+            "group": a.group,
+            "shortlist": a.shortlist,
+            "has_data": a.iso3.upper() in held,
+        }
+        # Only aggregates that denote SOMEWHERE: the residual "not classified" bucket is
+        # a real code but not a place, and listing it beside World reads as one.
+        for a in aggs.place_aggregates()
+    ]
+    return {
+        "aggregates": out,
+        "groups": [g for g in aggs.GROUPS if g not in aggs.NON_PLACE_GROUPS],
+        "as_of": aggs.WB_AGGREGATES_AS_OF,
+        "caveat": _AGG_CAVEAT,
+    }
+
+
+@router.get("/aggregate/{code}")
+def aggregate_data(code: str, history: int = 30, db: Session = Depends(get_db)) -> dict:
+    """Every curated indicator for ONE published aggregate — the producer's own figure.
+
+    Refuses a COUNTRY code with 404 rather than serving it. The country route tolerates
+    an aggregate because the figures there are real and only the label would be wrong;
+    this direction is not symmetric — answering "France" here would present a nation as
+    a published aggregate, which is a claim about what the producer publishes and is
+    simply false. An unknown code is refused for the same reason.
+    """
+    raw = (code or "").strip()
+    entry = aggs.aggregate_of(raw)
+    if entry is None:
+        kind = classify_ref_area(raw)
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"{raw!r} is a country, not a published aggregate"
+                if kind == "country"
+                else f"unknown aggregate: {raw!r}"
+            ),
         )
-        series = [{"year": str(f["time_period"]), "value": f.get("value")} for f in rows]
-        # latest = the most recent NON-NULL value (a published gap doesn't mask the value)
-        latest = next((s for s in reversed(series) if s["value"] is not None), None)
-        out.append({
-            **meta,
-            "latest": latest,                       # {year, value} or None
-            "series": series[-max(1, history):] if series else [],
-        })
-    return {"country": iso3, "iso2": to_iso2(iso3), "indicators": out, "caveat": _CAVEAT}
+    body = _area_indicators(db, entry.iso3, history)
+    return {
+        "code": entry.iso3,
+        "iso2": entry.iso2,
+        "name": entry.name,
+        "group": entry.group,
+        "kind": "aggregate",
+        "as_of": aggs.WB_AGGREGATES_AS_OF,
+        **body,
+        "caveat": _AGG_CAVEAT + " " + _CAVEAT,
+    }
 
 
 class LoadStandardBody(BaseModel):
@@ -355,6 +484,99 @@ def load_standard(body: LoadStandardBody | None = None) -> dict:
 def load_standard_status() -> dict:
     """Live status of the background government-statistics load (state/progress/error)."""
     return _GOV_JOB.status()
+
+
+# --------------------------------------------------------------------------- #
+# Series-as-Articles (rulings 5, 30, 31) — the corpus half of the Governments tab
+# --------------------------------------------------------------------------- #
+
+
+def _series_corpus_worker(ctx, *, agency: str, batch: int) -> dict:
+    """Materialise stored series as corpus Articles, in bounded batches.
+
+    LOCAL ONLY — this reads the figure store and writes Articles; nothing here goes near
+    a socket, so there is no consent gate and airplane mode is irrelevant to it.
+
+    Commits per BATCH rather than per run, for the reason the load-standard worker does:
+    the single-writer gate is released between batches so collection interleaves instead
+    of waiting out a walk of ~9,800 series. Cancellable between series; because the
+    upsert is idempotent on the content hash, a cancelled run plus a re-run costs one
+    SELECT per already-materialised series and can never double-write.
+    """
+    from src.analytics.extract import BaselineExtractor
+    from src.stats import series_corpus as sc
+
+    extractor = BaselineExtractor()
+    start = 0
+    totals = {"created": 0, "updated": 0, "unchanged": 0, "skipped": 0, "examined": 0}
+    complete = False
+    with session_scope() as db:
+        total = len(sc.series_keys(db, agency=agency))
+        ctx.set_progress(done=0, total=total, detail="starting")
+        while True:
+            if ctx.stopping:
+                break
+            out = sc.sync_series_corpus(
+                db, agency=agency, extractor=extractor, limit=batch, start=start,
+                should_stop=lambda: ctx.stopping,
+            )
+            for k in totals:
+                totals[k] += out.get(k, 0)
+            db.commit()          # release the writer gate between batches
+            start = out["next_start"]
+            ctx.set_progress(done=start, total=out["total_series"],
+                             detail=f"{start} of {out['total_series']} series")
+            if out.get("complete") or out["examined"] == 0:
+                complete = bool(out.get("complete"))
+                break
+    return {
+        "agency": agency,
+        **totals,
+        # Honest: did it walk the whole set, or stop early? A cancelled run says so
+        # rather than reporting the tally it happened to reach as a finished one.
+        "complete": complete,
+        "caveat": (
+            "Each series is one Article under the `statistics` provenance class, so it "
+            "is searchable and filterable like any other — and can be excluded from a "
+            "corpus-wide figure that should not contain it. " + _CAVEAT
+        ),
+    }
+
+
+_SERIES_CORPUS_JOB = register_job(
+    BackgroundJob(
+        "governments-series-corpus", "Indexing statistics series into the corpus",
+        _series_corpus_worker, is_writer=True, cancellable=True,
+    )
+)
+
+
+class SeriesCorpusBody(BaseModel):
+    agency: str = "worldbank"
+    batch: int = 100
+
+
+@router.post("/series-corpus")
+def series_corpus_start(body: SeriesCorpusBody | None = None) -> dict:
+    """Index the stored statistics series into the corpus as Articles (rulings 5/30/31).
+
+    Local, no network. Idempotent: re-running over unchanged series is a no-op, so this
+    is safe to press twice and safe to schedule. Poll ``/series-corpus/status`` or the
+    task manager.
+    """
+    agency = ((body.agency if body else None) or "worldbank").strip().lower()
+    batch = max(1, min(1000, (body.batch if body else None) or 100))
+    try:
+        return {"started": True, "job": _SERIES_CORPUS_JOB.start(agency=agency, batch=batch)}
+    except RuntimeError:
+        # Already running — return the live status rather than 409 (idempotent button).
+        return {"started": False, "job": _SERIES_CORPUS_JOB.status()}
+
+
+@router.get("/series-corpus/status")
+def series_corpus_status() -> dict:
+    """Live status of the series-into-corpus indexing job."""
+    return _SERIES_CORPUS_JOB.status()
 
 
 def advance_country_data(session: Session, *, per_pass: int = 2) -> dict:

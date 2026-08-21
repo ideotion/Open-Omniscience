@@ -3062,6 +3062,68 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     "lower it when it can drop" is not a licence to lower it when it cannot, which
     would hand the next drift a free slot.
 
+  - **A TERM WHOSE COUNT EQUALS THE ARTICLE COUNT IS A FACT ABOUT THE CHANNEL, NOT ABOUT
+    THE CORPUS — and the argument FOR keeping it will already be written into the code
+    and a passing test (2026-08-20, official-statistics series as Articles):** ruling
+    5/30/31 makes each series an ordinary Article, so ~9,800 templated documents enter
+    the shared keyword index. The body carried `{agency} · {series_id}`, two facts a
+    reader might plausibly search for, once each; the module docstring said the
+    producer's name "is exactly what ruling 30 asks for" and that the code had to stay
+    because "dropping it from the body would remove it from FTS too". Measured over 1,298
+    real series with the real extractor, that line was **a THIRD of the channel's entire
+    term volume** (30,358 -> 20,372) and held ranks #1/#2/#3 — `world`, `bank`,
+    `world bank` at 1,298 each, i.e. exactly one per article. Both halves of the argument
+    were wrong differently: a per-article constant ranks by how much of ONE THING you
+    have, and the code was never searchable in the keyword index at all, because the
+    tokenizer splits `SP.DYN.LE00.IN` on its dots and indexes `dyn`/`le00`/`totl` — the
+    DEBRIS of an identifier. **THE TELL IS THE ARITHMETIC: when a term's mention count
+    equals the article count to the unit, it is scaffolding, whatever it says.** Two
+    riders. (a) **Re-measure AFTER the change, not only before:** removing the line also
+    collapsed the near-dup clustering that had motivated the audit — 9 clusters with a
+    biggest of 36 down to 7 with a biggest of 3 — so the boilerplate was MANUFACTURING
+    the similarity, not riding it, which no amount of reasoning predicted. (b) State the
+    loss and CHECK the replacement: FTS covers `title, content` only, so `?query=World
+    Bank` and `?query=SP.DYN.LE00.IN` now return 0, and `?source=…` / `?tags=statistics`
+    were each verified to return all 1,298 rather than assumed to.
+
+  - **A GUARD CAN BE READING THE PRODUCER'S OWN TEXT AND CALLING IT YOURS (2026-08-20,
+    the same slice):** stripping the metadata line left a body of bare numbers — a value
+    without its unit — so `({unit})` was appended and guarded with `"(years)" in body`.
+    The mutation that DELETES the unit **passed**, because the World Bank's own label is
+    "Life expectancy at birth (years)" (26 of the catalog's 36 read that way), so the
+    shipped code would have printed "(years) (years)" while the test read the producer's
+    parenthetical and reported success. GENERAL FORM: when your output CONCATENATES your
+    text with someone else's, a fixture in which the two are indistinguishable cannot
+    test which one produced the result — split the assertions by which source is supposed
+    to supply it. The repair also has to key on the OTHER party's convention rather than
+    a similarity heuristic: a substring check was measured and rejected because labels
+    spell units out in words while the unit field uses symbols ("current US$" vs "USD",
+    "metric tons per capita" vs "t/capita"), so it missed four of ten and re-introduced
+    the doubling on exactly those.
+
+  - **AN IDENTITY FALLBACK FOR A TEMPLATE IS A BROKEN FRAME, AND A HARNESS THAT DOUBLES
+    THE i18n HELPERS CANNOT SEE IT (2026-08-20, same slice):** a new handler opened with
+    `const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((x) => x)`, so before i18n
+    loads a `tf("{created} new · …", vars)` renders the literal `{created}` to the
+    reader — the broken frame the composite-string rule forbids. `_govTf` did it
+    correctly thirty lines up, and a grep afterwards found this was the ONLY `((x) => x)`
+    template fallback in 20,000 lines, i.e. the file's own convention was already right
+    and I had written past it. What caught it was that the node harness EXTRACTS the real
+    helpers from `app.js` rather than stubbing them; an identity double would have agreed
+    with the defect. Reach for the module's existing helper before writing a fallback,
+    and extract rather than double whatever the code under test calls.
+
+  - **A SCRIPTED CLICK IS NOT A CLICK, AND A FALSE NEGATIVE FROM ONE IS INDISTINGUISHABLE
+    FROM A DEFECT (2026-08-20, verifying the publish-anyway override):** driving the
+    control with `eval_on_selector_all("#gov-grp-body button", "els => els[0].click()")`
+    produced no request, no re-render and six standing refusals — which reads exactly
+    like "the override is broken", and the instinct on seeing it is to go and fix code
+    that is already correct. A real `page.click()` on the same selector fired it
+    immediately: `allow_incomplete=true` on the wire, all six strategies computed, and
+    the panel labelled itself `PARTIAL — members computed: 2 of 42` with the missing
+    members named. Use the framework's own click; and when a UI check fails, rule out the
+    harness before believing the finding.
+
   - **AN ENUMERATOR THAT DOES NOT LIST THE APP'S OWN DEFAULT MAKES THE APP BLIND TO ITS
     OWN WRITES — and the damage lands somewhere else entirely (2026-08-11, the Ollama
     store):** the 2026-08-04 move pointed a spawned daemon at `data/models/ollama`, and
@@ -4595,6 +4657,58 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   that simply does not report it. The bloc rosters (Task 4) still want their own session with
   live fetch: the search channel that DOES work returned four incompatible Saudi-in-BRICS states
   in one query — see the interested-party lesson in Session rituals.
+  **STATISTICS SIDE EXECUTED 2026-08-20 (branch `ideotion/inspiring-hawking-t9jsfm`, one draft
+  PR onto `main`; per-slice detail = the six 2026-08-20 `docs/ledger/shipped.csv` rows).
+  PER-RULING STATUS, so a later session does not re-derive it:**
+  • **1b + 32 — SHIPPED.** Aggregates have their own surface; `classify_ref_area` decides what
+    appears where, asserted in BOTH directions (a country surface shows zero aggregates AND the
+    aggregates view zero countries — a filter hiding only one of the two leaves the other lying).
+    Curated shortlist of 16 → "show all" 77. `GET /aggregate/{code}` 404s a country BY NAME.
+  • **4 — SHIPPED.** Two-country side by side, all indicators as aligned rows, `_govFmt` units,
+    gaps as gaps, PER-SIDE YEARS (two countries rarely share a latest year, so a bare pair would
+    silently compare 2019 against 2023). Derives nothing: no difference, ratio, ranking or winner.
+  • **43 + 44 — SHIPPED.** Every strategy side by side; refuse-by-default on incomplete coverage;
+    the publish-anyway override carries `missing_members` in the PAYLOAD, not only in the UI;
+    spread (min/max/n) beside every central figure.
+  • **45 — SHIPPED.** Membership vintage stated on every bloc surface; an unpopulated bloc renders
+    its reason with no figure.
+  • **47 — SHIPPED.** Both lenses (WB-published and computed), never blended. Extensive indicators
+    offer totals; intensive ones are REFUSED with the engine's reason, and the test proves a summed
+    percentage cannot be obtained FROM THE API rather than merely being hidden in the UI. The WB
+    lens states honestly that it has no continental-Africa figure at all.
+  • **5 + 30 + 31 — SHIPPED.** One Article per indicator×country through `index_article`, upserted
+    on the content hash, `statistics` provenance class, background job, NO schema change (so the
+    Lane-2 migration fence was never approached).
+  • **6 + 33 — ALREADY EXISTED, verified not rebuilt** (all-years storage; the ride-along).
+  • **G5 — ALREADY FIXED**, reproduced then confirmed; its guard was re-anchored onto `_govIndCard`
+    after the card renderer was hoisted, since leaving it on the old function would have reported a
+    correct gate as absent.
+  **THREE THINGS THIS SESSION FOUND THAT THE BRIEF DID NOT ASK FOR, recorded because each is a
+  defect rather than a feature:** (a) `/country/{iso3}` silently truncated history to 30 points with
+  nothing saying so — a fabricated completeness, now reported in both directions; (b) `/aggregates`
+  read every stored figure to answer "which of these has data", measured at 1.47 s in the browser and
+  replaced with a DISTINCT covering-index scan, EXPLAIN-confirmed and pinned by a statement-SHAPE
+  test rather than a timing; (c) an ALL-CAPS CSS inheritance leak and an unreadable 54-name list,
+  both found by reading pixels rather than code.
+  **THE MEASUREMENT WORTH KEEPING (the T6 skeptic lens, and it REFUTED my own first cut):** the
+  series body carried `{agency} · {series_id}` — two facts a reader might plausibly search for, once
+  each. Over 1,298 real series that line was **a THIRD of the channel's entire term volume** and
+  ranked #1/#2/#3 (`world`, `bank`, `world bank` at 1,298 each = exactly one per article, a count
+  that tracks the CHANNEL's size and nothing about the corpus). The series code was never searchable
+  in the keyword index either — the tokenizer splits `SP.DYN.LE00.IN` on its dots, so what is indexed
+  is `dyn`/`le00`, the DEBRIS of an identifier. Removing both left `gdp · total · population · rate ·
+  income · capita · expenditure · births · labour force`. **AN UNPREDICTED SECOND WIN:** it also
+  shrank the near-dup clustering that motivated the lens in the first place — 9 clusters with a
+  biggest of 36 members down to 7 with a biggest of 3 — so the boilerplate was MANUFACTURING the
+  similarity, not merely riding it. Coordination stays impossible by construction regardless (one
+  source per agency against a three-distinct-source gate; 0 clusters span even 2 sources at either
+  production threshold).
+  **REMAINING / HONEST BOARD:** every frontend slice is BROWSER-DRIVEN here (Chromium, zero page and
+  zero console errors across the six subtabs, the compare rows, both lenses, the refusal paths and
+  the new corpus control in English and French) but that is NOT the maintainer click-through —
+  "Chromium-verified (remote sandbox) · awaiting human UX pass", never field-confirmed. The
+  networked half of the 2026-08-07 rulings is untouched and still operator-gated (the list above).
+  The LAW side of the 47 rulings (34/35/36/37) is not this lane's territory and was not touched.
 - **MERGE STEP 3 IS STILL UNEXPLAINED — and the leading hypothesis is now REFUTED, so do
   not re-chase it (2026-08-06, from the field beat ring of `imp-20260805T032610Z-477e83`):**
   a second 24 h import died at the same place. WHAT THE BEAT PROVES: the merge entered step

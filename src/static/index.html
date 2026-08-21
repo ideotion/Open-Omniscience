@@ -663,6 +663,8 @@
     <div class="tab-page" id="tab-law">
       <nav class="tabs" id="gov-subtabs" role="tablist" aria-label="Governments sections">
         <button class="active" data-tab="countries">Countries</button>
+        <button data-tab="compare">Compare</button>
+        <button data-tab="groups">Groups</button>
         <button data-tab="map">Map</button>
         <button data-tab="law">Law</button>
         <button data-tab="statistics">Statistics</button>
@@ -687,6 +689,72 @@
           <div class="row"><div style="flex:1;max-width:360px"><label for="gov-country">Country</label>
             <select id="gov-country" onchange="loadGovCountry(this.value)"></select></div></div>
           <div id="gov-country-data" style="margin-top:12px"><div class="muted">Loading…</div></div>
+        </section>
+      </div>
+
+      <!-- Compare: ruling 4 (field feedback 2026-08-07) — two countries side by
+           side across every curated indicator. Display only: no figure on this
+           surface is derived, so there is nothing here to get wrong beyond showing
+           a gap as a gap. It reuses the SAME indicator grid as the Countries view
+           rather than inventing a second layout. -->
+      <div class="gov-view" id="gov-compare" style="display:none">
+        <section class="panel">
+          <div class="phead"><h2>Compare two countries</h2><span class="sp"></span></div>
+          <p class="hint">Every curated indicator for two countries, side by side, each
+            with its own latest year. Nothing here is computed or combined: a difference
+            between two producers' figures for two different years would not be a
+            comparison, so each value carries the year it was published for. Where one
+            side has no figure, that is a published gap and is shown as one — never zero.</p>
+          <div class="row">
+            <div style="flex:1;max-width:280px"><label for="gov-cmp-a">First country</label>
+              <select id="gov-cmp-a" onchange="renderGovCompare()"></select></div>
+            <div style="flex:1;max-width:280px"><label for="gov-cmp-b">Second country</label>
+              <select id="gov-cmp-b" onchange="renderGovCompare()"></select></div>
+          </div>
+          <div id="gov-cmp-body" style="margin-top:12px"></div>
+        </section>
+      </div>
+
+      <!-- Groups: rulings 32, 43, 44, 45 and 47. TWO lenses, and the split is the
+           point rather than a filing convenience — one shows the producer's OWN
+           published aggregates, the other computes from member countries and shows
+           every honest strategy side by side. They differ (World Bank "Sub-Saharan
+           Africa" excludes North Africa, so that lens has no continental-Africa
+           figure at all), which is exactly why ruling 47 asked for both. -->
+      <div class="gov-view" id="gov-groups" style="display:none">
+        <section class="panel">
+          <div class="phead"><h2>Groups of countries</h2><span class="sp"></span></div>
+          <div class="row" id="gov-lens" role="group" aria-label="Which kind of group figure">
+            <button type="button" class="secondary" data-lens="published" aria-pressed="true"
+              onclick="showGovLens('published')"
+              title="The World Bank's own published aggregates — World, the income groups, its seven regions. One figure, from the producer, exactly as published. These are NOT continents.">Published by the producer</button>
+            <button type="button" class="secondary" data-lens="computed" aria-pressed="false"
+              onclick="showGovLens('computed')"
+              title="Computed here from member countries, every strategy side by side so you can compare them rather than trust one. Continents are ours; a group with no sourced membership dates is listed and refused rather than guessed.">Computed from members</button>
+          </div>
+
+          <div id="gov-lens-published" style="margin-top:12px">
+            <p class="hint" id="gov-agg-note"></p>
+            <div class="row"><div style="flex:1;max-width:360px"><label for="gov-agg-pick">Aggregate</label>
+              <select id="gov-agg-pick" onchange="loadGovAggregate(this.value)"></select></div>
+              <div style="align-self:end"><button type="button" class="secondary tiny" id="gov-agg-all"
+                onclick="govToggleAllAggregates(this)" aria-pressed="false">Show all</button></div></div>
+            <div id="gov-agg-body" style="margin-top:12px"></div>
+          </div>
+
+          <div id="gov-lens-computed" style="display:none;margin-top:12px">
+            <p class="hint" id="gov-grp-note"></p>
+            <div class="row">
+              <div style="flex:1;max-width:300px"><label for="gov-grp-pick">Group</label>
+                <select id="gov-grp-pick" onchange="renderGovGroup()"></select></div>
+              <div style="flex:1;max-width:300px"><label for="gov-grp-ind">Indicator</label>
+                <select id="gov-grp-ind" onchange="renderGovGroup()"></select></div>
+              <div><label for="gov-grp-year">Year</label>
+                <input id="gov-grp-year" type="text" inputmode="numeric" placeholder="latest"
+                  style="max-width:110px" onchange="renderGovGroup()"></div>
+            </div>
+            <div id="gov-grp-body" style="margin-top:12px"></div>
+          </div>
         </section>
       </div>
 
@@ -792,6 +860,14 @@
         <div id="statfig-map" style="margin-top:6px"></div>
         <div style="overflow:auto;margin-top:10px" id="statfig-table"></div>
         <div style="overflow:auto;margin-top:10px" id="statfig-tri"></div>
+        <div style="margin-top:14px">
+          <div class="row" style="align-items:center;justify-content:space-between">
+            <h3 style="margin:0;font-size:12px">Add series to the corpus</h3>
+            <button class="secondary" id="statcorpus-run" onclick="runSeriesCorpus()" title="Make each stored series findable in ordinary search: one Article per indicator per country, carrying every year held. Local only -- this reads figures you already have and fetches nothing.">Add series to the corpus</button>
+          </div>
+          <p class="hint" style="margin-top:2px">A figure nobody can find is not really in your corpus. This materialises each stored series as an ordinary Article, so search, trending, Leads and the Feed reach it with no separate search box to remember. One Article per indicator per country, updated in place -- a restated figure never adds a near-copy, so running this twice costs nothing. They are labelled "Official statistics" and stay filterable in or out of any view. Local only: it reads figures already stored and makes no network request.</p>
+          <div id="statcorpus-msg" class="hint" role="status" aria-live="polite" style="margin-top:6px"></div>
+        </div>
         <div style="margin-top:14px">
           <div class="row" style="align-items:center;justify-content:space-between">
             <h3 style="margin:0;font-size:12px">Revision anomalies</h3>
