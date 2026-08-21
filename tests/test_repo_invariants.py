@@ -3467,7 +3467,13 @@ def test_agenda_merges_imported_events_as_filterable_class():
     assert "imported: true" in html, (
         "imported events must carry the imported:true provenance flag (their filterable class)"
     )
-    assert "e.imported || (e.sources" in html, "imported events must bypass the subscribed-only filter"
+    # 2026-08-20: the bypass gained `e.deduced` beside `e.imported` — corpus-DEDUCED
+    # events' synthetic calendar can never be subscribed, so without the second flag the
+    # default-checked filter hid the whole deduced category (the matrix run's agenda
+    # drill; guarded in tests/test_ui_matrix_20260820.py). The imported half is unchanged.
+    assert "e.imported || e.deduced || (e.sources" in html, (
+        "imported events must bypass the subscribed-only filter"
+    )
     import json
     en = json.loads((_SRC / "static" / "locales" / "en.json").read_text(encoding="utf-8"))
     assert "imported" in en, "the 'imported' category label must be keyed ×12"

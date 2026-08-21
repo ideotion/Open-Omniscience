@@ -435,7 +435,16 @@
        exactly as .pill.err does. */
     #llm.ai-off {
       position:relative; overflow:hidden;
-      color:var(--err);
+      /* The "AI" LABEL at raw var(--err) failed WCAG AA 4.5:1 text contrast against this
+         rule's own 8%-err pill tint on 13 of 17 themes (worst: solar 2.41:1, dawn 3.80,
+         sepia 3.94 — computed per theme from the declared tokens, 2026-08-20 matrix run;
+         found once the theme axis widened past the 5 themes earlier runs checked). Same
+         repair as the diagonal bar below and the marks (2026-08-12): mix toward --fg,
+         theme-DERIVED, never a hardcoded hue. 55% is the smallest 5-point step clearing
+         4.5:1 on every theme (worst case 4.82:1 on solar); the red hue survives, and the
+         STATE was never colour-only anyway — the diagonal bar and the hover title carry
+         it (the 2026-08-02 ruling's own bar). */
+      color:color-mix(in srgb, var(--fg) 55%, var(--err));
       border-color:color-mix(in srgb, var(--err) 55%, var(--border));
       background:color-mix(in srgb, var(--err) 8%, var(--panel2));
     }
@@ -1385,6 +1394,73 @@
       .scrim { display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:55; }
       #hamburger { display:inline-flex; }
       .doc-layout { grid-template-columns:1fr; }
+    }
+    /* Phone-width top bar (<=600px, the same breakpoint the sidebar already treats as
+       mobile). 2026-08-20 matrix session T1: at 375x900 the ONE universal horizontal
+       overflow on EVERY surface was #statusCluster's nowrap min-content — measured
+       434px: the activity chip's reserved 160px .act-host slot + #health's 110px
+       constant footprint + #llm's 46px + gaps — present exactly while the activity
+       chip is visible (an idle page reads clean, which is why the symptom looked
+       intermittent, and why the 2026-08-13 report's attribution to "the bar's
+       contents" cumulatively was imprecise: .topbar itself wraps fine; the cluster
+       inside it could not). Strategy: COLLAPSE the informational footprints to
+       SMALLER CONSTANTS and let the cluster wrap internally — never hide or remove a
+       control (controls are commitments; everything here is a status readout whose
+       full detail lives in the task manager). The phone footprints stay FIXED sizes,
+       so invariant #3's real property — a text change never reflows its neighbours —
+       holds at every breakpoint; only the constant differs per breakpoint. #health
+       ellipsizes ("checking…" truncates for a moment at boot; "healthy" fits whole)
+       with the full text still on its #oo-tip hover title. Verified live at 375x900
+       with the activity chip visible: documentElement.scrollWidth == clientWidth and
+       all four core controls (#net-toggle #lang-switch #tm-open #app-shutdown)
+       on-screen — the 2026-08-20 report's T1 evidence. */
+    @media (max-width:600px) {
+      /* Every tab page is a single-column grid with an IMPLICIT auto column, and an
+         auto grid track is CONTENT-sized — so any panel whose intrinsic width
+         exceeds the viewport silently widens the whole page instead of clamping
+         (measured: the Agenda panel's grid track resolved to 486px in a 375px
+         viewport purely from its controls' intrinsic widths). minmax(0,1fr) pins
+         the track to the container; content wider than that now wraps or scrolls
+         inside its own box instead of scrolling the PAGE. Phone-scoped: at wider
+         viewports the auto track never exceeds the container in practice, and the
+         narrower scope keeps this pass design-scoped as briefed. */
+      .tab-page.active { grid-template-columns:minmax(0, 1fr); }
+      .status-cluster { flex-wrap:wrap; min-width:0; }
+      .act-host { width:96px; }
+      #health { min-width:0; max-width:88px; overflow:hidden; text-overflow:ellipsis;
+        white-space:nowrap; }
+      /* .row > div's 140px min-width (two-up plus a select's intrinsic width) forced
+         a ~350px row min-content at a 375px viewport (measured). min-width:0 is the
+         flexbox escape hatch; with the tab-page grid track pinned above, the row then
+         resolves inside the panel and the controls squeeze/wrap instead of widening
+         the page. NOTE for the next session: `contain:inline-size` here looks like a
+         stronger fix and is a TRAP — it zeroes any wrapper whose flex-basis is auto
+         with no grow (`flex:0 0 auto`, the Insights Explore-button wrapper), and the
+         un-containable button then protrudes from a 0px box (measured live before
+         this comment replaced that version). */
+      .row > div { min-width:0; }
+      /* A <select>/<input> sizes to its intrinsic content and never shrinks below it
+         (the Agenda country picker measured 452px intrinsic); with the wrapper now
+         allowed to shrink, a percentage max-width clamps the control's render to the
+         resolved box. The dropdown's option list is a native popup and renders
+         full-width regardless. */
+      .row select, .row input { max-width:100%; }
+      /* The Agenda month bar carries a deliberate inline flex-wrap:nowrap (the
+         ‹ month › cluster reads as one unit on a desktop); at phone width its
+         trailing hint span protruded 106px past the viewport (measured). Wrapping
+         is the phone behaviour — the nav cluster stays together, the hint drops to
+         its own line. */
+      #agenda-monthbar { flex-wrap:wrap !important; }
+      /* Data tables in the Settings > Advanced sections scroll INSIDE their own box at
+         phone width (the repo-wide wide-content rule: the page body never scrolls
+         horizontally). Found by the 2026-08-20 flagship-375 walk on source_management:
+         #src-table already sits in an overflow:auto wrapper (index.html), but the
+         discovery-candidates table in #candidates-list does not, and its 443px
+         min-content widened the whole page to 478 in a 375 viewport. `display:block`
+         on the table is this stylesheet's own .prose-table convention for a
+         self-scrolling table; scoped to the .adv-sec sections (covers every current
+         and future advanced-section table; a table already wrapped is unaffected). */
+      details.adv-sec table { display:block; overflow-x:auto; max-width:100%; }
     }
     @media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
 

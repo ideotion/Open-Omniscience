@@ -5194,3 +5194,52 @@ the panel labelled itself `PARTIAL — members computed: 2 of 42` and named the 
 members. Drive controls with the framework's own click; a false negative from a dispatch
 quirk is indistinguishable from a defect, and the instinct on seeing it is to "fix" code
 that was already correct.
+## 2026-08-20 — the browser-verification matrix expansion: five harness lookalikes, and the payoff that justified the axes
+
+The gate-row-8 stretch matrix ran end to end — four test states (virgin · empty ·
+453-article seeded corpus · a REAL volumes-backup import into a fresh data dir), 53 steps,
+179 coverage rows, all 17 themes, the Reader, the a11y axis, five lens drills, five
+standing honesty-rule checks — and the durable lesson is that A WALK'S INSTRUMENT PASSES
+OR FAILS FOR REASONS ABOUT THE INSTRUMENT. Five lookalikes from one run:
+
+(a) `querySelector(".pill.warn")` measured the AI PILL — an element that carries those
+classes for footprint styling while its STATE rules override the colour per state — and
+filed a P1 naming the `--warn-fg` token whose fix was intact (5.78:1 on the theme it
+accused). The first match of a class selector can be an element whose classes mean
+something else; exclude it (`:not(#llm)`) and measure the state label as its OWN claim.
+(b) A surface anchored on a BY-CONSTRUCTION-EMPTY element (`#ux-imp-summary` before any
+import) reads not-visible and fails the reachability walk it was meant to serve — anchor
+reachability on the container, and let a dedicated fixture (state D's real import) claim
+the content. (c) A breakpoint walk that NAVIGATES at 375px tests navigation-at-375 — a
+different claim, and one the sidebar legitimately fails below 600px per invariant #2's own
+floor — so the settings-gear click times out and three of five flagship surfaces read
+blocked; navigate at desktop width, then measure the OPENED surface at the target width.
+(d) A specimen-search that derives a CSS selector from tag/class hands the reader the
+DOCUMENT'S first `td`, not the specimen's — the recorded non-unique-needle trap as a
+selector; tag the found node with a probe attribute and address that. (e) A sidecar API
+probe shares 127.0.0.1 with the harness's own browser, so the app's rate limiter (a
+feature under test) can 429 it past any polite backoff — read ids from the DOM the browser
+already rendered.
+
+Plus the f-string continuation trap that produced two of the five hours lost: in a
+multi-line `page.evaluate(f"... {{ ..." "... }}")` the PLAIN-string continuation line's
+`}}` stays a literal `}}` (only f-strings collapse braces) — a JS SyntaxError; and after
+fixing it in one evaluate the same shape was found AGAIN in a sibling drill in the same
+file, the recorded fixing-a-property-in-one-place failure.
+
+THE PAYOFF THAT MAKES A MATRIX WORTH ITS COST: widening the theme axis 5 → 17 found the
+AI pill's ai-off label at raw `var(--err)` below AA text contrast on 13 of 17 themes
+(worst solar 2.41:1 against the pill's own 8%-err tint) — invisible to every earlier
+5-theme run. The repair is the recorded mix-toward-`--fg` pattern (55% = the smallest
+5-point step clearing 4.5:1 on every theme, worst 4.82:1); the state was never colour-only
+(the diagonal bar + hover title carry it). And the deduced-events find is the same family
+app-side: `#agenda-subonly` defaults CHECKED and its bypass named only `imported`, so the
+corpus-DEDUCED category — whose synthetic calendar can never be subscribed — was invisible
+in every agenda view at default settings while the category filter still OFFERED "deduced"
+as an empty lens. A filter must never offer a category its default state structurally
+suppresses.
+
+Also probed empirically rather than assumed: Playwright's `emulate_media(contrast=None)`
+is a silent NO-OP (None means "leave unchanged"), and BOTH reset tokens — the stub-typed
+`"null"` and `"no-override"` — behaviorally clear the emulation; the driver's
+`emulate_contrast` now branches explicitly and records the probe in its docstring.
