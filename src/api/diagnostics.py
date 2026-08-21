@@ -2994,6 +2994,23 @@ def request_latency() -> dict:
     return _summary()
 
 
+@router.get("/stall-forensics")
+def stall_forensics_report(limit: int = Query(50, ge=1, le=200)) -> dict:
+    """Requests that blew the stall budget, each with what the machine was doing.
+
+    The 2026-07-21 field brief recorded a cluster of multi-hour requests and 503s on
+    one afternoon and could not say why: the instruments that would have known are
+    windowed, so the evidence had aged out before anyone read the export. This log
+    takes the reading AT the stall -- single-writer gate, event loop, slowest
+    statement -- and files the cause classes those readings support. Correlation,
+    never proof: a stall none of the three can see is filed ``undetermined`` rather
+    than assigned to the nearest class. In-memory and bounded; a restart empties it.
+    """
+    from src.monitoring.stall_forensics import report as _report
+
+    return _report(limit=limit)
+
+
 @router.get("/slow-queries")
 def slow_queries(explain: int = Query(1, ge=0, le=1), db: Session = Depends(get_db)) -> dict:
     """The slow-query ring buffer + aggregate, and (explain=1) an EXPLAIN QUERY PLAN
@@ -3438,6 +3455,9 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("freshness.json", lambda: external_freshness()),
         # Recursive-augmentation logs #1-#5 (maintainer 2026-07-02).
         ("request-latency.json", lambda: request_latency()),
+        # Cause attribution for the requests the latency log shows as stalls. Cheap:
+        # an in-memory ring read, no DB work, so it needs no deadline of its own.
+        ("stall-forensics.json", lambda: stall_forensics_report(limit=200)),
         ("slow-queries.json", lambda: slow_queries(explain=1, db=db)),
         ("schema-drift.json", lambda: schema_drift_report(db=db)),
         ("corpus-integrity.json", lambda: corpus_integrity_report(sample=500, full=0, db=db)),
@@ -3748,6 +3768,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/storage-composition": "storage-composition.json",
     "/frontend-errors": "frontend-errors.json",
     "/request-latency": "request-latency.json",
+    "/stall-forensics": "stall-forensics.json",
     "/slow-queries": "slow-queries.json",
     "/schema-drift": "schema-drift.json",
     "/integrity": "corpus-integrity.json",

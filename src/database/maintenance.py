@@ -142,6 +142,47 @@ HOT_INDEXES: dict[str, str] = {
     ),
 }
 
+# --------------------------------------------------------------------------- #
+# PROPOSED, deliberately NOT wired: idx_keyword_normterm_nocase
+# --------------------------------------------------------------------------- #
+# The omnibar's keyword group (src/api/search_omni.py:_keywords_group) runs a PREFIX
+# match, `normalized_term LIKE 'abc%'`, per debounced keystroke. SQLite rewrites that
+# into a range scan only when the indexed column's collation matches the LIKE
+# case-sensitivity -- and with `case_sensitive_like` off (the default) that means
+# NOCASE. `idx_keyword_normalized_term` is BINARY, so the rewrite can never fire and
+# the query reads EVERY key. On the field corpus that is ~5M keys, twice per keystroke.
+#
+#   CREATE INDEX idx_keyword_normterm_nocase ON keywords (normalized_term COLLATE NOCASE)
+#
+# MEASURED on a 2,000,000-row fixture carrying this table's REAL index set (plaintext;
+# the SQLCipher codec multiplies it -- this machine has measured 2.4x):
+#   before  count(*)  SCAN ... USING COVERING INDEX   126.7 ms
+#           top-3     full traversal + TEMP B-TREE    140.8 ms
+#   after   count(*)  SEARCH ... (term>? AND term<?)    0.02 ms
+#           top-3     SEARCH ... (term>? AND term<?)    0.22 ms
+# Characterised by tests/test_keyword_prefix_index.py against the statements the
+# PRODUCTION path emits, in both directions.
+#
+# WHY IT IS NOT IN THE DICT ABOVE, which is the part worth reading. Every entry there
+# is mirrored on its model, and that is not tidiness: `alembic_stamp_align` compares
+# the live schema against the models, so an index the self-heal creates but the model
+# does not declare reads as schema DRIFT and flips the stamp verdict to
+# "schema-behind" (reproduced -- it is what caught this). Mirroring it does not fix
+# that either: `COLLATE NOCASE` makes it an EXPRESSION index, and alembic's
+# autogenerate cannot compare those --
+#   "Generating approximate signature for index ... The dialect implementation should
+#    either skip expression indexes or provide a custom implementation"
+# -- after which it reports a permanent spurious "changed index". So shipping this
+# needs a migrations-layer decision (an `include_object` exclusion, or an equivalent),
+# which belongs to whoever owns models.py/migrations rather than to a perf pass.
+# Two honest limits on the numbers above, for whoever picks it up: WHICH full
+# traversal the planner takes before the fix varies with table statistics and with the
+# exact ORDER BY form (a bare table scan and a full index scan were both measured), so
+# the tests assert only the range-SEARCH-vs-full-traversal distinction; and a very
+# broad prefix still sorts all its matches by frequency (a 1-char prefix measured
+# 119 ms even after the fix), though the endpoint's own `min_length=2` keeps the
+# realistic worst case near 4 ms.
+
 
 # Indexes here that are built over a column added by one of the additive self-heal
 # helpers below, rather than by the original schema. On a store that has not yet been

@@ -40,6 +40,17 @@ _EVENTS: deque[dict[str, Any]] = deque(maxlen=_EVENTS_CAP)
 
 _watchdog_started = False
 
+try:  # pragma: no cover - the fallback is unreachable in a healthy tree
+    from src.monitoring.stall_forensics import note_stall as _note_stall
+except Exception:  # noqa: BLE001
+    # No cycle exists today (stall_forensics imports this module lazily, inside a
+    # function), and this guard is not about that: it is the "instrumentation must
+    # never break the response" rule applied one level up. A latency module that
+    # cannot be IMPORTED takes the whole app with it, so a broken optional log
+    # degrades to a no-op rather than to an unbootable server.
+    def _note_stall(route: str, status: int, duration_ms: float) -> None:  # type: ignore[misc]
+        return None
+
 
 def _loop_block_ms() -> float:
     """Loop-lag threshold in ms above which a block is recorded (OO_LOOP_BLOCK_MS; 250)."""
@@ -117,6 +128,29 @@ def record(req_id: int, route: str, status: int, duration_ms: float) -> None:
             r["statuses"][sc] = r["statuses"].get(sc, 0) + 1
     except Exception:  # noqa: BLE001 - instrumentation must never break the response
         return
+    # A request slow enough to be a STALL gets its causes read while the machine is
+    # still in the state that produced it -- the 2026-07-11 cluster was undiagnosable
+    # precisely because nobody was looking at the moment. Deliberately OUTSIDE the
+    # _LOCK above: the readings take other modules' locks, and holding this one across
+    # them would let the stall log become its own source of contention. ``_note_stall``
+    # is resolved once at import (see below), not per request: this runs on EVERY
+    # response, and it returns immediately for all but the rare slow one.
+    try:
+        _note_stall(route, status, duration_ms)
+    except Exception:  # noqa: BLE001 - instrumentation must never break the response
+        return
+
+
+def recent_block_events(limit: int = 5) -> list[dict[str, Any]]:
+    """The most recent event-loop-block events, oldest-first within the window.
+
+    A read-only accessor over the same ring :func:`summary` publishes, so a caller
+    that needs to correlate one request against recent loop blocks (see
+    ``src.monitoring.stall_forensics``) does not have to reach into module state.
+    """
+    with _LOCK:
+        evs = list(_EVENTS)
+    return evs[-max(1, int(limit or 1)) :]
 
 
 def _pct(sorted_vals: list[float], p: float) -> float:

@@ -4262,6 +4262,72 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     a ~1M-entry dict per call, and the memory guard polls only BETWEEN batches — so it
     cannot interrupt the scan it most needs to. A guard that runs between the expensive
     things is not a guard on the expensive thing.
+  - **SQLite's LIKE OPTIMIZATION NEEDS A `COLLATE NOCASE` INDEX, AND A "SCAN … USING
+    COVERING INDEX" IS WHAT ITS ABSENCE LOOKS LIKE (2026-08-20, the omnibar keyword
+    group):** `x LIKE 'abc%'` is rewritten into a range scan only when the indexed
+    column's collation matches the LIKE case-sensitivity — and since
+    `case_sensitive_like` is OFF by default, that means the index must be NOCASE. The
+    keywords table's index is BINARY, so the rewrite could never fire and every
+    debounced omnibar keystroke traversed all ~5M keys, twice. Measured at 2M rows:
+    126.7 ms → 0.02 ms (count) and 140.8 ms → 0.22 ms (top-3). **TWO THINGS I GOT WRONG
+    BY RECALL AND FIXED BY MEASURING**, which is the transferable half: I "remembered"
+    that an `ESCAPE` clause disqualifies the optimization — it does NOT, at least
+    through SQLite 3.45; and my first bench omitted `idx_keyword_frequency`, so the
+    planner picked a different pre-fix path and the before-number moved once the
+    table's REAL index set was present. The recorded "a standalone SQL probe is a
+    lookalike" lesson has a third axis beyond stats and ANALYZE state: **the rest of
+    the table's indexes.** Reproduce the index set, then capture the statements the
+    production path emits (`before_cursor_execute`) and EXPLAIN those. And note the
+    plan vocabulary: the pre-fix count read `SCAN … USING COVERING INDEX`, which the
+    repo's own classifier calls healthy — index-only is not the same as bounded, and a
+    full traversal of a covering index over 5M rows is still a full traversal.
+    **THE INDEX IS CHARACTERISED AND NOT SHIPPED, and the reason is the durable half:
+    an entry in `HOT_INDEXES` is not optional-to-mirror on its model.** Wiring the
+    self-heal alone flipped `alembic_stamp_align`'s verdict to `schema-behind`, because
+    that check compares the LIVE schema against the MODELS and an index the boot
+    self-heal creates but no model declares reads as drift — which is why every
+    existing entry in that dict carries a "mirrored on the model + migration" comment.
+    Mirroring it does not resolve it either: **`COLLATE NOCASE` makes it an EXPRESSION
+    index, and alembic's autogenerate cannot compare those** — it warns "should either
+    skip expression indexes or provide a custom implementation" and then reports a
+    permanent spurious "changed index". So a NOCASE/expression index needs a
+    migrations-layer decision (an `include_object` exclusion or equivalent), not just a
+    DDL string. GENERAL FORM: before adding to a boot-self-heal index dict, check what
+    ELSE compares the live schema to the models — the dict is not a free-standing
+    performance knob, it is one of three places that must agree.
+  - **THE "NEVER CAPPED FIGURES" SWEEP HAS MORE INSTANCES, AND THE ONE THAT BITES IS A
+    `limit=` DEFAULT (2026-08-20, the omnibar articles total):** the 2026-07-18 ruling
+    asked for a sweep for "any other displayed figure that is secretly a cap". Here it
+    was `total: len(ids)` where `ids = search_ids(...)` and `search_ids` carries
+    `limit=_MAX_CANDIDATES` (20000) — so on any corpus where a common term matches more,
+    the omnibar published a flat 20000 as a count. The shape to grep for is not
+    `.limit(n)` at the call site (which is visible) but a **helper whose own signature
+    caps**, read by a caller that treats the returned length as a measurement. THE FIX
+    IS FREE IN THE COMMON CASE: under the cap `len(ids)` IS exact, so only a list that
+    actually FILLED the cap pays for a count — which is also the only list whose length
+    was ever a lie. **AND STATE THE COST HONESTLY: this is not a speedup.** Measured on
+    a 300k-doc FTS fixture, a broad term costs 438 ms against 415 ms, +5.6% for a right
+    number instead of a wrong one — worth it, and not something to dress as performance
+    work. **THE TEST TRAP, which cost a vacuous guard:** compressing the module CONSTANT
+    is not enough to reach the branch, because the helper's `limit` is a DEFAULT
+    ARGUMENT bound at definition time — the fetch still returned every row, `len(ids)`
+    was still exact, and the first draft passed against the reverted fix. The list must
+    genuinely be truncated.
+  - **A FINDING CAN BE RETRACTED BY A LATER FIX — re-check a brief's PREMISE, not just
+    whether its item is done (2026-08-20, the five 100%-outlier sources):** the
+    2026-07-21 field brief named five sources at 100% `outlier_rate` and reasoned that
+    "a 100% rate across a real sample is much more consistent with broken extraction",
+    proposing they be hand-checked. That inference was made unsafe by the auditor's own
+    arithmetic: `robust_stats` p90 is nearest-rank, so on a cohort with zero spread p90
+    IS 0.0, the tail test `value > p90` degenerates to `value > 0`, and ONE pathological
+    article in ~2,000 scores 100%. Root-caused and fixed 2026-08-02. Building the
+    proposed tool would have been building on a withdrawn signal. GENERAL FORM: the
+    staleness guard is usually run as "is this already built?" — run it also as "is the
+    MEASUREMENT this item rests on still one the code would produce today?", because a
+    fix to an instrument silently retracts every finding that instrument reported. Same
+    pass, same brief: five of its seven items were already closed and its own
+    three-week-old banner said "still fully unaddressed", so a status line ages faster
+    than the finding it describes.
 ## Open queue (when maintainer says proceed)
 - **KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING (maintainer 2026-08-13, "let's get this done
   at my return" — PARKED, nothing further to build; the machinery is shipped and the

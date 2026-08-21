@@ -1,4 +1,29 @@
-> **Status update (2026-07-22, docs-audit remediation pass):** verified against live `main` by a subagent fan-out audit of the whole `docs/design/` tree — still fully unaddressed as of 2026-07-22 — none of its 7 findings (the slow map-coverage endpoint, the missing `article_ids=` hard-link on the "rising" Home Lead card, the unexplained stall cluster, the 5 outlier-rate sources) have been fixed yet. Now tracked as a phase in `ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`. See [`ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md`](./ACTION_PLAN_2026-07-22_DESIGN_AUDIT_REMEDIATION.md) for the full remediation plan.
+> **Status update (2026-08-20, perf/diagnostics burn-down):** re-verified item by item
+> against live `main` @82fb74b, in the CODE rather than from this file's own text. **Five
+> of the seven are closed; one is closed with its premise retracted; the two that were
+> genuinely open were fixed or instrumented this pass.** Per-item verdicts are inline below. The headline
+> correction is that this doc's own 2026-07-22 banner ("still fully unaddressed") went
+> stale within days: items 2 and 5's building blocks landed 2026-07-23, and item 1's
+> map-coverage half landed in the same wave.
+>
+> | # | Verdict (2026-08-20) | Anchor |
+> |---|---|---|
+> | 1 map-coverage | **CLOSED** | `idx_article_source_sentiment` (`models.py:730`) + boot self-heal (`maintenance.py:81`), 2026-07-23 |
+> | 1 omni | **root-caused; 3 of 4 fixed this pass** | `search_omni.py`, `fts.py:search_total`; the NOCASE index is characterised + handed over (`maintenance.py`, blocked on an alembic/expression-index decision) |
+> | 2 rising `article_ids` | **CLOSED** | `producers.py:305`; shipped.csv 2026-07-23 "9.1 rising_now article_ids" |
+> | 3 stall cluster | **not answerable retroactively; answered FORWARD** | `src/monitoring/stall_forensics.py` + `/api/diagnostics/stall-forensics` (new this pass) |
+> | 4 vocabulary/nav-soup | **CLOSED** | prose gate + `non_article_scan` quarantine shipped 2026-07-23 |
+> | 5 non-article contamination | **CLOSED** (execution is a maintainer-gated operator step, by ruling) | S3.2/S3.3 quarantine, shipped.csv 2026-07-23 |
+> | 6 five 100%-outlier sources | **PREMISE RETRACTED** | the 100% figures were a degenerate-cohort artifact: `source_audit.py:278-296,521`, fixed 2026-08-02 |
+> | 7 schema/FTS clean | informational, unchanged | — |
+>
+> **Item 6 deserves the emphasis.** The five sources were not evidence of five broken
+> scrapes: `source_audit`'s tail test is `value > p90`, and on a cohort with zero spread
+> p90 is exactly 0.0, so the test degenerated to `value > 0` and ONE pathological article
+> in a couple of thousand read as a 100% outlier rate. That was root-caused and fixed
+> 2026-08-02 (`PATHOLOGY_ABS_FLOOR` plus the degenerate-cohort guard). Building the
+> "hand-check these five" tool this brief proposes would have been building on a
+> withdrawn signal — so it was deliberately not built, and this note replaces it.
 
 # Autonomous session brief — field diagnostics findings (2026-07-21)
 
@@ -15,6 +40,30 @@ Each item below is a candidate for its own scoped PR — do not bundle them. Non
 growth to investigate or fix; all are reproducible against the current ~475K-article corpus.
 
 ## 1. Two endpoints have a severe slow long-tail (highest priority — user-facing)
+
+> **2026-08-20 — map-coverage CLOSED; omni root-caused, three of its four defects fixed.** The suspects this
+> item lists were both wrong, which is worth recording. map-coverage was not falling
+> back to the live scan under some condition: its cost was the per-source-country
+> `GROUP BY` reading `sentiment_score` off the heap, closed 2026-07-23 by
+> `idx_article_source_sentiment`. And omni's slow path was not "a term with very high
+> mention count" hitting the FTS — it was the **keyword** group. `normalized_term LIKE
+> 'abc%'` cannot use SQLite's LIKE optimization unless the index carries NOCASE
+> collation (whenever `case_sensitive_like` is off, the default), and
+> `idx_keyword_normalized_term` is BINARY — so every debounced keystroke traversed all
+> ~5M keys, twice. Measured on a 2M-row fixture with this table's real index set:
+> 126.7 ms → 0.02 ms (count) and 140.8 ms → 0.22 ms (top-3). **That index is
+> characterised and NOT shipped:** wiring it into the boot self-heal alone flips
+> `alembic_stamp_align` to `schema-behind` (the check compares the live schema against
+> the models), and mirroring it on the model does not help because `COLLATE NOCASE`
+> makes it an expression index, which alembic's autogenerate cannot compare and reports
+> as permanently changed. It needs a migrations-layer decision and is handed over with
+> its DDL, measurement and blocker in `src/database/maintenance.py`. Two further
+> findings in the same endpoint DID ship: the articles group reported `len(ids)` as its
+> **total**, and `ids` is
+> capped at 20000 — a cap wearing a count's name on any large corpus, which the
+> 2026-07-18 "never capped figures" ruling forbids and whose sweep this is a result of;
+> and the articles and wiki groups each ran the same ranked FTS fetch, so it now runs
+> once per keystroke instead of twice.
 
 `GET /api/insights/map-coverage` (`src/api/insights.py:1161`, backed by
 `src/analytics/map_serve.py:235` / `queries.source_country_counts` fallback): p50=20ms
@@ -43,6 +92,24 @@ through to the `Card(...)` call. Verify against `src/api/diagnostics.py`'s `home
 diagnostic (it's the thing that caught this) after the fix.
 
 ## 3. A cluster of 503s and event-loop stalls, all on 2026-07-11
+
+> **2026-08-20 — STILL OPEN, and the question this item asks can no longer be answered
+> retroactively.** What ran that day is not recoverable from the tree, and the
+> instruments that would have said so are windowed: `collect_perf` keeps roughly one
+> pass and the latency reservoir is a rolling sample. So the honest form of this item is
+> not "find out what happened on 2026-07-11" but "make the NEXT one attributable".
+> Partly mitigated since: the diagnostics path did get the deadline/threadpool
+> discipline this item guessed at (PR #727, then the S8 debug-bundle budget), and
+> `latency.py` now carries an event-loop-lag watchdog plus a per-route p95 verdict.
+> What is still missing is the piece this item actually needs — a per-REQUEST cause
+> class when a request blows its deadline (writer-gate wait vs codec read vs FTS vs
+> CPU). **BUILT this pass** as `src/monitoring/stall_forensics.py`, hooked at
+> `latency.record()` and surfaced at `/api/diagnostics/stall-forensics` (a bundle
+> member): a request over `OO_STALL_THRESHOLD_MS` is filed with a point-in-time reading
+> of `write_gate.stats()`, the loop-block watchdog and the slow-query log, plus the
+> cause classes those readings SUPPORT. Correlation, never proof — and a stall none of
+> the three can see is filed `undetermined` rather than assigned to the nearest class.
+> It cannot answer 2026-07-11; it is what makes the next one answer itself.
 
 The watchdog logged in-flight requests stuck for hours on 2026-07-11 (`home-cards` and
 `rollup-benchmark` both multi-hour that day per `request-latency.json`), and
@@ -79,6 +146,20 @@ the maintainer signs off on the cleanup strategy (0.3 gate row 5 — execution n
 maintainer agreement per the ledger's own ruling, not something to just run).
 
 ## 6. Source health: 6% degraded/failing, with a few outright-broken standouts
+
+> **2026-08-20 — PREMISE RETRACTED. Do not hand-check these five on this basis.** The
+> reasoning below ("a 100% rate across a real sample is much more consistent with broken
+> extraction … so 100% is a strong signal") is exactly the inference the auditor's own
+> arithmetic made unsafe. `robust_stats` p90 is nearest-rank, and on a cohort whose
+> members are all clean the p90 IS 0.0 — so the outlier test `value > p90` degenerates
+> to `value > 0`, and a single pathological article out of ~2,000 scores 100%. The field
+> run that produced this list flagged 63 sources that way, each of them orders of
+> magnitude below its own absolute floor. Root-caused and fixed 2026-08-02
+> (`source_audit.py:278-296` and the comment at `:521`; `PATHOLOGY_ABS_FLOOR` gives the
+> high-confidence criterion a floor that fires independently of the cohort). The five
+> named sources may or may not be healthy — the point is that THIS measurement never
+> said they were broken, so the next word on them should come from a re-run of the
+> fixed auditor, not from this list.
 
 `oo-source-audit-*.json`: of 1,957 sources, 1,563 healthy, 276 watch, 90 degraded, 28 failing.
 Five sources show **100% outlier_rate** (every sampled article flagged): `subseaworldnews.com`,

@@ -264,6 +264,18 @@ buildable-now tooling gap)
 
 ## Phase 9 — Field-diagnostics findings (#728)
 
+> **CLOSED 2026-08-20.** 9.1 shipped 2026-07-23 (`producers.py:305`). 9.2 shipped in the
+> same wave and the answer was the one this item guessed at — a missing index, not a
+> structural problem (`idx_article_source_sentiment` + boot self-heal); the omnibar half
+> of that finding was a separate root cause (a BINARY keyword index defeating SQLite's
+> LIKE optimization) and was fixed 2026-08-20. 9.3 splits: the 2026-07-11 stall cluster
+> is **not answerable retroactively** — the instruments are windowed and the evidence had
+> aged out before the export was read — so it was answered forward instead, with a stall
+> attribution log (`src/monitoring/stall_forensics.py`); and the 5 outlier sources had
+> their **premise retracted** (a degenerate-cohort artifact in the auditor, fixed
+> 2026-08-02), so re-examining the raw JSON would measure the defect, not the sources.
+> Per-item verdicts with anchors live in the brief itself.
+
 - **9.1 [BUILDABLE-NOW]** Fix the concrete, named bug: `rising_now`'s `Card(...)`
   call (`src/briefing/producers.py`, around line 230 per this audit) still
   doesn't pass `article_ids=` — the exact-set-seeding convention every other

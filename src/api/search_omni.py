@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
-from src.database.fts import SearchQueryError, search_ids
+from src.database.fts import MAX_CANDIDATES, SearchQueryError, search_ids, search_total
 from src.database.models import Article, Keyword, LawDocument, Source, WikiPage
 from src.database.session import get_db
 
@@ -39,32 +39,73 @@ def _like_escape(q: str) -> str:
     return q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _articles_group(db: Session, q: str) -> dict:
-    note = "FTS5 Boolean match, relevance-ordered"
-    # Quarantined articles (the app's own "this is a list, not an article" verdict) are
-    # excluded IN SQL, so `total` below counts exactly the rows a user reaches by opening
-    # the full search -- /api/articles applies the same always-on condition. Filtering
-    # after the fact would have left the count describing a different set than the items.
+def _fts_hits(db: Session, q: str) -> tuple[list[int], str, bool]:
+    """Run the corpus FTS search ONCE for every group that needs it.
+
+    Returns ``(ids, effective_query, searchable)``. Both the articles group and the
+    wiki group need the same ``search_ids(q, exclude_quarantined=True)`` result, and
+    each used to run it independently -- this module's own docstring admitted the
+    cost ("runs 2x full FTS ``search_ids``"). On a term matching most of the corpus
+    that ranked fetch is the omnibar's dominant cost, so doing it once per keystroke
+    instead of twice halves the dominant term.
+
+    Quarantined articles (the app's own "this is a list, not an article" verdict) are
+    excluded IN SQL, so a count over this set describes exactly the rows a user
+    reaches by opening the full search -- /api/articles applies the same always-on
+    condition. Filtering after the fact would leave the count describing a different
+    set than the items.
+
+    A half-typed Boolean mid-keystroke falls back to a quoted phrase, never a 400;
+    ``searchable`` is False only when even the phrase retry fails.
+
+    ``search_ids`` returns ``None`` -- distinct from ``[]`` -- when the query has no
+    searchable positive content (punctuation-only, or purely negative). That is the
+    UNSEARCHABLE case, not a zero-match case, so it is reported as such: publishing
+    ``total: 0`` for a query that placed no constraint at all would be a fabricated
+    zero. It also removes a latent crash. The previous code took ``len(ids)`` of that
+    ``None``, which raised inside the per-group guard -- and since both FTS-backed
+    groups did it, a query like ``--`` came back carrying only keywords, sources and
+    law: the omnibar answered as though articles and Wikipedia had never been
+    searched, with nothing in the payload saying so. Verified by driving the pre-fix
+    shape rather than reasoning about it.
+    """
     try:
         ids = search_ids(db, q, exclude_quarantined=True)
+        return ([], q, False) if ids is None else (ids, q, True)
     except SearchQueryError:
-        # Half-typed operators mid-keystroke: fall back to a phrase, never 400.
+        phrase = '"' + q.replace('"', " ") + '"'
         try:
-            ids = search_ids(db, '"' + q.replace('"', " ") + '"', exclude_quarantined=True)
-            note = "FTS5 phrase match (the raw query was not a valid Boolean expression)"
+            ids = search_ids(db, phrase, exclude_quarantined=True)
+            return ([], phrase, False) if ids is None else (ids, phrase, True)
         except SearchQueryError:
-            return {"kind": "articles", "items": [], "total": 0,
-                    "note": "query not searchable as typed"}
-    if ids is None:
-        # `search_ids` returns None for "no positive content to search" -- a
-        # purely-negative or punctuation-only query ("NOT foo", "...") -- which is
-        # DISTINCT from [] "searched, matched nothing". Live-reproduced 2026-08-20:
-        # falling through left `len(ids)` below raising TypeError, i.e. a 500 on the
-        # omnibar for a Boolean the UI's own hint advertises. The omnibar must never
-        # blank OR 500: answer with the same honest empty payload as the unparseable
-        # case above, and say which of the two it was.
+            return [], q, False
+
+
+def _articles_group(
+    db: Session, q: str, hits: tuple[list[int], str, bool] | None = None
+) -> dict:
+    # ``hits`` is the shared per-request FTS result (see _fts_hits). It stays OPTIONAL
+    # so the group is still correct standalone -- the sharing is a cost optimisation
+    # in the dispatcher, not a new precondition a caller has to satisfy.
+    ids, effective_q, searchable = hits if hits is not None else _fts_hits(db, q)
+    if not searchable:
         return {"kind": "articles", "items": [], "total": 0,
-                "note": "query has no searchable terms"}
+                "note": "query not searchable as typed"}
+    note = (
+        "FTS5 Boolean match, relevance-ordered"
+        if effective_q == q
+        else "FTS5 phrase match (the raw query was not a valid Boolean expression)"
+    )
+    # The TOTAL must be a count, never the candidate cap wearing a count's name (the
+    # 2026-07-18 "never capped figures" ruling). Under the cap `len(ids)` IS exact and
+    # costs nothing extra -- the common case is unchanged. Only a query that actually
+    # FILLED the cap pays for one extra count(*), and that is precisely the query whose
+    # `len(ids)` would otherwise have been a flat MAX_CANDIDATES on any large corpus.
+    if len(ids) >= MAX_CANDIDATES:
+        exact = search_total(db, effective_q, exclude_quarantined=True)
+        total = len(ids) if exact is None else exact
+    else:
+        total = len(ids)
     rows = []
     if ids:
         top = ids[:_PER_GROUP]
@@ -84,7 +125,7 @@ def _articles_group(db: Session, q: str) -> dict:
             for aid in top
             if aid in by_id
         ]
-    return {"kind": "articles", "items": rows, "total": len(ids), "note": note}
+    return {"kind": "articles", "items": rows, "total": total, "note": note}
 
 
 def _keywords_group(db: Session, q: str) -> dict:
@@ -190,7 +231,9 @@ def _dump_hits(q: str) -> tuple[list[dict], bool, bool]:
     return items, True, more
 
 
-def _wiki_group(db: Session, q: str) -> dict:
+def _wiki_group(
+    db: Session, q: str, hits: tuple[list[int], str, bool] | None = None
+) -> dict:
     """Wikipedia: search the wiki ARTICLE CONTENT, not only watched-page titles
     (maintainer 2026-06-21). Wiki page text (WikiPage.baseline_text) is stored
     COMPRESSED, so content search runs over the FTS-indexed corpus articles produced by
@@ -202,20 +245,7 @@ def _wiki_group(db: Session, q: str) -> dict:
     #    Quarantine is excluded here for the same reason as the articles group: a wiki
     #    article the screening judged not-an-article must not come back through a
     #    different group of the same omnibar.
-    try:
-        ids = search_ids(db, q, exclude_quarantined=True)
-    except SearchQueryError:
-        try:
-            ids = search_ids(db, '"' + q.replace('"', " ") + '"', exclude_quarantined=True)
-        except SearchQueryError:
-            ids = []
-    # `None` = "no positive content to search" ("NOT foo", "...") -- DISTINCT from []
-    # "searched, matched nothing". Either way there are no CONTENT hits, so normalise
-    # to [] and let the watched-page TITLE catalog below answer, exactly as the
-    # unparseable branch above already chooses to. Live-reproduced 2026-08-20: without
-    # this the slice below raised TypeError, i.e. a 500 on the omnibar.
-    if ids is None:
-        ids = []
+    ids = (hits if hits is not None else _fts_hits(db, q))[0]
     window = ids[:_WIKI_SCAN_CAP]
     content_items: list[dict] = []
     content_total = 0
@@ -272,6 +302,13 @@ def _wiki_group(db: Session, q: str) -> dict:
             "kind": "wiki",
             "items": content_items + title_items,
             "total": content_total,
+            # ``total`` here is how many of the SCANNED window are Wikipedia-edition
+            # articles -- bounded by construction (making it exact would mean the
+            # domain join over every match). So the bound travels as a FIELD, not only
+            # as prose a renderer would have to sniff for: `bounded` says the number is
+            # a floor, `scanned` says over how many ranked hits it was taken.
+            "bounded": capped,
+            "scanned": len(window),
             "dump_items": dump_items,
             "dump_available": dump_available,
             "dump_more": dump_more,
@@ -329,9 +366,21 @@ def omni(q: str = Query(min_length=2, max_length=200), db: Session = Depends(get
 
     def _compute() -> dict:
         groups = []
+        # ONE corpus FTS search shared by the two groups that need it (articles, wiki)
+        # instead of the same ranked fetch run twice per keystroke. A failure here is
+        # handled exactly like a per-group failure: the omnibar must never blank.
+        try:
+            hits = _fts_hits(db, q)
+        except Exception:  # noqa: BLE001 - the FTS layer must never blank the omnibar
+            _LOG.warning("omni fts search failed for %r", q, exc_info=True)
+            hits = ([], q, False)
         for fn in (_articles_group, _keywords_group, _sources_group, _wiki_group, _law_group):
             try:
-                groups.append(fn(db, q))
+                # Only the two FTS-backed groups take the shared hits; the catalog
+                # groups (keywords/sources/law) run their own bounded index queries.
+                groups.append(
+                    fn(db, q, hits) if fn in (_articles_group, _wiki_group) else fn(db, q)
+                )
             except Exception:  # noqa: BLE001 - one group must never blank the omnibar
                 _LOG.warning("omni group %s failed", fn.__name__, exc_info=True)
         return {"q": q, "per_group": _PER_GROUP, "groups": groups, "method": _method}
