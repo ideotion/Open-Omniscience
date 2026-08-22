@@ -10,15 +10,27 @@ Boolean full-text search → export. Local-first, loopback only, no accounts.
 
 If you just want to use the app (no command-line knowledge needed afterwards):
 
+**Linux / macOS** — in a terminal:
+
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/scripts/bootstrap.sh | bash
 ```
 
+**Windows 11** — in PowerShell:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/install.ps1 | iex"
+```
+
+Windows support is narrower than Linux and the difference is stated plainly in
+[§C](#c-on-windows-11-powershell) — read it before relying on it.
+
 > **Inspect before you trust.** Piping a script into your shell runs code on your
-> machine. The bootstrap is deliberately tiny — read it first if you like
-> ([scripts/bootstrap.sh](../scripts/bootstrap.sh)); all it does is check for
-> git + Python 3.13, clone this repo into `~/open-omniscience`, and hand off to
-> the in-repo `./install.sh`. You can equally clone yourself and run `./install.sh`.
+> machine. Both are deliberately small — read them first if you like
+> ([scripts/bootstrap.sh](../scripts/bootstrap.sh), [install.ps1](../install.ps1)).
+> They check for git + Python 3.13, clone this repo into `~/open-omniscience`
+> (`%USERPROFILE%\Open-Omniscience` on Windows), and hand off to the in-repo
+> installer. You can equally clone yourself and run `./install.sh` / `install.ps1`.
 
 `install.sh` is **promptless** — there is **no component menu**. One command installs
 the sensible default set:
@@ -30,7 +42,7 @@ the sensible default set:
 | **Compression** | faster on-disk storage of the corpus |
 
 Local-LLM / Ollama setup is **not** part of the installer — it lives entirely in the
-app's **Settings → AI** tab (see §D). Override the installed set with the
+app's **Settings → AI** tab (see §E). Override the installed set with the
 `OO_COMPONENTS="…"` env var (e.g. `OO_COMPONENTS="analysis,nlp"`); re-running
 `./install.sh` is idempotent and only installs what's missing.
 
@@ -43,7 +55,7 @@ menu + Desktop) and opens the app in your browser. To start it again later:
 A small terminal window appears, the app starts, and your browser opens to
 **http://127.0.0.1:8000**. **Close that window (or use the top-bar power / shutdown
 button) to stop the app.** (On macOS the launcher is `Open Omniscience.command` on your
-Desktop.)
+Desktop; on Windows it is a Desktop + Start-menu shortcut created by `install.ps1`.)
 
 **First launch.** On a fresh install the app walks you through a short one-time setup
 *before* the main UI: **choose your language → read and accept the legal terms**
@@ -139,7 +151,116 @@ alembic upgrade head
 
 ---
 
-## C. The end-to-end loop (UI or API)
+## C. On Windows 11 (PowerShell)
+
+**Honest support status — read this first.** Every CI run proves three things on
+`windows-latest`: the dependency install, the **boot check** (the whole app imports),
+and **SQLCipher at-rest encryption** — that last one on a *blocking* lane, so the
+encryption is not a guess. Nothing beyond that is proven. The Windows **pytest lane
+hangs** (recent completed runs sat in `pytest` for 3h21m and ~6h, against 18 minutes
+on macOS), and **nobody has clicked through the UI on Windows**. So: expect install
+and launch to work, treat everything past boot as unverified, and please report what
+breaks. Linux remains the release gate.
+
+### 1. One command
+
+Open **PowerShell** (no administrator rights needed unless Python itself has to be
+installed) and paste:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/install.ps1 | iex"
+```
+
+> **Inspect before you trust.** This runs code on your machine. Read
+> [install.ps1](../install.ps1) first if you like — it installs Git and Python 3.13
+> via `winget` only if they are missing, clones into `%USERPROFILE%\Open-Omniscience`,
+> builds a `.venv`, and verifies the result by importing the real app.
+
+To pass options through the one-liner, create the script block explicitly:
+
+```powershell
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/install.ps1))) -Extras analysis
+```
+
+Already cloned? Just run it in place — it detects its own checkout and skips cloning:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+### 2. Run it
+
+The installer creates an **Open Omniscience** shortcut on your **Desktop** and in the
+**Start menu**. Double-click it: a terminal window appears, and your browser opens at
+**http://127.0.0.1:8000** once the app actually answers. Close that window (or use the
+app's power button) to stop it.
+
+From a terminal instead: `scripts\launch.cmd`.
+
+### 3. First launch
+
+Same one-time flow as every platform: **choose your language → read and accept the
+legal terms → create your corpus passphrase**. The corpus is **encrypted at rest by
+default** and there is **no recovery** for a lost passphrase. The app then boots
+**offline (airplane mode)**; going online passes **one consent popup**.
+
+### Installer options
+
+| Flag | What it does |
+|------|--------------|
+| *(none)* | Core + `analysis,compression,columnar`, then verify and create launchers |
+| `-Path <dir>` | Install somewhere other than `%USERPROFILE%\Open-Omniscience` |
+| `-Extras "analysis"` | Choose the pip extras (`""` for core only) |
+| `-Ref <branch>` | Clone a specific branch or tag |
+| `-NoPython` | Never auto-install Git/Python; fail with instructions instead |
+| `-NoLauncher` | Skip the Desktop / Start-menu shortcuts |
+| `-Check` | Health report (same as `open-omniscience doctor`) |
+| `-Uninstall` | Remove `.venv` + launchers; data kept unless separately confirmed |
+| `-Yes` | Assume yes at prompts (unattended) |
+
+Only `analysis` is proven on Windows by CI. If the fuller default set fails to
+install, the script **falls back to `analysis` and says so** rather than failing
+silently or pretending the extras arrived.
+
+### Manual install (no script)
+
+```powershell
+winget install --id Python.Python.3.13 -e
+winget install --id Git.Git -e
+# close and reopen PowerShell so the new PATH is visible
+git clone https://github.com/ideotion/Open-Omniscience.git $HOME\Open-Omniscience
+cd $HOME\Open-Omniscience
+py -3.13 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --upgrade pip
+.\.venv\Scripts\python.exe -m pip install -e ".[analysis]"
+.\.venv\Scripts\python.exe -c "from src.api.main import app; print(sum(1 for _ in app.routes))"   # boot check
+.\.venv\Scripts\open-omniscience.exe
+```
+
+### Windows-specific notes
+
+- **Execution policy.** The default policy blocks `.\.venv\Scripts\Activate.ps1`.
+  Nothing here needs it: call `.venv\Scripts\python.exe` by path and the whole problem
+  disappears. `-ExecutionPolicy Bypass` on the command line covers the installer itself.
+- **The `python` that opens the Microsoft Store.** A fresh Windows 11 ships an
+  execution-alias stub named `python.exe` that launches the Store instead of running
+  code. The installer ignores it (a stub prints no version) and uses the `py -3.13`
+  launcher. If you install manually, prefer `py -3.13` over `python`.
+- **Where your data lives.** Because this is a source checkout, the corpus, signing
+  keys and settings go in **`<repo>\data`** — not `%APPDATA%`. Set `OO_DATA_DIR` to put
+  them on another drive.
+- **Folder permissions.** On Linux the data directory is locked to your user
+  (`chmod 0700`); that call is a no-op on Windows, so the folder inherits ordinary
+  Windows ACLs. On a shared PC, restrict `<repo>\data` yourself. The corpus database
+  itself is still encrypted at rest either way.
+- **SmartScreen / Defender.** The launcher is an unsigned `.cmd`; SmartScreen may warn
+  the first time. Real-time scanning also slows the first `pip install` noticeably.
+- **Port.** Set `OO_PORT` before launching to move off 8000; `scripts\launch.cmd`
+  honours it.
+
+---
+
+## D. The end-to-end loop (UI or API)
 
 > **Sources are preconfigured.** On first launch (or during `install.sh --appvm`)
 > the curated catalogs (`configs/sources.yml` ~3,200 public-interest outlets, plus
@@ -184,7 +305,7 @@ Interactive API docs: **http://127.0.0.1:8000/docs**.
 
 ---
 
-## D. Analysis capabilities
+## E. Analysis capabilities
 
 All are local-first and degrade loudly (never fabricate). Full schemas at `/docs`.
 

@@ -345,6 +345,126 @@ def object_literal(js: str, name: str) -> str:
 _LINE_COMMENT = re.compile(r"^\s*//.*$", re.MULTILINE)
 
 
+def strip_ps_comments(ps: str) -> str:
+    """PowerShell source with ``<# block #>`` and unquoted ``#`` comments removed.
+
+    The JS ``strip_comments`` above cannot serve here: PowerShell comments are
+    ``#``/``<# #>``, its escape character is a BACKTICK rather than a backslash,
+    and a Windows path inside a string (``"...\\Scripts\\python.exe"``) would be
+    mangled by backslash-escape rules that do not apply to it.
+
+    Stripping matters for the same recorded reason it does in JS: a script that
+    DOCUMENTS the trap it avoids ("activating a venv needs Activate.ps1, which the
+    execution policy blocks") would otherwise satisfy -- or defeat -- an assertion
+    about whether the code does that thing.
+    """
+    ps = re.sub(r"<#.*?#>", "", ps, flags=re.DOTALL)
+    out: list[str] = []
+    for line in ps.splitlines():
+        quote: str | None = None
+        cut = len(line)
+        i = 0
+        while i < len(line):
+            ch = line[i]
+            if quote:
+                if ch == "`" and quote == '"':      # backtick escapes inside "..."
+                    i += 2
+                    continue
+                if ch == quote:
+                    quote = None
+            elif ch in "'\"":
+                quote = ch
+            elif ch == "#":
+                cut = i
+                break
+            i += 1
+        out.append(line[:cut])
+    return "\n".join(out)
+
+
+def ps_function_body(ps: str, name: str) -> str:
+    """One PowerShell function's body -- the braced block only, brace-matched.
+
+    The shape this replaces was written three times in one file::
+
+        ps.split("function Install-WingetPackage", 1)[1].split("\\nfunction ", 1)[0]
+
+    which is the module's recorded OVER-RUN bug in a new language: the closing
+    delimiter is guessed, so if the target happens to be the LAST function in the
+    file the "body" silently becomes the whole rest of the script and every
+    assertion over it passes against unrelated code. It works only for as long as
+    some other function happens to follow.
+
+    Brace-matching is string- and comment-aware, because a ``#`` or a brace inside
+    a string is data. Raises rather than returning empty -- a slice that comes back
+    empty is how a guard passes vacuously.
+
+    HONEST LIMIT: here-strings (``@' ... '@``) are not recognised. None appear in
+    this tree; if one does, the unbalanced case raises rather than truncating
+    silently, which is the safe direction.
+    """
+    m = re.search(rf"\bfunction\s+{re.escape(name)}(?![\w-])", ps)
+    if m is None:
+        raise AssertionError(f"no PowerShell function named {name!r} in the source")
+
+    i, n = m.end(), len(ps)
+    while i < n and ps[i] not in "({":     # an optional ($a, $b) parameter list
+        i += 1
+    if i < n and ps[i] == "(":
+        depth = 0
+        while i < n:
+            if ps[i] == "(":
+                depth += 1
+            elif ps[i] == ")":
+                depth -= 1
+                if depth == 0:
+                    i += 1
+                    break
+            i += 1
+    while i < n and ps[i] != "{":
+        i += 1
+    if i >= n:
+        raise AssertionError(f"no body brace found for PowerShell function {name!r}")
+
+    body_at, depth, quote = i, 0, None
+    while i < n:
+        ch = ps[i]
+        if quote:
+            if ch == "`" and quote == '"':
+                i += 2
+                continue
+            if ch == quote:
+                quote = None
+        elif ch in "'\"":
+            quote = ch
+        elif ch == "`":
+            i += 2
+            continue
+        elif ch == "#":
+            i = ps.find("\n", i)
+            if i == -1:
+                break
+            continue
+        elif ch == "<" and ps.startswith("<#", i):
+            end = ps.find("#>", i)
+            if end == -1:
+                break
+            i = end + 2
+            continue
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                if i + 1 - body_at < 3:
+                    raise AssertionError(
+                        f"{name!r} sliced to an empty body: {ps[body_at : i + 1]!r}"
+                    )
+                return ps[body_at : i + 1]
+        i += 1
+    raise AssertionError(f"unbalanced braces while slicing PowerShell {name!r}")
+
+
 def strip_comments(js: str) -> str:
     """Drop whole-line ``//`` comments, leaving code (and string literals) intact.
 

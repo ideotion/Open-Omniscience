@@ -1,1 +1,6 @@
 docs/ledger/shipped.csv merge=union
+
+# Windows scripts must keep CRLF endings whatever the contributor's core.autocrlf is:
+# a .cmd checked out with bare LF can misparse multi-line blocks under cmd.exe.
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
