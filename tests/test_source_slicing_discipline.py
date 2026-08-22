@@ -30,9 +30,11 @@ from tests.js_source_helper import (
     function_body,
     function_source,
     object_literal,
+    ps_function_body,
     python_function_source,
     read_static,
     strip_comments,
+    strip_ps_comments,
 )
 
 _TESTS = Path(__file__).resolve().parent
@@ -176,6 +178,61 @@ def test_a_comment_mentioning_a_call_does_not_satisfy_assert_present():
     js = "// this used to call startSweep()\nsomethingElse();\n"
     with pytest.raises(AssertionError):
         assert_present(js, "startSweep()")
+
+
+def test_a_powershell_body_does_not_over_run_past_the_last_function():
+    """The same over-run, in the language install.ps1 is written in.
+
+    Three sites in tests/test_installer_windows.py were written as
+    ``ps.split("function Name", 1)[1].split("\\nfunction ", 1)[0]``. The closing
+    delimiter is guessed, so a function with no sibling after it slices to the
+    whole rest of the script -- here, top-level installer code that has nothing to
+    do with the function under test.
+    """
+    ps = (
+        "function First {\n  $a = 1\n}\n\n"
+        "function Last {\n  $b = 2\n}\n\n"
+        "Write-Host 'top-level code that must not be in any body'\n"
+    )
+    # No naive slice is written here: this module's own convention (see the JS
+    # over-run test above) is that the FIXTURE discriminates -- top-level code
+    # follows the last function, so a "split on the next declaration" slicer
+    # sweeps it in and the assertion below fails. Writing the buggy form would
+    # add the very sites the ratchet counts.
+    body = ps_function_body(ps, "Last")
+    assert "$b = 2" in body
+    assert "top-level code" not in body, body
+
+
+def test_a_powershell_brace_inside_a_string_does_not_truncate_the_body():
+    ps = 'function F {\n  $s = "a } b"\n  $real = 1\n}\n'
+    body = ps_function_body(ps, "F")
+    assert "$real = 1" in body, body
+
+
+def test_a_missing_powershell_function_raises_instead_of_slicing_to_nothing():
+    with pytest.raises(AssertionError):
+        ps_function_body("function F {\n  $a = 1\n}\n", "Nope")
+
+
+def test_a_powershell_hyphenated_name_is_not_matched_by_a_prefix():
+    """``Write-Ok`` must not match ``Write-OkThing``: PowerShell names take
+    hyphens, so a bare word boundary is not enough."""
+    ps = "function Write-OkThing {\n  $wrong = 1\n}\nfunction Write-Ok {\n  $right = 1\n}\n"
+    body = ps_function_body(ps, "Write-Ok")
+    assert "$right = 1" in body, body
+    assert "$wrong" not in body, body
+
+
+def test_stripping_powershell_comments_keeps_code_and_string_hashes():
+    """install.ps1 documents the traps it avoids, so a guard asserting the code
+    does NOT do that thing would be satisfied by the explanation itself."""
+    src = "$a = 1  # trailing note\n<#\nblock\n#>\n$b = 'has # inside a string'\n# whole line\n"
+    stripped = strip_ps_comments(src)
+    assert "$a = 1" in stripped
+    assert "'has # inside a string'" in stripped
+    for gone in ("trailing note", "block", "whole line"):
+        assert gone not in stripped, stripped
 
 
 # --- the ratchet ------------------------------------------------------------ #

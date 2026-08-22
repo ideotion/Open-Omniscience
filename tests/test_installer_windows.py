@@ -23,30 +23,12 @@ from pathlib import Path
 
 import pytest
 
+from tests.js_source_helper import ps_function_body, strip_ps_comments
+
 REPO = Path(__file__).resolve().parents[1]
 INSTALL_PS1 = REPO / "install.ps1"
 LAUNCH_CMD = REPO / "scripts" / "launch.cmd"
 QUICKSTART = REPO / "docs" / "QUICKSTART.md"
-
-
-def _strip_ps_comments(source: str) -> str:
-    """Drop <# block #> and unquoted `#` line comments from PowerShell source."""
-    source = re.sub(r"<#.*?#>", "", source, flags=re.DOTALL)
-    out: list[str] = []
-    for line in source.splitlines():
-        quote: str | None = None
-        cut = len(line)
-        for i, ch in enumerate(line):
-            if quote:
-                if ch == quote:
-                    quote = None
-            elif ch in "'\"":
-                quote = ch
-            elif ch == "#":
-                cut = i
-                break
-        out.append(line[:cut])
-    return "\n".join(out)
 
 
 def _strip_cmd_comments(source: str) -> str:
@@ -58,27 +40,12 @@ def _strip_cmd_comments(source: str) -> str:
 
 @pytest.fixture(scope="module")
 def ps1() -> str:
-    return _strip_ps_comments(INSTALL_PS1.read_text(encoding="utf-8"))
+    return strip_ps_comments(INSTALL_PS1.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="module")
 def cmd() -> str:
     return _strip_cmd_comments(LAUNCH_CMD.read_text(encoding="utf-8"))
-
-
-# --------------------------------------------------------------------------- #
-# The comment stripper itself -- a broken stripper would silently weaken every
-# assertion below, so it is pinned in both directions.
-# --------------------------------------------------------------------------- #
-def test_comment_stripper_removes_comments_but_keeps_code_and_strings():
-    src = "$a = 1  # trailing note\n<#\nblock\n#>\n$b = 'has # inside a string'\n# whole line\n"
-    stripped = _strip_ps_comments(src)
-    assert "$a = 1" in stripped
-    assert "trailing note" not in stripped
-    assert "block" not in stripped
-    assert "whole line" not in stripped
-    # A '#' inside a quoted string is data, not a comment.
-    assert "'has # inside a string'" in stripped
 
 
 # --------------------------------------------------------------------------- #
@@ -127,13 +94,13 @@ def test_verifies_the_install_by_importing_the_real_app(ps1: str):
 def test_refreshes_path_after_a_winget_install(ps1: str):
     """A winget install leaves this session's PATH stale, so the next probe would miss it."""
     assert "Update-PathFromRegistry" in ps1
-    body = ps1.split("function Install-WingetPackage", 1)[1].split("\nfunction ", 1)[0]
+    body = ps_function_body(ps1, "Install-WingetPackage")
     assert "Update-PathFromRegistry" in body, "the winget helper must refresh PATH itself"
 
 
 def test_winget_success_is_judged_by_capability_not_by_exit_code(ps1: str):
     """winget returns non-zero for benign outcomes, so the re-probe is the real gate."""
-    body = ps1.split("function Install-WingetPackage", 1)[1].split("\nfunction ", 1)[0]
+    body = ps_function_body(ps1, "Install-WingetPackage")
     assert "-AllowFailure" in body, "winget's exit code must not be fatal"
     # ...and the caller must re-probe rather than assume the install worked.
     after = ps1.split("Install-WingetPackage -Id 'Python.Python.3.13'", 1)[1]
@@ -184,7 +151,7 @@ def test_uninstall_never_deletes_data_without_confirmation(ps1: str):
 
 
 def test_confirm_defaults_to_no_when_non_interactive(ps1: str):
-    body = ps1.split("function Confirm-Action", 1)[1].split("\nfunction ", 1)[0]
+    body = ps_function_body(ps1, "Confirm-Action")
     assert "IsInputRedirected" in body, "a redirected stdin must not be read as consent"
 
 
