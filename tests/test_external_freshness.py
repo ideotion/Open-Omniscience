@@ -59,6 +59,48 @@ def test_nothing_is_stale():
     assert not stale, f"stale external artifacts (refresh them): {stale}"
 
 
+def test_reviewed_through_is_only_available_to_on_security_entries():
+    """`reviewed_through` silences the upstream watch until the NEXT release, which is the
+    right behaviour for an `on-security` artifact (lagging upstream is its normal, correct
+    state) and the WRONG behaviour for every other policy, where being behind is real work
+    somebody owes. Without this guard the field is a universal mute button: any entry could
+    go quiet by declaring itself reviewed, and the watch would stop being a watch.
+
+    A `track-duckdb-version` entry moves its `current` when the coupling is actually
+    re-verified — a different motion, deliberately not automatable away.
+    """
+    offenders = []
+    for a in R.load_registry():
+        uc = a.get("upstream_check") or {}
+        if not str(uc.get("reviewed_through") or "").strip():
+            continue
+        policy = (a.get("freshness") or {}).get("policy")
+        if policy != "on-security":
+            offenders.append(f"{a['id']} (policy={policy!r})")
+    assert not offenders, (
+        "reviewed_through is only meaningful under freshness.policy == 'on-security'; "
+        f"remove it from: {offenders}"
+    )
+
+
+def test_reviewed_through_never_understates_what_we_ship():
+    """A review baseline must be at or ahead of the shipped version. `reviewed_through`
+    BEHIND `current` would be incoherent (we shipped something nobody cleared) and would
+    also silently re-flag forever, which is the noise this field exists to remove."""
+    for a in R.load_registry():
+        uc = a.get("upstream_check") or {}
+        reviewed = str(uc.get("reviewed_through") or "").strip()
+        current = str(uc.get("current") or "").strip()
+        if not reviewed or not current:
+            continue
+        norm = lambda t: tuple(  # noqa: E731 - local, single use
+            int(p) if p.isdigit() else p for p in re.split(r"[.\-+]", t.lstrip("vV"))
+        )
+        assert norm(reviewed) >= norm(current), (
+            f"{a['id']}: reviewed_through={reviewed} is behind current={current}"
+        )
+
+
 def test_duckdb_floor_matches_pyproject():
     """COMPATIBILITY coupling: the registry's DuckDB floor MUST equal the pyproject
     [columnar] floor, so the bundled crypto-extension version stays in lockstep."""

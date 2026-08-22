@@ -85,6 +85,51 @@ the encrypted round trip — that in-lane checksum is **never** written back int
   `python scripts/build_ip_geo.py --mirror`, then bump `IP_GEO_AS_OF`. Keep the CC BY 4.0
   attribution (`ip_geo.ATTRIBUTION`).
 - **Vendored Alpine** — re-vendor only on a security release; update the file + its sha256.
+  When a review clears an upstream release *without* re-vendoring, record it with
+  `reviewed_through` (below) — do **not** leave the watch flagging forever.
 - **Natural Earth geometry** — refresh only on a data correction (changes rarely).
 - **CI action SHAs + pinned QA tools** (`mypy`/`bandit`/`pip-audit`/`ruff`) — let
   Dependabot bump; re-pin to the new SHA with its tag comment.
+
+## Clearing an `on-security` artifact without re-vendoring (`reviewed_through`)
+
+An `on-security` artifact is **supposed** to sit behind upstream: we re-vendor on a
+security fix, not on every release. But the upstream watch compared the latest release
+against `current` — the version we *ship* — so those entries flagged on every release and
+the rolling issue could never close. A gate that always fires is a gate everyone learns to
+ignore, which is exactly how the one release that *does* carry a CVE would arrive into an
+already-red issue.
+
+So the two facts are kept apart:
+
+| field | means |
+|---|---|
+| `current` | the release we **ship** (never edit it without re-vendoring) |
+| `reviewed_through` | the newest upstream release a human **reviewed and cleared** |
+
+The watch compares against `reviewed_through` when present, else `current`
+(`scripts/check_upstream_updates.py:review_baseline`). Two guards keep it honest:
+`reviewed_through` is rejected on any policy other than `on-security` (so it cannot become
+a universal mute button), and it may never sit *behind* `current`. Both are enforced in
+`tests/test_external_freshness.py`.
+
+**Doing a review.** When the watch flags an `on-security` entry:
+
+1. Read the **tags**, not the issue body — upstream may have moved since the issue was
+   last written (2026-08-22: the issue said Alpine v3.16.1, upstream was already v3.16.2).
+   `git ls-remote --tags --refs <url>` needs no API access.
+2. Diff the upstream **git history** between the shipped tag and the latest, not the
+   release-note prose: `git clone --filter=blob:none --no-checkout`, then
+   `git log --oneline <shipped>..<latest>` filtered for
+   `secur|vulnerab|xss|cve|ghsa|sanitiz|escap|inject|exploit|prototype pollut`.
+3. For each candidate, decide whether it reaches **what we actually ship** — a fix in a
+   plugin package is irrelevant if our bundle does not contain that package (probe the
+   vendored file for its identifying tokens and record the result).
+4. Re-vendor if a fix applies. Otherwise set `reviewed_through` to the latest tag, write
+   the **evidence** into the entry as a comment, and bump `last_verified`.
+
+**Honest limit.** This watch sees **releases, not advisories**. A vulnerability disclosed
+against a pinned version with no new upstream release is invisible to it — that is
+Dependabot/GHSA territory. The GitHub advisory DB and `api.osv.dev` are also egress-blocked
+from the build sandbox, so a sandbox review is a code-level read of the upstream diff, not
+an advisory clearance; say which one you did.

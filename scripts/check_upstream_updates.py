@@ -9,7 +9,10 @@ This is layer 3's network-using half — it runs in CI ONLY (the freshness workf
 in the app. For each registry entry that declares an ``upstream_check`` it queries the
 GitHub API and compares to our recorded pin:
 
-  * ``type: release``      -> latest GitHub release tag vs the entry's ``current`` tag;
+  * ``type: release``      -> latest GitHub release tag vs the entry's review baseline:
+    ``reviewed_through`` when the entry sets it (the newest upstream release a human has
+    reviewed and cleared), else ``current`` (the release we ship). See ``review_baseline``
+    for why an ``on-security`` entry needs the two facts kept apart;
   * ``type: path_commit``  -> the month of the latest commit touching ``path`` vs our
     ``*_AS_OF`` (so a refreshed data mirror is noticed).
 
@@ -59,6 +62,32 @@ def release_is_behind(current: str, latest_tag: str) -> bool:
     return bool(latest_tag) and _norm_tag(latest_tag) != _norm_tag(current)
 
 
+def review_baseline(uc: dict[str, Any]) -> tuple[str, str]:
+    """The tag upstream is compared against, plus the registry field that supplied it.
+
+    ``current`` names the release we SHIP. For an ``on-security`` artifact the shipped
+    version is EXPECTED to lag upstream indefinitely — we re-vendor on a security fix, not
+    on every release — so comparing upstream against it makes the watch fire forever and
+    the rolling issue can never close. A gate that always fires teaches everyone to ignore
+    it, which is exactly how the one release that DOES carry a CVE would arrive into an
+    already-red issue nobody reads.
+
+    ``reviewed_through`` records the newest upstream release a human has reviewed and
+    CLEARED under the entry's policy. When present it is the comparison baseline, so the
+    watch goes quiet after a review and speaks again on the NEXT release. It is a separate
+    field on purpose: conflating "what we ship" with "what we have cleared" into one value
+    would make the registry misstate the shipped artifact. Absent, behaviour is unchanged.
+
+    HONEST LIMIT: this watch sees RELEASES, not ADVISORIES. A vulnerability disclosed
+    against our pinned version with no new upstream release is invisible to it — that is
+    Dependabot/GHSA territory, and the entry's own notes carry the evidence of each review.
+    """
+    reviewed = str(uc.get("reviewed_through") or "").strip()
+    if reviewed:
+        return reviewed, "reviewed_through"
+    return str(uc.get("current", "") or ""), "current"
+
+
 def latest_release_tag(payload: Any) -> str | None:
     if isinstance(payload, dict):
         return payload.get("tag_name") or payload.get("name")
@@ -98,11 +127,17 @@ def check_all(fetch: Callable[[str], Any] = _fetch_json) -> list[dict[str, Any]]
             if typ == "release":
                 payload = fetch(f"https://api.github.com/repos/{gh}/releases/latest")
                 latest = latest_release_tag(payload)
-                cur = uc.get("current", "")
+                base, field = review_baseline(uc)
                 if latest is None:
                     rec.update(status="check-failed", detail="no release tag in response")
-                elif release_is_behind(cur, latest):
-                    rec.update(status="behind", detail=f"upstream {latest} vs pinned {cur}")
+                elif release_is_behind(base, latest):
+                    label = "pinned" if field == "current" else "reviewed through"
+                    rec.update(status="behind", detail=f"upstream {latest} vs {label} {base}")
+                elif field == "reviewed_through":
+                    # Never say "up to date" here: we may still ship an older release on
+                    # purpose. State what was actually established — upstream has not moved
+                    # past the last review.
+                    rec["detail"] = f"reviewed through {base} (upstream {latest})"
                 else:
                     rec["detail"] = f"up to date ({latest})"
             elif typ == "path_commit":

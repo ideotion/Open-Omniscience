@@ -27,6 +27,17 @@
 #   description   what it is / why we bundle it
 #   upstream      where it comes from
 #   check_upstream how to tell a newer release exists (for the cron + humans)
+#   upstream_check  the machine watch: {github, type: release|path_commit, ...}
+#                   `current`          the release we SHIP
+#                   `reviewed_through` (on-security entries ONLY, test-enforced) the newest
+#                     upstream release a human REVIEWED and CLEARED. Kept apart from
+#                     `current` because an on-security artifact is SUPPOSED to lag upstream
+#                     — we re-vendor on a security fix, not on every release — so comparing
+#                     against the shipped version makes the watch fire forever and the
+#                     rolling issue never close, which trains everyone to ignore it. Set it
+#                     only WITH the evidence of the review in a comment + a fresh
+#                     last_verified. It silences nothing permanently: the next release past
+#                     it re-flags.
 #   license       + attribution requirement when any
 #   pin           one of:
 #                   {file, const}            a `*_AS_OF` (or version) constant in source
@@ -52,7 +63,17 @@ artifacts:
     freshness: {max_age_months: 6}
     couplings: ["src/geo/data/dbip_country_lite.csv.gz must exist + be parseable"]
     upstream_check: {github: "sapics/ip-location-db", type: path_commit, path: "dbip-country/dbip-country-ipv4.csv", compare: as_of}
-    last_verified: "2026-07-16"
+    # Refreshed 2026-08-22 to the 2026-08 DB-IP release (freshness issue #440). The mirror's
+    # last dbip-country data commit is 2026-08-01, which is what fixes the vintage month --
+    # the mirror carries no month label of its own, so the release month is read from its
+    # commit history, never guessed from today's date. 696,606 -> 706,466 rows; 0 malformed;
+    # the country vocabulary is unchanged at 250 codes (none gained, none lost), and v4/v6
+    # grew proportionally -- i.e. a routine monthly delta, not a format or coverage change.
+    # Verified through the production reader (src.geo.ip_geo.lookup), not just the build
+    # script's 5-row check: known IPs resolve (8.8.8.8 us, 1.1.1.1 au, 212.27.48.10 fr,
+    # 2001:4860:4860::8888 ca) and the RFC-5737 documentation range still returns the honest
+    # level="unavailable" rather than a fabricated country.
+    last_verified: "2026-08-22"
 
   - id: llm-model-catalog
     title: Ollama model catalog
@@ -260,15 +281,43 @@ artifacts:
     upstream: https://github.com/alpinejs/alpine (npm tarball)
     check_upstream: "watch alpinejs releases for security fixes"
     license: MIT
-    pin: {path: src/static/guis/vendor/alpine.min.js, sha256: ""}  # filled by registry self-heal/verify
+    # Real measured digest (2026-08-22), cross-checked against the committed sidecar
+    # src/static/guis/vendor/alpine.min.js.sha256 — never a fabricated value. A BLANK pin
+    # left this entry at status `info` ("present"), i.e. the registry checked that the file
+    # exists and never that it was the file we vendored; filled, drift now reports `stale`.
+    pin: {path: src/static/guis/vendor/alpine.min.js,
+          sha256: "358d9afbb1ab5befa2f48061a30776e5bcd7707f410a606ba985f98bc3b1c034"}
     refresh: "re-vendor the pinned version; update the sha256 + the gallery checksum constant"
     freshness: {policy: on-security}
-    upstream_check: {github: "alpinejs/alpine", type: release, current: "v3.14.1"}
-    # Checked 2026-07-16 (freshness issue #440 flagged v3.15.12 upstream): no GitHub
-    # Security Advisory exists for alpinejs/alpine, and none of the v3.14.2-v3.15.12
-    # release notes mention a CVE/vulnerability/XSS fix -- policy is on-security, so
-    # correctly NOT re-vendored. Re-check next time the issue flags a newer upstream.
-    last_verified: "2026-07-16"
+    # `current` names the version we SHIP (v3.14.1). `reviewed_through` names the newest
+    # upstream release reviewed and CLEARED under the on-security policy -- see
+    # scripts/check_upstream_updates.py:review_baseline for why the two must stay apart.
+    upstream_check:
+      {github: "alpinejs/alpine", type: release, current: "v3.14.1",
+       reviewed_through: "v3.16.2"}
+    # Reviewed 2026-08-22 (freshness issue #440 flagged v3.16.1; upstream had already moved
+    # to v3.16.2 by the time it was read -- read the tags, not the issue body). Evidence,
+    # from the upstream git history rather than release-note prose:
+    #   * 190 commits in v3.14.1..v3.16.2; a keyword scan (secur|vulnerab|xss|cve|ghsa|
+    #     sanitiz|escap|inject|exploit|csp|prototype pollut) surfaced 10 candidates.
+    #   * Nine are not security fixes: six are CSP-BUILD features (Alpine's eval-free
+    #     bundle), plus ShadowRoot support, the addition of SECURITY.md itself, and a
+    #     magic-memoization fix that matched only on the word "inject".
+    #   * The one genuine XSS-shaped fix is #4770 "Escape attribute values in morph
+    #     `setAttribute` patch" (1735d0b, first released v3.15.9) -- it escapes & and "
+    #     before an innerHTML attribute write. It lives in packages/morph, and OUR BUNDLE
+    #     SHIPS NO MORPH: four token probes over alpine.min.js (morph / Alpine.morph /
+    #     hostDiv / monkeyPatchDomSetAttributeToAllowAtSymbols) all return 0.
+    #   * Core (packages/alpinejs, 86 commits in range) touched a dangerous sink twice:
+    #     89e9685 `x-html` rendering "undefined" (cosmetic) and 76defde "Improve evaluator"
+    #     (ADDS a `new Function`; our bundle has none, and an added sink upstream is not a
+    #     fix we are missing).
+    # So: no security fix applies to what we vendor -> correctly NOT re-vendored.
+    # LIMIT, stated rather than glossed: github.com/advisories and api.osv.dev are both
+    # egress-blocked from the build sandbox (403), so this is a code-level review of the
+    # upstream diff, NOT an advisory-database clearance. A CVE filed against v3.14.1 with
+    # no new release would be invisible to this watch.
+    last_verified: "2026-08-22"
 
   - id: vendored-axe-core
     title: axe-core (vendored, browser-harness a11y engine)
@@ -343,19 +392,43 @@ artifacts:
     upstream: https://github.com/duckdb/duckdb (+ extensions.duckdb.org)
     check_upstream: "watch duckdb releases; the storage format + extension version both move"
     license: MIT (DuckDB)
-    pin: {floor: "1.4", verified: "1.5.4"}   # pyproject [columnar] duckdb>=floor ; verified against
+    pin: {floor: "1.4", verified: "1.5.5"}   # pyproject [columnar] duckdb>=floor ; verified against
+    # Re-verified 2026-08-22 at duckdb 1.5.5 (freshness issue #440). WHAT THAT COVERS, and
+    # what it does not -- the two halves of this coupling are in different states:
+    #   * LIVE half, verified here: `pip install -e ".[columnar]"` resolves duckdb>=1.4 to
+    #     1.5.5 today, the floor coupling holds (test_duckdb_floor_matches_pyproject +
+    #     test_duckdb_version_coupling_holds_when_installed), and the whole columnar CI lane
+    #     is green at 1.5.5 -- 57 passed (engine, read model, keyword_daily + source_coverage
+    #     rollups, rollup-serve, and the httpfs loader's verify MECHANISM against its fixture
+    #     binary).
+    #   * DORMANT half, NOT verified here and unchanged: the real per-OS httpfs binaries.
+    #     They ship BLANK by design, so secure_crypto_available() is False at 1.5.5 (checked)
+    #     and there is nothing bundled to re-download or re-checksum. The real-httpfs
+    #     encrypted round trip skipped honestly -- extensions.duckdb.org is egress-blocked
+    #     from the build sandbox (curl: CONNECT tunnel failed) -- so it stays the operator's
+    #     audited build, exactly as before. NEVER promote a CI-computed checksum into a pin.
+    # The FLOOR deliberately stays 1.4: nothing here requires 1.5, and raising it would break
+    # installs that resolve lower for no gain.
+    # WHY THIS BUMP IS LOW-RISK, measured rather than assumed: 1.5.4 -> 1.5.5 is a PATCH
+    # release inside minor 1.5, and the loader couples on MAJOR.MINOR
+    # (columnar._duckdb_minor() returns "1.5" at 1.5.5, checked) -- so a binary built for any
+    # 1.5.x still matches. A MINOR bump (1.5 -> 1.6) is the one that invalidates a bundle and
+    # demands the full per-platform rebuild in `refresh` below.
     refresh: >
       On a DuckDB bump: re-download httpfs for EVERY supported platform_arch at the NEW
       version; verify each signature/checksum; re-run the encryption gate per platform;
       confirm the persisted store still opens (else delete+rebuild — it is disposable);
       update {floor, verified} here.
     freshness: {policy: track-duckdb-version}
-    upstream_check: {github: "duckdb/duckdb", type: release, current: "v1.5.4"}
+    # No `reviewed_through` here on purpose: under track-duckdb-version, lagging upstream is
+    # NOT a legitimate steady state (unlike an on-security artifact), so `current` moves only
+    # when the coupling is actually re-verified -- as it was, at 1.5.5, on 2026-08-22.
+    upstream_check: {github: "duckdb/duckdb", type: release, current: "v1.5.5"}
     platforms: [linux_amd64, linux_arm64, osx_amd64, osx_arm64, windows_amd64]
     couplings:
       - "pyproject.toml [project.optional-dependencies] columnar duckdb>= must equal floor"
       - "the on-disk store format is version-bound; on mismatch the disposable store is rebuilt"
-    last_verified: "2026-06-19"
+    last_verified: "2026-08-22"
 
   - id: duckdb-httpfs-extension
     title: DuckDB httpfs extension binaries (persisted-store crypto backend, D1)
@@ -372,7 +445,14 @@ artifacts:
     upstream: https://github.com/duckdb/duckdb (httpfs built with statically-linked OpenSSL via vcpkg)
     check_upstream: "rebuild per platform on any duckdb minor bump (the version couples)"
     license: MIT (DuckDB)
-    pin: {floor: "1.4", verified: "1.5.4"}   # tracks the installed duckdb minor, like duckdb-crypto-extension
+    pin: {floor: "1.4", verified: "1.5.5"}   # tracks the installed duckdb minor, like duckdb-crypto-extension
+    # Kept in step with duckdb-crypto-extension on 2026-08-22. Here `verified` names the
+    # duckdb version the (still-unbundled) binaries must be BUILT at -- a target, not a
+    # verification of binaries that do not exist. Nothing else changes: every `binaries`
+    # entry below is still blank, secure_crypto_available() is still False (checked at
+    # 1.5.5), and enforcement is per-binary against the INSTALLED minor at run time
+    # (columnar._verified_httpfs), never against this field. 1.5.4 -> 1.5.5 is a patch
+    # inside minor 1.5, so it would not have invalidated a bundle even if one existed.
     binaries:                                # per-platform pins; version+sha256 BLANK until the networked build (NEVER fabricated)
       linux_amd64:   {version: "", sha256: "", file: ""}
       linux_arm64:   {version: "", sha256: "", file: ""}

@@ -51,14 +51,15 @@ def test_month_is_behind():
 
 
 def test_check_all_flags_behind_and_current_and_failures():
-    # A fake GitHub API: alpine has moved on, duckdb is current, the geo mirror is current.
+    # A fake GitHub API: alpine has moved past its review baseline, duckdb is current, the
+    # geo mirror is older than our vintage.
     def fake_fetch(url: str):
         if "alpinejs/alpine/releases/latest" in url:
-            return {"tag_name": "v3.20.0"}            # newer than pinned v3.14.1 -> behind
+            return {"tag_name": "v3.20.0"}            # past reviewed_through -> behind
         if "duckdb/duckdb/releases/latest" in url:
-            return {"tag_name": "v1.5.4"}             # == pinned -> current
+            return {"tag_name": "v1.5.5"}             # == current -> current
         if "ip-location-db/commits" in url:
-            return [{"commit": {"committer": {"date": "2026-06-01T00:00:00Z"}}}]  # == as_of
+            return [{"commit": {"committer": {"date": "2026-06-01T00:00:00Z"}}}]  # <= as_of
         raise AssertionError(f"unexpected url {url}")
 
     rows = U.check_all(fetch=fake_fetch)
@@ -66,6 +67,58 @@ def test_check_all_flags_behind_and_current_and_failures():
     assert by_id["vendored-alpine"]["status"] == "behind"
     assert by_id["duckdb-crypto-extension"]["status"] == "current"
     assert by_id["ip-geo-country"]["status"] == "current"
+
+
+def test_review_baseline_prefers_reviewed_through_then_current():
+    assert U.review_baseline({"current": "v1.0"}) == ("v1.0", "current")
+    assert U.review_baseline({"current": "v1.0", "reviewed_through": "v2.0"}) == (
+        "v2.0",
+        "reviewed_through",
+    )
+    # Blank/whitespace reviewed_through must not shadow current (an empty baseline would
+    # make release_is_behind() flag every release forever).
+    assert U.review_baseline({"current": "v1.0", "reviewed_through": ""}) == ("v1.0", "current")
+    assert U.review_baseline({"current": "v1.0", "reviewed_through": "   "}) == ("v1.0", "current")
+    assert U.review_baseline({}) == ("", "current")
+
+
+def test_a_cleared_on_security_entry_goes_quiet_but_never_claims_we_ship_upstream():
+    """The point of reviewed_through: after a review the watch stops firing, so the rolling
+    issue can close -- WITHOUT the registry pretending we vendor the newer release."""
+
+    def fetch_at_reviewed(url: str):
+        if "alpinejs/alpine/releases/latest" in url:
+            return {"tag_name": "v3.16.2"}            # == reviewed_through -> quiet
+        if "duckdb/duckdb/releases/latest" in url:
+            return {"tag_name": "v1.5.5"}
+        if "ip-location-db/commits" in url:
+            return [{"commit": {"committer": {"date": "2026-06-01T00:00:00Z"}}}]
+        raise AssertionError(f"unexpected url {url}")
+
+    row = {r["id"]: r for r in U.check_all(fetch=fetch_at_reviewed)}["vendored-alpine"]
+    assert row["status"] == "current", "a reviewed-and-cleared entry must not stay flagged"
+    # The negative half, and the reason this is a distinct branch rather than reusing the
+    # "up to date" string: we ship v3.14.1 and the wording must not imply otherwise.
+    assert "up to date" not in row["detail"]
+    assert "reviewed through v3.16.2" in row["detail"]
+
+
+def test_a_release_past_the_review_baseline_speaks_again():
+    """The twin: going quiet after a review must not mean going deaf. A release nobody has
+    looked at re-flags, which is the whole signal the watch exists to carry."""
+
+    def fetch_newer(url: str):
+        if "alpinejs/alpine/releases/latest" in url:
+            return {"tag_name": "v3.16.3"}            # one patch past the review
+        if "duckdb/duckdb/releases/latest" in url:
+            return {"tag_name": "v1.5.5"}
+        if "ip-location-db/commits" in url:
+            return [{"commit": {"committer": {"date": "2026-06-01T00:00:00Z"}}}]
+        raise AssertionError(f"unexpected url {url}")
+
+    row = {r["id"]: r for r in U.check_all(fetch=fetch_newer)}["vendored-alpine"]
+    assert row["status"] == "behind"
+    assert "v3.16.3" in row["detail"] and "v3.16.2" in row["detail"]
 
 
 def test_check_all_degrades_loudly_never_crashes():

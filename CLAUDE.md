@@ -4527,6 +4527,51 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     run to run still supports the invariants it holds exactly (zero `pageerror`, the same 1393
     globals, in all fourteen state-runs); it just cannot support the one that varies, and saying
     which is which is what keeps the evidence section evidence.
+  - **A WATCH WHOSE BASELINE IS THE SHIPPED VERSION FIRES FOREVER ON AN ARTIFACT THAT IS
+    SUPPOSED TO LAG — and a gate that always fires is a gate nobody reads (2026-08-22,
+    freshness issue #440, open two months):** `check_upstream_updates` compared the latest
+    upstream release against `upstream_check.current`, which names the version we SHIP. For an
+    `on-security` artifact lagging upstream is the CORRECT steady state — we re-vendor on a
+    security fix, not on every release — so `vendored-alpine` flagged on every single Alpine
+    release, the rolling issue could never close, and the whole watch decayed into background
+    noise. That is the recorded "a gate you expect to be interesting never says anything
+    interesting" lesson INVERTED, and the failure mode is worse: the one release that does
+    carry a CVE arrives into an issue that has been red for months. FIX = keep the two facts
+    apart rather than overloading one field (the standing one-key-two-meanings defect):
+    `current` = what we ship, `reviewed_through` = the newest upstream release a human
+    reviewed and CLEARED; the watch compares against the second when present. TWO GUARDS make
+    it honest rather than a mute button — it is rejected on any policy but `on-security` (a
+    `track-duckdb-version` entry must keep nagging until the coupling is really re-verified),
+    and it may never sit BEHIND `current`. And the quiet branch must NOT reuse the "up to
+    date" string: we still ship the older release, so it says "reviewed through X (upstream
+    X)" — a mutation that reuses the old wording reddens by name. HONEST LIMIT recorded in the
+    entry: this watch sees RELEASES, not ADVISORIES, so a CVE filed against a pinned version
+    with no new release is invisible to it.
+  - **READ THE TAGS, NOT THE ISSUE BODY — and ask whether the fix reaches what you SHIP
+    (2026-08-22, the same issue):** the issue said Alpine v3.16.1; `git ls-remote --tags` said
+    **v3.16.2** — an automated issue is a snapshot that ages, so re-derive the upstream state
+    before reasoning about it (the same class as the stale-baseline trap, one input over). The
+    review itself then turns on a question a version-diff cannot answer: of 190 commits in
+    v3.14.1..v3.16.2 exactly one is genuinely XSS-shaped (#4770, escaping `&` and `"` before
+    an `innerHTML` attribute write), and it lives in `packages/morph` — **our vendored bundle
+    contains no morph at all** (four token probes, all 0). So the honest verdict is "no
+    security fix applies to what we vendor", which is a stronger and more checkable claim than
+    "no advisory exists" — and it needed the upstream GIT HISTORY, not the release-note prose,
+    since Alpine publishes no CHANGELOG. Corollary on tooling: `git ls-remote` and a
+    `--filter=blob:none --no-checkout` clone need no GitHub API access, which matters because
+    `api.github.com` is repo-scoped in the sandbox and `github.com/advisories` + `api.osv.dev`
+    are both egress-blocked (403) — state which kind of review you actually did.
+  - **A PATCH BUMP INSIDE THE SAME MINOR CANNOT INVALIDATE A VERSION-COUPLED BUNDLE — check
+    which component the coupling is on before doing the expensive checklist (2026-08-22):**
+    duckdb v1.5.4 -> v1.5.5 reads like the trigger for the full per-platform httpfs rebuild
+    the registry's `refresh` describes. It is not: `columnar._verified_httpfs` couples on
+    MAJOR.MINOR, and `_duckdb_minor()` returns `"1.5"` at 1.5.5 (measured, not assumed), so
+    any 1.5.x binary still matches and only a 1.5 -> 1.6 bump demands the rebuild. What WAS
+    verifiable in-sandbox is the live half — pip resolves `duckdb>=1.4` to 1.5.5 today, the
+    floor coupling holds, and the whole columnar lane is green at 1.5.5 (57 passed) — while
+    the dormant half stays operator-gated because `extensions.duckdb.org` is egress-blocked
+    and the binaries ship blank by design. Bumping `verified` is then honest ONLY with the
+    split written down beside it; a bare "1.5.5" would imply the per-platform work happened.
 ## Open queue (when maintainer says proceed)
 - **KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING (maintainer 2026-08-13, "let's get this done
   at my return" — PARKED, nothing further to build; the machinery is shipped and the
