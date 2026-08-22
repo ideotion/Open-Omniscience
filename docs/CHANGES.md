@@ -46,6 +46,52 @@ loop, and recalibrates the analytics against a real ~500k-article corpus. On the
 - **The Observatory** — the corpus-as-night-sky exploration tab (design of record:
   [`docs/design/OBSERVATORY_DESIGN.md`](design/OBSERVATORY_DESIGN.md)), gated on the
   group-statistics core and maintainer click-through.
+- **The Bulletin — a periodic document made from your corpus.** Settings → Advanced →
+  *Bulletin* builds a report over one closed period — a day, a week, a month, up to a
+  year — and it is the record rather than a summary of one: exact counts, each with the
+  method that produced it. It opens by stating its own lens, because a figure about a
+  corpus is not a figure about the world: how many sources actually contributed, what
+  share the largest three carried, the language and country split, and how many of the
+  period's days saw any ingest at all. Eight sections follow — what rose, which channel
+  carried a concept first (ties reported as ties, never broken), local coverage beside
+  international coverage of the same country, topics, changes to tracked laws and
+  Wikipedia pages, provider-declared alerts, the same calendar days in earlier years,
+  and the Lead cards. Each prints the window it *actually* used, so a fourteen-day number
+  in a seven-day edition is visible rather than discovered later, and everything the
+  period could not see — quarantined articles, mentions carrying no date, an unfinished
+  re-index — is counted at the end instead of quietly dropped.
+  **A local model can narrate it, and the layer comes off cleanly.** With narration on,
+  each story cluster gains a paragraph — and every sentence is checked against the article
+  text the model was shown, then dropped if it names a figure or an entity that is not
+  there. A paragraph that lost sentences says so. A story whose sentences all failed falls
+  back to the deterministic counts and is deliberately *not* labelled AI-derived: calling
+  the app's own arithmetic a model's work would be a fabricated attribution in the other
+  direction. Model sentences are marked beside the prose, not once in a footer.
+  **What leaves the machine is chosen, and says what it is.** Nothing publishes itself —
+  automation reaches a draft and stops, because you are the byline. The review screen shows
+  each sentence's verdict and lets you exclude a section or a story; excluding one
+  *re-renders* from the saved record rather than editing the output, so a published number
+  is always a number the record contains, and the document states that it is a selection
+  ("1 of 3 sections") so a reader is never handed an omission they cannot see. The report
+  downloads with an annexes bundle — one file per cited article, where the report's
+  `[0007]` and `..._Article_0007.md` are guaranteed to be the same article. Published
+  output carries **external** links only: a local article id means a different article on
+  someone else's install. The HTML is entirely self-contained — no stylesheet, font, script
+  or image fetched from anywhere — because a shared document that phones home would tell
+  its recipient's network what you read. An owner-only evidence archive can carry every
+  article a figure was computed over, so the counts can be recomputed rather than trusted;
+  it is plaintext leaving an encrypted store, and it says so before it is written.
+  **It is written in your interface language** — 11 locales, mechanically verified
+  complete. A missing translation renders in English *and is reported*; a translation whose
+  placeholders no longer match its sentence is refused rather than printed with a stray
+  brace; and entries merely copied from the English are counted apart, so a catalog of
+  copies cannot report itself finished. Design of record:
+  [`docs/design/BULLETIN_DESIGN_2026-07-31.md`](design/BULLETIN_DESIGN_2026-07-31.md).
+  **Not claimed:** the feature is gated on hardware capable of practical local inference,
+  which currently denies a GPU-less machine even the deterministic document — a single
+  constant, and an open question. Narration still runs inside the generate request rather
+  than as a resumable background job, which is right for a bounded number of stories and
+  wrong for a long run. Every screen here shipped browser-unverified.
 - **The import page-cache rule was the bug** — a large import on a small machine
   spent 15.9 hours inside a single merge step without finishing, while the same
   code merged smaller backups in seconds. The cause was this project's own
