@@ -545,6 +545,7 @@ human UX pass".
 | 2026-08-23 | **P0.3 reported `fail` and the detector was wrong.** `peak - first` fired on 3 of 193 passes (1.6 %) while first/median/last were 1323/1371/1303 MB, against a method string promising *a sustained rise*; the sampler is process-wide, so the largest spike sits between two of the app's own pre-restore snapshots. Verdict moved to the sustained level, excursions still reported; replaying the real series returns pass at +176 MB. Row 7b stays in `0.4` — a fabricated failure removed is not a soak run | session |
 | 2026-08-23 | **Row 5 criteria PROPOSED** from the release-scale report: Tier A = the 8-article drop path (`/topics/<id>` indexes, measured 0.0 function-word density) for execution; Tier B = the 451 index pages above the word guard, explicitly **not** proposed because their prose is unmeasured. `CRITERIA_VERSION` bumped to `nav-soup-v2`. Two instrument findings recorded, not fixed: the bundle's prose arm always restarts at id 0 so it can never finish, and it walks by id rather than by the population in question | session |
 | 2026-08-23 | **Session forensics gains a text rendering** — `forensics.render_text`, a dated `.txt` on `?download=1`, and `session-forensics.txt` beside the JSON in the bundle (field ask). A deliberate, reasoned exception to the 2026-07-20 button-consolidation ruling | session |
+| 2026-08-23 | **PR #979 merged** as `917e809`, carrying rows 3 and 7a's closures and the three field-defect fixes onto `main`. §7.4 re-measured on that tree: **8434 passed / 47 skipped / 0 failed**, with the other four blocking gates re-run green (ruff, mypy 0/482, bandit, both i18n ratchets *identical* at 561 / 298). Each merge delta checked against what its diff added — both close exactly. The figures it previously carried (8423 / 43) described a tree two merges old | session |
 | 2026-08-20 | Row 8's **stretch matrix executed** — 375px P1 fixed, state-D import fixture, Reader drilled, all 17 themes (ai-off AA fix), five lens drills (agenda deduced-events fix), a11y axis (axe vendored; #oo-tip fix), 5 of 9 honesty rules automated; `docs/audit/UI_CLICKTHROUGH_2026-08-20.md`. The row was already closed; this discharges the recorded stretch target | session |
 
 ---
@@ -776,11 +777,13 @@ on a named artifact, never on "it was built".
 
 ### 7.4 What a session verified, and what that is worth
 
-Run on the tree that would be tagged:
+Run on the tree that would be tagged, and re-run after each `origin/main` merge the
+release branch absorbed — so these are the numbers for `917e809`, the merge commit that
+carries `0.3.0` on `main`:
 
 | Gate | Command (verbatim from `ci.yml`) | Result |
 |---|---|---|
-| Tests | `python -m pytest -q` | **8423 passed**, 43 skipped, 0 failed |
+| Tests | `python -m pytest -q` | **8434 passed**, 47 skipped, 0 failed |
 | Blocking lint | `ruff check --select=F,B --extend-ignore=B008 src/ tests/` | clean |
 | Types | `python -m mypy src/` | **0 errors**, 482 files |
 | SAST | `bandit -r src/ -ll -q` | clean |
@@ -792,8 +795,17 @@ Run on the tree that would be tagged:
 The pass count carries its own proof at every step: 8390 → **8406** is exactly the 16 tests
 the first pass added, 8406 → **8415** is exactly the 9 that arrived with `origin/main`'s
 Windows-on-ARM work, and 8415 → **8423** is exactly the 8 added for the three field defects.
+Two further `origin/main` merges landed before the branch went in, and each was checked the
+same way against what its diff actually added: 8423 / 43 skipped → **8432 / 46** for the
+architecture-detection and venv-rebuild work (15 tests added, 3 of its own renamed away, so
+12 net — and the split is +9 passed / +3 skipped), then → **8434 / 47** for moving the
+bundled interpreter out of the checkout (3 tests, +2 passed / +1 skipped).
+
 A change that adds tests and reports an unchanged total has a harness that never ran it —
-and a merge that reports only one side's total ran only one side.
+and a merge that reports only one side's total ran only one side. The skipped column is
+load-bearing in those last two steps rather than incidental: main's Windows installer tests
+are `pwsh`-gated and *correctly* skip in this sandbox, so reading the passed column alone
+would have made both merges look as though they under-delivered against their own diffs.
 
 The two ratchets are maxima, so "under the bar" is not evidence — a *shrinking* measured
 population reads the same as an improving codebase. Both were checked for being
