@@ -8,6 +8,10 @@ so this gate governs **tagging**, not the version number.
 Amended twice since; the amendment log is §3. The narrative board lives in
 [`docs/CHANGES.md`](../CHANGES.md) under `0.3.0`; this file is the part you tick.
 
+**The sequence from here to the tag is [§7](#7-the-path-to-the-tag--what-is-left-in-order).**
+Three rows remain and all three are measurements on the maintainer's own corpus; §7.5
+records what a session already verified, and what that is worth.
+
 **How a row closes.** A row is `CLOSED` only when there is a **named artifact** — a
 report file, a merged PR, a measured number — that a later reader can re-open and check.
 "It was built" is not closure; the gate's own rule is *merged ≠ green ≠ verified*. A row
@@ -163,7 +167,7 @@ fronts, tag archives — *"a list, not an article"*).
 
 **The only missing step is a decision, and row 3 delivers its input.**
 `criteria-calibration.json` is already an all-diagnostics **bundle member**
-(`src/api/diagnostics.py:3529`), so the diagnostics run queued for row 3 *contains* the
+(`src/api/diagnostics.py:3526`), so the diagnostics run queued for row 3 *contains* the
 report row 5's execution is gated on. Sequence:
 
 1. operator runs the bundle (row 3) →
@@ -321,6 +325,7 @@ human UX pass".
 | 2026-08-13 | Rows 1 and 2 marked closed against named artifacts; this file created | session |
 | 2026-08-13 | Row 8 **closed** against its own literal wording — the standing Playwright `ui_walk` runner shipped, drove all three test states, all 5 flagship surfaces stamped, every P0/P1 fixed-or-recorded; the fuller 15-surface/17-theme/12-locale/a11y matrix from the brief's §6 is explicitly NOT fully covered and is recorded as a stretch target, not a condition of this row | session |
 | 2026-08-13 | A **second** gate board (repo root, 2026-08-04) found and **absorbed** into §6; the root file removed. This file is the only 0.3 board | session |
+| 2026-08-23 | **§7 added — the path to the tag**: the three open rows sequenced (row 5 consumes row 3's output), the tag mechanics corrected for `0.3` (no branch rename; `pyproject` already `0.3.0`; the tag is cut from the maintainer's machine because the session git proxy refuses tag pushes; never create the release in the UI), and §7.5 recording a full pre-tag gate run at `edfed14` — 8390 passed, mypy 0/482, blocking ruff + bandit + pip-audit clean, all three i18n gates unchanged at their ratchets. Every CLOSED row's named artifact re-verified present in the tree the same day | session |
 | 2026-08-20 | Row 8's **stretch matrix executed** — 375px P1 fixed, state-D import fixture, Reader drilled, all 17 themes (ai-off AA fix), five lens drills (agenda deduced-events fix), a11y axis (axe vendored; #oo-tip fix), 5 of 9 honesty rules automated; `docs/audit/UI_CLICKTHROUGH_2026-08-20.md`. The row was already closed; this discharges the recorded stretch target | session |
 
 ---
@@ -435,3 +440,121 @@ the soak and cold-boot (row 7), and claiming the `ui_walk` runner standing (row 
 475K-article diagnostics export (two endpoints with a severe p95/p99 tail, a missing hard-link
 on "rising" Home Lead cards, an unexplained 2026-07-11 stall cluster, five sources at 100%
 outlier rate).
+
+---
+
+## 7. The path to the tag — what is left, in order
+
+Everything a session can do is done: the code, the docs, the gates and the release
+machinery are ready, and §7.5 records the evidence. **The three open rows all need the
+maintainer's own machine and corpus** — they are measurements of a real ~1M-article
+install, and no sandbox can produce them. They are listed in dependency order, because
+row 5 consumes row 3's output.
+
+Step-by-step mechanics for each run live in
+[`P0_VALIDATION_RUNBOOK.md`](P0_VALIDATION_RUNBOOK.md); this is the sequence, not a
+duplicate of it.
+
+### 7.1 Row 3 — the diagnostics bundle (do this first)
+
+Settings → Advanced → Diagnostics → the one all-diagnostics button, then send the zip.
+
+It is one button and then waiting. The run journal records each member's begin/end, wall
+time and bytes, plus a runtime coverage block, so a long run that dies is still
+diagnosable. **Closes when** the bundle exists, its manifest's coverage block shows every
+GET diagnostic route as a member or a documented exemption, and nothing reports
+`skipped-deadline` for a reason that matters.
+
+Report the findings as **evidence at ~1M articles** — the 5M bar was withdrawn
+(§3, 2026-07-30), and a finding from this run must not be written as though it tested one.
+
+### 7.2 Row 5 — the article clean-up (needs 7.1, then a decision from you)
+
+The bundle from 7.1 *contains* `criteria-calibration.json`, which is the input this row
+was waiting on. Then:
+
+1. a session reads it and proposes clean-up criteria against the real specimens;
+2. **you agree the criteria** — this is the explicit sign-off the bar names, and it is the
+   only human step that cannot be delegated;
+3. run the quarantine pass with `write=True`;
+4. re-index, to clear the keywords and entities the quarantined articles contributed.
+
+**Closes when** step 3 has run and the report names how many articles were quarantined
+under which criteria version. Nothing is deleted: quarantine is a reversible stamp, and
+quarantined articles ride backup export/import as data.
+
+### 7.3 Row 7 — the two P0 follow-ups (independent of 7.1/7.2; can run in parallel)
+
+Both are in [`P0_VALIDATION_RUNBOOK.md`](P0_VALIDATION_RUNBOOK.md) §8.
+
+- **(a) Cold boot** (§8.2) — stop the app *cleanly* on the full corpus, start it, unlock,
+  re-run the validation immediately. Minutes. Bankable when the report shows P0.4 with
+  `wal_state_before_open.state = "absent"`. Do **not** stage an unclean shutdown: that is a
+  different measurement, and not the one the bar asks for.
+- **(b) Multi-day soak** (§8.3) — go online, leave continuous collection running **≥ 72 h**,
+  then re-run the validation while it is still running or immediately after. Days of
+  elapsed time, no attention.
+
+Run (b) first in wall-clock terms, since it is the long pole; (a) can be done any time
+before the tag.
+
+### 7.4 Tag day
+
+**Do not start this until 7.1–7.3 are done and their rows are ticked in §1.** A row closes
+on a named artifact, never on "it was built".
+
+1. **Every row closed.** §1 shows rows 1, 2, 3, 5, 6, 7 and 8 closed, and row 4 recorded as
+   moved to `0.4` (§5). Any open row blocks the tag.
+2. **No version edit is needed.** `pyproject.toml` already reads `0.3.0` (single source of
+   truth, set 2026-07-18 by the P0-pass → `v0.2.0`-tag → flip sequence), and
+   `README` / `CONTRIBUTING` / `CHANGES` are already written for the post-tag state.
+   **The branch rename step from the `v0.2.0` checklist does not apply** — the default
+   branch is permanently `main`.
+3. **CI green at the exact SHA you will tag.** "Merged" is not "green": the default
+   branch's runs are usually `cancelled`, because each merge supersedes the last. Dispatch
+   `ci.yml` (`workflow_dispatch`) on that commit and **watch it to completion**. The
+   Windows lane is observation-only and may hang for hours — it does not block; the
+   blocking lanes are what must be green.
+4. **Cut the tag from your own machine.** A session cannot: this repo's git proxy refuses
+   tag pushes (HTTP 403 — branch refs only), which is also why `v0.1.0` was never tagged
+   from one.
+   ```
+   git fetch origin main
+   git tag -a v0.3.0 <sha> -m "v0.3.0 — measured & verified"
+   git push origin v0.3.0
+   ```
+5. **Push the tag, and nothing else.** Do **not** create the release in the GitHub UI. At
+   `v0.2.0` a UI-created release made the workflow's `gh release create` fail instantly and
+   the release shipped with **no artifacts**. `release.yml` is now idempotent and would
+   recover — but only for a tag whose workflow runs the *current* file, so the simple path
+   is to let the workflow create it.
+6. **`release.yml` then does the rest**, in this order: the full `pytest -q` suite, a
+   `tag == pyproject version` check, `sdist` + `wheel` + `SHA256SUMS`, and a GitHub Release
+   marked pre-release automatically (any `0.x` tag is an alpha by the project's own
+   maturity ladder). A red tree or a mismatched tag stops it before publishing.
+7. **Verify the published assets** against the release's own `SHA256SUMS`. Checksums only —
+   there is still no signing key, which is a tracked future item and stated in the notes.
+
+### 7.5 What a session already verified — and what that is worth
+
+Run at `edfed14`, 2026-08-23, on the tree that would be tagged:
+
+| Gate | Command (verbatim from `ci.yml`) | Result |
+|---|---|---|
+| Tests | `python -m pytest -q` | **8390 passed**, 43 skipped, 0 failed |
+| Blocking lint | `ruff check --select=F,B --extend-ignore=B008 src/ tests/` | clean |
+| Types | `python -m mypy src/` | **0 errors**, 482 files |
+| SAST | `bandit -r src/ -ll -q` | clean |
+| Dependencies | `pip-audit --skip-editable` | no known vulnerabilities |
+| i18n completeness | `scripts/i18n_report.py --min 100` | 2987/2987 × 12 locales |
+| i18n ratchet 1 | `--max-untranslatable 561` | 561 — **unchanged**, not merely under |
+| i18n ratchet 2 | `--max-unkeyed-t-calls 298` | 298 — **unchanged**, not merely under |
+
+The two ratchets are maxima, so "under the bar" is not evidence — a *shrinking* measured
+population reads the same as an improving codebase. Both were checked for being
+**identical**, which is the only reading that means anything.
+
+**What this is not.** It is a clean tree, not a validated release. Every one of these runs
+in a sandbox against synthetic data; none of them touches your corpus, your hardware, or a
+browser you would ship to. That is exactly the gap rows 3, 5 and 7 exist to close, and why
+they cannot be delegated.
