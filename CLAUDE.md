@@ -4597,6 +4597,47 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     one retry quietly reinstalls the wrong build. And state a platform-gated precondition
     BEFORE the expensive step: the same warning printed after a twenty-minute source build
     arrives as the last line of a wall of Rust errors, where nobody reads it.
+  - **⚠ THIS SANDBOX CAN RUN POWERSHELL — the standing "CI runs pytest and never
+    executes install.ps1" caveat is a HABIT, not a limit (2026-08-23):** three
+    consecutive Windows defects shipped because nothing ever ran the script. PowerShell
+    publishes linux-x64 tarballs as GitHub release assets, and github.com is reachable
+    here: `curl -sL .../releases/download/v7.4.6/powershell-7.4.6-linux-x64.tar.gz`,
+    untar, `chmod +x pwsh`. That gives (a) a REAL parse — `[Parser]::ParseFile` — which
+    is the `bash -n` equivalent the repo's own skipped test wanted all along, and (b)
+    far more: pull the function definitions out of the real file with the AST
+    (`FindAll` for `FunctionDefinitionAst`, dot-source each `Extent.Text` — never
+    retype them) and EXERCISE them. Done here, that downloaded 14 MB from nuget.org,
+    verified it against the publisher's attested SHA-512, unpacked it, and separately
+    confirmed a tampered file fails the same comparison — the security-critical path
+    proven live rather than asserted by a substring guard. Same shape as the recorded
+    browser/py3.13 lesson: check what the box can actually do before writing
+    "unverified" on a slice. **AND THE CATCH THAT PAYS FOR IT:** a pwsh-gated test
+    SKIPS in the sandbox, so it is unverified until run with a real pwsh — mine was
+    broken (`-Command` does not populate `$args`, so the script read a null path) and
+    would have reddened the Windows lane. Run tool-gated tests with the tool, exactly
+    as the Core-only-lane lesson says for optional extras; and pass a path to a
+    PowerShell script as DATA in the environment, never spliced into the source.
+  - **BEFORE PINNING A DEPENDENCY BACKWARDS TO SATISFY A PLATFORM, QUERY ITS ADVISORY
+    RECORD — a pin that restores compatibility by reintroducing known vulnerabilities
+    is not a fix (2026-08-23, Windows on ARM):** the obvious way to make a native ARM64
+    install work was to pin `cryptography` to 46.0.0-46.0.3, the only series publishing
+    `win_arm64` wheels. One call — PyPI's JSON carries a `vulnerabilities` key per
+    version — says why not: **13 open advisory records at 46.0.3 against 0 at current**,
+    including a statically-linked OpenSSL one fixed only at 48.0.1 and several
+    certificate-chain bypasses. In an app whose value proposition includes tamper-
+    evident signing, shipping that silently is the fabricated security this project
+    forbids, so the compatibility pin was REFUSED as an automatic path and the honest
+    fallback became a stop with the one-download fix (plus an explicit opt-in for a
+    machine that really can compile). GENERAL FORM: a version constraint chosen for
+    COMPATIBILITY is still a security decision, and the check is one HTTP call. THE
+    SIBLING RULE, from the same fix: when the honest answer is "obtain the right
+    artifact" rather than "downgrade", the acquisition needs a verifiable source — read
+    the PUBLISHER's attested digest (nuget.org's catalog `packageHash` +
+    `packageHashAlgorithm`, GitHub's release `digest`) and refuse on mismatch AND on a
+    missing attestation, so "nobody published a hash" can never quietly become "install
+    it anyway". Never write a digest into the repo for this: it would be fabricated (if
+    you cannot reach the publisher to verify it) or rot into a false alarm that someone
+    eventually deletes.
 ## Open queue (when maintainer says proceed)
 - **KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING (maintainer 2026-08-13, "let's get this done
   at my return" — PARKED, nothing further to build; the machinery is shipped and the
