@@ -195,3 +195,202 @@ def test_quickstart_section_letters_are_unique_and_ordered():
     letters = re.findall(r"^## ([A-Z])\. ", text, re.MULTILINE)
     assert letters == sorted(letters), f"section letters out of order: {letters}"
     assert len(letters) == len(set(letters)), f"duplicate section letter: {letters}"
+
+
+def test_python_discovery_does_not_depend_on_path(ps1: str) -> None:
+    """Discovery must consult the registry, not just PATH and a few guessed paths.
+
+    Field failure this replaced: winget reported installing Python 3.13, the
+    interpreter was on disk, and the script still dead-ended at "not resolvable" --
+    through a reopened terminal AND a reboot, which rules out the stale-PATH cause the
+    old message assumed. winget's Python package often leaves PATH untouched, so a
+    PATH-only probe cannot see a perfectly good install. PEP 514's registry record is
+    written by the installer itself and is what `py.exe` reads, so it answers
+    regardless of the shell environment.
+    """
+    body = ps_function_body(ps1, "Resolve-Python")
+    assert "Get-RegisteredPythonPaths" in body, (
+        "Resolve-Python must consult the registry; PATH alone reproduces the field bug"
+    )
+
+    registry = ps_function_body(ps1, "Get-RegisteredPythonPaths")
+    assert "SOFTWARE\\Python" in registry, "PEP 514 is the authoritative record"
+    assert "InstallPath" in registry
+    # ExecutablePath is exact when present; the key's default value is only the
+    # directory, so reading one without the other misses half the installs.
+    assert "ExecutablePath" in registry
+
+
+def test_a_failed_python_bootstrap_prints_what_it_probed(ps1: str) -> None:
+    """A dead end that says only "it did not work" can be neither acted on nor reported.
+
+    The message this replaced named a website and nothing else: it told neither the
+    operator nor the maintainer WHICH probe came up empty, so the only way forward was
+    guessing. The diagnosis must also be CALLED, not merely defined -- a bare name
+    search is satisfied by the definition alone, which is exactly how a dead
+    diagnostic ships looking wired.
+    """
+    assert "function Show-PythonDiagnostics" in ps1
+    assert ps1.count("Show-PythonDiagnostics") >= 2, (
+        "Show-PythonDiagnostics is defined but never called"
+    )
+    assert re.search(
+        r"Show-PythonDiagnostics\s*\n\s*Stop-WithError", ps1
+    ), "the diagnosis must run at the failure path, immediately before giving up"
+
+
+def test_the_probe_records_why_it_refused_an_interpreter(ps1: str) -> None:
+    """A probe that answers only "no" sends the operator back for another round trip.
+
+    Field failure this replaced: all three discovery paths found
+    `...\\Python313-arm64\\python.exe` and the script still reported "no interpreter
+    answers", with nothing saying which check refused it. The old body wrapped every
+    path in one try/except returning $null, so "PowerShell threw" and "this is not a
+    Python" were the same answer.
+
+    PowerShell 5.1 makes that worse: with $ErrorActionPreference = 'Stop' a native
+    command's stderr becomes a TERMINATING error even when redirected, so a working
+    interpreter can be refused by the shell rather than by its own output. The probe
+    must lower that for the duration of the call and record a reason on each exit.
+    """
+    body = ps_function_body(ps1, "Test-PythonCandidate")
+
+    assert "$ErrorActionPreference = 'Continue'" in body, (
+        "PS 5.1 turns native stderr into a terminating error under 'Stop'"
+    )
+    assert "finally" in body, "the caller's preference must be restored"
+
+    # Every rejecting branch reports; the count is what stops one path staying silent.
+    assert body.count("$script:PythonProbeLog +=") >= 5, (
+        "each way of refusing an interpreter needs its own recorded reason"
+    )
+
+    diagnostics = ps_function_body(ps1, "Show-PythonDiagnostics")
+    assert "$script:PythonProbeLog" in diagnostics, "the reasons must reach the operator"
+    # ARM64 vs x64 decides which dependency wheels exist at all, so it is a fact the
+    # report has to carry -- it is what identified the field machine.
+    assert "PROCESSOR_ARCHITECTURE" in diagnostics
+
+
+def test_no_code_handed_to_a_native_command_carries_a_double_quote(ps1: str) -> None:
+    """PowerShell 5.1 strips embedded `"` on the way to a native command.
+
+    Field failure this replaced: the probe read
+    `print("%d.%d" % sys.version_info[:2])` and python received
+    `print(%d.%d % sys.version_info[:2])` -- SyntaxError, on EVERY Windows machine,
+    ARM64 and x64 alike. install.ps1 could therefore never find an interpreter at
+    all, and nothing caught it because CI runs pytest and never executes this
+    script.
+
+    The durable rule is the one the fix relies on: a code string passed to a native
+    `-c` takes no double quotes. Both of ours are written to need none.
+    """
+    for name in ("probe", "bootCheck"):
+        match = re.search(rf"\${name}\s*=\s*'([^']*)'", ps1)
+        assert match, f"${name} assignment not found"
+        assert '"' not in match.group(1), (
+            f"${name} carries a double quote; PowerShell 5.1 strips it and python "
+            f"receives a syntax error"
+        )
+
+
+def test_the_probe_and_its_parser_agree_on_the_line_count(ps1: str) -> None:
+    """Changing what the probe prints without changing the parser re-breaks discovery.
+
+    The stub check and the executable's index are both derived from how many lines
+    the probe emits, so they are pinned to it rather than to a literal that can
+    quietly drift.
+    """
+    body = ps_function_body(ps1, "Test-PythonCandidate")
+    match = re.search(r"\$probe\s*=\s*'([^']*)'", body)
+    assert match, "probe assignment not found inside Test-PythonCandidate"
+    printed = match.group(1).count("print(")
+    assert printed >= 3, "major, minor and the executable path are all needed"
+
+    assert re.search(rf"\$lines\.Count -lt {printed}\b", body), (
+        f"the probe prints {printed} lines, so the Store-stub check must require {printed}"
+    )
+    assert f"$lines[{printed - 1}]" in body, (
+        "the executable is the probe's last line; the parser must read that index"
+    )
+
+
+def test_the_probe_reads_the_interpreter_platform_not_the_machine(ps1: str) -> None:
+    """`platform.machine()` inverts the ARM64 check; `sysconfig.get_platform()` does not.
+
+    What decides whether pip finds a wheel is the interpreter's OWN build platform
+    (`win-amd64` / `win-arm64`), which is what `sysconfig.get_platform()` reports.
+    `platform.machine()` on Windows reports the MACHINE, so an x64 python running
+    under ARM64 emulation -- exactly the configuration this fix installs -- answers
+    ARM64, and every check built on it decides the opposite of the truth.
+
+    Field failure this serves: cryptography, statsmodels and httptools publish no
+    win_arm64 wheel, so an ARM64 interpreter sent pip to a Rust + MSVC source build
+    that died on a machine with no toolchain.
+    """
+    body = ps_function_body(ps1, "Test-PythonCandidate")
+    match = re.search(r"\$probe\s*=\s*'([^']*)'", body)
+    assert match, "probe assignment not found"
+    probe = match.group(1)
+    assert "sysconfig.get_platform()" in probe, (
+        "the probe must report the interpreter's own wheel platform"
+    )
+    assert "platform.machine" not in probe, (
+        "platform.machine() reports the machine, not the interpreter -- it inverts "
+        "the check for an emulated x64 python, which is the case that matters"
+    )
+    assert "Platform =" in body, "the probe's platform must reach the caller"
+
+
+def test_an_arm64_machine_asks_winget_for_the_x64_python(ps1: str) -> None:
+    """Without an explicit architecture winget installs the one with no wheels.
+
+    winget defaults to the machine's own architecture, so on ARM64 every install and
+    every retry would fetch the arm64 build again -- the one whose dependency wheels
+    do not exist. The x64 build runs natively on Windows on ARM.
+    """
+    assert "--architecture" in ps1 and "'x64'" in ps1, (
+        "the ARM64 path must name the architecture winget should fetch"
+    )
+    # Every Python install call has to carry it, or one retry path quietly reinstalls
+    # the architecture that cannot work.
+    calls = re.findall(r"Install-WingetPackage[^\r\n]*Python\.Python[^\r\n]*", ps1)
+    assert calls, "no Python winget install found"
+    for call in calls:
+        assert "$pyArch" in call, f"a Python install ignores the architecture: {call}"
+
+
+def test_an_x64_machine_still_short_circuits_on_the_first_interpreter(ps1: str) -> None:
+    """The ARM64 fix must cost an ordinary machine nothing.
+
+    Preferring x64 means probing every candidate instead of stopping at the first
+    that answers. That is fine on ARM64, where it decides whether the install works
+    at all, and it is pure waste everywhere else -- so it is switched, not default.
+    """
+    body = ps_function_body(ps1, "Resolve-Python")
+    assert "param([switch] $PreferX64)" in body.replace("\n", " ").replace("  ", " "), (
+        "the preference must be a switch, so the default path is unchanged"
+    )
+    assert "if (-not $PreferX64) { return $found }" in body, (
+        "without the switch, the first working interpreter must still win immediately"
+    )
+
+
+def test_an_arm64_interpreter_is_reported_before_pip_runs_not_after(ps1: str) -> None:
+    """A wheel gap discovered by pip costs twenty minutes and reads as a wall of Rust.
+
+    The install cannot succeed on an ARM64 interpreter, so the script says which
+    packages will fail and how to fix it -- before it starts installing, not in the
+    middle of a source build. It does not refuse: a machine that does carry the MSVC
+    and Rust toolchain can build them, and refusing would be worse than trying.
+    """
+    stripped = ps1
+    assert "cryptography, statsmodels and httptools" in stripped, (
+        "name the packages that have no ARM64 wheel; a generic warning is not actionable"
+    )
+    assert "-amd64.exe" in stripped and "-arm64.exe" in stripped, (
+        "the manual route must name which installer file to take, and which not to"
+    )
+    warn = stripped.index("Still on an ARM64 interpreter")
+    pip = stripped.index("'-m', 'pip', 'install', '-e'")
+    assert warn < pip, "the warning must be printed before pip is invoked, not after"

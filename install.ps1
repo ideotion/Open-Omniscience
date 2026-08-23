@@ -74,6 +74,9 @@ $ProgressPreference    = 'SilentlyContinue'   # keeps winget/IWR progress bars o
 $RepoUrl     = 'https://github.com/ideotion/Open-Omniscience.git'
 $AppName     = 'Open Omniscience'
 $MinPython   = [version]'3.13'
+# Every reason a found interpreter was refused. Printed by Show-PythonDiagnostics:
+# a probe that says only "no" cannot be acted on.
+$script:PythonProbeLog = @()
 $ProvenExtras = 'analysis'                    # the set windows-latest CI installs every run
 
 # --------------------------------------------------------------------------- #
@@ -145,63 +148,229 @@ function Test-HasCommand {
 # --------------------------------------------------------------------------- #
 function Test-PythonCandidate {
     param([string[]] $Command)
+    $label = $Command -join ' '
+    $exe   = $Command[0]
+    $rest  = @()
+    if ($Command.Count -gt 1) { $rest = $Command[1..($Command.Count - 1)] }
+    # NOT ONE DOUBLE QUOTE IN HERE, deliberately. PowerShell 5.1 strips embedded "
+    # characters when it hands an argument to a native command, so the previous
+    # probe -- print("%d.%d" % sys.version_info[:2]) -- reached python as
+    # print(%d.%d % sys.version_info[:2]) and died with SyntaxError on EVERY Windows
+    # machine. Nothing caught it because CI never executes this script. Bare prints
+    # need no quoting at all, so there is nothing left for the shell to eat.
+    # sysconfig.get_platform() -- win-amd64 / win-arm64 -- is the interpreter's OWN
+    # wheel platform, which is what decides whether a wheel exists on PyPI. Do not
+    # reach for platform.machine(): on Windows it reports the MACHINE, so an x64
+    # python running under ARM64 emulation answers ARM64 and the check inverts.
+    $probe = 'import sys,sysconfig;print(sys.version_info[0]);print(sys.version_info[1]);print(sysconfig.get_platform());print(sys.executable)'
+
+    # PowerShell 5.1 turns a native command's stderr into a TERMINATING error while
+    # $ErrorActionPreference is 'Stop' -- even when that stderr is redirected. The
+    # previous version caught it and returned $null, which made "PowerShell threw"
+    # indistinguishable from "this is not a Python": a found interpreter could be
+    # rejected with no way for anyone to see why. Drop to Continue for the call, and
+    # RECORD the reason on every path out.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     try {
-        $exe  = $Command[0]
-        $rest = @()
-        if ($Command.Count -gt 1) { $rest = $Command[1..($Command.Count - 1)] }
-        $script = 'import sys; print("%d.%d" % sys.version_info[:2]); print(sys.executable)'
         $global:LASTEXITCODE = 0
-        $out = & $exe @rest '-c' $script 2>$null
-        if ($LASTEXITCODE -ne 0) { return $null }
-        $lines = @($out | Where-Object { $_ -ne $null -and $_.ToString().Trim() -ne '' })
-        # A bare `python` on a fresh Windows 11 is the Microsoft Store execution-alias
-        # stub: it prints nothing and does not run code. Two lines of real output is
-        # what separates an interpreter from the stub.
-        if ($lines.Count -lt 2) { return $null }
-        $version = [version] $lines[0].ToString().Trim()
-        if ($version -lt $MinPython) { return $null }
-        return [pscustomobject]@{ Version = $version; Exe = $lines[1].ToString().Trim() }
+        $out  = & $exe @rest '-c' $probe 2>&1
+        $code = $LASTEXITCODE
     } catch {
+        $script:PythonProbeLog += "$label -- could not be launched: $($_.Exception.Message)"
         return $null
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+
+    $text = (@($out) | ForEach-Object { $_.ToString().Trim() }) -join ' | '
+    if ($code -ne 0) {
+        $script:PythonProbeLog += "$label -- exit code ${code}: $text"
+        return $null
+    }
+    $lines = @($out | Where-Object { $_ -ne $null -and $_.ToString().Trim() -ne '' })
+    # A bare `python` on a fresh Windows 11 is the Microsoft Store execution-alias
+    # stub: it prints nothing and does not run code. Four lines of real output is
+    # what separates an interpreter from the stub.
+    if ($lines.Count -lt 4) {
+        $script:PythonProbeLog += "$label -- answered with fewer than four lines: $text"
+        return $null
+    }
+    try {
+        # Major and minor arrive on their own lines and are joined HERE, in
+        # PowerShell, so the interpreter is never asked to format anything.
+        $version = [version] ('{0}.{1}' -f $lines[0].ToString().Trim(), $lines[1].ToString().Trim())
+    } catch {
+        $script:PythonProbeLog += "$label -- unreadable version lines: $text"
+        return $null
+    }
+    if ($version -lt $MinPython) {
+        $script:PythonProbeLog += "$label -- version $version is below $MinPython"
+        return $null
+    }
+    return [pscustomobject]@{
+        Version  = $version
+        Platform = $lines[2].ToString().Trim()
+        Exe      = $lines[3].ToString().Trim()
     }
 }
 
+# PEP 514: every Windows Python registers itself at
+# SOFTWARE\Python\<Company>\<Tag>\InstallPath. That key is written by the installer
+# itself, so it is AUTHORITATIVE and -- unlike PATH -- needs no reopened terminal and no
+# reboot. winget's Python package frequently declines to touch PATH at all, which is
+# exactly the case a PATH-only probe cannot see.
+function Get-RegisteredPythonPaths {
+    $found = @()
+    $roots = @('HKCU:\SOFTWARE\Python', 'HKLM:\SOFTWARE\Python', 'HKLM:\SOFTWARE\WOW6432Node\Python')
+    foreach ($root in $roots) {
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+        try {
+            $keys = Get-ChildItem -LiteralPath $root -Recurse -ErrorAction SilentlyContinue |
+                    Where-Object { $_.PSChildName -eq 'InstallPath' }
+        } catch { continue }
+        foreach ($key in $keys) {
+            try {
+                $props = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction Stop
+                # ExecutablePath is exact when present; otherwise the key's default
+                # value is the install directory with python.exe directly inside it.
+                $exe = $props.ExecutablePath
+                if (-not $exe) {
+                    $dir = $props.'(default)'
+                    if ($dir) { $exe = Join-Path $dir 'python.exe' }
+                }
+                if ($exe -and (Test-Path -LiteralPath $exe)) { $found += $exe }
+            } catch { }
+        }
+    }
+    return $found
+}
+
+# The py launcher already knows every interpreter on the machine; asking it is cheaper
+# and more complete than guessing directories. Absent launcher simply yields nothing.
+function Get-LauncherPythonPaths {
+    $found = @()
+    try {
+        $global:LASTEXITCODE = 0
+        $out = & py '-0p' 2>$null
+        if ($LASTEXITCODE -ne 0) { return $found }
+        foreach ($line in @($out)) {
+            $m = [regex]::Match($line.ToString(), '(?<path>[A-Za-z]:\\[^\s].*?python\.exe)')
+            if ($m.Success) { $found += $m.Groups['path'].Value }
+        }
+    } catch { }
+    return $found
+}
+
+# Last resort before giving up: look where installers actually put things. Top level
+# only, so this stays cheap.
+function Get-FilesystemPythonPaths {
+    $found = @()
+    $roots = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python'),
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)},
+        'C:\'
+    )
+    foreach ($root in $roots) {
+        if (-not $root -or -not (Test-Path -LiteralPath $root)) { continue }
+        try {
+            Get-ChildItem -LiteralPath $root -Directory -Filter 'Python3*' -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                    $exe = Join-Path $_.FullName 'python.exe'
+                    if (Test-Path -LiteralPath $exe) { $found += $exe }
+                }
+        } catch { }
+    }
+    $alias = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\python.exe'
+    if (Test-Path -LiteralPath $alias) { $found += $alias }
+    return $found
+}
+
+# Windows on ARM runs x64 binaries transparently, and that is not a nicety here:
+# cryptography, statsmodels and httptools publish NO win_arm64 wheel at the versions
+# pip resolves (verified on PyPI 2026-08-23), so an ARM64 interpreter sends pip to a
+# Rust + MSVC source build that fails outright on a machine with no build tools --
+# and cryptography is a CORE dependency, so even a bare install dies there. An x64
+# interpreter gets a published wheel for every one of them. On ARM64 the interpreter's
+# architecture is therefore not a preference; it decides whether the install completes.
+$script:WantsX64Python = (
+    $env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64'
+)
+
 function Resolve-Python {
+    param([switch] $PreferX64)
+    # Ordered widest-net-last: a name on PATH is cheapest, the registry is
+    # authoritative, the filesystem sweep is the backstop.
     $candidates = @(
         @('py', '-3.13'),
         @('python3.13'),
         @('python'),
         @('python3')
     )
-    $wellKnown = @(
-        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\python.exe'),
-        (Join-Path $env:ProgramFiles 'Python313\python.exe'),
-        'C:\Python313\python.exe'
-    )
-    foreach ($p in $wellKnown) {
-        if ($p -and (Test-Path -LiteralPath $p)) { $candidates += , @($p) }
+    $paths = @()
+    $paths += Get-RegisteredPythonPaths
+    $paths += Get-LauncherPythonPaths
+    $paths += Get-FilesystemPythonPaths
+    foreach ($path in ($paths | Select-Object -Unique)) {
+        if ($path) { $candidates += , @($path) }
     }
+    # Without -PreferX64 this short-circuits on the first working interpreter, exactly
+    # as before -- an x64 machine probes no more than it used to. With it, keep looking
+    # for a win-amd64 build and fall back to whatever did answer, so an ARM64 machine
+    # that already has both installed picks the one whose wheels exist.
+    $fallback = $null
     foreach ($candidate in $candidates) {
         $found = Test-PythonCandidate -Command $candidate
-        if ($found) { return $found }
+        if (-not $found) { continue }
+        if (-not $PreferX64) { return $found }
+        if ($found.Platform -eq 'win-amd64') { return $found }
+        if (-not $fallback) { $fallback = $found }
     }
-    return $null
+    return $fallback
+}
+
+# A dead end that says only "it did not work" is not a diagnosis. Print what was
+# actually probed so a failure can be reported and fixed rather than guessed at.
+function Show-PythonDiagnostics {
+    Write-Host ''
+    Write-Host '  --- what this script probed ---' -ForegroundColor DarkGray
+    $reg = Get-RegisteredPythonPaths
+    Write-Host "  registry (PEP 514): $(if ($reg) { $reg -join '; ' } else { 'nothing registered' })" -ForegroundColor DarkGray
+    $lau = Get-LauncherPythonPaths
+    Write-Host "  py launcher:        $(if ($lau) { $lau -join '; ' } else { 'no launcher, or it lists nothing' })" -ForegroundColor DarkGray
+    $fs = Get-FilesystemPythonPaths
+    Write-Host "  on disk:            $(if ($fs) { $fs -join '; ' } else { 'no Python3* directory found' })" -ForegroundColor DarkGray
+    Write-Host "  minimum required:   $MinPython" -ForegroundColor DarkGray
+    Write-Host "  this machine:       $env:PROCESSOR_ARCHITECTURE" -ForegroundColor DarkGray
+    if ($script:PythonProbeLog.Count -gt 0) {
+        Write-Host '  refused, and why:' -ForegroundColor DarkGray
+        foreach ($line in ($script:PythonProbeLog | Select-Object -Unique)) {
+            Write-Host "    - $line" -ForegroundColor DarkGray
+        }
+    }
+    if ($script:LastWingetExit -ne $null) {
+        Write-Host "  winget exit code:   $($script:LastWingetExit)" -ForegroundColor DarkGray
+    }
+    Write-Host ''
 }
 
 function Install-WingetPackage {
-    param([string] $Id, [string] $Label)
+    param([string] $Id, [string] $Label, [string[]] $Extra = @())
     if (-not (Test-HasCommand 'winget')) {
         return $false
     }
     Write-Step "Installing $Label via winget (this can take a few minutes)"
-    # winget's exit code is unreliable for our purposes (see above), so ignore it and
-    # let the caller re-probe for the capability.
-    Invoke-Native -File 'winget' -AllowFailure -Arguments @(
+    $wingetArgs = @(
         'install', '--id', $Id, '--exact', '--source', 'winget',
         '--accept-package-agreements', '--accept-source-agreements',
         '--disable-interactivity'
-    ) | Out-Null
+    ) + $Extra
+    # winget's exit code is unreliable for our purposes (see above), so ignore it and
+    # let the caller re-probe for the capability. Keep the transcript regardless: when
+    # the capability probe fails afterwards, winget's own words are the only evidence
+    # of why, and swallowing them is what turns a fixable failure into a dead end.
+    $script:LastWingetExit = Invoke-Native -File 'winget' -AllowFailure -Arguments $wingetArgs
     Update-PathFromRegistry
     return $true
 }
@@ -345,7 +514,11 @@ if (-not $inRepo) {
 # 2. Python 3.13
 # --------------------------------------------------------------------------- #
 Write-Step 'Looking for Python 3.13+'
-$python = Resolve-Python
+# The x64 build is what winget must fetch on ARM64 -- its default picks the machine's
+# own architecture, which is the one with no wheels.
+$pyArch = @()
+if ($script:WantsX64Python) { $pyArch = @('--architecture', 'x64') }
+$python = Resolve-Python -PreferX64:$script:WantsX64Python
 if (-not $python) {
     if ($NoPython) {
         Stop-WithError 'No Python 3.13+ found (and -NoPython was given).' @(
@@ -353,21 +526,51 @@ if (-not $python) {
         )
     }
     Write-Note 'Not found -- installing it.'
-    if (-not (Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13')) {
+    if (-not (Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13' -Extra $pyArch)) {
         Stop-WithError 'Python 3.13 is missing and winget is unavailable.' @(
             'Install Python 3.13 from https://www.python.org/downloads/',
             'Tick "Add python.exe to PATH" in the installer, then re-run this script.'
         )
     }
-    $python = Resolve-Python
+    $python = Resolve-Python -PreferX64:$script:WantsX64Python
     if (-not $python) {
-        Stop-WithError 'Python 3.13 still is not resolvable after the winget install.' @(
-            'Close this terminal, open a NEW one, and re-run install.ps1.',
-            'If it still fails, install from https://www.python.org/downloads/ manually.'
+        # winget's default scope can pick a machine-wide install that a non-elevated
+        # session cannot finish, leaving nothing behind. User scope is the one that
+        # reliably completes without elevation, so it is worth one explicit retry
+        # before asking the operator to do anything by hand.
+        Write-Caution 'Still not resolvable -- retrying the install in user scope.'
+        Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13' -Extra ($pyArch + @('--scope', 'user')) | Out-Null
+        $python = Resolve-Python -PreferX64:$script:WantsX64Python
+    }
+    if (-not $python) {
+        Show-PythonDiagnostics
+        Stop-WithError 'Python 3.13 is installed or attempted, but no interpreter answers.' @(
+            'The probe above is the real evidence -- please include it in a bug report.',
+            'Workaround: install Python 3.13 from https://www.python.org/downloads/',
+            'ticking "Add python.exe to PATH", then re-run this script.'
         )
     }
 }
-Write-Ok "Python $($python.Version) at $($python.Exe)"
+# An ARM64 interpreter reaches this line only when no x64 one was found. Fetch one
+# rather than letting pip discover the wheel gap twenty minutes into a source build.
+if ($script:WantsX64Python -and $python.Platform -ne 'win-amd64' -and -not $NoPython) {
+    Write-Caution "This is an ARM64 machine and the Python found is $($python.Platform)."
+    Write-Note 'cryptography, statsmodels and httptools ship no ARM64 wheel, so pip would'
+    Write-Note 'try to compile them. Installing the x64 build, which runs here natively.'
+    Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13 (x64)' -Extra $pyArch | Out-Null
+    $again = Resolve-Python -PreferX64
+    if ($again -and $again.Platform -eq 'win-amd64') { $python = $again }
+}
+Write-Ok "Python $($python.Version) ($($python.Platform)) at $($python.Exe)"
+if ($script:WantsX64Python -and $python.Platform -ne 'win-amd64') {
+    # Proceed anyway: refusing would be worse than a build that might succeed on a
+    # machine that does have the toolchain. But say what will happen, before it does.
+    Write-Caution 'Still on an ARM64 interpreter -- the dependency install will likely fail.'
+    Write-Note 'cryptography, statsmodels and httptools have no win_arm64 wheel; pip will'
+    Write-Note 'fall back to compiling them and stop at a missing MSVC/Rust toolchain.'
+    Write-Note 'Fix: install the x64 Python from https://www.python.org/downloads/windows/'
+    Write-Note '(the file named -amd64.exe, NOT -arm64.exe) and re-run this script.'
+}
 
 # --------------------------------------------------------------------------- #
 # 3. Source

@@ -16,11 +16,16 @@ If you just want to use the app (no command-line knowledge needed afterwards):
 curl -fsSL https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/scripts/bootstrap.sh | bash
 ```
 
-**Windows 11** — in PowerShell:
+**Windows 11** — in PowerShell. Download it, *then* run it:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/install.ps1 | iex"
+irm https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/install.ps1 -OutFile $env:TEMP\oo-install.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\oo-install.ps1
 ```
+
+Windows Defender may quarantine the file anyway — it is unsigned and new. That is a
+false positive; [§C](#c-on-windows-11-powershell) explains exactly why, and gives you a
+script-free path that nothing can eat.
 
 Windows support is narrower than Linux and the difference is stated plainly in
 [§C](#c-on-windows-11-powershell) — read it before relying on it.
@@ -162,33 +167,66 @@ on macOS), and **nobody has clicked through the UI on Windows**. So: expect inst
 and launch to work, treat everything past boot as unverified, and please report what
 breaks. Linux remains the release gate.
 
-### 1. One command
+### 1. Install
 
 Open **PowerShell** (no administrator rights needed unless Python itself has to be
-installed) and paste:
+installed). Download the installer, read it if you like, then run it:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/install.ps1 | iex"
+irm https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/install.ps1 -OutFile $env:TEMP\oo-install.ps1
+notepad $env:TEMP\oo-install.ps1                                     # optional: see what you are about to run
+powershell -NoProfile -ExecutionPolicy Bypass -File $env:TEMP\oo-install.ps1 -Extras analysis
 ```
 
-> **Inspect before you trust.** This runs code on your machine. Read
-> [install.ps1](../install.ps1) first if you like — it installs Git and Python 3.13
-> via `winget` only if they are missing, clones into `%USERPROFILE%\Open-Omniscience`,
-> builds a `.venv`, and verifies the result by importing the real app.
+It installs Git and Python 3.13 via `winget` only if they are missing, clones into
+`%USERPROFILE%\Open-Omniscience`, builds a `.venv`, and verifies the result by
+importing the real app. Drop the `-Extras` flag for the fuller default set, or see
+[Installer options](#installer-options).
 
-To pass options through the one-liner, create the script block explicitly:
-
-```powershell
-& ([scriptblock]::Create((irm https://raw.githubusercontent.com/ideotion/Open-Omniscience/HEAD/install.ps1))) -Extras analysis
-```
-
-Already cloned? Just run it in place — it detects its own checkout and skips cloning:
+Already cloned? Run it in place — it detects its own checkout and skips cloning:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-### 2. Run it
+> **Why not a single `irm … | iex` line?** Because fetching remote code and executing
+> it straight out of memory is the most common way Windows malware is delivered, so
+> Defender scores that shape as hostile whatever the script contains. Writing the file
+> down first is both less likely to be blocked and more honest — you can read the thing
+> before it runs.
+
+### 2. If Windows Defender quarantines the installer
+
+It may delete `install.ps1` on sight. That is a **false positive**, and you should not
+take our word for it — here is precisely why it happens, so you can judge:
+
+- The file is **unsigned and new**, so Defender's cloud reputation has never seen it.
+  Unknown + unsigned is on its own enough to trip the machine-learning heuristics; the
+  detection name typically ends in `!ml`.
+- Its **shape** is installer-shaped: it calls a package manager, re-reads `PATH` from
+  the registry, writes Start-menu shortcuts, and its `-Uninstall` path deletes
+  directories. Droppers do those same things. The classifier scores shape, not intent.
+
+What it does *not* contain, and what you can check yourself in ~500 readable lines: no
+`Invoke-Expression`, no encoded or obfuscated payload, no `WebClient`, no hidden
+windows, and no download other than this repository.
+
+Three ways forward, best first:
+
+1. **Use the script-free path** — [Manual install](#manual-install-no-script) below.
+   Same commands the installer runs, no file to quarantine. This always works.
+2. **Report the false positive** to Microsoft at
+   <https://www.microsoft.com/en-us/wdsi/filesubmission> (choose *Software developer*).
+   It usually turns around in a day or two and fixes it for everyone who installs
+   after you — not just for you.
+3. **Exclude the folder** (Windows Security → Virus & threat protection → Manage
+   settings → Exclusions). Know the trade before you do it: an exclusion stops
+   Defender scanning that folder *entirely*, for everything, indefinitely — not just
+   for this one file. Your machine, your call; we are not going to pretend it is free.
+
+The honest fix on our side is code-signing, which we do not have yet.
+
+### 3. Run it
 
 The installer creates an **Open Omniscience** shortcut on your **Desktop** and in the
 **Start menu**. Double-click it: a terminal window appears, and your browser opens at
@@ -197,7 +235,7 @@ app's power button) to stop it.
 
 From a terminal instead: `scripts\launch.cmd`.
 
-### 3. First launch
+### 4. First launch
 
 Same one-time flow as every platform: **choose your language → read and accept the
 legal terms → create your corpus passphrase**. The corpus is **encrypted at rest by
@@ -225,15 +263,34 @@ silently or pretending the extras arrived.
 ### Manual install (no script)
 
 ```powershell
-winget install --id Python.Python.3.13 -e
-winget install --id Git.Git -e
-# close and reopen PowerShell so the new PATH is visible
-git clone https://github.com/ideotion/Open-Omniscience.git $HOME\Open-Omniscience
+# 1. Prerequisites -- skip either line if you already have it
+winget install --id Git.Git -e --source winget
+winget install --id Python.Python.3.13 -e --source winget --scope user
+
+# 2. Find the interpreter. winget frequently installs Python WITHOUT adding it to
+#    PATH, so `python` and `py` can still resolve to nothing on a freshly restarted
+#    machine. This reads the record the installer itself writes (PEP 514) -- the same
+#    one py.exe uses -- so it answers whatever PATH says:
+Get-ChildItem 'HKCU:\SOFTWARE\Python','HKLM:\SOFTWARE\Python' -Recurse -ErrorAction SilentlyContinue |
+  Where-Object PSChildName -eq 'InstallPath' |
+  ForEach-Object { (Get-ItemProperty $_.PSPath).'(default)' }
+
+$py = "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe"   # or whatever that printed
+
+# 3. Clone
+git clone --depth 1 https://github.com/ideotion/Open-Omniscience.git $HOME\Open-Omniscience
 cd $HOME\Open-Omniscience
-py -3.13 -m venv .venv
+
+# 4. Virtual environment. Everything is called by full path on purpose: activating a
+#    venv needs Activate.ps1, which the default execution policy blocks.
+& $py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install --upgrade pip
 .\.venv\Scripts\python.exe -m pip install -e ".[analysis]"
-.\.venv\Scripts\python.exe -c "from src.api.main import app; print(sum(1 for _ in app.routes))"   # boot check
+
+# 5. Verify -- the exact check CI's Windows lane runs
+.\.venv\Scripts\python.exe -c "from src.api.main import app; print(sum(1 for _ in app.routes))"
+
+# 6. Run
 .\.venv\Scripts\open-omniscience.exe
 ```
 
@@ -253,10 +310,33 @@ py -3.13 -m venv .venv
   (`chmod 0700`); that call is a no-op on Windows, so the folder inherits ordinary
   Windows ACLs. On a shared PC, restrict `<repo>\data` yourself. The corpus database
   itself is still encrypted at rest either way.
-- **SmartScreen / Defender.** The launcher is an unsigned `.cmd`; SmartScreen may warn
-  the first time. Real-time scanning also slows the first `pip install` noticeably.
+- **SmartScreen / Defender.** Nothing here is code-signed, so Windows treats all of it
+  as unknown: SmartScreen may warn on the launcher, and Defender may quarantine
+  `install.ps1` outright — see
+  [§2](#2-if-windows-defender-quarantines-the-installer) for what that is and what to
+  do about it. Real-time scanning also slows the first `pip install` noticeably.
 - **Port.** Set `OO_PORT` before launching to move off 8000; `scripts\launch.cmd`
   honours it.
+- **Windows on ARM (ARM64).** Handled automatically, and worth knowing why. Three
+  dependencies publish **no `win_arm64` wheel at all** — `cryptography` (core: Ed25519
+  signing), `httptools` (core, via `uvicorn[standard]`) and `statsmodels` (the
+  `analysis` extra). `statsmodels` and `httptools` have never published one; whereas
+  `cryptography` did, for **46.0.0–46.0.3** only. Checked against PyPI 2026-08-23 and
+  confirmed in the field: a *native* ARM64 interpreter sends pip to a Rust + MSVC
+  source build that stops at `linker link.exe not found` on any machine without Visual
+  Studio Build Tools. Everything else — `sqlcipher3`, `lxml`, `bcrypt`, `pydantic-core`,
+  `numpy`, `duckdb` — does ship ARM64, so encryption itself was never the problem.
+  - **What `install.ps1` does:** detects ARM64, then installs and uses the **x64**
+    Python, which Windows on ARM runs natively. Every dependency then arrives as a
+    published wheel and no build tools are needed. If you already have an x64 Python
+    it uses that one instead of installing anything.
+  - **If you install Python by hand,** take `python-3.13.x-amd64.exe` from python.org
+    — the file ending `-amd64.exe`, **not** `-arm64.exe`.
+  - **Staying on a native ARM64 interpreter** means building all three from source:
+    Visual Studio Build Tools (C++) *and* a Rust toolchain. Pinning
+    `cryptography<=46.0.3` does not avoid this — the other two have no ARM64 wheel to
+    pin to — so it buys nothing and holds a security-critical library back several
+    major versions. Use the x64 route.
 
 ---
 
