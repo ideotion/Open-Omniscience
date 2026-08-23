@@ -4921,12 +4921,11 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
 - **KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING (maintainer 2026-08-13, "let's get this done
   at my return" — PARKED, nothing further to build; the machinery is shipped and the
   remaining steps are one operator fetch, one review, one ruling):**
-  **WHAT SHIPPED THIS SESSION (all merged except the last):** the cleanup button continues a
-  paused re-index instead of discarding it + a measured `keywords/h` (#947) · the triage log
+  **WHAT SHIPPED THIS SESSION (all four merged):** the cleanup button continues a paused
+  re-index instead of discarding it + a measured `keywords/h` (#947) · the triage log
   becomes a language-SCOPED proposal, `propose_stoplist_additions`'s first production caller
   (#948) · the sweep panels render their saved run and load in the section that holds them
-  (#950) · the panel reports the LOG's totals rather than one failed invocation's (#956, CI
-  green, awaiting merge).
+  (#950) · the panel reports the LOG's totals rather than one failed invocation's (#956).
   **THE OPERATOR STEP (blocks everything else):** on OOS-GPU, from `/home/user/open-omniscience`
   (their data dir is `<install>/data`, not `~/.local/share`), run
   `curl -sS -OJ 'http://127.0.0.1:8000/api/diagnostics/keyword-triage/proposal?download=1'`
