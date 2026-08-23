@@ -556,6 +556,123 @@ def data_dir_persistence() -> dict[str, Any]:
     }
 
 
+def _mb(n: Any) -> str:
+    """Bytes at a sensible magnitude. An unmeasured size says so; it never renders 0."""
+    if not isinstance(n, (int, float)):
+        return "not measured"
+    v = float(n)
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if v < 1024 or unit == "TB":
+            return f"{v:.0f} {unit}" if unit == "B" else f"{v:.1f} {unit}"
+        v /= 1024
+    return f"{v:.1f} TB"
+
+
+def render_text(d: dict[str, Any] | None = None) -> str:
+    """A plain-text rendering of the session forensics, built to be READABLE WHEN
+    PASTED INTO A CHAT — the channel this file exists for. Mirrors
+    ``expedition.render_text``: no colour, no wide tables, and every absence stated in
+    words rather than as a blank or a zero.
+
+    The expedition log is appended because the two answer one question together — what
+    happened to this instance while nobody was watching — and because that is the pair
+    an operator actually sends. Its own "nothing armed yet" line is kept rather than
+    suppressed: an absence stated is worth more than a section that silently vanishes."""
+    d = d if d is not None else session_forensics()
+    lines: list[str] = ["# Open Omniscience — Session Forensics", ""]
+
+    prev = d.get("previous_session") or {}
+    verdict = prev.get("previous_session")
+    lines.append("## Previous session")
+    lines.append("")
+    lines.append(f"- ended: {verdict or 'unknown'}")
+    if prev.get("started_at"):
+        lines.append(f"- started: {prev['started_at']}")
+    if prev.get("ended_at"):
+        lines.append(f"- ended at: {prev['ended_at']}")
+    if prev.get("last_rss_mb") is not None:
+        lines.append(f"- collector's last RSS sample: {prev['last_rss_mb']} MB")
+    if prev.get("method"):
+        lines.append(f"- how this is known: {prev['method']}")
+
+    unlock = d.get("last_unlock") or {}
+    lines += ["", "## Last unlock", ""]
+    if not unlock:
+        lines.append("- no unlock has been recorded on this machine yet.")
+    else:
+        total = unlock.get("synchronous_total_ms")
+        lines.append(
+            f"- synchronous total: {total} ms" if total is not None
+            else "- synchronous total: not recorded"
+        )
+        phases = unlock.get("phases") or []
+        if phases:
+            lines.append(
+                "- phases: "
+                + " · ".join(f"{p.get('phase')} ({p.get('ms')} ms)" for p in phases)
+            )
+        wal = unlock.get("wal_state_before_open") or {}
+        if wal:
+            lines.append(f"- WAL before open: {wal.get('state')} ({_mb(wal.get('bytes'))})")
+            if wal.get("reason"):
+                lines.append(f"  {wal['reason']}")
+        if unlock.get("at"):
+            lines.append(f"- measured at: {unlock['at']}")
+
+    inv = d.get("inventory") or {}
+    tot = inv.get("totals") or {}
+    lines += ["", "## Data folder", ""]
+    lines.append(f"- path: {inv.get('data_dir') or 'unknown'}")
+    lines.append(
+        f"- total on disk: {_mb(tot.get('total_bytes'))} "
+        f"(database {_mb(tot.get('db_bytes'))} · WAL {_mb(tot.get('wal_bytes'))} · "
+        f"other {_mb(tot.get('other_bytes'))})"
+    )
+    suspect = inv.get("suspect_staging") or []
+    if suspect:
+        # An orphaned staging tree from an ENCRYPTED corpus holds a PLAINTEXT copy, so
+        # this is an at-rest-encryption finding, not a housekeeping one. Say it loudly.
+        lines.append(
+            f"- ⚠ ORPHANED STAGING: {len(suspect)} leftover backup/restore "
+            f"director(ies), {_mb(tot.get('orphaned_staging_bytes'))} — on an encrypted "
+            "corpus these hold a PLAINTEXT copy."
+        )
+        for e in suspect[:10]:
+            lines.append(f"    {e.get('name')} — {_mb(e.get('bytes'))}")
+    else:
+        lines.append("- orphaned backup/restore staging: none found")
+    for e in (inv.get("entries") or [])[:12]:
+        lines.append(f"    {e.get('name')} {e.get('kind') or ''} {_mb(e.get('bytes'))}")
+    if inv.get("entries_truncated"):
+        lines.append(f"    … and {inv['entries_truncated']} more entries not listed")
+
+    persist = d.get("data_dir_persistence") or {}
+    if persist:
+        lines += ["", "## Does this data folder survive a restart?", ""]
+        at_risk = persist.get("at_risk")
+        lines.append(
+            "- at risk: unknown" if at_risk is None
+            else f"- at risk: {'YES' if at_risk else 'no'}"
+        )
+        if persist.get("reason"):
+            lines.append(f"- {persist['reason']}")
+        if persist.get("filesystem"):
+            lines.append(f"- filesystem: {persist['filesystem']}")
+        if at_risk and persist.get("how_to_persist"):
+            lines.append(f"- {persist['how_to_persist']}")
+
+    lines += ["", "---", ""]
+    try:
+        from src.monitoring import expedition
+
+        lines.append(expedition.render_text())
+    except Exception:  # noqa: BLE001 - the forensics file must survive a broken sidecar
+        _LOG.debug("session forensics: expedition log unavailable", exc_info=True)
+        lines.append("The expedition log could not be read for this report.")
+
+    return "\n".join(lines)
+
+
 def session_forensics() -> dict[str, Any]:
     """The one-call diagnostic block: inventory + previous-session verdict + the last unlock
     timing + the complete storage footprint + the data-dir persistence assessment. Rides the

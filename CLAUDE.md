@@ -4687,6 +4687,92 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     that the folder is empty. And moving a resource out of a tree means the uninstall
     no longer reclaims it by removing the tree — both sites must read ONE function, or
     the uninstall silently orphans it.
+  - **A CONTEXT MANAGER THAT CAPTURES A CONNECTION AT ENTRY AND RELEASES IT IN `finally`
+    BREAKS THE MOMENT THE BLOCK LEGITIMATELY RECONNECTS — and the crash is the loud half
+    (2026-08-23, the first field diagnostics bundle):** `statement_deadline` armed one raw
+    DBAPI connection at entry and cleared its progress handler on that same object in
+    `finally`, while the briefing registry's WAL guard closes its cursor and commits every
+    30 s BY DESIGN — and on a NullPool bind returning the connection CLOSES the real handle.
+    So the teardown raised `"Cannot operate on a closed database"` **from inside a
+    `finally`**, replacing the member's return value: three bundle members (the only three
+    that drive the producer registry, 400 s of a 713 s run) each finished their work and
+    wrote 0 bytes. **A guard that can destroy the work it was guarding is worse than no
+    guard.** THE QUIETER HALF IS THE ONE TO REMEMBER: a progress handler is
+    PER-CONNECTION, so from the first reconnect onward the deadline was **not enforced at
+    all**, with nothing raising to say so — measured on the unpatched code, a 1 s deadline
+    let a runaway recursive CTE run 15.2 s to completion. Fixing only the crash would have
+    left a guard that reports success and guards nothing. GENERAL FORM: for any resource a
+    context manager acquires ONCE and releases at exit, ask whether the guarded block can
+    legitimately re-acquire it — if it can, the manager must track every instance it armed
+    (here a SESSION-scoped `after_begin` listener re-arms on reconnect; an engine-level one
+    would arm other sessions' connections and interrupt their statements on your clock) and
+    disarm each defensively, since releasing an already-released resource must never
+    surface. And the mutation matrix has to revert EACH mechanism separately: dropping the
+    re-arm fails only the enforcement test, un-guarding the disarm fails all three — which
+    is how you learn both halves are load-bearing rather than one being decoration.
+  - **A URL'S QUERY STRING CAN BE THE ARTICLE ADDRESS, AND `urlparse().path` THROWS IT AWAY
+    (2026-08-23, the first criteria-calibration report):** the whole drop path proposed FOUR
+    articles out of 5,010 and all four were false positives — `antiwar.com/news/?articleid=2504`
+    and siblings, each recorded as *"section landing '/news'"*, each with a function-word
+    density of 0.28–0.37 (prose; nav soup measures ~0.05). An older CMS puts the article id
+    in the query and leaves the path a bare section; WordPress's own default permalink
+    (`/?p=12345`) does the same to the homepage rule. Both rules exist on the premise that
+    the URL names no item, which a query id falsifies — so the *reason* was untrue of the
+    thing it was about, which is the defect even where the disposition is arguable. TWO
+    RULES. (a) When a classifier keys on URL SHAPE, enumerate which components it reads and
+    which it discards; a rule whose premise is "there is no item address here" must look at
+    the query, not only the path. (b) Scope the repair to the rules whose premise actually
+    fails — the taxonomy and utility rules key on an explicit path segment and must NOT be
+    vetoed, or `/tag/gaza?id=9` stops being a listing. And keep the veto narrow in the
+    direction that matters: the parameter name must read as a record id AND its value must
+    contain a digit, so `?page=2` / `?tag=gaza` / `?s=query` rescue nothing, because the
+    cost of a mistake here is a QUARANTINED REAL ARTICLE. PROCESS POINT: this is what the
+    sign-off step in a clean-up gate is for. Proposing corpus-wide criteria from those four
+    specimens would have quarantined four genuine articles and zero junk, and the report
+    would have read like evidence.
+  - **A STATISTIC'S PROSE IS A CLAIM, AND WHEN IT DISAGREES WITH THE CODE THE CODE IS
+    PUBLISHING A VERDICT NOBODY ASKED FOR — plus: a whole-process sampler makes a
+    diagnostic contaminate its own window (2026-08-23, the P0.3 collector `fail`):** the
+    check computed `rise = max(numeric) - first` while the `climb_method` string it
+    published beside the number promised *"a sustained absolute rise is the OOM signature
+    at any baseline"*. `max()` cannot tell one excursion from a trend, so the two had never
+    been the same measurement, and the field run duly reported *"the OOM signature"* over a
+    series whose first, median and last passes were 1323 / 1371 / 1303 MB — **3 of 193
+    passes (1.6 %)** above the floor, 71 *below* the first pass, opening-to-trailing fifth
+    +176 MB against a 512 MB bar. A fabricated FAIL is exactly as dishonest as a fabricated
+    pass, and it is more expensive here, because it points an operator at a leak that is not
+    there. THE SECOND HALF IS THE ONE THAT GENERALISES FURTHEST: `collect_perf` samples
+    `psutil.Process()` with **no argument** — whole-process RSS — so the app's own backup,
+    restore and diagnostics work lands in the collector's samples, and the largest spike sat
+    between two pre-restore snapshots the instance's own forensics timestamps. **Running the
+    P0 validation contaminates the very window P0.3 reads.** RULES. (a) When a computation
+    publishes a method string, assert that the string describes the arithmetic — the
+    mismatch is invisible in review precisely because the sentence reads correctly. (b) For
+    any "did this grow" verdict, take it from the SUSTAINED level (a trailing window against
+    an opening one) and keep the peak as a *reported fact*: suppressing the excursion trades
+    one dishonest reading for another, since a 2.4 GB spike is information even when it is
+    not a leak. (c) Before reading a per-subsystem metric, ask whether the sampler can even
+    see subsystems — a process-wide gauge attributes everything to whoever is being measured.
+    (d) The twin is mandatory and cheap: a monotone climb AND a leak that saturates early
+    must still fail, or the fix is just a detector that never fires.
+  - **AN EXPENSIVE CALIBRATION ARM POINTED AT THE WRONG POPULATION MEASURES NOTHING THE
+    DECISION NEEDS — and a resumable cursor pinned to 0 can never finish (2026-08-23, the
+    row-5 criteria):** the clean-up decision is about the **451** index pages that clear the
+    ≥100-word body guard — URL says listing, body length says article, so the corroborating
+    prose measurement is the whole question. The report's prose arm instead walks the corpus
+    by ascending id, and the bundle member pins `prose_gate_after_id=0` with `limit=500`, so
+    every run re-measures the same lowest-id 500 articles, `done` can never become true on
+    any corpus larger than 500, and two consecutive field reports both stopped at
+    `last_id: 695` having flagged **0**. Nothing is mislabelled — the per-batch denominator
+    is stated — but "resumable" reads as "will finish", and in the bundle it will not. So
+    the proposal could only cover the 8-article drop path, against a 451-article problem.
+    GENERAL FORM: when a report exists to calibrate a decision, name the population the
+    decision is about and check the report's costly arm is pointed AT it; an arm that walks
+    a natural key (id, date, alphabet) samples whatever that key happens to order first,
+    which is almost never the population in question. And the honest move when the evidence
+    is missing is to propose the tier you CAN corroborate and say plainly that the other one
+    is unmeasured — quarantining 451 real-looking articles on a URL rule alone would be the
+    lookalike trap wearing a clean-up's clothes.
 ## Open queue (when maintainer says proceed)
 - **KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING (maintainer 2026-08-13, "let's get this done
   at my return" — PARKED, nothing further to build; the machinery is shipped and the

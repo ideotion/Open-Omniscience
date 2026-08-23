@@ -2,145 +2,364 @@
 
 > The repository’s **default branch is `main`** (permanently, since 2026-07-15 — the branch name and the version number are independent). Historically each cycle branch `0.0N` produced release `0.0.N`, the consolidated `0.09` cycle produced **`0.1.0`, the first alpha**, the `0.1` cycle produced **`0.2.0`, data safety at scale** (tagged `v0.2.0` after the live-corpus P0 validation), and the current cycle is **`0.3.0`, measured & verified** (see the README's version note).
 
-## 0.3.0 — measured & verified (in progress, unreleased)
+## 0.3.0 — measured & verified (the `0.2` cycle, version set 2026-07-18)
 
-The `0.3` cycle turns the instruments the project has built into a standing improvement
-loop, and recalibrates the analytics against a real ~500k-article corpus. On the board
-(each item ships via its own reviewed PR; nothing below is claimed done until it lands):
+The `0.3` cycle is about **turning instruments on real data and believing the answer**.
+Where `0.2` made a large corpus survivable, `0.3` ran the app against one — ~1M articles,
+21 GB, encrypted — and spent most of its effort on what that surfaced: an import that took
+nineteen hours, a merge that silently dropped columns, an AI backend that could not start,
+analytics calibrated at 2k articles and inverted at 500k. Almost every entry below began as
+a field report rather than a plan.
 
-- **The recursive improvement loop v1** — the machine-readable KPI snapshot + diff and
-  the standing improvement-cycle protocol
-  ([`docs/design/V1_PATHWAY_2026-07-14.md`](design/V1_PATHWAY_2026-07-14.md) §2).
-- **Settings, restructured** — fifteen subtabs became ten. What was scattered
-  configuration is grouped by what you are actually doing: **Cards** is new and finally
-  exposes all 37 Lead producers across their 8 families, each with a plain description
-  and — where tunable — a stated **safe range** rather than a silent clamp; **Advanced**
-  is new and folds away the acquisition plumbing (Collect, Sources, Keywords, the
-  ~500-feed calendar catalogue, the statistics producers), loading each section only when
-  you expand it, so a folded section never costs a fetch. Shortcuts moved into General,
-  Newsletters into Data & backup, the statistics *figures* to Governments → Statistics
-  where the data belongs, Offline map became **OpenStreetMap**, and Leads went away
-  entirely. Along the way: calendar feed verification became progressive (it rides
-  collection passes, never boot) with a capped re-check ladder so a feed is never retired
-  for good; a chip-contrast bug that failed WCAG AA on 16 of the 17 themes was measured
-  and fixed at the token level; and the AI tab gained a single **Set up local AI** button
-  in place of three scattered installs. Local inference is now refused by default only
-  below a real floor (fewer than 4 cores, or under 6 GB of RAM, with no accelerator) —
-  running without a dedicated GPU is a warning about what to expect, not a refusal, and
-  never a block. **The four prompts you read the output of** — summary, translation,
-  synthesis and keyword extraction — now ship in **all twelve interface languages**, so a
-  non-English reader stops getting English work back from the local model; your own
-  prompt, if you write one, is still used exactly as you wrote it.
-- **Scale recalibration of the analytics surfaces** — the six delegated 2026-07-18
-  briefs: Leads/card-system selection calibration (+ the convergence exploration
-  amendment and the **no-capped-figures rule**: a displayed number is never a cap),
-  lemmatization default-on, entity-families cleanup (furniture acronyms, cross-script
-  aliases, truthful kind filters), the groups layer (keyword → group → super-group
-  naming, the circle grammar, honest group statistics with mandatory dominance
-  disclosures, keyword→group navigation, the clickable concept map).
-- **The law vertical build-out** — proving the tracker end-to-end on the merged
-  world-wide legal-source catalog (225 sources / 162 jurisdictions), adapters for
-  structured sources, coverage diagnostics against official enumerations.
-- **The browser-verification burn-down** — the AppVM runner + `ui_walk`, graduating the
-  accumulated "browser-unverified, needs click-through" frontend backlog.
-- **The Observatory** — the corpus-as-night-sky exploration tab (design of record:
-  [`docs/design/OBSERVATORY_DESIGN.md`](design/OBSERVATORY_DESIGN.md)), gated on the
-  group-statistics core and maintainer click-through.
-- **The Bulletin — a periodic document made from your corpus.** Settings → Advanced →
-  *Bulletin* builds a report over one closed period — a day, a week, a month, up to a
-  year — and it is the record rather than a summary of one: exact counts, each with the
-  method that produced it. It opens by stating its own lens, because a figure about a
-  corpus is not a figure about the world: how many sources actually contributed, what
-  share the largest three carried, the language and country split, and how many of the
-  period's days saw any ingest at all. Eight sections follow — what rose, which channel
-  carried a concept first (ties reported as ties, never broken), local coverage beside
-  international coverage of the same country, topics, changes to tracked laws and
-  Wikipedia pages, provider-declared alerts, the same calendar days in earlier years,
-  and the Lead cards. Each prints the window it *actually* used, so a fourteen-day number
-  in a seven-day edition is visible rather than discovered later, and everything the
-  period could not see — quarantined articles, mentions carrying no date, an unfinished
-  re-index — is counted at the end instead of quietly dropped.
-  **A local model can narrate it, and the layer comes off cleanly.** With narration on,
-  each story cluster gains a paragraph — and every sentence is checked against the article
-  text the model was shown, then dropped if it names a figure or an entity that is not
-  there. A paragraph that lost sentences says so. A story whose sentences all failed falls
-  back to the deterministic counts and is deliberately *not* labelled AI-derived: calling
-  the app's own arithmetic a model's work would be a fabricated attribution in the other
-  direction. Model sentences are marked beside the prose, not once in a footer.
-  **What leaves the machine is chosen, and says what it is.** Nothing publishes itself —
-  automation reaches a draft and stops, because you are the byline. The review screen shows
-  each sentence's verdict and lets you exclude a section or a story; excluding one
-  *re-renders* from the saved record rather than editing the output, so a published number
-  is always a number the record contains, and the document states that it is a selection
-  ("1 of 3 sections") so a reader is never handed an omission they cannot see. The report
-  downloads with an annexes bundle — one file per cited article, where the report's
-  `[0007]` and `..._Article_0007.md` are guaranteed to be the same article. Published
-  output carries **external** links only: a local article id means a different article on
-  someone else's install. The HTML is entirely self-contained — no stylesheet, font, script
-  or image fetched from anywhere — because a shared document that phones home would tell
-  its recipient's network what you read. An owner-only evidence archive can carry every
-  article a figure was computed over, so the counts can be recomputed rather than trusted;
-  it is plaintext leaving an encrypted store, and it says so before it is written.
-  **It is written in your interface language** — 11 locales, mechanically verified
-  complete. A missing translation renders in English *and is reported*; a translation whose
-  placeholders no longer match its sentence is refused rather than printed with a stray
-  brace; and entries merely copied from the English are counted apart, so a catalog of
-  copies cannot report itself finished. Design of record:
-  [`docs/design/BULLETIN_DESIGN_2026-07-31.md`](design/BULLETIN_DESIGN_2026-07-31.md).
-  **Not claimed:** the feature is gated on hardware capable of practical local inference,
-  which currently denies a GPU-less machine even the deterministic document — a single
-  constant, and an open question. Narration still runs inside the generate request rather
-  than as a resumable background job, which is right for a bounded number of stories and
-  wrong for a long run. Every screen here shipped browser-unverified.
-- **The import page-cache rule was the bug** — a large import on a small machine
-  spent 15.9 hours inside a single merge step without finishing, while the same
-  code merged smaller backups in seconds. The cause was this project's own
-  2026-07-30 change, which scaled the merge page cache *up* with RAM on the
-  stated belief that an open transaction pins its dirty pages until COMMIT.
-  SQLite spills them as the cache fills — memory tracks `cache_size`, not
-  transaction length — so the rule handed the most memory to the machines least
-  able to pay. The budget now only ever scales *down* from a measured ceiling,
-  and the refuted reasoning is kept in place as an explicitly-corrected premise
-  so it cannot be quietly restored. Two defects surfaced alongside it: **Stop is
-  now honoured inside a merge step** (it was read only between steps, so during
-  the step that takes the time the button was inert), and a failing cleanup
-  `ROLLBACK` no longer replaces the real error on an encrypted store
-  (`sqlcipher3.Error` is not a `sqlite3.Error`). An import now states its scale —
-  staged size against the machine's RAM and free disk — before the long stages
-  rather than after them.
-- **The import/export run journal** — a crash-surviving record of what each import and
-  export was doing *while it ran*, on by default
-  ([`docs/maintenance/RUN_JOURNAL.md`](maintenance/RUN_JOURNAL.md)). The import path was
-  already well instrumented; every number it produced was held in memory and written
-  once, at the end, on the success path — so a run that never reached its end left
-  nothing at all, and "is it stuck or is it slow?" needed `ps` by hand. Milestones and a
-  heartbeat now land on disk as the run goes, carrying the cumulative CPU of the parent
-  **and its pool children** (the only pair that separates a healthy re-index from a
-  deadlocked one), memory, swap, disk-free, WAL size and write-gate state. It refuses to
-  guess: no `moving` verdict for a phase that publishes no counter, no zeroed field
-  standing in for an unmeasurable one, no "crashed" where "killed, or its journal was
-  muted" is all the file can support — and an interrupted run's report no longer
-  headlines the article count it never merged.
-- **Installing the local AI without starting the collector** — a third network state
-  between "offline" and "online". Until now `POST /api/system/network` cleared the kill
-  switch *and* started the scheduler in one act, so "let me install vLLM" also meant
-  "and begin contacting every source I have" — while showing your address to PyPI or
-  Hugging Face is a bounded, chosen exposure to a handful of infrastructure hosts. A
-  consented **egress window** keeps the kill switch **engaged** — so all ~75 of its call
-  sites keep refusing unchanged and `POST /api/system/network` is untouched — and exempts
-  only the gates that name the AI-install purpose. It closes itself once no install work
-  has been running, driven by a thread this module owns rather than by a browser tab
-  polling it, and it always closes at its deadline. The socket-level airplane backstop
-  stays in force on **every thread but the one performing an install request**, and there
-  only for that request's duration: an early version lifted it process-wide on the
-  reasoning that every fetch path checks the kill switch itself, which turned out to be
-  false for the source-preflight sweep — it reaches the network through `EthicalFetcher`'s
-  side doors and a plain session, so the backstop had been its only protection, and a
-  window let it resolve and fetch scraped-source hosts. Both halves are fixed and pinned.
-  What is **not** claimed: the window does not restrict *which hosts* the installer
-  contacts — pip, Hugging Face and Ollama's daemon are child processes an in-process
+**Not yet tagged.** The gate is [`docs/product/RELEASE_0.3_GATE.md`](product/RELEASE_0.3_GATE.md)
+— four rows closed against named artifacts, two moved to `0.4`, three remaining. Those three
+all come off one sitting on the release-scale instance: a clean restart and the P0 button
+(the cold-boot unlock), then the one diagnostics button, whose bundle also carries the
+article clean-up's input. A row closes on evidence a later reader can re-open, never on
+"it was built".
+
+### The AI stack
+
+- **Two backends, one model, one question at a time.** Local inference used to mean Ollama
+  or nothing. It now runs on **vLLM** where a dedicated GPU is present and **Ollama**
+  everywhere else, behind one `LlmBackend` seam — so a feature is written once and the
+  machine decides. Three separate questions that had been answered by one function are now
+  answered separately, because they have different right answers: *routing* (who can serve
+  this request now), *provisioning* (what will this machine serve with once set up) and
+  *activation* (which backend do I start). Conflating them is what put an Ollama tag in
+  front of a GPU machine and burned a sweep's whole retry budget against a daemon that was
+  never running. The default model is **Ministral 3 3B** app-wide — the same model on both
+  backends, so a cross-backend comparison finally varies one thing — chosen on a 48-item field
+  translation probe over the models that actually answered, where it answered in the language asked for 98% of the
+  time and never once returned the source text unchanged. Your own model still works: the
+  field is there, deliberately buried.
+- **vLLM starts, or says why it did not.** Ten consecutive field starts died and reported
+  progress. Each cause was real and separate: the server was spawned on the app's own port
+  (derived from `OO_PORT` now, not hardcoded); FlashInfer JIT-compiles its sampler on first
+  use, so a machine with the NVIDIA driver but no CUDA toolkit died at the *end* of engine
+  init with the weights already loaded; Ollama was still holding the card; a half-downloaded
+  checkpoint was reported as downloaded. A **start journal** now records every attempt with
+  its reason, because `server.log` is truncated by the next start — the instrument was being
+  destroyed by the failure it existed to explain. The KV budget is derived from *this*
+  checkpoint's published config rather than a 7B-class constant (0.1016 MB/token against an
+  assumed 0.5), the reserve is absolute rather than a fraction that gave the least to the
+  smallest card, and the equation is composed where the numbers are so it reproduces its own
+  result.
+- **A coordinator, so the background sweeps stop fighting.** Keyword triage, source tagging,
+  language detection and perception extraction share one lane, round-robin, on the one
+  backend — and a user-initiated batch preempts them with a visible notice. Every sweep is
+  an on/off toggle with a persisted cursor, so a run survives a restart, a backend outage
+  pauses instead of ending, and a paused run is never reported as finished. Constrained
+  output runs at **temperature 0**: the sampling options had been dropped on the floor, so
+  twelve perception-eval passes over one model and one gold set disagreed about which
+  languages cleared the bar.
+- **Extraction is gated per field, and the gate can say "unmeasured".** LLM who/where/when
+  extraction ships as *candidates* in the AI layer — never the trusted keyword index — and a
+  language is only enabled where the eval harness measured it. Each floor is applied against
+  its own denominator, so an extractor that returns nothing cannot clear a hallucination gate
+  by having nothing to hallucinate, and a field that was never tested is refused as
+  *unmeasured* rather than passed or failed.
+- **Background sweeps read the whole article.** They used to cut at 6,000 characters and say
+  so — an honest disclosure of a gap that should not have existed. Long articles are now
+  chunked and merged round-robin, so a budget is filled from across the document instead of
+  from its opening. The one deliberate exception is language detection, which needs a lead
+  sample and nothing more.
+- **One button for every AI check**, reporting what it could *not* run and why, with the
+  per-step timings; the AI pill turns green on its own and distinguishes *ready* from
+  *working*. Local inference is refused by default only below a real floor — fewer than 4
+  cores or under 6 GB of RAM with no accelerator — and the refusal is always overridable.
+
+### Import, backup and the merge
+
+- **The import page-cache rule was the bug.** A large import on a small machine spent 15.9
+  hours inside a single merge step without finishing, while the same code merged smaller
+  backups in seconds. The cause was this project's own 2026-07-30 change, which scaled the
+  merge page cache *up* with RAM on the stated belief that an open transaction pins its
+  dirty pages until COMMIT. SQLite spills them as the cache fills — memory tracks
+  `cache_size`, not transaction length — so the rule handed the most memory to the machines
+  least able to pay. The budget now only ever scales *down* from a measured ceiling, and the
+  refuted reasoning is kept in place as an explicitly-corrected premise so it cannot be
+  quietly restored. Two defects surfaced alongside it: **Stop is now honoured inside a merge
+  step** (it was read only between steps, so during the step that takes the time the button
+  was inert), and a failing cleanup `ROLLBACK` no longer replaces the real error on an
+  encrypted store (`sqlcipher3.Error` is not a `sqlite3.Error`).
+- **The merge stopped dropping things.** Fourteen columns and fourteen tables were being
+  reported and never copied. A dropped column with a `NOT NULL` default is the dangerous
+  kind: the row arrives populated with a plausible, legal value, so nothing looks missing —
+  which is how a **disqualified** source came back from a restore as `unqualified`,
+  indistinguishable from never-judged, and was laundered into the trial queue with its
+  backoff ladder reset. Every copied table is now checked column-by-column against the model
+  by an AST guard, and a table must join the handled set or the deliberately-ignored set —
+  the middle state that read as intentional in the restore report is gone. Five tables with
+  no unique constraint waited on a maintainer ruling about what "the same row in another
+  corpus" means, rather than having one invented for them.
+- **Imports got faster where it was measured, and honest where it was not.** The four
+  whole-corpus costs a restore paid *once per backup* are paid once per run; the
+  corpus-proportional merge steps are windowed by measured bytes rather than a row count
+  (the same 20,000 rows cost 178 MB at 2 KB an article and 947 MB at 32 KB); the search index
+  is built once after the merge instead of once per inserted article, which was 98% of the
+  merge time on a 1.4M-article corpus; and the re-index no longer blocks the import.
+  Windowing a deduplicating `INSERT..SELECT` changes *what lands* when the incoming rows
+  contain duplicates of each other, so each windowed step must present one of three
+  justifications and the refusals are recorded too.
+- **A crash-surviving run journal** ([`docs/maintenance/RUN_JOURNAL.md`](maintenance/RUN_JOURNAL.md)),
+  on by default. The import path was already well instrumented; every number it produced was
+  held in memory and written once, at the end, on the success path — so a run that never
+  reached its end left nothing at all, and "is it stuck or is it slow?" needed `ps` by hand.
+  Milestones and a heartbeat now land on disk as the run goes, carrying the cumulative CPU
+  of the parent **and its pool children** (the only pair that separates a healthy re-index
+  from a deadlocked one), memory, swap, disk-free, WAL size and write-gate state. It refuses
+  to guess: no `moving` verdict for a phase that publishes no counter, no zeroed field
+  standing in for an unmeasurable one, no "crashed" where "killed, or its journal was muted"
+  is all the file can support. It is also **bounded** — an early version put a breadcrumb on
+  a per-statement path into the never-trimmed stream, which grew `run_logs` from 11 MB to
+  1,615 MB in one merge and then made the app unbootable, because the boot-time reader
+  loaded whole journals into memory before the unlock screen.
+- **Exports are compartmented.** A backup no longer has to include the corpus: models, maps
+  or Wikipedia dumps can go on their own, and the completion line names what is actually in
+  the folder rather than saying "complete". The Hugging Face weights cache now rides the
+  large-data backup — vLLM models were never being saved. The atomic swap at the end of a
+  restore waits for in-flight corpus work instead of replacing the file under it, and honours
+  a Stop while it waits.
+
+- **A guard that could destroy the work it was guarding.** The first real diagnostics
+  bundle from a field instance lost three of its members — the only three that drive the
+  producer registry, and 400 s of a 713 s run — each finishing its work and then raising
+  *"Cannot operate on a closed database"*, writing nothing. `statement_deadline` armed one
+  raw connection when it opened and disarmed that same object in its `finally`, while the
+  registry's WAL guard closes its cursor and commits mid-scan **by design** every 30 s; on
+  a NullPool bind that closes the real handle. Fixing only the crash would have left the
+  quieter half, because a progress handler is per-connection: after the first reconnect the
+  deadline was **silently not enforced** — measured, a 1 s deadline let a runaway run 15.2 s.
+  It now re-arms on reconnect and disarms defensively, and each half has a test that fails
+  when the other is removed.
+
+### Sources: qualification, discovery, and what is not an article
+
+- **Qualification is the admission gate.** Every source — the curated catalog included, no
+  grandfathering — passes a trial before joining regular collection, and carries a stamp
+  saying what was checked (extraction validity, never editorial merit), when, and against
+  which criteria version. A disqualified source is kept, not deleted, and gets a second
+  chance on a capped backoff ladder rather than a permanent exclusion. Two defects in the
+  first cut are worth recording: a source that produced *zero* evidence was silently promoted
+  (missing from an aggregation reads identically to examined-and-clean), and fixing that
+  turned an id-ordered queue into one that starved on its first permanently-unresolvable
+  entry.
+- **Newsletter links can become sources.** The sanitised external links in an imported
+  `.eml` now produce `article_links` rows, so the citation-discovery funnel sees them — with
+  the tracker-wrapped links whose destination could not be recovered deliberately excluded.
+- **A prose gate at the ingest door.** A word-rich page of pure navigation chrome used to
+  pass the thin-body filter and land in the corpus, where its menu items became *people* and
+  its section list an *organisation*. The gate measures function-word density against the
+  text's own language and near-zero sentence punctuation, is script-aware, and refuses to
+  judge text it cannot read rather than dropping it.
+- **A section front and an article can share a URL path.** The clean-up's calibration
+  report proposed exactly four articles on a real corpus, and all four were false
+  positives: `antiwar.com/news/?articleid=2504` and its siblings, flagged as *"section
+  landing /news"*. A query string carrying `?articleid=` addresses one article — but
+  `urlparse().path` discards the query, so an older CMS reached the section-landing rule
+  looking exactly like a section front, and WordPress's own default permalink (`/?p=12345`)
+  hit the homepage rule the same way. A parameter that reads as a record id now vetoes those
+  two rules and only those two, narrowly enough that `?page=2` and `?tag=gaza` rescue
+  nothing — because the direction of a mistake here is a quarantined real article.
+
+- **The post-import screen says what changed.** It used to headline a cross-table row sum as
+  "4,855,433 imported" — mentions, links and dates counted as articles. It now leads with
+  articles, breaks the rest down by type, shows the corpus delta before and after, and names
+  the work the import created (sources awaiting qualification, articles awaiting re-index).
+
+### Throughput
+
+Seventeen slices against the measured ceilings, following
+[`docs/design/SCRAPING_10X_SCALING_STRATEGIES_2026-07-24.md`](design/SCRAPING_10X_SCALING_STRATEGIES_2026-07-24.md):
+the housekeeping ride-alongs moved off the pass thread into their own priority-ordered lane
+(a field box spent 52% of its time between passes); **crawling is on by default** as a
+budgeted rung rather than a mode flip, so a feedless source is finally reachable without
+abandoning conditional-GET economics; sitemap discovery landed; the robots and DNS caches
+survive a restart; a fetch already going through a SOCKS proxy stops doing a pointless local
+DNS resolve that also leaked which hosts were being read; keyword mentions insert in bulk;
+and an in-memory dedup front skips the codec read for the ~90% of fetched articles that are
+duplicates. The collector also **remembers**: a governor rebuilt at the top of every pass
+re-learned the same memory ceiling for twenty-five hours on a 3.65 GiB box, so the learned
+ceiling now persists across passes and restarts, relaxes on clean passes, and clears itself
+on a machine that no longer needs it.
+
+### Settings, restructured
+
+Fifteen subtabs became **nine**. What was scattered configuration is grouped by what you are
+actually doing: **Cards** is new and finally exposes all 37 Lead producers across their 8
+families, each with a plain description and — where tunable — a stated **safe range** rather
+than a silent clamp; **Advanced** is new and folds away the acquisition plumbing (Collect,
+Sources, Keywords, the ~500-feed calendar catalogue, the statistics producers, and now
+Diagnostics), loading each section only when you expand it, so a folded section never costs a
+fetch. Shortcuts moved into General, Newsletters into Data & backup, the statistics *figures*
+to Governments → Statistics where the data belongs, Offline map became **OpenStreetMap**, and
+Leads went away entirely. Along the way: calendar feed verification became progressive (it
+rides collection passes, never boot) with a capped re-check ladder so a feed is never retired
+for good; a chip-contrast bug that failed WCAG AA on 16 of the 17 themes was measured and
+fixed at the token level; and the AI tab was rebuilt around one card, one list and one toggle.
+**The four prompts you read the output of** — summary, translation, synthesis and keyword
+extraction — now ship in **all twelve interface languages**, so a non-English reader stops
+getting English work back from the local model; your own prompt, if you write one, is still
+used exactly as you wrote it.
+
+### The analytics, recalibrated against a real corpus
+
+The six delegated 2026-07-18 briefs, each written from a field export rather than a design:
+Leads/card-system selection calibration (producers tuned at ~2k articles whose base rates
+invert at 500k — boilerplate origins ranking as laundering, single-source as the *norm*,
+a z-score of 5.85 on three articles) plus the convergence amendment and the **no-capped-figures
+rule**: a displayed number is never a cap, and a cap that bounds which examples are listed
+must never bound a reported total. Lemmatization is on by default after the preview was
+reviewed on the live corpus. Entity families lost their furniture acronyms and gained
+cross-script aliases and truthful kind filters. The groups layer got its naming ruling
+(keyword → **group** → **super-group**), the circle grammar that marks the level everywhere,
+honest group statistics with mandatory dominance disclosures, and a clickable concept map.
+
+Beyond the briefs: charts stopped drawing a line across a period nothing was recorded in
+(and `isFinite(null)` is `true`, so the obvious filter plots a published gap as a **zero** —
+strictly worse than the bridged line it replaces); a channel facet that promised more
+articles than clicking it delivered was making a stated equality false; a source auditor that
+read `value > p90` flagged all 63 of a field corpus's "failing" sources on **one** bad article
+in 1,992, because on a clean cohort p90 is 0 and the test degenerates to "greater than zero";
+and the growth sentinel — the count substituted when there is no prior rate to divide by —
+stopped being printed as a multiplication on all six surfaces that showed it, where it had
+been ranking a raw volume of 5,701 above every measurable ratio.
+
+### Governments and official statistics
+
+The World Bank fetch **never paginated** — one request at `per_page=1000` against ~266
+economies × ~65 years, discarding the page metadata that says how many pages there are, so
+~94% of every indicator was silently missing. Statistical aggregates were being admitted as
+countries (`XD` is "High income", not a country), which is now a classification with its own
+surface — and those aggregates turn out to *be* the regional and world averages the roadmap
+wanted. Added since: two countries side by side as a display and not a calculation; country
+groups with published and computed lenses kept apart and several aggregation strategies shown
+together, refusing outright to sum an intensive indicator; and each indicator×country series
+stored as an ordinary corpus Article, which put ~9,800 series into search and trending.
+
+### The rest
+
+- **A recursive improvement loop** — a machine-readable KPI snapshot (`/api/diagnostics/kpi`),
+  a differ that classifies improved/regressed/unchanged/not-measurable without blending them,
+  and a standing protocol ([`docs/process/IMPROVEMENT_CYCLE.md`](process/IMPROVEMENT_CYCLE.md)).
+- **The Bulletin** — a periodic document made from your corpus, described in full below.
+- **The law vertical** — a merged world-wide catalog (225 sources / 162 jurisdictions,
+  research-verified per row and registered with its verification tier), page chrome stripped
+  before extraction (the stored body of the UK Data Protection Act was the site's search-form
+  dropdown, which is why `PART` ×24 had become an *organisation*), longest-match place
+  resolution so `\bireland\b` stops matching inside "Northern Ireland", a **CLML adapter**
+  that reads legislation from the publisher's own XML into addressable provisions with three
+  dates that cannot collapse, and a coverage diagnostic that reports
+  tracked-against-*enumerated* using the source's own published count.
+  The enumeration half is **not** built: every official portal is egress-blocked from the
+  build sandbox, so the fixtures are hand-authored and labelled as such, and no endpoint was
+  invented to fill the gap.
+- **Browser verification** — a real Playwright `ui_walk` runner now **stands**
+  ([`docs/audit/UI_CLICKTHROUGH_2026-08-13.md`](audit/UI_CLICKTHROUGH_2026-08-13.md)), re-runnable
+  by any later session, and a matrix expansion followed
+  ([2026-08-20](audit/UI_CLICKTHROUGH_2026-08-20.md)): all 17 themes, the Reader, a real import
+  fixture, an a11y axis with axe-core vendored offline, and five of nine honesty-rule checks
+  standing as automated instruments. Every stamp reads *Chromium-verified (remote sandbox),
+  awaiting a human UX pass* — it is not the Gecko/AppVM bar, and it does not replace one.
+- **Installing** — an **air-gapped Debian installer** (a bundle of wheels plus a pip that
+  installs itself from one of them, so a machine with no network and no `ensurepip` can still
+  create a venv), and a **Windows** installer and launcher that states plainly what it does
+  not prove. Debian remains the supported target.
+- **Storage** — every new corpus is created with `auto_vacuum=INCREMENTAL` and a **16 KiB
+  page size**, after a bench on two live encrypted corpora: at 22 GB, 16K halves the
+  index-window time, and the one shape 4K won at 3 GB *inverts* at 22 GB — it was a cache-fit
+  artifact. SQLCipher cannot discover page size from a file, so the reopen path carries a
+  verify-then-fallback ladder; existing corpora are untouched.
+- **Installing the local AI without starting the collector** — a third network state between
+  offline and online. `POST /api/system/network` cleared the kill switch *and* started the
+  scheduler in one act, so "let me install vLLM" also meant "and begin contacting every source
+  I have". A consented **egress window** keeps the kill switch engaged — all ~75 of its call
+  sites keep refusing unchanged — and exempts only the gates that name the AI-install purpose,
+  on the one thread performing that request. An early version lifted the socket backstop
+  process-wide, on the reasoning that every fetch path checks the kill switch itself, which
+  turned out to be false for the source-preflight sweep: it reaches the network through
+  `EthicalFetcher`'s side doors, so the backstop had been its only protection. Both halves are
+  fixed and pinned. What is **not** claimed: the window does not restrict which hosts the
+  installer contacts — pip, Hugging Face and Ollama's daemon are child processes an in-process
   socket patch cannot see — and those downloads do not use your proxy or Tor. The consent
   dialog says exactly that, in the same breath as the guarantee.
+
+### The Bulletin — a periodic document made from your corpus
+
+Settings → Advanced → *Bulletin* builds a report over one closed period — a day, a week, a
+month, up to a year — and it is the record rather than a summary of one: exact counts, each
+with the method that produced it. It opens by stating its own lens, because a figure about a
+corpus is not a figure about the world: how many sources actually contributed, what share the
+largest three carried, the language and country split, and how many of the period's days saw
+any ingest at all. Eight sections follow — what rose, which channel carried a concept first
+(ties reported as ties, never broken), local coverage beside international coverage of the
+same country, topics, changes to tracked laws and Wikipedia pages, provider-declared alerts,
+the same calendar days in earlier years, and the Lead cards. Each prints the window it
+*actually* used, so a fourteen-day number in a seven-day edition is visible rather than
+discovered later, and everything the period could not see — quarantined articles, mentions
+carrying no date, an unfinished re-index — is counted at the end instead of quietly dropped.
+
+**A local model can narrate it, and the layer comes off cleanly.** With narration on, each
+story cluster gains a paragraph — and every sentence is checked against the article text the
+model was shown, then dropped if it names a figure or an entity that is not there. A paragraph
+that lost sentences says so. A story whose sentences all failed falls back to the deterministic
+counts and is deliberately *not* labelled AI-derived: calling the app's own arithmetic a
+model's work would be a fabricated attribution in the other direction. Model sentences are
+marked beside the prose, not once in a footer.
+
+**What leaves the machine is chosen, and says what it is.** Nothing publishes itself —
+automation reaches a draft and stops, because you are the byline. The review screen shows each
+sentence's verdict and lets you exclude a section or a story; excluding one *re-renders* from
+the saved record rather than editing the output, so a published number is always a number the
+record contains, and the document states that it is a selection ("1 of 3 sections") so a
+reader is never handed an omission they cannot see. The report downloads with an annexes
+bundle — one file per cited article, where the report's `[0007]` and `..._Article_0007.md` are
+guaranteed to be the same article. Published output carries **external** links only: a local
+article id means a different article on someone else's install. The HTML is entirely
+self-contained — no stylesheet, font, script or image fetched from anywhere — because a shared
+document that phones home would tell its recipient's network what you read. An owner-only
+evidence archive can carry every article a figure was computed over, so the counts can be
+recomputed rather than trusted; it is plaintext leaving an encrypted store, and it says so
+before it is written.
+
+**It is written in your interface language** — 11 locales, mechanically verified complete. A
+missing translation renders in English *and is reported*; a translation whose placeholders no
+longer match its sentence is refused rather than printed with a stray brace; and entries merely
+copied from the English are counted apart, so a catalog of copies cannot report itself
+finished. Design of record:
+[`docs/design/BULLETIN_DESIGN_2026-07-31.md`](design/BULLETIN_DESIGN_2026-07-31.md).
+
+**Not claimed:** the feature is gated on hardware capable of practical local inference, which
+currently denies a GPU-less machine even the deterministic document — a single constant, and an
+open question. Narration still runs inside the generate request rather than as a resumable
+background job, which is right for a bounded number of stories and wrong for a long run.
+
+### Still on the board, not in this release
+
+- **The Observatory** — the corpus-as-night-sky exploration tab. Its data spine shipped
+  (the domain scaffold field and the universe/galaxy endpoint); the `ooSky` canvas renderer
+  did not, and is gated on a maintainer click-through. Design of record:
+  [`docs/design/OBSERVATORY_DESIGN.md`](design/OBSERVATORY_DESIGN.md).
+- **A committed full import that re-checks every source** — moved to `0.4` and **required**
+  there, not merely deferred. Every restore validated so far ran uncommitted, which is a
+  self-restore where every row reads as a duplicate; the committed write path at ~1M articles
+  has not been exercised in the field. The gate's §5 records what it must demonstrate.
+- **A multi-day (≥72 h) collector soak** — moved to `0.4` and **required** there. The
+  instrumentation exists and the last real reading (~22 h, 61 passes) showed no climb, but
+  22 hours is not multi-day, so memory across days at release scale is **unmeasured** rather
+  than merely unreported.
+- **Diagnostics on the ~1M-article instance** — the scale bar was withdrawn to ~1M in July
+  because the app's throughput could not reach 5M, and withdrawn again on 2026-08-23 because
+  the ~1M instance is not the machine this release ships against. `0.3`'s diagnostics evidence
+  is therefore read **at 40,260 articles**, and anything that only appears an order of
+  magnitude higher is unmeasured rather than measured-and-fine. Both bars return when the
+  throughput work does; the ~1M run is required in `0.4`.
+- **The article clean-up** — the criteria are proposed and the machinery ships, but the pass
+  has not been executed. Tier A (8 listing pages, corroborated) awaits sign-off; Tier B (451
+  index pages that clear the ≥100-word body guard, the population the clean-up is actually
+  for) awaits a prose measurement nobody has taken, and is deliberately not proposed without
+  one.
 
 ## 0.2.0 — data safety at scale (the `0.1` cycle, version set 2026-07-10)
 

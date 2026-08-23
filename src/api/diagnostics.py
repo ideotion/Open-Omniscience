@@ -2831,16 +2831,45 @@ def report_frontend_error(err: _FrontendError) -> dict:
     return {"ok": True}
 
 
-@router.get("/session-forensics")
-def session_forensics_report() -> dict:
+# response_model=None: the handler returns a dict OR a text Response, and FastAPI
+# cannot build a response model for that union. Keeping the dict return (rather than
+# wrapping it in a JSONResponse) is deliberate — the bundle member calls this function
+# directly, and the archive writer's dict path carries `_member_default`, so
+# session-forensics.json stays byte-identical to what it was before the text sibling.
+@router.get("/session-forensics", response_model=None)
+def session_forensics_report(download: bool = Query(False)) -> dict | Response:
     """Session forensics (2026-07-09 field event): the data-dir inventory (per-entry
     sizes; orphaned PLAINTEXT backup staging detected loudly), the previous session's
     clean/unclean-end verdict with the collector's last RSS sample (the honest OOM
     inference), and the last unlock's own phase timings + the -wal size before open.
-    Local diagnostics only — sizes and app-owned names, never file contents."""
+    Local diagnostics only — sizes and app-owned names, never file contents.
+
+    ``download=1`` returns the same facts as a dated PLAIN-TEXT attachment (2026-08-23
+    field ask). This is a deliberate exception to the 2026-07-20 button-consolidation
+    ruling, whose rationale was that the ratchet guarantees the bundle carries every
+    report: it does, and `session-forensics.txt` is now in it — but this is the one
+    file that explains a crash, and making an operator sit through a full bundle run
+    to send it is the wrong cost for that question."""
+    from src.monitoring.forensics import render_text as _render
     from src.monitoring.forensics import session_forensics as _sf
 
-    return _sf()
+    payload = _sf()
+    if download:
+        fname = f"oo-session-forensics-{datetime.now().strftime('%Y%m%d-%H%M')}.txt"
+        return Response(
+            content=_render(payload),
+            media_type="text/plain; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+        )
+    return payload
+
+
+def _session_forensics_text() -> Response:
+    """The text rendering as a bundle member. Returns a ``Response`` so the archive
+    writer's own encoder writes the bytes verbatim instead of JSON-quoting them."""
+    from src.monitoring.forensics import render_text as _render
+
+    return Response(content=_render(), media_type="text/plain; charset=utf-8")
 
 
 def _p0_validation_last() -> dict:
@@ -3473,7 +3502,13 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # direct HTTP GET would take.
         ("fixity.json", lambda: _fixity_bundle_member(db=db)),
         ("frontend-errors.json", lambda: frontend_errors(limit=500)),
-        ("session-forensics.json", lambda: session_forensics_report()),
+        # download=False EXPLICITLY: called directly, `Query(False)` is a sentinel
+        # OBJECT and truthy, which would have put the TEXT in the .json member.
+        ("session-forensics.json", lambda: session_forensics_report(download=False)),
+        # The SAME facts rendered for a human (2026-08-23 field ask). It rides beside
+        # the JSON rather than replacing it: the JSON is what a tool reads, the text is
+        # what an operator pastes into a chat when something went wrong.
+        ("session-forensics.txt", lambda: _session_forensics_text()),
         # A12b: itemized footprint across ALL stores incl. the external Ollama model store.
         ("storage-footprint.json", lambda: storage_footprint_report(download=False)),
         # P1.5: per-table/per-index bytes (dbstat) — what the on-disk GB actually IS.

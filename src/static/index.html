@@ -2463,6 +2463,7 @@
            with its own confirm flow later. -->
       <div id="session-forensics-box" style="margin-top:8px">
         <button class="secondary" onclick="loadSessionForensics(this)" title="Why did the app crash / why was unlock slow / what is filling the disk — the app's own records: the previous session's clean-or-unclean-end verdict, the last unlock's phase timings and -wal size, and the data folder's on-disk inventory with any orphaned backup/restore staging (a leftover decrypted corpus snapshot is flagged). Local only; sizes and app-owned names, never file contents.">Session forensics</button>
+        <a class="secondary" style="margin-left:6px" href="/api/diagnostics/session-forensics?download=1" target="_blank" rel="noopener" title="The same facts as a dated plain-text file you can send on. It is also in the all-diagnostics archive as session-forensics.txt — this link is here because a full bundle run is the wrong cost when the one question is what happened to this instance.">Download (.txt)</a>
         <div id="session-forensics-out" class="small" style="margin-top:6px"></div>
       </div>
       <!-- UNATTENDED RUN (2026-08-12 field ask): ONE button pressed before a multi-day

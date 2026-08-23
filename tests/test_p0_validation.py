@@ -179,6 +179,50 @@ def test_collector_single_pass_cannot_show_a_trend():
     assert c["verdict"] == "not-measurable-here"
 
 
+def _passes(maxes):
+    return [
+        {"kind": "summary", "pass_id": i, "rss_mb": {"max": float(m)}}
+        for i, m in enumerate(maxes)
+    ]
+
+
+def test_a_noisy_plateau_with_isolated_spikes_is_not_a_leak():
+    """The 2026-08-23 field case, replayed in miniature. `peak - first` called this
+    "the OOM signature" — but 3 of 193 passes spiked while first/median/last were
+    1323/1371/1303 MB, and RSS is sampled process-wide, so the largest spike sat
+    inside a restore the app's own pre-restore snapshots timestamp. A fabricated FAIL
+    is exactly as dishonest as a fabricated pass."""
+    maxes = [1300 + (i % 7) * 30 for i in range(50)]
+    maxes[19] = 2450.0  # one transient excursion, far above the floor
+    c = p0._collector_verdict(_passes(maxes), _guard_state())
+    assert c["verdict"] == "pass", c["reason"]
+    m = c["measurements"]
+    assert m["rss_sustained_rise_mb"] <= p0._COLLECTOR_CLIMB_ABS_MB
+    # the excursion is REPORTED, never quietly dropped: hiding it would trade one
+    # dishonest reading for another.
+    assert m["rss_peak_across_passes_mb"] == 2450.0
+    assert len(m["rss_spikes_above_floor"]) == 1
+    assert "spike" in c["reason"] and "process-wide" in c["reason"]
+
+
+def test_a_sustained_climb_over_many_passes_still_fails():
+    """The twin. An over-corrected detector that never fails is the mirror defect, so
+    the direction this check exists for must still bite at the same length of window
+    the field case passes at."""
+    maxes = [1300 + i * 20 for i in range(50)]  # +980 MB, monotone
+    c = p0._collector_verdict(_passes(maxes), _guard_state())
+    assert c["verdict"] == "fail", c["reason"]
+    assert "rose" in c["reason"] and "stayed risen" in c["reason"]
+
+
+def test_a_leak_that_saturates_early_and_stays_high_still_fails():
+    """A windowed mean could miss a leak that climbs fast then plateaus — it does not,
+    because the trailing window is still far above the opening one."""
+    maxes = [1300.0] * 5 + [2600.0] * 45
+    c = p0._collector_verdict(_passes(maxes), _guard_state())
+    assert c["verdict"] == "fail", c["reason"]
+
+
 # --------------------------------------------------------------------------- #
 # Unit: dest-dir safety guard
 # --------------------------------------------------------------------------- #

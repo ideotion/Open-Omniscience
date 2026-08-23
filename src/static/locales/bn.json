@@ -2150,6 +2150,8 @@
   "The app is busy — retrying shortly…": "অ্যাপ ব্যস্ত — শীঘ্রই আবার চেষ্টা করা হচ্ছে…",
   "Session forensics": "সেশন ফরেনসিক",
   "Could not load session forensics.": "সেশন ফরেনসিক লোড করা যায়নি।",
+  "Download (.txt)": "ডাউনলোড (.txt)",
+  "The same facts as a dated plain-text file you can send on. It is also in the all-diagnostics archive as session-forensics.txt — this link is here because a full bundle run is the wrong cost when the one question is what happened to this instance.": "একই তথ্য তারিখ-সহ একটি সাদা-টেক্সট ফাইলে, যা আপনি পাঠিয়ে দিতে পারেন। এটি সম্পূর্ণ-ডায়াগনস্টিক আর্কাইভেও session-forensics.txt নামে আছে — এই লিঙ্কটি আছে কারণ প্রশ্নটি যখন কেবল এই ইনস্ট্যান্সের কী হয়েছে, তখন পুরো আর্কাইভ চালানো অত্যধিক খরচ।",
   "Previous session": "পূর্ববর্তী সেশন",
   "Ended cleanly": "স্বাভাবিকভাবে শেষ হয়েছে",
   "Ended unexpectedly": "অপ্রত্যাশিতভাবে শেষ হয়েছে",

@@ -177,9 +177,10 @@ maintainer channel along with the debug bundle if any check failed.
 > [`RELEASE_0.2_GATE.md`](RELEASE_0.2_GATE.md), which also carries the
 > release-workflow collision that shipped it with no assets and the idempotent
 > fix that protects later tags. The steps below are kept verbatim as the
-> precedent. **For `0.3`, read [`RELEASE_0.3_GATE.md`](RELEASE_0.3_GATE.md)** —
-> and note two things below no longer apply: `pyproject` now reads `0.3.0`, and
-> the branch rename is obsolete (the default branch is permanently `main`).
+> precedent. **For `0.3`, the tag-day sequence is
+> [`RELEASE_0.3_GATE.md`](RELEASE_0.3_GATE.md) §7** — it supersedes the steps below,
+> which no longer apply in two respects: `pyproject` now reads `0.3.0`, and the branch
+> rename is obsolete (the default branch is permanently `main`).
 
 Do NOT run this until the report above is green for the data-safety checks and
 unlock/collector were measured (cold boot + soak). The tag and the live run are

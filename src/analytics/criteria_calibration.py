@@ -33,7 +33,14 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 SCHEMA = "oo-criteria-calibration-1"
-CRITERIA_VERSION = "nav-soup-v1"
+# v2 (2026-08-23): `classify_non_article` gained the query-string item-id veto, so the
+# homepage and section-landing rules no longer fire on `/news/?articleid=2504`. The stamp
+# is what tells a future reader WHICH generation flagged a quarantined row, so a rule
+# change that left it at v1 would make v1 mean two different detectors — and the stamp is
+# the reversibility story. Measured on the 2026-08-23 field corpus: the drop path went
+# from 12 specimens to 8, and the 4 it stopped flagging had function-word densities of
+# 0.28-0.37 (prose), against 0.0 for all 8 it kept.
+CRITERIA_VERSION = "nav-soup-v2"
 _DEFAULT_TOP_N = 100
 _DEFAULT_PROSE_GATE_LIMIT = 2000
 

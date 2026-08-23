@@ -199,11 +199,85 @@ def test_endpoint_and_bundle_are_wired():
     from pathlib import Path
 
     src = Path("src/api/diagnostics.py").read_text(encoding="utf-8")
-    assert '@router.get("/session-forensics")' in src
+    # Match the PATH, not the whole decorator line: it also carries response_model=None
+    # (the handler returns a dict or a text Response), and an exact-line anchor would
+    # break on any future kwarg while proving nothing more.
+    assert '@router.get("/session-forensics"' in src
     # S8: every debug-bundle member is now individually guarded + budgeted via _member.
     assert '"session_forensics": _member("session_forensics", _session_forensics)' in src
-    assert '("session-forensics.json", lambda: session_forensics_report())' in src
+    assert '"session-forensics.json", lambda: session_forensics_report(download=False)' in src
+    assert '("session-forensics.txt", lambda: _session_forensics_text())' in src
     main = Path("src/api/main.py").read_text(encoding="utf-8")
     assert "record_session_start" in main and "record_clean_shutdown" in main
     unlock = Path("src/api/unlock.py").read_text(encoding="utf-8")
     assert "wal_bytes_before_open" in unlock and "record_unlock_timing" in unlock
+
+
+# --------------------------------------------------------------------------- #
+#  The text rendering (2026-08-23 field ask): a file an operator can send
+# --------------------------------------------------------------------------- #
+def test_render_text_states_every_absence_in_words(dd):
+    """On a machine with no history there is nothing to report — and the renderer must
+    SAY that rather than emit blanks or zeros, which is the whole convention it
+    inherits from the expedition log."""
+    out = forensics.render_text()
+    assert out.startswith("# Open Omniscience — Session Forensics")
+    assert "no unlock has been recorded" in out
+    assert "orphaned backup/restore staging: none found" in out
+
+
+def test_render_text_flags_orphaned_plaintext_staging_loudly(dd, monkeypatch):
+    """An orphaned staging tree from an ENCRYPTED corpus holds a PLAINTEXT copy, so it
+    is an at-rest-encryption finding. It must not read as a housekeeping line."""
+    payload = forensics.session_forensics()
+    payload["inventory"]["suspect_staging"] = [{"name": ".restore-abc", "bytes": 2 * 1024**3}]
+    payload["inventory"]["totals"]["orphaned_staging_bytes"] = 2 * 1024**3
+    out = forensics.render_text(payload)
+    assert "ORPHANED STAGING" in out and "PLAINTEXT" in out and ".restore-abc" in out
+
+
+def test_render_text_never_prints_an_unmeasured_size_as_zero(dd):
+    """`0 B` and "we could not measure it" are different facts; collapsing them is the
+    sentinel-sharing defect this project keeps paying for."""
+    payload = forensics.session_forensics()
+    payload["inventory"]["totals"]["wal_bytes"] = None
+    assert "not measured" in forensics.render_text(payload)
+
+
+def test_the_text_member_is_verbatim_and_the_json_member_is_still_json():
+    """BEHAVIOURAL, not a source grep: `download` defaults to `Query(False)`, which is a
+    truthy sentinel OBJECT when the route is called directly the way the bundle calls
+    it — so a source-level check of the member list would pass while
+    session-forensics.json quietly contained the TEXT."""
+    from src.api.diagnostics import (
+        _member_bytes,
+        _session_forensics_text,
+        session_forensics_report,
+    )
+
+    txt = _member_bytes(_session_forensics_text())
+    assert txt.startswith(b"# Open Omniscience"), "the .txt member must be verbatim text"
+
+    jsn = _member_bytes(session_forensics_report(download=False))
+    assert jsn.startswith(b"{"), "the .json member must still be JSON, not the rendering"
+    assert b"inventory" in jsn
+
+    # ...and the trap itself, so the reason for the explicit argument cannot rot away.
+    import inspect
+
+    default = inspect.signature(session_forensics_report).parameters["download"].default
+    assert bool(default) is True, (
+        "Query(False) is expected to be a TRUTHY sentinel — this test exists because "
+        "of that; if it ever becomes falsy the explicit download=False is still right, "
+        "but this rationale needs rewriting rather than deleting."
+    )
+
+
+def test_the_download_is_a_dated_plain_text_attachment():
+    from src.api.diagnostics import session_forensics_report
+
+    r = session_forensics_report(download=True)
+    assert r.media_type == "text/plain; charset=utf-8"
+    cd = r.headers.get("content-disposition") or ""
+    assert cd.startswith("attachment;") and cd.endswith('.txt"')
+    assert r.body.startswith(b"# Open Omniscience")

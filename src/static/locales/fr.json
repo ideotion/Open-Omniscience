@@ -2150,6 +2150,8 @@
   "The app is busy — retrying shortly…": "L'application est occupée — nouvelle tentative sous peu…",
   "Session forensics": "Analyse de session",
   "Could not load session forensics.": "Impossible de charger l'analyse de session.",
+  "Download (.txt)": "Télécharger (.txt)",
+  "The same facts as a dated plain-text file you can send on. It is also in the all-diagnostics archive as session-forensics.txt — this link is here because a full bundle run is the wrong cost when the one question is what happened to this instance.": "Les mêmes faits sous forme de fichier texte daté que vous pouvez transmettre. Il figure aussi dans l’archive de diagnostic complet sous le nom session-forensics.txt — ce lien existe parce qu’exécuter une archive complète coûte trop cher lorsque la seule question est de savoir ce qui est arrivé à cette instance.",
   "Previous session": "Session précédente",
   "Ended cleanly": "Terminée proprement",
   "Ended unexpectedly": "Terminée de façon inattendue",

@@ -2150,6 +2150,8 @@
   "The app is busy — retrying shortly…": "التطبيق مشغول — ستُعاد المحاولة قريبًا…",
   "Session forensics": "تحليل الجلسة",
   "Could not load session forensics.": "تعذّر تحميل تحليل الجلسة.",
+  "Download (.txt)": "تنزيل (.txt)",
+  "The same facts as a dated plain-text file you can send on. It is also in the all-diagnostics archive as session-forensics.txt — this link is here because a full bundle run is the wrong cost when the one question is what happened to this instance.": "الحقائق نفسها في ملف نصي مؤرَّخ يمكنك إرساله. وهو موجود أيضًا في أرشيف التشخيص الكامل باسم session-forensics.txt — هذا الرابط موجود لأن تشغيل الأرشيف الكامل تكلفة مبالغ فيها حين يكون السؤال الوحيد هو ما الذي حدث لهذه النسخة.",
   "Previous session": "الجلسة السابقة",
   "Ended cleanly": "انتهت بشكل سليم",
   "Ended unexpectedly": "انتهت بشكل غير متوقّع",

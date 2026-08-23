@@ -11,15 +11,16 @@ contending request is issued, so there is no timing race for leadership.
 """
 
 import threading
+import time
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from src.api import heavy
 from src.api.heavy import HeavyBusy, flight_key, guarded_read, run_heavy
-from src.database.maintenance import StatementTimeout
+from src.database.maintenance import StatementTimeout, statement_deadline
 
 
 @pytest.fixture(autouse=True)
@@ -265,3 +266,79 @@ def test_guarded_read_maps_deadline_to_503_and_honors_on_timeout():
 def test_guarded_read_returns_the_real_value_when_healthy():
     session = _sqlite_session()
     assert guarded_read(session, "k", lambda: {"ok": 1}) == {"ok": 1}
+
+
+# --------------------------------------------------------------------------- #
+#  A deadline must survive a mid-block RECONNECT (field defect, 2026-08-23)
+# --------------------------------------------------------------------------- #
+# The all-diagnostics bundle from a real instance lost three members --
+# home-cards, leads-quality and card-audit, the only three that drive the producer
+# registry, together 400 s of a 713 s run -- each completing its work and then dying
+# with "Cannot operate on a closed database", 0 bytes written. Cause: the deadline
+# armed ONE raw DBAPI connection at entry and disarmed that same object in `finally`,
+# while the registry's WAL guard closes its cursor and commits mid-scan BY DESIGN.
+# On a NullPool bind that commit closes the real handle.
+
+def _file_session(tmp_path, **kw):
+    """A NullPool file-backed session: returning the connection CLOSES the DBAPI handle,
+    which is exactly what a commit inside the guarded block does in production."""
+    from sqlalchemy.pool import NullPool
+
+    engine = create_engine(f"sqlite:///{tmp_path/'d.db'}", poolclass=NullPool, **kw)
+    return sessionmaker(bind=engine)()
+
+
+def test_a_reconnect_inside_the_block_never_destroys_the_blocks_result(tmp_path):
+    """The half that cost three members: a teardown that can replace the value of the
+    work it was guarding is worse than no guard at all."""
+    s = _file_session(tmp_path)
+    try:
+        with statement_deadline(s, 300):
+            s.execute(text("select 1")).all()
+            s.commit()                            # NullPool -> the armed handle is closed
+            s.execute(text("select 1")).all()     # reconnects onto a NEW dbapi connection
+            value = {"member": "ok"}
+        assert value == {"member": "ok"}
+    finally:
+        s.close()
+
+
+def test_the_deadline_still_bites_after_that_reconnect(tmp_path):
+    """The twin, and the reason the fix re-arms rather than merely swallowing the error:
+    a progress handler is per-connection, so without re-arming everything after the
+    reconnect ran UNBOUNDED -- a guarantee lost silently, with nothing raising to say so.
+    Measured on the unpatched code: a 1 s deadline let a runaway run 15.2 s to completion."""
+    s = _file_session(tmp_path)
+    runaway = (
+        "with recursive c(x) as (select 1 union all select x+1 from c where x<80000000) "
+        "select count(*) from c"
+    )
+    try:
+        with pytest.raises(StatementTimeout):
+            with statement_deadline(s, 1.0):
+                s.execute(text("select 1")).all()
+                s.commit()
+                s.execute(text("select 1")).all()
+                s.execute(text(runaway)).all()
+    finally:
+        s.close()
+
+
+def test_the_deadline_is_disarmed_on_the_connection_it_leaves_behind(tmp_path):
+    """Re-arming must not leave a live handler on the session's connection for whatever
+    runs next -- the stray-progress-handler hazard the bundle's own member runner names.
+    After the block, a slow statement on the SAME session must run to completion."""
+    s = _file_session(tmp_path)
+    slow = (
+        "with recursive c(x) as (select 1 union all select x+1 from c where x<300000) "
+        "select count(*) from c"
+    )
+    try:
+        with statement_deadline(s, 1.0):
+            s.execute(text("select 1")).all()
+            s.commit()
+            s.execute(text("select 1")).all()
+        time.sleep(1.1)                      # past the (now-expired) deadline's clock
+        assert s.execute(text(slow)).scalar() == 300000
+    finally:
+        s.close()
