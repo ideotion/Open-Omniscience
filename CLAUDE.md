@@ -4664,6 +4664,29 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     BASE interpreter's `sysconfig.get_platform()` (the premise the whole check rests on),
     and that the nuget package carries `venvlauncher.exe` + `ensurepip` with a bundled pip,
     so the vendored interpreter can build the venv it is now asked to.
+  - **A RESOURCE WRITTEN INTO A DIRECTORY A LATER STEP REQUIRES TO BE EMPTY IS A
+    DEADLOCK THAT DELETING THE DIRECTORY CANNOT FIX (2026-08-23, the Windows
+    installer):** the nuget rung unpacked its interpreter into `$target\.python-x64`,
+    and the step after it refuses when `$target` is non-empty and not a git checkout.
+    So section 2 created the very condition section 3 rejects — reported from the field
+    three consecutive runs, and it would have happened on every machine that needs that
+    rung, forever. The operator deleting the folder does not help: the next run
+    recreates it before looking. **THE PART WORTH REMEMBERING IS THAT RELAXING THE
+    CHECK WOULD NOT HAVE FIXED IT** — `git clone` declines a non-empty directory on its
+    own, so the emptiness check was not the obstacle, only the first thing to complain;
+    the RESOURCE had to move. GENERAL FORM: when an early step writes into a path a
+    later step constrains, the constraint is usually right and the placement is wrong;
+    look for the step that owns that directory before assuming the guard is too strict.
+    TWO RIDERS. (a) Ask what KIND of thing it is: an interpreter is a MACHINE resource,
+    not a checkout resource, so outside the checkout it also survives the operator
+    deleting the app folder — which matters because a venv whose base interpreter
+    vanished is broken, not merely stale — and a second `-Path` checkout reuses it
+    instead of re-downloading. (b) A copy left in the old place by the shipped version
+    is MOVED, never deleted: deleting also clears the deadlock and costs every affected
+    machine another download, so the twin test asserts the bytes SURVIVED, not just
+    that the folder is empty. And moving a resource out of a tree means the uninstall
+    no longer reclaims it by removing the tree — both sites must read ONE function, or
+    the uninstall silently orphans it.
   - **A CONTEXT MANAGER THAT CAPTURES A CONNECTION AT ENTRY AND RELEASES IT IN `finally`
     BREAKS THE MOMENT THE BLOCK LEGITIMATELY RECONNECTS — and the crash is the loud half
     (2026-08-23, the first field diagnostics bundle):** `statement_deadline` armed one raw
