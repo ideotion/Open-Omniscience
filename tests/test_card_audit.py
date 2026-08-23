@@ -17,6 +17,8 @@ environment.
 
 from __future__ import annotations
 
+from contextlib import contextmanager
+
 import pytest
 
 from src.briefing.card import Card
@@ -124,6 +126,50 @@ def test_one_failing_producer_never_aborts_the_pass(clean_registry):
     outcomes = {o.name: o for o in observe_producers(object())}
     assert outcomes["boom"].outcome == "error"
     assert outcomes["after"].outcome == "ok"
+
+
+def test_the_observer_enters_the_wal_guard_at_the_same_scope_run_all_does(
+    clean_registry, monkeypatch
+):
+    """The scope of ``_wal_guard`` is part of what this observer MIRRORS, not an
+    implementation detail — and it is the half a "same isolation contract" docstring
+    cannot pin by itself.
+
+    Entering the guard is what runs ``_drain_pending``, i.e. what closes whatever scan
+    the PREVIOUS producer left mid-flight. ``run_all_bounded`` enters it once per
+    producer for exactly that reason (PR-D / W1 finding #1). An observer that entered
+    it once for the WHOLE loop would still surface the same cards, still isolate the
+    same exceptions, and still pass every other test in this file — while every
+    ``elapsed_s`` it reports measured a different pinning regime than production runs
+    under. A diagnostic quietly describing code that is not the code is worse than no
+    diagnostic.
+
+    BEHAVIOURAL ON PURPOSE. A source grep for ``with _wal_guard`` inside the loop is
+    satisfied by the comment above that line, which is precisely the text a future
+    session needs to read before deciding the scope was arbitrary.
+    """
+    from src.briefing import registry as REG
+
+    entries: list[int] = []
+    real = REG._wal_guard
+
+    @contextmanager
+    def _counting(session):
+        entries.append(1)
+        with real(session):
+            yield
+
+    monkeypatch.setattr(REG, "_wal_guard", _counting)
+
+    clean_registry.register("a", lambda _s: [_card(key="a")])
+    clean_registry.register("b", lambda _s: [_card(key="b")])
+    clean_registry.register("c", lambda _s: [_card(key="c")])
+
+    observe_producers(object())
+    assert sum(entries) == 3, (
+        "the guard must be entered once PER PRODUCER; a single entry for the whole "
+        "loop leaves each producer's dangling scan pinned across its successors"
+    )
 
 
 def test_observer_surfaced_set_matches_run_all_exactly(clean_registry):

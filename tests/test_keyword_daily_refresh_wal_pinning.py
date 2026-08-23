@@ -56,8 +56,10 @@ alone, without ever depending on it accidentally reaching busy=1.
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, date, datetime, timedelta
 
+import pytest
 from sqlalchemy import create_engine, event, insert
 from sqlalchemy.orm import sessionmaker
 
@@ -70,6 +72,57 @@ from src.scheduler.hygiene import checkpoint_wal
 _JOURNAL_SIZE_LIMIT_MB = 1
 _BASE = datetime(2024, 1, 1, tzinfo=UTC)
 _BATCH_QUERY_ANCHOR = "keyword_id, observed_on, count, article_id"  # in BOTH code shapes' SQL
+
+
+def _columnar_engine_available() -> bool:
+    """The SOURCE OF TRUTH for "can ``columnar.connect()`` hand back a connection".
+
+    Deliberately mirrors ``columnar.connect``'s OWN guard (columnar.py) rather than
+    probing ``duckdb_available()`` alone: that function answers "is the optional
+    ``duckdb`` extra importable", while ``connect()`` returns ``None`` for a SECOND
+    reason too -- the ``OO_COLUMNAR=0`` operator kill switch. A guard that reads only
+    half the condition skips honestly on a core install and then fails on an operator
+    who turned the engine off, which is the same defect wearing a different hat.
+    """
+    return columnar.duckdb_available() and os.getenv("OO_COLUMNAR") != "0"
+
+
+needs_columnar = pytest.mark.skipif(
+    not _columnar_engine_available(),
+    reason=(
+        "the derived columnar engine is unavailable (the optional `duckdb` extra is "
+        "absent, or OO_COLUMNAR=0), so `columnar.connect()` honestly returns None and "
+        "there is no store to refresh -- see test_connect_degrades_honestly_when_the_"
+        "engine_is_unavailable, which RUNS in that configuration"
+    ),
+)
+
+
+def test_connect_degrades_honestly_when_the_engine_is_unavailable():
+    """The NEGATIVE-SPACE twin of the skip guard above -- and it must RUN on a core
+    install, which is the whole point: a `skipif` alone is a mute button, asserting
+    nothing about the configuration it skips in.
+
+    ``columnar.connect``'s own docstring states the contract -- "Returns a DuckDB
+    connection, or ``None`` when the engine is unavailable (duckdb absent /
+    ``OO_COLUMNAR=0``) so the caller falls back to the live query." This pins BOTH
+    directions of that sentence, so whichever configuration the lane runs in, one of
+    the two branches genuinely exercises `connect()` rather than leaving it untested.
+    """
+    con = columnar.connect(passphrase=None)
+    if _columnar_engine_available():
+        assert con is not None, (
+            "duckdb is importable and OO_COLUMNAR is not '0', so connect() must hand "
+            "back a real connection -- returning None here would silently disable "
+            "every columnar path on an install that HAS the engine"
+        )
+        con.close()
+    else:
+        assert con is None, (
+            "the engine is unavailable, so connect() must return None for the caller "
+            "to fall back to the live query -- anything else (a half-built object, a "
+            "raised ImportError) breaks the documented degrade contract"
+        )
 
 
 def _ts(n: int) -> datetime:
@@ -102,6 +155,7 @@ def _fresh_cadence(monkeypatch):
     monkeypatch.setattr(hygiene, "_LAST_CKPT_MONO", None)
 
 
+@needs_columnar
 def test_a_checkpoint_attempted_between_two_batches_of_an_incremental_refresh_succeeds(
     tmp_path, monkeypatch
 ):
