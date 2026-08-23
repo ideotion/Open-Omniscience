@@ -67,9 +67,61 @@ whether they are handled elsewhere or genuinely dropped, and report which.
 
 ### Build it as
 
-One commit per table group, each with a behavioural round-trip test asserting the value **survives**
-(the reproducer above is the template — it lives at
-`scratchpad/merge_col_check.py`). Then close the class permanently:
+One commit per table group, each with a behavioural round-trip test asserting the value
+**survives**. The reproducer that produced the evidence above is inlined here so it cannot rot —
+plain SQLite, no encryption, no fixtures; run it, then re-run it after each commit:
+
+```python
+import sys, sqlite3, tempfile, pathlib
+sys.path.insert(0, ".")
+from sqlalchemy import create_engine
+from src.database.models import Base
+from src.backup.merge import merge_corpus
+
+def make(p):
+    e = create_engine(f"sqlite:///{p}", future=True)
+    Base.metadata.create_all(e); e.dispose()
+
+d = pathlib.Path(tempfile.mkdtemp()); inc, loc = d / "inc.db", d / "local.db"
+make(inc); make(loc)
+
+c = sqlite3.connect(inc)
+c.execute("INSERT INTO sources (name, domain, enabled) VALUES ('S','ex.com',1)")
+c.execute("INSERT INTO articles (url, canonical_url, source_id, title, content, hash,"
+          " language, detected_language, server_ip, server_ip_reason)"
+          " VALUES ('http://ex.com/a','http://ex.com/a',1,'T','body','h1','en','fr',"
+          "'9.9.9.9','socket')")
+c.execute("INSERT INTO wiki_pages (wiki, title, latest_text, latest_text_revid)"
+          " VALUES ('en','P','THE LATEST TEXT',42)")
+c.execute("INSERT INTO wiki_revisions (page_id, revid, timestamp, full_text)"
+          " VALUES (1,7,'2026-01-01','THE REVISION FULL TEXT')")
+c.execute("INSERT INTO law_documents (jurisdiction, url, title, country, language,"
+          " latest_text, latest_text_revid)"
+          " VALUES ('fr','http://l/1','T','kh','fr','LATEST',5)")
+c.execute("INSERT INTO law_revisions (document_id, content_hash, full_text)"
+          " VALUES (1,'h','REV FULL TEXT')")
+c.execute("INSERT INTO external_sources (name, domain, discovered_via)"
+          " VALUES ('X','x.com','wikipedia')")
+c.commit(); c.close()
+
+merge_corpus(inc, loc, {"artifact_id": "t", "created_at": "2026-01-01",
+                        "app_version": "0.3.0"})
+
+c = sqlite3.connect(loc)
+# `language` and `jurisdiction` are the CONTROLS -- they must survive, or the merge
+# never ran and every other None below would be meaningless.
+print(c.execute("SELECT language, detected_language, server_ip, server_ip_reason"
+                " FROM articles").fetchall())
+print(c.execute("SELECT latest_text, latest_text_revid FROM wiki_pages").fetchall())
+print(c.execute("SELECT full_text FROM wiki_revisions").fetchall())
+print(c.execute("SELECT jurisdiction, country, language, latest_text,"
+                " latest_text_revid FROM law_documents").fetchall())
+print(c.execute("SELECT full_text FROM law_revisions").fetchall())
+print(c.execute("SELECT discovered_via FROM external_sources").fetchall())
+```
+
+Two schema gotchas that cost a run each while writing this: `articles.canonical_url` is NOT NULL,
+and `wiki_pages`' edition column is `wiki`, not `lang`. Then close the class permanently:
 a test that walks `Base.metadata.tables`, extracts each merge INSERT's column list **via AST**, and
 fails on any model column that is neither in the INSERT nor in an explicit
 `_MERGE_COLUMN_INTENTIONALLY_OMITTED` map with a reason. That is the completeness check the
