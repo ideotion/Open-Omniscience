@@ -26,15 +26,28 @@ router = APIRouter(prefix="/api/quarantine", tags=["quarantine"])
 
 
 @router.post("/start")
-def quarantine_start(write: bool = Query(False)) -> dict:
+def quarantine_start(
+    write: bool = Query(False),
+    include_prose_gate: bool = Query(True),
+) -> dict:
     """Start the retroactive quarantine job. ``write=False`` (default): pure detection,
     no database mutation. ``write=True``: additionally stamps each detected candidate,
     idempotently (an already-quarantined row is skipped, never re-stamped). 409 if a run
-    is already in progress."""
+    is already in progress.
+
+    ``include_prose_gate`` (default True = unchanged) selects the CRITERIA the run applies.
+    The nav-soup prose gate is independent of the URL-shape rules and fires only on bodies
+    the >= _ARTICLE_MIN_WORDS guard KEEPS, so it reaches a different, larger population than
+    the URL rules do. ``include_prose_gate=false`` runs the URL-shape rules ALONE -- which is
+    what an operator wants when the corpus's long-body prose has not been measured and the
+    agreed scope is the drop path only. It is part of the run-lifetime mode: a pause/resume
+    or an app restart continues under the SAME criteria, never a silently different set."""
     from src.analytics.quarantine_job import get_quarantine_manager
 
     try:
-        return get_quarantine_manager().start(write=write)
+        return get_quarantine_manager().start(
+            write=write, include_prose_gate=include_prose_gate
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

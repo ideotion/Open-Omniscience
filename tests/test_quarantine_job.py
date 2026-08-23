@@ -16,6 +16,8 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import textwrap
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -407,13 +409,32 @@ def test_the_work_fn_doubles_in_this_file_match_the_real_batch_signature():
     real keyword-only parameter set so the next addition reddens HERE, by name."""
     import inspect
 
+    import ast
+
     real = {
         name for name, p in
         inspect.signature(default_quarantine_candidates_batch).parameters.items()
         if p.kind is inspect.Parameter.KEYWORD_ONLY
     }
-    # every keyword the manager can pass must be accepted by the doubles above
-    manager_passes = {"after_id", "limit", "write", "index_page_tiers"}
+
+    # DERIVE the set the manager actually passes from _run's own call, rather than
+    # hardcoding it. A hardcoded list cannot redden on "the next addition" -- it only
+    # records the additions someone remembered to add to it, which is how
+    # ``include_prose_gate`` was threaded through the manager while this guard stayed
+    # green. Walk the real source for the work(...) call and read its keywords.
+    run_src = inspect.getsource(QuarantineJobManager._run)
+    calls = [
+        n for n in ast.walk(ast.parse(textwrap.dedent(run_src)))
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == "work"
+    ]
+    assert len(calls) == 1, f"expected exactly one work(...) call in _run, found {len(calls)}"
+    manager_passes = {kw.arg for kw in calls[0].keywords if kw.arg}
+    assert manager_passes, "derived no keywords -- the AST walk found the wrong call"
+    assert "include_prose_gate" in manager_passes, (
+        "the manager must choose the criteria explicitly rather than inheriting the "
+        "work function's default -- that default reaches a larger population than the "
+        "URL-shape rules do"
+    )
     assert manager_passes <= real, manager_passes - real
 
     src = inspect.getsource(test_job_pauses_and_resumes_from_persisted_cursor)
@@ -457,3 +478,217 @@ def test_resume_preserves_the_index_page_tier_mode_of_the_paused_run(tmp_path):
     _join(mgr)
     assert len(seen) > 1, "the resume ran no further batch, so it proves nothing"
     assert all(t == frozenset({1}) for t in seen), seen
+
+
+def _reasons(Session):
+    """What the corpus is actually stamped with, by reason -- read back from the rows."""
+    with Session() as s:
+        out: dict[str, int] = {}
+        for a in s.query(Article).filter(Article.quarantined.is_(True)).all():
+            out[a.quarantine_reason] = out.get(a.quarantine_reason, 0) + 1
+        return out
+
+
+def test_a_tier_a_run_applies_the_url_rules_without_the_prose_gate(tmp_path):
+    """``include_prose_gate=False`` runs the URL-shape rules ALONE.
+
+    The two criteria reach DIFFERENT populations: the URL rules fire only below the
+    ``_ARTICLE_MIN_WORDS`` guard, while the prose gate fires only on bodies that guard
+    KEEPS. So a run agreed as "the URL-shape drop path" must not silently also apply a
+    criterion to every long body in the corpus -- on a real corpus that is an unmeasured
+    population, and the size of it is not knowable from the run's own report.
+
+    Driven through the REAL manager start path, and asserted on the STAMPED ROWS rather
+    than the tally, because the tally is what a wrong criterion would also inflate.
+    """
+    Session = _env(tmp_path)
+    _seed(Session)
+    mgr = QuarantineJobManager(state_path=tmp_path / "q.json")
+    mgr.start(_session_factory=Session, write=True, include_prose_gate=False)
+    _join(mgr)
+
+    assert mgr.status()["state"] == "done"
+    assert _reasons(Session) == {"url_homepage": 1, "url_taxonomy": 1}
+
+    # the nav-soup body is reachable ONLY by the prose gate: it clears the word guard,
+    # so no URL rule applies to it. It must still be a normal article after a Tier A run.
+    with Session() as s:
+        nav = s.query(Article).filter(
+            Article.url.like("%newsletter-preference-centre%")
+        ).one()
+        assert nav.quarantined is not True
+        assert nav.quarantine_reason is None
+
+
+def test_the_prose_gate_still_fires_when_it_is_not_switched_off(tmp_path):
+    """The negative-space twin of the test above, and the one that makes it mean anything.
+
+    Without this, a change that disabled the prose gate outright -- or broke it -- would
+    satisfy the Tier A test perfectly while quietly removing a criterion the default run
+    is supposed to apply.
+    """
+    Session = _env(tmp_path)
+    _seed(Session)
+    mgr = QuarantineJobManager(state_path=tmp_path / "q.json")
+    mgr.start(_session_factory=Session, write=True)  # include_prose_gate defaults True
+    _join(mgr)
+
+    assert mgr.status()["state"] == "done"
+    assert _reasons(Session) == {"url_homepage": 1, "url_taxonomy": 1, "nav_soup": 1}
+
+
+def test_resume_preserves_the_prose_gate_mode_of_the_paused_run(tmp_path):
+    """``include_prose_gate`` changes WHICH articles a run detects, so it is part of the
+    run mode exactly like ``write`` and ``index_page_tiers``. A resume that let it fall
+    back to its default would WIDEN the criteria half way through a run agreed as Tier A
+    and file both halves under one run's name.
+
+    The pause is requested by the work fn on its first batch, so a paused state is
+    guaranteed rather than raced against a fast machine finishing the small fixture.
+    """
+    Session = _env(tmp_path)
+    _seed(Session)
+    mgr = QuarantineJobManager(state_path=tmp_path / "q.json")
+    seen: list[bool] = []
+
+    def _pause_after_first(session, *, after_id=0, limit=1, include_prose_gate=True,
+                           write=False, index_page_tiers=None):
+        seen.append(include_prose_gate)
+        if len(seen) == 1:
+            mgr.pause()
+        return default_quarantine_candidates_batch(
+            session, after_id=after_id, limit=1, write=write,
+            include_prose_gate=include_prose_gate, index_page_tiers=index_page_tiers,
+        )
+
+    mgr.start(_session_factory=Session, _work_fn=_pause_after_first, write=True,
+              include_prose_gate=False)
+    _join(mgr)
+    assert mgr.status()["state"] == "paused"
+
+    mgr.resume()
+    _join(mgr)
+    assert mgr.status()["state"] == "done"
+
+    # every batch, on both sides of the pause, ran under the mode the run started in
+    assert len(seen) > 1, "the run never resumed, so this proves nothing about resume"
+    assert seen == [False] * len(seen), seen
+    assert "nav_soup" not in _reasons(Session)
+
+
+def test_a_restart_restores_every_dimension_of_the_run_mode(tmp_path):
+    """An interrupted run is restored as PAUSED on the next construction -- and it must come
+    back under the same CRITERIA, not just the same write flag.
+
+    Persisting only ``write`` meant a restart silently reset the other two dimensions: a
+    Tier A run would resume applying the prose gate (wider), and a tier run would resume
+    without its tiers (narrower). Both file the result under one run's name, which is the
+    thing the run-mode rule exists to prevent.
+    """
+    import json
+
+    state = tmp_path / "q.json"
+    Session = _env(tmp_path)
+    _seed(Session)
+
+    mgr = QuarantineJobManager(state_path=state)
+    mgr.start(_session_factory=Session, _work_fn=lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("should not run")), write=True, include_prose_gate=False,
+        index_page_tiers={1})
+    mgr.pause()
+    _join(mgr)
+
+    # the state file itself carries all three, not just write
+    saved = json.loads(state.read_text(encoding="utf-8"))
+    assert saved["write"] is True
+    assert saved["include_prose_gate"] is False
+    assert saved["index_page_tiers"] == [1]
+
+    # a FRESH manager (the app-restart path) restores them
+    restored = QuarantineJobManager(state_path=state)
+    assert restored._write is True
+    assert restored._include_prose_gate is False
+    assert restored._index_page_tiers == frozenset({1})
+
+
+def test_a_state_file_written_before_these_were_persisted_still_restores(tmp_path):
+    """Forward-compatibility: a run paused by an older build has no ``include_prose_gate``
+    or ``index_page_tiers`` key. It must restore under the values ``start()`` itself
+    defaults to, rather than crashing or inventing a mode nobody chose."""
+    import json
+
+    state = tmp_path / "q.json"
+    state.write_text(json.dumps({
+        "cursor": 7, "total": 10, "done": 7, "tally": {}, "state": "paused", "write": True,
+    }), encoding="utf-8")
+
+    mgr = QuarantineJobManager(state_path=state)
+    assert mgr._write is True
+    assert mgr._include_prose_gate is True          # start()'s own default
+    assert mgr._index_page_tiers == frozenset()     # start()'s own default
+    assert mgr.status()["state"] == "paused"
+
+
+def test_the_endpoint_forwards_the_operators_criteria_choice_to_the_manager():
+    """The API is the layer an operator actually runs this from, so a parameter accepted
+    there and dropped on the way to the manager is worse than one that was never offered:
+    the run reports itself as the mode that was asked for while applying another.
+
+    Driven through a real TestClient rather than by reading the source, because FastAPI is
+    what turns the query string into arguments -- and because a route called directly
+    receives ``Query(...)`` SENTINEL objects, which are truthy, so a source-level or
+    direct-call check would pass on exactly the bug it is meant to catch.
+    """
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from src.api.quarantine import router
+
+    seen: list[dict] = []
+
+    class _Recorder:
+        def start(self, **kw):
+            seen.append(kw)
+            return {"state": "running", **kw}
+
+    app = FastAPI()
+    app.include_router(router)
+    import src.analytics.quarantine_job as qj
+
+    real = qj.get_quarantine_manager
+    qj.get_quarantine_manager = lambda: _Recorder()  # type: ignore[assignment]
+    try:
+        c = TestClient(app)
+        assert c.post("/api/quarantine/start?write=true&include_prose_gate=false").status_code == 200
+        assert seen[-1] == {"write": True, "include_prose_gate": False}
+
+        # ...and the twin: omitting it must not silently narrow a default run either.
+        assert c.post("/api/quarantine/start").status_code == 200
+        assert seen[-1] == {"write": False, "include_prose_gate": True}
+    finally:
+        qj.get_quarantine_manager = real  # type: ignore[assignment]
+
+
+def test_status_says_which_criteria_the_run_is_applying(tmp_path):
+    """``dry_run`` alone cannot distinguish two runs that stamp different populations.
+    A Tier A run and a default run are both ``dry_run: false`` with a tally of stamped
+    articles, so without the criteria in the payload the tally can never be read back
+    against the scope it was agreed under -- in the task manager or in a saved report."""
+    Session = _env(tmp_path)
+    _seed(Session)
+    mgr = QuarantineJobManager(state_path=tmp_path / "q.json")
+    mgr.start(_session_factory=Session, write=True, include_prose_gate=False)
+    _join(mgr)
+
+    st = mgr.status()
+    assert st["dry_run"] is False
+    assert st["include_prose_gate"] is False
+    assert st["index_page_tiers"] == []
+
+    # the default run reports the other mode, so the field actually discriminates
+    Session2 = _env(tmp_path / "b")
+    _seed(Session2)
+    mgr2 = QuarantineJobManager(state_path=tmp_path / "q2.json")
+    mgr2.start(_session_factory=Session2, write=True)
+    _join(mgr2)
+    assert mgr2.status()["include_prose_gate"] is True
