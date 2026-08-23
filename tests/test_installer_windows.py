@@ -52,8 +52,36 @@ def cmd() -> str:
 # --------------------------------------------------------------------------- #
 # Syntax
 # --------------------------------------------------------------------------- #
+INSTALLER_TEST_SOURCE = Path(__file__).read_text(encoding="utf-8")
+
+
 def _powershell() -> str | None:
     return shutil.which("pwsh") or shutil.which("powershell")
+
+
+def test_the_powershell_gated_guards_actually_run_on_a_runner() -> None:
+    """A skip is green, so nothing here said whether the behavioural guards execute.
+
+    Three tests in this file need pwsh/powershell, and `ci.yml` never mentions either
+    -- so on a runner without one they would skip silently and a green lane would say
+    nothing about the .ps1 behaviour they exist to pin. On a developer machine a skip
+    is the right answer and this skips too; on a runner it is a coverage hole, so say
+    so there.
+    """
+    if os.environ.get("CI", "").strip().lower() not in {"1", "true"}:
+        pytest.skip("developer machine -- pwsh is optional here")
+    # Count the DECORATORS, not every line mentioning the probe -- this very line
+    # would otherwise count itself and report one more guard than exists.
+    gated = sum(
+        1
+        for line in INSTALLER_TEST_SOURCE.splitlines()
+        if line.startswith("@pytest.mark.skipif(_powershell() is None")
+    )
+    assert _powershell() is not None, (
+        f"no pwsh/powershell on this runner, so the {gated} behavioural .ps1 guards "
+        "in this file skipped -- a green lane proves nothing about them. Either "
+        "install PowerShell in the workflow or drop the gate."
+    )
 
 
 @pytest.mark.skipif(_powershell() is None, reason="needs pwsh/powershell to parse .ps1")
@@ -511,6 +539,135 @@ def test_a_32_bit_only_windows_is_refused_with_the_real_reason(ps1: str) -> None
     """
     assert "no 32-bit Windows wheel" in ps1, "name the actual blocker"
     assert "64-bit Windows is required" in ps1, "and state the requirement plainly"
+
+
+def test_an_existing_venv_is_matched_against_the_resolved_interpreter(ps1: str) -> None:
+    """Existence is not a match, and the mismatch is silent.
+
+    A .venv keeps the version and wheel platform of whichever interpreter built it,
+    for life. A field run on Windows-on-ARM resolved a win-amd64 interpreter, printed
+    "ok  Python 3.13 (win-amd64)", reused the win-arm64 .venv four lines later, and
+    pip went hunting win_arm64 wheels that do not exist -- three source builds and a
+    dead install, with nothing in the output naming the cause.
+    """
+    start = ps1.index("$venv       = Join-Path $target '.venv'")
+    # Bounded by CODE: the fixture strips comments, so a comment anchor does not
+    # exist here at all.
+    end = ps1.index("Push-Location -LiteralPath $target", start)
+    section = ps1[start:end]
+    assert "Test-PythonCandidate -Command @($venvPython)" in section, (
+        "the existing venv must be probed, not merely found on disk"
+    )
+    assert "$existingVenv.Platform -ne $python.Platform" in section, (
+        "a venv of the wrong wheel platform is the whole reason this check exists"
+    )
+    assert "$existingVenv.Version -ne $python.Version" in section, (
+        "a venv from an older Python takes the wrong wheels too"
+    )
+
+
+def test_a_venv_that_cannot_be_replaced_stops_instead_of_installing_into_it(
+    ps1: str,
+) -> None:
+    """The failure direction that matters: a locked folder must not fall through.
+
+    Removal fails when something is running out of that folder. Proceeding would put
+    the packages into the very environment just judged wrong, which is the bug this
+    check exists to prevent -- so it fails closed and says what to close.
+    """
+    start = ps1.index("$venv       = Join-Path $target '.venv'")
+    # Bounded by CODE: the fixture strips comments, so a comment anchor does not
+    # exist here at all.
+    end = ps1.index("Push-Location -LiteralPath $target", start)
+    section = ps1[start:end]
+    assert 'Stop-WithError "Could not remove $venv' in section, (
+        "a failed removal must stop, not continue into the mismatched venv"
+    )
+
+
+# The PowerShell below is held apart from the test body so neither language has to
+# escape the other's quotes. It slices the venv block out of the REAL installer --
+# a retyped copy would pass while the shipped code was broken.
+_VENV_DRIVER = r"""
+$all = (Get-Content -Raw $env:OO_INSTALL_PS1) -replace "`r`n", "`n"
+$s = $all.IndexOf($env:OO_BLOCK_START)
+$e = $all.IndexOf($env:OO_BLOCK_END)
+if ($s -lt 0 -or $e -le $s) { throw 'could not slice the venv block' }
+$block = $all.Substring($s, $e - $s)
+
+$script:Removed = $false
+$script:Created = $false
+function Write-Step { param([string] $Message) }
+function Write-Ok { param([string] $Message) }
+function Write-Note { param([string] $Message) }
+function Write-Caution { param([string] $Message) }
+function Stop-WithError { param([string] $Message, [string[]] $Hints = @()) throw $Message }
+function Invoke-Native {
+    param([string] $File, [string[]] $Arguments = @(), [switch] $AllowFailure)
+    $script:Created = $true
+    New-Item -ItemType Directory -Force -Path (Split-Path $script:vp) | Out-Null
+    Set-Content -LiteralPath $script:vp -Value 'stub'
+    return 0
+}
+function Remove-Item {
+    [CmdletBinding()] param([string] $LiteralPath, [switch] $Recurse, [switch] $Force)
+    $script:Removed = $true
+    Microsoft.PowerShell.Management\Remove-Item -LiteralPath $LiteralPath -Recurse -Force
+}
+$python = [pscustomobject]@{ Version = [version]'3.13'; Platform = 'win-amd64'; Exe = 'x' }
+
+function Invoke-Case {
+    param($Answer)
+    $script:Removed = $false
+    $script:Created = $false
+    $target = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N'))
+    $script:vp = Join-Path $target '.venv\Scripts\python.exe'
+    New-Item -ItemType Directory -Force -Path (Split-Path $script:vp) | Out-Null
+    Set-Content -LiteralPath $script:vp -Value 'existing'
+    Set-Item -Path function:Test-PythonCandidate `
+        -Value { param([string[]] $Command) $Answer }.GetNewClosure()
+    Invoke-Expression $block
+    return "$($script:Removed):$($script:Created)"
+}
+
+$mismatch = Invoke-Case ([pscustomobject]@{ Version = [version]'3.13'; Platform = 'win-arm64'; Exe = 'v' })
+$match = Invoke-Case ([pscustomobject]@{ Version = [version]'3.13'; Platform = 'win-amd64'; Exe = 'v' })
+Write-Output "$mismatch|$match"
+"""
+
+
+@pytest.mark.skipif(_powershell() is None, reason="needs pwsh/powershell")
+def test_a_mismatched_venv_is_rebuilt_and_a_matching_one_is_not() -> None:
+    """Behavioural, both directions, because either one alone ships a defect.
+
+    Only rebuilding proves nothing on its own: a fix that rebuilt unconditionally
+    would pass it and make every re-run re-download several hundred MB. The pair is
+    the guard.
+    """
+    # Anchors and the path travel as DATA in the environment -- `-Command` does not
+    # populate $args, and splicing either into source is how a quote becomes syntax.
+    env = {
+        **os.environ,
+        "OO_INSTALL_PS1": str(INSTALL_PS1),
+        "OO_BLOCK_START": "$venv       = Join-Path $target '.venv'",
+        "OO_BLOCK_END": "# Everything below calls",
+    }
+    out = subprocess.run(
+        [_powershell(), "-NoProfile", "-NonInteractive", "-Command", _VENV_DRIVER],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        env=env,
+    )
+    assert out.returncode == 0, out.stderr
+    mismatch, match = out.stdout.strip().splitlines()[-1].split("|")
+    assert mismatch == "True:True", (
+        "a win-arm64 venv under a win-amd64 interpreter must be removed and rebuilt"
+    )
+    assert match == "False:False", (
+        "a matching venv must be reused untouched -- rebuilding it costs a full "
+        "re-download on every run"
+    )
 
 
 @pytest.mark.skipif(_powershell() is None, reason="needs pwsh/powershell")

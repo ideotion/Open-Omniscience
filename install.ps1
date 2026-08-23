@@ -807,11 +807,51 @@ if (-not (Test-Path -LiteralPath (Join-Path $target 'pyproject.toml'))) {
 $venv       = Join-Path $target '.venv'
 $venvPython = Join-Path $venv 'Scripts\python.exe'
 
-if (-not (Test-Path -LiteralPath $venvPython)) {
+# A .venv is DERIVED from whichever interpreter created it, and it keeps that
+# interpreter's version and wheel platform for life -- so reusing one built by a
+# different Python silently defeats everything section 2 just did. On the field
+# machine that reported this, the ARM64 ladder resolved a win-amd64 interpreter and
+# said so, the .venv left by the previous run was still win-arm64, pip went looking
+# for win_arm64 wheels that do not exist, and three packages fell back to source
+# builds that need a C compiler. The installer's own output read
+# "ok  Python 3.13 (win-amd64)" four lines above the failure. Existence is not a
+# match: probe the venv's OWN interpreter and rebuild when it disagrees.
+$reuseVenv = $false
+if (Test-Path -LiteralPath $venvPython) {
+    $existingVenv = Test-PythonCandidate -Command @($venvPython)
+    if (-not $existingVenv) {
+        $venvMismatch = 'it does not run -- the interpreter it was built from is gone or broken'
+    } elseif ($existingVenv.Platform -ne $python.Platform) {
+        $venvMismatch = "it is $($existingVenv.Platform) and this install needs $($python.Platform)"
+    } elseif ($existingVenv.Version -ne $python.Version) {
+        $venvMismatch = "it is Python $($existingVenv.Version) and this install uses Python $($python.Version)"
+    } else {
+        $venvMismatch = $null
+        $reuseVenv    = $true
+    }
+
+    if (-not $reuseVenv) {
+        # Not prompted on purpose. A .venv holds no user data -- it is rebuilt by the
+        # very pip step that runs next -- and under `irm | iex` stdin is redirected, so
+        # a prompt would answer itself. Say what is happening instead.
+        Write-Caution "Replacing .venv: $venvMismatch."
+        Write-Note 'Nothing of yours is in there; pip rebuilds it in the next step.'
+        try {
+            Remove-Item -LiteralPath $venv -Recurse -Force -ErrorAction Stop
+        } catch {
+            Stop-WithError "Could not remove $venv -- $($_.Exception.Message)" @(
+                'Close anything running from that folder (the app, an editor, a terminal), then re-run.',
+                'Continuing would install into a virtual environment that cannot take the right wheels.'
+            )
+        }
+    }
+}
+
+if ($reuseVenv) {
+    Write-Ok "Reusing the existing .venv (Python $($python.Version), $($python.Platform))"
+} else {
     Write-Step 'Creating the virtual environment (.venv)'
     Invoke-Native -File $python.Exe -Arguments @('-m', 'venv', $venv) | Out-Null
-} else {
-    Write-Ok 'Reusing the existing .venv'
 }
 if (-not (Test-Path -LiteralPath $venvPython)) {
     Stop-WithError "The virtual environment was not created at $venv."
