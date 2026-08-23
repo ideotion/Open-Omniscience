@@ -230,9 +230,34 @@ proposed below against its specimens. Sequence:
 
 1. ~~operator runs the bundle~~ → **done** (2026-08-23, 40,260 articles)
 2. ~~session proposes criteria against real specimens~~ → **done**, below
-3. **maintainer agrees the criteria** ← *this is where the row now sits*
-4. operator runs the quarantine pass with `write=True`
+3. ~~maintainer agrees the criteria~~ → **AGREED 2026-08-23: Tier A** (*"proceed with tier A"*)
+4. **operator runs the quarantine pass** ← *this is where the row now sits* — the exact
+   invocation is below, and it is **not** the default one
 5. re-index clears the junk keywords and entities the quarantined articles contributed
+
+##### Running Tier A — the flag that makes the agreed scope the executed scope
+
+```
+POST /api/quarantine/start?write=true&include_prose_gate=false
+```
+
+`include_prose_gate=false` is load-bearing and was **added for this run**. The write path
+applies three independent criteria, and only the first is Tier A:
+
+| Criterion | Fires on | In Tier A? |
+|---|---|---|
+| `classify_non_article` URL-shape rules | bodies **below** the ≥100-word guard | **yes** — the 8 |
+| `classify_index_page` tiers | bodies the guard keeps | no — Tier B, opt-in, off by default |
+| **nav-soup prose gate** | bodies the guard keeps | **no** — and it was **on** by default |
+
+The prose gate is not a narrower reading of the URL rules; it is a *different* criterion over
+a *different, larger* population — every ≥100-word body in the corpus. Its size here is
+unmeasured, and unmeasurable from the bundle, because the calibration report's prose arm is
+the one pinned at `after_id=0, limit=500` (below). Running the default would therefore have
+stamped the 8 agreed articles **plus** an unknown number nobody has reviewed. The manager
+never passed the flag at all, so before this change there was no way to ask for Tier A alone;
+it is now part of the run-lifetime mode, preserved across pause/resume and app restart like
+`write`, so a resumed run cannot come back under wider criteria than it started with.
 
 **Closes when:** step 4 has run and the report names how many articles were quarantined
 under which criteria version. Nothing is deleted — quarantine is a reversible stamp, and
@@ -546,6 +571,8 @@ human UX pass".
 | 2026-08-23 | **Row 5 criteria PROPOSED** from the release-scale report: Tier A = the 8-article drop path (`/topics/<id>` indexes, measured 0.0 function-word density) for execution; Tier B = the 451 index pages above the word guard, explicitly **not** proposed because their prose is unmeasured. `CRITERIA_VERSION` bumped to `nav-soup-v2`. Two instrument findings recorded, not fixed: the bundle's prose arm always restarts at id 0 so it can never finish, and it walks by id rather than by the population in question | session |
 | 2026-08-23 | **Session forensics gains a text rendering** — `forensics.render_text`, a dated `.txt` on `?download=1`, and `session-forensics.txt` beside the JSON in the bundle (field ask). A deliberate, reasoned exception to the 2026-07-20 button-consolidation ruling | session |
 | 2026-08-23 | **PR #979 merged** as `917e809`, carrying rows 3 and 7a's closures and the three field-defect fixes onto `main`. §7.4 re-measured on that tree: **8434 passed / 47 skipped / 0 failed**, with the other four blocking gates re-run green (ruff, mypy 0/482, bandit, both i18n ratchets *identical* at 561 / 298). Each merge delta checked against what its diff added — both close exactly. The figures it previously carried (8423 / 43) described a tree two merges old | session |
+| 2026-08-23 | **Row 5 criteria AGREED (maintainer): Tier A** — *"proceed with tier A"*. The 8-article URL-shape drop path is approved for execution; Tier B (the 451 above the word guard) stays unproposed | maintainer |
+| 2026-08-23 | **Tier A was not executable as agreed, and now is.** The write path applies THREE independent criteria; the nav-soup prose gate fires on bodies the word guard KEEPS — a different, larger population than the URL rules reach — and it was ON by default with the manager never passing the flag, so the default run would have stamped the 8 agreed articles plus an unmeasured number more. `include_prose_gate` is now threaded through the manager and the endpoint as run-lifetime mode (preserved across pause/resume AND app restart, like `write`); `index_page_tiers` gained the same persistence, closing a restart that silently narrowed a tier run. Six tests, five mutations each reddening by name | session |
 | 2026-08-20 | Row 8's **stretch matrix executed** — 375px P1 fixed, state-D import fixture, Reader drilled, all 17 themes (ai-off AA fix), five lens drills (agenda deduced-events fix), a11y axis (axe vendored; #oo-tip fix), 5 of 9 honesty rules automated; `docs/audit/UI_CLICKTHROUGH_2026-08-20.md`. The row was already closed; this discharges the recorded stretch target | session |
 
 ---

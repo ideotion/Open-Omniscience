@@ -229,6 +229,7 @@ class QuarantineJobManager:
         self._done_at_start = 0  # _done when the current run began (honest run-rate ETA)
         self._tally: dict[str, int] = {}  # quarantined / by-reason / write counts
         self._index_page_tiers: frozenset[int] = frozenset()
+        self._include_prose_gate = True  # the nav-soup gate over >= _ARTICLE_MIN_WORDS bodies
         self._write = False  # dry-run by default; fixed for a run's lifetime, persisted across resumes
         self._error: str | None = None
         self._cancelled = False
@@ -255,6 +256,11 @@ class QuarantineJobManager:
                 json.dumps({
                     "cursor": self._cursor, "total": self._total, "done": self._done,
                     "tally": self._tally, "state": self._state, "write": self._write,
+                    # EVERY dimension of the run mode, not just write: a restart that
+                    # restored only some of them would resume the same run under
+                    # different criteria and report both halves under one run's name.
+                    "include_prose_gate": self._include_prose_gate,
+                    "index_page_tiers": sorted(self._index_page_tiers),
                 }),
                 encoding="utf-8",
             )
@@ -281,6 +287,10 @@ class QuarantineJobManager:
         self._done = max(0, int(d.get("done") or 0))
         self._tally = {str(k): int(v) for k, v in (d.get("tally") or {}).items()}
         self._write = bool(d.get("write", False))
+        # Absent in a state file written before these were persisted: fall back to the
+        # value that start() itself defaults to, so an older file resumes as it would have.
+        self._include_prose_gate = bool(d.get("include_prose_gate", True))
+        self._index_page_tiers = frozenset(int(x) for x in (d.get("index_page_tiers") or ()))
         self._state = "paused"
 
     # -- lifecycle ---------------------------------------------------------- #
@@ -303,6 +313,7 @@ class QuarantineJobManager:
         self, *, _session_factory=None, _work_fn=None, _cursor: int = 0, _total: int = 0,
         _done: int = 0, write: bool = False,
         index_page_tiers: frozenset[int] | set[int] | None = None,
+        include_prose_gate: bool = True,
     ) -> dict:
         """Launch the worker. RuntimeError if already running. ``_work_fn`` overrides the default
         batch function (a test seam). ``write`` (default False, dry-run detection only) is fixed
@@ -311,7 +322,10 @@ class QuarantineJobManager:
         in a different mode than it started. ``index_page_tiers`` (default None = off) is part of
         that same run-lifetime mode for exactly the same reason: it changes WHICH articles the run
         detects, so a resume that dropped it would silently narrow the scope mid-run and report
-        the result under one run's name."""
+        the result under one run's name. ``include_prose_gate`` (default True = unchanged) is the
+        third such dimension: it is a criterion INDEPENDENT of the URL-shape rules, firing only on
+        bodies the word guard KEEPS, so switching it off is how an operator runs the URL-shape
+        rules ALONE against a corpus whose long-body prose has not been measured."""
         with self._lock:
             if self._alive():
                 raise RuntimeError("A quarantine job is already running.")
@@ -331,6 +345,7 @@ class QuarantineJobManager:
             # happens to still be 0.
             self._write = bool(write)
             self._index_page_tiers = frozenset(index_page_tiers or ())
+            self._include_prose_gate = bool(include_prose_gate)
             self._error = None
             self._started_at = time.monotonic()
             self._session_factory = _session_factory
@@ -351,6 +366,7 @@ class QuarantineJobManager:
                     after = self._cursor
                     write = self._write
                     tiers = self._index_page_tiers
+                    prose_gate = self._include_prose_gate
                     self._save()
                 while True:
                     if self._stop.is_set():
@@ -365,7 +381,8 @@ class QuarantineJobManager:
                         break
                     with corpus_lease("quarantine"):
                         r = work(session, after_id=after, limit=_BATCH, write=write,
-                                 index_page_tiers=tiers or None)
+                                 index_page_tiers=tiers or None,
+                                 include_prose_gate=prose_gate)
                     after = int(r["last_id"])
                     with self._lock:
                         self._tally["scanned"] = self._tally.get("scanned", 0) + int(r.get("scanned", 0))
@@ -413,8 +430,9 @@ class QuarantineJobManager:
             tally = dict(self._tally)
             w = self._write  # ALWAYS preserve the mode the paused run was in
             tiers = self._index_page_tiers  # ...and every other part of that mode
+            gate = self._include_prose_gate
         out = self.start(_session_factory=sf, _work_fn=wf, _cursor=cur, _total=tot, _done=done,
-                         write=w, index_page_tiers=tiers)
+                         write=w, index_page_tiers=tiers, include_prose_gate=gate)
         with self._lock:
             self._tally = tally
             self._save()
@@ -450,6 +468,12 @@ class QuarantineJobManager:
                 "error": self._error,
                 "running": self._alive(),
                 "dry_run": not self._write,  # honest: reflects the ACTUAL mode this run is in
+                # ...and WHICH CRITERIA it is in, for the same reason. Two runs that stamp
+                # different populations otherwise look identical here and in the task
+                # manager, so a tally could never be read back against the scope it was
+                # agreed under.
+                "include_prose_gate": self._include_prose_gate,
+                "index_page_tiers": sorted(self._index_page_tiers),
             }
 
 

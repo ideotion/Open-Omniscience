@@ -4852,6 +4852,35 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     Same family as the recorded `cmd | tail` lesson: a check you expect to be
     interesting that says nothing interesting has usually not run. Assert the selector
     matches FIRST (`1 passed, N deselected`), then mutate.
+  - **A SIGN-OFF NAMES A POPULATION; THE CODE PATH APPLIES A SET OF CRITERIA, AND THOSE
+    ARE NOT THE SAME THING (2026-08-23, executing the row-5 clean-up):** the maintainer
+    agreed *Tier A* — 8 articles, the URL-shape drop path. `POST /api/quarantine/start
+    ?write=true` would have stamped those 8 **plus** every ≥100-word body the nav-soup
+    PROSE GATE flags, because the write path applies three independent criteria and that
+    one defaults ON while the manager never passed the flag at all. It is not a stricter
+    reading of the URL rules — the URL rules fire only BELOW the ≥100-word guard and the
+    prose gate only ABOVE it, so they are disjoint populations, and the second one's size
+    was unmeasured *and unmeasurable* from the same report (its prose arm is the one pinned
+    at `after_id=0, limit=500` that never advances). RULES. (a) Before executing an agreed
+    scope, enumerate every criterion the code path applies and check each against what was
+    agreed — an agreement about a COUNT is not an agreement about a PREDICATE, and the
+    count is what gets quoted back. (b) The two-tier proposal was what made this findable:
+    naming the blast radius up front is what turns "run the pass" into a checkable claim.
+    (c) A criterion that changes WHICH rows are selected is run-lifetime MODE, not a call
+    argument — `write` and `index_page_tiers` were already treated that way here, with the
+    docstring citing the resume lesson, and the third dimension was simply missed; the same
+    audit found `index_page_tiers` preserved by in-process `resume()` but NOT persisted, so
+    an app restart silently NARROWED a tier run while a missing prose-gate flag would have
+    WIDENED a Tier A one. Both file two different criteria under one run's name.
+    **AND THE GUARD THAT WAS SUPPOSED TO CATCH THIS DIDN'T:** a parity test existed whose
+    docstring promised "the next addition reddens HERE, by name" — and it compared against
+    a HARDCODED `manager_passes = {...}` set, so it only ever recorded the additions someone
+    remembered to add to it. It now derives the set by walking `_run`'s real `work(...)` call
+    with `ast`. A guard that must be updated by hand to keep working is a guard that reports
+    on the last person's memory. FIFTH mutation worth keeping: the endpoint silently dropping
+    the operator's choice passed everything until a TestClient guard was added — and it had
+    to be a TestClient, because a route called directly receives `Query(...)` sentinels,
+    which are truthy, so a direct-call check would have passed on exactly that bug.
 ## Open queue (when maintainer says proceed)
 - **KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING (maintainer 2026-08-13, "let's get this done
   at my return" — PARKED, nothing further to build; the machinery is shipped and the
