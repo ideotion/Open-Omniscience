@@ -780,19 +780,20 @@ Run on the tree that would be tagged:
 
 | Gate | Command (verbatim from `ci.yml`) | Result |
 |---|---|---|
-| Tests | `python -m pytest -q` | **8415 passed**, 43 skipped, 0 failed |
+| Tests | `python -m pytest -q` | **8423 passed**, 43 skipped, 0 failed |
 | Blocking lint | `ruff check --select=F,B --extend-ignore=B008 src/ tests/` | clean |
 | Types | `python -m mypy src/` | **0 errors**, 482 files |
 | SAST | `bandit -r src/ -ll -q` | clean |
 | Dependencies | `pip-audit --skip-editable` | no known vulnerabilities |
-| i18n completeness | `scripts/i18n_report.py --min 100` | 2987/2987 × 12 locales |
+| i18n completeness | `scripts/i18n_report.py --min 100` | 2989/2989 × 12 locales |
 | i18n ratchet 1 | `--max-untranslatable 561` | 561 — **unchanged**, not merely under |
 | i18n ratchet 2 | `--max-unkeyed-t-calls 298` | 298 — **unchanged**, not merely under |
 
-The pass count carries its own proof twice: 8390 → **8406** is exactly the 16 tests this
-pass added, and 8406 → **8415** is exactly the 9 that arrived with `origin/main`'s
-Windows-on-ARM work. A change that adds tests and reports an unchanged total has a harness
-that never ran it — and a merge that reports only one side's total ran only one side.
+The pass count carries its own proof at every step: 8390 → **8406** is exactly the 16 tests
+the first pass added, 8406 → **8415** is exactly the 9 that arrived with `origin/main`'s
+Windows-on-ARM work, and 8415 → **8423** is exactly the 8 added for the three field defects.
+A change that adds tests and reports an unchanged total has a harness that never ran it —
+and a merge that reports only one side's total ran only one side.
 
 The two ratchets are maxima, so "under the bar" is not evidence — a *shrinking* measured
 population reads the same as an improving codebase. Both were checked for being
