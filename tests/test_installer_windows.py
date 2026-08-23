@@ -195,3 +195,45 @@ def test_quickstart_section_letters_are_unique_and_ordered():
     letters = re.findall(r"^## ([A-Z])\. ", text, re.MULTILINE)
     assert letters == sorted(letters), f"section letters out of order: {letters}"
     assert len(letters) == len(set(letters)), f"duplicate section letter: {letters}"
+
+
+def test_python_discovery_does_not_depend_on_path(ps1: str) -> None:
+    """Discovery must consult the registry, not just PATH and a few guessed paths.
+
+    Field failure this replaced: winget reported installing Python 3.13, the
+    interpreter was on disk, and the script still dead-ended at "not resolvable" --
+    through a reopened terminal AND a reboot, which rules out the stale-PATH cause the
+    old message assumed. winget's Python package often leaves PATH untouched, so a
+    PATH-only probe cannot see a perfectly good install. PEP 514's registry record is
+    written by the installer itself and is what `py.exe` reads, so it answers
+    regardless of the shell environment.
+    """
+    body = ps_function_body(ps1, "Resolve-Python")
+    assert "Get-RegisteredPythonPaths" in body, (
+        "Resolve-Python must consult the registry; PATH alone reproduces the field bug"
+    )
+
+    registry = ps_function_body(ps1, "Get-RegisteredPythonPaths")
+    assert "SOFTWARE\\Python" in registry, "PEP 514 is the authoritative record"
+    assert "InstallPath" in registry
+    # ExecutablePath is exact when present; the key's default value is only the
+    # directory, so reading one without the other misses half the installs.
+    assert "ExecutablePath" in registry
+
+
+def test_a_failed_python_bootstrap_prints_what_it_probed(ps1: str) -> None:
+    """A dead end that says only "it did not work" can be neither acted on nor reported.
+
+    The message this replaced named a website and nothing else: it told neither the
+    operator nor the maintainer WHICH probe came up empty, so the only way forward was
+    guessing. The diagnosis must also be CALLED, not merely defined -- a bare name
+    search is satisfied by the definition alone, which is exactly how a dead
+    diagnostic ships looking wired.
+    """
+    assert "function Show-PythonDiagnostics" in ps1
+    assert ps1.count("Show-PythonDiagnostics") >= 2, (
+        "Show-PythonDiagnostics is defined but never called"
+    )
+    assert re.search(
+        r"Show-PythonDiagnostics\s*\n\s*Stop-WithError", ps1
+    ), "the diagnosis must run at the failure path, immediately before giving up"

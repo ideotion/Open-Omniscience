@@ -166,21 +166,93 @@ function Test-PythonCandidate {
     }
 }
 
+# PEP 514: every Windows Python registers itself at
+# SOFTWARE\Python\<Company>\<Tag>\InstallPath. That key is written by the installer
+# itself, so it is AUTHORITATIVE and -- unlike PATH -- needs no reopened terminal and no
+# reboot. winget's Python package frequently declines to touch PATH at all, which is
+# exactly the case a PATH-only probe cannot see.
+function Get-RegisteredPythonPaths {
+    $found = @()
+    $roots = @('HKCU:\SOFTWARE\Python', 'HKLM:\SOFTWARE\Python', 'HKLM:\SOFTWARE\WOW6432Node\Python')
+    foreach ($root in $roots) {
+        if (-not (Test-Path -LiteralPath $root)) { continue }
+        try {
+            $keys = Get-ChildItem -LiteralPath $root -Recurse -ErrorAction SilentlyContinue |
+                    Where-Object { $_.PSChildName -eq 'InstallPath' }
+        } catch { continue }
+        foreach ($key in $keys) {
+            try {
+                $props = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction Stop
+                # ExecutablePath is exact when present; otherwise the key's default
+                # value is the install directory with python.exe directly inside it.
+                $exe = $props.ExecutablePath
+                if (-not $exe) {
+                    $dir = $props.'(default)'
+                    if ($dir) { $exe = Join-Path $dir 'python.exe' }
+                }
+                if ($exe -and (Test-Path -LiteralPath $exe)) { $found += $exe }
+            } catch { }
+        }
+    }
+    return $found
+}
+
+# The py launcher already knows every interpreter on the machine; asking it is cheaper
+# and more complete than guessing directories. Absent launcher simply yields nothing.
+function Get-LauncherPythonPaths {
+    $found = @()
+    try {
+        $global:LASTEXITCODE = 0
+        $out = & py '-0p' 2>$null
+        if ($LASTEXITCODE -ne 0) { return $found }
+        foreach ($line in @($out)) {
+            $m = [regex]::Match($line.ToString(), '(?<path>[A-Za-z]:\\[^\s].*?python\.exe)')
+            if ($m.Success) { $found += $m.Groups['path'].Value }
+        }
+    } catch { }
+    return $found
+}
+
+# Last resort before giving up: look where installers actually put things. Top level
+# only, so this stays cheap.
+function Get-FilesystemPythonPaths {
+    $found = @()
+    $roots = @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Python'),
+        $env:ProgramFiles,
+        ${env:ProgramFiles(x86)},
+        'C:\'
+    )
+    foreach ($root in $roots) {
+        if (-not $root -or -not (Test-Path -LiteralPath $root)) { continue }
+        try {
+            Get-ChildItem -LiteralPath $root -Directory -Filter 'Python3*' -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                    $exe = Join-Path $_.FullName 'python.exe'
+                    if (Test-Path -LiteralPath $exe) { $found += $exe }
+                }
+        } catch { }
+    }
+    $alias = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\python.exe'
+    if (Test-Path -LiteralPath $alias) { $found += $alias }
+    return $found
+}
+
 function Resolve-Python {
+    # Ordered widest-net-last: a name on PATH is cheapest, the registry is
+    # authoritative, the filesystem sweep is the backstop.
     $candidates = @(
         @('py', '-3.13'),
         @('python3.13'),
         @('python'),
         @('python3')
     )
-    $wellKnown = @(
-        (Join-Path $env:LOCALAPPDATA 'Programs\Python\Python313\python.exe'),
-        (Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\python.exe'),
-        (Join-Path $env:ProgramFiles 'Python313\python.exe'),
-        'C:\Python313\python.exe'
-    )
-    foreach ($p in $wellKnown) {
-        if ($p -and (Test-Path -LiteralPath $p)) { $candidates += , @($p) }
+    $paths = @()
+    $paths += Get-RegisteredPythonPaths
+    $paths += Get-LauncherPythonPaths
+    $paths += Get-FilesystemPythonPaths
+    foreach ($path in ($paths | Select-Object -Unique)) {
+        if ($path) { $candidates += , @($path) }
     }
     foreach ($candidate in $candidates) {
         $found = Test-PythonCandidate -Command $candidate
@@ -189,19 +261,40 @@ function Resolve-Python {
     return $null
 }
 
+# A dead end that says only "it did not work" is not a diagnosis. Print what was
+# actually probed so a failure can be reported and fixed rather than guessed at.
+function Show-PythonDiagnostics {
+    Write-Host ''
+    Write-Host '  --- what this script probed ---' -ForegroundColor DarkGray
+    $reg = Get-RegisteredPythonPaths
+    Write-Host "  registry (PEP 514): $(if ($reg) { $reg -join '; ' } else { 'nothing registered' })" -ForegroundColor DarkGray
+    $lau = Get-LauncherPythonPaths
+    Write-Host "  py launcher:        $(if ($lau) { $lau -join '; ' } else { 'no launcher, or it lists nothing' })" -ForegroundColor DarkGray
+    $fs = Get-FilesystemPythonPaths
+    Write-Host "  on disk:            $(if ($fs) { $fs -join '; ' } else { 'no Python3* directory found' })" -ForegroundColor DarkGray
+    Write-Host "  minimum required:   $MinPython" -ForegroundColor DarkGray
+    if ($script:LastWingetExit -ne $null) {
+        Write-Host "  winget exit code:   $($script:LastWingetExit)" -ForegroundColor DarkGray
+    }
+    Write-Host ''
+}
+
 function Install-WingetPackage {
-    param([string] $Id, [string] $Label)
+    param([string] $Id, [string] $Label, [string[]] $Extra = @())
     if (-not (Test-HasCommand 'winget')) {
         return $false
     }
     Write-Step "Installing $Label via winget (this can take a few minutes)"
-    # winget's exit code is unreliable for our purposes (see above), so ignore it and
-    # let the caller re-probe for the capability.
-    Invoke-Native -File 'winget' -AllowFailure -Arguments @(
+    $wingetArgs = @(
         'install', '--id', $Id, '--exact', '--source', 'winget',
         '--accept-package-agreements', '--accept-source-agreements',
         '--disable-interactivity'
-    ) | Out-Null
+    ) + $Extra
+    # winget's exit code is unreliable for our purposes (see above), so ignore it and
+    # let the caller re-probe for the capability. Keep the transcript regardless: when
+    # the capability probe fails afterwards, winget's own words are the only evidence
+    # of why, and swallowing them is what turns a fixable failure into a dead end.
+    $script:LastWingetExit = Invoke-Native -File 'winget' -AllowFailure -Arguments $wingetArgs
     Update-PathFromRegistry
     return $true
 }
@@ -361,9 +454,20 @@ if (-not $python) {
     }
     $python = Resolve-Python
     if (-not $python) {
-        Stop-WithError 'Python 3.13 still is not resolvable after the winget install.' @(
-            'Close this terminal, open a NEW one, and re-run install.ps1.',
-            'If it still fails, install from https://www.python.org/downloads/ manually.'
+        # winget's default scope can pick a machine-wide install that a non-elevated
+        # session cannot finish, leaving nothing behind. User scope is the one that
+        # reliably completes without elevation, so it is worth one explicit retry
+        # before asking the operator to do anything by hand.
+        Write-Caution 'Still not resolvable -- retrying the install in user scope.'
+        Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13' -Extra @('--scope', 'user') | Out-Null
+        $python = Resolve-Python
+    }
+    if (-not $python) {
+        Show-PythonDiagnostics
+        Stop-WithError 'Python 3.13 is installed or attempted, but no interpreter answers.' @(
+            'The probe above is the real evidence -- please include it in a bug report.',
+            'Workaround: install Python 3.13 from https://www.python.org/downloads/',
+            'ticking "Add python.exe to PATH", then re-run this script.'
         )
     }
 }
