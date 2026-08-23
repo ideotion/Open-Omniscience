@@ -75,6 +75,40 @@ artifacts:
     # level="unavailable" rather than a fabricated country.
     last_verified: "2026-08-22"
 
+  - id: windows-x64-python-nuget
+    title: CPython x64 for Windows (NuGet, Python Software Foundation)
+    kind: runtime-coupling
+    description: >
+      install.ps1's last rung for obtaining a win-amd64 interpreter, used when winget
+      will not deliver one. NOT vendored and NOT pinned: the version is resolved at
+      run time (newest 3.13.x on the flat container) and the bytes are verified
+      against the SHA-512 nuget.org ATTESTS for that exact version, read from its
+      catalog leaf -- the same shape as the Ollama installer's attested GitHub digest.
+      A mismatch refuses; a version with no attested hash refuses. Nothing is written
+      down here to go stale, which is the point: a digest embedded in the repo would
+      either be fabricated or rot into a false alarm.
+      Registered because it is an external SOURCE this project installs software from,
+      even though it pins nothing -- the thing worth watching is the package identity
+      and the availability of the attestation, not a version.
+    upstream: https://www.nuget.org/packages/python
+    check_upstream: >
+      flat container https://api.nuget.org/v3-flatcontainer/python/index.json lists
+      versions; the hash lives at registration5-semver1 -> catalogEntry -> packageHash.
+      Watch for: the id changing owner (authors must remain "Python Software
+      Foundation"), the tools/python.exe layout changing, or packageHashAlgorithm
+      moving off SHA512 -- install.ps1 refuses on the last of those by construction.
+    license: PSF-2.0 (CPython; license file ships inside the package)
+    pin: {floor: "3.13", verified: "3.13.15"}
+    refresh: >
+      nothing to refresh -- the version is resolved live. Re-verify the couplings if
+      the floor moves off 3.13 (Get-NuGetPythonVersion matches the floor's MAJOR.MINOR
+      so a future 3.14 cannot arrive unannounced).
+    freshness: {policy: rarely}
+    couplings:
+      - "install.ps1 MinPython -- Get-NuGetPythonVersion filters to its MAJOR.MINOR"
+      - "registration5-semver1, NOT the -gz- endpoint: PS 5.1 cannot decompress gzip"
+    last_verified: "2026-08-23"
+
   - id: llm-model-catalog
     title: Ollama model catalog
     kind: catalog
