@@ -270,3 +270,46 @@ def test_the_probe_records_why_it_refused_an_interpreter(ps1: str) -> None:
     # ARM64 vs x64 decides which dependency wheels exist at all, so it is a fact the
     # report has to carry -- it is what identified the field machine.
     assert "PROCESSOR_ARCHITECTURE" in diagnostics
+
+
+def test_no_code_handed_to_a_native_command_carries_a_double_quote(ps1: str) -> None:
+    """PowerShell 5.1 strips embedded `"` on the way to a native command.
+
+    Field failure this replaced: the probe read
+    `print("%d.%d" % sys.version_info[:2])` and python received
+    `print(%d.%d % sys.version_info[:2])` -- SyntaxError, on EVERY Windows machine,
+    ARM64 and x64 alike. install.ps1 could therefore never find an interpreter at
+    all, and nothing caught it because CI runs pytest and never executes this
+    script.
+
+    The durable rule is the one the fix relies on: a code string passed to a native
+    `-c` takes no double quotes. Both of ours are written to need none.
+    """
+    for name in ("probe", "bootCheck"):
+        match = re.search(rf"\${name}\s*=\s*'([^']*)'", ps1)
+        assert match, f"${name} assignment not found"
+        assert '"' not in match.group(1), (
+            f"${name} carries a double quote; PowerShell 5.1 strips it and python "
+            f"receives a syntax error"
+        )
+
+
+def test_the_probe_and_its_parser_agree_on_the_line_count(ps1: str) -> None:
+    """Changing what the probe prints without changing the parser re-breaks discovery.
+
+    The stub check and the executable's index are both derived from how many lines
+    the probe emits, so they are pinned to it rather than to a literal that can
+    quietly drift.
+    """
+    body = ps_function_body(ps1, "Test-PythonCandidate")
+    match = re.search(r"\$probe\s*=\s*'([^']*)'", body)
+    assert match, "probe assignment not found inside Test-PythonCandidate"
+    printed = match.group(1).count("print(")
+    assert printed >= 3, "major, minor and the executable path are all needed"
+
+    assert re.search(rf"\$lines\.Count -lt {printed}\b", body), (
+        f"the probe prints {printed} lines, so the Store-stub check must require {printed}"
+    )
+    assert f"$lines[{printed - 1}]" in body, (
+        "the executable is the probe's last line; the parser must read that index"
+    )

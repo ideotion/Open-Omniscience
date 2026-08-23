@@ -152,7 +152,13 @@ function Test-PythonCandidate {
     $exe   = $Command[0]
     $rest  = @()
     if ($Command.Count -gt 1) { $rest = $Command[1..($Command.Count - 1)] }
-    $probe = 'import sys; print("%d.%d" % sys.version_info[:2]); print(sys.executable)'
+    # NOT ONE DOUBLE QUOTE IN HERE, deliberately. PowerShell 5.1 strips embedded "
+    # characters when it hands an argument to a native command, so the previous
+    # probe -- print("%d.%d" % sys.version_info[:2]) -- reached python as
+    # print(%d.%d % sys.version_info[:2]) and died with SyntaxError on EVERY Windows
+    # machine. Nothing caught it because CI never executes this script. Three bare
+    # prints need no quoting at all, so there is nothing left for the shell to eat.
+    $probe = 'import sys;print(sys.version_info[0]);print(sys.version_info[1]);print(sys.executable)'
 
     # PowerShell 5.1 turns a native command's stderr into a TERMINATING error while
     # $ErrorActionPreference is 'Stop' -- even when that stderr is redirected. The
@@ -180,23 +186,25 @@ function Test-PythonCandidate {
     }
     $lines = @($out | Where-Object { $_ -ne $null -and $_.ToString().Trim() -ne '' })
     # A bare `python` on a fresh Windows 11 is the Microsoft Store execution-alias
-    # stub: it prints nothing and does not run code. Two lines of real output is
+    # stub: it prints nothing and does not run code. Three lines of real output is
     # what separates an interpreter from the stub.
-    if ($lines.Count -lt 2) {
-        $script:PythonProbeLog += "$label -- answered with fewer than two lines: $text"
+    if ($lines.Count -lt 3) {
+        $script:PythonProbeLog += "$label -- answered with fewer than three lines: $text"
         return $null
     }
     try {
-        $version = [version] $lines[0].ToString().Trim()
+        # Major and minor arrive on their own lines and are joined HERE, in
+        # PowerShell, so the interpreter is never asked to format anything.
+        $version = [version] ('{0}.{1}' -f $lines[0].ToString().Trim(), $lines[1].ToString().Trim())
     } catch {
-        $script:PythonProbeLog += "$label -- unreadable version line: $($lines[0])"
+        $script:PythonProbeLog += "$label -- unreadable version lines: $text"
         return $null
     }
     if ($version -lt $MinPython) {
         $script:PythonProbeLog += "$label -- version $version is below $MinPython"
         return $null
     }
-    return [pscustomobject]@{ Version = $version; Exe = $lines[1].ToString().Trim() }
+    return [pscustomobject]@{ Version = $version; Exe = $lines[2].ToString().Trim() }
 }
 
 # PEP 514: every Windows Python registers itself at
