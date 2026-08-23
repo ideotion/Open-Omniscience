@@ -156,9 +156,13 @@ function Test-PythonCandidate {
     # characters when it hands an argument to a native command, so the previous
     # probe -- print("%d.%d" % sys.version_info[:2]) -- reached python as
     # print(%d.%d % sys.version_info[:2]) and died with SyntaxError on EVERY Windows
-    # machine. Nothing caught it because CI never executes this script. Three bare
-    # prints need no quoting at all, so there is nothing left for the shell to eat.
-    $probe = 'import sys;print(sys.version_info[0]);print(sys.version_info[1]);print(sys.executable)'
+    # machine. Nothing caught it because CI never executes this script. Bare prints
+    # need no quoting at all, so there is nothing left for the shell to eat.
+    # sysconfig.get_platform() -- win-amd64 / win-arm64 -- is the interpreter's OWN
+    # wheel platform, which is what decides whether a wheel exists on PyPI. Do not
+    # reach for platform.machine(): on Windows it reports the MACHINE, so an x64
+    # python running under ARM64 emulation answers ARM64 and the check inverts.
+    $probe = 'import sys,sysconfig;print(sys.version_info[0]);print(sys.version_info[1]);print(sysconfig.get_platform());print(sys.executable)'
 
     # PowerShell 5.1 turns a native command's stderr into a TERMINATING error while
     # $ErrorActionPreference is 'Stop' -- even when that stderr is redirected. The
@@ -186,10 +190,10 @@ function Test-PythonCandidate {
     }
     $lines = @($out | Where-Object { $_ -ne $null -and $_.ToString().Trim() -ne '' })
     # A bare `python` on a fresh Windows 11 is the Microsoft Store execution-alias
-    # stub: it prints nothing and does not run code. Three lines of real output is
+    # stub: it prints nothing and does not run code. Four lines of real output is
     # what separates an interpreter from the stub.
-    if ($lines.Count -lt 3) {
-        $script:PythonProbeLog += "$label -- answered with fewer than three lines: $text"
+    if ($lines.Count -lt 4) {
+        $script:PythonProbeLog += "$label -- answered with fewer than four lines: $text"
         return $null
     }
     try {
@@ -204,7 +208,11 @@ function Test-PythonCandidate {
         $script:PythonProbeLog += "$label -- version $version is below $MinPython"
         return $null
     }
-    return [pscustomobject]@{ Version = $version; Exe = $lines[2].ToString().Trim() }
+    return [pscustomobject]@{
+        Version  = $version
+        Platform = $lines[2].ToString().Trim()
+        Exe      = $lines[3].ToString().Trim()
+    }
 }
 
 # PEP 514: every Windows Python registers itself at
@@ -279,7 +287,19 @@ function Get-FilesystemPythonPaths {
     return $found
 }
 
+# Windows on ARM runs x64 binaries transparently, and that is not a nicety here:
+# cryptography, statsmodels and httptools publish NO win_arm64 wheel at the versions
+# pip resolves (verified on PyPI 2026-08-23), so an ARM64 interpreter sends pip to a
+# Rust + MSVC source build that fails outright on a machine with no build tools --
+# and cryptography is a CORE dependency, so even a bare install dies there. An x64
+# interpreter gets a published wheel for every one of them. On ARM64 the interpreter's
+# architecture is therefore not a preference; it decides whether the install completes.
+$script:WantsX64Python = (
+    $env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64'
+)
+
 function Resolve-Python {
+    param([switch] $PreferX64)
     # Ordered widest-net-last: a name on PATH is cheapest, the registry is
     # authoritative, the filesystem sweep is the backstop.
     $candidates = @(
@@ -295,11 +315,19 @@ function Resolve-Python {
     foreach ($path in ($paths | Select-Object -Unique)) {
         if ($path) { $candidates += , @($path) }
     }
+    # Without -PreferX64 this short-circuits on the first working interpreter, exactly
+    # as before -- an x64 machine probes no more than it used to. With it, keep looking
+    # for a win-amd64 build and fall back to whatever did answer, so an ARM64 machine
+    # that already has both installed picks the one whose wheels exist.
+    $fallback = $null
     foreach ($candidate in $candidates) {
         $found = Test-PythonCandidate -Command $candidate
-        if ($found) { return $found }
+        if (-not $found) { continue }
+        if (-not $PreferX64) { return $found }
+        if ($found.Platform -eq 'win-amd64') { return $found }
+        if (-not $fallback) { $fallback = $found }
     }
-    return $null
+    return $fallback
 }
 
 # A dead end that says only "it did not work" is not a diagnosis. Print what was
@@ -486,7 +514,11 @@ if (-not $inRepo) {
 # 2. Python 3.13
 # --------------------------------------------------------------------------- #
 Write-Step 'Looking for Python 3.13+'
-$python = Resolve-Python
+# The x64 build is what winget must fetch on ARM64 -- its default picks the machine's
+# own architecture, which is the one with no wheels.
+$pyArch = @()
+if ($script:WantsX64Python) { $pyArch = @('--architecture', 'x64') }
+$python = Resolve-Python -PreferX64:$script:WantsX64Python
 if (-not $python) {
     if ($NoPython) {
         Stop-WithError 'No Python 3.13+ found (and -NoPython was given).' @(
@@ -494,21 +526,21 @@ if (-not $python) {
         )
     }
     Write-Note 'Not found -- installing it.'
-    if (-not (Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13')) {
+    if (-not (Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13' -Extra $pyArch)) {
         Stop-WithError 'Python 3.13 is missing and winget is unavailable.' @(
             'Install Python 3.13 from https://www.python.org/downloads/',
             'Tick "Add python.exe to PATH" in the installer, then re-run this script.'
         )
     }
-    $python = Resolve-Python
+    $python = Resolve-Python -PreferX64:$script:WantsX64Python
     if (-not $python) {
         # winget's default scope can pick a machine-wide install that a non-elevated
         # session cannot finish, leaving nothing behind. User scope is the one that
         # reliably completes without elevation, so it is worth one explicit retry
         # before asking the operator to do anything by hand.
         Write-Caution 'Still not resolvable -- retrying the install in user scope.'
-        Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13' -Extra @('--scope', 'user') | Out-Null
-        $python = Resolve-Python
+        Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13' -Extra ($pyArch + @('--scope', 'user')) | Out-Null
+        $python = Resolve-Python -PreferX64:$script:WantsX64Python
     }
     if (-not $python) {
         Show-PythonDiagnostics
@@ -519,7 +551,26 @@ if (-not $python) {
         )
     }
 }
-Write-Ok "Python $($python.Version) at $($python.Exe)"
+# An ARM64 interpreter reaches this line only when no x64 one was found. Fetch one
+# rather than letting pip discover the wheel gap twenty minutes into a source build.
+if ($script:WantsX64Python -and $python.Platform -ne 'win-amd64' -and -not $NoPython) {
+    Write-Caution "This is an ARM64 machine and the Python found is $($python.Platform)."
+    Write-Note 'cryptography, statsmodels and httptools ship no ARM64 wheel, so pip would'
+    Write-Note 'try to compile them. Installing the x64 build, which runs here natively.'
+    Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13 (x64)' -Extra $pyArch | Out-Null
+    $again = Resolve-Python -PreferX64
+    if ($again -and $again.Platform -eq 'win-amd64') { $python = $again }
+}
+Write-Ok "Python $($python.Version) ($($python.Platform)) at $($python.Exe)"
+if ($script:WantsX64Python -and $python.Platform -ne 'win-amd64') {
+    # Proceed anyway: refusing would be worse than a build that might succeed on a
+    # machine that does have the toolchain. But say what will happen, before it does.
+    Write-Caution 'Still on an ARM64 interpreter -- the dependency install will likely fail.'
+    Write-Note 'cryptography, statsmodels and httptools have no win_arm64 wheel; pip will'
+    Write-Note 'fall back to compiling them and stop at a missing MSVC/Rust toolchain.'
+    Write-Note 'Fix: install the x64 Python from https://www.python.org/downloads/windows/'
+    Write-Note '(the file named -amd64.exe, NOT -arm64.exe) and re-run this script.'
+}
 
 # --------------------------------------------------------------------------- #
 # 3. Source
