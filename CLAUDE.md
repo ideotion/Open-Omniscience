@@ -483,14 +483,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     reddened the next PR rather than their own. Install the pyproject-pinned
     `mypy==2.3.0` into the project venv (`TMPDIR=<repo>/.tmp-pip .venv/bin/python3.13
     -m pip install mypy==2.3.0 types-PyYAML` — TMPDIR per the recorded pip lesson) and
-    reproduce the CI command verbatim: `python -m mypy src/ | grep -c " error: "`.
-    THE TELL is the count: it must be a number near the baseline, not 3 — a
-    two-digit-smaller count means the run aborted, not that the tree got cleaner.
-    And when the count IS above baseline, diff against a worktree at the merge-base
-    rather than assuming it is yours; the errors may already be on `main`.
-  - **CI-only tests + the standalone-repro pattern:** the guarded fetch factory pulls
-    in `cryptography` (pyo3 PANIC in the bare sandbox) and the ORM pulls `bleach`
-    (often absent) — so endpoint/ORM/fetch tests are CI-only. Prove the ALGORITHM
+    reproduce the CI command verbatim: `python -m mypy src/`.
+    **AMENDED 2026-08-23: THE RATCHET IS GONE — the 2026-08-20 paydown took the
+    remaining 127 to 0 and `ci.yml` now runs the plain blocking `python -m mypy src/`,
+    so the pass condition is EXIT 0, not a count under a baseline.** Any earlier
+    ledger text naming 127 (or the local-reads-126 adjustment) is a record of how the
+    number fell, not of what to check. THE TELL survives the change and is now the
+    FILE COUNT in `Success: no issues found in N source files` — N is ~482; a run that
+    aborted reports 3 stub errors and no success line at all, which still reads like a
+    clean check of a file with nothing wrong in it. And when an error IS reported,
+    diff against a worktree at the merge-base rather than assuming it is yours; at
+    zero, a newer mypy's new diagnostic reddens every PR through no code change, which
+    is why the pin is load-bearing.
+  - **CI-only tests + the standalone-repro pattern** — **but MEASURE the claim before
+    accepting it: on 2026-08-23 `pip install -e .` into the py3.13 `.venv` (TMPDIR in
+    the repo) turned 18 "pre-existing" reds across the whole restore/merge family into
+    81/81 + 124/124 GREEN, and `cryptography` 50.0.0 installed and imported without the
+    pyo3 panic this entry had recorded as a fact.** That matters more than the
+    convenience: a baseline diff is blind wherever the baseline is already red, and 13
+    of those 18 were in `test_restore_timing_instrumentation.py`, i.e. the file most
+    likely to catch a regression in the very function being changed — so "they fail on
+    both sides" was worth nothing until they RAN. The dependency chase is six installs
+    deep (`bleach` → `cryptography` → `fastapi`/`python-multipart` → `slowapi` →
+    `feedparser` → `trafilatura`), which is the tell to stop chasing and install the
+    project. Historically: the guarded fetch factory pulls
+    in `cryptography` and the ORM pulls `bleach` (often absent) — so endpoint/ORM/fetch
+    tests were treated as CI-only. Prove the ALGORITHM
     here with a standalone py3.11 repro against the PURE module (e.g. `parse_csv` /
     `_parse_period`), then let CI run the real test. (`pip install bleach sqlalchemy
     pytest` lets the ORM/store tests run locally; `cryptography` won't.)
@@ -4773,6 +4791,48 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     is missing is to propose the tier you CAN corroborate and say plainly that the other one
     is unmeasured — quarantining 451 real-looking articles on a URL rule alone would be the
     lookalike trap wearing a clean-up's clothes.
+  - **WINDOWS WILL NOT UNLINK A FILE SOMEBODY HAS OPEN, SO EVERY delete-then-replace
+    PATH IS POSIX-ONLY-TESTED BY CONSTRUCTION — and the errno that looks like the
+    signal is shared with the failure it must be told apart from (2026-08-23, a restore
+    dying on `[WinError 32] ... open_omniscience.db-wal`):** the swap unlinks the live
+    `-wal`/`-shm` before `os.replace`, which is load-bearing (a stale WAL beside the
+    incoming database has SQLite replay the old log into the new file — corruption, not
+    a failed import). POSIX unlinks an open file happily, so the step was correct by
+    accident everywhere it had ever run. Compounding it, `engine.dispose()` closes only
+    the pool's IDLE connections and leaves CHECKED-OUT ones to close as they are
+    returned, so the swap legitimately meets a handle that is ABOUT TO GO AWAY — which
+    is why waiting it out is the fix and not a workaround. FOUR THINGS WORTH KEEPING.
+    (a) **`errno` cannot discriminate a lock on Windows**: ERROR_SHARING_VIOLATION (32)
+    and ERROR_ACCESS_DENIED (5) both map onto `EACCES`, so an errno-based check reads a
+    permissions failure as a busy file, burns the whole retry budget per file, and then
+    tells the operator to close a program that was never the problem. `winerror` is the
+    only signal that answers, and where it exists `errno` must not be consulted at all.
+    Its sibling half was DEAD CODE: `isinstance(exc, PermissionError) and errno ==
+    EBUSY` is unreachable, because Python raises a plain `OSError` for EBUSY and
+    `PermissionError` only for EACCES/EPERM — measured, not assumed. Both were caught
+    by the negative-space twin on its FIRST run, which is the whole argument for
+    writing it. (b) **Never key on message text**: the field report arrived in French
+    (*le fichier est utilise par un autre processus*), so any substring match would
+    have missed the very report that produced the fix — and the test proves the CODE
+    decided, by asserting that the identical message carrying no `winerror` is NOT
+    recognised. (c) **Checkpoint before you unlink**: committed transactions live in
+    the WAL until a checkpoint moves them into the database file, so unlinking a
+    non-empty WAL and then failing the replace loses exactly those; checkpoint first
+    and an abort at every later point is free. (d) **A checkpoint must be BOUNDED**:
+    `checkpoint_wal` takes the single-writer gate and that gate's `acquire` has NO
+    timeout, so calling it straight converts a restore that fails fast into one that
+    hangs forever behind another writer — and a checkpoint that cannot finish MEANS a
+    writer is active, which is the one condition the swap must not run under, so the
+    caller aborts rather than proceeding. ORDERING IS ASSERTED FROM THE PARSE TREE, not
+    as text: a comment explaining why the order matters necessarily names the same
+    calls, so a substring search is satisfied by the explanation of the rule instead of
+    the rule. **PROCESS NOTE, and the cheapest thing here to get wrong:** two mutations
+    in the matrix ran `pytest -k order` against a guard whose name contains no "order",
+    so they selected ZERO tests and printed nothing — which reads exactly like a pass.
+    Same family as the recorded `cmd | tail` lesson: a check you expect to be
+    interesting that says nothing interesting has usually not run. Assert the selector
+    matches FIRST (`1 passed, N deselected`), then mutate.
+
 ## Open queue (when maintainer says proceed)
 - **KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING (maintainer 2026-08-13, "let's get this done
   at my return" — PARKED, nothing further to build; the machinery is shipped and the
