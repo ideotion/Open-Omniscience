@@ -4638,6 +4638,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     it anyway". Never write a digest into the repo for this: it would be fabricated (if
     you cannot reach the publisher to verify it) or rot into a false alarm that someone
     eventually deletes.
+  - **RESOLVING A NEW INPUT DOES NOT RE-DERIVE WHAT WAS BUILT FROM THE OLD ONE — and the
+    stale copy will be sitting right under the line that announces the new one
+    (2026-08-23, the Windows venv):** the ARM64->x64 ladder worked exactly as designed in
+    the field: detected the machine, tried winget twice, fetched the PSF's x64 CPython from
+    nuget.org, verified it against the attested SHA-512, and printed
+    `ok  Python 3.13 (win-amd64)`. Four lines later it printed `ok  Reusing the existing
+    .venv` and pip went hunting `win_arm64` wheels. A `.venv` keeps the version and wheel
+    platform of whichever interpreter built it, FOR LIFE, and the only check was
+    `Test-Path` — so the entire architecture ladder was undone by derived state nobody
+    re-derived, silently, with the correct answer printed immediately above the failure.
+    GENERAL FORM: after changing how an input is chosen, list what is BUILT from that input
+    and cached on disk (a venv, a lockfile, a compiled index, a generated config) and give
+    each one a match check against the new value — existence is not a match. THREE RIDERS.
+    (a) The check reuses the SAME probe the resolver uses (`Test-PythonCandidate` against
+    the venv's own python), so the two can never disagree about what a match is; a second
+    implementation would drift. (b) The negative-space twin is what makes it a guard rather
+    than a rebuild: reusing a MATCHING venv untouched has to be asserted too, because a fix
+    that rebuilds unconditionally passes every mismatch test and costs a full
+    several-hundred-MB re-download on every run — both mutations redden the one behavioural
+    test by name. (c) A replacement that FAILS (a locked folder) must stop, not fall through
+    into the environment just judged wrong; and it is not prompted, because a `.venv` holds
+    no user data and under `irm | iex` stdin is redirected, so a prompt would answer itself
+    — say what is happening instead. Verified with pwsh in-sandbox that a venv reports its
+    BASE interpreter's `sysconfig.get_platform()` (the premise the whole check rests on),
+    and that the nuget package carries `venvlauncher.exe` + `ensurepip` with a bundled pip,
+    so the vendored interpreter can build the venv it is now asked to.
 ## Open queue (when maintainer says proceed)
 - **KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING (maintainer 2026-08-13, "let's get this done
   at my return" — PARKED, nothing further to build; the machinery is shipped and the

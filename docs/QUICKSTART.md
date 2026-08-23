@@ -340,6 +340,13 @@ cd $HOME\Open-Omniscience
   If every rung fails you get a stop with the one-download fix, not a twenty-minute
   Rust build that ends in `linker link.exe not found`.
 
+  An existing `.venv` is **probed, not just found**: it keeps the version and wheel
+  platform of whatever interpreter built it, so one left by an earlier run on a
+  different Python is replaced rather than reused — otherwise everything above is
+  silently undone at the last step. A matching one is reused untouched. Re-running the
+  installer is therefore the fix for a half-finished install; nothing needs deleting by
+  hand.
+
   - **Why a native ARM64 install is not auto-enabled.** It would need `cryptography`
     pinned to 46.0.0–46.0.3, the only series with ARM64 wheels. That release carries
     **13 open advisory records** (including a statically-linked OpenSSL one fixed in
