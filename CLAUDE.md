@@ -4882,6 +4882,42 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     to be a TestClient, because a route called directly receives `Query(...)` sentinels,
     which are truthy, so a direct-call check would have passed on exactly that bug.
 ## Open queue (when maintainer says proceed)
+- **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
+  is still open (found 2026-08-20 while reviewing a CI red on PR #963; RECORD-ONLY, nothing
+  built — the maintainer asked to record and defer):** upstream `pqcrypto` 1.0.0 (2026-08-15)
+  renamed the ml_dsa_65 API, and the "PQC signing path" lane went red with
+  `AttributeError: module 'pqcrypto.sign.ml_dsa_65' has no attribute 'generate_keypair'`
+  (14 failed / 4 passed across `tests/test_custody_signing.py` + `tests/test_annotations.py`).
+  **THE INSTANCE IS CLOSED** — `2617037c` + `e112e04f` upper-bounded it to
+  `pqcrypto>=0.3.4,<1.0` (pyproject:198, with the reason in a comment). **THE CLASS IS NOT**,
+  and that is the half worth building: `src/custody/signing.py` sets `PQC_AVAILABLE = True`
+  (line 61, guarded by the bare `import` at line 59) on IMPORT SUCCESS ALONE, but the module
+  still imported perfectly — only `generate_keypair` was gone — so the flag was `True`,
+  `pqc_unavailable_but_requested` (a property that exists *specifically* to say "the operator
+  wants PQC but the library cannot provide it") returned **False**, and
+  `_mldsa.generate_keypair()` raised at `signing.py:246`. (Line numbers verified 2026-08-23;
+  grep the identifiers if they have drifted again — the file moves.) **THE ABSENCE PATH IS
+  WELL BUILT AND NEVER FIRED**: `PQC_AVAILABLE` gates every call site, `_load_or_create_mldsa`
+  returns `(None, None)`, `_verify_mldsa` returns `None` — a whole honest-degrade machine that
+  a working-but-wrong-API library walks straight past. **THE FUNCTION'S OWN DOCSTRING IS THE
+  REFUTATION:** `custody/settings.py:196` — *"Report what the **build** can actually do"* —
+  publishes `{"pqc_available": true}` for a library that cannot sign, i.e. a fabricated
+  capability claim, which is the one thing this project's non-negotiables forbid outright.
+  **FIX SHAPE (unbuilt):** probe the API SURFACE the code actually uses (`generate_keypair`,
+  `sign`, `verify`, `PUBLIC_KEY_SIZE`) rather than importability, so the next upstream change
+  degrades through the path already built for it instead of crashing. The test that makes it
+  real is the NEGATIVE direction: a module that IMPORTS but LACKS `generate_keypair` must
+  report unavailable, never raise — a positive-only fixture passes against the broken guard.
+  **OPEN QUESTION, deliberately not asserted:** whether the new ceiling owes an
+  `external_artifacts.yml` entry. The registry has a `runtime-coupling` kind
+  (`windows-x64-python-nuget`) that would hold it, but its test enforces `*_AS_OF` constants,
+  not every pip bound — so this is a scope decision, not a confirmed protocol breach.
+  **THE GENERAL LESSON (the recorded "a probe of the port is not a probe of the model", one
+  layer down): an availability flag must probe the CAPABILITY it gates, not the module that
+  contains it.** Importability and usability are different questions, and a dependency can
+  answer the first while failing the second for years of upstream churn. Anywhere the tree
+  sets an `X_AVAILABLE` boolean from a bare `import` inside a `try`, the same gap exists —
+  worth a sweep when this is built (`OTS_AVAILABLE` sits in the same payload).
 - **KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING (maintainer 2026-08-13, "let's get this done
   at my return" — PARKED, nothing further to build; the machinery is shipped and the
   remaining steps are one operator fetch, one review, one ruling):**
