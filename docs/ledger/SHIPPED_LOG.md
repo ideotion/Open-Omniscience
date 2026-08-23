@@ -3,6 +3,52 @@
 > The full, verbatim shipped-work entries that used to live under `CLAUDE.md` → '## Shipped batch log'. Moved here to keep CLAUDE.md readable (maintainer-asked). The terse, sortable tracking index is [`shipped.csv`](shipped.csv); the load-bearing LESSONS are curated into CLAUDE.md's Session-rituals 'Lessons' subsection. Full detail of any item is also in git history + its PR + the named design docs. APPEND new shipped work as a `shipped.csv` row (+ a verbatim entry here if it carries a reusable lesson), NOT as a CLAUDE.md bullet.
 
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
+- **WINDOWS RESTORE, ROUND 2: `os.replace` WAS THE OTHER HALF OF THE LOCK FIX — plus the
+  diagnostic that answers "who holds it" (2026-08-23, branch `claude/windows-repo-install-255ude`;
+  two `shipped.csv` rows):** the same Win11 ARM64 machine, the same `-wal`, ten minutes in,
+  AFTER the first fix shipped and was pulled. ROOT CAUSE: the first pass taught the swap that
+  Windows will not UNLINK an open file and protected `_clear_stale_side_files`, but
+  `os.replace(working, target)` is `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING)` and needs the
+  DESTINATION closed for exactly the same reason — so one of the two Windows operations in that
+  block kept its retry and the other was bare. FIXED by extracting `_retry_while_locked(op, *,
+  wait_s, on_retry)` and putting BOTH steps through it (`_replace_live_corpus`), under ONE shared
+  `swap_deadline` (two 20 s retries read as 20 s in the message and are 40 s in the wall);
+  `on_retry=dispose_engine` every 8 attempts, because `engine.dispose()` closes only IDLE pooled
+  connections and waiting alone can never release a checked-out one of OUR OWN; budget 20 s →
+  300 s; `_lock_holder_note()` names the holder in the refusal where psutil can see it. THE
+  CORPUS WAS NEVER AT RISK IN EITHER REPORT — the failure precedes the swap, nothing is
+  committed, and `corpus-integrity.json` in the operator's own bundle was clean.
+  **THEN THE DIAGNOSTIC THE SECOND FAILURE PROVED WAS NEEDED (maintainer: "add it in the
+  advanced settings / diagnostics section. Make it count"):** `[WinError 32]` names the FILE and
+  never the holder, so two rounds of fixes had produced no way to separate a bug in this app from
+  a program the operator could close — and the 300 s expiry says the holder is not transient,
+  which is a fact about SOMETHING we could not name. `src/monitoring/windows_locks.py` asks
+  Windows directly with the same primitive the swap needs: `CreateFileW(GENERIC_READ,
+  dwShareMode=0, OPEN_EXISTING)` on each corpus file, closed immediately — success proves no
+  other handle exists, and it writes, creates and truncates nothing (pinned by an mtime/size
+  test). Plus our OWN handles (the half that decides "our bug" vs "close that program"), a
+  BOUNDED other-process sweep, and Defender's real-time state + exclusion paths via two bounded
+  read-only cmdlets. Wired as a GET endpoint, an all-diagnostics bundle member (the coverage
+  ratchet mutation-verified to bite) and a panel button that renders the READING inline, because
+  an operator staring at that error needs the sentence rather than a file to open.
+  **THE DEFECT THAT WOULD HAVE INVERTED THE HEADLINE FINDING, caught before wiring:**
+  `INVALID_HANDLE_VALUE` is `(HANDLE)-1` and `restype = wintypes.HANDLE` is a `c_void_p`, so
+  ctypes returns `18446744073709551615` on 64-bit — `handle == -1` is False on EVERY failed
+  call, and a REFUSED open would have been reported as a success on exactly the case the module
+  exists to detect. Five more found in the same review: `ctypes.get_last_error()` returns 0
+  without `WinDLL(..., use_last_error=True)` (so a naive read reports another call's error under
+  this one's name); the reading collapsed UNMEASURED into FREE via `.get("exclusive_open", True)`
+  and printed an all-clear for an unanswered question; the Defender exclusion check was a string
+  PREFIX, so `…\Open-Omniscience-old` would have read as covering `…\Open-Omniscience` (the
+  recorded containment trap, telling an operator they had applied a remedy they had not); the
+  process sweep was unbounded and could hang the bundle; and a failed budget import degraded to
+  a silent `None`. **AND ONE MORE IN MY OWN GUARD:** `os.path.normcase` is the IDENTITY on
+  Linux, so the containment test would have exercised different behaviour than production —
+  fixed by lowercasing explicitly, since these are Windows paths whatever host inspects them.
+  28 guards, a 9-mutation matrix all reddening BY NAME — including one that revealed the
+  route guard was satisfied by the download URL alone, so a broken FETCH url (the one that
+  produces the reading) would have slipped through; both call sites are now asserted
+  independently. 5 strings keyed ×12 so both i18n ratchets stay exactly at 561/298.
 - **OMNIBUS SESSION — STANDING SOURCE AUDITOR + Part-3A surfacing (2026-07-13, executing
   `docs/design/ACTION_PLAN_2026-07-13_SOURCES_MAPS_GAPS.md`; DRAFT-PR-only, nothing auto-merges):** Item 0
   (ledger + the 6 rulings) merged #662; **Item 2** = the standing source AUDITOR (`src/analytics/source_audit.py`,

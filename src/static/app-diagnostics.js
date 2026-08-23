@@ -430,6 +430,46 @@
       }
     }
 
+    // Windows refuses to replace an OPEN file, so a restore dies with [WinError 32]
+    // naming the FILE and never the holder. This asks who holds it and prints the
+    // answer here, because an operator staring at that error needs the sentence, not
+    // a download. The report still downloads: it is what travels in a bug report.
+    async function windowsLocksReport(btn) {
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const out = $("win-locks-status");
+      if (btn) btn.disabled = true;
+      if (out) out.textContent = t("Checking…");
+      try {
+        const d = await api("/api/diagnostics/windows-locks");
+        const r = (d && d.data) || {};
+        const bits = [];
+        // The reading first: it is the only line that answers the question.
+        if (r.reading) bits.push(r.reading);
+        // Then the names, when there are any. A holder list is the actionable part,
+        // and an empty one is NOT published as "nobody" -- the report's own caveat
+        // carries why, and the counts below say whether anything was even visible.
+        const other = r.other_processes || {};
+        if (other.available && (other.holders || []).length) {
+          const who = other.holders
+            .map((h) => `${h.name || "?"} (pid ${h.pid})`)
+            .filter((v, i, a) => a.indexOf(v) === i);
+          bits.push(t("Holding it:") + " " + who.join(", "));
+        } else if (other.available && !other.complete) {
+          bits.push(t("no holder was visible, but not every process could be inspected"));
+        }
+        const av = r.antivirus || {};
+        if (av.probed && av.defender_realtime_enabled && av.data_dir_excluded === false) {
+          bits.push(t("Defender real-time scanning is on and your data folder is not excluded."));
+        }
+        if (out) out.textContent = bits.join(" · ");
+        window.open("/api/diagnostics/windows-locks?download=1", "_blank");
+      } catch (e) {
+        if (out) out.textContent = _apiErrorMessage ? _apiErrorMessage(e) : String(e);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
+    }
+
     async function viewKeywordGrowth(btn) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       if (btn) btn.disabled = true;

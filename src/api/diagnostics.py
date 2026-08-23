@@ -3004,6 +3004,39 @@ def storage_composition_report(
     return JSONResponse(body)
 
 
+@router.get("/windows-locks")
+def windows_locks_report(download: bool = Query(False)) -> JSONResponse:
+    """Why Windows refused to replace the corpus during a restore — who holds the files.
+
+    A Windows restore fails with ``[WinError 32]`` when anything at all has the
+    database or its ``-wal`` open, because Windows will not unlink or replace an
+    open file; the OS names the FILE and never the holder, which leaves an
+    operator unable to tell a bug in this app from a program they could close.
+
+    This asks that question directly and changes nothing doing it: each corpus
+    file is opened for READ with sharing disabled — the same exclusivity the swap
+    needs — and closed immediately; our own handles are listed; other processes
+    are swept within a stated budget; and Defender's real-time state and
+    exclusion paths are read. Off Windows it reports honestly that none of it
+    applies rather than a clean bill of health. Read-only, zero network, no score.
+    With ``download=1`` it returns as a dated attachment."""
+    from src.monitoring.windows_locks import windows_lock_report
+
+    payload = windows_lock_report()
+    body = envelope(
+        kind="windows-locks",
+        query={},
+        count=len(payload.get("files") or []),
+        payload=payload,
+    )
+    if download:
+        fname = f"oo-windows-locks-{datetime.now().strftime('%Y%m%d-%H%M')}.json"
+        return JSONResponse(
+            body, headers={"Content-Disposition": f'attachment; filename="{fname}"'}
+        )
+    return JSONResponse(body)
+
+
 @router.get("/frontend-errors")
 def frontend_errors(limit: int = Query(200, ge=1, le=2000)) -> dict:
     """The captured browser errors (log #1) + the rolling-log summary counts."""
@@ -3513,6 +3546,7 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("storage-footprint.json", lambda: storage_footprint_report(download=False)),
         # P1.5: per-table/per-index bytes (dbstat) — what the on-disk GB actually IS.
         ("storage-composition.json", lambda: storage_composition_report(download=False, db=db)),
+        ("windows-locks.json", lambda: windows_locks_report(download=False)),
         # S1.2: the last P0 data-safety validation report (read-only; never runs a backup).
         ("p0-validation.json", lambda: _p0_validation_last()),
         # §6 recursive-improvement loop instruments: the two cheap, decrypt-light DATA reports
@@ -3801,6 +3835,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/data-dir-persistence": "data-dir-persistence.json",
     "/storage-footprint": "storage-footprint.json",
     "/storage-composition": "storage-composition.json",
+    "/windows-locks": "windows-locks.json",
     "/frontend-errors": "frontend-errors.json",
     "/request-latency": "request-latency.json",
     "/stall-forensics": "stall-forensics.json",

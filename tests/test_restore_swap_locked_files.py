@@ -30,24 +30,32 @@ from __future__ import annotations
 import errno
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
 from src.backup.merge import (
     _checkpoint_before_swap,
+    _lock_holder_note,
+    _replace_live_corpus,
     _clear_stale_side_files,
     _file_is_locked,
     classify_restore_error,
 )
 
 
-def _win_error(winerror: int, message: str) -> PermissionError:
+def _win_error(winerror: int, message: str, filename: str | None = None) -> PermissionError:
     """A PermissionError shaped like the one Windows raises.
 
     ``winerror`` is a real attribute of OSError on Windows and simply absent
     elsewhere, so setting it is what makes this fixture faithful on Linux CI.
+
+    ``filename`` is the THIRD OSError argument, and it has to be passed
+    explicitly: a two-argument construction leaves ``.filename`` as None, which
+    is not what a real file operation raises -- the OS-raised error carries the
+    path it refused, which is exactly what the field report showed.
     """
-    exc = PermissionError(errno.EACCES, message)
+    exc = PermissionError(errno.EACCES, message, filename)
     exc.winerror = winerror  # type: ignore[attr-defined]
     return exc
 
@@ -327,7 +335,12 @@ def test_the_swap_checkpoints_before_it_unlinks_anything():
         if isinstance(node, ast.FunctionDef) and node.name == "run_restore"
     )
 
-    wanted = {"_checkpoint_before_swap", "dispose_engine", "_clear_stale_side_files", "replace"}
+    wanted = {
+        "_checkpoint_before_swap",
+        "dispose_engine",
+        "_clear_stale_side_files",
+        "_replace_live_corpus",
+    }
     seen: list[tuple[int, str]] = []
     for node in ast.walk(body):
         if not isinstance(node, ast.Call):
@@ -348,7 +361,299 @@ def test_the_swap_checkpoints_before_it_unlinks_anything():
     assert where["dispose_engine"] < where["_clear_stale_side_files"], (
         "dispose first, or the pool's own idle handles are what blocks the unlink"
     )
-    assert where["_clear_stale_side_files"] < where["replace"], (
+    assert where["_clear_stale_side_files"] < where["_replace_live_corpus"], (
         "the stale WAL must be gone before the incoming database takes its place, "
         "or SQLite replays the old log into the new file"
+    )
+
+
+# --------------------------------------------------------------------------
+# _replace_live_corpus -- the step the first cut of this fix left bare
+# --------------------------------------------------------------------------
+#
+# Windows MoveFileEx refuses to replace a file another process still holds open,
+# with the SAME ERROR_SHARING_VIOLATION the unlinks meet. Guarding only the
+# unlinks moved the failure from "...db-wal" to "...db" and changed nothing else.
+
+
+def test_the_replace_waits_out_a_lock_on_the_destination(tmp_path, monkeypatch):
+    working = tmp_path / "working.db"
+    target = tmp_path / "corpus.db"
+    working.write_bytes(b"new")
+    target.write_bytes(b"old")
+
+    import src.backup.merge as merge_mod
+
+    real_replace = merge_mod.os.replace
+    refusals = {"n": 0}
+
+    def flaky(src, dst):
+        if refusals["n"] < 2:
+            refusals["n"] += 1
+            raise _win_error(32, "utilise par un autre processus")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(merge_mod.os, "replace", flaky)
+
+    _replace_live_corpus(working, target, wait_s=5.0)
+
+    assert refusals["n"] == 2, "the retry must actually have been exercised"
+    assert target.read_bytes() == b"new", "the merged corpus must be in place"
+
+
+def test_the_replace_gives_up_at_the_budget_and_leaves_both_files(tmp_path, monkeypatch):
+    """A permanent refusal must still end in an answer, with nothing damaged.
+
+    os.replace is atomic, so a refusal leaves both files exactly as they were --
+    and by this point the live corpus has been checkpointed, so it is complete on
+    its own even with its side files already gone.
+    """
+    working = tmp_path / "working.db"
+    target = tmp_path / "corpus.db"
+    working.write_bytes(b"new")
+    target.write_bytes(b"old")
+
+    import src.backup.merge as merge_mod
+
+    monkeypatch.setattr(
+        merge_mod.os,
+        "replace",
+        lambda src, dst: (_ for _ in ()).throw(_win_error(32, "utilise")),
+    )
+
+    started = time.monotonic()
+    with pytest.raises(PermissionError):
+        _replace_live_corpus(working, target, wait_s=0.5)
+    elapsed = time.monotonic() - started
+
+    assert 0.4 <= elapsed < 3.0, f"must give up at the budget, took {elapsed:.2f}s"
+    assert target.read_bytes() == b"old", "the live corpus must be untouched"
+    assert working.read_bytes() == b"new", "and the merged copy must survive too"
+
+
+def test_the_replace_does_not_retry_a_non_lock_error(tmp_path, monkeypatch):
+    """Negative-space twin: a cross-device refusal answers instantly and forever."""
+    working = tmp_path / "working.db"
+    target = tmp_path / "corpus.db"
+    working.write_bytes(b"new")
+    target.write_bytes(b"old")
+
+    import src.backup.merge as merge_mod
+
+    def cross_device(src, dst):
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    monkeypatch.setattr(merge_mod.os, "replace", cross_device)
+
+    started = time.monotonic()
+    with pytest.raises(OSError) as caught:
+        _replace_live_corpus(working, target, wait_s=30.0)
+    elapsed = time.monotonic() - started
+
+    assert caught.value.errno == errno.EXDEV
+    assert elapsed < 1.0, f"a non-lock error must raise at once, took {elapsed:.2f}s"
+
+
+def test_a_lock_retry_re_disposes_the_engine(tmp_path, monkeypatch):
+    """Anything in this process that touches the database re-opens the pool.
+
+    Then WE are the holder, waiting for ourselves -- so the retry re-disposes.
+    Costs nothing when nothing reopened; it is the only thing that helps when
+    something did.
+    """
+    import src.backup.merge as merge_mod
+
+    disposals = {"n": 0}
+    monkeypatch.setattr(
+        "src.database.session.dispose_engine",
+        lambda: disposals.__setitem__("n", disposals["n"] + 1),
+    )
+
+    working = tmp_path / "working.db"
+    target = tmp_path / "corpus.db"
+    working.write_bytes(b"new")
+    target.write_bytes(b"old")
+    monkeypatch.setattr(
+        merge_mod.os,
+        "replace",
+        lambda src, dst: (_ for _ in ()).throw(_win_error(32, "utilise")),
+    )
+
+    with pytest.raises(PermissionError):
+        _replace_live_corpus(working, target, wait_s=3.0)
+
+    assert disposals["n"] >= 1, "a lock retry must re-dispose the engine at least once"
+
+
+# --------------------------------------------------------------------------
+# _lock_holder_note -- which of the two opposite answers is it
+# --------------------------------------------------------------------------
+
+
+def test_the_note_says_when_this_app_itself_holds_the_file(tmp_path):
+    """The answer that means 'closing programs will not help -- it is our bug'."""
+    held = tmp_path / "corpus.db-wal"
+    held.write_bytes(b"x")
+    with held.open("rb"):
+        note = _lock_holder_note(_win_error(32, "utilise", str(held)))
+    if not note:
+        pytest.skip("psutil is an optional extra and is absent")
+    assert "own process still has that file open" in note
+    assert "bug in the app" in note
+
+
+def test_the_note_says_when_something_else_holds_it(tmp_path):
+    """The answer that means 'close antivirus or the other copy of the app'."""
+    not_held = tmp_path / "corpus.db-wal"
+    not_held.write_bytes(b"x")
+    note = _lock_holder_note(_win_error(32, "utilise", str(not_held)))
+    if not note:
+        pytest.skip("psutil is an optional extra and is absent")
+    assert "does NOT have that file open" in note
+    assert "antivirus" in note
+
+
+def test_the_note_is_silent_when_it_cannot_tell(tmp_path):
+    """No filename to check means no note -- never a guess.
+
+    A diagnostic that invents an answer is worse than one that stays quiet: the
+    operator would act on it.
+    """
+    bare = PermissionError(errno.EACCES, "no filename attached")
+    bare.winerror = 32  # type: ignore[attr-defined]
+    assert _lock_holder_note(bare) == ""
+
+
+def test_the_note_is_silent_without_psutil(tmp_path, monkeypatch):
+    """psutil is an optional extra; a core install must degrade, not crash."""
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_psutil(name, *args, **kwargs):
+        if name == "psutil":
+            raise ImportError("no psutil in this install")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", no_psutil)
+    held = tmp_path / "corpus.db-wal"
+    held.write_bytes(b"x")
+    assert _lock_holder_note(_win_error(32, "utilise", str(held))) == ""
+
+
+def test_a_locked_file_message_carries_the_wait_and_the_holder_note(tmp_path):
+    """The operator must learn how long we tried and who to blame."""
+    from src.backup.merge import _SWAP_HANDLE_WAIT_S
+
+    not_held = tmp_path / "corpus.db-wal"
+    not_held.write_bytes(b"x")
+    detail = classify_restore_error("restore", _win_error(32, "utilise", str(not_held)))
+
+    assert f"Waited {_SWAP_HANDLE_WAIT_S:.0f}s" in detail
+    assert "Nothing was changed" in detail
+
+
+def test_the_swap_shares_one_wait_budget_across_all_three_steps():
+    """-wal, -shm and the replace all face the same holder.
+
+    A per-step budget would stall a doomed swap for three times as long while
+    the message told the operator it had waited once -- so the deadline is
+    computed once and each step gets whatever is left. Read through ``ast``, so
+    the comment explaining the rule cannot satisfy the check for it.
+    """
+    import ast
+    import inspect
+
+    from src.backup import merge as merge_mod
+
+    tree = ast.parse(inspect.getsource(merge_mod))
+    run_restore = next(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name == "run_restore"
+    )
+
+    budgeted = {}
+    for node in ast.walk(run_restore):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        name = fn.id if isinstance(fn, ast.Name) else getattr(fn, "attr", None)
+        if name in ("_clear_stale_side_files", "_replace_live_corpus"):
+            budgeted[name] = {kw.arg for kw in node.keywords}
+
+    assert set(budgeted) == {"_clear_stale_side_files", "_replace_live_corpus"}, (
+        f"both swap steps must be called in run_restore, found {sorted(budgeted)}"
+    )
+    for name, kwargs in budgeted.items():
+        assert "wait_s" in kwargs, (
+            f"{name} must be given the REMAINING budget, or it starts a fresh one"
+        )
+
+    assigned = [
+        t.id
+        for node in ast.walk(run_restore)
+        if isinstance(node, ast.Assign)
+        for t in node.targets
+        if isinstance(t, ast.Name) and t.id == "swap_deadline"
+    ]
+    assert len(assigned) == 1, (
+        f"the swap deadline must be computed exactly once, found {len(assigned)}"
+    )
+
+
+def test_both_side_files_share_ONE_budget_not_one_each(tmp_path, monkeypatch) -> None:
+    """A per-file budget spends twice what the caller allotted.
+
+    -wal and -shm are held by the same process for the same reason, so giving
+    each the full window makes a doomed swap wait 2x what its own message says.
+    Worse, the caller computes the REPLACE's budget from what is left -- so
+    over-spending here leaves the step that actually matters with nothing.
+
+    THE SCENARIO IS THE WHOLE TEST. Locking both files permanently does NOT
+    discriminate: the first one raises at its deadline and the second is never
+    reached, so a per-file budget spends exactly as long as a shared one. -wal
+    has to be released PARTWAY so the loop actually gets to -shm -- only then
+    does a fresh window for the second file show up as time on the clock.
+
+    Behavioural on purpose: the ast guard above asserts the call-site shape and
+    passes against a per-file budget, because the sharing happens inside the
+    function it never looks at.
+    """
+    from src.backup import merge as merge_mod
+
+    target = tmp_path / "open_omniscience.db"
+    target.write_bytes(b"corpus")
+    for suffix in ("-wal", "-shm"):
+        target.with_name(target.name + suffix).write_bytes(b"x")
+
+    budget = 1.0
+    release_wal_at = time.monotonic() + 0.5
+    real_unlink = Path.unlink
+
+    def _fake(self, missing_ok=False):  # noqa: ANN001
+        name = str(self)
+        if name.endswith("-shm"):
+            raise _win_error(32, "held", name)  # never released
+        if time.monotonic() < release_wal_at:
+            raise _win_error(32, "held", name)  # released halfway through
+        return real_unlink(self, missing_ok=missing_ok)
+
+    monkeypatch.setattr(Path, "unlink", _fake)
+    monkeypatch.setattr(merge_mod, "_SWAP_HANDLE_WAIT_S", 999.0)
+
+    started = time.monotonic()
+    with pytest.raises(OSError):
+        merge_mod._clear_stale_side_files(target, wait_s=budget)
+    spent = time.monotonic() - started
+
+    # Shared: -wal clears at ~0.5s, -shm gets the remaining ~0.5s => ~1.0s total.
+    # Per-file: -shm starts a FRESH 1.0s window => ~1.5s. The bar sits between
+    # them with room on both sides, so this is a factor, never a few milliseconds.
+    assert spent < 1.25, (
+        f"spent {spent:.2f}s of a {budget:.1f}s budget — each file started its own window"
+    )
+    assert spent >= budget * 0.8, (
+        f"spent only {spent:.2f}s — the budget was not actually honoured, so this "
+        f"test would pass for a reason unrelated to sharing"
     )
