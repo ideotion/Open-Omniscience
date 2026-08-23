@@ -4791,6 +4791,26 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     is missing is to propose the tier you CAN corroborate and say plainly that the other one
     is unmeasured — quarantining 451 real-looking articles on a URL rule alone would be the
     lookalike trap wearing a clean-up's clothes.
+  - **A TABLE BUILT TO DEMONSTRATE RIGOUR IS EXACTLY WHERE A CELL GETS BACK-FILLED
+    (2026-08-23, correcting the gate's own evidence section):** two `origin/main` merges
+    left gate §7.4 quoting `8423 passed` under the heading *"the tree that would be
+    tagged"*, in the one section arguing that a pass count is load-bearing evidence. Fixing
+    it, I widened the prose into a six-row table with a `skipped` column — and invented two
+    cells doing it: a baseline of `40 skipped` (the ledger records **43**) and `+3 skipped`
+    for a merge whose skip count provably did not move, since the runs bracketing it both
+    read 43. A third cell, that merge's test count, came from a commit range spanning more
+    PRs than the merge actually brought in. None of it was checkable from anything I had
+    measured; all of it looked like diligence. THE MECHANISM IS THE FORMAT: prose states
+    only the steps you have, while a table has a cell for every intersection and an empty
+    one reads as an omission, so the shape itself asks to be completed. RULES: extend the
+    prose rather than promote it to a grid unless every cell is measured; before writing a
+    figure into an evidence section, name where it came from (a run you executed, or a line
+    in the ledger) and drop it if the answer is "it follows"; and when a delta *can* be
+    checked against the diff, check it — `+2 passed / +1 skipped` against three added test
+    functions closes exactly, and that arithmetic is what the section is claiming to do.
+    COROLLARY worth the same weight: a `skipped` count is not noise beside a pass count
+    here — `pwsh`-gated installer tests correctly skip in this sandbox, so reading passed
+    alone makes a merge look as though it under-delivered against its own diff.
   - **WINDOWS WILL NOT UNLINK A FILE SOMEBODY HAS OPEN, SO EVERY delete-then-replace
     PATH IS POSIX-ONLY-TESTED BY CONSTRUCTION — and the errno that looks like the
     signal is shared with the failure it must be told apart from (2026-08-23, a restore
@@ -4832,7 +4852,6 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     Same family as the recorded `cmd | tail` lesson: a check you expect to be
     interesting that says nothing interesting has usually not run. Assert the selector
     matches FIRST (`1 passed, N deselected`), then mutate.
-
 ## Open queue (when maintainer says proceed)
 - **KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING (maintainer 2026-08-13, "let's get this done
   at my return" — PARKED, nothing further to build; the machinery is shipped and the
