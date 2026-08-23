@@ -237,3 +237,36 @@ def test_a_failed_python_bootstrap_prints_what_it_probed(ps1: str) -> None:
     assert re.search(
         r"Show-PythonDiagnostics\s*\n\s*Stop-WithError", ps1
     ), "the diagnosis must run at the failure path, immediately before giving up"
+
+
+def test_the_probe_records_why_it_refused_an_interpreter(ps1: str) -> None:
+    """A probe that answers only "no" sends the operator back for another round trip.
+
+    Field failure this replaced: all three discovery paths found
+    `...\\Python313-arm64\\python.exe` and the script still reported "no interpreter
+    answers", with nothing saying which check refused it. The old body wrapped every
+    path in one try/except returning $null, so "PowerShell threw" and "this is not a
+    Python" were the same answer.
+
+    PowerShell 5.1 makes that worse: with $ErrorActionPreference = 'Stop' a native
+    command's stderr becomes a TERMINATING error even when redirected, so a working
+    interpreter can be refused by the shell rather than by its own output. The probe
+    must lower that for the duration of the call and record a reason on each exit.
+    """
+    body = ps_function_body(ps1, "Test-PythonCandidate")
+
+    assert "$ErrorActionPreference = 'Continue'" in body, (
+        "PS 5.1 turns native stderr into a terminating error under 'Stop'"
+    )
+    assert "finally" in body, "the caller's preference must be restored"
+
+    # Every rejecting branch reports; the count is what stops one path staying silent.
+    assert body.count("$script:PythonProbeLog +=") >= 5, (
+        "each way of refusing an interpreter needs its own recorded reason"
+    )
+
+    diagnostics = ps_function_body(ps1, "Show-PythonDiagnostics")
+    assert "$script:PythonProbeLog" in diagnostics, "the reasons must reach the operator"
+    # ARM64 vs x64 decides which dependency wheels exist at all, so it is a fact the
+    # report has to carry -- it is what identified the field machine.
+    assert "PROCESSOR_ARCHITECTURE" in diagnostics

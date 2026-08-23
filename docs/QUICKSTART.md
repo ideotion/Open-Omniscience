@@ -317,6 +317,20 @@ cd $HOME\Open-Omniscience
   do about it. Real-time scanning also slows the first `pip install` noticeably.
 - **Port.** Set `OO_PORT` before launching to move off 8000; `scripts\launch.cmd`
   honours it.
+- **Windows on ARM (ARM64).** Untested: CI runs `windows-latest`, which is x64. One
+  dependency is known to block a *native* ARM64 install — `cryptography`, which this
+  project needs for Ed25519 signing. It published `win_arm64` wheels only for
+  **46.0.0–46.0.3**; every later release is `win_amd64` only, so pip resolves to the
+  newest, finds no wheel, tries to build from Rust source, and fails. Checked on PyPI
+  2026-08-23; `sqlcipher3`, `lxml`, `bcrypt`, `pydantic-core`, `numpy` and `duckdb` all
+  do publish `win_arm64`, so encryption itself is fine. Two ways round it, and the
+  trade is real either way:
+  - **Install the x64 Python** (`python-3.13.x-amd64.exe` from python.org) and let
+    Windows emulate it. Every stock wheel then installs, including current
+    `cryptography`. Slower, nothing pinned, nothing held back.
+  - **Stay native ARM64** and pin `cryptography<=46.0.3`. Faster, but it holds a
+    security-critical library back several major versions — read its changelog before
+    choosing this, and prefer the emulated route unless you have a reason not to.
 
 ---
 

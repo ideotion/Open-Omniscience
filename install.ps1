@@ -74,6 +74,9 @@ $ProgressPreference    = 'SilentlyContinue'   # keeps winget/IWR progress bars o
 $RepoUrl     = 'https://github.com/ideotion/Open-Omniscience.git'
 $AppName     = 'Open Omniscience'
 $MinPython   = [version]'3.13'
+# Every reason a found interpreter was refused. Printed by Show-PythonDiagnostics:
+# a probe that says only "no" cannot be acted on.
+$script:PythonProbeLog = @()
 $ProvenExtras = 'analysis'                    # the set windows-latest CI installs every run
 
 # --------------------------------------------------------------------------- #
@@ -145,25 +148,55 @@ function Test-HasCommand {
 # --------------------------------------------------------------------------- #
 function Test-PythonCandidate {
     param([string[]] $Command)
+    $label = $Command -join ' '
+    $exe   = $Command[0]
+    $rest  = @()
+    if ($Command.Count -gt 1) { $rest = $Command[1..($Command.Count - 1)] }
+    $probe = 'import sys; print("%d.%d" % sys.version_info[:2]); print(sys.executable)'
+
+    # PowerShell 5.1 turns a native command's stderr into a TERMINATING error while
+    # $ErrorActionPreference is 'Stop' -- even when that stderr is redirected. The
+    # previous version caught it and returned $null, which made "PowerShell threw"
+    # indistinguishable from "this is not a Python": a found interpreter could be
+    # rejected with no way for anyone to see why. Drop to Continue for the call, and
+    # RECORD the reason on every path out.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     try {
-        $exe  = $Command[0]
-        $rest = @()
-        if ($Command.Count -gt 1) { $rest = $Command[1..($Command.Count - 1)] }
-        $script = 'import sys; print("%d.%d" % sys.version_info[:2]); print(sys.executable)'
         $global:LASTEXITCODE = 0
-        $out = & $exe @rest '-c' $script 2>$null
-        if ($LASTEXITCODE -ne 0) { return $null }
-        $lines = @($out | Where-Object { $_ -ne $null -and $_.ToString().Trim() -ne '' })
-        # A bare `python` on a fresh Windows 11 is the Microsoft Store execution-alias
-        # stub: it prints nothing and does not run code. Two lines of real output is
-        # what separates an interpreter from the stub.
-        if ($lines.Count -lt 2) { return $null }
-        $version = [version] $lines[0].ToString().Trim()
-        if ($version -lt $MinPython) { return $null }
-        return [pscustomobject]@{ Version = $version; Exe = $lines[1].ToString().Trim() }
+        $out  = & $exe @rest '-c' $probe 2>&1
+        $code = $LASTEXITCODE
     } catch {
+        $script:PythonProbeLog += "$label -- could not be launched: $($_.Exception.Message)"
+        return $null
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+
+    $text = (@($out) | ForEach-Object { $_.ToString().Trim() }) -join ' | '
+    if ($code -ne 0) {
+        $script:PythonProbeLog += "$label -- exit code ${code}: $text"
         return $null
     }
+    $lines = @($out | Where-Object { $_ -ne $null -and $_.ToString().Trim() -ne '' })
+    # A bare `python` on a fresh Windows 11 is the Microsoft Store execution-alias
+    # stub: it prints nothing and does not run code. Two lines of real output is
+    # what separates an interpreter from the stub.
+    if ($lines.Count -lt 2) {
+        $script:PythonProbeLog += "$label -- answered with fewer than two lines: $text"
+        return $null
+    }
+    try {
+        $version = [version] $lines[0].ToString().Trim()
+    } catch {
+        $script:PythonProbeLog += "$label -- unreadable version line: $($lines[0])"
+        return $null
+    }
+    if ($version -lt $MinPython) {
+        $script:PythonProbeLog += "$label -- version $version is below $MinPython"
+        return $null
+    }
+    return [pscustomobject]@{ Version = $version; Exe = $lines[1].ToString().Trim() }
 }
 
 # PEP 514: every Windows Python registers itself at
@@ -273,6 +306,13 @@ function Show-PythonDiagnostics {
     $fs = Get-FilesystemPythonPaths
     Write-Host "  on disk:            $(if ($fs) { $fs -join '; ' } else { 'no Python3* directory found' })" -ForegroundColor DarkGray
     Write-Host "  minimum required:   $MinPython" -ForegroundColor DarkGray
+    Write-Host "  this machine:       $env:PROCESSOR_ARCHITECTURE" -ForegroundColor DarkGray
+    if ($script:PythonProbeLog.Count -gt 0) {
+        Write-Host '  refused, and why:' -ForegroundColor DarkGray
+        foreach ($line in ($script:PythonProbeLog | Select-Object -Unique)) {
+            Write-Host "    - $line" -ForegroundColor DarkGray
+        }
+    }
     if ($script:LastWingetExit -ne $null) {
         Write-Host "  winget exit code:   $($script:LastWingetExit)" -ForegroundColor DarkGray
     }
