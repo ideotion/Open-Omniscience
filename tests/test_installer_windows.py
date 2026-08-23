@@ -313,3 +313,84 @@ def test_the_probe_and_its_parser_agree_on_the_line_count(ps1: str) -> None:
     assert f"$lines[{printed - 1}]" in body, (
         "the executable is the probe's last line; the parser must read that index"
     )
+
+
+def test_the_probe_reads_the_interpreter_platform_not_the_machine(ps1: str) -> None:
+    """`platform.machine()` inverts the ARM64 check; `sysconfig.get_platform()` does not.
+
+    What decides whether pip finds a wheel is the interpreter's OWN build platform
+    (`win-amd64` / `win-arm64`), which is what `sysconfig.get_platform()` reports.
+    `platform.machine()` on Windows reports the MACHINE, so an x64 python running
+    under ARM64 emulation -- exactly the configuration this fix installs -- answers
+    ARM64, and every check built on it decides the opposite of the truth.
+
+    Field failure this serves: cryptography, statsmodels and httptools publish no
+    win_arm64 wheel, so an ARM64 interpreter sent pip to a Rust + MSVC source build
+    that died on a machine with no toolchain.
+    """
+    body = ps_function_body(ps1, "Test-PythonCandidate")
+    match = re.search(r"\$probe\s*=\s*'([^']*)'", body)
+    assert match, "probe assignment not found"
+    probe = match.group(1)
+    assert "sysconfig.get_platform()" in probe, (
+        "the probe must report the interpreter's own wheel platform"
+    )
+    assert "platform.machine" not in probe, (
+        "platform.machine() reports the machine, not the interpreter -- it inverts "
+        "the check for an emulated x64 python, which is the case that matters"
+    )
+    assert "Platform =" in body, "the probe's platform must reach the caller"
+
+
+def test_an_arm64_machine_asks_winget_for_the_x64_python(ps1: str) -> None:
+    """Without an explicit architecture winget installs the one with no wheels.
+
+    winget defaults to the machine's own architecture, so on ARM64 every install and
+    every retry would fetch the arm64 build again -- the one whose dependency wheels
+    do not exist. The x64 build runs natively on Windows on ARM.
+    """
+    assert "--architecture" in ps1 and "'x64'" in ps1, (
+        "the ARM64 path must name the architecture winget should fetch"
+    )
+    # Every Python install call has to carry it, or one retry path quietly reinstalls
+    # the architecture that cannot work.
+    calls = re.findall(r"Install-WingetPackage[^\r\n]*Python\.Python[^\r\n]*", ps1)
+    assert calls, "no Python winget install found"
+    for call in calls:
+        assert "$pyArch" in call, f"a Python install ignores the architecture: {call}"
+
+
+def test_an_x64_machine_still_short_circuits_on_the_first_interpreter(ps1: str) -> None:
+    """The ARM64 fix must cost an ordinary machine nothing.
+
+    Preferring x64 means probing every candidate instead of stopping at the first
+    that answers. That is fine on ARM64, where it decides whether the install works
+    at all, and it is pure waste everywhere else -- so it is switched, not default.
+    """
+    body = ps_function_body(ps1, "Resolve-Python")
+    assert "param([switch] $PreferX64)" in body.replace("\n", " ").replace("  ", " "), (
+        "the preference must be a switch, so the default path is unchanged"
+    )
+    assert "if (-not $PreferX64) { return $found }" in body, (
+        "without the switch, the first working interpreter must still win immediately"
+    )
+
+
+def test_an_arm64_interpreter_is_reported_before_pip_runs_not_after(ps1: str) -> None:
+    """A wheel gap discovered by pip costs twenty minutes and reads as a wall of Rust.
+
+    The install cannot succeed on an ARM64 interpreter, so the script says which
+    packages will fail and how to fix it -- before it starts installing, not in the
+    middle of a source build. It does not refuse: a machine that does carry the MSVC
+    and Rust toolchain can build them, and refusing would be worse than trying.
+    """
+    stripped = ps1
+    assert "cryptography, statsmodels and httptools" in stripped, (
+        "name the packages that have no ARM64 wheel; a generic warning is not actionable"
+    )
+    assert "-amd64.exe" in stripped and "-arm64.exe" in stripped, (
+        "the manual route must name which installer file to take, and which not to"
+    )
+    warn = stripped.index("Still on an ARM64 interpreter")
+    pip = stripped.index("'-m', 'pip', 'install', '-e'")
+    assert warn < pip, "the warning must be printed before pip is invoked, not after"

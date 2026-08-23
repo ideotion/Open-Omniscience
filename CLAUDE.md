@@ -4572,6 +4572,31 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the dormant half stays operator-gated because `extensions.duckdb.org` is egress-blocked
     and the binaries ship blank by design. Bumping `verified` is then honest ONLY with the
     split written down beside it; a bare "1.5.5" would imply the per-platform work happened.
+  - **A "PIN AN OLDER VERSION" WORKAROUND IS ONLY AN OPTION IF SOME VERSION EVER CARRIED
+    THE ARTIFACT — query every release, not the one pip resolved (2026-08-23, Windows on
+    ARM):** an install died building `cryptography`, `statsmodels` and `httptools` from
+    source on an ARM64 machine. Reading the resolved versions gave the obvious remedy —
+    `cryptography` published `win_arm64` wheels for 46.0.0-46.0.3, so pin it — and the
+    previous QUICKSTART had already recommended exactly that. Walking the FULL release
+    history instead showed `statsmodels` and `httptools` have **never** published a
+    `win_arm64` wheel, so there is nothing to pin the other two to and the whole route is
+    dead: without a C and Rust toolchain the only thing that works is an x64 interpreter,
+    which Windows on ARM runs natively and for which all three ship wheels. The check is
+    four lines against the PyPI JSON API and it inverted the recommendation. GENERAL FORM:
+    before proposing a downgrade, ask whether the thing being downgraded TO exists — for
+    every blocker, not just the one you looked at first. **THE MECHANISM HALF is the trap
+    that would have made the fix decide backwards:** what determines whether a wheel exists
+    is the interpreter's own build platform (`sysconfig.get_platform()` -> `win-amd64` /
+    `win-arm64`), NOT the machine — and `platform.machine()` on Windows reports the MACHINE,
+    so an x64 python running under ARM64 emulation, which is precisely the configuration the
+    fix installs, answers `ARM64` and every check built on it reads the opposite of the
+    truth. THIRD, on defaults: a package manager asked to install without an explicit
+    architecture picks the machine's own, so on ARM64 every install AND every retry path
+    re-fetches the arch that cannot work — the architecture has to be named at each call
+    site, and a guard that only checks the flag appears somewhere in the file passes while
+    one retry quietly reinstalls the wrong build. And state a platform-gated precondition
+    BEFORE the expensive step: the same warning printed after a twenty-minute source build
+    arrives as the last line of a wall of Rust errors, where nobody reads it.
 ## Open queue (when maintainer says proceed)
 - **KEYWORD-TRIAGE REVIEW + THE STOPLIST RULING (maintainer 2026-08-13, "let's get this done
   at my return" — PARKED, nothing further to build; the machinery is shipped and the
