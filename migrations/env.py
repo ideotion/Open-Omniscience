@@ -29,6 +29,26 @@ if config.config_file_name is not None:
     # their diagnostics (including the noise-filtered ERROR the W4 fix targets)
     # forever after. uvicorn's own default logging config makes the same call with
     # this same override for the identical reason.
+    #
+    # TWO DISTINCT FAILURE MODES, both real, kept together deliberately: the
+    # first is the production one (an app logger muted for the rest of the
+    # process), the second is the test one (a caplog assertion that silently
+    # loses every record). They were written by separate passes against the
+    # same setting; neither supersedes the other.
+    # disable_existing_loggers=False (fileConfig's own default is True): the bare
+    # default silently sets `.disabled = True` on EVERY pre-existing logger not
+    # explicitly named in alembic.ini's [loggers] (only root/sqlalchemy/alembic are
+    # listed there) -- permanently, process-wide, for the rest of the run. Any test
+    # elsewhere in the suite that triggers an `alembic upgrade`/`alembic check` (which
+    # imports this module) BEFORE it, and that later asserts on a caplog-captured
+    # WARNING from an app-module logger (e.g. src.briefing.registry, src.analytics.
+    # columnar), silently loses every record -- `caplog.at_level()` only sets a
+    # logger's `.level`, never its `.disabled` flag, so it cannot undo this.
+    # Empirically confirmed (a standalone repro: getLogger() before fileConfig(),
+    # then fileConfig() with the bare default -> .disabled flips True and every
+    # later .warning() call is silently dropped). Same class of production risk too:
+    # a real boot-time migration self-heal would silently mute ordinary app logging
+    # for the rest of the process. Never intentional here -- keep it off.
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = Base.metadata

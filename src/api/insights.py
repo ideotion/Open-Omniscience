@@ -1353,6 +1353,26 @@ def insights_lunar_correlation(
 
 
 
+def _safe_rollback(db: Session) -> None:
+    """Roll back `db` after a step's exception, tolerating a bogus non-Session `db`
+    (e.g. the `db=object()` unit-test double) and any error `rollback()` itself raises.
+
+    A FAILED `db.commit()` (e.g. an IntegrityError, or a genuine 'database is locked'
+    under the single-writer gate) leaves a real SQLAlchemy Session's transaction marked
+    'must rollback' -- SQLAlchemy does NOT reset it automatically. warm_cache() runs
+    SEVERAL steps sharing ONE session, each in its own try/except that only LOGS a
+    failure; without an explicit rollback() here, the NEXT step's first DB touch would
+    raise `PendingRollbackError` (unrelated to that step's own work) and get logged as
+    if it independently failed too -- a cascade that hides the real, first failure
+    behind misleading noise in every subsequent step's log line. Best-effort: NEVER lets
+    a rollback failure propagate past this call.
+    """
+    try:
+        db.rollback()
+    except Exception:  # noqa: BLE001 - rollback itself must never break the caller
+        _LOG.warning("warm_cache: rollback after a failed step also failed", exc_info=True)
+
+
 def warm_cache(db: Session) -> dict:
     """Pre-compute the common whole-corpus views into the read cache so the Home /
     Insights surfaces never hit a cold heavy query (perf, field report 2026-06-18).
@@ -1390,6 +1410,9 @@ def warm_cache(db: Session) -> dict:
         db.commit()
     except Exception:  # noqa: BLE001 - never fatal to a pass
         _LOG.warning("columnar read-model refresh failed during warm_cache", exc_info=True)
+        # PR-D / W1 fix-forward: a failed db.commit() above leaves the session's
+        # transaction poisoned -- roll it back so the NEXT step doesn't cascade-fail.
+        _safe_rollback(db)
 
     # Opt-in (OO_COLUMNAR_SERVE=1) in-memory rollup serve: (re)build it in the background so
     # the windowed views pick up new articles. No-op unless opted in; never blocks.
@@ -1401,6 +1424,7 @@ def warm_cache(db: Session) -> dict:
         db.commit()  # PR-D / W1: release the transaction between steps (see above)
     except Exception:  # noqa: BLE001 - a background accelerator must never break a pass
         _LOG.warning("rollup serve refresh failed during warm_cache", exc_info=True)
+        _safe_rollback(db)  # PR-D / W1 fix-forward: never cascade a poisoned session
 
     # Background-refresh the POLLED alert strip (field test 2026-07-08, Item 8): the
     # Home strip polls /api/signals/alerts, whose compute_alerts runs a 45-day space-time
@@ -1415,6 +1439,7 @@ def warm_cache(db: Session) -> dict:
         db.commit()  # PR-D / W1: release the transaction between steps (see above)
     except Exception:  # noqa: BLE001 - a background accelerator must never break a pass
         _LOG.warning("alert poll-cache refresh failed during warm_cache", exc_info=True)
+        _safe_rollback(db)  # PR-D / W1 fix-forward: never cascade a poisoned session
 
     warmed: list[str] = []
     # Warm the EXACT keys the surfaces request, or the warm value is never a hit and
@@ -1474,6 +1499,10 @@ def warm_cache(db: Session) -> dict:
             db.commit()
         except Exception:  # noqa: BLE001 - a commit failure must not break warming
             _LOG.warning("warm_cache: commit after warming %s failed", key, exc_info=True)
+            # PR-D / W1 fix-forward: without this, a poisoned session would make
+            # EVERY remaining spec in this loop fail too (PendingRollbackError),
+            # each misreported as its own independent warming failure.
+            _safe_rollback(db)
     return {"warmed": warmed}
 
 
