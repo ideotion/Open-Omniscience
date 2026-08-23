@@ -71,9 +71,17 @@ _SWAP_QUIESCE_S = 180.0
 # away on its own. On POSIX that never mattered: unlink works on an open file. Windows
 # refuses, and the field saw the raw refusal
 # ("[WinError 32] ... open_omniscience.db-wal") reach the operator as the whole
-# explanation. The handles in question are short -- a status poll, a background read
-# finishing -- so waiting them out is the fix, not a workaround.
-_SWAP_HANDLE_WAIT_S = float(os.environ.get("OO_SWAP_HANDLE_WAIT_S", "20") or 20)
+# explanation.
+#
+# 20s was the first value, chosen for a handle that is already on its way out -- a
+# status poll, a background read finishing. It is too short for the other holder a
+# Windows machine has: real-time antivirus, which opens a multi-gigabyte database
+# the moment the merge finishes writing it and can hold it for minutes. The cost is
+# asymmetric and that is what sets the number. Waiting longer can only ever delay a
+# failure that was going to happen anyway; giving up early throws away an import that
+# has already run for ten minutes. It stays BOUNDED, because a handle that never goes
+# away must still end in an answer rather than a hang.
+_SWAP_HANDLE_WAIT_S = float(os.environ.get("OO_SWAP_HANDLE_WAIT_S", "300") or 300)
 
 # How long to let the pre-swap WAL checkpoint run before treating the corpus as busy.
 _SWAP_CHECKPOINT_S = float(os.environ.get("OO_SWAP_CHECKPOINT_S", "60") or 60)
@@ -140,31 +148,138 @@ def _file_is_locked(exc: BaseException) -> bool:
     return getattr(exc, "winerror", None) in (32, 33)
 
 
+def _retry_while_locked(
+    op: Callable[[], object],
+    *,
+    deadline: float,
+    on_retry: Callable[[], object] | None = None,
+) -> None:
+    """Run ``op``, waiting out a Windows file lock until ``deadline``.
+
+    The deadline is ABSOLUTE (``time.monotonic()``) rather than a duration,
+    because the callers have several steps facing the SAME holder: a duration
+    would hand each step a fresh window, so a three-step swap would wait three
+    times what its own message says it waited.
+
+    Retries ONLY a lock. Any other error -- a read-only volume, a vanished
+    directory, a permissions refusal -- raises at once, because no amount of
+    waiting changes those answers and retrying them would just make the operator
+    wait out the whole budget to reach an identical failure.
+
+    Re-raises the ORIGINAL exception when the budget runs out, deliberately: it
+    carries the OS's own reason and the path it refused, which is more than any
+    message composed here would say.
+    """
+    attempt = 0
+    while True:
+        try:
+            op()
+            return
+        except OSError as exc:
+            if not _file_is_locked(exc) or time.monotonic() >= deadline:
+                raise
+            attempt += 1
+            if on_retry is not None and attempt % 8 == 0:
+                # A pool that was disposed can be re-opened by anything in this
+                # process that touches the database -- a scheduled snapshot, a
+                # progress write -- and then WE are the holder, waiting for
+                # ourselves. Re-disposing costs nothing when nothing reopened.
+                try:
+                    on_retry()
+                except Exception:  # noqa: BLE001 - a courtesy, never load-bearing
+                    _LOG.debug("re-dispose during a locked-file retry failed", exc_info=True)
+            time.sleep(0.25)
+
+
+def _lock_holder_note(exc: BaseException) -> str:
+    """Best-effort: is THIS app holding the file, or is something else?
+
+    The two answers call for opposite responses -- one is a bug in the app, the
+    other is a program the operator can close -- and the OS refusal names
+    neither, so without this the operator is told to close a program that may
+    never have been involved.
+
+    ``psutil`` is an optional extra, so an install without it gets NO note
+    rather than a guess. The probe only ever inspects our OWN process: naming
+    the other holder would need privileges we do not ask for, so the honest
+    answer there is "not us", never a name.
+    """
+    name = getattr(exc, "filename", None)
+    if not name:
+        return ""
+    try:
+        import psutil
+    except Exception:  # noqa: BLE001 - optional extra; absence is not an error
+        return ""
+    try:
+        wanted = os.path.normcase(os.path.abspath(str(name)))
+        ours = any(
+            os.path.normcase(os.path.abspath(f.path)) == wanted
+            for f in psutil.Process().open_files()
+        )
+    except Exception:  # noqa: BLE001 - a diagnostic must never replace the failure
+        return ""
+    if ours:
+        return (
+            " This app's own process still has that file open, so closing other "
+            "programs will not help -- that is a bug in the app, and worth reporting."
+        )
+    return (
+        " This app's own process does NOT have that file open, so the holder is "
+        "another program -- on Windows that is usually real-time antivirus "
+        "scanning the data folder, or a second copy of the app."
+    )
+
+
 def _clear_stale_side_files(target: Path, *, wait_s: float | None = None) -> None:
     """Remove the live -wal/-shm so the incoming database is never opened beside them.
 
     Leaving them is not an option: SQLite would apply the OLD write-ahead log to the
-    NEW database file, which is corruption rather than a failed restore. So this is
-    load-bearing, and it is the step that fails on Windows.
+    NEW database file, which is corruption rather than a failed restore.
 
-    Retries only a LOCK, and only for a bounded window. Any other error -- a
-    read-only volume, a vanished directory -- raises immediately, because retrying
-    it would just delay the same answer. Nothing has been written to the live corpus
-    when this raises: the WAL was checkpointed a moment ago, so the database file is
-    complete on its own, and the replace has not run.
+    Nothing is lost if this raises: the WAL was checkpointed a moment ago, so the
+    database file is complete on its own and the replace has not run.
     """
+    from src.database.session import dispose_engine
+
     budget = _SWAP_HANDLE_WAIT_S if wait_s is None else wait_s
+    # ONE deadline for both suffixes. -wal and -shm are held by the same process
+    # for the same reason, so a per-file budget would spend twice what the caller
+    # allotted -- and the caller then computes the REPLACE's budget from what is
+    # left, so over-spending here silently leaves the step that matters with none.
+    deadline = time.monotonic() + budget
     for suffix in ("-wal", "-shm"):
         stale = target.with_name(target.name + suffix)
-        deadline = time.monotonic() + budget
-        while True:
-            try:
-                stale.unlink(missing_ok=True)
-                break
-            except OSError as exc:
-                if not _file_is_locked(exc) or time.monotonic() >= deadline:
-                    raise
-                time.sleep(0.25)
+        _retry_while_locked(
+            lambda p=stale: p.unlink(missing_ok=True),  # type: ignore[misc]
+            deadline=deadline,
+            on_retry=dispose_engine,
+        )
+
+
+def _replace_live_corpus(working: Path, target: Path, *, wait_s: float | None = None) -> None:
+    """Put the merged corpus in place, waiting out a lock on the DESTINATION.
+
+    This is the operation the first cut of the lock fix left bare, and it is the
+    one that matters. Windows ``MoveFileEx`` refuses to replace a file another
+    process still holds open, raising the SAME ERROR_SHARING_VIOLATION the unlinks
+    above meet -- so guarding only the unlinks moved the failure from
+    ``...db-wal`` to ``...db`` and changed nothing else.
+
+    Retrying is free here. ``os.replace`` is atomic: it either happened or it did
+    not, so a refusal leaves both files exactly as they were. And by this point the
+    live corpus has been checkpointed and its side files removed, which costs it
+    nothing -- the database file is complete on its own and SQLite recreates a WAL
+    on the next open -- so even a permanent refusal leaves an intact corpus.
+    """
+    from src.database.session import dispose_engine
+
+    budget = _SWAP_HANDLE_WAIT_S if wait_s is None else wait_s
+    _retry_while_locked(
+        lambda: os.replace(working, target),
+        deadline=time.monotonic() + budget,
+        on_retry=dispose_engine,
+    )
 
 
 # 2026-07-26 hardware diagnostics W5: _prune_snapshots() (below) only fires as a
@@ -267,8 +382,9 @@ def classify_restore_error(action: str, exc: Exception) -> str:
             f"could not {action} this backup because another program still has your "
             f"corpus open, so its files could not be replaced. Nothing was changed — "
             f"your corpus is exactly as it was. Close any other window or copy of the "
-            f"app (and anything reading data/open_omniscience.db), then import again: "
-            f"{msg}"
+            f"app (and anything reading data/open_omniscience.db), then import again."
+            f"{_lock_holder_note(exc)} Waited {_SWAP_HANDLE_WAIT_S:.0f}s for it to be "
+            f"released: {msg}"
         )
     if isinstance(exc, _db_integrity_error_types()):
         return (
@@ -4999,8 +5115,15 @@ def run_restore(
                     "import again."
                 )
             dispose_engine()
-            _clear_stale_side_files(target)
-            os.replace(working, target)  # atomic on the same filesystem
+            # ONE budget for the whole swap, not one per file: -wal, -shm and the
+            # replace all face the same holder, so a per-step budget would stall a
+            # doomed swap for three times as long while telling the operator it had
+            # waited once. Each step gets whatever is left.
+            swap_deadline = time.monotonic() + _SWAP_HANDLE_WAIT_S
+            _clear_stale_side_files(target, wait_s=max(0.0, swap_deadline - time.monotonic()))
+            _replace_live_corpus(
+                working, target, wait_s=max(0.0, swap_deadline - time.monotonic())
+            )  # atomic on the same filesystem
             init_db()
 
         report["committed"] = True

@@ -168,13 +168,19 @@ def test_the_swap_waits_and_refuses_rather_than_replacing_under_a_writer() -> No
     import src.backup.merge as merge
 
     src = inspect.getsource(merge.run_restore)
-    # Anchored on the CALL and on the swap's OWN replace: run_restore has several
-    # os.replace calls (side files) and names wait_for_quiescence twice (import + call),
-    # so a bare substring would compare the wrong pair of positions.
-    # No closing paren in the anchor: the call gained a `should_stop=` argument once
-    # already, and a guard that pins the argument list breaks on the next one while
-    # saying nothing about the property it is named for.
-    CALL, SWAP = "wait_for_quiescence(_SWAP_QUIESCE_S", "os.replace(working, target)"
+    # Anchored on the CALL and on the COMMIT POINT. `os.replace(working, target)` was
+    # the anchor until the Windows lock fix moved that call behind
+    # `_replace_live_corpus()` (MoveFileEx refuses an open DESTINATION, so the replace
+    # needed the same bounded retry the side-file unlinks got). The PROPERTY is
+    # unchanged -- the barrier still precedes the replace, and a timeout still aborts
+    # pre-swap -- so this is a re-anchor, not a relaxation: the mutation that moves the
+    # barrier after the swap still fails it.
+    # No closing paren in either anchor: the quiescence call gained a `should_stop=`
+    # argument once already and the replace takes a `wait_s=`, and a guard that pins an
+    # argument list breaks on the next one while saying nothing about the property it is
+    # named for. `_replace_live_corpus(working, target` would not match at all -- the
+    # call spans a line break.
+    CALL, SWAP = "wait_for_quiescence(_SWAP_QUIESCE_S", "_replace_live_corpus("
     assert src.count(CALL) == 1 and src.count(SWAP) == 1
     # The barrier is INSIDE the timed swap stage (the wait is real time that stage
     # spends) but before the commit point. That ordering is the whole property: waiting

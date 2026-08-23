@@ -4881,6 +4881,69 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the operator's choice passed everything until a TestClient guard was added — and it had
     to be a TestClient, because a route called directly receives `Query(...)` sentinels,
     which are truthy, so a direct-call check would have passed on exactly that bug.
+  - **FIXING A PROPERTY AT ONE OF ITS TWO CALL SITES IS NOT FIXING IT — and the second
+    site was in the SAME function, four lines down (2026-08-23, the Windows restore
+    failing a second time):** the first fix taught the swap that Windows will not UNLINK
+    an open file: `_clear_stale_side_files` got a retry, `_file_is_locked` got a winerror
+    check, `classify_restore_error` got a branch naming the remedy. It shipped, and the
+    operator hit `[WinError 32]` again on the same `-wal`. The reason is that
+    `os.replace(working, target)` is `MoveFileExW(..., MOVEFILE_REPLACE_EXISTING)`, which
+    needs the DESTINATION to be closed for exactly the same reason unlink does — so the
+    retry protected one of the two Windows operations in that block and the other was
+    left bare. The ledger already carries this shape twice (`release_backend` reading
+    `stopped` alone; the vLLM stop with two paths and the guarantee in one) and it
+    recurred anyway, which says the tell is not "grep the module" but **"name the OS
+    PROPERTY you are working around, then list every call in the block that depends on
+    it"** — here: anything that unlinks, replaces or renames. THREE RIDERS. (a) One
+    budget for the whole block, not one per call: two 20s retries read as 20s in the
+    message and are 40s in the wall, so the deadline is computed once and each step gets
+    what is left — and note that "one budget" is a claim about the INNER loop too: my
+    own first cut computed the shared deadline at the CALL SITE and then handed each of
+    `-wal`/`-shm` the full remainder, so the side-file step could spend 2x while the
+    replace — the step that matters — was left with `max(0, ...)` = ZERO. **THE GUARD I
+    WROTE FOR IT WAS VACUOUS TWICE.** The `ast` version asserted the call-site shape
+    (`wait_s` passed, the deadline assigned once) and says nothing about what the callee
+    does with it. The behavioural replacement locked BOTH files permanently — and that
+    does not discriminate either, because the first file raises at its deadline and the
+    second is never reached, so per-file and shared spend the same. The scenario has to
+    RELEASE the first file partway, so the loop actually reaches the second and a fresh
+    window shows up on the clock (measured: 1.50s against a 1.0s budget). General form:
+    for a guard about a BUDGET SHARED ACROSS STEPS, the fixture must reach every step —
+    a fixture that fails at step one tests the step, never the sharing. (b) A retry whose
+    holder is OUR OWN pool must DO something between
+    attempts — `engine.dispose()` closes only IDLE connections, so a re-dispose every few
+    attempts is what converts waiting into progress; waiting alone is how a 20s budget
+    expires against a handle that was never going to be released by time. (c) When the
+    budget expires the message must say WHAT IT WAITED and, where it can, WHO held it:
+    "close any other window" is unactionable advice if the operator has none open, and it
+    is the sentence that sends a real bug back as user error.
+  - **AN ERROR THAT NAMES THE FILE AND NEVER THE HOLDER IS A DIAGNOSTIC DEAD END — build
+    the probe out of the SAME primitive the failing operation needs (2026-08-23, the
+    Windows lock report):** two rounds of fixes produced no way to tell a bug in this app
+    from a program the operator could simply close, because `[WinError 32]` names the
+    path and nothing else. The answer is not to parse the error harder: Windows will hand
+    you the fact directly if you ask for the same EXCLUSIVITY the swap needs —
+    `CreateFileW(GENERIC_READ, dwShareMode=0, OPEN_EXISTING)` succeeds only when no other
+    handle exists, and closing it immediately changes nothing. A probe built from the
+    operation's own precondition cannot drift from it the way a heuristic would.
+    **THE CTYPES TRAP THAT WOULD HAVE INVERTED THE WHOLE FINDING:** `INVALID_HANDLE_VALUE`
+    is `(HANDLE)-1`, and a function declared `restype = wintypes.HANDLE` (a `c_void_p`)
+    returns the UNSIGNED form — `18446744073709551615` on 64-bit — so `handle == -1` is
+    **False on every failed call**, and a REFUSED open would have been reported as a
+    success on precisely the case the module exists to detect. Compare against
+    `ctypes.c_void_p(-1).value`, and note the sibling: `ctypes.get_last_error()` returns 0
+    unless the library was opened `WinDLL(..., use_last_error=True)`, so a naive read can
+    report a different call's error under this one's name. TWO HONESTY RULES the report
+    needed. (a) NOT-MEASURED is a third state: reading a probe that did not run as "free"
+    via `.get("exclusive_open", True)` prints an all-clear for an unanswered question —
+    the `.get(key, 0)` family again, and here it would tell an operator to retry a restore
+    that is still doomed. (b) An empty holder list is only a finding when the sweep was
+    COMPLETE: enumerating another process's handles needs privileges this app does not
+    ask for, so refused and unreached processes are counted and published, because
+    "not visible" and "not there" are opposite answers. And the exclusion-path check is
+    the recorded containment trap in a new place — `…\Open-Omniscience-old` starts with
+    `…\Open-Omniscience`, and reporting that as excluded tells an operator they already
+    applied a remedy they did not.
 ## Open queue (when maintainer says proceed)
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
   is still open (found 2026-08-20 while reviewing a CI red on PR #963; RECORD-ONLY, nothing

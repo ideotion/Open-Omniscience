@@ -133,7 +133,13 @@ def test_there_is_deliberately_NO_abort_point_after_the_swap():
     # replace is exactly what the ruling requires, and the old split called it a violation.
     # Splitting here is strictly stronger for the property named -- it still catches the
     # one thing that would be unsound, and no longer fires on the many things that are not.
-    SWAP = "os.replace(working, target)"
+    # RE-ANCHORED AGAIN 2026-08-23: the commit point moved INTO a helper
+    # (_replace_live_corpus) when the replace gained the Windows lock retry, so the
+    # old literal no longer appears in run_restore at all. The count assertion below
+    # is what caught it rather than letting the split silently match nothing -- which
+    # is the whole reason it is there. The property is unchanged: this still names the
+    # single point past which there is no undo.
+    SWAP = "_replace_live_corpus("
     assert body.count(SWAP) == 1, "the anchor must be the single commit point, or the split lies"
     after_swap = body.split(SWAP, 1)[1]
     assert "_abort_point(" not in after_swap, (
