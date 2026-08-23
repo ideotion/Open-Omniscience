@@ -3019,3 +3019,81 @@ Until then: **do not invest in the legacy import path** — no progress plumbing
 queue membership, no rate display. See
 [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-29_IMPORT_PERFORMANCE.md`](design/AUTONOMOUS_SESSION_BRIEF_2026-07-29_IMPORT_PERFORMANCE.md)
 §9 (scope fences).
+
+---
+
+## The Bulletin — a periodic corpus document (maintainer design session 2026-07-31; BUILD ORDER SHIPPED 2026-08-01, extended 2026-08-11/12)
+
+Design of record: [`docs/design/BULLETIN_DESIGN_2026-07-31.md`](design/BULLETIN_DESIGN_2026-07-31.md)
+(21 sections, 17 maintainer rulings). This entry carries the **why** and the open remainder;
+the spec carries the what, and [`docs/ROADMAP.md`](ROADMAP.md) §4 carries the status board.
+
+A document generated from the corpus over one closed period, deterministic first, with a
+removable local-LLM narration layer and an owner-only evidence archive.
+
+**Why it exists.** Every other surface answers a question the reader brought. This one answers
+"what did my corpus hold this week" — the question nobody asks because there is nowhere to ask
+it, and the one a periodic instrument is uniquely able to answer. It is also the only artifact
+in the app designed to *leave* the machine, which is why most of its design is about what the
+document must say about itself before anyone else reads it.
+
+**The load-bearing decisions, and why they went the way they did:**
+
+- **NAME.** "Bulletin", chosen so that "Synthesis" keeps its existing meaning (the shipped
+  selection tool) and NOTHING existing is renamed. "AI summary" was rejected as a mislabel: the
+  document is deterministic-first, and its narration is off below the hardware gate.
+- **WINDOWS — the rising window EQUALS the coverage window.** The proposed
+  fraction-of-period ratios were refuted with a worked example rather than on taste: a story
+  peaking on day 2 sits inside its *own* baseline and reads as FALLING in the edition covering
+  its own week, and 6/7 of corpus time never contributes to any rising signal at all.
+- **HOURLY IS BLOCKED, NOT TWEAKABLE.** `KeywordMention.observed_on` is a `Date` — the time is
+  destroyed at write — and `created_at` cannot substitute because re-index deletes and reinserts
+  every row stamped `now()`. Daily is the floor cadence, and it is a schema fact, not a setting.
+- **THE AI SETTING IS A TIME BUDGET, NOT A COUNT.** Deterministic counts stay exact and uncapped;
+  only narration is sampled. A count would have to be translated into time by the operator using
+  a number nothing had measured.
+- **TWO LAYERS, MEETING BY ADJACENCY.** Narration sits *beside* the story facts it narrates,
+  never interleaved, so a reader can always see which sentences a model wrote. "Removable" is an
+  asymmetry, not a docstring: turning narration on ADDS keys and changes no number already there,
+  which is why a guard asserts exactly that rather than asserting the layer is optional.
+- **NO "TOP STORY", EVER.** That is where an implicit composite score creeps in. Ordering is the
+  disclosed `explain_order` tuple and the section header states its method. The framing verb is
+  "what rose in this corpus", never "what trended".
+- **A CROSS-TIME COUNTERWEIGHT IS STRUCTURAL.** A periodic document trains a reader that recent
+  equals important. `through_time` exists to push back — a lens, never a reweighting.
+- **THE PUBLISHED ARTIFACT CARRIES EXTERNAL IDENTITY ONLY.** A local article id resolves to a
+  *different* article on a recipient's install, so a local link would send a reader to the wrong
+  thing with no way to notice. Where no source URL exists the document prints no link at all
+  rather than one that lies.
+- **AUTOMATION REACHES A DRAFT AND STOPS.** The operator is the byline. Excluding a section
+  RE-RENDERS from the saved record rather than editing output, so a published number is always a
+  number the record contains — and the document states that it is a selection, because a reader
+  cannot see an omission.
+
+**OPEN QUESTIONS (§20) — four of five still open, with their real state:**
+
+1. **Final section list.** Eight shipped (`rising_concepts · across_channels · country_coverage ·
+   by_topic_tag · changes_of_record · alerts · through_time · cards`) — §11's proposal plus
+   `country_coverage` and `cards`. Answered *de facto* by what shipped; never formally ruled.
+2. **An introduction — one, templated, or none?** None built. The document opens on a mechanical
+   framing line and the masthead; there is no generated prose above the first section. Genuinely
+   open, and the cheapest of the five to answer.
+3. **Mail sending — never, or opt-in later?** Not built, and the reason is recorded rather than
+   deferred: sending is real egress that reveals the operator to a mail provider, off Tor, with
+   stored credentials. The current exit is download plus a short digest for paste.
+4. **Should Layer A be available BELOW the hardware gate?** It needs no model, so a GPU-less
+   operator is currently denied even the deterministic document. This is ONE constant with
+   exactly one read (`src/bulletin/gate.py:LAYER_A_REQUIRES_CAPABLE_HARDWARE`, pinned by a test
+   that counts the reads) — a one-line change, not an audit. The strongest open question here.
+5. **Review-screen UX.** Shipped as one *reading* of the question — a checkbox per section and
+   story with per-sentence verdicts — not as a ruled design.
+
+**REMAINING slices:** (S1) the §14 Layer-B **`BackgroundJob` with a persisted cursor** — narration
+runs inline inside the generate request today, which is right for a bounded story cap and wrong
+for a long run, and the design record explicitly warns against repeating the abort-to-done bug
+this repo has fixed three times (a transient LLM error must retry with backoff, never end a run in
+a benign-looking "done"). (S2) **§18's export-privacy enumeration** before a first evidence archive
+leaves a machine: the document reveals the operator's source list, interests, cadence and — via
+timestamps — their timezone, and the archive is plaintext leaving an encrypted store. (S3) the
+maintainer **click-through** — every frontend slice shipped browser-unverified per fork-3. (S4) the
+§6.3 time budget rests on a guess until `/llm-bench` is run on a GPU machine *and* a slow one.
