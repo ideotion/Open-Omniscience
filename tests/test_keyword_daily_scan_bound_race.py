@@ -31,15 +31,69 @@ new row lands BEHIND the scan's already-advanced cursor).
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from sqlalchemy import create_engine, event, insert, text
 from sqlalchemy.orm import sessionmaker
 
 from src.analytics import columnar
 from src.database import session as db_session
 from src.database.models import Article, Base, Keyword, KeywordMention, Source
+
+
+def _columnar_engine_available() -> bool:
+    """The SOURCE OF TRUTH for "can ``columnar.connect()`` hand back a connection".
+
+    Deliberately mirrors ``columnar.connect``'s OWN guard (columnar.py) rather than
+    probing ``duckdb_available()`` alone: that function answers "is the optional
+    ``duckdb`` extra importable", while ``connect()`` returns ``None`` for a SECOND
+    reason too -- the ``OO_COLUMNAR=0`` operator kill switch. A guard that reads only
+    half the condition skips honestly on a core install and then fails on an operator
+    who turned the engine off, which is the same defect wearing a different hat.
+    """
+    return columnar.duckdb_available() and os.getenv("OO_COLUMNAR") != "0"
+
+
+needs_columnar = pytest.mark.skipif(
+    not _columnar_engine_available(),
+    reason=(
+        "the derived columnar engine is unavailable (the optional `duckdb` extra is "
+        "absent, or OO_COLUMNAR=0), so `columnar.connect()` honestly returns None and "
+        "there is no store to build -- see test_connect_degrades_honestly_when_the_"
+        "engine_is_unavailable, which RUNS in that configuration"
+    ),
+)
+
+
+def test_connect_degrades_honestly_when_the_engine_is_unavailable():
+    """The NEGATIVE-SPACE twin of the skip guard above -- and it must RUN on a core
+    install, which is the whole point: a `skipif` alone is a mute button, asserting
+    nothing about the configuration it skips in.
+
+    ``columnar.connect``'s own docstring promises it returns ``None`` when the engine
+    is unavailable "so the caller falls back to the live query". That promise is the
+    reason the scan-bound tests below may skip rather than fail, so it is asserted
+    here rather than assumed.
+    """
+    con = columnar.connect(passphrase=None)
+    if _columnar_engine_available():
+        assert con is not None, (
+            "duckdb is importable and OO_COLUMNAR is not 0, so connect() must hand "
+            "back a real connection -- a None here would mean the engine failed for "
+            "some THIRD reason the skip guard cannot see, and the tests below would "
+            "then skip while silently hiding it"
+        )
+        con.close()
+    else:
+        assert con is None, (
+            "the engine is unavailable, so connect() must degrade to None rather than "
+            "raise or hand back a half-built connection -- this is the contract its "
+            "own docstring states, and the tests below rely on it to skip honestly"
+        )
+
 
 _BASE = datetime(2024, 1, 1, tzinfo=UTC)
 
@@ -95,6 +149,7 @@ def _trigger_write_before_call(scanner, writer, *, call_n: int, write_fn):
     return lambda: setattr(scanner, "execute", real_execute)  # restore hook
 
 
+@needs_columnar
 def test_a_row_already_read_that_is_deleted_and_reinserted_to_a_higher_id_is_never_double_counted(
     tmp_path,
 ):
@@ -176,6 +231,7 @@ def test_a_row_already_read_that_is_deleted_and_reinserted_to_a_higher_id_is_nev
     eng.dispose()
 
 
+@needs_columnar
 def test_a_reinsert_that_reuses_a_freed_max_id_is_excluded_this_build_but_self_corrects_on_the_next(
     tmp_path,
 ):
@@ -258,6 +314,7 @@ def test_a_reinsert_that_reuses_a_freed_max_id_is_excluded_this_build_but_self_c
     eng.dispose()
 
 
+@needs_columnar
 def test_watermark_reflects_the_true_max_id_even_when_the_tail_rows_are_all_undated(tmp_path):
     """TRANSACTIONAL-SEMANTICS FINDING #2 (MEDIUM): ``last_mention_id`` must track the TRUE
     max mention id seen this build, including UNDATED rows (``observed_on IS NULL``) that sit

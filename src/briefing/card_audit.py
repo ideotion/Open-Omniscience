@@ -495,7 +495,9 @@ def observe_producers(session) -> list[ProducerOutcome]:
 
     Mirrors ``registry.run_all``'s isolation contract exactly — one producer's
     exception can never abort the pass, non-``Card`` items are dropped, and the
-    same WAL guard / between-producer commit are used — but instead of collapsing
+    same WAL guard (entered at the same PER-PRODUCER scope, which is what makes
+    the timings describe production) / between-producer commit are used — but
+    instead of collapsing
     every empty result into an indistinguishable ``[]`` it records WHICH of the
     three states each producer reached. ``run_all`` itself is NOT modified,
     imported, or wrapped in a way that changes its behaviour; this is a parallel
@@ -505,36 +507,52 @@ def observe_producers(session) -> list[ProducerOutcome]:
     from src.briefing.card import Card
     from src.briefing.registry import _REGISTRY, _release_transaction, _wal_guard
 
+    from src.briefing.registry import _drain_pending
+
     out: list[ProducerOutcome] = []
-    with _wal_guard(session):
-        for name, producer in list(_REGISTRY):
-            started = time.monotonic()
-            try:
+    for name, producer in list(_REGISTRY):
+        started = time.monotonic()
+        try:
+            # PR-D / W1 fix-forward: entered PER PRODUCER, exactly as
+            # ``run_all_bounded`` now does, and for the same reason -- entering
+            # `_wal_guard` is what runs `_drain_pending`, closing whatever scan the
+            # PREVIOUS producer left mid-flight. THE SCOPE IS PART OF THE MIRRORING,
+            # not an implementation detail: this observer exists to describe what
+            # `run_all` does, so a guard entered once for the whole loop here would
+            # make every timing it reports a measurement of a DIFFERENT pinning
+            # regime than the one production runs under -- an auditor quietly
+            # describing code that is not the code.
+            with _wal_guard(session):
                 produced = producer(session) or []
-            except Exception as exc:  # noqa: BLE001 - the point: capture, never abort
-                out.append(
-                    ProducerOutcome(
-                        name=name,
-                        outcome="error",
-                        elapsed_s=time.monotonic() - started,
-                        error_type=type(exc).__name__,
-                        error_message=str(exc)[:500],
-                    )
-                )
-                _release_transaction(session)
-                continue
-            cards = [c for c in produced if isinstance(c, Card)]
+        except Exception as exc:  # noqa: BLE001 - the point: capture, never abort
             out.append(
                 ProducerOutcome(
                     name=name,
-                    outcome="ok" if cards else "no-signal",
-                    cards_proposed=len(cards),
+                    outcome="error",
                     elapsed_s=time.monotonic() - started,
-                    non_card_items=len(produced) - len(cards),
-                    cards=cards,
+                    error_type=type(exc).__name__,
+                    error_message=str(exc)[:500],
                 )
             )
             _release_transaction(session)
+            continue
+        cards = [c for c in produced if isinstance(c, Card)]
+        out.append(
+            ProducerOutcome(
+                name=name,
+                outcome="ok" if cards else "no-signal",
+                cards_proposed=len(cards),
+                elapsed_s=time.monotonic() - started,
+                non_card_items=len(produced) - len(cards),
+                cards=cards,
+            )
+        )
+        _release_transaction(session)
+    # Close what the LAST producer left open -- there is no further `_wal_guard`
+    # call in this invocation to do it. Same reasoning as `run_all_bounded`'s own
+    # trailing drain; reached by the `continue` path too, since it sits after the
+    # loop rather than inside it.
+    _drain_pending(session)
     return out
 
 
