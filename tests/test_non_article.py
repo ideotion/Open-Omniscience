@@ -292,3 +292,49 @@ def test_the_reported_index_page_rate_is_a_FLOOR_not_a_census():
                 "https://example.com/obituaries"):
         assert classify_non_article(url) is None, url
         assert classify_index_page(url) is None, url
+
+
+# --------------------------------------------------------------------------- #
+# A query-string item id vetoes the homepage / section-landing rules
+# --------------------------------------------------------------------------- #
+# Found by the 2026-08-23 criteria-calibration bundle (0.3 gate row 5): on a 5,010-article
+# instance the ENTIRE drop path proposed four articles, all four Antiwar.com
+# ``/news/?articleid=NNNN``, all four under the reason "section landing '/news'" — which is
+# false of a URL that names one article. Their function-word densities were 0.28-0.37, i.e.
+# prose. So the only quarantine this corpus's criteria proposed was 4/4 false positives.
+
+@pytest.mark.parametrize("url", [
+    "https://www.antiwar.com/news/?articleid=2504",   # the field specimens, verbatim
+    "http://antiwar.com/news/?articleid=2637",
+    "https://example.com/?p=12345",                   # WordPress default permalink
+    "https://example.com/news/?story_id=443",
+    "https://example.com/?nid=1234",
+])
+def test_a_query_string_item_id_is_not_a_section_landing_or_a_homepage(url):
+    """The DIRECTION that matters: a false positive here quarantines a real article."""
+    assert classify_non_article(url, text="A short real page body.", word_count=50) is None, url
+
+
+@pytest.mark.parametrize("url,signal", [
+    # The twin. Widening this veto until it swallows genuine listings would be the same
+    # defect pointing the other way, so each of these must still fire.
+    ("https://example.com/news/", "url_section"),        # a real section front
+    ("https://example.com/", "url_homepage"),            # a real homepage
+    ("https://example.com/news/?page=2", "url_section"), # pagination is not an item id
+    ("https://example.com/news/?tag=gaza", "url_section"),
+    ("https://example.com/news/?s=search+terms", "url_section"),
+    ("https://example.com/news/?id=", "url_section"),    # blank value addresses nothing
+    ("https://example.com/news/?id=latest", "url_section"),  # no digit -> not a record id
+])
+def test_the_veto_does_not_rescue_a_genuine_listing(url, signal):
+    v = classify_non_article(url, text="Headline one. Headline two.", word_count=6)
+    assert v is not None and v.signal == signal, url
+
+
+def test_the_veto_is_scoped_to_the_two_rules_about_having_no_item_address():
+    """Taxonomy and utility rules key on an explicit PATH segment, so an item id in the
+    query must not rescue them — a `/tag/gaza` listing is a listing however it is decorated."""
+    for url, signal in (("https://example.com/tag/gaza?id=9", "url_taxonomy"),
+                        ("https://example.com/account/login?id=9", "url_utility")):
+        v = classify_non_article(url, text="Headline one.", word_count=4)
+        assert v is not None and v.signal == signal, url

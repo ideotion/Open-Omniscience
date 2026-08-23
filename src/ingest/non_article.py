@@ -44,8 +44,9 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 from src.services.prose_gate import prose_gate_verdict
 
@@ -100,6 +101,44 @@ def _is_short_taxonomy(seg: str) -> bool:
     return len(seg) <= _TAXONOMY_MAX_LEN and seg.count("-") <= _TAXONOMY_MAX_HYPHENS
 
 
+# A query parameter that ADDRESSES ONE ITEM: an older CMS puts the article id in the query
+# string and leaves the path a bare section (``/news/?articleid=2504``) or empty
+# (WordPress ``/?p=12345``). ``urlparse().path`` discards the query, so those URLs reach the
+# homepage / section-landing rules below looking exactly like a section front.
+#
+# FIELD EVIDENCE (criteria-calibration bundle, 2026-08-23, a 5,010-article instance): the
+# whole base scan flagged FOUR articles, all four ``url_section`` "section landing '/news'",
+# all four Antiwar.com ``/news/?articleid=NNNN`` — real pages with per-item addresses, and
+# with function-word densities of 0.28-0.37, i.e. prose, not the ~0.05 of nav soup. So the
+# only thing this corpus's drop path proposed to quarantine was four false positives, each
+# under a REASON that was not true of it. The disposition is arguable for a 46-word page;
+# the stated reason is not.
+#
+# Deliberately narrow, because the direction of a mistake here is a quarantined real
+# article: the parameter NAME must read as a record id, and its VALUE must contain a digit.
+# ``?page=2`` (pagination), ``?tag=gaza`` and ``?s=query`` are all left to fall through.
+_ITEM_ID_PARAM = re.compile(
+    r"^(?:(?:article|story|post|item|entry|content|doc|news|obj|page|thread|topic)_?)?id$|^p$|^[ans]id$"
+)
+
+
+def _has_item_identifier(url: str) -> bool:
+    """True if ``url``'s QUERY STRING addresses one specific item (see ``_ITEM_ID_PARAM``).
+
+    Used only to VETO the two rules whose whole premise is that the URL names no item --
+    the homepage and section-landing rules. The taxonomy and utility rules key on explicit
+    path segments and are unaffected.
+    """
+    try:
+        params = parse_qsl(urlparse(url).query, keep_blank_values=False)
+    except (ValueError, UnicodeDecodeError):  # a malformed URL is not an item address
+        return False
+    return any(
+        _ITEM_ID_PARAM.match(name.strip().lower()) and any(ch.isdigit() for ch in value)
+        for name, value in params
+    )
+
+
 def classify_non_article(
     url: str, *, title: str | None = None, text: str | None = None, word_count: int | None = None,
     language: str | None = None,
@@ -137,7 +176,7 @@ def classify_non_article(
     path = urlparse(url).path.strip("/").lower()
     segments = [s for s in path.split("/") if s]
 
-    if not segments:
+    if not segments and not _has_item_identifier(url):
         return NonArticleVerdict("url_homepage", "site homepage / front page — no article path")
 
     # 2. Utility / tool path anywhere in the URL.
@@ -155,7 +194,7 @@ def classify_non_article(
                 return NonArticleVerdict("url_taxonomy", f"taxonomy listing under '/{seg}'")
 
     # 4. Single-segment SECTION landing (a section front, not an article).
-    if len(segments) == 1 and segments[0] in _SECTION_WORDS:
+    if len(segments) == 1 and segments[0] in _SECTION_WORDS and not _has_item_identifier(url):
         return NonArticleVerdict("url_section", f"section landing '/{segments[0]}'")
 
     return None  # looks like a real article — keep it

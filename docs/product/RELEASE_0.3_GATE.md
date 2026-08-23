@@ -30,11 +30,14 @@ no evidence.
 | 4 | A committed full import that re-checks **all** sources | operator | **MOVED TO 0.4 — required there** (2026-08-13) |
 | 5 | Article clean-up: discussed → agreed → implemented → **executed** | shared | **OPEN** — blocked on row 3 |
 | 6 | DB-10 §1b page-size bench passed + the ruling made | maintainer | **CLOSED** (2026-08-13) |
-| 7 | The `v0.2.0` P0 report's own follow-ups | operator | **OPEN** — two runs |
+| 7a | Cold-boot unlock at full scale | operator | **OPEN** — one clean restart |
+| 7b | Multi-day (≥72 h) collector soak | operator | **MOVED TO 0.4 — required there** (2026-08-23) |
 | 8 | Browser-verification bar | session | **CLOSED** (2026-08-13) |
 
-Three rows remain: **3, 5, 7.** Rows 3 and 5 are one operator action apart (§2.5);
-row 7 is two boots and a soak. Row 8 closed against its own literal wording; the larger
+Three rows remain: **3, 5, 7a** — and they now close in ONE operator sitting on the
+release-scale instance (§7.1): a clean restart, the P0 button, then the diagnostics
+button, whose bundle carries row 5's input. Row 7b's ≥72 h soak moved to `0.4`
+(maintainer, 2026-08-23), alongside row 4. Row 8 closed against its own literal wording; the larger
 matrix its report's §4–§6 recorded as a stretch target was then **executed 2026-08-20**
 (`docs/audit/UI_CLICKTHROUGH_2026-08-20.md` — all 17 themes, the Reader surface, a real
 import fixture, the a11y axis with vendored axe-core, five lens drills, five standing
@@ -120,6 +123,32 @@ makes a long run diagnosable if it dies.
 diagnostic route as a member or a documented exemption, and no member reports
 `skipped-deadline` for a reason that matters.
 
+#### The 2026-08-23 bundle — what it settled, and what it did not
+
+A bundle arrived from a **5,010-article** instance (2 cores, 3.7 GB, Qubes). It does not
+meet this row's scale bar and is not treated as closing it — but it was worth its weight
+twice over, because it exercised the *mechanism* and found two real defects.
+
+**Settled — the bundle machinery works.** 64 members, 713 s, and the runtime coverage block
+reads `complete: true`: 98 GET diagnostic routes, 63 covered, 35 exempt, nothing
+unclassified, no missing members, no stale classification. That is the half of this row's
+bar that is about the bundle rather than the corpus, and it holds.
+
+**Not settled — the scale.** 5,010 articles is 0.5% of the ~1M bar. Every figure in it is
+evidence at five thousand articles and is reported as such.
+
+**Found — three members died, and the bundle's own journal is what said so.** `home-cards`,
+`leads-quality` and `card-audit` — the only three that drive the producer registry, together
+**400 s of the 713 s run** — each completed its work and then raised *"Cannot operate on a
+closed database"*, writing 0 bytes. Root-caused, reproduced and fixed: `statement_deadline`
+armed ONE raw DBAPI connection at entry and disarmed that same object in `finally`, while the
+registry's WAL guard closes its cursor and commits mid-scan **by design** (every 30 s), which
+on a NullPool bind closes the real handle. A teardown that can destroy the value of the work
+it was guarding is worse than no guard. Fixing only the crash would have left the quieter
+half — a progress handler is per-connection, so after the first reconnect the deadline was
+**silently not enforced** (measured: a 1 s deadline let a runaway run 15.2 s), so the fix
+re-arms on `after_begin` as well. Both halves are mutation-checked.
+
 ---
 
 ### Row 4 — a committed full import re-checking all sources · MOVED TO 0.4
@@ -180,6 +209,45 @@ report row 5's execution is gated on. Sequence:
 under which criteria version. Nothing is deleted — quarantine is a reversible stamp, and
 quarantined articles ride backup export/import as data.
 
+#### The 2026-08-23 calibration report — the criteria are NOT ready to sign off
+
+The first real `criteria-calibration.json` arrived (5,010-article instance). Reading it
+against its own specimens is exactly why this row has a sign-off step, because on this
+corpus the drop path proposed **four articles, and all four are false positives**:
+
+| id | url | words | function-word density | flagged as |
+|---|---|---|---|---|
+| 2827 | `antiwar.com/news/?articleid=2504` | 49 | 0.33 | section landing `/news` |
+| 4548 | `antiwar.com/news/?articleid=2444` | 46 | 0.28 | section landing `/news` |
+| 4549 | `antiwar.com/news/?articleid=2776` | 76 | 0.32 | section landing `/news` |
+| 4552 | `antiwar.com/news/?articleid=2637` | 77 | 0.37 | section landing `/news` |
+
+A URL carrying `?articleid=2504` addresses **one article**; it is not a section front. And
+0.28–0.37 function-word density is prose — nav soup measures around 0.05. `urlparse().path`
+discards the query string, so an older CMS that puts the id there reached the
+section-landing rule looking exactly like a section front. WordPress's own default permalink
+(`/?p=12345`) hit the homepage rule the same way.
+
+**Fixed** (`src/ingest/non_article.py`): a query parameter that reads as a record id vetoes
+the two rules whose entire premise is that the URL names no item — homepage and section
+landing. Deliberately narrow, because a mistake here quarantines a real article: the
+parameter name must read as an id *and* its value must contain a digit, so `?page=2`,
+`?tag=gaza` and `?s=query` rescue nothing, and the taxonomy and utility rules (which key on
+an explicit path segment) are untouched. Both directions are tested and mutation-checked.
+
+**The prose-gate arm produced nothing to calibrate against.** It is paginated: it scanned
+**500 of 5,010** articles (`last_id: 695`, `done: false`) and flagged **0**. Continuing it
+needs repeated calls with `prose_gate_after_id`.
+
+**What IS real evidence here:** 116 index pages sit **above** the ≥100-word guard (2.32% of
+the corpus) — 67 `/tag` taxonomy listings, 27 `/news` section landings, 22 tier-1. That is
+the population this clean-up is actually for, and it is untouched by the fix above.
+
+**So the sequence stands, with step 2 unchanged:** re-run the bundle at release scale after
+this fix lands, read the fresh report, propose criteria against *those* specimens, and get
+the sign-off. Proposing corpus-wide criteria from four specimens — all four wrong — would be
+the fabricated-confidence failure this gate exists to prevent.
+
 **Standing remainder, tracked but not gating:** the quarantine exclusion currently applies
 in `_query_articles`; omnibar, watches, reporting and framing are still ungated.
 
@@ -212,31 +280,47 @@ By the §1a precedent, **merging was the ratification**; today's ruling makes th
 
 ---
 
-### Row 7 — the `v0.2.0` P0 report's own follow-ups · OPEN
+### Row 7a — cold-boot unlock at full scale · OPEN
 
-Two measurements the P0 report itself flagged as not-yet-confirmed. Both are operator runs.
-**The step-by-step instructions are in
-[`P0_VALIDATION_RUNBOOK.md`](P0_VALIDATION_RUNBOOK.md) → "Closing the two carried-forward
-follow-ups".**
+**Ruled 2026-08-23** (maintainer): the ≥72 h soak moves to `0.4`; the cold boot stays here.
+Splitting them is right — one is five minutes and the other is three days, and they were
+only ever one row because the same report carries both.
 
-**(a) Cold-boot unlock at full scale.** The instrument was fixed on 2026-08-12 (PR #940):
-`wal_bytes_before_open` returned `None` on *any* `OSError`, so an **absent** `-wal` (a real
-measurement — nothing to replay) was indistinguishable from an unreadable one. A clean
-shutdown checkpoints and *deletes* the `-wal`, so absent is the normal state after exactly
-the boot the bar asks for — following the instructions guaranteed the null the report then
-read as missing evidence. The three-state record now names which case it measured, so the
-next run is bankable. The 2026-08-12 reading (323 ms against a 2000 ms bar) is already
-comfortably inside; what it lacks is the *statement* that the boot was cold.
+Step-by-step in [`P0_VALIDATION_RUNBOOK.md`](P0_VALIDATION_RUNBOOK.md) §8.2. Stop the app
+*cleanly* on the full corpus (the power button or `Ctrl-C`, never `kill -9`), start it,
+unlock, and re-run the P0 validation immediately.
 
-**(b) Multi-day collector soak.** The 2026-08-12 report shows **0 samples, 0 passes** and
-honestly reports `not-measurable`. The last real reading (2026-07-29/30) covered ~22 h over
-61 passes with no climb (+327 MB against a 512 MB floor) but was 4 days stale by report time.
-The bar names a *multi-day* soak.
+The instrument was fixed on 2026-08-12 (PR #940): `wal_bytes_before_open` returned `None`
+on *any* `OSError`, so an **absent** `-wal` — a real measurement, meaning nothing to
+replay — was indistinguishable from an unreadable one. A clean shutdown checkpoints and
+*deletes* the `-wal`, so absent is the normal state after exactly the boot the bar asks
+for: following the instructions guaranteed the null the report then read as missing
+evidence. The three-state record now names which case it measured.
 
-**Closes when:** one P0 report shows P0.4 with `wal_state_before_open.state = "absent"` and
-a stated cold boot, and P0.3 with samples spanning ≥ 72 h.
+The 2026-08-12 reading (323 ms against a 2000 ms bar) is already comfortably inside; what
+it lacks is the *statement* that the boot was cold.
+
+**Closes when** one report shows P0.4 with `wal_state_before_open.state = "absent"` and a
+total under 2000 ms, taken on the full corpus.
 
 ---
+
+### Row 7b — the multi-day collector soak · MOVED TO 0.4
+
+**Ruled 2026-08-23** (maintainer): *"Postpone the >72h with the other P0 validation to the
+v0.4 release."*
+
+**What it is.** The 2026-08-12 report shows **0 samples, 0 passes** and honestly reports
+`not-measurable`. The last real reading (2026-07-29/30) covered ~22 h over 61 passes with
+no climb (+327 MB against a 512 MB floor) but was 4 days stale by report time. The bar
+names a *multi-day* soak; 22 h is not one.
+
+**What 0.3 gives up.** No evidence that memory stays flat across days of continuous
+collection at release scale. The instrumentation exists and the shorter reading was clean,
+so this is an unmeasured property rather than a suspected one — but unmeasured is what it
+is, and the release notes say so.
+
+**It is required in 0.4, not deferred.** See §5.
 
 ### Row 8 — the browser-verification bar · CLOSED
 
@@ -325,6 +409,8 @@ human UX pass".
 | 2026-08-13 | Rows 1 and 2 marked closed against named artifacts; this file created | session |
 | 2026-08-13 | Row 8 **closed** against its own literal wording — the standing Playwright `ui_walk` runner shipped, drove all three test states, all 5 flagship surfaces stamped, every P0/P1 fixed-or-recorded; the fuller 15-surface/17-theme/12-locale/a11y matrix from the brief's §6 is explicitly NOT fully covered and is recorded as a stretch target, not a condition of this row | session |
 | 2026-08-13 | A **second** gate board (repo root, 2026-08-04) found and **absorbed** into §6; the root file removed. This file is the only 0.3 board | session |
+| 2026-08-23 | Row **7 SPLIT**: 7a (cold boot) stays in `0.3`, **7b (the ≥72 h soak) moves to 0.4** alongside row 4 — *"Postpone the >72h with the other P0 validation to the v0.4 release"* | maintainer |
+| 2026-08-23 | First real diagnostics bundle read (5,010-article instance). Does **not** meet row 3's ~1M bar, but its coverage block is `complete: true` and it found two defects: three producer-driven members died at `statement_deadline` teardown (400 s of a 713 s run, 0 bytes each), and the row-5 drop path proposed 4 specimens that were 4 false positives. Both fixed; §7.1 folds rows 7a/3/5 into one operator sitting | session |
 | 2026-08-23 | **§7 added — the path to the tag**: the three open rows sequenced (row 5 consumes row 3's output), the tag mechanics corrected for `0.3` (no branch rename; `pyproject` already `0.3.0`; the tag is cut from the maintainer's machine because the session git proxy refuses tag pushes; never create the release in the UI), and §7.5 recording a full pre-tag gate run at `edfed14` — 8390 passed, mypy 0/482, blocking ruff + bandit + pip-audit clean, all three i18n gates unchanged at their ratchets. Every CLOSED row's named artifact re-verified present in the tree the same day | session |
 | 2026-08-20 | Row 8's **stretch matrix executed** — 375px P1 fixed, state-D import fixture, Reader drilled, all 17 themes (ai-off AA fix), five lens drills (agenda deduced-events fix), a11y axis (axe vendored; #oo-tip fix), 5 of 9 honesty rules automated; `docs/audit/UI_CLICKTHROUGH_2026-08-20.md`. The row was already closed; this discharges the recorded stretch target | session |
 
@@ -391,6 +477,24 @@ disqualified afterwards. That last clause is the whole point — a pass that onl
 demonstrates (1) and (3) in minutes; only (2) genuinely needs the full corpus. Recorded so
 the option does not have to be re-invented — declined for 0.3, still available later.
 
+
+### 7b · A multi-day (≥72 h) collector soak
+
+**Was:** the second half of row 7 of this gate. **Moved:** 2026-08-23 — *"Postpone the >72h
+with the other P0 validation to the v0.4 release."* The cold-boot half (7a) stayed, because
+it is five minutes and this is three days.
+
+**What it must demonstrate in 0.4:** memory flat across ≥72 h of continuous collection at
+release scale — P0.3 with samples spanning the window and no climb against the 512 MB floor.
+
+**Read both signals, not just the rate.** The collect-perf log retains roughly two hours, so
+P0.3 only ever sees the recent window; the durable multi-day evidence is the app **surviving**
+— the memory guard not stuck engaged, and the previous session ending cleanly in session
+forensics. A pass on the rate alone would be a verdict about two hours wearing a three-day
+label.
+
+**Closes when** one report shows P0.3 with samples spanning ≥ 72 h and no climb.
+
 ---
 
 ## 6. Appendix — the 2026-07-21 session record (absorbed)
@@ -455,56 +559,56 @@ Step-by-step mechanics for each run live in
 [`P0_VALIDATION_RUNBOOK.md`](P0_VALIDATION_RUNBOOK.md); this is the sequence, not a
 duplicate of it.
 
-### 7.1 Row 3 — the diagnostics bundle (do this first)
+### 7.1 One sitting on the release-scale instance — rows 7a, 3 and 5's input
 
-Settings → Advanced → Diagnostics → the one all-diagnostics button, then send the zip.
+All three remaining rows come off the same machine, in this order, because each step's
+output is the next one's input. Budget ~15 minutes of attention plus the bundle's own run
+time.
 
-It is one button and then waiting. The run journal records each member's begin/end, wall
-time and bytes, plus a runtime coverage block, so a long run that dies is still
-diagnosable. **Closes when** the bundle exists, its manifest's coverage block shows every
-GET diagnostic route as a member or a documented exemption, and nothing reports
-`skipped-deadline` for a reason that matters.
+1. **Stop the app cleanly** — the power button, or `Ctrl-C`. Never `kill -9`: a clean
+   WAL-mode close checkpoints and deletes the `-wal`, and *that* is the steady-state boot
+   row 7a asks for.
+2. **Start it and unlock normally.** Nothing to capture by hand — the boot's per-phase
+   timing is recorded.
+3. **Run the P0 validation** (Settings → Diagnostics). This closes **row 7a** if P0.4 comes
+   back `wal_state_before_open.state = "absent"` under 2000 ms. P0.3 will report
+   `not-measurable` with no soak behind it; that is row 7b, now in `0.4`, and is expected.
+4. **Run the one all-diagnostics button** and send the zip. This closes **row 3** — and the
+   same bundle carries `criteria-calibration.json`, which is **row 5's** input.
 
-Report the findings as **evidence at ~1M articles** — the 5M bar was withdrawn
-(§3, 2026-07-30), and a finding from this run must not be written as though it tested one.
+Do this *after* the `statement_deadline` fix lands, or three producer-driven members
+(`home-cards`, `leads-quality`, `card-audit`) will die again the way they did on
+2026-08-23 — see §2.3.
 
-### 7.2 Row 5 — the article clean-up (needs 7.1, then a decision from you)
+### 7.2 Row 5 — the article clean-up (from step 4's bundle, then a decision from you)
 
-The bundle from 7.1 *contains* `criteria-calibration.json`, which is the input this row
-was waiting on. Then:
-
-1. a session reads it and proposes clean-up criteria against the real specimens;
-2. **you agree the criteria** — this is the explicit sign-off the bar names, and it is the
-   only human step that cannot be delegated;
+1. a session reads the fresh `criteria-calibration.json` and proposes criteria against
+   *those* specimens;
+2. **you agree the criteria** — the explicit sign-off the bar names, and the only step here
+   that cannot be delegated;
 3. run the quarantine pass with `write=True`;
 4. re-index, to clear the keywords and entities the quarantined articles contributed.
 
-**Closes when** step 3 has run and the report names how many articles were quarantined
-under which criteria version. Nothing is deleted: quarantine is a reversible stamp, and
-quarantined articles ride backup export/import as data.
+**Closes when** step 3 has run and the report names how many articles were quarantined under
+which criteria version. Nothing is deleted: quarantine is a reversible stamp, and quarantined
+articles ride backup export/import as data.
 
-### 7.3 Row 7 — the two P0 follow-ups (independent of 7.1/7.2; can run in parallel)
+The 2026-08-23 report is why step 1 is not a formality — see §2.5. Its four proposed
+specimens were four false positives, which produced a real detector fix and no criteria.
 
-Both are in [`P0_VALIDATION_RUNBOOK.md`](P0_VALIDATION_RUNBOOK.md) §8.
+### 7.3 What moved to 0.4
 
-- **(a) Cold boot** (§8.2) — stop the app *cleanly* on the full corpus, start it, unlock,
-  re-run the validation immediately. Minutes. Bankable when the report shows P0.4 with
-  `wal_state_before_open.state = "absent"`. Do **not** stage an unclean shutdown: that is a
-  different measurement, and not the one the bar asks for.
-- **(b) Multi-day soak** (§8.3) — go online, leave continuous collection running **≥ 72 h**,
-  then re-run the validation while it is still running or immediately after. Days of
-  elapsed time, no attention.
-
-Run (b) first in wall-clock terms, since it is the long pole; (a) can be done any time
-before the tag.
+Row **7b** (the ≥72 h soak) and row **4** (a committed full import re-checking every source).
+Both are recorded in §5 with what they must demonstrate and what closes them — a postponed
+data-safety demonstration that nobody writes down becomes one that never happens.
 
 ### 7.4 Tag day
 
 **Do not start this until 7.1–7.3 are done and their rows are ticked in §1.** A row closes
 on a named artifact, never on "it was built".
 
-1. **Every row closed.** §1 shows rows 1, 2, 3, 5, 6, 7 and 8 closed, and row 4 recorded as
-   moved to `0.4` (§5). Any open row blocks the tag.
+1. **Every row closed.** §1 shows rows 1, 2, 3, 5, 6, 7a and 8 closed, with rows 4 and 7b
+   recorded as moved to `0.4` (§5). Any open row blocks the tag.
 2. **No version edit is needed.** `pyproject.toml` already reads `0.3.0` (single source of
    truth, set 2026-07-18 by the P0-pass → `v0.2.0`-tag → flip sequence), and
    `README` / `CONTRIBUTING` / `CHANGES` are already written for the post-tag state.
@@ -537,11 +641,11 @@ on a named artifact, never on "it was built".
 
 ### 7.5 What a session already verified — and what that is worth
 
-Run at `edfed14`, 2026-08-23, on the tree that would be tagged:
+Run at `edfed14` + the two 2026-08-23 fixes, on the tree that would be tagged:
 
 | Gate | Command (verbatim from `ci.yml`) | Result |
 |---|---|---|
-| Tests | `python -m pytest -q` | **8390 passed**, 43 skipped, 0 failed |
+| Tests | `python -m pytest -q` | **8406 passed**, 43 skipped, 0 failed |
 | Blocking lint | `ruff check --select=F,B --extend-ignore=B008 src/ tests/` | clean |
 | Types | `python -m mypy src/` | **0 errors**, 482 files |
 | SAST | `bandit -r src/ -ll -q` | clean |
@@ -549,6 +653,9 @@ Run at `edfed14`, 2026-08-23, on the tree that would be tagged:
 | i18n completeness | `scripts/i18n_report.py --min 100` | 2987/2987 × 12 locales |
 | i18n ratchet 1 | `--max-untranslatable 561` | 561 — **unchanged**, not merely under |
 | i18n ratchet 2 | `--max-unkeyed-t-calls 298` | 298 — **unchanged**, not merely under |
+
+The pass count moved 8390 → 8406, which is **exactly the 16 tests this pass added** — a
+change that adds tests and reports an unchanged total has a harness that never ran it.
 
 The two ratchets are maxima, so "under the bar" is not evidence — a *shrinking* measured
 population reads the same as an improving codebase. Both were checked for being

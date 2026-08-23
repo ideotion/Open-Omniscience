@@ -12,11 +12,11 @@ analytics calibrated at 2k articles and inverted at 500k. Almost every entry bel
 a field report rather than a plan.
 
 **Not yet tagged.** The gate is [`docs/product/RELEASE_0.3_GATE.md`](product/RELEASE_0.3_GATE.md)
-— eight rows: four closed against named artifacts, one moved to `0.4`, three remaining.
-Those three need the
-maintainer's own machine and corpus: a full diagnostics bundle at release scale, the
-article clean-up it feeds, and two P0 follow-up runs (a cold boot, a multi-day soak). A row
-closes on evidence a later reader can re-open, never on "it was built".
+— four rows closed against named artifacts, two moved to `0.4`, three remaining. Those three
+all come off one sitting on the release-scale instance: a clean restart and the P0 button
+(the cold-boot unlock), then the one diagnostics button, whose bundle also carries the
+article clean-up's input. A row closes on evidence a later reader can re-open, never on
+"it was built".
 
 ### The AI stack
 
@@ -122,6 +122,18 @@ closes on evidence a later reader can re-open, never on "it was built".
   restore waits for in-flight corpus work instead of replacing the file under it, and honours
   a Stop while it waits.
 
+- **A guard that could destroy the work it was guarding.** The first real diagnostics
+  bundle from a field instance lost three of its members — the only three that drive the
+  producer registry, and 400 s of a 713 s run — each finishing its work and then raising
+  *"Cannot operate on a closed database"*, writing nothing. `statement_deadline` armed one
+  raw connection when it opened and disarmed that same object in its `finally`, while the
+  registry's WAL guard closes its cursor and commits mid-scan **by design** every 30 s; on
+  a NullPool bind that closes the real handle. Fixing only the crash would have left the
+  quieter half, because a progress handler is per-connection: after the first reconnect the
+  deadline was **silently not enforced** — measured, a 1 s deadline let a runaway run 15.2 s.
+  It now re-arms on reconnect and disarms defensively, and each half has a test that fails
+  when the other is removed.
+
 ### Sources: qualification, discovery, and what is not an article
 
 - **Qualification is the admission gate.** Every source — the curated catalog included, no
@@ -141,6 +153,16 @@ closes on evidence a later reader can re-open, never on "it was built".
   its section list an *organisation*. The gate measures function-word density against the
   text's own language and near-zero sentence punctuation, is script-aware, and refuses to
   judge text it cannot read rather than dropping it.
+- **A section front and an article can share a URL path.** The clean-up's calibration
+  report proposed exactly four articles on a real corpus, and all four were false
+  positives: `antiwar.com/news/?articleid=2504` and its siblings, flagged as *"section
+  landing /news"*. A query string carrying `?articleid=` addresses one article — but
+  `urlparse().path` discards the query, so an older CMS reached the section-landing rule
+  looking exactly like a section front, and WordPress's own default permalink (`/?p=12345`)
+  hit the homepage rule the same way. A parameter that reads as a record id now vetoes those
+  two rules and only those two, narrowly enough that `?page=2` and `?tag=gaza` rescue
+  nothing — because the direction of a mistake here is a quarantined real article.
+
 - **The post-import screen says what changed.** It used to headline a cross-table row sum as
   "4,855,433 imported" — mentions, links and dates counted as articles. It now leads with
   articles, breaks the rest down by type, shows the corpus delta before and after, and names
@@ -323,6 +345,10 @@ background job, which is right for a bounded number of stories and wrong for a l
   there, not merely deferred. Every restore validated so far ran uncommitted, which is a
   self-restore where every row reads as a duplicate; the committed write path at ~1M articles
   has not been exercised in the field. The gate's §5 records what it must demonstrate.
+- **A multi-day (≥72 h) collector soak** — moved to `0.4` and **required** there. The
+  instrumentation exists and the last real reading (~22 h, 61 passes) showed no climb, but
+  22 hours is not multi-day, so memory across days at release scale is **unmeasured** rather
+  than merely unreported.
 - **The 5M-scale diagnostics** — the bar was withdrawn to ~1M for this cycle because the app's
   throughput could not reach it. It returns when the throughput work does.
 

@@ -5389,3 +5389,50 @@ is a silent NO-OP (None means "leave unchanged"), and BOTH reset tokens — the 
     the dormant half stays operator-gated because `extensions.duckdb.org` is egress-blocked
     and the binaries ship blank by design. Bumping `verified` is then honest ONLY with the
     split written down beside it; a bare "1.5.5" would imply the per-platform work happened.
+
+
+## 2026-08-23 — the field bundle's two defects
+
+  - **A CONTEXT MANAGER THAT CAPTURES A CONNECTION AT ENTRY AND RELEASES IT IN `finally`
+    BREAKS THE MOMENT THE BLOCK LEGITIMATELY RECONNECTS — and the crash is the loud half
+    (2026-08-23, the first field diagnostics bundle):** `statement_deadline` armed one raw
+    DBAPI connection at entry and cleared its progress handler on that same object in
+    `finally`, while the briefing registry's WAL guard closes its cursor and commits every
+    30 s BY DESIGN — and on a NullPool bind returning the connection CLOSES the real handle.
+    So the teardown raised `"Cannot operate on a closed database"` **from inside a
+    `finally`**, replacing the member's return value: three bundle members (the only three
+    that drive the producer registry, 400 s of a 713 s run) each finished their work and
+    wrote 0 bytes. **A guard that can destroy the work it was guarding is worse than no
+    guard.** THE QUIETER HALF IS THE ONE TO REMEMBER: a progress handler is
+    PER-CONNECTION, so from the first reconnect onward the deadline was **not enforced at
+    all**, with nothing raising to say so — measured on the unpatched code, a 1 s deadline
+    let a runaway recursive CTE run 15.2 s to completion. Fixing only the crash would have
+    left a guard that reports success and guards nothing. GENERAL FORM: for any resource a
+    context manager acquires ONCE and releases at exit, ask whether the guarded block can
+    legitimately re-acquire it — if it can, the manager must track every instance it armed
+    (here a SESSION-scoped `after_begin` listener re-arms on reconnect; an engine-level one
+    would arm other sessions' connections and interrupt their statements on your clock) and
+    disarm each defensively, since releasing an already-released resource must never
+    surface. And the mutation matrix has to revert EACH mechanism separately: dropping the
+    re-arm fails only the enforcement test, un-guarding the disarm fails all three — which
+    is how you learn both halves are load-bearing rather than one being decoration.
+  - **A URL'S QUERY STRING CAN BE THE ARTICLE ADDRESS, AND `urlparse().path` THROWS IT AWAY
+    (2026-08-23, the first criteria-calibration report):** the whole drop path proposed FOUR
+    articles out of 5,010 and all four were false positives — `antiwar.com/news/?articleid=2504`
+    and siblings, each recorded as *"section landing '/news'"*, each with a function-word
+    density of 0.28–0.37 (prose; nav soup measures ~0.05). An older CMS puts the article id
+    in the query and leaves the path a bare section; WordPress's own default permalink
+    (`/?p=12345`) does the same to the homepage rule. Both rules exist on the premise that
+    the URL names no item, which a query id falsifies — so the *reason* was untrue of the
+    thing it was about, which is the defect even where the disposition is arguable. TWO
+    RULES. (a) When a classifier keys on URL SHAPE, enumerate which components it reads and
+    which it discards; a rule whose premise is "there is no item address here" must look at
+    the query, not only the path. (b) Scope the repair to the rules whose premise actually
+    fails — the taxonomy and utility rules key on an explicit path segment and must NOT be
+    vetoed, or `/tag/gaza?id=9` stops being a listing. And keep the veto narrow in the
+    direction that matters: the parameter name must read as a record id AND its value must
+    contain a digit, so `?page=2` / `?tag=gaza` / `?s=query` rescue nothing, because the
+    cost of a mistake here is a QUARANTINED REAL ARTICLE. PROCESS POINT: this is what the
+    sign-off step in a clean-up gate is for. Proposing corpus-wide criteria from those four
+    specimens would have quarantined four genuine articles and zero junk, and the report
+    would have read like evidence.

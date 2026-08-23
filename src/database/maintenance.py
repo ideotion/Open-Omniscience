@@ -24,7 +24,7 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 from sqlalchemy.engine import Engine
 
 _LOG = logging.getLogger("database.maintenance")
@@ -1149,7 +1149,37 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
     def _check() -> int:
         return 1 if (time.monotonic() - started) > limit else 0
 
+    # A progress handler is per-DBAPI-CONNECTION, and a block may legitimately RECONNECT
+    # while we are inside it: the briefing registry's WAL guard closes its cursor and
+    # commits every ``_WAL_GUARD_MIN_RELEASE_INTERVAL_S`` by design, and on a NullPool bind
+    # (the read-snapshot engines) returning the connection CLOSES the real DBAPI handle.
+    #
+    # FIELD DEFECT this fixes (all-diagnostics bundle, 2026-08-23): three members --
+    # home-cards, leads-quality and card-audit, the only three that drive the producer
+    # registry, and 400 s of a 713 s run -- each completed its work and then died in this
+    # ``finally`` with "Cannot operate on a closed database", writing 0 bytes. A teardown
+    # that can destroy the value of the work it was guarding is worse than no guard.
+    #
+    # So: track every connection we arm, re-arm on reconnect (``after_begin`` is
+    # session-scoped -- an engine-level listener would arm OTHER sessions' connections and
+    # interrupt their statements on our clock), and disarm each one defensively. Losing a
+    # handler on an already-closed connection costs nothing: the connection is gone.
+    armed: list = [raw]
+
+    def _rearm(_session, _transaction, connection) -> None:
+        try:
+            new_raw = connection.connection.dbapi_connection
+        except Exception:  # noqa: BLE001 - no raw handle here; the deadline simply lapses
+            return
+        if new_raw is None or any(new_raw is a for a in armed):
+            return
+        if not hasattr(new_raw, "set_progress_handler"):
+            return
+        new_raw.set_progress_handler(_check, 20_000)
+        armed.append(new_raw)
+
     raw.set_progress_handler(_check, 20_000)
+    event.listen(session, "after_begin", _rearm)
     try:
         yield
     except Exception as exc:
@@ -1161,7 +1191,15 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
             ) from exc
         raise
     finally:
-        raw.set_progress_handler(None, 0)
+        try:
+            event.remove(session, "after_begin", _rearm)
+        except Exception:  # noqa: BLE001 - teardown must never replace the block's outcome
+            _LOG.debug("statement_deadline: listener removal failed", exc_info=True)
+        for conn in armed:
+            try:
+                conn.set_progress_handler(None, 0)
+            except Exception:  # noqa: BLE001 - a closed/replaced connection needs no disarm
+                _LOG.debug("statement_deadline: disarm skipped", exc_info=True)
 
 
 def vacuum_database(engine: Engine) -> dict:
