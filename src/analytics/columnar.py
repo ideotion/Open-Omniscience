@@ -743,10 +743,12 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
     (columnar, fast) into the per-day rollup. This is a resumable-shaped BATCH job scheduled
     WITH the re-index — NEVER on the query path.
 
-    Rows with a NULL ``observed_on`` are excluded: the windowed query filters by an
-    ``observed_on`` range, so an undated mention can never fall inside a window. Records
-    ``last_mention_id`` (MAX mention id) in ``oo_meta`` so D3 can refresh incrementally.
-    Returns a small tally. The canonical store is unchanged; this is a disposable table.
+    Rows with a NULL ``observed_on`` are excluded from the per-day rollup itself (the
+    windowed query filters by an ``observed_on`` range, so an undated mention can never
+    fall inside a window) -- but they are STILL scanned and STILL advance the id
+    watermark (see the PR-D / W2 correction below), so ``last_mention_id`` never
+    under-reports the table's true max id. Returns a small tally. The canonical store is
+    unchanged; this is a disposable table.
 
     PR-D / W1 (docs/design/AUTONOMOUS_SESSION_BRIEF_2026-07-26_HARDWARE_DIAGNOSTICS_
     COMPARISON.md §1; the single highest-value fix in that brief): this streamed scan
@@ -767,22 +769,56 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
     the WAL pin -- it doesn't). See ``src.briefing.registry._WalGuardResult``'s
     docstring for the full deterministic reproduction of this finding.
 
-    THE ACTUAL FIX: real KEYSET pagination. Each batch is its OWN bounded query
-    (``id > :cursor ORDER BY id LIMIT :batch_size``), fully drained via
-    ``fetchall()`` (LIMIT guarantees the statement reaches natural completion) and
-    then EXPLICITLY ``.close()``d -- the same close-never-just-commit discipline
+    THE STREAMING KEYSET: each batch is its OWN bounded query, fully drained via
+    ``fetchall()`` (LIMIT guarantees the statement reaches natural completion) and then
+    EXPLICITLY ``.close()``d -- the same close-never-just-commit discipline
     ``_WalGuardResult`` uses -- before the next batch's query is issued and the
-    accumulated staging insert is committed. Because ``id`` is the table's
-    monotonically increasing integer primary key, ``cursor`` (the last row's id in
-    the batch) is a safe, gap-tolerant keyset boundary: a row deleted between
-    batches is simply absent from a later batch (never re-seen, never skipped
-    twice), and a concurrently INSERTed row always gets an id greater than any
-    already-assigned id, so it is picked up by a LATER batch, never missed nor
-    double-counted. ``last_mention_id`` is still computed from the actual streamed
-    rows' own ids (never a separate post-loop ``SELECT MAX(id)``, which would run
-    in a fresh, possibly-newer snapshot once the loop has been committing mid-scan)
-    -- it must never overshoot what this build actually incorporated, or D3's
-    incremental refresh would silently skip mentions forever.
+    accumulated staging insert is committed.
+
+    **PR-D / W2 CORRECTION (found by a mandatory 4-lens adversarial skeptic matrix
+    against the W1 fix; two HIGH parity findings, each LIVE-REPRODUCED against this
+    real function -- not merely reasoned about -- before being trusted):** the
+    ORIGINAL pure ``id > :cursor`` keyset was NOT the reuse-immune boundary its own
+    docstring claimed. ``KeywordMention.id`` carries no ``AUTOINCREMENT`` protection,
+    so SQLite's default rowid-reuse behaviour means a DELETEd row's freed rowid CAN be
+    reused by a later INSERT that supplies no explicit id (empirically confirmed via a
+    raw sqlite3 script). Combined with ``index_article``'s real re-index idiom --
+    ``session.query(KeywordMention).filter_by(article_id=X).delete()`` followed by a
+    single bulk ``session.execute(insert(KeywordMention), rows)`` of X's fresh mentions
+    with NO explicit ``id`` field in any row -- this broke the "a concurrently INSERTed
+    row always gets an id greater than any already-assigned id" premise in TWO concrete,
+    live-reproduced directions: (a) DOUBLE-COUNT -- a mention re-indexed to a HIGHER
+    (never-yet-seen) id is counted once at its OLD id (already streamed in an earlier
+    batch) and AGAIN at its NEW id (streamed later in the SAME build); (b) silent DROP --
+    a mention re-indexed to a LOWER id that happens to land AT OR BEHIND the scan's
+    already-advanced cursor is never seen at all, even though the corpus genuinely still
+    holds it.
+
+    THE FIX: a composite ``(created_at, id)`` keyset bounded ABOVE by a ``scan_bound``
+    snapshot -- ``MAX(created_at)`` read ONCE, before the loop starts. The project's
+    single-writer gate (``src/database/writer.py``) serialises every commit in real
+    wall-clock order, so ``created_at`` is a genuinely monotonic, reuse-immune ordering
+    key (unlike ``id``). Any row committed AT OR BEFORE ``scan_bound`` is eligible; a
+    concurrent delete-then-reinsert ALWAYS produces a fresh row whose ``created_at`` is
+    STRICTLY AFTER ``scan_bound`` (the reinsert happens during, never before, the scan
+    started) -- so it is excluded from THIS build regardless of which id it lands on,
+    closing both the double-count and the id-reuse-drop directions BY CONSTRUCTION, not
+    by luck. A NULL ``created_at`` (a pre-migration or otherwise unset row) is treated as
+    maximally old via ``COALESCE(created_at, '1970-01-01 00:00:00')`` -- it is included,
+    never silently excluded on a data gap.
+
+    KNOWN, ACCEPTED RESIDUAL (recorded so it is never mistaken for an oversight): a row
+    that existed at ``scan_bound`` but is physically DELETED before the scan's cursor
+    reaches it is excluded from THIS one build -- the same transient staleness ANY
+    snapshot-isolated read shows when it races a genuinely concurrent writer. It is
+    never a PERMANENT loss: the corpus-epoch guard (D3, ``refresh_keyword_daily``)
+    forces a FULL rebuild -- with a FRESH ``scan_bound`` -- after any re-index/prune/
+    restore, and that rebuild's own snapshot captures whatever the corpus holds at that
+    later moment. ``last_mention_id`` is computed from the actual MAX id seen across
+    EVERY fetched row (dated or not, never a separate post-loop ``SELECT MAX(id)``,
+    which would run in a fresh, possibly-newer snapshot once the loop has been
+    committing mid-scan) -- it must never overshoot what this build actually
+    incorporated, or D3's incremental refresh would silently skip mentions forever.
     """
     from sqlalchemy import text as _sql
 
@@ -791,35 +827,64 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
 
     ensure_store_meta(con)  # idempotent: guarantees oo_meta exists
 
+    # -- capture the scan boundary ONCE, before the loop begins (see the docstring's
+    # PR-D / W2 correction) -- a concurrent delete-then-reinsert can never land inside it.
+    scan_bound = session.execute(_sql("SELECT MAX(created_at) FROM keyword_mentions")).scalar()
+
     # -- stream mentions -> DuckDB staging (dates kept as text; cast in the GROUP BY) ---- #
     con.execute("CREATE OR REPLACE TABLE keyword_daily_stage "
                 "(keyword_id BIGINT, day VARCHAR, cnt BIGINT, article_id BIGINT)")
     streamed = 0
     max_streamed_id = 0
-    cursor = 0
-    while True:
-        result = session.execute(_sql(
-            "SELECT id, keyword_id, observed_on, count, article_id FROM keyword_mentions "
-            "WHERE observed_on IS NOT NULL AND id > :cursor ORDER BY id LIMIT :batch_size"
-        ), {"cursor": cursor, "batch_size": batch_size})
-        chunk = result.fetchall()
-        # Close -- never just commit -- to actually release: see the docstring's
-        # empirical finding. Closing resets the DBAPI cursor, which is what
-        # actually frees the WAL read-mark; a bare commit with the cursor still
-        # open does not.
-        result.close()
-        if not chunk:
-            break
-        con.executemany(
-            "INSERT INTO keyword_daily_stage VALUES (?, ?, ?, ?)",
-            [(int(r[1]), str(r[2])[:10], int(r[3]), int(r[4])) for r in chunk],
-        )
-        streamed += len(chunk)
-        cursor = int(chunk[-1][0])  # ids are strictly increasing (ORDER BY id)
-        max_streamed_id = cursor
-        # Release the transaction this batch's read+insert opened before the next
-        # (already-closed) batch query -- the keyset-pagination fix (see docstring).
-        session.commit()
+    cursor_ts: str | None = None  # None == "before the first row" (no lower bound yet)
+    cursor_id = 0
+    _EPOCH = "1970-01-01 00:00:00"  # the COALESCE sentinel for a NULL created_at
+    if scan_bound is not None:
+        while True:
+            base = (
+                "SELECT id, keyword_id, observed_on, count, article_id, created_at "
+                "FROM keyword_mentions "
+                "WHERE COALESCE(created_at, :epoch) <= :bound "
+            )
+            params: dict = {"epoch": _EPOCH, "bound": scan_bound, "batch_size": batch_size}
+            if cursor_ts is None:
+                sql = base + "ORDER BY COALESCE(created_at, :epoch), id LIMIT :batch_size"
+            else:
+                sql = base + (
+                    "AND (COALESCE(created_at, :epoch) > :cursor_ts "
+                    "OR (COALESCE(created_at, :epoch) = :cursor_ts AND id > :cursor_id)) "
+                    "ORDER BY COALESCE(created_at, :epoch), id LIMIT :batch_size"
+                )
+                params["cursor_ts"] = cursor_ts
+                params["cursor_id"] = cursor_id
+            result = session.execute(_sql(sql), params)
+            chunk = result.fetchall()
+            # Close -- never just commit -- to actually release: see the docstring's
+            # empirical finding. Closing resets the DBAPI cursor, which is what
+            # actually frees the WAL read-mark; a bare commit with the cursor still
+            # open does not.
+            result.close()
+            if not chunk:
+                break
+            dated_rows = [
+                (int(r[1]), str(r[2])[:10], int(r[3]), int(r[4]))
+                for r in chunk if r[2] is not None
+            ]
+            if dated_rows:
+                con.executemany(
+                    "INSERT INTO keyword_daily_stage VALUES (?, ?, ?, ?)", dated_rows
+                )
+            streamed += len(dated_rows)
+            # The watermark tracks the MAX id seen across the WHOLE batch (dated or
+            # not) -- ordering is by (created_at, id), so the LAST row in a batch is
+            # not necessarily the one with the largest raw id (see the docstring).
+            max_streamed_id = max(max_streamed_id, max(int(r[0]) for r in chunk))
+            last = chunk[-1]
+            cursor_ts = last[5] if last[5] is not None else _EPOCH
+            cursor_id = int(last[0])
+            # Release the transaction this batch's read+insert opened before the next
+            # (already-closed) batch query -- the keyset-pagination fix (see docstring).
+            session.commit()
 
     con.execute(_KEYWORD_DAILY_DDL)
     con.execute(
@@ -1079,25 +1144,104 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
     from sqlalchemy import text as _sql
 
     last_id = int(_get_meta(con, "keyword_daily.last_mention_id") or 0)
-    new_max = int(session.execute(_sql("SELECT MAX(id) FROM keyword_mentions")).scalar() or last_id)
-    if new_max <= last_id:
+
+    # PR-D / W1 fix-forward (mandatory 4-lens adversarial skeptic matrix,
+    # transactional-semantics finding #3, MEDIUM): this incremental scan used to hold
+    # ONE open cursor across the WHOLE tail (`result = session.execute(...)` then a
+    # raw `while True: chunk = result.fetchmany(batch_size)` loop -- no `.close()`, no
+    # intervening `session.commit()`) -- the exact WAL-pinning shape
+    # `build_keyword_daily` (D2) was fixed for above; on a live corpus a large tail can
+    # hold this open for long enough to pin the WAL read-mark for the whole scan.
+    # Fixed by adopting the SAME proven streaming-keyset shape: each batch is its own
+    # bounded query, drained via `.fetchall()` and explicitly `.close()`d before the
+    # next batch's query is issued, with a `session.commit()` between batches to
+    # actually release the read-mark (a bare commit while the Result stays open does
+    # NOT release it -- see `build_keyword_daily`'s docstring for the deterministic
+    # proof).
+    #
+    # A `scan_bound = MAX(created_at)` captured ONCE, before the loop, is layered on
+    # top of the `id > :lo` tail filter as defense-in-depth (the same D2/W2
+    # composite-key protection, applied here for the sub-case it closes): a mention
+    # re-indexed to a FRESH id above `last_id` DURING this multi-batch scan gets a
+    # `created_at` strictly AFTER `scan_bound` (the reinsert happens during, never
+    # before, the scan started) and is therefore excluded from THIS refresh -- picked
+    # up cleanly on the NEXT incremental call once its own `scan_bound` moves past it
+    # -- rather than risking inclusion (or a moving-cursor drop) at an unstable moment
+    # mid-scan.
+    #
+    # KNOWN, ACCEPTED RESIDUAL (stated so it is never mistaken for full coverage): a
+    # re-index that reuses a rowid AT OR BELOW `last_id` is invisible to the
+    # `id > :lo` tail filter regardless of the `scan_bound` bound -- the incremental
+    # path's whole invariant ("the tail contains only APPENDED mentions") rests on the
+    # CALLER's corpus-epoch guard (a re-index/prune/restore bumps the epoch, forcing a
+    # FULL rebuild with a fresh scan instead of an incremental merge, per this
+    # function's own docstring); this refresh does not itself re-derive that
+    # guarantee -- it only hardens the transactional shape and the one sub-case a
+    # `scan_bound` upper bound can close on its own.
+    scan_bound = session.execute(_sql("SELECT MAX(created_at) FROM keyword_mentions")).scalar()
+    if scan_bound is None:
+        # No mentions at all (e.g. a corpus that was just pruned to empty) -- nothing
+        # to stream; the watermark stays put.
         return {"mode": "incremental", "merged_days": 0, "new_keywords": 0,
                 "last_mention_id": last_id, "corpus_epoch": int(corpus_epoch)}
+    _EPOCH = "1970-01-01 00:00:00"  # the COALESCE sentinel for a NULL created_at
 
     con.execute("CREATE OR REPLACE TABLE keyword_daily_stage "
                 "(keyword_id BIGINT, day VARCHAR, cnt BIGINT, article_id BIGINT)")
-    result = session.execute(_sql(
-        "SELECT keyword_id, observed_on, count, article_id FROM keyword_mentions "
-        "WHERE id > :lo AND observed_on IS NOT NULL"
-    ), {"lo": last_id})
+    streamed_any = False
+    max_streamed_id = last_id
+    cursor_ts: str | None = None  # None == "before the first row" (no lower bound yet)
+    cursor_id = last_id
     while True:
-        chunk = result.fetchmany(batch_size)
+        base = (
+            "SELECT id, keyword_id, observed_on, count, article_id, created_at "
+            "FROM keyword_mentions "
+            "WHERE id > :lo AND COALESCE(created_at, :epoch) <= :bound "
+        )
+        params: dict = {
+            "lo": last_id, "epoch": _EPOCH, "bound": scan_bound, "batch_size": batch_size,
+        }
+        if cursor_ts is None:
+            sql = base + "ORDER BY COALESCE(created_at, :epoch), id LIMIT :batch_size"
+        else:
+            sql = base + (
+                "AND (COALESCE(created_at, :epoch) > :cursor_ts "
+                "OR (COALESCE(created_at, :epoch) = :cursor_ts AND id > :cursor_id)) "
+                "ORDER BY COALESCE(created_at, :epoch), id LIMIT :batch_size"
+            )
+            params["cursor_ts"] = cursor_ts
+            params["cursor_id"] = cursor_id
+        result = session.execute(_sql(sql), params)
+        chunk = result.fetchall()
+        # Close -- never just commit -- to actually release the WAL read-mark (see
+        # the note above + build_keyword_daily's docstring for the empirical proof).
+        result.close()
         if not chunk:
             break
-        con.executemany(
-            "INSERT INTO keyword_daily_stage VALUES (?, ?, ?, ?)",
-            [(int(r[0]), str(r[1])[:10], int(r[2]), int(r[3])) for r in chunk],
-        )
+        streamed_any = True
+        dated_rows = [
+            (int(r[1]), str(r[2])[:10], int(r[3]), int(r[4]))
+            for r in chunk if r[2] is not None
+        ]
+        if dated_rows:
+            con.executemany(
+                "INSERT INTO keyword_daily_stage VALUES (?, ?, ?, ?)", dated_rows
+            )
+        # The watermark tracks the MAX id seen across the WHOLE batch (dated or not)
+        # -- ordering is by (created_at, id), so the LAST row in a batch is not
+        # necessarily the one with the largest raw id.
+        max_streamed_id = max(max_streamed_id, max(int(r[0]) for r in chunk))
+        last = chunk[-1]
+        cursor_ts = last[5] if last[5] is not None else _EPOCH
+        cursor_id = int(last[0])
+        # Release the transaction this batch's read opened before the next
+        # (already-closed) batch query -- the keyset-pagination fix.
+        session.commit()
+
+    if not streamed_any:
+        con.execute("DROP TABLE keyword_daily_stage")
+        return {"mode": "incremental", "merged_days": 0, "new_keywords": 0,
+                "last_mention_id": last_id, "corpus_epoch": int(corpus_epoch)}
 
     con.execute(
         "CREATE OR REPLACE TABLE keyword_daily_tail AS "
@@ -1123,9 +1267,9 @@ def refresh_keyword_daily(con, session, *, corpus_epoch: int, batch_size: int = 
     new_keywords = _upsert_keyword_meta(con, session, tail_kids)
     con.execute("DROP TABLE keyword_daily_stage")
     con.execute("DROP TABLE keyword_daily_tail")
-    _set_meta(con, "keyword_daily.last_mention_id", new_max)
+    _set_meta(con, "keyword_daily.last_mention_id", max_streamed_id)
     return {"mode": "incremental", "merged_days": int(merged_days),
-            "new_keywords": int(new_keywords), "last_mention_id": new_max,
+            "new_keywords": int(new_keywords), "last_mention_id": max_streamed_id,
             "corpus_epoch": int(corpus_epoch)}
 
 

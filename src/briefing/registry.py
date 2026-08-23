@@ -87,6 +87,21 @@ def _release_transaction(session) -> None:
     Accepted — Home cards are advisory/heuristic signals, not a transactionally
     consistent report, and a stale multi-minute-old snapshot is worse for users
     than a slightly newer one mid-pass.
+
+    PR-D / W1 fix-forward (mandatory 4-lens skeptic matrix, transactional-semantics
+    finding #4, LOW): a FAILED first commit here means the caller's own
+    ``evaluate_watches()`` write is lost silently unless the failure is at least
+    LOGGED — which it already was — but the best-effort ``session.rollback()``
+    below used to swallow ITS OWN failure with a bare ``except: pass``, leaving
+    zero diagnostic trace of a doubly-rare commit-then-rollback failure. If that
+    happened, the session would stay poisoned (``PendingRollbackError`` on every
+    later producer's own read — the SAME cascade mechanism the warm_cache
+    write-gate/autoflush finding named), and each subsequent producer's own
+    ``except`` in ``run_all()``'s loop WOULD still log its own failure (so the
+    cascade's SYMPTOMS were never invisible) — but the true ROOT CAUSE (this
+    rollback failing) was. Logging it here, rather than swallowing it silently,
+    closes that visibility gap without changing any control flow: rollback
+    failure is still never fatal to the feed.
     """
     try:
         session.commit()
@@ -94,8 +109,12 @@ def _release_transaction(session) -> None:
         _LOG.warning("run_all: commit between producers failed", exc_info=True)
         try:
             session.rollback()
-        except Exception:  # noqa: BLE001 - best-effort recovery only
-            pass
+        except Exception:  # noqa: BLE001 - best-effort recovery only, never fatal
+            _LOG.warning(
+                "run_all: rollback after a failed commit ALSO failed -- the "
+                "session may stay poisoned for the rest of this pass",
+                exc_info=True,
+            )
 
 
 class _WalGuardResult:
@@ -165,6 +184,35 @@ class _WalGuardResult:
     protect — as opposed to ``build_keyword_daily``'s OWN fix, which uses a
     real ``WHERE id > :cursor ORDER BY id`` keyset instead of this generic
     fallback, precisely because it has an indexed key to page on safely).
+
+    PR-D / W1 fix-forward (mandatory 4-lens skeptic matrix, parity finding
+    #3, MEDIUM): spelling the limitation out CONCRETELY, not just
+    abstractly — because it is a DORMANT trap for any FUTURE producer that
+    reuses this generic wrapper over a genuinely mutable table. This
+    project's own documented delete-then-reinsert idiom (``index_article``
+    deletes then reinserts an article's mentions on re-index) is exactly
+    the shape that breaks it: if a row already delivered is deleted and its
+    same logical content is reinserted (a fresh row id, since a reinsert is
+    a new INSERT) while a scan is paused between releases, the COUNT-based
+    fast-forward on reissue silently (a) DROPS a row that was never
+    delivered before the mutation (the reissued scan's row count shifted,
+    so the numeric skip boundary now lands one row too far) and (b)
+    DOUBLE-COUNTS the reinserted row (the same logical content is delivered
+    once before the delete, and again — under its new row id — after the
+    reissue). Both anomalies are empirically reproduced, not merely
+    asserted, by ``tests/test_wal_guard_mutable_table_trap.py``. NEITHER is
+    possible in shipped code today: ``build_keyword_daily`` is the only
+    producer that ever used this generic path over a mutable table, and it
+    was rewritten (see ``refresh_keyword_daily`` and ``tests/test_keyword_
+    daily_scan_bound_race.py``) onto its own real keyset (``WHERE id >
+    :cursor ORDER BY id``) instead, precisely because a keyset is immune to
+    this class of shift — a reinserted row's fresh higher id simply sorts
+    past the cursor and is picked up (or correctly excluded) on that basis,
+    never by a fragile row COUNT. Before wiring this generic fallback onto
+    ANY future producer, confirm the table it scans is genuinely
+    append-only for the ENTIRE pinned window, or give that producer its own
+    keyset-based reissue instead — never assume the generic fallback is
+    safe merely because it "usually" is on today's lightly-written tables.
 
     Only ``fetchmany()`` is intercepted; every other ``Result`` method
     (``fetchall``, ``scalars``, ``all``, ``first`` …) delegates straight
@@ -435,36 +483,62 @@ def run_all_bounded(
     disabled = _disabled_names()
     ran = 0
     truncated = False
-    with _wal_guard(session):  # PR-D / W1: release the WAL snapshot within a producer's own scan too
-        for i, (name, producer) in enumerate(_REGISTRY):
-            if deadline is not None and time.monotonic() >= deadline:
-                truncated = True
-                _LOG.warning(
-                    "run_all: budget spent after %d/%d producers; stopping before %r",
-                    ran, total, name,
-                )
-                break
-            ran += 1
-            try:
-                # Settings restructure PR-7: ONE place decides whether a producer
-                # runs at all, so every Lead is switchable from Settings → Cards
-                # without each producer needing its own opt-out check. The recipe
-                # producers keep their own internal check as a belt; this is the
-                # braces, and it also saves the work rather than discarding the
-                # cards afterwards.
+    for i, (name, producer) in enumerate(_REGISTRY):
+        if deadline is not None and time.monotonic() >= deadline:
+            truncated = True
+            _LOG.warning(
+                "run_all: budget spent after %d/%d producers; stopping before %r",
+                ran, total, name,
+            )
+            break
+        ran += 1
+        try:
+            # PR-D / W1 fix-forward (mandatory 4-lens skeptic matrix, transactional-
+            # semantics finding #1, HIGH): `_wal_guard` is entered PER PRODUCER, not
+            # once for the whole loop. Entering it calls `_drain_pending(session)`
+            # FIRST (see that function's docstring), which closes any `_WalGuardResult`
+            # the PREVIOUS producer left mid-flight (a `fetchmany()` scan that never
+            # fully drained before its producer call returned) -- giving THIS producer
+            # a genuinely unpinned start. Wrapping the WHOLE loop in ONE `_wal_guard`
+            # call (the original shape) meant `_drain_pending` never ran BETWEEN
+            # producers at all within a single invocation: a scanning producer's
+            # dangling wrapper stayed referenced (and hence pinned) for every
+            # SUBSEQUENT producer in the SAME pass, and -- since nothing calls
+            # `_wal_guard` again until some FUTURE invocation, which may be a long
+            # time later or may never happen again in the process's life -- for
+            # however long the process kept running after this returned too.
+            #
+            # Settings restructure PR-7: ONE place decides whether a producer
+            # runs at all, so every Lead is switchable from Settings -> Cards
+            # without each producer needing its own opt-out check. The recipe
+            # producers keep their own internal check as a belt; this is the
+            # braces, and it also saves the work rather than discarding the
+            # cards afterwards. A disabled producer still enters the guard, which
+            # is deliberate: entering is what drains the PREVIOUS producer's
+            # leftovers, and skipping it would let a dangling scan outlive a
+            # disabled neighbour for the rest of the pass.
+            with _wal_guard(session):
                 produced = [] if name in disabled else (producer(session) or [])
-            except Exception:  # noqa: BLE001 - one bad producer must not abort the feed
-                _LOG.warning("briefing producer %r failed", name, exc_info=True)
-                produced = []
-            for card in produced:
-                if isinstance(card, Card):
-                    cards.append(card)
-            if on_progress is not None:
-                try:
-                    on_progress(i + 1, total, name)
-                except Exception:  # noqa: BLE001 - progress is cosmetic, never fatal
-                    pass
-            _release_transaction(session)  # PR-D / W1: commit between producers
+        except Exception:  # noqa: BLE001 - one bad producer must not abort the feed
+            _LOG.warning("briefing producer %r failed", name, exc_info=True)
+            produced = []
+        for card in produced:
+            if isinstance(card, Card):
+                cards.append(card)
+        if on_progress is not None:
+            try:
+                on_progress(i + 1, total, name)
+            except Exception:  # noqa: BLE001 - progress is cosmetic, never fatal
+                pass
+        _release_transaction(session)  # PR-D / W1: commit between producers
+    # PR-D / W1 fix-forward: close whatever the LAST producer left open. There is
+    # no FURTHER `_wal_guard(session)` call within THIS invocation to do it
+    # otherwise (that only happens on ENTRY to the *next* `_wal_guard` call, i.e.
+    # the next producer's own turn, or a future run) -- without this, a mid-flight
+    # scan left by the final producer would stay pinned from the moment this
+    # returns until some possibly-much-later call. Reached by the deadline `break`
+    # too, which is why it sits after the loop rather than in its last iteration.
+    _drain_pending(session)
 
     # S5.1 (Leads-calibration, cross-card dedup belt): each producer already keys its
     # own cards for de-duplication (e.g. laundering's registrable-origin domain,
