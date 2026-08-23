@@ -53,6 +53,8 @@ coverage.xml
 # Environments
 .env
 .venv
+# Windows: the PSF x64 CPython install.ps1 unpacks when winget will not deliver one.
+.python-x64/
 .venv-audit/
 .venv-core/
 .venv-fresh/

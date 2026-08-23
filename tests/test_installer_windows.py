@@ -16,6 +16,7 @@ guard strips comments rather than the file dropping its explanations.
 
 from __future__ import annotations
 
+import os
 import re
 import shutil
 import subprocess
@@ -51,8 +52,36 @@ def cmd() -> str:
 # --------------------------------------------------------------------------- #
 # Syntax
 # --------------------------------------------------------------------------- #
+INSTALLER_TEST_SOURCE = Path(__file__).read_text(encoding="utf-8")
+
+
 def _powershell() -> str | None:
     return shutil.which("pwsh") or shutil.which("powershell")
+
+
+def test_the_powershell_gated_guards_actually_run_on_a_runner() -> None:
+    """A skip is green, so nothing here said whether the behavioural guards execute.
+
+    Three tests in this file need pwsh/powershell, and `ci.yml` never mentions either
+    -- so on a runner without one they would skip silently and a green lane would say
+    nothing about the .ps1 behaviour they exist to pin. On a developer machine a skip
+    is the right answer and this skips too; on a runner it is a coverage hole, so say
+    so there.
+    """
+    if os.environ.get("CI", "").strip().lower() not in {"1", "true"}:
+        pytest.skip("developer machine -- pwsh is optional here")
+    # Count the DECORATORS, not every line mentioning the probe -- this very line
+    # would otherwise count itself and report one more guard than exists.
+    gated = sum(
+        1
+        for line in INSTALLER_TEST_SOURCE.splitlines()
+        if line.startswith("@pytest.mark.skipif(_powershell() is None")
+    )
+    assert _powershell() is not None, (
+        f"no pwsh/powershell on this runner, so the {gated} behavioural .ps1 guards "
+        "in this file skipped -- a green lane proves nothing about them. Either "
+        "install PowerShell in the workflow or drop the gate."
+    )
 
 
 @pytest.mark.skipif(_powershell() is None, reason="needs pwsh/powershell to parse .ps1")
@@ -342,55 +371,342 @@ def test_the_probe_reads_the_interpreter_platform_not_the_machine(ps1: str) -> N
     assert "Platform =" in body, "the probe's platform must reach the caller"
 
 
-def test_an_arm64_machine_asks_winget_for_the_x64_python(ps1: str) -> None:
+def test_every_python_install_names_the_x64_architecture(ps1: str) -> None:
     """Without an explicit architecture winget installs the one with no wheels.
 
     winget defaults to the machine's own architecture, so on ARM64 every install and
     every retry would fetch the arm64 build again -- the one whose dependency wheels
     do not exist. The x64 build runs natively on Windows on ARM.
+
+    The continuations are folded first: a call split across lines with a backtick is
+    the same call, and a guard that reads raw lines would pass it as compliant while
+    the argument sat on the line it never looked at.
     """
-    assert "--architecture" in ps1 and "'x64'" in ps1, (
-        "the ARM64 path must name the architecture winget should fetch"
-    )
-    # Every Python install call has to carry it, or one retry path quietly reinstalls
-    # the architecture that cannot work.
-    calls = re.findall(r"Install-WingetPackage[^\r\n]*Python\.Python[^\r\n]*", ps1)
+    folded = re.sub(r"`\r?\n\s*", " ", ps1)
+    calls = re.findall(r"Install-WingetPackage[^\r\n]*Python\.Python[^\r\n]*", folded)
     assert calls, "no Python winget install found"
     for call in calls:
         assert "$pyArch" in call, f"a Python install ignores the architecture: {call}"
+    assert "'--architecture', 'x64'" in ps1, "the architecture must be named literally"
 
 
-def test_an_x64_machine_still_short_circuits_on_the_first_interpreter(ps1: str) -> None:
-    """The ARM64 fix must cost an ordinary machine nothing.
+def test_an_already_correct_interpreter_is_accepted_without_probing_further(ps1: str) -> None:
+    """The architecture preference must cost an ordinary machine nothing.
 
-    Preferring x64 means probing every candidate instead of stopping at the first
-    that answers. That is fine on ARM64, where it decides whether the install works
-    at all, and it is pure waste everywhere else -- so it is switched, not default.
+    Preferring x64 could mean probing every candidate before choosing. It does not:
+    the FIRST win-amd64 hit returns immediately, so a machine whose first candidate is
+    already win-amd64 -- every ordinary x64 box -- probes exactly what it always did.
+    Only when the first interpreter that answers is the wrong architecture do we keep
+    looking, which is precisely the case that used to end in a source build.
     """
     body = ps_function_body(ps1, "Resolve-Python")
-    assert "param([switch] $PreferX64)" in body.replace("\n", " ").replace("  ", " "), (
-        "the preference must be a switch, so the default path is unchanged"
+    assert "if ($found.Platform -eq 'win-amd64') { return $found }" in body, (
+        "a win-amd64 interpreter must be accepted immediately, not after a full sweep"
     )
-    assert "if (-not $PreferX64) { return $found }" in body, (
-        "without the switch, the first working interpreter must still win immediately"
+    assert "$fallback" in body, (
+        "an interpreter of the wrong architecture still beats none -- keep it"
     )
 
 
-def test_an_arm64_interpreter_is_reported_before_pip_runs_not_after(ps1: str) -> None:
+def test_a_wrong_architecture_stops_before_pip_and_says_why(ps1: str) -> None:
     """A wheel gap discovered by pip costs twenty minutes and reads as a wall of Rust.
 
-    The install cannot succeed on an ARM64 interpreter, so the script says which
-    packages will fail and how to fix it -- before it starts installing, not in the
-    middle of a source build. It does not refuse: a machine that does carry the MSVC
-    and Rust toolchain can build them, and refusing would be worse than trying.
+    Every acquisition rung has failed by this point, so the install cannot succeed:
+    stop, name the three packages, and give the one-download fix -- before pip starts,
+    not in the middle of a source build.
+
+    It is a stop rather than a warning because "automatic" has to mean the run either
+    works or ends honestly, and the recorded refusal to auto-pin cryptography to its
+    one ARM64 series (13 open advisories) means there is no silent way through.
     """
     stripped = ps1
-    assert "cryptography, statsmodels and httptools" in stripped, (
+    assert "httptools" in stripped and "statsmodels" in stripped and "cryptography" in stripped, (
         "name the packages that have no ARM64 wheel; a generic warning is not actionable"
     )
-    assert "-amd64.exe" in stripped and "-arm64.exe" in stripped, (
+    assert "-amd64.exe, NOT -arm64.exe" in stripped, (
         "the manual route must name which installer file to take, and which not to"
     )
-    warn = stripped.index("Still on an ARM64 interpreter")
+    stop = stripped.index("Only a $($python.Platform) interpreter is available")
     pip = stripped.index("'-m', 'pip', 'install', '-e'")
-    assert warn < pip, "the warning must be printed before pip is invoked, not after"
+    assert stop < pip, "the refusal must come before pip is invoked, not after"
+
+
+def test_the_refusal_is_not_a_cage(ps1: str) -> None:
+    """A machine that genuinely has MSVC and Rust can build all three.
+
+    Refusing it outright would trade one wrong default for another, so the escape
+    exists and the refusal names it. It is off by default because without that
+    toolchain the build fails slowly and the fix is one download.
+    """
+    assert "[switch]  $AllowSourceBuilds," in ps1, "the escape must be a real parameter"
+    assert "$AllowSourceBuilds) {" in ps1, "and it must actually gate the refusal"
+    assert "-AllowSourceBuilds to compile them here." in ps1, (
+        "the refusal must tell the operator the escape exists"
+    )
+
+
+def test_the_nuget_download_is_verified_against_a_publisher_attested_hash(ps1: str) -> None:
+    """An unverifiable download is a worse failure than the one it is fixing.
+
+    nuget.org's catalog publishes `packageHash` + `packageHashAlgorithm` per version.
+    We read the PUBLISHER's own attested SHA-512 and check the bytes against it --
+    the same shape as this project's Ollama installer, which verifies against
+    GitHub's attested release digest. Both directions are load-bearing: a mismatch
+    refuses, and a MISSING attestation refuses too, because "no hash was published"
+    must never quietly become "install it anyway".
+    """
+    body = ps_function_body(ps1, "Install-PythonFromNuGet")
+    assert "Get-FileHash" in body and "SHA512" in body, "the bytes must actually be hashed"
+    assert "FromBase64String" in body, (
+        "nuget attests base64; comparing it to Get-FileHash's hex needs the conversion"
+    )
+    lowered = body.lower()
+    assert "refusing" in lowered, "a failed verification must refuse, not warn and continue"
+    attest = ps_function_body(ps1, "Get-NuGetAttestedHash")
+    assert "packageHashAlgorithm" in attest and "'SHA512'" in attest, (
+        "trusting packageHash without checking the algorithm accepts whatever nuget "
+        "publishes next"
+    )
+    assert "if (-not $attested)" in body, "a missing attestation must be its own refusal"
+
+
+def test_no_checksum_for_the_python_download_is_hardcoded(ps1: str) -> None:
+    """The digest is fetched from the publisher, never written down here.
+
+    A checksum embedded in this file would either be fabricated (nobody in this
+    project's sandbox can reach python.org to verify one) or go stale the moment
+    nuget publishes the next patch, at which point the honest failure becomes a
+    false alarm and someone deletes the check.
+    """
+    for match in re.finditer(r"[0-9a-fA-F]{40,}", ps1):
+        raise AssertionError(
+            f"a literal digest is embedded in install.ps1: {match.group(0)[:24]}..."
+        )
+
+
+def test_the_nuget_registration_endpoint_is_the_one_powershell_can_read(ps1: str) -> None:
+    """The -gz- registration endpoint always answers gzipped, whatever you ask for.
+
+    Windows PowerShell 5.1's Invoke-RestMethod does not decompress it, so it would
+    hand back bytes instead of JSON and the whole rung would fail for a reason that
+    looks nothing like its cause. registration5-semver1 serves plain JSON and carries
+    the same packageHash.
+    """
+    assert "registration5-semver1" in ps1, "use the endpoint PS 5.1 can actually parse"
+    assert "registration5-gz-semver2" not in re.sub(r"(?m)^\s*#.*$", "", ps1), (
+        "the gzipped endpoint must not be requested (the comment explaining why may "
+        "name it; the code may not)"
+    )
+
+
+def test_the_acquisition_ladder_reprobes_instead_of_trusting_winget(ps1: str) -> None:
+    """winget's exit code is unreliable, so the capability check is the only verdict.
+
+    Three rungs, each followed by a fresh Resolve-Python: winget with the
+    architecture named, winget again in user scope, then the nuget package. A rung
+    that reported success but delivered nothing must not end the ladder.
+    """
+    # Bounded by CODE, not by the section comment: the fixture strips comments, so a
+    # comment anchor is not merely fragile here, it does not exist.
+    start = ps1.index("Write-Step 'Looking for Python 3.13+'")
+    end = ps1.index("if ($inRepo) {", start)
+    section = ps1[start:end]
+    assert section.count("Install-WingetPackage") == 2, "both winget rungs must be present"
+    assert "Install-PythonFromNuGet" in section, "the nuget rung must be reachable"
+    assert section.count("Resolve-Python") >= 3, (
+        "every rung must be judged by a re-probe, not by the installer's exit code"
+    )
+
+
+def test_machine_architecture_is_read_from_the_unmasked_variable(ps1: str) -> None:
+    """PROCESSOR_ARCHITECTURE names the EMULATION inside an emulated process.
+
+    A 32-bit shell on a 64-bit machine reports x86 there, and only
+    PROCESSOR_ARCHITEW6432 names the real machine. Reading the masked one first would
+    make a perfectly capable box look 32-bit and route it to the refusal.
+    """
+    body = ps_function_body(ps1, "Get-MachineArchitecture")
+    first = body.index("PROCESSOR_ARCHITEW6432")
+    second = body.index("PROCESSOR_ARCHITECTURE")
+    assert first < second, "the unmasked variable must be consulted first"
+
+
+def test_a_32_bit_only_windows_is_refused_with_the_real_reason(ps1: str) -> None:
+    """cryptography publishes no win32 wheel at all, so this is a limit, not a bug.
+
+    Saying "64-bit Windows is required" without the reason invites someone to treat
+    it as an arbitrary gate and remove it.
+    """
+    assert "no 32-bit Windows wheel" in ps1, "name the actual blocker"
+    assert "64-bit Windows is required" in ps1, "and state the requirement plainly"
+
+
+def test_an_existing_venv_is_matched_against_the_resolved_interpreter(ps1: str) -> None:
+    """Existence is not a match, and the mismatch is silent.
+
+    A .venv keeps the version and wheel platform of whichever interpreter built it,
+    for life. A field run on Windows-on-ARM resolved a win-amd64 interpreter, printed
+    "ok  Python 3.13 (win-amd64)", reused the win-arm64 .venv four lines later, and
+    pip went hunting win_arm64 wheels that do not exist -- three source builds and a
+    dead install, with nothing in the output naming the cause.
+    """
+    start = ps1.index("$venv       = Join-Path $target '.venv'")
+    # Bounded by CODE: the fixture strips comments, so a comment anchor does not
+    # exist here at all.
+    end = ps1.index("Push-Location -LiteralPath $target", start)
+    section = ps1[start:end]
+    assert "Test-PythonCandidate -Command @($venvPython)" in section, (
+        "the existing venv must be probed, not merely found on disk"
+    )
+    assert "$existingVenv.Platform -ne $python.Platform" in section, (
+        "a venv of the wrong wheel platform is the whole reason this check exists"
+    )
+    assert "$existingVenv.Version -ne $python.Version" in section, (
+        "a venv from an older Python takes the wrong wheels too"
+    )
+
+
+def test_a_venv_that_cannot_be_replaced_stops_instead_of_installing_into_it(
+    ps1: str,
+) -> None:
+    """The failure direction that matters: a locked folder must not fall through.
+
+    Removal fails when something is running out of that folder. Proceeding would put
+    the packages into the very environment just judged wrong, which is the bug this
+    check exists to prevent -- so it fails closed and says what to close.
+    """
+    start = ps1.index("$venv       = Join-Path $target '.venv'")
+    # Bounded by CODE: the fixture strips comments, so a comment anchor does not
+    # exist here at all.
+    end = ps1.index("Push-Location -LiteralPath $target", start)
+    section = ps1[start:end]
+    assert 'Stop-WithError "Could not remove $venv' in section, (
+        "a failed removal must stop, not continue into the mismatched venv"
+    )
+
+
+# The PowerShell below is held apart from the test body so neither language has to
+# escape the other's quotes. It slices the venv block out of the REAL installer --
+# a retyped copy would pass while the shipped code was broken.
+_VENV_DRIVER = r"""
+$all = (Get-Content -Raw $env:OO_INSTALL_PS1) -replace "`r`n", "`n"
+$s = $all.IndexOf($env:OO_BLOCK_START)
+$e = $all.IndexOf($env:OO_BLOCK_END)
+if ($s -lt 0 -or $e -le $s) { throw 'could not slice the venv block' }
+$block = $all.Substring($s, $e - $s)
+
+$script:Removed = $false
+$script:Created = $false
+function Write-Step { param([string] $Message) }
+function Write-Ok { param([string] $Message) }
+function Write-Note { param([string] $Message) }
+function Write-Caution { param([string] $Message) }
+function Stop-WithError { param([string] $Message, [string[]] $Hints = @()) throw $Message }
+function Invoke-Native {
+    param([string] $File, [string[]] $Arguments = @(), [switch] $AllowFailure)
+    $script:Created = $true
+    New-Item -ItemType Directory -Force -Path (Split-Path $script:vp) | Out-Null
+    Set-Content -LiteralPath $script:vp -Value 'stub'
+    return 0
+}
+function Remove-Item {
+    [CmdletBinding()] param([string] $LiteralPath, [switch] $Recurse, [switch] $Force)
+    $script:Removed = $true
+    Microsoft.PowerShell.Management\Remove-Item -LiteralPath $LiteralPath -Recurse -Force
+}
+$python = [pscustomobject]@{ Version = [version]'3.13'; Platform = 'win-amd64'; Exe = 'x' }
+
+function Invoke-Case {
+    param($Answer)
+    $script:Removed = $false
+    $script:Created = $false
+    $target = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N'))
+    $script:vp = Join-Path $target '.venv\Scripts\python.exe'
+    New-Item -ItemType Directory -Force -Path (Split-Path $script:vp) | Out-Null
+    Set-Content -LiteralPath $script:vp -Value 'existing'
+    Set-Item -Path function:Test-PythonCandidate `
+        -Value { param([string[]] $Command) $Answer }.GetNewClosure()
+    Invoke-Expression $block
+    return "$($script:Removed):$($script:Created)"
+}
+
+$mismatch = Invoke-Case ([pscustomobject]@{ Version = [version]'3.13'; Platform = 'win-arm64'; Exe = 'v' })
+$match = Invoke-Case ([pscustomobject]@{ Version = [version]'3.13'; Platform = 'win-amd64'; Exe = 'v' })
+Write-Output "$mismatch|$match"
+"""
+
+
+@pytest.mark.skipif(_powershell() is None, reason="needs pwsh/powershell")
+def test_a_mismatched_venv_is_rebuilt_and_a_matching_one_is_not() -> None:
+    """Behavioural, both directions, because either one alone ships a defect.
+
+    Only rebuilding proves nothing on its own: a fix that rebuilt unconditionally
+    would pass it and make every re-run re-download several hundred MB. The pair is
+    the guard.
+    """
+    # Anchors and the path travel as DATA in the environment -- `-Command` does not
+    # populate $args, and splicing either into source is how a quote becomes syntax.
+    env = {
+        **os.environ,
+        "OO_INSTALL_PS1": str(INSTALL_PS1),
+        "OO_BLOCK_START": "$venv       = Join-Path $target '.venv'",
+        "OO_BLOCK_END": "# Everything below calls",
+    }
+    out = subprocess.run(
+        [_powershell(), "-NoProfile", "-NonInteractive", "-Command", _VENV_DRIVER],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        env=env,
+    )
+    assert out.returncode == 0, out.stderr
+    mismatch, match = out.stdout.strip().splitlines()[-1].split("|")
+    assert mismatch == "True:True", (
+        "a win-arm64 venv under a win-amd64 interpreter must be removed and rebuilt"
+    )
+    assert match == "False:False", (
+        "a matching venv must be reused untouched -- rebuilding it costs a full "
+        "re-download on every run"
+    )
+
+
+@pytest.mark.skipif(_powershell() is None, reason="needs pwsh/powershell")
+def test_machine_architecture_unmasks_an_emulated_shell() -> None:
+    """Behavioural, because the source guard can only prove the READ ORDER.
+
+    Runs the real function out of the real file (never a retyped copy) against the
+    three environments that matter. The middle one is the trap: inside a 32-bit or
+    emulated process PROCESSOR_ARCHITECTURE names the EMULATION, and only
+    PROCESSOR_ARCHITEW6432 names the machine -- so a capable 64-bit box would
+    otherwise read as 32-bit and be refused.
+    """
+    # The path travels as DATA in the environment, never spliced into the script
+    # text: `-Command` does not populate $args, and interpolating a path into source
+    # is how a quote in it becomes syntax.
+    script = r"""
+$src = Get-Content -Raw $env:OO_INSTALL_PS1
+$ast = [System.Management.Automation.Language.Parser]::ParseInput($src, [ref]$null, [ref]$null)
+foreach ($f in $ast.FindAll({ param($n)
+        $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+    if ($f.Name -eq 'Get-MachineArchitecture') { . ([scriptblock]::Create($f.Extent.Text)) }
+}
+$env:PROCESSOR_ARCHITEW6432 = ''; $env:PROCESSOR_ARCHITECTURE = 'ARM64'
+$a = Get-MachineArchitecture
+$env:PROCESSOR_ARCHITECTURE = 'x86'; $env:PROCESSOR_ARCHITEW6432 = 'AMD64'
+$b = Get-MachineArchitecture
+$env:PROCESSOR_ARCHITEW6432 = ''
+$c = Get-MachineArchitecture
+Write-Output "$a|$b|$c"
+"""
+    env = {**os.environ, "OO_INSTALL_PS1": str(INSTALL_PS1)}
+    out = subprocess.run(
+        [_powershell(), "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, timeout=120, env=env,
+    )
+    assert out.returncode == 0, out.stderr
+    arm, emulated, real32 = out.stdout.strip().splitlines()[-1].split("|")
+    assert arm == "ARM64"
+    assert emulated == "AMD64", (
+        "a 32-bit shell on a 64-bit machine must report the MACHINE, not the emulation"
+    )
+    assert real32 == "X86", "a genuinely 32-bit machine must still read as 32-bit"

@@ -24,6 +24,12 @@
     Where to install. Defaults to the checkout this script lives in, else
     "$HOME\Open-Omniscience".
 
+.PARAMETER AllowSourceBuilds
+    Proceed on a non-x64 interpreter. Three dependencies have no wheel there, so pip
+    will try to COMPILE them: only useful on a machine that carries Visual Studio
+    Build Tools and a Rust toolchain. Off by default because without those the build
+    fails after a long wait, and the fix is one download.
+
 .PARAMETER Extras
     Comma-separated pip extras. Default "analysis,compression,columnar" matches
     install.sh. Only "analysis" is proven on Windows by CI; if the full set fails to
@@ -62,6 +68,7 @@ param(
     [string]  $Extras = 'analysis,compression,columnar',
     [string]  $Ref,
     [switch]  $NoPython,
+    [switch]  $AllowSourceBuilds,
     [switch]  $NoLauncher,
     [switch]  $Check,
     [switch]  $Uninstall,
@@ -287,19 +294,46 @@ function Get-FilesystemPythonPaths {
     return $found
 }
 
-# Windows on ARM runs x64 binaries transparently, and that is not a nicety here:
-# cryptography, statsmodels and httptools publish NO win_arm64 wheel at the versions
-# pip resolves (verified on PyPI 2026-08-23), so an ARM64 interpreter sends pip to a
-# Rust + MSVC source build that fails outright on a machine with no build tools --
-# and cryptography is a CORE dependency, so even a bare install dies there. An x64
-# interpreter gets a published wheel for every one of them. On ARM64 the interpreter's
-# architecture is therefore not a preference; it decides whether the install completes.
-$script:WantsX64Python = (
-    $env:PROCESSOR_ARCHITECTURE -eq 'ARM64' -or $env:PROCESSOR_ARCHITEW6432 -eq 'ARM64'
-)
+# --------------------------------------------------------------------------- #
+# Architecture
+#
+# WHY THIS MATTERS MORE THAN IT LOOKS. What decides whether `pip install` succeeds
+# is not the machine, it is which wheels exist for the INTERPRETER's own platform.
+# Measured against PyPI on 2026-08-23, for CPython 3.13, across this project's whole
+# dependency set:
+#
+#   win-amd64  every dependency publishes a wheel.  <- the only complete architecture
+#   win-arm64  all but three: cryptography (CORE), httptools (via uvicorn[standard])
+#              and statsmodels ([analysis]). statsmodels and httptools have NEVER
+#              published one; cryptography did, for 46.0.0-46.0.3 only.
+#   win32      cryptography publishes NO win32 wheel at all, so the app cannot be
+#              installed on a 32-bit-only Windows without a Rust toolchain.
+#
+# Windows on ARM runs x64 binaries transparently, so an x64 interpreter is the right
+# answer on ARM64 as well as on x64 -- it is not a compromise, it is the complete set.
+#
+# AND WE DELIBERATELY DO NOT AUTO-PIN cryptography to 46.0.3 to make a native ARM64
+# install "work": that release carries 13 open advisory records (including a
+# statically-linked OpenSSL one fixed only in 48.0.1), and this app signs evidence.
+# Silently installing it would be fabricated security, which this project forbids.
+# --------------------------------------------------------------------------- #
+function Get-MachineArchitecture {
+    # PROCESSOR_ARCHITEW6432 exists only inside an emulated/WOW process, where it
+    # names the REAL machine while PROCESSOR_ARCHITECTURE names the emulation. So it
+    # wins when present, and a 32-bit shell on a 64-bit box cannot mislead us.
+    $arch = $env:PROCESSOR_ARCHITEW6432
+    if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
+    if (-not $arch) { return 'unknown' }
+    return $arch.ToUpperInvariant()
+}
+
+$script:MachineArch = Get-MachineArchitecture
+# ARM64 and IA64 both execute x64; x86 cannot. 'unknown' is treated as capable so a
+# machine we failed to identify still gets the good path and fails loudly if wrong,
+# rather than being refused on a reading we could not make.
+$script:CanRunX64 = @('AMD64', 'ARM64', 'IA64', 'unknown') -contains $script:MachineArch
 
 function Resolve-Python {
-    param([switch] $PreferX64)
     # Ordered widest-net-last: a name on PATH is cheapest, the registry is
     # authoritative, the filesystem sweep is the backstop.
     $candidates = @(
@@ -312,18 +346,21 @@ function Resolve-Python {
     $paths += Get-RegisteredPythonPaths
     $paths += Get-LauncherPythonPaths
     $paths += Get-FilesystemPythonPaths
+    if ($script:VendoredPython -and (Test-Path -LiteralPath $script:VendoredPython)) {
+        $paths = @($script:VendoredPython) + $paths
+    }
     foreach ($path in ($paths | Select-Object -Unique)) {
         if ($path) { $candidates += , @($path) }
     }
-    # Without -PreferX64 this short-circuits on the first working interpreter, exactly
-    # as before -- an x64 machine probes no more than it used to. With it, keep looking
-    # for a win-amd64 build and fall back to whatever did answer, so an ARM64 machine
-    # that already has both installed picks the one whose wheels exist.
+    # A win-amd64 hit RETURNS IMMEDIATELY, so the ordinary machine -- whose first
+    # candidate is already win-amd64 -- probes exactly what it always did. Only when
+    # the first interpreter that answers is the WRONG architecture do we keep looking,
+    # which is the case that used to end in a source build. Whatever answered is kept
+    # as the fallback: an interpreter of the wrong architecture still beats none.
     $fallback = $null
     foreach ($candidate in $candidates) {
         $found = Test-PythonCandidate -Command $candidate
         if (-not $found) { continue }
-        if (-not $PreferX64) { return $found }
         if ($found.Platform -eq 'win-amd64') { return $found }
         if (-not $fallback) { $fallback = $found }
     }
@@ -373,6 +410,132 @@ function Install-WingetPackage {
     $script:LastWingetExit = Invoke-Native -File 'winget' -AllowFailure -Arguments $wingetArgs
     Update-PathFromRegistry
     return $true
+}
+
+# --------------------------------------------------------------------------- #
+# x64 CPython, without winget and without elevation
+#
+# The Python Software Foundation publishes a self-contained x64 CPython on nuget.org
+# under the id `python` (authors: Python Software Foundation; repository:
+# github.com/Python/CPython). It carries ensurepip with a bundled pip wheel and its
+# own vcruntime, so `python -m venv` works straight out of the unpacked folder. It
+# needs no installer, no elevation, no PATH change and no registry entry, and it
+# unpacks INSIDE the app folder -- which makes it the right last resort when winget
+# will not deliver an x64 build.
+#
+# VERIFICATION, and why this is not a fabricated checksum: nuget.org's catalog
+# publishes `packageHash` and `packageHashAlgorithm` for every version. We read the
+# PUBLISHER's own attested SHA-512 and check the bytes we downloaded against it --
+# the same shape as this project's Ollama installer, which verifies against GitHub's
+# attested release digest. A mismatch REFUSES; a missing attestation REFUSES. We
+# never invent a digest and we never install unverified bytes.
+# --------------------------------------------------------------------------- #
+$script:NuGetFlat = 'https://api.nuget.org/v3-flatcontainer/python'
+# registration5-SEMVER1 deliberately, not the -gz- variant: the gzipped endpoint
+# always answers with Content-Encoding gzip, which Windows PowerShell 5.1's
+# Invoke-RestMethod does not decompress, so it would hand us bytes instead of JSON.
+$script:NuGetReg  = 'https://api.nuget.org/v3/registration5-semver1/python/index.json'
+
+function Get-NuGetPythonVersion {
+    param([version] $Minimum)
+    $index = Invoke-RestMethod -Uri "$script:NuGetFlat/index.json" -UseBasicParsing
+    $best = $null
+    foreach ($raw in $index.versions) {
+        # Prereleases carry a suffix; a plain [version] cast rejects them for us.
+        $parsed = $null
+        if (-not [version]::TryParse($raw, [ref] $parsed)) { continue }
+        # Same MAJOR.MINOR as the floor, so a future 3.14 does not arrive by surprise
+        # on an installer whose guards were measured against 3.13.
+        if ($parsed.Major -ne $Minimum.Major -or $parsed.Minor -ne $Minimum.Minor) { continue }
+        if (-not $best -or $parsed -gt $best.Parsed) {
+            $best = [pscustomobject]@{ Raw = $raw; Parsed = $parsed }
+        }
+    }
+    return $best
+}
+
+function Get-NuGetAttestedHash {
+    param([string] $Version)
+    $index = Invoke-RestMethod -Uri $script:NuGetReg -UseBasicParsing
+    foreach ($page in $index.items) {
+        $items = $page.items
+        if (-not $items) { $items = (Invoke-RestMethod -Uri $page.'@id' -UseBasicParsing).items }
+        foreach ($item in $items) {
+            if ($item.catalogEntry.version -ne $Version) { continue }
+            $leaf = Invoke-RestMethod -Uri $item.catalogEntry.'@id' -UseBasicParsing
+            if ($leaf.packageHashAlgorithm -ne 'SHA512') { return $null }
+            return $leaf.packageHash
+        }
+    }
+    return $null
+}
+
+function Install-PythonFromNuGet {
+    param([string] $Destination)
+    # PowerShell 5.1 can still default to TLS 1.0, which nuget.org refuses outright.
+    try {
+        [Net.ServicePointManager]::SecurityProtocol =
+            [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    } catch { }
+
+    Write-Step 'Fetching an x64 CPython from nuget.org (Python Software Foundation)'
+    try {
+        $version = Get-NuGetPythonVersion -Minimum $MinPython
+    } catch {
+        Write-Caution "Could not reach nuget.org: $($_.Exception.Message)"
+        return $null
+    }
+    if (-not $version) {
+        Write-Caution "nuget.org lists no $($MinPython.Major).$($MinPython.Minor).x CPython."
+        return $null
+    }
+    Write-Note "Version $($version.Raw)"
+
+    $attested = $null
+    try { $attested = Get-NuGetAttestedHash -Version $version.Raw } catch { }
+    if (-not $attested) {
+        # Refusing here is the point: an unverifiable download is not a fallback, it
+        # is a worse failure than the one we are trying to fix.
+        Write-Caution 'nuget.org attested no SHA-512 for that version -- refusing to install unverified bytes.'
+        return $null
+    }
+
+    $work = Join-Path ([IO.Path]::GetTempPath()) "oo-python-$([guid]::NewGuid().ToString('N'))"
+    New-Item -ItemType Directory -Path $work -Force | Out-Null
+    try {
+        $pkg = Join-Path $work 'python.zip'
+        Write-Note 'Downloading (about 15 MB)'
+        $previous = $ProgressPreference
+        $ProgressPreference = 'SilentlyContinue'   # the progress bar makes IWR ~10x slower
+        try {
+            Invoke-WebRequest -Uri "$script:NuGetFlat/$($version.Raw)/python.$($version.Raw).nupkg" `
+                              -OutFile $pkg -UseBasicParsing
+        } finally { $ProgressPreference = $previous }
+
+        $actual = (Get-FileHash -Path $pkg -Algorithm SHA512).Hash
+        $expect = [BitConverter]::ToString([Convert]::FromBase64String($attested)).Replace('-', '')
+        if ($actual -ne $expect) {
+            Write-Caution 'The download does not match the hash nuget.org attests for it. Refusing.'
+            return $null
+        }
+        Write-Ok 'Verified against the publisher-attested SHA-512'
+
+        if (Test-Path -LiteralPath $Destination) {
+            Remove-Item -LiteralPath $Destination -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        Expand-Archive -LiteralPath $pkg -DestinationPath $Destination -Force
+        $exe = Join-Path $Destination 'tools\python.exe'
+        if (-not (Test-Path -LiteralPath $exe)) {
+            Write-Caution 'The package unpacked without a tools\python.exe -- its layout changed.'
+            return $null
+        }
+        return $exe
+    } catch {
+        Write-Caution "The nuget.org download failed: $($_.Exception.Message)"
+        return $null
+    } finally {
+        Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 # --------------------------------------------------------------------------- #
@@ -514,62 +677,100 @@ if (-not $inRepo) {
 # 2. Python 3.13
 # --------------------------------------------------------------------------- #
 Write-Step 'Looking for Python 3.13+'
-# The x64 build is what winget must fetch on ARM64 -- its default picks the machine's
-# own architecture, which is the one with no wheels.
+Write-Note "Machine architecture: $($script:MachineArch)"
+# Where a nuget-sourced interpreter lives, if we end up needing one. Set BEFORE the
+# first Resolve-Python so a previous run's copy is found instead of re-downloaded.
+$script:VendoredPython = Join-Path $target '.python-x64\tools\python.exe'
+# winget defaults to the machine's own architecture. On ARM64 that is the one whose
+# wheels do not exist, so name x64 explicitly wherever x64 can run at all.
 $pyArch = @()
-if ($script:WantsX64Python) { $pyArch = @('--architecture', 'x64') }
-$python = Resolve-Python -PreferX64:$script:WantsX64Python
-if (-not $python) {
-    if ($NoPython) {
-        Stop-WithError 'No Python 3.13+ found (and -NoPython was given).' @(
-            'Install it from https://www.python.org/downloads/ and re-run.'
-        )
+if ($script:CanRunX64) { $pyArch = @('--architecture', 'x64') }
+
+$python = Resolve-Python
+if (-not $python -and $NoPython) {
+    Stop-WithError 'No Python 3.13+ found (and -NoPython was given).' @(
+        'Install it from https://www.python.org/downloads/ and re-run.'
+    )
+}
+
+# THE LADDER. Each rung is tried only while we still lack a win-amd64 interpreter,
+# and each is re-probed rather than trusted: winget's exit code is unreliable, so
+# the capability check is the verdict (the same rule as everywhere else here).
+if (-not $NoPython -and (-not $python -or $python.Platform -ne 'win-amd64')) {
+    $why = if ($python) { "the Python found is $($python.Platform)" } else { 'no Python answered' }
+    Write-Note "Need a win-amd64 interpreter -- $why."
+
+    if ($script:CanRunX64) {
+        # 1. winget, naming the architecture.
+        Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13 (x64)' -Extra $pyArch | Out-Null
+        $python = Resolve-Python
     }
-    Write-Note 'Not found -- installing it.'
-    if (-not (Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13' -Extra $pyArch)) {
-        Stop-WithError 'Python 3.13 is missing and winget is unavailable.' @(
-            'Install Python 3.13 from https://www.python.org/downloads/',
-            'Tick "Add python.exe to PATH" in the installer, then re-run this script.'
-        )
+    if (-not $python -or $python.Platform -ne 'win-amd64') {
+        if ($script:CanRunX64) {
+            # 2. winget again in USER scope. A machine-wide install can need an
+            # elevation this session does not have, and leaves nothing behind when it
+            # cannot finish; user scope is the one that completes unattended.
+            Write-Caution 'Retrying the winget install in user scope.'
+            Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13 (x64)' `
+                                  -Extra ($pyArch + @('--scope', 'user')) | Out-Null
+            $python = Resolve-Python
+        }
     }
-    $python = Resolve-Python -PreferX64:$script:WantsX64Python
-    if (-not $python) {
-        # winget's default scope can pick a machine-wide install that a non-elevated
-        # session cannot finish, leaving nothing behind. User scope is the one that
-        # reliably completes without elevation, so it is worth one explicit retry
-        # before asking the operator to do anything by hand.
-        Write-Caution 'Still not resolvable -- retrying the install in user scope.'
-        Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13' -Extra ($pyArch + @('--scope', 'user')) | Out-Null
-        $python = Resolve-Python -PreferX64:$script:WantsX64Python
-    }
-    if (-not $python) {
-        Show-PythonDiagnostics
-        Stop-WithError 'Python 3.13 is installed or attempted, but no interpreter answers.' @(
-            'The probe above is the real evidence -- please include it in a bug report.',
-            'Workaround: install Python 3.13 from https://www.python.org/downloads/',
-            'ticking "Add python.exe to PATH", then re-run this script.'
-        )
+    if (-not $python -or $python.Platform -ne 'win-amd64') {
+        if ($script:CanRunX64) {
+            # 3. nuget.org. This is the rung that makes the install unattended on a
+            # machine where winget declines -- it asks nobody for anything.
+            $vendored = Install-PythonFromNuGet -Destination (Join-Path $target '.python-x64')
+            if ($vendored) {
+                $found = Test-PythonCandidate -Command @($vendored)
+                if ($found -and $found.Platform -eq 'win-amd64') { $python = $found }
+            }
+        }
     }
 }
-# An ARM64 interpreter reaches this line only when no x64 one was found. Fetch one
-# rather than letting pip discover the wheel gap twenty minutes into a source build.
-if ($script:WantsX64Python -and $python.Platform -ne 'win-amd64' -and -not $NoPython) {
-    Write-Caution "This is an ARM64 machine and the Python found is $($python.Platform)."
-    Write-Note 'cryptography, statsmodels and httptools ship no ARM64 wheel, so pip would'
-    Write-Note 'try to compile them. Installing the x64 build, which runs here natively.'
-    Install-WingetPackage -Id 'Python.Python.3.13' -Label 'Python 3.13 (x64)' -Extra $pyArch | Out-Null
-    $again = Resolve-Python -PreferX64
-    if ($again -and $again.Platform -eq 'win-amd64') { $python = $again }
+
+if (-not $python) {
+    Show-PythonDiagnostics
+    Stop-WithError 'No Python 3.13+ interpreter answers, and none could be installed.' @(
+        'The probe above is the real evidence -- please include it in a bug report.',
+        'Workaround: install Python 3.13 from https://www.python.org/downloads/',
+        'ticking "Add python.exe to PATH", then re-run this script.'
+    )
 }
 Write-Ok "Python $($python.Version) ($($python.Platform)) at $($python.Exe)"
-if ($script:WantsX64Python -and $python.Platform -ne 'win-amd64') {
-    # Proceed anyway: refusing would be worse than a build that might succeed on a
-    # machine that does have the toolchain. But say what will happen, before it does.
-    Write-Caution 'Still on an ARM64 interpreter -- the dependency install will likely fail.'
-    Write-Note 'cryptography, statsmodels and httptools have no win_arm64 wheel; pip will'
-    Write-Note 'fall back to compiling them and stop at a missing MSVC/Rust toolchain.'
-    Write-Note 'Fix: install the x64 Python from https://www.python.org/downloads/windows/'
-    Write-Note '(the file named -amd64.exe, NOT -arm64.exe) and re-run this script.'
+
+if ($python.Platform -ne 'win-amd64' -and $AllowSourceBuilds) {
+    # A machine that carries MSVC and Rust genuinely can build all three. Refusing it
+    # would be a cage, so the escape exists -- it is just not the default, because
+    # without that toolchain the build fails slowly and the fix is one download.
+    Write-Caution "Proceeding on a $($python.Platform) interpreter because -AllowSourceBuilds was given."
+    Write-Note 'cryptography, httptools and statsmodels will be COMPILED. This needs'
+    Write-Note 'Visual Studio Build Tools (C++) and a Rust toolchain, and takes a while.'
+} elseif ($python.Platform -ne 'win-amd64') {
+    # Every rung failed. Say exactly what will happen and why we will not paper over
+    # it, rather than letting pip discover it twenty minutes into a Rust build.
+    Show-PythonDiagnostics
+    if ($script:MachineArch -eq 'ARM64') {
+        Stop-WithError "Only a $($python.Platform) interpreter is available, and this project cannot install on one." @(
+            'cryptography (core), httptools (core, via uvicorn) and statsmodels have no',
+            'win_arm64 wheel, so pip would compile them and stop at a missing MSVC/Rust',
+            'toolchain. Pinning cryptography to the one ARM64 series that exists (46.0.3)',
+            'is NOT done automatically: it carries 13 open advisories, and this app signs',
+            'evidence -- installing that quietly would be security theatre.',
+            '',
+            'Fix, one download: https://www.python.org/downloads/windows/ ->',
+            'Windows installer (64-bit), the file named -amd64.exe, NOT -arm64.exe.',
+            'Tick "Add python.exe to PATH", then re-run this script.',
+            '',
+            'Or, if this machine HAS Visual Studio Build Tools and Rust, re-run with',
+            '-AllowSourceBuilds to compile them here.'
+        )
+    }
+    Stop-WithError "Only a $($python.Platform) interpreter is available, and this project cannot install on one." @(
+        'cryptography publishes no 32-bit Windows wheel at all, so the core dependency',
+        'set cannot be installed on a 32-bit-only Windows. This is a real limit, not a',
+        'configuration problem -- 64-bit Windows is required.'
+    )
 }
 
 # --------------------------------------------------------------------------- #
@@ -606,11 +807,51 @@ if (-not (Test-Path -LiteralPath (Join-Path $target 'pyproject.toml'))) {
 $venv       = Join-Path $target '.venv'
 $venvPython = Join-Path $venv 'Scripts\python.exe'
 
-if (-not (Test-Path -LiteralPath $venvPython)) {
+# A .venv is DERIVED from whichever interpreter created it, and it keeps that
+# interpreter's version and wheel platform for life -- so reusing one built by a
+# different Python silently defeats everything section 2 just did. On the field
+# machine that reported this, the ARM64 ladder resolved a win-amd64 interpreter and
+# said so, the .venv left by the previous run was still win-arm64, pip went looking
+# for win_arm64 wheels that do not exist, and three packages fell back to source
+# builds that need a C compiler. The installer's own output read
+# "ok  Python 3.13 (win-amd64)" four lines above the failure. Existence is not a
+# match: probe the venv's OWN interpreter and rebuild when it disagrees.
+$reuseVenv = $false
+if (Test-Path -LiteralPath $venvPython) {
+    $existingVenv = Test-PythonCandidate -Command @($venvPython)
+    if (-not $existingVenv) {
+        $venvMismatch = 'it does not run -- the interpreter it was built from is gone or broken'
+    } elseif ($existingVenv.Platform -ne $python.Platform) {
+        $venvMismatch = "it is $($existingVenv.Platform) and this install needs $($python.Platform)"
+    } elseif ($existingVenv.Version -ne $python.Version) {
+        $venvMismatch = "it is Python $($existingVenv.Version) and this install uses Python $($python.Version)"
+    } else {
+        $venvMismatch = $null
+        $reuseVenv    = $true
+    }
+
+    if (-not $reuseVenv) {
+        # Not prompted on purpose. A .venv holds no user data -- it is rebuilt by the
+        # very pip step that runs next -- and under `irm | iex` stdin is redirected, so
+        # a prompt would answer itself. Say what is happening instead.
+        Write-Caution "Replacing .venv: $venvMismatch."
+        Write-Note 'Nothing of yours is in there; pip rebuilds it in the next step.'
+        try {
+            Remove-Item -LiteralPath $venv -Recurse -Force -ErrorAction Stop
+        } catch {
+            Stop-WithError "Could not remove $venv -- $($_.Exception.Message)" @(
+                'Close anything running from that folder (the app, an editor, a terminal), then re-run.',
+                'Continuing would install into a virtual environment that cannot take the right wheels.'
+            )
+        }
+    }
+}
+
+if ($reuseVenv) {
+    Write-Ok "Reusing the existing .venv (Python $($python.Version), $($python.Platform))"
+} else {
     Write-Step 'Creating the virtual environment (.venv)'
     Invoke-Native -File $python.Exe -Arguments @('-m', 'venv', $venv) | Out-Null
-} else {
-    Write-Ok 'Reusing the existing .venv'
 }
 if (-not (Test-Path -LiteralPath $venvPython)) {
     Stop-WithError "The virtual environment was not created at $venv."

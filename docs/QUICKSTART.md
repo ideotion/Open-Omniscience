@@ -317,26 +317,45 @@ cd $HOME\Open-Omniscience
   do about it. Real-time scanning also slows the first `pip install` noticeably.
 - **Port.** Set `OO_PORT` before launching to move off 8000; `scripts\launch.cmd`
   honours it.
-- **Windows on ARM (ARM64).** Handled automatically, and worth knowing why. Three
-  dependencies publish **no `win_arm64` wheel at all** — `cryptography` (core: Ed25519
-  signing), `httptools` (core, via `uvicorn[standard]`) and `statsmodels` (the
-  `analysis` extra). `statsmodels` and `httptools` have never published one; whereas
-  `cryptography` did, for **46.0.0–46.0.3** only. Checked against PyPI 2026-08-23 and
-  confirmed in the field: a *native* ARM64 interpreter sends pip to a Rust + MSVC
-  source build that stops at `linker link.exe not found` on any machine without Visual
-  Studio Build Tools. Everything else — `sqlcipher3`, `lxml`, `bcrypt`, `pydantic-core`,
-  `numpy`, `duckdb` — does ship ARM64, so encryption itself was never the problem.
-  - **What `install.ps1` does:** detects ARM64, then installs and uses the **x64**
-    Python, which Windows on ARM runs natively. Every dependency then arrives as a
-    published wheel and no build tools are needed. If you already have an x64 Python
-    it uses that one instead of installing anything.
-  - **If you install Python by hand,** take `python-3.13.x-amd64.exe` from python.org
-    — the file ending `-amd64.exe`, **not** `-arm64.exe`.
-  - **Staying on a native ARM64 interpreter** means building all three from source:
-    Visual Studio Build Tools (C++) *and* a Rust toolchain. Pinning
-    `cryptography<=46.0.3` does not avoid this — the other two have no ARM64 wheel to
-    pin to — so it buys nothing and holds a security-critical library back several
-    major versions. Use the x64 route.
+- **Architecture (x64 / ARM64 / 32-bit).** Detected and handled by the installer; here
+  is what it is deciding. What governs whether `pip install` succeeds is not the
+  machine but which wheels exist for the *interpreter's* platform. Measured against
+  PyPI on 2026-08-23, for CPython 3.13, across this project's whole dependency set:
+
+  | interpreter | wheels |
+  |---|---|
+  | `win-amd64` | **every dependency.** The only complete architecture. |
+  | `win-arm64` | all but three — `cryptography` (core), `httptools` (core, via `uvicorn[standard]`) and `statsmodels` (`analysis`) |
+  | `win32` | `cryptography` publishes none at all |
+
+  Windows on ARM runs x64 binaries transparently, so an **x64 interpreter is the right
+  answer on ARM64 too** — not a compromise, the complete set. `install.ps1` therefore
+  prefers `win-amd64` everywhere and will obtain one if the machine hasn't got one:
+  winget with the architecture named, then winget in user scope, then the Python
+  Software Foundation's self-contained x64 CPython from nuget.org — verified against
+  the SHA-512 nuget attests for it, unpacked into `.python-x64/` inside the app folder,
+  needing no elevation, no PATH change and no registry entry. A hash mismatch, or a
+  version nuget attests no hash for, **refuses**.
+
+  If every rung fails you get a stop with the one-download fix, not a twenty-minute
+  Rust build that ends in `linker link.exe not found`.
+
+  An existing `.venv` is **probed, not just found**: it keeps the version and wheel
+  platform of whatever interpreter built it, so one left by an earlier run on a
+  different Python is replaced rather than reused — otherwise everything above is
+  silently undone at the last step. A matching one is reused untouched. Re-running the
+  installer is therefore the fix for a half-finished install; nothing needs deleting by
+  hand.
+
+  - **Why a native ARM64 install is not auto-enabled.** It would need `cryptography`
+    pinned to 46.0.0–46.0.3, the only series with ARM64 wheels. That release carries
+    **13 open advisory records** (including a statically-linked OpenSSL one fixed in
+    48.0.1). This app signs evidence; installing that quietly would be security
+    theatre. If your machine genuinely has Visual Studio Build Tools **and** a Rust
+    toolchain, `-AllowSourceBuilds` compiles the three natively — an explicit choice,
+    never a default.
+  - **32-bit Windows is not supported**, and that is a real limit rather than a gate:
+    `cryptography` ships no `win32` wheel. 64-bit Windows is required.
 
 ---
 
