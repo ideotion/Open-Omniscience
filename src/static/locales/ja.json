@@ -2150,6 +2150,8 @@
   "The app is busy — retrying shortly…": "アプリがビジー状態です — まもなく再試行します…",
   "Session forensics": "セッション診断",
   "Could not load session forensics.": "セッション診断を読み込めませんでした。",
+  "Download (.txt)": "ダウンロード (.txt)",
+  "The same facts as a dated plain-text file you can send on. It is also in the all-diagnostics archive as session-forensics.txt — this link is here because a full bundle run is the wrong cost when the one question is what happened to this instance.": "同じ内容を日付入りのプレーンテキストファイルとして取得でき、そのまま送れます。全診断アーカイブにも session-forensics.txt として含まれています。このリンクがあるのは、知りたいことがこのインスタンスに何が起きたかだけのときに、アーカイブ全体を実行するのは割に合わないからです。",
   "Previous session": "前回のセッション",
   "Ended cleanly": "正常に終了",
   "Ended unexpectedly": "予期せず終了",

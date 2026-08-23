@@ -2150,6 +2150,8 @@
   "The app is busy — retrying shortly…": "应用繁忙——即将重试…",
   "Session forensics": "会话取证",
   "Could not load session forensics.": "无法加载会话取证。",
+  "Download (.txt)": "下载 (.txt)",
+  "The same facts as a dated plain-text file you can send on. It is also in the all-diagnostics archive as session-forensics.txt — this link is here because a full bundle run is the wrong cost when the one question is what happened to this instance.": "同样的事实，以带日期的纯文本文件形式提供，可直接转发。它也在完整诊断归档中，名为 session-forensics.txt — 这个链接存在，是因为当唯一的问题是这个实例出了什么事时，运行一次完整归档的代价过高。",
   "Previous session": "上一次会话",
   "Ended cleanly": "正常结束",
   "Ended unexpectedly": "意外结束",

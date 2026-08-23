@@ -2150,6 +2150,8 @@
   "The app is busy — retrying shortly…": "Приложение занято — скоро повторим попытку…",
   "Session forensics": "Криминалистика сессии",
   "Could not load session forensics.": "Не удалось загрузить криминалистику сессии.",
+  "Download (.txt)": "Скачать (.txt)",
+  "The same facts as a dated plain-text file you can send on. It is also in the all-diagnostics archive as session-forensics.txt — this link is here because a full bundle run is the wrong cost when the one question is what happened to this instance.": "Те же данные в виде текстового файла с датой, который можно переслать. Он также есть в полном диагностическом архиве под именем session-forensics.txt — эта ссылка нужна потому, что запускать весь архив слишком дорого, когда вопрос лишь один: что произошло с этим экземпляром.",
   "Previous session": "Предыдущая сессия",
   "Ended cleanly": "Завершена корректно",
   "Ended unexpectedly": "Завершена неожиданно",

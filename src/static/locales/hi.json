@@ -2150,6 +2150,8 @@
   "The app is busy — retrying shortly…": "ऐप व्यस्त है — शीघ्र ही पुनः प्रयास…",
   "Session forensics": "सत्र फोरेंसिक",
   "Could not load session forensics.": "सत्र फोरेंसिक लोड नहीं हो सका।",
+  "Download (.txt)": "डाउनलोड करें (.txt)",
+  "The same facts as a dated plain-text file you can send on. It is also in the all-diagnostics archive as session-forensics.txt — this link is here because a full bundle run is the wrong cost when the one question is what happened to this instance.": "वही तथ्य एक तिथि-अंकित सादा-पाठ फ़ाइल के रूप में, जिसे आप आगे भेज सकते हैं। यह पूर्ण-निदान संग्रह में भी session-forensics.txt के नाम से मौजूद है — यह लिंक इसलिए है कि जब एकमात्र प्रश्न यह हो कि इस इंस्टेंस के साथ क्या हुआ, तब पूरा संग्रह चलाना बहुत महँगा पड़ता है।",
   "Previous session": "पिछला सत्र",
   "Ended cleanly": "सही ढंग से समाप्त",
   "Ended unexpectedly": "अप्रत्याशित रूप से समाप्त",

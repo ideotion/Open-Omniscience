@@ -5436,3 +5436,50 @@ is a silent NO-OP (None means "leave unchanged"), and BOTH reset tokens — the 
     sign-off step in a clean-up gate is for. Proposing corpus-wide criteria from those four
     specimens would have quarantined four genuine articles and zero junk, and the report
     would have read like evidence.
+
+
+## 2026-08-23 — the release-scale P0 read: a fabricated FAIL, and a calibration arm aimed at the wrong population
+
+  - **A STATISTIC'S PROSE IS A CLAIM, AND WHEN IT DISAGREES WITH THE CODE THE CODE IS
+    PUBLISHING A VERDICT NOBODY ASKED FOR — plus: a whole-process sampler makes a
+    diagnostic contaminate its own window (2026-08-23, the P0.3 collector `fail`):** the
+    check computed `rise = max(numeric) - first` while the `climb_method` string it
+    published beside the number promised *"a sustained absolute rise is the OOM signature
+    at any baseline"*. `max()` cannot tell one excursion from a trend, so the two had never
+    been the same measurement, and the field run duly reported *"the OOM signature"* over a
+    series whose first, median and last passes were 1323 / 1371 / 1303 MB — **3 of 193
+    passes (1.6 %)** above the floor, 71 *below* the first pass, opening-to-trailing fifth
+    +176 MB against a 512 MB bar. A fabricated FAIL is exactly as dishonest as a fabricated
+    pass, and it is more expensive here, because it points an operator at a leak that is not
+    there. THE SECOND HALF IS THE ONE THAT GENERALISES FURTHEST: `collect_perf` samples
+    `psutil.Process()` with **no argument** — whole-process RSS — so the app's own backup,
+    restore and diagnostics work lands in the collector's samples, and the largest spike sat
+    between two pre-restore snapshots the instance's own forensics timestamps. **Running the
+    P0 validation contaminates the very window P0.3 reads.** RULES. (a) When a computation
+    publishes a method string, assert that the string describes the arithmetic — the
+    mismatch is invisible in review precisely because the sentence reads correctly. (b) For
+    any "did this grow" verdict, take it from the SUSTAINED level (a trailing window against
+    an opening one) and keep the peak as a *reported fact*: suppressing the excursion trades
+    one dishonest reading for another, since a 2.4 GB spike is information even when it is
+    not a leak. (c) Before reading a per-subsystem metric, ask whether the sampler can even
+    see subsystems — a process-wide gauge attributes everything to whoever is being measured.
+    (d) The twin is mandatory and cheap: a monotone climb AND a leak that saturates early
+    must still fail, or the fix is just a detector that never fires.
+  - **AN EXPENSIVE CALIBRATION ARM POINTED AT THE WRONG POPULATION MEASURES NOTHING THE
+    DECISION NEEDS — and a resumable cursor pinned to 0 can never finish (2026-08-23, the
+    row-5 criteria):** the clean-up decision is about the **451** index pages that clear the
+    ≥100-word body guard — URL says listing, body length says article, so the corroborating
+    prose measurement is the whole question. The report's prose arm instead walks the corpus
+    by ascending id, and the bundle member pins `prose_gate_after_id=0` with `limit=500`, so
+    every run re-measures the same lowest-id 500 articles, `done` can never become true on
+    any corpus larger than 500, and two consecutive field reports both stopped at
+    `last_id: 695` having flagged **0**. Nothing is mislabelled — the per-batch denominator
+    is stated — but "resumable" reads as "will finish", and in the bundle it will not. So
+    the proposal could only cover the 8-article drop path, against a 451-article problem.
+    GENERAL FORM: when a report exists to calibrate a decision, name the population the
+    decision is about and check the report's costly arm is pointed AT it; an arm that walks
+    a natural key (id, date, alphabet) samples whatever that key happens to order first,
+    which is almost never the population in question. And the honest move when the evidence
+    is missing is to propose the tier you CAN corroborate and say plainly that the other one
+    is unmeasured — quarantining 451 real-looking articles on a URL rule alone would be the
+    lookalike trap wearing a clean-up's clothes.

@@ -2150,6 +2150,8 @@
   "The app is busy — retrying shortly…": "Aplikasi sedang sibuk — mencoba lagi sebentar…",
   "Session forensics": "Forensik sesi",
   "Could not load session forensics.": "Tidak dapat memuat forensik sesi.",
+  "Download (.txt)": "Unduh (.txt)",
+  "The same facts as a dated plain-text file you can send on. It is also in the all-diagnostics archive as session-forensics.txt — this link is here because a full bundle run is the wrong cost when the one question is what happened to this instance.": "Fakta yang sama sebagai berkas teks bertanggal yang dapat Anda kirimkan. Berkas ini juga ada di arsip diagnostik lengkap dengan nama session-forensics.txt — tautan ini ada karena menjalankan arsip lengkap terlalu mahal ketika satu-satunya pertanyaan adalah apa yang terjadi pada instans ini.",
   "Previous session": "Sesi sebelumnya",
   "Ended cleanly": "Berakhir dengan bersih",
   "Ended unexpectedly": "Berakhir tak terduga",

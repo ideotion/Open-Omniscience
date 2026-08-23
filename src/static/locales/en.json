@@ -2150,6 +2150,8 @@
   "The app is busy — retrying shortly…": "The app is busy — retrying shortly…",
   "Session forensics": "Session forensics",
   "Could not load session forensics.": "Could not load session forensics.",
+  "Download (.txt)": "Download (.txt)",
+  "The same facts as a dated plain-text file you can send on. It is also in the all-diagnostics archive as session-forensics.txt — this link is here because a full bundle run is the wrong cost when the one question is what happened to this instance.": "The same facts as a dated plain-text file you can send on. It is also in the all-diagnostics archive as session-forensics.txt — this link is here because a full bundle run is the wrong cost when the one question is what happened to this instance.",
   "Previous session": "Previous session",
   "Ended cleanly": "Ended cleanly",
   "Ended unexpectedly": "Ended unexpectedly",

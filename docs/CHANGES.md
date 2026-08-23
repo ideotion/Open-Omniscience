@@ -349,8 +349,17 @@ background job, which is right for a bounded number of stories and wrong for a l
   instrumentation exists and the last real reading (~22 h, 61 passes) showed no climb, but
   22 hours is not multi-day, so memory across days at release scale is **unmeasured** rather
   than merely unreported.
-- **The 5M-scale diagnostics** — the bar was withdrawn to ~1M for this cycle because the app's
-  throughput could not reach it. It returns when the throughput work does.
+- **Diagnostics on the ~1M-article instance** — the scale bar was withdrawn to ~1M in July
+  because the app's throughput could not reach 5M, and withdrawn again on 2026-08-23 because
+  the ~1M instance is not the machine this release ships against. `0.3`'s diagnostics evidence
+  is therefore read **at 40,260 articles**, and anything that only appears an order of
+  magnitude higher is unmeasured rather than measured-and-fine. Both bars return when the
+  throughput work does; the ~1M run is required in `0.4`.
+- **The article clean-up** — the criteria are proposed and the machinery ships, but the pass
+  has not been executed. Tier A (8 listing pages, corroborated) awaits sign-off; Tier B (451
+  index pages that clear the ≥100-word body guard, the population the clean-up is actually
+  for) awaits a prose measurement nobody has taken, and is deliberately not proposed without
+  one.
 
 ## 0.2.0 — data safety at scale (the `0.1` cycle, version set 2026-07-10)
 

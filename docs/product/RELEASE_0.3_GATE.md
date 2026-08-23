@@ -9,7 +9,7 @@ Amended twice since; the amendment log is §3. The narrative board lives in
 [`docs/CHANGES.md`](../CHANGES.md) under `0.3.0`; this file is the part you tick.
 
 **The sequence from here to the tag is [§7](#7-the-path-to-the-tag--what-is-left-in-order).**
-Three rows remain and all three are measurements on the maintainer's own corpus; §7.5
+One row remains and it needs a decision, not a measurement; §7.4
 records what a session already verified, and what that is worth.
 
 **How a row closes.** A row is `CLOSED` only when there is a **named artifact** — a
@@ -26,18 +26,23 @@ no evidence.
 |---|---|---|---|
 | 1 | Source-management program implemented **and double-checked** | shared | **CLOSED** (2026-08-13) |
 | 2 | Full transversal repo audit | session | **CLOSED** (2026-07-25) |
-| 3 | Full diagnostics from the real corpus at release scale (~1M) | operator | **OPEN** — run queued |
+| 3 | Full diagnostics from the real corpus at release scale | operator | **CLOSED** (2026-08-23) |
 | 4 | A committed full import that re-checks **all** sources | operator | **MOVED TO 0.4 — required there** (2026-08-13) |
-| 5 | Article clean-up: discussed → agreed → implemented → **executed** | shared | **OPEN** — blocked on row 3 |
+| 5 | Article clean-up: discussed → agreed → implemented → **executed** | shared | **OPEN** — criteria proposed, awaiting sign-off |
 | 6 | DB-10 §1b page-size bench passed + the ruling made | maintainer | **CLOSED** (2026-08-13) |
-| 7a | Cold-boot unlock at full scale | operator | **OPEN** — one clean restart |
+| 7a | Cold-boot unlock at full scale | operator | **CLOSED** (2026-08-23) |
 | 7b | Multi-day (≥72 h) collector soak | operator | **MOVED TO 0.4 — required there** (2026-08-23) |
 | 8 | Browser-verification bar | session | **CLOSED** (2026-08-13) |
 
-Three rows remain: **3, 5, 7a** — and they now close in ONE operator sitting on the
-release-scale instance (§7.1): a clean restart, the P0 button, then the diagnostics
-button, whose bundle carries row 5's input. Row 7b's ≥72 h soak moved to `0.4`
-(maintainer, 2026-08-23), alongside row 4. Row 8 closed against its own literal wording; the larger
+**One row remains: 5**, and what it needs is a decision, not a measurement — the criteria
+are proposed in that section from the 2026-08-23 field evidence, and the sign-off is the
+one step that cannot be delegated.
+
+Rows **3** and **7a** closed on 2026-08-23 against the release-scale instance (40,260
+articles). The **~1M scale bar moved to `0.4`** with the instance it was written for
+(maintainer: *"the 1M instance is NOT the v0.3 release-scale one"*), so row 3's bar is now
+the corpus 0.3 actually ships against — see §5 for what that costs. Row 7b's ≥72 h soak
+moved to `0.4` alongside row 4. Row 8 closed against its own literal wording; the larger
 matrix its report's §4–§6 recorded as a stretch target was then **executed 2026-08-20**
 (`docs/audit/UI_CLICKTHROUGH_2026-08-20.md` — all 17 themes, the Reader surface, a real
 import fixture, the a11y axis with vendored axe-core, five lens drills, five standing
@@ -99,15 +104,18 @@ Re-run it before the tag only if the cycle's remaining work touches a non-negoti
 
 ---
 
-### Row 3 — full diagnostics at release scale · OPEN
+### Row 3 — full diagnostics at release scale · CLOSED (2026-08-23)
 
 **Bar:** one complete `all-diagnostics` bundle from the **real** corpus at its actual
 release scale.
 
-**Amended 2026-07-30:** the original bar said ~5 million articles. Withdrawn by the
-maintainer — *"we won't be able to achieve the 5 million mark for the next release due to
-the overall app speed"* — and replaced with **~1 million**, which the corpus has reached
-(1,048,725 on 2026-08-12).
+**Amended twice, and the second one is what closed it.** The original bar said ~5 million
+articles; the maintainer withdrew that on 2026-07-30 (*"we won't be able to achieve the 5
+million mark for the next release due to the overall app speed"*) and set ~1 million. On
+**2026-08-23** they withdrew that too — *"the 1M instance is NOT the v0.3 release-scale
+one"* — and the ~1M bar **moved to `0.4`** with the instance it describes. The bar this row
+was always about is *the real corpus at the scale this release actually ships against*, and
+that is the ~40k instance below.
 
 **What this costs, stated rather than glossed:** every finding from this run is evidence
 **at ~1M** and must be reported as such. Behaviour that only appears an order of magnitude
@@ -123,7 +131,30 @@ makes a long run diagnosable if it dies.
 diagnostic route as a member or a documented exemption, and no member reports
 `skipped-deadline` for a reason that matters.
 
-#### The 2026-08-23 bundle — what it settled, and what it did not
+#### The bundle that closed it — 2026-08-23, 40,260 articles
+
+`oo-alldiagnostics-20260823-101529.zip`, from the release-scale instance: **40,260
+articles / 685,601 keywords / 810,462 mentions**, on 2 cores and 4.1 GB of RAM (Qubes,
+i7-1065G7). 64 members in **1,139.9 s**, app `0.3.0`, schema head `6933c8d7c7b0`.
+
+The manifest's runtime coverage block reads **`complete: true`** — 98 GET diagnostic
+routes, 63 covered, 35 exempt, nothing unclassified, no stale classification, no missing
+member. No member reported `skipped-deadline`. That is the bar, met.
+
+**Two members errored, and the fix is in this PR.** `home-cards` and `card-audit` — 514 s
+of the run between them — each finished its work and then raised *"Cannot operate on a
+closed database"*, writing 0 bytes. It is the **same defect** the 2026-08-23 5,010-article
+bundle surfaced (below), root-caused and fixed here: `statement_deadline` armed one raw
+DBAPI connection and disarmed that same object in `finally`, while the briefing registry's
+WAL guard closes its cursor and commits mid-scan by design. `leads-quality` survived this
+time, which is the tell — whether the 30 s release lands inside a given member's scan is
+timing, so the same bundle can lose two members on one instance and three on another.
+
+Row 3 closes on the written bar (bundle · coverage · no deadline skips). The confirming
+re-run on the fixed build is not a second gate — it rides the row-5 sitting, which needs a
+post-fix `criteria-calibration.json` anyway.
+
+#### The earlier 2026-08-23 bundle — what it settled, and what it did not
 
 A bundle arrived from a **5,010-article** instance (2 cores, 3.7 GB, Qubes). It does not
 meet this row's scale bar and is not treated as closing it — but it was worth its weight
@@ -177,7 +208,7 @@ demonstration that nobody writes down becomes a demonstration that never happens
 
 ---
 
-### Row 5 — the article clean-up · OPEN, blocked on row 3
+### Row 5 — the article clean-up · OPEN, criteria proposed, awaiting sign-off
 
 **Bar:** discussed → **agreed** (explicit sign-off before execution) → implemented →
 **executed** on the real corpus, removing the undesired-article class (nav soup, section
@@ -194,22 +225,76 @@ fronts, tag archives — *"a list, not an article"*).
 - the **calibration diagnostic** — `criteria_calibration` (`/api/diagnostics/criteria-calibration`),
   the top-N would-be-disregarded articles plus statistics and per-article detail.
 
-**The only missing step is a decision, and row 3 delivers its input.**
-`criteria-calibration.json` is already an all-diagnostics **bundle member**
-(`src/api/diagnostics.py:3526`), so the diagnostics run queued for row 3 *contains* the
-report row 5's execution is gated on. Sequence:
+**Steps 1 and 2 are done.** The release-scale bundle arrived (row 3), and the criteria are
+proposed below against its specimens. Sequence:
 
-1. operator runs the bundle (row 3) →
-2. session reads `criteria-calibration.json`, proposes criteria against real specimens →
-3. **maintainer agrees the criteria** (this is the sign-off the bar names) →
-4. operator runs the quarantine pass with `write=True` →
-5. re-index clears the junk keywords and entities the quarantined articles contributed.
+1. ~~operator runs the bundle~~ → **done** (2026-08-23, 40,260 articles)
+2. ~~session proposes criteria against real specimens~~ → **done**, below
+3. **maintainer agrees the criteria** ← *this is where the row now sits*
+4. operator runs the quarantine pass with `write=True`
+5. re-index clears the junk keywords and entities the quarantined articles contributed
 
 **Closes when:** step 4 has run and the report names how many articles were quarantined
 under which criteria version. Nothing is deleted — quarantine is a reversible stamp, and
 quarantined articles ride backup export/import as data.
 
-#### The 2026-08-23 calibration report — the criteria are NOT ready to sign off
+#### The proposal — what to quarantine, and what to leave alone
+
+Measured on the release-scale bundle: **40,156 articles scanned, 12 flagged (0.03 %)** by
+the URL-shape rules, and after the detector fix in this PR, **8**.
+
+**Tier A — the drop path, 8 articles. Proposed for execution.**
+
+All eight are BBC Chinese-edition topic indexes (`bbc.com/ukchina/trad/topics/<id>`,
+`bbc.com/zhongwen/…`), flagged `url_taxonomy` on an explicit `/topics` path segment — a
+rule that keys on a literal segment rather than a heuristic, and `/topics/<id>` is
+definitionally an index. Their measured English function-word density is **0.0** across
+26–95 tokens: not one `the`, `of` or `and`. That is a real measurement rather than a gap —
+`function_word_density` returns `(0.0, None)` for text it cannot read, and these returned
+`en` — so two independent signals agree.
+
+Two honest qualifications. The *sentence-punctuation* half is weak here and is not being
+leaned on: an ASCII `[.!?]` counter reads low on a page whose Chinese content uses `。`
+regardless of whether it is prose. And the fact that a BBC **Chinese** page's stored text
+is predominantly *English* is itself the tell — the extractor captured the page shell
+because there is no article body to capture.
+
+**Tier B — the 451 index pages above the word guard. NOT proposed. Measure first.**
+
+`index_pages_above_guard` counts **451** articles (1.12 % of scanned) that the ≥100-word
+body guard *keeps* even though their URL is listing-shaped: 115 tier-1, 336 tier-2, the
+largest single reason `/tag` taxonomy listings at 272. This is the population the clean-up
+is actually for — Tier A is 8 articles against a 451-article problem.
+
+It is not proposed because **their prose is unmeasured**. Quarantining 451 real-looking
+articles on a URL rule alone, with no corroborating signal, is precisely the
+"a probe's data distribution is part of the lookalike" trap: the ≥100-word guard exists to
+protect genuine articles at listing-shaped URLs, and Tier A's corroboration does not
+transfer to a population that cleared that guard.
+
+#### Two findings about the instrument, recorded rather than fixed
+
+Both concern the report's prose-gate arm, and together they are why Tier B has no evidence.
+
+1. **In the bundle, the arm can never finish.** It is resumable by design
+   (`prose_gate_after_id`), but the bundle member pins it to `prose_gate_after_id=0` with
+   `limit=500`. So every bundle re-measures the same lowest-id 500 articles, `done` can
+   never become `true` on any corpus larger than 500, and both 2026-08-23 reports stopped
+   at `last_id: 695` having flagged 0. The per-batch denominator is honestly labelled; what
+   misleads is that "resumable" reads as "will finish", and here it will not.
+2. **It walks by id, not by the population under question.** Pointing it at the 451 would
+   make Tier B decidable in a single run, instead of ~20 paginated calls over articles
+   nobody has a question about.
+
+Neither is fixed in this PR. The change is to a data-safety-adjacent instrument
+immediately before a tag, and the standing rule is to park that with a written reason
+rather than ship it fast — this is the reason.
+
+**`CRITERIA_VERSION` is bumped to `nav-soup-v2`** in the same commit as the rule change,
+because that stamp is what tells a future reader which detector generation flagged a
+quarantined row; leaving it would have made `v1` mean two different detectors.
+
+#### The earlier calibration report — how the detector fix was found
 
 The first real `criteria-calibration.json` arrived (5,010-article instance). Reading it
 against its own specimens is exactly why this row has a sign-off step, because on this
@@ -243,10 +328,10 @@ needs repeated calls with `prose_gate_after_id`.
 the corpus) — 67 `/tag` taxonomy listings, 27 `/news` section landings, 22 tier-1. That is
 the population this clean-up is actually for, and it is untouched by the fix above.
 
-**So the sequence stands, with step 2 unchanged:** re-run the bundle at release scale after
-this fix lands, read the fresh report, propose criteria against *those* specimens, and get
-the sign-off. Proposing corpus-wide criteria from four specimens — all four wrong — would be
-the fabricated-confidence failure this gate exists to prevent.
+That run produced no criteria and a real detector fix, which is what the sign-off step is
+for: proposing corpus-wide criteria from four specimens, all four wrong, would have been
+the fabricated-confidence failure this gate exists to prevent. The release-scale report
+above is the one the proposal is built on.
 
 **Standing remainder, tracked but not gating:** the quarantine exclusion currently applies
 in `_query_articles`; omnibar, watches, reporting and framing are still ungated.
@@ -280,7 +365,7 @@ By the §1a precedent, **merging was the ratification**; today's ruling makes th
 
 ---
 
-### Row 7a — cold-boot unlock at full scale · OPEN
+### Row 7a — cold-boot unlock at full scale · CLOSED (2026-08-23)
 
 **Ruled 2026-08-23** (maintainer): the ≥72 h soak moves to `0.4`; the cold boot stays here.
 Splitting them is right — one is five minutes and the other is three days, and they were
@@ -297,11 +382,20 @@ replay — was indistinguishable from an unreadable one. A clean shutdown checkp
 for: following the instructions guaranteed the null the report then read as missing
 evidence. The three-state record now names which case it measured.
 
-The 2026-08-12 reading (323 ms against a 2000 ms bar) is already comfortably inside; what
-it lacks is the *statement* that the boot was cold.
+**Closed by `oo-p0-validation-20260823-100517.json`.** P0.4 reports **368.9 ms** against
+the 2000 ms bar, with `wal_state_before_open` = `{state: "absent", bytes: 0}` and the
+reason spelled out: *"no -wal file at open — a clean shutdown checkpoints and removes it,
+so WAL recovery had nothing to do and is NOT part of this timing"*. Phases: `init_db`
+366.9 ms, airplane guard 2.0 ms. The instance's own session forensics corroborates the
+clean end independently (`previous_session: clean`, 05:45:56 → 07:51:20).
 
-**Closes when** one report shows P0.4 with `wal_state_before_open.state = "absent"` and a
-total under 2000 ms, taken on the full corpus.
+So the row has what it was missing: not a faster number, but the *statement* of which
+shutdown preceded the boot. This is the steady-state unlock the bar asks for, on the
+release-scale corpus.
+
+**What it does not measure, by construction:** WAL recovery. A clean shutdown removes the
+`-wal`, so the phase that grows with the corpus had nothing to replay. That is not a gap in
+the run — it is what "steady-state" means, and the report says so in the same sentence.
 
 ---
 
@@ -321,6 +415,39 @@ so this is an unmeasured property rather than a suspected one — but unmeasured
 is, and the release notes say so.
 
 **It is required in 0.4, not deferred.** See §5.
+
+#### The 2026-08-23 run reported `fail`, and the detector was wrong
+
+The release-scale P0 run returned **`fail`** on P0.3: *"collector RSS rose 1129 MB across
+193 passes (1323 → peak 2452 MB) — over the 512 MB climb floor, the OOM signature."*
+Re-derived from the report's own 193-pass series, that verdict does not hold:
+
+| | |
+|---|---|
+| first / median / last pass | 1323 / 1371 / **1303** MB |
+| passes above `first + 512` | **3 of 193** (1.6 %) |
+| passes *below* the first pass | 71 of 193 |
+| opening vs trailing fifth | 1364 → 1540 MB (**+176**, under the floor) |
+
+That is a noisy plateau with three isolated excursions, not a climb. The detector computed
+`peak - first` while its own method string promised *"a sustained absolute rise"* — and
+`max()` cannot tell one excursion from a trend. Worse, the sampler is `psutil.Process()`
+with **no argument**, i.e. whole-process RSS, so the app's own backup, restore and
+diagnostics work lands in the collector's samples: the largest spike (06:19:32) sits
+between two pre-restore snapshots the instance's forensics timestamps at 06:00:21 and
+06:16:33. Running the P0 validation contaminates the very window P0.3 reads.
+
+**Fixed in this PR.** The verdict is taken from the sustained level (trailing fifth minus
+opening fifth); the peak and every above-floor excursion are still *reported*, with the
+process-wide confound named, because an excursion is information even when it is not a
+leak. Replaying the real 193-pass series through the fixed function returns **pass, +176
+MB**, with the 3 spikes disclosed. The twin — a genuine sustained climb, and a leak that
+saturates early and stays high — must still fail, and is tested; the mutation back to
+`peak - first` reddens the field-case test by name.
+
+**This does not close 7b.** A fabricated failure is exactly as dishonest as a fabricated
+pass, and removing one is not the same as running the soak. The multi-day measurement is
+still owed, in `0.4`.
 
 ### Row 8 — the browser-verification bar · CLOSED
 
@@ -412,6 +539,12 @@ human UX pass".
 | 2026-08-23 | Row **7 SPLIT**: 7a (cold boot) stays in `0.3`, **7b (the ≥72 h soak) moves to 0.4** alongside row 4 — *"Postpone the >72h with the other P0 validation to the v0.4 release"* | maintainer |
 | 2026-08-23 | First real diagnostics bundle read (5,010-article instance). Does **not** meet row 3's ~1M bar, but its coverage block is `complete: true` and it found two defects: three producer-driven members died at `statement_deadline` teardown (400 s of a 713 s run, 0 bytes each), and the row-5 drop path proposed 4 specimens that were 4 false positives. Both fixed; §7.1 folds rows 7a/3/5 into one operator sitting | session |
 | 2026-08-23 | **§7 added — the path to the tag**: the three open rows sequenced (row 5 consumes row 3's output), the tag mechanics corrected for `0.3` (no branch rename; `pyproject` already `0.3.0`; the tag is cut from the maintainer's machine because the session git proxy refuses tag pushes; never create the release in the UI), and §7.5 recording a full pre-tag gate run at `edfed14` — 8390 passed, mypy 0/482, blocking ruff + bandit + pip-audit clean, all three i18n gates unchanged at their ratchets. Every CLOSED row's named artifact re-verified present in the tree the same day | session |
+| 2026-08-23 | **Ruled** (maintainer): *"the 1M instance is NOT the v0.3 release-scale one, postpone this milestone to the v0.4 release."* Row 3's ~1M bar moves to `0.4` with the instance it describes; the row's bar becomes the corpus `0.3` ships against | maintainer |
+| 2026-08-23 | **Row 3 CLOSED** against `oo-alldiagnostics-20260823-101529.zip` — 40,260 articles / 685,601 keywords / 810,462 mentions on 2 cores + 4.1 GB, 64 members in 1,139.9 s, runtime coverage `complete: true` (98 routes, 63 covered, 35 exempt, 0 unclassified), no `skipped-deadline`. Two members (`home-cards`, `card-audit`) errored on the `statement_deadline` defect fixed in this PR | operator + session |
+| 2026-08-23 | **Row 7a CLOSED** against `oo-p0-validation-20260823-100517.json` — P0.4 **368.9 ms** vs the 2000 ms bar with `wal_state_before_open.state = "absent"`, i.e. the steady-state cold boot the bar asks for, corroborated by the instance's own `previous_session: clean` | operator |
+| 2026-08-23 | **P0.3 reported `fail` and the detector was wrong.** `peak - first` fired on 3 of 193 passes (1.6 %) while first/median/last were 1323/1371/1303 MB, against a method string promising *a sustained rise*; the sampler is process-wide, so the largest spike sits between two of the app's own pre-restore snapshots. Verdict moved to the sustained level, excursions still reported; replaying the real series returns pass at +176 MB. Row 7b stays in `0.4` — a fabricated failure removed is not a soak run | session |
+| 2026-08-23 | **Row 5 criteria PROPOSED** from the release-scale report: Tier A = the 8-article drop path (`/topics/<id>` indexes, measured 0.0 function-word density) for execution; Tier B = the 451 index pages above the word guard, explicitly **not** proposed because their prose is unmeasured. `CRITERIA_VERSION` bumped to `nav-soup-v2`. Two instrument findings recorded, not fixed: the bundle's prose arm always restarts at id 0 so it can never finish, and it walks by id rather than by the population in question | session |
+| 2026-08-23 | **Session forensics gains a text rendering** — `forensics.render_text`, a dated `.txt` on `?download=1`, and `session-forensics.txt` beside the JSON in the bundle (field ask). A deliberate, reasoned exception to the 2026-07-20 button-consolidation ruling | session |
 | 2026-08-20 | Row 8's **stretch matrix executed** — 375px P1 fixed, state-D import fixture, Reader drilled, all 17 themes (ai-off AA fix), five lens drills (agenda deduced-events fix), a11y axis (axe vendored; #oo-tip fix), 5 of 9 honesty rules automated; `docs/audit/UI_CLICKTHROUGH_2026-08-20.md`. The row was already closed; this discharges the recorded stretch target | session |
 
 ---
@@ -445,6 +578,28 @@ drops it.
 
 A postponed data-safety demonstration that nobody writes down becomes a demonstration that
 never happens. This section is the write-down.
+
+### 3-at-scale · Diagnostics on the ~1M-article instance
+
+**What it was.** Row 3's bar, from 2026-07-30 until 2026-08-23: one all-diagnostics bundle
+from a corpus of ~1 million articles.
+
+**Why it moved.** The maintainer ruled that the ~1M instance is not the machine `0.3` ships
+against, so the bar was describing a different release than the one being tagged. Row 3
+closed instead against the real release-scale instance — 40,260 articles.
+
+**What `0.3` gives up, stated rather than glossed.** Every figure in the 2026-08-23 bundle
+is evidence **at forty thousand articles**, and must be read as such. Anything that only
+appears an order of magnitude higher — a member that finishes in 19 minutes here and does
+not there, a query whose plan flips, a memory profile that only bends at scale — is
+**unmeasured** for `0.3`, not measured-and-fine. The two members that died in this bundle
+are a reminder that the run is where such things surface.
+
+**What closes it in `0.4`.** One bundle from the ~1M instance whose coverage block reads
+`complete: true`, on a build carrying the `statement_deadline` fix, with every member
+non-zero. The P0 data-safety trio has already been read at that scale (2026-08-12:
+1,048,725 articles, 21.0 GB, backup RSS +1.4 %), so what is owed is the *diagnostics* run,
+not the safety evidence.
 
 ### 4 · A committed full import that re-checks all sources
 
@@ -549,66 +704,46 @@ outlier rate).
 
 ## 7. The path to the tag — what is left, in order
 
-Everything a session can do is done: the code, the docs, the gates and the release
-machinery are ready, and §7.5 records the evidence. **The three open rows all need the
-maintainer's own machine and corpus** — they are measurements of a real ~1M-article
-install, and no sandbox can produce them. They are listed in dependency order, because
-row 5 consumes row 3's output.
+**One thing is left before the tag: you agree the row-5 criteria.** Everything else that a
+session can do is done, and §7.4 records the evidence.
 
-Step-by-step mechanics for each run live in
+Rows 3 and 7a closed on 2026-08-23 against the release-scale instance; rows 4, 7b and the
+~1M diagnostics bar are in `0.4` (§5). Step-by-step mechanics for any run live in
 [`P0_VALIDATION_RUNBOOK.md`](P0_VALIDATION_RUNBOOK.md); this is the sequence, not a
 duplicate of it.
 
-### 7.1 One sitting on the release-scale instance — rows 7a, 3 and 5's input
+### 7.1 Row 5 — agree the criteria, then run the pass
 
-All three remaining rows come off the same machine, in this order, because each step's
-output is the next one's input. Budget ~15 minutes of attention plus the bundle's own run
-time.
+1. **Read the proposal** in row 5. Tier A is 8 articles — BBC `/topics/<id>` indexes, an
+   explicit-path-segment rule, corroborated by a measured 0.0 function-word density. Tier B
+   (the 451 index pages above the word guard) is deliberately **not** proposed: their prose
+   is unmeasured, and that is the whole population the clean-up is for.
+2. **Agree, amend, or decline.** This is the sign-off the bar names and the one step that
+   cannot be delegated. Declining Tier A is a legitimate outcome — 8 reversible stamps is a
+   small clean-up, and the honest reason to run it is that the criteria then exist and are
+   proven end to end, not that 8 articles matter.
+3. **Run the quarantine pass with `write=True`**, then re-index to clear the keywords and
+   entities those articles contributed.
 
-1. **Stop the app cleanly** — the power button, or `Ctrl-C`. Never `kill -9`: a clean
-   WAL-mode close checkpoints and deletes the `-wal`, and *that* is the steady-state boot
-   row 7a asks for.
-2. **Start it and unlock normally.** Nothing to capture by hand — the boot's per-phase
-   timing is recorded.
-3. **Run the P0 validation** (Settings → Diagnostics). This closes **row 7a** if P0.4 comes
-   back `wal_state_before_open.state = "absent"` under 2000 ms. P0.3 will report
-   `not-measurable` with no soak behind it; that is row 7b, now in `0.4`, and is expected.
-4. **Run the one all-diagnostics button** and send the zip. This closes **row 3** — and the
-   same bundle carries `criteria-calibration.json`, which is **row 5's** input.
+**Closes when** step 3 has run and the report names how many articles were quarantined
+under which criteria version — now `nav-soup-v2`.
 
-Do this *after* the `statement_deadline` fix lands, or three producer-driven members
-(`home-cards`, `leads-quality`, `card-audit`) will die again the way they did on
-2026-08-23 — see §2.3.
+### 7.2 Before any of it: land this PR
 
-### 7.2 Row 5 — the article clean-up (from step 4's bundle, then a decision from you)
+The bundle you sent lost `home-cards` and `card-audit` to the `statement_deadline` defect,
+and the calibration report you sent came from the pre-fix detector. Both fixes are in this
+PR. So a re-run on the fixed build is worth one button press — it confirms row 3's two
+errored members are gone and gives Tier B its first prose measurement — but nothing is
+*blocked* on it: row 3 closed on the written bar, and row 5's decision is Tier A, which the
+fix does not change.
 
-1. a session reads the fresh `criteria-calibration.json` and proposes criteria against
-   *those* specimens;
-2. **you agree the criteria** — the explicit sign-off the bar names, and the only step here
-   that cannot be delegated;
-3. run the quarantine pass with `write=True`;
-4. re-index, to clear the keywords and entities the quarantined articles contributed.
+### 7.3 Tag day
 
-**Closes when** step 3 has run and the report names how many articles were quarantined under
-which criteria version. Nothing is deleted: quarantine is a reversible stamp, and quarantined
-articles ride backup export/import as data.
-
-The 2026-08-23 report is why step 1 is not a formality — see §2.5. Its four proposed
-specimens were four false positives, which produced a real detector fix and no criteria.
-
-### 7.3 What moved to 0.4
-
-Row **7b** (the ≥72 h soak) and row **4** (a committed full import re-checking every source).
-Both are recorded in §5 with what they must demonstrate and what closes them — a postponed
-data-safety demonstration that nobody writes down becomes one that never happens.
-
-### 7.4 Tag day
-
-**Do not start this until 7.1–7.3 are done and their rows are ticked in §1.** A row closes
+**Do not start this until 7.1 is done and row 5 is ticked in §1.** A row closes
 on a named artifact, never on "it was built".
 
-1. **Every row closed.** §1 shows rows 1, 2, 3, 5, 6, 7a and 8 closed, with rows 4 and 7b
-   recorded as moved to `0.4` (§5). Any open row blocks the tag.
+1. **Every row closed.** §1 shows rows 1, 2, 3, 5, 6, 7a and 8 closed, with rows 4, 7b and
+   the ~1M diagnostics bar recorded as moved to `0.4` (§5). Any open row blocks the tag.
 2. **No version edit is needed.** `pyproject.toml` already reads `0.3.0` (single source of
    truth, set 2026-07-18 by the P0-pass → `v0.2.0`-tag → flip sequence), and
    `README` / `CONTRIBUTING` / `CHANGES` are already written for the post-tag state.
@@ -639,10 +774,9 @@ on a named artifact, never on "it was built".
 7. **Verify the published assets** against the release's own `SHA256SUMS`. Checksums only —
    there is still no signing key, which is a tracked future item and stated in the notes.
 
-### 7.5 What a session already verified — and what that is worth
+### 7.4 What a session verified, and what that is worth
 
-Run at `e29ced1` — `edfed14`, the two 2026-08-23 fixes, and `origin/main` merged in —
-on the tree that would be tagged:
+Run on the tree that would be tagged:
 
 | Gate | Command (verbatim from `ci.yml`) | Result |
 |---|---|---|

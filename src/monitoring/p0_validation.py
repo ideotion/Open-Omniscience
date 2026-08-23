@@ -714,15 +714,42 @@ def _collector_verdict(samples: list[dict], guard_state: dict) -> dict:
     first, last = numeric[0], numeric[-1]
     peak = max(numeric)
     rise = round(peak - first, 1)
+    # A LEAK IS A LEVEL THAT ROSE AND STAYED RISEN, so the verdict is taken from the
+    # SUSTAINED level, never from `peak - first`: max() cannot tell one transient
+    # excursion from a climb, and the sampler is process-wide (`psutil.Process()` with
+    # no argument), so a backup, a restore or an all-diagnostics build running inside
+    # the window lands in the collector's own samples. Field case 2026-08-23: 3 of 193
+    # passes exceeded the floor -- the largest inside a restore the app's own
+    # pre-restore snapshots timestamp -- while first/median/last were 1323/1371/1303 MB.
+    # `peak - first` called that "the OOM signature", which is a fabricated FAIL, and a
+    # fabricated failure is exactly as dishonest as a fabricated pass.
+    window = max(1, len(numeric) // 5)
+    opening = round(sum(numeric[:window]) / window, 1)
+    trailing = round(sum(numeric[-window:]) / window, 1)
+    sustained = round(trailing - opening, 1)
+    spikes = [
+        {"pass_id": pid, "rss_max_mb": mx}
+        for pid, mx in maxes
+        if mx is not None and mx - first > _COLLECTOR_CLIMB_ABS_MB
+    ]
     guard_engaged = bool((guard_state or {}).get("engaged"))
     base["rss_first_pass_max_mb"] = first
     base["rss_last_pass_max_mb"] = last
     base["rss_peak_across_passes_mb"] = peak
     base["rss_rise_first_to_peak_mb"] = rise
+    base["rss_trend_window_passes"] = window
+    base["rss_opening_level_mb"] = opening
+    base["rss_trailing_level_mb"] = trailing
+    base["rss_sustained_rise_mb"] = sustained
+    base["rss_spikes_above_floor"] = spikes
     base["climb_threshold_mb"] = _COLLECTOR_CLIMB_ABS_MB
     base["climb_method"] = (
-        f"climbing when the peak pass RSS rises >{_COLLECTOR_CLIMB_ABS_MB:g} MB above "
-        "the first pass (a sustained absolute rise is the OOM signature at any baseline)."
+        f"climbing when the SUSTAINED level rises >{_COLLECTOR_CLIMB_ABS_MB:g} MB — the "
+        f"mean of the last {window} pass(es) minus the mean of the first {window}. The "
+        "single highest pass is reported separately (rss_rise_first_to_peak_mb, "
+        "rss_spikes_above_floor) because one excursion is not a leak: RSS is sampled "
+        "process-wide, so a backup, restore or diagnostics build inside the window "
+        "inflates individual passes without the collector having grown."
     )
     # HONEST WINDOW CAVEAT: collect_perf trims its log to ~5000 lines (~2 h), so this
     # reads only the RETAINED tail — a SLOWER multi-day leak may not appear here. The
@@ -735,22 +762,32 @@ def _collector_verdict(samples: list[dict], guard_state: dict) -> dict:
         "surviving days of collection without an OOM (memory-guard state + a clean "
         "previous-session end)."
     )
-    if rise > _COLLECTOR_CLIMB_ABS_MB:
+    if sustained > _COLLECTOR_CLIMB_ABS_MB:
         return _verdict(
             "fail",
-            f"collector RSS rose {rise:.0f} MB across {len(numeric)} passes "
-            f"({first:.0f} -> peak {peak:.0f} MB) — over the {_COLLECTOR_CLIMB_ABS_MB:.0f} "
-            "MB climb floor, the OOM signature. Investigate pass recycling / the memory "
-            "guard, and run a multi-day soak.",
+            f"collector RSS rose {sustained:.0f} MB and stayed risen across "
+            f"{len(numeric)} passes ({opening:.0f} -> {trailing:.0f} MB, comparing the "
+            f"first and last {window} pass(es)) — over the "
+            f"{_COLLECTOR_CLIMB_ABS_MB:.0f} MB climb floor, the OOM signature. "
+            "Investigate pass recycling / the memory guard, and run a multi-day soak.",
             base,
             bar,
         )
     guard_note = " The memory guard is currently engaged." if guard_engaged else ""
+    spike_note = ""
+    if spikes:
+        spike_note = (
+            f" {len(spikes)} of {len(numeric)} pass(es) did spike above the floor "
+            f"(highest {peak:.0f} MB) without the sustained level moving — RSS is "
+            "sampled process-wide, so check whether a backup, restore or diagnostics "
+            "run overlapped those passes before reading them as collector growth."
+        )
     return _verdict(
         "pass",
-        f"collector RSS rose only {rise:.0f} MB across {len(numeric)} passes "
-        f"({first:.0f} -> peak {peak:.0f} MB, under the {_COLLECTOR_CLIMB_ABS_MB:.0f} MB "
-        f"floor) over the retained window.{guard_note} Confirm over a multi-day live soak.",
+        f"collector RSS rose only {sustained:.0f} MB across {len(numeric)} passes "
+        f"({opening:.0f} -> {trailing:.0f} MB, under the "
+        f"{_COLLECTOR_CLIMB_ABS_MB:.0f} MB floor) over the retained "
+        f"window.{spike_note}{guard_note} Confirm over a multi-day live soak.",
         base,
         bar,
     )
