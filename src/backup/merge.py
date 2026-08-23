@@ -64,6 +64,109 @@ _SNAPSHOT_KEEP = 3
 #: Generous on purpose: a re-index batch is 300 articles, and the alternative to waiting
 #: is throwing away an import that has already done hours of work.
 _SWAP_QUIESCE_S = 180.0
+
+# How long the swap waits for a lagging handle on the live corpus before giving up.
+# engine.dispose() closes the pool's IDLE connections and leaves the CHECKED-OUT ones
+# to close as they are returned -- so a swap can meet a handle that is about to go
+# away on its own. On POSIX that never mattered: unlink works on an open file. Windows
+# refuses, and the field saw the raw refusal
+# ("[WinError 32] ... open_omniscience.db-wal") reach the operator as the whole
+# explanation. The handles in question are short -- a status poll, a background read
+# finishing -- so waiting them out is the fix, not a workaround.
+_SWAP_HANDLE_WAIT_S = float(os.environ.get("OO_SWAP_HANDLE_WAIT_S", "20") or 20)
+
+# How long to let the pre-swap WAL checkpoint run before treating the corpus as busy.
+_SWAP_CHECKPOINT_S = float(os.environ.get("OO_SWAP_CHECKPOINT_S", "60") or 60)
+
+
+def _checkpoint_before_swap(timeout_s: float | None = None) -> bool:
+    """Flush the live WAL into the database file. True if it completed.
+
+    Bounded on purpose. ``checkpoint_wal`` takes the single-writer gate, and that
+    gate's acquire has NO timeout -- so calling it straight would turn a restore
+    that currently fails fast into one that hangs forever behind another writer,
+    which the swap barrier above already refuses to do for exactly this reason.
+
+    A checkpoint that cannot finish MEANS a writer is active, which is the one
+    condition the swap must not run under, so the caller aborts rather than
+    proceeding. That is also why this must not simply give up and carry on: the
+    worker would still hold a connection to the corpus, and on Windows that is a
+    guaranteed lock on the files we are about to replace.
+
+    Giving up leaves the checkpoint thread running, which is safe and is worth
+    saying why: it is blocked on the write gate, and once it gets there it does
+    ordinary maintenance the scheduler performs anyway. It also cannot collide
+    with a later retry -- that retry runs THIS function first, and cannot succeed
+    until the gate is free, which is only true once the stray one has finished.
+    """
+    budget = _SWAP_CHECKPOINT_S if timeout_s is None else timeout_s
+    done = threading.Event()
+
+    def _run() -> None:
+        try:
+            from src.scheduler.hygiene import checkpoint_wal
+
+            checkpoint_wal(force=True)  # never raises, by its own contract
+        finally:
+            done.set()
+
+    threading.Thread(target=_run, name="oo-swap-checkpoint", daemon=True).start()
+    return done.wait(budget)
+
+
+def _file_is_locked(exc: BaseException) -> bool:
+    """Is this the OS refusing because something else has the file open?
+
+    Keyed on the WINDOWS ERROR CODE, never on the message: the field report
+    arrived in French ("le fichier est utilise par un autre processus"), so any
+    substring match would have missed the very report that produced this
+    function. ERROR_SHARING_VIOLATION (32) and ERROR_LOCK_VIOLATION (33) are the
+    two codes that mean "open somewhere else".
+
+    ``errno`` is deliberately NOT consulted. Windows maps ERROR_SHARING_VIOLATION
+    and ERROR_ACCESS_DENIED onto the SAME errno (EACCES), so an errno check reads
+    a permissions failure as a busy file -- it would wait out the whole budget and
+    then tell the operator to close a program that was never the problem. The
+    precise code exists on exactly the platform that has this failure, so it is
+    the only one that answers.
+
+    POSIX is not covered because it has no case to cover: unlink succeeds on an
+    open file there, which is why this was a Windows-only field failure. EACCES on
+    POSIX means the directory is not writable -- an answer that will not change
+    however long we wait. A mounted SMB share can surface a real sharing violation
+    on Linux; it arrives with no ``winerror``, and is reported at once rather than
+    guessed at.
+    """
+    return getattr(exc, "winerror", None) in (32, 33)
+
+
+def _clear_stale_side_files(target: Path, *, wait_s: float | None = None) -> None:
+    """Remove the live -wal/-shm so the incoming database is never opened beside them.
+
+    Leaving them is not an option: SQLite would apply the OLD write-ahead log to the
+    NEW database file, which is corruption rather than a failed restore. So this is
+    load-bearing, and it is the step that fails on Windows.
+
+    Retries only a LOCK, and only for a bounded window. Any other error -- a
+    read-only volume, a vanished directory -- raises immediately, because retrying
+    it would just delay the same answer. Nothing has been written to the live corpus
+    when this raises: the WAL was checkpointed a moment ago, so the database file is
+    complete on its own, and the replace has not run.
+    """
+    budget = _SWAP_HANDLE_WAIT_S if wait_s is None else wait_s
+    for suffix in ("-wal", "-shm"):
+        stale = target.with_name(target.name + suffix)
+        deadline = time.monotonic() + budget
+        while True:
+            try:
+                stale.unlink(missing_ok=True)
+                break
+            except OSError as exc:
+                if not _file_is_locked(exc) or time.monotonic() >= deadline:
+                    raise
+                time.sleep(0.25)
+
+
 # 2026-07-26 hardware diagnostics W5: _prune_snapshots() (below) only fires as a
 # side effect of a LATER restore -- a "keep 3" policy correctly retains all 3
 # forever once no further restore ever happens, which is exactly the diagnosed
@@ -153,6 +256,20 @@ def classify_restore_error(action: str, exc: Exception) -> str:
         or "no such column" in low
         or "schema" in low
     )
+    # Something else still has the corpus open. Windows refuses to unlink or replace
+    # such a file; POSIX does not, which is why this surfaced only in the field and
+    # only there. Worth its own sentence because the raw one says nothing an operator
+    # can act on -- and because the reassurance is the important half: this is raised
+    # BEFORE the swap, with the WAL already checkpointed, so the corpus is untouched
+    # and complete.
+    if _file_is_locked(exc):
+        return (
+            f"could not {action} this backup because another program still has your "
+            f"corpus open, so its files could not be replaced. Nothing was changed — "
+            f"your corpus is exactly as it was. Close any other window or copy of the "
+            f"app (and anything reading data/open_omniscience.db), then import again: "
+            f"{msg}"
+        )
     if isinstance(exc, _db_integrity_error_types()):
         return (
             f"the backup's data conflicts with your corpus on a database constraint "
@@ -4859,11 +4976,30 @@ def run_restore(
                     "your corpus. Stop that job, or let it finish, and import again."
                 )
             target = live_db_path()
+            # Empty the live WAL BEFORE letting go of the engine. Two reasons, and
+            # the second is the data-safety one:
+            #   * a checkpointed WAL is usually removed by SQLite's own clean close,
+            #     so there is frequently nothing left to unlink at all;
+            #   * committed transactions live in the WAL until a checkpoint moves
+            #     them into the database file. Unlinking a NON-empty WAL and then
+            #     failing to finish the replace would lose exactly those. Checkpoint
+            #     first and the abort below is free at every point: the database file
+            #     is complete on its own and nothing has been written to it.
+            # RestoreAborted, deliberately, to match the quiesce barrier just above:
+            # both refuse for the same reason (another writer is active) and an
+            # operator who meets one should not be told a different story from the
+            # other. Its handler labels that "cancelled" while the operator cancelled
+            # nothing -- a real wrinkle, but one this barrier already had, so
+            # re-labelling belongs to a slice that changes both, not to a file-lock fix.
+            if not _checkpoint_before_swap():
+                raise RestoreAborted(
+                    "your corpus is still being written to, so its write-ahead log "
+                    f"could not be flushed within {_SWAP_CHECKPOINT_S:.0f}s — nothing "
+                    "was written to your corpus. Let the running job finish, and "
+                    "import again."
+                )
             dispose_engine()
-            for suffix in ("-wal", "-shm"):
-                stale = target.with_name(target.name + suffix)
-                if stale.exists():
-                    stale.unlink()
+            _clear_stale_side_files(target)
             os.replace(working, target)  # atomic on the same filesystem
             init_db()
 
