@@ -52,8 +52,36 @@ def cmd() -> str:
 # --------------------------------------------------------------------------- #
 # Syntax
 # --------------------------------------------------------------------------- #
+INSTALLER_TEST_SOURCE = Path(__file__).read_text(encoding="utf-8")
+
+
 def _powershell() -> str | None:
     return shutil.which("pwsh") or shutil.which("powershell")
+
+
+def test_the_powershell_gated_guards_actually_run_on_a_runner() -> None:
+    """A skip is green, so nothing here said whether the behavioural guards execute.
+
+    Three tests in this file need pwsh/powershell, and `ci.yml` never mentions either
+    -- so on a runner without one they would skip silently and a green lane would say
+    nothing about the .ps1 behaviour they exist to pin. On a developer machine a skip
+    is the right answer and this skips too; on a runner it is a coverage hole, so say
+    so there.
+    """
+    if os.environ.get("CI", "").strip().lower() not in {"1", "true"}:
+        pytest.skip("developer machine -- pwsh is optional here")
+    # Count the DECORATORS, not every line mentioning the probe -- this very line
+    # would otherwise count itself and report one more guard than exists.
+    gated = sum(
+        1
+        for line in INSTALLER_TEST_SOURCE.splitlines()
+        if line.startswith("@pytest.mark.skipif(_powershell() is None")
+    )
+    assert _powershell() is not None, (
+        f"no pwsh/powershell on this runner, so the {gated} behavioural .ps1 guards "
+        "in this file skipped -- a green lane proves nothing about them. Either "
+        "install PowerShell in the workflow or drop the gate."
+    )
 
 
 @pytest.mark.skipif(_powershell() is None, reason="needs pwsh/powershell to parse .ps1")
