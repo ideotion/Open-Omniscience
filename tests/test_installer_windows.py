@@ -84,6 +84,72 @@ def test_the_powershell_gated_guards_actually_run_on_a_runner() -> None:
     )
 
 
+def test_the_bundled_interpreter_never_lands_inside_the_checkout(ps1: str) -> None:
+    """It used to, and that deadlocked every machine that needed it.
+
+    Section 2 created `$target\\.python-x64`; section 3 then found `$target` non-empty
+    and not a git checkout and refused -- and `git clone` declines a non-empty
+    directory anyway, so the checkout could never appear. Deleting the folder did not
+    help: the next run recreated it. Reported from the field three runs in a row.
+    """
+    body = ps_function_body(ps1, "Get-VendoredRoot")
+    assert "$target" not in body, (
+        "the interpreter's home must not be derived from the checkout path"
+    )
+    assert "LOCALAPPDATA" in body, "per-user, no elevation, outside the checkout"
+    assert "Install-PythonFromNuGet -Destination $script:VendoredRoot" in ps1, (
+        "the download must land in that out-of-tree root"
+    )
+    assert "Install-PythonFromNuGet -Destination (Join-Path $target" not in ps1, (
+        "writing it into the checkout is the deadlock"
+    )
+
+
+def test_uninstall_reclaims_the_out_of_tree_interpreter(ps1: str) -> None:
+    """Moving it out of the checkout means removing the checkout no longer reclaims it.
+
+    Sixty-odd MB of orphan otherwise, in a folder the user never chose. Both sites
+    read the same function so the two paths cannot spell it differently.
+    """
+    start = ps1.index("if ($Uninstall) {")
+    end = ps1.index("if ($Check) {", start)
+    section = ps1[start:end]
+    assert "Get-VendoredRoot" in section, (
+        "uninstall must remove the interpreter it installed outside the checkout"
+    )
+    assert ps1.count("function Get-VendoredRoot") == 1, "one implementation, not two"
+
+
+@pytest.mark.skipif(_powershell() is None, reason="needs pwsh/powershell")
+def test_an_interpreter_left_in_the_checkout_is_moved_out_not_re_downloaded() -> None:
+    """The state the field machines are already in, driven end to end.
+
+    Both halves matter: the checkout must end up EMPTY so the clone can proceed, and
+    the interpreter must survive the move -- deleting it would work too, and would
+    cost every affected machine another download.
+    """
+    env = {
+        **os.environ,
+        "OO_INSTALL_PS1": str(INSTALL_PS1),
+        "OO_BLOCK_START": "$script:VendoredRoot = Get-VendoredRoot",
+        "OO_BLOCK_END": "# winget defaults to the machine",
+    }
+    out = subprocess.run(
+        [_powershell(), "-NoProfile", "-NonInteractive", "-Command", _VENDOR_DRIVER],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        env=env,
+    )
+    assert out.returncode == 0, out.stderr
+    empty, moved, content = out.stdout.strip().splitlines()[-1].split("|")
+    assert empty == "True", "the checkout must be left empty or the clone cannot run"
+    assert moved == "True", "the interpreter must exist in its new home"
+    assert content == "legacy", (
+        "it must be the SAME interpreter -- re-downloading it is a worse fix"
+    )
+
+
 @pytest.mark.skipif(_powershell() is None, reason="needs pwsh/powershell to parse .ps1")
 def test_install_ps1_parses():
     exe = _powershell()
@@ -583,6 +649,37 @@ def test_a_venv_that_cannot_be_replaced_stops_instead_of_installing_into_it(
     assert 'Stop-WithError "Could not remove $venv' in section, (
         "a failed removal must stop, not continue into the mismatched venv"
     )
+
+
+# Held apart from the test body so neither language escapes the other's quotes.
+_VENDOR_DRIVER = r"""
+$all = (Get-Content -Raw $env:OO_INSTALL_PS1) -replace "`r`n", "`n"
+$s = $all.IndexOf($env:OO_BLOCK_START)
+$e = $all.IndexOf($env:OO_BLOCK_END)
+if ($s -lt 0 -or $e -le $s) { throw 'could not slice the vendored-python block' }
+$block = $all.Substring($s, $e - $s)
+
+$ast = [System.Management.Automation.Language.Parser]::ParseInput($all, [ref]$null, [ref]$null)
+foreach ($f in $ast.FindAll({ param($n)
+        $n -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+    if ($f.Name -eq 'Get-VendoredRoot') { . ([scriptblock]::Create($f.Extent.Text)) }
+}
+function Write-Note { param([string] $Message) }
+function Write-Caution { param([string] $Message) }
+
+$sandbox = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid().ToString('N'))
+$env:LOCALAPPDATA = Join-Path $sandbox 'LocalAppData'
+$target = Join-Path $sandbox 'Open-Omniscience'
+New-Item -ItemType Directory -Force -Path (Join-Path $target '.python-x64\tools') | Out-Null
+Set-Content -LiteralPath (Join-Path $target '.python-x64\tools\python.exe') -Value 'legacy'
+
+Invoke-Expression $block
+
+$left = @(Get-ChildItem -LiteralPath $target -Force)
+$moved = Test-Path -LiteralPath $script:VendoredPython
+$content = if ($moved) { (Get-Content -Raw $script:VendoredPython).Trim() } else { '' }
+Write-Output "$($left.Count -eq 0)|$moved|$content"
+"""
 
 
 # The PowerShell below is held apart from the test body so neither language has to
