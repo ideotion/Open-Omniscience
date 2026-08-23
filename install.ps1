@@ -541,6 +541,14 @@ function Install-PythonFromNuGet {
 # --------------------------------------------------------------------------- #
 # Launchers
 # --------------------------------------------------------------------------- #
+# The bundled interpreter's home. A function, not two copies: -Uninstall needs it
+# before section 2 ever runs, and two spellings of a path that must be removed is how
+# an uninstall silently leaves several tens of MB behind.
+function Get-VendoredRoot {
+    if ($env:LOCALAPPDATA) { return Join-Path $env:LOCALAPPDATA 'Open-Omniscience\python-x64' }
+    return Join-Path $HOME '.open-omniscience\python-x64'
+}
+
 function New-Shortcut {
     param([string] $ShortcutPath, [string] $Target, [string] $WorkingDirectory)
     $shell = New-Object -ComObject WScript.Shell
@@ -616,6 +624,17 @@ if ($Uninstall) {
             Write-Ok "Removed shortcut $lnk"
         }
     }
+    # The bundled x64 interpreter lives outside the checkout, so removing the app
+    # folder never reclaims it. It is ours and nothing else uses it.
+    $vendoredRoot = Get-VendoredRoot
+    if (Test-Path -LiteralPath $vendoredRoot) {
+        try {
+            Remove-Item -LiteralPath $vendoredRoot -Recurse -Force -ErrorAction Stop
+            Write-Ok "Removed the bundled interpreter at $vendoredRoot"
+        } catch {
+            Write-Caution "Could not remove $vendoredRoot -- $($_.Exception.Message)"
+        }
+    }
     $dataPath = Join-Path $target 'data'
     if (Test-Path -LiteralPath $dataPath) {
         Write-Host ''
@@ -680,7 +699,34 @@ Write-Step 'Looking for Python 3.13+'
 Write-Note "Machine architecture: $($script:MachineArch)"
 # Where a nuget-sourced interpreter lives, if we end up needing one. Set BEFORE the
 # first Resolve-Python so a previous run's copy is found instead of re-downloaded.
-$script:VendoredPython = Join-Path $target '.python-x64\tools\python.exe'
+#
+# OUTSIDE the checkout, deliberately. It used to live in $target\.python-x64, which
+# deadlocked every machine that needed it: section 2 created the folder, section 3
+# then found $target non-empty and not a git checkout and refused -- and `git clone`
+# declines a non-empty directory anyway, so the checkout could never appear. Deleting
+# the folder did not help; the next run recreated it. An interpreter is also a
+# MACHINE resource rather than a checkout one: this survives deleting the app folder
+# (so the venv built on it does not break) and is shared by a second -Path checkout.
+$script:VendoredRoot = Get-VendoredRoot
+$script:VendoredPython = Join-Path $script:VendoredRoot 'tools\python.exe'
+
+# Carry a copy left in the checkout by an earlier version over to the new home, so
+# nobody re-downloads it -- and so the folder stops blocking the clone.
+$legacyVendored = Join-Path $target '.python-x64'
+if (Test-Path -LiteralPath $legacyVendored) {
+    try {
+        if (Test-Path -LiteralPath $script:VendoredPython) {
+            Remove-Item -LiteralPath $legacyVendored -Recurse -Force -ErrorAction Stop
+            Write-Note 'Removed a duplicate interpreter left inside the app folder.'
+        } else {
+            New-Item -ItemType Directory -Force -Path (Split-Path $script:VendoredRoot) | Out-Null
+            Move-Item -LiteralPath $legacyVendored -Destination $script:VendoredRoot -ErrorAction Stop
+            Write-Note "Moved the bundled interpreter out of the app folder to $($script:VendoredRoot)."
+        }
+    } catch {
+        Write-Caution "Could not clear $legacyVendored -- $($_.Exception.Message)"
+    }
+}
 # winget defaults to the machine's own architecture. On ARM64 that is the one whose
 # wheels do not exist, so name x64 explicitly wherever x64 can run at all.
 $pyArch = @()
@@ -720,7 +766,7 @@ if (-not $NoPython -and (-not $python -or $python.Platform -ne 'win-amd64')) {
         if ($script:CanRunX64) {
             # 3. nuget.org. This is the rung that makes the install unattended on a
             # machine where winget declines -- it asks nobody for anything.
-            $vendored = Install-PythonFromNuGet -Destination (Join-Path $target '.python-x64')
+            $vendored = Install-PythonFromNuGet -Destination $script:VendoredRoot
             if ($vendored) {
                 $found = Test-PythonCandidate -Command @($vendored)
                 if ($found -and $found.Platform -eq 'win-amd64') { $python = $found }

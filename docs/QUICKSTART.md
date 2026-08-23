@@ -333,8 +333,11 @@ cd $HOME\Open-Omniscience
   prefers `win-amd64` everywhere and will obtain one if the machine hasn't got one:
   winget with the architecture named, then winget in user scope, then the Python
   Software Foundation's self-contained x64 CPython from nuget.org — verified against
-  the SHA-512 nuget attests for it, unpacked into `.python-x64/` inside the app folder,
-  needing no elevation, no PATH change and no registry entry. A hash mismatch, or a
+  the SHA-512 nuget attests for it, unpacked into
+  `%LOCALAPPDATA%\Open-Omniscience\python-x64`, needing no elevation, no PATH change
+  and no registry entry. It sits **outside** the checkout on purpose: it is a machine
+  resource, so it survives deleting the app folder (the `.venv` built on it would
+  otherwise break) and a second `-Path` checkout reuses it. `-Uninstall` removes it. A hash mismatch, or a
   version nuget attests no hash for, **refuses**.
 
   If every rung fails you get a stop with the one-download fix, not a twenty-minute
