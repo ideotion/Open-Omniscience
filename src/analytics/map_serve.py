@@ -58,6 +58,9 @@ _STATE: dict = {
     "token": None,
     "pending": False,
     "checked_at": 0.0,
+    # S6.1 (2026-09-03): the last DECLINED build and why, so a skip is visible in the
+    # status rather than reading as a build that simply never happened.
+    "last_skip": None,
 }
 
 # P1.10: the old TTL is now the MINIMUM interval between rebuilds (bounds churn while the
@@ -106,6 +109,7 @@ def status() -> dict:
         built_at = _STATE["built_at"]
         rows = _STATE["rows"]
         pending = _STATE["pending"]
+        last_skip = _STATE["last_skip"]
     return {
         "enabled": serve_enabled(),
         "mode": serve_mode(),  # auto | forced-on | forced-off
@@ -120,14 +124,29 @@ def status() -> dict:
         "change_pending": pending,
         "min_rebuild_s": _MIN_REBUILD_S,
         "backstop_s": _BACKSTOP_S,
+        "last_skip": last_skip,
     }
 
 
 def _build_and_swap() -> None:
-    """Build a FRESH in-memory source_coverage rollup on its own session/connection, swap."""
+    """Build a FRESH in-memory source_coverage rollup on its own session/connection, swap.
+
+    S6.1 (2026-09-03): declines while an exclusive operation owns the machine. This build
+    is kicked from a SERVE, so it never met the collection pause an exclusive window
+    applies -- the same gap the sibling keyword rollup had. Skipping leaves the previous
+    rollup serving with ``change_pending`` true, so the next check retries, and the serve
+    falls back to live queries: a declined build costs latency, never an answer.
+    """
     try:
         from src.analytics import columnar, serve_gate
         from src.database.session import session_scope
+
+        skip = serve_gate.exclusive_verdict()
+        if skip is not None:
+            with _LOCK:
+                _STATE["last_skip"] = skip
+            _LOG.info("map serve: build skipped (%s)", skip.get("reason"))
+            return
 
         con = columnar.connect(passphrase=None)  # offline -> in-memory (never a file)
         if con is None:

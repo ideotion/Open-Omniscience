@@ -5287,6 +5287,57 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     tell is the same every time — the fix was written while reading ONE caller. Before
     declaring an interruption, a hold or a pause wired, grep for every caller of the thing
     being guarded, not for the caller you happened to open.
+  - **THE FOURTH RECURRENCE OF "GATE EVERY ENTRY POINT" HID IN THE PATHS KICKED BY A
+    REQUEST — and the primitive the brief named would have shipped a worse bug than the
+    one it fixed (2026-09-03, the all-diagnostics bundle's exclusive hold):** the bundle
+    runs for tens of minutes and competed with a collection pass the whole time, so it
+    takes the exclusive hold. Enumerating who else must respect that hold, the answer
+    looked complete — `run_now` checks it, the re-index job checks it, the continuous
+    loop is paused by the window. The two that did not check are the two ROLLUP BUILDS,
+    and the reason they were absent from the enumeration is structural: they are kicked
+    from a SERVE, i.e. by any HTTP read that happens to find the change gate open, so
+    they never appear in a list of "background work" — nothing schedules them. A
+    whole-corpus columnar rebuild is the heaviest thing this process does outside a pass.
+    GENERAL FORM: when listing what competes for a machine, the request-kicked paths are
+    the ones missing, because they do not look like background work; grep for what STARTS
+    a thread, not for what is scheduled.
+    **THE SECOND HALF IS SHARPER, AND IT WAS THE BRIEF'S OWN INSTRUCTION:** the slice was
+    specified as "acquires the existing exclusive hold (`runner.hold_exclusive()`)", and
+    doing exactly that would have been a defect. `_exclusive_hold` is a **BOOLEAN**, so a
+    bundle started during a restore would clear the RESTORE's claim on its own release and
+    put a manual "Run now" back on the machine mid-restore — reinstating precisely the
+    concurrency defect the 2026-07-24 lesson records, from inside the fix for it. The
+    codebase already had the answer: `exclusive_window()` is the RE-ENTRANT, imbalance-proof
+    wrapper whose own docstring says it "restores the flag to what it FOUND", and it exists
+    because this was learned once already. RULE: before calling a hold/release pair
+    directly, read whether the flag is a boolean or an owned/counted one — a boolean pair
+    is safe only for a single outermost owner, and a nested caller must use the wrapper.
+    The test that pins it enters an OUTER window first and asserts the outer claim survives
+    the inner block's exit; without the outer window every mutation passes.
+    **THIRD, on the payload:** a hold whose pause is bounded and best-effort must not
+    publish `exclusive: true`. `paused_collection` is the pause's OWN return value (was the
+    loop running and did it get signalled), `nested` says an outer operation already owned
+    the machine, and a caller that took no hold gets `held: false` with a reason — three
+    facts instead of one claim the mechanism cannot support.
+  - **A HIGH-WATER INSTRUMENT USED AS A PER-ITEM DELTA PUBLISHES A FABRICATED ZERO FOR
+    EVERY ITEM AFTER THE LARGEST — and the first item's number looks right, which is what
+    carries it past review (2026-09-03, the bundle's `rss_delta_kb`):** `ru_maxrss` never
+    falls, so once the process peak is set, a member that really allocated 40 MB reports a
+    delta of 0. The recorded 2026-08-06 lesson names this for a TEST that could not fail;
+    the costlier form is a SHIPPED PAYLOAD, where ~58 of 59 members published 0 under a
+    field named for their memory cost, and 0 reads as "this member allocated nothing"
+    rather than as "we could not tell". Every field bundle collected since carries it.
+    THREE THINGS THE FIX NEEDED. (a) The discriminating test FIXES a high peak and asserts
+    the delta still moves — a test that merely checks the key exists, or that it is
+    non-negative, passes against the defect. (b) The high-water rise is still worth
+    publishing and must keep its OWN name: "did this member allocate 40 MB" and "did it
+    push the process past its all-time peak" are different questions, and only one of them
+    is answerable after the first big member. (c) An unreadable instrument OMITS the field
+    and NAMES itself (`rss_basis`), because a `(after or 0) - (before or 0)` is the same
+    fabricated zero by another route. RIDER, on reuse: the instruction "reuse it, don't
+    write a second one" is testable BEHAVIOURALLY — monkeypatch the function that must be
+    reused and assert the caller reflects it, so an inlined second copy fails where a
+    source grep for the import would pass.
   - **A LOCK THAT GRANTS TO WHOEVER FINDS IT FREE MAKES ITS OWN WAIT COUNTER MEANINGLESS
     (2026-09-03, S2.6c):** the gate's `max_wait_s` was the field's headline number — 6,236
     seconds — and it could not be read as a long write, because `acquire()` had a fast path

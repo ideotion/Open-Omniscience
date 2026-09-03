@@ -311,11 +311,21 @@ def _build_and_swap() -> None:
     serve also falls back to live queries, so a declined build costs latency, never an
     answer."""
     try:
-        skip = _memory_verdict()
+        # TWO reasons to decline, checked in order; the FIRST that fires is recorded, so
+        # `last_skip` always names the condition that actually stopped this build rather
+        # than whichever check happens to be listed last. S6.1 (2026-09-03) added the
+        # exclusive one: this build is kicked from a SERVE, so it never met the collection
+        # pause and would happily rebuild a whole-corpus rollup underneath a restore.
+        from src.analytics.serve_gate import exclusive_verdict
+
+        skip = exclusive_verdict() or _memory_verdict()
         if skip is not None:
             with _LOCK:
                 _STATE["last_skip"] = skip
-            _LOG.info("rollup serve: build skipped (%s)", skip.get("guard_reason") or "mem-low")
+            _LOG.info(
+                "rollup serve: build skipped (%s)",
+                skip.get("guard_reason") or skip.get("reason") or "mem-low",
+            )
             return
         if _persisted_serve_active():
             _refresh_persisted_build()

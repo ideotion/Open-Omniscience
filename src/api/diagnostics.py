@@ -3777,13 +3777,15 @@ def _member_touches_db(fn) -> bool:
     return code is not None and "db" in code.co_freevars
 
 
-def _rss_kb() -> int | None:
-    """Best-effort CURRENT-process resident-set size in KB (+ RSS delta 'where cheap' per
-    the envelope spec) -- a single ``getrusage`` syscall, no new dependency. Linux reports
-    ru_maxrss in KB already; macOS reports bytes, normalized here. This is a HIGH-WATER-MARK
-    (never decreases within a process lifetime), so a per-member 'delta' is a lower bound on
-    that member's own allocation, not an exact attribution -- still the cheap, honest signal
-    the spec asks for. None (never fabricated) if unavailable on this platform."""
+def _rss_peak_kb() -> int | None:
+    """Process PEAK resident-set size in KB -- ``ru_maxrss``, one syscall, no dependency.
+    Linux reports KB already; macOS reports bytes, normalized here.
+
+    This is a HIGH-WATER MARK that NEVER FALLS, which is why S6.2 stopped using it as the
+    per-member delta: after the first big member the process peak is already set, so every
+    later member's "delta" is 0 whatever it really allocated. It is kept, under its own
+    name, because it answers a different and still-useful question -- did THIS member push
+    the process past everything it had ever done. None (never fabricated) where unreadable."""
     try:
         import resource
         import sys as _sys
@@ -3792,6 +3794,85 @@ def _rss_kb() -> int | None:
         return int(rss / 1024) if _sys.platform == "darwin" else int(rss)
     except Exception:  # noqa: BLE001 - best-effort instrumentation, never fatal
         return None
+
+
+class _RssProbe:
+    """CURRENT resident-set size in KB -- rises AND falls, so a delta across a member
+    measures that member (S6.2).
+
+    RESOLVED ONCE, before anything is measured, because the instrument perturbs what it
+    reads. The 2026-09-03 portability measurement ran each candidate five times on one
+    workload: ``/proc`` and ONE HOISTED ``psutil.Process`` both reported 31.9 MB freed,
+    5/5, agreeing to the hundredth of a MB, while a fresh ``psutil.Process()`` per read
+    reported 0 MB and a forking ``ps -o rss=`` reported -0.1 MB -- the fork prevents the
+    allocator returning the pages, so those two would have made an honest release read as
+    "the trim freed nothing" on every platform they answered on.
+
+    Order: ``merge_diag._rss_current_mb`` (``/proc/self/statm``, Linux, no dependency and
+    no fork -- REUSED rather than re-implemented), then one hoisted ``psutil.Process``
+    where ``/proc`` is absent, then nothing. ``basis`` NAMES which instrument answered, so
+    a platform where no current reading exists says so instead of having a high-water
+    figure published under the current-RSS name.
+    """
+
+    def __init__(self) -> None:
+        self._proc = None
+        self.basis = "unavailable"
+        try:
+            from src.monitoring.merge_diag import _rss_current_mb
+
+            if _rss_current_mb() is not None:
+                self.basis = "proc"
+                return
+        except Exception:  # noqa: BLE001 - an absent /proc is a platform fact
+            pass
+        try:
+            import psutil
+
+            proc = psutil.Process()
+            proc.memory_info()  # prove it reads before claiming the basis
+            self._proc = proc
+            self.basis = "psutil"
+        except Exception:  # noqa: BLE001 - absent psutil is a platform fact, not a failure
+            self._proc = None
+
+    def kb(self) -> int | None:
+        """The current reading in KB, or None -- never a fabricated 0."""
+        try:
+            if self.basis == "proc":
+                from src.monitoring.merge_diag import _rss_current_mb
+
+                mb = _rss_current_mb()
+            elif self.basis == "psutil" and self._proc is not None:
+                mb = self._proc.memory_info().rss / 1024.0 / 1024.0
+            else:
+                return None
+        except Exception:  # noqa: BLE001 - a reading is best-effort, never fatal
+            return None
+        return None if mb is None else int(mb * 1024)
+
+
+# Trim only after a member that actually moved the resident set: ``malloc_trim`` walks the
+# allocator's arenas, so running it after each of ~59 members would be noise on the wall
+# clock and would report a freed figure for members that allocated nothing. The threshold is
+# a stated choice, not a measurement -- what IS measured is the freed amount it reports.
+_ALL_DIAG_TRIM_AFTER_KB = 64 * 1024  # 64 MiB
+
+
+def _trim_after_heavy_member(probe: "_RssProbe", rss_after: int | None) -> dict | None:
+    """Return the allocator's arena memory to the OS between heavy members, and report what
+    that actually freed (S6.2). Reuses ``hygiene._malloc_trim`` rather than writing a second
+    one. ``None`` when nothing was attempted; ``freed_kb: None`` -- never 0 -- when the
+    call was made but the release could not be measured."""
+    try:
+        from src.scheduler.hygiene import _malloc_trim
+    except Exception:  # noqa: BLE001 - instrumentation is never a hard dependency
+        return None
+    if not _malloc_trim():
+        return None
+    after = probe.kb()
+    freed = (rss_after - after) if (rss_after is not None and after is not None) else None
+    return {"trimmed": True, "freed_kb": freed}
 
 
 _ALL_DIAG_DEADLINE_SENTINEL = object()
@@ -4170,6 +4251,7 @@ def _all_diagnostics_manifest(
     db=None,
     run_started_at: float | None = None,
     run_ended_at: float | None = None,
+    exclusive: dict | None = None,
 ) -> dict:
     import platform
     import sys as _sys
@@ -4214,6 +4296,15 @@ def _all_diagnostics_manifest(
             "total_wall_s": total_wall_s,
             "slowest_members": slowest_members,
             "runtime_coverage": _diagnostics_coverage_report(),
+            # EXCLUSIVE HOLD (S6.1, 2026-09-03): what the run actually claimed, not what
+            # it wished for. `held` says the hold was taken; `paused_collection` says the
+            # continuous loop was RUNNING and got signalled -- the pause is bounded and
+            # best-effort, so a pass already deep in a fetch may still have been finishing
+            # while this bundle ran. A degrade carries its `reason` instead. Never a bare
+            # "exclusive: true", which would assert an isolation the pause cannot confirm.
+            "exclusive": exclusive
+            if exclusive is not None
+            else {"held": False, "reason": "not requested by this caller"},
         },
         "members": results,
         # HONESTY (2026-07-17): what is deliberately NOT in this archive, and why —
@@ -4275,7 +4366,8 @@ def _all_diagnostics_manifest(
 
 
 def _write_all_diagnostics_zip(
-    members, zf, *, progress=None, should_stop=None, journal_path=None, db=None
+    members, zf, *, progress=None, should_stop=None, journal_path=None, db=None,
+    exclusive=None,
 ) -> list[dict]:
     """Write every member (+ manifest) into the open ZipFile ``zf``; return the per-member
     results. Shared by the sync endpoint (an in-memory BytesIO) and the job (a file on disk).
@@ -4284,9 +4376,19 @@ def _write_all_diagnostics_zip(
     interrupted mid-run). One failing log never aborts the bundle (a ``<name>.error.txt`` is
     written and recorded in the manifest).
 
-    ENVELOPE (0.3 gate row 3 / DIAGNOSE-THE-DIAGNOSTICS, 2026-07-20): every member now
-    records ``{file, ok, outcome, started_at, wall_s, bytes[, error][, rss_delta_kb]}`` --
-    ``ok`` is KEPT (True iff ``outcome == "ok"``) for any reader still on the old boolean.
+    ENVELOPE (0.3 gate row 3 / DIAGNOSE-THE-DIAGNOSTICS, 2026-07-20): every member records
+    ``{file, ok, outcome, started_at, wall_s, bytes, rss_basis[, error][, rss_delta_kb]
+    [, rss_peak_rise_kb][, release]}`` -- ``ok`` is KEPT (True iff ``outcome == "ok"``) for
+    any reader still on the old boolean.
+
+    S6.2 (2026-09-03): ``rss_delta_kb`` was computed from ``ru_maxrss``, a process
+    high-water mark that never falls, so every member after the first big one reported 0.
+    It is now a CURRENT-RSS delta, the high-water rise keeps its own name
+    (``rss_peak_rise_kb``), and ``rss_basis`` says which instrument answered so a platform
+    with no current reading cannot be mistaken for one. After a member that actually moved
+    the resident set, ``hygiene._malloc_trim`` returns the allocator's arenas to the OS and
+    ``release.freed_kb`` records what that measured -- so a delta that survives a trim is a
+    real retention rather than allocator noise.
 
     DEADLINES (S8 lesson): a member whose thunk closes over ``db`` (touches the shared
     connection) runs INLINE under a statement deadline — never threaded, because a shared
@@ -4313,6 +4415,9 @@ def _write_all_diagnostics_zip(
         open(journal_path, "a", encoding="utf-8")  # noqa: SIM115
         if journal_path is not None else None
     )
+    # S6.2: resolved ONCE, before the first member is measured -- a memory instrument
+    # rebuilt per reading perturbs the very thing it reads (measured 5/5).
+    _rss = _RssProbe()
     try:
         for i, (name, fn) in enumerate(members):
             if should_stop is not None and should_stop():
@@ -4344,7 +4449,8 @@ def _write_all_diagnostics_zip(
                         journal_fp.close()
                     journal_fp = None
 
-            rss_before = _rss_kb()
+            rss_before = _rss.kb()
+            peak_before = _rss_peak_kb()
             outcome = "ok"
             err: str | None = None
             nbytes = 0
@@ -4384,7 +4490,8 @@ def _write_all_diagnostics_zip(
                 zf.writestr(name + ".error.txt", err)
 
             wall_s = round(_time.time() - started_t, 3)
-            rss_after = _rss_kb()
+            rss_after = _rss.kb()
+            peak_after = _rss_peak_kb()
             entry: dict = {
                 "file": name,
                 "ok": outcome == "ok",
@@ -4395,8 +4502,22 @@ def _write_all_diagnostics_zip(
             }
             if err is not None:
                 entry["error"] = err
+            # S6.2: the delta is now CURRENT RSS, which rises and falls, so it measures
+            # THIS member. ``rss_basis`` names the instrument, and the high-water rise
+            # keeps its own name rather than being published as the same number under a
+            # different meaning -- "did this member allocate 40 MB" and "did it push the
+            # process past its all-time peak" are different questions and only one of them
+            # can be answered after the first big member.
+            entry["rss_basis"] = _rss.basis
             if rss_before is not None and rss_after is not None:
                 entry["rss_delta_kb"] = rss_after - rss_before
+            if peak_before is not None and peak_after is not None:
+                entry["rss_peak_rise_kb"] = peak_after - peak_before
+            if rss_before is not None and rss_after is not None \
+                    and (rss_after - rss_before) >= _ALL_DIAG_TRIM_AFTER_KB:
+                trim = _trim_after_heavy_member(_rss, rss_after)
+                if trim is not None:
+                    entry["release"] = trim
             results.append(entry)
 
             if journal_fp is not None:
@@ -4423,7 +4544,8 @@ def _write_all_diagnostics_zip(
 
     run_ended_at = _time.time()
     manifest = _all_diagnostics_manifest(
-        results, db=db, run_started_at=run_started_at, run_ended_at=run_ended_at
+        results, db=db, run_started_at=run_started_at, run_ended_at=run_ended_at,
+        exclusive=exclusive,
     )
     zf.writestr("manifest.json", json.dumps(manifest, ensure_ascii=False, indent=2))
     # Fold the durable journal into the finished archive as bundle-journal.jsonl -- the
@@ -4458,8 +4580,12 @@ def all_diagnostics(db: Session = Depends(get_db)) -> Response:
     import zipfile
 
     buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-        _write_all_diagnostics_zip(_all_diagnostics_members(db), z, db=db)
+    # S6.1: both entry points to this build take the hold, not just the job. The
+    # PR-13 lesson in miniature -- a guard wired into one of two callers is the
+    # gate-every-entry-point defect, and this route can run for 36+ minutes.
+    with _bundle_exclusive_window() as excl, \
+            zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        _write_all_diagnostics_zip(_all_diagnostics_members(db), z, db=db, exclusive=excl)
     fname = f"oo-all-diagnostics-{datetime.now().strftime('%Y%m%d-%H%M')}.zip"
     return Response(
         content=buf.getvalue(),
@@ -4474,6 +4600,52 @@ def all_diagnostics(db: Session = Depends(get_db)) -> Response:
 # server-side file under data_dir()/diagnostics/, and reports per-member progress. The
 # synchronous /all route above is kept during the transition (absorption-gated).
 # --------------------------------------------------------------------------- #
+
+
+def _bundle_exclusive_window():
+    """S6.1: hold the machine for the bundle's duration, so it never competes with a
+    collection pass, the housekeeping lane or the rollup build.
+
+    Uses ``runner.exclusive_window()`` -- the existing RE-ENTRANT, imbalance-proof
+    mechanism -- rather than calling ``hold_exclusive``/``release_exclusive`` directly.
+    That distinction is load-bearing, not stylistic: ``_exclusive_hold`` is a BOOLEAN, so a
+    bundle started during a restore would clear the RESTORE's hold on its own release and
+    put a manual "Run now" back on the machine mid-restore -- reinstating exactly the
+    concurrency defect the 2026-07-24 lesson records. ``exclusive_window`` restores the flag
+    to what it FOUND, so only the outermost block ever resumes.
+
+    Yields the honest facts rather than an assumed exclusivity: ``paused_collection`` is
+    ``was_paused``, i.e. whether the continuous loop was actually running and got signalled
+    -- the pause is bounded and best-effort, and a pass already deep in a fetch may still be
+    finishing. ``nested`` says the machine was already owned by an outer operation.
+
+    Ruling 4 is unaffected: this changes what else may run, never which members do. Every
+    member still runs.
+    """
+    import contextlib as _cl
+
+    @_cl.contextmanager
+    def _cm():
+        try:
+            from src.scheduler.runner import exclusive_window, exclusive_window_open
+        except Exception:  # noqa: BLE001 - a bundle must never fail for want of the hold
+            yield {"held": False, "reason": "scheduler unavailable"}
+            return
+        nested = False
+        try:
+            nested = bool(exclusive_window_open())
+        except Exception:  # noqa: BLE001 - an unknown state is never claimed as ownership
+            nested = False
+        try:
+            with exclusive_window() as was_paused:
+                yield {
+                    "held": True, "paused_collection": bool(was_paused), "nested": nested,
+                }
+        except Exception:  # noqa: BLE001 - the bundle is the evidence channel; never lose it
+            _LOG.warning("all-diagnostics could not claim the machine", exc_info=True)
+            yield {"held": False, "reason": "could not claim the machine"}
+
+    return _cm()
 
 
 def _all_diagnostics_dir():
@@ -4505,7 +4677,7 @@ def _all_diagnostics_worker(ctx) -> dict:
     # a clean finish it is folded into the zip as bundle-journal.jsonl and the sidecar is
     # removed (its job is done); on a hard kill it simply survives as forensic evidence.
     journal_path = out_dir / (fname + ".journal.jsonl")
-    with session_scope() as db:
+    with _bundle_exclusive_window() as excl, session_scope() as db:
         members = _all_diagnostics_members(db)
 
         def _progress(done, total, name):
@@ -4514,7 +4686,7 @@ def _all_diagnostics_worker(ctx) -> dict:
         with zipfile.ZipFile(part_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
             results = _write_all_diagnostics_zip(
                 members, z, progress=_progress, should_stop=lambda: ctx.stopping,
-                journal_path=journal_path, db=db,
+                journal_path=journal_path, db=db, exclusive=excl,
             )
     if ctx.stopping:
         # Cancelled between members: drop the partial, never present it as a good archive.

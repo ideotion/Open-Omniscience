@@ -30,6 +30,7 @@ falls back to its backstop cadence — a doubt must never break or churn a serve
 from __future__ import annotations
 
 import logging
+import time
 
 from sqlalchemy.orm import Session
 
@@ -73,4 +74,54 @@ def change_token(
         return tuple(token)
     except Exception:  # noqa: BLE001 - a coordination read must never break its caller
         _LOG.debug("serve gate: change-token read failed", exc_info=True)
+        return None
+
+
+def exclusive_verdict() -> dict | None:
+    """Should a whole-corpus background build DECLINE right now because an exclusive
+    operation owns the machine?
+
+    Returns a skip record while an exclusive window is open (a restore, an import, the
+    all-diagnostics bundle), else ``None``.
+
+    WHY THIS EXISTS (S6.1, 2026-09-03). ``exclusive_window()`` pauses the CONTINUOUS
+    COLLECTION LOOP and blocks ``run_now()``, and that was read as "the machine is
+    claimed". It is not: the two rollup builds are kicked from a SERVE, i.e. from any
+    HTTP read that happens to find the change gate open, so they start on their own
+    schedule and never consulted the hold. That is precisely the shape the 2026-07-24
+    lesson names -- "a pause that only stops the primary loop is honest-sounding and
+    incomplete" -- and a whole-corpus columnar rebuild is the single heaviest thing this
+    process does outside a pass.
+
+    DECLINING IS SAFE HERE, and only here, because both callers are AUTO-ON accelerators
+    whose own docstrings already say so: a skip leaves the previous rollup serving with
+    ``change_pending`` true, so the next check retries, and the serve falls back to live
+    queries -- "a declined build costs latency, never an answer". An operator asking for
+    a build explicitly (the rollup benchmark calls ``columnar.build_keyword_daily``
+    directly) never reaches this gate, which is the same carve-out ``_memory_verdict``
+    makes.
+
+    NOT extended to the briefing recompute: that one is kicked by a Home POLL, i.e. by a
+    person waiting for an answer, and the standing ruling is that user work preempts
+    background work -- refusing it for the hours a bundle can run would leave Home stale
+    on a request the user just made.
+
+    An unreadable scheduler is NOT evidence of a claim: any error returns ``None`` and the
+    build proceeds, matching ``_memory_verdict``'s blind-guard direction (declining on an
+    absent measurement would refuse every build wherever the import fails).
+    """
+    try:
+        from src.scheduler.runner import exclusive_window_open
+
+        if not exclusive_window_open():
+            return None
+        return {
+            "reason": "exclusive-hold",
+            "at": time.time(),
+            # The claim is bounded and best-effort by construction: this says an
+            # exclusive window is OPEN, never that nothing else is mid-flight.
+            "detail": "an exclusive operation owns the machine (restore/import/diagnostics)",
+        }
+    except Exception:  # noqa: BLE001 - an unreadable scheduler must not block the build
+        _LOG.debug("serve gate: exclusive-hold read failed", exc_info=True)
         return None
