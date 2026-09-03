@@ -5247,6 +5247,46 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     deterministic" is indistinguishable from "I relaxed an assertion I had not understood" —
     and ship both halves as named guards, so the next reader can check the reason rather
     than re-derive it.
+  - **A GUARD WRITTEN FOR THE DEFECT IS NOT A GUARD ON THE CODE — a mutation matrix over my
+    OWN new tests found SEVEN gaps, and every one of them was a test that could not see the
+    branch the shipped code takes (2026-09-03, S5.1/S5.2):** twenty-two mutations, seven
+    survivors, all against tests written in the same hour as the fix. The shape recurs, so
+    it is worth naming rather than listing: each guard was aimed at the CASE THE FIX WAS
+    ABOUT and not at the CASE THE FUNCTION EXECUTES. (a) **A verdict-parity test cannot see
+    a scoping change.** Deleting the `source_id IN` filter — the whole point of S5.1 —
+    changed NO verdict: the extra sources land in `per`, the caller only ever reads
+    `s.id in per`, and the baseline is the FROZEN cut either way, so every status and every
+    reason stayed identical while the per-batch read went back to walking the corpus. A
+    slice whose win is COST needs a guard on cost or shape; parity is blind to it by
+    construction. (b) **A cross-source statistic needs a fixture that crosses sources.** The
+    furniture ubiquity cut is `max(5, 0.3·n_sources)`, and the cohort fixture gives every
+    source its own unique terms, so no document frequency ever reaches the cut, every share
+    is 0.0, and the assertion `alone == together == frozen` held as `0.0 == 0.0 == 0.0` —
+    passing for a reason unrelated to its claim. (c) **"consulted at least twice" is
+    satisfied by one loop ticking twice**: count EXACTLY, and give the two loops DIFFERENT
+    row counts (quarantine one article; the mention GROUP BY has no quarantine filter) so
+    the total names which half went missing. (d) **One function, two branches, two guards** —
+    the scoped path chunks its mention aggregate and the unscoped path does not, so a test
+    driving one leaves the other's pause check unexercised. (e) **When two scans can both
+    pause, the first one always wins**, so `should_pause=lambda: True` only ever exercises
+    the freeze; supplying a frozen cohort is what moves the pause to the scoped read the
+    gate actually runs per batch. (f) **A negative twin at production granularity over a
+    tiny fixture proves nothing**: the check fires every 5,000 rows and the fixture walks
+    76, so "a callback answering False completes the scan" was true whatever the code did —
+    it needs the compressed threshold AND an assertion that the callback was consulted at
+    all. (g) The `ValueError` refusing a cohort frozen at the wrong `min_articles` — added
+    in the same slice precisely because the failure is invisible — had **no test whatsoever**.
+    GENERAL FORM, and the cheap way to get it right the first time: for each new guard, name
+    the branch it executes and ask what ELSE in the function could satisfy the assertion;
+    then run the mutation before believing the answer. A mutation that reddens nothing is a
+    finding about the test, and here it was the finding seven times out of twenty-four.
+    **AND AN EIGHTH GAP THE MATRIX COULD NOT SEE, because it was in the SHIPPED code rather
+    than the tests:** the memory guard was wired into the bulk job's scan and NOT into the
+    per-pass ride-along, which calls the same whole-corpus freeze from the scheduler's
+    housekeeping lane. That is "gate EVERY entry point" recurring for the Nth time, and the
+    tell is the same every time — the fix was written while reading ONE caller. Before
+    declaring an interruption, a hold or a pause wired, grep for every caller of the thing
+    being guarded, not for the caller you happened to open.
   - **A LOCK THAT GRANTS TO WHOEVER FINDS IT FREE MAKES ITS OWN WAIT COUNTER MEANINGLESS
     (2026-09-03, S2.6c):** the gate's `max_wait_s` was the field's headline number — 6,236
     seconds — and it could not be read as a long write, because `acquire()` had a fast path

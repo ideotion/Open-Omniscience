@@ -48,6 +48,7 @@ past the cohort floor, the SAME call starts honouring cohort-relative soft signa
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -67,7 +68,15 @@ _LOG = logging.getLogger("catalog.qualification")
 # The criteria VERSION stamped on every verdict (Source.qualification_criteria_version +
 # SourceQualificationAttempt.criteria_version). Bump this if the judging criteria change
 # so the history stays honest about which rules judged an old attempt.
-CRITERIA_VERSION = "oo-source-qualification-1"
+CRITERIA_VERSION = "oo-source-qualification-2"
+# -2 (S5.1, 2026-09-02 crash analysis): the cohort baselines a verdict is measured against
+# are computed ONCE PER RUN and frozen, instead of re-read from the whole corpus for every
+# batch of 20. A batch is therefore judged against a baseline up to one run old, and an
+# attempt row must not read as though it were judged the old way -- which is exactly what
+# this field is for ("a later criteria change is visible in the history rather than
+# silently reinterpreted", SourceQualificationAttempt's own docstring). The per-run
+# staleness numbers ride the pass RESULT (baseline_token / baseline_articles /
+# baseline_age_s), because an age belongs in a measurement and not in a version string.
 
 # Exactly the three states the ruling names -- never "candidate"/"trial" (the process,
 # not a persisted state) and never a fourth state.
@@ -350,6 +359,8 @@ def _corpus_articles(session: Session) -> int:
 def run_qualification_pass(
     session: Session, fetcher: EthicalFetcher | None, *, per_pass: int,
     now: datetime | None = None,
+    cohort_provider: Callable[[], dict] | None = None,
+    should_pause: Callable[[], bool] | None = None,
 ) -> dict:
     """One bounded qualification pass: pick up to ``per_pass`` candidates (never-yet-
     qualified first, then due re-qualifications), best-effort trial-fetch each, then
@@ -384,6 +395,7 @@ def run_qualification_pass(
     empirically before this fix (30 feed-less sources blocked a genuinely resolvable one
     across 20 passes)."""
     from src.analytics import source_audit as sa
+    from src.analytics import source_quality as sq
 
     if per_pass <= 0:
         return {"enabled": False}
@@ -430,15 +442,54 @@ def run_qualification_pass(
                     getattr(source, "domain", "?"), exc_info=True,
                 )
 
-    per = sa.per_source_metrics(session)
-    # per_source_metrics does not itself compute furniture_share (audit_sources adds it
-    # as a separate enrichment step) -- flag_criteria's CRITERIA panel requires the key
-    # to be present on every entry, so reuse the SAME cross-source fingerprint helper
-    # audit_sources uses, rather than re-deriving it.
-    shares = sa._furniture_share_by_source(session, list(per))  # noqa: SLF001 - reuse, not duplicate
-    for sid, m in per.items():
-        m["furniture_share"] = shares.get(sid, 0.0)
-    fails_by_source = sa.flag_criteria(per, min_articles=TRIAL_MIN_ARTICLES)
+    # S5.1: the COHORT is frozen (once per run, by the caller that knows what a run is) and
+    # only the CANDIDATES' own metrics are read here, scoped in SQL. A caller that passes no
+    # cohort gets one computed now, which is byte-identical to the old behaviour and is what
+    # the per-pass ride-along does -- it calls this once per pass, so a per-pass freeze IS
+    # once per call there and nothing about its verdicts changes.
+    # Resolved HERE, after the candidates are known, so a pass with nothing to judge never
+    # pays for a whole-corpus scan (the early return above happens first). The provider is a
+    # CALLABLE rather than a dict for exactly that reason -- a caller that memoises it gets
+    # one freeze per run, and a pass that never needs one never triggers it.
+    try:
+        frozen = cohort_provider() if cohort_provider is not None else sa.frozen_cohort(
+            session, should_pause=should_pause, min_articles=TRIAL_MIN_ARTICLES,
+        )
+    except sq.ScanPaused as exc:
+        # The FREEZE is itself a whole-corpus scan, so it can pause too -- and it is the
+        # bigger of the two. Catching only the scoped read would have let the larger one
+        # escape as an unhandled exception, which the job would report as a crash.
+        _LOG.info("qualification pass paused during the cohort freeze: %s", exc)
+        return {
+            "enabled": True, "evaluated": 0, "paused": "memory", "reason": str(exc),
+            "trial_fetch_errors": trial_errors,
+        }
+    # A cut frozen at another threshold is a DIFFERENT baseline -- it decides which sources
+    # form the cohort at all. Refused rather than answered, because the failure is invisible:
+    # frozen at the report's 20 against 4-article sources the cut comes out empty, and three
+    # soft criteria simply stop being flaggable with nothing saying so.
+    if frozen.get("min_articles") != TRIAL_MIN_ARTICLES:
+        raise ValueError(
+            f"cohort frozen at min_articles={frozen.get('min_articles')!r}, but this gate "
+            f"judges at {TRIAL_MIN_ARTICLES} -- a cut frozen at another threshold is a "
+            "different baseline"
+        )
+    try:
+        per = sa.scoped_metrics(
+            session, {int(s.id) for s in candidates}, frozen, should_pause=should_pause,
+        )
+    except sq.ScanPaused as exc:
+        # S5.2: nothing is stamped from a paused scan. The candidates keep whatever status
+        # they already had -- for a never-judged one that is ``unqualified``, which is the
+        # truth, and the queue's least-recently-attempted ordering brings them back.
+        _LOG.info("qualification pass paused: %s", exc)
+        return {
+            "enabled": True, "evaluated": 0, "paused": "memory", "reason": str(exc),
+            "trial_fetch_errors": trial_errors,
+        }
+    fails_by_source = sa.flag_criteria(
+        per, min_articles=TRIAL_MIN_ARTICLES, cohort_cut=frozen["cohort_cut"],
+    )
 
     # A candidate absent from ``per`` has ZERO stored articles -- no evidence at all,
     # never stamped (see the docstring above). ``sid in per`` is the exact same test
@@ -469,23 +520,54 @@ def run_qualification_pass(
     return {
         "enabled": True, "evaluated": len(candidates), "trial_fetch_errors": trial_errors,
         "no_evidence": len(no_evidence),
+        # S5.1 staleness disclosure: WHICH corpus state the baseline reflects and how much of
+        # it. Reported per pass rather than folded into the criteria version, because an age
+        # is a measurement -- and because a reader must be able to tell a fresh baseline from
+        # one carried across a long run without re-deriving it from timestamps.
+        "baseline_token": frozen.get("token"),
+        "baseline_articles": frozen.get("articles"),
+        "baseline_sources": frozen.get("sources"),
+        "baseline_frozen_by_caller": cohort_provider is not None,
         **tally,
     }
+
+
+def _memory_pause_check() -> bool:
+    """S5.2's OTHER half. The bulk job wires the memory guard's own poll into the scan; the
+    per-pass ride-along is the second entry point to the SAME whole-corpus scan, and a fix
+    that reaches one of two callers is the recorded gate-every-entry-point defect.
+
+    ``poll()`` is the same call the collector's own loop already makes between sources, so
+    the two can never disagree about the machine."""
+    from src.scheduler import memguard
+
+    return bool(memguard.memory_guard.poll())
 
 
 def advance_qualification(
     session: Session, fetcher: EthicalFetcher | None, *, per_pass: int,
     now: datetime | None = None,
+    should_pause: Callable[[], bool] | None = None,
 ) -> dict:
     """The scheduler RIDE-ALONG (ruling clause (c): "like the world-discovery ride-
     along"): a bounded qualification pass per online collection pass, through the SAME
     guarded transport. Skips honestly under airplane mode (trial fetches ride the
     standing online-consent envelope -- never under airplane); the caller wraps this so
-    a failure never breaks a scrape."""
+    a failure never breaks a scrape.
+
+    ``should_pause`` defaults to the memory guard's own poll (S5.2), so the whole-corpus
+    cohort scan this pass performs can be given up under pressure instead of being the one
+    part of a collect pass nothing can interrupt."""
     if per_pass <= 0:
         return {"enabled": False}
     from src.ingest import kill_switch_active
 
     if kill_switch_active():
         return {"enabled": True, "skipped": "airplane mode engaged"}
-    return run_qualification_pass(session, fetcher, per_pass=per_pass, now=now)
+    return run_qualification_pass(
+        session, fetcher, per_pass=per_pass, now=now,
+        # S5.2: the ride-along's scan is interruptible too. A pass that gives up returns
+        # ``paused`` and stamps NOTHING -- the candidates keep the status they had and the
+        # queue's least-recently-attempted ordering brings them back next pass.
+        should_pause=should_pause if should_pause is not None else _memory_pause_check,
+    )

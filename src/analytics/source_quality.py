@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import json
 import random
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -189,8 +189,28 @@ def audited_source_ids(sources: dict[int, Source]) -> tuple[set[int], dict[str, 
     return audited, excluded
 
 
+class ScanPaused(Exception):
+    """The whole-corpus scan gave up because the machine asked it to (S5.2).
+
+    A TYPED exception, not a bare return, for one reason: a caller must never be able to
+    read a partial scan as a complete one. Nothing is stamped from a paused scan -- the
+    job records ``paused`` and the candidates keep whatever status they already had, which
+    for a never-judged one is ``unqualified`` and is the truth.
+    """
+
+
+# How often the cooperative pause callback is consulted, in rows. The memory guard polls
+# only BETWEEN batches, so a whole-corpus scan inside a batch was unguarded -- and it is
+# the single largest transient in a qualification pass. Rate-limited because the callback
+# reads /proc; the check itself is what must not be rate-limited away entirely (a pause an
+# operator is waiting on should not take a second scan to arrive).
+_PAUSE_CHECK_EVERY = 5_000
+
+
 def collect_article_stats(
     session: Session, *, audited_ids: set[int] | None = None,
+    source_ids: set[int] | None = None,
+    should_pause: Callable[[], bool] | None = None,
 ) -> list[ArticleStat]:
     """Whole-corpus, COUNT-ONLY. One pass over the small article columns (word_count, language,
     source_id — the article_length_report pattern; the codec decrypts each page once, the
@@ -207,24 +227,75 @@ def collect_article_stats(
 
     ``audited_ids``, when given, restricts the pass to sources a ratio audit can judge (see
     ``audited_source_ids``). ``None`` keeps every source, so a caller that has not resolved
-    provenance still gets the old behaviour rather than an empty report.
+    provenance still gets the old behaviour rather than an empty report. It filters in PYTHON,
+    after every row is fetched, which is right for a report that wants the whole corpus read
+    once and is useless for bounding COST.
+
+    ``source_ids`` (S5.1) is the different thing: a SQL-scoped pass, for a caller that wants
+    only a handful of sources judged against a cohort someone else already computed. It scopes
+    BOTH queries -- the article pass on the indexed ``source_id``, and the mention aggregate by
+    the resulting article ids in chunks. Scoping only the article pass would leave the mention
+    GROUP BY reading every mention in the corpus, which is where the time actually goes. The
+    two paths are deliberately separate rather than one generalised query: the unscoped one is
+    byte-identical to what it has always been, so a report cannot change because a job needed
+    a cheaper scan.
+
+    ``should_pause`` (S5.2) is consulted every ``_PAUSE_CHECK_EVERY`` rows of BOTH loops and
+    raises :class:`ScanPaused`. The raise is ours, not the callback's, so a caller cannot
+    accidentally provide a "pause" that returns a partial list.
     """
+    if source_ids is not None and not source_ids:
+        return []  # an empty scope is an empty answer, never the whole corpus
+    scope: list[int] | None = sorted(source_ids) if source_ids else None
+
+    seen = 0
+
+    def _tick() -> None:
+        nonlocal seen
+        seen += 1
+        if should_pause is not None and seen % _PAUSE_CHECK_EVERY == 0 and should_pause():
+            raise ScanPaused(f"paused after {seen} rows")
+
+    # The article pass first when scoped: its ids are what bound the mention aggregate.
+    art_q = session.query(
+        Article.id, Article.word_count, Article.language, Article.source_id, Article.url
+    ).filter(Article.quarantined.isnot(True))
+    if scope is not None:
+        art_q = art_q.filter(Article.source_id.in_(scope))
+    art_rows = list(art_q) if scope is not None else None
+
     # per-article keyword aggregates (one indexed group-by over keyword_mentions; no content).
     agg: dict[int, tuple[int, int, int]] = {}
-    for aid, total, distinct, mx in (
-        session.query(
-            KeywordMention.article_id,
-            func.coalesce(func.sum(KeywordMention.count), 0),
-            func.count(),
-            func.coalesce(func.max(KeywordMention.count), 0),
-        ).group_by(KeywordMention.article_id)
-    ):
-        agg[int(aid)] = (int(total or 0), int(distinct or 0), int(mx or 0))
+    if art_rows is not None:
+        aids = [int(r[0]) for r in art_rows]
+        for chunk in _chunks(aids):
+            for aid, total, distinct, mx in (
+                session.query(
+                    KeywordMention.article_id,
+                    func.coalesce(func.sum(KeywordMention.count), 0),
+                    func.count(),
+                    func.coalesce(func.max(KeywordMention.count), 0),
+                )
+                .filter(KeywordMention.article_id.in_(chunk))
+                .group_by(KeywordMention.article_id)
+            ):
+                agg[int(aid)] = (int(total or 0), int(distinct or 0), int(mx or 0))
+                _tick()
+    else:
+        for aid, total, distinct, mx in (
+            session.query(
+                KeywordMention.article_id,
+                func.coalesce(func.sum(KeywordMention.count), 0),
+                func.count(),
+                func.coalesce(func.max(KeywordMention.count), 0),
+            ).group_by(KeywordMention.article_id)
+        ):
+            agg[int(aid)] = (int(total or 0), int(distinct or 0), int(mx or 0))
+            _tick()
 
     stats: list[ArticleStat] = []
-    for aid, wc, lang, sid, url in session.query(
-        Article.id, Article.word_count, Article.language, Article.source_id, Article.url
-    ).filter(Article.quarantined.isnot(True)):
+    for aid, wc, lang, sid, url in (art_rows if art_rows is not None else art_q):
+        _tick()
         if audited_ids is not None and (sid is None or int(sid) not in audited_ids):
             continue
         total, distinct, mx = agg.get(int(aid), (0, 0, 0))

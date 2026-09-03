@@ -22,6 +22,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -116,11 +117,40 @@ class SourceAudit:
 # Per-source count-only metric aggregation (reuses the source_quality collectors)
 # --------------------------------------------------------------------------- #
 
-def per_source_metrics(session: Session) -> dict[int, dict]:
+def cohort_from_stats(stats: list) -> dict:
+    """The two ARTICLE-level cohort statistics ``per_source_metrics`` judges against, split out
+    so they can be computed once over the whole corpus and reused (S5.1). PURE.
+
+    ``baselines`` -- robust per-language baselines for the four count-only ratios.
+    ``lang_short_cut`` -- the per-language p10 word count (segmented articles only; a cohort
+    below the floor gets ``None``, said honestly, rather than a cut derived from too little).
+    """
+    baselines = sq.build_baselines(stats, floor=COHORT_ARTICLE_FLOOR)
+    lang_wcs: dict[str, list[int]] = {}
+    for s in stats:
+        if not s.unsegmented and s.word_count is not None:
+            lang_wcs.setdefault(s.language, []).append(s.word_count)
+    lang_short_cut: dict[str, float | None] = {}
+    for lang, wcs in lang_wcs.items():
+        rs = sq.robust_stats([float(w) for w in wcs])
+        lang_short_cut[lang] = rs["p10"] if rs["n"] >= COHORT_ARTICLE_FLOOR else None
+    return {"baselines": baselines, "lang_short_cut": lang_short_cut}
+
+
+def per_source_metrics(
+    session: Session, *, source_ids: set[int] | None = None,
+    cohort: dict | None = None,
+    stats: list | None = None,
+    should_pause: Callable[[], bool] | None = None,
+) -> dict[int, dict]:
     """Count-only per-source extraction-validity metrics, derived from the shipped source_quality
     collectors (no article-content decrypt). Returns ``{source_id: {metrics..., language, region,
     article_count, dominant_lang}}``. UNSEGMENTED articles are excluded from the word-count and
     keyword-ratio criteria (script-aware) but still counted in article_count + language_mismatch.
+
+    ``source_ids`` + ``cohort`` are the S5.1 split: judge a handful of sources against a
+    cohort computed ONCE over the whole corpus, instead of re-reading the corpus per batch.
+    Passing ``source_ids`` without a ``cohort`` raises rather than answering.
 
     QUARANTINED ARTICLES ARE EXCLUDED, inherited from ``collect_article_stats`` (F4,
     2026-08-03): an article the article gate already condemned as a non-article must not count
@@ -136,24 +166,36 @@ def per_source_metrics(session: Session) -> dict[int, dict]:
     never at risk either way (they carry zero pathological articles, and auto-demote is
     default-off), so there is nothing here to fix in a hurry and a real way to get it wrong.
     """
-    stats = sq.collect_article_stats(session)
-    baselines = sq.build_baselines(stats, floor=COHORT_ARTICLE_FLOOR)
+    # ``stats`` lets a caller that has ALREADY scanned pass its rows in. Without it the
+    # freeze below scanned the whole corpus TWICE -- once for the article-level cohort and
+    # once here -- which the once-per-run statement count caught immediately: 2, not 1.
+    if stats is None:
+        stats = sq.collect_article_stats(
+            session, source_ids=source_ids, should_pause=should_pause
+        )
+    if cohort is None:
+        # No frozen cohort -> derive it from THESE stats, which is only meaningful over the
+        # whole corpus. A caller that scopes the scan and supplies no cohort would be judging
+        # a handful of sources against a baseline made of themselves, so it is refused rather
+        # than answered: a cohort of the accused is the fabricated-baseline defect.
+        if source_ids is not None:
+            raise ValueError(
+                "a scoped per_source_metrics needs a frozen cohort -- deriving the baseline "
+                "from the scoped sources alone would judge them against themselves"
+            )
+        cohort = cohort_from_stats(stats)
+    baselines = cohort["baselines"]
+    lang_short_cut = cohort["lang_short_cut"]
     outliers = sq.flag_outliers(stats, baselines, floor=COHORT_ARTICLE_FLOOR)
     outlier_ids = {o["article_id"] for o in outliers}
     pathology_ids = {o["article_id"] for o in outliers if o.get("pathology_furniture_repetition")}
 
-    # source metadata + regions
-    src_meta = {int(s.id): (s.domain, s.language, s.region) for s in session.query(Source)}
-
-    # short-article low tail per LANGUAGE cohort (script-aware: segmented only)
-    lang_wcs: dict[str, list[int]] = {}
-    for s in stats:
-        if not s.unsegmented and s.word_count is not None:
-            lang_wcs.setdefault(s.language, []).append(s.word_count)
-    lang_short_cut: dict[str, float | None] = {}
-    for lang, wcs in lang_wcs.items():
-        rs = sq.robust_stats([float(w) for w in wcs])
-        lang_short_cut[lang] = rs["p10"] if rs["n"] >= COHORT_ARTICLE_FLOOR else None
+    # source metadata + regions (scoped with the scan -- the catalog is tens of thousands of
+    # rows and reading all of them per batch is the same defect one table over)
+    meta_q = session.query(Source.id, Source.domain, Source.language, Source.region)
+    if source_ids is not None:
+        meta_q = meta_q.filter(Source.id.in_(sorted(source_ids)))
+    src_meta = {int(sid): (dom, lang, reg) for sid, dom, lang, reg in meta_q}
 
     per: dict[int, dict] = {}
     for s in stats:
@@ -206,12 +248,126 @@ def per_source_metrics(session: Session) -> dict[int, dict]:
     return out
 
 
-def _furniture_share_by_source(session: Session, source_ids: list[int]) -> dict[int, float]:
+def frozen_cohort(
+    session: Session, *, should_pause: Callable[[], bool] | None = None,
+    with_furniture: bool = True, min_articles: int = MIN_SOURCE_ARTICLES,
+) -> dict:
+    """Every COHORT statistic a qualification verdict is measured against, computed ONCE over
+    the whole corpus so a batch of candidates does not re-read it (S5.1).
+
+    Measured before this existed: ``per_source_metrics`` alone held ~131.8 MiB of Python per
+    call (a 17.1 MiB aggregate dict, a 75.0 MiB ``ArticleStat`` list at 669 B each, 39.7 MiB
+    of per-source dicts) plus the connection's page cache -- **once per batch of 20**, from
+    both the bulk job and the per-pass ride-along. The candidates' own metrics are cheap; it
+    was always the cohort that cost, and a cohort does not change per batch.
+
+    WHAT THIS CHANGES, stated rather than buried: a batch is judged against a baseline up to
+    one run old. That is why ``CRITERIA_VERSION`` is bumped -- an attempt row must not read as
+    though it were judged the old way. It is also why the numbers below travel with the
+    result: ``token`` says which corpus state the baseline reflects and ``articles`` how much
+    of it, so a stale verdict is visible rather than inferred.
+
+    ``with_furniture=False`` skips the cross-source fingerprint DF, which is the expensive
+    half (one ``corpus_keywords`` per source over a bounded sample). A caller that skips it
+    gets ``furniture_df: None``, and every share then reads 0.0 -- the same honest zero
+    ``audit_sources`` already publishes when it declines that layer.
+
+    ``min_articles`` MUST match the threshold the consumer will judge at, and is recorded in
+    the result so a mismatch can be refused instead of silently answered. It decides WHICH
+    sources form the cohort, so a cut frozen at one threshold is a different baseline from a
+    cut frozen at another -- the qualification gate judges at ``TRIAL_MIN_ARTICLES`` (1) and
+    the report at ``MIN_SOURCE_ARTICLES`` (20). The parity twin caught this on its first run:
+    frozen at 20 against a fixture of 4-article sources, the cut was EMPTY, so three soft
+    criteria silently stopped being flaggable.
+    """
+    from src.analytics import serve_gate
+
+    stats = sq.collect_article_stats(session, should_pause=should_pause)
+    cohort = cohort_from_stats(stats)
+    per = per_source_metrics(session, cohort=cohort, stats=stats, should_pause=should_pause)
+    furn_df: dict[str, int] | None = None
+    furn_n: int | None = None
+    if with_furniture and per:
+        shares_input = list(per)
+        source_to_articles = sq_source_to_articles(session, source_ids=set(shares_input))
+        import random
+
+        per_top: dict[int, list[str]] = {}
+        for sid in shares_input:
+            ids = source_to_articles.get(sid, [])
+            if not ids:
+                per_top[sid] = []
+                continue
+            if len(ids) > sq.FINGERPRINT_SAMPLE_CAP:
+                ids = sorted(
+                    random.Random(sq.DEFAULT_SEED + sid).sample(ids, sq.FINGERPRINT_SAMPLE_CAP)
+                )
+            ck = sq.q.corpus_keywords(session, article_ids=ids, limit=sq.TOP_KEYWORDS)
+            per_top[sid] = [term["normalized"] for term in ck.get("terms", [])]
+        furn_df = sq.compute_cross_source_df(per_top)
+        furn_n = len(per_top)
+        _flag, shares = sq.flag_furniture_sources(per_top, furn_df, n_sources=furn_n)
+        for sid, m in per.items():
+            m["furniture_share"] = shares.get(sid, 0.0)
+    else:
+        for m in per.values():
+            m["furniture_share"] = 0.0
+
+    return {
+        "cohort": cohort,
+        "cohort_cut": source_cohort_cut(per, min_articles=min_articles),
+        "min_articles": min_articles,
+        "furniture_df": furn_df,
+        "furniture_n_sources": furn_n,
+        "token": serve_gate.change_token(session, articles=True, sources=True),
+        "articles": len(stats),
+        "sources": len(per),
+    }
+
+
+def scoped_metrics(
+    session: Session, source_ids: set[int], frozen: dict, *,
+    should_pause: Callable[[], bool] | None = None,
+) -> dict[int, dict]:
+    """The candidates' OWN metrics, scoped in SQL, judged against ``frozen``'s cohort (S5.1).
+
+    A source absent from the result has ZERO stored articles -- the 2026-07-23 zero-evidence
+    rule -- and the caller must keep testing MEMBERSHIP rather than reading a missing entry as
+    a clean pass."""
+    per = per_source_metrics(
+        session, source_ids=source_ids, cohort=frozen["cohort"], should_pause=should_pause
+    )
+    if not per:
+        return per
+    df = frozen.get("furniture_df")
+    if df is None:
+        for m in per.values():
+            m["furniture_share"] = 0.0
+    else:
+        shares = _furniture_share_by_source(
+            session, list(per), cross_df=df, n_sources=frozen.get("furniture_n_sources"),
+        )
+        for sid, m in per.items():
+            m["furniture_share"] = shares.get(sid, 0.0)
+    return per
+
+
+def _furniture_share_by_source(
+    session: Session, source_ids: list[int], *,
+    cross_df: dict[str, int] | None = None, n_sources: int | None = None,
+) -> dict[int, float]:
     """Per-source top-12 furniture share, reusing the source_quality fingerprint + cross-source DF.
-    Bounded per-source sample (the FINGERPRINT_SAMPLE_CAP guard) so the IN(...) stays safe."""
+    Bounded per-source sample (the FINGERPRINT_SAMPLE_CAP guard) so the IN(...) stays safe.
+
+    ``cross_df``/``n_sources`` (S5.1) let a caller supply a FROZEN document-frequency map
+    instead of deriving one from ``source_ids``. That distinction is load-bearing rather than
+    an optimisation: "how much of this source's top-12 is furniture" is measured against how
+    ubiquitous those terms are ACROSS SOURCES, so deriving the DF from a 20-source batch would
+    give the same source a different share in every batch it appeared in. The source's own
+    top-12 is its own metric; the DF is the cohort's."""
     import random
 
-    source_to_articles = sq_source_to_articles(session)
+    source_to_articles = sq_source_to_articles(session, source_ids=set(source_ids))
     per_top: dict[int, list[str]] = {}
     for sid in source_ids:
         ids = source_to_articles.get(sid, [])
@@ -222,15 +378,26 @@ def _furniture_share_by_source(session: Session, source_ids: list[int]) -> dict[
             ids = sorted(random.Random(sq.DEFAULT_SEED + sid).sample(ids, sq.FINGERPRINT_SAMPLE_CAP))
         ck = sq.q.corpus_keywords(session, article_ids=ids, limit=sq.TOP_KEYWORDS)
         per_top[sid] = [t["normalized"] for t in ck.get("terms", [])]
-    cross_df = sq.compute_cross_source_df(per_top)
-    _flagged, shares = sq.flag_furniture_sources(per_top, cross_df, n_sources=len(per_top))
+    df = cross_df if cross_df is not None else sq.compute_cross_source_df(per_top)
+    n = n_sources if n_sources is not None else len(per_top)
+    _flagged, shares = sq.flag_furniture_sources(per_top, df, n_sources=n)
     return shares
 
 
-def sq_source_to_articles(session: Session) -> dict[int, list[int]]:
+def sq_source_to_articles(
+    session: Session, *, source_ids: set[int] | None = None
+) -> dict[int, list[int]]:
+    """``{source_id: [article_id, ...]}``. ``source_ids`` scopes it in SQL (S5.1) -- the
+    unscoped form walks every article row in the corpus, which is fine once per run and is
+    not fine once per batch of 20."""
     from src.database.models import Article
+    q = session.query(Article.id, Article.source_id)
+    if source_ids is not None:
+        if not source_ids:
+            return {}
+        q = q.filter(Article.source_id.in_(sorted(source_ids)))
     out: dict[int, list[int]] = {}
-    for aid, sid in session.query(Article.id, Article.source_id):
+    for aid, sid in q:
         if sid is not None:
             out.setdefault(int(sid), []).append(int(aid))
     return out
@@ -240,8 +407,30 @@ def sq_source_to_articles(session: Session) -> dict[int, list[int]]:
 # Cohort-relative criterion flagging + status derivation (PURE)
 # --------------------------------------------------------------------------- #
 
+def source_cohort_cut(per_source: dict[int, dict], *,
+                      min_articles: int = MIN_SOURCE_ARTICLES) -> dict[str, dict[str, dict]]:
+    """The per-language, per-criterion robust baselines a source is judged against, split out
+    of ``flag_criteria`` so they can be frozen once per run (S5.1). PURE.
+
+    This is a SOURCE-level cohort, so it is only meaningful over every auditable source in
+    the corpus -- which is exactly why it has to be frozen rather than recomputed from
+    whatever handful of candidates a batch happens to hold."""
+    auditable = {sid: m for sid, m in per_source.items() if m["article_count"] >= min_articles}
+    by_lang: dict[str, dict[str, list[float]]] = {}
+    for m in auditable.values():
+        lang = m["dominant_lang"]
+        c = by_lang.setdefault(lang, {name: [] for name in _CRIT_NAMES})
+        for name in _CRIT_NAMES:
+            c[name].append(m[name])
+    cut: dict[str, dict[str, dict]] = {}
+    for lang, vals in by_lang.items():
+        cut[lang] = {name: sq.robust_stats(vals[name]) for name in _CRIT_NAMES}
+    return cut
+
+
 def flag_criteria(per_source: dict[int, dict], *, cohort_floor: int = SOURCE_COHORT_FLOOR,
-                  min_articles: int = MIN_SOURCE_ARTICLES, tail_p: int = TAIL_P) -> dict[int, list[dict]]:
+                  min_articles: int = MIN_SOURCE_ARTICLES, tail_p: int = TAIL_P,
+                  cohort_cut: dict[str, dict[str, dict]] | None = None) -> dict[int, list[dict]]:
     """For each auditable source, the LIST of criteria whose value sits in the BAD tail of the
     source's SAME-LANGUAGE cohort — each with value + baseline + n + how it was ``flagged_by``. A
     cohort below ``cohort_floor`` sources gets NO baseline, so the SOFT (style-ambiguous) criteria
@@ -250,27 +439,23 @@ def flag_criteria(per_source: dict[int, dict], *, cohort_floor: int = SOURCE_COH
     stays visible even with no usable cohort / a wholly-degraded cohort (the nearest-rank tail trap).
     PURE."""
     auditable = {sid: m for sid, m in per_source.items() if m["article_count"] >= min_articles}
-    # group per-criterion values by the source's dominant language cohort
-    by_lang: dict[str, dict[str, list[float]]] = {}
-    for m in auditable.values():
-        lang = m["dominant_lang"]
-        c = by_lang.setdefault(lang, {name: [] for name in _CRIT_NAMES})
-        for name in _CRIT_NAMES:
-            c[name].append(m[name])
-    cohort_cut: dict[str, dict[str, dict]] = {}
-    for lang, vals in by_lang.items():
-        cohort_cut[lang] = {}
-        for name in _CRIT_NAMES:
-            rs = sq.robust_stats(vals[name])
-            cohort_cut[lang][name] = rs  # carries n; usable only when n >= cohort_floor
+    # The cohort baselines: derived from THESE sources unless a frozen cut is supplied
+    # (S5.1). Each rs carries n; usable only when n >= cohort_floor.
+    cut = cohort_cut if cohort_cut is not None else source_cohort_cut(
+        per_source, min_articles=min_articles
+    )
 
     out: dict[int, list[dict]] = {}
     for sid, m in auditable.items():
         lang = m["dominant_lang"]
         fails: list[dict] = []
+        # A language the frozen cohort has never seen has NO baseline -- an empty
+        # robust_stats reads n=0, so the soft criteria are not flaggable, which is the
+        # same honest answer a below-floor cohort gets. Never a borrowed baseline.
+        lang_cut = cut.get(lang, {})
         for crit in CRITERIA:
             name, bad = crit["name"], crit["bad"]
-            rs = cohort_cut[lang][name]
+            rs = lang_cut.get(name) or sq.robust_stats([])
             v = m[name]
             has_baseline = rs["n"] >= cohort_floor and rs["p90"] is not None
             tail_hit = has_baseline and ((v > rs["p90"]) if bad == "high" else (v < rs["p10"]))
