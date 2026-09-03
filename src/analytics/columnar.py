@@ -118,10 +118,20 @@ def _offline_config() -> dict:
     """DuckDB config that guarantees no network on open: extension autoload/autoinstall
     DISABLED and external access OFF. The columnar engine is local-first by construction.
     """
+    # S1.1: memory_limit and threads were set NOWHERE, so DuckDB used its documented
+    # default of 80% of system RAM and one thread per core — a promise a laptop cannot
+    # keep while the app, the browser and the desktop are also resident, and on the
+    # 2-core field machine a thread count that competes with the collector for exactly
+    # the cores it needs. Bounded at EVERY size, not only on small machines.
+    from src.config.memory_budget import budget
+
+    b = budget()
     return {
         "autoinstall_known_extensions": False,
         "autoload_known_extensions": False,
         "enable_external_access": False,
+        "memory_limit": f"{int(b['duckdb_memory_limit_mb'])}MB",
+        "threads": int(b["duckdb_threads"]),
     }
 
 

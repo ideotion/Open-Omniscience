@@ -68,12 +68,23 @@ def _build_engine() -> Engine:
         # block them. Overflow connections beyond pool_size are closed on return
         # (each re-open re-derives the SQLCipher key — a known, logged cost); the
         # governor's memory back-off keeps the number actually open in check.
+        # S1.1: the pool's SIZE is now a function of the machine, not a constant.
+        # 8 + 64 connections at 64 MiB of page cache each is a 4.6 GB worst case that
+        # nothing computed before; on the 3.3 GB field machine that is the whole
+        # machine. The budget resolves it from total RAM ONCE, and an explicit
+        # OO_DB_POOL_SIZE / OO_DB_MAX_OVERFLOW still wins (it is read inside the
+        # budget, and reported there as an override). Read HERE, at engine build, so
+        # it is applied before the first connection exists — the pool size cannot be
+        # changed on a live engine.
+        from src.config.memory_budget import budget as _memory_budget
+
+        _b = _memory_budget()
         return create_engine(
             DATABASE_URL,
             future=True,
             creator=_creator,
-            pool_size=int(os.getenv("OO_DB_POOL_SIZE", "8")),
-            max_overflow=int(os.getenv("OO_DB_MAX_OVERFLOW", "64")),
+            pool_size=int(_b["db_pool_size"]),
+            max_overflow=int(_b["db_max_overflow"]),
             pool_timeout=float(os.getenv("OO_DB_POOL_TIMEOUT", "30")),
         )
     # PostgreSQL / other: modest pool suitable for a single-user server.
@@ -116,9 +127,17 @@ def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
         # Resolved via the power-profile knob (OO_SQLITE_CACHE_MB override, else the active
         # profile; Optimized = 64, byte-identical to today). Read PER CONNECTION, so a profile
         # switch applies to new connections; never raises (clamped ≥ 2).
+        # S1.1: the profile knob still decides when the operator set one; otherwise the
+        # RAM-aware budget does, so the per-connection cache scales with the machine
+        # instead of being a flat 64 MiB on a 3.3 GB box.
+        from src.config.memory_budget import budget as _memory_budget
         from src.config.power_profiles import sqlite_cache_mb
 
-        cache_mb = sqlite_cache_mb()
+        cache_mb = (
+            sqlite_cache_mb()
+            if os.getenv("OO_SQLITE_CACHE_MB") is not None
+            else int(_memory_budget()["sqlite_cache_mb"])
+        )
         cursor.execute(f"PRAGMA cache_size=-{cache_mb * 1024}")  # negative = KiB
         cursor.execute("PRAGMA temp_store=MEMORY")
         # WAL RESTING CEILING (STORAGE_5TB_PLAN §3 Phase-A: "journal_size_limit is set

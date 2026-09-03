@@ -107,7 +107,19 @@ def serve_enabled() -> bool:
         return False
     from src.analytics import columnar
 
-    return columnar.duckdb_available()
+    if not columnar.duckdb_available():
+        return False
+    if serve_mode() == "forced-on":
+        return True
+    # S1.1: below the RAM floor the in-memory rollup is OFF BY DEFAULT. It is a
+    # streamed scan of every keyword mention into RAM, and at export time it was still
+    # BUILDING on both field machines with the biggest corpora — an unbounded live cost
+    # on exactly the machines least able to pay it. Every serve already falls back to
+    # the identical live query, so this costs speed and never an answer. The explicit
+    # OO_COLUMNAR_SERVE=1 override is honoured above.
+    from src.config.memory_budget import budget
+
+    return bool(budget()["columnar_serve_default"])
 
 
 def _persist_passphrase() -> str | None:

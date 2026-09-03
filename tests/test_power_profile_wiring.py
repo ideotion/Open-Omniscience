@@ -16,6 +16,7 @@ Copyright (C) 2026 Ideotion. GPL-3.0-or-later.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from src.config.power_profiles import (
@@ -95,17 +96,39 @@ def test_an_unknown_profile_falls_back_to_optimized(monkeypatch):
         assert fn() == type(fn())(_KNOB[name].optimized), name
 
 
+def _no_comments(src: str) -> str:
+    """Drop whole-line ``#`` comments.
+
+    A source guard must never be satisfiable by the comment that EXPLAINS the rule
+    (the recorded trap, in both directions) - so every needle below is matched
+    against comment-stripped source.
+    """
+    return "\n".join(
+        line for line in src.splitlines() if not line.lstrip().startswith("#")
+    )
+
+
 def test_the_consumer_read_sites_call_the_resolvers():
-    # Source-pinned (the wiring lesson): each read site must call its resolver, not a literal.
+    """Each read site must CALL its resolver, never inline a literal.
+
+    Anchored on the PROPERTY (the call reaches the consumer variable), not on one
+    exact former line: ``src/database/session.py`` used to read
+    ``cache_mb = sqlite_cache_mb()`` on one line and now resolves the cache from the
+    RAM budget with the power-profile knob still winning whenever the operator has
+    set ``OO_SQLITE_CACHE_MB`` - so the old literal needle failed against correct
+    code while the property it named still held. Re-anchored deliberately: the
+    regex matches both shapes and still fails if the call is replaced by a number.
+    """
     wiring = {
-        "src/database/session.py": "cache_mb = sqlite_cache_mb()",
-        "src/testing/scale_bench.py": "cache_mb = sqlite_cache_mb()",
-        "src/scheduler/runner.py": "pass_budget_minutes() * 60.0",
-        "src/analytics/rollup_serve.py": "age < rollup_serve_ttl_s()",
-        "src/wiki/dumps.py": "else dump_concurrency()",
+        "src/database/session.py": r"cache_mb\s*=\s*\(?\s*sqlite_cache_mb\(\)",
+        "src/testing/scale_bench.py": r"cache_mb\s*=\s*\(?\s*sqlite_cache_mb\(\)",
+        "src/scheduler/runner.py": r"pass_budget_minutes\(\)\s*\*\s*60\.0",
+        "src/analytics/rollup_serve.py": r"age\s*<\s*rollup_serve_ttl_s\(\)",
+        "src/wiki/dumps.py": r"else\s+dump_concurrency\(\)",
     }
-    for path, needle in wiring.items():
-        assert needle in Path(path).read_text(encoding="utf-8"), path
+    for path, pattern in wiring.items():
+        body = _no_comments(Path(path).read_text(encoding="utf-8"))
+        assert re.search(pattern, body), path
     # the old hard-coded literals are gone from the read sites
     assert 'int(os.getenv("OO_SQLITE_CACHE_MB", "64"))' not in Path(
         "src/database/session.py"

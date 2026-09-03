@@ -993,6 +993,10 @@ def run_scrape_once(
                             w_max=w_max,
                             mem_low_ticks=_ticks,
                             mem_low_min_permits=_floor,
+                            # S1.4: the denominator that tells RARE pressure from
+                            # SUSTAINED. Without it one brushed tick pins the ceiling
+                            # for the machine's whole life.
+                            samples=_capacity.samples_from_summary(summary),
                         )
                     except Exception:  # noqa: BLE001 - a hint is never worth a failure
                         _LOG.debug("collect capacity: could not record this pass")
