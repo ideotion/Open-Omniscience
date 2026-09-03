@@ -37,6 +37,7 @@ from sqlalchemy.orm import sessionmaker
 # Data directory resolution is centralised in src.paths so a source checkout, an
 # editable install under $HOME, and a wheel install into a read-only location all
 # behave correctly (see that module's docstring). OO_DATA_DIR still wins.
+from src.database.writer import _SESSION_FLAG as _WRITE_GATE_SESSION_FLAG
 from src.paths import data_dir, default_sqlite_url
 
 DATA_DIR = data_dir()
@@ -357,6 +358,124 @@ def close_session(session: SASession) -> None:
         session.close()
     except Exception:
         _LOG.debug("close_session: error during session.close()", exc_info=True)
+
+
+# "This transaction has written." Tracked on the Session CLASS, so it holds for
+# every session in the process — including one bound to an engine the
+# single-writer gate was never wired to (a test engine, a read-snapshot engine).
+# The gate's own flag is checked too, but relying on it ALONE would make the
+# guard blind exactly where the gate is absent. Same listener shape writer.py
+# already proves: set on the first flush / ORM bulk DML, cleared when the
+# OUTERMOST transaction ends (a savepoint has a parent and must not clear it).
+#
+# COST, measured rather than waved away (the recorded "an instrument on a hot
+# path is a load source" lesson): +6 us per ORM statement, against 57 us for a
+# trivial in-memory read -- ~10% there, and a far smaller share of any statement
+# that touches the encrypted store. ``do_orm_execute`` is the per-statement one
+# and it is the price of seeing bulk DML at all: it leaves no ORM state, so
+# ``before_flush`` never fires for it. writer.py already pays this exact shape
+# for gated sessions; this one holds for EVERY session in the process, which is
+# what makes the guard sound on an engine the gate was never wired to.
+_WROTE_FLAG = "_oo_txn_wrote"
+
+
+def _mark_wrote(session: SASession) -> None:
+    session.info[_WROTE_FLAG] = True
+
+
+@event.listens_for(SASession, "before_flush")
+def _wrote_on_flush(session, _flush_context, _instances) -> None:  # pragma: no cover - event
+    _mark_wrote(session)
+
+
+@event.listens_for(SASession, "do_orm_execute")
+def _wrote_on_bulk_dml(orm_execute_state) -> None:  # pragma: no cover - event
+    if (
+        orm_execute_state.is_insert
+        or orm_execute_state.is_update
+        or orm_execute_state.is_delete
+    ):
+        _mark_wrote(orm_execute_state.session)
+
+
+@event.listens_for(SASession, "after_transaction_end")
+def _clear_wrote(session, transaction) -> None:  # pragma: no cover - event
+    if transaction.parent is None:
+        session.info.pop(_WROTE_FLAG, None)
+
+
+def release_idle_connection(session: SASession) -> bool:
+    """End ``session``'s READ transaction so its pooled connection goes back.
+
+    S1.0. A ``Session`` holds a DBAPI connection only while a transaction is open
+    and re-acquires one transparently on its next statement — measured here on
+    SQLAlchemy 2.0.52 with this project's own pool settings (fresh 0, a read 1,
+    ``rollback()`` 0, the next read 1 again).
+
+    WHAT THIS BUYS, measured rather than assumed. Ending the transaction does NOT
+    free a resident connection's page cache: a 64 MiB warm cache stayed at
+    112.5 MB RSS across ``rollback()`` + ``malloc_trim`` and fell to 46 MB only on
+    ``PRAGMA shrink_memory`` or ``close()``. What it changes is how MANY
+    connections exist at once. Before, each collector worker held one from its
+    first read until its feed bookkeeping committed — across the feed fetch and
+    every article fetch — so 50 workers meant 50 warm connections, 42 of them
+    ``max_overflow`` connections this pool CLOSES on return. Releasing between
+    statements collapses simultaneous checkouts to the number of statements
+    actually running, so those overflow connections are largely never created,
+    and any that are hand their cache back when they close. The ``pool_size``
+    core stays resident with its cache by design, at every worker count: that
+    floor is S1.1's job, not this one's.
+
+    Two further effects, and on the field evidence they are the stronger
+    argument: the worker no longer pins a WAL read snapshot across a Tor fetch
+    (the "a long-lived reader blocks a checkpoint" note on all three 2026-09-02
+    bundles), and the read-then-write window that produces ``SQLITE_BUSY_SNAPSHOT``
+    — the fleet's most frequent recorded error — shrinks to the statements
+    themselves.
+
+    COST, stated because it is real and unpriced elsewhere: a re-acquire that the
+    pool cannot satisfy opens a physical connection, and on the encrypted store
+    that re-derives the SQLCipher key (~160-173 ms). Measured at 50 workers, the
+    multiplier is dominated by ``pool_size`` — 13.9x at pool 2, 3.9x at pool 6,
+    1.0x at pool 8 — which is why S1.1's small tier is shaped for slots rather
+    than for the smallest possible floor.
+
+    WHAT THE GUARD CAN AND CANNOT SEE. ``session.new/dirty/deleted`` describe
+    pending, UN-FLUSHED unit-of-work state. They are all empty once a caller has
+    flushed, while the rows sit unwritten in the open transaction — and
+    ``Session.rollback()`` rolls back to the ROOT, so it would discard them and
+    would destroy an enclosing ``begin_nested()`` savepoint as well. Three
+    further checks close that: an active savepoint, and the single-writer gate's
+    own ``session.info`` flag, which ``writer.py`` sets on the first flush or bulk
+    DML and clears at the outermost transaction end — i.e. exactly "this
+    transaction has written". Bulk ``session.execute(insert()/update()/delete())``
+    leaves no ORM state at all and is caught only by that flag.
+
+    So: this releases a session that has READ and not yet written. Anything else
+    is declined — slower, never wrong. Returns whether a connection was handed
+    back, so a caller can REPORT the effect instead of assuming it. Never raises.
+    """
+    try:
+        # Un-flushed ORM work: a rollback would discard it outright.
+        if session.new or session.dirty or session.deleted:
+            return False
+        # Flushed-but-uncommitted work, and bulk DML that leaves no ORM state.
+        # Two independent markers, deliberately: our own (set for EVERY session in
+        # the process by the listeners below) and the single-writer gate's, so a
+        # session that is gated but somehow missed by ours is still declined.
+        if session.info.get(_WROTE_FLAG) or session.info.get(_WRITE_GATE_SESSION_FLAG):
+            return False
+        # A rollback would roll back to the ROOT, not to the savepoint, taking
+        # the caller's enclosing block with it.
+        if session.in_nested_transaction():
+            return False
+        if not session.in_transaction():
+            return False
+        session.rollback()
+        return True
+    except Exception:  # noqa: BLE001 - releasing early is never worth an error
+        _LOG.debug("release_idle_connection: could not end the transaction", exc_info=True)
+        return False
 
 
 @contextmanager

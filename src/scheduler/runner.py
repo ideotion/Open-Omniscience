@@ -625,10 +625,28 @@ def _process_source(source, *, session, fetcher, mode: str, crawl_cfg) -> tuple[
     Isolated and fail-safe: one bad source never aborts the pass — its error is
     tallied and reported. Used by both the sequential loop and the parallel
     worker pool; the pool gives each call its OWN session (SQLAlchemy sessions
-    are not thread-safe), while the fetcher is shared and per-host-locked.
+    are not thread-safe), while the fetcher is shared and per-host-locked — and
+    is paired with this call's session (S1.0) so a fetch never runs while that
+    session holds a pooled connection.
     """
     from src.ingest.crawl import crawl_source
+    from src.ingest.fetch_release import wrap_fetcher
     from src.ingest.pipeline import ingest_source
+
+    # S1.0: pair the fetcher with THIS session so no network call runs while the
+    # session holds a pooled connection. N workers used to hold N connections
+    # from their first read until the feed bookkeeping committed — across every
+    # fetch — and the governor's back-off cannot preempt a holder. Releasing does
+    # not free a resident connection's cache (measured); it collapses how many
+    # exist at once, so the overflow connections a held-across-fetch worker
+    # forces into being are largely never created, the WAL read snapshot is not
+    # pinned across a Tor fetch, and the BUSY_SNAPSHOT window shrinks to the
+    # statements. Wrapping the fetcher rather than the call sites covers
+    # everything reached FROM THIS LOOP, including what a future edit adds
+    # inside ingest_source/crawl_source — but not the housekeeping lane's own
+    # session+fetcher pairings, which hold one connection each (see
+    # src/ingest/fetch_release.py for what is and is not covered).
+    fetcher = wrap_fetcher(fetcher, session)
 
     try:
         if mode == "crawl":

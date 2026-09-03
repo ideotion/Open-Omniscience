@@ -193,6 +193,10 @@ class CollectionMonitor:
         self._n = 0
         self._rate_sum = 0.0
         self._peak_permits = 0
+        # S1.0 evidence: the most pooled DB connections held at ONE moment
+        # during this pass. None when the pool cannot be read — omitted with a
+        # reason rather than reported as 0, which would read as 'none held'.
+        self._pool_peak: int | None = None
         self._max_inflight = 0
         self._max_cpu_sys = 0.0
         self._min_mem_avail: float | None = None
@@ -296,6 +300,7 @@ class CollectionMonitor:
         wstats = self._writer_stats_fn() or {}
         permits = int(getattr(self._gov, "permits", 0) or 0)
         inflight, inflight_hosts = self._inflight()
+        self._sample_pool()
 
         cpu_sys = vit.get("cpu_sys_pct")
         mem_avail = vit.get("mem_avail_mb")
@@ -432,6 +437,25 @@ class CollectionMonitor:
         except Exception:  # noqa: BLE001 - never break a sample on a forensic sidecar
             pass
 
+    def _sample_pool(self) -> None:
+        """One cheap reading of the engine pool's checked-out count.
+
+        This is the measurement that distinguishes a pass whose workers held a
+        connection across every fetch from one that did not — the static
+        ceiling beside it cannot, because it is the same number either pass.
+        """
+        try:
+            from src.database.session import engine
+
+            checkedout = getattr(engine.pool, "checkedout", None)
+            if checkedout is None:  # a pool shape without the counter
+                return
+            n = int(checkedout())
+        except Exception:  # noqa: BLE001 - a gauge is never worth a pass
+            return
+        if self._pool_peak is None or n > self._pool_peak:
+            self._pool_peak = n
+
     def _mem_gauges(self) -> dict:
         """Cheap allocator + component gauges for one sample (best-effort)."""
         out: dict = {"py_alloc_blocks": None, "fetcher": None}
@@ -512,6 +536,43 @@ class CollectionMonitor:
             "memory_headroom_note": memory_headroom_note,
         }
 
+    def _db_memory(self) -> dict:
+        """The DB-side memory budget in force for this pass (measured, not assumed).
+
+        Omitted fields rather than zeros: a budget that could not be read is an
+        unknown, and a zeroed ceiling would read as "the pool holds nothing".
+        """
+        try:
+            from src.config.memory_budget import (
+                budget,
+                resident_pool_cache_mb,
+                worker_cache_ceiling_mb,
+            )
+
+            b = budget()
+            out = {
+                "tier": b.get("tier"),
+                # Resolved from the RAM budget, NOT read back from a connection.
+                "sqlite_cache_mb": b.get("sqlite_cache_mb"),
+                "pool_bound": int(b["db_pool_size"]) + int(b["db_max_overflow"]),
+                "resident_pool_cache_mb": resident_pool_cache_mb(),
+            }
+            w_max = int(getattr(self._gov, "w_max", 0) or 0)
+            if w_max:
+                out["w_max"] = w_max
+                out["page_cache_ceiling_mb"] = worker_cache_ceiling_mb(w_max)
+            else:
+                out["page_cache_ceiling_mb_unavailable"] = "no governor w_max"
+            if self._pool_peak is not None:
+                out["pool_checkout_peak"] = self._pool_peak
+            else:
+                out["pool_checkout_unavailable"] = "the engine pool could not be read"
+            return out
+        except Exception as exc:  # noqa: BLE001 - a report line is never worth a pass
+            # Named, never a bare {}: "the budget could not be read" and "there
+            # was nothing to read" are different facts.
+            return {"unavailable": f"{type(exc).__name__}: {exc}"[:200]}
+
     def _write_summary(self, result: dict | None) -> dict | None:
         if self._n == 0:
             return None
@@ -528,6 +589,14 @@ class CollectionMonitor:
                 "last": self._rss_last,
                 "max": self._rss_max,
             },
+            # S1.0/S1.1: what the DB side of this pass could have cost, beside the
+            # RSS it actually reached. `page_cache_ceiling_mb` is an upper BOUND
+            # from the config (identical every pass, and lazily filled, so the real
+            # figure is lower); `resident_pool_cache_mb` is the part no release can
+            # reclaim; `pool_checkout_peak` is the MEASURED number — the most
+            # connections held at once — and it is the one that says whether
+            # workers were holding connections across their fetches.
+            "db_memory": self._db_memory(),
         }
         if result:
             summary["articles_stored"] = result.get("articles_stored")

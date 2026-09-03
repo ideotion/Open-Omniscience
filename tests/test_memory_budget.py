@@ -33,12 +33,15 @@ def _clean(monkeypatch):
 def test_the_field_machine_is_narrowed_and_the_numbers_are_stated():
     got = mb.resolve_for(3296)  # machine C
     assert got["tier"] == "small"
-    assert got["db_pool_size"] == 2
-    assert got["db_max_overflow"] == 6
+    # Shaped for SLOTS (S1.0's measured churn: opens track pool_size, not the
+    # total bound), with half the cache so the worst case still HALVES.
+    assert got["db_pool_size"] == 6
+    assert got["db_max_overflow"] == 2
     assert got["sqlite_cache_mb"] <= 16
     assert got["columnar_serve_default"] is False
     # the worst case the file's own comment names: cache_mb x (pool + overflow)
     assert got["worst_case_pool_cache_mb"] == 8 * got["sqlite_cache_mb"]
+    assert got["worst_case_pool_cache_mb"] == 64
     assert got["worst_case_pool_cache_mb"] < 200
     # the caveat must carry the real numbers, not an adjective
     assert "3,296" in got["reason"] and "4,096" in got["reason"]
@@ -98,7 +101,7 @@ def test_an_operator_value_wins_and_is_reported_as_an_override(monkeypatch):
     assert got["db_pool_size"] == 12
     assert got["overrides"] == {"sqlite_cache_mb": 128, "db_pool_size": 12}
     # ... and the machine's own overflow default still applies where nothing was set
-    assert got["db_max_overflow"] == 6
+    assert got["db_max_overflow"] == 2
 
 
 def test_the_engine_reads_the_budget_rather_than_a_constant():
@@ -257,3 +260,147 @@ def test_the_runner_hands_the_denominator_through():
             assert "samples" in names, f"record_pass must receive samples; got {names}"
             return
     raise AssertionError("the runner no longer calls record_pass")
+
+
+# --------------------------------------------------------------------------- #
+# S1.0: the ceiling is bounded by the POOL, and it has a reader.
+# --------------------------------------------------------------------------- #
+def test_the_page_cache_ceiling_is_bounded_by_the_pool_not_only_the_worker_count(
+    monkeypatch,
+):
+    """50 workers cannot hold 50 connections a pool of 8 will never hand out.
+
+    Taking the worker count alone over-states the small tier by 6x -- and an
+    over-stated ceiling is a fabricated number in the direction that looks
+    responsible, which is the harder kind to notice.
+    """
+    monkeypatch.setattr(mb, "total_ram_mb", lambda: 3296.0)
+    mb.reset_for_tests()  # small: pool 2 + overflow 6 = 8
+    b = mb.budget()
+    pool_bound = b["db_pool_size"] + b["db_max_overflow"]
+    assert pool_bound == 8
+    naive = 50 * b["sqlite_cache_mb"]
+    assert mb.worker_cache_ceiling_mb(50) == pool_bound * b["sqlite_cache_mb"]
+    assert mb.worker_cache_ceiling_mb(50) < naive, "the pool must bind before the worker count"
+    # Below the pool bound the worker count is what binds -- both directions.
+    assert mb.worker_cache_ceiling_mb(3) == 3 * b["sqlite_cache_mb"]
+    assert mb.worker_cache_ceiling_mb(0) == 0
+
+
+def test_the_db_memory_block_is_computed_from_the_budget_and_the_governor(monkeypatch):
+    """The arithmetic has a READER: without one it is a dead end (the recorded shape).
+
+    Named for what it drives — it calls ``_db_memory()`` directly; the WIRING
+    into the written summary is the separate test below, which exists because
+    removing the field from ``_write_summary`` reddened nothing while only this
+    test existed."""
+    monkeypatch.setattr(mb, "total_ram_mb", lambda: 3296.0)
+    mb.reset_for_tests()
+
+    from src.monitoring.collect_perf import CollectionMonitor
+
+    class _Gov:
+        w_max = 50
+        permits = 1
+        active = 0
+
+    m = CollectionMonitor(governor=_Gov(), pass_id="p", mode="rss")
+    block = m._db_memory()
+    assert block["tier"] == "small"
+    assert block["pool_bound"] == 8
+    assert block["w_max"] == 50
+    assert block["page_cache_ceiling_mb"] == mb.worker_cache_ceiling_mb(50)
+
+
+def test_the_db_memory_block_names_its_failure_rather_than_fabricating_a_zero(monkeypatch):
+    """An unreadable budget is a NAMED absence, never a zeroed ceiling that would
+    read as 'the pool holds nothing' — and never a bare {}, which cannot be told
+    from 'there was nothing to read'."""
+    from src.monitoring import collect_perf as cp
+
+    class _Gov:
+        w_max = 4
+
+    monkeypatch.setattr(
+        mb, "budget", lambda: (_ for _ in ()).throw(RuntimeError("unreadable"))
+    )
+    m = cp.CollectionMonitor(governor=_Gov(), pass_id="p", mode="rss")
+    got = m._db_memory()
+    assert "page_cache_ceiling_mb" not in got, "never a fabricated ceiling"
+    assert "RuntimeError" in got["unavailable"] and "unreadable" in got["unavailable"]
+
+
+def test_a_governor_without_w_max_says_so_instead_of_dropping_the_field(monkeypatch):
+    """The partial case must be distinguishable from the failed one.
+
+    Both used to collapse into a dict with no ``page_cache_ceiling_mb``, so a
+    reader could not tell 'no ceiling because w_max is unknown' from 'the budget
+    could not be read' — and `.get("page_cache_ceiling_mb", 0)` would invent a
+    zero for either.
+    """
+    monkeypatch.setattr(mb, "total_ram_mb", lambda: 3296.0)
+    mb.reset_for_tests()
+    from src.monitoring import collect_perf as cp
+
+    m = cp.CollectionMonitor(governor=object(), pass_id="p", mode="rss")
+    got = m._db_memory()
+    assert got["tier"] == "small", "the budget itself read fine"
+    assert got["page_cache_ceiling_mb_unavailable"] == "no governor w_max"
+    assert "unavailable" not in got
+
+
+def test_the_measured_peak_is_reported_and_never_zeroed_when_unreadable(monkeypatch):
+    """The one number that says whether the fix RAN.
+
+    The ceiling beside it is a static property of the machine — identical for a
+    pass that held 50 connections across its fetches and one that held none — so
+    without this the summary could not support the reading its own comment
+    offers.
+    """
+    monkeypatch.setattr(mb, "total_ram_mb", lambda: 3296.0)
+    mb.reset_for_tests()
+    from src.monitoring import collect_perf as cp
+
+    class _Gov:
+        w_max = 9
+
+    m = cp.CollectionMonitor(governor=_Gov(), pass_id="p", mode="rss")
+    # Never sampled -> named absence, not 0.
+    assert m._db_memory()["pool_checkout_unavailable"]
+    assert "pool_checkout_peak" not in m._db_memory()
+
+    m._sample_pool()  # the real engine's pool
+    assert isinstance(m._pool_peak, int)
+    m._pool_peak = 7
+    assert m._db_memory()["pool_checkout_peak"] == 7
+
+    # It is a PEAK: a later, smaller reading must not lower it.
+    m._sample_pool()
+    assert m._pool_peak == 7
+
+
+def test_the_block_is_actually_wired_into_the_written_summary(monkeypatch):
+    """The wiring, not just the helper.
+
+    Removing ``"db_memory": self._db_memory()`` from ``_write_summary`` reddened
+    NOTHING while this test called the helper directly — a mutation that reddens
+    nothing is the finding, so the guard now reads the payload a reader gets.
+    """
+    monkeypatch.setattr(mb, "total_ram_mb", lambda: 3296.0)
+    mb.reset_for_tests()
+
+    from src.monitoring import collect_perf as cp
+
+    written: list[dict] = []
+    monkeypatch.setattr(cp, "_append_jsonl", lambda rec: written.append(rec))
+    monkeypatch.setattr(cp, "_trim_jsonl", lambda: None)
+
+    class _Gov:
+        w_max = 12
+
+    m = cp.CollectionMonitor(governor=_Gov(), pass_id="p", mode="rss")
+    m._n = 1  # a summary is only written for a pass that sampled
+    summary = m._write_summary(None)
+    assert summary is not None
+    assert summary["db_memory"]["page_cache_ceiling_mb"] == mb.worker_cache_ceiling_mb(12)
+    assert written and written[0]["db_memory"] == summary["db_memory"]

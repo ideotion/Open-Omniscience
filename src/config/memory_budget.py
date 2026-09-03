@@ -45,7 +45,19 @@ MEDIUM_RAM_MB = 8 * 1024
 # machine with headroom is untouched by this module.
 _LARGE = {"db_pool_size": 8, "db_max_overflow": 64, "sqlite_cache_mb": 64}
 _MEDIUM = {"db_pool_size": 4, "db_max_overflow": 16, "sqlite_cache_mb": 16}
-_SMALL = {"db_pool_size": 2, "db_max_overflow": 6, "sqlite_cache_mb": 16}
+# The small tier is shaped for SLOTS, not for the smallest possible floor. S1.0
+# stops a worker holding a connection across its fetch, so a re-acquire the pool
+# cannot satisfy opens a physical connection -- and on the encrypted store that
+# re-derives the SQLCipher key (~160-173 ms). Measured at 50 workers, the opens
+# are dominated by pool_size, not by the total bound: 2+6 -> 111 opens (13.9x the
+# held-connection baseline), 6+2 -> 31 (3.9x), 8+0 -> ~1x. Moving slots from
+# overflow into the pool at HALF the cache keeps the same total connection bound
+# while halving the worst case (8 x 16 = 128 MB -> 8 x 8 = 64 MB) and cutting the
+# key derivations 3.6x. It costs 16 MB of resident floor (2 x 16 = 32 -> 6 x 8 =
+# 48), which is the trade, stated. The same reshape was MEASURED for the medium
+# tier and REJECTED: 4+16 -> 8+12 bought only 4.7x -> 3.4x while DOUBLING that
+# tier's floor (64 -> 128 MB).
+_SMALL = {"db_pool_size": 6, "db_max_overflow": 2, "sqlite_cache_mb": 8}
 
 # DuckDB's own default is 80% of system RAM, which on a laptop is a promise the machine
 # cannot keep while the app, the browser and the desktop are also resident. Capped as a
@@ -196,11 +208,39 @@ def reset_for_tests() -> None:
     _CACHE = None
 
 
-def worker_cache_ceiling_mb(workers: int) -> int:
-    """What ``workers`` concurrent collector workers can hold in page cache alone.
+def resident_pool_cache_mb() -> int:
+    """Page cache the pool keeps warm for the engine's life, at any worker count.
 
-    The arithmetic nothing performed before S1.0: on the field's machine B, 50 workers
-    each held a pooled connection across a Tor fetch, and 50 x 64 MiB is 3.2 GB of page
-    cache that the governor's back-off cannot reclaim -- it throttles NEW work, and its
-    own semantics say holders in excess are never preempted."""
-    return max(0, int(workers)) * int(budget()["sqlite_cache_mb"])
+    This pool CLOSES connections beyond ``pool_size`` when they are returned
+    (``session.py``), so their page cache goes with them — measured: 20 concurrent
+    sessions on the large shape held +1329 MB, and returning them freed 456 MB
+    (the 12 overflow connections) while the 8 pooled ones kept theirs. So this is
+    the floor no release can reclaim; ``worker_cache_ceiling_mb`` is the peak.
+    """
+    b = budget()
+    return int(b["db_pool_size"]) * int(b["sqlite_cache_mb"])
+
+
+def worker_cache_ceiling_mb(workers: int) -> int:
+    """UPPER BOUND on DB page cache with ``workers`` collectors running.
+
+    ``min(workers, pool_size + max_overflow) x sqlite_cache_mb`` — bounded by the
+    POOL as well as by the worker count, because a worker cannot hold a
+    connection the pool will not hand out. Taking the worker count alone
+    over-states the small tier by more than 6x (50 workers against a pool of 8).
+
+    WHAT IT IS NOT. It is a bound, not a measurement, and it is a static property
+    of the machine and the config — identical every pass, so it cannot say
+    whether connections were actually held across fetches (that is
+    ``pool_checkout_peak`` in the pass summary). SQLite fills a page cache
+    LAZILY, so the real figure is data-dependent and lower: 20 connections each
+    declaring a 64 MiB ceiling cost 9.7 MB of RSS against a small database.
+
+    The arithmetic nothing performed before S1.0: on the field's machine B, 50
+    workers each held a pooled connection across a Tor fetch, and 50 x 64 MiB is
+    3.2 GB of page cache the governor's back-off cannot reclaim — it throttles
+    NEW work, and its own semantics say holders in excess are never preempted.
+    """
+    b = budget()
+    pool_bound = int(b["db_pool_size"]) + int(b["db_max_overflow"])
+    return min(max(0, int(workers)), pool_bound) * int(b["sqlite_cache_mb"])
