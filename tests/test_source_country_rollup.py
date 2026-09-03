@@ -181,7 +181,7 @@ def test_endpoint_serves_basis_and_matches_the_live_endpoint(tmp_path):
         finally:
             db.close()
 
-    import src.api.database as database_mod
+    from src.api.served_cache import invalidate as _invalidate_served
 
     app.dependency_overrides[get_db] = _override_get_db
     try:
@@ -189,11 +189,13 @@ def test_endpoint_serves_basis_and_matches_the_live_endpoint(tmp_path):
             live = client.get("/api/database/countries").json()
             with TestSession() as s:
                 source_country_rollup.refresh(s)
-            # Bust the endpoint's own 30s write-probed cache: refreshing the rollup
-            # writes only to the in-process rollup state, not the DB, so
-            # PRAGMA data_version is unchanged and the cache would otherwise still
-            # serve the pre-refresh live payload it already computed above.
-            database_mod._cache.clear()
+            # Bust the endpoint's own served cache: refreshing the rollup writes
+            # only to the in-process rollup state, not the DB, so the change probe
+            # is unchanged and the cache would otherwise still serve the pre-refresh
+            # live payload it already computed above. (S3.2 moved this cache into
+            # src.api.served_cache; the old `database_mod._cache` was a per-connection
+            # probe measured at a 0% hit rate on a pooled engine.)
+            _invalidate_served()
             served = client.get("/api/database/countries").json()
     finally:
         app.dependency_overrides.pop(get_db, None)

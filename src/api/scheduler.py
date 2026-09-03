@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from src.config.machine_floor import machine_floor
 from src.database.models import Source
 from src.database.session import get_db
+from src.monitoring.server_load import server_load
 from src.scheduler.coverage import DEFAULT_FRESH_WINDOW_HOURS, tag_coverage
 from src.scheduler.runner import get_scheduler
 from src.scheduler.settings import (
@@ -92,6 +93,13 @@ def _status_payload() -> dict:
     # cheap enough to recompute rather than cache: a STALE available reading is
     # precisely the wrong thing on a machine whose memory is moving.
     status["machine_floor"] = machine_floor()
+    # S3.4 (2026-09-02 ruling 7): the server's own load reading rides the same
+    # already-polled response, for the reason `online` and `machine_floor` do --
+    # behind a separate poll it is a disclosure nobody reads. It is a DISCLOSURE
+    # only: the client backs off on what IT observes (its own latencies and the
+    # 429/503 it was served), because a server too loaded to answer cannot tell
+    # anyone it is loaded.
+    status["server_load"] = server_load()
     return status
 
 

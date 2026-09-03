@@ -4705,6 +4705,83 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     that the folder is empty. And moving a resource out of a tree means the uninstall
     no longer reclaims it by removing the tree — both sites must read ONE function, or
     the uninstall silently orphans it.
+  - **A CACHE WHOSE KEY IS PER-CONNECTION HAS A 0% HIT RATE ON A POOLED ENGINE — and the
+    tests around it will be witnesses rather than detectors (2026-09-03, S3.2):**
+    `/api/database/stats` was guarded by a cache described in its own comment as VERIFIED:
+    served only while `PRAGMA data_version` and `SELECT total_changes()` proved the database
+    unchanged. The claim is true and the mechanism was dead. Both components are PER
+    CONNECTION and diverge by OPPOSITE mechanisms — `total_changes()` counts only the writes
+    THIS connection made since it opened (so two pooled connections disagree PERMANENTLY, not
+    transiently), while `data_version` does NOT tick for the connection that wrote and DOES
+    tick for every other. Measured through the production functions on a two-connection pool
+    with ZERO writes: **six reads, six recomputes**. The default engine is `pool_size=5` + 10
+    overflow, so on a live server the cache essentially never served and every 4 s poll paid a
+    whole-table scan inline — 43 s for the mentions count on the field corpus. **THE THREE
+    TESTS AROUND IT ALL PASSED, AND EACH WAS EVIDENCE OF THE DEFECT:** one had to
+    `monkeypatch` the probe to a constant to observe a cache hit at all, with a comment
+    blaming a "spurious" invalidation and a 2026-06-15 CI flake; two others passed only
+    BECAUSE there were no hits (write a row, read the count on the next line). A test that
+    freezes the mechanism it is testing is describing a lookalike, and a test that depends on
+    a cache never serving will keep passing for as long as it never does. GENERAL FORM: a
+    cache key must be a property of the DATABASE, not of the connection that happens to serve
+    the request — and the way to find out is to drive the real `_cached` with two sessions and
+    count computes, not to read the probe and reason about it. THE PROBE THAT WORKS was
+    already in the tree: the write gate's `grants` counter, one process-global monotonic int
+    bumped once per write transaction, measured against all four properties (pure reads do not
+    bump it; it sees this connection's own write; it sees another connection's write from
+    anywhere; it is comparable across connections by construction). **STATE ITS LIMITS RATHER
+    THAN THE GUARANTEE YOU WISH IT HAD:** it is blind to a bare textual `session.execute(text(
+    "INSERT ..."))` outside `write_lock()` (measured, unchanged) and to another PROCESS, so the
+    corpus swap and VACUUM drop the entry BY NAME and every payload carries its real `as_of` —
+    the offer is that the age is VISIBLE, never that it is zero. COROLLARY: the same broken
+    cache existed as a VERBATIM COPY in `src/api/library.py`, which is how one copy gets fixed
+    and the other quietly does not; and a namespacing wrapper added to prevent key collisions
+    had a hole at the one call site that did not go through it, found by the test rather than
+    by review.
+  - **"SERVE STALE" AND "REFRESH WHEN CHANGED" ARE THE WRONG PAIR — the probe must gate the
+    REBUILD, not the SERVE (2026-09-03, same slice):** the obvious design is "probe says
+    changed → recompute", which is exactly the defect (during collection every poll pays the
+    scan), and the obvious repair is "refresh at the TTL regardless", which on a corpus where
+    the scan takes 43 s and the TTL is 60 s means a background rebuild running essentially
+    continuously. Neither is right. The trigger is `age >= ttl AND the probe moved`: an idle
+    app rebuilds NOTHING (the value is not merely fresh enough, it is still exactly correct),
+    a collecting one rebuilds at most once per TTL, and the request thread never computes
+    after the first cold call. TWO DETAILS THAT CARRY IT: keep `built_at` (the value's real
+    age, which drives `as_of`) separate from `checked_at` (the refresh clock) — re-stamping
+    `built_at` on an unchanged re-check restarts the age at zero and reports a value computed
+    minutes ago as fresh; and single-flight the COLD path under a per-key lock with a
+    double-check, or N simultaneous polls start N scans, which is the death-spiral shape the
+    alert strip already hit.
+  - **A MUTATION THAT SURVIVES IS A FINDING ABOUT THE TEST, AND THE USUAL FAULT IS THAT THE
+    FIXTURE NEVER REACHED THE BRANCH (2026-09-03, same slice):** `test_an_unavailable_probe_
+    is_never_read_as_nothing_changed` warmed the cache and THEN made the probe unavailable, so
+    the stored probe was a real int against a `None` reading — unequal under both the fix and
+    the mutant, and the mutation that reads `None` as "nothing changed" passed. The
+    discriminating case is a probe that is `None` when the entry is BUILT as well as when it
+    is read, i.e. the real case (an install whose write gate is off), where the mutant freezes
+    the counts forever. Same shape as the recorded cache-suppression and bucket-granularity
+    misses: ask what the mutant would SUPPRESS and build the fixture that reaches it.
+  - **A GUARD THAT FIRES ON THE WRONG ASSERTION IS A GUARD WHOSE CLAIM IS UNTESTED
+    (2026-09-03, S3.4):** the node harness for the poll backoff asserted both the SCHEDULE
+    (the delay the chain asks for) and the SOURCE (that `startLive` reads the load factor).
+    The source checks ran first, so the brief's own mutation — "schedules at exactly 15,000
+    ms" — aborted the suite on a string before the delay was ever driven. It reddened, which
+    is what makes it easy to miss: the suite failed, so the mutation looked caught. Order the
+    BEHAVIOURAL assertion first, so the number the claim is about is the thing that fails
+    (`got 15000`). And a rebuilt-from-source function must keep its SIGNATURE: extracting only
+    the body and re-wrapping it as `function name()` silently drops the parameters, and the
+    copy then throws `ReferenceError` on the very argument the real one is called with.
+  - **A PER-SECTION DEGRADE EARNS ITS KEEP ON THE FIRST RUN, NOT IN THEORY (2026-09-03,
+    S3.4):** the `server_load` composer wraps each of its three readings separately and reports
+    `{"read": false, "reason": ...}` for one that raises, because "we could not read it" and
+    "we read it and it is quiet" are opposite facts that must not share a key or a value. Its
+    very first execution reported `TypeError: 'bool' object is not callable` — my own bug,
+    `memguard.memory_guard.engaged` being a PROPERTY — where a naive `except: return
+    {"engaged": False}` would have published a confident, wrong, permanent all-clear. When
+    adding a composed diagnostic, write the honest-absence branch BEFORE trusting any of the
+    sections, and give it a test that asserts a failed section does not also publish the value
+    it failed to read.
+
   - **A CONTEXT MANAGER THAT CAPTURES A CONNECTION AT ENTRY AND RELEASES IT IN `finally`
     BREAKS THE MOMENT THE BLOCK LEGITIMATELY RECONNECTS — and the crash is the loud half
     (2026-08-23, the first field diagnostics bundle):** `statement_deadline` armed one raw
