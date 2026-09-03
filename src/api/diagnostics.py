@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session
 from src.analytics import queries as q
 from src.analytics.families import build_families
 from src.api.heavy import guarded_read
-from src.database.maintenance import StatementTimeout, statement_deadline
+from src.database.maintenance import StatementTimeout, deadline_expired, statement_deadline
 from src.database.models import (
     Article,
     Keyword,
@@ -4309,11 +4309,20 @@ def _write_all_diagnostics_zip(
                 if db is not None and _member_touches_db(fn):
                     with statement_deadline(db, _all_diag_db_member_deadline_s()):
                         value = fn()
+                        # S2.2: a member that STOPPED at the deadline and returned
+                        # what it had is PARTIAL, not skipped. Recording
+                        # "skipped-deadline" writes only a marker (see the branch
+                        # below) and would DISCARD the payload -- home-cards' cards,
+                        # card-audit's diagnoses -- which is the opposite of what an
+                        # operator diagnosing a slow machine needs. Read the expiry
+                        # INSIDE the block: leaving it restores the enclosing value.
+                        if deadline_expired(db):
+                            outcome = "partial-deadline"
                 else:
                     value = _run_nondb_member_bounded(fn, _all_diag_nondb_member_deadline_s())
                     if value is _ALL_DIAG_DEADLINE_SENTINEL:
                         outcome = "skipped-deadline"
-                if outcome == "ok":
+                if outcome in ("ok", "partial-deadline"):
                     payload = _member_bytes(value)
                     zf.writestr(name, payload)
                     nbytes = len(payload)

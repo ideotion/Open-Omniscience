@@ -42,10 +42,25 @@ def card_click_diagnostics(session) -> dict:
     "hard-linked") or a text search of its seed term ("search-fallback")? A search whose
     live FTS count differs wildly from the card's own ``n`` means the click LOSES the
     card's corpus — the dysfunction to fix, per card type."""
-    from src.briefing import service
     from src.database.fts import SearchQueryError, search_ids
 
-    cards = service.get_briefing(session, force=True, include_dismissed=True).get("cards", [])
+    # S2.3: READ the cache; never recompute. ``get_briefing(force=True)`` runs
+    # refresh_briefing, which WRITES briefing_cache.json -- so a diagnostic that
+    # merely reports on Home's cards was replacing the live Home feed with its own
+    # result, and under a member deadline with a TRUNCATED one.
+    #
+    # The cache is also the RIGHT source, not merely the safe one: the question is
+    # "for each card CURRENTLY on Home", and the cache is exactly what Home shows.
+    # It keeps the dismissed cards the old ``include_dismissed=True`` asked for
+    # (dismissal is applied at presentation, not at write), and it costs no producer
+    # run at all -- so this member can no longer overrun a deadline either.
+    #
+    # ``get_briefing(force=False)`` is NOT a substitute: it recomputes on an absent
+    # or stale cache, and a recompute writes.
+    from src.briefing import service
+
+    cached = service._read_cache() or {}  # noqa: SLF001 - read, never recompute
+    cards = cached.get("cards", [])
     out: list[dict] = []
     hard = soft = mismatched = 0
     by_type: dict[str, dict] = {}
@@ -121,6 +136,16 @@ def card_click_diagnostics(session) -> dict:
     return {
         "schema": "oo-cardclick-1",
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        # Say WHAT was read: "0 cards" from an absent cache and "0 cards" from a
+        # Home that genuinely has none are opposite facts, and the summary alone
+        # cannot tell them apart.
+        "basis": (
+            "the live Home cache as generated at "
+            + str(cached.get("generated_at"))
+            if cached
+            else "no Home cache exists yet — nothing has been generated to report on"
+        ),
+        "cache_present": bool(cached),
         "summary": {
             "total": len(cards),
             "hard_linked": hard,

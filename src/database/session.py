@@ -165,6 +165,35 @@ def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
         cursor.close()
 
 
+@event.listens_for(engine, "reset")
+def _disarm_progress_handler(dbapi_connection, _connection_record, _reset_state) -> None:
+    """S2.1: no connection may re-enter the pool carrying a progress handler.
+
+    ``statement_deadline`` arms the SQLite progress handler, which is state on
+    the DBAPI CONNECTION, not on the session. A block that ends (or merely
+    commits) while its deadline is still running returns an ARMED connection to
+    the pool, and the next thread to check it out is interrupted on the first
+    thread's clock -- reproduced against the shipped code: with
+    ``pool_size=1`` thread B's own statement raised ``interrupted`` while
+    thread A was still inside its block.
+
+    ``reset`` is the right hook, verified against the installed SQLAlchemy
+    (2.0.52) rather than assumed: it fires before checkin on QueuePool, before
+    close on NullPool (the read-snapshot engines), and on a bare
+    ``raw_connection()`` checkout+close -- so there is no return path that
+    escapes it.
+
+    Defensive by construction: a driver without the attribute, or a connection
+    already closed, needs no disarm and must never turn a checkin into an error.
+    """
+    try:
+        handler = getattr(dbapi_connection, "set_progress_handler", None)
+        if handler is not None:
+            handler(None, 0)
+    except Exception:  # noqa: BLE001 - a checkin must never fail on a teardown
+        pass
+
+
 # Session factory. Explicit commits/flushes for predictable transaction control.
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
 

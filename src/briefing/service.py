@@ -20,7 +20,7 @@ from datetime import UTC, datetime
 
 from src.briefing.card import BUCKET_LABELS, BUCKETS
 from src.briefing.producers import register_default_producers
-from src.briefing.registry import run_all
+from src.briefing.registry import run_all_bounded
 
 _LOG = logging.getLogger(__name__)
 
@@ -255,7 +255,30 @@ def refresh_briefing(session, on_progress=None) -> dict:
         evaluate_watches(session)
     except Exception:  # noqa: BLE001 - the watch pass is additive, never fatal to the feed
         _LOG.warning("watch evaluation failed; briefing continues", exc_info=True)
-    cards = [c.to_dict() for c in run_all(session, on_progress=on_progress)]
+    produced, stats = run_all_bounded(session, on_progress=on_progress)
+    cards = [c.to_dict() for c in produced]
+
+    # S2.3: a truncated run must not REPLACE a good feed with what it managed to
+    # finish. The producer loop now stops when an enclosing statement deadline
+    # expires (S2.2), so a diagnostic running under one can reach here with a
+    # partial -- or empty -- set that is a fact about the DEADLINE, not about the
+    # corpus.
+    #
+    # Gated STRICTLY on that expiry, and only when the new set is EMPTY and the
+    # cached one is not. An unconditional "never replace non-empty with empty"
+    # would freeze a stale Home forever on a corpus that genuinely yields no cards,
+    # which is a worse failure than the one being fixed: the feed would stop being
+    # about the corpus at all, and nothing would say so.
+    if stats.get("truncated") and not cards:
+        existing = _read_cache()
+        if existing and existing.get("cards"):
+            _LOG.warning(
+                "briefing refresh truncated by an enclosing deadline and produced no "
+                "cards; keeping the %d cached cards rather than blanking Home",
+                len(existing["cards"]),
+            )
+            return existing
+
     payload = {
         "version": CACHE_VERSION,
         "generated_at": datetime.now(UTC).isoformat(),

@@ -20,6 +20,18 @@ from contextlib import contextmanager
 
 from src.briefing.card import Card
 
+
+def _deadline_expired(session) -> bool:
+    """Local import + guard: the registry must stay importable without the DB layer
+    (it is imported by producers under test with stub sessions), and a missing
+    reader must read as "no deadline", never as an expired one."""
+    try:
+        from src.database.maintenance import deadline_expired
+
+        return deadline_expired(session)
+    except Exception:  # noqa: BLE001 - no DB layer, or a stub session
+        return False
+
 _LOG = logging.getLogger(__name__)
 
 # _WalGuardResult: the minimum real-clock gap between two WAL-releasing closes of
@@ -489,6 +501,20 @@ def run_all_bounded(
             _LOG.warning(
                 "run_all: budget spent after %d/%d producers; stopping before %r",
                 ran, total, name,
+            )
+            break
+        # S2.2: an ENCLOSING statement deadline is this loop's budget too. Without
+        # this the caller's deadline arrives as an exception, the per-producer
+        # ``except`` below catches it, and the loop runs on -- raising and catching
+        # once per remaining producer, for as long as the list is. That is the
+        # 69-minute member: the guard fired, the isolation ate it, and nobody was
+        # told. Same treatment as our own budget, for the same reason: a ``break``
+        # is control flow the isolation cannot intercept.
+        if _deadline_expired(session):
+            truncated = True
+            _LOG.warning(
+                "run_all: enclosing statement deadline expired after %d/%d producers; "
+                "stopping before %r", ran, total, name,
             )
             break
         ran += 1

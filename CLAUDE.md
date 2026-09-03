@@ -5016,6 +5016,45 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     means the number cannot be quietly raised either: it fails if the budget sits above
     the real count, so the only ways out are to fix the slice or to argue the budget up
     deliberately.
+  - **A BELT ADDED FOR SAFETY CAN MAKE THE THING IT BACKS UP UNTESTABLE — the second
+    guard masks the first (2026-09-02, the `statement_deadline` pool poison):** the fix
+    is four edits, and edit 4 (an owner-thread check, so an escaped handler can only
+    interrupt the thread that armed it) is a deliberate belt under edit 1 (disarm on
+    checkin). Together they are right; together they also mean the CROSS-THREAD test —
+    the one that reproduces the field defect — passes with edit 1 **neutered**, because
+    the belt makes a stale handler inert on a foreign thread anyway. Neutering the
+    listener reddened nothing. The discriminating case is SAME-thread: a connection
+    returned to the pool mid-deadline and checked out again by the same thread, where
+    the belt is silent and only the listener can save it. GENERAL FORM: when a fix has a
+    primary mechanism and a belt, ask which one each test is actually exercising — a
+    belt that covers the primary path everywhere leaves the primary untested, and the
+    mutation matrix is the only thing that says so.
+  - **A TEST THAT ATTACHES THE PRODUCTION LISTENER TO ITS OWN ENGINE PROVES THE FUNCTION
+    AND NOT THE WIRING (2026-09-02, same slice):** the fixture did
+    `event.listen(eng, "reset", _disarm_progress_handler)` — right for exercising the
+    real function on an isolated engine, and it means removing
+    `@event.listens_for(engine, "reset")` from `session.py` reddens NOTHING. That is the
+    recorded "a test double injected via a parameter bypasses the production path" trap
+    wearing a fixture's clothes, and the fix is one assertion:
+    `event.contains(engine, "reset", fn)` against the app's own engine.
+  - **A "TWO SESSIONS MUST NOT INTERFERE" TEST NEEDS THEM TO SHARE THE RESOURCE, WHICH
+    A ROOMY POOL PREVENTS (2026-09-02, same slice):** the foreign-disarm test ran on
+    `pool_size=2`, so the two blocks never touched the same connection and restoring the
+    old historical-list disarm changed nothing. `pool_size=1` FORCES the shape the hazard
+    needs — X arms C and commits, Y picks C up and arms it on its own clock, X's block
+    exits — and the mutation then fails by name. Same family as the anti-vacuity rule
+    already recorded for the cross-thread case (with a larger pool the other thread gets
+    a fresh connection and passes for free): for any interference test, assert or force
+    that the two parties really share the thing.
+  - **A NESTED-STATE TEST MUST PUT THE INTERESTING VALUE ON THE OUTER LEVEL, OR
+    "RESTORED" AND "ERASED" READ THE SAME (2026-09-02, the deadline expiry):** the
+    expiry is stashed in `session.info` and restored on exit so nesting works. Tested
+    with a LONG outer and a SHORT inner, the post-exit assertion is
+    `deadline_expired() is False` — which is equally true if the key was restored and if
+    it was deleted outright, so replacing the restore with an unconditional `pop` passed.
+    Making the OUTER the expired one turns the same assertion into a discriminating
+    `True`. GENERAL FORM: for any save/restore, arrange the fixture so the restored value
+    and the absent value produce DIFFERENT answers.
 ## Open queue (when maintainer says proceed)
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
   is still open (found 2026-08-20 while reviewing a CI red on PR #963; RECORD-ONLY, nothing

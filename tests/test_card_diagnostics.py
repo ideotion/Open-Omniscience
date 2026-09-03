@@ -29,7 +29,13 @@ def _run(monkeypatch, cards, fts):
     import src.briefing.service as service
     import src.database.fts as fts_mod
 
-    monkeypatch.setattr(service, "get_briefing", lambda *a, **k: {"cards": cards})
+    # S2.3: the diagnostic READS the Home cache and never recomputes — forcing a
+    # refresh made this read-only report REWRITE the live feed. So the seam the
+    # fixture stubs is the cache read, not get_briefing.
+    monkeypatch.setattr(
+        service, "_read_cache",
+        lambda: {"generated_at": "2026-01-01T00:00:00+00:00", "cards": cards},
+    )
     # **k so the double tracks the real signature: search_ids grew an
     # `exclude_quarantined` keyword (the diagnostic passes it, so that clicking a card
     # and this count measure the SAME set). A positional-only double silently
@@ -80,3 +86,30 @@ def test_zero_result_search_fallback_is_a_mismatch(monkeypatch):
               "article_ids": [], "key": "no-such-term"}]
     log = _run(monkeypatch, cards, {"no-such-term": 0})
     assert log["cards"][0]["mismatch"] is True  # loads 0 -> corpus lost
+
+
+def test_an_absent_cache_says_so_instead_of_reporting_zero_cards(monkeypatch):
+    """"0 cards" from an absent cache and "0 cards" from a Home that genuinely has
+    none are opposite facts. The summary alone cannot tell them apart, so the basis
+    must."""
+    import src.briefing.service as service
+
+    monkeypatch.setattr(service, "_read_cache", lambda: None)
+    log = cd.card_click_diagnostics(session=None)
+    assert log["summary"]["total"] == 0
+    assert log["cache_present"] is False
+    assert "no Home cache" in log["basis"]
+
+
+def test_a_present_cache_names_when_it_was_generated(monkeypatch):
+    """The twin: a real cache must report as one, or the honest-absence branch would
+    swallow every genuine read."""
+    import src.briefing.service as service
+
+    monkeypatch.setattr(
+        service, "_read_cache",
+        lambda: {"generated_at": "2026-01-02T03:04:05+00:00", "cards": []},
+    )
+    log = cd.card_click_diagnostics(session=None)
+    assert log["cache_present"] is True
+    assert "2026-01-02T03:04:05+00:00" in log["basis"]

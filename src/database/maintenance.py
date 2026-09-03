@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -1118,6 +1119,27 @@ def _deadline_seconds() -> float:
         return 60.0
 
 
+_DEADLINE_KEY = "_oo_statement_deadline_at"
+
+
+def deadline_expired(session) -> bool:
+    """Has an enclosing :func:`statement_deadline` already elapsed?
+
+    ``False`` when there is no deadline at all, which is the honest answer: a loop
+    that reads "no deadline" as "expired" would stop on every unbounded path.
+
+    This exists so a LOOP can stop on its own terms. The deadline's other signal is
+    an exception, and the loops that need this all wrap each item in ``except
+    Exception`` so one bad item cannot break the whole -- correct isolation that
+    also eats the deadline, once per item, silently.
+    """
+    try:
+        at = session.info.get(_DEADLINE_KEY)
+    except Exception:  # noqa: BLE001 - a stub session with no .info
+        return False
+    return at is not None and time.monotonic() >= at
+
+
 @contextmanager
 def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
     """Abort the session's SQLite statements if they run past ``seconds``.
@@ -1145,8 +1167,24 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
         yield
         return
     started = time.monotonic()
+    deadline_at = started + limit
+    # S2.2: publish the expiry so a LOOP can treat it as its own budget. The
+    # deadline's only signal used to be an exception, and an exception is
+    # catchable by design -- ``run_all_bounded``'s per-producer isolation ate one
+    # per producer and the caller learned nothing (the 69-minute member, field
+    # report 2026-08-09). A queryable expiry is CONTROL FLOW the isolation cannot
+    # intercept, which is the same reason that loop's own budget is a ``break``.
+    prev_deadline = session.info.get(_DEADLINE_KEY)
+    session.info[_DEADLINE_KEY] = deadline_at
+    # S2.1 belt: the handler is per-CONNECTION, and a connection can outlive this
+    # block (it is pooled). Even if one escapes still armed, it may only ever
+    # interrupt the thread that armed it -- so a leak costs this block's own
+    # statement, never a stranger's. One get_ident per 20,000 opcodes.
+    owner = threading.get_ident()
 
     def _check() -> int:
+        if threading.get_ident() != owner:
+            return 0
         return 1 if (time.monotonic() - started) > limit else 0
 
     # A progress handler is per-DBAPI-CONNECTION, and a block may legitimately RECONNECT
@@ -1160,23 +1198,24 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
     # ``finally`` with "Cannot operate on a closed database", writing 0 bytes. A teardown
     # that can destroy the value of the work it was guarding is worse than no guard.
     #
-    # So: track every connection we arm, re-arm on reconnect (``after_begin`` is
-    # session-scoped -- an engine-level listener would arm OTHER sessions' connections and
-    # interrupt their statements on our clock), and disarm each one defensively. Losing a
-    # handler on an already-closed connection costs nothing: the connection is gone.
-    armed: list = [raw]
-
+    # So: re-arm on reconnect (``after_begin`` is session-scoped -- an engine-level
+    # listener would arm OTHER sessions' connections and interrupt their statements on
+    # our clock).
+    #
+    # S2.1: re-arm UNCONDITIONALLY. The old code skipped a connection it had already
+    # armed, which was correct only while a handler, once set, stayed set. It does not:
+    # the engine's ``reset`` listener now disarms every connection on its way back to
+    # the pool, so the SAME object handed back to this session arrives DISARMED. Skipping
+    # it would silently drop this block's own deadline the moment it commits -- the
+    # positive half of the guarantee, lost to the fix for the negative half.
     def _rearm(_session, _transaction, connection) -> None:
         try:
             new_raw = connection.connection.dbapi_connection
         except Exception:  # noqa: BLE001 - no raw handle here; the deadline simply lapses
             return
-        if new_raw is None or any(new_raw is a for a in armed):
-            return
-        if not hasattr(new_raw, "set_progress_handler"):
+        if new_raw is None or not hasattr(new_raw, "set_progress_handler"):
             return
         new_raw.set_progress_handler(_check, 20_000)
-        armed.append(new_raw)
 
     raw.set_progress_handler(_check, 20_000)
     event.listen(session, "after_begin", _rearm)
@@ -1191,13 +1230,36 @@ def statement_deadline(session, seconds: float | None = None) -> Iterator[None]:
             ) from exc
         raise
     finally:
+        # Restore rather than delete: deadlines can nest (a member's own inside the
+        # bundle's), and clearing the key would tell the OUTER block it has no
+        # deadline at all.
+        if prev_deadline is None:
+            session.info.pop(_DEADLINE_KEY, None)
+        else:
+            session.info[_DEADLINE_KEY] = prev_deadline
         try:
             event.remove(session, "after_begin", _rearm)
         except Exception:  # noqa: BLE001 - teardown must never replace the block's outcome
             _LOG.debug("statement_deadline: listener removal failed", exc_info=True)
-        for conn in armed:
+        # S2.1: disarm ONLY the connection this session still holds. The old code
+        # walked a historical list of every connection it had ever armed -- and after
+        # a checkin those objects can belong to ANOTHER session with its own live
+        # deadline, so this teardown stripped a stranger's handler (reproduced: X's
+        # exit erased Y's, and Y's runaway query then ran unbounded). Everything this
+        # block released along the way was already disarmed by the engine's ``reset``
+        # listener, so nothing is missed by narrowing it.
+        held = None
+        try:
+            # in_transaction() FIRST: session.connection() would OPEN one, and a
+            # finally that checks out a connection just to disarm it is a new way
+            # to fail during teardown.
+            if getattr(session, "in_transaction", lambda: False)():
+                held = session.connection().connection.dbapi_connection
+        except Exception:  # noqa: BLE001 - nothing held, or a stub session
+            held = None
+        if held is not None:
             try:
-                conn.set_progress_handler(None, 0)
+                held.set_progress_handler(None, 0)
             except Exception:  # noqa: BLE001 - a closed/replaced connection needs no disarm
                 _LOG.debug("statement_deadline: disarm skipped", exc_info=True)
 
