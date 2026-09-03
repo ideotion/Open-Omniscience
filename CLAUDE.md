@@ -5583,6 +5583,25 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     a suite reads source from disk long after importing it, and the wording to remember is
     "do not mutate the tree", not "do not switch branches". Cost: one 18-minute run, plus
     the time spent believing eight real-looking failures.
+  - **A COMMENT IS NOT A GUARD AGAINST A BOT — AND THE JUSTIFICATION ITSELF CAN CARRY A
+    FABRICATED FACT (2026-09-03, `pqcrypto` re-widened 14 days after it was pinned):** the
+    2026-08-20 lesson ends *"Put the reason in the constraint comment, or the next reader
+    simply widens the bound."* The reason WAS in the comment, in capitals, naming the
+    migration doc it required — and dependabot #996 widened `pqcrypto>=0.3.4,<1.0` to `<2.0`
+    anyway, and it merged, because the next reader was not a reader. Prose addresses humans;
+    only a CI-visible mechanism addresses a bot, and this bound had no test. **THE HALF WORTH
+    MORE:** that same comment asserted 1.0.0 *"returns `PublicKey` / `SecretKey` objects
+    rather than raw bytes"*, which measurement REFUTES — `keygen()` returns plain `bytes` and
+    `PUBLIC_KEY_SIZE` is 1952 in both versions. The real second breakage was elsewhere and
+    worse: `verify` returns `None` for a VALID signature (0.4.0 returns `True`) and raises for
+    an invalid one, so a `bool(verify(...))` call site reports every valid signature as a
+    verification FAILURE — silently, in a tamper-evidence path, and reached without ever
+    calling the renamed function. An unverified elaboration inside a justification is not
+    harmless decoration: it makes the bound easier to dismiss AND points whoever eventually
+    does the migration at a key-format problem that does not exist. RULE: when you record WHY
+    a bound exists, install both versions and write down what you MEASURED — here 1.0.0 → 16
+    failed / 23 passed in this repo's own suite against 0.4.0 → 39 passed, which is checkable,
+    where a changelog paraphrase arrives at the same confidence and is where the error will be.
 
 ## Open queue (when maintainer says proceed)
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
@@ -5591,8 +5610,18 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   renamed the ml_dsa_65 API, and the "PQC signing path" lane went red with
   `AttributeError: module 'pqcrypto.sign.ml_dsa_65' has no attribute 'generate_keypair'`
   (14 failed / 4 passed across `tests/test_custody_signing.py` + `tests/test_annotations.py`).
-  **THE INSTANCE IS CLOSED** — `2617037c` + `e112e04f` upper-bounded it to
-  `pqcrypto>=0.3.4,<1.0` (pyproject:198, with the reason in a comment). **THE CLASS IS NOT**,
+  **THE INSTANCE IS CLOSED, AND IT RE-OPENED ONCE** — `2617037c` + `e112e04f` upper-bounded it
+  to `pqcrypto>=0.3.4,<1.0` with the reason in a comment; **dependabot #996 widened it straight
+  back to `<2.0` on 2026-09-03 and it merged** (a bot does not read comments), and it was
+  re-narrowed the same day. That round MEASURED a second breakage the first pass missed: 1.0.0's
+  `verify` returns `None` for a VALID signature and raises `InvalidSignatureError` for an invalid
+  one, where 0.4.0 returns True/False — so `signing.py`'s `bool(_mldsa.verify(...))` reports every
+  genuine ML-DSA signature as a verification FAILURE on an install whose keys already exist, a
+  path that never reaches `generate_keypair` and therefore fails SILENTLY rather than loudly.
+  NOTE WHAT THAT MEANS FOR THE FIX SHAPE BELOW: probing the API SURFACE catches a RENAME (it
+  would have caught this one), but it cannot catch a changed RETURN CONTRACT under an unchanged
+  name — so the probe should exercise a ROUND TRIP (keygen → sign → verify-true → verify-false)
+  rather than assert that four attributes exist. **THE CLASS IS NOT**,
   and that is the half worth building: `src/custody/signing.py` sets `PQC_AVAILABLE = True`
   (line 61, guarded by the bare `import` at line 59) on IMPORT SUCCESS ALONE, but the module
   still imported perfectly — only `generate_keypair` was gone — so the flag was `True`,
