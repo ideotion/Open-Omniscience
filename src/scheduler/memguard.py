@@ -75,6 +75,12 @@ def _psutil_readings() -> dict:
         out["rss_mb"] = round(psutil.Process().memory_info().rss / (1024 * 1024), 1)
     except Exception:  # noqa: BLE001 - readings are best-effort
         pass
+    try:
+        from src.monitoring.swap import swap_readings
+
+        out.update(swap_readings())
+    except Exception:  # noqa: BLE001
+        pass
     return out
 
 
@@ -100,6 +106,7 @@ class MemoryGuard:
         trip_after: int | None = None,
         resume_after: int | None = None,
         readings_fn=None,
+        release_fn=None,
     ) -> None:
         self.rss_pct = _env_float("OO_MEM_GUARD_RSS_PCT", 85.0) if rss_pct is None else rss_pct
         self.avail_floor_mb = (
@@ -112,6 +119,11 @@ class MemoryGuard:
         # Resume needs MARGIN below the trip line (hysteresis gap, no flapping).
         self.resume_rss_pct = max(1.0, self.rss_pct - 10.0)
         self._readings = readings_fn or _psutil_readings
+        # S1.2: what an engage RELEASES. Injectable so tests drive the ladder
+        # deterministically; the record is kept so a report can say what was
+        # freed rather than assert that pausing helped.
+        self._release_fn = release_fn
+        self._last_release: dict | None = None
         self._lock = threading.Lock()
         self._engaged = False
         self._since: str | None = None
@@ -119,6 +131,9 @@ class MemoryGuard:
         self._over = 0
         self._under = 0
         self._last: dict = {}
+        # Our own swapped-out bytes at the previous sample, so a RISE can be
+        # distinguished from a machine that paged out once and settled.
+        self._last_proc_swap: float | None = None
 
     @staticmethod
     def enabled() -> bool:
@@ -135,12 +150,23 @@ class MemoryGuard:
         rss_mb: float | None,
         mem_avail_mb: float | None,
         mem_total_mb: float | None,
+        proc_swap_mb: float | None = None,
     ) -> bool:
         """Feed one measured sample; returns the engaged state afterwards.
 
         All-None readings carry no information: they neither advance the trip
         counter nor the resume counter (never a fabricated pressure OR a
         fabricated recovery).
+
+        S1.2 — a SWAP-OUT IS NOT A RECOVERY. Moving our pages to disk raises
+        ``available`` and lowers RSS at the same time, which is precisely the
+        healthy turn the resume condition is watching for; the field readings
+        show ``available`` alternating 200/600 MB while RSS sat at 1600 and
+        ``VmSwap`` climbed. So while our OWN swap is RISING the resume counter is
+        reset: the machine is not recovering, it is paying for the same pages in
+        a slower place. Only a RISE counts — steady swap is what a box that has
+        already paged out looks like for the rest of its life, and treating that
+        as pressure would pin the guard on forever.
         """
         if not self.enabled():
             return False
@@ -150,10 +176,19 @@ class MemoryGuard:
         tripped_reason: str | None = None
         resumed = False
         with self._lock:
+            prev_swap = self._last_proc_swap
+            if proc_swap_mb is not None:
+                self._last_proc_swap = proc_swap_mb
             self._last = {
                 "rss_mb": rss_mb,
                 "mem_avail_mb": mem_avail_mb,
                 "mem_total_mb": mem_total_mb,
+                "proc_swap_mb": proc_swap_mb,
+                "proc_swap_rising": (
+                    None
+                    if proc_swap_mb is None or prev_swap is None
+                    else proc_swap_mb > prev_swap
+                ),
                 "rss_pct_of_total": round(rss_frac_pct, 1) if rss_frac_pct is not None else None,
                 "ts": datetime.now(UTC).isoformat(timespec="seconds"),
             }
@@ -176,7 +211,13 @@ class MemoryGuard:
             else:
                 healthy_rss = rss_frac_pct is None or rss_frac_pct <= self.resume_rss_pct
                 healthy_avail = mem_avail_mb is None or mem_avail_mb >= 2.0 * self.avail_floor_mb
-                if healthy_rss and healthy_avail and not (over_rss or over_avail):
+                swapping_out = bool(self._last.get("proc_swap_rising"))
+                if (
+                    healthy_rss
+                    and healthy_avail
+                    and not (over_rss or over_avail)
+                    and not swapping_out
+                ):
                     self._under += 1
                     if self._under >= self.resume_after:
                         self._resume_locked()
@@ -196,9 +237,30 @@ class MemoryGuard:
                 self.avail_floor_mb,
                 self.trip_after,
             )
+            self._run_release()
         if resumed:
             _LOG.warning("memory guard released (memory recovered) — collection resumes")
         return engaged
+
+    def _run_release(self) -> None:
+        """Release residents on engage. Never raises — the pause must stand even
+        if the release fails, and this runs when the machine is already in
+        trouble."""
+        fn = self._release_fn
+        if fn is None:
+            from src.scheduler.release import release_residents as fn  # noqa: PLC0415
+        try:
+            rec = fn()
+        except Exception:  # noqa: BLE001 - a failed release is not a failed pause
+            _LOG.debug("memory guard: release ladder failed", exc_info=True)
+            return
+        with self._lock:
+            self._last_release = rec
+
+    def last_release(self) -> dict | None:
+        """The most recent release record (None until an engage has run one)."""
+        with self._lock:
+            return self._last_release
 
     def poll(self) -> bool:
         """Take a fresh reading NOW (between passes, when no monitor is
@@ -208,6 +270,7 @@ class MemoryGuard:
             rss_mb=r.get("rss_mb"),
             mem_avail_mb=r.get("mem_avail_mb"),
             mem_total_mb=r.get("mem_total_mb"),
+            proc_swap_mb=r.get("proc_swap_mb"),
         )
 
     def reset(self, *, reason: str = "user action") -> None:

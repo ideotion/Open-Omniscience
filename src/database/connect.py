@@ -36,6 +36,7 @@ import os
 import shutil
 import sqlite3
 import threading
+import time
 from pathlib import Path
 
 _LOG = logging.getLogger("database.connect")
@@ -364,17 +365,76 @@ def connect(
     )
 
 
-def locked_state(path: Path | str) -> str:
-    """One word for the boot machine + doctor: unlocked-plaintext |
-    unlocked-encrypted | locked | fresh."""
-    state = is_encrypted_file(path)
-    if state is False:
+def state_for_header(header: bool | None) -> str:
+    """The lock-state DECISION, given the file's header reading.
+
+    Split out of :func:`locked_state` so the middleware can reach it with a
+    CACHED header (S3.6) without a second copy of the decision -- two
+    implementations of one rule drift, and this one decides whether the app
+    answers at all. The passphrase/plaintext inputs are read LIVE here, so only
+    the file read is ever cached; unlocking changes the answer immediately.
+    """
+    if header is False:
         return "unlocked-plaintext"
-    if state is True:
+    if header is True:
         return "unlocked-encrypted" if get_passphrase() else "locked"
     if plaintext_mode() or get_passphrase():
         return "unlocked-plaintext" if plaintext_mode() else "unlocked-encrypted"
     return "fresh"
+
+
+def locked_state(path: Path | str) -> str:
+    """One word for the boot machine + doctor: unlocked-plaintext |
+    unlocked-encrypted | locked | fresh. Reads the header every call -- callers
+    pass arbitrary paths (staged artifacts, backup members), so this one is
+    deliberately uncached; :func:`main_header_state` is the hot-path variant."""
+    return state_for_header(is_encrypted_file(path))
+
+
+# --- S3.6: the header read, off the request path --------------------------- #
+#
+# The lock middleware runs for EVERY request -- every API call and every static
+# asset -- and reached is_encrypted_file, i.e. exists() + stat() + open() +
+# read(16) on the live store. MEASURED here: 19 us per call page-cached, 95 us
+# with the page evicted before each call (4.9x) on a healthy disk. Small either
+# way, and it is blocking file I/O on the EVENT LOOP that the answer does not
+# need: the header changes only when the store file itself is created, replaced
+# or wiped, and every one of those paths is ours.
+#
+# So the header is cached with BOTH belts the brief asks for: explicit
+# invalidation from each mutator (enumerated at the call sites), and a short TTL
+# so a path someone forgets to enumerate self-heals in seconds rather than
+# never. The passphrase is NOT cached -- see state_for_header.
+# Three separate variables rather than one dict[str, object]: the three values
+# have three different types, and a heterogeneous dict would only be readable
+# through casts -- which is how a cache starts returning the wrong field.
+_HEADER_TTL_S = 5.0
+_header_path: str | None = None
+_header_value: bool | None = None
+_header_at: float = 0.0
+_header_lock = threading.Lock()
+
+
+def invalidate_header_cache() -> None:
+    """Forget the cached store header. Call from EVERY path that creates,
+    replaces or removes the live database file."""
+    global _header_path
+    with _header_lock:
+        _header_path = None
+
+
+def main_header_state(path: Path | str) -> bool | None:
+    """:func:`is_encrypted_file` for the live store, cached (see above)."""
+    global _header_path, _header_value, _header_at
+    key = str(path)
+    now = time.monotonic()
+    with _header_lock:
+        if _header_path == key and (now - _header_at) < _HEADER_TTL_S:
+            return _header_value
+    header = is_encrypted_file(path)
+    with _header_lock:
+        _header_path, _header_value, _header_at = key, header, now
+    return header
 
 
 def attach(conn, path: Path | str, alias: str) -> None:

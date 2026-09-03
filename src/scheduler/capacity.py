@@ -56,6 +56,14 @@ SCHEMA = "oo-collect-capacity-1"
 #: than one permit at a time; the governor's own per-tick back-off is what catches it
 #: again if the climb was premature.
 _RELAX_FACTOR = 2
+# S1.4 (2026-09-02): a pass relaxes the ceiling when pressure was RARE, not only when it
+# was absent. The relax half already existed and could never fire in the field, because
+# it required mem_low_ticks == 0 exactly: with tens of workers some tick nearly always
+# brushes the floor, so a machine that dipped once stayed pinned for the rest of its
+# life. Machine A was running ONE worker with 1,239 MB available and the guard not
+# engaged; machine C had 499 mem-low ticks out of 11,799 samples — 4.2% — and was pinned
+# at 1. This is the share above which a pass counts as genuinely pressured.
+_RELAX_SHARE = 0.10
 
 
 def _default_state_path() -> Path:
@@ -129,6 +137,7 @@ def record_pass(
     w_max: int,
     mem_low_ticks: int | None,
     mem_low_min_permits: int | None,
+    samples: int | None = None,
     state_path: Path | None = None,
 ) -> int | None:
     """Fold one finished pass into the ceiling; return the new ceiling (``None`` = cleared).
@@ -136,11 +145,19 @@ def record_pass(
     ``mem_low_ticks`` and ``mem_low_min_permits`` come straight from the collection
     monitor's own summary -- this function measures nothing itself.
 
-    A pass that saw pressure lowers the ceiling to the floor the governor actually
-    reached (never raises it: pressure is not evidence of headroom). A pass that saw none
+    A pass that saw SUSTAINED pressure lowers the ceiling to the floor the governor
+    actually reached (never raises it: pressure is not evidence of headroom). A pass
+    that saw none — or saw it only rarely, below ``_RELAX_SHARE`` of its samples —
     relaxes it, and clearing the record at ``w_max`` keeps a healthy machine carrying no
     state at all. A pass that reported no usable numbers leaves the ceiling untouched --
     an absent measurement is not a measurement of zero pressure.
+
+    ``samples`` is the pass's own tick count. Without it a single brushed tick counts as
+    pressure, which is what pinned machine A at one worker while 1,239 MB was free: with
+    tens of workers some tick nearly always touches the floor, so "ticks == 0" is a
+    condition a busy machine can essentially never meet again. With it, RARE pressure
+    relaxes and SUSTAINED pressure still pins. An absent ``samples`` keeps the old
+    strict behaviour rather than guessing a denominator.
     """
     w_max = max(1, int(w_max))
     path = state_path or _default_state_path()
@@ -149,7 +166,20 @@ def record_pass(
     if mem_low_ticks is None:
         return current  # the pass never ran the monitor; it says nothing either way.
 
-    if mem_low_ticks > 0:
+    sustained = mem_low_ticks > 0
+    if (
+        sustained
+        and isinstance(samples, int)
+        and not isinstance(samples, bool)
+        and samples > 0
+        and (mem_low_ticks / samples) <= _RELAX_SHARE
+    ):
+        # Pressure was seen but it was RARE — treat the pass as healthy so the ceiling
+        # can climb back. The guard's own engage/release record is unaffected; this is
+        # only about whether the ramp stays capped next pass.
+        sustained = False
+
+    if sustained:
         if not isinstance(mem_low_min_permits, int) or mem_low_min_permits < 1:
             # Pressure was seen but the floor was not recorded: refuse to invent one.
             return current
@@ -183,6 +213,26 @@ def record_pass(
         },
     )
     return int(new)
+
+
+def samples_from_summary(summary: dict | None) -> int | None:
+    """The pass's own tick count, the denominator ``record_pass`` needs to tell rare
+    pressure from sustained pressure.
+
+    NESTED UNDER ``bottleneck``, exactly like the other two — this is the trap
+    ``from_summary``'s docstring names, and the first cut of this function walked
+    straight into it by reading the top level. A top-level ``.get`` returns None,
+    ``record_pass`` correctly treats None as "no denominator" and keeps the strict
+    behaviour, so the relaxation would never have fired in production while every unit
+    test of the logic passed. Read from the same block, pinned against a REAL
+    CollectionMonitor summary."""
+    if not isinstance(summary, dict):
+        return None
+    block = summary.get("bottleneck")
+    if not isinstance(block, dict):
+        return None
+    got = block.get("samples")
+    return got if isinstance(got, int) and not isinstance(got, bool) else None
 
 
 def from_summary(summary: dict | None) -> tuple[int | None, int | None]:

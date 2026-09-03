@@ -249,7 +249,7 @@
         // Figures endpoint is 60 s-cached server-side, so polling it here is cheap.
         [d, fig] = await Promise.all([
           api("/api/library/overview"),
-          api("/api/database/figures").catch(() => ({})),
+          api("/api/database/figures", {polled: true}).catch(() => ({})),
         ]);
       } catch (e) { host.innerHTML = `<div class="note err">${esc(e.message)}</div>`; return; }
       const stamp = JSON.stringify([d.downloaded, d.derived, fig]);
@@ -939,7 +939,7 @@
     async function loadDbStats() {
       const el = $("db-stats");
       try {
-        const s = await api("/api/database/stats");
+        const s = await api("/api/database/stats", {polled: true});
         const t9 = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
         const entries = Object.entries(s.counts || {}).filter(([k]) => !DB_STAT_HIDDEN_KEYS.has(k));
         const keys = entries.map(([k]) => k).join(",");
@@ -992,8 +992,14 @@
       insights: {ms: 6000, fn: () => loadInsights()},
       wiki:     {ms: 6000, fn: () => refreshWikiLive()},
     };
+    // S3.1 (c): the tabs whose OWN loader already does what their live spec does,
+    // so the poller's leading tick would repeat it. Declared rather than inferred:
+    // `library`'s loader and live fn are different functions that happen to load
+    // the same view, and `ingest`/`wiki` have no loader at all -- a blanket skip
+    // would delay their first live data for a whole interval.
+    const LOADER_COVERS_LIVE = new Set(["home", "insights", "library"]);
     let _live = null;
-    function startLive(name) {
+    function startLive(name, opts) {
       stopLive();
       const spec = LIVE[name];
       if (!spec) return;
@@ -1008,10 +1014,40 @@
         inflight = true;
         try { await spec.fn(); } finally { inflight = false; }
       };
-      tick();
-      _live = {name, timer: setInterval(() => { if (!document.hidden) tick(); }, spec.ms)};
+      // The leading tick is a DUPLICATE only when this tab's own loader just ran
+      // and already covers what the live spec does. Everything else ticks now, so
+      // no tab's first live data is delayed by an interval.
+      if (!(opts && opts.loaderJustRan && LOADER_COVERS_LIVE.has(name))) tick();
+
+      // S3.4 (b): a RESCHEDULING chain rather than setInterval, because the delay
+      // has to be recomputed each time -- a fixed interval cannot back off. Under
+      // load the gap is spec.ms x the client's own refusal-derived factor, up to
+      // 8x, and it returns to spec.ms on its own once the refusals stop. The
+      // banner names the cadence it just moved to.
+      const schedule = () => {
+        const factor = (typeof _loadFactor === "function") ? _loadFactor() : 1;
+        const delay = spec.ms * factor;
+        if (typeof _noteLoadCadence === "function") _noteLoadCadence(delay);
+        const timer = setTimeout(() => {
+          if (!document.hidden) tick();
+          // Reschedule from the CALLBACK, not from the tick's completion: a slow
+          // tick already has the single-flight guard above, and waiting for it
+          // here would let one long poll stall the chain entirely.
+          if (_live && _live.name === name) schedule();
+        }, delay);
+        if (_live) _live.timer = timer; else _live = {name, timer};
+      };
+      _live = {name, timer: null};
+      schedule();
     }
-    function stopLive() { if (_live) { clearInterval(_live.timer); _live = null; } }
+    function stopLive() { if (_live) { if (_live.timer) clearTimeout(_live.timer); _live = null; } }
+    // Exposed for the node harness: the poll delay this chain WOULD use next.
+    function liveNextDelayMs(name) {
+      const spec = LIVE[name];
+      if (!spec) return null;
+      const factor = (typeof _loadFactor === "function") ? _loadFactor() : 1;
+      return spec.ms * factor;
+    }
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) return;
       const active = document.querySelector(".tab-page.active");
@@ -1021,7 +1057,7 @@
     // Live refreshers that only touch STATUS/PROGRESS displays (never the config
     // inputs the user may be editing).
     async function refreshSchedulerLive() {
-      try { renderSchedStatus(await api("/api/scheduler/status")); } catch (e) { /* keep last */ }
+      try { renderSchedStatus(await api("/api/scheduler/status", {polled: true})); } catch (e) { /* keep last */ }
     }
     let _wikiStatusBuilt = false;
     function renderWikiStatus(s) {
@@ -1042,7 +1078,7 @@
     }
 
     async function refreshWikiLive() {
-      try { renderWikiStatus(await api("/api/wiki/status")); } catch (e) { /* keep last */ }
+      try { renderWikiStatus(await api("/api/wiki/status", {polled: true})); } catch (e) { /* keep last */ }
       loadWikiDumps();
     }
 

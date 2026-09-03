@@ -402,22 +402,31 @@ def test_keyword_export_budget_env_is_honoured(monkeypatch):
 # --------------------------------------------------------------------------- #
 # Cached counts (freshness disclosed) + the VACUUM tool
 # --------------------------------------------------------------------------- #
-def test_stats_cached_with_disclosed_freshness(client, monkeypatch):
-    from src.api import database as dbmod
+def test_stats_cached_with_disclosed_freshness(client):
+    """Re-anchored deliberately at S3.2 (2026-09-02), and the reason is the finding.
 
-    # Freeze the DB change-probe so the two reads are GUARANTEED cache hits. Otherwise a
-    # probe blip between the two HTTP calls (data_version / per-connection total_changes()
-    # across the test client's connection pool) can spuriously invalidate the cache and
-    # recompute computed_at ~1s later — a real-clock timing flake (CI, 2026-06-15). This
-    # asserts the cache-SERVING path deterministically; probe invalidation is separate.
-    monkeypatch.setattr(dbmod, "_db_change_probe", lambda db: ("frozen",))
-    dbmod._cache.clear()
+    This test used to monkeypatch ``_db_change_probe`` to a constant, with a
+    comment saying an unfrozen probe "can spuriously invalidate the cache" and had
+    caused a CI flake. That was the defect showing itself: both components of the
+    old (data_version, total_changes) probe are PER CONNECTION, so across the test
+    client's pool the key essentially never matched -- measured at a 0% hit rate.
+    The freeze made the assertion pass by testing a lookalike cache instead of the
+    real one.
+
+    No freeze now: the probe is the write gate's process-global ``grants`` counter,
+    which is stable across connections by construction, so this asserts the real
+    serving path. That is strictly stronger than what it replaced."""
+    from src.api import database as dbmod
+    from src.api import served_cache
+
+    served_cache.invalidate()
     first = client.get("/api/database/stats").json()
     assert "computed_at" in first and first["cache_ttl_s"] == dbmod._CACHE_TTL_S
     assert "reclaimable_bytes" in first
     second = client.get("/api/database/stats").json()
     assert second["computed_at"] == first["computed_at"]  # served from cache
-    dbmod._cache.clear()
+    assert second["cached"] is True and "as_of" in second
+    served_cache.invalidate()
     third = client.get("/api/database/stats").json()
     assert "computed_at" in third
 

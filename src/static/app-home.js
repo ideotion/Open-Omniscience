@@ -27,14 +27,38 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       return t(HOME_STAT_LABELS[k] || k.replace(/_/g, " "));
     }
-    function renderHomeStats(counts) {
+    // S3.4 (d): a served-stale payload states its REAL age. The counts now come
+    // from a background-refreshed cache (S3.2), so on a busy server they can be a
+    // minute or two old -- and a number that is quietly old is worse than one that
+    // says how old it is. Below the threshold nothing is added: stamping every
+    // render with an age would turn a normal reading into a warning.
+    const _STALE_NOTE_S = 90;
+    function homeStatsAgeNote(payload, t) {
+      const age = payload && payload.cache_age_s;
+      if (!(typeof age === "number" && age >= _STALE_NOTE_S)) return "";
+      // The time comes from the payload's own as_of, never from the browser clock
+      // minus an age -- two clocks would disagree and the payload's is the one
+      // that describes the measurement.
+      let stamp = "";
+      try {
+        const d = new Date(payload.as_of);
+        if (!isNaN(d.getTime())) {
+          stamp = d.toLocaleTimeString([], {hour: "2-digit", minute: "2-digit"});
+        }
+      } catch (e) { stamp = ""; }
+      if (!stamp) return "";
+      return t("as of {time} (server busy)").replace("{time}", stamp);
+    }
+    function renderHomeStats(counts, payload) {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       const el = $("home-stats"); if (!el) return;
       const entries = Object.entries(counts || {});
       const allZero = entries.length > 0 && entries.every(([, v]) => !v);
+      const note = homeStatsAgeNote(payload, t);
       el.innerHTML = (entries.length && !allZero)
         ? entries.map(([k, v]) =>
             `<span class="s"><b>${(v || 0).toLocaleString()}</b> <span>${esc(homeStatLabel(k))}</span></span>`).join("")
+          + (note ? `<span class="s muted">${esc(note)}</span>` : "")
         : `<div class="muted">${esc(t("Your library is empty — head to Collect to gather your first material."))}</div>`;
     }
     function renderHomeStatus(running) {
@@ -262,7 +286,7 @@
 
     async function loadHome() {
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
-      try { const s = await api("/api/database/stats"); renderHomeStats(s.counts); }
+      try { const s = await api("/api/database/stats"); renderHomeStats(s.counts, s); }
       catch (e) { $("home-stats").innerHTML = `<div class="muted">${esc(t("Stats unavailable."))}</div>`; }
       try { const sc = await api("/api/scheduler/status"); renderHomeStatus(sc.running); }
       catch (e) { renderHomeStatus(false); }
@@ -535,6 +559,16 @@
       if (!box) return;
       try {
         const d = await api("/api/signals/alerts");
+        // S3.1: a scan still running is NOT "no alerts". It reports building:true
+        // and OMITS every measured field, so this branch must come before the
+        // total check -- `!d.total` on an absent total would hide the panel and
+        // a computing corpus would look like a quiet one.
+        if (d && d.building) {
+          if (panel) panel.hidden = false;
+          const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+          box.innerHTML = `<div class="muted">${esc(t("Checking for alerts…"))}</div>`;
+          return;
+        }
         if (!d || !d.total) { if (panel) panel.hidden = true; box.innerHTML = ""; return; }
         if (panel) panel.hidden = false;
         _renderHomeAlerts(d);
@@ -670,10 +704,10 @@
       // Awaited end-to-end so the LIVE single-flight guard covers the WHOLE Home chain
       // (under 429 backpressure a poll can outlast its 15 s interval; without this the
       // trailing trends/alerts would race the next tick).
-      try { const s = await api("/api/database/stats"); renderHomeStats(s.counts); } catch (e) {}
-      try { const sc = await api("/api/scheduler/status"); renderHomeStatus(sc.running); } catch (e) {}
+      try { const s = await api("/api/database/stats", {polled: true}); renderHomeStats(s.counts, s); } catch (e) {}
+      try { const sc = await api("/api/scheduler/status", {polled: true}); renderHomeStatus(sc.running); } catch (e) {}
       try {
-        const data = await api("/api/briefing");
+        const data = await api("/api/briefing", {polled: true});
         if (data.generated_at !== _lastBriefGen) renderBriefing(data);
       } catch (e) {}
       try { await loadHomeTrends(); } catch (e) {}

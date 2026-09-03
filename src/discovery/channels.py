@@ -425,8 +425,32 @@ def run_discovery(session, *, per_run: int = 10) -> dict:
     # the shared session, every pass was recorded ok:false, and NO new articles
     # were committed: "scraping stopped" (field log 2026-06-18). Data collection
     # must never be broken by this side feature.
+    # S2.4 (2026-09-02): the gate is taken BEFORE the first read, not around the write.
+    #
+    # SQLite treats a SAVEPOINT opened outside a transaction as BEGIN DEFERRED, so the
+    # channels' reads below (citation_channel scans article_links whole) take a READ
+    # SNAPSHOT. If anything else commits before this block's flush -- the housekeeping
+    # lane, which is kicked one step earlier and commits through the gate, or the
+    # briefing thread, which commits between producers -- the flush's promotion to a
+    # write transaction returns SQLITE_BUSY_SNAPSHOT. The busy handler is NOT consulted
+    # while a read transaction is open, so the 30 s busy_timeout never applies and the
+    # error is INSTANT (reproduced: 0.0000 s with busy_timeout=30000). SQLAlchemy then
+    # issues ROLLBACK TO SAVEPOINT without RELEASE, the stale outer transaction
+    # survives, the next tail writer fails identically, and session_scope's final
+    # commit raises PendingRollbackError -- a 4-hour pass recorded ok:false.
+    #
+    # This was the most frequent error in the whole fleet (234 / 144 / 82 lifetime on
+    # the three field machines), and it was CREATED by moving the ride-alongs onto a
+    # concurrent lane thread.
+    #
+    # Holding the gate from before the scan is what makes the window safe: every
+    # in-process commit is gated, so none can land between the snapshot and the write.
+    # Rolling back before begin_nested() does NOT work -- the snapshot is taken by the
+    # reads INSIDE the savepoint, so the identical window remains.
+    from src.database.writer import write_lock
+
     try:
-        with session.begin_nested():
+        with write_lock(), session.begin_nested():
             pruned = prune_noise_candidates(session)  # self-clean earlier noise
             # three channels share the per-run budget: citations, Wikipedia references, catalog.
             third = max(1, per_run // 3)

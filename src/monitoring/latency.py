@@ -38,6 +38,14 @@ _ROUTES: dict[str, dict[str, Any]] = {}
 _INFLIGHT: dict[int, dict[str, Any]] = {}
 _EVENTS: deque[dict[str, Any]] = deque(maxlen=_EVENTS_CAP)
 
+# S3.4: EVERY watchdog sample, not just the ones that breach the block threshold.
+# The events above record exceptional stalls; this is the continuous reading a
+# client-facing "is the server busy" disclosure needs. (epoch, lag_ms) pairs at
+# the watchdog's own cadence, bounded to the window below.
+_LAG_WINDOW_S = 10.0
+_LAG_CAP = 128
+_LAG: deque[tuple[float, float]] = deque(maxlen=_LAG_CAP)
+
 _watchdog_started = False
 
 try:  # pragma: no cover - the fallback is unreachable in a healthy tree
@@ -191,8 +199,52 @@ async def _watchdog(interval_s: float = 0.2) -> None:
         except asyncio.CancelledError:  # graceful shutdown
             return
         lag_ms = (time.monotonic() - before - interval_s) * 1000.0
+        # A negative reading means the loop woke EARLY (clock granularity); floor at
+        # 0 rather than publishing a negative lag, which describes nothing.
+        with _LOCK:
+            _LAG.append((time.monotonic(), max(0.0, lag_ms)))
         if lag_ms >= _loop_block_ms():
             _record_block(lag_ms)
+
+
+def loop_lag() -> dict[str, Any]:
+    """The event loop's recent scheduling delay -- a real measurement, or an
+    honest absence.
+
+    ``latest_ms`` is the most recent sample and ``peak_ms`` the largest in the
+    window; they are published SEPARATELY because they answer different questions
+    and one number cannot carry both. A single 200 ms sample can read near zero on
+    a loaded server that happened to be free at that instant, so the peak is the
+    one a "server busy" disclosure should read -- and calling the peak "the lag"
+    would be the same key meaning two things.
+
+    Every field is ``None`` when the watchdog has never sampled (no running loop,
+    or it was never started). NOT zero: "the loop is not lagging" and "nobody
+    measured" are opposite claims, and a zero here would publish the first while
+    meaning the second.
+    """
+    now = time.monotonic()
+    with _LOCK:
+        samples = [(t, v) for (t, v) in _LAG if (now - t) <= _LAG_WINDOW_S]
+        latest = _LAG[-1] if _LAG else None
+    if not samples and latest is None:
+        return {
+            "latest_ms": None,
+            "peak_ms": None,
+            "window_s": _LAG_WINDOW_S,
+            "samples": 0,
+            "reason": "the event-loop watchdog has not sampled (no running loop)",
+        }
+    return {
+        # `latest` can sit outside the window on an app that is idle enough for the
+        # watchdog to be the only thing running; report it with its real age rather
+        # than dropping the only reading there is.
+        "latest_ms": round(latest[1], 1) if latest is not None else None,
+        "latest_age_s": round(now - latest[0], 1) if latest is not None else None,
+        "peak_ms": round(max(v for _, v in samples), 1) if samples else None,
+        "window_s": _LAG_WINDOW_S,
+        "samples": len(samples),
+    }
 
 
 def start_watchdog() -> None:
@@ -210,8 +262,9 @@ def start_watchdog() -> None:
 
 
 def _reset_for_tests() -> None:
-    """Drop all recorded per-route reservoirs / events (test hook)."""
+    """Drop all recorded per-route reservoirs / events / lag samples (test hook)."""
     with _LOCK:
+        _LAG.clear()
         _ROUTES.clear()
         _INFLIGHT.clear()
         _EVENTS.clear()

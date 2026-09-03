@@ -29,6 +29,13 @@ def panic_wipe(data_dir: Path | None = None, *, confirm: bool = False) -> dict:
     ``files_wiped`` / ``data_dir`` / ``limit`` preserved for existing callers)."""
     if not confirm:
         raise PermissionError("panic_wipe requires confirm=True (this is irreversible)")
+    from src.database.connect import invalidate_header_cache
     from src.safety.crypto_erase import quick_crypto_erase
 
-    return quick_crypto_erase(confirm=True, data_dir=data_dir)
+    try:
+        return quick_crypto_erase(confirm=True, data_dir=data_dir)
+    finally:
+        # S3.6: the store file is gone. A cached header saying "plaintext" would
+        # let the lock middleware answer requests for a corpus that no longer
+        # exists -- in a `finally` because a partial wipe still removed it.
+        invalidate_header_cache()

@@ -555,21 +555,30 @@ _COLD_BOOT_HOWTO = (
     "button / Ctrl-C), then start it and unlock. The per-phase timing of that cold "
     "boot is recorded automatically; re-run this validation immediately after to "
     "read it. The recorded timing reflects the corpus size AT that boot, so measure "
-    "with the full corpus present. That clean shutdown removes the -wal, so the "
-    "boot after it measures steady-state unlock with no WAL to replay — which is "
-    "the bar. WAL-recovery time is a DIFFERENT measurement, exercised only when a "
-    "session ends uncleanly; the app records it automatically if that ever happens, "
-    "so there is nothing to stage for it here."
+    "with the full corpus present. A clean shutdown normally leaves no -wal, so the "
+    "boot after it measures steady-state unlock with little or no WAL to replay — "
+    "which is the bar. WAL-recovery time is a DIFFERENT measurement, exercised when "
+    "a session ends uncleanly; the app records it automatically if that happens, so "
+    "there is nothing to stage for it here. Note what an absent -wal does NOT prove: "
+    "any connection that opens and closes the store unlinks it, so absence is not "
+    "evidence that the previous shutdown was clean — the app's clean-shutdown "
+    "sentinel is what answers that."
 )
 
 
 def _wal_sentence(last_unlock: dict) -> str:
     """What the recorded -wal state says this unlock timing actually covered.
 
-    Three states, three different facts — an absent WAL is a real measurement
-    (a clean prior shutdown left nothing to replay), NOT the same as a WAL whose
-    size could not be read. Saying which one it was is the difference between a
-    number the operator can bank against the bar and a number they must re-take.
+    Three states, three different facts — an absent WAL means this timing contains
+    no WAL replay, which is NOT the same as a WAL whose size could not be read.
+    Saying which one it was is the difference between a number the operator can
+    bank against the bar and a number they must re-take.
+
+    What ``absent`` does NOT establish (corrected 2026-09-02, S0.1): that the
+    previous shutdown was clean. Any connection that opens and closes the store
+    checkpoints and unlinks the -wal, so absence is produced equally by a clean
+    close, a wrong-passphrase attempt and an earlier probe. The clean-shutdown
+    sentinel answers that question; this field answers only what this timing covered.
     """
     st = last_unlock.get("wal_state_before_open")
     state = (st or {}).get("state")
@@ -580,12 +589,17 @@ def _wal_sentence(last_unlock: dict) -> str:
         )
     if state == "absent":
         return (
-            " No -wal was present at open — the previous shutdown was clean, so this is "
-            "the steady-state unlock the bar asks for and it does NOT include WAL "
-            "recovery (only an unclean end exercises that)."
+            " No -wal was present at open, so this timing does NOT include WAL recovery "
+            "— it is the steady-state unlock the bar asks for. (It is not evidence that "
+            "the previous shutdown was clean: any connection unlinks the -wal.)"
         )
     if state == "unreadable":
         return " The -wal size could not be read, so the WAL component is unmeasured."
+    if state == "not-measured":
+        return (
+            " No -wal reading was taken before the store was opened, so the WAL "
+            "component of this timing is unmeasured."
+        )
     # Older records (or a forensics failure) carry no state at all — say so rather
     # than let the absence read as either a clean boot or a fault.
     return (

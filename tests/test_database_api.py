@@ -15,8 +15,27 @@ import uuid
 from fastapi.testclient import TestClient
 
 from src.api.main import app
+from src.api.served_cache import invalidate as invalidate_served_counts
 from src.database.models import Source
 from src.database.session import init_db, session_scope
+
+
+def _force_live_counts() -> None:
+    """Drop the served counts so the next read recomputes live.
+
+    S3.2 (2026-09-02): ``/api/database/stats`` no longer recomputes on the request
+    thread -- it serves the last real counts with a visible ``as_of`` and rebuilds
+    in the background, because on a pooled engine the previous cache had a 0% hit
+    rate and every poll paid a whole-table scan. So a test that writes a row and
+    reads the endpoint one line later is asking for a number the endpoint now
+    delivers a refresh later, not instantly.
+
+    These tests are about whether the NUMBERS are real, move with the data, and
+    partition exactly -- and that is what they still assert. Whether the new value
+    is DELIVERED without scanning on the request thread is a different property,
+    proven directly in tests/test_served_counts_cache.py rather than inferred here.
+    """
+    invalidate_served_counts()
 
 
 def setup_module(_module):
@@ -65,6 +84,7 @@ def test_source_count_increments_with_real_rows():
         before = client.get("/api/database/stats").json()["counts"]["sources"]
         with session_scope() as s:
             s.add(Source(name="Stat Probe", domain=domain))
+        _force_live_counts()
         after = client.get("/api/database/stats").json()["counts"]["sources"]
         assert after == before + 1
         with session_scope() as s:
@@ -97,6 +117,7 @@ def test_three_class_sources_split_partitions_the_flat_total():
                          status=STATUS_DISQUALIFIED))
             s.add(Source(name="Candidate", domain=candidate, enabled=False,
                          status=STATUS_UNQUALIFIED))
+        _force_live_counts()
         after = client.get("/api/database/stats").json()["counts"]
         assert after["sources_qualified"] == before["sources_qualified"] + 1
         # both the never-judged AND the disqualified-but-still-enabled source count

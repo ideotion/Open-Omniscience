@@ -69,13 +69,21 @@ def test_warm_cache_populates_the_keys_the_endpoints_use(monkeypatch):
 
     res = ins.warm_cache(db=object())
     assert len(res["warmed"]) == 3
-    # The EXACT keys Home + Insights request must each be a cache HIT — including the
-    # `tl` param the endpoint always adds (P0-4: the old warm key used limit=10 and
-    # omitted tl, so it matched NOTHING the UI asks for and the user paid cold).
+    # The EXACT keys Home + Insights request must each be a cache HIT. History,
+    # because it is the whole reason this guard exists: P0-4 found the warm key
+    # using limit=10 and omitting `tl`, so it matched nothing the UI asked for.
+    # This test then fixed it by writing the key out BY HAND -- a third copy of
+    # the expression -- and S3.3 found it drifted AGAIN, warming `tl=None` while
+    # the UI always sends a target_lang.
+    #
+    # So the key comes from the SHARED builder now, which is the actual fix: a
+    # hand-written near-miss cannot recur where there is only one expression. The
+    # stronger claim -- that the builder agrees with what the ENDPOINT computes,
+    # in every language -- is asserted by driving the real endpoint, in
+    # tests/test_poll_storm.py::test_the_key_the_endpoint_builds_is_the_key_the_warmer_warms.
     for lim, st in (ins.WARM_TRENDING_HOME, ins.WARM_TRENDING_INSIGHTS):
-        key = ins._ckey(
-            "trending-windows", country=None, kind=None,
-            limit=lim, series_top=st, tl=ins._tlang(None),
+        key = ins.trending_windows_key(
+            country=None, kind=None, limit=lim, series_top=st
         )
         assert ins._read_cache.get(key) is not None, f"warm missed the UI key {lim}/{st}"
     # A second warm within the TTL recomputes nothing (all keys already fresh).

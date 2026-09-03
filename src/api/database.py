@@ -23,44 +23,37 @@ from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
+from src.api import served_cache
 from src.database.session import engine, get_db
-from src.utils.cache import SimpleCache
 
 router = APIRouter(prefix="/api/database", tags=["database"])
 
-# Count aggregations are full table scans in SQLite (and the Library tab polls
-# them). VERIFIED caching: an entry is served only while two cheap probes —
-# PRAGMA data_version (commits by other connections) and total_changes()
-# (writes on this connection) — prove the database unchanged since it was
-# computed, with the TTL as an upper bound. A write from ANY path (scraper,
-# import, direct session) flips a probe and forces a recompute, so a number
-# can be stale only while nothing was written. computed_at + cache_ttl_s are
-# stamped into every payload so freshness stays visible regardless.
+# Count aggregations are full table scans in SQLite, and the Library storage view
+# polls this endpoint every 4 s (Home every 15 s). They are served through
+# :mod:`src.api.served_cache`: the last real counts are returned immediately with
+# a visible as_of, and a recompute runs in the BACKGROUND. A poll never pays the
+# scan.
+#
+# This REPLACES a cache keyed on (PRAGMA data_version, total_changes()) that was
+# described as verified and, measured through these very functions, had a 0% hit
+# rate on a pooled engine -- both probe components are per-connection, so every
+# poll recomputed inline. served_cache's module docstring carries the numbers and
+# the probe that replaced them.
 _CACHE_TTL_S = 30
-_cache = SimpleCache(max_size=8, default_ttl=_CACHE_TTL_S)
-
-
-def _db_change_probe(db: Session) -> tuple:
-    from sqlalchemy import text
-
-    if engine.url.get_backend_name() != "sqlite":
-        return (None, None)
-    return (
-        db.execute(text("PRAGMA data_version")).scalar(),
-        db.execute(text("SELECT total_changes()")).scalar(),
-    )
 
 
 def _cached(key: str, compute, db: Session) -> dict:
-    probe = _db_change_probe(db)
-    hit = _cache.get(key)
-    if hit is not None and hit.get("probe") == probe:
-        return hit["payload"]
-    out = compute()
-    out["computed_at"] = datetime.now(UTC).isoformat(timespec="seconds")
-    out["cache_ttl_s"] = _CACHE_TTL_S
-    _cache.set(key, {"probe": probe, "payload": out})
-    return out
+    """Serve ``key`` from the shared background-refreshed cache.
+
+    ``compute`` takes the Session to read from rather than closing over the
+    request's: the background refresher re-runs the SAME callable on its own
+    thread, over its own session, long after this request's session is closed.
+
+    Keys are namespaced per module because the cache dict is process-global and
+    shared with the other endpoints that use it -- an unprefixed "overview" or
+    "stats" added on either side would silently serve the other's payload.
+    """
+    return served_cache.cached(f"db:{key}", compute, db, ttl_s=_CACHE_TTL_S)
 
 
 # Human-facing label -> table name. Counted only if the table is present.
@@ -123,7 +116,7 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
     describing the corpus.
     """
 
-    def _compute() -> dict:
+    def _compute(db: Session) -> dict:
         from sqlalchemy import func, select, table, text
 
         present = set(inspect(engine).get_table_names())
@@ -199,17 +192,21 @@ def database_stats(db: Session = Depends(get_db)) -> dict:
     return _cached("stats", _compute, db)
 
 
-# Library computed figures get their OWN longer, time-based cache (not the 30 s
-# write-probed one) so the single full keyword_mentions COUNT never rides the 4 s
-# stats poll on a large encrypted corpus. Recomputed at most once a minute.
+# The Library figures get their OWN longer interval: the single full
+# keyword_mentions COUNT measured 43 s on the field corpus, so it must not ride
+# the 4 s stats poll. Before S3.2 that was a plain time cache whose expiry
+# recomputed INLINE -- so once a minute one poll still waited out the whole scan
+# on the request thread. It now goes through served_cache like /stats: the last
+# real figures are served immediately and the recompute happens in the
+# background.
 _FIGURES_TTL_S = 60
-_figures_cache: dict = {"at": None, "payload": None}
 
 
 def _compute_figures(db: Session, now: datetime) -> dict:
     """Averages + ingestion rate for the Library tab. All index-backed (word_count and
     created_at are indexed); counts only, no score. The keyword_mentions COUNT is the
-    one O(n) query — amortised to once/minute by the caller's cache."""
+    one O(n) query — kept off the request thread entirely by served_cache, which
+    recomputes it in the background and serves the previous real figures meanwhile."""
     from datetime import timedelta
 
     from sqlalchemy import func, select
@@ -248,21 +245,20 @@ def _compute_figures(db: Session, now: datetime) -> dict:
 def library_figures(db: Session = Depends(get_db)) -> dict:
     """Computed Library figures: average article word count, average keyword mentions
     per article, and the ingestion RATE (lifetime average articles/day + the current
-    articles/hour over the last 24 h). Time-cached ~60 s so the full mentions count
-    stays off the frequent stats poll."""
-    now = datetime.now(UTC)
-    c = _figures_cache
-    if (
-        c["payload"] is not None
-        and c["at"] is not None
-        and (now - c["at"]).total_seconds() < _FIGURES_TTL_S
-    ):
-        return c["payload"]
-    payload = _compute_figures(db, now)
-    payload["computed_at"] = now.isoformat(timespec="seconds")
-    payload["cache_ttl_s"] = _FIGURES_TTL_S
-    _figures_cache.update(at=now, payload=payload)
-    return payload
+    articles/hour over the last 24 h). Served from the background-refreshed cache,
+    so a poll never waits on the whole-table mentions count; ``as_of``/``cache_age_s``
+    state the figures' real age."""
+
+    # `now` is read INSIDE the compute rather than captured here: a background
+    # rebuild runs minutes after the request that kicked it, and the 24 h window
+    # must be measured from when the figures were actually computed.
+    def _compute(session: Session) -> dict:
+        return _compute_figures(session, datetime.now(UTC))
+
+    # Namespaced like every other key here: it does NOT go through _cached (the
+    # figures carry their own longer interval), so the prefix has to be written
+    # out, or this one key sits unprefixed in a dict shared with another module.
+    return served_cache.cached("db:figures", _compute, db, ttl_s=_FIGURES_TTL_S)
 
 
 @router.get("/coverage")
@@ -283,7 +279,7 @@ def country_coverage(db: Session = Depends(get_db)) -> dict:
     )
     from src.database.models import Source
 
-    def _compute() -> dict:
+    def _compute(db: Session) -> dict:
         counts = country_counts_from_session(db)
         report = coverage_report(counts)
         report["missing"] = report["missing"][:80]  # trim for the UI; details in /countries
@@ -325,7 +321,7 @@ def sources_by_country(db: Session = Depends(get_db)) -> dict:
     """
     from src.analytics import source_country_rollup
 
-    def _compute() -> dict:
+    def _compute(db: Session) -> dict:
         served = source_country_rollup.served(db)
         if served is not None:
             return served
@@ -358,7 +354,12 @@ def vacuum() -> dict:
                 "stop it or retry when it finishes"
             ),
         ) from exc
-    _cache.clear()
+    # A VACUUM rewrites the file wholesale through a raw connection that never
+    # touches the write gate, so the `grants` probe cannot see it. Drop the
+    # served counts by name rather than leaving them to a probe that is blind to
+    # exactly this path (reclaimable_bytes is what changes here, and it is served
+    # from the same "stats" entry).
+    served_cache.invalidate()
     return report
 
 

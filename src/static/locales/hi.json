@@ -1996,6 +1996,7 @@
   "stale": "पुराना",
   "No local hazard snapshot — silence is not safety.": "कोई स्थानीय आपदा स्नैपशॉट नहीं — चुप्पी सुरक्षा नहीं है।",
   "Alerts": "अलर्ट",
+  "Checking for alerts…": "अलर्ट की जाँच की जा रही है…",
   "Latest in your corpus": "आपके संग्रह में नवीनतम",
   "Min words": "न्यूनतम शब्द",
   "Min cited sources": "न्यूनतम उद्धृत स्रोत",
@@ -2152,6 +2153,9 @@
   "Backfill failed:": "बैकफ़िल विफल:",
   "Applied baseline tags:": "आधार टैग लागू किए गए:",
   "tags": "टैग",
+  "The server is busy — refreshing every {s}s until it recovers.": "सर्वर व्यस्त है — ठीक होने तक हर {s} सेकंड में ताज़ा किया जा रहा है।",
+  "The server recovered — refreshing at the usual rate again.": "सर्वर ठीक हो गया — सामान्य दर से ताज़ा किया जा रहा है।",
+  "as of {time} (server busy)": "{time} तक (सर्वर व्यस्त)",
   "The app is busy — retrying shortly…": "ऐप व्यस्त है — शीघ्र ही पुनः प्रयास…",
   "Session forensics": "सत्र फोरेंसिक",
   "Could not load session forensics.": "सत्र फोरेंसिक लोड नहीं हो सका।",
@@ -2998,5 +3002,7 @@
   "Indexing series: {detail}": "शृंखलाएँ अनुक्रमित की जा रही हैं: {detail}",
   "Indexing failed: {error}": "अनुक्रमण विफल: {error}",
   "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} नए · {updated} अद्यतन · {unchanged} पहले से अद्यतन — अंत से पहले रुक गया; जहाँ छूटा था वहीं से जारी रखने के लिए इसे फिर दबाएँ।",
-  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} नए · {updated} अद्यतन · {unchanged} पहले से अद्यतन — सभी संग्रहीत शृंखलाएँ अब संग्रह में हैं।"
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} नए · {updated} अद्यतन · {unchanged} पहले से अद्यतन — सभी संग्रहीत शृंखलाएँ अब संग्रह में हैं।",
+  "Limited memory: {available} MB free of {total} MB.": "सीमित मेमोरी: {total} MB में से {available} MB ख़ाली।",
+  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "पूरे कॉरपस की पृष्ठभूमि स्कैनिंग (स्रोत योग्यता जाँच) रोक दी गई है, और एक साथ संग्रह की संख्या सीमित है। बड़े कॉरपस पर योग्यता जाँच यहाँ कभी नहीं चल सकती — यह इस सेटिंग की कीमत है, खराबी नहीं। फिर भी चलाने के लिए OO_ALLOW_BIG_SCANS=1 सेट करें।"
 }

@@ -34,6 +34,31 @@ from src.scheduler.settings import SchedulerSettings, load_settings
 
 _LOG = logging.getLogger(__name__)
 
+
+def _tail_phase(name: str, *, pass_id: str | None = None):
+    """Record one pass-tail step in the phase journal (S0.5), or do nothing.
+
+    Wrapped so a journal fault can NEVER break a pass: an instrument that can take
+    the thing it observes down with it is a second failure layered on the first."""
+    try:
+        from src.scheduler.pass_journal import phase
+
+        return phase(name, pass_id=pass_id)
+    except Exception:  # noqa: BLE001 - the journal is best-effort, always
+        from contextlib import nullcontext
+
+        return nullcontext()
+
+
+def _tail_journal_trim() -> None:
+    try:
+        from src.scheduler.pass_journal import trim
+
+        trim()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # Inter-pass gap in CONTINUOUS mode: short enough that passes are effectively
 # back-to-back (a real pass takes minutes), long enough to yield CPU and let a
 # pathologically fast/empty pass (e.g. every feed answered 304) not hot-spin.
@@ -600,10 +625,28 @@ def _process_source(source, *, session, fetcher, mode: str, crawl_cfg) -> tuple[
     Isolated and fail-safe: one bad source never aborts the pass — its error is
     tallied and reported. Used by both the sequential loop and the parallel
     worker pool; the pool gives each call its OWN session (SQLAlchemy sessions
-    are not thread-safe), while the fetcher is shared and per-host-locked.
+    are not thread-safe), while the fetcher is shared and per-host-locked — and
+    is paired with this call's session (S1.0) so a fetch never runs while that
+    session holds a pooled connection.
     """
     from src.ingest.crawl import crawl_source
+    from src.ingest.fetch_release import wrap_fetcher
     from src.ingest.pipeline import ingest_source
+
+    # S1.0: pair the fetcher with THIS session so no network call runs while the
+    # session holds a pooled connection. N workers used to hold N connections
+    # from their first read until the feed bookkeeping committed — across every
+    # fetch — and the governor's back-off cannot preempt a holder. Releasing does
+    # not free a resident connection's cache (measured); it collapses how many
+    # exist at once, so the overflow connections a held-across-fetch worker
+    # forces into being are largely never created, the WAL read snapshot is not
+    # pinned across a Tor fetch, and the BUSY_SNAPSHOT window shrinks to the
+    # statements. Wrapping the fetcher rather than the call sites covers
+    # everything reached FROM THIS LOOP, including what a future edit adds
+    # inside ingest_source/crawl_source — but not the housekeeping lane's own
+    # session+fetcher pairings, which hold one connection each (see
+    # src/ingest/fetch_release.py for what is and is not covered).
+    fetcher = wrap_fetcher(fetcher, session)
 
     try:
         if mode == "crawl":
@@ -841,6 +884,23 @@ def run_scrape_once(
     # The hard ceiling on concurrent fetches (the governor's upper bound). 1 =
     # the sequential loop (governor off, unchanged behaviour).
     w_max = max(1, getattr(settings, "collect_parallelism", 1) or 1)
+    # S1.3 (2026-09-02 ruling 1): below the memory floor, cap the fan-out. The
+    # policy lives with the floor (``capped_workers``) so it is testable without
+    # slicing this function's source; see FLOOR_MAX_WORKERS for what the cap is
+    # actually about -- documents in flight, NOT pooled connections, which S1.0
+    # already bounded. The operator's SETTING is never rewritten.
+    from src.config.machine_floor import capped_workers as _capped_workers
+
+    # NB: named _floor_verdict, not _floor — this function already binds a
+    # _floor (the mem-low permit floor) further down, and one name for two
+    # different things is how a later edit reads the wrong one.
+    _capped, _floor_verdict = _capped_workers(w_max)
+    if _capped != w_max:
+        _LOG.info(
+            "collect_parallelism capped %d -> %d: %s (%s=1 to lift)",
+            w_max, _capped, _floor_verdict["reason"], _floor_verdict["override_env"],
+        )
+        w_max = _capped
     # Parallel collection requires the gated GLOBAL engine: worker threads open
     # their OWN sessions (through the single-writer gate). A caller that passes a
     # session bound to a DIFFERENT engine (e.g. a test's in-memory DB, where
@@ -968,6 +1028,10 @@ def run_scrape_once(
                             w_max=w_max,
                             mem_low_ticks=_ticks,
                             mem_low_min_permits=_floor,
+                            # S1.4: the denominator that tells RARE pressure from
+                            # SUSTAINED. Without it one brushed tick pins the ceiling
+                            # for the machine's whole life.
+                            samples=_capacity.samples_from_summary(summary),
                         )
                     except Exception:  # noqa: BLE001 - a hint is never worth a failure
                         _LOG.debug("collect capacity: could not record this pass")
@@ -1357,7 +1421,20 @@ def run_housekeeping_lane(session, fetcher, settings: SchedulerSettings) -> dict
     ``_process_source``'s per-source isolation). Stops taking on NEW kinds
     (never interrupts one mid-flight) once the memory guard engages -- the
     same wind-down discipline the pass itself uses (``_PassWindDown``)."""
+    from src.ingest.fetch_release import wrap_fetcher
     from src.scheduler import memguard
+
+    # S1.0, second site. The lane is ONE session shared by every kind, held for
+    # the whole invocation -- and it runs on a background thread CONCURRENTLY
+    # with the next collection pass, so on the small tier its single held
+    # connection is a third of the pool the workers were just taught not to
+    # hoard. `_lane_step_crawl` additionally runs the very ingest_url shape
+    # `_process_source` now protects. Pairing here covers every kind at once,
+    # the same way `_process_source` covers every call reached from the worker
+    # loop. Honest limit: a kind that leaves the session DIRTY across its own
+    # fetch loop (crawl mutates SourceMetadata without committing) is correctly
+    # DECLINED by the guard and gets no benefit until its first commit.
+    fetcher = wrap_fetcher(fetcher, session)
 
     out: dict[str, dict] = {}
     order = _lane_kind_order(_lane_pending_kinds(settings))
@@ -1433,6 +1510,15 @@ class BackgroundScheduler:
         self._lane_lock = threading.Lock()
         self._lane_thread: threading.Thread | None = None
         self._last_lane_result: dict | None = None
+        # S2.5 (b): the two heavy tail consumers -- the housekeeping lane and the
+        # whole-corpus briefing recompute -- were each non-overlapping WITH
+        # THEMSELVES and free to run CONCURRENTLY with each other, on a box the
+        # field report describes as two cores. This lock serialises them: whoever
+        # kicks first runs first, the other WAITS (bounded) rather than skipping
+        # outright, because skipping on contention would let the earlier kick --
+        # always the lane -- starve the briefing refresh permanently.
+        self._heavy_tail_lock = threading.Lock()
+        self._heavy_tail_waits = 0  # bounded waits that gave up (observability)
         # Session A §4 concurrency-skeptic finding (2026-07-24, HIGH): an exclusive
         # operation (a restore) pausing the CONTINUOUS loop via .stop() left run_now()
         # completely unaware -- run_now() spawns its own _do_run() thread gated ONLY on
@@ -1639,14 +1725,20 @@ class BackgroundScheduler:
             # on the run report so the effect is auditable, never guessed.
             from src.scheduler.hygiene import run_pass_hygiene
 
-            hygiene = run_pass_hygiene()
+            # S0.5: the checkpoint inside run_pass_hygiene takes the write gate, whose
+            # acquire has no timeout — a pass that hangs here leaves no trace at all
+            # today, because record_run is BELOW it.
+            with _tail_phase("hygiene", pass_id=report.get("pass_id")):
+                hygiene = run_pass_hygiene()
             if hygiene:
                 report["hygiene"] = hygiene
             report["finished_at"] = datetime.now(UTC).isoformat(timespec="seconds")
             # One auditable line per run (WP3/RM-06); best-effort by design.
             from src.scheduler.runlog import record_run
 
-            record_run(report)
+            with _tail_phase("record-run", pass_id=report.get("pass_id")):
+                record_run(report)
+            _tail_journal_trim()
             _phase_set(None)
             with self._state_lock:
                 self._active = False
@@ -1738,8 +1830,14 @@ class BackgroundScheduler:
             try:
                 from src.briefing.service import refresh_briefing
 
-                with session_scope() as session:
-                    refresh_briefing(session)
+                # S2.5 (b): never concurrent with the housekeeping lane.
+                if not self._acquire_heavy_tail("briefing refresh"):
+                    return
+                try:
+                    with session_scope() as session:
+                        refresh_briefing(session)
+                finally:
+                    self._heavy_tail_lock.release()
             except Exception:  # noqa: BLE001 - a background refresh must never crash the thread
                 _LOG.warning("background briefing refresh failed", exc_info=True)
             finally:
@@ -1750,6 +1848,41 @@ class BackgroundScheduler:
             target=_run, daemon=True, name="oo-briefing-bg"
         )
         self._briefing_thread.start()
+
+    def _heavy_tail_timeout_s(self) -> float:
+        try:
+            return max(0.0, float(os.getenv("OO_HEAVY_TAIL_WAIT_S", "") or 900.0))
+        except (TypeError, ValueError):
+            return 900.0
+
+    def _acquire_heavy_tail(self, who: str) -> bool:
+        """Serialise the two whole-corpus tail consumers (S2.5 b).
+
+        WAITS rather than skipping on contention, bounded: the lane is always
+        kicked first, so a skip-on-contention would mean the briefing refresh
+        essentially never ran on a busy machine -- trading one duty-cycle
+        problem for a permanently stale Home. The bound stops a wedged consumer
+        pinning the other's thread forever; giving up is logged and counted,
+        never silent. At most one waiter per consumer exists by construction
+        (each already holds its own non-overlapping lock before reaching here).
+        ``OO_HEAVY_TAIL_WAIT_S=0`` restores an unbounded wait.
+        """
+        timeout = self._heavy_tail_timeout_s()
+        got = (
+            self._heavy_tail_lock.acquire(timeout=timeout)
+            if timeout > 0
+            else self._heavy_tail_lock.acquire()
+        )
+        if got:
+            return True
+        self._heavy_tail_waits += 1
+        _LOG.warning(
+            "%s gave up after %.0fs waiting for the other heavy tail consumer; "
+            "skipping this cycle",
+            who,
+            timeout,
+        )
+        return False
 
     def _kick_housekeeping_lane(self) -> None:
         """S-B (2026-07-24 throughput brief, C1): move the serial network
@@ -1784,10 +1917,17 @@ class BackgroundScheduler:
                 if kill_switch_active():
                     self._last_lane_result = {"skipped": "airplane mode engaged"}
                     return
-                settings = self._settings_provider()
-                fetcher = make_fetcher()
-                with session_scope() as session:
-                    self._last_lane_result = run_housekeeping_lane(session, fetcher, settings)
+                # S2.5 (b): never concurrent with the briefing recompute.
+                if not self._acquire_heavy_tail("housekeeping lane"):
+                    self._last_lane_result = {"skipped": "another heavy tail consumer is running"}
+                    return
+                try:
+                    settings = self._settings_provider()
+                    fetcher = make_fetcher()
+                    with session_scope() as session:
+                        self._last_lane_result = run_housekeeping_lane(session, fetcher, settings)
+                finally:
+                    self._heavy_tail_lock.release()
             except Exception:  # noqa: BLE001 - a background lane must never crash the thread
                 _LOG.warning("housekeeping lane failed", exc_info=True)
             finally:
@@ -1807,6 +1947,9 @@ class BackgroundScheduler:
         settings = self._settings_provider()
         fetcher = make_fetcher()
         run_started = datetime.now(UTC)
+        # Same identity CollectionMonitor stamps on its samples, so the pass-tail
+        # journal (S0.5) and the collector ring join on one key.
+        _pass_id = run_started.isoformat(timespec="seconds")
         with session_scope() as session:
             # COLLECT ARTICLES FIRST (maintainer 2026-06-18: "it took 3-5 minutes
             # to get the first article"). The first-run source/feed preflight, the
@@ -1882,7 +2025,8 @@ class BackgroundScheduler:
             # first article). Their opt-outs (auto_import_calendars/
             # auto_track_law) are honoured inside the lane's own pending-kinds
             # check (_lane_pending_kinds), not here.
-            self._kick_housekeeping_lane()
+            with _tail_phase("lane-kick", pass_id=_pass_id):
+                self._kick_housekeeping_lane()
             # Field-test instrumentation (live-test cycles): exercise every fetch
             # surface once and log verbatim outcomes for the maintainer's debug
             # bundle. OPT-IN since 0.1 (OO_FIELD_TEST=1 enables — a public tag
@@ -1901,9 +2045,19 @@ class BackgroundScheduler:
             try:
                 from src.discovery import run_discovery
 
-                result["discovery"] = run_discovery(
-                    session, per_run=settings.discovery_per_run
-                )
+                # S2.4: its OWN session, not the pass's.
+                #
+                # Discovery's savepoint used to live inside the pass session, so when
+                # its flush hit SQLITE_BUSY_SNAPSHOT SQLAlchemy issued ROLLBACK TO
+                # SAVEPOINT without RELEASE, the stale outer transaction survived, and
+                # session_scope's final commit raised PendingRollbackError -- marking a
+                # four-hour pass ok:false over a best-effort side feature. A separate,
+                # short-lived session cannot poison the pass whatever happens inside it.
+                with _tail_phase("discovery", pass_id=_pass_id):
+                    with session_scope() as _disc_session:
+                        result["discovery"] = run_discovery(
+                            _disc_session, per_run=settings.discovery_per_run
+                        )
             except Exception:  # noqa: BLE001 - never fail the scrape on discovery
                 _LOG.warning("offline source discovery failed", exc_info=True)
             # S-B (2026-07-24 throughput brief, C1): world-discovery, qualification,
@@ -1958,7 +2112,10 @@ class BackgroundScheduler:
                 if getattr(settings, "auto_enrich_sources", True):
                     from src.analytics.source_topics import run_auto_source_enrichment
 
-                    _enr = run_auto_source_enrichment(session)
+                    # S2.4: its own session, for the same reason as discovery above.
+                    with _tail_phase("source-enrichment", pass_id=_pass_id):
+                        with session_scope() as _enr_session:
+                            _enr = run_auto_source_enrichment(_enr_session)
                     if _enr.get("ran") and _enr.get("sources_updated"):
                         result["source_enrich"] = _enr
                         _LOG.info("source auto-enrichment: %s", _enr)
@@ -1978,7 +2135,8 @@ class BackgroundScheduler:
             # the phase stays "background" through to the return (the recompute is
             # tracked as its own task-manager entry, not a scheduler phase, since it
             # can now genuinely outlive this pass).
-            self._refresh_briefing_async()
+            with _tail_phase("briefing-refresh-kick", pass_id=_pass_id):
+                self._refresh_briefing_async()
             return result
 
     # -- introspection ----------------------------------------------------- #

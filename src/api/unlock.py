@@ -22,6 +22,7 @@ machine or a copied file, never a compromised running session.
 from __future__ import annotations
 
 import logging
+import time
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -45,13 +46,21 @@ def main_db_path() -> Path | None:
 
 def app_lock_state() -> str:
     """unlocked-plaintext | unlocked-encrypted | locked | fresh (non-SQLite ->
-    unlocked-plaintext: the at-rest layer does not apply and doctor says so)."""
-    from src.database.connect import locked_state
+    unlocked-plaintext: the at-rest layer does not apply and doctor says so).
+
+    S3.6: reads the store header through the CACHED accessor, because this runs
+    inside the lock middleware -- on every request, including every static asset
+    -- and the uncached path is blocking file I/O on the event loop. The
+    passphrase half is still read live, so an unlock is visible immediately;
+    only the file's own header is cached, and every path that changes it calls
+    ``invalidate_header_cache``.
+    """
+    from src.database.connect import main_header_state, state_for_header
 
     p = main_db_path()
     if p is None:
         return "unlocked-plaintext"
-    return locked_state(p)
+    return state_for_header(main_header_state(p))
 
 
 def app_is_locked() -> bool:
@@ -200,9 +209,23 @@ def startup_status() -> dict:
     return get_startup()
 
 
-def _finish_unlock() -> None:
+def _finish_unlock(wal_state: dict | None = None, verify_ms: float | None = None) -> None:
     """Open the engine on the now-available key, make the DB queryable, and run the
     slow startup upkeep IN THE BACKGROUND.
+
+    ``verify_ms`` is the caller's own passphrase-verify step. It is timed and reported
+    as its own phase because it is not free: on the field's S3 boot the unlock spent
+    24.7 s outside every timed phase, and that time was inside exactly this
+    connect/close — wal-index recovery, WAL replay, the page-size probe and the
+    checkpoint-on-close. Attributed to nothing, it read as unexplained overhead.
+
+    ``wal_state`` is the caller's -wal reading taken BEFORE it opened any connection
+    (S0.1). The timer used to take its own reading here, which was worthless on an
+    encrypted store: ``unlock()`` verifies the passphrase with a connect/close first,
+    and SQLite checkpoints and unlinks the -wal on the last close — so the reading was
+    always ``absent``, whatever the previous session had left. A caller that has no
+    reading (a fresh store) passes None and the timer says so rather than inventing
+    one.
 
     On a large encrypted corpus the upkeep (bounded ANALYZE + catalog seeding + full
     COUNTs that decrypt every page + a cache warm) took long enough to freeze the
@@ -225,7 +248,9 @@ def _finish_unlock() -> None:
     # BEFORE the first connection (a large WAL predicts recovery time inside it) and
     # time the synchronous phases, so "why was unlock slow" answers itself in the
     # next diagnostics export instead of needing the maintainer's stopwatch.
-    _t = _forensic_timer()
+    _t = _forensic_timer(wal_state=wal_state)
+    if verify_ms is not None:
+        _t.add_phase("passphrase verify + WAL recovery + checkpoint-on-close", verify_ms)
     init_db()  # schema self-heal — fast on an existing store; makes the DB queryable
     _t.phase("init_db (schema self-heal + migrations + WAL recovery)")
     # The corpus is now fully usable — everything the background thread does below
@@ -266,31 +291,44 @@ class _forensic_timer:
     connection, and persists the record via forensics.record_unlock_timing.
     Every step is best-effort: a forensics failure never touches the unlock."""
 
-    def __init__(self) -> None:
+    def __init__(self, wal_state: dict | None = None) -> None:
         import time as _time
 
         self._time = _time
         self._t0 = _time.monotonic()
         self._last = self._t0
         self._phases: list[dict] = []
-        self._wal_state: dict | None = None
-        try:
-            from src.monitoring.forensics import wal_state_before_open
-
-            self._wal_state = wal_state_before_open()
-            # The legacy field keeps its EXACT two-state meaning (present -> size,
-            # absent/unreadable -> None) so existing readers are byte-unchanged; the
-            # three-state record beside it is what tells those two cases apart.
-            self._wal = (
-                self._wal_state["bytes"] if self._wal_state["state"] == "present" else None
-            )
-        except Exception:  # noqa: BLE001
-            self._wal = None
+        self._caller_ms = 0.0
+        # The reading is HANDED IN, never taken here (S0.1): by the time this runs the
+        # caller has already opened and closed a verify connection, which unlinks the
+        # -wal, so a reading taken at this point describes the probe rather than the
+        # store. A caller with nothing to hand in gets an explicit "not measured".
+        self._wal_state: dict | None = wal_state or {
+            "bytes": None,
+            "state": "not-measured",
+            "reason": (
+                "the caller took no -wal reading before opening the store, so this "
+                "unlock's WAL component is unmeasured — never reported as zero"
+            ),
+        }
+        # The legacy field keeps its EXACT two-state meaning (present -> size,
+        # absent/unreadable/not-measured -> None) so existing readers are byte-unchanged;
+        # the state record beside it is what tells those cases apart.
+        self._wal = (
+            self._wal_state.get("bytes") if self._wal_state.get("state") == "present" else None
+        )
 
     def phase(self, name: str) -> None:
         now = self._time.monotonic()
         self._phases.append({"phase": name, "ms": round((now - self._last) * 1000, 1)})
         self._last = now
+
+    def add_phase(self, name: str, ms: float) -> None:
+        """Record a phase the CALLER timed (it happened before this timer existed).
+        Its duration is added to the reported total so the phases and the total agree
+        — an equation that does not reproduce its own number is worse than none."""
+        self._phases.append({"phase": name, "ms": round(float(ms), 1)})
+        self._caller_ms += float(ms)
 
     def finish(self) -> None:
         try:
@@ -302,17 +340,20 @@ class _forensic_timer:
                     "wal_state_before_open": self._wal_state,
                     "phases": self._phases,
                     "synchronous_total_ms": round(
-                        (self._time.monotonic() - self._t0) * 1000, 1
+                        (self._time.monotonic() - self._t0) * 1000 + self._caller_ms, 1
                     ),
                     "method": (
                         "Wall-clock over the SYNCHRONOUS unlock phases (the wait the "
-                        "user actually feels); the background upkeep is tracked "
-                        "separately by startup-status. The -wal state is read before "
-                        "the first connection: a WAL present at open is replayed "
-                        "inside init_db (a large one predicts a slow unlock), while "
-                        "an absent one means a clean prior shutdown left nothing to "
-                        "recover — those are different facts, so they are recorded "
-                        "as different states, never both as null."
+                        "user actually feels), INCLUDING the caller's passphrase-verify "
+                        "step; the background upkeep is tracked separately by "
+                        "startup-status. The -wal state is the caller's reading taken "
+                        "before it opened ANY connection: a WAL present then is replayed "
+                        "inside the verify connect and init_db, so a large one predicts "
+                        "a slow unlock. An ABSENT -wal says nothing about how the "
+                        "previous session ended — any connection, including a "
+                        "wrong-passphrase attempt, unlinks it. The forensic reading "
+                        "about the previous session is the one taken at boot "
+                        "(previous_session.wal_at_boot), not this one."
                     ),
                 }
             )
@@ -337,13 +378,25 @@ def unlock(body: PassphraseBody) -> dict:
         raise HTTPException(status_code=409, detail="this store is not locked")
     if not body.passphrase:
         raise HTTPException(status_code=400, detail="a passphrase is required")
+    # S0.1: read the -wal BEFORE the verify connection, because that connection
+    # checkpoints and unlinks it. This reading is about the unlock path's own timing;
+    # the load-bearing forensic reading is the one record_session_start() takes at
+    # boot, which a wrong-passphrase attempt cannot destroy.
+    try:
+        from src.monitoring.forensics import wal_state_before_open
+
+        _wal_state = wal_state_before_open()
+    except Exception:  # noqa: BLE001 - forensics never blocks an unlock
+        _wal_state = None
+    _verify_t0 = time.monotonic()
     try:
         conn = connect(p, key=body.passphrase, check_same_thread=False)
         conn.close()
     except WrongPassphraseError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    _verify_ms = round((time.monotonic() - _verify_t0) * 1000, 1)
     set_passphrase(body.passphrase)
-    _finish_unlock()
+    _finish_unlock(wal_state=_wal_state, verify_ms=_verify_ms)
     _LOG.info("store unlocked")
     return {"unlocked": True, "state": app_lock_state()}
 
@@ -354,7 +407,7 @@ def create_db(body: CreateBody) -> dict:
 
     The no-recovery note is shown by the page; this endpoint enforces only
     what a server can (length, match) — never strength theater."""
-    from src.database.connect import set_passphrase
+    from src.database.connect import invalidate_header_cache, set_passphrase
 
     p = main_db_path()
     if p is None:
@@ -373,5 +426,11 @@ def create_db(body: CreateBody) -> dict:
     except Exception:
         set_passphrase(None)  # leave the fresh state intact on any failure
         raise
+    finally:
+        # S3.6: the store file now exists (or the attempt touched it), so the
+        # cached header is stale either way. In a `finally` on purpose -- a
+        # half-created file left by a failure must not be answered for from a
+        # cache that still says "fresh".
+        invalidate_header_cache()
     _LOG.info("encrypted store created")
     return {"created": True, "state": app_lock_state()}

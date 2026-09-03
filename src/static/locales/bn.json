@@ -1996,6 +1996,7 @@
   "stale": "বাসি",
   "No local hazard snapshot — silence is not safety.": "কোনো স্থানীয় বিপদ স্ন্যাপশট নেই — নীরবতা মানে নিরাপত্তা নয়।",
   "Alerts": "সতর্কতা",
+  "Checking for alerts…": "সতর্কতা পরীক্ষা করা হচ্ছে…",
   "Latest in your corpus": "আপনার কর্পাসে সর্বশেষ",
   "Min words": "সর্বনিম্ন শব্দ",
   "Min cited sources": "সর্বনিম্ন উদ্ধৃত উৎস",
@@ -2152,6 +2153,9 @@
   "Backfill failed:": "ব্যাকফিল ব্যর্থ:",
   "Applied baseline tags:": "বেসলাইন ট্যাগ প্রয়োগ করা হয়েছে:",
   "tags": "ট্যাগ",
+  "The server is busy — refreshing every {s}s until it recovers.": "সার্ভার ব্যস্ত — পুনরুদ্ধার না হওয়া পর্যন্ত প্রতি {s} সেকেন্ডে রিফ্রেশ করা হচ্ছে।",
+  "The server recovered — refreshing at the usual rate again.": "সার্ভার পুনরুদ্ধার হয়েছে — স্বাভাবিক হারে রিফ্রেশ করা হচ্ছে।",
+  "as of {time} (server busy)": "{time} পর্যন্ত (সার্ভার ব্যস্ত)",
   "The app is busy — retrying shortly…": "অ্যাপ ব্যস্ত — শীঘ্রই আবার চেষ্টা করা হচ্ছে…",
   "Session forensics": "সেশন ফরেনসিক",
   "Could not load session forensics.": "সেশন ফরেনসিক লোড করা যায়নি।",
@@ -2998,5 +3002,7 @@
   "Indexing series: {detail}": "সিরিজ সূচিবদ্ধ করা হচ্ছে: {detail}",
   "Indexing failed: {error}": "সূচিবদ্ধকরণ ব্যর্থ: {error}",
   "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created}টি নতুন · {updated}টি হালনাগাদ · {unchanged}টি আগে থেকেই হালনাগাদ — শেষ হওয়ার আগেই থেমেছে; যেখানে থেমেছিল সেখান থেকে চালিয়ে যেতে আবার চাপুন।",
-  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created}টি নতুন · {updated}টি হালনাগাদ · {unchanged}টি আগে থেকেই হালনাগাদ — সংরক্ষিত সব সিরিজ এখন কর্পাসে আছে।"
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created}টি নতুন · {updated}টি হালনাগাদ · {unchanged}টি আগে থেকেই হালনাগাদ — সংরক্ষিত সব সিরিজ এখন কর্পাসে আছে।",
+  "Limited memory: {available} MB free of {total} MB.": "সীমিত মেমরি: {total} MB-এর মধ্যে {available} MB ফাঁকা।",
+  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "গোটা কর্পাসের পটভূমি স্ক্যান (সোর্স যোগ্যতা যাচাই) স্থগিত করা হয়েছে এবং একসাথে সংগ্রহের সংখ্যা সীমিত। বড় কর্পাসে যোগ্যতা যাচাই এখানে কখনই না চলতে পারে — এটি এই সেটিংয়ের খরচ, কোনো ত্রুটি নয়। তারপরও চালাতে OO_ALLOW_BIG_SCANS=1 সেট করুন।"
 }

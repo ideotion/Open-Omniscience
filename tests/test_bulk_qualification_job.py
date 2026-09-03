@@ -78,7 +78,8 @@ def _add_unqualified(db, n: int, *, rss=True):
     db.commit()
 
 
-def _always_no_evidence_pass(db, fetcher, per_pass, now):
+def _always_no_evidence_pass(db, fetcher, per_pass, now, *,
+                             cohort_provider=None, should_pause=None):
     """A fake qualification_pass that always reports zero evidence — models the
     permanently-unresolvable-candidates case without touching real source_audit
     machinery (kept a pure unit test of the DRIVER loop, not the judging)."""
@@ -140,7 +141,8 @@ def test_drains_the_backlog_across_several_batches(db, scope, monkeypatch):
     _add_unqualified(db, 25)
 
     # Stub the pass to instantly qualify everything (no real trial fetch/source_audit).
-    def _pass(session, fetcher, batch_size, now):
+    def _pass(session, fetcher, batch_size, now, *,
+              cohort_provider=None, should_pause=None):
         from src.catalog.qualification import select_unqualified
 
         cands = select_unqualified(session, limit=batch_size)
@@ -173,7 +175,8 @@ def test_reports_initial_backlog_estimate(db):
 def test_cooperative_cancel_stops_and_reports_progress_is_saved(db, scope, monkeypatch):
     _add_unqualified(db, 20)
 
-    def _pass(session, fetcher, batch_size, now):
+    def _pass(session, fetcher, batch_size, now, *,
+              cohort_provider=None, should_pause=None):
         from src.catalog.qualification import select_unqualified
 
         cands = select_unqualified(session, limit=batch_size)
@@ -258,7 +261,8 @@ def test_resume_after_cancel_finishes_the_backlog_with_no_double_stamps(db, scop
 
     calls = {"n": 0}
 
-    def _pass(session, fetcher, batch_size, now):
+    def _pass(session, fetcher, batch_size, now, *,
+              cohort_provider=None, should_pause=None):
         from src.catalog.qualification import select_unqualified
 
         calls["n"] += 1

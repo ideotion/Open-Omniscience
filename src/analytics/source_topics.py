@@ -109,14 +109,21 @@ def apply_source_topics(session, *, min_articles: int = 5, top_n: int = 4) -> di
     from src.database.models import Source
     from src.database.writer import write_lock
 
-    proposed = {r["domain"]: r["topics"] for r in derive_source_topics(
-        session, min_articles=min_articles, top_n=top_n
-    )}
-    if not proposed:
-        return {"sources_updated": 0, "tags_added": 0}
-
+    # S2.4 (2026-09-02): the gate must be held from BEFORE the read.
+    #
+    # derive_source_topics scans the corpus, which takes a read snapshot; the write
+    # below then promotes that same transaction. With the gate taken only around the
+    # write, anything that commits in between (the housekeeping lane, the briefing
+    # thread) makes the promotion return SQLITE_BUSY_SNAPSHOT -- instantly, because
+    # the busy handler is not consulted while a read transaction is open, so
+    # busy_timeout buys nothing. Same defect and same shape as run_discovery's.
     updated = added = 0
     with write_lock():
+        proposed = {r["domain"]: r["topics"] for r in derive_source_topics(
+            session, min_articles=min_articles, top_n=top_n
+        )}
+        if not proposed:
+            return {"sources_updated": 0, "tags_added": 0}
         # one query, then match in Python -- avoids the SQLite 999-variable IN cap
         for src in session.query(Source).all():
             topics = proposed.get(src.domain)

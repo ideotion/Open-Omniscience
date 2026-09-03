@@ -13,6 +13,7 @@ src/analytics/queries.
 from __future__ import annotations
 
 import contextlib
+import copy
 import itertools
 import logging
 import os as _os
@@ -65,6 +66,49 @@ _read_cache = SimpleCache(max_size=128, default_ttl=max(1, _CACHE_TTL_S))
 
 def _ckey(name: str, **params) -> str:
     return name + "|" + "|".join(f"{k}={params[k]}" for k in sorted(params))
+
+
+# --- S3.3: ONE key builder per cached endpoint ----------------------------- #
+#
+# The warm keys and the request keys were written out by hand in two places, and
+# both had drifted so far that NEITHER warmed spec could ever be read:
+#
+#   trending-windows  warm  ...|series_top=4|tl=None
+#                     req   ...|series_top=4|tl=en      <- the UI always sends
+#                                                          target_lang, so this
+#                                                          missed for EVERY
+#                                                          language, English
+#                                                          included, despite the
+#                                                          comment claiming the
+#                                                          English path was warm
+#   top               warm  top|country=None|days=None|group=True|kind=None|limit=20
+#                     req   top|...|limit=20|tl=None    <- the warm omitted the
+#                                                          tl COMPONENT, so it
+#                                                          missed even the
+#                                                          no-target_lang caller
+#
+# warm_cache reported `warmed: [<keys>]` throughout, which reads as success. A
+# shared builder is the durable fix: a hand-written near-miss cannot recur if
+# there is only one expression.
+
+
+def trending_windows_key(*, country, kind, limit, series_top) -> str:
+    """The cache key for /trending-windows -- used by the endpoint AND the warmer.
+
+    Deliberately carries NO target language: the aggregation is language-neutral
+    and the translation is annotated onto a COPY after the cache read, so one
+    entry serves all twelve UI languages instead of none.
+    """
+    return _ckey(
+        "trending-windows", country=country, kind=kind, limit=limit, series_top=series_top
+    )
+
+
+def top_key(*, days, country, kind, limit, group, tl) -> str:
+    """The cache key for /top -- used by the endpoint AND the warmer."""
+    return _ckey(
+        "top", days=days, country=country, kind=kind, limit=limit, group=group, tl=tl
+    )
 
 
 def _bind_key(db, key: str) -> str:
@@ -923,6 +967,34 @@ def insights_corpus_coordination(
     return _deadlined(db, key, _compute)
 
 
+def _annotate_windows(payload, tl: str | None):
+    """Add the verified ring translations to a /trending-windows payload (S3.3).
+
+    Works on a DEEP COPY: ``_cached`` returns ``{**hit, ...}``, a TOP-level copy
+    only, so the nested term dicts are the very objects the cache will serve to
+    the next caller -- annotating them in place would stamp one reader's language
+    onto everybody's. No copy at all when there is nothing to annotate, so the
+    no-target_lang path stays byte-identical to before.
+
+    The rows carry what the annotation needs by construction: a ring row has its
+    ``ring_id`` and a solo row its own ``language``, which is why this can run
+    after the cache without the ``stored_lang`` fallback the in-query call uses.
+    """
+    if not tl or not isinstance(payload, dict):
+        return payload
+    windows = payload.get("windows")
+    if not isinstance(windows, list):
+        return payload
+    from src.analytics.queries import _annotate_translations
+
+    out = copy.deepcopy(payload)
+    for w in out.get("windows") or []:
+        terms = w.get("terms") if isinstance(w, dict) else None
+        if isinstance(terms, list):
+            _annotate_translations(terms, tl)
+    return out
+
+
 def _tlang(target_lang: str | None) -> str | None:
     """Sanitise the target-language code for verified-translation annotation.
 
@@ -988,7 +1060,7 @@ def insights_top(
     ``target_lang`` makes the rows language-aware: a foreign keyword whose concept is
     in a cross-language ring gains its verified translation into that language."""
     tl = _tlang(target_lang)
-    key = _ckey("top", days=days, country=country, kind=kind, limit=limit, group=group, tl=tl)
+    key = top_key(days=days, country=country, kind=kind, limit=limit, group=group, tl=tl)
 
     def _compute() -> dict:
         out = rm.top_terms(
@@ -1065,11 +1137,16 @@ def insights_trending_windows(
     /trend day buckets) to the top terms so the frontend can draw an ooChart each;
     ``series_top=0`` (default) is byte-identical to the prior response."""
     tl = _tlang(target_lang)
-    key = _ckey("trending-windows", country=country, kind=kind, limit=limit,
-                series_top=series_top, tl=tl)
-    return _deadlined(db, key, lambda: rm.trending_windows(
-        db, country=country, kind=_kind(kind), limit=limit, series_top=series_top, target_lang=tl
+    # S3.3: cache the AGGREGATION (language-neutral), annotate the translation
+    # onto a copy afterwards. The annotation is a pure in-memory pass over the
+    # rows against the Wikidata ring index -- no DB -- so moving it out of the
+    # cached compute costs nothing and lets ONE entry serve every UI language.
+    key = trending_windows_key(country=country, kind=kind, limit=limit, series_top=series_top)
+    out = _deadlined(db, key, lambda: rm.trending_windows(
+        db, country=country, kind=_kind(kind), limit=limit, series_top=series_top,
+        target_lang=None,
     ))
+    return _annotate_windows(out, tl)
 
 
 @router.get("/trend")
@@ -1461,14 +1538,28 @@ def warm_cache(db: Session) -> dict:
     for lim, st in (WARM_TRENDING_HOME, WARM_TRENDING_INSIGHTS):
         specs.append(
             (
-                _bind_key(db, _ckey("trending-windows", country=None, kind=None, limit=lim, series_top=st, tl=None)),
+                _bind_key(db, trending_windows_key(
+                    country=None, kind=None, limit=lim, series_top=st,
+                )),
                 lambda lim=lim, st=st: rm.trending_windows(
                     db, country=None, kind=None, limit=lim, series_top=st, target_lang=None
                 ),
             )
         )
     specs.append(
-        (_bind_key(db, _ckey("top", days=None, country=None, kind=None, limit=20, group=True)),
+        # HONEST GAP, stated rather than silently half-fixed: this warms the
+        # no-target_lang key, which an API caller reads and the UI does NOT --
+        # Insights asks /top with group=true&limit=200 (and 80) AND a
+        # target_lang. Warming those would need the same annotate-after-cache
+        # split trending-windows just got, and that is blocked here: with
+        # group=true the rows are FAMILY dicts and Family.to_dict() carries no
+        # `language`, so annotating after the cache would silently drop the
+        # translation for every non-ringed family row. Teaching Family its
+        # language is its own slice; until then this spec is correct for the
+        # callers it can serve, and the UI's /top calls are simply not warmed.
+        (_bind_key(db, top_key(
+            days=None, country=None, kind=None, limit=20, group=True, tl=None,
+        )),
          lambda: rm.top_terms(db, days=None, country=None, kind=None, limit=20, group=True))
     )
     if _CACHE_TTL_S <= 0:

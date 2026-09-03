@@ -1996,6 +1996,7 @@
   "stale": "obsoleto",
   "No local hazard snapshot — silence is not safety.": "No hay instantánea local de peligros: el silencio no es seguridad.",
   "Alerts": "Alertas",
+  "Checking for alerts…": "Buscando alertas…",
   "Latest in your corpus": "Lo más reciente de tu corpus",
   "Min words": "Palabras mín.",
   "Min cited sources": "Fuentes citadas mín.",
@@ -2152,6 +2153,9 @@
   "Backfill failed:": "Error al rellenar:",
   "Applied baseline tags:": "Etiquetas de referencia aplicadas:",
   "tags": "etiquetas",
+  "The server is busy — refreshing every {s}s until it recovers.": "El servidor está ocupado: se actualizará cada {s} s hasta que se recupere.",
+  "The server recovered — refreshing at the usual rate again.": "El servidor se ha recuperado: se actualiza al ritmo habitual.",
+  "as of {time} (server busy)": "a las {time} (servidor ocupado)",
   "The app is busy — retrying shortly…": "La aplicación está ocupada — reintentando en breve…",
   "Session forensics": "Análisis de la sesión",
   "Could not load session forensics.": "No se pudo cargar el análisis de la sesión.",
@@ -2998,5 +3002,7 @@
   "Indexing series: {detail}": "Indexando las series: {detail}",
   "Indexing failed: {error}": "Falló la indexación: {error}",
   "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} nuevas · {updated} actualizadas · {unchanged} ya al día — se detuvo antes del final; púlselo otra vez para continuar donde se quedó.",
-  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} nuevas · {updated} actualizadas · {unchanged} ya al día — todas las series almacenadas están ahora en el corpus."
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} nuevas · {updated} actualizadas · {unchanged} ya al día — todas las series almacenadas están ahora en el corpus.",
+  "Limited memory: {available} MB free of {total} MB.": "Memoria limitada: {available} MB libres de {total} MB.",
+  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "Los análisis de fondo sobre todo el corpus (calificación de fuentes) están en pausa y el número de descargas simultáneas está limitado. En un corpus grande, la calificación puede no ejecutarse nunca aquí: es el coste de este ajuste, no un fallo. Defina OO_ALLOW_BIG_SCANS=1 para ejecutarlos de todos modos."
 }

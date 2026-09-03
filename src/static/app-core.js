@@ -1596,6 +1596,12 @@
     // Retry-After is safe for GET and POST alike — it reads as the app protecting itself,
     // never as breakage. After the retries are spent the caller sees the honest error.
     const _API_MAX_RETRIES = 4;
+    // S3.4 (c): a POLLED call retries a 429 ONCE, not four times. A background
+    // refresh that spends five attempts is adding load to a server that just said
+    // it has none to spare, and it will be asked again in a few seconds anyway --
+    // whereas a user action has nobody to re-ask it. Callers mark themselves with
+    // {polled: true}; nothing else changes.
+    const _API_MAX_RETRIES_POLLED = 1;
     const _API_RETRY_MAX_MS = 8000;
     let _busyNoticeAt = 0;
     function _noteBusyRetry() {
@@ -1605,6 +1611,60 @@
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
       toast(t("The app is busy — retrying shortly…"), "warn");
     }
+
+    // ---- S3.4 (b): the client half of "both ends under load" ------------------ //
+    //
+    // The server publishes what it can see of its own load, but the backoff is
+    // driven by what the CLIENT observed -- the 429s and 503s it was actually
+    // served -- because a server too loaded to answer cannot tell anyone it is
+    // loaded. Routing the backoff through the server's payload would make it fail
+    // exactly when it is needed.
+    //
+    // The multiplier is a STEP ladder, not a continuous curve: each refusal within
+    // the window doubles the poll interval to a ceiling of 8x, and it decays to 1x
+    // on its own once the refusals stop. 8x is a bound, not a guess about recovery
+    // time -- at 8x a 15 s Home poll is 2 minutes, which is as far as a live view
+    // can drift and still be called live.
+    const _LOAD_WINDOW_MS = 60000;   // refusals older than this no longer count
+    const _LOAD_MAX_FACTOR = 8;
+    let _loadRefusals = [];          // epochs of the refusals seen in the window
+    let _loadBannerFactor = 0;       // the factor the banner last named
+    function _noteServerBusy() {
+      const now = Date.now();
+      _loadRefusals.push(now);
+      _loadRefusals = _loadRefusals.filter((t) => now - t < _LOAD_WINDOW_MS);
+    }
+    function _loadFactor() {
+      const now = Date.now();
+      _loadRefusals = _loadRefusals.filter((t) => now - t < _LOAD_WINDOW_MS);
+      const n = _loadRefusals.length;
+      if (!n) return 1;
+      return Math.min(_LOAD_MAX_FACTOR, Math.pow(2, Math.min(n, 3)));
+    }
+    // ONE banner, named for the cadence it is announcing, and only when the
+    // cadence actually CHANGES -- a message repeated every tick is a toast storm
+    // with extra steps, and a message that never updates leaves the user reading a
+    // stale claim about how often the page refreshes.
+    function _noteLoadCadence(intervalMs) {
+      const factor = _loadFactor();
+      if (factor === _loadBannerFactor) return;
+      const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+      const prev = _loadBannerFactor;
+      _loadBannerFactor = factor;
+      if (factor > 1) {
+        toast(
+          t("The server is busy — refreshing every {s}s until it recovers.")
+            .replace("{s}", String(Math.round(intervalMs / 1000))),
+          "warn");
+      } else if (prev > 1) {
+        toast(t("The server recovered — refreshing at the usual rate again."), "ok");
+      }
+    }
+    function _loadState() {   // for the node harness and diagnostics; no score
+      return {factor: _loadFactor(), refusals: _loadRefusals.length,
+              window_ms: _LOAD_WINDOW_MS, max_factor: _LOAD_MAX_FACTOR};
+    }
+    function _resetLoadState() { _loadRefusals = []; _loadBannerFactor = 0; }
     // ins-convergence-window-cap-mismatch (P1, the api() half): a FastAPI/Pydantic
     // 422 response body's `detail` is an ARRAY of {type, loc, msg} objects, which
     // Error() string-coerces into the useless "[object Object],[object Object]" --
@@ -1761,13 +1821,18 @@
     }
 
     async function api(path, opts={}) {
+      // `polled` is OURS, not fetch's: pull it out before the rest is spread into
+      // the request init, so a background refresh can ask for the shorter retry
+      // budget without a stray property riding along on the wire.
+      const {polled, ...init} = opts;
+      const maxRetries = polled ? _API_MAX_RETRIES_POLLED : _API_MAX_RETRIES;
       _bumpInflight(1);
       try {
         for (let attempt = 0; ; attempt++) {
           let res;
           try {
             res = await fetch(path, {
-              headers: {"Content-Type": "application/json"}, ...opts,
+              headers: {"Content-Type": "application/json"}, ...init,
             });
           } catch (netErr) {
             // The fetch itself failed: no response at all. This is the only
@@ -1776,7 +1841,12 @@
             throw netErr;
           }
           _noteReachable(true);  // it answered -- an error STATUS is still an answer
-          if (res.status === 429 && attempt < _API_MAX_RETRIES) {
+          // Every refusal counts toward the poll backoff, including the ones a
+          // retry goes on to absorb: the server said "not now" whether or not the
+          // next attempt succeeded, and a backoff that only saw the FINAL failure
+          // would not slow down until the retries had already spent the load.
+          if (res.status === 429 || res.status === 503) _noteServerBusy();
+          if (res.status === 429 && attempt < maxRetries) {
             const ra = parseFloat(res.headers.get("Retry-After"));
             const waitMs = Math.min(
               (isFinite(ra) && ra >= 0) ? ra * 1000 : 500 * (attempt + 1), _API_RETRY_MAX_MS);

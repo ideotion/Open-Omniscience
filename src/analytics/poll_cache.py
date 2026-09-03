@@ -193,7 +193,21 @@ def get_alerts(
         if (now - built_at) > _ttl_s():
             _trigger_self_heal(within_hours, hazard_max_age_hours, convergence_lookback_days)
         return _decorate(entry["payload"], built_at=built_at, cached=True, now=now)
-    # Cold cache OR the entry reflects a DIFFERENT database than this caller -> live.
+    # S3.1: a COLD cache on the POLLED default params no longer computes here.
+    #
+    # The cold path was the death spiral's own engine. compute_alerts measured
+    # p50 23.7 s on the field corpus, and the background build takes just as
+    # long -- so every Home poll arriving during that window found the cache
+    # still cold and started its OWN full convergence scan, on the request
+    # thread, in parallel. _BUILD_LOCK stopped a second BACKGROUND build; it
+    # never stopped the request ones.
+    #
+    # Only the default params take this branch. A caller asking for a window
+    # nobody polls is a one-off question that must still get an answer, so it
+    # computes live exactly as before (its negative twin pins that).
+    if _is_default(within_hours, hazard_max_age_hours, convergence_lookback_days):
+        _kick_background_refresh(within_hours, hazard_max_age_hours, convergence_lookback_days)
+        return _building_payload()
     fresh = _compute(
         session,
         within_hours=within_hours,
@@ -202,6 +216,34 @@ def get_alerts(
     )
     built_at = _store(key, fresh, _bind_of(session)) or now
     return _decorate(fresh, built_at=built_at, cached=False, now=now)
+
+
+def _is_default(within_hours: int, hazard_max_age_hours: int, convergence_lookback_days: int) -> bool:
+    return (
+        within_hours == DEFAULT_WITHIN_HOURS
+        and hazard_max_age_hours == DEFAULT_HAZARD_MAX_AGE_HOURS
+        and convergence_lookback_days == DEFAULT_CONVERGENCE_LOOKBACK_DAYS
+    )
+
+
+def _building_payload() -> dict:
+    """The honest answer while the first scan is still running.
+
+    The measured fields are OMITTED, not zeroed. ``total: 0`` beside
+    ``building: true`` would read as "no alerts" to anything that does not check
+    the flag -- and the strip's own render guard is exactly `if (!d.total) hide`,
+    so a zero here would turn a scan in flight into a silently empty panel. An
+    absent total cannot be mistaken for a measured one.
+    """
+    return {
+        "building": True,
+        "cached": False,
+        "as_of": None,
+        "reason": (
+            "the alert scan is running in the background; this is not a result yet"
+        ),
+        "method": "no figure is reported until the scan that produces it has finished",
+    }
 
 
 def refresh_alerts(

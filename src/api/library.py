@@ -25,15 +25,13 @@ Database tab; computed_at + cache_ttl_s state the freshness window.
 from __future__ import annotations
 
 import logging
-from datetime import UTC, datetime
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, inspect, select, table
 from sqlalchemy.orm import Session
 
+from src.api import served_cache
 from src.api.heavy import guarded_read
 from src.database.session import engine, get_db
-from src.utils.cache import SimpleCache
 
 _LOG = logging.getLogger("api.library")
 router = APIRouter(prefix="/api/library", tags=["library"])
@@ -53,31 +51,27 @@ _HISTORY_MAX_DAYS = 3650  # ~10 years — generous, never literally unbounded
 _LANGUAGES_TOP_N = 12
 _LANGUAGES_MAX_TOP_N = 60
 
+# This overview rolls up whole-table COUNT(*)s and is reached from a polled
+# Library view. It went through a VERBATIM COPY of the cache src/api/database.py
+# carried -- the same (data_version, total_changes) probe, the same 0% hit rate
+# on a pooled engine, so the same inline recompute on every poll. Both now share
+# ONE mechanism in src.api.served_cache: two copies of a cache is how one of them
+# is fixed and the other quietly is not.
 _CACHE_TTL_S = 30
-_cache = SimpleCache(max_size=4, default_ttl=_CACHE_TTL_S)
-
-
-def _db_change_probe(db: Session) -> tuple:
-    from sqlalchemy import text
-
-    if engine.url.get_backend_name() != "sqlite":
-        return (None, None)
-    return (
-        db.execute(text("PRAGMA data_version")).scalar(),
-        db.execute(text("SELECT total_changes()")).scalar(),
-    )
 
 
 def _cached(key: str, compute, db: Session) -> dict:
-    probe = _db_change_probe(db)
-    hit = _cache.get(key)
-    if hit is not None and hit.get("probe") == probe:
-        return hit["payload"]
-    out = compute()
-    out["computed_at"] = datetime.now(UTC).isoformat(timespec="seconds")
-    out["cache_ttl_s"] = _CACHE_TTL_S
-    _cache.set(key, {"probe": probe, "payload": out})
-    return out
+    """Serve ``key`` from the shared background-refreshed cache.
+
+    ``compute`` takes the Session to read from rather than closing over the
+    request's: the background refresher re-runs the SAME callable on its own
+    thread, over its own session, long after this request's session is closed.
+
+    Keys are namespaced per module because the cache dict is process-global and
+    shared with the other endpoints that use it -- an unprefixed "overview" or
+    "stats" added on either side would silently serve the other's payload.
+    """
+    return served_cache.cached(f"library:{key}", compute, db, ttl_s=_CACHE_TTL_S)
 
 
 def _downloads_done(get_manager) -> dict:
@@ -99,7 +93,7 @@ def _downloads_done(get_manager) -> dict:
 def library_overview(db: Session = Depends(get_db)) -> dict:
     """One cached roll-up of everything downloaded + extrapolated (counts + sizes only)."""
 
-    def _compute() -> dict:
+    def _compute(db: Session) -> dict:
         present = set(inspect(engine).get_table_names())
 
         def _count(tbl: str) -> int | None:

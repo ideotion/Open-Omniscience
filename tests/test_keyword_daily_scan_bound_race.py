@@ -129,20 +129,36 @@ def _mention(keyword_id: int, article_id: int, ts: datetime, *, count: int = 1):
     )
 
 
-def _trigger_write_before_call(scanner, writer, *, call_n: int, write_fn):
-    """Monkeypatch ``scanner.execute`` so ``write_fn(writer)`` runs -- and commits -- exactly
-    once, immediately BEFORE the ``call_n``-th call to ``scanner.execute`` reaches the real
-    database. This lets a test pin a concurrent write to a precise point in
-    ``build_keyword_daily``'s own batch-by-batch scan, deterministically, with no threads and
-    no real-time race.
+def _trigger_write_before_batch(scanner, writer, *, batch_n: int, write_fn):
+    """Monkeypatch ``scanner.execute`` so ``write_fn(writer)`` runs -- and commits --
+    exactly once, immediately BEFORE the ``batch_n``-th DATED BATCH query of
+    ``build_keyword_daily``'s scan reaches the real database. Deterministic, no
+    threads, no real-time race.
+
+    ANCHORED ON THE QUERY SHAPE, not on a call ordinal. This used to count EVERY
+    ``scanner.execute`` call and take the ``call_n``-th, which coincided with the
+    intended batch only for one particular sequence of statements: S3.5 split the
+    scan into a NULL-created_at phase and a dated phase, so the dated scan's first
+    batch moved from call 2 to call 3 and a ``call_n=3`` trigger began firing
+    BEFORE any row had been read. The tests then measured the accepted
+    deleted-before-the-cursor-reached-it residual instead of the double-count they
+    are named for -- a stale landmark, not a behaviour change. Matching the dated
+    batch's own SQL cannot drift that way.
     """
     real_execute = scanner.execute
-    calls = {"n": 0}
+    seen = {"n": 0}
+
+    def _is_dated_batch(stmt) -> bool:
+        # NEVER `or ""` here: a SQLAlchemy clause raises TypeError from __bool__.
+        raw = getattr(stmt, "text", None)
+        sql = raw if isinstance(raw, str) else str(stmt)
+        return "keyword_mentions" in sql and "LIMIT" in sql and "created_at IS NOT NULL" in sql
 
     def patched(stmt, *a, **kw):
-        calls["n"] += 1
-        if calls["n"] == call_n:
-            write_fn(writer)
+        if _is_dated_batch(stmt):
+            seen["n"] += 1
+            if seen["n"] == batch_n:
+                write_fn(writer)
         return real_execute(stmt, *a, **kw)
 
     scanner.execute = patched  # type: ignore[method-assign]
@@ -205,7 +221,7 @@ def test_a_row_already_read_that_is_deleted_and_reinserted_to_a_higher_id_is_nev
         w.execute(_mention(1, 2, _ts(7)))
         w.commit()
 
-    restore = _trigger_write_before_call(scanner, writer, call_n=3, write_fn=_concurrent_reindex)
+    restore = _trigger_write_before_batch(scanner, writer, batch_n=2, write_fn=_concurrent_reindex)
     try:
         con = columnar.connect(passphrase=None)
         tally = columnar.build_keyword_daily(session=scanner, con=con, batch_size=3)
@@ -277,7 +293,7 @@ def test_a_reinsert_that_reuses_a_freed_max_id_is_excluded_this_build_but_self_c
         w.execute(_mention(2, 6, _ts(7), count=9))
         w.commit()
 
-    restore = _trigger_write_before_call(scanner, writer, call_n=3, write_fn=_concurrent_write)
+    restore = _trigger_write_before_batch(scanner, writer, batch_n=2, write_fn=_concurrent_write)
     try:
         con = columnar.connect(passphrase=None)
         columnar.build_keyword_daily(session=scanner, con=con, batch_size=3)

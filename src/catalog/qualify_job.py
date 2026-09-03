@@ -56,6 +56,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 
 _LOG = logging.getLogger(__name__)
@@ -129,6 +130,14 @@ def run_bulk_qualification(
     consecutive_no_progress = 0
     paused_reason: str | None = None
     complete = False
+    cohort: dict | None = None
+
+    def _pause_check() -> bool:
+        """Consulted every few thousand rows INSIDE the whole-corpus scan (S5.2). The guard
+        polled only between batches, so the largest transient in the pass was the one part
+        of it nothing could interrupt. ``poll()`` is the same call the loop above makes, so
+        the two can never disagree about the machine."""
+        return bool(memguard.memory_guard.poll())
 
     ctx.set_progress(done=0, total=total_backlog, detail="starting…")
 
@@ -149,7 +158,31 @@ def run_bulk_qualification(
 
         now = now_fn() if now_fn is not None else datetime.now(UTC)
         with session_factory() as db:
-            result = qualification_pass(db, fetcher, batch_size, now)
+            # S5.1: the COHORT baselines are frozen once per RUN, not once per batch. The
+            # measured cost was ~131.8 MiB of Python plus the connection's page cache per
+            # call, and a batch of 20 candidates does not change a corpus-wide cohort -- so
+            # every batch after the first was paying for the same numbers again. This loop
+            # is what "a run" means, which is why the freeze is owned HERE rather than
+            # hidden in a module-level cache with a guessed lifetime. Passed as a PROVIDER
+            # so a pass with no candidates never triggers it at all.
+            def _cohort(db=db) -> dict:
+                nonlocal cohort
+                if cohort is None:
+                    cohort = freeze_cohort(db, should_pause=_pause_check)
+                return cohort
+
+            result = qualification_pass(
+                db, fetcher, batch_size, now,
+                cohort_provider=_cohort, should_pause=_pause_check,
+            )
+        if result.get("paused"):
+            # S5.2: the scan itself gave up under pressure. Nothing was stamped.
+            paused_reason = (
+                "paused: "
+                + str(result.get("reason") or "memory pressure")
+                + " — progress is saved, start again once memory recovers"
+            )
+            break
 
         evaluated = int(result.get("evaluated", 0))
         totals["batches_run"] += 1
@@ -193,9 +226,24 @@ def run_bulk_qualification(
     return summary
 
 
-def qualification_pass(db, fetcher, batch_size: int, now: datetime) -> dict:
+def qualification_pass(db, fetcher, batch_size: int, now: datetime, *,
+                       cohort_provider: Callable[[], dict] | None = None,
+                       should_pause: Callable[[], bool] | None = None) -> dict:
     """Thin seam so tests can stub the underlying pass without patching a module-level
     import inside :func:`run_bulk_qualification`."""
     from src.catalog.qualification import run_qualification_pass
 
-    return run_qualification_pass(db, fetcher, per_pass=batch_size, now=now)
+    return run_qualification_pass(
+        db, fetcher, per_pass=batch_size, now=now,
+        cohort_provider=cohort_provider, should_pause=should_pause,
+    )
+
+
+def freeze_cohort(db, *, should_pause: Callable[[], bool] | None = None) -> dict:
+    """Its own seam, for the same reason ``qualification_pass`` is one: a test needs to be
+    able to count how many times the whole-corpus cohort is computed across a multi-batch
+    run without stubbing the pass that consumes it."""
+    from src.analytics.source_audit import frozen_cohort
+    from src.catalog.qualification import TRIAL_MIN_ARTICLES
+
+    return frozen_cohort(db, should_pause=should_pause, min_articles=TRIAL_MIN_ARTICLES)

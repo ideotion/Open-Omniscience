@@ -4705,6 +4705,83 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     that the folder is empty. And moving a resource out of a tree means the uninstall
     no longer reclaims it by removing the tree — both sites must read ONE function, or
     the uninstall silently orphans it.
+  - **A CACHE WHOSE KEY IS PER-CONNECTION HAS A 0% HIT RATE ON A POOLED ENGINE — and the
+    tests around it will be witnesses rather than detectors (2026-09-03, S3.2):**
+    `/api/database/stats` was guarded by a cache described in its own comment as VERIFIED:
+    served only while `PRAGMA data_version` and `SELECT total_changes()` proved the database
+    unchanged. The claim is true and the mechanism was dead. Both components are PER
+    CONNECTION and diverge by OPPOSITE mechanisms — `total_changes()` counts only the writes
+    THIS connection made since it opened (so two pooled connections disagree PERMANENTLY, not
+    transiently), while `data_version` does NOT tick for the connection that wrote and DOES
+    tick for every other. Measured through the production functions on a two-connection pool
+    with ZERO writes: **six reads, six recomputes**. The default engine is `pool_size=5` + 10
+    overflow, so on a live server the cache essentially never served and every 4 s poll paid a
+    whole-table scan inline — 43 s for the mentions count on the field corpus. **THE THREE
+    TESTS AROUND IT ALL PASSED, AND EACH WAS EVIDENCE OF THE DEFECT:** one had to
+    `monkeypatch` the probe to a constant to observe a cache hit at all, with a comment
+    blaming a "spurious" invalidation and a 2026-06-15 CI flake; two others passed only
+    BECAUSE there were no hits (write a row, read the count on the next line). A test that
+    freezes the mechanism it is testing is describing a lookalike, and a test that depends on
+    a cache never serving will keep passing for as long as it never does. GENERAL FORM: a
+    cache key must be a property of the DATABASE, not of the connection that happens to serve
+    the request — and the way to find out is to drive the real `_cached` with two sessions and
+    count computes, not to read the probe and reason about it. THE PROBE THAT WORKS was
+    already in the tree: the write gate's `grants` counter, one process-global monotonic int
+    bumped once per write transaction, measured against all four properties (pure reads do not
+    bump it; it sees this connection's own write; it sees another connection's write from
+    anywhere; it is comparable across connections by construction). **STATE ITS LIMITS RATHER
+    THAN THE GUARANTEE YOU WISH IT HAD:** it is blind to a bare textual `session.execute(text(
+    "INSERT ..."))` outside `write_lock()` (measured, unchanged) and to another PROCESS, so the
+    corpus swap and VACUUM drop the entry BY NAME and every payload carries its real `as_of` —
+    the offer is that the age is VISIBLE, never that it is zero. COROLLARY: the same broken
+    cache existed as a VERBATIM COPY in `src/api/library.py`, which is how one copy gets fixed
+    and the other quietly does not; and a namespacing wrapper added to prevent key collisions
+    had a hole at the one call site that did not go through it, found by the test rather than
+    by review.
+  - **"SERVE STALE" AND "REFRESH WHEN CHANGED" ARE THE WRONG PAIR — the probe must gate the
+    REBUILD, not the SERVE (2026-09-03, same slice):** the obvious design is "probe says
+    changed → recompute", which is exactly the defect (during collection every poll pays the
+    scan), and the obvious repair is "refresh at the TTL regardless", which on a corpus where
+    the scan takes 43 s and the TTL is 60 s means a background rebuild running essentially
+    continuously. Neither is right. The trigger is `age >= ttl AND the probe moved`: an idle
+    app rebuilds NOTHING (the value is not merely fresh enough, it is still exactly correct),
+    a collecting one rebuilds at most once per TTL, and the request thread never computes
+    after the first cold call. TWO DETAILS THAT CARRY IT: keep `built_at` (the value's real
+    age, which drives `as_of`) separate from `checked_at` (the refresh clock) — re-stamping
+    `built_at` on an unchanged re-check restarts the age at zero and reports a value computed
+    minutes ago as fresh; and single-flight the COLD path under a per-key lock with a
+    double-check, or N simultaneous polls start N scans, which is the death-spiral shape the
+    alert strip already hit.
+  - **A MUTATION THAT SURVIVES IS A FINDING ABOUT THE TEST, AND THE USUAL FAULT IS THAT THE
+    FIXTURE NEVER REACHED THE BRANCH (2026-09-03, same slice):** `test_an_unavailable_probe_
+    is_never_read_as_nothing_changed` warmed the cache and THEN made the probe unavailable, so
+    the stored probe was a real int against a `None` reading — unequal under both the fix and
+    the mutant, and the mutation that reads `None` as "nothing changed" passed. The
+    discriminating case is a probe that is `None` when the entry is BUILT as well as when it
+    is read, i.e. the real case (an install whose write gate is off), where the mutant freezes
+    the counts forever. Same shape as the recorded cache-suppression and bucket-granularity
+    misses: ask what the mutant would SUPPRESS and build the fixture that reaches it.
+  - **A GUARD THAT FIRES ON THE WRONG ASSERTION IS A GUARD WHOSE CLAIM IS UNTESTED
+    (2026-09-03, S3.4):** the node harness for the poll backoff asserted both the SCHEDULE
+    (the delay the chain asks for) and the SOURCE (that `startLive` reads the load factor).
+    The source checks ran first, so the brief's own mutation — "schedules at exactly 15,000
+    ms" — aborted the suite on a string before the delay was ever driven. It reddened, which
+    is what makes it easy to miss: the suite failed, so the mutation looked caught. Order the
+    BEHAVIOURAL assertion first, so the number the claim is about is the thing that fails
+    (`got 15000`). And a rebuilt-from-source function must keep its SIGNATURE: extracting only
+    the body and re-wrapping it as `function name()` silently drops the parameters, and the
+    copy then throws `ReferenceError` on the very argument the real one is called with.
+  - **A PER-SECTION DEGRADE EARNS ITS KEEP ON THE FIRST RUN, NOT IN THEORY (2026-09-03,
+    S3.4):** the `server_load` composer wraps each of its three readings separately and reports
+    `{"read": false, "reason": ...}` for one that raises, because "we could not read it" and
+    "we read it and it is quiet" are opposite facts that must not share a key or a value. Its
+    very first execution reported `TypeError: 'bool' object is not callable` — my own bug,
+    `memguard.memory_guard.engaged` being a PROPERTY — where a naive `except: return
+    {"engaged": False}` would have published a confident, wrong, permanent all-clear. When
+    adding a composed diagnostic, write the honest-absence branch BEFORE trusting any of the
+    sections, and give it a test that asserts a failed section does not also publish the value
+    it failed to read.
+
   - **A CONTEXT MANAGER THAT CAPTURES A CONNECTION AT ENTRY AND RELEASES IT IN `finally`
     BREAKS THE MOMENT THE BLOCK LEGITIMATELY RECONNECTS — and the crash is the loud half
     (2026-08-23, the first field diagnostics bundle):** `statement_deadline` armed one raw
@@ -4944,6 +5021,569 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the recorded containment trap in a new place — `…\Open-Omniscience-old` starts with
     `…\Open-Omniscience`, and reporting that as excluded tells an operator they already
     applied a remedy they did not.
+  - **A MUTATION THAT DOES NOT APPLY IS INDISTINGUISHABLE FROM A GUARD THAT DOES NOT
+    BITE — assert the edit landed before reading the run (2026-09-02, the S1.3 locale
+    mutation):** the mutation matrix's whole value is that a green run after a mutation
+    is a FINDING. That inverts the moment the mutation silently fails to apply: a
+    `str.replace` whose needle is absent is a no-op, the suite passes, and the result
+    reads exactly like "this guard is vacuous". Here the French translation uses
+    NON-BREAKING spaces (`{available}\xa0Mo`, correct typography that `json.dumps`
+    preserved), so a plain-space search matched nothing and a perfectly good guard was
+    about to be recorded as dead. RULE: every mutation asserts its own application
+    (`assert new != old, "MUTATION DID NOT APPLY"`) before the test run, and where the
+    edit is a value in a data file, take the needle FROM the parsed file rather than
+    retyping it. Same family as the recorded `pytest -k` selector matching zero tests
+    and the `cmd | tail` exit-code trap: a check that reports success without having run
+    is the most expensive kind, and here it would have cost a real guard.
+  - **A GUARD THAT PROVES THE SAFETY HALF AND NOT THE ACTION PASSES WITH THE ACTION
+    DELETED (2026-09-02, the pool-dispose step):** `test_disposing_the_pool_closes_idle_
+    connections_only` asserted that a checked-out connection SURVIVES — the property the
+    step could most plausibly get wrong — and `ok is True`. Deleting `pool.dispose()`
+    left both true, so the release ladder's largest step could have shipped as a no-op
+    reporting success. The mirror case in the same file: `_shrink_sqlite` had a
+    beautifully measured PREMISE test (a raw connection proving `shrink_memory` is what
+    frees a warm page cache) and nothing asserting the SHIPPED function issues the
+    PRAGMA, so replacing it with `pass` kept `ok: True` and every test green. GENERAL
+    FORM: a step with a safety property and an effect needs an assertion for EACH, and a
+    measurement of the MECHANISM is not a test of the CODE — drive the production
+    function with a recording double and assert the statement reached it. Note the
+    fixture order matters for the action half: a checkout REUSES an idle connection, so
+    a test that takes its held connection after seeding the idle ones silently consumes
+    one of them and the count it asserts is wrong.
+  - **A NEW LOCAL THAT SHADOWS AN EXISTING ONE IN A LONG FUNCTION IS A REAL BUG THE TYPE
+    GATE CATCHES AND REVIEW DOES NOT (2026-09-02, S1.3's `_floor`):** the fan-out cap
+    bound `_floor` to the floor VERDICT (a dict) 130 lines above an existing `_floor`
+    holding the mem-low permit floor (an int). Python rebinds happily; mypy rejected it
+    by name. In a 200-line function the two uses are never on screen together, so the
+    only thing standing between this and a later edit reading the wrong one is the type
+    gate — which is the argument for running it rather than only the tests after an edit
+    that "only" adds a variable. Rename with the reason in a comment, so the next reader
+    does not tidy the distinction away.
+  - **A COST YOU ARE ABOUT TO PUT ON A POLLED ENDPOINT IS ONE `timeit` AWAY — measure it
+    instead of caching defensively (2026-09-02, the floor verdict on `/status`):** the
+    memory-floor caveat has to ride every scheduler response for the same reason `online`
+    does — a caveat behind a second poll the UI might never make is not visible by
+    default. The reflex is a TTL cache, and it is the wrong instinct here twice over: the
+    call is one `/proc/meminfo` read (measured at **107 µs**), and a STALE available
+    reading is precisely the wrong thing on a machine whose memory is moving. Measuring
+    took less time than writing the cache would have.
+  - **A MEASUREMENT WHOSE INSTRUMENT IS PROCESS RSS IS ONLY VALID IN A PROCESS SMALL
+    ENOUGH TO SEE IT — run it in a subprocess (2026-09-02, the shrink_memory premise
+    test):** the release ladder rests on a measurement (a warm 64 MiB page cache is
+    handed back by `PRAGMA shrink_memory` and NOT by ending the transaction), and
+    re-running it as a test is right. Reading it through `/proc/self/status` is not: the
+    test passed alone and failed in the full suite, where the interpreter already holds
+    ~1.5 GB across the allocator's arenas and a 64 MiB free is invisible — so the failure
+    read as "shrink_memory does nothing", the exact opposite of the truth. This is the
+    recorded `ru_maxrss`-is-vacuous lesson with the sign flipped: there a
+    high-water-mark instrument could not fail, here a whole-process instrument could not
+    succeed. `tracemalloc` is no help either, because the allocation is SQLite's, in C.
+    The fix is to measure where the docstring's own numbers were taken — a fresh
+    interpreter — and to add the anti-vacuity assertion that the probe genuinely warmed
+    a cache first, or a probe that allocated nothing would "prove" the same thing.
+  - **PREFER BEING STOPPED BY THE SLICING RATCHET OVER LOWERING ITS BUDGET — and it
+    fires on TESTS, which is where new hand-rolled slices are written (2026-09-02):**
+    a new test file sliced `app-sources.js` with `src.index("function renderMachineFloor(")`
+    and a hand-guessed `"\n    }\n"` terminator, and `test_adhoc_slicers_do_not_multiply`
+    caught it at 233 against a budget of 232. Routing it through
+    `js_source_helper.function_body` + `strip_comments` restored the budget WITHOUT
+    lowering it, and the mutation matrix was re-run afterwards to confirm the re-sliced
+    guard still discriminates — a refactor of a guard is not finished until its mutation
+    reddens again. The ratchet's twin (`test_the_budget_is_not_left_above_the_real_count`)
+    means the number cannot be quietly raised either: it fails if the budget sits above
+    the real count, so the only ways out are to fix the slice or to argue the budget up
+    deliberately.
+  - **A BELT ADDED FOR SAFETY CAN MAKE THE THING IT BACKS UP UNTESTABLE — the second
+    guard masks the first (2026-09-02, the `statement_deadline` pool poison):** the fix
+    is four edits, and edit 4 (an owner-thread check, so an escaped handler can only
+    interrupt the thread that armed it) is a deliberate belt under edit 1 (disarm on
+    checkin). Together they are right; together they also mean the CROSS-THREAD test —
+    the one that reproduces the field defect — passes with edit 1 **neutered**, because
+    the belt makes a stale handler inert on a foreign thread anyway. Neutering the
+    listener reddened nothing. The discriminating case is SAME-thread: a connection
+    returned to the pool mid-deadline and checked out again by the same thread, where
+    the belt is silent and only the listener can save it. GENERAL FORM: when a fix has a
+    primary mechanism and a belt, ask which one each test is actually exercising — a
+    belt that covers the primary path everywhere leaves the primary untested, and the
+    mutation matrix is the only thing that says so.
+  - **A TEST THAT ATTACHES THE PRODUCTION LISTENER TO ITS OWN ENGINE PROVES THE FUNCTION
+    AND NOT THE WIRING (2026-09-02, same slice):** the fixture did
+    `event.listen(eng, "reset", _disarm_progress_handler)` — right for exercising the
+    real function on an isolated engine, and it means removing
+    `@event.listens_for(engine, "reset")` from `session.py` reddens NOTHING. That is the
+    recorded "a test double injected via a parameter bypasses the production path" trap
+    wearing a fixture's clothes, and the fix is one assertion:
+    `event.contains(engine, "reset", fn)` against the app's own engine.
+  - **A "TWO SESSIONS MUST NOT INTERFERE" TEST NEEDS THEM TO SHARE THE RESOURCE, WHICH
+    A ROOMY POOL PREVENTS (2026-09-02, same slice):** the foreign-disarm test ran on
+    `pool_size=2`, so the two blocks never touched the same connection and restoring the
+    old historical-list disarm changed nothing. `pool_size=1` FORCES the shape the hazard
+    needs — X arms C and commits, Y picks C up and arms it on its own clock, X's block
+    exits — and the mutation then fails by name. Same family as the anti-vacuity rule
+    already recorded for the cross-thread case (with a larger pool the other thread gets
+    a fresh connection and passes for free): for any interference test, assert or force
+    that the two parties really share the thing.
+  - **A NESTED-STATE TEST MUST PUT THE INTERESTING VALUE ON THE OUTER LEVEL, OR
+    "RESTORED" AND "ERASED" READ THE SAME (2026-09-02, the deadline expiry):** the
+    expiry is stashed in `session.info` and restored on exit so nesting works. Tested
+    with a LONG outer and a SHORT inner, the post-exit assertion is
+    `deadline_expired() is False` — which is equally true if the key was restored and if
+    it was deleted outright, so replacing the restore with an unconditional `pop` passed.
+    Making the OUTER the expired one turns the same assertion into a discriminating
+    `True`. GENERAL FORM: for any save/restore, arrange the fixture so the restored value
+    and the absent value produce DIFFERENT answers.
+  - **A MUTEX WITH NO TIMEOUT IS A HANG WITH A GOOD REASON, AND THE WORK BELOW IT IS WHAT
+    DISAPPEARS (2026-09-03, S2.5):** `WriterGate.acquire()` waited on a `Condition` with no
+    bound, which is *correct* for a writer — a write that waits is right, a write that
+    proceeds ungated is the data-loss bug the gate exists to prevent. It is wrong for the
+    pass tail's WAL checkpoint, which takes the gate on the way past, and `record_run` sits
+    BELOW it: so a long writer did not merely delay the checkpoint, it deleted the run
+    record, and a stalled pass left no account of itself at all. THE RULE: when adding a
+    bound to a shared primitive, ask what each caller does when it gives up — a caller that
+    would proceed anyway must not get the bound (the default here stays unbounded, and the
+    negative twin pins that), and a caller that can honestly SKIP gets it. THE SKIP IS ITS
+    OWN OUTCOME: `checkpoint_wal` already returned `None` for "disabled / not due", so
+    folding a gate-busy skip into `None` would have made "could not run" and "was never
+    asked to run" indistinguishable in the run report — the recorded one-key-two-meanings
+    defect, in a return value. RIDER that cost a rewrite: `except WriteGateBusy` is
+    *evaluated* when an exception propagates, so binding that name with an import INSIDE the
+    `try` turns any earlier failure into a `NameError` from the handler; the exception class
+    has to be imported at module level even when the function it guards imports lazily.
+
+  - **A PRESCRIBED REMEDY CAN BE A REVERT OF A RECORDED FIX — read the module's own
+    docstring before implementing the plan item that names it (2026-09-03, S3.5):** the
+    brief's first remedy for the rollup's per-batch full scan was "re-key the batch loop on
+    the integer PK". `columnar.py`'s own docstring records why that key was ABANDONED:
+    `KeywordMention.id` carries no `AUTOINCREMENT`, so a DELETEd rowid can be reused, and
+    with `index_article`'s delete-then-bulk-insert idiom a rowid keyset was LIVE-REPRODUCED
+    both double-counting and silently dropping rows (the PR-D / W2 correction). Bounding
+    `id <= MAX(id)` closes the append direction and NOT the reuse one: a re-index that frees
+    the top rowids and reinserts there lands at ids inside the bound, behind an advanced
+    cursor. The plan's PERFORMANCE claim was exact and only its remedy was unsafe, which is
+    the distinction worth carrying — verify the measurement, then check the fix against what
+    the code already knows. GENERAL FORM: a plan written from measurements is trustworthy
+    about the defect and not automatically about the repair, and the docstring beside the
+    line you are about to change is where the previous repair's reasoning lives.
+  - **AN EXPRESSION OVER AN INDEXED COLUMN MAKES THE INDEX UNREACHABLE, SO ADDING THE INDEX
+    PROVES NOTHING — remove the expression (2026-09-03, S3.5):** the rollup's keyset was
+    `WHERE COALESCE(created_at, :epoch) <= :bound AND (COALESCE(...) > :cursor OR ...)
+    ORDER BY COALESCE(...), id`, and EXPLAIN over the statements the REAL build emits (a
+    listener, not a hand-written lookalike — the recorded probe-is-a-lookalike lesson) said
+    `SCAN keyword_mentions` **plus** `USE TEMP B-TREE FOR ORDER BY` per 50k batch, i.e. it
+    sorted its whole match set every batch. Measured: adding `(created_at, id)` left that
+    plan **byte-identical**, because an expression is not indexable. The fix is to make the
+    predicate a plain range, which here means streaming the NULL rows as their own phase —
+    and NOT an expression index, because alembic's autogenerate cannot compare those and one
+    would leave permanent spurious drift plus an `alembic_stamp_align` schema-behind verdict
+    (the recorded 2026-08-20 NOCASE case). Splitting a scan on nullability has its own
+    correctness question: a rowid keyset is safe on the NULL phase *only* because nothing
+    can ADD a row to it mid-scan, which is a claim about every insert path and was verified
+    against both real idioms (a plain ORM `add` and the bulk `insert(Model), [rows]`) plus
+    the absence of any raw `INSERT INTO` in `src/` — not assumed from the column default.
+  - **A `busy_timeout` IS THE HOLD: against a pinned WAL the whole cost of
+    `wal_checkpoint(TRUNCATE)` is the busy handler, and the pinned verdict is free
+    (2026-09-03, S4.1):** measured on the real PRAGMAs with a reader holding an unexhausted
+    cursor (4.1 MB WAL, 423 frames) — `TRUNCATE` at `busy_timeout=5000` cost **5012 ms**,
+    returned `busy=1` and moved nothing; `PASSIVE` cost **0.0 ms** and backfilled 423/423;
+    `TRUNCATE` at `busy_timeout=0` cost **0.0 ms** and returned the same `busy=1`; with the
+    reader closed, `TRUNCATE` took 0.8 ms and left the WAL at 0. So waiting bought no
+    information a later boundary would not get, while guaranteeing a multi-second hold of
+    the write gate at every pass boundary. PASSIVE is what actually bounds growth while
+    pinned (it backfills to the oldest reader mark; only the FILE reset needs the reader
+    gone). **THE PLAN'S OWN GATE IS REFUTED AND PINNED AS REFUTED:** attempting TRUNCATE
+    only when `log_frames == checkpointed_frames` after the passive step does NOT mean
+    "nothing is pinned" — a reader whose snapshot sits at the current END of the WAL
+    satisfies it exactly (423 == 423) while still pinning the file — and adopting it also
+    breaks the UNPINNED path, since with no reader the frames also match and the TRUNCATE
+    would be skipped, leaving the file unreclaimed. There is nothing to predict: not
+    waiting is the fix.
+  - **`fetchall()` OVER A `LIMIT` ALREADY COMPLETES THE STATEMENT, so an explicit
+    `close()` there is belt and not the mechanism (2026-09-03, S4.2, caught by a mutation
+    that SURVIVED):** the registry's close-never-merely-commit finding is about
+    `fetchmany()` on a **partially drained** Result, where an un-reset prepared statement
+    pins the read snapshot independently of BEGIN/COMMIT. I copied that comment onto a
+    batch loop that fully drains each bounded query with `fetchall()`, and the mutation
+    removing the `close()` reddened nothing — correctly, because the statement had already
+    reached natural completion. A claim in a comment that the code does not depend on is a
+    fabricated mechanism inside an honesty fix; state which of the two shapes you have.
+  - **A FIXTURE WHOSE ENTITIES CARRY SLACK CANNOT SEE A LOST ROW (2026-09-03, S4.2):** a
+    keyset mutation advancing the cursor one row too far (skipping a row per chunk) passed
+    a chunk-size-agreement test twice. With one keyword and a lopsided majority, no output
+    field moves; with 24 keywords at THREE mentions each, losing one still left every
+    keyword above the floor and the tally unchanged. Only ONE mention per keyword makes a
+    keyword's presence in the tally depend on a single row, and then the mutation fails
+    immediately. GENERAL FORM: for a guard that a scan lost nothing, build the fixture so
+    each counted entity depends on exactly one row — any redundancy per entity is slack the
+    mutation hides in, and this is the same "a probe's data distribution is part of the
+    lookalike" trap with REDUNDANCY as the varying axis. Corollary from the same matrix: a
+    test of a HELPER is not a test of its WIRING — every assertion called `_wal_gauges()`
+    directly and deleting its use from the sample dict reddened none of them, which is the
+    recorded unguarded-wiring defect recurring one subsystem over.
+  - **A TEST CAN BE POISONED BY ITS OWN BACKGROUND THREAD, AND PASS ALONE ONLY BECAUSE THAT
+    THREAD DIES — remove the kick, never out-wait it (2026-09-03, the persisted-serve
+    race):** `test_persisted_serve_matches_live_and_discloses_the_store` took its live
+    baseline by calling `top_terms` with the rollup serve ON and `_STATE["con"]` None,
+    which is precisely the condition `windowed_rows` answers with
+    `_trigger_build_async()`. So the test raced a daemon in-memory build against its own
+    four statements, and that build's swap sets `persisted=False`: landing before the
+    test's `_STATE.update` is harmless, landing between the serve and the `basis()`
+    composition is a red `assert 'memory' == 'persisted'`. **It was green for years
+    because in ISOLATION the racing build reads the PROCESS store via `session_scope()`,
+    and in a single-file run that store is unmigrated — it raises `no such table:
+    keyword_mentions` before it can reach the swap.** A full suite migrates the store, the
+    build completes, and the landing point is then decided by how long the build takes —
+    which two extra round trips in an unrelated rollup change were enough to move. THREE
+    GENERAL POINTS. (a) A test that passes alone and fails in a full run is not
+    automatically pollution FROM another test: it can be its OWN worker, which only becomes
+    capable of finishing once the shared fixtures other files set up exist — so ask what the
+    thread READS, not only what the tests write. This is the mirror of the recorded
+    "a test that starts a real worker and never joins it poisons the whole pytest process":
+    there the victim is elsewhere, here it is the test itself. (b) Prefer removing the kick
+    to draining it — taking the baseline with the serve explicitly OFF makes the race
+    impossible by construction, and the `kicked == []` assertion then reddens
+    DETERMINISTICALLY when the guard is removed, where an out-wait reddens only by luck.
+    (c) Prove the two halves SEPARATELY and synchronously before touching either side (the
+    serve kicks a build; the swap flips an installed state), or "I made the test
+    deterministic" is indistinguishable from "I relaxed an assertion I had not understood" —
+    and ship both halves as named guards, so the next reader can check the reason rather
+    than re-derive it.
+  - **A GUARD WRITTEN FOR THE DEFECT IS NOT A GUARD ON THE CODE — a mutation matrix over my
+    OWN new tests found SEVEN gaps, and every one of them was a test that could not see the
+    branch the shipped code takes (2026-09-03, S5.1/S5.2):** twenty-two mutations, seven
+    survivors, all against tests written in the same hour as the fix. The shape recurs, so
+    it is worth naming rather than listing: each guard was aimed at the CASE THE FIX WAS
+    ABOUT and not at the CASE THE FUNCTION EXECUTES. (a) **A verdict-parity test cannot see
+    a scoping change.** Deleting the `source_id IN` filter — the whole point of S5.1 —
+    changed NO verdict: the extra sources land in `per`, the caller only ever reads
+    `s.id in per`, and the baseline is the FROZEN cut either way, so every status and every
+    reason stayed identical while the per-batch read went back to walking the corpus. A
+    slice whose win is COST needs a guard on cost or shape; parity is blind to it by
+    construction. (b) **A cross-source statistic needs a fixture that crosses sources.** The
+    furniture ubiquity cut is `max(5, 0.3·n_sources)`, and the cohort fixture gives every
+    source its own unique terms, so no document frequency ever reaches the cut, every share
+    is 0.0, and the assertion `alone == together == frozen` held as `0.0 == 0.0 == 0.0` —
+    passing for a reason unrelated to its claim. (c) **"consulted at least twice" is
+    satisfied by one loop ticking twice**: count EXACTLY, and give the two loops DIFFERENT
+    row counts (quarantine one article; the mention GROUP BY has no quarantine filter) so
+    the total names which half went missing. (d) **One function, two branches, two guards** —
+    the scoped path chunks its mention aggregate and the unscoped path does not, so a test
+    driving one leaves the other's pause check unexercised. (e) **When two scans can both
+    pause, the first one always wins**, so `should_pause=lambda: True` only ever exercises
+    the freeze; supplying a frozen cohort is what moves the pause to the scoped read the
+    gate actually runs per batch. (f) **A negative twin at production granularity over a
+    tiny fixture proves nothing**: the check fires every 5,000 rows and the fixture walks
+    76, so "a callback answering False completes the scan" was true whatever the code did —
+    it needs the compressed threshold AND an assertion that the callback was consulted at
+    all. (g) The `ValueError` refusing a cohort frozen at the wrong `min_articles` — added
+    in the same slice precisely because the failure is invisible — had **no test whatsoever**.
+    GENERAL FORM, and the cheap way to get it right the first time: for each new guard, name
+    the branch it executes and ask what ELSE in the function could satisfy the assertion;
+    then run the mutation before believing the answer. A mutation that reddens nothing is a
+    finding about the test, and here it was the finding seven times out of twenty-four.
+    **AND AN EIGHTH GAP THE MATRIX COULD NOT SEE, because it was in the SHIPPED code rather
+    than the tests:** the memory guard was wired into the bulk job's scan and NOT into the
+    per-pass ride-along, which calls the same whole-corpus freeze from the scheduler's
+    housekeeping lane. That is "gate EVERY entry point" recurring for the Nth time, and the
+    tell is the same every time — the fix was written while reading ONE caller. Before
+    declaring an interruption, a hold or a pause wired, grep for every caller of the thing
+    being guarded, not for the caller you happened to open.
+  - **THE FOURTH RECURRENCE OF "GATE EVERY ENTRY POINT" HID IN THE PATHS KICKED BY A
+    REQUEST — and the primitive the brief named would have shipped a worse bug than the
+    one it fixed (2026-09-03, the all-diagnostics bundle's exclusive hold):** the bundle
+    runs for tens of minutes and competed with a collection pass the whole time, so it
+    takes the exclusive hold. Enumerating who else must respect that hold, the answer
+    looked complete — `run_now` checks it, the re-index job checks it, the continuous
+    loop is paused by the window. The two that did not check are the two ROLLUP BUILDS,
+    and the reason they were absent from the enumeration is structural: they are kicked
+    from a SERVE, i.e. by any HTTP read that happens to find the change gate open, so
+    they never appear in a list of "background work" — nothing schedules them. A
+    whole-corpus columnar rebuild is the heaviest thing this process does outside a pass.
+    GENERAL FORM: when listing what competes for a machine, the request-kicked paths are
+    the ones missing, because they do not look like background work; grep for what STARTS
+    a thread, not for what is scheduled.
+    **THE SECOND HALF IS SHARPER, AND IT WAS THE BRIEF'S OWN INSTRUCTION:** the slice was
+    specified as "acquires the existing exclusive hold (`runner.hold_exclusive()`)", and
+    doing exactly that would have been a defect. `_exclusive_hold` is a **BOOLEAN**, so a
+    bundle started during a restore would clear the RESTORE's claim on its own release and
+    put a manual "Run now" back on the machine mid-restore — reinstating precisely the
+    concurrency defect the 2026-07-24 lesson records, from inside the fix for it. The
+    codebase already had the answer: `exclusive_window()` is the RE-ENTRANT, imbalance-proof
+    wrapper whose own docstring says it "restores the flag to what it FOUND", and it exists
+    because this was learned once already. RULE: before calling a hold/release pair
+    directly, read whether the flag is a boolean or an owned/counted one — a boolean pair
+    is safe only for a single outermost owner, and a nested caller must use the wrapper.
+    The test that pins it enters an OUTER window first and asserts the outer claim survives
+    the inner block's exit; without the outer window every mutation passes.
+    **THIRD, on the payload:** a hold whose pause is bounded and best-effort must not
+    publish `exclusive: true`. `paused_collection` is the pause's OWN return value (was the
+    loop running and did it get signalled), `nested` says an outer operation already owned
+    the machine, and a caller that took no hold gets `held: false` with a reason — three
+    facts instead of one claim the mechanism cannot support.
+  - **A HIGH-WATER INSTRUMENT USED AS A PER-ITEM DELTA PUBLISHES A FABRICATED ZERO FOR
+    EVERY ITEM AFTER THE LARGEST — and the first item's number looks right, which is what
+    carries it past review (2026-09-03, the bundle's `rss_delta_kb`):** `ru_maxrss` never
+    falls, so once the process peak is set, a member that really allocated 40 MB reports a
+    delta of 0. The recorded 2026-08-06 lesson names this for a TEST that could not fail;
+    the costlier form is a SHIPPED PAYLOAD, where ~58 of 59 members published 0 under a
+    field named for their memory cost, and 0 reads as "this member allocated nothing"
+    rather than as "we could not tell". Every field bundle collected since carries it.
+    THREE THINGS THE FIX NEEDED. (a) The discriminating test FIXES a high peak and asserts
+    the delta still moves — a test that merely checks the key exists, or that it is
+    non-negative, passes against the defect. (b) The high-water rise is still worth
+    publishing and must keep its OWN name: "did this member allocate 40 MB" and "did it
+    push the process past its all-time peak" are different questions, and only one of them
+    is answerable after the first big member. (c) An unreadable instrument OMITS the field
+    and NAMES itself (`rss_basis`), because a `(after or 0) - (before or 0)` is the same
+    fabricated zero by another route. RIDER, on reuse: the instruction "reuse it, don't
+    write a second one" is testable BEHAVIOURALLY — monkeypatch the function that must be
+    reused and assert the caller reflects it, so an inlined second copy fails where a
+    source grep for the import would pass.
+  - **A LOCK THAT GRANTS TO WHOEVER FINDS IT FREE MAKES ITS OWN WAIT COUNTER MEANINGLESS
+    (2026-09-03, S2.6c):** the gate's `max_wait_s` was the field's headline number — 6,236
+    seconds — and it could not be read as a long write, because `acquire()` had a fast path
+    that took a free gate without queueing. A thread looping acquire/release re-takes it the
+    instant it releases, while the waiter it just notified is still being scheduled, so the
+    figure measures STARVATION and a hold indistinguishably. FIFO tickets fix the number as
+    much as the fairness. TWO THINGS THE FIX TURNS ON: `notify()` becomes `notify_all()`,
+    because under FIFO the one thread `notify()` wakes may not be the queue head, and it
+    goes straight back to sleep while the head is never woken — a lost wakeup that a
+    fairness change introduces rather than removes; and a timed-out waiter must REMOVE
+    itself and wake whoever is now the head, or the abandoned entry sits at the head forever
+    and blocks every later acquire (which also means `_reset_for_tests` must clear the queue,
+    not just the owner). **AND THE OBVIOUS WAY TO SOLVE THE FIRST IS A 5.3x THROUGHPUT
+    REGRESSION, which only a measurement finds:** one shared condition plus `notify_all()` is
+    correct, reads as the textbook fix, and at 50 workers x 200 us holds took **2543 ms
+    against the old 482 ms**, because every release woke all 49 waiters so that one could
+    proceed — a thundering herd on the very collector throughput the field report is
+    complaining about. Give each waiter its OWN `Condition` over the SHARED lock and wake the
+    head alone: one wakeup per handoff, what the pre-FIFO `notify()` cost. Then state what
+    fairness itself costs rather than implying it is free — 473 -> 550 ms wall (+16%) while
+    the worst wait falls 458 -> 14.6 ms (31x), within noise when uncontended. GENERAL FORM:
+    a fairness fix on a contended primitive changes a HOT PATH, so benchmark it against the
+    algorithm it replaces before shipping; and when the honest version is slower, the
+    question is whether the fix can be made cheaper, not whether the regression is
+    acceptable. TESTING NOTE, and the reason the guard is trustworthy: a thread race cannot
+    deterministically discriminate FIFO from the old `notify()`-based "FIFO-ish" order.
+    The load-bearing half is the fast path's REFUSAL, and that is testable directly — queue
+    a ticket, leave the gate FREE, assert a fresh acquire is not granted — which reddens
+    exactly when the `and not self._queue` guard is removed.
+
+  - **AN INSTRUMENT THAT KEEPS NAMING A THREAD AFTER IT LET GO ACCUSES THE INNOCENT
+    (2026-09-03, S2.6b):** the write gate can name whoever is inside the WRITE window, and
+    can never name the thread that actually pins the WAL — a long-lived READ transaction
+    stops `wal_checkpoint(TRUNCATE)` reclaiming anything with the gate free the whole time,
+    which is the shape the field's three-hour WAL growth had. A checkout/checkin pair names
+    it, and the load-bearing property is the CHECKIN: an instrument that recorded checkouts
+    and never forgot them would name whichever thread ran last on every reading, so it would
+    be worse than no instrument. Its negative twin ("a returned connection is NOT listed") is
+    therefore the test that matters, and the empty case has to be stated in the payload —
+    "nothing is checked out at this instant" is not "nothing ever was". RIDER: a
+    process-global register attached to the real app engine is order-dependent test
+    pollution by construction, so it joins conftest's autouse reset list — clearing the
+    RECORD and never the listeners, since detaching them would leave every later test
+    measuring an instrument that is not running.
+
+  - **TWO THINGS THAT EACH REFUSE TO OVERLAP THEMSELVES ARE NOT THEREBY SERIALISED — and
+    SKIPPING on contention starves whichever one is kicked second (2026-09-03, S2.5b):** the
+    housekeeping lane and the whole-corpus briefing recompute each had a non-overlapping
+    lock, each documented as "occasionally skipped, never stacked", and nothing stopped both
+    running at once on the two-core box the field report describes. The obvious fix — a
+    shared lock taken with `blocking=False` — reads like the existing posture and is worse
+    than the bug: the lane is always kicked FIRST in the tail, so the briefing refresh would
+    have found the lock held on essentially every pass and a permanently stale Home would
+    have replaced a slow one. It WAITS instead, bounded, and the bound is what keeps a wedged
+    consumer from pinning the other's thread forever. GENERAL FORM: when serialising two
+    background consumers, look at the ORDER they are kicked in before choosing skip-vs-wait —
+    skip is only fair when arrival order is fair, and a fixed kick order makes it a permanent
+    verdict against the later one.
+  - **A DOCSTRING SAYING "NOT AT IMPORT" IS NOT A GUARANTEE — CHECK WHETHER THE
+    FUNCTION IT NAMES IS ITSELF CALLED AT IMPORT (2026-09-03, the write-gate
+    watchdog):** `start_write_gate_watchdog()` was called from
+    `register_write_gate()`, and BOTH its docstring and the comment at the call
+    site said, in almost those words, that this was "the production wiring,
+    never at import, so a test that imports this module gets no thread". The
+    property was false the moment it was written: `session.py` calls
+    `register_write_gate(SessionLocal)` inside a module-level `if _IS_SQLITE:`,
+    so merely `import src.database.models` spawned a monitoring thread. I wrote
+    the correct rule down twice and then satisfied neither. GENERAL FORM: when a
+    comment asserts "X does not happen at import", the check is not to re-read
+    the comment but to grep for the CALLERS of the function it points at and ask
+    what scope each of them runs in — a function is only as lazy as its most
+    eager caller. THE GUARD THAT CAUGHT IT was `test_import_has_no_side_effects`,
+    which asserts the property BEHAVIOURALLY in a subprocess (`n0 ==
+    threading.active_count()` after importing the models) rather than by reading
+    the source — the only shape that could have caught this, since every source
+    grep for the honest string finds it. THREE RIDERS. (a) The trigger has to be
+    the point where the watched thing can first EXIST: `watchdog_tick` reads the
+    gate's holder and nothing else, and a hold cannot exist before an acquire, so
+    arming on the first `acquire()` loses no coverage while a migration, a CLI or
+    a test that only imports pays for no thread. (b) A "have we decided yet" flag
+    is NOT the same as a "did we start" flag: `_WATCHDOG_STARTED` stays False
+    forever when the watchdog is disabled, so keying the hot path on it re-reads
+    the environment and re-takes a lock on every single write — the disabled case
+    needs its own one-shot flag, and the mutation that swaps them reddens only a
+    test written for that case. (c) **THE PRE-EXISTING TEST FOR THIS WAS PASSING
+    VACUOUSLY**: `test_the_watchdog_is_started_by_the_production_wiring` asserted
+    `_WATCHDOG_STARTED is True` after importing the session module, and passed
+    because an EARLIER test in the same file had already taken the gate and armed
+    it — so it held whatever the wiring did. It was re-anchored (deliberately,
+    per the guard-that-anticipates-its-own-supersession rule) onto the real
+    property in a subprocess: no thread on import, a thread after a real ORM
+    write. Anything process-global ("has it started yet", "was this registered")
+    is unprovable in-process once any sibling test can arm it.
+  - **A `pgrep -f` / `pkill -f` PATTERN MATCHES THE WRAPPER RUNNING IT — twice in
+    one session, in two different disguises (2026-09-03):** the recorded 2026-08-08
+    lesson names `pgrep -f` in a wait loop; both recurrences here evaded it because
+    neither looked like that example. (a) `until ! pgrep -f "[p]ytest -q --continue"`
+    — the `[p]` bracket trick that defeats a self-match in `ps | grep` does NOTHING
+    for `pgrep -f`, because the pattern is a REGEX matched against every command
+    line INCLUDING the waiting shell's own, which contains the literal
+    `pytest -q --continue-on-collection-errors` from the command it is about to
+    run. The loop waited on itself forever, and a wait that never returns is
+    indistinguishable from work that never finishes. (b) `pkill -f "python -m
+    pytest"` killed the very shell that issued it (exit 144). RULE: never match a
+    process by a string your own command line contains — match on an absolute
+    argv[0] (`ps -eo args | grep "^/abs/path/.venv/bin/python -m pytest"`), or
+    record the PID when you START the process and wait on that. And prefer the
+    harness's own job control (a background task id) to any pattern at all.
+
+  - **AN INSTRUMENT THAT FORKS CAN DESTROY THE EFFECT IT IS MEASURING — and the
+    obvious portable substitute for `/proc` does exactly that (2026-09-03, the
+    macOS portability lane on the shrink_memory measurement):** the probe behind
+    the S1.2 release ladder read `/proc/self/status`, which does not exist on
+    macOS, so the test died there with `CalledProcessError` — a real portability
+    defect in a claim (about SQLite) that is not Linux-specific. The obvious
+    dependency-free fix is `ps -o rss=`, which reports CURRENT resident size on
+    both platforms and looks perfect. It is wrong, and only a repeated run says
+    so: five runs of each candidate on the identical workload gave
+    **`/proc` 31.9 MB freed 5/5 · psutil (one Process object, hoisted) 31.9 MB
+    5/5 · `ps -o rss=` −0.1 MB 5/5**. Reading RSS by FORKING prevents the
+    allocator returning the pages, so the instrument erases the release it was
+    added to observe — and shipping it would have made macOS report
+    "shrink_memory freed nothing" forever: a FABRICATED FAILURE, exactly as
+    dishonest as a fabricated pass and much easier to believe, because it looks
+    like the code under test failing on another platform. **THE SAME HAZARD HAS A
+    SECOND, QUIETER FORM**: constructing a fresh `psutil.Process()` on every read
+    perturbs it identically (0 MB freed), while hoisting ONE Process object out
+    of the loop agrees with `/proc` to the hundredth of a MB. So a memory
+    instrument must be resolved ONCE, before anything is measured, and each
+    reading must allocate as close to nothing as possible. **PROCESS NOTE, and
+    the reason this entry is trustworthy at all: I reached the right conclusion,
+    then refuted it, then re-reached it.** Single runs of each configuration
+    disagreed with each other (66 MB / 0 MB / 49 MB / 0 MB across four one-off
+    probes), and from that noise I first concluded "the fork destroys it", then
+    "no, it is run-to-run variance, my mechanism was wrong". Only running each
+    configuration five times showed both readings were wrong about the noise: the
+    results are perfectly deterministic PER CONFIGURATION (5/5 identical each) and
+    it was the one-at-a-time comparison that was unreliable. When a measurement
+    disagrees between runs, the answer is more runs of each arm, never a better
+    story about the difference. `resource.getrusage`'s `ru_maxrss` was never a
+    candidate: a high-water mark cannot measure a DECREASE and would report
+    success for any implementation at all (the recorded 2026-08-06 lesson).
+    GUARD: because Linux prefers `/proc` and would never exercise the fallback,
+    a dedicated test drives the real probe with ONLY `/proc/self/status` blocked
+    (psutil reads `statm`, so it survives — a blanket `/proc` blackout would
+    disable the very fallback under test and prove nothing) and requires the
+    portable path to see the same release. Three mutations redden it by name:
+    fork per read, Process per read, and no fallback at all.
+  - **AND THE GUARD I JUST DESCRIBED FABRICATED A DIAGNOSIS ON THE PLATFORM IT WAS
+    WRITTEN FOR (2026-09-03, the macOS lane, one day later):** it COMPARES the psutil
+    answer against a `/proc` reference, and its own docstring says so — "checked FROM
+    Linux". It had no gate, so it also ran ON macOS, where the shim blocking
+    `/proc/self/status` does nothing (the file never existed), psutil takes the Mach
+    path, and macOS's allocator does not hand freed pages back to the OS at all. It
+    then reported **"the instrument is perturbing the measurement"** about a platform
+    where the instrument is fine and the PLATFORM is what freed nothing. A fabricated
+    diagnosis is exactly as dishonest as a fabricated pass, and it is worse to debug,
+    because it names a mechanism that is not there. **THE PART THAT MATTERS IS THAT
+    THE FIX WAS ALREADY WRITTEN TWENTY LINES ABOVE IT**: the sibling premise test
+    skips when `instrument != "proc"` and the platform freed nothing, with the reason
+    "calling this a failure would report a platform we never measured as a broken
+    shrink_memory" — I wrote that guard and the ungated test in the same pass, which
+    is the recorded "a lesson recorded against one assertion does not propagate itself
+    to the one beside it" trap at its shortest possible range. GENERAL FORM: a test
+    that COMPARES two instruments needs its REFERENCE, so gate it on the reference
+    being available — not on a `sys.platform` string, which is a proxy for the thing
+    you actually need — and make the skip say what stays unchecked there.
+  - **A BAR SET AT EXACTLY `signal + one noise quantum` HAS ZERO SLACK — and whether
+    to raise the input or change the claim is decided by asking if the noise is FIXED
+    or PROPORTIONAL (2026-09-03, the shared-budget test on macOS):**
+    `test_both_side_files_share_ONE_budget_not_one_each` failed at 1.353s and 1.385s
+    against a 1.25s bar on BOTH lanes of one commit — systematic, not a flake (the
+    recorded push-vs-PR A/B), in code the branch never touched. The mechanism:
+    `_retry_while_locked` checks the deadline BEFORE `time.sleep(0.25)`, so an
+    iteration starting a hair inside the budget legitimately returns one whole quantum
+    past it — the shared case is **bimodal** at `budget` or `budget + 0.25`. The bar
+    was `budget + exactly one quantum`, i.e. it allowed the overshoot and left nothing
+    for `sleep()` returning late; an idle Linux box measured 1.213–1.226 against it,
+    **24 ms of headroom**, so it was about to bite the blocking lane too. THE
+    CALIBRATION RULE, which refines the recorded WAL and llm-throughput entries with
+    the case neither covers: that llm lesson says raise the input when the noise
+    scales with the work and change the CLAIM when it does not — here the noise is
+    FIXED (one quantum) while the SIGNAL scales with the budget, which is the third
+    combination and the one where raising the input is strictly the strongest lever.
+    1.0s → 2.0s doubles the gap and leaves the quantum where it was: measured across a
+    full-quantum sweep, shared 2.002 flat (worst legal 2.25), per-file ≥ 3.00, bar
+    2.60 — 0.35 s of slack above and 0.4 s below, where there had been 0.03. The
+    per-file mutation reddens at 3.13. COROLLARY worth grepping for: **any loop that
+    checks a deadline before sleeping overshoots by up to one sleep**, so every budget
+    assertion over such a loop owes room for a quantum it cannot avoid.
+  - **A GUARD THAT FINDS THE CALL IS NOT A GUARD THAT RESOLVES THE NAME — and I wrote
+    both the guard and the defect in one pass (2026-09-03, the header-cache
+    invalidation):** the ledger already says *"any 'module X imports what it uses'
+    assertion has to resolve the binding (ast, enclosing scope), or it is satisfied by
+    an import that cannot be seen from the call"* — and the first cut of this slice's
+    guard asserted that `invalidate_header_cache` appeared as an `ast.Call` anywhere
+    in the file. It did: in a function whose scope had no import for it, so the
+    endpoint would have raised `NameError` in the `finally` on the very path the guard
+    existed to protect. **Only ruff's F821 caught it.** So the recurrence is the
+    finding, and what the entry was missing is the RECIPE: build a `child -> parent`
+    map, walk up from the call collecting the scopes it can see (each enclosing
+    function, the module; a `ClassDef` only when the call sits directly in it, since
+    class names are not visible to nested functions), and for each scope scan its own
+    body for a binding — an import alias, a `Store` `Name`, a `def`/`class` of that
+    name, a parameter, a `global` — WITHOUT descending into nested scopes, which have
+    their own. Three mutations: dropping the import reddens by file and line, deleting
+    the call reddens (the enumeration half still holds), and **hoisting the import to
+    module scope must PASS** — the negative twin, because a guard that demanded one
+    import style would be a fabricated failure the day someone legitimately moved it.
+  - **A VERIFICATION TABLE NAMING TESTS IS AN EVIDENCE TABLE, AND I FABRICATED 14 OF 24
+    CELLS FROM MEMORY (2026-09-03, the brief's §7 contract):** the recorded 2026-08-23
+    lesson says a table "has a cell for every intersection and an empty one reads as an
+    omission, so the shape itself asks to be completed", and names back-filled FIGURES
+    as the hazard. The same pull applies to IDENTIFIERS, and it is easier to miss
+    because a plausible test name looks like a citation rather than a number: writing
+    one row per slice from memory of work I had done myself produced 14 names out of 24
+    that **do not exist in the tree** — every one grammatical, house-style, and
+    describing the right property. A reviewer following such a table finds nothing and
+    cannot tell an invented name from a renamed test. THE DETECTOR IS TWO LINES AND
+    SHOULD RUN BEFORE ANY SUCH TABLE SHIPS: extract every backticked `test_*` from the
+    document, list the real ones with `grep -rho "^def \(test_[a-zA-Z0-9_]*\)" tests/`,
+    and `comm -23` the two — anything printed is fabricated. Re-derived from the files,
+    the same table came to 57 names and all 57 resolve. GENERAL FORM: a claim is only
+    citable if it was READ; when a document's job is to let someone else check the work,
+    every identifier in it is a measurement, and memory is not a measurement.
+  - **EDITING ONE FILE MID-RUN MANUFACTURED EIGHT FAILURES, AND "NEVER SWITCH BRANCHES"
+    UNDERSTATES THE RULE (2026-09-03):** the recorded 2026-07-09 lesson says never switch
+    git branches while a background suite runs. I did not switch anything — I reordered
+    two import lines in `src/backup/merge.py`, semantically identical, while a full run
+    was at ~55%. The run reported **8 failures** across four files, every one of which
+    reads that module's source; all eight pass alone, all 68 pass together, and the clean
+    re-run reconciles exactly (8596 + 8 = 8604). THE DIAGNOSTIC SIGNATURE is worth more
+    than the count: `inspect.getsource(merge.run_restore)` returned
+    `'    staged: StagedArtifact,\n'` — a single line of the SIGNATURE — so every source
+    anchor failed with `ValueError: substring not found`. If you see a source-reading test
+    fail that way, suspect the tree moved under the run before suspecting the code.
+    **THE MECHANISM IS NOT ESTABLISHED, and saying so is the point.** Two hypotheses were
+    tested and neither reproduced: a `co_firstlineno` line-shift self-corrects, because
+    `inspect.findsource` walks BACKWARD to the nearest `def`; and a `linecache` poisoning
+    from a read during `open(p,"w")`'s truncation window explains the spread across
+    minutes but could not be reproduced either. So the rule stands on the reconciliation,
+    not on a story: **any write to a tracked file during a run can invalidate it**, because
+    a suite reads source from disk long after importing it, and the wording to remember is
+    "do not mutate the tree", not "do not switch branches". Cost: one 18-minute run, plus
+    the time spent believing eight real-looking failures.
+
 ## Open queue (when maintainer says proceed)
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
   is still open (found 2026-08-20 while reviewing a CI red on PR #963; RECORD-ONLY, nothing

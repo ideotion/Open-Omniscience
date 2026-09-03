@@ -37,6 +37,7 @@ from sqlalchemy.orm import sessionmaker
 # Data directory resolution is centralised in src.paths so a source checkout, an
 # editable install under $HOME, and a wheel install into a read-only location all
 # behave correctly (see that module's docstring). OO_DATA_DIR still wins.
+from src.database.writer import _SESSION_FLAG as _WRITE_GATE_SESSION_FLAG
 from src.paths import data_dir, default_sqlite_url
 
 DATA_DIR = data_dir()
@@ -68,12 +69,23 @@ def _build_engine() -> Engine:
         # block them. Overflow connections beyond pool_size are closed on return
         # (each re-open re-derives the SQLCipher key — a known, logged cost); the
         # governor's memory back-off keeps the number actually open in check.
+        # S1.1: the pool's SIZE is now a function of the machine, not a constant.
+        # 8 + 64 connections at 64 MiB of page cache each is a 4.6 GB worst case that
+        # nothing computed before; on the 3.3 GB field machine that is the whole
+        # machine. The budget resolves it from total RAM ONCE, and an explicit
+        # OO_DB_POOL_SIZE / OO_DB_MAX_OVERFLOW still wins (it is read inside the
+        # budget, and reported there as an override). Read HERE, at engine build, so
+        # it is applied before the first connection exists — the pool size cannot be
+        # changed on a live engine.
+        from src.config.memory_budget import budget as _memory_budget
+
+        _b = _memory_budget()
         return create_engine(
             DATABASE_URL,
             future=True,
             creator=_creator,
-            pool_size=int(os.getenv("OO_DB_POOL_SIZE", "8")),
-            max_overflow=int(os.getenv("OO_DB_MAX_OVERFLOW", "64")),
+            pool_size=int(_b["db_pool_size"]),
+            max_overflow=int(_b["db_max_overflow"]),
             pool_timeout=float(os.getenv("OO_DB_POOL_TIMEOUT", "30")),
         )
     # PostgreSQL / other: modest pool suitable for a single-user server.
@@ -116,9 +128,17 @@ def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
         # Resolved via the power-profile knob (OO_SQLITE_CACHE_MB override, else the active
         # profile; Optimized = 64, byte-identical to today). Read PER CONNECTION, so a profile
         # switch applies to new connections; never raises (clamped ≥ 2).
+        # S1.1: the profile knob still decides when the operator set one; otherwise the
+        # RAM-aware budget does, so the per-connection cache scales with the machine
+        # instead of being a flat 64 MiB on a 3.3 GB box.
+        from src.config.memory_budget import budget as _memory_budget
         from src.config.power_profiles import sqlite_cache_mb
 
-        cache_mb = sqlite_cache_mb()
+        cache_mb = (
+            sqlite_cache_mb()
+            if os.getenv("OO_SQLITE_CACHE_MB") is not None
+            else int(_memory_budget()["sqlite_cache_mb"])
+        )
         cursor.execute(f"PRAGMA cache_size=-{cache_mb * 1024}")  # negative = KiB
         cursor.execute("PRAGMA temp_store=MEMORY")
         # WAL RESTING CEILING (STORAGE_5TB_PLAN §3 Phase-A: "journal_size_limit is set
@@ -145,6 +165,35 @@ def _sqlite_pragmas(dbapi_connection, _connection_record) -> None:
         cursor.close()
 
 
+@event.listens_for(engine, "reset")
+def _disarm_progress_handler(dbapi_connection, _connection_record, _reset_state) -> None:
+    """S2.1: no connection may re-enter the pool carrying a progress handler.
+
+    ``statement_deadline`` arms the SQLite progress handler, which is state on
+    the DBAPI CONNECTION, not on the session. A block that ends (or merely
+    commits) while its deadline is still running returns an ARMED connection to
+    the pool, and the next thread to check it out is interrupted on the first
+    thread's clock -- reproduced against the shipped code: with
+    ``pool_size=1`` thread B's own statement raised ``interrupted`` while
+    thread A was still inside its block.
+
+    ``reset`` is the right hook, verified against the installed SQLAlchemy
+    (2.0.52) rather than assumed: it fires before checkin on QueuePool, before
+    close on NullPool (the read-snapshot engines), and on a bare
+    ``raw_connection()`` checkout+close -- so there is no return path that
+    escapes it.
+
+    Defensive by construction: a driver without the attribute, or a connection
+    already closed, needs no disarm and must never turn a checkin into an error.
+    """
+    try:
+        handler = getattr(dbapi_connection, "set_progress_handler", None)
+        if handler is not None:
+            handler(None, 0)
+    except Exception:  # noqa: BLE001 - a checkin must never fail on a teardown
+        pass
+
+
 # Session factory. Explicit commits/flushes for predictable transaction control.
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
 
@@ -160,6 +209,15 @@ if _IS_SQLITE:
     from src.database.writer import register_write_gate
 
     register_write_gate(SessionLocal)
+
+# S2.6 (b): record which thread holds each POOLED CONNECTION. Not a duplicate of
+# the write gate -- a long-lived READ transaction pins the WAL with the gate free
+# the whole time, and that is the thread the gate can never name. Backend-neutral
+# (it records checkouts, not writes) and cheap: a dict entry per checkout, dropped
+# on checkin, no statement text.
+from src.database import pool_watch as _pool_watch  # noqa: E402
+
+_pool_watch.register(engine)
 
 
 def init_db() -> None:
@@ -338,6 +396,124 @@ def close_session(session: SASession) -> None:
         session.close()
     except Exception:
         _LOG.debug("close_session: error during session.close()", exc_info=True)
+
+
+# "This transaction has written." Tracked on the Session CLASS, so it holds for
+# every session in the process — including one bound to an engine the
+# single-writer gate was never wired to (a test engine, a read-snapshot engine).
+# The gate's own flag is checked too, but relying on it ALONE would make the
+# guard blind exactly where the gate is absent. Same listener shape writer.py
+# already proves: set on the first flush / ORM bulk DML, cleared when the
+# OUTERMOST transaction ends (a savepoint has a parent and must not clear it).
+#
+# COST, measured rather than waved away (the recorded "an instrument on a hot
+# path is a load source" lesson): +6 us per ORM statement, against 57 us for a
+# trivial in-memory read -- ~10% there, and a far smaller share of any statement
+# that touches the encrypted store. ``do_orm_execute`` is the per-statement one
+# and it is the price of seeing bulk DML at all: it leaves no ORM state, so
+# ``before_flush`` never fires for it. writer.py already pays this exact shape
+# for gated sessions; this one holds for EVERY session in the process, which is
+# what makes the guard sound on an engine the gate was never wired to.
+_WROTE_FLAG = "_oo_txn_wrote"
+
+
+def _mark_wrote(session: SASession) -> None:
+    session.info[_WROTE_FLAG] = True
+
+
+@event.listens_for(SASession, "before_flush")
+def _wrote_on_flush(session, _flush_context, _instances) -> None:  # pragma: no cover - event
+    _mark_wrote(session)
+
+
+@event.listens_for(SASession, "do_orm_execute")
+def _wrote_on_bulk_dml(orm_execute_state) -> None:  # pragma: no cover - event
+    if (
+        orm_execute_state.is_insert
+        or orm_execute_state.is_update
+        or orm_execute_state.is_delete
+    ):
+        _mark_wrote(orm_execute_state.session)
+
+
+@event.listens_for(SASession, "after_transaction_end")
+def _clear_wrote(session, transaction) -> None:  # pragma: no cover - event
+    if transaction.parent is None:
+        session.info.pop(_WROTE_FLAG, None)
+
+
+def release_idle_connection(session: SASession) -> bool:
+    """End ``session``'s READ transaction so its pooled connection goes back.
+
+    S1.0. A ``Session`` holds a DBAPI connection only while a transaction is open
+    and re-acquires one transparently on its next statement — measured here on
+    SQLAlchemy 2.0.52 with this project's own pool settings (fresh 0, a read 1,
+    ``rollback()`` 0, the next read 1 again).
+
+    WHAT THIS BUYS, measured rather than assumed. Ending the transaction does NOT
+    free a resident connection's page cache: a 64 MiB warm cache stayed at
+    112.5 MB RSS across ``rollback()`` + ``malloc_trim`` and fell to 46 MB only on
+    ``PRAGMA shrink_memory`` or ``close()``. What it changes is how MANY
+    connections exist at once. Before, each collector worker held one from its
+    first read until its feed bookkeeping committed — across the feed fetch and
+    every article fetch — so 50 workers meant 50 warm connections, 42 of them
+    ``max_overflow`` connections this pool CLOSES on return. Releasing between
+    statements collapses simultaneous checkouts to the number of statements
+    actually running, so those overflow connections are largely never created,
+    and any that are hand their cache back when they close. The ``pool_size``
+    core stays resident with its cache by design, at every worker count: that
+    floor is S1.1's job, not this one's.
+
+    Two further effects, and on the field evidence they are the stronger
+    argument: the worker no longer pins a WAL read snapshot across a Tor fetch
+    (the "a long-lived reader blocks a checkpoint" note on all three 2026-09-02
+    bundles), and the read-then-write window that produces ``SQLITE_BUSY_SNAPSHOT``
+    — the fleet's most frequent recorded error — shrinks to the statements
+    themselves.
+
+    COST, stated because it is real and unpriced elsewhere: a re-acquire that the
+    pool cannot satisfy opens a physical connection, and on the encrypted store
+    that re-derives the SQLCipher key (~160-173 ms). Measured at 50 workers, the
+    multiplier is dominated by ``pool_size`` — 13.9x at pool 2, 3.9x at pool 6,
+    1.0x at pool 8 — which is why S1.1's small tier is shaped for slots rather
+    than for the smallest possible floor.
+
+    WHAT THE GUARD CAN AND CANNOT SEE. ``session.new/dirty/deleted`` describe
+    pending, UN-FLUSHED unit-of-work state. They are all empty once a caller has
+    flushed, while the rows sit unwritten in the open transaction — and
+    ``Session.rollback()`` rolls back to the ROOT, so it would discard them and
+    would destroy an enclosing ``begin_nested()`` savepoint as well. Three
+    further checks close that: an active savepoint, and the single-writer gate's
+    own ``session.info`` flag, which ``writer.py`` sets on the first flush or bulk
+    DML and clears at the outermost transaction end — i.e. exactly "this
+    transaction has written". Bulk ``session.execute(insert()/update()/delete())``
+    leaves no ORM state at all and is caught only by that flag.
+
+    So: this releases a session that has READ and not yet written. Anything else
+    is declined — slower, never wrong. Returns whether a connection was handed
+    back, so a caller can REPORT the effect instead of assuming it. Never raises.
+    """
+    try:
+        # Un-flushed ORM work: a rollback would discard it outright.
+        if session.new or session.dirty or session.deleted:
+            return False
+        # Flushed-but-uncommitted work, and bulk DML that leaves no ORM state.
+        # Two independent markers, deliberately: our own (set for EVERY session in
+        # the process by the listeners below) and the single-writer gate's, so a
+        # session that is gated but somehow missed by ours is still declined.
+        if session.info.get(_WROTE_FLAG) or session.info.get(_WRITE_GATE_SESSION_FLAG):
+            return False
+        # A rollback would roll back to the ROOT, not to the savepoint, taking
+        # the caller's enclosing block with it.
+        if session.in_nested_transaction():
+            return False
+        if not session.in_transaction():
+            return False
+        session.rollback()
+        return True
+    except Exception:  # noqa: BLE001 - releasing early is never worth an error
+        _LOG.debug("release_idle_connection: could not end the transaction", exc_info=True)
+        return False
 
 
 @contextmanager

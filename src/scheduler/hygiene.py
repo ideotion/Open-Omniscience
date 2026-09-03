@@ -36,6 +36,12 @@ import time
 from contextlib import suppress
 from pathlib import Path
 
+# Module level, not lazy inside checkpoint_wal: an ``except WriteGateBusy``
+# clause is evaluated when an exception propagates, so a name bound by an import
+# INSIDE the try would be unbound for any failure raised before that line --
+# turning a real error into a NameError from the handler.
+from src.database.writer import WriteGateBusy
+
 _LOG = logging.getLogger("scheduler.hygiene")
 
 
@@ -148,16 +154,63 @@ def _ckpt_min_interval_s() -> float:
         return 300.0
 
 
-def _ckpt_busy_timeout_ms() -> int:
-    # Bounded on purpose: with an active long reader, TRUNCATE calls the busy
-    # handler until the reader finishes — the default 30 s connection timeout
-    # would hold the write gate that long between passes. 5 s bounds the hold;
-    # an unfinished checkpoint returns the honest busy=1 and is retried next
-    # pass boundary.
+def _ckpt_gate_timeout_s() -> float:
+    # S2.5: the checkpoint takes the single-writer gate, and until this bound
+    # existed it waited on an unbounded Condition -- so a long writer held the
+    # whole pass tail, and record_run (BELOW it) was never reached, which is why
+    # a stalled pass left no run record at all. 30 s bounds the wait; giving up
+    # records an honest skip and the checkpoint is retried next pass boundary.
+    # <=0 restores the unbounded wait (an escape hatch, not a default).
     try:
-        return max(0, int(os.getenv("OO_WAL_CHECKPOINT_BUSY_MS", "") or 5000))
+        return max(0.0, float(os.getenv("OO_CKPT_GATE_TIMEOUT_S", "") or 30.0))
     except (TypeError, ValueError):
-        return 5000
+        return 30.0
+
+
+def _ckpt_busy_timeout_ms() -> int:
+    # S4.1: ZERO by default -- never wait. Measured against a WAL pinned by a
+    # reader with an unexhausted cursor (4.1 MB WAL, 423 frames):
+    #
+    #   TRUNCATE busy_timeout=5000 -> 5012.4 ms, busy=1, wal UNCHANGED
+    #   PASSIVE  busy_timeout=5000 ->    0.0 ms, busy=0, 423/423 backfilled
+    #   TRUNCATE busy_timeout=0    ->    0.0 ms, busy=1, wal UNCHANGED
+    #   (reader closed) TRUNCATE   ->    0.8 ms, busy=0, wal 0
+    #
+    # So the whole hold WAS the busy handler, and waiting bought nothing: the
+    # pinned attempt returns the same busy=1 instantly. What actually bounds the
+    # WAL while a reader is pinning it is the PASSIVE backfill below, which is
+    # free and needs no wait at all. The cost of not waiting is that a lock held
+    # only momentarily is no longer waited out -- and a reader that would clear
+    # inside half a second is also gone by the next boundary, 300 s later.
+    # OO_WAL_CHECKPOINT_BUSY_MS restores an allowance for anyone who wants one.
+    try:
+        return max(0, int(os.getenv("OO_WAL_CHECKPOINT_BUSY_MS", "") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _reader_snapshot() -> dict:
+    """The oldest live connection checkout, or an honest "nobody is watching".
+
+    A busy checkpoint says the WAL is pinned and cannot say by whom; pool_watch
+    (S2.6 b) can. An UNATTACHED pool_watch returns the same empty list as a
+    genuinely idle pool, so the attached-ness is reported rather than inferred --
+    otherwise a checkpoint diagnosis would read "no reader is pinning this"
+    from an instrument that is not running.
+    """
+    try:
+        from src.database import pool_watch
+
+        if not pool_watch.is_registered():
+            return {"instrument": "unattached"}
+        rows = pool_watch.checked_out()
+        return {
+            "n": len(rows),
+            "oldest_age_s": rows[0]["age_s"] if rows else None,
+            "oldest_thread": rows[0]["thread"] if rows else None,
+        }
+    except Exception:  # noqa: BLE001 - an instrument must never break the tail
+        return {"instrument": "unreadable"}
 
 
 def checkpoint_wal(
@@ -167,11 +220,20 @@ def checkpoint_wal(
 
     Serialised through ``write_lock()`` (the same gate every writer takes), so
     it can NEVER run beside a gated writer — it queues behind one instead.
+    S2.5: that queue is now BOUNDED (``OO_CKPT_GATE_TIMEOUT_S``, 30 s). It used
+    to be an unbounded wait, and ``record_run`` sits BELOW this call in the pass
+    tail — so a long writer did not merely delay the checkpoint, it meant a
+    stalled pass left no run record of itself at all.
     Rate-limited by ``OO_WAL_CHECKPOINT_MIN_S`` (default 300 s) so fast
     recycled passes don't churn; ``force=True`` bypasses the cadence (tests /
     explicit maintenance). Returns the measured record — busy flag, frames,
-    wal bytes before/after, duration — or None (disabled / not due /
-    non-SQLite / error). Never raises.
+    wal bytes before/after, duration — or ``{'skipped': 'gate busy', ...}`` when
+    the bound expired (its OWN outcome: a checkpoint that could not run and one
+    that was never due are opposite facts), or None (disabled / not due /
+    non-SQLite / error). Never raises. NOTE the cadence stamp is taken before
+    the gate is attempted, so a gate-busy skip consumes that budget and the
+    retry is at the NEXT boundary past the interval — matching every other
+    failure path here, and visible in the returned record rather than silent.
     """
     global _LAST_CKPT_MONO
     if not wal_checkpoint_enabled():
@@ -200,15 +262,32 @@ def checkpoint_wal(
 
         from src.database.writer import write_lock
 
+        gate_timeout = _ckpt_gate_timeout_s()
         t0 = time.monotonic()
         raw = engine.raw_connection()
         try:
             cur = raw.cursor()
             try:
-                with write_lock():
+                with write_lock(timeout=gate_timeout or None):
                     # PRAGMAs are not DML, so pysqlite opens no implicit
                     # transaction here — the checkpoint runs outside any BEGIN.
                     cur.execute(f"PRAGMA busy_timeout={int(busy_ms)}")
+                    # S4.1: PASSIVE first. It never blocks and never waits, and
+                    # it backfills every frame up to the oldest reader's mark --
+                    # so on a pinned WAL it is the step that actually bounds
+                    # growth, while TRUNCATE can only reset the FILE, which no
+                    # reader will allow. Then TRUNCATE, which at busy_timeout=0
+                    # is free whichever way it goes.
+                    #
+                    # REFUTED, and recorded so it is not re-attempted: gating the
+                    # TRUNCATE on `log_frames == checkpointed_frames` after the
+                    # passive step does NOT mean "nothing is pinned". Measured, a
+                    # reader whose snapshot is at the current end of the WAL
+                    # satisfies it exactly (423 == 423) while still pinning the
+                    # file. There is nothing to predict: not waiting is the fix.
+                    passive_row = cur.execute(
+                        "PRAGMA wal_checkpoint(PASSIVE)"
+                    ).fetchone()
                     row = cur.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
             finally:
                 # ALWAYS restore before the connection returns to the pool
@@ -226,6 +305,11 @@ def checkpoint_wal(
         busy, log_frames, ckpt_frames = (
             (int(row[0]), int(row[1]), int(row[2])) if row else (None, None, None)
         )
+        p_busy, p_log, p_ckpt = (
+            (int(passive_row[0]), int(passive_row[1]), int(passive_row[2]))
+            if passive_row
+            else (None, None, None)
+        )
         out = {
             "busy": busy,  # 1 = an active reader pinned the WAL: honest partial
             "log_frames": log_frames,
@@ -233,9 +317,34 @@ def checkpoint_wal(
             "wal_bytes_before": bytes_before,
             "wal_bytes_after": bytes_after,
             "duration_ms": duration_ms,
+            # S4.1: the passive step's own result. Separate keys, because a
+            # busy TRUNCATE over a successful backfill and a busy TRUNCATE that
+            # moved nothing are different outcomes, and the old record could not
+            # tell them apart.
+            "passive": {
+                "busy": p_busy,
+                "log_frames": p_log,
+                "checkpointed_frames": p_ckpt,
+            },
+            # S4.1 + S2.6(b): when TRUNCATE comes back busy, this names the
+            # candidate. Absent rather than zeroed when the instrument is not
+            # attached -- see pool_watch.is_registered.
+            "readers": _reader_snapshot(),
         }
         _LOG.info("wal checkpoint(TRUNCATE): %s", out)
         return out
+    except WriteGateBusy as exc:
+        # S2.5: NOT a failure -- another writer holds the gate, so the WAL stays
+        # where it is and the next pass boundary tries again. Reported as its own
+        # outcome rather than folded into None (which the run report reads as
+        # "disabled / not due"): a checkpoint that could not run and one that was
+        # never asked to run are opposite facts.
+        _LOG.warning("wal checkpoint skipped: %s", exc)
+        return {
+            "skipped": "gate busy",
+            "detail": str(exc),
+            "waited_s": _ckpt_gate_timeout_s(),
+        }
     except Exception:  # noqa: BLE001 - hygiene must never break the run loop
         _LOG.warning("wal checkpoint failed; run loop continues", exc_info=True)
         return None
@@ -248,7 +357,9 @@ def run_pass_hygiene() -> dict | None:
     try:
         out = release_pass_state() or {}
         # Always present so the run report shows whether a checkpoint ran
-        # (None = disabled / not due / skipped — never a silent omission).
+        # (None = disabled / not due / error; a dict with "skipped" = it was
+        # REFUSED and by what — never a silent omission, and never the same
+        # value for "could not run" and "was never asked to").
         out["wal_checkpoint"] = checkpoint_wal()
         return out
     except Exception:  # noqa: BLE001 - hygiene must never break the run loop

@@ -264,13 +264,24 @@ is bankable.)*
 
 | `state` | What it means | Bankable? |
 |---|---|---|
-| `absent` | No `-wal` at open — the previous shutdown was clean. **This is the steady-state unlock the bar asks for**, and it does not include WAL recovery. | ✅ **yes — this is the target** |
+| `absent` | No `-wal` at open, so this timing contains **no WAL replay**. **This is the steady-state unlock the bar asks for.** | ✅ **yes — this is the target** |
 | `present` | A `-wal` was there and this timing **includes replaying it**. A different, larger measurement. | Valid data, but not the bar |
 | `unreadable` | The `-wal` could not be read (with the reason). | ❌ re-take |
+| `not-measured` | No reading was taken before the store was opened (an older record). | ❌ re-take |
 
 Before 2026-08-12 an **absent** WAL and an **unreadable** one shared a single `null`, so the
 clean shutdown this runbook prescribes *guaranteed* a null that read as missing evidence.
 That is fixed — the report now names which case it measured.
+
+**What `absent` does not prove (corrected 2026-09-02).** An earlier version of this table
+read `absent` as "the previous shutdown was clean". It is not evidence of that. **Any**
+connection that opens and closes the store checkpoints and unlinks the `-wal` — including
+the passphrase-verify connection the unlock route opens, and including one opened by a
+**wrong-passphrase attempt**. So absence tells you what this timing covered and nothing about
+how the previous session ended. The question "did the last session end cleanly" is answered by
+the clean-shutdown sentinel, and the `-wal` evidence about it is the reading the app now takes
+**at boot**, before any connection can exist: look for `previous_session.wal_at_boot` in the
+session forensics, not for this field.
 
 **A note on the old wording:** an earlier version of the bar justified the cold boot as
 testing "WAL recovery". It does not — a clean shutdown by construction leaves nothing to

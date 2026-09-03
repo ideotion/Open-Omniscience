@@ -159,7 +159,7 @@ _FILTERED_METRICS: dict[str, Callable[[Session], int]] = {
 }
 
 
-def _gauge_wal_bytes(session: Session) -> int | None:
+def wal_bytes() -> int | None:
     """Size of the live ``-wal`` sidecar right now, in bytes — or None when there
     is nothing to measure.
 
@@ -167,6 +167,12 @@ def _gauge_wal_bytes(session: Session) -> int | None:
     point: an unmeasurable gauge must leave a GAP in the series, never a recorded
     zero that reads as "the WAL was empty at that hour". A genuinely absent ``-wal``
     file on a real SQLite store IS a real zero, and is recorded as one.
+
+    Public because the hourly gauge is not its only reader any more: S4.3 records
+    the same figure in every collect_perf sample, since the hourly one runs inside
+    idle maintenance and the scheduler skips that whenever the memory guard is
+    engaged — blind on exactly the machine that starves. One implementation, not
+    two copies of it.
     """
     from src.database.session import engine
 
@@ -180,6 +186,14 @@ def _gauge_wal_bytes(session: Session) -> int | None:
         return wal.stat().st_size if wal.exists() else 0
     except OSError:  # a stat failure is unmeasured, never a fabricated 0
         return None
+
+
+def _gauge_wal_bytes(session: Session) -> int | None:
+    """The metric registry's signature (every gauge takes a session). Delegates to
+    :func:`wal_bytes`, which reads the engine rather than the session, so there is
+    exactly one implementation for both the hourly series and S4.3's per-sample
+    reading. Kept under this name because tests already anchor on it."""
+    return wal_bytes()
 
 
 # GAUGES: point-in-time measurements that are NOT a COUNT(*) over a table, so they

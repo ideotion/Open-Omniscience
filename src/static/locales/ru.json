@@ -1996,6 +1996,7 @@
   "stale": "устарело",
   "No local hazard snapshot — silence is not safety.": "Нет локального снимка угроз — тишина не означает безопасность.",
   "Alerts": "Оповещения",
+  "Checking for alerts…": "Поиск оповещений…",
   "Latest in your corpus": "Последнее в вашем корпусе",
   "Min words": "Мин. слов",
   "Min cited sources": "Мин. цитируемых источников",
@@ -2152,6 +2153,9 @@
   "Backfill failed:": "Ошибка заполнения:",
   "Applied baseline tags:": "Базовые теги применены:",
   "tags": "теги",
+  "The server is busy — refreshing every {s}s until it recovers.": "Сервер загружен — обновление каждые {s} с до восстановления.",
+  "The server recovered — refreshing at the usual rate again.": "Сервер восстановился — обновление с обычной частотой.",
+  "as of {time} (server busy)": "по состоянию на {time} (сервер загружен)",
   "The app is busy — retrying shortly…": "Приложение занято — скоро повторим попытку…",
   "Session forensics": "Криминалистика сессии",
   "Could not load session forensics.": "Не удалось загрузить криминалистику сессии.",
@@ -2998,5 +3002,7 @@
   "Indexing series: {detail}": "Индексация рядов: {detail}",
   "Indexing failed: {error}": "Индексация не удалась: {error}",
   "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} новых · {updated} обновлено · {unchanged} уже актуальны — остановлено до конца; нажмите ещё раз, чтобы продолжить с места остановки.",
-  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} новых · {updated} обновлено · {unchanged} уже актуальны — все сохранённые ряды теперь в корпусе."
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} новых · {updated} обновлено · {unchanged} уже актуальны — все сохранённые ряды теперь в корпусе.",
+  "Limited memory: {available} MB free of {total} MB.": "Мало памяти: свободно {available} МБ из {total} МБ.",
+  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "Фоновые проходы по всему корпусу (квалификация источников) приостановлены, а число одновременных загрузок ограничено. На большом корпусе квалификация может никогда здесь не запуститься — это цена данной настройки, а не сбой. Установите OO_ALLOW_BIG_SCANS=1, чтобы всё равно их выполнить."
 }

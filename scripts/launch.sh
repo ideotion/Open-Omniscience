@@ -83,7 +83,12 @@ EOF
 open-omniscience &
 SERVER=$!
 # Stop the server when this launcher exits (window closed / Ctrl-C).
-trap 'kill "$SERVER" 2>/dev/null || true' EXIT INT TERM
+# HUP is in the list because it is the signal the ADVERTISED stop actually sends:
+# closing the terminal window HUPs the foreground process group. Without it bash
+# takes SIGHUP's default disposition and the EXIT trap is not a reliable path
+# (2026-09-02, S0.2). The server also installs its own SIGHUP handler, so the stop
+# is graceful whether the signal reaches it directly or through this trap.
+trap 'kill "$SERVER" 2>/dev/null || true' EXIT INT TERM HUP
 
 # Wait up to ~20s for the health endpoint.
 for _ in $(seq 1 40); do

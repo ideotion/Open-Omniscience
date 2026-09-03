@@ -1886,6 +1886,19 @@ class KeywordMention(Base):
         # the Feed off the keyword_mentions -> articles join the recorded codec trap names.
         # Mirrored in migration 3f9c17ab42de + maintenance.HOT_INDEXES.
         Index("ix_mention_article_count", "article_id", "count", "keyword_id"),
+        # The columnar rollup's FULL build streams every mention in (created_at, id)
+        # order -- created_at because the single-writer gate makes it monotonic and
+        # reuse-immune, which a rowid is not (see build_keyword_daily's PR-D / W2
+        # correction). Without this index that ordered keyset was a bare
+        # `SCAN keyword_mentions` PLUS a `USE TEMP B-TREE FOR ORDER BY` **per 50k
+        # batch** -- EXPLAIN-confirmed, and the reason a full rebuild cost 109-194 s
+        # a batch over 187 batches in the field. NOTE the index alone fixes nothing:
+        # the old predicate wrapped the column in COALESCE(created_at, epoch), and an
+        # expression is not indexable -- measured, the plan was unchanged. The query
+        # had to lose the COALESCE (a NULL-created_at phase is streamed separately)
+        # for this to be reachable at all. Mirrored in maintenance.HOT_INDEXES +
+        # migration a8cbf5556b39.
+        Index("ix_mention_created_id", "created_at", "id"),
     )
 
     def __repr__(self) -> str:
