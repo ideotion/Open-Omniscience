@@ -1936,10 +1936,19 @@ class BackgroundScheduler:
             try:
                 from src.discovery import run_discovery
 
+                # S2.4: its OWN session, not the pass's.
+                #
+                # Discovery's savepoint used to live inside the pass session, so when
+                # its flush hit SQLITE_BUSY_SNAPSHOT SQLAlchemy issued ROLLBACK TO
+                # SAVEPOINT without RELEASE, the stale outer transaction survived, and
+                # session_scope's final commit raised PendingRollbackError -- marking a
+                # four-hour pass ok:false over a best-effort side feature. A separate,
+                # short-lived session cannot poison the pass whatever happens inside it.
                 with _tail_phase("discovery", pass_id=_pass_id):
-                    result["discovery"] = run_discovery(
-                        session, per_run=settings.discovery_per_run
-                    )
+                    with session_scope() as _disc_session:
+                        result["discovery"] = run_discovery(
+                            _disc_session, per_run=settings.discovery_per_run
+                        )
             except Exception:  # noqa: BLE001 - never fail the scrape on discovery
                 _LOG.warning("offline source discovery failed", exc_info=True)
             # S-B (2026-07-24 throughput brief, C1): world-discovery, qualification,
@@ -1994,8 +2003,10 @@ class BackgroundScheduler:
                 if getattr(settings, "auto_enrich_sources", True):
                     from src.analytics.source_topics import run_auto_source_enrichment
 
+                    # S2.4: its own session, for the same reason as discovery above.
                     with _tail_phase("source-enrichment", pass_id=_pass_id):
-                        _enr = run_auto_source_enrichment(session)
+                        with session_scope() as _enr_session:
+                            _enr = run_auto_source_enrichment(_enr_session)
                     if _enr.get("ran") and _enr.get("sources_updated"):
                         result["source_enrich"] = _enr
                         _LOG.info("source auto-enrichment: %s", _enr)
