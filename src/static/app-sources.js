@@ -724,6 +724,33 @@
                `, ${r.sources_processed} source(s), ${esc(String(r.duration_s))}s ` +
                `<span class="muted">at ${esc(fmtLocal(r.finished_at || ""))}</span>`
              : '<span class="muted">No run yet.</span>');
+      renderMachineFloor(st.machine_floor);
+    }
+
+    // S1.3 (2026-09-02 ruling 1): the memory-floor caveat, VISIBLE by default
+    // beside the collection state — never behind a toggle, and never a hard
+    // block. The FRAME is a keyed template (so it translates x12) and the
+    // NUMBERS are interpolated data: a sentence with the numbers welded in
+    // could never be keyed at all.
+    function renderMachineFloor(mf) {
+      const el = $("sched-floor");
+      if (!el) return;
+      const T = (window.OOI18N && OOI18N.t) ? OOI18N.t : (s => s);
+      const TF = (window.OOI18N && OOI18N.tf)
+        ? OOI18N.tf : ((tpl, v) => tpl.replace(/\{(\w+)\}/g, (_, k) => v[k]));
+      // Absent (an older server) or above the floor -> say nothing. A caveat
+      // about a machine we did not measure would be a fabricated warning.
+      if (!mf || !mf.declines) { el.hidden = true; el.textContent = ""; return; }
+      const avail = (mf.available_mb == null) ? "?" : Math.round(mf.available_mb);
+      const total = (mf.total_mb == null) ? "?" : Math.round(mf.total_mb);
+      el.textContent =
+        TF("Limited memory: {available} MB free of {total} MB.", {available: avail, total: total})
+        + " "
+        + T("Whole-corpus background scans (source qualification) are paused, and "
+            + "the collection fan-out is capped. On a large corpus that can mean "
+            + "qualification never runs here — that is the cost of the setting, not "
+            + "a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.");
+      el.hidden = false;
     }
 
     // Collection-speed slider stops (kbps = kilobits/s, the consumer "download

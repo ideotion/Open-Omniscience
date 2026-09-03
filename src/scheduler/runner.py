@@ -884,6 +884,23 @@ def run_scrape_once(
     # The hard ceiling on concurrent fetches (the governor's upper bound). 1 =
     # the sequential loop (governor off, unchanged behaviour).
     w_max = max(1, getattr(settings, "collect_parallelism", 1) or 1)
+    # S1.3 (2026-09-02 ruling 1): below the memory floor, cap the fan-out. The
+    # policy lives with the floor (``capped_workers``) so it is testable without
+    # slicing this function's source; see FLOOR_MAX_WORKERS for what the cap is
+    # actually about -- documents in flight, NOT pooled connections, which S1.0
+    # already bounded. The operator's SETTING is never rewritten.
+    from src.config.machine_floor import capped_workers as _capped_workers
+
+    # NB: named _floor_verdict, not _floor — this function already binds a
+    # _floor (the mem-low permit floor) further down, and one name for two
+    # different things is how a later edit reads the wrong one.
+    _capped, _floor_verdict = _capped_workers(w_max)
+    if _capped != w_max:
+        _LOG.info(
+            "collect_parallelism capped %d -> %d: %s (%s=1 to lift)",
+            w_max, _capped, _floor_verdict["reason"], _floor_verdict["override_env"],
+        )
+        w_max = _capped
     # Parallel collection requires the gated GLOBAL engine: worker threads open
     # their OWN sessions (through the single-writer gate). A caller that passes a
     # session bound to a DIFFERENT engine (e.g. a test's in-memory DB, where

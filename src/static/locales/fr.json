@@ -2998,5 +2998,7 @@
   "Indexing series: {detail}": "Indexation des séries : {detail}",
   "Indexing failed: {error}": "Échec de l'indexation : {error}",
   "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} nouvelles · {updated} mises à jour · {unchanged} déjà à jour — arrêt avant la fin ; appuyez de nouveau pour reprendre là où cela s'est arrêté.",
-  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} nouvelles · {updated} mises à jour · {unchanged} déjà à jour — toutes les séries stockées sont désormais dans le corpus."
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} nouvelles · {updated} mises à jour · {unchanged} déjà à jour — toutes les séries stockées sont désormais dans le corpus.",
+  "Limited memory: {available} MB free of {total} MB.": "Mémoire limitée : {available} Mo libres sur {total} Mo.",
+  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "Les analyses de fond sur l’ensemble du corpus (qualification des sources) sont suspendues et le nombre de collectes simultanées est plafonné. Sur un grand corpus, la qualification peut ne jamais s’exécuter ici — c’est le coût de ce réglage, pas une panne. Définissez OO_ALLOW_BIG_SCANS=1 pour les lancer malgré tout."
 }

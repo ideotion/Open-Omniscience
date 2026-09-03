@@ -98,7 +98,7 @@ def _vitals() -> dict:
     """Process + system CPU% and memory, via psutil. All fields None on any error
     (psutil missing / sandbox) so the governor simply skips that back-off — never a
     fabricated number."""
-    out = {
+    out: dict[str, float | None] = {
         "cpu_sys_pct": None,
         "cpu_proc_pct": None,
         "mem_avail_mb": None,
@@ -116,6 +116,14 @@ def _vitals() -> dict:
         out["cpu_proc_pct"] = proc.cpu_percent(interval=None)
         out["rss_mb"] = round(proc.memory_info().rss / (1024 * 1024), 1)
     except Exception:  # noqa: BLE001 - vitals are best-effort
+        pass
+    # S1.2: swap, the reading that separates a kill from a thrash and stops a
+    # swap-out reading as a recovery. Absent when unmeasurable, never 0.
+    try:
+        from src.monitoring.swap import swap_readings
+
+        out.update(swap_readings())
+    except Exception:  # noqa: BLE001
         pass
     return out
 

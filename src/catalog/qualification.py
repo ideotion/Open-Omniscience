@@ -51,6 +51,11 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
 
+from sqlalchemy import func
+
+from src.config.machine_floor import scan_budget
+from src.database.models import Article
+
 if TYPE_CHECKING:
     from sqlalchemy.orm import Session
 
@@ -329,6 +334,19 @@ def log_no_evidence_attempts(
     return len(sources)
 
 
+def _corpus_articles(session: Session) -> int:
+    """Cheap indexed COUNT of articles — the scale the scan's need is sized from.
+
+    A count failure returns 0, which sizes the need at its floor and therefore
+    DECLINES LESS: a machine is refused on a measurement, never on our inability
+    to take one.
+    """
+    try:
+        return int(session.query(func.count(Article.id)).scalar() or 0)
+    except Exception:  # noqa: BLE001 - a count must never break the pass
+        return 0
+
+
 def run_qualification_pass(
     session: Session, fetcher: EthicalFetcher | None, *, per_pass: int,
     now: datetime | None = None,
@@ -369,6 +387,28 @@ def run_qualification_pass(
 
     if per_pass <= 0:
         return {"enabled": False}
+
+    # S1.3 (2026-09-02 ruling 1): a machine below the memory floor DECLINES the
+    # whole-corpus scan this pass is built on, with the numbers stated. Gated
+    # HERE rather than at the two callers (the bulk job and the scheduler
+    # ride-along) because this is the one place ``per_source_metrics`` is
+    # reached -- an enumeration of callers is what the "gate EVERY entry point"
+    # lesson keeps costing. And it is gated BEFORE the trial fetches: spending
+    # Tor bandwidth on evidence we have already decided not to judge would be
+    # the worst of both.
+    budget = scan_budget(_corpus_articles(session))
+    if budget["declines"]:
+        return {
+            "enabled": True,
+            "evaluated": 0,
+            "skipped": budget["skipped"],
+            "available_mb": budget["available_mb"],
+            "need_mb": budget["need_mb"],
+            "reason": budget["reason"],
+            "caveat": budget["caveat"],
+            "override_env": budget["override_env"],
+        }
+
     now = now or datetime.now(UTC)
 
     candidates = select_unqualified(session, limit=per_pass)

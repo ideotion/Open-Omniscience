@@ -4944,6 +4944,78 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the recorded containment trap in a new place — `…\Open-Omniscience-old` starts with
     `…\Open-Omniscience`, and reporting that as excluded tells an operator they already
     applied a remedy they did not.
+  - **A MUTATION THAT DOES NOT APPLY IS INDISTINGUISHABLE FROM A GUARD THAT DOES NOT
+    BITE — assert the edit landed before reading the run (2026-09-02, the S1.3 locale
+    mutation):** the mutation matrix's whole value is that a green run after a mutation
+    is a FINDING. That inverts the moment the mutation silently fails to apply: a
+    `str.replace` whose needle is absent is a no-op, the suite passes, and the result
+    reads exactly like "this guard is vacuous". Here the French translation uses
+    NON-BREAKING spaces (`{available}\xa0Mo`, correct typography that `json.dumps`
+    preserved), so a plain-space search matched nothing and a perfectly good guard was
+    about to be recorded as dead. RULE: every mutation asserts its own application
+    (`assert new != old, "MUTATION DID NOT APPLY"`) before the test run, and where the
+    edit is a value in a data file, take the needle FROM the parsed file rather than
+    retyping it. Same family as the recorded `pytest -k` selector matching zero tests
+    and the `cmd | tail` exit-code trap: a check that reports success without having run
+    is the most expensive kind, and here it would have cost a real guard.
+  - **A GUARD THAT PROVES THE SAFETY HALF AND NOT THE ACTION PASSES WITH THE ACTION
+    DELETED (2026-09-02, the pool-dispose step):** `test_disposing_the_pool_closes_idle_
+    connections_only` asserted that a checked-out connection SURVIVES — the property the
+    step could most plausibly get wrong — and `ok is True`. Deleting `pool.dispose()`
+    left both true, so the release ladder's largest step could have shipped as a no-op
+    reporting success. The mirror case in the same file: `_shrink_sqlite` had a
+    beautifully measured PREMISE test (a raw connection proving `shrink_memory` is what
+    frees a warm page cache) and nothing asserting the SHIPPED function issues the
+    PRAGMA, so replacing it with `pass` kept `ok: True` and every test green. GENERAL
+    FORM: a step with a safety property and an effect needs an assertion for EACH, and a
+    measurement of the MECHANISM is not a test of the CODE — drive the production
+    function with a recording double and assert the statement reached it. Note the
+    fixture order matters for the action half: a checkout REUSES an idle connection, so
+    a test that takes its held connection after seeding the idle ones silently consumes
+    one of them and the count it asserts is wrong.
+  - **A NEW LOCAL THAT SHADOWS AN EXISTING ONE IN A LONG FUNCTION IS A REAL BUG THE TYPE
+    GATE CATCHES AND REVIEW DOES NOT (2026-09-02, S1.3's `_floor`):** the fan-out cap
+    bound `_floor` to the floor VERDICT (a dict) 130 lines above an existing `_floor`
+    holding the mem-low permit floor (an int). Python rebinds happily; mypy rejected it
+    by name. In a 200-line function the two uses are never on screen together, so the
+    only thing standing between this and a later edit reading the wrong one is the type
+    gate — which is the argument for running it rather than only the tests after an edit
+    that "only" adds a variable. Rename with the reason in a comment, so the next reader
+    does not tidy the distinction away.
+  - **A COST YOU ARE ABOUT TO PUT ON A POLLED ENDPOINT IS ONE `timeit` AWAY — measure it
+    instead of caching defensively (2026-09-02, the floor verdict on `/status`):** the
+    memory-floor caveat has to ride every scheduler response for the same reason `online`
+    does — a caveat behind a second poll the UI might never make is not visible by
+    default. The reflex is a TTL cache, and it is the wrong instinct here twice over: the
+    call is one `/proc/meminfo` read (measured at **107 µs**), and a STALE available
+    reading is precisely the wrong thing on a machine whose memory is moving. Measuring
+    took less time than writing the cache would have.
+  - **A MEASUREMENT WHOSE INSTRUMENT IS PROCESS RSS IS ONLY VALID IN A PROCESS SMALL
+    ENOUGH TO SEE IT — run it in a subprocess (2026-09-02, the shrink_memory premise
+    test):** the release ladder rests on a measurement (a warm 64 MiB page cache is
+    handed back by `PRAGMA shrink_memory` and NOT by ending the transaction), and
+    re-running it as a test is right. Reading it through `/proc/self/status` is not: the
+    test passed alone and failed in the full suite, where the interpreter already holds
+    ~1.5 GB across the allocator's arenas and a 64 MiB free is invisible — so the failure
+    read as "shrink_memory does nothing", the exact opposite of the truth. This is the
+    recorded `ru_maxrss`-is-vacuous lesson with the sign flipped: there a
+    high-water-mark instrument could not fail, here a whole-process instrument could not
+    succeed. `tracemalloc` is no help either, because the allocation is SQLite's, in C.
+    The fix is to measure where the docstring's own numbers were taken — a fresh
+    interpreter — and to add the anti-vacuity assertion that the probe genuinely warmed
+    a cache first, or a probe that allocated nothing would "prove" the same thing.
+  - **PREFER BEING STOPPED BY THE SLICING RATCHET OVER LOWERING ITS BUDGET — and it
+    fires on TESTS, which is where new hand-rolled slices are written (2026-09-02):**
+    a new test file sliced `app-sources.js` with `src.index("function renderMachineFloor(")`
+    and a hand-guessed `"\n    }\n"` terminator, and `test_adhoc_slicers_do_not_multiply`
+    caught it at 233 against a budget of 232. Routing it through
+    `js_source_helper.function_body` + `strip_comments` restored the budget WITHOUT
+    lowering it, and the mutation matrix was re-run afterwards to confirm the re-sliced
+    guard still discriminates — a refactor of a guard is not finished until its mutation
+    reddens again. The ratchet's twin (`test_the_budget_is_not_left_above_the_real_count`)
+    means the number cannot be quietly raised either: it fails if the budget sits above
+    the real count, so the only ways out are to fix the slice or to argue the budget up
+    deliberately.
 ## Open queue (when maintainer says proceed)
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
   is still open (found 2026-08-20 while reviewing a CI red on PR #963; RECORD-ONLY, nothing

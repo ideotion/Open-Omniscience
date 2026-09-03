@@ -47,7 +47,8 @@ HTTP API) and troubleshooting.
    - [Where your data lives](#51-where-your-data-lives) ·
      [Environment variables](#52-environment-variables) ·
      [Optional extras](#53-optional-extras) ·
-     [The HTTP API](#54-the-http-api)
+     [The HTTP API](#54-the-http-api) ·
+     [Memory on a small machine](#55a-memory-on-a-small-machine--the-one-real-ceiling)
 6. [Troubleshooting](#6-troubleshooting)
 7. [Glossary](#7-glossary)
 
@@ -1388,6 +1389,7 @@ them and names where to move them, and nothing is moved or deleted for you.
 | `OO_KEY_PASSPHRASE` | Encrypt custody private keys at rest (AES-256-GCM via scrypt). Without it, keys are written `0600` in the clear and reported honestly as `plaintext-0600`. |
 | `OO_FETCH_TIMEOUT` / `OO_FETCH_MIN_INTERVAL` | Tune the ethical fetcher's timeout and per-host minimum interval. |
 | `OO_LLM_MODEL` / `OO_OLLAMA_URL` (or `OLLAMA_BASE_URL`) | Default local model and Ollama endpoint. |
+| `OO_ALLOW_BIG_SCANS` | Set `1` to run the whole-corpus background scans on a machine below the memory floor (see [Memory on a small machine](#55a-memory-on-a-small-machine--the-one-real-ceiling)). The verdict then reports that you overrode it. |
 | `HTTPS_PROXY` | Route outbound traffic (e.g. OpenTimestamps) through a proxy/Tor. |
 
 ### 5.3 Optional extras
@@ -1544,6 +1546,68 @@ default sources imported over Tor in one pass):
   User-Agent and routing every fetch through it.
 
 ---
+
+### 5.5a Memory on a small machine — the one real ceiling
+
+The app already shrinks itself on a small box: below **4 GB of RAM**, or with
+under **1 GB free**, it uses a smaller database cache and fewer pooled
+connections, caps how many sources it fetches at once, and **pauses the
+whole-corpus background scans** (source qualification). It tells you so, with the
+numbers, beside the collection state in Settings → Collect.
+
+**Say the cost out loud:** on a machine with a large corpus and little free
+memory this can mean source qualification never runs there. That is the cost of
+the setting, not a failure. To run them anyway, start the app with
+`OO_ALLOW_BIG_SCANS=1` — the verdict then reports that you overrode it, and it
+keeps reporting that the machine is small, because the override changes what the
+app *does*, never what it *measured*.
+
+#### Why the app cannot simply cap its own memory
+
+There is no honest way for a program to enforce a memory ceiling on itself:
+
+- **`RLIMIT_RSS` is ignored by Linux.** It exists in the API and does nothing.
+- **`RLIMIT_AS` caps *address space*, not memory in use.** Libraries this app
+  uses (DuckDB, numpy) reserve far more virtual address space than they ever
+  touch, so an address-space cap raises `MemoryError` in unrelated code long
+  before the process is actually large. The app deliberately sets neither, and a
+  test fails the build if one is ever added.
+
+#### The ceiling that does work: run it in a cgroup
+
+On Linux with systemd, start the app with a hard memory limit:
+
+```bash
+systemd-run --user --scope -p MemoryMax=3G -p MemorySwapMax=0 \
+  ~/open-omniscience/scripts/launch.sh
+```
+
+**What this buys, honestly:** it converts a *desktop freeze* into a *clean app
+restart*. Without a limit, a machine that runs out of memory swaps until it is
+unusable for everything — the browser, the terminal, the desktop — and you may
+have to power-cycle it. With a limit, the kernel kills **this app** instead, and
+only this app.
+
+**What it costs:** the app is killed, mid-work, with no chance to tidy up.
+
+**Why your corpus is safe anyway:** the database runs in WAL mode with
+`synchronous=NORMAL`, so a kill can only lose work that was never committed.
+Everything committed is on disk, and the write-ahead log is replayed the next
+time you unlock. **Nothing you had already collected is lost.**
+
+A **backup** interrupted this way is a different matter: it is left incomplete.
+It is not silently trusted, though — every volume carries a checksum in the
+manifest, and the backup's own verify step checks all of them and names the ones
+that are missing or do not match. Run a verify (or simply take the backup again)
+before relying on one that was interrupted.
+
+Pick `MemoryMax` at roughly **60–75 % of total RAM**, leaving room for the
+desktop and the browser. `MemorySwapMax=0` is the half that stops the thrash:
+without it the app can still swap the machine into a crawl before the limit is
+reached.
+
+If you are not on systemd, the same is available through Docker/Podman
+(`--memory=3g --memory-swap=3g`) or a plain cgroup v2 `memory.max`.
 
 ## 5.6 Known limits & honest disclosures
 

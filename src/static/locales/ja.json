@@ -2998,5 +2998,7 @@
   "Indexing series: {detail}": "系列をインデックス中：{detail}",
   "Indexing failed: {error}": "インデックス作成に失敗しました：{error}",
   "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "新規 {created} · 更新 {updated} · 既に最新 {unchanged} — 最後まで行かずに停止しました。もう一度押すと中断した箇所から続行します。",
-  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "新規 {created} · 更新 {updated} · 既に最新 {unchanged} — 保存済みのすべての系列がコーパスに入りました。"
+  "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "新規 {created} · 更新 {updated} · 既に最新 {unchanged} — 保存済みのすべての系列がコーパスに入りました。",
+  "Limited memory: {available} MB free of {total} MB.": "メモリが不足しています：{total} MB 中 {available} MB 空き。",
+  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "コーパス全体のバックグラウンドスキャン（情報源の資格審査）を一時停止し、同時収集数を制限しています。大きなコーパスでは資格審査がここで一度も実行されないこともあります——これはこの設定の代償であり、障害ではありません。OO_ALLOW_BIG_SCANS=1 で実行できます。"
 }

@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from src.config.machine_floor import machine_floor
 from src.database.models import Source
 from src.database.session import get_db
 from src.scheduler.coverage import DEFAULT_FRESH_WINDOW_HOURS, tag_coverage
@@ -84,6 +85,13 @@ def _status_payload() -> dict:
     # airplane toggle IMMEDIATELY on implicit transitions (a collect start
     # clears the kill switch server-side) instead of waiting for the 5 s poll.
     status["online"] = not kill_switch_active()
+    # S1.3 (2026-09-02 ruling 1): the memory-floor verdict rides every scheduler
+    # response for the same reason ``online`` does -- the caveat must be visible
+    # BESIDE the collection state, not behind a separate poll the UI might never
+    # make. Measured at ~107 us per call (one /proc/meminfo read), so this is
+    # cheap enough to recompute rather than cache: a STALE available reading is
+    # precisely the wrong thing on a machine whose memory is moving.
+    status["machine_floor"] = machine_floor()
     return status
 
 
