@@ -429,6 +429,12 @@ class CollectionMonitor:
             "mem_total_mb": vit.get("mem_total_mb"),
             "rss_mb": vit.get("rss_mb"),
             "memory_guard_engaged": guard_engaged,
+            # S4.3: the WAL and its candidate pinner, in EVERY sample. The hourly
+            # wal_bytes gauge runs inside idle maintenance, and the scheduler returns
+            # early from that whenever the memory guard is engaged (runner.py) -- so
+            # the only WAL series the app had went blind on exactly the machine that
+            # starves, which is where a growing WAL matters most.
+            "wal": self._wal_gauges(),
             # Per-component memory gauges (P0.3 E1): where a marathon pass
             # accumulates. All measured; None where not instrumented.
             "mem": self._mem_gauges(),
@@ -463,6 +469,41 @@ class CollectionMonitor:
             return
         if self._pool_peak is None or n > self._pool_peak:
             self._pool_peak = n
+
+    @staticmethod
+    def _wal_gauges() -> dict:
+        """WAL bytes plus the oldest live connection checkout, both measured.
+
+        Three states are kept apart on purpose. ``bytes`` is None only when there is
+        nothing to measure (a non-SQLite or in-memory backend) -- an absent ``-wal``
+        on a real store is a real 0 and is recorded as one. For the reader side, an
+        UNATTACHED pool_watch returns the same empty list as a genuinely idle pool,
+        so the attached-ness is reported rather than inferred: without it, an
+        instrument that never registered would publish "no reader is pinning the
+        WAL" forever, which is the reading a checkpoint diagnosis turns on.
+        """
+        out: dict = {"bytes": None, "readers": {"instrument": "unattached"}}
+        try:
+            from src.database.snapshots import wal_bytes
+
+            out["bytes"] = wal_bytes()
+        except Exception:  # noqa: BLE001 - a gauge fault must never abort a tick
+            pass
+        try:
+            from src.database import pool_watch
+
+            if pool_watch.is_registered():
+                rows = pool_watch.checked_out()
+                out["readers"] = {
+                    "n": len(rows),
+                    # None because there IS no reader to age, never because the age
+                    # could not be read -- `n` carries that denominator.
+                    "oldest_age_s": rows[0]["age_s"] if rows else None,
+                    "oldest_thread": rows[0]["thread"] if rows else None,
+                }
+        except Exception:  # noqa: BLE001
+            pass
+        return out
 
     def _mem_gauges(self) -> dict:
         """Cheap allocator + component gauges for one sample (best-effort)."""

@@ -52,6 +52,15 @@ HOT_INDEXES: dict[str, str] = {
         "CREATE INDEX IF NOT EXISTS ix_mention_date_keyword ON keyword_mentions "
         "(observed_on, keyword_id, count)"
     ),
+    # Ordering key for the columnar rollup's FULL build. It streams every mention in
+    # (created_at, id) order; without this the ordered keyset was a bare SCAN plus a
+    # temp B-tree sort per 50k batch. See the KeywordMention model for why the sort key
+    # is created_at rather than the rowid, and why the query had to drop its COALESCE
+    # before any index could serve it. Byte-identical to migration a8cbf5556b39.
+    "ix_mention_created_id": (
+        "CREATE INDEX IF NOT EXISTS ix_mention_created_id ON keyword_mentions "
+        "(created_at, id)"
+    ),
     # Covering index for the PER-ARTICLE top-keyword reads (Feed ruling 10, and the
     # tied set the Articles tab shows for its visible rows): "keyword_id, count WHERE
     # article_id IN (one page)". ix_mention_article alone finds the rows then reads the

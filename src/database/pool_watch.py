@@ -64,6 +64,17 @@ def checked_out() -> list[dict[str, Any]]:
     return rows
 
 
+def is_registered() -> bool:
+    """Whether the listeners are attached.
+
+    Load-bearing for any consumer of :func:`checked_out`: an UNATTACHED instrument
+    also returns an empty list, and "nothing is checked out" and "nobody is
+    watching" are opposite facts. A reader that cannot tell them apart publishes a
+    clean bill of health for an instrument that is not running.
+    """
+    return _REGISTERED
+
+
 def register(engine) -> bool:
     """Attach the listeners to ``engine``'s pool. Idempotent; never raises."""
     global _REGISTERED

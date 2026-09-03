@@ -145,6 +145,18 @@ def test_dispatcher_routes_to_persisted_when_active(monkeypatch):
 def test_persisted_serve_matches_live_and_discloses_the_store(session, tmp_path, monkeypatch):
     store = tmp_path / "analytics.duckdb"
     monkeypatch.setattr(columnar, "connect", _persisted_stub(store))
+    # The live baseline is taken with the serve explicitly OFF, not merely unbuilt.
+    # With it ON and _STATE["con"] None this very call kicks a BACKGROUND in-memory
+    # build (proved by test_an_unbuilt_serve_kicks_a_background_build below) whose swap
+    # sets persisted=False (proved by its twin) -- and whether that lands before the
+    # _STATE.update below (harmless) or between the serve and basis() (this test's
+    # assertion, red) is pure timing. In ISOLATION the racing build dies on an
+    # unmigrated process store and never swaps, which is exactly why this was green
+    # alone and red in a full run. Off-then-on removes the kick by CONSTRUCTION rather
+    # than draining a thread we would then have to out-wait.
+    kicked: list[int] = []
+    monkeypatch.setattr(rollup_serve, "_trigger_build_async", lambda: kicked.append(1))
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "0")
     live = q.top_terms(session, days=_WIDE, group=False, limit=100)
 
     con = columnar.connect(passphrase="pw")  # the persisted stub
@@ -160,6 +172,9 @@ def test_persisted_serve_matches_live_and_discloses_the_store(session, tmp_path,
     assert "persisted encrypted" in served["basis"]["note"]
     assert _canon(served) == _canon(live)
     assert rollup_serve.status()["store"] == "persisted"
+    # Nothing in this test needs a background build: the rollup is installed by hand and
+    # the serve reads it. A kick here is a thread racing the assertions above.
+    assert kicked == [], "a background build was kicked and races this test's own state"
 
 
 def test_persisted_refresh_is_incremental_and_stays_correct(session, tmp_path, monkeypatch):
@@ -217,6 +232,50 @@ def test_persisted_store_survives_a_restart_without_a_full_rebuild(session, tmp_
     assert full_builds["n"] == 1, "the reopen must not full-rebuild"
     assert con2.execute("SELECT COUNT(*) FROM keyword_daily").fetchone()[0] == rows1
     con2.close()
+
+
+# ----------------------------- why the baseline is taken with the serve OFF ------------- #
+#
+# Both halves below were reproduced on the base tree before the test above was changed.
+# They are the reason that change is a determinism fix and not a relaxed assertion: the
+# property under test ("the persisted serve matches live and discloses its store") is
+# unchanged and can now fail only for its own reason.
+
+
+def test_an_unbuilt_serve_kicks_a_background_build(session, monkeypatch):
+    """Half one: a serve on an unbuilt rollup kicks a build on a daemon thread."""
+    kicked: list[int] = []
+    monkeypatch.setattr(rollup_serve, "_trigger_build_async", lambda: kicked.append(1))
+    monkeypatch.setenv("OO_COLUMNAR_SERVE", "1")
+    q.top_terms(session, days=_WIDE, group=False, limit=100)
+    assert kicked == [1]
+
+
+def test_a_background_swap_flips_an_installed_persisted_state(session, tmp_path, monkeypatch):
+    """Half two: that build's swap replaces an installed persisted state with the
+    in-memory one, so ``basis()`` reports ``memory`` for a rollup that is persisted.
+
+    Driven SYNCHRONOUSLY -- the racing thread's own work, with the timing removed.
+    ``init_db()`` is what makes it deterministic: the in-memory build reads the PROCESS
+    store, and on an unmigrated one it raises before reaching the swap."""
+    from src.database.session import init_db
+
+    init_db()
+    monkeypatch.setattr(columnar, "connect", _persisted_stub(tmp_path / "analytics.duckdb"))
+    con = columnar.connect(passphrase="pw")
+    columnar.refresh_keyword_daily(con, session, corpus_epoch=get_corpus_epoch(session))
+    rollup_serve._STATE.update(
+        {"con": con, "persisted": True, "bind": session.get_bind(), "built_at": time.time()}
+    )
+    assert rollup_serve.basis(_WIDE)["store"] == "persisted"
+
+    # The stub already answers a passphrase-less connect with an in-memory duckdb, which
+    # is exactly what the in-memory build asks for.
+    rollup_serve._build_inmemory_and_swap()
+    assert rollup_serve.basis(_WIDE)["store"] == "memory", (
+        "the background swap does not flip an installed persisted state, so the "
+        "off-then-on baseline above is guarding nothing"
+    )
 
 
 def test_basis_store_field_defaults_to_memory():

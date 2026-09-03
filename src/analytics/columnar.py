@@ -813,9 +813,11 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
     STRICTLY AFTER ``scan_bound`` (the reinsert happens during, never before, the scan
     started) -- so it is excluded from THIS build regardless of which id it lands on,
     closing both the double-count and the id-reuse-drop directions BY CONSTRUCTION, not
-    by luck. A NULL ``created_at`` (a pre-migration or otherwise unset row) is treated as
-    maximally old via ``COALESCE(created_at, '1970-01-01 00:00:00')`` -- it is included,
-    never silently excluded on a data gap.
+    by luck. A NULL ``created_at`` (a pre-migration or otherwise unset row) is included,
+    never silently excluded on a data gap -- originally by treating it as maximally old
+    via ``COALESCE(created_at, '1970-01-01 00:00:00')``, and since S3.5 by streaming
+    those rows as their own phase, for the reason the PHASE SPLIT note below gives.
+    The property is unchanged; only what serves it is.
 
     KNOWN, ACCEPTED RESIDUAL (recorded so it is never mistaken for an oversight): a row
     that existed at ``scan_bound`` but is physically DELETED before the scan's cursor
@@ -829,6 +831,40 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
     which would run in a fresh, possibly-newer snapshot once the loop has been
     committing mid-scan) -- it must never overshoot what this build actually
     incorporated, or D3's incremental refresh would silently skip mentions forever.
+
+    **PHASE SPLIT (S3.5, 2026-09-02 crash analysis):** the keyset above was correct
+    and unservable. ``COALESCE(created_at, :epoch)`` is an EXPRESSION, so no index on
+    ``created_at`` can satisfy either the range or the ORDER BY -- EXPLAIN-measured,
+    adding the index changed the plan not at all, and each 50k batch stayed a bare
+    ``SCAN keyword_mentions`` **plus** a ``USE TEMP B-TREE FOR ORDER BY``. That is the
+    109-194 s per batch over 187 batches the field reported. An expression index would
+    serve it and is refused for a separate reason: alembic's autogenerate cannot
+    compare expression indexes, so one would leave a permanent spurious drift and an
+    ``alembic_stamp_align`` schema-behind verdict.
+
+    So the COALESCE is gone and the scan is two phases over disjoint sets, each a plain
+    range that ``ix_mention_created_id`` serves as a SEARCH with no sort:
+
+    * **A** -- ``created_at IS NULL``, ordered by ``id``. A rowid keyset is safe here
+      and ONLY here, because nothing can ADD a row to this phase while the scan runs:
+      every insert path sets ``created_at`` from the column default (verified against
+      both real idioms -- a plain ORM ``add`` and the bulk ``insert(KeywordMention),
+      [rows]`` that ``index_article`` uses -- and there is no raw
+      ``INSERT INTO keyword_mentions`` anywhere in ``src/``). The set can therefore
+      only SHRINK, and a shrinking set has neither failure direction: a deleted row is
+      simply not seen, and a reused rowid arrives carrying a real ``created_at``, which
+      puts it in phase B rather than behind this cursor. NULL rows reach a live corpus
+      through a restore of a pre-migration one, and a restore bumps the corpus epoch,
+      which forces a fresh build rather than racing this one.
+    * **B** -- ``created_at IS NOT NULL AND created_at <= scan_bound``, ordered by
+      ``(created_at, id)`` with a row-value keyset (SQLite >= 3.15). Identical
+      semantics to the old OR-expansion; the row value is what the index can serve.
+
+    ONE BEHAVIOUR CHANGE, in the honest direction: on a corpus where EVERY mention has
+    a NULL ``created_at``, ``MAX(created_at)`` is NULL, the old code skipped its whole
+    loop and the rollup came out EMPTY. Phase A does not depend on that boundary, so
+    those rows are now streamed. They are real mentions with real ``observed_on``
+    dates, and ``observed_on`` -- never ``created_at`` -- is what the rollup groups by.
     """
     from sqlalchemy import text as _sql
 
@@ -846,27 +882,28 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
                 "(keyword_id BIGINT, day VARCHAR, cnt BIGINT, article_id BIGINT)")
     streamed = 0
     max_streamed_id = 0
-    cursor_ts: str | None = None  # None == "before the first row" (no lower bound yet)
-    cursor_id = 0
-    _EPOCH = "1970-01-01 00:00:00"  # the COALESCE sentinel for a NULL created_at
-    if scan_bound is not None:
-        while True:
-            base = (
-                "SELECT id, keyword_id, observed_on, count, article_id, created_at "
-                "FROM keyword_mentions "
-                "WHERE COALESCE(created_at, :epoch) <= :bound "
+
+    def _absorb(chunk: list) -> None:
+        """Stage one batch and advance the watermark. Shared by both phases."""
+        nonlocal streamed, max_streamed_id
+        dated_rows = [
+            (int(r[1]), str(r[2])[:10], int(r[3]), int(r[4]))
+            for r in chunk if r[2] is not None
+        ]
+        if dated_rows:
+            con.executemany(
+                "INSERT INTO keyword_daily_stage VALUES (?, ?, ?, ?)", dated_rows
             )
-            params: dict = {"epoch": _EPOCH, "bound": scan_bound, "batch_size": batch_size}
-            if cursor_ts is None:
-                sql = base + "ORDER BY COALESCE(created_at, :epoch), id LIMIT :batch_size"
-            else:
-                sql = base + (
-                    "AND (COALESCE(created_at, :epoch) > :cursor_ts "
-                    "OR (COALESCE(created_at, :epoch) = :cursor_ts AND id > :cursor_id)) "
-                    "ORDER BY COALESCE(created_at, :epoch), id LIMIT :batch_size"
-                )
-                params["cursor_ts"] = cursor_ts
-                params["cursor_id"] = cursor_id
+        streamed += len(dated_rows)
+        # The watermark tracks the MAX id seen across the WHOLE batch (dated or
+        # not) -- ordering is by (created_at, id), so the LAST row in a batch is
+        # not necessarily the one with the largest raw id (see the docstring).
+        max_streamed_id = max(max_streamed_id, max(int(r[0]) for r in chunk))
+
+    def _drain(sql: str, params: dict, advance) -> None:
+        """Run one keyset loop to exhaustion. ``advance`` reads the last row and
+        returns the next batch's cursor params."""
+        while True:
             result = session.execute(_sql(sql), params)
             chunk = result.fetchall()
             # Close -- never just commit -- to actually release: see the docstring's
@@ -876,25 +913,42 @@ def build_keyword_daily(con, session, *, batch_size: int = 50_000) -> dict:
             result.close()
             if not chunk:
                 break
-            dated_rows = [
-                (int(r[1]), str(r[2])[:10], int(r[3]), int(r[4]))
-                for r in chunk if r[2] is not None
-            ]
-            if dated_rows:
-                con.executemany(
-                    "INSERT INTO keyword_daily_stage VALUES (?, ?, ?, ?)", dated_rows
-                )
-            streamed += len(dated_rows)
-            # The watermark tracks the MAX id seen across the WHOLE batch (dated or
-            # not) -- ordering is by (created_at, id), so the LAST row in a batch is
-            # not necessarily the one with the largest raw id (see the docstring).
-            max_streamed_id = max(max_streamed_id, max(int(r[0]) for r in chunk))
-            last = chunk[-1]
-            cursor_ts = last[5] if last[5] is not None else _EPOCH
-            cursor_id = int(last[0])
+            _absorb(chunk)
+            params = {**params, **advance(chunk[-1])}
             # Release the transaction this batch's read+insert opened before the next
             # (already-closed) batch query -- the keyset-pagination fix (see docstring).
             session.commit()
+
+    # -- PHASE A: the NULL-created_at rows (see the docstring's PHASE SPLIT note).
+    # Ordered by id alone, which is safe HERE and only here: no insert path can add a
+    # row to this phase mid-scan, so the set can only shrink, and a shrinking set has
+    # neither the double-count nor the reuse-drop direction. A re-indexed row leaves
+    # the phase entirely (its fresh row carries a real created_at). No upper bound is
+    # needed for the same reason -- and none is available, since MAX(created_at) says
+    # nothing about rows that have none.
+    _drain(
+        "SELECT id, keyword_id, observed_on, count, article_id "
+        "FROM keyword_mentions WHERE created_at IS NULL AND id > :cursor_id "
+        "ORDER BY id LIMIT :batch_size",
+        {"cursor_id": 0, "batch_size": batch_size},
+        lambda last: {"cursor_id": int(last[0])},
+    )
+
+    # -- PHASE B: every dated row at or before the boundary, in (created_at, id)
+    # order. A row-value keyset rather than the OR-expansion, because that is what
+    # ix_mention_created_id can serve as a SEARCH; the empty-string sentinel sorts
+    # below every real timestamp, so it is the "before the first row" lower bound.
+    if scan_bound is not None:
+        _drain(
+            "SELECT id, keyword_id, observed_on, count, article_id, created_at "
+            "FROM keyword_mentions "
+            "WHERE created_at IS NOT NULL AND created_at <= :bound "
+            "AND (created_at, id) > (:cursor_ts, :cursor_id) "
+            "ORDER BY created_at, id LIMIT :batch_size",
+            {"bound": scan_bound, "cursor_ts": "", "cursor_id": 0,
+             "batch_size": batch_size},
+            lambda last: {"cursor_ts": last[5], "cursor_id": int(last[0])},
+        )
 
     con.execute(_KEYWORD_DAILY_DDL)
     con.execute(

@@ -5150,6 +5150,103 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     `try` turns any earlier failure into a `NameError` from the handler; the exception class
     has to be imported at module level even when the function it guards imports lazily.
 
+  - **A PRESCRIBED REMEDY CAN BE A REVERT OF A RECORDED FIX — read the module's own
+    docstring before implementing the plan item that names it (2026-09-03, S3.5):** the
+    brief's first remedy for the rollup's per-batch full scan was "re-key the batch loop on
+    the integer PK". `columnar.py`'s own docstring records why that key was ABANDONED:
+    `KeywordMention.id` carries no `AUTOINCREMENT`, so a DELETEd rowid can be reused, and
+    with `index_article`'s delete-then-bulk-insert idiom a rowid keyset was LIVE-REPRODUCED
+    both double-counting and silently dropping rows (the PR-D / W2 correction). Bounding
+    `id <= MAX(id)` closes the append direction and NOT the reuse one: a re-index that frees
+    the top rowids and reinserts there lands at ids inside the bound, behind an advanced
+    cursor. The plan's PERFORMANCE claim was exact and only its remedy was unsafe, which is
+    the distinction worth carrying — verify the measurement, then check the fix against what
+    the code already knows. GENERAL FORM: a plan written from measurements is trustworthy
+    about the defect and not automatically about the repair, and the docstring beside the
+    line you are about to change is where the previous repair's reasoning lives.
+  - **AN EXPRESSION OVER AN INDEXED COLUMN MAKES THE INDEX UNREACHABLE, SO ADDING THE INDEX
+    PROVES NOTHING — remove the expression (2026-09-03, S3.5):** the rollup's keyset was
+    `WHERE COALESCE(created_at, :epoch) <= :bound AND (COALESCE(...) > :cursor OR ...)
+    ORDER BY COALESCE(...), id`, and EXPLAIN over the statements the REAL build emits (a
+    listener, not a hand-written lookalike — the recorded probe-is-a-lookalike lesson) said
+    `SCAN keyword_mentions` **plus** `USE TEMP B-TREE FOR ORDER BY` per 50k batch, i.e. it
+    sorted its whole match set every batch. Measured: adding `(created_at, id)` left that
+    plan **byte-identical**, because an expression is not indexable. The fix is to make the
+    predicate a plain range, which here means streaming the NULL rows as their own phase —
+    and NOT an expression index, because alembic's autogenerate cannot compare those and one
+    would leave permanent spurious drift plus an `alembic_stamp_align` schema-behind verdict
+    (the recorded 2026-08-20 NOCASE case). Splitting a scan on nullability has its own
+    correctness question: a rowid keyset is safe on the NULL phase *only* because nothing
+    can ADD a row to it mid-scan, which is a claim about every insert path and was verified
+    against both real idioms (a plain ORM `add` and the bulk `insert(Model), [rows]`) plus
+    the absence of any raw `INSERT INTO` in `src/` — not assumed from the column default.
+  - **A `busy_timeout` IS THE HOLD: against a pinned WAL the whole cost of
+    `wal_checkpoint(TRUNCATE)` is the busy handler, and the pinned verdict is free
+    (2026-09-03, S4.1):** measured on the real PRAGMAs with a reader holding an unexhausted
+    cursor (4.1 MB WAL, 423 frames) — `TRUNCATE` at `busy_timeout=5000` cost **5012 ms**,
+    returned `busy=1` and moved nothing; `PASSIVE` cost **0.0 ms** and backfilled 423/423;
+    `TRUNCATE` at `busy_timeout=0` cost **0.0 ms** and returned the same `busy=1`; with the
+    reader closed, `TRUNCATE` took 0.8 ms and left the WAL at 0. So waiting bought no
+    information a later boundary would not get, while guaranteeing a multi-second hold of
+    the write gate at every pass boundary. PASSIVE is what actually bounds growth while
+    pinned (it backfills to the oldest reader mark; only the FILE reset needs the reader
+    gone). **THE PLAN'S OWN GATE IS REFUTED AND PINNED AS REFUTED:** attempting TRUNCATE
+    only when `log_frames == checkpointed_frames` after the passive step does NOT mean
+    "nothing is pinned" — a reader whose snapshot sits at the current END of the WAL
+    satisfies it exactly (423 == 423) while still pinning the file — and adopting it also
+    breaks the UNPINNED path, since with no reader the frames also match and the TRUNCATE
+    would be skipped, leaving the file unreclaimed. There is nothing to predict: not
+    waiting is the fix.
+  - **`fetchall()` OVER A `LIMIT` ALREADY COMPLETES THE STATEMENT, so an explicit
+    `close()` there is belt and not the mechanism (2026-09-03, S4.2, caught by a mutation
+    that SURVIVED):** the registry's close-never-merely-commit finding is about
+    `fetchmany()` on a **partially drained** Result, where an un-reset prepared statement
+    pins the read snapshot independently of BEGIN/COMMIT. I copied that comment onto a
+    batch loop that fully drains each bounded query with `fetchall()`, and the mutation
+    removing the `close()` reddened nothing — correctly, because the statement had already
+    reached natural completion. A claim in a comment that the code does not depend on is a
+    fabricated mechanism inside an honesty fix; state which of the two shapes you have.
+  - **A FIXTURE WHOSE ENTITIES CARRY SLACK CANNOT SEE A LOST ROW (2026-09-03, S4.2):** a
+    keyset mutation advancing the cursor one row too far (skipping a row per chunk) passed
+    a chunk-size-agreement test twice. With one keyword and a lopsided majority, no output
+    field moves; with 24 keywords at THREE mentions each, losing one still left every
+    keyword above the floor and the tally unchanged. Only ONE mention per keyword makes a
+    keyword's presence in the tally depend on a single row, and then the mutation fails
+    immediately. GENERAL FORM: for a guard that a scan lost nothing, build the fixture so
+    each counted entity depends on exactly one row — any redundancy per entity is slack the
+    mutation hides in, and this is the same "a probe's data distribution is part of the
+    lookalike" trap with REDUNDANCY as the varying axis. Corollary from the same matrix: a
+    test of a HELPER is not a test of its WIRING — every assertion called `_wal_gauges()`
+    directly and deleting its use from the sample dict reddened none of them, which is the
+    recorded unguarded-wiring defect recurring one subsystem over.
+  - **A TEST CAN BE POISONED BY ITS OWN BACKGROUND THREAD, AND PASS ALONE ONLY BECAUSE THAT
+    THREAD DIES — remove the kick, never out-wait it (2026-09-03, the persisted-serve
+    race):** `test_persisted_serve_matches_live_and_discloses_the_store` took its live
+    baseline by calling `top_terms` with the rollup serve ON and `_STATE["con"]` None,
+    which is precisely the condition `windowed_rows` answers with
+    `_trigger_build_async()`. So the test raced a daemon in-memory build against its own
+    four statements, and that build's swap sets `persisted=False`: landing before the
+    test's `_STATE.update` is harmless, landing between the serve and the `basis()`
+    composition is a red `assert 'memory' == 'persisted'`. **It was green for years
+    because in ISOLATION the racing build reads the PROCESS store via `session_scope()`,
+    and in a single-file run that store is unmigrated — it raises `no such table:
+    keyword_mentions` before it can reach the swap.** A full suite migrates the store, the
+    build completes, and the landing point is then decided by how long the build takes —
+    which two extra round trips in an unrelated rollup change were enough to move. THREE
+    GENERAL POINTS. (a) A test that passes alone and fails in a full run is not
+    automatically pollution FROM another test: it can be its OWN worker, which only becomes
+    capable of finishing once the shared fixtures other files set up exist — so ask what the
+    thread READS, not only what the tests write. This is the mirror of the recorded
+    "a test that starts a real worker and never joins it poisons the whole pytest process":
+    there the victim is elsewhere, here it is the test itself. (b) Prefer removing the kick
+    to draining it — taking the baseline with the serve explicitly OFF makes the race
+    impossible by construction, and the `kicked == []` assertion then reddens
+    DETERMINISTICALLY when the guard is removed, where an out-wait reddens only by luck.
+    (c) Prove the two halves SEPARATELY and synchronously before touching either side (the
+    serve kicks a build; the swap flips an installed state), or "I made the test
+    deterministic" is indistinguishable from "I relaxed an assertion I had not understood" —
+    and ship both halves as named guards, so the next reader can check the reason rather
+    than re-derive it.
   - **A LOCK THAT GRANTS TO WHOEVER FINDS IT FREE MAKES ITS OWN WAIT COUNTER MEANINGLESS
     (2026-09-03, S2.6c):** the gate's `max_wait_s` was the field's headline number — 6,236
     seconds — and it could not be read as a long write, because `acquire()` had a fast path

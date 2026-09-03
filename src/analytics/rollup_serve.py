@@ -71,6 +71,9 @@ _STATE: dict = {
     "token": None,
     "pending": False,
     "checked_at": 0.0,
+    # S3.5: the last time the AUTO-ON background build declined to run, and why.
+    # None == it has never declined. A skip is a disclosure, never a silent no-op.
+    "last_skip": None,
 }
 
 # P1.10: the old TTL is now the MINIMUM interval between rebuilds (bounds churn while the
@@ -157,6 +160,7 @@ def status() -> dict:
         rows = _STATE["rows"]
         pending = _STATE["pending"]
         persisted = _STATE["persisted"]
+        last_skip = _STATE["last_skip"]
     return {
         "enabled": serve_enabled(),
         "mode": serve_mode(),  # auto | forced-on | forced-off
@@ -172,6 +176,10 @@ def status() -> dict:
         "change_pending": pending,
         "min_rebuild_s": rollup_serve_ttl_s(),
         "backstop_s": _BACKSTOP_S,
+        # S3.5: the last declined AUTO build, with the memory guard's own readings.
+        # Absent (None) means it has never declined -- never conflated with "declined
+        # and everything was fine".
+        "last_skip": last_skip,
     }
 
 
@@ -263,10 +271,52 @@ def _refresh_persisted_build() -> None:
     _LOG.info("rollup serve: refreshed persisted keyword_daily (%s rows)", rows)
 
 
+def _memory_verdict() -> dict | None:
+    """The memory guard's OWN verdict on whether a whole-corpus build should start now.
+
+    Returns a skip record when the guard is engaged, else None. It never computes a
+    memory number of its own -- the readings it reports are the guard's, so the two can
+    never disagree about the machine. A guard with no readings (no psutil) is BLIND, and
+    a blind guard is not evidence of pressure: it reports ``engaged: False`` and the
+    build proceeds, which is the honest direction (declining on an absent measurement
+    would refuse the build on every core install).
+    """
+    try:
+        from src.scheduler.memguard import memory_guard
+        # `engaged` is a PROPERTY, not a method -- calling it raises TypeError, and a
+        # bare except here would have swallowed that into "not engaged" forever.
+        if not memory_guard.engaged:
+            return None
+        st = memory_guard.state()
+        return {
+            "reason": "mem-low",
+            "at": time.time(),
+            # The guard's own numbers, passed through rather than re-measured.
+            "guard_reason": st.get("reason"),
+            "last_reading": st.get("last_reading"),
+            "readings_available": st.get("readings_available"),
+        }
+    except Exception:  # noqa: BLE001 - an unreadable guard must not block the build
+        return None
+
+
 def _build_and_swap() -> None:
     """Background (re)build dispatcher: the PERSISTED store when D1 is active, else the
-    in-memory store. Always releases the build lock; a failure never crashes the app."""
+    in-memory store. Always releases the build lock; a failure never crashes the app.
+
+    S3.5: declines while the memory guard is engaged. This is the AUTO-ON path only --
+    an operator asking for a build explicitly (the rollup benchmark calls
+    ``columnar.build_keyword_daily`` directly) is never refused. Skipping leaves the
+    previous rollup serving and ``change_pending`` true, so the next check retries; the
+    serve also falls back to live queries, so a declined build costs latency, never an
+    answer."""
     try:
+        skip = _memory_verdict()
+        if skip is not None:
+            with _LOCK:
+                _STATE["last_skip"] = skip
+            _LOG.info("rollup serve: build skipped (%s)", skip.get("guard_reason") or "mem-low")
+            return
         if _persisted_serve_active():
             _refresh_persisted_build()
         else:

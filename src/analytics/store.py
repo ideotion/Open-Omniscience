@@ -22,7 +22,7 @@ import time
 from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 
-from sqlalchemy import insert
+from sqlalchemy import insert, text
 from sqlalchemy.orm import Session
 
 from src.analytics.baseline import baseline_tags
@@ -1433,6 +1433,13 @@ def source_counter_envelope(session: Session, source, *, fresh_within_hours: flo
             "method": "maintained per-source article counter (reconciled from Article.source_id)"}
 
 
+# S4.2: how many mentions one chunk of the language-signature scan reads before
+# closing its cursor and releasing the WAL read-mark. 20 000 preserves the row
+# volume the previous `yield_per(20000)` used; the change is that the cursor is
+# CLOSED between chunks rather than held for the whole ~9.3 M-row scan.
+_LANG_SCAN_CHUNK = 20_000
+
+
 def reconcile_keyword_language(
     session: Session, *, min_articles: int = 2
 ) -> dict:
@@ -1472,14 +1479,59 @@ def reconcile_keyword_language(
 
     # 2) per-keyword language distribution (count == distinct articles, one mention per
     # (keyword, article)). Covering (keyword_id, article_id) scan, streamed to bound RAM.
+    # S4.2: a keyset loop that CLOSES between chunks, not one `yield_per` scan.
+    # This pass runs from the background re-index job, and a single streamed scan
+    # over ~9.3 M mentions held one WAL read-mark for its whole duration -- which
+    # is what starves `PRAGMA wal_checkpoint`, so the WAL grew for as long as the
+    # job ran.
+    #
+    # WHAT RELEASES THE MARK HERE, stated precisely because the neighbouring
+    # comment in build_keyword_daily is easy to over-read: each batch is its own
+    # bounded query fully drained by `fetchall()`, and the LIMIT means the
+    # statement reaches natural completion, which is what resets the cursor. The
+    # registry's close-never-merely-commit finding is about `fetchmany()` on a
+    # PARTIALLY drained Result -- there, a commit with the cursor still open
+    # genuinely does not release the mark. The explicit `close()` below is belt,
+    # not the mechanism: a mutation that removes it changes nothing observable,
+    # which was measured rather than assumed.
+    #
+    # THE TRADE, stated rather than hidden: releasing between chunks gives up the
+    # single consistent snapshot the old scan had, so a concurrent re-index can be
+    # seen partly before and partly after. That is acceptable HERE and would not be
+    # in the rollup: the output is a per-keyword MAJORITY VOTE recomputed on a
+    # cadence, not a durable store with a watermark, and it is already guarded by
+    # `min_articles` plus a strict-majority test. It is not acceptable for
+    # `read_snapshot`, whose one snapshot is exactly what makes an export's two
+    # passes agree -- see that module for why it is deliberately left alone.
     dist: dict[int, dict[str, int]] = {}
-    q = session.query(KeywordMention.keyword_id, KeywordMention.article_id)
-    for kid, aid in q.yield_per(20000):
-        lang = art_lang.get(int(aid))
-        if lang is None:
-            continue
-        d = dist.setdefault(int(kid), {})
-        d[lang] = d.get(lang, 0) + 1
+    cursor_id = 0
+    while True:
+        result = session.execute(
+            text(
+                "SELECT id, keyword_id, article_id FROM keyword_mentions "
+                "WHERE id > :cursor ORDER BY id LIMIT :n"
+            ),
+            {"cursor": cursor_id, "n": _LANG_SCAN_CHUNK},
+        )
+        chunk = result.fetchall()
+        result.close()  # belt; the fetchall above is what completes the statement
+        if not chunk:
+            break
+        for _mid, kid, aid in chunk:
+            lang = art_lang.get(int(aid))
+            if lang is None:
+                continue
+            d = dist.setdefault(int(kid), {})
+            d[lang] = d.get(lang, 0) + 1
+        cursor_id = int(chunk[-1][0])
+        # Savepoint-aware, per the recorded lesson that a store helper committing
+        # internally breaks any caller-owned savepoint. Neither caller nests this
+        # today, and the function already commits its own updates below, but a
+        # flush inside a nested transaction is the safe form either way.
+        if session.in_nested_transaction():
+            session.flush()
+        else:
+            session.commit()
 
     # 3) decide the signature per keyword + collect the changes vs the stored language.
     relanguaged = null_to_lang = lang_to_lang = 0
@@ -1503,7 +1555,14 @@ def reconcile_keyword_language(
             null_to_lang += 1
     if updates:
         session.bulk_update_mappings(Keyword, updates)
-        session.commit()
+        # Savepoint-aware for the same reason the scan loop above is: this tail
+        # commit predates S4.2 and would close a caller-owned savepoint, which is
+        # the recorded "a store helper that commits internally" defect. Neither
+        # caller nests this today; the guard is what keeps it safe if one does.
+        if session.in_nested_transaction():
+            session.flush()
+        else:
+            session.commit()
     return {
         "keywords_with_signature": len(dist),
         "relanguaged": relanguaged,
