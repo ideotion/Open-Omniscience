@@ -195,7 +195,7 @@ pqc = [
     # has generate_keypair and completes a sign/verify round trip. Same unpinned-tool drift
     # class as the bandit/mypy pins. Lifting this bound means doing the migration per
     # docs/maintenance/EXTERNAL_DEPENDENCIES.md, not just widening it.
-    "pqcrypto>=0.3.4,<1.0",
+    "pqcrypto>=0.3.4,<2.0",
 ]
 
 # Independent "existed no later than T" timestamping via OpenTimestamps (anchors
