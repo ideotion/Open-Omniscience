@@ -45,19 +45,25 @@ semaphore capping how many workers hold a session, which with this interleaving
 caps the whole per-source unit of work and so gives up the parallelism the memory
 was being spent on.
 
-WHAT IS AND IS NOT COVERED. The wrapper is applied at ONE place --
-``_process_source``, the per-source collector loop both the parallel pool and the
-sequential path go through -- and it wraps the FETCHER rather than the call
-sites, so every network call REACHED FROM THAT LOOP is covered, including ones a
-future edit adds inside ``ingest_source``/``crawl_source``. It does NOT cover the
-housekeeping lane's own session+fetcher pairings (``_lane_step_crawl``, which
-runs the same ``ingest_url`` shape, ``_lane_step_qualification``, which calls the
-same ``ingest_source``, ``_lane_step_backfill``/``_law``/``_markets``,
-``preflight_sources``, ``field_test``), nor law/markets mode in the pass itself.
-Those are ONE session each rather than N, which is why they are not this slice --
-but "every network call in the collector path is covered by construction" would
-be false, and the non-negotiable that matters here is one fetch CLASS, not one
-wrapped INSTANCE. Wrapping them is the obvious follow-up.
+WHAT IS AND IS NOT COVERED. The wrapper is applied where a session and a fetcher
+are PAIRED, not at the call sites, so everything reached from that pairing is
+covered -- including what a future edit adds inside ``ingest_source`` or
+``crawl_source``. There are two such places: ``_process_source`` (the per-source
+collector loop both the parallel pool and the sequential path go through) and
+``run_housekeeping_lane`` (one session shared by every kind, held for the whole
+invocation, on a background thread concurrently with the next pass -- and
+``_lane_step_crawl`` runs the same ``ingest_url`` shape).
+
+Still NOT covered, stated rather than claimed away: law and markets mode inside
+``run_scrape_once`` (``track_watched_law``, ``run_rules``, ``import_due_feeds``),
+which pair the pass session with the raw fetcher at their own call sites, and
+``preflight_sources`` / ``field_test`` in the pass tail. "Every network call in
+the collector path is covered by construction" would be false: the non-negotiable
+that matters here is one fetch CLASS, not one wrapped INSTANCE, so a call site
+that obtains a fetcher any other way satisfies the non-negotiable and gets no
+coverage. The private network helpers (``_guarded_redirect_get``, ``_http_get``,
+``_get_robots``) are likewise delegated un-released -- ``monitoring/preflight.py``
+and ``feed_preflight.py`` already call them directly.
 
 Correctness comes from the pipeline's existing discipline AND from the guard:
 the article loop already runs on a CLEAN session by design (the feed bookkeeping

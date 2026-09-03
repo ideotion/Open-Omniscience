@@ -1404,7 +1404,20 @@ def run_housekeeping_lane(session, fetcher, settings: SchedulerSettings) -> dict
     ``_process_source``'s per-source isolation). Stops taking on NEW kinds
     (never interrupts one mid-flight) once the memory guard engages -- the
     same wind-down discipline the pass itself uses (``_PassWindDown``)."""
+    from src.ingest.fetch_release import wrap_fetcher
     from src.scheduler import memguard
+
+    # S1.0, second site. The lane is ONE session shared by every kind, held for
+    # the whole invocation -- and it runs on a background thread CONCURRENTLY
+    # with the next collection pass, so on the small tier its single held
+    # connection is a third of the pool the workers were just taught not to
+    # hoard. `_lane_step_crawl` additionally runs the very ingest_url shape
+    # `_process_source` now protects. Pairing here covers every kind at once,
+    # the same way `_process_source` covers every call reached from the worker
+    # loop. Honest limit: a kind that leaves the session DIRTY across its own
+    # fetch loop (crawl mutates SourceMetadata without committing) is correctly
+    # DECLINED by the guard and gets no benefit until its first commit.
+    fetcher = wrap_fetcher(fetcher, session)
 
     out: dict[str, dict] = {}
     order = _lane_kind_order(_lane_pending_kinds(settings))

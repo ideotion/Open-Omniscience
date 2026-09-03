@@ -704,3 +704,73 @@ def _assert_outcomes(plain, plain_releases, wrapped, wrapped_releases):
     )
     assert plain == wrapped, (plain, wrapped)
     assert plain.get("stored") == 3, plain
+
+
+# --------------------------------------------------------------------------- #
+# The second site: the housekeeping lane.
+# --------------------------------------------------------------------------- #
+def test_the_housekeeping_lane_pairs_its_fetcher_with_its_own_session():
+    """The lane holds ONE session for its whole invocation, on a background
+    thread, concurrently with the next pass — and ``_lane_step_crawl`` runs the
+    same ``ingest_url`` shape ``_process_source`` protects. Same structural
+    property, including that the result is BOUND (a discarded call is inert).
+    """
+    src = Path("src/scheduler/runner.py").read_text(encoding="utf-8")
+    body = "\n".join(
+        line for line in src.splitlines() if not line.lstrip().startswith("#")
+    )
+    fn = next(
+        n
+        for n in ast.walk(ast.parse(body))
+        if isinstance(n, ast.FunctionDef) and n.name == "run_housekeeping_lane"
+    )
+    assigns = [
+        n
+        for n in ast.walk(fn)
+        if isinstance(n, ast.Assign)
+        and isinstance(n.value, ast.Call)
+        and isinstance(n.value.func, ast.Name)
+        and n.value.func.id == "wrap_fetcher"
+    ]
+    assert assigns, "the lane must pair its fetcher with its session"
+    assert {a.id for a in assigns[0].value.args if isinstance(a, ast.Name)} == {
+        "fetcher",
+        "session",
+    }
+    assert any(
+        isinstance(t, ast.Name) and t.id == "fetcher" for a in assigns for t in a.targets
+    ), "the wrapper must be bound to `fetcher`, or every lane step gets the raw one"
+
+
+def test_the_lane_hands_the_wrapped_fetcher_to_every_step():
+    """Behavioural: each step receives the wrapper, not the raw fetcher.
+
+    The structural guard above cannot see a step invoked with something else, and
+    the lane's value is precisely that ONE pairing covers all of them.
+    """
+    from src.scheduler import runner as R
+
+    seen: list[object] = []
+
+    def _step(_session, fetcher, _settings):
+        seen.append(fetcher)
+        return {"ok": True}
+
+    class _S:
+        mode = "rss"
+
+    raw = _RecordingFetcher()
+    sess = _CountingSession()
+    kinds = list(R._LANE_STEPS)[:2]
+    orig = dict(R._LANE_STEPS)
+    try:
+        R._LANE_STEPS.clear()
+        R._LANE_STEPS.update(dict.fromkeys(kinds, _step))
+        R.run_housekeeping_lane(sess, raw, _S())
+    finally:
+        R._LANE_STEPS.clear()
+        R._LANE_STEPS.update(orig)
+
+    assert seen, "no lane step ran — the fixture must reach one"
+    assert all(f is not raw for f in seen), "a step received the RAW fetcher"
+    assert all(isinstance(f, type(wrap_fetcher(raw, sess))) for f in seen)
