@@ -310,8 +310,15 @@ async def lifespan(app: FastAPI):
     # recorder that makes the next such death self-explaining).
     try:
         from src.monitoring.forensics import data_dir_persistence, record_session_start
+        from src.monitoring.session_hwm import capture_previous
 
+        # record_session_start() takes the -wal reading BEFORE anything can open the
+        # store (S0.1) — keep it first, and keep nothing that touches the database
+        # above it.
         record_session_start()
+        # Snapshot the PREVIOUS session's own memory peaks before this one starts
+        # overwriting them (S0.4).
+        capture_previous()
         # A11: honestly warn ONCE at boot if the corpus is on a provably-volatile root
         # (RAM-backed / Qubes disposable), pointing at the opt-in persistent OO_DATA_DIR.
         # Never "stop using disposable VMs" — only how to keep the corpus.
@@ -360,6 +367,12 @@ async def lifespan(app: FastAPI):
         logger.warning("Error stopping scheduler on shutdown", exc_info=True)
 
     dispose_engine()
+    try:
+        from src.monitoring.session_hwm import flush as _flush_hwm
+
+        _flush_hwm()  # persist this session's peaks past the write throttle
+    except Exception:  # noqa: BLE001 - best-effort
+        logger.debug("could not flush the session high-water marks", exc_info=True)
     try:
         from src.monitoring.forensics import record_clean_shutdown
 

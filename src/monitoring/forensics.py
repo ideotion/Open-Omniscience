@@ -182,6 +182,8 @@ def data_dir_inventory(max_entries: int = 60) -> dict[str, Any]:
 
 _PREV_AT_BOOT: dict[str, Any] | None = None
 _PREV_LOADED = False
+# This boot's -wal reading, taken before any connection can exist (S0.1).
+_WAL_AT_BOOT: dict[str, Any] | None = None
 
 
 def _read_state() -> dict[str, Any] | None:
@@ -202,8 +204,21 @@ def _write_state(state: dict[str, Any]) -> None:
 
 def record_session_start() -> dict[str, Any] | None:
     """Stamp this session 'running'; returns the PREVIOUS session's state (the
-    forensic input). Call once at process start; best-effort."""
-    global _PREV_AT_BOOT, _PREV_LOADED
+    forensic input). Call once at process start; best-effort.
+
+    THE -wal READING HAPPENS HERE, AND THAT PLACEMENT IS THE POINT (S0.1). Any
+    connection that opens and closes the store unlinks the -wal, so a reading taken
+    later describes the prober, not the previous session. Taking it inside this
+    function — which the lifespan calls before anything can open the database —
+    makes the ordering a property of the code rather than a convention a future
+    caller has to remember, and it also survives the case a reorder inside
+    ``unlock()`` cannot cover: a WRONG-passphrase attempt deletes the -wal too, so
+    every retry after the first would otherwise be blind."""
+    global _PREV_AT_BOOT, _PREV_LOADED, _WAL_AT_BOOT
+    # Read the -wal FIRST: before the previous state is even parsed, so nothing
+    # between here and the probe can grow into a database open.
+    boot_reading = wal_state_before_open()
+    _WAL_AT_BOOT = boot_reading
     prev = _read_state()
     if not _PREV_LOADED:
         _PREV_AT_BOOT = prev
@@ -213,12 +228,26 @@ def record_session_start() -> dict[str, Any] | None:
             "state": "running",
             "started_at": _now(),
             "pid": os.getpid(),
+            # What the PREVIOUS session left on disk, measured before this one could
+            # touch it. It describes that session, not this one.
+            "wal_at_boot": boot_reading,
             # carry the last unlock record forward so one boot's timing survives
             # into the next export even if the next unlock is fast
             "last_unlock": (prev or {}).get("last_unlock"),
         }
     )
     return prev
+
+
+def wal_at_boot() -> dict[str, Any] | None:
+    """This boot's -wal reading (see ``record_session_start``), or None if the boot
+    read never ran. Reads the module global first so a later probe — which would by
+    then have destroyed the evidence — can never be mistaken for it."""
+    if _WAL_AT_BOOT is not None:
+        return _WAL_AT_BOOT
+    st = _read_state() or {}
+    got = st.get("wal_at_boot")
+    return got if isinstance(got, dict) else None
 
 
 def record_clean_shutdown() -> None:
@@ -278,18 +307,36 @@ def wal_bytes_before_open() -> int | None:
 
 
 def wal_state_before_open() -> dict[str, Any]:
-    """The -wal file's state BEFORE the first connection, in THREE states.
+    """The -wal file's state at the moment of the call, in THREE states.
 
-    A clean SQLite WAL-mode shutdown checkpoints and REMOVES the -wal file
-    (verified empirically, not assumed). So "absent" is a real measurement —
-    there is no WAL, therefore WAL recovery has nothing to do — and it is NOT
-    the same fact as "the size could not be read at all".
+    READ THIS BEFORE INTERPRETING THE RESULT (2026-09-02, S0.1). What the call
+    measures depends entirely on WHEN it runs, because *any* SQLite connection
+    that opens and closes the store checkpoints and unlinks the -wal — including
+    a passphrase-verify connection, and including one opened by a WRONG-passphrase
+    attempt. The old reading of ``absent`` ("the previous shutdown was clean")
+    was therefore an artifact of the measurement order, not a fact: on an
+    encrypted store the unlock route verified the passphrase with its own
+    connect/close *before* this ran, so the answer was ``absent`` whatever had
+    happened. Reproduced with stdlib sqlite3: a crashed store with an 840 KB
+    -wal, one connect()/close(), and the file is gone.
 
-    ``wal_bytes_before_open`` collapses both onto ``None``, and that conflation
-    has a cost: the P0.4 unlock check asks the operator to produce a cold boot
-    after a CLEAN shutdown, which by construction leaves no -wal, so the very
-    boot the bar asks for reports its WAL evidence as an unmeasured gap. Three
-    states let the report say which case it measured.
+    So the honest readings are:
+
+    * ``present``  — a -wal existed at this moment. Read AT BOOT (before anything
+      can open the store) that means the previous session's last SQLite
+      connection was never cleanly closed. That includes a lifespan teardown that
+      still had a connection checked out, so it is evidence of an unclean *close*,
+      not proof of a crash.
+    * ``absent``   — no -wal at this moment. NOTHING can be concluded from it: a
+      clean close, a wrong-passphrase attempt, an earlier probe, or a fresh store
+      that never had one all produce it.
+    * ``unreadable`` — the size could not be read. Unmeasured, never reported as
+      zero.
+
+    The load-bearing call site is ``record_session_start()``, which takes the
+    reading at boot before any connection can exist and persists it as
+    ``wal_at_boot``. A reading taken later (the unlock timer) describes the unlock
+    path's own timing, not the previous session.
     """
     p = data_dir() / f"{_DB_NAME}-wal"
     try:
@@ -297,8 +344,10 @@ def wal_state_before_open() -> dict[str, Any]:
             "bytes": p.stat().st_size,
             "state": "present",
             "reason": (
-                "a -wal file was present at open — its frames are replayed inside "
-                "the first connection, so that recovery is part of the unlock timing"
+                "a -wal file was present — its frames are replayed inside the next "
+                "connection, so that recovery is part of whatever this reading times. "
+                "Read AT BOOT it also means the previous session's last SQLite "
+                "connection was never cleanly closed"
             ),
         }
     except FileNotFoundError:
@@ -306,8 +355,10 @@ def wal_state_before_open() -> dict[str, Any]:
             "bytes": 0,
             "state": "absent",
             "reason": (
-                "no -wal file at open — a clean shutdown checkpoints and removes it, "
-                "so WAL recovery had nothing to do and is NOT part of this timing"
+                "no -wal file at this moment, so there is no WAL recovery in this "
+                "timing. NOTHING can be concluded about how the previous session "
+                "ended: a clean close, a wrong-passphrase attempt, an earlier probe "
+                "and a fresh store all leave the file absent"
             ),
         }
     except OSError as exc:
@@ -329,12 +380,22 @@ def previous_session_report() -> dict[str, Any]:
         "generated_at": _now(),
         "method": (
             "A clean-shutdown sentinel (session_state.json stamped 'running' at boot, "
-            "'clean' at shutdown) + the collector's last self-recorded RSS sample. An "
-            "unclean end whose last RSS approaches the machine's RAM is CONSISTENT WITH "
+            "'clean' at shutdown), the PREVIOUS session's own high-water memory marks, "
+            "and the -wal state read at this boot before any connection existed. An "
+            "unclean end whose peak RSS approaches the machine's RAM is CONSISTENT WITH "
             "an external OOM kill — an INFERENCE from the app's own records, never a "
-            "kernel-log fact; confirm with the host's journal if it matters."
+            "kernel-log fact; confirm with the host's journal if it matters. Note what "
+            "the app CANNOT tell apart from its own data: an OOM kill, a host reset, a "
+            "SIGHUP from a closed terminal and a native fatal all leave this same "
+            "record."
         ),
     }
+    # What the PREVIOUS session left on disk, measured at THIS boot before any
+    # connection could exist (S0.1). Reported for EVERY verdict — including the
+    # no-sentinel one, where a -wal present with no sentinel is itself a fact (the
+    # sentinel file was removed, or this build predates it) — because "absent" is now
+    # an honest non-answer rather than a claim of a clean shutdown.
+    out["wal_at_boot"] = wal_at_boot()
     if prev is None:
         out["previous_session"] = "unknown"
         out["note"] = "no sentinel yet (first boot with forensics, or the file was removed)"
@@ -348,7 +409,47 @@ def previous_session_report() -> dict[str, Any]:
     out["ended_at"] = prev.get("ended_at")
     out["last_unlock"] = prev.get("last_unlock")
     if out["previous_session"] == "unclean-end":
-        out["last_collector_sample"] = _last_collect_perf_sample()
+        # The previous session's OWN peaks (S0.4). ``last_collector_sample`` reads the
+        # last line of a file EVERY session appends to, so once this process starts
+        # collecting it reports the survivor's numbers, not the crashed run's — which
+        # is how an OOM was once "inferred" from the wrong process. The sidecar is
+        # scoped to one session and is snapshotted at boot, so it cannot drift.
+        out["previous_session_peaks"] = _previous_peaks()
+        sample = _last_collect_perf_sample()
+        if sample is not None:
+            sample = dict(sample)
+            sample["attribution"] = (
+                "the last line of collect_perf.jsonl, which EVERY session appends to — "
+                "once this session starts collecting these are ITS numbers, not the "
+                "previous one's. Use previous_session_peaks for the crashed run."
+            )
+        out["last_collector_sample"] = sample
+    return out
+
+
+def _previous_peaks() -> dict[str, Any] | None:
+    """The previous session's own high-water marks, or a stated absence."""
+    try:
+        from src.monitoring.session_hwm import previous
+
+        got = previous()
+    except Exception:  # noqa: BLE001 - forensics degrades, never raises
+        return None
+    if not got:
+        return {
+            "available": False,
+            "reason": (
+                "no per-session high-water record from the previous run (it predates "
+                "this instrument, or the file was removed) — unmeasured, not zero"
+            ),
+        }
+    out = dict(got)
+    out["available"] = True
+    out["method"] = (
+        "peak RSS / minimum available memory / peak swap-used sampled by the previous "
+        "session itself and snapshotted at this boot. A field that could not be "
+        "measured is ABSENT rather than zero."
+    )
     return out
 
 
@@ -592,6 +693,40 @@ def render_text(d: dict[str, Any] | None = None) -> str:
         lines.append(f"- ended at: {prev['ended_at']}")
     if prev.get("last_rss_mb") is not None:
         lines.append(f"- collector's last RSS sample: {prev['last_rss_mb']} MB")
+    wal_boot = prev.get("wal_at_boot") or {}
+    if wal_boot.get("state"):
+        nbytes = wal_boot.get("bytes")
+        size = f"{int(nbytes):,} bytes" if isinstance(nbytes, int) else "size unmeasured"
+        lines.append(f"- -wal at this boot: {wal_boot['state']} ({size})")
+        if wal_boot.get("reason"):
+            lines.append(f"  - {wal_boot['reason']}")
+    peaks = prev.get("previous_session_peaks") or {}
+    if peaks:
+        lines.append("- that session's own peaks:")
+        if peaks.get("available") is False:
+            lines.append(f"  - unavailable: {peaks.get('reason', 'no reason recorded')}")
+        else:
+            for key, label, unit in (
+                ("rss_max_mb", "peak RSS", "MB"),
+                ("avail_min_mb", "minimum available memory", "MB"),
+                ("swap_used_max_mb", "peak swap used", "MB"),
+            ):
+                if peaks.get(key) is None:
+                    lines.append(f"  - {label}: not measured (omitted, never zero)")
+                else:
+                    lines.append(f"  - {label}: {peaks[key]} {unit}")
+            if peaks.get("phase"):
+                lines.append(f"  - last phase seen: {peaks['phase']}")
+            if peaks.get("last_ts"):
+                lines.append(f"  - last recorded at: {peaks['last_ts']}")
+    sample = prev.get("last_collector_sample") or {}
+    if sample:
+        lines.append(
+            f"- last collect_perf line (see attribution): rss {sample.get('rss_mb')} MB, "
+            f"available {sample.get('mem_avail_mb')} MB, at {sample.get('ts')}"
+        )
+        if sample.get("attribution"):
+            lines.append(f"  - {sample['attribution']}")
     if prev.get("method"):
         lines.append(f"- how this is known: {prev['method']}")
 

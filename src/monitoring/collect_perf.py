@@ -422,6 +422,15 @@ class CollectionMonitor:
         }
         _set_latest(sample)
         _append_jsonl(sample)
+        # Fold this tick into the per-session high-water marks (S0.4). Throttled and
+        # best-effort inside; the sidecar is what makes a crashed session's numbers
+        # attributable to IT rather than to whichever session exported the bundle.
+        try:
+            from src.monitoring.session_hwm import observe as _hwm_observe
+
+            _hwm_observe(phase=f"collecting (pass {self._pass_id})" if self._pass_id else "collecting")
+        except Exception:  # noqa: BLE001 - never break a sample on a forensic sidecar
+            pass
 
     def _mem_gauges(self) -> dict:
         """Cheap allocator + component gauges for one sample (best-effort)."""

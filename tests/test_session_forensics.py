@@ -157,14 +157,23 @@ def test_wal_state_before_open_separates_absent_from_unreadable(dd):
     """Three states, because 'no WAL' and 'could not read the WAL' are different
     facts and the P0.4 bar turns on which one happened.
 
-    A clean SQLite WAL-mode shutdown REMOVES the -wal file (verified empirically),
-    so 'absent' is the normal state after the very cold boot the bar asks for --
-    reporting it as an unmeasured null is what made that boot unbankable.
+    UPDATED DELIBERATELY 2026-09-02 (S0.1), not by reflex. This test used to assert
+    that the 'absent' reason says "a clean shutdown checkpoints and removes it". That
+    reading was false and load-bearing: ANY connection that touches the store
+    checkpoints and unlinks the -wal on close -- including the passphrase-verify
+    connection the unlock route opens before this probe ran, and including one opened
+    by a WRONG-passphrase attempt. So 'absent' was produced on an encrypted store
+    whatever had happened, and three places read it as evidence of a clean shutdown.
+    The three states survive (they answer "what did this timing cover"); the clean-
+    shutdown CLAIM is gone, and the forensic reading about the previous session is now
+    taken at boot (record_session_start -> wal_at_boot), which is what
+    tests/test_forensics_wal_at_boot.py guards.
     """
     absent = forensics.wal_state_before_open()
     assert absent["state"] == "absent"
     assert absent["bytes"] == 0  # a real measurement: nothing to replay
-    assert "clean shutdown" in absent["reason"]
+    assert "nothing can be concluded" in absent["reason"].lower()
+    assert "clean shutdown checkpoints and removes it" not in absent["reason"]
 
     (dd / "open_omniscience.db-wal").write_bytes(b"w" * 777)
     present = forensics.wal_state_before_open()
