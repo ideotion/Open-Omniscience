@@ -13319,6 +13319,84 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   adapting reaches stored key material in the tamper-evidence path and belongs behind the
   EXTERNAL_DEPENDENCIES upgrade checklist, not in an unrelated PR at speed. Put the reason
   in the constraint comment, or the next reader simply widens the bound.
+- **SYSTEMATIC CRASHES ACROSS FOUR MACHINES — FIELD ANALYSIS + EIGHT RULINGS (maintainer
+  2026-09-02: "my app is systematically crashing … I ran it on several instances, needed to
+  either restart or reinstall after each crash"; three all-diagnostics bundles + four
+  session-forensics exports analysed; brief of record =
+  [`docs/design/AUTONOMOUS_SESSION_BRIEF_2026-09-02_CRASH_ROOT_CAUSE.md`](docs/design/AUTONOMOUS_SESSION_BRIEF_2026-09-02_CRASH_ROOT_CAUSE.md);
+  NOTHING BUILT this session — analysis, rulings and the executable brief only):** a 60-finding
+  investigation with adversarial per-lens refutation (6 findings killed, 54 survive; every
+  load-bearing claim re-verified against the tree or reproduced).
+  **THE HEADLINE MECHANISM (measured, top-ranked): a collector worker holds a POOLED DB
+  CONNECTION ACROSS ITS NETWORK FETCH, and the governor cannot take it back.**
+  `runner._worker` acquires a governor permit, opens `session_scope()`, and then runs
+  `ingest_source` — i.e. the whole Tor fetch — inside that session; `_AdjustableSemaphore`
+  documents that holders in excess "simply finish their one unit of work and release — never
+  preempted". Each pooled connection carries `cache_size=-65536` (64 MiB) plus
+  `temp_store=MEMORY`, so 50 admitted workers pin a multi-GB resident floor for as long as the
+  slowest fetch takes. On machine B this held **6,767 MB RSS with 94 MB available for 2.5 h**
+  while the governor had already cut permits 50 -> 1: the back-off was correct and arrived too
+  late to matter, because the memory is in connections nobody can preempt. The memory guard
+  pauses collection but releases nothing resident, so it cannot recover this state either.
+  **THREE DEFECTS CONFIRMED ON ALL THREE BUNDLES (cross-machine, not one bad box):**
+  (1) **`SQLITE_BUSY_SNAPSHOT` is the fleet's most frequent error** (A 234 lifetime, B 144,
+  C 82) — reproduced: a `begin_nested()` SAVEPOINT taken outside a transaction is a
+  `BEGIN DEFERRED`, so a read inside it takes a snapshot, a concurrent commit invalidates it,
+  and the later write fails **instantly** (the busy handler is NOT invoked while a read
+  transaction is open, so the 30 s `busy_timeout` buys nothing); a `ROLLBACK TO SAVEPOINT`
+  without `RELEASE` leaves the stale transaction alive. **Rolling back before `begin_nested()`
+  does NOT fix it** (the snapshot is taken by the reads INSIDE the savepoint) — the fix is to
+  hold `write_lock()` across the read-then-write, at the two identified call sites.
+  (2) the alerts cold-compute and (3) the trending-windows warm-key mismatch, both on A, B and C.
+  **THE `statement_deadline` POOL POISON (reproduced, SQLAlchemy 2.0.52 QueuePool):** the
+  deadline arms `set_progress_handler` on the session's *pooled DBAPI connection*; when the
+  session returns that connection to the pool with the handler still armed, the next checkout
+  inherits it and is interrupted on the FIRST holder's clock — 3/3 victims interrupted in the
+  reproducer.
+  **THE WAL-PROBE ARTIFACT (invalidates a shipped inference): unlock's own verify connection
+  is the last connection to close, so SQLite checkpoints and DELETES the `-wal` before the
+  probe reads it** — so `forensics.py:311-315`, `p0_validation.py:582-586` and the P0 runbook
+  §8 all read "no WAL" as evidence of a clean shutdown when it is an artifact of the probe's
+  own ordering. (This is the 2026-08-12 three-state `wal_state_before_open` lesson recurring
+  one layer up: the sentinel was fixed, the INFERENCE built on it was not.)
+  **WHY THE MACHINES DIE DIFFERENTLY (do not treat the four deaths as one bug):** A
+  (3,924 MiB RAM, only 1,024 MiB swap) is the box most likely to be genuinely OOM-KILLED;
+  C (7.25 GiB swap) converts the same pressure into a multi-hour FREEZE instead. A correction
+  worth keeping: A was described in a human-typed expedition label as "6 core"; the hardware
+  probe says 4 physical / 4 logical — **trust the probe**.
+  **HONEST LIMIT stated in the brief itself: the proximate cause of each of the four deaths
+  remains undetermined from app data alone.** Phase 0 of the plan exists to make the NEXT one
+  answerable (kernel-log read, a bounded pre-death breadcrumb, the WAL-inference correction),
+  which is why it sequences first.
+  **THE EIGHT MAINTAINER RULINGS (2026-09-02, all binding):**
+  • **R1 — below ~4 GB RAM: REDUCE *and* DECLINE.** Auto-apply a small-RAM budget (~2 pooled
+    connections, ~16 MiB page cache, no in-memory columnar rollup) AND decline the whole-corpus
+    background scans by default — each refusal STATED with the real numbers, a visible translated
+    caveat, and an override. Collection keeps running. **Never a hard block** (the AI hardware
+    gate is the precedent — it already refuses on this exact box and says why).
+  • **R2 — SELF-CAP, actually RELEASE, and DOCUMENT the hard ceiling.** The app caps its own
+    resident budget and RELEASES memory when paused (accepting slower collection on small
+    machines); the manual documents the operator's real ceiling (a cgroup `MemoryMax`), which
+    converts a desktop freeze into a clean app restart with the corpus intact.
+  • **R3 — READ THE HOST KERNEL LOG AT BOOT: always, local-only.** Best-effort `journalctl -k` on
+    a background thread with a timeout, storing ONLY lines naming this app's own process. Zero
+    network, read-only, shared only on export — it is the only source that separates an OOM KILL
+    from a FREEZE.
+  • **R4 — the diagnostics bundle PAUSES COLLECTION while it runs** (the existing exclusive-hold
+    mechanism) **and still runs EVERY member** — the bundle is the maintainer's only evidence
+    channel. A member that overruns publishes a **`partial-deadline`** outcome that KEEPS its
+    payload: recording `skipped-deadline` would DISCARD what it had already computed, which is
+    the refuter finding that changed this design.
+  • **R5 — BOUND THE WRITE GATE *and* SERIALISE THE PASS TAIL** — both, not either.
+  • **R6 — the `database is locked` fix is TARGETED**: fix the two failing call sites; do NOT
+    change the engine's transaction mode in this batch (recorded as a separate reviewed slice).
+  • **R7 — BOTH ENDS UNDER LOAD**: the server publishes an honest load reading AND the UI backs
+    off with one honest banner, recovering automatically.
+  • **R8 — collect the FILES *and* the HOST CHECKS from machines A and B** (the operator step),
+    so the next report carries the kernel verdict beside the app's own account.
+  **OPERATOR STEPS (in the brief's §8, none guessable from here):** the A/B host checks + the
+  kernel-log capture at the next crash; nothing else in the plan is gated on them.
+  PENDING: the brief's execution (14 sequenced PRs, S0.1 first).
 ## Shipped batch log (compressed verdicts; details in git history + named docs)
 Shipped work is tracked in **[`docs/ledger/shipped.csv`](docs/ledger/shipped.csv)** (sortable: date · area · item · status · refs · key_paths · summary) — 125 entries as of 2026-06-25. The full verbatim entries are archived in [`docs/ledger/SHIPPED_LOG.md`](docs/ledger/SHIPPED_LOG.md); deeper detail is in git history + each PR + the named design docs. Load-bearing LESSONS from shipped work live in the Session-rituals 'Lessons' subsection above (read those).
 
