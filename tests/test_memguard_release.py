@@ -446,6 +446,25 @@ def test_the_portable_rss_instrument_does_not_perturb_what_it_measures(tmp_path)
     psutil = pytest.importorskip("psutil", reason="the portable instrument itself is absent")
     assert psutil  # the skip above is the guard; this keeps the name used
 
+    # This is a COMPARISON of two instruments, so it needs the reference to
+    # compare against. Without /proc there is nothing to check psutil's answer
+    # for, and macOS's allocator does not hand freed pages back to the OS at
+    # all -- so running here anyway reports "the instrument is perturbing the
+    # measurement" about a platform where the instrument is fine and the
+    # PLATFORM is what freed nothing. That is a fabricated diagnosis, which is
+    # the same dishonesty as a fabricated pass; the sibling premise test above
+    # already refuses it for the same reason. Say what stays unchecked instead.
+    try:
+        with open("/proc/self/status", encoding="utf-8") as _fh:
+            _fh.read(1)
+    except OSError:
+        pytest.skip(
+            "no /proc/self/status to compare psutil against: this check is a "
+            "Linux-side check OF the macOS code path, and on a platform whose "
+            "allocator keeps freed pages the two instruments cannot be told "
+            "apart -- the psutil fallback stays unverified here, by construction"
+        )
+
     # Block ONLY the file the probe reads. psutil reads /proc/<pid>/statm on
     # Linux and uses Mach on macOS, so it stays functional either way -- a
     # blanket /proc blackout would disable the very fallback under test and the

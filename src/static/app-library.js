@@ -992,8 +992,14 @@
       insights: {ms: 6000, fn: () => loadInsights()},
       wiki:     {ms: 6000, fn: () => refreshWikiLive()},
     };
+    // S3.1 (c): the tabs whose OWN loader already does what their live spec does,
+    // so the poller's leading tick would repeat it. Declared rather than inferred:
+    // `library`'s loader and live fn are different functions that happen to load
+    // the same view, and `ingest`/`wiki` have no loader at all -- a blanket skip
+    // would delay their first live data for a whole interval.
+    const LOADER_COVERS_LIVE = new Set(["home", "insights", "library"]);
     let _live = null;
-    function startLive(name) {
+    function startLive(name, opts) {
       stopLive();
       const spec = LIVE[name];
       if (!spec) return;
@@ -1008,7 +1014,10 @@
         inflight = true;
         try { await spec.fn(); } finally { inflight = false; }
       };
-      tick();
+      // The leading tick is a DUPLICATE only when this tab's own loader just ran
+      // and already covers what the live spec does. Everything else ticks now, so
+      // no tab's first live data is delayed by an interval.
+      if (!(opts && opts.loaderJustRan && LOADER_COVERS_LIVE.has(name))) tick();
       _live = {name, timer: setInterval(() => { if (!document.hidden) tick(); }, spec.ms)};
     }
     function stopLive() { if (_live) { clearInterval(_live.timer); _live = null; } }

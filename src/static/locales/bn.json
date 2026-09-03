@@ -1996,6 +1996,7 @@
   "stale": "বাসি",
   "No local hazard snapshot — silence is not safety.": "কোনো স্থানীয় বিপদ স্ন্যাপশট নেই — নীরবতা মানে নিরাপত্তা নয়।",
   "Alerts": "সতর্কতা",
+  "Checking for alerts…": "সতর্কতা পরীক্ষা করা হচ্ছে…",
   "Latest in your corpus": "আপনার কর্পাসে সর্বশেষ",
   "Min words": "সর্বনিম্ন শব্দ",
   "Min cited sources": "সর্বনিম্ন উদ্ধৃত উৎস",

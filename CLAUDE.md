@@ -5221,6 +5221,83 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     disable the very fallback under test and prove nothing) and requires the
     portable path to see the same release. Three mutations redden it by name:
     fork per read, Process per read, and no fallback at all.
+  - **AND THE GUARD I JUST DESCRIBED FABRICATED A DIAGNOSIS ON THE PLATFORM IT WAS
+    WRITTEN FOR (2026-09-03, the macOS lane, one day later):** it COMPARES the psutil
+    answer against a `/proc` reference, and its own docstring says so — "checked FROM
+    Linux". It had no gate, so it also ran ON macOS, where the shim blocking
+    `/proc/self/status` does nothing (the file never existed), psutil takes the Mach
+    path, and macOS's allocator does not hand freed pages back to the OS at all. It
+    then reported **"the instrument is perturbing the measurement"** about a platform
+    where the instrument is fine and the PLATFORM is what freed nothing. A fabricated
+    diagnosis is exactly as dishonest as a fabricated pass, and it is worse to debug,
+    because it names a mechanism that is not there. **THE PART THAT MATTERS IS THAT
+    THE FIX WAS ALREADY WRITTEN TWENTY LINES ABOVE IT**: the sibling premise test
+    skips when `instrument != "proc"` and the platform freed nothing, with the reason
+    "calling this a failure would report a platform we never measured as a broken
+    shrink_memory" — I wrote that guard and the ungated test in the same pass, which
+    is the recorded "a lesson recorded against one assertion does not propagate itself
+    to the one beside it" trap at its shortest possible range. GENERAL FORM: a test
+    that COMPARES two instruments needs its REFERENCE, so gate it on the reference
+    being available — not on a `sys.platform` string, which is a proxy for the thing
+    you actually need — and make the skip say what stays unchecked there.
+  - **A BAR SET AT EXACTLY `signal + one noise quantum` HAS ZERO SLACK — and whether
+    to raise the input or change the claim is decided by asking if the noise is FIXED
+    or PROPORTIONAL (2026-09-03, the shared-budget test on macOS):**
+    `test_both_side_files_share_ONE_budget_not_one_each` failed at 1.353s and 1.385s
+    against a 1.25s bar on BOTH lanes of one commit — systematic, not a flake (the
+    recorded push-vs-PR A/B), in code the branch never touched. The mechanism:
+    `_retry_while_locked` checks the deadline BEFORE `time.sleep(0.25)`, so an
+    iteration starting a hair inside the budget legitimately returns one whole quantum
+    past it — the shared case is **bimodal** at `budget` or `budget + 0.25`. The bar
+    was `budget + exactly one quantum`, i.e. it allowed the overshoot and left nothing
+    for `sleep()` returning late; an idle Linux box measured 1.213–1.226 against it,
+    **24 ms of headroom**, so it was about to bite the blocking lane too. THE
+    CALIBRATION RULE, which refines the recorded WAL and llm-throughput entries with
+    the case neither covers: that llm lesson says raise the input when the noise
+    scales with the work and change the CLAIM when it does not — here the noise is
+    FIXED (one quantum) while the SIGNAL scales with the budget, which is the third
+    combination and the one where raising the input is strictly the strongest lever.
+    1.0s → 2.0s doubles the gap and leaves the quantum where it was: measured across a
+    full-quantum sweep, shared 2.002 flat (worst legal 2.25), per-file ≥ 3.00, bar
+    2.60 — 0.35 s of slack above and 0.4 s below, where there had been 0.03. The
+    per-file mutation reddens at 3.13. COROLLARY worth grepping for: **any loop that
+    checks a deadline before sleeping overshoots by up to one sleep**, so every budget
+    assertion over such a loop owes room for a quantum it cannot avoid.
+  - **A GUARD THAT FINDS THE CALL IS NOT A GUARD THAT RESOLVES THE NAME — and I wrote
+    both the guard and the defect in one pass (2026-09-03, the header-cache
+    invalidation):** the ledger already says *"any 'module X imports what it uses'
+    assertion has to resolve the binding (ast, enclosing scope), or it is satisfied by
+    an import that cannot be seen from the call"* — and the first cut of this slice's
+    guard asserted that `invalidate_header_cache` appeared as an `ast.Call` anywhere
+    in the file. It did: in a function whose scope had no import for it, so the
+    endpoint would have raised `NameError` in the `finally` on the very path the guard
+    existed to protect. **Only ruff's F821 caught it.** So the recurrence is the
+    finding, and what the entry was missing is the RECIPE: build a `child -> parent`
+    map, walk up from the call collecting the scopes it can see (each enclosing
+    function, the module; a `ClassDef` only when the call sits directly in it, since
+    class names are not visible to nested functions), and for each scope scan its own
+    body for a binding — an import alias, a `Store` `Name`, a `def`/`class` of that
+    name, a parameter, a `global` — WITHOUT descending into nested scopes, which have
+    their own. Three mutations: dropping the import reddens by file and line, deleting
+    the call reddens (the enumeration half still holds), and **hoisting the import to
+    module scope must PASS** — the negative twin, because a guard that demanded one
+    import style would be a fabricated failure the day someone legitimately moved it.
+  - **A VERIFICATION TABLE NAMING TESTS IS AN EVIDENCE TABLE, AND I FABRICATED 14 OF 24
+    CELLS FROM MEMORY (2026-09-03, the brief's §7 contract):** the recorded 2026-08-23
+    lesson says a table "has a cell for every intersection and an empty one reads as an
+    omission, so the shape itself asks to be completed", and names back-filled FIGURES
+    as the hazard. The same pull applies to IDENTIFIERS, and it is easier to miss
+    because a plausible test name looks like a citation rather than a number: writing
+    one row per slice from memory of work I had done myself produced 14 names out of 24
+    that **do not exist in the tree** — every one grammatical, house-style, and
+    describing the right property. A reviewer following such a table finds nothing and
+    cannot tell an invented name from a renamed test. THE DETECTOR IS TWO LINES AND
+    SHOULD RUN BEFORE ANY SUCH TABLE SHIPS: extract every backticked `test_*` from the
+    document, list the real ones with `grep -rho "^def \(test_[a-zA-Z0-9_]*\)" tests/`,
+    and `comm -23` the two — anything printed is fabricated. Re-derived from the files,
+    the same table came to 57 names and all 57 resolve. GENERAL FORM: a claim is only
+    citable if it was READ; when a document's job is to let someone else check the work,
+    every identifier in it is a measurement, and memory is not a measurement.
 
 ## Open queue (when maintainer says proceed)
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS

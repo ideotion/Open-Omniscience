@@ -1996,6 +1996,7 @@
   "stale": "stale",
   "No local hazard snapshot — silence is not safety.": "No local hazard snapshot — silence is not safety.",
   "Alerts": "Alerts",
+  "Checking for alerts…": "Checking for alerts…",
   "Latest in your corpus": "Latest in your corpus",
   "Min words": "Min words",
   "Min cited sources": "Min cited sources",

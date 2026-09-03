@@ -46,13 +46,21 @@ def main_db_path() -> Path | None:
 
 def app_lock_state() -> str:
     """unlocked-plaintext | unlocked-encrypted | locked | fresh (non-SQLite ->
-    unlocked-plaintext: the at-rest layer does not apply and doctor says so)."""
-    from src.database.connect import locked_state
+    unlocked-plaintext: the at-rest layer does not apply and doctor says so).
+
+    S3.6: reads the store header through the CACHED accessor, because this runs
+    inside the lock middleware -- on every request, including every static asset
+    -- and the uncached path is blocking file I/O on the event loop. The
+    passphrase half is still read live, so an unlock is visible immediately;
+    only the file's own header is cached, and every path that changes it calls
+    ``invalidate_header_cache``.
+    """
+    from src.database.connect import main_header_state, state_for_header
 
     p = main_db_path()
     if p is None:
         return "unlocked-plaintext"
-    return locked_state(p)
+    return state_for_header(main_header_state(p))
 
 
 def app_is_locked() -> bool:
@@ -399,7 +407,7 @@ def create_db(body: CreateBody) -> dict:
 
     The no-recovery note is shown by the page; this endpoint enforces only
     what a server can (length, match) — never strength theater."""
-    from src.database.connect import set_passphrase
+    from src.database.connect import invalidate_header_cache, set_passphrase
 
     p = main_db_path()
     if p is None:
@@ -418,5 +426,11 @@ def create_db(body: CreateBody) -> dict:
     except Exception:
         set_passphrase(None)  # leave the fresh state intact on any failure
         raise
+    finally:
+        # S3.6: the store file now exists (or the attempt touched it), so the
+        # cached header is stale either way. In a `finally` on purpose -- a
+        # half-created file left by a failure must not be answered for from a
+        # cache that still says "fresh".
+        invalidate_header_cache()
     _LOG.info("encrypted store created")
     return {"created": True, "state": app_lock_state()}

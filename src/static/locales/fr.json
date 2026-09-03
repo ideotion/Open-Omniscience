@@ -1996,6 +1996,7 @@
   "stale": "périmé",
   "No local hazard snapshot — silence is not safety.": "Aucun instantané local des risques — le silence n’est pas la sécurité.",
   "Alerts": "Alertes",
+  "Checking for alerts…": "Recherche d’alertes…",
   "Latest in your corpus": "Dernières entrées de votre corpus",
   "Min words": "Mots min.",
   "Min cited sources": "Sources citées min.",

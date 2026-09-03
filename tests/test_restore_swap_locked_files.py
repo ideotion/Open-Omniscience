@@ -619,6 +619,27 @@ def test_both_side_files_share_ONE_budget_not_one_each(tmp_path, monkeypatch) ->
     Behavioural on purpose: the ast guard above asserts the call-site shape and
     passes against a per-file budget, because the sharing happens inside the
     function it never looks at.
+
+    THE INPUT IS 2.0s, NOT 1.0s, AND THAT IS THE WHOLE CALIBRATION. The retry
+    loop checks the deadline BEFORE ``time.sleep(0.25)``, so an iteration that
+    starts a hair inside the budget legitimately returns one whole quantum past
+    it -- the shared case is bimodal at ``budget`` or ``budget + 0.25``. The bar
+    used to be 1.25 = ``budget + exactly one quantum``, i.e. it allowed the
+    overshoot and left nothing for ``sleep()`` returning late, so the macOS lane
+    measured 1.353s and 1.385s (both lanes, same commit -- systematic, not a
+    flake) and reported a working shared budget as a per-file one. An idle Linux
+    box measured 1.213-1.226 against that same 1.25: 24ms of headroom.
+
+    Fixed by raising the INPUT rather than lowering the bar, because the noise
+    here is a FIXED term (one quantum) while the signal scales with the budget,
+    so a bigger budget is strictly more discriminating. Measured, sweeping the
+    release across a full quantum, 10 runs each:
+
+        budget 1.0   shared 1.001-1.218   per-file >= 1.50   bar 1.25  (0.03 slack)
+        budget 2.0   shared 2.002-2.002   per-file >= 3.00   bar 2.60  (0.35 slack)
+
+    Worst legal shared value is ``budget + 0.25`` = 2.25, so 2.6 clears the
+    overshoot AND stays 0.4s below the cheapest per-file outcome.
     """
     from src.backup import merge as merge_mod
 
@@ -627,8 +648,8 @@ def test_both_side_files_share_ONE_budget_not_one_each(tmp_path, monkeypatch) ->
     for suffix in ("-wal", "-shm"):
         target.with_name(target.name + suffix).write_bytes(b"x")
 
-    budget = 1.0
-    release_wal_at = time.monotonic() + 0.5
+    budget = 2.0
+    release_wal_at = time.monotonic() + 1.0
     real_unlink = Path.unlink
 
     def _fake(self, missing_ok=False):  # noqa: ANN001
@@ -647,10 +668,11 @@ def test_both_side_files_share_ONE_budget_not_one_each(tmp_path, monkeypatch) ->
         merge_mod._clear_stale_side_files(target, wait_s=budget)
     spent = time.monotonic() - started
 
-    # Shared: -wal clears at ~0.5s, -shm gets the remaining ~0.5s => ~1.0s total.
-    # Per-file: -shm starts a FRESH 1.0s window => ~1.5s. The bar sits between
+    # Shared: -wal clears at ~1.0s, -shm gets the remaining ~1.0s => ~2.0s total
+    # (up to 2.25 -- see the docstring on the pre-sleep deadline check).
+    # Per-file: -shm starts a FRESH 2.0s window => >= 3.0s. The bar sits between
     # them with room on both sides, so this is a factor, never a few milliseconds.
-    assert spent < 1.25, (
+    assert spent < 2.6, (
         f"spent {spent:.2f}s of a {budget:.1f}s budget — each file started its own window"
     )
     assert spent >= budget * 0.8, (

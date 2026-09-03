@@ -310,7 +310,17 @@ def test_severity_alerts_producer_silent_when_nothing(session, data_dir):
 # --------------------------------------------------------------------------- #
 def test_alerts_endpoint(monkeypatch, tmp_path):
     monkeypatch.setenv("OO_DATA_DIR", str(tmp_path))
+    from src.analytics import poll_cache
     from src.api.main import app
+    from src.database.session import session_scope
+
+    # S3.1: a cold cache on the POLLED params answers "still building" instead of
+    # running a multi-second convergence scan on the request thread. This test is
+    # about the endpoint's CONTRACT, so let the build happen first, exactly as
+    # production does -- _kick_background_refresh runs precisely this, on a
+    # thread; running it inline keeps the test deterministic.
+    with session_scope() as _s:
+        poll_cache.refresh_alerts(_s)
 
     with TestClient(app) as c:
         out = c.get("/api/signals/alerts").json()

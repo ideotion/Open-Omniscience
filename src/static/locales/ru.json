@@ -1996,6 +1996,7 @@
   "stale": "устарело",
   "No local hazard snapshot — silence is not safety.": "Нет локального снимка угроз — тишина не означает безопасность.",
   "Alerts": "Оповещения",
+  "Checking for alerts…": "Поиск оповещений…",
   "Latest in your corpus": "Последнее в вашем корпусе",
   "Min words": "Мин. слов",
   "Min cited sources": "Мин. цитируемых источников",

@@ -1996,6 +1996,7 @@
   "stale": "过期",
   "No local hazard snapshot — silence is not safety.": "没有本地灾害快照——沉默不等于安全。",
   "Alerts": "警报",
+  "Checking for alerts…": "正在检查警报…",
   "Latest in your corpus": "语料库中的最新内容",
   "Min words": "最少字数",
   "Min cited sources": "最少引用来源",

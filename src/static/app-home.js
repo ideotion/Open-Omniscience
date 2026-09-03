@@ -535,6 +535,16 @@
       if (!box) return;
       try {
         const d = await api("/api/signals/alerts");
+        // S3.1: a scan still running is NOT "no alerts". It reports building:true
+        // and OMITS every measured field, so this branch must come before the
+        // total check -- `!d.total` on an absent total would hide the panel and
+        // a computing corpus would look like a quiet one.
+        if (d && d.building) {
+          if (panel) panel.hidden = false;
+          const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((s) => s);
+          box.innerHTML = `<div class="muted">${esc(t("Checking for alerts…"))}</div>`;
+          return;
+        }
         if (!d || !d.total) { if (panel) panel.hidden = true; box.innerHTML = ""; return; }
         if (panel) panel.hidden = false;
         _renderHomeAlerts(d);

@@ -138,13 +138,19 @@ def test_cached_alerts_equals_a_fresh_live_compute(data_dir):
     ids = _seed_convergence(s)
     _seed_fired_watch(s, [901, 902])
 
-    r1 = poll_cache.get_alerts(s)  # cold -> live compute, populates
-    r2 = poll_cache.get_alerts(s)  # served from the memo
+    # S3.1: the POLLED params are populated by the background path, never by a
+    # request. refresh_alerts is exactly what that thread runs, called here
+    # synchronously so the test needs no thread (the idiom this file already uses
+    # below). The claim under test is unchanged: what the memo serves is a REAL
+    # value, byte-identical to a live compute.
+    poll_cache.refresh_alerts(s)
+    r1 = poll_cache.get_alerts(s)  # served from the memo
+    r2 = poll_cache.get_alerts(s)  # ...and again, still no recompute
     live = compute_alerts(
         s, within_hours=48, hazard_max_age_hours=48, convergence_lookback_days=45
     )
 
-    assert r1["cached"] is False, "first call is a live compute"
+    assert r1["cached"] is True, "served from the memo the background path built"
     assert r2["cached"] is True, "second poll is served from the memo (no recompute)"
     # The cached payload is byte-identical to a fresh live compute (only the freshness
     # disclosure differs) — a REAL value, just memoised. Never fabricated/summarised.
@@ -160,8 +166,9 @@ def test_cached_alerts_equals_a_fresh_live_compute(data_dir):
 # --------------------------------------------------------------------------- #
 def test_stale_cache_is_refreshed_by_the_background_path(data_dir):
     s = _fresh_session()
-    r0 = poll_cache.get_alerts(s)  # cold -> caches; no watch yet
-    assert r0["cached"] is False
+    poll_cache.refresh_alerts(s)  # S3.1: the background path populates, not a poll
+    r0 = poll_cache.get_alerts(s)  # no watch yet
+    assert r0["cached"] is True
     assert len(r0["tiers"]["watch"]["watches"]) == 0
 
     # The corpus changes: a watch fires. Then age the memo so it is stale.
@@ -183,15 +190,49 @@ def test_stale_cache_is_refreshed_by_the_background_path(data_dir):
 # --------------------------------------------------------------------------- #
 #  3) A cold/empty cache falls back to a live compute.
 # --------------------------------------------------------------------------- #
-def test_cold_cache_falls_back_to_live(data_dir):
+def test_a_cold_cache_on_the_POLLED_params_does_not_compute_on_the_request(data_dir):
+    """S3.1 supersedes this test's original claim, deliberately and by halves.
+
+    It used to assert that a cold cache computes live, which WAS the behaviour --
+    and was the death spiral's own engine: compute_alerts measured p50 23.7 s on
+    the field corpus, so every Home poll arriving during that window found the
+    cache still cold and started its OWN full convergence scan, on the request
+    thread, in parallel. _BUILD_LOCK stopped a second BACKGROUND build; it never
+    stopped the request ones.
+
+    So on the DEFAULT params -- the only ones anything polls -- a cold cache now
+    kicks one background build and answers honestly that there is no result yet.
+    The negative half is the next test, and it is the half that stops this fix
+    over-reaching into questions nobody polls.
+    """
     s = _fresh_session()
     _seed_fired_watch(s, [7, 8])
     poll_cache.clear()  # explicitly cold
 
     out = poll_cache.get_alerts(s)
-    assert out["cached"] is False, "a cold cache computes live"
+    assert out.get("building") is True, out
+    assert out["cached"] is False
+    # The measured fields are OMITTED, not zeroed: `total: 0` beside building
+    # would read as "no alerts" to anything that does not check the flag, and the
+    # strip's own render guard is exactly `if (!d.total) hide`.
+    assert "total" not in out, f"a scan in flight must not publish a count: {out}"
+    assert out["as_of"] is None
+    assert "not a result yet" in out["reason"]
+
+
+def test_a_cold_cache_on_ANY_OTHER_params_still_computes_live(data_dir):
+    """The negative twin. A window nobody polls is a one-off question that must
+    still get an answer -- if this ever skipped too, the fix would have turned a
+    storm into a refusal."""
+    s = _fresh_session()
+    _seed_fired_watch(s, [7, 8])
+    poll_cache.clear()  # explicitly cold
+
+    out = poll_cache.get_alerts(s, within_hours=24)  # not the polled default
+    assert not out.get("building"), out
+    assert out["cached"] is False, "a cold cache on non-default params computes live"
     live = compute_alerts(
-        s, within_hours=48, hazard_max_age_hours=48, convergence_lookback_days=45
+        s, within_hours=24, hazard_max_age_hours=48, convergence_lookback_days=45
     )
     assert _strip(out) == live
     assert len(out["tiers"]["watch"]["watches"]) == 1
@@ -203,6 +244,7 @@ def test_cold_cache_falls_back_to_live(data_dir):
 def test_payload_carries_as_of_and_no_score_key(data_dir):
     s = _fresh_session()
     _seed_convergence(s)
+    poll_cache.refresh_alerts(s)  # S3.1: a payload test must let the build happen
     out = poll_cache.get_alerts(s)
 
     assert out.get("as_of"), "a visible as_of must disclose the memo's age"
@@ -230,12 +272,20 @@ def test_poll_cache_bind_mismatch_never_serves_another_corpus(data_dir):
     _seed_fired_watch(a, [1, 2])  # corpus A has a fired watch
     b = _fresh_session()  # corpus B has none
 
-    ra = poll_cache.get_alerts(a)  # populates the default key under A's bind
+    poll_cache.refresh_alerts(a)  # populates the default key under A's bind
+    ra = poll_cache.get_alerts(a)
     assert len(ra["tiers"]["watch"]["watches"]) == 1
 
     rb = poll_cache.get_alerts(b)  # SAME param key, DIFFERENT engine -> must not serve A
-    assert rb["cached"] is False, "a bind mismatch falls back to a live compute"
-    assert len(rb["tiers"]["watch"]["watches"]) == 0, "served B's own (empty) corpus, never A's"
+    # The property this test is NAMED for is untouched: B never receives A's
+    # payload. What S3.1 changed is only what B gets INSTEAD -- on the polled
+    # params a mismatch now answers "still building" rather than computing on the
+    # request thread, so assert the safety property directly rather than through
+    # the shape of the substitute.
+    assert rb["cached"] is False, "a bind mismatch never serves the other corpus's memo"
+    assert rb.get("tiers", {}).get("watch", {}).get("watches", []) == [], (
+        f"A's fired watch must not reach B: {rb}"
+    )
 
 
 def test_same_bind_gate_is_identity_based():
@@ -259,6 +309,11 @@ def test_alerts_endpoint_served_through_memo_via_dependency_override(data_dir):
     s = _fresh_session()
     _seed_fired_watch(s, [11, 22])
     poll_cache.clear()
+    # S3.1: the endpoint no longer computes a cold POLLED payload on the request
+    # thread, so warm it through the background path first. That is faithful to
+    # production, where warm_cache/refresh runs after each pass -- and it is what
+    # makes the assertions below about the ENDPOINT rather than about who built it.
+    poll_cache.refresh_alerts(s)
 
     app.dependency_overrides[get_db] = lambda: s
     try:
@@ -272,7 +327,7 @@ def test_alerts_endpoint_served_through_memo_via_dependency_override(data_dir):
     # disclosure is present.
     assert set(r1["tiers"]) == {"info", "watch", "urgent"}
     assert "never invents urgency" in r1["caveat"]
-    assert r1.get("as_of") and r1["cached"] is False
+    assert r1.get("as_of") and r1["cached"] is True, "served from the warmed memo"
     assert r2["cached"] is True, "the second poll is served from the memo"
     assert _strip(r1) == _strip(r2), "the cached poll is the same real value"
     # The fired watch flowed through (the endpoint used the overridden session, not

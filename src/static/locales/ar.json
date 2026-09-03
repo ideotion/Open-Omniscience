@@ -1996,6 +1996,7 @@
   "stale": "قديم",
   "No local hazard snapshot — silence is not safety.": "لا توجد لقطة محلية للمخاطر — الصمت ليس أمانًا.",
   "Alerts": "تنبيهات",
+  "Checking for alerts…": "جارٍ البحث عن التنبيهات…",
   "Latest in your corpus": "الأحدث في مجموعتك",
   "Min words": "الحد الأدنى للكلمات",
   "Min cited sources": "الحد الأدنى للمصادر المذكورة",

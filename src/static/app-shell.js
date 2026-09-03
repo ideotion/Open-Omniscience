@@ -119,7 +119,21 @@
       document.querySelectorAll(".tab-page").forEach(p =>
         p.classList.toggle("active", p.id === "tab-" + name));
       _relocateSubtabs(name);   // move this tab's facet subtabs into the top strip (under the status bar)
-      if (TAB_LOADERS[name] && !_loaded.has(name)) { _loaded.add(name); TAB_LOADERS[name](); }
+      // S3.1 (c): a tab's own loader and its live poller overlap for home,
+      // insights and library -- `insights` is literally the SAME function in
+      // both maps -- so the first open of those tabs issued every request twice
+      // (Home: stats, scheduler status, briefing, trends and alerts, the last
+      // being the 23.7 s convergence scan). The loader runs once per page load;
+      // the live poller ticks immediately on EVERY showTab. When the loader has
+      // just run, its leading tick is the duplicate, so skip that one -- the
+      // interval is untouched, so live data is never delayed by more than the
+      // loader it would have duplicated.
+      let justLoaded = false;
+      if (TAB_LOADERS[name] && !_loaded.has(name)) {
+        _loaded.add(name);
+        TAB_LOADERS[name]();
+        justLoaded = true;
+      }
       // THEME-3: opening Analysis hydrates the restored active tab the first time (the
       // strip is restored at boot; the active tab's data loads lazily here), or shows
       // the launcher empty state when there are no tabs.
@@ -131,7 +145,7 @@
         else if (!_anTabs.length) _anShowEmpty();
       }
       if (name !== "timemap" && typeof stopTmapPlay === "function") stopTmapPlay();  // don't animate a hidden tab
-      startLive(name);                                  // live status for the active tab
+      startLive(name, {loaderJustRan: justLoaded});      // live status for the active tab
       document.body.classList.remove("nav-open");       // close mobile drawer
       closePalette();
       const m = document.querySelector("main"); if (m) m.scrollTop = 0;

@@ -1996,6 +1996,7 @@
   "stale": "古い",
   "No local hazard snapshot — silence is not safety.": "ローカルの危険スナップショットはありません — 沈黙は安全ではありません。",
   "Alerts": "アラート",
+  "Checking for alerts…": "アラートを確認しています…",
   "Latest in your corpus": "コーパスの最新",
   "Min words": "最小語数",
   "Min cited sources": "引用元の最小数",

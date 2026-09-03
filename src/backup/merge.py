@@ -272,14 +272,24 @@ def _replace_live_corpus(working: Path, target: Path, *, wait_s: float | None = 
     nothing -- the database file is complete on its own and SQLite recreates a WAL
     on the next open -- so even a permanent refusal leaves an intact corpus.
     """
+    from src.database.connect import invalidate_header_cache
     from src.database.session import dispose_engine
 
     budget = _SWAP_HANDLE_WAIT_S if wait_s is None else wait_s
-    _retry_while_locked(
-        lambda: os.replace(working, target),
-        deadline=time.monotonic() + budget,
-        on_retry=dispose_engine,
-    )
+    try:
+        _retry_while_locked(
+            lambda: os.replace(working, target),
+            deadline=time.monotonic() + budget,
+            on_retry=dispose_engine,
+        )
+    finally:
+        # S3.6: the live store file has just been REPLACED, so any cached header
+        # describes a file that no longer exists. In a `finally` because a
+        # replace that raised may still have happened (os.replace is atomic, but
+        # the retry wrapper can fail after a successful attempt on another path)
+        # -- and re-reading a header is cheap while answering from a stale one
+        # is a wrong lock verdict.
+        invalidate_header_cache()
 
 
 # 2026-07-26 hardware diagnostics W5: _prune_snapshots() (below) only fires as a
