@@ -250,12 +250,48 @@ def wal_at_boot() -> dict[str, Any] | None:
     return got if isinstance(got, dict) else None
 
 
+# The signal that initiated this stop, if any (set by install_signal_handlers).
+_STOP_SIGNAL: str | None = None
+
+
+def note_stop_signal(name: str) -> None:
+    """Record which signal initiated the stop, so a deliberate stop can never be
+    rendered as a crash. Called from the signal handler, before the graceful path."""
+    global _STOP_SIGNAL
+    _STOP_SIGNAL = name
+
+
+def record_shutdown_phase(phase: str, *, reason: str | None = None) -> None:
+    """Advance the sentinel through the teardown (S0.2).
+
+    Before this, the sentinel had two states -- 'running' and 'clean' -- so a death
+    DURING teardown was indistinguishable from a death long before it. The teardown
+    is not instant (it stops the scheduler thread and disposes the pool, which
+    checkpoints an encrypted store), so that window is real. Each step stamps its own
+    phase, and a session that dies inside one reads as e.g. 'shutting-down' on the
+    next boot: it was asked to stop and did not finish, which is a different fact from
+    'it was killed mid-collection'.
+
+    ``reason`` names WHY the stop began (a signal, the in-app power button); it is
+    recorded once, on the first phase, and carried forward."""
+    state = _read_state() or {}
+    state["state"] = phase
+    state["shutdown_phase_at"] = _now()
+    if reason and not state.get("shutdown_reason"):
+        state["shutdown_reason"] = reason
+    if _STOP_SIGNAL and not state.get("stop_signal"):
+        state["stop_signal"] = _STOP_SIGNAL
+    _write_state(state)
+
+
 def record_clean_shutdown() -> None:
     """Flip the sentinel to 'clean'. Called from the lifespan shutdown; a session
     that dies without reaching this reads as UNCLEAN on the next boot."""
     state = _read_state() or {}
     state["state"] = "clean"
     state["ended_at"] = _now()
+    if _STOP_SIGNAL and not state.get("stop_signal"):
+        state["stop_signal"] = _STOP_SIGNAL
     _write_state(state)
 
 
@@ -403,11 +439,19 @@ def previous_session_report() -> dict[str, Any]:
     state = str(prev.get("state"))
     out["previous_session"] = {
         "running": "unclean-end",  # died without reaching the shutdown hook
+        # S0.2: a death DURING teardown. It was asked to stop and did not finish —
+        # a different fact from being killed mid-collection, and one the two-state
+        # sentinel could not express.
+        "shutting-down": "unclean-end-during-shutdown",
+        "dispose-done": "unclean-end-after-dispose",
         "clean": "clean",
     }.get(state, f"unknown({state})")
     out["started_at"] = prev.get("started_at")
     out["ended_at"] = prev.get("ended_at")
     out["last_unlock"] = prev.get("last_unlock")
+    for key in ("shutdown_reason", "stop_signal", "shutdown_phase_at"):
+        if prev.get(key):
+            out[key] = prev[key]
     if out["previous_session"] == "unclean-end":
         # The previous session's OWN peaks (S0.4). ``last_collector_sample`` reads the
         # last line of a file EVERY session appends to, so once this process starts
@@ -451,6 +495,19 @@ def _previous_peaks() -> dict[str, Any] | None:
         "measured is ABSENT rather than zero."
     )
     return out
+
+
+def pass_tail_journal() -> dict[str, Any]:
+    """The collector pass tail's own phase journal (S0.5), or a stated absence."""
+    try:
+        from src.scheduler.pass_journal import report
+
+        return report()
+    except Exception as exc:  # noqa: BLE001 - forensics degrades, never raises
+        return {
+            "available": False,
+            "reason": f"the pass journal could not be read ({type(exc).__name__})",
+        }
 
 
 def _ollama_store_bytes() -> tuple[str | None, int, int]:
@@ -691,6 +748,12 @@ def render_text(d: dict[str, Any] | None = None) -> str:
         lines.append(f"- started: {prev['started_at']}")
     if prev.get("ended_at"):
         lines.append(f"- ended at: {prev['ended_at']}")
+    if prev.get("stop_signal"):
+        lines.append(f"- stop initiated by: {prev['stop_signal']}")
+    if prev.get("shutdown_reason"):
+        lines.append(f"- shutdown reason: {prev['shutdown_reason']}")
+    if prev.get("shutdown_phase_at"):
+        lines.append(f"- last teardown step at: {prev['shutdown_phase_at']}")
     if prev.get("last_rss_mb") is not None:
         lines.append(f"- collector's last RSS sample: {prev['last_rss_mb']} MB")
     wal_boot = prev.get("wal_at_boot") or {}
@@ -729,6 +792,32 @@ def render_text(d: dict[str, Any] | None = None) -> str:
             lines.append(f"  - {sample['attribution']}")
     if prev.get("method"):
         lines.append(f"- how this is known: {prev['method']}")
+
+    journal = d.get("pass_tail_journal") or {}
+    if journal:
+        lines += ["", "## Collector pass tail", ""]
+        if journal.get("available") is False:
+            lines.append(f"- unavailable: {journal.get('reason', 'no reason recorded')}")
+        elif journal.get("records"):
+            lines.append(f"- phase records: {journal['records']}")
+            if journal.get("last_record_at"):
+                lines.append(f"- last record at: {journal['last_record_at']}")
+            died = journal.get("died_during")
+            if died:
+                lines.append(f"- **a phase was never finished: {died.get('phase')}**")
+                lines.append(f"  - began: {died.get('ts')}")
+                if died.get("rss_mb") is not None:
+                    lines.append(f"  - RSS at that moment: {died['rss_mb']} MB")
+                if died.get("mem_avail_mb") is not None:
+                    lines.append(f"  - available at that moment: {died['mem_avail_mb']} MB")
+                if died.get("basis"):
+                    lines.append(f"  - basis: {died['basis']}")
+            else:
+                lines.append("- every recorded phase has a matching end")
+            for row in journal.get("slowest_phases") or []:
+                lines.append(f"- slowest: {row.get('phase')} — {row.get('ms')} ms ({row.get('ts')})")
+        else:
+            lines.append(f"- {journal.get('note', 'nothing recorded yet')}")
 
     unlock = d.get("last_unlock") or {}
     lines += ["", "## Last unlock", ""]
@@ -819,4 +908,7 @@ def session_forensics() -> dict[str, Any]:
         "data_dir_persistence": data_dir_persistence(),
         "previous_session": previous_session_report(),
         "last_unlock": cur.get("last_unlock"),
+        # Where a pass got to in its tail (S0.5) — the window the field's S2 session
+        # died in, from which nothing survived because record_run sits below it.
+        "pass_tail_journal": pass_tail_journal(),
     }

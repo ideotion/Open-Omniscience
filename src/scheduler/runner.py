@@ -34,6 +34,31 @@ from src.scheduler.settings import SchedulerSettings, load_settings
 
 _LOG = logging.getLogger(__name__)
 
+
+def _tail_phase(name: str, *, pass_id: str | None = None):
+    """Record one pass-tail step in the phase journal (S0.5), or do nothing.
+
+    Wrapped so a journal fault can NEVER break a pass: an instrument that can take
+    the thing it observes down with it is a second failure layered on the first."""
+    try:
+        from src.scheduler.pass_journal import phase
+
+        return phase(name, pass_id=pass_id)
+    except Exception:  # noqa: BLE001 - the journal is best-effort, always
+        from contextlib import nullcontext
+
+        return nullcontext()
+
+
+def _tail_journal_trim() -> None:
+    try:
+        from src.scheduler.pass_journal import trim
+
+        trim()
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # Inter-pass gap in CONTINUOUS mode: short enough that passes are effectively
 # back-to-back (a real pass takes minutes), long enough to yield CPU and let a
 # pathologically fast/empty pass (e.g. every feed answered 304) not hot-spin.
@@ -1639,14 +1664,20 @@ class BackgroundScheduler:
             # on the run report so the effect is auditable, never guessed.
             from src.scheduler.hygiene import run_pass_hygiene
 
-            hygiene = run_pass_hygiene()
+            # S0.5: the checkpoint inside run_pass_hygiene takes the write gate, whose
+            # acquire has no timeout — a pass that hangs here leaves no trace at all
+            # today, because record_run is BELOW it.
+            with _tail_phase("hygiene", pass_id=report.get("pass_id")):
+                hygiene = run_pass_hygiene()
             if hygiene:
                 report["hygiene"] = hygiene
             report["finished_at"] = datetime.now(UTC).isoformat(timespec="seconds")
             # One auditable line per run (WP3/RM-06); best-effort by design.
             from src.scheduler.runlog import record_run
 
-            record_run(report)
+            with _tail_phase("record-run", pass_id=report.get("pass_id")):
+                record_run(report)
+            _tail_journal_trim()
             _phase_set(None)
             with self._state_lock:
                 self._active = False
@@ -1807,6 +1838,9 @@ class BackgroundScheduler:
         settings = self._settings_provider()
         fetcher = make_fetcher()
         run_started = datetime.now(UTC)
+        # Same identity CollectionMonitor stamps on its samples, so the pass-tail
+        # journal (S0.5) and the collector ring join on one key.
+        _pass_id = run_started.isoformat(timespec="seconds")
         with session_scope() as session:
             # COLLECT ARTICLES FIRST (maintainer 2026-06-18: "it took 3-5 minutes
             # to get the first article"). The first-run source/feed preflight, the
@@ -1882,7 +1916,8 @@ class BackgroundScheduler:
             # first article). Their opt-outs (auto_import_calendars/
             # auto_track_law) are honoured inside the lane's own pending-kinds
             # check (_lane_pending_kinds), not here.
-            self._kick_housekeeping_lane()
+            with _tail_phase("lane-kick", pass_id=_pass_id):
+                self._kick_housekeeping_lane()
             # Field-test instrumentation (live-test cycles): exercise every fetch
             # surface once and log verbatim outcomes for the maintainer's debug
             # bundle. OPT-IN since 0.1 (OO_FIELD_TEST=1 enables — a public tag
@@ -1901,9 +1936,10 @@ class BackgroundScheduler:
             try:
                 from src.discovery import run_discovery
 
-                result["discovery"] = run_discovery(
-                    session, per_run=settings.discovery_per_run
-                )
+                with _tail_phase("discovery", pass_id=_pass_id):
+                    result["discovery"] = run_discovery(
+                        session, per_run=settings.discovery_per_run
+                    )
             except Exception:  # noqa: BLE001 - never fail the scrape on discovery
                 _LOG.warning("offline source discovery failed", exc_info=True)
             # S-B (2026-07-24 throughput brief, C1): world-discovery, qualification,
@@ -1958,7 +1994,8 @@ class BackgroundScheduler:
                 if getattr(settings, "auto_enrich_sources", True):
                     from src.analytics.source_topics import run_auto_source_enrichment
 
-                    _enr = run_auto_source_enrichment(session)
+                    with _tail_phase("source-enrichment", pass_id=_pass_id):
+                        _enr = run_auto_source_enrichment(session)
                     if _enr.get("ran") and _enr.get("sources_updated"):
                         result["source_enrich"] = _enr
                         _LOG.info("source auto-enrichment: %s", _enr)
@@ -1978,7 +2015,8 @@ class BackgroundScheduler:
             # the phase stays "background" through to the return (the recompute is
             # tracked as its own task-manager entry, not a scheduler phase, since it
             # can now genuinely outlive this pass).
-            self._refresh_briefing_async()
+            with _tail_phase("briefing-refresh-kick", pass_id=_pass_id):
+                self._refresh_briefing_async()
             return result
 
     # -- introspection ----------------------------------------------------- #

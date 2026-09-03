@@ -358,6 +358,17 @@ async def lifespan(app: FastAPI):
         logger.warning("could not start the event-loop watchdog", exc_info=True)
     yield
 
+    # S0.2: stamp the teardown's own phases. The sentinel used to hold two states,
+    # so a death DURING this window — stopping the scheduler thread, then disposing a
+    # pool whose close checkpoints an encrypted store — read exactly like a death
+    # hours earlier, mid-collection. Each step now says where it got to.
+    try:
+        from src.monitoring.forensics import record_shutdown_phase
+
+        record_shutdown_phase("shutting-down", reason="lifespan shutdown")
+    except Exception:  # noqa: BLE001 - best-effort
+        logger.debug("could not stamp the shutdown phase", exc_info=True)
+
     # Stop the scheduler thread cleanly if it is running (no-op otherwise).
     try:
         from src.scheduler.runner import get_scheduler
@@ -367,6 +378,12 @@ async def lifespan(app: FastAPI):
         logger.warning("Error stopping scheduler on shutdown", exc_info=True)
 
     dispose_engine()
+    try:
+        from src.monitoring.forensics import record_shutdown_phase
+
+        record_shutdown_phase("dispose-done")
+    except Exception:  # noqa: BLE001 - best-effort
+        logger.debug("could not stamp the dispose phase", exc_info=True)
     try:
         from src.monitoring.session_hwm import flush as _flush_hwm
 
@@ -2374,6 +2391,54 @@ async def read_tasks():
     return await read_root()
 
 
+def install_signal_handlers() -> list[str]:
+    """Route SIGHUP onto the same graceful path as SIGTERM, and record which signal
+    initiated a stop. Returns the signal names actually registered.
+
+    WHY SIGHUP (2026-09-02, S0.2). The advertised way to stop the app is "close this
+    window" (scripts/launch.sh prints exactly that), and closing a terminal sends
+    SIGHUP to its foreground process group -- which contains the server. uvicorn
+    installs handlers for SIGINT and SIGTERM only, so SIGHUP kept the default
+    disposition: the process died before the lifespan shutdown ran, the sentinel was
+    never flipped, and the next boot reported an unclean end. A deliberate stop was
+    being recorded as a crash.
+
+    Ctrl-C (SIGINT) and the in-app power button (SIGTERM to self) were already clean
+    and stay untouched -- this adds the one path that was not.
+
+    Installed BEFORE uvicorn.run so uvicorn's own SIGINT/SIGTERM handlers, which it
+    registers inside run(), still win for those two. The handler records the signal
+    and then re-raises as SIGTERM, so there is exactly one graceful path rather than
+    a second implementation of one."""
+    import signal as _signal
+
+    installed: list[str] = []
+
+    def _graceful(signum, _frame):  # pragma: no cover - driven by a real signal
+        name = _signal.Signals(signum).name
+        try:
+            from src.monitoring.forensics import note_stop_signal
+
+            note_stop_signal(name)
+        except Exception:  # noqa: BLE001 - never block a shutdown on forensics
+            pass
+        logger.info("received %s — shutting down gracefully", name)
+        # Hand over to the ONE graceful path (uvicorn's SIGTERM handler) rather than
+        # tearing down here: two shutdown implementations drift.
+        os.kill(os.getpid(), _signal.SIGTERM)
+
+    for name in ("SIGHUP",):
+        sig = getattr(_signal, name, None)
+        if sig is None:  # pragma: no cover - Windows has no SIGHUP
+            continue
+        try:
+            _signal.signal(sig, _graceful)
+            installed.append(name)
+        except (ValueError, OSError):  # pragma: no cover - not the main thread
+            logger.debug("could not install a %s handler", name)
+    return installed
+
+
 def main() -> None:
     """Console entrypoint (``open-omniscience``).
 
@@ -2542,7 +2607,15 @@ def _serve() -> None:
             "and is intended for single-user local use only.",
             host,
         )
-    uvicorn.run(app, host=host, port=port)
+    install_signal_handlers()
+    # A graceful-shutdown deadline (S0.2). Without one, uvicorn waits indefinitely for
+    # in-flight requests -- and this app has requests that legitimately run for
+    # minutes (a cold alerts compute measured 558 s in the field). A logout SIGTERM
+    # arriving during one of those left the app waiting until logind SIGKILLed it,
+    # which skips the lifespan shutdown entirely and reads as a crash on the next
+    # boot. 30 s is long enough for an ordinary request and short enough to lose the
+    # race with nothing.
+    uvicorn.run(app, host=host, port=port, timeout_graceful_shutdown=30)
 
 
 if __name__ == "__main__":
