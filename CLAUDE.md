@@ -5298,6 +5298,26 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the same table came to 57 names and all 57 resolve. GENERAL FORM: a claim is only
     citable if it was READ; when a document's job is to let someone else check the work,
     every identifier in it is a measurement, and memory is not a measurement.
+  - **EDITING ONE FILE MID-RUN MANUFACTURED EIGHT FAILURES, AND "NEVER SWITCH BRANCHES"
+    UNDERSTATES THE RULE (2026-09-03):** the recorded 2026-07-09 lesson says never switch
+    git branches while a background suite runs. I did not switch anything — I reordered
+    two import lines in `src/backup/merge.py`, semantically identical, while a full run
+    was at ~55%. The run reported **8 failures** across four files, every one of which
+    reads that module's source; all eight pass alone, all 68 pass together, and the clean
+    re-run reconciles exactly (8596 + 8 = 8604). THE DIAGNOSTIC SIGNATURE is worth more
+    than the count: `inspect.getsource(merge.run_restore)` returned
+    `'    staged: StagedArtifact,\n'` — a single line of the SIGNATURE — so every source
+    anchor failed with `ValueError: substring not found`. If you see a source-reading test
+    fail that way, suspect the tree moved under the run before suspecting the code.
+    **THE MECHANISM IS NOT ESTABLISHED, and saying so is the point.** Two hypotheses were
+    tested and neither reproduced: a `co_firstlineno` line-shift self-corrects, because
+    `inspect.findsource` walks BACKWARD to the nearest `def`; and a `linecache` poisoning
+    from a read during `open(p,"w")`'s truncation window explains the spread across
+    minutes but could not be reproduced either. So the rule stands on the reconciliation,
+    not on a story: **any write to a tracked file during a run can invalidate it**, because
+    a suite reads source from disk long after importing it, and the wording to remember is
+    "do not mutate the tree", not "do not switch branches". Cost: one 18-minute run, plus
+    the time spent believing eight real-looking failures.
 
 ## Open queue (when maintainer says proceed)
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
