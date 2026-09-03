@@ -2045,6 +2045,22 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     that the scan actually OFFERED several windows (`wal_releases >= 4`; it is 2 without the
     compression) — because the fix is one deleted monkeypatch away from reverting to
     coin-flip, and it would revert as an intermittent CI red that reproduces nowhere.
+    **IT RECURRED IN THE SIBLING ROUND ON 2026-09-03, which is the finding worth more than
+    the fix:** `test_wal_reader_starvation.py` runs the same shape against `run_all()` and was
+    never given the same compression, so at the production 30 s its scan offered the
+    checkpointer exactly ONE window and the whole assertion turned on whether a 50 ms-timeout
+    attempt landed in it. Measured on a 4-core box under 3x CPU oversubscription — what a
+    shared runner executing two full suites concurrently looks like — **6 passed / 4 failed in
+    10**; on CI it presented as a red `pull_request` lane while the `push` lane passed on the
+    IDENTICAL commit (the recorded free A/B). Porting the compression: **10/10** under the same
+    contention, and the mutation matrix keeps discrimination — removing the in-scan release
+    reddens by name, and dropping the monkeypatch reddens the anti-vacuity guard with the
+    diagnosis printed in the message (*"only 1 in-scan release(s) ... (3 total)"*), which is the
+    single-window shape quantified. So the general form is not about throttles at all: **a
+    lesson recorded against one assertion does not propagate itself to the one beside it** — when
+    a timing fix lands, grep for every sibling round that compresses the same dimension and
+    check each one carries it, because the one you did not touch will fail months later as an
+    intermittent red that reproduces nowhere.
   - **AGREEING ON THE GATE IS NOT ENOUGH — TWO MODULES PUBLISHING ONE QUANTITY MUST AGREE
     ON THE BUCKET KEY (2026-08-03, the language-equilibrium lever):** the recorded framing-tone
     lesson says modules publishing the same quantity must agree on the *gate*. A weaker
