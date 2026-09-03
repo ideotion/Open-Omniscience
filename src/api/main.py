@@ -315,10 +315,18 @@ async def lifespan(app: FastAPI):
         # record_session_start() takes the -wal reading BEFORE anything can open the
         # store (S0.1) — keep it first, and keep nothing that touches the database
         # above it.
-        record_session_start()
+        _prev = record_session_start()
         # Snapshot the PREVIOUS session's own memory peaks before this one starts
         # overwriting them (S0.4).
         capture_previous()
+        # Ask the HOST how the previous session ended (S0.3, ruled always/local-only).
+        # On a BACKGROUND thread: a hung journalctl must never delay a boot.
+        try:
+            from src.monitoring.forensics import start_kernel_evidence_read
+
+            start_kernel_evidence_read(_prev)
+        except Exception:  # noqa: BLE001 - forensics must never block startup
+            logger.debug("could not start the kernel-log read", exc_info=True)
         # A11: honestly warn ONCE at boot if the corpus is on a provably-volatile root
         # (RAM-backed / Qubes disposable), pointing at the opt-in persistent OO_DATA_DIR.
         # Never "stop using disposable VMs" — only how to keep the corpus.

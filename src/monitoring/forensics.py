@@ -432,6 +432,9 @@ def previous_session_report() -> dict[str, Any]:
     # sentinel file was removed, or this build predates it) — because "absent" is now
     # an honest non-answer rather than a claim of a clean shutdown.
     out["wal_at_boot"] = wal_at_boot()
+    # The host's own account. It is the ONLY source that separates an OOM kill from a
+    # host reset from a signal from a native fault — the app's records cannot.
+    out["kernel_evidence"] = kernel_evidence()
     if prev is None:
         out["previous_session"] = "unknown"
         out["note"] = "no sentinel yet (first boot with forensics, or the file was removed)"
@@ -495,6 +498,57 @@ def _previous_peaks() -> dict[str, Any] | None:
         "measured is ABSENT rather than zero."
     )
     return out
+
+
+_KERNEL_EVIDENCE: dict[str, Any] | None = None
+
+
+def start_kernel_evidence_read(prev: dict[str, Any] | None) -> None:
+    """Kick the host kernel-log read for the PREVIOUS session, on a background thread.
+
+    RULED always-on and local-only (2026-09-02). Off the lifespan's critical path by
+    construction: a hung ``journalctl`` must never delay a boot, so it runs on a daemon
+    thread and the report simply says the read has not finished if it is asked first."""
+    global _KERNEL_EVIDENCE
+    if prev is None:
+        _KERNEL_EVIDENCE = {
+            "verdict": "not-applicable",
+            "reason": "no previous session recorded, so there is nothing to look up",
+        }
+        return
+
+    def _work() -> None:
+        global _KERNEL_EVIDENCE
+        try:
+            from src.monitoring.kernel_log import read_kernel_evidence
+
+            pid = prev.get("pid")
+            _KERNEL_EVIDENCE = read_kernel_evidence(
+                int(pid) if isinstance(pid, int) else None,
+                since=prev.get("started_at"),
+            )
+        except Exception as exc:  # noqa: BLE001 - a forensic read never raises upward
+            _KERNEL_EVIDENCE = {
+                "verdict": "unavailable",
+                "reason": f"the kernel-log read failed ({type(exc).__name__})",
+            }
+
+    import threading
+
+    threading.Thread(target=_work, name="oo-kernel-evidence", daemon=True).start()
+
+
+def kernel_evidence() -> dict[str, Any]:
+    """The kernel's account of the previous session, or an honest not-yet/never."""
+    if _KERNEL_EVIDENCE is not None:
+        return _KERNEL_EVIDENCE
+    return {
+        "verdict": "not-read",
+        "reason": (
+            "the background kernel-log read has not completed (or was never started, "
+            "e.g. outside the app's own boot path) — unmeasured, not 'clean'"
+        ),
+    }
 
 
 def pass_tail_journal() -> dict[str, Any]:
@@ -763,6 +817,16 @@ def render_text(d: dict[str, Any] | None = None) -> str:
         lines.append(f"- -wal at this boot: {wal_boot['state']} ({size})")
         if wal_boot.get("reason"):
             lines.append(f"  - {wal_boot['reason']}")
+    kern = prev.get("kernel_evidence") or {}
+    if kern:
+        lines.append(f"- host kernel evidence: {kern.get('verdict', 'unknown')}")
+        if kern.get("reason"):
+            lines.append(f"  - {kern['reason']}")
+        for note in ("storage_note", "permission_note"):
+            if kern.get(note):
+                lines.append(f"  - {kern[note]}")
+        for ln in (kern.get("lines") or [])[:6]:
+            lines.append(f"  - kernel: {ln}")
     peaks = prev.get("previous_session_peaks") or {}
     if peaks:
         lines.append("- that session's own peaks:")
