@@ -261,45 +261,6 @@ def test_the_passphrase_half_is_never_cached(monkeypatch):
     assert connect.state_for_header(True) == "unlocked-encrypted"
 
 
-def _binds_here(scope, name: str) -> bool:
-    """Is ``name`` bound in THIS scope's own body -- an import, an assignment, a
-    ``def``, a parameter -- without descending into nested scopes, which have
-    their own?"""
-    import ast
-
-    args = getattr(scope, "args", None)
-    if args is not None:
-        for a in (
-            list(args.posonlyargs)
-            + list(args.args)
-            + list(args.kwonlyargs)
-            + [args.vararg, args.kwarg]
-        ):
-            if a is not None and a.arg == name:
-                return True
-
-    stack = list(ast.iter_child_nodes(scope))
-    while stack:
-        node = stack.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            if node.name == name:
-                return True
-            continue  # a different scope
-        if isinstance(node, ast.Lambda):
-            continue
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
-            for alias in node.names:
-                if (alias.asname or alias.name.split(".")[0]) == name:
-                    return True
-        elif isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
-            if node.id == name:
-                return True
-        elif isinstance(node, ast.Global) and name in node.names:
-            return True
-        stack.extend(ast.iter_child_nodes(node))
-    return False
-
-
 def test_every_path_that_replaces_the_store_drops_the_cached_header():
     """Enumerated, per the brief: a TTL alone would leave a window in which the
     app answers for a store that is no longer there.
@@ -311,47 +272,13 @@ def test_every_path_that_replaces_the_store_drops_the_cached_header():
     path the guard existed to protect. Only ruff's F821 caught that; a test
     that walks the enclosing scopes catches it here, where the reason is
     written down."""
-    import ast
     import pathlib
+
+    from tests.py_source_helper import assert_calls_resolve
 
     NAME = "invalidate_header_cache"
     root = pathlib.Path(__file__).resolve().parents[1]
     for rel in ("src/api/unlock.py", "src/backup/merge.py", "src/safety/panic.py"):
-        src = (root / rel).read_text(encoding="utf-8")
-        tree = ast.parse(src)
-
-        parent = {}
-        for node in ast.walk(tree):
-            for child in ast.iter_child_nodes(node):
-                parent[child] = node
-
-        sites = [
-            n
-            for n in ast.walk(tree)
-            if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id == NAME
-        ]
-        assert sites, f"{rel} changes the store file but never drops the cached header"
-
-        for call in sites:
-            # Every scope the call can see a name from: its own function, each
-            # enclosing function, and the module. A class body is skipped --
-            # its names are NOT visible to functions nested inside it.
-            scopes, node, first = [], parent.get(call), True
-            while node is not None:
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
-                    scopes.append(node)
-                elif isinstance(node, ast.ClassDef):
-                    if first:
-                        scopes.append(node)
-                elif isinstance(node, ast.Module):
-                    scopes.append(node)
-                if isinstance(
-                    node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
-                ):
-                    first = False
-                node = parent.get(node)
-
-            assert any(_binds_here(s, NAME) for s in scopes), (
-                f"{rel}:{call.lineno} calls {NAME}() but no enclosing scope binds "
-                f"that name -- the call raises NameError when the path is taken"
-            )
+        # Raises with the file and line when a call cannot resolve its name, and
+        # when a file stopped dropping the header altogether.
+        assert_calls_resolve(root / rel, NAME)

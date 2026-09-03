@@ -250,6 +250,23 @@ def _source_country_rollup_isolated():
 
 
 @pytest.fixture(autouse=True)
+def _served_counts_cache_isolated():
+    """S3.2 (2026-09-02): the polled-count cache (``src.api.served_cache``) is a
+    process-global, bind-aware singleton by design -- the SAME order-dependent-
+    pollution class as the fixtures above, and the one it is most likely to hit,
+    because ``/api/database/stats`` is reached by settings, backup, library and
+    home tests alike. Left shared, the FIRST test to warm it leaves counts every
+    later test on the same bind is served instead of the live numbers it just
+    wrote. Cleared on the way IN as well as out: a test that fails mid-way must
+    not hand its warm entry to the next one."""
+    from src.api import served_cache
+
+    served_cache.invalidate()
+    yield
+    served_cache.invalidate()
+
+
+@pytest.fixture(autouse=True)
 def _pool_watch_isolated():
     """S2.6 (2026-09-02): the pooled-connection checkout register
     (``src.database.pool_watch``) is a process-global by design -- it must span
