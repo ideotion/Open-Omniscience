@@ -55,10 +55,30 @@ def _get_identifier():
         try:
             from py3langid.langid import MODEL_FILE, LanguageIdentifier
 
+            # py3langid renamed this loader between 0.3 and 0.4 (from_pickled_model ->
+            # from_model_file) and the dependency is pinned ">=0.3" with no ceiling, so
+            # a fresh install got the new library and lost the old name. The failure was
+            # SILENT and total: the except below set _unavailable, detector_available()
+            # answered False, detect_language() answered None for every text, and every
+            # article's detected_language stayed NULL — the honest-degrade path working
+            # perfectly while the capability behind it was simply gone. Measured
+            # 2026-09-02 on py3langid 0.4.0: from_pickled_model raises AttributeError,
+            # from_model_file returns a working identifier (en at p=0.996).
+            #
+            # Both names are tried rather than pinning the dependency backwards: a
+            # version constraint chosen for compatibility is also a security decision,
+            # and supporting both APIs costs one getattr.
+            _loader = getattr(LanguageIdentifier, "from_model_file", None) or getattr(
+                LanguageIdentifier, "from_pickled_model", None
+            )
+            if _loader is None:
+                raise AttributeError(
+                    "py3langid exposes neither from_model_file nor from_pickled_model"
+                )
             # norm_probs=True -> classify() returns (lang, probability in [0,1]); the
             # FULL model (no set_languages) so an unsupported language is detected AS
             # itself and then rejected below, instead of force-fit to a supported one.
-            _identifier = LanguageIdentifier.from_pickled_model(MODEL_FILE, norm_probs=True)
+            _identifier = _loader(MODEL_FILE, norm_probs=True)
         except Exception:  # noqa: BLE001 - lib/model absent -> honest unavailable
             _unavailable = True
         return _identifier

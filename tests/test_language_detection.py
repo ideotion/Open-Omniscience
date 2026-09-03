@@ -112,3 +112,32 @@ def test_unknown_language_stays_none(db):
     a = _art(db, 1, "Short.", language=None)
     index_article(db, a, extractor=BaselineExtractor())
     assert a.language is None and a.detected_language is None
+
+
+def test_an_importable_py3langid_must_actually_load_its_model():
+    """If the library is here, the capability must be here (2026-09-02).
+
+    py3langid renamed its loader between 0.3 and 0.4 (from_pickled_model ->
+    from_model_file) and the dependency is pinned ">=0.3" with no ceiling. The rename
+    made detection SILENTLY and totally dead on any fresh install: the module's
+    except-clause set _unavailable, detector_available() answered False,
+    detect_language() answered None for every text, and every article's
+    detected_language stayed NULL -- the honest-degrade path working perfectly while
+    the capability behind it was gone.
+
+    This is the recorded 'an availability flag must probe the CAPABILITY it gates, not
+    the module that contains it' lesson: importability and usability are different
+    questions, and a dependency can answer the first while failing the second for years
+    of upstream churn. So: importable => loadable, or say why.
+    """
+    pytest.importorskip("py3langid")
+
+    from src.analytics import langdetect as ld
+
+    # clear the memoised probe so this measures the loader, not an earlier call
+    ld._identifier = None
+    ld._unavailable = False
+    assert ld.detector_available() is True, (
+        "py3langid imports but its model would not load -- the loader API has changed "
+        "again; support the new name rather than letting detection go silently dead"
+    )
