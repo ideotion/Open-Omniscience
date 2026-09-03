@@ -5182,6 +5182,46 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     record the PID when you START the process and wait on that. And prefer the
     harness's own job control (a background task id) to any pattern at all.
 
+  - **AN INSTRUMENT THAT FORKS CAN DESTROY THE EFFECT IT IS MEASURING — and the
+    obvious portable substitute for `/proc` does exactly that (2026-09-03, the
+    macOS portability lane on the shrink_memory measurement):** the probe behind
+    the S1.2 release ladder read `/proc/self/status`, which does not exist on
+    macOS, so the test died there with `CalledProcessError` — a real portability
+    defect in a claim (about SQLite) that is not Linux-specific. The obvious
+    dependency-free fix is `ps -o rss=`, which reports CURRENT resident size on
+    both platforms and looks perfect. It is wrong, and only a repeated run says
+    so: five runs of each candidate on the identical workload gave
+    **`/proc` 31.9 MB freed 5/5 · psutil (one Process object, hoisted) 31.9 MB
+    5/5 · `ps -o rss=` −0.1 MB 5/5**. Reading RSS by FORKING prevents the
+    allocator returning the pages, so the instrument erases the release it was
+    added to observe — and shipping it would have made macOS report
+    "shrink_memory freed nothing" forever: a FABRICATED FAILURE, exactly as
+    dishonest as a fabricated pass and much easier to believe, because it looks
+    like the code under test failing on another platform. **THE SAME HAZARD HAS A
+    SECOND, QUIETER FORM**: constructing a fresh `psutil.Process()` on every read
+    perturbs it identically (0 MB freed), while hoisting ONE Process object out
+    of the loop agrees with `/proc` to the hundredth of a MB. So a memory
+    instrument must be resolved ONCE, before anything is measured, and each
+    reading must allocate as close to nothing as possible. **PROCESS NOTE, and
+    the reason this entry is trustworthy at all: I reached the right conclusion,
+    then refuted it, then re-reached it.** Single runs of each configuration
+    disagreed with each other (66 MB / 0 MB / 49 MB / 0 MB across four one-off
+    probes), and from that noise I first concluded "the fork destroys it", then
+    "no, it is run-to-run variance, my mechanism was wrong". Only running each
+    configuration five times showed both readings were wrong about the noise: the
+    results are perfectly deterministic PER CONFIGURATION (5/5 identical each) and
+    it was the one-at-a-time comparison that was unreliable. When a measurement
+    disagrees between runs, the answer is more runs of each arm, never a better
+    story about the difference. `resource.getrusage`'s `ru_maxrss` was never a
+    candidate: a high-water mark cannot measure a DECREASE and would report
+    success for any implementation at all (the recorded 2026-08-06 lesson).
+    GUARD: because Linux prefers `/proc` and would never exercise the fallback,
+    a dedicated test drives the real probe with ONLY `/proc/self/status` blocked
+    (psutil reads `statm`, so it survives — a blanket `/proc` blackout would
+    disable the very fallback under test and prove nothing) and requires the
+    portable path to see the same release. Three mutations redden it by name:
+    fork per read, Process per read, and no fallback at all.
+
 ## Open queue (when maintainer says proceed)
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
   is still open (found 2026-08-20 while reviewing a CI red on PR #963; RECORD-ONLY, nothing
