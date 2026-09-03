@@ -76,7 +76,36 @@ def _last_wal_checkpoint() -> dict[str, Any] | None:
 
         for run in recent_runs(limit=50):
             ck = (run.get("hygiene") or {}).get("wal_checkpoint")
-            if isinstance(ck, dict):
+            # S2.5: a gate-busy SKIP is also a dict, and taking it here would
+            # report "the most recent real checkpoint measurement" for a
+            # checkpoint that never ran -- with no busy flag and no
+            # wal_bytes_after to contradict it. It is surfaced separately by
+            # _last_wal_checkpoint_skip so the absence still has a reason.
+            if isinstance(ck, dict) and "skipped" not in ck:
+                out = dict(ck)
+                when = run.get("finished_at") or run.get("started_at")
+                if when:
+                    out["run_at"] = when
+                return out
+    except Exception:  # noqa: BLE001 - a diagnostic read degrades, never raises
+        return None
+    return None
+
+
+def _last_wal_checkpoint_skip() -> dict[str, Any] | None:
+    """The most recent checkpoint that was REFUSED, with its reason.
+
+    Reported beside ``last_checkpoint`` rather than folded into it: a WAL that
+    has not been reclaimed because a writer held the gate, and one that has not
+    been reclaimed because a reader pinned it (``busy: 1``), point at different
+    subsystems, and a reader who cannot tell them apart looks in the wrong one.
+    """
+    try:
+        from src.scheduler.runlog import recent_runs
+
+        for run in recent_runs(limit=50):
+            ck = (run.get("hygiene") or {}).get("wal_checkpoint")
+            if isinstance(ck, dict) and "skipped" in ck:
                 out = dict(ck)
                 when = run.get("finished_at") or run.get("started_at")
                 if when:
@@ -189,6 +218,12 @@ def storage_composition(session: Session) -> dict[str, Any]:
     last_ck = _last_wal_checkpoint()
     if last_ck is not None:
         out["last_checkpoint"] = last_ck
+    # ...and the most recent REFUSAL, if any: an un-reclaimed WAL whose
+    # checkpoint never got the write gate is a different finding from one whose
+    # TRUNCATE ran and reported busy=1 (a reader pinning it).
+    last_skip = _last_wal_checkpoint_skip()
+    if last_skip is not None:
+        out["last_checkpoint_skipped"] = last_skip
     # Is it growing ACROSS DAYS? No single reading can answer that.
     hist = _wal_history(session)
     if hist is not None:

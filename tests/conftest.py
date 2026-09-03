@@ -247,3 +247,20 @@ def _source_country_rollup_isolated():
     source_country_rollup._reset_for_tests()
     yield
     source_country_rollup._reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
+def _pool_watch_isolated():
+    """S2.6 (2026-09-02): the pooled-connection checkout register
+    (``src.database.pool_watch``) is a process-global by design -- it must span
+    sessions to name a WAL pinner. The listeners are attached to the real app
+    engine, so a test that leaves a connection checked out (or one whose engine
+    is disposed without a checkin) would leave a row a LATER test's assertion
+    reads as its own -- the same order-dependent-pollution class as the fixtures
+    above. Clearing the RECORD, never the listeners: detaching them would make
+    every later test measure an instrument that is not running."""
+    from src.database import pool_watch
+
+    pool_watch._reset_for_tests()
+    yield
+    pool_watch._reset_for_tests()

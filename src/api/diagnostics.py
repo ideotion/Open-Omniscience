@@ -3047,6 +3047,44 @@ def frontend_errors(limit: int = Query(200, ge=1, le=2000)) -> dict:
     return {"errors": records[-limit:], "summary": _summary()}
 
 
+@router.get("/write-gate")
+def write_gate_report() -> dict:
+    """WHO is holding the single-writer gate, and who is holding a connection.
+
+    S2.6 (2026-09-02 crash analysis). Two different pins, kept apart because they
+    answer different questions and a reader who conflates them looks in the wrong
+    place:
+
+    * ``gate`` -- the WRITE window. ``holder``/``held_for_s`` name the current
+      hold; ``max_hold_holder`` retains the name of the longest one after it is
+      released, because a peak with no name cannot be acted on. Under FIFO
+      handoff ``max_wait_s`` now measures a real hold rather than starvation.
+    * ``pool`` -- checked-out CONNECTIONS, oldest first. A long-lived read
+      transaction pins the WAL with the gate free the whole time, which is the
+      shape the field's three-hour WAL growth had; the top row is the candidate.
+
+    An empty ``pool`` list means nothing is checked out RIGHT NOW -- a returned
+    connection is deliberately not listed, so no innocent thread is named.
+    Read-only, in-memory, no statement text and no stack (the write gate's own
+    watchdog captures a stack on demand, only for a hold past its threshold).
+    """
+    from src.database import pool_watch
+    from src.database.writer import write_gate_stats
+
+    return {
+        "gate": write_gate_stats(),
+        "pool": pool_watch.checked_out(),
+        "method": (
+            "gate counters read under the gate's own lock; pool rows recorded by "
+            "SQLAlchemy checkout/checkin listeners and forgotten on checkin"
+        ),
+        "caveat": (
+            "A point-in-time reading. An empty pool list means nothing is checked "
+            "out at this instant, never that nothing ever was."
+        ),
+    }
+
+
 @router.get("/request-latency")
 def request_latency() -> dict:
     """Per-route latency percentiles + the event-loop-block watchdog events (log #2).
@@ -3517,6 +3555,10 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("freshness.json", lambda: external_freshness()),
         # Recursive-augmentation logs #1-#5 (maintainer 2026-07-02).
         ("request-latency.json", lambda: request_latency()),
+        # S2.6 (2026-09-02): the two pins, named. Point-in-time and in-memory, so
+        # it is cheap and the bundle carries it beside the latency log the stalls
+        # show up in.
+        ("write-gate.json", lambda: write_gate_report()),
         # Cause attribution for the requests the latency log shows as stalls. Cheap:
         # an in-memory ring read, no DB work, so it needs no deadline of its own.
         ("stall-forensics.json", lambda: stall_forensics_report(limit=200)),
@@ -3838,6 +3880,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/windows-locks": "windows-locks.json",
     "/frontend-errors": "frontend-errors.json",
     "/request-latency": "request-latency.json",
+    "/write-gate": "write-gate.json",  # S2.6 (2026-09-02): who holds the gate / a connection
     "/stall-forensics": "stall-forensics.json",
     "/slow-queries": "slow-queries.json",
     "/schema-drift": "schema-drift.json",

@@ -1390,6 +1390,9 @@ them and names where to move them, and nothing is moved or deleted for you.
 | `OO_FETCH_TIMEOUT` / `OO_FETCH_MIN_INTERVAL` | Tune the ethical fetcher's timeout and per-host minimum interval. |
 | `OO_LLM_MODEL` / `OO_OLLAMA_URL` (or `OLLAMA_BASE_URL`) | Default local model and Ollama endpoint. |
 | `OO_ALLOW_BIG_SCANS` | Set `1` to run the whole-corpus background scans on a machine below the memory floor (see [Memory on a small machine](#55a-memory-on-a-small-machine--the-one-real-ceiling)). The verdict then reports that you overrode it. |
+| `OO_CKPT_GATE_TIMEOUT_S` | How long the between-pass WAL checkpoint waits for the single-writer gate before recording an honest skip and moving on (default `30`). `0` restores the old unbounded wait. |
+| `OO_WRITE_GATE_WARN_S` | Log a warning, with the holding thread's name and one stack, when a single write holds the gate longer than this (default `60`). `OO_WRITE_GATE_WATCHDOG=0` turns the watch off entirely. |
+| `OO_HEAVY_TAIL_WAIT_S` | How long the Home-briefing recompute and the background housekeeping lane wait for each other rather than running at once (default `900`). `0` waits indefinitely. |
 | `HTTPS_PROXY` | Route outbound traffic (e.g. OpenTimestamps) through a proxy/Tor. |
 
 ### 5.3 Optional extras

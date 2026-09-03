@@ -5055,6 +5055,133 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     Making the OUTER the expired one turns the same assertion into a discriminating
     `True`. GENERAL FORM: for any save/restore, arrange the fixture so the restored value
     and the absent value produce DIFFERENT answers.
+  - **A MUTEX WITH NO TIMEOUT IS A HANG WITH A GOOD REASON, AND THE WORK BELOW IT IS WHAT
+    DISAPPEARS (2026-09-03, S2.5):** `WriterGate.acquire()` waited on a `Condition` with no
+    bound, which is *correct* for a writer — a write that waits is right, a write that
+    proceeds ungated is the data-loss bug the gate exists to prevent. It is wrong for the
+    pass tail's WAL checkpoint, which takes the gate on the way past, and `record_run` sits
+    BELOW it: so a long writer did not merely delay the checkpoint, it deleted the run
+    record, and a stalled pass left no account of itself at all. THE RULE: when adding a
+    bound to a shared primitive, ask what each caller does when it gives up — a caller that
+    would proceed anyway must not get the bound (the default here stays unbounded, and the
+    negative twin pins that), and a caller that can honestly SKIP gets it. THE SKIP IS ITS
+    OWN OUTCOME: `checkpoint_wal` already returned `None` for "disabled / not due", so
+    folding a gate-busy skip into `None` would have made "could not run" and "was never
+    asked to run" indistinguishable in the run report — the recorded one-key-two-meanings
+    defect, in a return value. RIDER that cost a rewrite: `except WriteGateBusy` is
+    *evaluated* when an exception propagates, so binding that name with an import INSIDE the
+    `try` turns any earlier failure into a `NameError` from the handler; the exception class
+    has to be imported at module level even when the function it guards imports lazily.
+
+  - **A LOCK THAT GRANTS TO WHOEVER FINDS IT FREE MAKES ITS OWN WAIT COUNTER MEANINGLESS
+    (2026-09-03, S2.6c):** the gate's `max_wait_s` was the field's headline number — 6,236
+    seconds — and it could not be read as a long write, because `acquire()` had a fast path
+    that took a free gate without queueing. A thread looping acquire/release re-takes it the
+    instant it releases, while the waiter it just notified is still being scheduled, so the
+    figure measures STARVATION and a hold indistinguishably. FIFO tickets fix the number as
+    much as the fairness. TWO THINGS THE FIX TURNS ON: `notify()` becomes `notify_all()`,
+    because under FIFO the one thread `notify()` wakes may not be the queue head, and it
+    goes straight back to sleep while the head is never woken — a lost wakeup that a
+    fairness change introduces rather than removes; and a timed-out waiter must REMOVE
+    itself and wake whoever is now the head, or the abandoned entry sits at the head forever
+    and blocks every later acquire (which also means `_reset_for_tests` must clear the queue,
+    not just the owner). **AND THE OBVIOUS WAY TO SOLVE THE FIRST IS A 5.3x THROUGHPUT
+    REGRESSION, which only a measurement finds:** one shared condition plus `notify_all()` is
+    correct, reads as the textbook fix, and at 50 workers x 200 us holds took **2543 ms
+    against the old 482 ms**, because every release woke all 49 waiters so that one could
+    proceed — a thundering herd on the very collector throughput the field report is
+    complaining about. Give each waiter its OWN `Condition` over the SHARED lock and wake the
+    head alone: one wakeup per handoff, what the pre-FIFO `notify()` cost. Then state what
+    fairness itself costs rather than implying it is free — 473 -> 550 ms wall (+16%) while
+    the worst wait falls 458 -> 14.6 ms (31x), within noise when uncontended. GENERAL FORM:
+    a fairness fix on a contended primitive changes a HOT PATH, so benchmark it against the
+    algorithm it replaces before shipping; and when the honest version is slower, the
+    question is whether the fix can be made cheaper, not whether the regression is
+    acceptable. TESTING NOTE, and the reason the guard is trustworthy: a thread race cannot
+    deterministically discriminate FIFO from the old `notify()`-based "FIFO-ish" order.
+    The load-bearing half is the fast path's REFUSAL, and that is testable directly — queue
+    a ticket, leave the gate FREE, assert a fresh acquire is not granted — which reddens
+    exactly when the `and not self._queue` guard is removed.
+
+  - **AN INSTRUMENT THAT KEEPS NAMING A THREAD AFTER IT LET GO ACCUSES THE INNOCENT
+    (2026-09-03, S2.6b):** the write gate can name whoever is inside the WRITE window, and
+    can never name the thread that actually pins the WAL — a long-lived READ transaction
+    stops `wal_checkpoint(TRUNCATE)` reclaiming anything with the gate free the whole time,
+    which is the shape the field's three-hour WAL growth had. A checkout/checkin pair names
+    it, and the load-bearing property is the CHECKIN: an instrument that recorded checkouts
+    and never forgot them would name whichever thread ran last on every reading, so it would
+    be worse than no instrument. Its negative twin ("a returned connection is NOT listed") is
+    therefore the test that matters, and the empty case has to be stated in the payload —
+    "nothing is checked out at this instant" is not "nothing ever was". RIDER: a
+    process-global register attached to the real app engine is order-dependent test
+    pollution by construction, so it joins conftest's autouse reset list — clearing the
+    RECORD and never the listeners, since detaching them would leave every later test
+    measuring an instrument that is not running.
+
+  - **TWO THINGS THAT EACH REFUSE TO OVERLAP THEMSELVES ARE NOT THEREBY SERIALISED — and
+    SKIPPING on contention starves whichever one is kicked second (2026-09-03, S2.5b):** the
+    housekeeping lane and the whole-corpus briefing recompute each had a non-overlapping
+    lock, each documented as "occasionally skipped, never stacked", and nothing stopped both
+    running at once on the two-core box the field report describes. The obvious fix — a
+    shared lock taken with `blocking=False` — reads like the existing posture and is worse
+    than the bug: the lane is always kicked FIRST in the tail, so the briefing refresh would
+    have found the lock held on essentially every pass and a permanently stale Home would
+    have replaced a slow one. It WAITS instead, bounded, and the bound is what keeps a wedged
+    consumer from pinning the other's thread forever. GENERAL FORM: when serialising two
+    background consumers, look at the ORDER they are kicked in before choosing skip-vs-wait —
+    skip is only fair when arrival order is fair, and a fixed kick order makes it a permanent
+    verdict against the later one.
+  - **A DOCSTRING SAYING "NOT AT IMPORT" IS NOT A GUARANTEE — CHECK WHETHER THE
+    FUNCTION IT NAMES IS ITSELF CALLED AT IMPORT (2026-09-03, the write-gate
+    watchdog):** `start_write_gate_watchdog()` was called from
+    `register_write_gate()`, and BOTH its docstring and the comment at the call
+    site said, in almost those words, that this was "the production wiring,
+    never at import, so a test that imports this module gets no thread". The
+    property was false the moment it was written: `session.py` calls
+    `register_write_gate(SessionLocal)` inside a module-level `if _IS_SQLITE:`,
+    so merely `import src.database.models` spawned a monitoring thread. I wrote
+    the correct rule down twice and then satisfied neither. GENERAL FORM: when a
+    comment asserts "X does not happen at import", the check is not to re-read
+    the comment but to grep for the CALLERS of the function it points at and ask
+    what scope each of them runs in — a function is only as lazy as its most
+    eager caller. THE GUARD THAT CAUGHT IT was `test_import_has_no_side_effects`,
+    which asserts the property BEHAVIOURALLY in a subprocess (`n0 ==
+    threading.active_count()` after importing the models) rather than by reading
+    the source — the only shape that could have caught this, since every source
+    grep for the honest string finds it. THREE RIDERS. (a) The trigger has to be
+    the point where the watched thing can first EXIST: `watchdog_tick` reads the
+    gate's holder and nothing else, and a hold cannot exist before an acquire, so
+    arming on the first `acquire()` loses no coverage while a migration, a CLI or
+    a test that only imports pays for no thread. (b) A "have we decided yet" flag
+    is NOT the same as a "did we start" flag: `_WATCHDOG_STARTED` stays False
+    forever when the watchdog is disabled, so keying the hot path on it re-reads
+    the environment and re-takes a lock on every single write — the disabled case
+    needs its own one-shot flag, and the mutation that swaps them reddens only a
+    test written for that case. (c) **THE PRE-EXISTING TEST FOR THIS WAS PASSING
+    VACUOUSLY**: `test_the_watchdog_is_started_by_the_production_wiring` asserted
+    `_WATCHDOG_STARTED is True` after importing the session module, and passed
+    because an EARLIER test in the same file had already taken the gate and armed
+    it — so it held whatever the wiring did. It was re-anchored (deliberately,
+    per the guard-that-anticipates-its-own-supersession rule) onto the real
+    property in a subprocess: no thread on import, a thread after a real ORM
+    write. Anything process-global ("has it started yet", "was this registered")
+    is unprovable in-process once any sibling test can arm it.
+  - **A `pgrep -f` / `pkill -f` PATTERN MATCHES THE WRAPPER RUNNING IT — twice in
+    one session, in two different disguises (2026-09-03):** the recorded 2026-08-08
+    lesson names `pgrep -f` in a wait loop; both recurrences here evaded it because
+    neither looked like that example. (a) `until ! pgrep -f "[p]ytest -q --continue"`
+    — the `[p]` bracket trick that defeats a self-match in `ps | grep` does NOTHING
+    for `pgrep -f`, because the pattern is a REGEX matched against every command
+    line INCLUDING the waiting shell's own, which contains the literal
+    `pytest -q --continue-on-collection-errors` from the command it is about to
+    run. The loop waited on itself forever, and a wait that never returns is
+    indistinguishable from work that never finishes. (b) `pkill -f "python -m
+    pytest"` killed the very shell that issued it (exit 144). RULE: never match a
+    process by a string your own command line contains — match on an absolute
+    argv[0] (`ps -eo args | grep "^/abs/path/.venv/bin/python -m pytest"`), or
+    record the PID when you START the process and wait on that. And prefer the
+    harness's own job control (a background task id) to any pattern at all.
+
 ## Open queue (when maintainer says proceed)
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
   is still open (found 2026-08-20 while reviewing a CI red on PR #963; RECORD-ONLY, nothing

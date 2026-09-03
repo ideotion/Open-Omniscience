@@ -1510,6 +1510,15 @@ class BackgroundScheduler:
         self._lane_lock = threading.Lock()
         self._lane_thread: threading.Thread | None = None
         self._last_lane_result: dict | None = None
+        # S2.5 (b): the two heavy tail consumers -- the housekeeping lane and the
+        # whole-corpus briefing recompute -- were each non-overlapping WITH
+        # THEMSELVES and free to run CONCURRENTLY with each other, on a box the
+        # field report describes as two cores. This lock serialises them: whoever
+        # kicks first runs first, the other WAITS (bounded) rather than skipping
+        # outright, because skipping on contention would let the earlier kick --
+        # always the lane -- starve the briefing refresh permanently.
+        self._heavy_tail_lock = threading.Lock()
+        self._heavy_tail_waits = 0  # bounded waits that gave up (observability)
         # Session A §4 concurrency-skeptic finding (2026-07-24, HIGH): an exclusive
         # operation (a restore) pausing the CONTINUOUS loop via .stop() left run_now()
         # completely unaware -- run_now() spawns its own _do_run() thread gated ONLY on
@@ -1821,8 +1830,14 @@ class BackgroundScheduler:
             try:
                 from src.briefing.service import refresh_briefing
 
-                with session_scope() as session:
-                    refresh_briefing(session)
+                # S2.5 (b): never concurrent with the housekeeping lane.
+                if not self._acquire_heavy_tail("briefing refresh"):
+                    return
+                try:
+                    with session_scope() as session:
+                        refresh_briefing(session)
+                finally:
+                    self._heavy_tail_lock.release()
             except Exception:  # noqa: BLE001 - a background refresh must never crash the thread
                 _LOG.warning("background briefing refresh failed", exc_info=True)
             finally:
@@ -1833,6 +1848,41 @@ class BackgroundScheduler:
             target=_run, daemon=True, name="oo-briefing-bg"
         )
         self._briefing_thread.start()
+
+    def _heavy_tail_timeout_s(self) -> float:
+        try:
+            return max(0.0, float(os.getenv("OO_HEAVY_TAIL_WAIT_S", "") or 900.0))
+        except (TypeError, ValueError):
+            return 900.0
+
+    def _acquire_heavy_tail(self, who: str) -> bool:
+        """Serialise the two whole-corpus tail consumers (S2.5 b).
+
+        WAITS rather than skipping on contention, bounded: the lane is always
+        kicked first, so a skip-on-contention would mean the briefing refresh
+        essentially never ran on a busy machine -- trading one duty-cycle
+        problem for a permanently stale Home. The bound stops a wedged consumer
+        pinning the other's thread forever; giving up is logged and counted,
+        never silent. At most one waiter per consumer exists by construction
+        (each already holds its own non-overlapping lock before reaching here).
+        ``OO_HEAVY_TAIL_WAIT_S=0`` restores an unbounded wait.
+        """
+        timeout = self._heavy_tail_timeout_s()
+        got = (
+            self._heavy_tail_lock.acquire(timeout=timeout)
+            if timeout > 0
+            else self._heavy_tail_lock.acquire()
+        )
+        if got:
+            return True
+        self._heavy_tail_waits += 1
+        _LOG.warning(
+            "%s gave up after %.0fs waiting for the other heavy tail consumer; "
+            "skipping this cycle",
+            who,
+            timeout,
+        )
+        return False
 
     def _kick_housekeeping_lane(self) -> None:
         """S-B (2026-07-24 throughput brief, C1): move the serial network
@@ -1867,10 +1917,17 @@ class BackgroundScheduler:
                 if kill_switch_active():
                     self._last_lane_result = {"skipped": "airplane mode engaged"}
                     return
-                settings = self._settings_provider()
-                fetcher = make_fetcher()
-                with session_scope() as session:
-                    self._last_lane_result = run_housekeeping_lane(session, fetcher, settings)
+                # S2.5 (b): never concurrent with the briefing recompute.
+                if not self._acquire_heavy_tail("housekeeping lane"):
+                    self._last_lane_result = {"skipped": "another heavy tail consumer is running"}
+                    return
+                try:
+                    settings = self._settings_provider()
+                    fetcher = make_fetcher()
+                    with session_scope() as session:
+                        self._last_lane_result = run_housekeeping_lane(session, fetcher, settings)
+                finally:
+                    self._heavy_tail_lock.release()
             except Exception:  # noqa: BLE001 - a background lane must never crash the thread
                 _LOG.warning("housekeeping lane failed", exc_info=True)
             finally:

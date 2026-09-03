@@ -210,6 +210,15 @@ if _IS_SQLITE:
 
     register_write_gate(SessionLocal)
 
+# S2.6 (b): record which thread holds each POOLED CONNECTION. Not a duplicate of
+# the write gate -- a long-lived READ transaction pins the WAL with the gate free
+# the whole time, and that is the thread the gate can never name. Backend-neutral
+# (it records checkouts, not writes) and cheap: a dict entry per checkout, dropped
+# on checkin, no statement text.
+from src.database import pool_watch as _pool_watch  # noqa: E402
+
+_pool_watch.register(engine)
+
 
 def init_db() -> None:
     """

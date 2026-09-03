@@ -36,6 +36,12 @@ import time
 from contextlib import suppress
 from pathlib import Path
 
+# Module level, not lazy inside checkpoint_wal: an ``except WriteGateBusy``
+# clause is evaluated when an exception propagates, so a name bound by an import
+# INSIDE the try would be unbound for any failure raised before that line --
+# turning a real error into a NameError from the handler.
+from src.database.writer import WriteGateBusy
+
 _LOG = logging.getLogger("scheduler.hygiene")
 
 
@@ -148,6 +154,19 @@ def _ckpt_min_interval_s() -> float:
         return 300.0
 
 
+def _ckpt_gate_timeout_s() -> float:
+    # S2.5: the checkpoint takes the single-writer gate, and until this bound
+    # existed it waited on an unbounded Condition -- so a long writer held the
+    # whole pass tail, and record_run (BELOW it) was never reached, which is why
+    # a stalled pass left no run record at all. 30 s bounds the wait; giving up
+    # records an honest skip and the checkpoint is retried next pass boundary.
+    # <=0 restores the unbounded wait (an escape hatch, not a default).
+    try:
+        return max(0.0, float(os.getenv("OO_CKPT_GATE_TIMEOUT_S", "") or 30.0))
+    except (TypeError, ValueError):
+        return 30.0
+
+
 def _ckpt_busy_timeout_ms() -> int:
     # Bounded on purpose: with an active long reader, TRUNCATE calls the busy
     # handler until the reader finishes — the default 30 s connection timeout
@@ -167,11 +186,20 @@ def checkpoint_wal(
 
     Serialised through ``write_lock()`` (the same gate every writer takes), so
     it can NEVER run beside a gated writer — it queues behind one instead.
+    S2.5: that queue is now BOUNDED (``OO_CKPT_GATE_TIMEOUT_S``, 30 s). It used
+    to be an unbounded wait, and ``record_run`` sits BELOW this call in the pass
+    tail — so a long writer did not merely delay the checkpoint, it meant a
+    stalled pass left no run record of itself at all.
     Rate-limited by ``OO_WAL_CHECKPOINT_MIN_S`` (default 300 s) so fast
     recycled passes don't churn; ``force=True`` bypasses the cadence (tests /
     explicit maintenance). Returns the measured record — busy flag, frames,
-    wal bytes before/after, duration — or None (disabled / not due /
-    non-SQLite / error). Never raises.
+    wal bytes before/after, duration — or ``{'skipped': 'gate busy', ...}`` when
+    the bound expired (its OWN outcome: a checkpoint that could not run and one
+    that was never due are opposite facts), or None (disabled / not due /
+    non-SQLite / error). Never raises. NOTE the cadence stamp is taken before
+    the gate is attempted, so a gate-busy skip consumes that budget and the
+    retry is at the NEXT boundary past the interval — matching every other
+    failure path here, and visible in the returned record rather than silent.
     """
     global _LAST_CKPT_MONO
     if not wal_checkpoint_enabled():
@@ -200,12 +228,13 @@ def checkpoint_wal(
 
         from src.database.writer import write_lock
 
+        gate_timeout = _ckpt_gate_timeout_s()
         t0 = time.monotonic()
         raw = engine.raw_connection()
         try:
             cur = raw.cursor()
             try:
-                with write_lock():
+                with write_lock(timeout=gate_timeout or None):
                     # PRAGMAs are not DML, so pysqlite opens no implicit
                     # transaction here — the checkpoint runs outside any BEGIN.
                     cur.execute(f"PRAGMA busy_timeout={int(busy_ms)}")
@@ -236,6 +265,18 @@ def checkpoint_wal(
         }
         _LOG.info("wal checkpoint(TRUNCATE): %s", out)
         return out
+    except WriteGateBusy as exc:
+        # S2.5: NOT a failure -- another writer holds the gate, so the WAL stays
+        # where it is and the next pass boundary tries again. Reported as its own
+        # outcome rather than folded into None (which the run report reads as
+        # "disabled / not due"): a checkpoint that could not run and one that was
+        # never asked to run are opposite facts.
+        _LOG.warning("wal checkpoint skipped: %s", exc)
+        return {
+            "skipped": "gate busy",
+            "detail": str(exc),
+            "waited_s": _ckpt_gate_timeout_s(),
+        }
     except Exception:  # noqa: BLE001 - hygiene must never break the run loop
         _LOG.warning("wal checkpoint failed; run loop continues", exc_info=True)
         return None
@@ -248,7 +289,9 @@ def run_pass_hygiene() -> dict | None:
     try:
         out = release_pass_state() or {}
         # Always present so the run report shows whether a checkpoint ran
-        # (None = disabled / not due / skipped — never a silent omission).
+        # (None = disabled / not due / error; a dict with "skipped" = it was
+        # REFUSED and by what — never a silent omission, and never the same
+        # value for "could not run" and "was never asked to").
         out["wal_checkpoint"] = checkpoint_wal()
         return out
     except Exception:  # noqa: BLE001 - hygiene must never break the run loop
