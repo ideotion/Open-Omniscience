@@ -2045,6 +2045,26 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     that the scan actually OFFERED several windows (`wal_releases >= 4`; it is 2 without the
     compression) — because the fix is one deleted monkeypatch away from reverting to
     coin-flip, and it would revert as an intermittent CI red that reproduces nowhere.
+    **RECURRED 2026-09-04 IN THE SIBLING FILE THIS ENTRY WAS WRITTEN BESIDE, WHICH IS THE
+    HALF WORTH KEEPING: the fix was applied to `test_wal_starvation_soak.py` and never to
+    `test_wal_reader_starvation.py`, whose scan is also sub-second.** A lesson recorded
+    against one file does not propagate to the file it was derived FROM — so when a
+    timing-compression fix lands, grep the tree for every test driving the same mechanism
+    (here `registry.run_all`) rather than only the one that went red. **THE CI SIGNATURE OF
+    THIS CLASS IS WORTH RECOGNISING ON SIGHT: the same SHA passing in one lane and failing in
+    another.** `2d12708` passed the PR run's own `test` lane AND the push run's Core-only
+    job while failing the PR run's Core-only job — three lanes, identical code, so a code
+    regression is ruled out by construction in one lookup. Reproducing it needs LOAD, not a
+    delay: 12 spinners on 4 cores took it from 1/1 idle to **4 pass / 6 fail**, and the
+    compression to **12 pass / 0 fail**. Two riders. The anti-vacuity floor must be
+    calibrated against BOTH populations, measured — uncompressed releases **3**
+    (deterministic), compressed **8** minimum over 8 contended runs, so 4 discriminates with
+    margin either way; I first wrote "releases exactly ONCE" from reasoning and the
+    measurement said 3. And the floor now trips BEFORE the discriminating assertion, so its
+    message must name **both** causes it cannot tell apart — a missing production mechanism
+    or a missing compression — because a floor that guesses one accuses the wrong party: the
+    in-scan-release mutation fires it, and blaming the test's throttle there would send a
+    reader hunting the wrong defect.
   - **AGREEING ON THE GATE IS NOT ENOUGH — TWO MODULES PUBLISHING ONE QUANTITY MUST AGREE
     ON THE BUCKET KEY (2026-08-03, the language-equilibrium lever):** the recorded framing-tone
     lesson says modules publishing the same quantity must agree on the *gate*. A weaker
