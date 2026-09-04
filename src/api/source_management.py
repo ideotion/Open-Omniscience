@@ -1513,6 +1513,7 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
         tunable_payload,
     )
     from src.catalog.qualification import (
+        QUALIFIED_RECHECK_MONTHS,
         STATUS_DISQUALIFIED,
         STATUS_QUALIFIED,
         STATUS_UNQUALIFIED,
@@ -1523,6 +1524,7 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
     settings = load_settings()
     current = {
         "qualification_per_pass": settings.qualification_per_pass,
+        "qualification_recheck_per_pass": settings.qualification_recheck_per_pass,
         "min_source_articles": MIN_SOURCE_ARTICLES,
         "source_cohort_floor": SOURCE_COHORT_FLOOR,
         "tail_p": TAIL_P,
@@ -1596,6 +1598,25 @@ def qualification_config(db: Session = Depends(get_db)) -> dict:
             "note": (
                 "A disqualified source is re-checked on a lengthening ladder, reset by a "
                 "qualified verdict. The cap is what guarantees the re-check happens at all."
+            ),
+        },
+        # The panel renders the backend's description rather than restating it in HTML,
+        # so this block is what stops the UI explaining a gate the engine no longer
+        # applies -- and until 2026-09-04 the engine applied no re-verification at all.
+        "recheck": {
+            "qualified_months": QUALIFIED_RECHECK_MONTHS,
+            "per_pass": settings.qualification_recheck_per_pass,
+            "note": (
+                "A QUALIFIED verdict is re-checked on a flat clock, never the disqualified "
+                "ladder's doubling. Re-checks draw on their OWN per-pass budget: while they "
+                "shared one with new candidates, a backlog of unexamined sources spent it "
+                "before a single re-check was reached. 0 turns re-verification off."
+            ),
+            "scope_note": (
+                "A re-check judges a source on its whole stored history, so it sees a source "
+                "that is broadly broken and NOT one that degraded recently against years of "
+                "good articles. Its value is judging a source admitted on one or two articles "
+                "against a cohort baseline that did not exist when it was admitted."
             ),
         },
         "counts": counts,

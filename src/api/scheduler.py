@@ -60,6 +60,11 @@ class SchedulerConfigUpdate(BaseModel):
     # QUALIFICATION ride-along (0.3 CLOSE GATE ruling): candidate sources trial-fetched +
     # judged per online pass, like the world-discovery ride-along; 0 disables.
     qualification_per_pass: int | None = None
+    # RE-VERIFICATION budget, separate on purpose (2026-09-04 ruling): sharing one budget
+    # with new candidates is what made the re-qualification ladder unreachable behind a
+    # backlog. 0 disables re-verification. Absent from this model = silently unwritable,
+    # since save_settings only sees the fields the body declares.
+    qualification_recheck_per_pass: int | None = None
     # Optional per-language cadence lever (default OFF): a {lang: weight} target
     # the operator opts into; {} or omitted keeps the pure random rotation.
     language_equilibrium: dict | None = None

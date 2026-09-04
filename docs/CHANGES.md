@@ -145,6 +145,36 @@ article clean-up's input. A row closes on evidence a later reader can re-open, n
   (missing from an aggregation reads identically to examined-and-clean), and fixing that
   turned an id-ordered queue into one that starved on its first permanently-unresolvable
   entry.
+- **Verdicts accumulate across installs, and stop being permanent.** Two halves of one
+  gap. Qualification work was already carried by a backup import — a source another
+  instance judged arrives judged, and one this instance never judged adopts that verdict
+  in both directions, with a local verdict always winning. What was missing is that a
+  **qualified stamp never expired**: the only two selection queries picked unqualified and
+  disqualified sources, so a verdict was reached once and re-examined by nothing. It is now
+  re-checked on a flat ~6-month clock, and what that can honestly see is written down —
+  the audit has no recency window, so a re-check catches a source that is broadly broken
+  and not one that degraded last month against years of good history; its real value is
+  measuring a source admitted on one or two articles against a baseline that did not exist
+  yet at the time. **The re-qualification ladder shipped in `0.2` had never actually run.**
+  Re-checks drew on the same per-pass budget as new candidates and were taken second, so
+  with a backlog of tens of thousands of unexamined sources the budget was always spent
+  before a single re-check was reached — correct code, unreachable. Re-checks now have
+  their own budget, so starvation is impossible in both directions rather than tuned.
+- **A fresh install starts from what earlier instances measured.** `configs/source_qualification.yml`
+  ships verdicts earned by measurement on real corpora, adopted at boot onto sources the
+  install has never judged — so the shipped catalog is effectively two lists, the sources
+  already qualified by the app and the ones still to be, without splitting the curated file
+  or restating a verdict in it. This is not the pre-qualified-by-curation stamp the ruling
+  rejected: that refused an *opinion* standing in for evidence, and every row here is the
+  same measurement the receiving install's own first pass would eventually have produced.
+  Adoption obeys the merge's rule identically, disqualifications ship too (so a fresh
+  install skips a known-broken source rather than rediscovering it over Tor), and an
+  adopted stamp keeps its **original** date — so a verdict earned eight months ago comes
+  due for re-verification almost at once instead of reading as measured today.
+  A diagnostics export emits that file from a live corpus, and a merge script accumulates
+  several instances' exports without ever resolving a disagreement automatically or
+  counting an inherited verdict as corroboration — importing one backup into eight machines
+  is one measurement seen eight times.
 - **Newsletter links can become sources.** The sanitised external links in an imported
   `.eml` now produce `article_links` rows, so the citation-discovery funnel sees them — with
   the tracker-wrapped links whose destination could not be recovered deliberately excluded.

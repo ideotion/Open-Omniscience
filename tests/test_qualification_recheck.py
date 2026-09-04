@@ -286,3 +286,50 @@ def test_an_inherited_row_never_becomes_a_source_status(db):
     db.refresh(s)
     assert s.status == STATUS_QUALIFIED
     assert {r.verdict for r in db.query(SourceQualificationAttempt).all()} == {VERDICT_INHERITED}
+
+
+# ------------------------------------------------------- the setting is reachable
+
+def test_the_recheck_budget_is_writable_through_the_config_endpoint():
+    """A setting the API body does not declare is silently dropped by
+    `save_settings(model_dump(exclude_unset=True))` -- so the knob would exist, be
+    documented, and be unreachable from the UI. The dead-seam shape this repo has paid
+    for repeatedly."""
+    from src.api.scheduler import SchedulerConfigUpdate
+
+    assert "qualification_recheck_per_pass" in SchedulerConfigUpdate.model_fields
+    body = SchedulerConfigUpdate(qualification_recheck_per_pass=4)
+    assert body.model_dump(exclude_unset=True) == {"qualification_recheck_per_pass": 4}
+
+
+def test_the_setting_round_trips_through_save_and_load(tmp_path, monkeypatch):
+    from src.scheduler import settings as st
+
+    monkeypatch.setattr(st, "_settings_path", lambda: tmp_path / "settings.json")
+    st.save_settings({"qualification_recheck_per_pass": 7})
+    assert st.load_settings().qualification_recheck_per_pass == 7
+
+
+def test_an_out_of_range_budget_is_REFUSED_not_quietly_clamped(tmp_path, monkeypatch):
+    """The house convention for this settings path, confirmed by driving it: an
+    out-of-range value RAISES rather than being silently coerced -- so an operator who
+    typed 10,000 learns that, instead of being given 100 and told nothing."""
+    from src.scheduler import settings as st
+
+    monkeypatch.setattr(st, "_settings_path", lambda: tmp_path / "settings.json")
+    with pytest.raises(st.SchedulerSettingsError):
+        st.save_settings({"qualification_recheck_per_pass": 10_000})
+
+
+def test_the_panel_describes_the_re_check_the_engine_actually_applies():
+    """The qualification panel renders the BACKEND's vocabulary rather than restating it in
+    HTML, precisely so it cannot describe a gate the engine no longer applies. A
+    re-verification clock the panel does not mention is that defect pointing the other
+    way: the engine applies something the operator is never told about."""
+    import inspect
+
+    from src.api import source_management
+
+    src = inspect.getsource(source_management.qualification_config)
+    assert '"recheck"' in src
+    assert "QUALIFIED_RECHECK_MONTHS" in src
