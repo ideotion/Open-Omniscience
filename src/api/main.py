@@ -213,8 +213,24 @@ def _run_startup_upkeep() -> None:
                 from src.catalog.provenance import ensure_channel_tags
 
                 ensure_channel_tags(session)
+                # SHIPPED QUALIFICATION VERDICTS (2026-09-04 ruling): adopt what earlier
+                # instances already measured onto sources this one has never judged, so a
+                # fresh install starts with app-qualified sources rather than re-earning
+                # every verdict from scratch. Idempotent and near-free after the first
+                # boot -- it only touches rows still reading 'unqualified'. A local
+                # verdict always wins, in both directions.
+                from src.catalog.qualification_overlay import apply_overlay
+
+                adopted = apply_overlay(session)
             if seeded.get("created"):
                 logger.info("Seeded %d catalog sources at startup.", seeded["created"])
+            if adopted.get("adopted"):
+                logger.info(
+                    "Adopted %d shipped qualification verdict(s) (%d qualified, "
+                    "%d disqualified); %d local verdict(s) kept.",
+                    adopted["adopted"], adopted.get("qualified", 0),
+                    adopted.get("disqualified", 0), adopted.get("kept_local", 0),
+                )
         except Exception:  # noqa: BLE001 - seeding must never block startup
             logger.warning("could not seed the source catalog at startup", exc_info=True)
     try:
@@ -2602,8 +2618,22 @@ def _serve() -> None:
                 from src.catalog.provenance import ensure_channel_tags
 
                 ensure_channel_tags(session)
+                # SHIPPED QUALIFICATION VERDICTS (2026-09-04 ruling): adopt what earlier
+                # instances already measured onto sources this one has never judged, so a
+                # fresh install starts with app-qualified sources rather than re-earning
+                # every verdict from scratch. Idempotent and near-free after the first
+                # boot -- it only touches rows still reading 'unqualified'. A local
+                # verdict always wins, in both directions.
+                from src.catalog.qualification_overlay import apply_overlay
+
+                adopted = apply_overlay(session)
             if result["created"]:
                 logger.info("Seeded %d starter sources on first run.", result["created"])
+            if adopted.get("adopted"):
+                logger.info(
+                    "Adopted %d shipped qualification verdict(s) on first run.",
+                    adopted["adopted"],
+                )
         except Exception as exc:  # noqa: BLE001 - never block startup on seeding
             logger.warning("Could not seed default sources: %s", exc)
 
