@@ -82,6 +82,30 @@ _WRITER_BLOB_BYTES = 1024 * 1024  # per-write payload. 2 MiB was tried and
 # 0/8 successful attempts at one speed), which would break assertion (b) -- the
 # discriminating one. 1 MiB satisfies both, so this is NOT the lever to reach
 # for when (a) comes up short; _TARGET_WRITES below is.
+# The in-scan release throttle (registry._WAL_GUARD_MIN_RELEASE_INTERVAL_S)
+# is 30 s in production, sized for a scan that "can run for MINUTES" so that
+# such a scan gets several release windows. THIS scan is compressed to a few
+# seconds, so at 30 s every release after the unconditional first one
+# (``_last_release_mono is None``) is throttled out and the whole assertion
+# below hangs on whether a checkpoint attempt happens to land inside that ONE
+# momentary window -- thread-scheduling luck.
+#
+# Measured here on a 4-core box under 3x CPU oversubscription (which is what a
+# shared runner executing two full suites concurrently looks like): 6 passes /
+# 4 failures in 10 at the production 30 s, and the failure reproduced on CI as
+# a red pull_request lane while the push lane passed on the IDENTICAL commit.
+#
+# This is the same defect, and the same fix, already shipped for the sibling
+# round in tests/test_wal_starvation_soak.py (see its _TEST_RELEASE_INTERVAL_S
+# block). Compressing the throttle to match the compressed scan CANNOT weaken
+# the assertion: an unpatched build releases ZERO times at ANY interval.
+# Production's 30 s is untouched.
+_TEST_RELEASE_INTERVAL_S = 0.05
+# ...and the floor that stops a silent regression to the single-window shape
+# if the monkeypatch below is ever dropped: asserted, never assumed. Without
+# the compression this scan produces exactly 1 in-scan release.
+_MIN_IN_SCAN_RELEASES = 3
+
 _TARGET_WRITES = 12  # the reader's window closes once the writer has committed
 # this many times -- NOT after a fixed wall-clock duration. This is what makes
 # assertion (a) runner-speed-INDEPENDENT; see the "why the window is
@@ -176,6 +200,23 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
     # tests / production import-time registrations must never run here, and
     # monkeypatch restores the real registry when this test ends).
     monkeypatch.setattr(registry, "_REGISTRY", [])
+
+    # See _TEST_RELEASE_INTERVAL_S: give this compressed scan the several
+    # in-scan release windows the production constant was sized to produce.
+    monkeypatch.setattr(
+        registry, "_WAL_GUARD_MIN_RELEASE_INTERVAL_S", _TEST_RELEASE_INTERVAL_S
+    )
+    # Count the releases rather than trusting that the patch above took effect
+    # (a module-global lookup at call time -- if the wrapper is ever changed to
+    # bind the constant at import, this counter is what notices).
+    releases: list[float] = []
+    _real_release = registry._release_transaction
+
+    def _counting_release(session):
+        releases.append(time.monotonic())
+        return _real_release(session)
+
+    monkeypatch.setattr(registry, "_release_transaction", _counting_release)
 
     # Signalled once per committed write, so the reader below can gate its
     # window on WRITES OBSERVED rather than on wall-clock time.
@@ -384,6 +425,20 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
     # code. Measured before this filter existed: the unpatched run passed 1
     # time in 3 on that race alone -- i.e. the guard silently stopped
     # discriminating a third of the time.
+    # ANTI-VACUITY: prove the compression above actually took effect. At the
+    # production 30 s this is 1 (the unconditional first fetchmany release);
+    # the discriminating assertion below would then be a coin flip rather than
+    # a guard. A dropped monkeypatch reddens HERE, by name, instead of turning
+    # the round back into a lottery that fails somewhere else one run in three.
+    in_scan_releases = [t for t in releases if window_open_mono <= t <= window_close_mono]
+    assert len(in_scan_releases) >= _MIN_IN_SCAN_RELEASES, (
+        f"only {len(in_scan_releases)} in-scan release(s) landed inside the "
+        f"producer's window ({len(releases)} total) -- the compressed release "
+        f"interval did not take effect, so the assertion below is testing "
+        f"thread-scheduling luck rather than the fix. See "
+        f"_TEST_RELEASE_INTERVAL_S."
+    )
+
     in_window = [
         rec for rec in ckpt_results
         if window_open_mono <= rec["_mono"] <= window_close_mono

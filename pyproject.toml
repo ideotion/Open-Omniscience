@@ -186,16 +186,26 @@ columnar = [
 # alone if this is absent (and labels itself honestly); installing this upgrades
 # new signatures to hybrid Ed25519 + ML-DSA (FIPS 204) for quantum resistance.
 pqc = [
-    # Upper-bounded on purpose. pqcrypto 1.0.0 (2026-08-15) is a breaking API change:
-    # ``generate_keypair`` became ``keygen`` and the module now returns ``PublicKey`` /
-    # ``SecretKey`` objects rather than raw bytes, so src/custody/signing.py — which
-    # PERSISTS those keys — needs a reviewed migration, not a rename (old 0.x keys must
-    # still verify). With no upper bound CI resolved 1.0.0 the moment it shipped and every
-    # signing test failed with AttributeError. Verified here: <1.0 resolves to 0.4.0, which
-    # has generate_keypair and completes a sign/verify round trip. Same unpinned-tool drift
-    # class as the bandit/mypy pins. Lifting this bound means doing the migration per
-    # docs/maintenance/EXTERNAL_DEPENDENCIES.md, not just widening it.
-    "pqcrypto>=0.3.4,<2.0",
+    # Upper-bounded on purpose, and RE-NARROWED after #996 widened it to <2.0 — with no
+    # upper bound the resolver takes 1.0.0 (2026-08-15), which breaks src/custody/signing.py
+    # in TWO ways. Both measured against the real wheels, not read off a changelog:
+    #   * ``generate_keypair`` was renamed ``keygen``, so signing.py:246 raises
+    #     AttributeError. The module still IMPORTS, so PQC_AVAILABLE is True and the
+    #     honest-degrade path never fires — it crashes instead of declining.
+    #   * ``verify`` changed contract: 0.4.0 returns True/False, 1.0.0 returns None for a
+    #     VALID signature and raises InvalidSignatureError for an invalid one. So
+    #     signing.py:318's ``bool(_mldsa.verify(...))`` reports every valid ML-DSA
+    #     signature as a verification FAILURE on any install whose keys already exist
+    #     (that path never reaches generate_keypair) — a silently inverted predicate in
+    #     the tamper-evidence path, which is worse than the loud AttributeError.
+    # Measured with this repo's own suite: 1.0.0 → 16 failed / 23 passed across
+    # test_custody_signing + test_annotations + test_custody_settings + test_crypto_erase;
+    # 0.4.0 → 39 passed. Keys are plain bytes and PUBLIC_KEY_SIZE is 1952 in BOTH versions,
+    # so the migration is a call-site + return-contract change rather than a key-format one
+    # — but it still touches PERSISTED key material in the custody chain, so it goes through
+    # docs/maintenance/EXTERNAL_DEPENDENCIES.md rather than a bound widening. Same
+    # unpinned-tool drift class as the bandit/mypy pins.
+    "pqcrypto>=0.3.4,<1.0",
 ]
 
 # Independent "existed no later than T" timestamping via OpenTimestamps (anchors
