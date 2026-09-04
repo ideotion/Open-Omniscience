@@ -425,18 +425,38 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
     # code. Measured before this filter existed: the unpatched run passed 1
     # time in 3 on that race alone -- i.e. the guard silently stopped
     # discriminating a third of the time.
-    # ANTI-VACUITY: prove the compression above actually took effect. At the
-    # production 30 s this is 1 (the unconditional first fetchmany release);
-    # the discriminating assertion below would then be a coin flip rather than
-    # a guard. A dropped monkeypatch reddens HERE, by name, instead of turning
-    # the round back into a lottery that fails somewhere else one run in three.
+    # ANTI-VACUITY: prove the compression above actually took effect, BEFORE
+    # the discriminating assertion (b) below runs. A dropped monkeypatch
+    # reddens HERE, by name, instead of turning the round back into a lottery
+    # that fails somewhere else one run in three.
+    #
+    # MEASURED on this box, 3 runs per condition, deterministic every time --
+    # in-scan releases (total releases in brackets):
+    #
+    #     compressed, as shipped:                6  (8)   -> passes
+    #     compression dropped (monkeypatch gone): 1  (3)   -> fires
+    #     in-scan release removed from registry: 0  (2)   -> fires
+    #
+    # so the floor sits between the passing population and BOTH failing ones,
+    # with 2x margin above. Note the second and third rows: this floor CANNOT
+    # tell those two causes apart, so its message must name both. Blaming the
+    # test's own throttle when the production mechanism is what regressed
+    # would send a reader hunting the wrong defect -- and that regression is
+    # the entire reason this file exists.
     in_scan_releases = [t for t in releases if window_open_mono <= t <= window_close_mono]
     assert len(in_scan_releases) >= _MIN_IN_SCAN_RELEASES, (
         f"only {len(in_scan_releases)} in-scan release(s) landed inside the "
-        f"producer's window ({len(releases)} total) -- the compressed release "
-        f"interval did not take effect, so the assertion below is testing "
-        f"thread-scheduling luck rather than the fix. See "
-        f"_TEST_RELEASE_INTERVAL_S."
+        f"producer's window ({len(releases)} total) -- expected at least "
+        f"{_MIN_IN_SCAN_RELEASES}. TWO causes produce this and the count "
+        "cannot tell them apart, so check BOTH: (1) the production fix is "
+        "gone or weakened -- _WalGuardResult.fetchmany no longer releases "
+        "mid-scan, which is the very regression this file exists to catch "
+        "(measured: 0 in-scan, 2 total); or (2) this test's own "
+        "release-interval compression did not take effect -- the monkeypatch "
+        "above was dropped, or _WalGuardResult now binds the constant at "
+        "import instead of reading it per call (measured: 1 in-scan, 3 "
+        "total), which would leave assertion (b) below a coin flip rather "
+        "than a guard. See _TEST_RELEASE_INTERVAL_S."
     )
 
     in_window = [

@@ -58,13 +58,35 @@ def test_toggles_and_zero_budgets_exclude_their_kind():
     s = SchedulerSettings(
         auto_track_signals=False,
         world_discovery_per_pass=0,
+        # Qualification has TWO budgets since 2026-09-04 -- admitting new candidates and
+        # RE-VERIFYING existing verdicts -- so excluding the kind takes both. Zeroing only
+        # the first is deliberately no longer enough: "stop taking new candidates" must not
+        # silently also mean "stop re-verifying the ones already admitted", which is pinned
+        # by the companion test below.
         qualification_per_pass=0,
+        qualification_recheck_per_pass=0,
         country_data_per_pass=0,
         crawl_per_pass=0,
         archive_backfill_per_pass=0,
     )
     pending = _lane_pending_kinds(s)
     assert pending == {"markets", "calendar", "law"}
+
+
+def test_re_verification_alone_still_schedules_the_qualification_kind():
+    """The other half of the two budgets: an install that has finished admitting
+    candidates still keeps its verdicts verified, so the lane must run for the re-check
+    budget alone."""
+    s = SchedulerSettings(
+        auto_track_signals=False,
+        world_discovery_per_pass=0,
+        qualification_per_pass=0,
+        qualification_recheck_per_pass=2,
+        country_data_per_pass=0,
+        crawl_per_pass=0,
+        archive_backfill_per_pass=0,
+    )
+    assert "qualification" in _lane_pending_kinds(s)
 
 
 # --------------------------------------------------------------------------- #

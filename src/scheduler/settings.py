@@ -102,6 +102,23 @@ class SchedulerSettings:
     # (candidates then simply stay unqualified/disqualified -- never auto-admitted).
     qualification_per_pass: int = 5
 
+    # RE-VERIFICATION budget, DELIBERATELY SEPARATE from `qualification_per_pass`
+    # (maintainer ruling 2026-09-04). The two must never share one budget: candidates are
+    # selected never-judged-first, and with a backlog of tens of thousands of unqualified
+    # sources (42.6k-66.7k measured in the field) a shared budget is always exhausted
+    # before a single re-check is reached -- which is exactly why the re-qualification
+    # ladder, shipped correct in 2026-07, had never actually run on a field instance.
+    # A separate budget makes starvation impossible in BOTH directions by construction,
+    # with no ratio to tune and no cross-pass state to keep.
+    #
+    # The marginal cost is small: re-checks ride the SAME pass, so they reuse its one
+    # frozen cohort and its one scoped-metrics query -- what a re-check adds is a few
+    # source ids and (for a source with a feed) a mostly-304 conditional GET.
+    # Sized from the work: ~3,600 catalog sources on a ~6-month clock is ~20 re-checks a
+    # day, and ~4 passes an hour is ~96 passes a day, so 2 per pass carries a corpus an
+    # order of magnitude larger than today's. 0 disables re-verification entirely.
+    qualification_recheck_per_pass: int = 2
+
     # SCRAPING SCOPE (maintainer amendment 2026-08-03). Both default to TODAY'S behaviour,
     # so an untouched install's `select_sources` query is byte-identical.
     #
@@ -323,6 +340,9 @@ def load_settings() -> SchedulerSettings:
         qualification_per_pass=_coerce_int(
             raw.get("qualification_per_pass"), d.qualification_per_pass, 0, 100
         ),
+        qualification_recheck_per_pass=_coerce_int(
+            raw.get("qualification_recheck_per_pass"), d.qualification_recheck_per_pass, 0, 100
+        ),
         scrape_unqualified=_coerce_bool(raw.get("scrape_unqualified"), d.scrape_unqualified),
         scrape_app_provided_only=_coerce_bool(
             raw.get("scrape_app_provided_only"), d.scrape_app_provided_only
@@ -391,6 +411,7 @@ def save_settings(updates: dict) -> SchedulerSettings:
     _ranged("discovery_per_run", 0, 100, "discovery_per_run")
     _ranged("world_discovery_per_pass", 0, 12, "world_discovery_per_pass")
     _ranged("qualification_per_pass", 0, 100, "qualification_per_pass")
+    _ranged("qualification_recheck_per_pass", 0, 100, "qualification_recheck_per_pass")
     _ranged("country_data_per_pass", 0, 100, "country_data_per_pass")
     _ranged("crawl_per_pass", 0, 100, "crawl_per_pass")
     _ranged("archive_backfill_per_pass", 0, 100, "archive_backfill_per_pass")

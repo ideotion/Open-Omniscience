@@ -96,6 +96,43 @@ TRIAL_MIN_ARTICLES = 1
 # fourth, ATTEMPT-LOG-only verdict recording "we tried, there was nothing to judge".
 VERDICT_NO_EVIDENCE = "no_evidence"
 
+# A stamp this instance did NOT earn -- adopted from a restored backup or from the shipped
+# qualification overlay (configs/source_qualification.yml). Like VERDICT_NO_EVIDENCE this is
+# an ATTEMPT-LOG-only verdict and NEVER a Source.status value: the three-state admission-gate
+# model is untouched. It records WHERE a verdict came from, so a history cannot read as
+# though this instance had measured something it only inherited (maintainer ruling
+# 2026-09-04: "trust it, then confirm in the background"). It is not a judgement, so like
+# no_evidence it neither advances nor resets the re-qualification ladder, and it does not
+# move the re-verification clock -- see `_last_clock_subquery`.
+VERDICT_INHERITED = "inherited"
+
+# The verdicts that are actual JUDGEMENTS -- a real evaluation of real evidence, by some
+# instance. The other two attempt verdicts record why a judgement did NOT happen.
+JUDGING_VERDICTS = (STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+
+# The verdicts that RESET the local re-verification clock. Deliberately WIDER than
+# JUDGING_VERDICTS by exactly one entry: adopting a stamp is not a judgement (it never
+# touches the ladder, and the export still reports it as basis "inherited"), but it IS the
+# moment this instance took responsibility for the source, so it is where the local clock
+# starts. `no_evidence` is in neither set -- it records that a judgement could not happen,
+# so counting it either way would be a lie in a different direction.
+CLOCK_VERDICTS = (*JUDGING_VERDICTS, VERDICT_INHERITED)
+
+# RE-VERIFICATION OF A QUALIFIED SOURCE (maintainer ruling 2026-09-04). A FLAT interval,
+# never the disqualified ladder's doubling: doubling encodes diminishing hope after repeated
+# failure and means nothing after a success.
+#
+# WHAT A RE-CHECK CAN HONESTLY CLAIM, stated here because the docstring is where a future
+# session will look before trusting it: `source_audit` has NO recency window anywhere in its
+# chain (`collect_article_stats` reads a source's whole stored history), so a re-check sees a
+# source that is BROADLY broken and CANNOT see one that degraded recently against years of
+# good history. Its real value is the COLD-START firming this module's own docstring already
+# describes: a source admitted on 1-4 articles, when the language cohort sat below
+# SOURCE_COHORT_FLOOR and only PATHOLOGY_ABS_FLOOR could fire, is judged against a real
+# cohort baseline for the first time. A recency-windowed re-check is a named follow-up;
+# claiming degradation detection without one would be a fabricated capability.
+QUALIFIED_RECHECK_MONTHS = 6
+
 # The re-qualification ladder cap (RE-QUALIFICATION RULED: "1 to 6 months").
 _LADDER_CAP_MONTHS = 6
 # 1 calendar month approximated as 30 days -- the ruling's own interval is casual ("1 to
@@ -125,14 +162,16 @@ def consecutive_disqualifications_from_verdicts(verdicts_newest_first: list[str]
     """PURE core: count the TRAILING run of ``disqualified`` verdicts from the newest
     attempt backwards -- a single ``qualified`` verdict anywhere in the run stops the
     count (the ladder resets on the NEXT success, per the ruling). A ``no_evidence``
-    entry (2026-07-23 livelock fix) is INCONCLUSIVE -- it neither advances nor resets
-    the ladder, so it is skipped rather than stopping the count; a source stays at its
-    real ladder position until an attempt that actually judges it again."""
+    entry (2026-07-23 livelock fix) or an ``inherited`` one (2026-09-04) is INCONCLUSIVE
+    -- neither advances nor resets the ladder, so both are skipped rather than stopping
+    the count; a source stays at its real ladder position until an attempt that actually
+    judges it again. Inheriting a stamp is not this instance measuring anything, so it
+    must not be able to reset a ladder that real failures built."""
     n = 0
     for v in verdicts_newest_first:
         if v == STATUS_DISQUALIFIED:
             n += 1
-        elif v == VERDICT_NO_EVIDENCE:
+        elif v in (VERDICT_NO_EVIDENCE, VERDICT_INHERITED):
             continue
         else:
             break
@@ -284,6 +323,135 @@ def select_due_disqualified(
     return due
 
 
+def _last_clock_subquery(session: Session):
+    """``{source_id: newest attempt that RESET this instance's re-verification clock}``.
+
+    Scoped to ``CLOCK_VERDICTS``: the two real judgements, plus ``inherited``.
+
+    CORRECTION (2026-09-04, maintainer ask). An earlier version of this scoped to
+    ``JUDGING_VERDICTS`` and argued that letting an ``inherited`` row move the clock would
+    make a stamp from an old catalog "read as verified today -- fabricated freshness". That
+    was wrong in KIND. Nothing here claims local verification: ``Source.qualified_at`` still
+    holds the ORIGINATING date, the attempt row still says ``inherited``, and the export
+    still reports ``basis: inherited``. What the narrow scope actually did was make every
+    shipped verdict arrive ALREADY EXPIRED -- any release reaches users more than
+    QUALIFIED_RECHECK_MONTHS after it was cut -- so a fresh install spent its qualification
+    budget re-verifying the whole shipped catalog on day one. That defeats the accumulation
+    the overlay exists for: the point is that a verdict earned once does not have to be
+    earned again on every machine.
+
+    Measured before the change: a 10-source overlay stamped 9 months earlier adopted
+    cleanly and then reported 10 of 10 already due on the first pass.
+
+    Where the freshness guarantee actually lives is the RELEASE process -- the maintainer
+    periodically merges instance exports and re-cuts the overlay, which is the "qualified
+    periodically" half of the ruling. Long-running instances still re-verify for real on
+    this clock and feed those measurements back. The residual risk, stated rather than
+    hidden: a catalog nobody re-cuts ossifies, since each install defers a further
+    QUALIFIED_RECHECK_MONTHS. ``build_overlay_export`` reports the age of the inherited
+    verdicts so that staleness is visible rather than silent.
+
+    NOTE the asymmetry this repairs: ``select_due_disqualified`` already clocks on
+    ``max(attempted_at)`` across ALL attempts, so inherited DISQUALIFIED stamps have always
+    deferred from adoption. Only the qualified side read the origin date, which was an
+    inconsistency rather than a decision.
+    """
+    from src.database.models import SourceQualificationAttempt as A
+
+    return (
+        session.query(
+            A.source_id.label("source_id"),
+            func.max(A.attempted_at).label("last_at"),
+        )
+        .filter(A.verdict.in_(CLOCK_VERDICTS))
+        .group_by(A.source_id)
+        .subquery()
+    )
+
+
+def qualified_recheck_due_at(last_judged_at: datetime) -> datetime:
+    """When a qualified verdict falls due for re-verification: a FLAT interval, unlike the
+    disqualified ladder's doubling backoff (see QUALIFIED_RECHECK_MONTHS)."""
+    return last_judged_at + timedelta(days=_MONTH_DAYS * QUALIFIED_RECHECK_MONTHS)
+
+
+def select_due_qualified(
+    session: Session, *, now: datetime, limit: int
+) -> list[Source]:
+    """Qualified sources whose verdict has aged past QUALIFIED_RECHECK_MONTHS.
+
+    THE CLOCK is the newest attempt that reset it -- a real judgement, or the ``inherited``
+    row written when a stamp was adopted here (``CLOCK_VERDICTS``; see
+    ``_last_clock_subquery`` for why adoption counts and for the correction that made it
+    so). It falls back to ``Source.qualified_at`` only when there is no attempt at all,
+    which is the pre-existing-corpus case rather than the inherited one.
+
+    So a stamp adopted from a backup or the shipped overlay waits a full interval from the
+    day THIS instance took it on, not from the day another instance earned it. That is what
+    lets a fresh install start with a working catalog instead of spending its first passes
+    re-verifying verdicts that were already paid for elsewhere -- while ``qualified_at``
+    keeps the true originating date, so nothing reads as measured here.
+
+    Ordered oldest-clock-first, so the longest-unverified verdict goes first.
+
+    A qualified row with NEITHER a judging attempt NOR a ``qualified_at`` is a data anomaly
+    (``evaluate_and_stamp`` always writes both). It is treated as DUE rather than skipped:
+    that is the direction that self-heals -- the source is re-judged and stamped properly --
+    where skipping would leave it permanently unverifiable and invisible.
+    """
+    from src.database.models import Source
+
+    if limit <= 0:
+        return []
+    last_judged = _last_clock_subquery(session)
+    rows = (
+        session.query(Source, last_judged.c.last_at)
+        .outerjoin(last_judged, last_judged.c.source_id == Source.id)
+        .filter(Source.status == STATUS_QUALIFIED)
+        # Oldest clock first, and a row with no clock at all (the anomaly above) first of
+        # all. COALESCE in SQL so the ordering is done by the database rather than by
+        # loading every qualified source into Python -- there can be tens of thousands.
+        .order_by(
+            func.coalesce(last_judged.c.last_at, Source.qualified_at).asc().nullsfirst(),
+            Source.id.asc(),
+        )
+        .limit(limit)
+        .all()
+    )
+    due: list[Source] = []
+    for source, last_at in rows:
+        clock = last_at or source.qualified_at
+        if clock is None:
+            due.append(source)
+            continue
+        # SQLite/SQLAlchemy round-trips a DateTime as NAIVE even when an aware UTC value
+        # was stored (the coverage.py skip_until convention) -- re-attach UTC before
+        # comparing against an aware ``now``.
+        if clock.tzinfo is None:
+            clock = clock.replace(tzinfo=UTC)
+        if qualified_recheck_due_at(clock) <= now:
+            due.append(source)
+    return due
+
+
+def log_inherited_stamps(
+    session: Session, sources: list[Source], *, now: datetime,
+    criteria_version: str = CRITERIA_VERSION,
+) -> int:
+    """Record that each source's stamp was INHERITED, not measured here (2026-09-04
+    ruling). Append-only, exactly like every other attempt row, and ``Source.status`` is
+    NEVER touched -- the caller has already adopted the verdict; this only records where
+    it came from, so a later reader cannot mistake an adopted stamp for local evidence."""
+    from src.database.models import SourceQualificationAttempt
+
+    for source in sources:
+        session.add(SourceQualificationAttempt(
+            source_id=source.id, attempted_at=now, verdict=VERDICT_INHERITED,
+            criteria_version=criteria_version,
+        ))
+    return len(sources)
+
+
 def evaluate_and_stamp(
     session: Session, sources: list[Source], fails_by_source: dict[int, list[dict]],
     *, now: datetime, criteria_version: str = CRITERIA_VERSION,
@@ -358,6 +526,7 @@ def _corpus_articles(session: Session) -> int:
 
 def run_qualification_pass(
     session: Session, fetcher: EthicalFetcher | None, *, per_pass: int,
+    recheck_per_pass: int = 0,
     now: datetime | None = None,
     cohort_provider: Callable[[], dict] | None = None,
     should_pause: Callable[[], bool] | None = None,
@@ -397,7 +566,7 @@ def run_qualification_pass(
     from src.analytics import source_audit as sa
     from src.analytics import source_quality as sq
 
-    if per_pass <= 0:
+    if per_pass <= 0 and recheck_per_pass <= 0:
         return {"enabled": False}
 
     # S1.3 (2026-09-02 ruling 1): a machine below the memory floor DECLINES the
@@ -423,10 +592,54 @@ def run_qualification_pass(
 
     now = now or datetime.now(UTC)
 
-    candidates = select_unqualified(session, limit=per_pass)
-    remaining = per_pass - len(candidates)
-    if remaining > 0:
-        candidates += select_due_disqualified(session, now=now, limit=remaining)
+    # ---- candidate selection: NEW candidates and RE-CHECKS have SEPARATE budgets ----
+    # (2026-09-04 ruling.) Until now they shared ``per_pass``, and new candidates were
+    # taken first: with a backlog of tens of thousands of unqualified sources (42.6k-66.7k
+    # measured in the field) the first query ALWAYS returned a full window, the remainder
+    # was always 0, and `select_due_disqualified` was never reached. The re-qualification
+    # ladder was correct and unreachable -- the recurrent verification had never actually
+    # run on a field instance. A separate budget makes that impossible by construction.
+    #
+    # Unused NEW slots still spill INTO re-checks (that is exactly today's behaviour, kept
+    # so a small backlog is no slower to re-verify than before); the reserved re-check
+    # budget deliberately does NOT spill the other way, because a budget that can be
+    # consumed by the queue it is protecting against is not a reservation.
+    new_candidates = select_unqualified(session, limit=per_pass)
+    spill = max(0, per_pass - len(new_candidates))
+    reserved = max(0, recheck_per_pass)
+
+    # The two re-check kinds draw on DIFFERENT budgets, and the asymmetry is deliberate:
+    #   * DISQUALIFIED re-checks may use the reserved budget AND unused new-candidate slots
+    #     -- the spill is exactly today's behaviour, kept so a small backlog re-checks no
+    #     more slowly than before this change.
+    #   * QUALIFIED re-checks may use ONLY the reserved budget. Letting them take the spill
+    #     would mean `qualification_recheck_per_pass = 0` still re-verified qualified
+    #     sources, i.e. an explicit "off" that does not turn the thing off -- and a setting
+    #     that does not mean what it says is worse than no setting.
+    total = reserved + spill
+    dq_pool: list[Source] = []
+    ql_pool: list[Source] = []
+    if total > 0:
+        # Each pool is queried once at the budget it could possibly use, then allocated, so
+        # an empty or short pool gives its slots to the other rather than wasting them.
+        dq_pool = select_due_disqualified(session, now=now, limit=total)
+    if reserved > 0:
+        # `limit=reserved` IS the cap that keeps the spill out of qualified re-checks --
+        # not a later min(), which would be a second place to enforce one rule. Querying
+        # only what may actually be used also means an install with re-verification off
+        # never pays for this query at all.
+        ql_pool = select_due_qualified(session, now=now, limit=reserved)
+
+    # Disqualified re-checks keep the priority they have today. At a reserved budget of 1
+    # with a disqualified source always due, qualified re-verification therefore only runs
+    # when none is -- stated rather than hidden; the default is 2, and 1 is the single
+    # configuration where the split cannot be fair to both.
+    take_dq = min(len(dq_pool), max(1, total // 2) if ql_pool else total)
+    take_ql = min(len(ql_pool), total - take_dq)
+    take_dq = min(len(dq_pool), total - take_ql)
+    rechecks: list[Source] = dq_pool[:take_dq] + ql_pool[:take_ql]
+
+    candidates = new_candidates + rechecks
     if not candidates:
         return {"enabled": True, "evaluated": 0}
 
@@ -520,6 +733,11 @@ def run_qualification_pass(
     return {
         "enabled": True, "evaluated": len(candidates), "trial_fetch_errors": trial_errors,
         "no_evidence": len(no_evidence),
+        # Reported apart because they answer different questions: "is the backlog draining"
+        # and "is the recurrent verification actually running". One number cannot say both,
+        # and it was precisely the absence of the second that hid a ladder that never ran.
+        "new_candidates": len(new_candidates),
+        "rechecks": len(rechecks),
         # S5.1 staleness disclosure: WHICH corpus state the baseline reflects and how much of
         # it. Reported per pass rather than folded into the criteria version, because an age
         # is a measurement -- and because a reader must be able to tell a fresh baseline from
@@ -546,6 +764,7 @@ def _memory_pause_check() -> bool:
 
 def advance_qualification(
     session: Session, fetcher: EthicalFetcher | None, *, per_pass: int,
+    recheck_per_pass: int = 0,
     now: datetime | None = None,
     should_pause: Callable[[], bool] | None = None,
 ) -> dict:
@@ -558,14 +777,19 @@ def advance_qualification(
     ``should_pause`` defaults to the memory guard's own poll (S5.2), so the whole-corpus
     cohort scan this pass performs can be given up under pressure instead of being the one
     part of a collect pass nothing can interrupt."""
-    if per_pass <= 0:
+    # Either budget alone is reason enough to run: with `qualification_per_pass=0` and a
+    # re-check budget set, an install that has finished admitting candidates still keeps its
+    # verdicts verified. Returning early on `per_pass <= 0` alone would have made "stop
+    # taking new candidates" silently also mean "stop re-verifying".
+    if per_pass <= 0 and recheck_per_pass <= 0:
         return {"enabled": False}
     from src.ingest import kill_switch_active
 
     if kill_switch_active():
         return {"enabled": True, "skipped": "airplane mode engaged"}
     return run_qualification_pass(
-        session, fetcher, per_pass=per_pass, now=now,
+        session, fetcher, per_pass=max(0, per_pass),
+        recheck_per_pass=recheck_per_pass, now=now,
         # S5.2: the ride-along's scan is interruptible too. A pass that gives up returns
         # ``paused`` and stamps NOTHING -- the candidates keep the status they had and the
         # queue's least-recently-attempted ordering brings them back next pass.

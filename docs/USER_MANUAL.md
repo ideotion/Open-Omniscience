@@ -586,6 +586,88 @@ and *Discovered candidates* (still disabled — see below) — because blending 
 one number made a machine-grown discovery backlog of tens of thousands of candidates
 read as if the app were already gathering from all of them.
 
+#### Re-verification — a stamp does not last forever
+
+A verdict is a measurement, and a measurement ages. **A qualified stamp is re-checked
+about every six months** (Settings → Scheduler, *qualification re-checks per pass*; 0
+turns re-verification off). The re-check is a flat interval, not the disqualified
+ladder's doubling — doubling encodes diminishing hope after repeated failure and means
+nothing after a success.
+
+**What a re-check can and cannot see, stated plainly:** it judges a source on its whole
+stored history, so it catches a source that is *broadly* broken, and it will **not**
+notice a source that went bad recently if years of good articles outweigh the recent
+ones. Its real value is different and worth knowing about: a source admitted very early,
+on only one or two articles, was judged when there was not yet enough of a corpus to
+compare it against — the re-check is the first time it is measured against a real
+baseline.
+
+Re-checks have their **own** budget, separate from the one that admits new candidates.
+That is not a detail: while they shared a budget, an install with a large backlog of
+unexamined sources spent every slot on new candidates, and no re-check — including the
+disqualified second chance described above — ever actually ran.
+
+#### Verdicts travel: backups, and a fresh install
+
+Qualification work done on one instance is **not lost when you move or merge corpora**.
+
+- **Importing a backup** carries its verdicts. A source the incoming corpus judged
+  arrives judged. A source *this* instance has never judged **adopts** the incoming
+  verdict — in both directions, so a source another instance found broken does not
+  quietly re-enter the trial queue here. A verdict *this* instance reached always wins:
+  an imported corpus can never overturn your own machine's judgement, in either
+  direction.
+- **A fresh install starts from what earlier instances measured.** The app ships
+  `configs/source_qualification.yml`, a generated list of verdicts, and adopts them at
+  first boot onto sources it has never judged. A source **absent** from that file simply
+  ships unqualified and is judged by the install's own first qualification pass, exactly
+  as before the file existed — so the shipped catalog is effectively two lists: the
+  sources already qualified by the app, and the ones still to be.
+
+An adopted verdict is recorded as **inherited**, not as something this machine measured,
+and it keeps the date it was originally reached — so nothing ever reads as though your
+install measured it. What starts fresh is your machine's own re-check clock: it runs from
+the day you adopted the verdict, not the day someone else earned it. A first download is
+therefore quiet, which is the point — a shipped catalog is always older than the six-month
+interval by the time it reaches you, so clocking on the original date would have every
+fresh install re-qualify the whole catalog on day one, which is exactly the work the
+shipped file exists to save.
+
+That trade is deliberate and has a cost worth stating: the freshness of the shipped
+catalog is no longer something each install re-establishes for itself. It is
+re-established when a new version ships an overlay re-cut from instances that *have* done
+the re-verification. The export below reports how old its verdicts are, so that staleness
+is visible rather than silent.
+
+#### Contributing your instance's verdicts back
+
+`GET /api/diagnostics/source-qualification-export` reports what your instance knows about
+its shipped sources — how many are qualified, how many disqualified, how many still
+pending — and `?fmt=yaml` returns that same list as the overlay file itself.
+`scripts/merge_source_qualification.py` combines exports from several instances into one.
+
+If you already collected **all-diagnostics bundles** from those instances, you do not need
+to go back and re-export: the bundle carries that same export as a member, and
+`--from-bundle` reads it straight out of the zip. The two routes are interchangeable and
+mix freely in one run:
+
+```
+python scripts/merge_source_qualification.py laptop-export.json \
+    --from-bundle oo-all-diagnostics-desktop.zip \
+    --from-bundle oo-all-diagnostics-server.zip
+```
+
+The printed report says how many instances it merged and by which route. A bundle whose
+export member did not complete is named, with the reason that instance recorded — it is
+never quietly skipped, because an overlay you believe rests on three instances and
+actually rests on two is worse than an error.
+
+Two things it deliberately will not do. It never **resolves a disagreement**: if one
+instance qualified a domain another disqualified, that is reported for a human to look
+at, because auto-picking a winner would ship a verdict nobody reviewed to every install.
+And it never counts an **inherited** verdict as corroboration — importing one backup into
+eight machines is one measurement seen eight times, not eight measurements.
+
 #### Discovery trail & qualified-citations tally
 
 Click a source's row to **expand its discovery trail**: **where it was found**
