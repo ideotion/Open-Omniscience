@@ -646,6 +646,22 @@ its shipped sources — how many are qualified, how many disqualified, how many 
 pending — and `?fmt=yaml` returns that same list as the overlay file itself.
 `scripts/merge_source_qualification.py` combines exports from several instances into one.
 
+If you already collected **all-diagnostics bundles** from those instances, you do not need
+to go back and re-export: the bundle carries that same export as a member, and
+`--from-bundle` reads it straight out of the zip. The two routes are interchangeable and
+mix freely in one run:
+
+```
+python scripts/merge_source_qualification.py laptop-export.json \
+    --from-bundle oo-all-diagnostics-desktop.zip \
+    --from-bundle oo-all-diagnostics-server.zip
+```
+
+The printed report says how many instances it merged and by which route. A bundle whose
+export member did not complete is named, with the reason that instance recorded — it is
+never quietly skipped, because an overlay you believe rests on three instances and
+actually rests on two is worse than an error.
+
 Two things it deliberately will not do. It never **resolves a disagreement**: if one
 instance qualified a domain another disqualified, that is reported for a human to look
 at, because auto-picking a winner would ship a verdict nobody reviewed to every install.

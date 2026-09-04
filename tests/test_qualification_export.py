@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -343,3 +344,179 @@ def test_the_cli_reports_and_can_write_nothing(tmp_path, capsys):
     assert m.main([str(exp), "-o", str(target), "--dry-run"]) == 0
     assert not target.exists(), "--dry-run must write nothing"
     assert json.loads(capsys.readouterr().out)["added"] == 1
+
+
+# --- --from-bundle: the same export, read out of an all-diagnostics bundle ------------
+#
+# The bundle already carries the export as a member, so a maintainer who collected
+# bundles need not go back and re-export. What must be pinned is that this convenience
+# cannot become a source of QUIET wrong answers: a bundle missing the member, or one
+# whose member failed, has to say so rather than merge nothing and report success.
+
+
+def _bundle(path: Path, members: dict[str, str]) -> Path:
+    """An all-diagnostics-shaped zip: members flat at the archive root, as the real
+    writer produces them (src/api/diagnostics.py's zf.writestr(name, payload))."""
+    with zipfile.ZipFile(path, "w") as z:
+        for name, body in members.items():
+            z.writestr(name, body)
+    return path
+
+
+def test_the_bundle_member_name_is_the_one_the_bundle_actually_writes():
+    """The script reads ONE member by exact name. If the bundle ever renames it, this
+    reddens here -- rather than --from-bundle silently finding nothing on every archive
+    while a fixture built from the script's own constant keeps passing."""
+    from src.api.diagnostics import _DIAG_COVERAGE_MAP
+
+    assert (
+        _merge_script().BUNDLE_MEMBER
+        == _DIAG_COVERAGE_MAP["/source-qualification-export"]
+    )
+
+
+def test_a_bundle_and_its_extracted_export_merge_identically(tmp_path):
+    """The route in must not change the answer: same verdicts, same report."""
+    m = _merge_script()
+    payload = json.dumps({"verdicts": [_row("a.example", "qualified"),
+                                       _row("b.example", "disqualified")]})
+
+    loose = tmp_path / "export.json"
+    loose.write_text(payload, encoding="utf-8")
+    from_file = m.merge([m._load_export(loose)], {}, accept_newest=False)
+
+    zipped = _bundle(tmp_path / "bundle.zip",
+                     {m.BUNDLE_MEMBER: payload, "manifest.json": "{}"})
+    from_bundle = m.merge([m._load_bundle(zipped)], {}, accept_newest=False)
+
+    assert from_bundle["merged"] == from_file["merged"]
+    assert from_bundle["report"] == from_file["report"]
+    assert set(from_bundle["merged"]) == {"a.example", "b.example"}
+
+
+def test_a_zip_without_the_member_is_refused_by_name(tmp_path):
+    """NEGATIVE SPACE: the failure that would hurt is merging NOTHING and calling it a
+    success -- the operator would ship an overlay believing an instance contributed."""
+    m = _merge_script()
+    wrong = _bundle(tmp_path / "wrong.zip", {"manifest.json": "{}", "network.json": "{}"})
+    with pytest.raises(SystemExit) as e:
+        m._load_bundle(wrong)
+    assert m.BUNDLE_MEMBER in str(e.value)
+
+
+def test_a_bundle_whose_export_member_failed_reports_that_instead(tmp_path):
+    """A member that did not complete leaves a sidecar in its place. Naming it, with the
+    recorded reason, points at the instance's export run -- where a bare not-found would
+    send the operator looking for the wrong archive."""
+    m = _merge_script()
+    b = _bundle(
+        tmp_path / "failed.zip",
+        {m.BUNDLE_MEMBER + ".error.txt": "OperationalError: database is locked",
+         "manifest.json": "{}"},
+    )
+    with pytest.raises(SystemExit) as e:
+        m._load_bundle(b)
+    msg = str(e.value)
+    assert "database is locked" in msg, "the recorded reason is the actionable half"
+    assert "re-run the export" in msg
+
+
+def test_a_deadline_skipped_member_is_reported_the_same_way(tmp_path):
+    m = _merge_script()
+    b = _bundle(
+        tmp_path / "slow.zip",
+        {m.BUNDLE_MEMBER + ".skipped-deadline.txt": "member exceeded its 300s deadline"},
+    )
+    with pytest.raises(SystemExit) as e:
+        m._load_bundle(b)
+    assert "300s" in str(e.value)
+
+
+def test_a_bundle_handed_in_as_a_positional_says_which_flag_to_use(tmp_path):
+    """It does NOT quietly treat it as a bundle: guessing is convenient right up to the
+    archive that is not one."""
+    m = _merge_script()
+    b = _bundle(tmp_path / "b.zip", {m.BUNDLE_MEMBER: json.dumps({"verdicts": []})})
+    with pytest.raises(SystemExit) as e:
+        m._load_export(b)
+    assert "--from-bundle" in str(e.value)
+
+
+def test_a_bomb_sized_member_is_refused_before_decompression(tmp_path, monkeypatch):
+    """The ceiling is the only thing between an untrusted archive and a decompression
+    bomb, and a zip's declared size is cheap to inflate. Driven by compressing the
+    ceiling rather than by writing gigabytes."""
+    m = _merge_script()
+    monkeypatch.setattr(m, "_MAX_MEMBER_BYTES", 16)
+    b = _bundle(tmp_path / "big.zip",
+                {m.BUNDLE_MEMBER: json.dumps({"verdicts": [_row("a.example", "qualified")]})})
+    with pytest.raises(SystemExit) as e:
+        m._load_bundle(b)
+    assert "ceiling" in str(e.value)
+
+
+def test_a_corrupt_archive_fails_as_an_archive(tmp_path):
+    m = _merge_script()
+    bad = tmp_path / "torn.zip"
+    bad.write_bytes(b"PK\x03\x04 this is not a zip")
+    with pytest.raises(SystemExit) as e:
+        m._load_bundle(bad)
+    assert "zip archive" in str(e.value)
+
+
+def test_the_cli_mixes_bundles_and_export_files_and_records_which(tmp_path, capsys):
+    """Both routes in one run, and the printed artifact says how many came from each --
+    an overlay reviewed weeks later should state how many instances it rests on."""
+    m = _merge_script()
+    exp = tmp_path / "e.json"
+    exp.write_text(json.dumps({"verdicts": [_row("a.example", "qualified")]}), encoding="utf-8")
+    b = _bundle(tmp_path / "b.zip",
+                {m.BUNDLE_MEMBER: json.dumps({"verdicts": [_row("b.example", "qualified")]})})
+    target = tmp_path / "out.yml"
+
+    assert m.main([str(exp), "--from-bundle", str(b), "-o", str(target)]) == 0
+    report = json.loads(capsys.readouterr().out)
+    assert report["added"] == 2
+    assert report["sources"] == {"export_files": 1, "bundles": 1}
+    assert set(load_overlay(target)) == {"a.example", "b.example"}
+
+
+def test_the_cli_runs_from_bundles_alone(tmp_path, capsys):
+    m = _merge_script()
+    b = _bundle(tmp_path / "b.zip",
+                {m.BUNDLE_MEMBER: json.dumps({"verdicts": [_row("a.example", "qualified")]})})
+    assert m.main(["--from-bundle", str(b), "-o", str(tmp_path / "out.yml")]) == 0
+    assert json.loads(capsys.readouterr().out)["added"] == 1
+
+
+def test_no_inputs_at_all_is_refused(tmp_path):
+    """Making ``exports`` optional made "nothing at all" reachable; it must not write an
+    overlay from nothing."""
+    m = _merge_script()
+    with pytest.raises(SystemExit):
+        m.main(["-o", str(tmp_path / "out.yml")])
+    assert not (tmp_path / "out.yml").exists()
+
+
+def test_a_real_export_serialized_the_way_the_bundle_serializes_it_round_trips(db, tmp_path):
+    """The end of the loop, over the REAL export rather than a hand-typed dict: the live
+    exporter's payload, encoded by the bundle's own member encoder, read back out of a zip
+    by --from-bundle, and adopted by the overlay loader. A hand-built fixture would keep
+    passing if the export's shape drifted; this would not."""
+    from src.api.diagnostics import _member_bytes
+
+    _src(db, "kept.example", STATUS_QUALIFIED, qualified_at=NOW - timedelta(days=10))
+    _src(db, "dropped.example", STATUS_DISQUALIFIED, qualified_at=NOW - timedelta(days=10))
+    db.commit()
+
+    payload = _member_bytes(build_overlay_export(db, now=NOW))
+    m = _merge_script()
+    bundle = _bundle(tmp_path / "oo-all-diagnostics-real.zip", {})
+    with zipfile.ZipFile(bundle, "w") as z:
+        z.writestr(m.BUNDLE_MEMBER, payload)
+
+    target = tmp_path / "source_qualification.yml"
+    assert m.main(["--from-bundle", str(bundle), "-o", str(target)]) == 0
+    got = load_overlay(target)
+    assert got["kept.example"]["status"] == STATUS_QUALIFIED
+    assert got["dropped.example"]["status"] == STATUS_DISQUALIFIED

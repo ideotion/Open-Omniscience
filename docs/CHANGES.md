@@ -177,7 +177,13 @@ article clean-up's input. A row closes on evidence a later reader can re-open, n
   A diagnostics export emits that file from a live corpus, and a merge script accumulates
   several instances' exports without ever resolving a disagreement automatically or
   counting an inherited verdict as corroboration — importing one backup into eight machines
-  is one measurement seen eight times.
+  is one measurement seen eight times. The merge also reads its input straight out of an
+  **all-diagnostics bundle** (`--from-bundle`), which already carries that export as a
+  member, so bundles collected for some other reason are enough. It reads that one member
+  by its exact name and never falls back to whatever else in the archive looks close: a
+  bundle missing it, or one whose export member failed, is named with the reason recorded
+  on that instance, because an overlay you believe rests on three instances and actually
+  rests on two is worse than an error.
 - **Newsletter links can become sources.** The sanitised external links in an imported
   `.eml` now produce `article_links` rows, so the citation-discovery funnel sees them — with
   the tracker-wrapped links whose destination could not be recovered deliberately excluded.
