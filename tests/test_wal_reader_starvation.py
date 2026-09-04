@@ -116,6 +116,46 @@ _SEED_ROWS = 200  # empirically: enough that the fetchmany() scan below never
 # while designing this test: 20 seed rows let SOME mid-pass checkpoints
 # through non-deterministically; 200 reproduces 100% of the time).
 
+# This test's scan lasts ~0.85 s (12 write-gated fetchmany() calls).
+# Production's release throttle (registry._WAL_GUARD_MIN_RELEASE_INTERVAL_S)
+# is 30 s, and its own comment sizes it for a scan that "can run for
+# MINUTES", which "comfortably gives such a scan several release windows".
+#
+# A sub-second scan gets no such thing. Every release after the
+# unconditional first one is throttled out, so the whole test hangs on ONE
+# momentary window and whether the checkpointer's 20 ms poll lands inside it
+# is thread-scheduling luck. That is why this test went red on the PR lane of
+# run 33881993602 while the SAME commit (2d12708) passed both in that run's
+# own `test` lane and in the push lane's Core-only job.
+#
+# MEASURED on this sandbox (4 cores), 12 spinners = 3x oversubscription, the
+# loaded-shared-runner shape: as-is 4 pass / 6 fail; with the interval below
+# 10 pass / 0 fail. Idle it passed either way, which is exactly why the
+# failure only ever appeared on CI.
+#
+# This does NOT weaken the guard. It raises the pressure the guard is fed
+# rather than lowering the bar it must clear, and an unpatched build cannot
+# benefit: the constant has exactly ONE read site (registry.py's
+# _WalGuardResult.fetchmany), which is a method an unpatched build does not
+# have at all. Production's 30 s is untouched.
+#
+# This is the same recorded lesson the SIBLING soak test already carries
+# (tests/test_wal_starvation_soak.py, 2026-08-04: "a test that compresses
+# time must compress the throttles too"); this file simply never got it.
+_TEST_RELEASE_INTERVAL_S = 0.05
+# ...and the floor below is what stops a silent regression to the
+# single-window shape if the monkeypatch is ever dropped. MEASURED on this
+# sandbox, same box, same commit -- releases observed during one scan:
+#
+#     uncompressed (production 30 s):  3, 3, 3          (deterministic)
+#     compressed, idle:                8
+#     compressed, 3x oversubscribed:   8,8,8,8,8,8,10,12 (min 8)
+#
+# so 4 sits between the two populations with margin on both sides: it cannot
+# false-fail a compressed run (min observed is double it) and it does catch an
+# uncompressed one. Asserted, never assumed.
+_MIN_RELEASES = 4
+
 
 def _wal_engine(tmp_path, name="wal_starve.db", seed_rows=_SEED_ROWS):
     """A REAL file-backed WAL database, isolated from the shared store.
@@ -176,6 +216,29 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
     # tests / production import-time registrations must never run here, and
     # monkeypatch restores the real registry when this test ends).
     monkeypatch.setattr(registry, "_REGISTRY", [])
+
+    # Give this sub-second scan the several in-scan release windows a real
+    # minutes-long scan gets under the production 30 s throttle, instead of
+    # the single momentary one it would otherwise hang on. See
+    # _TEST_RELEASE_INTERVAL_S for the measurement and for why this cannot
+    # weaken the discriminating assertion below.
+    monkeypatch.setattr(
+        registry, "_WAL_GUARD_MIN_RELEASE_INTERVAL_S", _TEST_RELEASE_INTERVAL_S
+    )
+
+    # Count the releases rather than trusting the patch above took effect. The
+    # constant is read as a module global at call time; if that wrapper is ever
+    # changed to bind it at import, or the monkeypatch is dropped, this counter
+    # is what notices -- loudly, instead of the test quietly going back to
+    # being a coin flip.
+    releases: list[float] = []
+    _real_release = registry._release_transaction
+
+    def _counting_release(session):
+        releases.append(time.monotonic())
+        return _real_release(session)
+
+    monkeypatch.setattr(registry, "_release_transaction", _counting_release)
 
     # Signalled once per committed write, so the reader below can gate its
     # window on WRITES OBSERVED rather than on wall-clock time.
@@ -366,6 +429,24 @@ def test_run_all_starves_every_checkpoint_for_its_whole_duration(tmp_path, monke
         diag_session.close()
     assert isinstance(composition.get("wal_bytes"), int), (
         "storage_composition must surface wal_bytes for operators"
+    )
+
+    # Anti-vacuity: prove the compression above actually took effect BEFORE
+    # the discriminating assertion (b) below runs. Uncompressed the scan
+    # releases 3 times (measured), assertion (b) becomes a coin flip, and its
+    # failure message would blame run_all() for a defect that is really this
+    # test's own throttle. Failing here instead names the real cause.
+    assert len(releases) >= _MIN_RELEASES, (
+        f"only {len(releases)} WAL release(s) happened during the scan -- "
+        f"expected at least {_MIN_RELEASES}. TWO causes produce this and the "
+        "count cannot tell them apart, so check both: (1) the production fix "
+        "is gone or weakened -- _WalGuardResult.fetchmany no longer releases "
+        "mid-scan, which is the very regression this file exists to catch "
+        "(measured: 2 releases with it removed); or (2) this test's own "
+        "release-interval compression did not take effect -- the monkeypatch "
+        "above was dropped, or _WalGuardResult now binds the constant at "
+        "import instead of reading it per call (measured: 3 releases), which "
+        "would leave assertion (b) below a coin flip rather than a guard."
     )
 
     # (b) THE REGRESSION (the discriminating assertion): today, with NO
