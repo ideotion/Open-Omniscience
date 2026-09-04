@@ -1177,7 +1177,8 @@ def _lane_pending_kinds(settings: SchedulerSettings) -> set[str]:
         pending.add("hazards")
     if getattr(settings, "world_discovery_per_pass", 0) > 0:
         pending.add("world_discovery")
-    if getattr(settings, "qualification_per_pass", 0) > 0:
+    if (getattr(settings, "qualification_per_pass", 0) > 0
+            or getattr(settings, "qualification_recheck_per_pass", 0) > 0):
         pending.add("qualification")
     if getattr(settings, "country_data_per_pass", 0) > 0:
         pending.add("country_data")
@@ -1297,13 +1298,18 @@ def _lane_step_qualification(session, fetcher, settings: SchedulerSettings) -> d
     from src.catalog.qualification import advance_qualification
     from src.monitoring import tasks as _bgtasks
 
+    recheck = getattr(settings, "qualification_recheck_per_pass", 0)
     tok = _bgtasks.register(
         "qualification", "qualifying candidate sources",
-        detail=f"up to {settings.qualification_per_pass} candidate(s)",
+        detail=(
+            f"up to {settings.qualification_per_pass} candidate(s)"
+            + (f" + {recheck} re-check(s)" if recheck else "")
+        ),
     )
     try:
         return advance_qualification(
-            session, fetcher, per_pass=settings.qualification_per_pass
+            session, fetcher, per_pass=settings.qualification_per_pass,
+            recheck_per_pass=recheck,
         )
     finally:
         _bgtasks.finish(tok)

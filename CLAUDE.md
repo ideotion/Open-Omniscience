@@ -11993,6 +11993,77 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   a changed/fixed site gets caught within a month, a persistently-junk domain costs ~2
   checks/year. A Settings knob (bounded ~30–180 days) stays available to override; the
   ladder is the default unless the maintainer rules otherwise.
+- **QUALIFICATION ACCUMULATES ACROSS INSTALLS — inherited stamps, recurrent re-verification, and
+  the shipped verdict overlay (maintainer asked 2026-09-04: "make sure that any already qualified
+  sources from backups are considered as such and that verification complies with the agreed
+  recurrent verification"; + "a tool to allow us to remember qualified sources so that the initial
+  list of sources ... is updated to include only qualified sources, and the rest should be added to
+  the list of sources that aren't yet qualified ... so that any newly fresh installs comprises a
+  list of app-qualified sources to begin with"; FOUR RULINGS given the same day, all four the
+  recommended option):**
+  **VERIFIED ALREADY SHIPPED (the staleness guard paid off — half the ask needed confirming, not
+  building):** backup adoption landed 2026-08-10 and is thorough — `_merge_sources` stamps sources
+  the restore INTRODUCES, a locally-NEVER-JUDGED row ADOPTS the incoming verdict in BOTH directions,
+  a local verdict always wins (a local `disqualified` can never be laundered), and
+  `source_qualification_attempts` merges with remapped ids so the ladder reads a real history.
+  Eighteen tests in `tests/test_merge_source_qualification.py` cover exactly the multi-instance case.
+  **THE FINDING THAT MADE THE SECOND HALF OF THE ASK REAL — THE RE-QUALIFICATION LADDER HAS NEVER
+  RUN ON A FIELD INSTANCE.** `run_qualification_pass` fills its per-pass budget with
+  `select_unqualified(limit=per_pass)` FIRST and offers `select_due_disqualified` only
+  `per_pass - len(candidates)` — so with an unqualified backlog of tens of thousands (42.6k–66.7k
+  measured 2026-07-23) the first call always returns a full window, the remainder is always 0, and
+  the due-disqualified query is never reached. The ladder shipped correct and is unreachable: the
+  recurrent verification the maintainer remembers agreeing to has, in practice, never happened. Same
+  family as the 2026-07-23 livelock (a FIFO with no fairness mechanism starving on its own front),
+  one level up — there the front of one queue starved the back of it, here one queue starves another
+  entirely. So a reserved share of the per-pass budget is part of this work, not a nicety.
+  SECOND, and the reason the first ask and the third are one build: **a QUALIFIED source is stamped
+  once and re-checked by NOTHING** — the only two selection queries in `qualification.py` are
+  `status == unqualified` and `status == disqualified`, and every other `== STATUS_QUALIFIED` in the
+  tree is a reader (snapshots, feed, the runner's admission gate). Harmless while a stamp was a local
+  fact about a local corpus; not harmless once a stamp travels in a backup and ships in the catalog,
+  where it would otherwise outlive the evidence for it on every install forever.
+  **THE FOUR RULINGS:**
+  • **RE-VERIFICATION: a qualified stamp is re-checked after ~6 MONTHS** (tunable), on a FLAT
+    interval — never the disqualified ladder's doubling, which encodes diminishing hope and means
+    nothing for a success. What the re-check can honestly claim is bounded and must be STATED rather
+    than implied: `source_audit` has no recency window anywhere in its chain
+    (`collect_article_stats` reads a source's whole stored history), so a re-check detects a source
+    that is BROADLY broken, and cannot see a source that degraded recently against years of good
+    history. Its real value is the COLD-START firming the qualification docstring already describes —
+    a source admitted on 1–4 articles when only `PATHOLOGY_ABS_FLOOR` could fire gets judged against
+    a real cohort baseline for the first time. A recency-windowed re-check is the named follow-up;
+    claiming degradation detection without it would be a fabricated capability. (It also does not
+    touch gate row 5's open floor-calibration decision, which stays the maintainer's.)
+  • **CATALOG SHAPE: a separate generated OVERLAY, `configs/source_qualification.yml`** (domain →
+    verdict + date + criteria version), read at seed time. `configs/sources.yml` stays hand-curated
+    and BYTE-UNTOUCHED — the recorded "never re-serialise a curated file to edit one entry" lesson
+    forbids the alternative, and a 3,429-entry rewrite per accumulation run would bury the real diff.
+    This already yields the two lists the ask describes without splitting anything: a domain IN the
+    overlay ships judged, a domain absent from it ships unqualified and queues for qualification.
+    Follows the `legal_sources_generated.yml` precedent (curated + generated, curated wins).
+  • **DISQUALIFIED VERDICTS SHIP TOO.** A fresh install skips a known-broken source instead of
+    spending Tor bandwidth rediscovering it, and the ladder still gives it its second chance on the
+    clock. Same safety direction the merge already takes, and the direction that makes the overlay
+    a record rather than a whitelist.
+  • **AN INHERITED STAMP IS TRUSTED, THEN CONFIRMED.** A verdict from the catalog or a backup admits
+    the source to collection immediately (the entire point of accumulating them), and is queued for a
+    local re-verification so the instance eventually confirms with its OWN evidence. The attempt log
+    records that the stamp was INHERITED rather than measured here — a fourth ATTEMPT-LOG-only
+    verdict beside `no_evidence`, never a `Source.status` value (the three-state model is untouched),
+    and like `no_evidence` it neither advances nor resets the ladder, because it is not a judgement.
+    The re-check CLOCK therefore reads the newest REAL judgement (falling back to `qualified_at`,
+    which for an inherited stamp is the originating instance's date) — so an inherited stamp that was
+    already months old is due sooner, and a freshly-earned one waits its full interval, with no
+    second queue.
+  **THE STANDING RULING THIS AMENDS, stated rather than quietly contradicted:** "ALL sources are
+  qualified BY DEFINITION — the curated catalog INCLUDED; NO pre-qualified-by-curation stamp" (the
+  2026-07-20 sub-decision). That rejected qualification by CURATION — somebody's opinion standing in
+  for evidence — and it stands. This ships verdicts EARNED BY MEASUREMENT on real instances, which is
+  the same basis backup adoption already runs on and the same basis the first collect pass would have
+  produced locally; what changes is only that the measurement no longer has to be repeated from
+  scratch on every install. A catalog entry with no overlay verdict still seeds unqualified and is
+  still qualified by its own first pass, exactly as ruled.
 - **LLM SOURCE-TAG ASSIGNMENT FROM TOP KEYWORDS (maintainer proposed 2026-07-20: "a source
   tag assignment strategy based on their top 200 keywords, given to the local LLM in the
   diagnostic tab"; DESIGN RECORDED, build PENDING — reuses the §8 triage chassis):** the
