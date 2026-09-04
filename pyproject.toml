@@ -195,7 +195,17 @@ pqc = [
     # has generate_keypair and completes a sign/verify round trip. Same unpinned-tool drift
     # class as the bandit/mypy pins. Lifting this bound means doing the migration per
     # docs/maintenance/EXTERNAL_DEPENDENCIES.md, not just widening it.
-    "pqcrypto>=0.3.4,<2.0",
+    #
+    # RE-PINNED 2026-09-04 after an automated bump (#996) widened it to <2.0 and merged
+    # red: <2.0 re-admits exactly the 1.0.0 this bound exists to exclude, so the "PQC
+    # signing path" lane went red on main with the same AttributeError the paragraph above
+    # describes (14 failed, 4 passed). Dependabot cannot read the comment that forbids the
+    # change it proposes, so this will recur -- the durable fix is a dependabot `ignore`
+    # for pqcrypto major versions, proposed on PR #1002 rather than pushed there, since it
+    # is a policy change and not this failure's minimal repair. Verified before re-pinning:
+    # <2.0 resolves 1.0.0 (generate_keypair absent, keygen present) and 10 of 13 signing
+    # tests fail; <1.0 resolves 0.4.0 and all 18 signing + annotation tests pass.
+    "pqcrypto>=0.3.4,<1.0",
 ]
 
 # Independent "existed no later than T" timestamping via OpenTimestamps (anchors
