@@ -2003,6 +2003,42 @@ def source_audit(
     return JSONResponse(report, headers=headers)
 
 
+@router.get("/source-qualification-export")
+def source_qualification_export(
+    download: bool = Query(False),
+    fmt: str = Query("json", pattern="^(json|yaml)$"),
+    db: Session = Depends(get_db),
+) -> Response:
+    """REMEMBER what this instance qualified, so a fresh install does not re-earn it.
+
+    Emits the overlay ``configs/source_qualification.yml`` -- the file the seeder adopts at
+    boot -- plus the split the 2026-09-04 ask asks to see: of the sources that shipped with
+    the app, how many are qualified, how many disqualified, and how many are still awaiting a
+    verdict. Same schema out as in, so what one instance exports is exactly what the next
+    fresh install adopts.
+
+    READ-ONLY: it reports verdicts already reached and never judges, fetches or stamps
+    anything. Plain ``def`` -> threadpool, off the event loop.
+
+    ``fmt=yaml`` returns the overlay file itself, ready to commit; ``json`` (the default, and
+    what the all-diagnostics bundle carries) adds the scope, basis and pending figures that
+    explain what the file does and does not contain.
+    """
+    from src.catalog.qualification_export import build_overlay_export, to_overlay_yaml
+
+    report = build_overlay_export(db)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    if fmt == "yaml":
+        headers = {"Content-Disposition": f'attachment; filename="source_qualification-{stamp}.yml"'}
+        return Response(to_overlay_yaml(report), media_type="text/yaml", headers=headers)
+    headers = {}
+    if download:
+        headers["Content-Disposition"] = (
+            f'attachment; filename="oo-source-qualification-{stamp}.json"'
+        )
+    return JSONResponse(report, headers=headers)
+
+
 @router.get("/source-audit-selftest")
 def source_audit_selftest(download: bool = Query(False)) -> JSONResponse:
     """Prove the auditor's PURE mechanism (flag_criteria / derive_status / should_auto_demote /
@@ -3695,6 +3731,10 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         ("search-timing-selftest.json", lambda: search_timing_selftest(download=False)),
         ("power-profile-selftest.json", lambda: power_profile_selftest(download=False)),
         ("source-audit-selftest.json", lambda: source_audit_selftest(download=False)),
+        # What this instance would contribute to the shipped qualification overlay, and
+        # the split of its app-provided sources (judged vs still pending). Read-only.
+        ("source-qualification-export.json",
+         lambda: source_qualification_export(download=False, fmt="json", db=db)),
         # The concurrency sweep's own MECHANISM (2026-08-09). The sweep itself is an
         # operator action needing a live model; this proves it really runs concurrently
         # -- a bench that silently ran serially would still publish a plausible curve.
@@ -3948,6 +3988,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/keyword-growth": "keyword-growth.json",
     "/source-audit": "source-audit.json",
     "/source-audit-selftest": "source-audit-selftest.json",
+    "/source-qualification-export": "source-qualification-export.json",
     "/dates": "date-extraction.json",
     "/performance": "performance.json",
     "/benchmark": "benchmark.json",

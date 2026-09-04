@@ -248,9 +248,10 @@ def _calls_with_binding(source: str, name: str) -> list[int]:
                     break
                 owner = parents.get(owner, scope)
             else:
-                if isinstance(node, (ast.Import, ast.ImportFrom)):
-                    if any((a.asname or a.name.split(".")[0]) == ident for a in node.names):
-                        return True
+                if isinstance(node, (ast.Import, ast.ImportFrom)) and any(
+                    (a.asname or a.name.split(".")[0]) == ident for a in node.names
+                ):
+                    return True
                 if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store) \
                         and node.id == ident:
                     return True
@@ -265,10 +266,10 @@ def _calls_with_binding(source: str, name: str) -> list[int]:
             continue
         scope: ast.AST | None = node
         while scope is not None:
-            if isinstance(scope, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef)):
-                if binds(scope, name):
-                    out.append(node.lineno)
-                    break
+            if isinstance(scope, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef)) \
+                    and binds(scope, name):
+                out.append(node.lineno)
+                break
             scope = parents.get(scope)
     return out
 
