@@ -12064,6 +12064,32 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   produced locally; what changes is only that the measurement no longer has to be repeated from
   scratch on every install. A catalog entry with no overlay verdict still seeds unqualified and is
   still qualified by its own first pass, exactly as ruled.
+  **SHIPPED 2026-09-04 (four commits; per-slice detail = the three `docs/ledger/shipped.csv`
+  rows):** the re-check scheduling with its own budget (the ladder's starvation reproduced as
+  a test first) + the flat 6-month qualified clock + the `inherited` attempt verdict · the
+  overlay loader and boot adoption · the diagnostics export, its bundle membership and the
+  accumulation merge script · the setting made writable, the qualification panel taught to
+  describe the re-check, and USER_MANUAL/CHANGES. Every slice mutation-checked (20 mutations
+  across the four, each reddening by name); full suite 8595 passed with the single failure
+  being the deliberately-superseded `test_toggles_and_zero_budgets_exclude_their_kind`,
+  updated with its reason and given a companion pinning the new behaviour. mypy 496 files,
+  ruff and i18n gates clean.
+  **THE ONE REMAINING STEP IS THE OPERATOR'S, AND IT CANNOT BE DONE FROM HERE:
+  `configs/source_qualification.yml` DOES NOT EXIST YET, deliberately.** The machinery ships;
+  the file must be GENERATED from real instances, because a verdict written by this session
+  would be exactly the fabricated-by-curation stamp the amendment above argues it is not. The
+  loop: run `GET /api/diagnostics/source-qualification-export?fmt=yaml` on each instance (it
+  also rides the all-diagnostics bundle as `source-qualification-export.json`), then
+  `python scripts/merge_source_qualification.py export1.json export2.json ...`, review the
+  disagreements it refuses to resolve, and commit the result. Until then every install
+  behaves exactly as before: an absent overlay is simply no overlay.
+  **NAMED FOLLOW-UP (not built, and the reason is recorded so it is not mistaken for an
+  oversight): a RECENCY-WINDOWED re-check.** `source_audit`'s whole chain reads a source's
+  entire stored history, so a re-check cannot see a source that degraded recently against
+  years of good articles. Adding a window touches `collect_article_stats`, which the audit
+  REPORT shares, so it is its own reviewed slice -- and it sits next to gate row 5's still-open
+  `PATHOLOGY_ABS_FLOOR` calibration, which is the maintainer's decision and was deliberately
+  not touched here.
 - **LLM SOURCE-TAG ASSIGNMENT FROM TOP KEYWORDS (maintainer proposed 2026-07-20: "a source
   tag assignment strategy based on their top 200 keywords, given to the local LLM in the
   diagnostic tab"; DESIGN RECORDED, build PENDING — reuses the §8 triage chassis):** the
