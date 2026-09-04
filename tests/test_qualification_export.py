@@ -19,6 +19,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.catalog.qualification import (
+    QUALIFIED_RECHECK_MONTHS,
     STATUS_DISQUALIFIED,
     STATUS_QUALIFIED,
     STATUS_UNQUALIFIED,
@@ -66,6 +67,63 @@ def _src(db, domain, status, *, tags="news,via:curated", qualified_at=None, judg
         ))
         db.commit()
     return s
+
+
+# --------------------------------------------------------------- verdict age
+
+
+def test_the_export_reports_how_stale_the_shipped_verdicts_are(db):
+    """The mitigation the deferred re-check clock leans on.
+
+    Because a fresh install now waits a full interval from ADOPTION before re-verifying an
+    inherited stamp, no install re-establishes the shipped catalog's freshness for itself
+    any more -- the maintainer does, by re-cutting the overlay. So staleness has to be
+    VISIBLE somewhere, and this is that somewhere. Without it the clock change would trade a
+    noisy first run for a catalog that quietly ossifies.
+    """
+    stale = NOW - timedelta(days=30 * QUALIFIED_RECHECK_MONTHS + 40)
+    fresh = NOW - timedelta(days=5)
+    _src(db, "old-a.example", STATUS_QUALIFIED, qualified_at=stale)
+    _src(db, "old-b.example", STATUS_QUALIFIED, qualified_at=stale)
+    _src(db, "new.example", STATUS_QUALIFIED, qualified_at=fresh)
+
+    age = build_overlay_export(db, now=NOW)["verdict_age"]
+
+    assert age["dated"] == 3
+    assert age["past_recheck_interval"] == 2, (
+        "the two verdicts older than the interval must be counted, so a reader can see the "
+        "catalog is due to be re-cut"
+    )
+    assert age["oldest"].startswith(stale.date().isoformat())
+    assert age["newest"].startswith(fresh.date().isoformat())
+    assert age["recheck_months"] == QUALIFIED_RECHECK_MONTHS
+
+
+def test_verdict_age_counts_only_dated_verdicts_and_never_invents_one(db):
+    """A disqualified row carries no `qualified_at` BY DESIGN (evaluate_and_stamp clears it,
+    so a stale 'qualified' date can never survive a failure). It must therefore be excluded
+    from the age figures rather than counted as infinitely old or stamped with today --
+    either would be a fabricated measurement, and the second would hide real staleness.
+    """
+    _src(db, "dated.example", STATUS_QUALIFIED, qualified_at=NOW - timedelta(days=5))
+    _src(db, "undated.example", STATUS_DISQUALIFIED, qualified_at=None)
+
+    e = build_overlay_export(db, now=NOW)
+    assert e["split"]["disqualified"] == 1, "the disqualified verdict still ships"
+    assert e["verdict_age"]["dated"] == 1, (
+        "only the verdict carrying a real date may enter the age figures"
+    )
+    assert e["verdict_age"]["past_recheck_interval"] == 0
+
+
+def test_verdict_age_is_empty_rather_than_zero_when_nothing_is_dated(db):
+    """An absent measurement must not render as a measured zero -- `oldest: null` says we
+    have no dated verdict, where `oldest: <today>` would claim a freshly-verified catalog.
+    """
+    _src(db, "undated.example", STATUS_DISQUALIFIED, qualified_at=None)
+    age = build_overlay_export(db, now=NOW)["verdict_age"]
+    assert age["oldest"] is None and age["newest"] is None
+    assert age["dated"] == 0
 
 
 # ------------------------------------------------------------------- export

@@ -12072,10 +12072,23 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     records that the stamp was INHERITED rather than measured here — a fourth ATTEMPT-LOG-only
     verdict beside `no_evidence`, never a `Source.status` value (the three-state model is untouched),
     and like `no_evidence` it neither advances nor resets the ladder, because it is not a judgement.
-    The re-check CLOCK therefore reads the newest REAL judgement (falling back to `qualified_at`,
-    which for an inherited stamp is the originating instance's date) — so an inherited stamp that was
-    already months old is due sooner, and a freshly-earned one waits its full interval, with no
-    second queue.
+    The re-check CLOCK reads the newest attempt that RESET it — either real judgement, or the
+    `inherited` row itself (`CLOCK_VERDICTS`), falling back to `qualified_at` only where there is no
+    attempt at all. **CORRECTED 2026-09-04, same day, on the maintainer's follow-up:** the clock first
+    shipped scoped to real judgements only, so it fell back to the ORIGINATING date and an inherited
+    stamp came due sooner. That was defended in a docstring as avoiding "fabricated freshness" and the
+    reasoning was wrong in KIND — nothing claimed local verification (`qualified_at` keeps the origin,
+    the attempt says `inherited`, the export says basis `inherited`); what it actually did was make
+    every shipped verdict arrive ALREADY EXPIRED, since a release always reaches users more than
+    QUALIFIED_RECHECK_MONTHS after it was cut. MEASURED: a 10-source overlay stamped 9 months earlier
+    adopted cleanly and then reported 10 of 10 due on the first pass — a fresh install re-qualifying
+    the entire shipped catalog, i.e. exactly the work the overlay exists to save. It also repaired an
+    inconsistency rather than introducing one: `select_due_disqualified` already clocked on
+    `max(attempted_at)` across ALL attempts, so inherited DISQUALIFIED stamps had always deferred from
+    adoption; only the qualified side read the origin. THE COST, stated not hidden: catalog freshness
+    is no longer re-established by each install, so a catalog nobody re-cuts ossifies — mitigated by
+    the export's `verdict_age` block (oldest/newest/`past_recheck_interval`), which is what makes the
+    staleness visible to whoever cuts the next release.
   **THE STANDING RULING THIS AMENDS, stated rather than quietly contradicted:** "ALL sources are
   qualified BY DEFINITION — the curated catalog INCLUDED; NO pre-qualified-by-curation stamp" (the
   2026-07-20 sub-decision). That rejected qualification by CURATION — somebody's opinion standing in

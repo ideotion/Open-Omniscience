@@ -103,12 +103,20 @@ VERDICT_NO_EVIDENCE = "no_evidence"
 # though this instance had measured something it only inherited (maintainer ruling
 # 2026-09-04: "trust it, then confirm in the background"). It is not a judgement, so like
 # no_evidence it neither advances nor resets the re-qualification ladder, and it does not
-# move the re-verification clock -- see `_last_judged_subquery`.
+# move the re-verification clock -- see `_last_clock_subquery`.
 VERDICT_INHERITED = "inherited"
 
 # The verdicts that are actual JUDGEMENTS -- a real evaluation of real evidence, by some
 # instance. The other two attempt verdicts record why a judgement did NOT happen.
 JUDGING_VERDICTS = (STATUS_QUALIFIED, STATUS_DISQUALIFIED)
+
+# The verdicts that RESET the local re-verification clock. Deliberately WIDER than
+# JUDGING_VERDICTS by exactly one entry: adopting a stamp is not a judgement (it never
+# touches the ladder, and the export still reports it as basis "inherited"), but it IS the
+# moment this instance took responsibility for the source, so it is where the local clock
+# starts. `no_evidence` is in neither set -- it records that a judgement could not happen,
+# so counting it either way would be a lie in a different direction.
+CLOCK_VERDICTS = (*JUDGING_VERDICTS, VERDICT_INHERITED)
 
 # RE-VERIFICATION OF A QUALIFIED SOURCE (maintainer ruling 2026-09-04). A FLAT interval,
 # never the disqualified ladder's doubling: doubling encodes diminishing hope after repeated
@@ -315,15 +323,38 @@ def select_due_disqualified(
     return due
 
 
-def _last_judged_subquery(session: Session):
-    """``{source_id: newest attempt that actually JUDGED it}``.
+def _last_clock_subquery(session: Session):
+    """``{source_id: newest attempt that RESET this instance's re-verification clock}``.
 
-    Scoped to ``JUDGING_VERDICTS`` on purpose: a ``no_evidence`` or ``inherited`` row
-    records why a judgement did NOT happen, and counting either as a judgement would make
-    the re-verification clock lie in the one direction that matters. An ``inherited`` row
-    is written at the moment a stamp is ADOPTED, so if it moved the clock, a stamp inherited
-    from a two-year-old catalog would read as verified today -- exactly the fabricated
-    freshness the ruling's "trust it, then confirm" wording exists to avoid.
+    Scoped to ``CLOCK_VERDICTS``: the two real judgements, plus ``inherited``.
+
+    CORRECTION (2026-09-04, maintainer ask). An earlier version of this scoped to
+    ``JUDGING_VERDICTS`` and argued that letting an ``inherited`` row move the clock would
+    make a stamp from an old catalog "read as verified today -- fabricated freshness". That
+    was wrong in KIND. Nothing here claims local verification: ``Source.qualified_at`` still
+    holds the ORIGINATING date, the attempt row still says ``inherited``, and the export
+    still reports ``basis: inherited``. What the narrow scope actually did was make every
+    shipped verdict arrive ALREADY EXPIRED -- any release reaches users more than
+    QUALIFIED_RECHECK_MONTHS after it was cut -- so a fresh install spent its qualification
+    budget re-verifying the whole shipped catalog on day one. That defeats the accumulation
+    the overlay exists for: the point is that a verdict earned once does not have to be
+    earned again on every machine.
+
+    Measured before the change: a 10-source overlay stamped 9 months earlier adopted
+    cleanly and then reported 10 of 10 already due on the first pass.
+
+    Where the freshness guarantee actually lives is the RELEASE process -- the maintainer
+    periodically merges instance exports and re-cuts the overlay, which is the "qualified
+    periodically" half of the ruling. Long-running instances still re-verify for real on
+    this clock and feed those measurements back. The residual risk, stated rather than
+    hidden: a catalog nobody re-cuts ossifies, since each install defers a further
+    QUALIFIED_RECHECK_MONTHS. ``build_overlay_export`` reports the age of the inherited
+    verdicts so that staleness is visible rather than silent.
+
+    NOTE the asymmetry this repairs: ``select_due_disqualified`` already clocks on
+    ``max(attempted_at)`` across ALL attempts, so inherited DISQUALIFIED stamps have always
+    deferred from adoption. Only the qualified side read the origin date, which was an
+    inconsistency rather than a decision.
     """
     from src.database.models import SourceQualificationAttempt as A
 
@@ -332,7 +363,7 @@ def _last_judged_subquery(session: Session):
             A.source_id.label("source_id"),
             func.max(A.attempted_at).label("last_at"),
         )
-        .filter(A.verdict.in_(JUDGING_VERDICTS))
+        .filter(A.verdict.in_(CLOCK_VERDICTS))
         .group_by(A.source_id)
         .subquery()
     )
@@ -349,14 +380,19 @@ def select_due_qualified(
 ) -> list[Source]:
     """Qualified sources whose verdict has aged past QUALIFIED_RECHECK_MONTHS.
 
-    THE CLOCK is the newest attempt that actually judged this source, falling back to
-    ``Source.qualified_at`` when there is none. The fallback is what makes an INHERITED
-    stamp work without a second queue: for a verdict adopted from a backup or the shipped
-    overlay, ``qualified_at`` is the ORIGINATING instance's date, so a stamp that was
-    already months old when it arrived comes due sooner, and a freshly-earned one waits its
-    full interval. Ordered oldest-first, so the longest-unverified verdict goes first --
-    which is also the ruling's "low priority" for inherited stamps, falling out of the
-    ordering rather than needing a separate pool.
+    THE CLOCK is the newest attempt that reset it -- a real judgement, or the ``inherited``
+    row written when a stamp was adopted here (``CLOCK_VERDICTS``; see
+    ``_last_clock_subquery`` for why adoption counts and for the correction that made it
+    so). It falls back to ``Source.qualified_at`` only when there is no attempt at all,
+    which is the pre-existing-corpus case rather than the inherited one.
+
+    So a stamp adopted from a backup or the shipped overlay waits a full interval from the
+    day THIS instance took it on, not from the day another instance earned it. That is what
+    lets a fresh install start with a working catalog instead of spending its first passes
+    re-verifying verdicts that were already paid for elsewhere -- while ``qualified_at``
+    keeps the true originating date, so nothing reads as measured here.
+
+    Ordered oldest-clock-first, so the longest-unverified verdict goes first.
 
     A qualified row with NEITHER a judging attempt NOR a ``qualified_at`` is a data anomaly
     (``evaluate_and_stamp`` always writes both). It is treated as DUE rather than skipped:
@@ -367,7 +403,7 @@ def select_due_qualified(
 
     if limit <= 0:
         return []
-    last_judged = _last_judged_subquery(session)
+    last_judged = _last_clock_subquery(session)
     rows = (
         session.query(Source, last_judged.c.last_at)
         .outerjoin(last_judged, last_judged.c.source_id == Source.id)

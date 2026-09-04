@@ -6,7 +6,9 @@ feature: with a large unqualified backlog the shared per-pass budget was always 
 never-judged candidates, so `select_due_disqualified` was never reached and the
 re-qualification ladder -- shipped correct in 2026-07 -- had in practice never run on a field
 instance. The second is the new flat ~6-month re-check of QUALIFIED verdicts, including the
-clock that makes an INHERITED stamp come due on the originating instance's date.
+clock that starts when a stamp is ADOPTED here, so a fresh install does not re-qualify a
+shipped catalog it was handed (superseding an earlier rule that clocked on the originating
+date -- see the test that records the change).
 
 In-memory SQLite, no network: the trial fetch is skipped by passing ``fetcher=None`` and the
 cohort is injected, so what is exercised is the SCHEDULING -- which candidates a pass picks.
@@ -157,18 +159,57 @@ def test_the_boundary_is_the_stated_interval_not_a_looser_one(db):
     assert qualified_recheck_due_at(just_inside) > NOW
 
 
-def test_an_inherited_stamp_comes_due_on_the_originating_instances_date(db):
-    """THE ruling's "trust it, then confirm". A stamp adopted today but EARNED five months
-    ago elsewhere must not read as verified today: the clock is `qualified_at`, and the
-    `inherited` row that records where the stamp came from must NOT move it."""
+def test_a_freshly_adopted_stamp_is_not_due_however_old_the_verdict_is(db):
+    """SUPERSEDES an earlier test that asserted the opposite (the clock reading the
+    ORIGINATING date, so a stamp earned more than an interval ago arrived already expired).
+
+    Changed deliberately on the maintainer's 2026-09-04 ask -- recorded rather than quietly
+    flipped. Every release reaches users more than QUALIFIED_RECHECK_MONTHS after it was
+    cut, so the old rule meant a fresh install spent its first passes re-verifying the whole
+    shipped catalog: measured at 10 of 10 already due on an overlay stamped 9 months back.
+    That defeats the accumulation the overlay exists for -- a verdict earned once should not
+    have to be earned again on every machine.
+
+    Nothing here claims local verification. `qualified_at` still holds the originating date
+    (asserted below), the attempt row still says `inherited`, and the export still reports
+    basis `inherited`. Only the LOCAL clock starts at adoption.
+    """
     earned = NOW - timedelta(days=30 * QUALIFIED_RECHECK_MONTHS + 10)
     s = _src(db, "adopted.example", status=STATUS_QUALIFIED, qualified_at=earned)
     log_inherited_stamps(db, [s], now=NOW)
     db.commit()
 
+    assert select_due_qualified(db, now=NOW, limit=10) == [], (
+        "a stamp adopted today must wait a full interval before this instance re-verifies "
+        "it, however old the verdict was when it arrived -- otherwise a fresh install "
+        "re-qualifies the entire shipped catalog on day one"
+    )
+    # SQLite round-trips a DateTime as NAIVE even when an aware UTC value was stored (the
+    # convention select_due_qualified itself re-attaches UTC for), so compare the instant.
+    stored = s.qualified_at
+    if stored.tzinfo is None:
+        stored = stored.replace(tzinfo=UTC)
+    assert stored == earned, (
+        "the ORIGINATING date must survive adoption: deferring the local clock must never "
+        "be implemented by restamping the verdict as though it were earned here"
+    )
+
+
+def test_an_adopted_stamp_does_come_due_once_ITS_OWN_interval_elapses(db):
+    """The twin of the test above, and the one that stops it being a licence to never
+    re-verify anything. Same adopted stamp, but adoption itself is now older than the
+    interval -- so it must come due. Without this, deferring and DISABLING look identical.
+    """
+    earned = NOW - timedelta(days=30 * QUALIFIED_RECHECK_MONTHS + 10)
+    adopted = NOW - timedelta(days=30 * QUALIFIED_RECHECK_MONTHS + 10)
+    s = _src(db, "adopted.example", status=STATUS_QUALIFIED, qualified_at=earned)
+    log_inherited_stamps(db, [s], now=adopted)
+    db.commit()
+
     due = select_due_qualified(db, now=NOW, limit=10)
     assert [x.domain for x in due] == ["adopted.example"], (
-        "an inherited row must not reset the re-verification clock to now"
+        "an inherited stamp must still be re-verified locally once the interval has run "
+        "from the day it was adopted here"
     )
 
 

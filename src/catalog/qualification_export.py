@@ -50,9 +50,11 @@ from src.catalog.provenance_scope import app_provided_filter
 from src.catalog.qualification import (
     CRITERIA_VERSION,
     JUDGING_VERDICTS,
+    QUALIFIED_RECHECK_MONTHS,
     STATUS_DISQUALIFIED,
     STATUS_QUALIFIED,
     STATUS_UNQUALIFIED,
+    qualified_recheck_due_at,
 )
 
 if TYPE_CHECKING:
@@ -103,12 +105,21 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
     )
 
     verdicts = []
+    stamp_dates: list[datetime] = []
+    past_recheck = 0
     basis_counts = {BASIS_MEASURED: 0, BASIS_INHERITED: 0}
     status_counts = {STATUS_QUALIFIED: 0, STATUS_DISQUALIFIED: 0}
     for s in judged:
         basis = BASIS_MEASURED if s.id in measured else BASIS_INHERITED
         basis_counts[basis] += 1
         status_counts[s.status] += 1
+        if s.qualified_at is not None:
+            stamped = s.qualified_at
+            if stamped.tzinfo is None:
+                stamped = stamped.replace(tzinfo=UTC)
+            stamp_dates.append(stamped)
+            if qualified_recheck_due_at(stamped) <= now:
+                past_recheck += 1
         verdicts.append({
             "domain": s.domain,
             "status": s.status,
@@ -155,6 +166,26 @@ def build_overlay_export(session: Session, *, now: datetime | None = None) -> di
             "disqualified": status_counts[STATUS_DISQUALIFIED],
             "pending": int(pending_total),
             "total": int(app_total),
+        },
+        # AGE OF THE VERDICTS. A fresh install defers its first local re-verification by a
+        # full QUALIFIED_RECHECK_MONTHS from the day it ADOPTS a shipped stamp, which is what
+        # keeps a first download quiet -- so the freshness of the shipped catalog is no longer
+        # something each install re-establishes for itself. It is re-established when the
+        # maintainer re-cuts the overlay, and this block is how they see that it is time:
+        # `past_recheck_interval` is the number of exported verdicts already older than the
+        # interval. Dates are the ones the verdicts were REACHED on, never today's.
+        "verdict_age": {
+            "oldest": _iso(min(stamp_dates)) if stamp_dates else None,
+            "newest": _iso(max(stamp_dates)) if stamp_dates else None,
+            "past_recheck_interval": past_recheck,
+            "dated": len(stamp_dates),
+            "recheck_months": QUALIFIED_RECHECK_MONTHS,
+            "note": (
+                "Counted over verdicts carrying a date (a disqualified row carries none by "
+                "design). A high past_recheck_interval means the shipped catalog is due to be "
+                "re-cut from fresh instance exports -- installs adopting it will not "
+                "re-verify it for themselves until their own interval elapses."
+            ),
         },
         "basis": {
             **basis_counts,

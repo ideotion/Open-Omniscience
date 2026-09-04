@@ -169,8 +169,11 @@ article clean-up's input. A row closes on evidence a later reader can re-open, n
   same measurement the receiving install's own first pass would eventually have produced.
   Adoption obeys the merge's rule identically, disqualifications ship too (so a fresh
   install skips a known-broken source rather than rediscovering it over Tor), and an
-  adopted stamp keeps its **original** date — so a verdict earned eight months ago comes
-  due for re-verification almost at once instead of reading as measured today.
+  adopted stamp keeps its **original** date, so nothing reads as measured locally — while
+  the receiving machine's own re-check clock starts at adoption, so a first download is
+  quiet instead of re-qualifying the whole catalog it was just handed. The export reports
+  how old the shipped verdicts are, since catalog freshness is now re-established by
+  re-cutting the overlay rather than by every install redoing the work.
   A diagnostics export emits that file from a live corpus, and a merge script accumulates
   several instances' exports without ever resolving a disagreement automatically or
   counting an inherited verdict as corroboration — importing one backup into eight machines

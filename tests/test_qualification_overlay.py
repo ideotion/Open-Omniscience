@@ -173,17 +173,33 @@ def test_adoption_records_that_the_stamp_was_inherited(db, tmp_path):
     assert [r.verdict for r in rows] == [VERDICT_INHERITED]
 
 
-def test_an_inherited_shipped_stamp_still_comes_due_on_its_own_age(db, tmp_path):
-    """End to end with slice 1: a verdict earned long ago elsewhere and adopted today is
-    re-verified promptly, rather than reading as freshly measured here."""
+def test_a_fresh_install_does_no_qualification_work_however_old_the_overlay_is(db, tmp_path):
+    """SUPERSEDES a test that asserted the opposite -- that a long-earned verdict adopted
+    today is "re-verified promptly". Changed on the maintainer's 2026-09-04 ask; recorded
+    here rather than quietly flipped.
+
+    This is the end-to-end version of the point: a shipped overlay is ALWAYS older than the
+    re-check interval by the time a release reaches a user, so the old rule meant every
+    fresh install spent its first passes re-qualifying the entire catalog it had just been
+    handed. That is precisely the work the overlay exists to save. The verdict's true age is
+    not lost -- it stays in `qualified_at`, and the export reports how stale the catalog is
+    so the maintainer knows when to re-cut it.
+    """
     old = (NOW - timedelta(days=30 * QUALIFIED_RECHECK_MONTHS + 5)).date().isoformat()
     _src(db, "old.example")
     p = _overlay_file(tmp_path, [{"domain": "old.example", "status": "qualified",
                                   "qualified_at": old}])
     apply_overlay(db, now=NOW, path=p)
 
-    due = select_due_qualified(db, now=NOW, limit=5)
-    assert [s.domain for s in due] == ["old.example"]
+    assert select_due_qualified(db, now=NOW, limit=5) == [], (
+        "adopting a shipped verdict must start this instance's own clock, not inherit an "
+        "already-expired one -- otherwise the first run re-qualifies the whole catalog"
+    )
+    # ...and the deferral is not implemented by pretending the verdict is new.
+    stored = db.query(Source).filter_by(domain="old.example").one()
+    assert stored.qualified_at.date().isoformat() == old, (
+        "the originating date must survive: the clock moved, the verdict did not"
+    )
 
 
 def test_a_recent_shipped_stamp_is_not_immediately_re_verified(db, tmp_path):

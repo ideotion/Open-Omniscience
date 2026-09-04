@@ -625,9 +625,19 @@ Qualification work done on one instance is **not lost when you move or merge cor
   sources already qualified by the app, and the ones still to be.
 
 An adopted verdict is recorded as **inherited**, not as something this machine measured,
-and it keeps the date it was originally reached. That matters: a verdict earned eight
-months ago and adopted today is due for re-verification almost immediately, rather than
-looking freshly measured. Inheriting buys you a head start, not a clean slate.
+and it keeps the date it was originally reached — so nothing ever reads as though your
+install measured it. What starts fresh is your machine's own re-check clock: it runs from
+the day you adopted the verdict, not the day someone else earned it. A first download is
+therefore quiet, which is the point — a shipped catalog is always older than the six-month
+interval by the time it reaches you, so clocking on the original date would have every
+fresh install re-qualify the whole catalog on day one, which is exactly the work the
+shipped file exists to save.
+
+That trade is deliberate and has a cost worth stating: the freshness of the shipped
+catalog is no longer something each install re-establishes for itself. It is
+re-established when a new version ships an overlay re-cut from instances that *have* done
+the re-verification. The export below reports how old its verdicts are, so that staleness
+is visible rather than silent.
 
 #### Contributing your instance's verdicts back
 
