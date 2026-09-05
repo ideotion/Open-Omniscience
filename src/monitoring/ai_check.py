@@ -161,11 +161,56 @@ def _throughput_advice(throughput: dict | None) -> dict | None:
     return line
 
 
+def _field_order(seen: list[str]) -> list[str]:
+    """The extractor's own field order, extended by anything the gate carries beyond it.
+
+    Read from ``perception_extract`` so the report stays in LOCKSTEP with what the sweep
+    actually gates on -- a field added there must not need a second edit here to become
+    visible. The import is separately guarded and non-fatal: losing the ORDER of three
+    names must never cost the whole gate block, which is what a single ``from ... import
+    gate_languages_from_report, _FIELDS`` would do the day that private name is renamed.
+    Unknown fields are appended rather than dropped, so the report can never be SHORTER
+    than the evidence it was handed.
+    """
+    known: tuple[str, ...] = ()
+    try:
+        from src.ai_layer.perception_extract import _FIELDS
+
+        known = tuple(_FIELDS)
+    except Exception:  # noqa: BLE001 - order is a nicety; the fields themselves are not
+        known = ()
+    return [f for f in known if f in seen] + [f for f in seen if f not in known]
+
+
 def _gate_lines(perception: dict | None) -> dict | None:
-    """Which languages the live gate clears, refuses, or never measured.
+    """Which languages the live gate clears, refuses, or never measured -- AND WHICH FIELDS.
 
     Three states, never two: "never evaluated" is not "failed", and collapsing them
     would make an untested language look like a rejected one.
+
+    PER-FIELD SINCE 2026-09-05, and the reason is a field report. The 09-04 check on the
+    maintainer's machine rendered ``cleared: 13, refused: 0, unmeasured: 0`` -- from which
+    the only available reading is that the model invents nothing anywhere. Running the
+    same gate over the same report says otherwise: of 39 field verdicts **20 cleared, 2
+    were REFUSED and 17 were never measured**. ``hi``'s ``who`` was refused for INVENTION
+    (hallucination 1.0, above the 0.5 floor) and ``fr``'s ``who`` for SILENCE (recall 0.0
+    on its one gold item) -- two different failures, of the two different kinds the gate
+    exists to catch -- while eleven of the thirteen "cleared" languages cleared on
+    ``where`` ALONE, with ``who`` and ``when`` untested.
+
+    None of that was wrong in the RUN: :func:`~src.ai_layer.perception_extract.field_gate`
+    correctly discarded both refused fields, and the sweep tallies ``field_gated`` per
+    field. The distinction existed in the payload and died HERE, at the render boundary,
+    because this function read only ``v["active"]`` -- the language-level rollup, which is
+    ``True`` when ANY field clears and is documented as meaning exactly that. So the
+    language lists keep their meaning and their names (they were never wrong at their own
+    level, and a key with readers is not redefined to fix a label); what they lacked was
+    the level below, which is added here rather than folded into them.
+
+    An OLD persisted report predates per-field verdicts and carries no ``fields`` key. That
+    is a SCHEMA gap, not a measurement gap: reporting its languages as "unmeasured for
+    every field" would claim a harness result that was never absent, so those entries are
+    counted and named apart instead.
     """
     if not perception or perception.get("status") == "unavailable":
         return None
@@ -180,16 +225,82 @@ def _gate_lines(perception: dict | None) -> dict | None:
     cleared = sorted(k for k, v in gates.items() if v.get("active") is True)
     refused = sorted(k for k, v in gates.items() if v.get("active") is False)
     unmeasured = sorted(k for k, v in gates.items() if v.get("active") is None)
-    return {
+
+    # --- the level that was being dropped ---------------------------------------- #
+    seen: list[str] = []
+    without_fields: list[str] = []
+    for lang in sorted(gates):
+        fields = (gates[lang] or {}).get("fields")
+        if not isinstance(fields, dict) or not fields:
+            without_fields.append(lang)
+            continue
+        for fld in fields:
+            if fld not in seen:
+                seen.append(fld)
+    order = _field_order(seen)
+    by_field: dict[str, dict] = {
+        f: {"cleared": [], "refused": [], "unmeasured": []} for f in order
+    }
+    refused_fields: list[dict] = []
+    partial: list[dict] = []
+    for lang in sorted(gates):
+        fields = (gates[lang] or {}).get("fields")
+        if not isinstance(fields, dict) or not fields:
+            continue
+        not_cleared: list[str] = []
+        for fld in order:
+            entry = fields.get(fld)
+            if not isinstance(entry, dict):
+                continue
+            active = entry.get("active")
+            bucket = "cleared" if active is True else ("refused" if active is False else "unmeasured")
+            by_field[fld][bucket].append(lang)
+            if active is not True:
+                not_cleared.append(fld)
+            if active is False:
+                refused_fields.append(
+                    {"language": lang, "field": fld, "reason": str(entry.get("reason") or "")}
+                )
+        # A language that cleared SOMETHING but not everything: the case the language-level
+        # "cleared" list cannot express, and the one the field report exists to surface.
+        if not_cleared and gates[lang].get("active") is True:
+            partial.append({"language": lang, "not_cleared": not_cleared})
+    counts = {
+        b: sum(len(v[b]) for v in by_field.values())
+        for b in ("cleared", "refused", "unmeasured")
+    }
+    counts["total"] = sum(counts.values())
+
+    out: dict[str, Any] = {
         "cleared": cleared,
         "refused": refused,
         "unmeasured": unmeasured,
+        "by_field": by_field,
+        # Named, with the harness's own reason, because a refusal is the actionable item
+        # and a count alone does not say which floor it hit or in which language.
+        "refused_fields": refused_fields,
+        "partly_cleared": partial,
+        "field_counts": counts,
         "note": (
             "'unmeasured' is not 'failed'. A language the harness never tested is refused "
             "for want of evidence, which is a different thing to fix than one that "
-            "hallucinated its way past the floor."
+            "hallucinated its way past the floor. And a language listed under 'cleared' is "
+            "cleared for AT LEAST ONE field, never necessarily for all three -- read "
+            "'by_field' for what the model is actually allowed to store, and "
+            "'refused_fields' for what it was caught doing."
         ),
     }
+    if without_fields:
+        # Distinct from "unmeasured": these carry no per-field verdicts AT ALL because the
+        # report that produced them predates them. Saying so beats counting them as gaps.
+        out["no_field_verdicts"] = {
+            "languages": without_fields,
+            "reason": (
+                "this gate carries no per-field verdicts for these languages -- a report "
+                "written before per-field gating existed, not a measurement that is missing"
+            ),
+        }
+    return out
 
 
 class _StepCtx:
