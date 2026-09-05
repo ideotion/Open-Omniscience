@@ -5635,6 +5635,45 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     a bound exists, install both versions and write down what you MEASURED — here 1.0.0 → 16
     failed / 23 passed in this repo's own suite against 0.4.0 → 39 passed, which is checkable,
     where a changelog paraphrase arrives at the same confidence and is where the error will be.
+  - **A RESERVE SIZED FOR A MECHANISM THAT IS SWITCHED OFF IS NOT CONSERVATISM — it is a
+    permanently unclaimed resource, and a "conservative" default stops being conservative
+    once it decides EVERY machine (2026-09-05, the field context window; maintainer-ruled
+    on the measurement the constant's own docstring asked for):** the 8 GiB field card ran
+    `--enforce-eager` with `gpu_memory_utilization: 0.77`, peaked at **6294 MiB of 8188 —
+    76.9%**, and simultaneously refused every 4057-token prompt with *"maximum context
+    length is 2048 tokens"*. ~1.9 GB sat behind `_GRAPH_POOL_RESERVE_GB`, which is sized
+    for the **CUDA-graph capture pool** — a pool eager mode never allocates and vLLM's own
+    log says so ("Cudagraph is disabled under eager mode"). The docstring had already
+    written the condition for changing it — *"If context length on small cards ever needs
+    the room, measure first"* — so when the measurement arrives, honouring it is the
+    promise, not a relaxation. Scope the reclaim to the mode where the mechanism is off;
+    the capture reserve is untouched, because nothing here measured capture succeeding.
+    **THREE RIDERS.** (a) **A monotonicity guard across a mode boundary fires on a
+    decision, not a defect** — an eager card now legitimately claims a greater fraction
+    than a slightly larger capture card, so the guard asserts the property WITHIN each
+    mode (twice) rather than being deleted; the class it was built to catch is unchanged.
+    (b) **Never past upstream's own default**: 0.90 stays the cap, so the reclaim moves
+    toward vLLM's number and never beyond it — being bolder than upstream on the smallest
+    hardware is the wrong direction to be bold in. (c) The budget still tracks what is
+    FREE, so a card holding a display server narrows itself instead of over-asking.
+    **AND THE ARITHMETICALLY SUFFICIENT CAUSE WAS SOMEWHERE ELSE ENTIRELY, which is the
+    part worth the most:** `measured_weight_gb`'s docstring said it over-counts "in the
+    safe direction" because a repo shipping both a consolidated checkpoint and its sharded
+    equivalent — *"(Mistral's do)"* — has both on disk while the loader reads ONE. That was
+    true right up to the day the repo doing it became the **only repo we ship**: the doubled
+    figure (~3.3 GB counted twice, plus the load margin) spent the whole post-weights budget
+    and floored `max_model_len` at 2048 **whatever the KV cost per token was** — so the whole
+    2026-08-13 KV-derivation fix was invisible behind it. GENERAL FORM: a known over-count
+    documented as harmless is a finding waiting for its population to shrink to one; group
+    the mutually-exclusive alternatives and take the MAX, which keeps the safe direction
+    without paying for it twice. **THE FOURTH DEFECT IS WHY IT TOOK A ROUND TRIP:** the
+    diagnostics context block called `compute_server_args` with neither the checkpoint's KV
+    cost nor its measured footprint, so it always described the FALLBACK derivation — a
+    start no machine performs — and reported *"this model's own shape could not be read"*
+    about a machine whose shape had never been looked at. When a report publishes a
+    DERIVATION, it must be handed the same inputs the production path uses, and publish
+    those inputs beside the outputs; otherwise the export cannot distinguish a machine that
+    failed to read its checkpoint from a reader that was never called.
 
 ## Open queue (when maintainer says proceed)
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS

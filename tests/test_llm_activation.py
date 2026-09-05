@@ -757,25 +757,62 @@ def test_utilization_never_gets_more_aggressive_as_the_card_gets_smaller():
     — the ones this app is designed around — got the least headroom.
 
     STRICT direction, per the recorded lesson that a monotonicity assertion over a
-    clamped value is satisfied by the constant it exists to catch."""
+    clamped value is satisfied by the constant it exists to catch.
+
+    WITHIN A MODE since 2026-09-05, and the qualification is the honest part rather
+    than a relaxation. Eager and capture cards hold back different reserves for a
+    principled reason -- eager allocates no graph pool, so it reserves only for
+    fragmentation -- so the two series are not one series, and comparing across the
+    threshold would fire on a difference that is a decision, not a defect. The property
+    the guard exists for is unchanged and is asserted TWICE: within each mode, a
+    smaller card must never be handed a greedier fraction.
+    """
+    from src.llm.vllm_lifecycle import _EAGER_MAX_VRAM_GB, compute_server_args
+
+    eager_cards = (2048, 4096, 6144, 8192, 10240)
+    capture_cards = (12288, 16384, 24576, 81920)
+    for mb in eager_cards:
+        assert mb / 1024.0 <= _EAGER_MAX_VRAM_GB, "fixture drifted past the eager threshold"
+    for mb in capture_cards:
+        assert mb / 1024.0 > _EAGER_MAX_VRAM_GB, "fixture drifted below the eager threshold"
+
+    for label, cards in (("eager", eager_cards), ("capture", capture_cards)):
+        seen = [compute_server_args(mb)["gpu_memory_utilization"] for mb in cards]
+        assert seen == sorted(seen), f"{label}: utilization must not rise as VRAM falls: {seen}"
+        assert seen[0] < seen[-1], f"{label}: and it must actually VARY, not be a constant"
+
+
+def test_a_capture_card_still_keeps_the_full_graph_pool_reserve():
+    """The measurement this constant came from: on an 8 GiB card the old rule left
+    0.48 GiB free and CUDA-graph capture died at 86% of 51 graphs. Nothing measured
+    capture succeeding, so the reserve that guards it is untouched wherever capture
+    actually happens -- the 2026-09-05 reclaim is scoped to eager mode, where the pool
+    is never allocated at all."""
     from src.llm.vllm_lifecycle import compute_server_args
 
-    seen = [compute_server_args(mb)["gpu_memory_utilization"]
-            for mb in (4096, 6144, 8192, 12288, 16384, 24576, 81920)]
-    assert seen == sorted(seen), f"utilization must not rise as VRAM falls: {seen}"
-    assert seen[0] < seen[-1], "and it must actually VARY, not be a constant"
-
-
-def test_the_field_card_gets_real_headroom_now():
-    """The measurement: on this 8 GiB card the old rule left 0.48 GiB free and CUDA-graph
-    capture died at 86% of 51 graphs. The reserve is absolute because the graph pool
-    scales with the model and the graph count, not with the card."""
-    from src.llm.vllm_lifecycle import compute_server_args
-
-    a = compute_server_args(8192)
-    free_gb = 8.0 * (1.0 - a["gpu_memory_utilization"])
+    a = compute_server_args(12288)  # above _EAGER_MAX_VRAM_GB, so graphs are captured
+    assert a["enforce_eager"] is False
+    free_gb = 12.0 * (1.0 - a["gpu_memory_utilization"])
     assert free_gb > 1.0, f"only {free_gb:.2f} GiB left for graph capture"
     assert a["gpu_memory_utilization"] <= 0.90, "never more aggressive than vLLM's own default"
+
+
+def test_the_eager_field_card_claims_the_headroom_it_measured_free():
+    """RULED 2026-09-05 on the field measurement `_GRAPH_POOL_RESERVE_GB`'s own
+    docstring asked for. The card ran eager at gpu_memory_utilization 0.77 and peaked
+    at 6294 MiB of 8188 -- 76.9% -- while refusing 4057-token prompts, so ~1.9 GB sat
+    unclaimed behind a reserve sized for a graph pool eager mode never allocates.
+
+    The bar is the maintainer's own: at least the ~1 GB they identified as available,
+    and never past vLLM's own 0.90 default."""
+    from src.llm.vllm_lifecycle import compute_server_args
+
+    a = compute_server_args(8188, vram_free_mb=7841)
+    assert a["enforce_eager"] is True
+    claimed_mb = a["gpu_memory_utilization"] * 8188
+    assert claimed_mb - 6294 >= 900, f"only {claimed_mb - 6294:.0f} MiB more than the field peak"
+    assert a["gpu_memory_utilization"] <= 0.90, "never more aggressive than vLLM's own default"
+    assert "eager mode captures no CUDA graphs" in a["method"]
 
 
 def test_but_the_context_length_the_field_proved_works_is_not_regressed():

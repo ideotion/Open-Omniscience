@@ -254,6 +254,136 @@ def test_an_unreadable_config_returns_None_never_a_guess(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
+#  1b. FIELD REPORT 2026-09-04. The one model this app ships reported "this model's
+#      own shape could not be read", ran a 2048-token window on an 8 GiB card, and
+#      failed every 4057-token synthesis call. Three separate things could produce
+#      that; each has a test here, and none of them could be told apart from the
+#      export, which is itself the fourth.
+# --------------------------------------------------------------------------- #
+
+#: The same shape in Mistral's OWN vocabulary. `_LOADER_CONFIG_FILES` -- the loader's
+#: stated precondition, which `_loadable_revision` already honours -- is
+#: ("config.json", "params.json"), and Mistral publishes the second; `kv_mb_per_token`
+#: opened only the first, so such a checkpoint resolved and then read as unmeasurable.
+MINISTRAL_3B_PARAMS_JSON = {
+    "dim": 3072,
+    "n_layers": 26,
+    "n_heads": 32,
+    "n_kv_heads": 8,
+    "head_dim": 128,
+    "vocab_size": 131072,
+    "max_seq_len": 262144,
+}
+
+
+def _snapshot_named(tmp_path: Path, name: str, cfg: dict) -> str:
+    rev = tmp_path / "snapshots" / "rev0"
+    rev.mkdir(parents=True, exist_ok=True)
+    (rev / name).write_text(json.dumps(cfg), encoding="utf-8")
+    return str(tmp_path)
+
+
+def test_a_mistral_format_checkpoint_is_read_from_params_json(tmp_path):
+    """The same arithmetic under the other published vocabulary -- and it must land on
+    the SAME number, because it is the same model."""
+    root = _snapshot_named(tmp_path, "params.json", MINISTRAL_3B_PARAMS_JSON)
+    with _with_snapshot(root):
+        mb, basis = kv_mb_per_token("mistralai/Ministral-3-3B-Instruct-2512")
+    assert mb == pytest.approx(MINISTRAL_3B_KV_MB)
+    assert basis["head_dim"] == 128 and basis["kv_heads"] == 8 and basis["layers"] == 26
+    assert basis["config_file"] == "params.json"
+    assert basis["max_position_embeddings"] == 262144
+
+
+def test_config_json_still_wins_when_both_are_present(tmp_path):
+    """Order is the loader's own, not ours: a repo carrying both must be read the way
+    vLLM reads it, so adding the second format cannot change the first's answer."""
+    root = _snapshot_named(tmp_path, "config.json", MINISTRAL_3B)
+    _snapshot_named(tmp_path, "params.json", {"n_layers": 99, "n_heads": 99,
+                                              "n_kv_heads": 99, "head_dim": 999})
+    with _with_snapshot(root):
+        mb, basis = kv_mb_per_token("mistralai/Ministral-3-3B-Instruct-2512")
+    assert mb == pytest.approx(MINISTRAL_3B_KV_MB)
+    assert basis["config_file"] == "config.json"
+
+
+def test_the_basis_says_WHICH_file_it_could_not_read(tmp_path):
+    """The reporting half. The field export could say the shape was unreadable and not
+    which file was missing or which field was absent, so the cause had to be inferred
+    from a vLLM startup banner instead of read -- and that cost a whole round trip."""
+    root = _snapshot_named(tmp_path, "config.json", {"unrelated": True})
+    with _with_snapshot(root):
+        basis = V.kv_basis("some/model")
+    assert basis["measured"] is False
+    assert "config.json" in basis["config_files_present"]
+    assert "layers" in basis["reason"] and "head dim" in basis["reason"]
+    assert basis["fallback_mb_per_token"] == V._KV_MB_PER_TOKEN
+
+    with _with_snapshot(_snapshot_named(tmp_path / "b", "params.json",
+                                        MINISTRAL_3B_PARAMS_JSON)):
+        ok = V.kv_basis("mistralai/Ministral-3-3B-Instruct-2512")
+    assert ok["measured"] is True and ok["mb_per_token"] == pytest.approx(MINISTRAL_3B_KV_MB)
+
+
+def test_a_repo_shipping_both_checkpoint_formats_is_not_counted_twice(tmp_path):
+    """THE ARITHMETICALLY SUFFICIENT CAUSE of the field's 2048.
+
+    Mistral repos ship a consolidated checkpoint AND its sharded equivalent; the loader
+    reads one. Summing both reported ~2x this 3B model's real weight, which spent the
+    whole post-weights budget and floored the window regardless of the KV figure -- the
+    old docstring called that over-count "safe", which it was until the repo doing it
+    became the only repo we ship."""
+    rev = tmp_path / "snapshots" / "rev0"
+    rev.mkdir(parents=True)
+    (rev / "params.json").write_text("{}", encoding="utf-8")
+    gib = 1024**3
+
+    def _sized(name: str, gb: float) -> None:
+        with (rev / name).open("wb") as fh:
+            fh.truncate(int(gb * gib))  # sparse: st_size is what the code reads
+
+    _sized("consolidated.safetensors", 3.3)
+    _sized("model-00001-of-00002.safetensors", 1.7)
+    _sized("model-00002-of-00002.safetensors", 1.6)
+
+    with _with_snapshot(str(tmp_path)):
+        got = V.measured_weight_gb("mistralai/Ministral-3-3B-Instruct-2512")
+    assert got == pytest.approx(3.3, abs=0.05), "one copy of the model, not both"
+    assert got < 5.0, "and under the conservative class default it replaces"
+
+
+def test_a_single_format_repo_is_summed_exactly_as_before(tmp_path):
+    """The negative-space twin: grouping must not turn a genuinely sharded checkpoint
+    into its largest shard. Every shard of one format is still added together."""
+    rev = tmp_path / "snapshots" / "rev0"
+    rev.mkdir(parents=True)
+    (rev / "config.json").write_text("{}", encoding="utf-8")
+    for i, gb in ((1, 1.7), (2, 1.6)):
+        with (rev / f"model-0000{i}-of-00002.safetensors").open("wb") as fh:
+            fh.truncate(int(gb * (1024**3)))
+    with _with_snapshot(str(tmp_path)):
+        assert V.measured_weight_gb("some/sharded") == pytest.approx(3.3, abs=0.05)
+
+
+def test_the_de_double_counted_footprint_lifts_the_window_off_the_floor():
+    """What the three fixes buy together on the field card, in the units the report
+    quoted: 8188 MiB with 7841 free, which is what the running server was started
+    from. The doubled footprint alone floored it at 2048 whatever the KV cost was."""
+    doubled = compute_server_args(
+        8188, vram_free_mb=7841, weight_footprint_gb=7.1,
+        kv_mb_per_token=MINISTRAL_3B_KV_MB, model_max_tokens=262144,
+    )
+    assert doubled["max_model_len"] == 2048, "the floor the field machine ran on"
+
+    fixed = compute_server_args(
+        8188, vram_free_mb=7841, weight_footprint_gb=3.8,  # measured 3.3 + load margin
+        kv_mb_per_token=MINISTRAL_3B_KV_MB, model_max_tokens=262144,
+    )
+    assert fixed["max_model_len"] >= 16384, "big enough for the 4057-token prompts that failed"
+    assert fixed["max_model_len"] <= 262144, "and never past what the checkpoint supports"
+
+
+# --------------------------------------------------------------------------- #
 #  2. What that does to the window.
 # --------------------------------------------------------------------------- #
 
@@ -280,13 +410,13 @@ def test_the_field_machine_stops_hitting_the_2048_floor():
         assert measured["max_model_len"] >= 8192, "big enough to carry an article"
         assert "config" in measured["method"]
 
-    # ...and the honest other end: a card with under ~6.5 GB free has nothing left
-    # after the weights and the graph pool, so it goes BACK to the floor. That is not
-    # the reported defect returning -- it is the one case where 2048 was always true,
-    # and publishing more would be a window built on memory the utilization already
-    # declined to claim.
+    # ...and the honest other end: a card with barely more free than the weights has
+    # nothing left after them and the fragmentation reserve, so it goes BACK to the
+    # floor. That is not the reported defect returning -- it is the one case where 2048
+    # was always true, and publishing more would be a window built on memory the
+    # utilization already declined to claim.
     tight = compute_server_args(
-        8192, vram_free_mb=int(6.0 * 1024),
+        8192, vram_free_mb=int(5.6 * 1024),
         kv_mb_per_token=MINISTRAL_3B_KV_MB, model_max_tokens=262144,
     )
     assert tight["max_model_len"] == 2048
@@ -314,7 +444,11 @@ def test_the_published_equation_reproduces_the_published_number():
         weight_footprint_gb=weights, kv_mb_per_token=MINISTRAL_3B_KV_MB,
         model_max_tokens=262144,
     )
-    reserve = max(V._GRAPH_POOL_RESERVE_GB, 8.0 * 0.10)
+    # WHICH reserve, per the mode this card is actually in: an 8 GiB card runs eager
+    # (see `_EAGER_MAX_VRAM_GB`), where no CUDA-graph pool is ever allocated, so the
+    # equation must quote the eager reserve it really subtracted -- quoting the capture
+    # reserve here would be the exact defect this test exists to catch, one mode over.
+    reserve = max(V._EAGER_GRAPH_POOL_RESERVE_GB, 8.0 * 0.05)
     for term in (f"{free_gb} GB available", f"{weights} GB for weights",
                  f"{reserve} GB held back", "15% headroom",
                  f"{MINISTRAL_3B_KV_MB} MB/token", "262144-token limit"):

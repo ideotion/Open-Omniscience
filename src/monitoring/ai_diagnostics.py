@@ -97,15 +97,71 @@ def _context_settings(backend_facts: dict, corpus: dict | None = None) -> dict:
             "reason": "the backend probe failed, so nothing was observed about vLLM here",
         }
     elif vllm_installed:
-        from src.llm.vllm_lifecycle import compute_server_args
+        from src.llm.ollama import DEFAULT_VLLM_MODEL
+        from src.llm.vllm_lifecycle import (
+            _DEFAULT_WEIGHT_GB,
+            _KV_MB_PER_TOKEN,
+            _WEIGHT_LOAD_MARGIN_GB,
+            compute_server_args,
+            kv_basis,
+            measured_weight_gb,
+        )
 
+        # THE MODEL'S OWN FACTS, not the class defaults (2026-09-05). This called
+        # `compute_server_args` with neither the checkpoint's KV cost nor its measured
+        # weight footprint, so the block always described the FALLBACK derivation --
+        # a start no machine performs, since `start()` reads both. The 2026-09-04 field
+        # export therefore reported "this model's own shape could not be read" on a
+        # machine whose shape had never been looked at, and the running server's real
+        # `max_model_len` differed from the published one with nothing to explain it.
+        # A bundle exists to show what would really happen.
+        # The model vLLM would actually be started with -- `active_model("vllm")` is
+        # the provisioning answer (what this machine will serve with once its backend
+        # is up), which is the question a context budget is about; routing is a
+        # different question and is not this one.
+        try:
+            from src.api.llm import active_model
+
+            model = active_model("vllm") or DEFAULT_VLLM_MODEL
+        except Exception:  # noqa: BLE001 - a diagnostic must degrade, never raise
+            model = DEFAULT_VLLM_MODEL
+        basis = kv_basis(model)
+        kv_mb = basis.get("mb_per_token") if basis.get("measured") else _KV_MB_PER_TOKEN
+        try:
+            measured_gb = measured_weight_gb(model)
+        except Exception:  # noqa: BLE001 - a diagnostic must degrade, never raise
+            measured_gb = None
+        footprint = (
+            round(measured_gb + _WEIGHT_LOAD_MARGIN_GB, 2)
+            if measured_gb is not None
+            else _DEFAULT_WEIGHT_GB
+        )
         # The free figure too (2026-08-05): on a machine sharing one card with Ollama,
         # a budget reported from the TOTAL describes a start that would be refused, and
         # a bundle exists to show what would really happen. Read at bundle time, so it
         # is a snapshot of that moment -- the `method` says so when it narrowed.
         out["vllm"] = compute_server_args(
-            gpu.get("vram_mb"), vram_free_mb=gpu.get("vram_free_mb")
+            gpu.get("vram_mb"),
+            vram_free_mb=gpu.get("vram_free_mb"),
+            weight_footprint_gb=footprint,
+            kv_mb_per_token=kv_mb or _KV_MB_PER_TOKEN,
+            model_max_tokens=basis.get("max_position_embeddings"),
         )
+        # The DERIVATION's own inputs, beside the numbers they produced -- so a machine
+        # still on the fallback constant says WHICH file it could not read rather than
+        # only that it could not, which is what cost a round trip.
+        out["vllm"]["model"] = model
+        out["vllm"]["kv_per_token"] = basis
+        out["vllm"]["weights_gb"] = {
+            "used": footprint,
+            "measured": measured_gb,
+            "load_margin_gb": _WEIGHT_LOAD_MARGIN_GB,
+            "source": (
+                "the checkpoint's own weight files plus a load margin"
+                if measured_gb is not None
+                else "the conservative class default (nothing measurable on disk)"
+            ),
+        }
     else:
         out["vllm"] = {"available": False, "reason": "vLLM is not installed"}
 

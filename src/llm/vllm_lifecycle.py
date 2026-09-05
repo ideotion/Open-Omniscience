@@ -984,6 +984,30 @@ _KV_DTYPE_FALLBACK_BYTES = 2.0
 #: second is much worse -- the same asymmetry ``weight_footprint_gb`` already reasons from.
 _GRAPH_POOL_RESERVE_GB = 1.5
 
+#: The reserve UNDER EAGER MODE, where there is no capture pool to reserve for.
+#:
+#: RULED 2026-09-05 by the maintainer, on the measurement :data:`_GRAPH_POOL_RESERVE_GB`'s
+#: own docstring asked for: *"If context length on small cards ever needs the room,
+#: measure first."* It now has been. The field machine (RTX 4070 Laptop, 8188 MiB) ran
+#: `enforce_eager` with `gpu_memory_utilization: 0.77` and peaked at **6294 MiB of 8188
+#: -- 76.9%**, started cleanly and served for a day without an allocation failure. So on
+#: that card the 1.5 GiB reserve left ~1.9 GB permanently unclaimed while the server was
+#: refusing 4057-token prompts, and the maintainer ruled that headroom be used.
+#:
+#: WHY IT IS SAFE TO RECLAIM ONLY HERE. The 1.5 GiB is sized for the CUDA-graph capture
+#: pool, and under `--enforce-eager` that pool is never allocated -- vLLM's own log says
+#: so ("Cudagraph is disabled under eager mode"). What remains is allocator
+#: fragmentation, which is real but far smaller. Capture mode keeps the full 1.5 GiB
+#: unchanged: that is the number an actual capture failure produced, and nothing here
+#: measured capture.
+#:
+#: STILL BOUNDED BY UPSTREAM. :data:`_MAX_GPU_UTILIZATION` (0.90, vLLM's own default) is
+#: untouched, so this can move the request toward that ceiling and never past it -- the
+#: standing rule that being bolder than upstream on the smallest hardware is the wrong
+#: direction to be bold in. And the budget still tracks what is actually FREE, so a card
+#: holding a display server (or another model) narrows itself rather than over-asking.
+_EAGER_GRAPH_POOL_RESERVE_GB = 0.5
+
 #: Never exceed vLLM's OWN documented default. Being more aggressive than upstream on
 #: the smallest cards -- which is what shipped -- is the wrong direction to be bold in.
 _MAX_GPU_UTILIZATION = 0.90
@@ -1127,11 +1151,12 @@ def compute_server_args(
     # got a different answer than the one published beside it. A derivation that shows
     # its work and gets it wrong is worse than one that shows none -- the reader can
     # check it, and checking it finds the app contradicting itself.
-    util_clause = (
-        f"gpu_memory_utilization = 1 − max({_GRAPH_POOL_RESERVE_GB} GB, 10% of VRAM) / VRAM, "
-        f"capped at {_MAX_GPU_UTILIZATION} (vLLM's own default) — the reserve is what CUDA-graph "
-        f"capture and fragmentation need, which does not shrink with the card. "
-    )
+    # COMPOSED DOWN IN THE DERIVATION since 2026-09-05, for the reason the comment
+    # above already gives about the length clause: the reserve now depends on whether
+    # graphs are captured, so a clause written up here would quote a term the code did
+    # not subtract for half of all machines. Set to the operator sentence only when the
+    # value really is theirs.
+    util_clause = "gpu_memory_utilization set by the operator. "
     eager_clause = (
         f"enforce_eager (skip CUDA-graph capture) is set at or below {_EAGER_MAX_VRAM_GB} GB of "
         f"VRAM and left off above it — capture died at 86% of 51 graphs on an 8 GiB card, and "
@@ -1193,7 +1218,17 @@ def compute_server_args(
     # too: leaving it inside would make an operator-set gpu_memory_utilization raise
     # NameError on the very next block -- a start that fails for a reason that has
     # nothing to do with the override.
-    reserve_gb = max(_GRAPH_POOL_RESERVE_GB, vram_gb * 0.10)
+    # EAGER MODE RECLAIMS THE CAPTURE POOL (2026-09-05, maintainer ruling on the field
+    # measurement). Under --enforce-eager vLLM never allocates the graph pool, so the
+    # only thing the reserve still has to cover is fragmentation; holding back the full
+    # capture-sized 1.5 GiB there left ~1.9 GB unclaimed on a card whose server was
+    # simultaneously refusing 4057-token prompts. The percentage floor drops with it
+    # (5% rather than 10%) for the same reason -- both terms exist to size a pool that,
+    # in this mode, is not created.
+    if eager:
+        reserve_gb = max(_EAGER_GRAPH_POOL_RESERVE_GB, vram_gb * 0.05)
+    else:
+        reserve_gb = max(_GRAPH_POOL_RESERVE_GB, vram_gb * 0.10)
     gpu_util = gpu_memory_utilization_override
     if gpu_util is None:
         # The RESERVE comes off the free figure, but the FRACTION is still of the total
@@ -1208,6 +1243,21 @@ def compute_server_args(
         # number that `start()` turns into a named refusal, not a comfortable-looking one.
         floor = 0.05 if narrowed else 0.50
         gpu_util = round(min(_MAX_GPU_UTILIZATION, max(floor, (free_gb - reserve_gb) / vram_gb)), 2)
+        # Quotes the terms THIS branch actually used, including which reserve and why
+        # -- a reader dividing the printed numbers must reach the printed result.
+        util_clause = (
+            f"gpu_memory_utilization = ({round(free_gb, 1)} GB available − "
+            f"{round(reserve_gb, 2)} GB reserve) ÷ {round(vram_gb, 1)} GB of VRAM, capped at "
+            f"{_MAX_GPU_UTILIZATION} (vLLM's own default)"
+            + (
+                " — the reserve covers allocator fragmentation only, because eager mode "
+                "captures no CUDA graphs and so allocates no graph pool"
+                if eager
+                else " — the reserve is what CUDA-graph capture and fragmentation need, "
+                "which does not shrink with the card"
+            )
+            + ". "
+        )
     max_len = max_model_len_override
     if max_len is None:
         # UNIT CORRECTED 2026-08-02. The 0.5 MB figure is per TOKEN, not per 1K
@@ -1278,7 +1328,14 @@ def compute_server_args(
         len_clause = (
             f"max_model_len = ({round(free_gb, 1)} GB available − {weight_footprint_gb} GB "
             f"for weights"
-            + (f" − {round(reserve_gb, 1)} GB held back for the graph pool" if measured_kv else "")
+            + (
+                (
+                    f" − {round(reserve_gb, 2)} GB held back for "
+                    + ("fragmentation" if eager else "the graph pool")
+                )
+                if measured_kv
+                else ""
+            )
             + f", less {kv_cache_reserve_frac:.0%} headroom) ÷ {kv_mb_per_token} MB/token "
             + (
                 "(this model's own layers x KV heads x head dim, read from its config)"
@@ -2826,36 +2883,65 @@ def measured_weight_gb(model: str) -> float | None:
     the blob and once as the link. A doubled figure that happens to produce a safe
     answer is not a measurement.
 
-    Counted here: files under the loadable snapshot revision whose suffix is a weight
-    format, deduplicated by RESOLVED path so a blob reached through a link is one file.
+    Counted here: files under the LOADABLE snapshot revision whose suffix is a weight
+    format, deduplicated by RESOLVED path so a blob reached through a link is one file,
+    and grouped by checkpoint FORMAT so the two copies of one model are not added
+    together.
 
-    KNOWN TO OVER-COUNT, in the safe direction: a repo shipping both a consolidated
-    checkpoint and its sharded equivalent (Mistral's do) has both on disk while the
-    loader reads one. Over-reserving costs context length; under-reserving costs an
-    OOM at startup, and on a small card the second failure is much worse -- the same
-    asymmetry ``weight_footprint_gb`` already reasons from.
+    THE SUM WAS DOUBLE-COUNTING THE MODEL THIS APP SHIPS (fixed 2026-09-05). The old
+    note called the over-count "safe" -- a repo shipping both a consolidated checkpoint
+    and its sharded equivalent "(Mistral's do)" has both on disk while the loader reads
+    ONE -- and that was true right up to the point where the repo doing it became the
+    only repo we ship. On the field card the doubled figure (~3.3 GB of fp8 weights
+    counted twice, plus the load margin) spent essentially the whole post-weights budget
+    and floored ``max_model_len`` at 2048 whatever the KV cost per token was, which is
+    what the machine was running: a window too small to accept a 4057-token prompt.
+    "Conservative" stops being conservative once it decides every machine.
+
+    STILL THE SAFE DIRECTION, just not doubly so. Each format group is SUMMED (a sharded
+    checkpoint really is all of its shards) and the groups are compared with MAX, never
+    added: the loader reads one group, so the largest is an upper bound on what it will
+    read, and the file-bytes-plus-margin reasoning above is untouched. Only the loadable
+    revision is walked, so a second cached revision of the same repo no longer inflates
+    the figure either.
     """
-    state = model_cache_state(model)
-    if not state.get("cached") or not state.get("path"):
+    rev = _loadable_revision(model)
+    if rev is None:
         return None
-    snaps = Path(state["path"]) / "snapshots"
-    seen: dict[Path, int] = {}
+    groups: dict[str, dict[Path, int]] = {}
     try:
-        for rev in snaps.iterdir() if snaps.is_dir() else []:
-            if not rev.is_dir():
+        for f in rev.rglob("*"):
+            if f.suffix.lower() not in _WEIGHT_SUFFIXES:
                 continue
-            for f in rev.rglob("*"):
-                if f.suffix.lower() not in _WEIGHT_SUFFIXES:
-                    continue
-                try:
-                    real = f.resolve()
-                    seen[real] = real.stat().st_size
-                except OSError:
-                    continue
+            try:
+                real = f.resolve()
+                size = real.stat().st_size
+            except OSError:
+                continue
+            groups.setdefault(_weight_format_group(f.name), {})[real] = size
     except OSError:
         return None
-    total = sum(seen.values())
+    if not groups:
+        return None
+    total = max(sum(files.values()) for files in groups.values())
     return round(total / (1024**3), 2) if total else None
+
+
+def _weight_format_group(name: str) -> str:
+    """Which checkpoint FORMAT a weight file belongs to.
+
+    The loader reads exactly one of these, so they are compared rather than summed.
+    Deliberately coarse: an unrecognised name lands in ``"other"`` and is summed with
+    its peers, which is the old behaviour for every repo that ships a single format.
+    """
+    low = name.lower()
+    if low.startswith("consolidated"):
+        return "consolidated"
+    if low.endswith(".gguf"):
+        return "gguf"
+    if low.endswith(".bin") or low.startswith("pytorch_model"):
+        return "torch-bin"
+    return "other"
 
 
 def _loadable_revision(model: str) -> Path | None:
@@ -2900,37 +2986,95 @@ def kv_mb_per_token(model: str) -> tuple[float, dict] | None:
 
     ``head_dim`` is read explicitly when present (newer configs publish it, and it is
     NOT always ``hidden_size // num_attention_heads``) and derived otherwise.
+
+    BOTH CHECKPOINT FORMATS SINCE 2026-09-05, and that is the field fix. This read
+    ``config.json`` only, while :data:`_LOADER_CONFIG_FILES` -- the loader's own stated
+    precondition, which :func:`_loadable_revision` already honours -- is
+    ``("config.json", "params.json")``. Mistral publishes its repos in the second
+    format, under a different vocabulary (``n_layers``/``n_heads``/``n_kv_heads``/
+    ``dim``), so on such a checkpoint the revision resolved, the open failed, and the
+    whole derivation fell back to the 7B-class constant. The field machine reported
+    exactly that -- *"this model's own shape could not be read"* -- on the ONE model
+    this app ships, and paid ~5x its real cost per token for it: a 2048-token window on
+    an 8 GiB card, which failed every synthesis call outright.
+
+    WHY THE REASON IS RETURNED AND NOT JUST THE NUMBER. A silent None is what made this
+    cost a round trip: the report could say the shape was unreadable but not WHICH file
+    was missing or WHICH field was absent, so the next export could not settle it
+    either. :func:`kv_basis` publishes the reason, so a machine that still cannot read
+    its checkpoint says so specifically.
     """
+    return _kv_from_checkpoint(model)
+
+
+#: The transformer-shape fields, under BOTH published vocabularies: Hugging Face's
+#: ``config.json`` names and Mistral's ``params.json`` names. Same arithmetic either
+#: way -- only the spelling of the terms differs.
+_SHAPE_KEYS: dict[str, tuple[str, ...]] = {
+    "layers": ("num_hidden_layers", "n_layers"),
+    "heads": ("num_attention_heads", "n_heads"),
+    "kv_heads": ("num_key_value_heads", "n_kv_heads"),
+    "head_dim": ("head_dim",),
+    "hidden": ("hidden_size", "dim"),
+}
+
+
+def _kv_from_checkpoint(model: str) -> tuple[float, dict] | None:
+    """:func:`kv_mb_per_token`'s body; separated so :func:`kv_basis` can report the
+    REASON a read failed without a second, drifting implementation of the read."""
     rev = _loadable_revision(model)
     if rev is None:
         return None
-    try:
-        raw = (rev / "config.json").read_text(encoding="utf-8")
-    except OSError:
-        return None
-    try:
-        cfg = json.loads(raw)
-    except ValueError:
-        return None
-    if not isinstance(cfg, dict):
+    cfg: dict | None = None
+    read_from: str | None = None
+    tried: list[str] = []
+    for name in _LOADER_CONFIG_FILES:
+        try:
+            raw = (rev / name).read_text(encoding="utf-8")
+        except OSError:
+            tried.append(f"{name}: not present")
+            continue
+        try:
+            parsed = json.loads(raw)
+        except ValueError:
+            tried.append(f"{name}: not valid JSON")
+            continue
+        if not isinstance(parsed, dict):
+            tried.append(f"{name}: not a JSON object")
+            continue
+        cfg, read_from = parsed, name
+        break
+    if cfg is None or read_from is None:
         return None
     # Some repos nest the transformer config (multimodal wrappers put it under
-    # "text_config"); prefer the nested one when the top level lacks the fields.
-    for key in ("text_config", "language_config"):
+    # "text_config"); prefer the nested one when the top level lacks the fields. The
+    # shipped checkpoint is exactly this shape -- the shape under `text_config`, the
+    # dtype outside it, and a `vision_config` carrying its OWN num_hidden_layers, so
+    # merging the wrong block would size the KV cache from the vision tower.
+    for key in ("text_config", "language_config", "transformer"):
         inner = cfg.get(key)
-        if isinstance(inner, dict) and "num_hidden_layers" in inner:
+        if isinstance(inner, dict) and any(
+            k in inner for k in (*_SHAPE_KEYS["layers"], *_SHAPE_KEYS["heads"])
+        ):
             cfg = {**cfg, **inner}
             break
 
     def _pos_int(value: object) -> int | None:
         return int(value) if isinstance(value, int) and value > 0 else None
 
-    layers = _pos_int(cfg.get("num_hidden_layers"))
-    heads = _pos_int(cfg.get("num_attention_heads"))
-    kv_heads = _pos_int(cfg.get("num_key_value_heads")) or heads
-    head_dim = _pos_int(cfg.get("head_dim"))
+    def _first(field: str) -> int | None:
+        for name in _SHAPE_KEYS[field]:
+            got = _pos_int(cfg.get(name))
+            if got is not None:
+                return got
+        return None
+
+    layers = _first("layers")
+    heads = _first("heads")
+    kv_heads = _first("kv_heads") or heads
+    head_dim = _first("head_dim")
     if head_dim is None:
-        hidden = _pos_int(cfg.get("hidden_size"))
+        hidden = _first("hidden")
         head_dim = (hidden // heads) if (hidden and heads) else None
     if not (layers and kv_heads and head_dim):
         return None
@@ -2969,9 +3113,55 @@ def kv_mb_per_token(model: str) -> tuple[float, dict] | None:
         # exceeds it, so a budget that ignores it can compute a window that turns a
         # working start into a failed one -- and on a long-context model it is the
         # number that says how much room there is to ask for.
-        "max_position_embeddings": _pos_int(cfg.get("max_position_embeddings")),
-        "source": "the model's own config.json",
+        "max_position_embeddings": _pos_int(cfg.get("max_position_embeddings"))
+        or _pos_int(cfg.get("max_seq_len")),
+        # WHICH file it came from, not a generic phrase: the whole 2026-09-05 field
+        # round trip was spent not knowing which of the two the checkpoint carried.
+        "source": f"the model's own {read_from}",
+        "config_file": read_from,
     }
+
+
+def kv_basis(model: str) -> dict:
+    """The KV-per-token derivation for ``model``, or a stated REASON it is unavailable.
+
+    Read-only, no network, never raises. Exists so a diagnostics export answers "why
+    is this machine on the fallback constant" ON THE MACHINE, instead of costing
+    another round trip: the 2026-09-04 field report could say the shape was unreadable
+    and not which file was missing, so the fix had to be inferred from a vLLM startup
+    banner rather than read.
+    """
+    try:
+        rev = _loadable_revision(model)
+    except Exception as exc:  # noqa: BLE001 - a diagnostic must degrade, never raise
+        return {"measured": False, "reason": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    if rev is None:
+        return {
+            "measured": False,
+            "reason": (
+                "no loadable snapshot revision for this model on disk (nothing "
+                f"containing {' or '.join(_LOADER_CONFIG_FILES)})"
+            ),
+            "fallback_mb_per_token": _KV_MB_PER_TOKEN,
+        }
+    present = [n for n in _LOADER_CONFIG_FILES if (rev / n).is_file()]
+    try:
+        got = _kv_from_checkpoint(model)
+    except Exception as exc:  # noqa: BLE001
+        return {"measured": False, "reason": f"{type(exc).__name__}: {str(exc)[:120]}"}
+    if got is None:
+        return {
+            "measured": False,
+            "reason": (
+                "the checkpoint's transformer shape could not be read from "
+                + (", ".join(present) if present else "any config file")
+                + " (layers / KV heads / head dim)"
+            ),
+            "config_files_present": present,
+            "fallback_mb_per_token": _KV_MB_PER_TOKEN,
+        }
+    mb, basis = got
+    return {"measured": True, "mb_per_token": mb, "config_files_present": present, **basis}
 
 
 def model_cache_state(model: str) -> dict:
