@@ -3009,5 +3009,9 @@
   "Search the concept in every language": "Искать понятие на всех языках",
   "Show only the words I typed": "Показывать только введённые мной слова",
   "{term} also matched as the concept “{concept}”": "{term} также найдено как понятие «{concept}»",
-  "{term} denotes several concepts, so it was not expanded": "{term} обозначает несколько понятий, поэтому запрос не расширялся"
+  "{term} denotes several concepts, so it was not expanded": "{term} обозначает несколько понятий, поэтому запрос не расширялся",
+  "Search one of them:": "Искать одно из них:",
+  "{term}: searching the concept “{concept}”, which you chose": "{term}: поиск по выбранному вами понятию «{concept}»",
+  "Show all senses": "Показать все значения",
+  "The sense you chose is not one this word belongs to, so it was ignored.": "Выбранное вами значение не относится к этому слову и было проигнорировано."
 }

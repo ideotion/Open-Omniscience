@@ -1069,6 +1069,10 @@
     // captured params because it is a LENS on the current corpus, like the sort — flipping
     // it must not re-run the whole analysis.
     let _anExpand = true;
+    // {normalized term: ring id} -- the reader's answers to the several-senses refusal
+    // (R2a: the reader picks the sense). Keyed on the NORMALIZED term the payload
+    // publishes, so the key the UI sends is the key the ring index is built on.
+    let _anSenses = {};
     function _articleQuery(p) {
       const q = new URLSearchParams(p);
       const seeded = q.get("article_ids");
@@ -1079,6 +1083,11 @@
         if (!_anExpand) q.set("expand", "false");
         const lang = (window.OOI18N && OOI18N.current) ? OOI18N.current() : "";
         if (lang) q.set("ui_lang", lang);
+        // Repeatable, one per chosen term. Sent even when expansion is off would be
+        // meaningless (nothing is expanded), so it rides inside the same guard.
+        if (_anExpand) {
+          Object.keys(_anSenses).forEach((k) => q.append("sense", k + ":" + _anSenses[k]));
+        }
       }
       return q;
     }
@@ -1100,18 +1109,45 @@
       // interpolated after translation — OOI18N.tf, the composite-string discipline.
       const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : ((s2, v) =>
         String(s2).replace(/\{(\w+)\}/g, (m, k) => (v && v[k] != null) ? v[k] : m));
+      const langsOf = (term) => Object.entries(term.by_language || {})
+        .map(([lg, words]) => `${esc(lg)}: ${esc((words || []).join(", "))}`)
+        .join(" · ");
+      // A pin that named a ring the term does not belong to. The search still ran, so the
+      // only dishonest thing available is silence: the reader would be looking at results
+      // for a concept they did not choose, believing they had chosen it.
+      const missNote = (term) => (term.pinned_ring && !term.pin_applied)
+        ? ` <span class="muted">${esc(t("The sense you chose is not one this word belongs to, so it was ignored."))}</span>`
+        : "";
       const parts = [];
       for (const term of (cross.terms || [])) {
-        if (term.expanded) {
-          const langs = Object.entries(term.by_language || {})
-            .map(([lg, words]) => `${esc(lg)}: ${esc((words || []).join(", "))}`)
-            .join(" · ");
+        if (term.pin_applied) {
+          // R2a, answered: the reader picked this sense, so the sentence says so rather
+          // than "also matched", which would read as something the app decided.
+          parts.push(`<div>${esc(tf("{term}: searching the concept “{concept}”, which you chose",
+            { term: term.term, concept: term.concept }))} — <span class="muted">${langsOf(term)}</span>`
+            + ` <button type="button" class="linkish" onclick="_anClearSense(${esc(JSON.stringify(term.normalized))})">`
+            + `${esc(t("Show all senses"))}</button></div>`);
+        } else if (term.expanded) {
           parts.push(`<div>${esc(tf("{term} also matched as the concept “{concept}”",
-            { term: term.term, concept: term.concept }))} — <span class="muted">${langs}</span></div>`);
+            { term: term.term, concept: term.concept }))} — <span class="muted">${langsOf(term)}</span>`
+            + missNote(term) + `</div>`);
         } else if (term.declined === "several-senses") {
-          const senses = (term.senses || []).map((s2) => `“${esc(s2.concept)}”`).join(", ");
+          // The refusal is honest and, on its own, a dead end: it names the concepts and
+          // leaves the reader nowhere to go. Each one is a button (R2a). The concept
+          // LABEL is data -- an English identifier derived from the ring id -- so it is
+          // interpolated, never keyed; only the frame around it translates.
+          const picks = (term.senses || []).map((s2) =>
+            `<button type="button" class="linkish"`
+            + ` onclick="_anPickSense(${esc(JSON.stringify(term.normalized))}, ${esc(JSON.stringify(s2.ring_id))})">`
+            + `“${esc(s2.concept)}”</button>`).join(" · ");
           parts.push(`<div>${esc(tf("{term} denotes several concepts, so it was not expanded",
-            { term: term.term }))}: <span class="muted">${senses}</span></div>`);
+            { term: term.term }))}. <span class="muted">${esc(t("Search one of them:"))}</span> ${picks}`
+            + missNote(term) + `</div>`);
+        } else if (term.pinned_ring) {
+          // No expansion and no refusal, but a pin was sent: the term touches no ring at
+          // all. Nothing else in this loop would render, so the rejected choice would
+          // vanish entirely.
+          parts.push(`<div>${esc(term.term)}${missNote(term)}</div>`);
         }
       }
       if (!parts.length) return "";
@@ -1124,6 +1160,18 @@
     }
     function _anSetExpand(on) {
       _anExpand = !!on;
+      if (_anArtParams) _anLoadArticles(_anArtParams, 0);
+    }
+    // R2a: the reader picks the sense, and the pick survives paging and re-sorting
+    // because it lives in the query the list rebuilds from, not in the rendered notice.
+    function _anPickSense(term, ringId) {
+      if (!term || !ringId) return;
+      _anSenses[term] = ringId;
+      if (_anArtParams) _anLoadArticles(_anArtParams, 0);
+    }
+    function _anClearSense(term) {
+      if (!term) return;
+      delete _anSenses[term];
       if (_anArtParams) _anLoadArticles(_anArtParams, 0);
     }
 

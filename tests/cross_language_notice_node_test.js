@@ -66,6 +66,20 @@ const DECLINED = {
   }],
 };
 
+const PINNED = {
+  expanded: true,
+  caveat: "This search matched the concept in every language the ring covers.",
+  terms: [{
+    term: "strom", normalized: "strom", expanded: true,
+    ring_id: "electricity", concept: "electricity", matched_language: "de",
+    added_terms: ["strommen", "elektrizitaet"],
+    by_language: { de: ["strommen", "elektrizitaet"] },
+    pinned_ring: "electricity", pin_applied: true,
+    senses: [{ ring_id: "electricity", concept: "electricity" },
+             { ring_id: "river", concept: "river" }],
+  }],
+};
+
 // 1. An expansion is NAMED, with its concept and its per-language members.
 {
   const html = _crossLangNotice(EXPANDED, false);
@@ -103,6 +117,54 @@ const DECLINED = {
   assert.strictEqual(_crossLangNotice(null, false), "", "a plain search must be silent");
   assert.strictEqual(_crossLangNotice({ expanded: false, terms: [] }, false), "",
     "an empty terms list must render nothing");
+}
+
+// 4b. R2a, THE PICK: a refusal names the concepts, and each one is a BUTTON. Without
+//     this the reader is told they must choose and given nothing to choose with -- the
+//     dead-end shape this project has a recorded lesson about.
+{
+  const html = _crossLangNotice(DECLINED, false);
+  assert.ok(/onclick="_anPickSense\(&quot;strom&quot;, &quot;electricity&quot;\)"/.test(html),
+    "the electricity sense is not pickable -- the refusal is still a dead end");
+  assert.ok(/onclick="_anPickSense\(&quot;strom&quot;, &quot;river&quot;\)"/.test(html),
+    "the river sense is not pickable");
+}
+
+// 4c. A CHOSEN sense says it was chosen, and offers the way back. "also matched" would
+//     read as something the app decided, which is the one thing R2a is about.
+{
+  const html = _crossLangNotice(PINNED, false);
+  assert.ok(html.includes("which you chose"),
+    "a chosen sense is rendered as if the app picked it");
+  assert.ok(html.includes("strommen") || html.includes("elektrizitaet"),
+    "the chosen concept's members are not shown");
+  assert.ok(/onclick="_anClearSense\(&quot;strom&quot;\)"/.test(html),
+    "no way back to the full list of senses");
+}
+
+// 4d. A pin that named a ring the term does not belong to is REPORTED. The search still
+//     ran, so silence would leave the reader looking at results for a concept they did
+//     not choose, believing they had chosen it.
+{
+  const missed = { expanded: true, caveat: "", terms: [{
+    term: "climate", normalized: "climate", expanded: true, ring_id: "climate",
+    concept: "climate", by_language: { fr: ["climat"] },
+    pinned_ring: "not-a-real-ring", pin_applied: false,
+  }] };
+  assert.ok(_crossLangNotice(missed, false).includes("was ignored"),
+    "a rejected pin renders as an ordinary expansion");
+}
+
+// 4e. The case that would otherwise VANISH: a pin on a term that touches no ring at all
+//     neither expands nor declines, so nothing else in the loop would draw it.
+{
+  const orphan = { expanded: false, caveat: "", terms: [{
+    term: "zblorp", normalized: "zblorp", expanded: false,
+    pinned_ring: "climate", pin_applied: false, senses: [],
+  }] };
+  const html = _crossLangNotice(orphan, false);
+  assert.ok(html.includes("zblorp") && html.includes("was ignored"),
+    "a rejected pin on an unringed term is silent");
 }
 
 // 5. The data is ESCAPED. A ring member is config-sourced, but a term is user-typed and

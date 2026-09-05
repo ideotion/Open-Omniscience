@@ -3009,5 +3009,9 @@
   "Search the concept in every language": "Rechercher le concept dans toutes les langues",
   "Show only the words I typed": "N'afficher que les mots que j'ai saisis",
   "{term} also matched as the concept “{concept}”": "{term} a aussi été trouvé en tant que concept « {concept} »",
-  "{term} denotes several concepts, so it was not expanded": "{term} désigne plusieurs concepts : la recherche n'a donc pas été élargie"
+  "{term} denotes several concepts, so it was not expanded": "{term} désigne plusieurs concepts : la recherche n'a donc pas été élargie",
+  "Search one of them:": "Rechercher l'un d'eux :",
+  "{term}: searching the concept “{concept}”, which you chose": "{term} : recherche du concept « {concept} », que vous avez choisi",
+  "Show all senses": "Afficher tous les sens",
+  "The sense you chose is not one this word belongs to, so it was ignored.": "Le sens que vous avez choisi n'est pas l'un de ceux de ce mot : il a été ignoré."
 }

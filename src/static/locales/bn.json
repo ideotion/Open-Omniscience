@@ -3009,5 +3009,9 @@
   "Search the concept in every language": "সব ভাষায় এই ধারণাটি খুঁজুন",
   "Show only the words I typed": "কেবল আমার লেখা শব্দগুলি দেখান",
   "{term} also matched as the concept “{concept}”": "{term} “{concept}” ধারণা হিসেবেও মিলেছে",
-  "{term} denotes several concepts, so it was not expanded": "{term} একাধিক ধারণা বোঝায়, তাই এটি সম্প্রসারিত করা হয়নি"
+  "{term} denotes several concepts, so it was not expanded": "{term} একাধিক ধারণা বোঝায়, তাই এটি সম্প্রসারিত করা হয়নি",
+  "Search one of them:": "এর একটি অনুসন্ধান করুন:",
+  "{term}: searching the concept “{concept}”, which you chose": "{term}: আপনার বাছাই করা ধারণা “{concept}” অনুসন্ধান করা হচ্ছে",
+  "Show all senses": "সব অর্থ দেখান",
+  "The sense you chose is not one this word belongs to, so it was ignored.": "আপনার বাছাই করা অর্থটি এই শব্দের নয়, তাই এটি উপেক্ষা করা হয়েছে।"
 }

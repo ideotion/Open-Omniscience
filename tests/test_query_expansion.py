@@ -28,6 +28,7 @@ from src.analytics.equivalence import (
     QueryExpander,
     expand_term,
     load_rings,
+    parse_sense_pins,
     ring_matches,
 )
 from src.database.fts import build_match
@@ -262,3 +263,138 @@ def test_ring_matches_keeps_collisions_that_ring_of_loses() -> None:
     assert len(rings) > 1
     assert ring_of("de", "strom") in rings
     assert len({ring_of("de", "strom")}) == 1, "ring_of still collapses — as documented"
+
+
+# --------------------------------------------------------------------------- #
+# R2a: the reader picks the sense. The refusal above names the concepts; without
+# these it names them and leaves the reader nowhere to go, which is the dead-end
+# shape this project has a recorded lesson about.
+# --------------------------------------------------------------------------- #
+
+def test_a_pinned_sense_expands_the_term_the_refusal_would_not() -> None:
+    """The whole point: the same term, refused unpinned and expanded when chosen."""
+    refused = expand_term("wahl", prefer_language="de")
+    assert refused.declined == DECLINE_SEVERAL_SENSES and not refused.expanded
+    picked = sorted({m.ring_id for m in refused.matches})[0]
+
+    chosen = expand_term("wahl", prefer_language="de", pinned_ring=picked)
+    assert chosen.expanded, "a chosen sense must actually widen the search"
+    assert chosen.applied is not None and chosen.applied.ring_id == picked
+    assert chosen.declined is None
+    assert chosen.pin_applied is True and chosen.pin_missed is False
+
+
+def test_the_pin_can_only_ever_choose_among_the_terms_own_rings() -> None:
+    """The safety property, and the reason a pin may travel in a URL at all.
+
+    A pin naming a ring the term does not belong to must not reach the query. It falls
+    through to ordinary resolution -- so the search still runs, honestly refused -- and
+    the rejected choice is REPORTED rather than dropped, because a reader who believes
+    they chose a concept and silently got a different search has been told something
+    false by omission.
+    """
+    out = expand_term("wahl", prefer_language="de", pinned_ring="climate")
+    assert out.expanded is False
+    assert out.declined == DECLINE_SEVERAL_SENSES, "resolution continues as if unpinned"
+    assert out.pin_applied is False and out.pin_missed is True
+    assert out.to_dict()["pin_applied"] is False
+    # And it did not quietly borrow the named ring's vocabulary.
+    assert "climat" not in out.siblings
+
+
+def test_a_pin_outranks_the_ui_language_narrowing() -> None:
+    """``prefer_language`` narrows a guess; a pin is not a guess.
+
+    Without this the reader's own choice could be silently overruled by their locale --
+    the one thing a query-time choice exists to prevent.
+    """
+    rings = sorted({m.ring_id for m in ring_matches("wahl", languages=["de"])})
+    assert len(rings) > 1, "fixture assumes the measured de collision still stands"
+    for ring in rings:
+        out = expand_term("wahl", prefer_language="de", pinned_ring=ring)
+        assert out.applied is not None and out.applied.ring_id == ring
+
+
+def test_a_pin_answers_the_too_short_refusal_too() -> None:
+    """A lone character is refused for want of a concept. A pin supplies one.
+
+    Deliberate, and stated: the too-short rule exists so a stray letter cannot drag a
+    whole ring in BY ACCIDENT, and an explicit pin is the opposite of an accident.
+
+    The fixture is real rather than contrived -- the shipped table has 139 one-character
+    members, and the Latin ones (``q``, ``d``, both aliases in the drone ring) are exactly
+    the case the too-short rule was written for.
+    """
+    lone = next(
+        (t for r in load_rings() for lg, t in r.members
+         if len(t) == 1 and expand_term(t).declined == DECLINE_TOO_SHORT),
+        None,
+    )
+    if lone is None:  # pragma: no cover - the shipped table has 139 of them
+        pytest.skip("no single-character member reaches the too-short refusal here")
+    ring = ring_matches(lone)[0].ring_id
+
+    assert expand_term(lone).expanded is False
+    chosen = expand_term(lone, pinned_ring=ring)
+    assert chosen.expanded is True and chosen.pin_applied is True
+
+
+def test_a_pin_on_a_term_in_no_ring_is_still_reported() -> None:
+    """The case that would otherwise vanish.
+
+    The term neither expands nor declines, so it is not "interesting" by the ordinary
+    test and the disclosure would omit it entirely -- leaving a rejected choice invisible.
+    """
+    x = QueryExpander(pinned={"zzz-not-a-ring-member": "climate"})
+    build_match("zzz-not-a-ring-member", expand=x)
+    d = x.disclosure()
+    assert d is not None, "a rejected pin must never be silent"
+    row = d["terms"][0]
+    assert row["pinned_ring"] == "climate" and row["pin_applied"] is False
+
+
+def test_a_pinned_term_still_publishes_the_alternatives() -> None:
+    """A reader who has chosen a sense is the likeliest to want a different one."""
+    rings = sorted({m.ring_id for m in ring_matches("wahl", languages=["de"])})
+    out = expand_term("wahl", prefer_language="de", pinned_ring=rings[0])
+    payload = out.to_dict()
+    assert {s["ring_id"] for s in payload["senses"]} == set(rings)
+
+
+def test_the_pin_reaches_the_match_through_the_expander() -> None:
+    """The wiring, not the helper: build_match must actually OR the chosen ring in."""
+    rings = sorted({m.ring_id for m in ring_matches("wahl", languages=["de"])})
+    plain = QueryExpander(prefer_language="de")
+    pinned = QueryExpander(prefer_language="de", pinned={"wahl": rings[0]})
+    assert build_match("wahl", expand=plain) != build_match("wahl", expand=pinned)
+    assert " OR " in build_match("wahl", expand=pinned)
+
+
+def test_the_pin_key_is_the_normalized_term() -> None:
+    """`April` and `april` are ONE choice, not two that disagree."""
+    rings = sorted({m.ring_id for m in ring_matches("wahl", languages=["de"])})
+    x = QueryExpander(prefer_language="de", pinned={"WAHL": rings[0]})
+    build_match("wahl", expand=x)
+    assert x.disclosure()["terms"][0]["pin_applied"] is True
+
+
+def test_parse_sense_pins_splits_on_the_last_colon_and_drops_the_malformed() -> None:
+    assert parse_sense_pins(["Wahl:voting"]) == {"wahl": "voting"}
+    # A typed term may contain a colon; a ring id may not (pinned below), so the LAST
+    # colon is always the separator and the term keeps its own.
+    assert parse_sense_pins(["a:b:c"]) == {"a:b": "c"}
+    assert parse_sense_pins(["nocolon", "", ":x", "y:", None]) == {}
+    assert parse_sense_pins(None) == {}
+
+
+def test_no_ring_id_contains_a_colon() -> None:
+    """What makes ``rsplit(":", 1)`` correct rather than lucky.
+
+    Measured over every ring in the shipped tables when the pick was built. A future id
+    that breaks it reddens HERE, next to the parser that depends on it, rather than
+    silently mis-splitting a reader's choice.
+    """
+    ids = [r.id for r in load_rings()]
+    assert ids, "ring table present"
+    assert [r for r in ids if ":" in r] == []
+

@@ -3009,5 +3009,9 @@
   "Search the concept in every language": "البحث عن المفهوم بكل اللغات",
   "Show only the words I typed": "عرض الكلمات التي كتبتها فقط",
   "{term} also matched as the concept “{concept}”": "طوبق {term} أيضًا بوصفه المفهوم «{concept}»",
-  "{term} denotes several concepts, so it was not expanded": "يدل {term} على عدة مفاهيم، لذلك لم يجرِ توسيع البحث"
+  "{term} denotes several concepts, so it was not expanded": "يدل {term} على عدة مفاهيم، لذلك لم يجرِ توسيع البحث",
+  "Search one of them:": "ابحث عن أحدها:",
+  "{term}: searching the concept “{concept}”, which you chose": "{term}: البحث عن المفهوم “{concept}” الذي اخترته",
+  "Show all senses": "إظهار جميع المعاني",
+  "The sense you chose is not one this word belongs to, so it was ignored.": "المعنى الذي اخترته ليس من معاني هذه الكلمة، لذلك تم تجاهله."
 }

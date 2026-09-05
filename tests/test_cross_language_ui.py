@@ -112,3 +112,64 @@ def test_the_omnibar_disclosure_uses_keyed_templates_not_a_built_sentence():
         "{term} denotes several concepts, so it was not expanded",
     ):
         assert key in en, f"the omnibar renders {key!r} with no key behind it"
+
+
+def test_the_reader_s_sense_choice_reaches_the_request() -> None:
+    """R2a's wiring, and the half a node test cannot see.
+
+    The node suite drives the RENDERER, so it proves the pick buttons exist and call the
+    handlers. It says nothing about whether the handler's state ever leaves the browser.
+    This asserts the query builder actually sends it -- and sends it only under the same
+    text-query guard as the rest of R1, since a pin on an id-seeded corpus would name a
+    choice that does not exist there.
+    """
+    body = strip_comments(function_body(_analysis(), "_articleQuery"))
+    assert "_anSenses" in body, "the reader's sense choices never reach the request"
+    assert 'q.append("sense"' in body, "the pin is not sent as the repeatable sense param"
+    guarded = body.split('if (q.get("query"))', 1)
+    assert len(guarded) == 2 and "_anSenses" in guarded[1], (
+        "the pin is sent outside the text-query guard -- it would ride an id-seeded corpus"
+    )
+
+
+def test_choosing_a_sense_and_clearing_it_both_re_run_the_search() -> None:
+    """A pick that does not re-run is a label, not a search."""
+    analysis = strip_comments(_analysis())
+    for name in ("_anPickSense", "_anClearSense"):
+        body = function_body(analysis, name)
+        assert "_anLoadArticles" in body, f"{name} does not re-run the article list"
+        assert "_anSenses" in body, f"{name} does not touch the sense state"
+
+
+def test_a_rejected_pin_is_rendered_rather_than_swallowed() -> None:
+    """The endpoint reports a pin it could not apply; a surface that drops it lies.
+
+    Guarded on the KEY the notice renders, not merely on the field name appearing
+    somewhere: the payload field could be read and the sentence still never drawn.
+    """
+    body = strip_comments(function_body(_analysis(), "_crossLangNotice"))
+    assert "pin_applied" in body and "pinned_ring" in body
+    assert "The sense you chose is not one this word belongs to" in body
+
+
+def test_every_string_the_pick_renders_is_keyed_in_all_twelve_locales() -> None:
+    """A value-bearing sentence needs a keyable FRAME, and a frame needs all 12 files.
+
+    Adding a key to en.json alone leaves `--min 100` red, so this is the guard that
+    catches the half-done version rather than CI.
+    """
+    body = strip_comments(function_body(_analysis(), "_crossLangNotice"))
+    keys = [
+        "Search one of them:",
+        "{term}: searching the concept “{concept}”, which you chose",
+        "Show all senses",
+        "The sense you chose is not one this word belongs to, so it was ignored.",
+    ]
+    for key in keys:
+        assert key in body, f"{key!r} is not rendered"
+    locales = Path(__file__).resolve().parents[1] / "src/static/locales"
+    for path in sorted(locales.glob("*.json")):
+        table = json.loads(path.read_text(encoding="utf-8"))
+        for key in keys:
+            assert key in table, f"{path.name} has no entry for {key!r}"
+

@@ -3009,5 +3009,9 @@
   "Search the concept in every language": "Cari konsep ini dalam semua bahasa",
   "Show only the words I typed": "Tampilkan hanya kata yang saya ketik",
   "{term} also matched as the concept “{concept}”": "{term} juga cocok sebagai konsep “{concept}”",
-  "{term} denotes several concepts, so it was not expanded": "{term} menunjuk beberapa konsep, jadi tidak diperluas"
+  "{term} denotes several concepts, so it was not expanded": "{term} menunjuk beberapa konsep, jadi tidak diperluas",
+  "Search one of them:": "Cari salah satunya:",
+  "{term}: searching the concept “{concept}”, which you chose": "{term}: mencari konsep “{concept}” yang Anda pilih",
+  "Show all senses": "Tampilkan semua makna",
+  "The sense you chose is not one this word belongs to, so it was ignored.": "Makna yang Anda pilih bukan milik kata ini, sehingga diabaikan."
 }

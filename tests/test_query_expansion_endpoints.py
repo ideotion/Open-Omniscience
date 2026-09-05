@@ -168,3 +168,111 @@ def test_an_ordinary_search_carries_no_disclosure(client, ring_corpus):
     r = client.get("/api/articles", params={"query": "zblorptastic"}).json()
     assert r["total"] >= 3  # the seeded articles all carry the nonsense token
     assert "cross_language" not in r
+
+
+# --------------------------------------------------------------------------- #
+# R2a: the reader picks the sense. The refusal names the concepts; these prove the
+# pick reaches the SEARCH, not merely the sentence describing it.
+# --------------------------------------------------------------------------- #
+
+@pytest.fixture()
+def ambiguous_corpus(client):
+    """Two articles whose only shared word is one the reader never types.
+
+    ``wahl`` sits in three rings in the shipped table, and two of them --
+    ``public-election`` and ``voting`` -- carry 33 and 39 terms the other does not. So one
+    article written in each ring's private vocabulary makes the sense choice VISIBLE: an
+    unpinned search reaches neither, and each pin reaches exactly one.
+    """
+    from src.analytics.equivalence import expand_term, ring_matches
+    from src.database.models import Article, Source
+    from src.database.session import session_scope
+
+    rings = sorted({m.ring_id for m in ring_matches("wahl", languages=["de"])})
+    if len(rings) < 2:
+        pytest.skip("the measured `wahl` collision is gone from the shipped table")
+    vocab = {r: set(expand_term("wahl", prefer_language="de", pinned_ring=r).siblings)
+             for r in rings}
+    picked = {}
+    for ring, words in vocab.items():
+        others = set().union(*[w for k, w in vocab.items() if k != ring])
+        private = sorted(w for w in (words - others) if w.isalpha() and " " not in w)
+        if private:
+            picked[ring] = private[0]
+    if len(picked) < 2:
+        pytest.skip("no two `wahl` rings carry private single-word vocabulary")
+    pair = sorted(picked.items())[:2]
+
+    with session_scope() as s:
+        src = Source(name="Sensetest Gazette", domain="sensetest.example")
+        s.add(src)
+        s.flush()
+        arts = {}
+        for i, (ring, word) in enumerate(pair):
+            a = Article(
+                url=f"https://sensetest.example/{i}",
+                canonical_url=f"https://sensetest.example/{i}",
+                source_id=src.id,
+                title=f"Quixotrope {i}",
+                content=f"quixotrope reporting about {word} and nothing else",
+                language="de",
+                hash=f"sense{i}" + "e" * 58,
+                published_at=datetime.now(UTC),
+            )
+            s.add(a)
+            s.flush()
+            arts[ring] = a.id
+        out = {"src": src.id, "arts": arts, "words": dict(pair)}
+    yield out
+    with session_scope() as s:
+        for aid in out["arts"].values():
+            s.execute(text(f"DELETE FROM articles WHERE id = {aid}"))  # noqa: S608
+        s.execute(text(f"DELETE FROM sources WHERE id = {out['src']}"))  # noqa: S608
+
+
+def _ids(payload):
+    return {r["id"] for r in payload["results"]}
+
+
+def test_a_chosen_sense_changes_which_articles_match(client, ambiguous_corpus):
+    """The headline, in both directions.
+
+    Unpinned, the refusal holds and neither article is reached. Each pin reaches exactly
+    the article written in that concept's own vocabulary -- which is what makes the pick
+    a search rather than a label on one.
+    """
+    rings = sorted(ambiguous_corpus["arts"])
+    seeded = set(ambiguous_corpus["arts"].values())
+
+    plain = client.get("/api/articles", params={"query": "wahl", "ui_lang": "de"}).json()
+    assert plain["cross_language"]["terms"][0]["declined"] == "several-senses"
+    assert not (_ids(plain) & seeded), "the refusal must reach neither sense"
+
+    for ring in rings:
+        got = client.get("/api/articles", params={
+            "query": "wahl", "ui_lang": "de", "sense": f"wahl:{ring}",
+        }).json()
+        assert _ids(got) & seeded == {ambiguous_corpus["arts"][ring]}, ring
+        row = got["cross_language"]["terms"][0]
+        assert row["pin_applied"] is True and row["ring_id"] == ring
+
+
+def test_the_endpoint_reports_a_pin_it_could_not_apply(client, ring_corpus):
+    """A stale or hand-edited link must not read as a choice that was honoured."""
+    got = client.get("/api/articles", params={
+        "query": "climate", "ui_lang": "en", "sense": "climate:not-a-real-ring",
+    }).json()
+    row = got["cross_language"]["terms"][0]
+    assert row["pinned_ring"] == "not-a-real-ring"
+    assert row["pin_applied"] is False
+    # The search still ran, and ran as it would have unpinned.
+    assert row["expanded"] is True and row["ring_id"] == "climate"
+
+
+def test_a_pin_is_ignored_when_the_reader_asked_for_the_literal_term(client, ring_corpus):
+    """`expand=false` means exactly the words typed, and a leftover pin cannot undo that."""
+    got = client.get("/api/articles", params={
+        "query": "climate", "ui_lang": "en", "expand": "false", "sense": "climate:climate",
+    }).json()
+    assert "cross_language" not in got
+

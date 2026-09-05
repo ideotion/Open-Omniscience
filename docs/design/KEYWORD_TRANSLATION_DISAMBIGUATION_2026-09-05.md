@@ -813,12 +813,43 @@ it, treat `kind_overrides` as a worklist rather than a patch, and **keep the amb
 | 3b | Re-file the mis-filed month block out of `hi.yml` into `_multilingual.yml` | **✅ BUILT 2026-09-05** — and `ru.yml` carried a 61-entry Latin block the plan had not seen; both moved, set-identity proved by digest, a script guard added |
 | 4 | Ambiguity map from the existing Wikidata fetch + the triage's `ambiguous_language` | none. Mechanism + prior art confirmed by pass 2 (§6c.1(2)); **size unmeasured** — the one open number (§6c.5) |
 | 5 | Ring coverage expansion (more seeds) | operator: networked run. ru/hi/bn need a source OMW structurally cannot provide (§6b.1(3)) — the SKOS family covers ru+ar (§6b.3) |
-| 6 | Sense **inventory** (**R2** / **R2a**) | slices 2–4; own reviewed slice. **Permanently** the inventory half — RULED 2026-09-05, §6c.4 |
+| 6 | Sense **inventory** (**R2** / **R2a**) | slices 2–4; own reviewed slice. **Permanently** the inventory half — RULED 2026-09-05, §6c.4. **The CHOICE MECHANISM shipped early (§8c)**: R2a's pick runs today over the 91 ring-covered collisions. What is still gated is the inventory's COVERAGE, which needs the dump |
 | ~~6b~~ | ~~Sense linker + eval~~ | **evidence-refuted** (§6c.1(3)): 0.335 F1 on news, measured on the subset where an answer exists |
 | 7 | Synonym tier, separately disclosed | **answered NEGATIVE for OMW** (§6b.1(2)) — the translated synsets already contain hypernyms. Open only for the SKOS family, gated on its licence |
 | — | Per-language month scoping | **not free here**: a stopwords-architecture change, not a data file (§6c.2(a)), and it recovers 3 of 7 named losses (§6c.2(b)). Complement to slice 3, not a substitute |
 
 Slices 1, 2, 3b and 4 need no network, no new dependency, and no ruling.
+
+### 8c. R2a's pick shipped with slice 1, and why it did not wait for slice 6
+
+Slice 1 refuses to expand a term that denotes several concepts and lists them. That
+refusal is right — resolving a collision by dict order would pick a sense on the reader's
+behalf — and on its own it is a **dead end**: it tells the reader they must choose and
+gives them nothing to choose with. This repository has a recorded rule for exactly that
+shape (*before shipping an endpoint that answers "here is why, and here is how to
+proceed", grep for the caller that actually sends the proceed flag*), so the pick is part
+of the refusal rather than a later slice.
+
+**What shipped.** `expand_term(..., pinned_ring=)` and `QueryExpander(pinned=)`, a
+repeatable `sense=term:ring_id` parameter on `/api/articles`, and pick buttons in the
+analysis window's notice. The pin outranks both the UI-language narrowing and the refusal
+— it answers the question they exist to avoid guessing at — and it can only ever select
+among the rings the term **already belongs to**, so a stale or hand-edited link cannot
+widen a search into a concept the term does not carry. Such a pin falls through to
+ordinary resolution and is **reported**, because a reader who believes they chose a
+concept and silently got a different search has been told something false by omission.
+
+**What did NOT ship, and is not hidden by this.** The sense inventory's *coverage*. The
+rings know 91 within-language collisions; a corpus-wide surface-form → sense index is
+slice 4's Wikidata dump, still blocked on the allowlist. So the pick is complete as a
+mechanism and partial as a population: an ambiguous term the rings do not cover shows no
+senses, because there are none to show, not because it is unambiguous.
+
+**One honest limit in the rendering.** A ring's concept LABEL is an English identifier
+derived from its id (`public-election` → "public election"); the ring's *members* are
+per-language but its *name* is not. So the buttons a French reader sees are framed in
+French and labelled in English. Translating them would need a per-language label on each
+ring, which the generator does not emit — recorded rather than papered over.
 
 ### 8b. What slice 2 does and does not settle — read this before quoting its number
 

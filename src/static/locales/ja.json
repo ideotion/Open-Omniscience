@@ -3009,5 +3009,9 @@
   "Search the concept in every language": "すべての言語でこの概念を検索",
   "Show only the words I typed": "入力した語だけを表示",
   "{term} also matched as the concept “{concept}”": "{term} は概念「{concept}」としても一致しました",
-  "{term} denotes several concepts, so it was not expanded": "{term} は複数の概念を指すため、拡張しませんでした"
+  "{term} denotes several concepts, so it was not expanded": "{term} は複数の概念を指すため、拡張しませんでした",
+  "Search one of them:": "いずれかを検索:",
+  "{term}: searching the concept “{concept}”, which you chose": "{term}: あなたが選んだ概念「{concept}」を検索中",
+  "Show all senses": "すべての意味を表示",
+  "The sense you chose is not one this word belongs to, so it was ignored.": "選んだ意味はこの語に属さないため、無視されました。"
 }

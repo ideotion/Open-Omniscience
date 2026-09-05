@@ -36,7 +36,7 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Iterable
+from typing import Any, Callable, Iterable, Mapping
 
 import yaml
 
@@ -432,6 +432,7 @@ class TermExpansion:
     matches: tuple[RingMatch, ...]  # every candidate ring, never narrowed silently
     applied: RingMatch | None  # the one expanded through, or None
     declined: str | None  # a DECLINE_* reason when matches exist but none was applied
+    pinned_ring: str | None = None  # the sense the READER chose, if any (R2a)
 
     @property
     def siblings(self) -> tuple[str, ...]:
@@ -441,9 +442,32 @@ class TermExpansion:
     def expanded(self) -> bool:
         return bool(self.siblings)
 
+    @property
+    def pin_applied(self) -> bool:
+        """True when the sense the reader chose is the one that was searched."""
+        return bool(
+            self.pinned_ring
+            and self.applied is not None
+            and self.applied.ring_id == self.pinned_ring
+        )
+
+    @property
+    def pin_missed(self) -> bool:
+        """The reader asked for a sense this term does not belong to.
+
+        Disclosed rather than silently dropped. A pin travels in a URL, so it can be
+        stale (the ring file is regenerated), hand-edited, or simply wrong — and a
+        reader who believes they chose a concept, and silently got a different search,
+        has been told something false by omission.
+        """
+        return bool(self.pinned_ring) and not self.pin_applied
+
     def to_dict(self) -> dict:
         """The payload shape. Counts only, no score, and the method is stated."""
         out: dict = {"term": self.term, "normalized": self.normalized, "expanded": self.expanded}
+        if self.pinned_ring:
+            out["pinned_ring"] = self.pinned_ring
+            out["pin_applied"] = self.pin_applied
         if self.applied is not None:
             out["ring_id"] = self.applied.ring_id
             out["concept"] = self.applied.label
@@ -452,6 +476,11 @@ class TermExpansion:
             out["by_language"] = {k: list(v) for k, v in self.applied.by_language().items()}
         if self.declined:
             out["declined"] = self.declined
+        # The alternatives ride along for a REFUSAL and for a PIN alike: a reader who has
+        # chosen a sense is the one most likely to want a different one, and a surface
+        # that has to clear the pin and re-search to find out what else there was would
+        # be hiding a list it is already holding.
+        if self.declined or self.pinned_ring:
             out["senses"] = [
                 {
                     "ring_id": m.ring_id,
@@ -498,6 +527,7 @@ def expand_term(
     *,
     prefer_language: str | None = None,
     languages: Iterable[str] | None = None,
+    pinned_ring: str | None = None,
 ) -> TermExpansion:
     """Resolve ONE query term to at most one ring, keeping every candidate visible.
 
@@ -512,6 +542,15 @@ def expand_term(
     voting. Picking one would change which articles match on a coin flip and say
     nothing about it -- and picking the UNION would drag river vocabulary into a search
     about the power grid, just as silently.
+
+    ``pinned_ring`` is that choice, made (R2a: *the reader picks the sense and expansion
+    runs per-sense from the chosen QID*). It outranks BOTH the language narrowing and the
+    refusal, because it answers the exact question they exist to avoid guessing at -- the
+    too-short refusal included, since a lone character is refused for want of a concept
+    and a pin supplies one. What it can never do is REACH: it selects among the term's own
+    candidate rings and nothing else, so a stale, hand-edited or simply wrong pin cannot
+    expand a search into a concept the term does not carry. Such a pin falls through to
+    ordinary resolution and is reported by ``pin_missed`` rather than dropped in silence.
     """
     normalized = _norm(term)
     if not normalized or not _enabled():
@@ -519,11 +558,23 @@ def expand_term(
 
     matches = ring_matches(normalized, languages=languages)
     if not matches:
-        return TermExpansion(term=term, normalized=normalized, matches=(), applied=None, declined=None)
+        return TermExpansion(
+            term=term, normalized=normalized, matches=(), applied=None, declined=None,
+            pinned_ring=pinned_ring,
+        )
+
+    if pinned_ring:
+        chosen = tuple(m for m in matches if m.ring_id == pinned_ring)
+        if chosen:
+            return TermExpansion(
+                term=term, normalized=normalized, matches=matches, applied=chosen[0],
+                declined=None, pinned_ring=pinned_ring,
+            )
+
     if _too_short_to_expand(normalized):
         return TermExpansion(
             term=term, normalized=normalized, matches=matches, applied=None,
-            declined=DECLINE_TOO_SHORT,
+            declined=DECLINE_TOO_SHORT, pinned_ring=pinned_ring,
         )
 
     candidates = matches
@@ -535,12 +586,39 @@ def expand_term(
     distinct = {m.ring_id for m in candidates}
     if len(distinct) == 1:
         return TermExpansion(
-            term=term, normalized=normalized, matches=matches, applied=candidates[0], declined=None
+            term=term, normalized=normalized, matches=matches, applied=candidates[0],
+            declined=None, pinned_ring=pinned_ring,
         )
     return TermExpansion(
         term=term, normalized=normalized, matches=matches, applied=None,
-        declined=DECLINE_SEVERAL_SENSES,
+        declined=DECLINE_SEVERAL_SENSES, pinned_ring=pinned_ring,
     )
+
+
+
+def parse_sense_pins(values: Iterable[str] | None) -> dict[str, str]:
+    """``term:ring_id`` pairs -> ``{normalized term: ring id}`` for :class:`QueryExpander`.
+
+    Split on the LAST colon. No ring id in either shipped ring file contains one (measured
+    over all 710, and pinned by a test so a future id that does reddens rather than
+    silently breaking the parse), while a term a reader typed may -- so the last colon is
+    always the separator and the term keeps its own.
+
+    A malformed entry is DROPPED rather than guessed at, and a well-formed one still has to
+    name a ring the term actually belongs to: :func:`expand_term` checks that and reports a
+    miss. So the two failure modes a URL parameter really has -- a typo and a stale link --
+    both end somewhere the reader can see, and neither can widen a search on its own.
+    """
+    out: dict[str, str] = {}
+    for raw in values or ():
+        text = str(raw or "").strip()
+        if ":" not in text:
+            continue
+        term, ring = text.rsplit(":", 1)
+        term, ring = _norm(term), ring.strip()
+        if term and ring:
+            out[term] = ring
+    return out
 
 
 class QueryExpander:
@@ -557,9 +635,14 @@ class QueryExpander:
         *,
         prefer_language: str | None = None,
         languages: Iterable[str] | None = None,
+        pinned: Mapping[str, str] | None = None,
     ) -> None:
         self.prefer_language = prefer_language
         self.languages = tuple(languages) if languages is not None else None
+        # {normalized term: ring id} -- the reader's sense choices (R2a). Keyed on the
+        # NORMALIZED form because that is what the ring index is keyed on, so `April` and
+        # `april` are one choice rather than two that disagree.
+        self.pinned: dict[str, str] = {_norm(k): str(v) for k, v in (pinned or {}).items() if v}
         self.expansions: list[TermExpansion] = []
         self._by_term: dict[str, TermExpansion] = {}
 
@@ -577,7 +660,10 @@ class QueryExpander:
         if cached is not None:
             return cached.siblings
         result = expand_term(
-            term, prefer_language=self.prefer_language, languages=self.languages
+            term,
+            prefer_language=self.prefer_language,
+            languages=self.languages,
+            pinned_ring=self.pinned.get(_norm(term)),
         )
         self._by_term[term] = result
         self.expansions.append(result)
@@ -595,7 +681,10 @@ class QueryExpander:
         when no query term touched a ring at all, so an ordinary search carries no
         extra weight.
         """
-        interesting = [e for e in self.expansions if e.expanded or e.declined]
+        # `pin_missed` earns its place in this list: a pin naming a ring the term does not
+        # belong to on a term that neither expanded nor declined would otherwise leave the
+        # reader's rejected choice invisible -- the one case where saying nothing is a lie.
+        interesting = [e for e in self.expansions if e.expanded or e.declined or e.pin_missed]
         if not interesting:
             return None
         return {

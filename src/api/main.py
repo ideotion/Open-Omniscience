@@ -37,7 +37,7 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _pkg_version
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import (
     HTMLResponse,
@@ -1142,7 +1142,13 @@ def _record_search_timing(timer) -> None:
         pass
 
 
-def _query_expander(query: str | None, *, enabled: bool, ui_lang: str | None):
+def _query_expander(
+    query: str | None,
+    *,
+    enabled: bool,
+    ui_lang: str | None,
+    senses: list[str] | None = None,
+):
     """Build the R1 cross-language hook for one request, or ``None``.
 
     ``None`` whenever there is no text query or the reader turned expansion off, and in
@@ -1153,12 +1159,20 @@ def _query_expander(query: str | None, *, enabled: bool, ui_lang: str | None):
     ``ui_lang`` is the reader's own locale. It only ever NARROWS an ambiguous term to the
     ring that matches under that language; it never adds a match, so a reader searching
     outside their UI language is not penalised for it.
+
+    ``senses`` carries the reader's own sense choices as ``term:ring_id`` (R2a). It is the
+    answer to the several-senses refusal, so it outranks the narrowing -- but only ever
+    among the rings the term already belongs to, and a pin that names anything else is
+    reported rather than applied.
     """
     if not query or not enabled:
         return None
-    from src.analytics.equivalence import QueryExpander
+    from src.analytics.equivalence import QueryExpander, parse_sense_pins
 
-    return QueryExpander(prefer_language=(ui_lang or "").strip().casefold() or None)
+    return QueryExpander(
+        prefer_language=(ui_lang or "").strip().casefold() or None,
+        pinned=parse_sense_pins(senses),
+    )
 
 
 def _query_articles(
@@ -1353,6 +1367,7 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
     offset: int = 0,
     expand: bool = True,
     ui_lang: str | None = None,
+    sense: list[str] | None = Query(None),
     db: Session = Depends(get_db),
 ):
     """
@@ -1379,6 +1394,12 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
     - sort_dir: asc|desc (default desc).
     - limit: Maximum number of results to return (default: 100).
     - offset: Offset for pagination (default: 0).
+    - expand: cross-language concept expansion (R1), on by default; false narrows the
+      search to exactly the words typed.
+    - ui_lang: the reader's locale. It only ever NARROWS an ambiguous term, never adds.
+    - sense: repeatable ``term:ring_id``, the reader's own answer to the several-senses
+      refusal (R2a). It selects among the rings that term already belongs to and nothing
+      else; a pin naming any other ring is reported in ``cross_language``, not applied.
 
     Each result carries ``provenance`` (its content-provenance class) and
     ``keyword_count`` (mentions of the searched keyword, or null); the response carries
@@ -1472,7 +1493,7 @@ def search_articles(  # plain def -> Starlette threadpool (S2.5): the synchronou
     # DISCLOSED in the payload below. `expand=false` is the "narrow to the literal term"
     # click -- the same request with the hook off, so the two readings are one parameter
     # apart and the reader can always get back to exactly what they typed.
-    expander = _query_expander(query, enabled=expand, ui_lang=ui_lang)
+    expander = _query_expander(query, enabled=expand, ui_lang=ui_lang, senses=sense)
     articles, total = _query_articles(
         db,
         query=query,
