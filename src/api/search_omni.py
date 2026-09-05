@@ -39,7 +39,7 @@ def _like_escape(q: str) -> str:
     return q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _fts_hits(db: Session, q: str) -> tuple[list[int], str, bool]:
+def _fts_hits(db: Session, q: str, expand: object | None = None) -> tuple[list[int], str, bool]:
     """Run the corpus FTS search ONCE for every group that needs it.
 
     Returns ``(ids, effective_query, searchable)``. Both the articles group and the
@@ -70,24 +70,25 @@ def _fts_hits(db: Session, q: str) -> tuple[list[int], str, bool]:
     shape rather than reasoning about it.
     """
     try:
-        ids = search_ids(db, q, exclude_quarantined=True)
+        ids = search_ids(db, q, exclude_quarantined=True, expand=expand)  # type: ignore[arg-type]
         return ([], q, False) if ids is None else (ids, q, True)
     except SearchQueryError:
         phrase = '"' + q.replace('"', " ") + '"'
         try:
-            ids = search_ids(db, phrase, exclude_quarantined=True)
+            ids = search_ids(db, phrase, exclude_quarantined=True, expand=expand)  # type: ignore[arg-type]
             return ([], phrase, False) if ids is None else (ids, phrase, True)
         except SearchQueryError:
             return [], q, False
 
 
 def _articles_group(
-    db: Session, q: str, hits: tuple[list[int], str, bool] | None = None
+    db: Session, q: str, hits: tuple[list[int], str, bool] | None = None,
+    expand: object | None = None,
 ) -> dict:
     # ``hits`` is the shared per-request FTS result (see _fts_hits). It stays OPTIONAL
     # so the group is still correct standalone -- the sharing is a cost optimisation
     # in the dispatcher, not a new precondition a caller has to satisfy.
-    ids, effective_q, searchable = hits if hits is not None else _fts_hits(db, q)
+    ids, effective_q, searchable = hits if hits is not None else _fts_hits(db, q, expand)
     if not searchable:
         return {"kind": "articles", "items": [], "total": 0,
                 "note": "query not searchable as typed"}
@@ -102,7 +103,10 @@ def _articles_group(
     # FILLED the cap pays for one extra count(*), and that is precisely the query whose
     # `len(ids)` would otherwise have been a flat MAX_CANDIDATES on any large corpus.
     if len(ids) >= MAX_CANDIDATES:
-        exact = search_total(db, effective_q, exclude_quarantined=True)
+        # The SAME hook the ids came from: a count over the un-widened query would
+        # describe a different set than the rows -- the property search_total exists to
+        # keep. An expanded total is still a real total (search_total takes no cap).
+        exact = search_total(db, effective_q, exclude_quarantined=True, expand=expand)  # type: ignore[arg-type]
         total = len(ids) if exact is None else exact
     else:
         total = len(ids)
@@ -128,7 +132,50 @@ def _articles_group(
     return {"kind": "articles", "items": rows, "total": total, "note": note}
 
 
-def _keywords_group(db: Session, q: str) -> dict:
+def _ring_sibling_rows(db: Session, expand: object | None, seen: set[str]) -> list[dict]:
+    """Keyword rows the PREFIX match cannot reach: the query's cross-language siblings.
+
+    ``_keywords_group`` is ``normalized_term LIKE 'climate%'``, and ``climat``/``Klima``
+    do not start with ``climate`` -- so before R1 the keyword group was blind to every
+    other language the corpus holds the concept in. These rows are looked up by EXACT
+    normalized term (one indexed probe each, a handful at most) and are LABELLED
+    ``via_ring`` so the surface can say where they came from rather than mixing them into
+    the prefix hits as though the user had typed them.
+
+    Only siblings PRESENT IN THE CORPUS are returned: the ring lists members that may
+    never have been collected, and offering one would be a result that leads nowhere.
+    """
+    if expand is None or not getattr(expand, "expansions", None):
+        return []
+    wanted: list[tuple[str, str]] = []  # (normalized sibling, ring id)
+    for exp in expand.expansions:  # type: ignore[attr-defined]
+        if not exp.applied:
+            continue
+        for sib in exp.siblings:
+            if sib not in seen and sib not in {w for w, _ in wanted}:
+                wanted.append((sib, exp.applied.ring_id))
+    if not wanted:
+        return []
+    ring_of_term = dict(wanted)
+    found = (
+        db.query(Keyword)
+        .filter(Keyword.normalized_term.in_([w for w, _ in wanted]))
+        .order_by(Keyword.frequency.desc().nullslast(), Keyword.normalized_term)
+        .limit(_PER_GROUP)
+        .all()
+    )
+    return [
+        {
+            "term": k.term, "normalized_term": k.normalized_term,
+            "frequency": k.frequency, "is_entity": bool(k.is_entity),
+            "language": k.language,
+            "via_ring": ring_of_term.get(k.normalized_term),
+        }
+        for k in found
+    ]
+
+
+def _keywords_group(db: Session, q: str, expand: object | None = None) -> dict:
     pat = _like_escape(q.casefold()) + "%"
     base = db.query(Keyword).filter(Keyword.normalized_term.like(pat, escape="\\"))
     total = base.count()
@@ -153,11 +200,19 @@ def _keywords_group(db: Session, q: str) -> dict:
         if hits:
             item["supergroups"] = hits
         items.append(item)
+    siblings = _ring_sibling_rows(db, expand, {k.normalized_term for k in rows})
+    note = "prefix match on the indexed normalized term"
+    if siblings:
+        # The total stays the PREFIX total. The sibling rows are a different question
+        # (exact matches on the concept's other languages), so folding them into one
+        # number would make a disclosed count describe two populations at once.
+        note += f"; plus {len(siblings)} cross-language sibling(s) matched by concept"
     return {
         "kind": "keywords",
-        "items": items,
+        "items": items + siblings,
         "total": total,
-        "note": "prefix match on the indexed normalized term",
+        "cross_language_items": len(siblings),
+        "note": note,
     }
 
 
@@ -348,7 +403,12 @@ def _law_group(db: Session, q: str) -> dict:
 
 
 @router.get("/omni")
-def omni(q: str = Query(min_length=2, max_length=200), db: Session = Depends(get_db)) -> dict:
+def omni(
+    q: str = Query(min_length=2, max_length=200),
+    expand: bool = True,
+    ui_lang: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict:
     """Federated first-hits for the omnibar. Index-backed; totals disclosed.
 
     S2.4 guard: the omnibar fires per debounced keystroke and runs 2x full FTS
@@ -364,13 +424,23 @@ def omni(q: str = Query(min_length=2, max_length=200), db: Session = Depends(get
         f"{_PER_GROUP} per group with the true totals disclosed"
     )
 
+    # R1 (2026-09-05): ONE expander per request, shared by every group that needs it, so
+    # the articles ids, the exact total, the keyword siblings and the sentence describing
+    # them all come from the same object and cannot disagree. ON by default per the
+    # ruling; `expand=false` is the "narrow to the literal term" click.
+    expander = None
+    if expand:
+        from src.analytics.equivalence import QueryExpander
+
+        expander = QueryExpander(prefer_language=(ui_lang or "").strip().casefold() or None)
+
     def _compute() -> dict:
         groups = []
         # ONE corpus FTS search shared by the two groups that need it (articles, wiki)
         # instead of the same ranked fetch run twice per keystroke. A failure here is
         # handled exactly like a per-group failure: the omnibar must never blank.
         try:
-            hits = _fts_hits(db, q)
+            hits = _fts_hits(db, q, expander)
         except Exception:  # noqa: BLE001 - the FTS layer must never blank the omnibar
             _LOG.warning("omni fts search failed for %r", q, exc_info=True)
             hits = ([], q, False)
@@ -378,12 +448,23 @@ def omni(q: str = Query(min_length=2, max_length=200), db: Session = Depends(get
             try:
                 # Only the two FTS-backed groups take the shared hits; the catalog
                 # groups (keywords/sources/law) run their own bounded index queries.
-                groups.append(
-                    fn(db, q, hits) if fn in (_articles_group, _wiki_group) else fn(db, q)
-                )
+                # The keyword group takes the expander instead: its prefix match cannot
+                # reach a sibling in another language, so it looks them up by exact term.
+                if fn in (_articles_group, _wiki_group):
+                    groups.append(fn(db, q, hits, expander) if fn is _articles_group else fn(db, q, hits))
+                elif fn is _keywords_group:
+                    groups.append(fn(db, q, expander))
+                else:
+                    groups.append(fn(db, q))
             except Exception:  # noqa: BLE001 - one group must never blank the omnibar
                 _LOG.warning("omni group %s failed", fn.__name__, exc_info=True)
-        return {"q": q, "per_group": _PER_GROUP, "groups": groups, "method": _method}
+        out = {"q": q, "per_group": _PER_GROUP, "groups": groups, "method": _method}
+        # R1: stated on the surface, never silent -- expansion changed which articles
+        # matched. Absent when no typed term touched a ring.
+        disclosure = expander.disclosure() if expander is not None else None
+        if disclosure is not None:
+            out["cross_language"] = disclosure
+        return out
 
     def _degraded(_exc) -> dict:
         return {

@@ -1,4 +1,7 @@
-# Curated EXTRA stopwords -- Russian.
+# Curated EXTRA stopwords -- Russian. Cyrillic only: the mixed-language Latin block
+# the Phase 4.1 split left here (61 pl/hu/da-nb/BCS function words) moved to
+# _multilingual.yml on 2026-09-05 -- see PROVENANCE.md. Keep this file Cyrillic;
+# tests/test_stopword_file_scripts.py enforces it.
 # Migrated from src/analytics/extract.py::_EXTRA_STOPWORD_TEXT (Phase 4.1, PR #740/#744
 # remediation). LANGUAGE-AGNOSTIC UNION: global_stopwords() unions every file here
 # regardless of which one a word lives in -- this split is a readability/maintenance
@@ -7,67 +10,6 @@
 # full evidence trail (field-log dates, mention counts, collision-safety reasoning)
 # that justified each addition -- preserved verbatim from the original inline comments.
 stopwords:
-  - aby
-  - adgang
-  - ahogy
-  - akkor
-  - arra
-  - azt
-  - dagens
-  - diskusiji
-  - efter
-  - egyik
-  - első
-  - ezt
-  - fel
-  - første
-  - godine
-  - godt
-  - hele
-  - ikke
-  - ili
-  - ingen
-  - jednak
-  - jego
-  - jej
-  - kao
-  - kell
-  - koja
-  - komentare
-  - które
-  - kun
-  - két
-  - lehet
-  - læs
-  - majd
-  - meg
-  - miatt
-  - mišljenje
-  - mondta
-  - może
-  - można
-  - nakon
-  - nich
-  - nije
-  - oglas
-  - olyan
-  - oraz
-  - ovoj
-  - pedig
-  - perc
-  - pročitajte
-  - roku
-  - również
-  - szerint
-  - tako
-  - temi
-  - tym
-  - után
-  - vaše
-  - vil
-  - volna
-  - így
-  - što
   - а
   - без
   - более

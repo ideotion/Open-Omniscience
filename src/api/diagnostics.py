@@ -1609,6 +1609,34 @@ def article_length(download: bool = Query(False), db: Session = Depends(get_db))
     return JSONResponse(report, headers=headers)
 
 
+@router.get("/month-occupancy")
+def month_occupancy(
+    sample: int = Query(400, ge=1, le=5000),
+    download: bool = Query(False),
+    db: Session = Depends(get_db),
+) -> JSONResponse:
+    """How much of the MONTH-NAME stopword ban is not actually about dates.
+
+    The stoplist bans 82 month forms language-agnostically, which suppresses datelines
+    and also deletes the planet Mars, the March on Washington and Theresa May from the
+    keyword index. The 2026-09-05 design of record proposes making the block DATE-AWARE
+    instead -- drop a month token only where the date extractor claimed its span -- and
+    says one number decides it: how many occurrences fall OUTSIDE any claimed date span.
+
+    This is that number, over a uniformly-drawn sample, with its n. Read-only, counts
+    only, NO score and NO recommendation -- the ruling is the maintainer's. Every
+    caveat that bounds it (unigrams only, so it is a FLOOR; a missed dateline counts as
+    outside, so it over-states) rides in the payload rather than in this docstring."""
+    from src.analytics.month_occupancy import month_occupancy_report
+
+    report = month_occupancy_report(db, sample=sample)
+    headers = {}
+    if download:
+        fname = f"oo-month-occupancy-{datetime.now().strftime('%Y%m%d')}.json"
+        headers["Content-Disposition"] = f'attachment; filename="{fname}"'
+    return JSONResponse(report, headers=headers)
+
+
 @router.get("/non-article-scan")
 def non_article_scan(download: bool = Query(False), db: Session = Depends(get_db)) -> JSONResponse:
     """Retroactive NON-ARTICLE scan (Slice 4a review half): per-reason counts + a bounded id sample
@@ -3631,6 +3659,10 @@ def _all_diagnostics_members(db: Session) -> list[tuple[str, object]]:
         # that were missing from the bundle, plus the loop SELF-INVENTORY (are the loop's own
         # mechanism-proof gates green?). Kept last so a heavy corpus never delays them.
         ("article-length.json", lambda: article_length(download=False, db=db)),
+        # Slice 2 of the 2026-09-05 keyword-translation plan: the one number that decides
+        # whether the month-name ban should become date-aware. Sample passed EXPLICITLY --
+        # a Query(...) default is a sentinel object when the route is called directly.
+        ("month-occupancy.json", lambda: month_occupancy(sample=400, download=False, db=db)),
         ("keyword-growth.json", lambda: keyword_growth(download=False, db=db)),
         ("recursive-loop.json", lambda: recursive_loop(download=False)),
         ("kpi.json", lambda: kpi(download=False)),
@@ -3983,6 +4015,7 @@ _DIAG_COVERAGE_MAP: dict[str, str] = {
     "/power-profile": "power-profile.json",
     "/power-profile-selftest": "power-profile-selftest.json",
     "/article-length": "article-length.json",
+    "/month-occupancy": "month-occupancy.json",
     "/non-article-scan": "non-article-scan.json",
     "/criteria-calibration": "criteria-calibration.json",  # S3.1 of the 2026-07-23 field-feedback workflow
     "/keyword-growth": "keyword-growth.json",

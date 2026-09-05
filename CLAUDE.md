@@ -5479,6 +5479,28 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     argv[0] (`ps -eo args | grep "^/abs/path/.venv/bin/python -m pytest"`), or
     record the PID when you START the process and wait on that. And prefer the
     harness's own job control (a background task id) to any pattern at all.
+    **RECURRED THREE TIMES IN ONE SESSION, 2026-09-05, BY AN AGENT THAT HAD READ THIS
+    ENTRY — so the remedy above is stated too weakly to be reached under time pressure,
+    and its last sentence has its own trap.** (a) `until ! pgrep -f "pytest tests/ -q"`
+    as a background waiter: the waiter's own `bash -c` line contains the pattern, so the
+    loop never exited and a 16-minute suite read as "still running" long after it had
+    printed its summary. (b) `pkill -f "\.venv/bin/python -m pytest tests/ -q"` — escaping
+    the dot does not help, because the problem was never the regex, it is WHICH command
+    lines it is matched against; it killed its own shell (exit 144). (c) **The recommended
+    fix then failed in a new way: `nohup bash -c 'until …; done' &` INSIDE a
+    `run_in_background` task.** The harness reported that task "completed (exit code 0)"
+    within seconds — truthfully, because what completed was the LAUNCHER; the detached
+    loop was still waiting, with its stdout on `/dev/null`, so no notification could ever
+    arrive. A completion notice describes the process the harness is watching, so
+    backgrounding your wait INSIDE a backgrounded task hands you a confident "done" about
+    something you did not ask about. Let the wait BE the task's command
+    (`while kill -0 <pid> 2>/dev/null; do sleep 15; done`) and never `&` inside it.
+    ORDER OF PREFERENCE, then: capture `$!` when you launch and poll or wait on that PID;
+    hand the harness the waiting loop itself; or, if you must match, filter on a field the
+    matcher's own line cannot occupy (`ps -eo pid,args | awk '$2 ~ /python/ && /pytest/'`
+    reads argv[0] rather than the whole line). Do NOT reach for `-f` with a substring of
+    the command you are about to run — that is the whole class, and it is not made safe by
+    bracket tricks, escaping, or a more specific pattern.
 
   - **AN INSTRUMENT THAT FORKS CAN DESTROY THE EFFECT IT IS MEASURING — and the
     obvious portable substitute for `/proc` does exactly that (2026-09-03, the
@@ -5714,6 +5736,149 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     rather than live (2 non-topical proposals in 921 assignments), and the fix is a
     reported finding rather than a silent filter, because deciding `independent` is
     not a topic is a taxonomy ruling a human makes.
+  - **A RELEVANCE-RANKED ID LIST IS NOT A SAMPLE FRAME — and for this question its bias
+    ran the way that would have decided the ruling (2026-09-05, the month-occupancy
+    diagnostic):** the cheap way to find articles containing a month name is
+    `search_ids`, and it is the wrong way, because it is `ORDER BY bm25(...)`: the
+    top-ranked documents for `march OR mai OR …` are the ones where a month token is
+    DENSEST, which is a near-definition of a dateline-heavy page. Sampling from it would
+    have over-counted the consumed side and under-counted the free one, i.e. produced a
+    number saying "the ban is nearly free" for a reason that is entirely an artifact of
+    the ranking. Drawn uniformly over the id range instead, with the one bias that
+    substitutes STATED (an article just after a large id gap is over-represented, because
+    each draw takes the first article at or above it) — a stated bias is a different
+    object from an unexamined one. GENERAL FORM: whenever a search API is the convenient
+    way to enumerate candidates, read its ORDER BY before treating the result as a
+    population, and ask which direction its ordering pushes the specific quantity being
+    measured. Two riders. Scanning uniformly costs a decrypt per article, most of which
+    contain nothing of interest — recovered by running the cheap regex FIRST and paying
+    for the expensive extraction only on a hit, so the sample size is bounded by hits
+    rather than by draws. And the draw is SEEDED, because a diagnostic a maintainer may
+    run twice owes the same answer twice; the seed and a bounded list of the ids drawn
+    both ride in the payload, which is also what makes the determinism assertable rather
+    than inferred.
+  - **WHEN A MUTATION OF AN ARGUMENT SURVIVES, MEASURE WHETHER THAT ARGUMENT CAN CHANGE
+    THE ANSWER AT ALL BEFORE INVENTING A TEST FOR IT (2026-09-05, same slice):** dropping
+    the article's `language` from the diagnostic's call reddened nothing, and there are
+    two wrong responses — write a contrived fixture until something fails, or conclude the
+    argument is dead and delete it. The measurement settles it: over the 82 banned month
+    names crossed with 12 languages and 7 sentence templates, `language` changes the
+    outcome in exactly one shape — Hungarian's year-first `2024. december`, which the
+    extractor reads only under a `hu` hint. Every other banned token sits in the
+    language-agnostic table, and NO banned token is in the gated map at all. So the
+    argument is (a) genuinely load-bearing, for one real and realistic case, and (b)
+    nearly unfalsifiable on any other fixture — which is precisely why the test has to
+    use that case and say so, or the next person to read it will "simplify" the fixture
+    and silently restore the gap. The general rule: a surviving mutant is a finding about
+    the test, and the first step is to find out what the argument DOES on the live data,
+    not to keep guessing at fixtures. A currently-inert argument may still be right to
+    pass — the banned set can grow into the gated vocabulary tomorrow — but that is a
+    claim to write down, not one to leave implied by an untestable line of code.
+  - **THE MEASUREMENT YOU NEED MAY ALREADY BE COMPUTED INSIDE A FUNCTION AND DISCARDED AT
+    ITS RETURN (2026-09-05, the claimed-span seam):** the standing lesson says to check
+    whether an instrument exists before building one; a level below it, check whether the
+    thing exists as a LOCAL. `extract_dates` resolves overlapping matches most-specific-
+    first by claiming character ranges, so it has always known exactly which text it
+    consumed as a date — and returned only the dates. The month question is a question
+    about those ranges, and the honest answer was a seam (share the body, return the pair,
+    keep the public wrapper byte-identical) rather than a re-implementation that would
+    have drifted from the extractor the moment either changed. Two details worth keeping.
+    The exposed spans are deliberately a SUPERSET of "a date was stored" — the Jalali
+    router claims on route, so an ambiguous Persian date is claimed and then refused — and
+    for "was this token read as part of a date?" the superset is the right answer, so the
+    docstring states which direction it errs in rather than leaving a caller to assume
+    equality. And the spans index the text the pass actually SCANNED, so a caller reading
+    an offset past `_MAX_SCAN` as "not claimed" would fabricate an absence out of a bound;
+    that is a property of the seam, so it belongs in the seam's contract and in a test,
+    not in each caller's memory.
+  - **BEFORE CALLING A HELPER FOR A SIDE VALUE, CHECK WHETHER IT IS ALREADY IN SCOPE — AND
+    WHETHER THE HELPER'S CALL COUNT IS ITSELF AN INVARIANT (2026-09-05, `_articleQuery`):**
+    the R1 notice needed to know whether the current view has a text query, and I wrote
+    `_articleQuery(p).get("query")` three lines below `const q = _articleQuery(p)`, which
+    already held it. Harmless as waste; not harmless as a guard breach, because
+    `test_every_api_articles_caller_goes_through_the_translation` deliberately counts
+    `_articleQuery(` uses against `/api/articles` URL sites rather than checking variable
+    names — its own docstring says naming would pass for a caller that picked the same
+    name without using the helper. A convenience call is indistinguishable from a caller
+    that skipped the translation, so the count broke on correct code. The repair is not to
+    relax the guard: it is the change that should have been written anyway. GENERAL FORM:
+    a test that counts CALL SITES is asserting a coupling, so any extra call — however
+    innocuous — is a claim about the code it will make on your behalf; read the failing
+    guard's docstring before deciding whether it or the code is wrong.
+  - **A LESSON DOES NOT APPLY ITSELF TO THE CODE YOU ARE WRITING — grep for the READERS of
+    every field you just published, and know which kind of field it is (2026-09-05, the
+    omnibar cross-language block):** slice 1 taught `search_omni` to publish a
+    `cross_language` block, a per-row `via_ring` flag and a separate `cross_language_items`
+    count, and its own commit message cites the standing "a machine-readable refusal whose
+    flag no caller ever sends is a DEAD END" lesson — about a different subsystem. Nothing
+    in the frontend read any of the three. The ledger already carries that shape at least
+    five times (the 409's `acknowledgeable`, `start_outcome()`, `ai_worklist`, the tri-state
+    read in four places, `propose_stoplist_additions`) and it recurred anyway, in the slice
+    that quoted it, because the rule was being applied to the code being CALLED and never to
+    the code being WRITTEN. The check is one grep of the CONSUMING surface for the FIELD
+    NAME (not for the endpoint, which is called either way), and it belongs at the end of
+    any slice that adds a field to a payload. **THE DISCRIMINATOR MATTERS AS MUCH AS THE
+    GREP, or the rule turns into "delete every unread field":** running it over all fourteen
+    keys of this payload found two more unread by both the frontend and the tests
+    (`matched_language`, `normalized`) and they are NOT the same defect — the question is
+    whether an unread field is the only route to a CAPABILITY or is EVIDENCE inside a
+    payload whose summary is already rendered. The disclosure block was the former: unread,
+    the reader lost the whole honesty layer on that surface. The two provenance fields are
+    the latter, sitting beside a `method` and a `caveat` the house convention puts in every
+    payload precisely so a number can be checked by a reader the UI does not know about.
+    Kept, deliberately, and now measured rather than assumed. Same read found the display
+    bug below, which is the argument for doing this as a step rather than as a habit: the
+    consumers you go looking for are also where the consumers you already had went wrong.
+  - **A "N MORE" DISCLOSURE COMPUTED FROM `len(items)` IS DELETED BY PADDING THE LIST FROM A
+    DIFFERENT POPULATION (2026-09-05, the same read):** the omnibar states a group's true
+    size with `g.total > (g.items || []).length`, which was exact while every row came from
+    the same query. Slice 1 then APPENDED cross-language sibling rows to the keywords group
+    while its `total` stayed deliberately the PREFIX total (two populations; one number
+    would describe neither) — so the padded row count could exceed a total that was still
+    larger than the rows the reader typed for, and the "N matches in total" note vanished
+    exactly when siblings were present, i.e. exactly when the group was least
+    self-explanatory. GENERAL FORM: a disclosure derived from a collection's LENGTH is a
+    claim about the population that collection holds, so adding members from another
+    population silently changes what the disclosure means — count the rows the total
+    actually describes, not the rows on screen. Same family as the recorded "two surfaces
+    computing the same-sounding quantity by different rules", one layer down: here the two
+    rules met inside one expression.
+  - **A SURVIVING MUTANT CAN BE A FINDING ABOUT THE CODE — measure for EQUIVALENCE before
+    writing a test to kill it (2026-09-05, same slice):** the mutation matrix left three
+    survivors. Two were the recorded "a test of a helper is not a test of its wiring" gap
+    (the node suite drove the helpers and never the row builder, so blanking the header note
+    and dropping the per-row label both passed) and were closed with a wiring test. The
+    third was not a gap at all: dropping `!terms.length` from a two-clause guard is
+    BYTE-IDENTICAL over 11 payload shapes, because an empty list adds nothing in the loop
+    and the tail already returns `""` when nothing was pushed. The reflex — write a fixture
+    until something fails — would have pinned a redundancy forever and read as coverage.
+    Measure the two versions against each other first; when they agree, DELETE the redundant
+    clause with the measurement in a comment (so the next reader does not restore it as a
+    missing guard) and replace the mutation with one that can actually fail. The standing
+    rule "a mutation that reddens nothing is a finding" is right about the finding and
+    silent about its subject, which can be the test, the fixture, or the code.
+    RIDER, a node-harness fact worth not re-deriving: `app-*.js` modules share ONE global
+    scope, and a guard written `window.OOI18N && OOI18N.tf` reads BOTH the property and the
+    bare global — so a sandbox defining only `window.OOI18N` raises `ReferenceError` on the
+    second half. Define the alias, and put every function under test in ONE sandbox: two
+    `runInNewContext` blocks each defining that global throw `Cannot redefine property`, and
+    the near-miss version (both merely assigning it) is worse — last-one-wins leaves the
+    earlier block silently reading the later block's state.
+  - **A TREE-SCANNING GUARD IS NOT IN THE SUITE YOU RUN FOR YOUR OWN FILES (2026-09-05, the
+    omnibar guard's unencoded locale read):** before pushing I ran the four suites the change
+    touched — 290 passed — and the full run then failed one test I had not thought to run:
+    `test_utf8_file_io`, which walks the WHOLE tree for a text read or write with no
+    `encoding=`, and my new guard read `en.json` with the platform default. On Windows that
+    is cp1252 and it CRASHES rather than failing an assertion, on this file in particular,
+    because the keys being asserted carry curly quotes. The general point is about which
+    tests a new FILE can break: not only the tests of that file, but every guard that reads
+    the tree — and this repo has four
+    (`test_utf8_file_io` · `test_source_slicing_discipline` · `test_repo_invariants` ·
+    `test_import_conclusion::test_every_node_suite_has_a_driver`). I ran the one I remembered
+    and got lucky on the other two that were live for this change (the commit added a node
+    suite AND touched source slicing). Run them as a NAMED SET after adding or editing any
+    file; they cost seven seconds together, against the sixteen minutes of the full suite
+    that is the only other thing that would have caught it.
   - **A ROLLUP THAT IS CORRECT AT ITS OWN LEVEL IS THE HARDEST RENDER-BOUNDARY LOSS TO
     SEE — nothing in the payload is wrong, and the reading it produces is the opposite
     of the truth (2026-09-05, the one-button AI check's extraction gate):** the recorded
@@ -5832,6 +5997,40 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     the file you expect: it may live in a SIBLING catalog the seeder also reads, and the
     entry that matters is the one the seeding ORDER actually reaches — checking that turned
     six "absent" proposals into four already-satisfied and one worth taking.
+  - **THE DEAD-END SHAPE HAS A VERSION WITH A READER INSTEAD OF A CALLER — a refusal that
+    names the choice and offers no way to make it (2026-09-05, the several-senses pick):**
+    the recorded rule is about a machine-readable answer whose flag no caller sends, and
+    the grep it prescribes is "who READS this field". One layer out, the field is read, the
+    sentence renders, a human sees it — and there is still nothing to do. R1's refusal told
+    the reader that `Wahl` denotes three concepts and that the search had therefore not been
+    widened, listed all three, and shipped no way to pick one; R2a had already ruled that
+    *the reader picks the sense*. The same grep works with the question changed: not "who
+    reads this" but "what can the reader DO with it". Worth separating from the recorded
+    entry because the two feel different while shipping — a payload with no consumer looks
+    unfinished, and a rendered sentence looks finished — and because the fix is sequenced
+    differently: this one belonged with the refusal, not in the later slice its broader
+    COVERAGE is gated on. Distinguish the mechanism from the population before deferring
+    something: the pick works today over the 91 collisions the rings know, and only the
+    inventory's reach waits on a dump.
+  - **WHEN A NEW REASON MAKES A PAYLOAD ENTRY MATTER, REVISIT THE FILTER THAT DECIDES WHICH
+    ENTRIES ARE EMITTED AT ALL (2026-09-05, same slice):** the disclosure kept
+    `[e for e in expansions if e.expanded or e.declined]` — exactly right while those were
+    the only two ways a term could be interesting. A rejected sense pin is a third, and on a
+    term that touches no ring it is the ONLY one: nothing expanded, nothing declined, so the
+    reader's rejected choice would have been dropped by a filter written before that choice
+    existed. The general form is that an allowlist-shaped filter fails CLOSED and therefore
+    silently — the new case does not error, it simply never appears — so any predicate of
+    the form "emit when A or B" is part of the change that introduces C. Same family as the
+    recorded explicit-column-allowlist lesson, at the level of a list comprehension rather
+    than a SQL INSERT, and with the same tell: the omission is invisible in the diff,
+    because the line you would have had to edit is one you did not touch.
+    RIDER on the fix's own safety property, which is where a URL-borne selector differs from
+    an internal argument: a pin arrives from a link and has exactly two failure modes,
+    a typo and staleness (the ring file is regenerated). Neither may widen a search. So the
+    pin selects among the candidates the term ALREADY has and can never introduce one, which
+    makes both failures end in the same place — ordinary resolution, plus a sentence saying
+    the choice was not applied. Validate a selector against the set it claims to select
+    from, rather than trusting it and hoping the value is still real.
 
 ## Open queue (when maintainer says proceed)
 - **MULTILINGUAL KEYWORD TRANSLATION + SENSE DISAMBIGUATION (maintainer 2026-09-05: "when searching
@@ -6028,6 +6227,42 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   **Slices 1, 2, 3b and 4 need no network, no new dependency and no ruling** — and after BOTH
   research passes NOTHING in slices 1-4 is gated on anything. Slice 3 is now cheaper (cross-check
   (c)), slice 7 is answered negative for OMW, and slice 6 is PERMANENTLY the inventory half (R2a).
+  **EXECUTED 2026-09-05 (branch `claude/pr-1004-review-9ukgly`, draft PR #1010 onto `main`; five
+  `docs/ledger/shipped.csv` rows): SLICES 1, 2 AND 3b ARE BUILT, plus the slice-3 ride-along.**
+  Slice 1 = the ring dictionary finally read by search (R1 expansion on by default, disclosed, with
+  a REFUSAL for the 91 measured within-language collisions — R2a's grammar arriving one slice early
+  on a real population). Slice 3b = both misfiled blocks re-filed (`ru.yml` carried 61 Latin entries
+  the plan had not seen) with a script guard. The ride-along = the Maghrebi calendar 1/8 → 7/8 and the
+  four multi-word Levantine names, with `ماي` deliberately WITHHELD (a within-Arabic collision a
+  language gate cannot separate) — and both of the design doc's Arabic claims corrected there, in
+  opposite directions. Slice 2 = the instrument, not the number:
+  `src/analytics/month_occupancy.py` + `GET /api/diagnostics/month-occupancy`, riding the
+  all-diagnostics bundle (no new button, per the one-button ruling), built on a new
+  `extract_dates_with_spans` seam that exposes the spans the extractor already claimed internally.
+  **⚠ THE ONE OPERATOR STEP, and slice 3 is gated on it: RUN THE DIAGNOSTIC ON A REAL CORPUS.** No
+  occupancy figure exists anywhere — the sandbox has no corpus, and a number from a fixture would be
+  a measurement of the fixture. One call (`GET /api/diagnostics/month-occupancy?sample=400&download=1`),
+  or read `month-occupancy.json` out of any bundle taken after this lands. **HOW TO READ IT is design
+  doc §8b, and it matters more than the headline**: two bounds point in OPPOSITE directions —
+  the denominator is unigram occurrences while the ban also kills every n-gram containing a banned
+  token (so the figure is a FLOOR on what is deleted), and a dateline the extractor MISSES counts as
+  outside (so it over-states what a date-aware block would newly admit). Neither is corrected,
+  because correcting either needs a number nobody has. `by_language` is where the decision lives and
+  `by_token` makes a PARTIAL fix decidable (drop the block for the worst handful rather than all 82).
+  Slice 4 remains blocked on `dumps.wikimedia.org` (the allowlist, five sessions running).
+  A FIFTH commit closes a gap slice 1 opened in itself: `search_omni` published a `cross_language`
+  block, a per-row `via_ring` and a `cross_language_items` count that NO frontend read — the
+  dead-end shape, in the slice whose own message cites that lesson — and rendering it exposed a real
+  display bug, because the group header's "N more" test compares the true total against a row count
+  slice 1 had begun PADDING with sibling rows, so the disclosure vanished exactly when siblings were
+  present. **WHAT SLICE 1 STILL OWES THE READER, and it is the same shape one level up:** the
+  several-senses REFUSAL names the concepts and offers no way to pick one, while R2a rules that *the
+  reader picks the sense and expansion runs per-sense from the chosen QID*. By this project's own
+  recorded rule — grep for the caller that sends the proceed flag before shipping an endpoint that
+  says "here is why, and here is how to proceed" — a refusal with no proceed path is unfinished, so
+  the pick is being built on the 91 ring-covered collisions now. The broader sense INVENTORY (slice
+  6) stays gated on the dump; what is buildable is the CHOICE mechanism over the senses the rings
+  already know.
   **RESEARCH PASS 2 — SENSE DISAMBIGUATION: RUN + REPORTED (operator, 2026-09-05; full record =
   design doc §6c). FOUR VERDICTS:** (1) **the obvious route is a DEAD END** — Wikidata
   *disambiguation items* (`P31 = Q4167410`, ~1.4M) exist only to carry interlanguage links; they

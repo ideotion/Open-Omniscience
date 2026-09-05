@@ -3007,5 +3007,14 @@
   "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} новых · {updated} обновлено · {unchanged} уже актуальны — остановлено до конца; нажмите ещё раз, чтобы продолжить с места остановки.",
   "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} новых · {updated} обновлено · {unchanged} уже актуальны — все сохранённые ряды теперь в корпусе.",
   "Limited memory: {available} MB free of {total} MB.": "Мало памяти: свободно {available} МБ из {total} МБ.",
-  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "Фоновые проходы по всему корпусу (квалификация источников) приостановлены, а число одновременных загрузок ограничено. На большом корпусе квалификация может никогда здесь не запуститься — это цена данной настройки, а не сбой. Установите OO_ALLOW_BIG_SCANS=1, чтобы всё равно их выполнить."
+  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "Фоновые проходы по всему корпусу (квалификация источников) приостановлены, а число одновременных загрузок ограничено. На большом корпусе квалификация может никогда здесь не запуститься — это цена данной настройки, а не сбой. Установите OO_ALLOW_BIG_SCANS=1, чтобы всё равно их выполнить.",
+  "Showing only the words you typed.": "Показаны только введённые вами слова.",
+  "Search the concept in every language": "Искать понятие на всех языках",
+  "Show only the words I typed": "Показывать только введённые мной слова",
+  "{term} also matched as the concept “{concept}”": "{term} также найдено как понятие «{concept}»",
+  "{term} denotes several concepts, so it was not expanded": "{term} обозначает несколько понятий, поэтому запрос не расширялся",
+  "Search one of them:": "Искать одно из них:",
+  "{term}: searching the concept “{concept}”, which you chose": "{term}: поиск по выбранному вами понятию «{concept}»",
+  "Show all senses": "Показать все значения",
+  "The sense you chose is not one this word belongs to, so it was ignored.": "Выбранное вами значение не относится к этому слову и было проигнорировано."
 }

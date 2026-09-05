@@ -534,21 +534,57 @@
     // Each carries a run() like any static command, so keyboard navigation and
     // Enter work unchanged. Group headers disclose the TRUE total behind the
     // first three (the display bound never hides the magnitude).
+    // How many of a group's rows the reader actually TYPED. The keywords group appends
+    // cross-language SIBLING rows matched by concept, and its `total` is deliberately the
+    // PREFIX total (two populations; one number would describe neither) -- so comparing the
+    // total against the padded row count hides the "N matches in total" note exactly when
+    // siblings are present, i.e. exactly when the group is least self-explanatory.
+    function _omniTypedRows(g) {
+      return Math.max(0, (g.items || []).length - (g.cross_language_items || 0));
+    }
+    // The R1 disclosure for a group header. Expansion changed WHICH rows are here, so the
+    // surface says so; a REFUSAL is disclosed too, or a search that quietly matched less
+    // reads as an ordinary one. Composite strings go through `tf` -- the frame is keyed,
+    // the term and the concept are DATA -- and without the i18n engine there is no frame
+    // to fill, so it discloses nothing rather than emitting a half-built sentence.
+    function _omniCrossNote(cross) {
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : null;
+      const terms = (cross && cross.terms) || [];
+      // Only the engine guard is load-bearing. `!terms.length` reads like a second one and
+      // is not: with no terms the loop adds nothing and the tail already returns "" --
+      // measured over 11 payload shapes, the two versions are byte-identical, so it is a
+      // cheap early-out rather than a behaviour, and no test can or should distinguish it.
+      if (!tf) return "";
+      const parts = [];
+      terms.forEach((x) => {
+        if (x.expanded && x.concept) {
+          parts.push(tf("{term} also matched as the concept \u201c{concept}\u201d",
+            {term: x.term, concept: x.concept}));
+        } else if (x.declined) {
+          parts.push(tf("{term} denotes several concepts, so it was not expanded", {term: x.term}));
+        }
+      });
+      return parts.length ? " · " + parts.join(" · ") : "";
+    }
     function _omniItems(q) {
       if (!_omniLive || _omniLive.q !== q) return [];
       const t = (window.OOI18N && OOI18N.t) ? OOI18N.t : ((x) => x);
-      const head = (label, g) => label + (g.total > (g.items || []).length ? ` · ${g.total} ${t("matches in total")}` : "");
+      const tf = (window.OOI18N && OOI18N.tf) ? OOI18N.tf : null;
+      const head = (label, g) => label + (g.total > _omniTypedRows(g) ? ` · ${g.total} ${t("matches in total")}` : "");
+      // Only the two groups R1 actually widened carry the note; sources/wiki/law are
+      // untouched by expansion, and labelling them would claim a reach it does not have.
+      const crossNote = _omniCrossNote(_omniLive.cross_language);
       const out = [];
       (_omniLive.groups || []).forEach(g => {
         const items = g.items || [];
         if (!items.length) return;
         if (g.kind === "articles") {
-          const grp = head(t("Articles"), g);
+          const grp = head(t("Articles"), g) + crossNote;
           items.forEach(it => out.push({grp, label: it.title || ("#" + it.article_id),
             sub: (it.published_at || "").slice(0, 10) || t("article"),
             run: () => window.open(it.url, "_blank")}));
         } else if (g.kind === "keywords") {
-          const grp = head(t("Keywords"), g);
+          const grp = head(t("Keywords"), g) + crossNote;
           items.forEach(it => {
             // S3: keyword -> super-group navigation. Plural membership renders every
             // group name (never picks one); the palette row's single action still
@@ -557,9 +593,16 @@
             const sgNote = (it.supergroups && it.supergroups.length)
               ? " · " + t("part of") + " ⊕ " + it.supergroups.map(g2 => g2.name).join(", ")
               : "";
+            // A row the reader did NOT type: it is here because the concept ring carries
+            // it in another language. Saying so per row is what stops a sibling reading
+            // as a prefix hit -- the group total counts only the typed ones.
+            const ringNote = (it.via_ring && tf)
+              ? " · " + tf("{term} also matched as the concept \u201c{concept}\u201d",
+                  {term: it.term, concept: it.via_ring})
+              : "";
             out.push({grp,
               label: it.term + (it.frequency ? ` (${it.frequency})` : ""),
-              sub: t("opens its corpus window") + sgNote,
+              sub: t("opens its corpus window") + sgNote + ringNote,
               run: () => openCorpus(it.normalized_term)});
           });
         } else if (g.kind === "sources") {

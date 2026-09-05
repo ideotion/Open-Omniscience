@@ -3007,5 +3007,14 @@
   "{created} new · {updated} updated · {unchanged} already current — stopped before the end; press it again to continue where it left off.": "{created} nouvelles · {updated} mises à jour · {unchanged} déjà à jour — arrêt avant la fin ; appuyez de nouveau pour reprendre là où cela s'est arrêté.",
   "{created} new · {updated} updated · {unchanged} already current — every stored series is now in the corpus.": "{created} nouvelles · {updated} mises à jour · {unchanged} déjà à jour — toutes les séries stockées sont désormais dans le corpus.",
   "Limited memory: {available} MB free of {total} MB.": "Mémoire limitée : {available} Mo libres sur {total} Mo.",
-  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "Les analyses de fond sur l’ensemble du corpus (qualification des sources) sont suspendues et le nombre de collectes simultanées est plafonné. Sur un grand corpus, la qualification peut ne jamais s’exécuter ici — c’est le coût de ce réglage, pas une panne. Définissez OO_ALLOW_BIG_SCANS=1 pour les lancer malgré tout."
+  "Whole-corpus background scans (source qualification) are paused, and the collection fan-out is capped. On a large corpus that can mean qualification never runs here — that is the cost of the setting, not a failure. Set OO_ALLOW_BIG_SCANS=1 to run them anyway.": "Les analyses de fond sur l’ensemble du corpus (qualification des sources) sont suspendues et le nombre de collectes simultanées est plafonné. Sur un grand corpus, la qualification peut ne jamais s’exécuter ici — c’est le coût de ce réglage, pas une panne. Définissez OO_ALLOW_BIG_SCANS=1 pour les lancer malgré tout.",
+  "Showing only the words you typed.": "Affichage limité aux mots que vous avez saisis.",
+  "Search the concept in every language": "Rechercher le concept dans toutes les langues",
+  "Show only the words I typed": "N'afficher que les mots que j'ai saisis",
+  "{term} also matched as the concept “{concept}”": "{term} a aussi été trouvé en tant que concept « {concept} »",
+  "{term} denotes several concepts, so it was not expanded": "{term} désigne plusieurs concepts : la recherche n'a donc pas été élargie",
+  "Search one of them:": "Rechercher l'un d'eux :",
+  "{term}: searching the concept “{concept}”, which you chose": "{term} : recherche du concept « {concept} », que vous avez choisi",
+  "Show all senses": "Afficher tous les sens",
+  "The sense you chose is not one this word belongs to, so it was ignored.": "Le sens que vous avez choisi n'est pas l'un de ceux de ce mot : il a été ignoré."
 }

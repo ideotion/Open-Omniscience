@@ -1302,6 +1302,7 @@ Official **figures** are not here at all — they are data, so they live under
   | **Keyword-growth curve / (.json)** | cumulative distinct keywords vs words added (is the vocabulary saturating?) |
   | **Home-card diagnostics (.json)** | does each Home Lead open its exact corpus or a fuzzy fallback? |
   | **Date-extraction log (.json)** | date-tagging coverage |
+  | **Month occupancy (.json)** | of the month names the keyword filter drops, how many were actually part of a date — the evidence for whether that filter should become date-aware |
   | **Network log (.json)** | fetch outcomes with transport-aware verdicts |
   | **Performance report / Scaling benchmark / Rollup benchmark (.json)** | timings and scaling checks |
   | **Debug bundle (.json)** | a consolidated support bundle |

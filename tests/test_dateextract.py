@@ -347,3 +347,57 @@ def test_reader_shows_entity_rows():
         html = c.get(f"/api/articles/{aid}/view").text
         assert "People in text" in html and "Macron" in html
         assert "Organizations in text" in html and "NATO" in html
+
+
+# --------------------------------------------------------------------------- claimed spans
+
+
+def test_extract_dates_with_spans_returns_the_spans_it_claimed():
+    """The seam the month-occupancy diagnostic reads.
+
+    A claimed span is what the extractor CONSUMED as a date, which is the question
+    "was this month token part of a date?" needs. Pinned by slicing the text with the
+    returned offsets, not by comparing to a hand-typed pair, so the spans are proved to
+    index the text the caller passed in."""
+    from src.timemap.dateextract import extract_dates_with_spans
+
+    text = "Published on 3 April 2026 and again in March 2025."
+    found, spans = extract_dates_with_spans(text, today=date(2026, 6, 11), language="en")
+    assert [c["date"] for c in found] == ["2026-04-03", "2025-03-01"]
+    sliced = sorted(text[a:b] for a, b in spans)
+    assert sliced == ["3 April 2026", "March 2025"]
+
+
+def test_the_public_extract_dates_is_unchanged_by_the_seam():
+    """The wrapper returns exactly the first element -- same list, same order."""
+    from src.timemap.dateextract import extract_dates, extract_dates_with_spans
+
+    text = "Le 11 juin 2026, puis le 3 avril 2025."
+    kw = {"today": date(2026, 6, 11), "language": "fr"}
+    assert extract_dates(text, **kw) == extract_dates_with_spans(text, **kw)[0]
+    assert extract_dates_with_spans("", **kw) == ([], [])
+
+
+def test_limit_truncates_the_candidates_and_never_the_spans():
+    """``limit`` is a bound on what is REPORTED. A caller asking "was this offset read
+    as a date?" must not get a different answer because it asked for fewer candidates."""
+    from src.timemap.dateextract import extract_dates_with_spans
+
+    text = " ".join(f"{d} June 2026" for d in range(1, 8))
+    kw = {"today": date(2026, 6, 30), "language": "en"}
+    few, spans_few = extract_dates_with_spans(text, limit=2, **kw)
+    many, spans_many = extract_dates_with_spans(text, limit=99, **kw)
+    assert len(few) == 2 and len(many) == 7
+    assert spans_few == spans_many
+
+
+def test_spans_never_reach_past_the_scan_bound():
+    """The extractor stops at ``_MAX_SCAN``; a caller reading an offset beyond it as
+    "not claimed" would fabricate an absence out of a bound, so there must be nothing
+    there to read."""
+    from src.timemap.dateextract import _MAX_SCAN, extract_dates_with_spans
+
+    text = "x" * (_MAX_SCAN + 50) + " 3 April 2026."
+    found, spans = extract_dates_with_spans(text, today=date(2026, 6, 11), language="en")
+    assert found == []
+    assert all(end <= _MAX_SCAN for _, end in spans)

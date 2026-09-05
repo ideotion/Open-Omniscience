@@ -403,7 +403,29 @@ route the drop decision through the spans it already claims.
 > **Sharpened by pass 2's own measurements (2026-09-05).** Two corrections, one in each
 > direction. The Levantine claim above was too generous: of seven forms tested the extractor
 > knows **three**, and is missing `كانون الثاني` (January), `نيسان` (April), `تموز` (July)
-> and `آب` (August) — so Levantine coverage is partial, not complete. And the extractor is
+> and `آب` (August) — so Levantine coverage is partial, not complete.
+>
+> > ⚠ **THREE OF THOSE FOUR ARE WRONG, and the error is the dangerous direction (measured
+> > against the tree 2026-09-05, while building the ride-along).** Driving the real
+> > extractor over all twelve Levantine names, not a seven-form sample, gives **6/12**, and
+> > the misses are not what this paragraph says:
+> > * **`تموز` (July) EXTRACTS.** It is in `_MONTH_LANG_OVERRIDES`, ar-gated, because it is
+> >   also a real Persian word ("midsummer heat"). Listed here as missing; it is handled.
+> > * **`نيسان` (April) and `آب` (August) are DELIBERATE REFUSALS**, with measured
+> >   fabrication evidence recorded beside them in `dateextract.py`: *"سيارة نيسان 2023"* is
+> >   a Nissan model year, and `آب` is ordinary fa/ur prose ("water"). A month fires beside
+> >   any adjacent number, so adding them invents dates. **Reading them as coverage gaps is
+> >   how a later session "fixes" them and silently reintroduces the vectors** — which is
+> >   what this paragraph invites. They are now pinned as BEHAVIOUR, with their reason, in
+> >   `tests/test_arabic_month_coverage.py`.
+> > * The genuine gap was the **four MULTI-WORD** names (`كانون الثاني`, `تشرين الأول`,
+> >   `تشرين الثاني`, `كانون الأول`) — a third of the Levantine year. The code called them
+> >   "out of scope"; that was a claim about the matcher and it was **measured false**
+> >   (`_MONTH_ALT` is a plain alternation, the surrounding patterns already wrap it in
+> >   `\s+`). All four now resolve with no pattern change: **Levantine 6/12 → 10/12.**
+> >
+> > The lesson generalises past Arabic: this section read an ABSENCE from a table as a gap
+> > without reading the comment above it, and half of those absences were reasoned refusals. And the extractor is
 > *better* than pass 2 assumed on Russian: pass 2 correctly reports that CLDR ships only the
 > nominative and genitive of six cases, and recommends a suffix rule or stemmer for the
 > prepositional `январе` ("в январе"). `dateextract.py` **already carries the prepositional
@@ -420,6 +442,25 @@ finding the report surfaced. It is a handful of table entries, not a project.
 > gets. Re-measured against the fuller list pass 2 supplies, the extractor knows **0 of 7**:
 > the three above plus `ماي` (May), `جوان` (June), `جويلية` (July) and `أوت` (August). Still
 > a table entry each — now with the missing set fully enumerated rather than sampled.
+>
+> > ✅ **BUILT 2026-09-05, and it was not "a table entry each".** Measured before: **1 of 8**
+> > (`مارس` resolves, shared with the Gulf set). Measured after: **7 of 8**. Five names went
+> > in ungated (`جانفي`, `فيفري`, `أفريل`/`افريل`, `جويلية`, `أوت`) — French loans with no
+> > other Arabic reading. The other two needed the discipline the existing block already
+> > applies, and recording WHY is the point:
+> > * **`جوان` (June) is ar-GATED**, not ungated: it is a very common Persian word ("young"),
+> >   exactly the `تموز` case, so it resolves under an ar hint and is skipped with none.
+> > * **`ماي` (May) is WITHHELD.** It is colloquial *water* across the Gulf, Iraq and the
+> >   Levant — a collision **within Arabic**, so the language gate that saves `جوان` cannot
+> >   help, and the corpus probe that cleared the six ungated Levantine names could not be
+> >   run here. Refused on the `آب` precedent: a missing dateline is a visible gap, an
+> >   invented date is not. Running that probe is what would settle it.
+> >
+> > One claim written into the source during this work had to be withdrawn before it shipped:
+> > that the non-hamza `اوت` was Persian *"out"* and therefore needed separating from the
+> > Maghrebi `أوت`. The table already answered it — `اوت` is **Persian August**, the same
+> > French loan, already mapped to 8. Both spellings agree, and the test pins that agreement
+> > rather than the distinction it was written to pin.
 
 ### 6b.3 Refuted, sharpened, and newly surfaced
 
@@ -766,18 +807,55 @@ it, treat `kind_overrides` as a worklist rather than a patch, and **keep the amb
 
 | # | Slice | Gate |
 |---|---|---|
-| 1 | `expand_query` + search/omnibar wiring + disclosure (**R1**) | none — buildable now |
-| 2 | Month-occupancy diagnostic (§5) — how often is a month token outside a claimed date span? | none — read-only |
+| 1 | `expand_query` + search/omnibar wiring + disclosure (**R1**) | **✅ BUILT 2026-09-05** — `equivalence.expand_term` / `QueryExpander`, the `build_match` hook, both search surfaces, the disclosure |
+| 2 | Month-occupancy diagnostic (§5) — how often is a month token outside a claimed date span? | **✅ BUILT 2026-09-05** — `analytics/month_occupancy.py`, `GET /api/diagnostics/month-occupancy`, rides the all-diagnostics bundle. **The number itself is an OPERATOR step**: it needs a real corpus (§8b) |
 | 3 | Date-aware month handling + re-index | slice 2's number. **Cheaper than it looked** — `dateextract` already carries ru (all three cases tested, incl. the prepositional CLDR omits), ar Gulf + *part of* Levantine, hi, bn, th, fa; §6b.2(c). Ride-alongs: the 7-form Maghrebi gap and the 4 missing Levantine forms, §6b.2(d) |
-| 3b | Re-file the mis-filed month block out of `hi.yml` into `_multilingual.yml` | none — a pure move, set-identical, byte-identity test proves it (§6b.2(a)) |
+| 3b | Re-file the mis-filed month block out of `hi.yml` into `_multilingual.yml` | **✅ BUILT 2026-09-05** — and `ru.yml` carried a 61-entry Latin block the plan had not seen; both moved, set-identity proved by digest, a script guard added |
 | 4 | Ambiguity map from the existing Wikidata fetch + the triage's `ambiguous_language` | none. Mechanism + prior art confirmed by pass 2 (§6c.1(2)); **size unmeasured** — the one open number (§6c.5) |
 | 5 | Ring coverage expansion (more seeds) | operator: networked run. ru/hi/bn need a source OMW structurally cannot provide (§6b.1(3)) — the SKOS family covers ru+ar (§6b.3) |
-| 6 | Sense **inventory** (**R2** / **R2a**) | slices 2–4; own reviewed slice. **Permanently** the inventory half — RULED 2026-09-05, §6c.4 |
+| 6 | Sense **inventory** (**R2** / **R2a**) | slices 2–4; own reviewed slice. **Permanently** the inventory half — RULED 2026-09-05, §6c.4. **The CHOICE MECHANISM shipped early (§8c)**: R2a's pick runs today over the 91 ring-covered collisions. What is still gated is the inventory's COVERAGE, which needs the dump |
 | ~~6b~~ | ~~Sense linker + eval~~ | **evidence-refuted** (§6c.1(3)): 0.335 F1 on news, measured on the subset where an answer exists |
 | 7 | Synonym tier, separately disclosed | **answered NEGATIVE for OMW** (§6b.1(2)) — the translated synsets already contain hypernyms. Open only for the SKOS family, gated on its licence |
 | — | Per-language month scoping | **not free here**: a stopwords-architecture change, not a data file (§6c.2(a)), and it recovers 3 of 7 named losses (§6c.2(b)). Complement to slice 3, not a substitute |
 
 Slices 1, 2, 3b and 4 need no network, no new dependency, and no ruling.
+
+### 8b. What slice 2 does and does not settle — read this before quoting its number
+
+The instrument is built and it has **not been run on a corpus**. Nothing in this document
+carries an occupancy figure, and none should be invented: the sandbox has no corpus, and a
+number produced from a fixture would be a measurement of the fixture.
+
+**The operator step is one call**, and it also rides the all-diagnostics bundle, so a
+bundle already taken after this lands contains it as `month-occupancy.json`:
+
+```
+GET /api/diagnostics/month-occupancy?sample=400&download=1
+```
+
+**How to read what comes back**, because two of its bounds point in opposite directions and
+the ruling turns on both:
+
+* `totals.outside_share` is the headline — the share of banned-month-token occurrences the
+  date extractor did **not** consume. Its denominator is UNIGRAM occurrences only, and the
+  ban additionally kills every n-gram containing a banned token (`march on washington`,
+  `april ryan`), so the deletion it measures is a **floor**;
+* pointing the other way, a dateline the extractor MISSES is counted as outside, and its
+  field recall was measured at 36–52%. So the figure **over-states** what a date-aware block
+  would newly admit. Neither bound is corrected, because correcting either would require a
+  number nobody has;
+* `by_language` is where the decision actually lives. The ban is language-agnostic while
+  the collision is not: `mars` is a French dateline and an English planet, `sept` is a French
+  numeral, `march`/`may`/`april`/`august` collide inside English. A high outside share
+  concentrated in the languages a corpus actually carries is the case for slice 3;
+* `by_token` names which bans cost the most, so a partial fix (drop the block for the worst
+  handful rather than all 82) is a decidable option rather than an assertion.
+
+**A number to expect and not to over-read.** The Hungarian year-first form is the only gate
+the current banned set can reach — measured, every other banned month name sits in the
+language-agnostic table — so `by_language` differences will be driven by what each language's
+prose contains, not by the extractor treating the languages differently.
+
 
 **After both research passes, nothing in slices 1–4 is gated on anything.** Two decisions
 were owed; one has been taken and one remains, and neither blocks those slices:
@@ -792,3 +870,34 @@ twelve-language surface-form index fits under 100 MB. At the measured 35.8 bytes
 file holds ~2.8 M forms, and the row count is unknown because the dump is behind the same
 allowlist that has now blocked five consecutive sessions (§6c.0). Opening it for
 `dumps.wikimedia.org` is the single highest-value operator step remaining.
+### 8c. R2a's pick shipped with slice 1, and why it did not wait for slice 6
+
+Slice 1 refuses to expand a term that denotes several concepts and lists them. That
+refusal is right — resolving a collision by dict order would pick a sense on the reader's
+behalf — and on its own it is a **dead end**: it tells the reader they must choose and
+gives them nothing to choose with. This repository has a recorded rule for exactly that
+shape (*before shipping an endpoint that answers "here is why, and here is how to
+proceed", grep for the caller that actually sends the proceed flag*), so the pick is part
+of the refusal rather than a later slice.
+
+**What shipped.** `expand_term(..., pinned_ring=)` and `QueryExpander(pinned=)`, a
+repeatable `sense=term:ring_id` parameter on `/api/articles`, and pick buttons in the
+analysis window's notice. The pin outranks both the UI-language narrowing and the refusal
+— it answers the question they exist to avoid guessing at — and it can only ever select
+among the rings the term **already belongs to**, so a stale or hand-edited link cannot
+widen a search into a concept the term does not carry. Such a pin falls through to
+ordinary resolution and is **reported**, because a reader who believes they chose a
+concept and silently got a different search has been told something false by omission.
+
+**What did NOT ship, and is not hidden by this.** The sense inventory's *coverage*. The
+rings know 91 within-language collisions; a corpus-wide surface-form → sense index is
+slice 4's Wikidata dump, still blocked on the allowlist. So the pick is complete as a
+mechanism and partial as a population: an ambiguous term the rings do not cover shows no
+senses, because there are none to show, not because it is unambiguous.
+
+**One honest limit in the rendering.** A ring's concept LABEL is an English identifier
+derived from its id (`public-election` → "public election"); the ring's *members* are
+per-language but its *name* is not. So the buttons a French reader sees are framed in
+French and labelled in English. Translating them would need a per-language label on each
+ring, which the generator does not emit — recorded rather than papered over.
+
