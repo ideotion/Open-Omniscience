@@ -590,6 +590,7 @@ sources:
   - africa
   - lean-center
   - news
+  - politics
   country: fr
 - name: Die Zeit
   domain: zeit.de
