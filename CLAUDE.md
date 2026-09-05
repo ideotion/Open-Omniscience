@@ -5755,6 +5755,47 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     from the same run: a shell-quoted `str.replace` mutation whose needle never matched
     reported 42-passed twelve times over, which reads exactly like twelve dead guards —
     every mutation must `assert new != old` before its run is allowed to mean anything.
+  - **A MODEL'S "JUNK" VERDICT IS ABOUT A TOKEN; A STOPLIST ENTRY IS ABOUT A LANGUAGE —
+    and the gap between the two is 90% (2026-09-05, the keyword-triage batch):** the
+    proposal offered 20,611 terms the model called junk. Hand-classifying a seeded random
+    sample of 60 across the three languages the reviewer reads well
+    (`docs/audit/keyword-triage-2026-09-05-sample.csv`, reproducible from
+    `random.Random(20260905)`): **10% site chrome · 40% inflected verbs and adjectives ·
+    27% real content nouns and proper nouns · 20% phrase fragments · 3% genuine
+    function-word gaps.** The verbs and adjectives are the recorded lemmatization
+    territory, the content nouns are the recorded open-class trap (nl `spanje`, `wereld`,
+    `brandweer` were all offered), and even inside the 10% only a third survived a second
+    bar — **furniture in a LANGUAGE, not furniture on one SITE**: nl `lang gratis` and de
+    `klick online` are one publisher's subscription copy, and stoplisting them per-language
+    would hide those words for every other publisher that uses them meaningfully (that is
+    the source-auditor's `furniture_share`, not the stoplist's job). Twenty words shipped
+    of 20,611 offered. FOUR RIDERS, each measured rather than reasoned. (a) **The
+    `setdefault` in the loader makes a NEW key a REPLACEMENT, not an addition**:
+    `scoped_stopwords.setdefault(lang, set()).update(curated)` means a curated entry for a
+    language with no vendored `configs/stopwords_iso/<lang>.txt` CREATES the key, and
+    `get_stopwords` then stops falling back to the English default — one word for `sr` takes
+    its stopset **128 → 1**. Invisible in every existing test, because every existing key
+    has a file; now a guard that proves the hazard rather than asserting it. (b) **The
+    channel a proposal NAMES is not the channel its caveat DESCRIBES**: the artifact is
+    `kind: scoped_stoplist_additions` and its caveat says an entry "hides every existing
+    mention at query time" — true of the global channel (`hidden_set` unions
+    `global_stopwords()`) and FALSE of the scoped one, which never reaches it. A scoped
+    entry is index-time only; the existing mentions go on the next re-index. Read what the
+    consumer does, not what the producer's prose says. (c) **`en` and `fr` cannot use the
+    scoped channel at all** — `get_stopwords` checks `language_stopwords` first and those
+    are its only two keys, so an English or French addition is necessarily GLOBALISED and
+    owes cross-language review; that is one structural reason, and it subsumes the separate
+    worry about `Keyword.language` being first-write-wins. (d) **A stoplist entry derived
+    from unsegmented text is pinned to the tokenizer's failure mode**: with the
+    `[segmentation]` extra absent, `th` terms are 3-character MARK FRAGMENTS (median 3.0
+    chars — `งหว`, `ทำให`) while `zh`/`ja` are whole unsegmented RUN-ONS (median 8 and 7.5 —
+    `保證天天中獎 點我下載app`, `会員限定記事`). Both are genuinely junk and neither is a WORD, so
+    an entry for either would be dead weight the day a segmenter is installed and the token
+    shape changes. Two different artifacts, one exclusion. **AND THE LABEL ONLY SELECTS THE
+    CANDIDATE**: `Keyword.language` is first-write-wins (`reconcile_keyword_language` is the
+    documented repair and runs only in the re-index cleanup), so the language a term is
+    filed under is a hint, not a finding — every word in the batch was assigned by READING
+    it, which is the only step that makes a language-scoped entry safe.
 
 ## Open queue (when maintainer says proceed)
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
@@ -5843,9 +5884,38 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   dissolves the maintainer's own transfer worry: the work lives in the repo, not in the
   database, so it travels to every install. Caveat to state when ruling: a stoplist derived
   from ONE corpus reflects that corpus's language and source mix — mitigated by putting
-  additions in the language-SCOPED channel (`configs/stopwords_extra/<lang>.yml`, collision-free
-  by construction) and reserving the global channel for words that survive cross-language
-  review.
+  additions in the language-SCOPED channel and reserving the global channel for words that
+  survive cross-language review.
+  **⚠ CORRECTION 2026-09-05 (this line previously named `configs/stopwords_extra/<lang>.yml` as
+  the language-SCOPED channel — it is the opposite, and following it would have put words in
+  the collision-prone channel believing them collision-free).** Those files' own headers say
+  it: `global_stopwords()` unions EVERY `stopwords_extra/*.yml` regardless of language, so the
+  split is a readability convenience, not scoping. The SCOPED channel is the vendored
+  `configs/stopwords_iso/<lang>.txt` (regenerated by `build_stopwords.py`, so hand edits there
+  are overwritten) plus the in-code `CURATED_SCOPED_STOPWORDS` / `PUBLISHING_BOILERPLATE_SCOPED`
+  in `src/services/stopwords.py`, which is where a curated word belongs. Two consequences the
+  ruling text should carry: (a) `en` and `fr` cannot reach the scoped channel at all
+  (`get_stopwords` checks `language_stopwords` first and they are its only two keys), so any
+  English or French addition IS a global one; (b) the "applied at BOTH ends" framing above is
+  the GLOBAL channel's — a scoped entry is index-time only and does not hide existing mentions
+  at query time, so it lands on the next re-index.
+  **PROPOSAL RECEIVED + FIRST REVIEWED BATCH SHIPPED 2026-09-05 (PR 5 of 5 from the
+  2026-09-05 AI-diagnostics export; shipped.csv row "analytics/stopwords"):** the operator
+  step above is DONE — `oo-keyword-triage-proposal-20260905.json` (20,175 batch records,
+  Ministral-3-3B, `canary_ok_overall: true`; 20,611 terms actually proposed, 59,206 held back
+  for ambiguous language). **NOTE the `judged` counts are AT the reader's cap:** 25,750 junk +
+  221,601 content + 2,649 unsure = **exactly 250,000** = `distinct_terms` = `_MAX_TERMS`. The
+  cap itself is correct (a bounded reader over a log whose size tracks how much there was to
+  judge) and `terms_truncated: true` sits in the SAME block, so this is disclosed, not hidden —
+  the nicety is that the block does not carry the cap's VALUE, so a reader cannot tell the
+  round number is a ceiling without reading the source. Not changed here; recorded so the
+  figure is never quoted as a corpus total. Twenty words across
+  de/nl/sv/da/tr merged into `PUBLISHING_BOILERPLATE_SCOPED` (sv/da/tr new to it), each
+  hand-verified, with the named refusals pinned so a later sweep argues with the reason. The
+  measured composition of what was NOT taken is the Lessons entry above. **STILL OPEN:** the
+  formal (1)-vs-(2) ruling; English (11,263 terms) and French (881) as a GLOBAL-channel batch
+  needing cross-language review; zh/ja/th (611) until the `[segmentation]` extra is installed
+  and those articles are re-indexed; and the 64,910 `kind_overrides` proposals, untouched here.
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
   the MEASUREMENT shipped, the two structural changes did NOT — deliberately, and the
   reasons are findings rather than reluctance):** the queue runs `_drive()` as a strict

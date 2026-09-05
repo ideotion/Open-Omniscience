@@ -446,13 +446,54 @@ CURATED_SCOPED_STOPWORDS: dict[str, frozenset[str]] = {
 # (= happy) can never be hidden by de/es "contenido"/"inhalte". Applied only to languages
 # that use the scoped channel (not en/fr, which take the language_stopwords branch — the
 # English furniture lives in PLATFORM_STOPWORDS above).
+#
+# A LANGUAGE KEY HERE MUST ALREADY HAVE A VENDORED configs/stopwords_iso/<lang>.txt.
+# ``__init__`` does ``scoped_stopwords.setdefault(lang, set()).update(curated)``, so a key
+# for a language with NO vendored file CREATES that key — and ``get_stopwords`` then stops
+# falling back to the English default and returns the curated words ALONE. Measured: adding
+# one word for "sr" takes its stopset 128 -> 1. For a language with a vendored file the
+# same addition is strictly additive. Pinned by test_curated_scoped_keys_never_shrink_a_stopset.
+#
+# 2026-09-05 batch (ai-proposed -> claude-verified -> maintainer-merged), from the
+# keyword-triage proposal in the 2026-09-05 AI-diagnostics export (Ministral-3-3B,
+# keyword-triage-v1). Counts are that export's own mentions/articles on the live corpus.
+# INCLUSION RULE, all four: (1) the term names site CHROME — a share/copy/login/paywall/
+# newsletter/comment/navigation/table-of-contents label — not something an article can be
+# ABOUT; (2) its non-chrome sense is negligible as a news-article topic IN THAT LANGUAGE;
+# (3) it is not a proper noun (publisher, place, person, product); (4) the reviewer reads
+# the language well enough to defend (2). Deliberately EXCLUDED, and named so a later sweep
+# has to argue with the reason rather than rediscover it: sv "bindningstid" (725m/363a) and
+# "nyhetssajter" (598m/299a) — real Swedish consumer-affairs and media-industry topics;
+# sv "kakor" (58m/11a) — also biscuits; tr "günaydın" (145m/49a) — a greeting, and a
+# proper-noun collision; de "abmelden" (12m/12a) and nl "abonnementen" (18m/7a) — dual use.
+# Multi-word entries are matched against the JOINED n-gram (extract.py's `phrase in stop`),
+# the established shape the vendored lists already use (379 of 645 entries in vi.txt).
 PUBLISHING_BOILERPLATE_SCOPED: dict[str, frozenset[str]] = {
-    "de": frozenset("inhalte werbung anzeige newsletter kommentare".split()),
+    # 2026-09-05: inhaltsverzeichnis 299m/7a · aufklappen 74m/24a · originalpreis 92m/46a
+    # · herunterladen 21m/8a · weiterlesen 19m/12a.
+    "de": frozenset(
+        "inhalte werbung anzeige newsletter kommentare "
+        "inhaltsverzeichnis aufklappen weiterlesen herunterladen originalpreis".split()
+    ),
     "es": frozenset("publicidad contenido boletín comentarios".split()),
     "it": frozenset("pubblicità contenuti newsletter commenti".split()),
     "pt": frozenset("publicidade conteúdo boletim comentários".split()),
-    "nl": frozenset("column nieuwsbrief reclame inhoud reacties".split()),
+    # 2026-09-05: wachtwoord 45m/15a · rubriek 25m/18a · downloaden 25m/11a · rubrieken
+    # 22m/7a · colofon 18m/18a · cookiebeleid 12m/3a.
+    "nl": frozenset(
+        "column nieuwsbrief reclame inhoud reacties "
+        "colofon rubriek rubrieken wachtwoord downloaden cookiebeleid".split()
+    ),
     "ru": frozenset("реклама рассылка комментарии".split()),
+    # 2026-09-05, new here: inloggad 1058m/570a (the single largest chrome term in the
+    # whole export) · webbplatsen 49m/3a · webbplats 35m/16a · a-ö 26m/9a (the A–Ö index
+    # label) · användarvillkor 10m/10a.
+    "sv": frozenset("inloggad webbplats webbplatsen användarvillkor a-ö".split()),
+    # 2026-09-05, new here: hjemmeside 81m/28a · nyhedsbreve 25m/11a.
+    "da": frozenset("hjemmeside nyhedsbreve".split()),
+    # 2026-09-05, new here. Both are PHRASES: the unigrams ("paylaş", "oku") are ordinary
+    # Turkish verbs and are deliberately NOT stoplisted.
+    "tr": frozenset({"haberi paylaş", "devamını oku"}),  # 35m/35a · 22m/2a
 }
 
 
