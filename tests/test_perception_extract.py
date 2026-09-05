@@ -172,6 +172,96 @@ def test_language_gate_empty_report_gates_every_language():
 
 
 # --------------------------------------------------------------------------- #
+# FIELD DEFECT 1 (2026-09-05): the language code is NORMALISED before the lookup.
+#
+# `Article.language` is stored raw from `<html lang>`, so most major outlets arrive
+# as `en-US`/`en-GB`. A plain `gate.get(language)` missed every one of them and
+# reported "never evaluated" -- 725,791 articles across a 33-day field sweep that
+# attempted zero calls, 23 days of it AFTER the harness cleared 13 languages.
+#
+# BOTH DIRECTIONS ARE PINNED. The over-eager fix is exactly as wrong as the defect:
+# a normaliser that folded distinct languages together would license a language the
+# harness never cleared, which is the fabricated pass this whole module exists to
+# refuse. So there is a test that `en-US` clears an `en` gate AND a test that `es`
+# never does.
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("stored", ["en-US", "en-GB", "EN", "en_us", "en-Latn-US", " en "])
+def test_a_region_tagged_article_language_clears_a_bare_code_gate(stored):
+    gate = PE.gate_languages_from_report(
+        {
+            "status": "ok",
+            "report": {
+                "by_language": {
+                    "en": {
+                        "who": {"hallucination_rate": 0.0, "recall": 1.0, "n_gold": 1},
+                        "where": {"hallucination_rate": 0.0, "recall": 1.0, "n_gold": 1},
+                        "when": {"hallucination_rate": 0.0, "recall": 1.0, "n_gold": 1},
+                        "n_cases": 1,
+                    }
+                }
+            },
+        }
+    )
+    active, reason = PE.language_gate(stored, gate)
+    assert active is True, f"{stored!r} is an English article, not an unevaluated one"
+    assert "never evaluated" not in reason
+    # The STORAGE gate must agree with the CALL gate, or a paid-for call is discarded.
+    assert PE.field_gate(stored, "where", gate)[0] is True
+
+
+def test_negative_space_normalising_never_merges_distinct_languages():
+    """The mirror defect: an over-eager key must not license an untested language."""
+    gate = PE.gate_languages_from_report(
+        {
+            "status": "ok",
+            "report": {
+                "by_language": {
+                    "en": {
+                        "who": {"hallucination_rate": 0.0, "recall": 1.0, "n_gold": 1},
+                        "n_cases": 1,
+                    }
+                }
+            },
+        }
+    )
+    for other in ("es", "eng", "de", "fr", "e"):
+        active, reason = PE.language_gate(other, gate)
+        assert active is False, f"{other!r} must never inherit en's verdict"
+        assert reason == "never evaluated"
+
+
+def test_a_region_tagged_report_key_is_reachable_by_a_bare_article_language():
+    """Normalised on BOTH sides (the 2026-07-29 lesson's second half): a report keyed
+    `en-US` must not create a bucket no article can ever address."""
+    gate = PE.gate_languages_from_report(
+        {
+            "status": "ok",
+            "report": {
+                "by_language": {
+                    "en-US": {
+                        "where": {"hallucination_rate": 0.0, "recall": 1.0, "n_gold": 1},
+                        "n_cases": 1,
+                    }
+                }
+            },
+        }
+    )
+    assert set(gate) == {"en"}
+    assert PE.language_gate("en", gate)[0] is True
+
+
+def test_an_unknown_language_still_refuses_and_says_so():
+    """Normalisation must not turn "we do not know" into a lookup miss that reads as
+    "the harness never tested it" -- they are different facts."""
+    gate = {"en": {"active": True, "reason": "cleared", "fields": {}}}
+    for empty in (None, "", "   ", "-"):
+        assert PE.language_gate(empty, gate) == (False, "article has no known language")
+        assert PE.field_gate(empty, "who", gate) == (False, "article has no known language")
+
+
+# --------------------------------------------------------------------------- #
 # select_perception_batch / extract_perception_batch -- in-memory DB, fake client.
 # --------------------------------------------------------------------------- #
 
@@ -330,6 +420,31 @@ def test_an_unevaluated_language_is_gated_never_assumed_safe(db):
     result = PE.extract_perception_batch(db, work, _NeverCallMe(), model="stub:test", gate={})
     assert result["gated"] == 1
     assert result["gated_detail"] == {"never evaluated": 1}
+
+
+def test_a_region_tagged_article_is_extracted_not_gated(db):
+    """The field defect, end to end through the real batch runner: an `en-US` article
+    against an `en` gate must reach the model and be stored, not counted as gated."""
+    src = Source(name="Src", domain="src.test", tags="news")
+    db.add(src)
+    db.flush()
+    a = _mk_article(db, src, 1, language="en-US")
+    db.commit()
+
+    gate = {
+        "en": {
+            "active": True,
+            "reason": "cleared the S6.5 harness",
+            "fields": {f: {"active": True, "reason": "cleared"} for f in ("who", "where", "when")},
+        }
+    }
+    work = [ArticleWork(a.id, a.title, a.content, a.language)]
+    result = PE.extract_perception_batch(db, work, _FakeClient(), model="stub:test", gate=gate)
+
+    assert result["gated"] == 0, result["gated_detail"]
+    assert result["attempted"] == 1
+    assert result["stored"] == 1
+    assert db.query(AiKeyword).count() > 0
 
 
 def test_empty_content_is_gated_without_calling_the_model(db):

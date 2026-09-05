@@ -152,8 +152,8 @@ def run_progressive_perception_extract_job(
     report"; when ``None`` it resolves via
     :func:`src.ai_layer.perception_job.last_perception_eval_live_report` (an empty/
     never-run report gates EVERY language as "never evaluated" -- the sweep then
-    honestly extracts nothing, which is the correct behaviour when no eval evidence
-    exists yet, never a guessed pass).
+    REFUSES TO START rather than walking the corpus to discover that fact once per
+    article; see the ``refused`` return below).
 
     ``max_batches`` bounds ONE call (mirrors ``run_progressive_triage_job``'s per-call
     budget). ``restart=True`` discards any saved cursor and starts a brand-new sweep (a
@@ -173,6 +173,41 @@ def run_progressive_perception_extract_job(
 
         gate_report = last_perception_eval_live_report()
     gate = PE.gate_languages_from_report(gate_report)
+
+    # REFUSE TO START WHEN THE GATE CLEARS NOTHING (2026-09-05, field defect 1's
+    # second half). The gate is resolved here, before any work; if no language is
+    # active then EVERY article will be refused, and walking the corpus to establish
+    # that costs one SELECT per batch and one log line per batch to learn the same
+    # fact again. The field run did it 31,762 times over 33 days and finished
+    # `state: "done"` with `attempted: 0` -- a sweep that cannot do anything must say
+    # so once, not iterate.
+    #
+    # NOT a completion and NOT an error: the cursor is untouched and no footer is
+    # written, so the moment a perception-eval lands the very next call resumes the
+    # SAME sweep from where it was. Nothing is logged either -- a refusal appended
+    # per invocation would reproduce the spam in a new shape (14,135 resumes).
+    active_langs = sorted(lang for lang, g in gate.items() if g.get("active") is True)
+    if not active_langs:
+        reason = (
+            "the perception-eval gate clears no language, so every article would be "
+            "refused -- run the live perception eval first (Settings -> AI, or POST "
+            "/api/diagnostics/perception-eval-live). Nothing was swept and no progress "
+            "was lost."
+        )
+        ctx.set_progress(detail=reason)
+        _LOG.info("progressive perception-extract refused to start: %s", reason)
+        return {
+            "state": "refused",
+            "refused": True,
+            "reason": reason,
+            "active_languages": [],
+            "gate_languages": len(gate),
+            "gate_source": {
+                "report_status": gate_report.get("status")
+                or ("ok" if gate_report.get("available") else "none"),
+                "report_run_at": gate_report.get("run_at"),
+            },
+        }
 
     path_state = state_path or _progress_state_path()
     state = {} if restart else load_progress_state(path_state)
@@ -208,9 +243,9 @@ def run_progressive_perception_extract_job(
             # all" are DIFFERENT facts and are recorded apart -- folding them together
             # (both are falsy) would let the run log read as "we measured it and disabled
             # it" for a language the harness never touched.
-            "active_languages": sorted(
-                lang for lang, g in gate.items() if g.get("active") is True
-            ),
+            # The SAME list the refusal above tested, not a second derivation of it --
+            # a header that could disagree with the guard is a header that will.
+            "active_languages": active_langs,
             "disabled_languages": {
                 lang: g.get("reason") for lang, g in gate.items() if g.get("active") is False
             },
