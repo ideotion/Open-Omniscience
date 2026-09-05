@@ -120,10 +120,14 @@ def build_source_tag_prompt(
     """Build the (system, user, expected_domains) prompt for one source-tag batch.
 
     The closed vocabulary is stated VERBATIM in the system prompt (resolved live
-    from the corpus's own ``Source.tags`` -- never a hardcoded taxonomy). Canaries
-    are mixed in with the real items exactly like triage's, so the model cannot
-    tell them apart."""
-    system = _SOURCE_TAG_SYSTEM_TEMPLATE.format(vocab=", ".join(vocabulary))
+    from the corpus's own ``Source.tags`` -- never a hardcoded taxonomy), minus the
+    provable separator duplicates: offering the model both ``case-law`` and
+    ``case_law`` asks it to distinguish two spellings of one tag. Only the PROMPT is
+    folded -- ``parse_source_tags`` still takes the full vocabulary, so the dropped
+    spelling remains a valid answer. Canaries are mixed in with the real items
+    exactly like triage's, so the model cannot tell them apart."""
+    prompt_vocab, _dropped = fold_separator_variants(vocabulary)
+    system = _SOURCE_TAG_SYSTEM_TEMPLATE.format(vocab=", ".join(prompt_vocab))
     lines: list[str] = []
     expected: list[str] = []
     for it in [*items, *canaries]:
@@ -263,22 +267,59 @@ def parse_source_tags(
 # Canaries -- hand-known obvious sources, evaluated only against the tags they
 # expect that ACTUALLY exist in this install's live vocabulary (verify_roster's
 # same conservatism: never assert a tag the corpus doesn't even have).
+#
+# THE EXPECTED SET IS AN ALTERNATIVES LIST, NOT A CONJUNCTION. Both shipped
+# canaries encode ONE concept in several spellings -- {"sports","sport","athletics"}
+# and {"finance","economy","economics","business"} -- so "recovered at least one" is
+# what their author meant. Reading the frozenset as a conjunction (the shipped
+# ``applicable.issubset(got)`` rule) turned the stats canary into an UNWINNABLE bar:
+# in the 2026-09-03 field run its applicable set was {business, economy, finance} and
+# the model was required to name all three. Measured over that run's 118 batches, it
+# never did -- while answering ``economy+finance`` 23 times and
+# ``economy+finance+official-statistics`` once, which are correct answers for a
+# statistics agency. It was scored FAILED 118 times out of 118.
+#
+# If a future canary genuinely needs a conjunction it needs an EXPLICIT mode, not a
+# re-reading of this field -- an ambiguous structure re-interpreted twice is how the
+# first defect happened.
 # --------------------------------------------------------------------------- #
 def check_source_canaries(
     pb: ParsedSourceBatch, canary_expected: dict[str, frozenset[str]], vocabulary: list[str]
 ) -> dict:
-    """Compare canary domains' parsed tags against their expected tag SUBSET.
+    """Grade canary domains by RECALL against their applicable expected tags.
 
     A canary is evaluated only if AT LEAST ONE of its expected tags is present in
     this install's live vocabulary (a canary whose expected tag the corpus simply
     doesn't have cannot be satisfied by a closed-vocabulary model -- that is a
     vocabulary-coverage fact, not a model failure, so it is SKIPPED, not failed).
-    A canary passes when its applicable expected tags are a SUBSET of what the
-    model proposed (extra, additional correct tags are fine)."""
+
+    Three outcomes, deliberately kept apart because they are three different facts
+    the shipped boolean folded into one:
+
+    * **no_answer** -- the model returned no valid line for this canary. It expressed
+      no topical opinion, so there is nothing to judge; ``pb.missing`` already counts
+      exactly this, for canaries and real sources alike. Reported, NOT a judgement
+      failure. In the field run's 39 such batches the median missing-share was
+      **1.00** -- the model returned nothing parseable for the WHOLE batch, so the
+      canary was a witness to a dead batch, not its subject.
+    * **failed** -- the model answered and recovered NONE of the applicable tags: a
+      genuinely wrong topic, or the explicit ``none`` verdict. This is the signal the
+      canary exists for, and it stays fatal.
+    * **partial** -- answered, recovered some but not all. Reported with its recall,
+      never fatal: exact-set equality is not a property a correct model must have on
+      a 204-tag closed vocabulary that contains near-synonyms (see
+      ``vocabulary_collisions``).
+
+    ``ok`` is ``None`` -- inconclusive -- when nothing was answered, never a bare
+    ``True``: a model that never answers must not read as a model that passed.
+    """
     vocab_set = set(vocabulary)
     checked = 0
-    failed = []
-    skipped = []
+    failed: list[dict] = []
+    partial: list[dict] = []
+    no_answer: list[dict] = []
+    skipped: list[dict] = []
+    passed = 0
     for domain, expected_tags in canary_expected.items():
         applicable = expected_tags & vocab_set
         if not applicable:
@@ -289,11 +330,38 @@ def check_source_canaries(
         checked += 1
         got = pb.tags.get(domain)
         if got is None:
-            failed.append({"domain": domain, "expected": sorted(applicable), "got": None})
+            no_answer.append({"domain": domain, "expected": sorted(applicable), "got": None})
             continue
-        if not applicable.issubset(set(got)):
-            failed.append({"domain": domain, "expected": sorted(applicable), "got": list(got)})
-    return {"ok": not failed, "checked": checked, "failed": failed, "skipped": skipped}
+        recovered = sorted(applicable & set(got))
+        entry = {
+            "domain": domain,
+            "expected": sorted(applicable),
+            "got": list(got),
+            "recovered": recovered,
+            "recall": round(len(recovered) / len(applicable), 4),
+        }
+        if not recovered:
+            failed.append(entry)
+        elif len(recovered) < len(applicable):
+            passed += 1
+            partial.append(entry)
+        else:
+            passed += 1
+    answered = checked - len(no_answer)
+    return {
+        # None = inconclusive: nothing was answered, so there is no verdict to give.
+        "ok": (not failed) if answered else None,
+        "checked": checked,
+        "answered": answered,
+        "passed": passed,
+        "failed": failed,
+        "failed_n": len(failed),
+        "partial": partial,
+        "partial_n": len(partial),
+        "no_answer": no_answer,
+        "no_answer_n": len(no_answer),
+        "skipped": skipped,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -315,6 +383,169 @@ def resolve_tag_vocabulary(session) -> list[str]:
             if tag:
                 vocab.add(tag)
     return sorted(vocab)
+
+
+# --------------------------------------------------------------------------- #
+# VOCABULARY HYGIENE. ``resolve_tag_vocabulary`` takes every distinct value the
+# corpus has ever put in ``Source.tags`` -- and this codebase uses that column for
+# more than topics. Measured on the 2026-09-03 field run's live 204-tag vocabulary:
+# exactly ONE pair is provably the same tag (``case-law``/``case_law``, since
+# ``_norm_term`` folds case+accents+whitespace but NOT ``_`` against ``-``), two
+# pairs are singular/plural JUDGEMENTS, fourteen "containment" pairs are all
+# LEGITIMATELY DISTINCT (``africa``/``east-africa``, ``official``/
+# ``official-statistics``, ``lean-center``/``lean-center-left``), and ~30 entries
+# are not topics at all (``via:*`` provenance, coverage-state markers, the
+# political-lean scale, legal formats).
+#
+# So the split is: FOLD only what is provable, REPORT everything else. A naive
+# near-synonym merge would have destroyed a real hierarchy in 14 of 17 candidates,
+# and deciding that ``independent`` is not a topic is a taxonomy ruling a human
+# makes -- propose-never-auto-apply.
+# --------------------------------------------------------------------------- #
+#: The per-run canary tally. ONE implementation, used by both the one-shot and the
+#: progressive job -- an accumulator written twice drifts, and only one copy gets
+#: tested.
+_CANARY_TALLY_KEYS = ("checked", "answered", "passed", "failed_n", "partial_n", "no_answer_n")
+
+
+def new_canary_tally() -> dict:
+    return dict.fromkeys(_CANARY_TALLY_KEYS, 0)
+
+
+def accumulate_canary(tally: dict, canary: dict) -> dict:
+    """Fold one batch's canary result into a run tally. Never reads ``ok`` -- the
+    run verdict is DERIVED from the counts, so a tri-state ``None`` from a batch
+    that answered nothing cannot become a run-level failure."""
+    for key in _CANARY_TALLY_KEYS:
+        tally[key] = int(tally.get(key) or 0) + int(canary.get(key) or 0)
+    return tally
+
+
+def canary_verdict(tally: dict) -> bool | None:
+    """The run-level verdict: ``None`` (inconclusive) until something was answered,
+    then False iff any answered canary recovered NONE of its expected tags."""
+    if not int(tally.get("answered") or 0):
+        return None
+    return not int(tally.get("failed_n") or 0)
+
+
+def _sep_fold_key(tag: str) -> str:
+    """``_norm_term`` (case/accent/whitespace) PLUS separator removal -- two tags
+    sharing this key differ only by ``-``/``_``/spacing, i.e. are the same string."""
+    return _norm_term(tag).replace("-", "").replace("_", "").replace(" ", "")
+
+
+#: Vocabulary entries this codebase writes into ``Source.tags`` for reasons other
+#: than topic. Reported, never filtered -- see the module comment above.
+_NON_TOPICAL_CLASSES: dict[str, tuple[str, ...]] = {
+    "provenance": ("via:", "world-catalog"),
+    "coverage-state": (
+        "data-gap",
+        "gap",
+        "thin-coverage",
+        "fragmented",
+        "fallback",
+        "point-in-time",
+        "transitional",
+        "post-2021",
+        "shared-platform",
+    ),
+    # A political-lean or ownership tag DEDUCED from keyword evidence would be a
+    # fabricated editorial judgement -- the one class where a wrong proposal is not
+    # merely noise. Measured: the field run proposed one of these ONCE in 921
+    # assignments (``independent``), so this is latent, not live contamination.
+    "stance-or-ownership": (
+        "lean-left",
+        "lean-center",
+        "lean-center-left",
+        "lean-center-right",
+        "lean-right",
+        "party-affiliated",
+        "state-media",
+        "state-owned",
+        "public-broadcaster",
+        "independent",
+        "tabloid",
+        "paywalled",
+    ),
+    "format-or-schema": ("akoma-ntoso", "eli", "codes", "dockets", "filings", "gazette"),
+}
+
+
+def vocabulary_collisions(vocabulary: list[str]) -> dict:
+    """Report what is wrong with a live closed vocabulary. Pure; changes nothing.
+
+    ``separator_variants`` are provable duplicates (folded for the prompt by
+    ``fold_separator_variants``). ``near_synonyms`` are singular/plural pairs -- a
+    judgement, so they are named and left alone. ``non_topical`` names entries the
+    corpus put in ``Source.tags`` for a reason other than topic."""
+    groups: dict[str, list[str]] = {}
+    for tag in vocabulary:
+        groups.setdefault(_sep_fold_key(tag), []).append(tag)
+    separator_variants = [sorted(v) for v in groups.values() if len(v) > 1]
+
+    def _stem(tag: str) -> str:
+        t = _sep_fold_key(tag)
+        for suffix, repl in (("ies", "y"), ("es", ""), ("s", "")):
+            if t.endswith(suffix) and len(t) - len(suffix) >= 4:
+                return t[: -len(suffix)] + repl
+        return t
+
+    stems: dict[str, list[str]] = {}
+    for tag in vocabulary:
+        stems.setdefault(_stem(tag), []).append(tag)
+    near_synonyms = [
+        sorted(v)
+        for v in stems.values()
+        if len(v) > 1 and len({_sep_fold_key(t) for t in v}) > 1
+    ]
+    non_topical: dict[str, list[str]] = {}
+    for label, markers in _NON_TOPICAL_CLASSES.items():
+        hits = sorted(
+            t
+            for t in vocabulary
+            if any(t.startswith(m) if m.endswith(":") else t == m for m in markers)
+        )
+        if hits:
+            non_topical[label] = hits
+    return {
+        "vocabulary_size": len(vocabulary),
+        "separator_variants": sorted(separator_variants),
+        "near_synonyms": sorted(near_synonyms),
+        "non_topical": non_topical,
+        "note": (
+            "separator_variants are folded for the PROMPT only (the parser still "
+            "resolves either spelling); near_synonyms and non_topical are reported "
+            "for review and are never merged or filtered automatically."
+        ),
+    }
+
+
+def fold_separator_variants(vocabulary: list[str]) -> tuple[list[str], dict[str, str]]:
+    """Collapse ``-``/``_``/space spellings of one tag for the PROMPT vocabulary.
+
+    Returns ``(folded, dropped)`` where ``dropped`` maps each removed spelling to
+    the one kept. The survivor is the sorted-first spelling -- a deterministic,
+    explainable tie-break, and the collision report names both so a reviewer sees
+    which was dropped.
+
+    STRICTLY NON-NARROWING: only the PROMPT is folded. ``parse_source_tags`` keeps
+    receiving the FULL vocabulary, so a model answering the dropped spelling still
+    resolves exactly as before -- nothing that used to be accepted becomes a
+    rejection."""
+    groups: dict[str, list[str]] = {}
+    for tag in vocabulary:
+        groups.setdefault(_sep_fold_key(tag), []).append(tag)
+    folded: list[str] = []
+    dropped: dict[str, str] = {}
+    for tag in vocabulary:
+        peers = sorted(groups[_sep_fold_key(tag)])
+        keep = peers[0]
+        if tag == keep:
+            folded.append(tag)
+        else:
+            dropped[tag] = keep
+    return folded, dropped
 
 
 def select_source_tag_candidates(
@@ -492,6 +723,9 @@ def source_tag_run_header(
         "hardware": hardware or {},
         "vocabulary": vocabulary,
         "vocabulary_size": len(vocabulary),
+        # What is wrong with this install's own vocabulary, stated in the run's own
+        # header so a reader grading its output knows what the model was up against.
+        "vocabulary_collisions": vocabulary_collisions(vocabulary),
     }
 
 
@@ -519,8 +753,18 @@ def source_tag_batch_record(
         "none_count": pb.none_count,
         "parse_failures": pb.parse_failures,
         "missing": len(pb.missing),
-        "canary_ok": bool(canary.get("ok", True)),
+        # ``ok`` is a TRI-STATE (None = nothing answered, so no verdict). Carried
+        # through as-is -- ``bool(None)`` would publish a fabricated failure.
+        "canary_ok": canary.get("ok", True),
+        "canary_checked": canary.get("checked", 0),
+        "canary_answered": canary.get("answered", 0),
+        "canary_passed": canary.get("passed", 0),
         "canary_failed": canary.get("failed", []),
+        "canary_failed_n": canary.get("failed_n", 0),
+        "canary_partial": canary.get("partial", []),
+        "canary_partial_n": canary.get("partial_n", 0),
+        "canary_no_answer": canary.get("no_answer", []),
+        "canary_no_answer_n": canary.get("no_answer_n", 0),
         "canary_skipped": canary.get("skipped", []),
     }
     for f in _OLLAMA_TIMING_FIELDS:
@@ -616,6 +860,28 @@ def run_source_tags_selftest() -> dict:
         canary=out["canary"],
         model="stub:test",
     )
+    # The three canary outcomes, on a hand-built batch so the primary path above
+    # stays a clean pass: a WRONG topic must still be fatal (this fix must not be a
+    # laundering), a PARTIAL match must not be, and a canary nobody answered must
+    # read as inconclusive rather than as a pass.
+    graded = check_source_canaries(
+        ParsedSourceBatch(
+            tags={
+                "wrong.example": ("technology",),
+                "partial.example": ("finance",),
+            },
+            sources_in=3,
+        ),
+        {
+            "wrong.example": frozenset({"sports"}),
+            "partial.example": frozenset({"finance", "government"}),
+            "silent.example": frozenset({"sports"}),
+        },
+        vocabulary,
+    )
+    nothing_answered = check_source_canaries(
+        ParsedSourceBatch(sources_in=1), {"silent.example": frozenset({"sports"})}, vocabulary
+    )
     checks = {
         "sources_in_4": pb.sources_in == 4,  # 3 items + 1 canary
         "espn_tagged_sports": pb.tags.get("espn.com") == ("sports",),
@@ -625,6 +891,18 @@ def run_source_tags_selftest() -> dict:
         "mystery_blog_missing": "mystery-blog.example" in pb.missing,
         "canary_ok": out["canary"]["ok"] is True,
         "canary_checked_1": out["canary"]["checked"] == 1,
+        "wrong_topic_is_still_fatal": graded["ok"] is False and graded["failed_n"] == 1,
+        "partial_match_is_reported_not_fatal": (
+            graded["partial_n"] == 1 and graded["partial"][0]["recall"] == 0.5
+        ),
+        "unanswered_canary_is_not_a_failure": graded["no_answer_n"] == 1,
+        "nothing_answered_is_inconclusive": nothing_answered["ok"] is None,
+        "separator_variants_folded_for_the_prompt_only": (
+            fold_separator_variants(["case-law", "case_law"])[0] == ["case-law"]
+            and parse_source_tags(
+                "x :: case_law", ["x"], ["case-law", "case_law"]
+            ).tags.get("x") == ("case_law",)
+        ),
         "timing_passthrough": rec["total_duration"] == 900_000_000 and rec["eval_count"] == 10,
         "format_none_is_valid_not_a_failure": True,  # exercised in the dedicated unit test below
     }

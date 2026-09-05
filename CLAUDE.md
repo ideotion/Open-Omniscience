@@ -5674,6 +5674,46 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     DERIVATION, it must be handed the same inputs the production path uses, and publish
     those inputs beside the outputs; otherwise the export cannot distinguish a machine that
     failed to read its checkpoint from a reader that was never called.
+  - **A SET-VALUED EXPECTATION IS AMBIGUOUS BETWEEN "ALL OF" AND "ANY OF", AND THE
+    READER WILL PICK THE ONE THAT MAKES THE BAR UNWINNABLE (2026-09-05, the
+    source-tags canary):** `CANARY_EXPECTED` maps a canary to
+    `frozenset({"finance","economy","economics","business"})` — four spellings of ONE
+    concept, i.e. an alternatives list. `check_source_canaries` read it as a
+    CONJUNCTION (`applicable.issubset(got)`), so the model had to name all three that
+    exist in the live vocabulary. Measured over the field run's 118 batches it never
+    did — while answering `economy+finance` 23 times and
+    `economy+finance+official-statistics` once, which are correct answers for a
+    statistics agency — and was scored FAILED **118 of 118**. Before writing a
+    membership test over a set someone else declared, ask whether they meant *all* or
+    *any*; if the structure cannot say, the structure is the defect, and a future
+    conjunction needs an EXPLICIT mode rather than a second re-reading. **THE HALF
+    THE 2026-08-11 DENOMINATOR LESSON DOES NOT COVER:** the same boolean also folded
+    in 82 canaries the model never answered — 39 of them in batches whose median
+    missing-share was **1.00**, i.e. the model returned nothing parseable for ANY
+    source. There the canary was a WITNESS to a dead batch, not its subject, and
+    `pb.missing` already counted it. So a probe of JUDGEMENT needs a no-evidence state
+    distinct from both pass and fail, or it reports on the transport instead of the
+    thing; of 161 recorded "failures", **zero were a wrong topic**. TWO COERCION TRAPS
+    once the verdict is a tri-state, and they fail in opposite directions, so both
+    need a test: `bool(None)` is False, so any serialisation or run-level `and` that
+    coerces it publishes a fabricated failure (three call sites did); and `ok: True`
+    with `checked == 0` is the vacuous pass — an existing test asserted exactly that
+    and had to be amended deliberately. **THE VOCABULARY HALF REFUTED MY OWN FRAMING,
+    which is why it was measured first:** I proposed "dedupe the near-synonym pairs",
+    and of 17 collision candidates in the live 204-tag vocabulary exactly ONE was
+    provable (`case-law`/`case_law` — `_norm_term` folds case, accents and whitespace
+    but not `_` against `-`), two were singular/plural JUDGEMENTS, and **fourteen were
+    real hierarchies** (`africa`/`east-africa`, `official`/`official-statistics`,
+    `lean-center`/`lean-center-left`) that a stem-based sweep would have destroyed. So
+    fold only what is provable, REPORT the rest, and fold the PROMPT while parsing
+    against the FULL set — a strictly non-narrowing change, so no answer that used to
+    resolve becomes a rejection. RIDER worth its own line: `resolve_tag_vocabulary`
+    takes every distinct `Source.tags` value, and this codebase uses that column for
+    provenance (`via:*`), coverage state, political lean and file formats — so a
+    "closed topical vocabulary" resolved live is not topical. Measured, it is latent
+    rather than live (2 non-topical proposals in 921 assignments), and the fix is a
+    reported finding rather than a silent filter, because deciding `independent` is
+    not a topic is a taxonomy ruling a human makes.
 
 ## Open queue (when maintainer says proceed)
 - **MULTILINGUAL KEYWORD TRANSLATION + SENSE DISAMBIGUATION (maintainer 2026-09-05: "when searching
