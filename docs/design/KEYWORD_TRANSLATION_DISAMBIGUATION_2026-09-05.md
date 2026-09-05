@@ -1,7 +1,8 @@
 # Multilingual keyword translation + sense disambiguation — analysis & plan
 
-**Status:** ANALYSIS + PLAN. Nothing built. Two rulings taken 2026-09-05 (§0), two
-decisions recommended and awaiting the maintainer (§5, §6).
+**Status:** ANALYSIS + PLAN. Nothing built. Three rulings taken 2026-09-05 (§0); one
+decision still owed (§6b.4, the Wiktextract licence mixture), and the month handling waits
+on its own measurement rather than on a ruling (§5).
 **Code state of record:** `main` @ 83b3cad, verified by direct reading — every claim
 below carries its file:line anchor.
 
@@ -12,10 +13,12 @@ below carries its file:line anchor.
 | # | Ruling | Consequence |
 |---|--------|-------------|
 | **R1** | **Cross-language search expansion is ON by default, and DISCLOSED.** Searching `climate` also matches `climat` / `Klima` / `clima` / `климат` / `مناخ`. The result surface states the expansion, shows the per-language breakdown, and offers one click back to the literal term. | §3 slice 1 |
-| **R2** | **Sense-level identity via Wikidata QID is the target model** for ambiguous terms (April = month \| given name \| organisation). | §4 — a schema change, sequenced behind the measurement in §5 |
+| **R2** | **Sense-level identity via Wikidata QID is the target model** for ambiguous terms (April = month \| given name \| organisation). | §4 — the identity model; its *promise* is R2a |
+| **R2a** | **That identity is a QUERY-TIME USER CHOICE, not a stored per-mention link.** Searching `April` surfaces the senses with their kinds and descriptions; the reader picks one and expansion runs per-sense from the chosen QID. | §6c.4. No linker, no per-mention storage, no `Keyword` schema change — slice 6 is permanently the inventory half |
 
-Both compose: once a mention carries a sense, expansion can be *per sense* rather than
-per string — searching the month April need not drag in April Ryan.
+Both compose: once a sense has been chosen, expansion can be *per sense* rather than
+per string — searching the month April need not drag in April Ryan. R2a settles **who
+chooses**: the reader, because the machine cannot (§6c.1(3)).
 
 ---
 
@@ -105,11 +108,18 @@ correctly held back for exactly this reason (`held_back.ambiguous_language`). Th
 is the single most valuable artefact in the file: a free, corpus-derived map of where
 collision actually happens.
 
-**Shape of the build (sequenced behind §5):** a sense inventory (surface form → candidate
-QIDs, CC0 from Wikidata), a sense column on the mention, a linker that assigns a sense
-only on evidence and otherwise leaves it NULL, and rings keyed per sense. Every link is a
-labelled assertion, so it needs its own eval before it is trusted — the perception-harness
-precedent. **An unlinked mention must stay usable**, never dropped for want of a sense.
+**Shape of the build — AMENDED BY R2a (ruled 2026-09-05).** The paragraph that stood here
+described a sense column on the mention plus a linker that assigns a sense on evidence and
+leaves it NULL otherwise. Pass 2 refuted the linker (0.335 F1 on news, §6c.1(3)) and the
+maintainer ruled the query-time alternative, so the build is now: **a sense inventory
+(surface form → candidate QIDs + `P31` kinds, CC0 from Wikidata) and nothing else.** No
+sense column, no linker, no per-mention storage, no change to the one-row-per-normalized-
+term identity above — the schema limitation this section opens with is no longer a blocker,
+because the question it blocks is one we have stopped asking of the machine. What the
+inventory publishes is *"this surface form denotes N things"*; which one a given occurrence
+means is answered by the reader at query time, per sense, from the chosen QID. The eval
+that a linker would have owed is therefore not owed: an inventory's failure mode is
+under-coverage, and under-coverage is visible (§6c.4).
 
 ## 5. Months — the live regression, and the recommendation
 
@@ -640,7 +650,7 @@ report's prose contrasts a most-frequent-sense baseline of **65.6** against a be
 knowledge-based **68.0**, but 65.6 is a SensEval-2 column figure while 68.0 is the ALL
 column. The like-for-like ALL comparison is 65.2 → 68.0. The conclusion is unchanged.
 
-### 6c.4 What this does to R2 — a maintainer decision
+### 6c.4 What this does to R2 — RULED: a query-time user choice
 
 R2 reads: *sense-level identity keyed on Wikidata QID is the target model*, and R1×R2
 compose because *"once a mention carries a sense, expansion can be per-SENSE rather than
@@ -663,12 +673,32 @@ disclosure grammar R1 already requires (expansion stated, breakdown shown, one c
 the literal term), it ships a claim we can defend instead of one we cannot, and it needs no
 per-mention storage at all.
 
-**The decision is the maintainer's**, because it changes what R2 promises: (i) sense
-identity as a **query-time user choice** (recommended — fully evidenced, no schema change,
-no linker); (ii) sense identity **stored per mention**, which needs the refuted linker and
-the `Keyword` identity change §4 describes; (iii) both, sequenced. Until it is taken,
-**slice 6 is scoped to the inventory half only** and slice 4 (the ambiguity map) is
-unaffected — it was always a lookup.
+**RULED 2026-09-05 (maintainer): option (i) — sense identity is a QUERY-TIME USER
+CHOICE.** The options put were (i) a query-time user choice (recommended — fully evidenced,
+no schema change, no linker); (ii) sense identity **stored per mention**, which needs the
+refuted linker and the `Keyword` identity change §4 describes; (iii) both, sequenced.
+
+**Option (ii) is DECLINED, and the reason is recorded so it is not re-proposed without new
+evidence**: it rests on a linker measured at 0.335 F1 on news — and measured on the InKB
+subset, i.e. on the mentions where an answer exists at all, which flatters it in exactly
+the direction our requirement does not allow (§6c.1(3)) — plus a change to the
+one-row-per-normalized-term identity model. At 0.335 F1 the majority of mentions would be
+linked wrongly or not at all; the loss splits between the two, and the wrong half is the
+dangerous one, because an absent link is visible and a wrong one is not.
+
+So **slice 6 is now permanently the inventory half**, not provisionally: surface form →
+candidate QIDs + kinds, published as *"this term denotes N things"*, with the reader
+choosing and the expansion running per-sense from the chosen QID. Nothing stores a sense
+against a mention, so nothing can be silently wrong about one. Slice 4 (the ambiguity map)
+was always a lookup, is unaffected, and is now the inventory's data source rather than a
+step toward a linker.
+
+**What this costs, stated rather than glossed:** a reader who does not pick gets the
+existing per-string behaviour, so an ambiguous term still expands across all its senses
+unless someone chooses — the honest default, and the one R1 already discloses. Automatic
+per-mention sense identity is not deferred pending a better linker; it is out of the plan
+until a measurement changes, and the measurement to watch is news-domain linking, not WSD
+benchmarks (§6c.1(3)).
 
 ### 6c.5 Still owed
 
@@ -742,7 +772,7 @@ it, treat `kind_overrides` as a worklist rather than a patch, and **keep the amb
 | 3b | Re-file the mis-filed month block out of `hi.yml` into `_multilingual.yml` | none — a pure move, set-identical, byte-identity test proves it (§6b.2(a)) |
 | 4 | Ambiguity map from the existing Wikidata fetch + the triage's `ambiguous_language` | none. Mechanism + prior art confirmed by pass 2 (§6c.1(2)); **size unmeasured** — the one open number (§6c.5) |
 | 5 | Ring coverage expansion (more seeds) | operator: networked run. ru/hi/bn need a source OMW structurally cannot provide (§6b.1(3)) — the SKOS family covers ru+ar (§6b.3) |
-| 6 | Sense **inventory** (**R2**) | slices 2–4; own reviewed slice. Scoped to the inventory half — see below |
+| 6 | Sense **inventory** (**R2** / **R2a**) | slices 2–4; own reviewed slice. **Permanently** the inventory half — RULED 2026-09-05, §6c.4 |
 | ~~6b~~ | ~~Sense linker + eval~~ | **evidence-refuted** (§6c.1(3)): 0.335 F1 on news, measured on the subset where an answer exists |
 | 7 | Synonym tier, separately disclosed | **answered NEGATIVE for OMW** (§6b.1(2)) — the translated synsets already contain hypernyms. Open only for the SKOS family, gated on its licence |
 | — | Per-language month scoping | **not free here**: a stopwords-architecture change, not a data file (§6c.2(a)), and it recovers 3 of 7 named losses (§6c.2(b)). Complement to slice 3, not a substitute |
@@ -750,11 +780,11 @@ it, treat `kind_overrides` as a worklist rather than a patch, and **keep the amb
 Slices 1, 2, 3b and 4 need no network, no new dependency, and no ruling.
 
 **After both research passes, nothing in slices 1–4 is gated on anything.** Two decisions
-are now owed, and neither blocks those slices:
+were owed; one has been taken and one remains, and neither blocks those slices:
 
-1. **What R2 promises** (§6c.4) — sense identity as a query-time user choice, stored per
-   mention, or both. The linker half is refuted either way, so slice 6 stays scoped to the
-   inventory until this is taken.
+1. **What R2 promises** (§6c.4) — **RULED 2026-09-05: a query-time user choice.**
+   Stored-per-mention is declined (it needs the refuted linker plus a `Keyword` identity
+   change), so slice 6 is permanently the inventory half and row 6b stays struck.
 2. The **Wiktextract 3.0/4.0 mixture** (§6b.4), unchanged and still gating nothing.
 
 The **one open number** in the whole plan is slice 4's: whether an ambiguous-only,

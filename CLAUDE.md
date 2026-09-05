@@ -5643,12 +5643,16 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   month, a name, and an organization)"; ANALYSIS + PLAN ONLY, nothing built; design of record =
   [`docs/design/KEYWORD_TRANSLATION_DISAMBIGUATION_2026-09-05.md`](docs/design/KEYWORD_TRANSLATION_DISAMBIGUATION_2026-09-05.md);
   research prompts = handed to the maintainer in-session 2026-09-05, not committed):**
-  **TWO RULINGS TAKEN (maintainer, same day):** **(R1) cross-language search expansion is ON BY
+  **THREE RULINGS TAKEN (maintainer, same day):** **(R1) cross-language search expansion is ON BY
   DEFAULT and DISCLOSED** — searching `climate` also matches `climat`/`Klima`/`clima`/`климат`/
   `مناخ`, with the expansion stated on the result surface, the per-language breakdown shown, and one
   click back to the literal term. **(R2) sense-level identity keyed on WIKIDATA QID is the target
-  model** for ambiguous terms. They compose: once a mention carries a sense, expansion can be
-  per-SENSE rather than per-string, so searching the month April need not drag in April Ryan.
+  model** for ambiguous terms. **(R2a, ruled after research pass 2) THAT IDENTITY IS A QUERY-TIME
+  USER CHOICE, NOT A STORED PER-MENTION LINK** — the reader picks the sense and expansion runs
+  per-sense from the chosen QID; no linker, no per-mention storage, no `Keyword` schema change
+  (full record + the declined alternative below, design doc §6c.4). They compose: once a sense has
+  been CHOSEN, expansion can be per-SENSE rather than per-string, so searching the month April need
+  not drag in April Ryan — R2a settles WHO chooses, the reader, because the machine cannot.
   **THE HEADLINE FINDING — THE DICTIONARY IS ALREADY BUILT AND SEARCH SIMPLY NEVER CALLS IT.**
   `configs/keyword_rings_generated.yml` holds **698 rings / ~22,000 members covering exactly the 12
   UI languages** (en 684 · es 676 · fr 674 · de 665 · ru 659 · ja 657 · zh 651 · pt 650 · ar 646 ·
@@ -5822,11 +5826,11 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   re-proposes it, treat `kind_overrides` as a worklist not a patch, KEEP the ambiguity map.
   **SEQUENCING (design doc §8):** 1 `expand_query` + search/omnibar wiring + disclosure (R1) ·
   2 the month-occupancy diagnostic · 3 date-aware months + re-index (gated on 2) · 4 the ambiguity
-  map · 5 ring-coverage expansion (operator: networked run) · 6 the sense layer + linker + eval (R2)
-  · 7 the synonym tier (gated on the source ruling). **Slices 1, 2, 3b and 4 need no network, no new
-  dependency and no ruling** — and after BOTH research passes NOTHING in slices 1-4 is gated on
-  anything. Slice 3 is now cheaper (cross-check (c)), slice 7 is answered negative for OMW, and
-  slice 6 is SPLIT (below).
+  map · 5 ring-coverage expansion (operator: networked run) · 6 the sense INVENTORY (R2/R2a — the
+  linker half is struck, evidence-refuted) · 7 the synonym tier (gated on the source ruling).
+  **Slices 1, 2, 3b and 4 need no network, no new dependency and no ruling** — and after BOTH
+  research passes NOTHING in slices 1-4 is gated on anything. Slice 3 is now cheaper (cross-check
+  (c)), slice 7 is answered negative for OMW, and slice 6 is PERMANENTLY the inventory half (R2a).
   **RESEARCH PASS 2 — SENSE DISAMBIGUATION: RUN + REPORTED (operator, 2026-09-05; full record =
   design doc §6c). FOUR VERDICTS:** (1) **the obvious route is a DEAD END** — Wikidata
   *disambiguation items* (`P31 = Q4167410`, ~1.4M) exist only to carry interlanguage links; they
@@ -5878,19 +5882,34 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   twelve languages in exchange for nothing. They DISAGREE on the table size (pass 1: 5,205 bytes;
   pass 2: 3,843 months-only, 216 of 384 forms usable once the narrow width — single letters, bare
   CJK digits — is excluded); reported, not reconciled, nothing turns on it.
-  **WHAT THIS DOES TO R2 — A MAINTAINER DECISION IS OWED (design doc §6c.4).** Pass 2 leaves R2's
-  IDENTITY MODEL intact (QID is the right key, `P31` the right kind field, CC0 the right licence)
-  and refutes the step that would make a mention CARRY a sense automatically. Slice 6 splits: the
+  **WHAT THIS DOES TO R2 — RULED 2026-09-05: A QUERY-TIME USER CHOICE (design doc §6c.4).**
+  Pass 2 leaves R2's IDENTITY MODEL intact (QID is the right key, `P31` the right kind field,
+  CC0 the right licence) and refutes the step that would make a mention CARRY a sense
+  automatically. Slice 6 splits: the
   **inventory** (surface form → candidate QIDs + kinds) is a committed lookup whose failure mode is
   under-coverage, SUPPORTED; the **linker** is 0.335 on news, NOT supported — and the standing
   preference (*rather ship no disambiguation than a silently wrong one*) settles it. So R1×R2's
   "once a mention carries a sense" needs another source, and one costs nothing: **THE READER
   CHOOSES** — searching `April` surfaces "this term denotes one of three things", each with its kind
   and description, and expansion runs per-sense from the chosen QID. Same disclosure grammar R1
-  already requires, no schema change, no linker, no per-mention storage. THE OPTIONS, maintainer's
-  call: (i) sense identity as a QUERY-TIME USER CHOICE (recommended — fully evidenced); (ii) STORED
-  PER MENTION (needs the refuted linker + the `Keyword` identity change); (iii) both, sequenced.
-  Until taken, **slice 6 is scoped to the inventory half**; slice 4 is unaffected (always a lookup).
+  already requires, no schema change, no linker, no per-mention storage. THE OPTIONS PUT were: (i) a
+  QUERY-TIME USER CHOICE (recommended — fully evidenced); (ii) STORED PER MENTION (needs the refuted
+  linker + the `Keyword` identity change); (iii) both, sequenced. **MAINTAINER RULED (i) — the
+  query-time user choice (= R2a above).** **(ii) IS DECLINED, with the reason recorded so nobody
+  re-proposes it without new evidence:** it rests on a linker measured at 0.335 F1 on news — and
+  measured on the InKB subset, i.e. only where an answer exists, which flatters it in exactly the
+  direction our requirement forbids — plus a change to the one-row-per-normalized-term identity
+  model; at 0.335 F1 the majority of mentions would be linked WRONGLY or not at all — and the
+  wrong ones are the dangerous half, because an absent link is visible and a wrong one is not.
+  So **slice 6 is now
+  PERMANENTLY the inventory half**, not provisionally: nothing stores a sense against a mention, so
+  nothing can be silently wrong about one. Slice 4 is unaffected (always a lookup) and is now the
+  inventory's DATA SOURCE rather than a step toward a linker. **THE COST, stated not glossed:** a
+  reader who does not pick gets the existing per-string behaviour, so an ambiguous term still
+  expands across all its senses unless someone chooses — the honest default, and the one R1 already
+  discloses. Automatic per-mention sense identity is not deferred pending a better linker; it is OUT
+  of the plan until a measurement changes, and the measurement to watch is NEWS-DOMAIN LINKING, not
+  WSD benchmarks.
   **THE ONE OPEN NUMBER in the whole plan** is slice 4's: whether an ambiguous-only 12-language
   surface-form index fits under 100 MB. Pass 2 could not download a dump, so it measured COST PER ROW
   instead — **35.8 bytes/row gzipped** (sorted TSV) ⇒ ~**2.8M ambiguous forms per 100 MB**, a FLOOR
@@ -5903,9 +5922,10 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   reach-named-publishers task**, and the second to characterise it rather than retry (its second
   channel reached ceur-ws/arXiv but reports Wikimedia as cache-only, which is why every Wikidata
   claim in both reports is capped `search-verified`). Opening `dumps.wikimedia.org` is the single
-  highest-value remaining step: it settles the one open number above. **RULINGS STILL OWED: (1) what
-  R2 promises (above); (2) the Wiktextract 3.0/4.0 mixture — unchanged, and still gating nothing in
-  slices 1-4.** NOT re-derivable, recorded so nobody re-chases it: CrossWikis (the canonical prior
+  highest-value remaining step: it settles the one open number above. **RULINGS: (1) what R2 promises
+  — TAKEN 2026-09-05 (R2a, the query-time user choice; stored-per-mention declined); (2) the
+  Wiktextract 3.0/4.0 mixture — STILL OWED, unchanged, and still gating nothing in slices 1-4.**
+  NOT re-derivable, recorded so nobody re-chases it: CrossWikis (the canonical prior
   table, 297M pairs) has a download REPORTED BROKEN and **no licence identifier anyone could find**
   (not guessed); UKB's licence 404s on three standard filenames, which matters because it is the
   strongest non-neural WSD system in the comparison; the WordNet supersense list could not be
