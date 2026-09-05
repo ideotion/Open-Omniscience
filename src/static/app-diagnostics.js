@@ -1674,14 +1674,45 @@
           + `<div class="hint">${esc(th.action || "")}</div>`,
         ));
       }
+      // The gate is reported at TWO levels, because one of them is not enough. The
+      // language line answers "is this language worth a call"; the field line answers
+      // "what may the model actually store", and only the second can show a field
+      // refused for inventing people inside a language that otherwise cleared. Shipping
+      // the payload's per-field verdicts without rendering them would have left the
+      // distinction dying at this boundary instead of the one above it.
       const g = r.extraction_gate;
       if (g && !g.error) {
-        rows.push(_aiCheckLine(
-          t("Extraction gate"),
-          `${esc(t("cleared"))}: ${esc((g.cleared || []).join(", ") || t("none"))}`
+        let body = `${esc(t("cleared"))}: ${esc((g.cleared || []).join(", ") || t("none"))}`
           + ((g.refused || []).length ? ` · ${esc(t("refused"))}: ${esc(g.refused.join(", "))}` : "")
-          + ((g.unmeasured || []).length ? ` · ${esc(t("unmeasured"))}: ${esc(g.unmeasured.join(", "))}` : ""),
-        ));
+          + ((g.unmeasured || []).length ? ` · ${esc(t("unmeasured"))}: ${esc(g.unmeasured.join(", "))}` : "");
+        const byField = g.by_field || {};
+        const fieldNames = Object.keys(byField);
+        if (fieldNames.length) {
+          const parts = fieldNames.map((f) => {
+            const v = byField[f] || {};
+            const bits = [`${(v.cleared || []).length} ${t("cleared")}`];
+            if ((v.refused || []).length) bits.push(`${v.refused.length} ${t("refused")}`);
+            if ((v.unmeasured || []).length) bits.push(`${v.unmeasured.length} ${t("unmeasured")}`);
+            return `${esc(f)} ${esc(bits.join(" · "))}`;
+          });
+          body += `<div class="hint">${esc(t("By field"))}: ${parts.join(" — ")}</div>`;
+        }
+        // Named, not counted: the reason says WHICH floor it hit, and that is the
+        // difference between a model that invents and one that stays silent.
+        (g.refused_fields || []).forEach((rf) => {
+          body += `<div class="card-caveat">${esc(rf.language)} · ${esc(rf.field)} — `
+            + `${esc(rf.reason || "")}</div>`;
+        });
+        // "cleared" over-reads without this: a language here cleared at least one field.
+        const partly = (g.partly_cleared || [])
+          .map((p) => `${esc(p.language)} (${esc((p.not_cleared || []).join(", "))})`);
+        if (partly.length) {
+          body += `<div class="hint">${esc(t("Cleared for some fields only"))}: ${partly.join(", ")}</div>`;
+        }
+        if (g.no_field_verdicts) {
+          body += `<div class="hint">${esc(g.no_field_verdicts.reason || "")}</div>`;
+        }
+        rows.push(_aiCheckLine(t("Extraction gate"), body));
       }
       // WHAT THE BENCH COVERED, never a headline number for it: the numbers are per
       // model, per task, per language, and a single figure over those is the composite

@@ -130,7 +130,7 @@ jobs:
       # the certain class can be driven to zero on its own schedule instead of
       # hiding inside a blended number. Also a ratchet: it may only be lowered.
       - name: i18n unkeyed t() call sites
-        run: python scripts/i18n_report.py --max-unkeyed-t-calls 298
+        run: python scripts/i18n_report.py --max-unkeyed-t-calls 297
 
       - name: Migration drift (models vs Alembic baseline)
         # The CI database is a fresh throwaway file; since at-rest encryption
