@@ -103,9 +103,10 @@ def test_the_omnibar_disclosure_uses_keyed_templates_not_a_built_sentence():
         "{term} denotes several concepts, so it was not expanded",
     ):
         assert frame in body, frame
-    en = json.loads(
-        (Path(__file__).resolve().parents[1] / "src/static/locales/en.json").read_text()
-    )
+    en_path = Path(__file__).resolve().parents[1] / "src/static/locales/en.json"
+    # encoding= is not optional here: the keys asserted below carry curly quotes, so a
+    # cp1252 default (Windows) would crash the read rather than fail the assertion.
+    en = json.loads(en_path.read_text(encoding="utf-8"))
     for key in (
         "{term} also matched as the concept “{concept}”",
         "{term} denotes several concepts, so it was not expanded",
