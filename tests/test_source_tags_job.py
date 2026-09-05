@@ -285,3 +285,83 @@ def test_evidence_floor_skip_is_logged_and_never_sent_to_the_model(db, monkeypat
         recs = [json.loads(line) for line in f if line.strip()]
     skips = [r for r in recs if r.get("status") == "skipped" and r.get("domain") == "thin.test"]
     assert skips and skips[0]["reason"] == "insufficient evidence"
+
+
+# --------------------------------------------------------------------------- #
+# The run-level canary verdict is DERIVED from a tally (2026-09-05). The field's
+# 2026-09-03 run reported a bare `canary_ok_overall: false` over 161 "failures"
+# that were 82 unanswered canaries and 79 partial matches -- and zero wrong topics.
+# --------------------------------------------------------------------------- #
+class CanaryAnsweringClient(FakeClient):
+    """Answers the real source AND the sports canary correctly."""
+
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
+        lines = []
+        for ln in prompt.splitlines():
+            ln = ln.strip()
+            if not ln.startswith("- "):
+                continue
+            domain = ln[2:].split("  [")[0]
+            if domain == "espn.test" or domain == "canary-sports-outlet.example":
+                lines.append(f"{domain} :: sports")
+        return FakeResult("\n".join(lines))
+
+
+class CanaryWrongTopicClient(FakeClient):
+    """Answers the sports canary with a plainly wrong topic."""
+
+    def generate(self, prompt, *, model, system=None, options=None, keep_alive=None):
+        lines = []
+        for ln in prompt.splitlines():
+            ln = ln.strip()
+            if not ln.startswith("- "):
+                continue
+            domain = ln[2:].split("  [")[0]
+            if domain == "espn.test":
+                lines.append(f"{domain} :: sports")
+            elif domain == "canary-sports-outlet.example":
+                lines.append(f"{domain} :: none")
+        return FakeResult("\n".join(lines))
+
+
+def _run_with(client, db, monkeypatch, tmp_path):
+    _seed(db)
+    _patch_session(monkeypatch, db)
+    monkeypatch.setattr(J, "_dir", lambda: tmp_path)
+    monkeypatch.setattr("src.llm.ollama.OllamaClient", lambda *a, **kw: client)
+    res = J.run_source_tags_job(
+        FakeCtx(), model="stub:test", top_n=50, min_articles=1, batch_size=10
+    )
+    with open(res["path"], encoding="utf-8") as f:
+        recs = [json.loads(line) for line in f if line.strip()]
+    return res, recs[-1]
+
+
+def test_a_run_whose_canaries_went_unanswered_is_inconclusive_never_a_failure(
+    db, monkeypatch, tmp_path
+):
+    """NEGATIVE SPACE: the default FakeClient never answers a canary. Folding that
+    into the run verdict is what made 39 dead batches read as model failures --
+    ``missing`` already counts an unanswered source, canary or not."""
+    res, footer = _run_with(FakeClient(), db, monkeypatch, tmp_path)
+    assert res["canary_ok_overall"] is None
+    assert footer["canary_ok_overall"] is None
+    assert footer["canary"]["no_answer_n"] >= 1
+    assert footer["canary"]["failed_n"] == 0
+
+
+def test_a_run_whose_canary_answered_correctly_reports_a_pass_with_its_denominator(
+    db, monkeypatch, tmp_path
+):
+    res, footer = _run_with(CanaryAnsweringClient(), db, monkeypatch, tmp_path)
+    assert res["canary_ok_overall"] is True
+    assert footer["canary"]["answered"] >= 1 and footer["canary"]["passed"] >= 1
+    assert footer["canary"]["failed_n"] == 0
+
+
+def test_a_run_whose_canary_answered_wrongly_still_fails(db, monkeypatch, tmp_path):
+    """NEGATIVE SPACE, and the assertion that stops the fix being a laundering: an
+    explicit 'none' for an obvious sports outlet is an ANSWER, and a wrong one."""
+    res, footer = _run_with(CanaryWrongTopicClient(), db, monkeypatch, tmp_path)
+    assert res["canary_ok_overall"] is False
+    assert footer["canary"]["failed_n"] >= 1

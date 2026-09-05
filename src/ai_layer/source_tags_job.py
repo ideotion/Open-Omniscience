@@ -215,7 +215,7 @@ def run_source_tags_job(
             "parse_failures": 0,
             "missing": 0,
             "skipped_evidence_floor": len(skipped),
-            "canary_ok_overall": True,
+            "canary_ok_overall": None,
             "wall_s_total": 0.0,
             "throughput_valid_per_s": None,
             "error": None,
@@ -240,7 +240,7 @@ def run_source_tags_job(
             "batches_total": 0,
             "batches_completed": 0,
             "skipped_evidence_floor": len(skipped),
-            "canary_ok_overall": True,
+            "canary_ok_overall": None,
             "error": None,
             "note": footer["note"],
         }
@@ -255,7 +255,7 @@ def run_source_tags_job(
         "parse_failures": 0,
         "missing": 0,
     }
-    canary_ok_overall = True
+    canary_tally = ST.new_canary_tally()
     wall_total = 0.0
     state = "done"
     error_msg: str | None = None
@@ -329,7 +329,7 @@ def run_source_tags_job(
         totals["none_count"] += pb.none_count
         totals["parse_failures"] += pb.parse_failures
         totals["missing"] += len(pb.missing)
-        canary_ok_overall = canary_ok_overall and bool(out["canary"].get("ok", True))
+        ST.accumulate_canary(canary_tally, out["canary"])
         wall_total += out["wall_s"]
         batches_completed += 1
         ctx.set_progress(
@@ -348,7 +348,13 @@ def run_source_tags_job(
         "batches_total": len(batches),
         **totals,
         "skipped_evidence_floor": len(skipped),
-        "canary_ok_overall": canary_ok_overall,
+        # WITH ITS DENOMINATOR: a canary verdict is unreadable as one word. The
+        # 2026-09-03 field run recorded 161 "failures" that were 82 unanswered
+        # canaries (39 of them in batches where the model returned nothing parseable
+        # for ANY source) and 79 partial matches against an alternatives list read as
+        # a conjunction -- and ZERO wrong topics.
+        "canary_ok_overall": ST.canary_verdict(canary_tally),
+        "canary": dict(canary_tally),
         "wall_s_total": round(wall_total, 3),
         "throughput_valid_per_s": valid_verdicts_per_sec(
             totals["assigned_count"] + totals["none_count"], wall_total
@@ -374,7 +380,8 @@ def run_source_tags_job(
         "batches_total": len(batches),
         "batches_completed": batches_completed,
         "skipped_evidence_floor": len(skipped),
-        "canary_ok_overall": canary_ok_overall,
+        "canary_ok_overall": ST.canary_verdict(canary_tally),
+        "canary": dict(canary_tally),
         "error": error_msg,
     }
 
@@ -502,7 +509,7 @@ def run_progressive_source_tags_job(
             "batches_completed": 0,
             "sources_in": 0, "assigned_count": 0, "none_count": 0,
             "parse_failures": 0, "missing": 0, "skipped_evidence_floor": 0,
-            "canary_ok_overall": True, "wall_s_total": 0.0,
+            "canary_ok_overall": None, "wall_s_total": 0.0,
             "throughput_valid_per_s": None, "error": None,
             "note": (
                 "no source in the corpus carries an asserted tag yet, so the closed "
@@ -517,7 +524,7 @@ def run_progressive_source_tags_job(
             "batches_completed": 0,
             "totals": {"sources_in": 0, "assigned_count": 0, "none_count": 0,
                        "parse_failures": 0, "missing": 0},
-            "canary_ok_overall": True, "cursor": None, "note": footer["note"],
+            "canary_ok_overall": None, "cursor": None, "note": footer["note"],
         }
 
     if not started_fresh and cursor is not None:
@@ -536,7 +543,12 @@ def run_progressive_source_tags_job(
     )
     skipped_evidence_floor_total = int(state.get("skipped_evidence_floor_total", 0))
     batches_completed = int(state.get("batches_completed", 0))
-    canary_ok_overall = bool(state.get("canary_ok_overall", True))
+    # The TALLY is what resumes, not the boolean: a resumable run's verdict must be
+    # derivable from the whole run's counts, not from whichever invocation ended.
+    canary_tally = ST.new_canary_tally()
+    for key, value in (state.get("canary") or {}).items():
+        if key in canary_tally:
+            canary_tally[key] = int(value or 0)
     wall_total = float(state.get("wall_s_total", 0.0))
 
     with session_factory() as session:
@@ -637,7 +649,8 @@ def run_progressive_source_tags_job(
                         "batches_completed": batches_completed,
                         **totals,
                         "skipped_evidence_floor": skipped_evidence_floor_total,
-                        "canary_ok_overall": canary_ok_overall,
+                        "canary_ok_overall": ST.canary_verdict(canary_tally),
+                        "canary": dict(canary_tally),
                         "wall_s_total": round(wall_total, 3),
                         "error": err,
                     }
@@ -647,6 +660,7 @@ def run_progressive_source_tags_job(
                         "totals": totals,
                         "skipped_evidence_floor_total": skipped_evidence_floor_total,
                         "batches_completed": batches_completed,
+                        "canary": dict(canary_tally),
                         "updated_at": datetime.now().isoformat(timespec="seconds"),
                     })
                     _save_progress_state(state, path_state)
@@ -710,7 +724,7 @@ def run_progressive_source_tags_job(
             totals["none_count"] += pb.none_count
             totals["parse_failures"] += pb.parse_failures
             totals["missing"] += len(pb.missing)
-            canary_ok_overall = canary_ok_overall and bool(out["canary"].get("ok", True))
+            ST.accumulate_canary(canary_tally, out["canary"])
             wall_total += out["wall_s"]
 
         # Reaching here means the page is SETTLED (nothing to send, or a
@@ -742,7 +756,8 @@ def run_progressive_source_tags_job(
             "totals": totals,
             "skipped_evidence_floor_total": skipped_evidence_floor_total,
             "batches_completed": batches_completed,
-            "canary_ok_overall": canary_ok_overall,
+            "canary_ok_overall": ST.canary_verdict(canary_tally),
+            "canary": dict(canary_tally),
             "wall_s_total": round(wall_total, 3),
             "updated_at": datetime.now().isoformat(timespec="seconds"),
         })
@@ -767,7 +782,8 @@ def run_progressive_source_tags_job(
             "batches_completed": batches_completed,
             **totals,
             "skipped_evidence_floor": skipped_evidence_floor_total,
-            "canary_ok_overall": canary_ok_overall,
+            "canary_ok_overall": ST.canary_verdict(canary_tally),
+            "canary": dict(canary_tally),
             "wall_s_total": round(wall_total, 3),
             "throughput_valid_per_s": valid_verdicts_per_sec(
                 totals["assigned_count"] + totals["none_count"], wall_total
@@ -794,7 +810,8 @@ def run_progressive_source_tags_job(
         "batches_this_call": batches_this_call,
         "totals": totals,
         "skipped_evidence_floor": skipped_evidence_floor_total,
-        "canary_ok_overall": canary_ok_overall,
+        "canary_ok_overall": ST.canary_verdict(canary_tally),
+        "canary": dict(canary_tally),
         "cursor": cursor,
     }
     if paused_reason:

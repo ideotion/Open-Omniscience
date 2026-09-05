@@ -440,11 +440,19 @@ def _task_source_tags(client, *, model: str, batch: dict, keep_alive: str | None
         "missing": len(pb.missing),
         "format_validity": validity,
         "by_language": by_language,
+        # ``ok`` is a TRI-STATE -- None means nothing was answered, so there is no
+        # verdict. Carried through, never coerced: ``bool(None)`` would publish a
+        # model failure the run has no evidence for. ``answered`` is the denominator
+        # that tells "hiccuped once" from "never produced a parseable canary".
         "canary": {
-            "ok": bool(out["canary"].get("ok", True)),
+            "ok": out["canary"].get("ok", True),
             "checked": int(out["canary"].get("checked") or 0),
+            "answered": int(out["canary"].get("answered") or 0),
+            "passed": int(out["canary"].get("passed") or 0),
             "failed_n": len(out["canary"].get("failed") or []),
             "failed": out["canary"].get("failed") or [],
+            "partial_n": int(out["canary"].get("partial_n") or 0),
+            "no_answer_n": int(out["canary"].get("no_answer_n") or 0),
             "skipped": out["canary"].get("skipped") or [],
         },
         "wall_s": round(float(out.get("wall_s") or 0.0), 3),
