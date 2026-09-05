@@ -132,7 +132,8 @@ _MONTHS.update({
     "януари": 1, "февруари": 2, "май": 5, "юни": 6, "юли": 7,
     "септември": 9, "октомври": 10, "ноември": 11, "декември": 12,
     # Arabic — Gregorian transliteration (the internationally common set; the
-    # multi-word Levantine names like كانون الثاني are out of scope for now).
+    # multi-word Levantine names like كانون الثاني are in the block below since
+    # 2026-09-05 — "out of scope" was a claim about the matcher and was measured false).
     # Eastern-Arabic digits (٠-٩) parse via \d + int() already. "مارس" also means
     # "practised", but a month only fires with an adjacent day/year, so prose is safe.
     "يناير": 1, "فبراير": 2, "مارس": 3, "أبريل": 4, "ابريل": 4, "مايو": 5,
@@ -149,6 +150,38 @@ _MONTHS.update({
     # گرمای تموز), so it lives in the language-gated override map below.
     "أيلول": 9, "ايلول": 9, "شباط": 2, "آذار": 3, "اذار": 3, "أيار": 5,
     "ايار": 5, "حزيران": 6,
+    # Arabic — Levantine MULTI-WORD month names (2026-09-05). The line above used
+    # to say these were "out of scope"; that was a claim about the matcher, and it
+    # is false — MEASURED, not reasoned: _MONTH_ALT is a plain alternation and the
+    # surrounding patterns wrap it in \s+, so a two-word alternative matches with
+    # no pattern change (probed on all four before adding them; the longest-first
+    # sort already puts them ahead of any prefix). Adding them takes the Levantine
+    # calendar from 6/12 to 10/12 — the four names a Lebanese, Syrian or Iraqi
+    # source uses for a THIRD of the year were simply unreadable.
+    # SAFE UNGATED where the single words are not: كانون alone is a brazier and
+    # الأول/الثاني are "the first"/"the second", but the two-word phrases name only
+    # months. The two still absent are the withheld نيسان/آب above.
+    "كانون الثاني": 1, "تشرين الأول": 10, "تشرين الثاني": 11,
+    "كانون الأول": 12,
+    # Arabic — Maghrebi month names (ar-DZ/ar-TN, French-derived), 2026-09-05.
+    # The extractor knew 1 of 8 (مارس, shared with the Gulf set above) against a
+    # legal-source catalog that covers dz and tn — measured, and the gap was
+    # surfaced independently by two research passes. These four are French loans
+    # with no other Arabic reading, so they are safe ungated:
+    "جانفي": 1, "فيفري": 2, "أفريل": 4, "افريل": 4, "جويلية": 7,
+    # أوت (August). The non-hamza اوت was ALREADY in the table — as PERSIAN August
+    # (the fa block below; both are the same French loan, août), so the two spellings
+    # agree on the month and neither needs a gate. Checked rather than assumed: an
+    # earlier draft of this comment asserted اوت was Persian "out" and had to be
+    # withdrawn when the table said otherwise.
+    "أوت": 8,
+    # NOT HERE, and both refusals are the آب precedent rather than an oversight:
+    #   ماي (May) is Gulf/Iraqi/Levantine colloquial for WATER — a within-Arabic
+    #     collision, so the ar language gate cannot help; it would need the same
+    #     corpus probe the six Levantine names above passed, which this session
+    #     could not run. A missing dateline is visible; an invented date is not.
+    #   جوان (June) is a REAL Persian word ("young", جوان) — exactly the تموز case,
+    #     so it is ar-gated in _MONTH_LANG_OVERRIDES below rather than dropped.
     # Hindi (Devanagari) — Gregorian month names; Devanagari digits parse via \d.
     "जनवरी": 1, "फरवरी": 2, "फ़रवरी": 2, "मार्च": 3, "अप्रैल": 4, "मई": 5,
     "जून": 6, "जुलाई": 7, "अगस्त": 8, "सितंबर": 9, "सितम्बर": 9, "अक्टूबर": 10,
@@ -335,6 +368,10 @@ _MONTH_LANG_OVERRIDES: dict[str, dict[str, int]] = {
     # heat" — گرمای تموز): ungated it fabricated month rows from fa prose,
     # including Solar-Hijri years (1403 passes the CE window). ar-gated only.
     "تموز": {"ar": 7},
+    # جوان = June in Maghrebi Arabic, but a REAL and common Persian word ("young"):
+    # the same class as تموز, so it resolves only under an ar hint and is skipped
+    # with no hint, never guessed.
+    "جوان": {"ar": 6},
 }
 _MONTH_ALT = "|".join(  # longest first so 'sept' beats 'sep'
     sorted(set(_MONTHS) | set(_MONTH_LANG_OVERRIDES), key=len, reverse=True)

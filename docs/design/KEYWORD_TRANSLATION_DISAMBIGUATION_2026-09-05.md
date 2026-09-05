@@ -403,7 +403,29 @@ route the drop decision through the spans it already claims.
 > **Sharpened by pass 2's own measurements (2026-09-05).** Two corrections, one in each
 > direction. The Levantine claim above was too generous: of seven forms tested the extractor
 > knows **three**, and is missing `كانون الثاني` (January), `نيسان` (April), `تموز` (July)
-> and `آب` (August) — so Levantine coverage is partial, not complete. And the extractor is
+> and `آب` (August) — so Levantine coverage is partial, not complete.
+>
+> > ⚠ **THREE OF THOSE FOUR ARE WRONG, and the error is the dangerous direction (measured
+> > against the tree 2026-09-05, while building the ride-along).** Driving the real
+> > extractor over all twelve Levantine names, not a seven-form sample, gives **6/12**, and
+> > the misses are not what this paragraph says:
+> > * **`تموز` (July) EXTRACTS.** It is in `_MONTH_LANG_OVERRIDES`, ar-gated, because it is
+> >   also a real Persian word ("midsummer heat"). Listed here as missing; it is handled.
+> > * **`نيسان` (April) and `آب` (August) are DELIBERATE REFUSALS**, with measured
+> >   fabrication evidence recorded beside them in `dateextract.py`: *"سيارة نيسان 2023"* is
+> >   a Nissan model year, and `آب` is ordinary fa/ur prose ("water"). A month fires beside
+> >   any adjacent number, so adding them invents dates. **Reading them as coverage gaps is
+> >   how a later session "fixes" them and silently reintroduces the vectors** — which is
+> >   what this paragraph invites. They are now pinned as BEHAVIOUR, with their reason, in
+> >   `tests/test_arabic_month_coverage.py`.
+> > * The genuine gap was the **four MULTI-WORD** names (`كانون الثاني`, `تشرين الأول`,
+> >   `تشرين الثاني`, `كانون الأول`) — a third of the Levantine year. The code called them
+> >   "out of scope"; that was a claim about the matcher and it was **measured false**
+> >   (`_MONTH_ALT` is a plain alternation, the surrounding patterns already wrap it in
+> >   `\s+`). All four now resolve with no pattern change: **Levantine 6/12 → 10/12.**
+> >
+> > The lesson generalises past Arabic: this section read an ABSENCE from a table as a gap
+> > without reading the comment above it, and half of those absences were reasoned refusals. And the extractor is
 > *better* than pass 2 assumed on Russian: pass 2 correctly reports that CLDR ships only the
 > nominative and genitive of six cases, and recommends a suffix rule or stemmer for the
 > prepositional `январе` ("в январе"). `dateextract.py` **already carries the prepositional
@@ -420,6 +442,25 @@ finding the report surfaced. It is a handful of table entries, not a project.
 > gets. Re-measured against the fuller list pass 2 supplies, the extractor knows **0 of 7**:
 > the three above plus `ماي` (May), `جوان` (June), `جويلية` (July) and `أوت` (August). Still
 > a table entry each — now with the missing set fully enumerated rather than sampled.
+>
+> > ✅ **BUILT 2026-09-05, and it was not "a table entry each".** Measured before: **1 of 8**
+> > (`مارس` resolves, shared with the Gulf set). Measured after: **7 of 8**. Five names went
+> > in ungated (`جانفي`, `فيفري`, `أفريل`/`افريل`, `جويلية`, `أوت`) — French loans with no
+> > other Arabic reading. The other two needed the discipline the existing block already
+> > applies, and recording WHY is the point:
+> > * **`جوان` (June) is ar-GATED**, not ungated: it is a very common Persian word ("young"),
+> >   exactly the `تموز` case, so it resolves under an ar hint and is skipped with none.
+> > * **`ماي` (May) is WITHHELD.** It is colloquial *water* across the Gulf, Iraq and the
+> >   Levant — a collision **within Arabic**, so the language gate that saves `جوان` cannot
+> >   help, and the corpus probe that cleared the six ungated Levantine names could not be
+> >   run here. Refused on the `آب` precedent: a missing dateline is a visible gap, an
+> >   invented date is not. Running that probe is what would settle it.
+> >
+> > One claim written into the source during this work had to be withdrawn before it shipped:
+> > that the non-hamza `اوت` was Persian *"out"* and therefore needed separating from the
+> > Maghrebi `أوت`. The table already answered it — `اوت` is **Persian August**, the same
+> > French loan, already mapped to 8. Both spellings agree, and the test pins that agreement
+> > rather than the distinction it was written to pin.
 
 ### 6b.3 Refuted, sharpened, and newly surfaced
 
