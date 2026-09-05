@@ -16,7 +16,13 @@ from __future__ import annotations
 import pathlib
 
 from src.analytics.extract import BaselineExtractor, global_stopwords
-from src.services.stopwords import STOPWORDS_ISO_AS_OF, stopwords_manager
+from src.services.stopwords import (
+    CURATED_SCOPED_STOPWORDS,
+    PUBLISHING_BOILERPLATE_SCOPED,
+    STOPWORDS_ISO_AS_OF,
+    StopwordsManager,
+    stopwords_manager,
+)
 
 _LANGS = [
     # 2026-06-23 original no_stoplist wave
@@ -166,3 +172,123 @@ def test_open_class_closed_gaps_and_platform_furniture_are_filtered():
 
 def test_as_of_is_set():
     assert STOPWORDS_ISO_AS_OF and len(STOPWORDS_ISO_AS_OF) >= 4
+
+
+# --- 2026-09-05 reviewed keyword-triage batch ------------------------------------- #
+# The keyword-triage proposal in the 2026-09-05 AI-diagnostics export proposed 20,611
+# terms as junk. The reviewed batch below is the twenty that survive the inclusion rule
+# in PUBLISHING_BOILERPLATE_SCOPED's comment; the rest is refused, and the named
+# refusals are pinned by test_2026_09_05_refused_terms_stay_out_of_every_stoplist.
+
+_BATCH_20260905: dict[str, set[str]] = {
+    "de": {"inhaltsverzeichnis", "aufklappen", "weiterlesen", "herunterladen", "originalpreis"},
+    "nl": {"colofon", "rubriek", "rubrieken", "wachtwoord", "downloaden", "cookiebeleid"},
+    "sv": {"inloggad", "webbplats", "webbplatsen", "användarvillkor", "a-ö"},
+    "da": {"hjemmeside", "nyhedsbreve"},
+}
+
+
+def test_2026_09_05_publishing_chrome_batch_is_filtered_per_language():
+    """Site CHROME the model flagged and a reviewer verified: a share/copy/login/paywall/
+    navigation label is never what an article is ABOUT. Behavioural — the real extractor
+    over a real sentence, because a membership assertion passes even if the word could
+    never have been tokenised in the first place (sv "a-ö" is exactly that shape)."""
+    ex = BaselineExtractor()
+    cases = {
+        "de": "Das Inhaltsverzeichnis aufklappen und den Originalpreis herunterladen, "
+        "dann weiterlesen im Bericht.",
+        "nl": "Het colofon en de rubriek tonen het wachtwoord, cookiebeleid en "
+        "downloaden van rubrieken.",
+        "sv": "Du är inloggad på webbplatsen och webbplats visar användarvillkor samt "
+        "a-ö register.",
+        "da": "Ministeriets hjemmeside sender nyhedsbreve til alle borgere i landet.",
+    }
+    for lang, txt in cases.items():
+        kept = {k.normalized for k in ex.extract(txt, language=lang)}
+        leaked = _BATCH_20260905[lang] & kept
+        assert not leaked, f"{lang}: chrome leaked as a keyword: {sorted(leaked)}"
+
+
+def test_2026_09_05_batch_is_scoped_and_never_globalised():
+    """The collision guarantee, on a pair where it does real work rather than a
+    hypothetical one: nl "downloaden" and da "hjemmeside" are ORDINARY WORDS in de and
+    nb respectively, so scoping them to the wrong language would hide a live token in a
+    language nobody reviewed."""
+    ex = BaselineExtractor()
+    g = global_stopwords()
+    for lang, words in _BATCH_20260905.items():
+        assert words <= stopwords_manager.get_stopwords(lang), lang
+        assert not (words & g), f"{lang}: batch reached the global union: {sorted(words & g)}"
+    # de keeps "downloaden" (a real German verb); nb keeps "hjemmeside".
+    de = {k.normalized for k in ex.extract("Wir wollen die Datei downloaden können.", language="de")}
+    assert "downloaden" in de
+    nb = {k.normalized for k in ex.extract("Kommunens hjemmeside ble oppdatert i går.", language="nb")}
+    assert "hjemmeside" in nb
+
+
+def test_2026_09_05_turkish_cta_phrases_are_matched_as_joined_ngrams():
+    """Multi-word entries are matched against the JOINED n-gram (extract.py's
+    ``phrase in stop``) — the shape the vendored lists already use. The component
+    unigrams are ordinary Turkish verbs and MUST survive: stoplisting "oku" (read) or
+    "paylaş" (share) to kill a button label would delete the verbs with it.
+
+    Stated limit: only the exact joined form is matched, so a LONGER n-gram overlapping
+    the phrase still leaks ("devamını oku sayfasında"). In the 2026-09-05 export the
+    CTAs occur only as the bare bigrams (35m/35a and 22m/2a), with no overlapping
+    trigram extracted, so this covers what the corpus actually contains."""
+    ex = BaselineExtractor()
+    kept = {
+        k.normalized
+        for k in ex.extract("Bu haberi paylaş ve devamını oku sayfasında.", language="tr")
+    }
+    assert not ({"haberi paylaş", "devamını oku"} & kept)
+    assert {"haberi", "paylaş", "devamını", "oku"} <= kept
+    assert not ({"haberi paylaş", "devamını oku"} & global_stopwords())
+
+
+def test_2026_09_05_refused_terms_stay_out_of_every_stoplist():
+    """The other half of a reviewed batch: what was CONSIDERED and REFUSED, pinned so a
+    later sweep has to argue with the reason instead of rediscovering it. sv
+    "bindningstid" (725m/363a) and "nyhetssajter" (598m/299a) read as pure paywall
+    furniture by df and are real Swedish consumer-affairs / media-industry topics; sv
+    "kakor" is also biscuits; tr "günaydın" is a greeting and a proper-noun collision;
+    de "abmelden" (deregister a residence) and nl "abonnementen" are dual use."""
+    refused = {
+        "sv": {"bindningstid", "nyhetssajter", "kakor"},
+        "tr": {"günaydın"},
+        "de": {"abmelden"},
+        "nl": {"abonnementen"},
+    }
+    g = global_stopwords()
+    for lang, words in refused.items():
+        got = stopwords_manager.get_stopwords(lang)
+        assert not (words & got), f"{lang}: refused term entered the stoplist: {sorted(words & got)}"
+        assert not (words & g), f"{lang}: refused term was globalised: {sorted(words & g)}"
+
+
+def test_curated_scoped_keys_never_shrink_a_stopset():
+    """``__init__`` does ``scoped_stopwords.setdefault(lang, set()).update(curated)``, so a
+    curated key for a language with NO vendored configs/stopwords_iso/<lang>.txt CREATES
+    that key — and ``get_stopwords`` then stops falling back to the English default and
+    returns the curated words ALONE. The hazard is proven here rather than asserted,
+    because it is invisible in every existing test (all current keys have a file)."""
+    base = pathlib.Path(__file__).resolve().parents[1] / "configs" / "stopwords_iso"
+    vendored = {p.stem.lower() for p in base.glob("*.txt")}
+    for name, src in (
+        ("CURATED_SCOPED_STOPWORDS", CURATED_SCOPED_STOPWORDS),
+        ("PUBLISHING_BOILERPLATE_SCOPED", PUBLISHING_BOILERPLATE_SCOPED),
+    ):
+        missing = sorted(set(src) - vendored)
+        assert not missing, (
+            f"{name} keys without a vendored stopwords_iso file: {missing} — each would "
+            "REPLACE that language's English-default fallback with the curated words alone"
+        )
+    # The hazard is real: one curated word for a file-less language collapses its stopset.
+    m = StopwordsManager()
+    absent = next(c for c in ("sr", "lb", "eu", "zz") if c not in m.scoped_stopwords)
+    before = len(m.get_stopwords(absent))
+    m.scoped_stopwords.setdefault(absent, set()).update({"reklama"})
+    assert before > 20 and len(m.get_stopwords(absent)) == 1, (
+        "the shrink hazard this guard exists for is no longer reproducible — "
+        "re-derive the guard before relaxing it"
+    )
