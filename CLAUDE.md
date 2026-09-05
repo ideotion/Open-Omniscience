@@ -5637,6 +5637,110 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     where a changelog paraphrase arrives at the same confidence and is where the error will be.
 
 ## Open queue (when maintainer says proceed)
+- **MULTILINGUAL KEYWORD TRANSLATION + SENSE DISAMBIGUATION (maintainer 2026-09-05: "when searching
+  the english term 'climate', the app should be able to automatically search for that term in all
+  other available UI languages … we should find a solution to deal with keywords such as April (a
+  month, a name, and an organization)"; ANALYSIS + PLAN ONLY, nothing built; design of record =
+  [`docs/design/KEYWORD_TRANSLATION_DISAMBIGUATION_2026-09-05.md`](docs/design/KEYWORD_TRANSLATION_DISAMBIGUATION_2026-09-05.md);
+  research prompts = `docs/design/research-prompts/`):**
+  **TWO RULINGS TAKEN (maintainer, same day):** **(R1) cross-language search expansion is ON BY
+  DEFAULT and DISCLOSED** — searching `climate` also matches `climat`/`Klima`/`clima`/`климат`/
+  `مناخ`, with the expansion stated on the result surface, the per-language breakdown shown, and one
+  click back to the literal term. **(R2) sense-level identity keyed on WIKIDATA QID is the target
+  model** for ambiguous terms. They compose: once a mention carries a sense, expansion can be
+  per-SENSE rather than per-string, so searching the month April need not drag in April Ryan.
+  **THE HEADLINE FINDING — THE DICTIONARY IS ALREADY BUILT AND SEARCH SIMPLY NEVER CALLS IT.**
+  `configs/keyword_rings_generated.yml` holds **698 rings / ~22,000 members covering exactly the 12
+  UI languages** (en 684 · es 676 · fr 674 · de 665 · ru 659 · ja 657 · zh 651 · pt 650 · ar 646 ·
+  id 629 · hi 558 · bn 553), Wikidata-QID-sourced and hand-vetted across two passes. Verified live:
+  `climate` -> fr:climat de:klima es:clima pt:clima ru:климат ar:مناخ. `equivalence.ring_of()` /
+  `ring_translation()` are pure, cached, language-qualified and tested — and are read ONLY by
+  analytics (top_terms · trending · associations · group_stats · card_audit · ring-countries · the AI
+  translate fallback · engine_report). The search path has ZERO ring awareness: `fts.build_match()`
+  is a pure Boolean parser emitting literal quoted terms, and `search_omni._keywords_group()` is
+  `normalized_term LIKE 'climate%'` (a prefix — `climat` and `Klima` do not start with `climate`).
+  **So R1 is ONE MISSING CONSUMER, not a new subsystem.** The real ceiling is COVERAGE: 698 concepts
+  against ~250,000 distinct corpus terms.
+  **THE "APRIL" PROBLEM IS WORSE THAN THE ASK ASSUMES — the current answer is DELETION, and it is a
+  live regression.** `configs/stopwords_extra/_multilingual.yml` puts month names into the
+  LANGUAGE-AGNOSTIC union (`extract.py:421 global_stopwords()`), applied at BOTH extraction and query
+  time, and `extract.py:612-615` drops an n-gram if ANY token is a stopword. Confirmed present:
+  `april august avril août janvier june mai march mars may`. So the keyword engine cannot see the
+  planet **Mars** / Mars rover / Mars Inc. (`mars` = French March), the **March** on Washington or a
+  climate march, **Theresa May**, **April Ryan**, the **April 6 Youth Movement**, **Avril Haines**,
+  **August Landmesser** — not ranked low, ABSENT, and absent as phrases too, while FTS full-text
+  search still finds them in article bodies (so the index and the engine disagree about whether these
+  topics exist). This is the project's own recorded stoplist lesson biting — *never globalise a word
+  that is content elsewhere* — with the collateral never measured.
+  **RECOMMENDED (maintainer asked "help me decide", and floated an integrated homonym dictionary):
+  make the month block DATE-AWARE rather than string-level.** The noise months were banned to
+  suppress is DATELINES, and `src/timemap/dateextract.py` already carries multilingual month
+  vocabulary and already resolves overlapping spans most-specific-first — so the honest claim is not
+  *"this string is always noise"* but *"this occurrence was consumed as a date"*: drop a month token
+  only where the date extractor claimed its span. Mechanism-matched; no sense layer, no external
+  dictionary, no new ruling. It beats the two obvious alternatives — per-language scoping fixes only
+  the cross-language half (`march`/`may`/`april`/`august` collide WITHIN English), and an n-gram
+  exemption recovers `april ryan` but not bare `Mars`. HONEST COST: the date extractor's recall is
+  imperfect (the recorded CJK-boundary gap; field coverage measured 36–52%), so some datelines leak
+  back — the trade is **leaked datelines are visible and stoplistable; deleted topics are invisible
+  and unrecoverable**, and the project's posture prefers the visible failure. Either way it needs a
+  re-index. DO THE CHEAP THING FIRST: a read-only diagnostic counting how many month-token
+  occurrences fall OUTSIDE any claimed date span — that number IS the decision and costs nothing to
+  be wrong about. ON THE HOMONYM DICTIONARY: the instinct is right and it is R2 under another name (a
+  homonym dictionary IS surface-form -> candidate senses), but it is the SENSE INVENTORY for R2, not
+  a month patch — it tells you `april` has three senses, never which one THIS occurrence is; the
+  month fix must not wait for it.
+  **THE SCHEMA IS WHY R2 IS A REAL BUILD:** `store.py:113 _get_or_create_keyword` does
+  `filter_by(normalized_term=…).first()` — one row per normalized term GLOBALLY, no language in the
+  identity key, `Keyword.language` first-write-wins (corrected only by the background
+  `reconcile_keyword_language` majority pass), and `ring_of(lang, term)` maps one (language, term) to
+  ONE ring. The model can say *"april is English"*; it cannot say *"this occurrence is the month."*
+  **SOURCES (maintainer: "fully open-source … ideally integrated in the app for offline
+  compatibility"): WIKIDATA FIRST, AND TWICE OVER** — it is CC0, already in the pipeline, and needs
+  no new licence decision: (a) more seeds -> more rings (coverage), and (b) **harvest the AMBIGUITY
+  MAP from the SAME fetch** (which OTHER QIDs carry this surface form as a label) = the homonym
+  dictionary, free, from data already retrieved. Beyond it, PanLex (believed CC0 — VERIFY), Wikidata
+  Lexemes (CC0), OMW (licences vary PER language pack), Wiktextract (CC BY-SA — needs the
+  maintainer's share-alike ruling, already flagged open in this ledger); BabelNet EXCLUDED (not
+  open). Everything bundles as a static file generated on a networked machine and committed, under
+  the 100 MB/file limit — the shipped pattern. **SYNONYM CAUTION recorded before anyone ships one:**
+  cross-language equivalence is near-identity and low-risk, but within-language synonymy is not —
+  synsets and dictionary "synonyms" sections routinely mix true synonyms with HYPERNYMS
+  (`car`↔`automobile` fine; `car`↔`vehicle` loses precision), so synonyms are a SEPARATE, separately-
+  disclosed expansion tier, never merged silently into rings.
+  **TRIAGE VERIFICATION (`oo-keyword-triage-proposal-20260905.json`, Ministral-3-3B,
+  `keyword-triage-v1`, run_state=error, canaries OK, 250k terms judged/truncated, 200 repeat
+  disagreements) — the ai-proposed -> claude-verified half of the ruled chain, sampled and MEASURED
+  rather than trusted:** the 20,611 `stoplist_additions` are **NOT safe to apply as a batch** — three
+  classes mixed: (1) genuine publishing furniture, the valuable part (`COMMENTS` · `RELATED` ·
+  `unsubscribe` · `browser extensions seems` · `barchart` · `menu close menu` · `أضف تعليقك`);
+  (2) **dual-use content words that must NOT be applied — 353 English single lowercase words with
+  >=20 articles**, incl. `helicopter` (150 articles), `guitar`, `needle`, `pets`, `pigs`, `tomato`,
+  `vacation`, `hikes`, `expense`, `clarity`, `height` = the recorded open-class trap exactly;
+  (3) **mis-languaged rows, 1,547/20,611 = 7.5%** — non-Latin script filed under a Latin-script
+  language (1,245 Cyrillic + 208 Hangul + 57 Arabic + 21 Devanagari under `en`), incl. the two
+  highest-spread "English" proposals being Russian UI boilerplate (`разблокировать аккаунт` 585
+  articles; `выберите скриншот отправить` 553) — the strings ARE junk, but the language field is what
+  makes scoping collision-free, so a 7.5% error rate matters for every scoped decision. The 64,910
+  `kind_overrides` are **not applicable as a batch** either: a 25-item sample shows systematic
+  failure — roles as persons (`home affairs minister`, `development officer`, `kommissaren`), common
+  nouns as orgs (`circoli`, `gazetesi`, `juthat`), adjectives as persons (`graduée`, `هنری`), and
+  mis-language (`ษโคว`, Thai, under `en`); correct ones exist (`richard pettigrew`, `marrakech`,
+  `월간조선`) at roughly half — a ~50% precision label set cannot be merged. **THE MOST VALUABLE
+  THING IN THE FILE IS NOT THE JUNK LIST: it is `held_back.ambiguous_language` — 59,206 of 250,000
+  judged terms (23.7%) exist under SEVERAL languages**, a free corpus-derived ambiguity map and a
+  direct input to R2 and to the month diagnostic. DISPOSITION: take the multi-word/boilerplate subset
+  as a reviewed batch, REJECT the single-common-word subset with the reason recorded so nobody
+  re-proposes it, treat `kind_overrides` as a worklist not a patch, KEEP the ambiguity map.
+  **SEQUENCING (design doc §8):** 1 `expand_query` + search/omnibar wiring + disclosure (R1) ·
+  2 the month-occupancy diagnostic · 3 date-aware months + re-index (gated on 2) · 4 the ambiguity
+  map · 5 ring-coverage expansion (operator: networked run) · 6 the sense layer + linker + eval (R2)
+  · 7 the synonym tier (gated on the source ruling). **Slices 1, 2 and 4 need no network, no new
+  dependency and no ruling.** OPERATOR STEP: run the two research prompts
+  (`docs/design/research-prompts/01_TRANSLATION_SOURCES.md`, `02_SENSE_DISAMBIGUATION.md`, both
+  carrying `00_SHARED_RULES.md`'s mandatory host-probe-first rule) on a genuinely networked machine —
+  the recorded three-consecutive-failures lesson says a sandboxed session is NOT one of the two
+  routes that work.
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
   is still open (found 2026-08-20 while reviewing a CI red on PR #963; RECORD-ONLY, nothing
   built — the maintainer asked to record and defer):** upstream `pqcrypto` 1.0.0 (2026-08-15)
