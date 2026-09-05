@@ -208,9 +208,13 @@ not: WordNet-style synsets and Wiktionary sections routinely mix true synonyms w
 therefore be a **separate, separately-disclosed expansion tier**, never merged silently into
 rings.
 
-**Facts to verify before committing to anything past Wikidata** — routed to the research
-sessions in `docs/design/research-prompts/`, because guessing a licence or a dump size is
-exactly the fabrication this project forbids.
+**Facts to verify before committing to anything past Wikidata** — routed to two
+self-contained research prompts handed to the maintainer directly (2026-09-05) for a
+genuinely networked session, deliberately NOT committed here: they are throwaway session
+inputs, not project documentation, and the findings come back as a report. Guessing a
+licence or a dump size is exactly the fabrication this project forbids, so each prompt
+carries a mandatory host-probe-first rule and a fetched / search-verified / lead
+verification tier per claim.
 
 ## 7. The attached triage — verification verdict
 

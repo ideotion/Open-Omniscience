@@ -5642,7 +5642,7 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   other available UI languages … we should find a solution to deal with keywords such as April (a
   month, a name, and an organization)"; ANALYSIS + PLAN ONLY, nothing built; design of record =
   [`docs/design/KEYWORD_TRANSLATION_DISAMBIGUATION_2026-09-05.md`](docs/design/KEYWORD_TRANSLATION_DISAMBIGUATION_2026-09-05.md);
-  research prompts = `docs/design/research-prompts/`):**
+  research prompts = handed to the maintainer in-session 2026-09-05, not committed):**
   **TWO RULINGS TAKEN (maintainer, same day):** **(R1) cross-language search expansion is ON BY
   DEFAULT and DISCLOSED** — searching `climate` also matches `climat`/`Klima`/`clima`/`климат`/
   `مناخ`, with the expansion stated on the result surface, the per-language breakdown shown, and one
@@ -5737,8 +5737,9 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   map · 5 ring-coverage expansion (operator: networked run) · 6 the sense layer + linker + eval (R2)
   · 7 the synonym tier (gated on the source ruling). **Slices 1, 2 and 4 need no network, no new
   dependency and no ruling.** OPERATOR STEP: run the two research prompts
-  (`docs/design/research-prompts/01_TRANSLATION_SOURCES.md`, `02_SENSE_DISAMBIGUATION.md`, both
-  carrying `00_SHARED_RULES.md`'s mandatory host-probe-first rule) on a genuinely networked machine —
+  (translation/synonym SOURCES; sense/homonym DISAMBIGUATION — two self-contained prompts handed
+  over in-session, each carrying a mandatory host-probe-first rule and a fetched/search-verified/lead
+  verification tier per claim) on a genuinely networked machine —
   the recorded three-consecutive-failures lesson says a sandboxed session is NOT one of the two
   routes that work.
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
