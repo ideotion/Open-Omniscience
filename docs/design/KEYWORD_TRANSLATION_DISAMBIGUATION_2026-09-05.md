@@ -820,37 +820,6 @@ it, treat `kind_overrides` as a worklist rather than a patch, and **keep the amb
 
 Slices 1, 2, 3b and 4 need no network, no new dependency, and no ruling.
 
-### 8c. R2a's pick shipped with slice 1, and why it did not wait for slice 6
-
-Slice 1 refuses to expand a term that denotes several concepts and lists them. That
-refusal is right — resolving a collision by dict order would pick a sense on the reader's
-behalf — and on its own it is a **dead end**: it tells the reader they must choose and
-gives them nothing to choose with. This repository has a recorded rule for exactly that
-shape (*before shipping an endpoint that answers "here is why, and here is how to
-proceed", grep for the caller that actually sends the proceed flag*), so the pick is part
-of the refusal rather than a later slice.
-
-**What shipped.** `expand_term(..., pinned_ring=)` and `QueryExpander(pinned=)`, a
-repeatable `sense=term:ring_id` parameter on `/api/articles`, and pick buttons in the
-analysis window's notice. The pin outranks both the UI-language narrowing and the refusal
-— it answers the question they exist to avoid guessing at — and it can only ever select
-among the rings the term **already belongs to**, so a stale or hand-edited link cannot
-widen a search into a concept the term does not carry. Such a pin falls through to
-ordinary resolution and is **reported**, because a reader who believes they chose a
-concept and silently got a different search has been told something false by omission.
-
-**What did NOT ship, and is not hidden by this.** The sense inventory's *coverage*. The
-rings know 91 within-language collisions; a corpus-wide surface-form → sense index is
-slice 4's Wikidata dump, still blocked on the allowlist. So the pick is complete as a
-mechanism and partial as a population: an ambiguous term the rings do not cover shows no
-senses, because there are none to show, not because it is unambiguous.
-
-**One honest limit in the rendering.** A ring's concept LABEL is an English identifier
-derived from its id (`public-election` → "public election"); the ring's *members* are
-per-language but its *name* is not. So the buttons a French reader sees are framed in
-French and labelled in English. Translating them would need a per-language label on each
-ring, which the generator does not emit — recorded rather than papered over.
-
 ### 8b. What slice 2 does and does not settle — read this before quoting its number
 
 The instrument is built and it has **not been run on a corpus**. Nothing in this document
@@ -901,3 +870,34 @@ twelve-language surface-form index fits under 100 MB. At the measured 35.8 bytes
 file holds ~2.8 M forms, and the row count is unknown because the dump is behind the same
 allowlist that has now blocked five consecutive sessions (§6c.0). Opening it for
 `dumps.wikimedia.org` is the single highest-value operator step remaining.
+### 8c. R2a's pick shipped with slice 1, and why it did not wait for slice 6
+
+Slice 1 refuses to expand a term that denotes several concepts and lists them. That
+refusal is right — resolving a collision by dict order would pick a sense on the reader's
+behalf — and on its own it is a **dead end**: it tells the reader they must choose and
+gives them nothing to choose with. This repository has a recorded rule for exactly that
+shape (*before shipping an endpoint that answers "here is why, and here is how to
+proceed", grep for the caller that actually sends the proceed flag*), so the pick is part
+of the refusal rather than a later slice.
+
+**What shipped.** `expand_term(..., pinned_ring=)` and `QueryExpander(pinned=)`, a
+repeatable `sense=term:ring_id` parameter on `/api/articles`, and pick buttons in the
+analysis window's notice. The pin outranks both the UI-language narrowing and the refusal
+— it answers the question they exist to avoid guessing at — and it can only ever select
+among the rings the term **already belongs to**, so a stale or hand-edited link cannot
+widen a search into a concept the term does not carry. Such a pin falls through to
+ordinary resolution and is **reported**, because a reader who believes they chose a
+concept and silently got a different search has been told something false by omission.
+
+**What did NOT ship, and is not hidden by this.** The sense inventory's *coverage*. The
+rings know 91 within-language collisions; a corpus-wide surface-form → sense index is
+slice 4's Wikidata dump, still blocked on the allowlist. So the pick is complete as a
+mechanism and partial as a population: an ambiguous term the rings do not cover shows no
+senses, because there are none to show, not because it is unambiguous.
+
+**One honest limit in the rendering.** A ring's concept LABEL is an English identifier
+derived from its id (`public-election` → "public election"); the ring's *members* are
+per-language but its *name* is not. So the buttons a French reader sees are framed in
+French and labelled in English. Translating them would need a per-language label on each
+ring, which the generator does not emit — recorded rather than papered over.
+

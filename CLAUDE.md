@@ -5479,6 +5479,28 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     argv[0] (`ps -eo args | grep "^/abs/path/.venv/bin/python -m pytest"`), or
     record the PID when you START the process and wait on that. And prefer the
     harness's own job control (a background task id) to any pattern at all.
+    **RECURRED THREE TIMES IN ONE SESSION, 2026-09-05, BY AN AGENT THAT HAD READ THIS
+    ENTRY — so the remedy above is stated too weakly to be reached under time pressure,
+    and its last sentence has its own trap.** (a) `until ! pgrep -f "pytest tests/ -q"`
+    as a background waiter: the waiter's own `bash -c` line contains the pattern, so the
+    loop never exited and a 16-minute suite read as "still running" long after it had
+    printed its summary. (b) `pkill -f "\.venv/bin/python -m pytest tests/ -q"` — escaping
+    the dot does not help, because the problem was never the regex, it is WHICH command
+    lines it is matched against; it killed its own shell (exit 144). (c) **The recommended
+    fix then failed in a new way: `nohup bash -c 'until …; done' &` INSIDE a
+    `run_in_background` task.** The harness reported that task "completed (exit code 0)"
+    within seconds — truthfully, because what completed was the LAUNCHER; the detached
+    loop was still waiting, with its stdout on `/dev/null`, so no notification could ever
+    arrive. A completion notice describes the process the harness is watching, so
+    backgrounding your wait INSIDE a backgrounded task hands you a confident "done" about
+    something you did not ask about. Let the wait BE the task's command
+    (`while kill -0 <pid> 2>/dev/null; do sleep 15; done`) and never `&` inside it.
+    ORDER OF PREFERENCE, then: capture `$!` when you launch and poll or wait on that PID;
+    hand the harness the waiting loop itself; or, if you must match, filter on a field the
+    matcher's own line cannot occupy (`ps -eo pid,args | awk '$2 ~ /python/ && /pytest/'`
+    reads argv[0] rather than the whole line). Do NOT reach for `-f` with a substring of
+    the command you are about to run — that is the whole class, and it is not made safe by
+    bracket tricks, escaping, or a more specific pattern.
 
   - **AN INSTRUMENT THAT FORKS CAN DESTROY THE EFFECT IT IS MEASURING — and the
     obvious portable substitute for `/proc` does exactly that (2026-09-03, the
@@ -5898,6 +5920,40 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     from the same run: a shell-quoted `str.replace` mutation whose needle never matched
     reported 42-passed twelve times over, which reads exactly like twelve dead guards —
     every mutation must `assert new != old` before its run is allowed to mean anything.
+  - **THE DEAD-END SHAPE HAS A VERSION WITH A READER INSTEAD OF A CALLER — a refusal that
+    names the choice and offers no way to make it (2026-09-05, the several-senses pick):**
+    the recorded rule is about a machine-readable answer whose flag no caller sends, and
+    the grep it prescribes is "who READS this field". One layer out, the field is read, the
+    sentence renders, a human sees it — and there is still nothing to do. R1's refusal told
+    the reader that `Wahl` denotes three concepts and that the search had therefore not been
+    widened, listed all three, and shipped no way to pick one; R2a had already ruled that
+    *the reader picks the sense*. The same grep works with the question changed: not "who
+    reads this" but "what can the reader DO with it". Worth separating from the recorded
+    entry because the two feel different while shipping — a payload with no consumer looks
+    unfinished, and a rendered sentence looks finished — and because the fix is sequenced
+    differently: this one belonged with the refusal, not in the later slice its broader
+    COVERAGE is gated on. Distinguish the mechanism from the population before deferring
+    something: the pick works today over the 91 collisions the rings know, and only the
+    inventory's reach waits on a dump.
+  - **WHEN A NEW REASON MAKES A PAYLOAD ENTRY MATTER, REVISIT THE FILTER THAT DECIDES WHICH
+    ENTRIES ARE EMITTED AT ALL (2026-09-05, same slice):** the disclosure kept
+    `[e for e in expansions if e.expanded or e.declined]` — exactly right while those were
+    the only two ways a term could be interesting. A rejected sense pin is a third, and on a
+    term that touches no ring it is the ONLY one: nothing expanded, nothing declined, so the
+    reader's rejected choice would have been dropped by a filter written before that choice
+    existed. The general form is that an allowlist-shaped filter fails CLOSED and therefore
+    silently — the new case does not error, it simply never appears — so any predicate of
+    the form "emit when A or B" is part of the change that introduces C. Same family as the
+    recorded explicit-column-allowlist lesson, at the level of a list comprehension rather
+    than a SQL INSERT, and with the same tell: the omission is invisible in the diff,
+    because the line you would have had to edit is one you did not touch.
+    RIDER on the fix's own safety property, which is where a URL-borne selector differs from
+    an internal argument: a pin arrives from a link and has exactly two failure modes,
+    a typo and staleness (the ring file is regenerated). Neither may widen a search. So the
+    pin selects among the candidates the term ALREADY has and can never introduce one, which
+    makes both failures end in the same place — ordinary resolution, plus a sentence saying
+    the choice was not applied. Validate a selector against the set it claims to select
+    from, rather than trusting it and hoping the value is still real.
 
 ## Open queue (when maintainer says proceed)
 - **MULTILINGUAL KEYWORD TRANSLATION + SENSE DISAMBIGUATION (maintainer 2026-09-05: "when searching
