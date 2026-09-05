@@ -121,7 +121,7 @@ jobs:
       # A RATCHET, not a target: it may only be lowered. Lower it in the same PR
       # that adds the keys -- the script prints the new floor when it can drop.
       - name: i18n untranslatable-string ratchet
-        run: python scripts/i18n_report.py --max-untranslatable 561
+        run: python scripts/i18n_report.py --max-untranslatable 560
 
       # The tight half. The ratchet above counts strings that regexes INFER reach
       # the DOM; this one counts only t("literal") call sites, where the code says
