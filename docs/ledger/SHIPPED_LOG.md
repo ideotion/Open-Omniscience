@@ -5713,3 +5713,82 @@ mutation asserts `new != old` before its run is allowed to mean anything.
 **Stated limit.** A phrase entry matches only the exact joined n-gram, so a longer overlapping
 one still leaks (`devamını oku sayfasında`). In this export the CTAs occur only as the bare
 bigrams, with no overlapping trigram extracted, so it covers what the corpus actually contains.
+
+## 2026-09-05 — catalog/source-tags: the reviewed batch, and the mirror defect in my own review
+
+PR 6 of the 2026-09-05 AI-diagnostics export, following PR3's re-specification of the
+source-tag canary. The funnel, measured: the sweep emitted **422 proposal rows over 270
+distinct domains** (921 tag mentions); the canary gate dropped **47 domains**, leaving 223; and
+a **≥20-collected-article floor** dropped **59 more**, leaving a **164-domain REVIEW WORKLIST**
+with **449 tag proposals, 381 of them new to the entry**. It was reviewed rather than merged —
+the ai-proposed → claude-verified → maintainer-merged chain — and **49 entries and 75 tags are
+taken**, a **20% acceptance rate** on the new proposals. The two dropped populations wait on
+different things: the 59 on more collection, the 47 on a re-run after the canary
+re-specification.
+
+**THE SYSTEMATIC DEFECT in the model's half: a keyword-derived tag describes the SCRAPE
+WINDOW, not the source.** The model reads a source's top keywords, which are whatever that
+source published while we were collecting, and states them as the outlet's beat. Fourteen
+refusals are named individually because each is a WRONG tag rather than merely an unsupported
+one: nawaat.org `east-africa` (Nawaat is Tunisian, and Tunisia is North Africa),
+medievalists.net `ancient-history` (medieval is not ancient), thecable.ng `north-america` (a
+Nigerian outlet), nypost.com `california`, clarin.com `climate` as the ONLY tag for
+Argentina's largest general daily, vg.no `sport`, heise.de `energy`, infolibre.es `crude-oil`,
+urdupoint.com `commodities`/`crypto`, blog.roboflow.com `industrial-silicon`, hromadske.ua
+`official-statistics` — and three fact-checkers offered topical tags but not `fact-checking`.
+
+**THE MIRROR DEFECT, in my own review, and it is the reusable half.** Four entries were
+dropped on a SECOND pass, after checking each proposal against the tags the entry ALREADY
+CARRIES rather than against the domain: `finance` beside an existing `financial` (the
+catalog's dominant form — 178 uses against 9), `health` beside `healthcare` (86), `academic`
+beside `education`, and `academic` beside `philosophy`, which already names Daily Nous's beat
+exactly. **Then six more, through the channel the guard explicitly cannot see**: `disinformation`
+was offered to six fact-checkers, and every one of them already carries `fake-news` — the
+catalog's form for that subject at **210 uses against 14**, with only two entries carrying both.
+`fact-checking` was kept for all eight because it is a different fact, the ACTIVITY rather than
+the subject. That set was found by MEASURING the added tag's frequency and its co-occurrence with
+the tags the entry carries, which is the review step no stem check can perform. **A near-synonym is not a new tag — it splits one collection stratum in two**, which
+is the same fragmentation PR3 addresses in the model's own vocabulary, arriving one level over
+in the hand-vetted batch that was supposed to be the careful half. The apply step already drops
+an EXACT duplicate; only a synonym check finds these.
+
+Pinned by `test_no_entry_carries_two_morphological_variants_of_one_tag`, which passes over all
+four seeded catalogs today (**0 collisions**, so it is a real ratchet rather than a wish) and
+**states its own honest limit in its body**: it finds MORPHOLOGICAL variants only. The semantic
+pair (`academic` beside `education`) shares no stem and is invisible to it — that one still
+needs a human reading the entry, and the guard must never be read as covering it. Its
+anti-vacuity companion asserts the predicate discriminates (`finance`/`financial` collide,
+`politics`/`policy` and `law`/`case-law` do not) — and it is what the mutation matrix catches
+when the stem function is neutered, since the main guard passes over a clean catalog whatever
+that function does.
+
+**TWO STRUCTURAL FINDINGS.** (1) `microsoft.com` carries TWO catalog entries (Research Blog,
+tags `[ai]`; Security Blog, tags `[cybersecurity]`), so a domain-keyed proposal cannot be
+attributed to either and `technology` was refused for that reason alone — and more broadly **54
+domains have more than one entry, meaning 227 of the 3,429 entries in `configs/sources.yml`
+are unreachable by the create-only seeder**, since it dedupes by domain both against the DB and
+within the input list. (2) Six worklist domains are absent from `configs/sources.yml` because
+they live in a SIBLING catalog the seeder also reads (markets → spectrum → wikidata → legal,
+in that order, after sources.yml). Checking the entry the seeder actually REACHES — not the
+first file the domain appears in — showed four of the six proposals already satisfied
+(`kipo.go.kr` has `[ip, patents]`; `avvenire.it` has `religion`) or redundant beside better
+tags, leaving one both new and defensible: `jeuneafrique.com` `politics`, which had no topical
+tag at all.
+
+**Six previously-untagged sources gain a collection stratum for the first time** (cnet.com,
+edweek.org, engadget.com, fortune.com, rollcall.com, zdnet.com — each carried `tags: []`). The
+seeder is create-only, so every edit here reaches FRESH INSTALLS only; an existing corpus keeps
+the tags its Source rows were created with. The one worklist row absent from every committed
+catalog is the synthetic `hazard.usgs.local`, and the model's `hazard` proposal for it is
+correct and already stamped by `CLASS_IMPLIED_TAGS` — nothing to do.
+
+**Verification.** The splice is textual and in-place — never a YAML round-trip, which would
+rewrite all 3,429 curated entries and bury the real diff — and verifies itself by parsing both
+sides and asserting that nothing but the intended tag lists differs, that no existing tag was
+reordered or dropped, and that the changed set equals the applied set exactly. The only inline
+form in these catalogs is the EMPTY list (0 of 191 inline occurrences carry a value, checked),
+so expanding six of them to block form cannot drop a tag; 80 insertions against 6 deletions
+reconciles as 74 tag lines plus 6 opened headers. A separate check asserts every taken tag was
+PROPOSED for that exact domain: its only two hits are the two rendered into the catalog's own
+vocabulary (fortune.com `finance` → `financial`, labiotech.eu `health` → `healthcare`). Mutation matrix: a reintroduced synonym pair
+and a neutered stem predicate each redden by name, restore verified green.

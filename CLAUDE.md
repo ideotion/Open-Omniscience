@@ -5796,6 +5796,42 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
     documented repair and runs only in the re-index cleanup), so the language a term is
     filed under is a hint, not a finding — every word in the batch was assigned by READING
     it, which is the only step that makes a language-scoped entry safe.
+  - **A NEAR-SYNONYM IS NOT A NEW TAG — check a proposal against the tags the ENTRY
+    ALREADY CARRIES and against the catalog's DOMINANT FORM, never against the domain
+    (2026-09-05, the source-tag batch; the mistake is mine, not the model's):** the same
+    sweep proposed tags for 223 sources, and the 164 with ≥20 collected articles were
+    hand-reviewed rather than merged. The model's systematic defect is easy to state — **a
+    keyword-derived tag describes the SCRAPE WINDOW, not the source**, which is how
+    nawaat.org (Tunisian) was offered `east-africa`, medievalists.net `ancient-history`,
+    and Argentina's largest general daily `climate` as its ONLY tag. The interesting half
+    is that the careful review then made the mirror mistake: four entries were dropped on a
+    SECOND pass because each proposal had been judged against the DOMAIN, and against the
+    entry's own tags they were synonyms — `finance` beside an existing `financial` (the
+    catalog's dominant form, **178 uses against 9**), `health` beside `healthcare` (86),
+    `academic` beside `education`, `academic` beside `philosophy`, which already named the
+    beat exactly — **and then six more through the channel the guard cannot see**:
+    `disinformation` offered to six fact-checkers that every one of them already answers with
+    `fake-news`, the catalog's form for that subject at **210 uses against 14**. That last set
+    was found by MEASURING the added tag's frequency and its co-occurrence with the tags the
+    entry carries, which is the step the stem guard cannot perform for you. A synonym does not add a fact; **it splits one collection stratum in
+    two**, which is the fragmentation the canary work addresses in the model's vocabulary,
+    recurring one level over in the batch that was supposed to be the careful one. The
+    apply step already dropped EXACT duplicates, so nothing loud ever fired. THREE RIDERS.
+    (a) The guard that pins it must **state what it cannot see**: a stem check finds
+    MORPHOLOGICAL variants (`finance`/`financial`) and is blind to the SEMANTIC pair
+    (`academic`/`education`), which shares no stem — so the docstring says so, or the next
+    reader takes a passing guard as coverage. (b) A guard that passes over four clean
+    catalogs **cannot fail when its own predicate is neutered**, so it owes an anti-vacuity
+    companion asserting the predicate discriminates (`finance`/`financial` collide;
+    `politics`/`policy` and `law`/`case-law` must not) — that companion, not the guard, is
+    what the mutation matrix catches. (c) **A domain-keyed proposal cannot be attributed
+    where a domain has several entries**: `microsoft.com` carries two (Research Blog `[ai]`,
+    Security Blog `[cybersecurity]`), which refused one tag on its own — and the same check
+    found **54 duplicate domains, i.e. 227 of the 3,429 entries in `configs/sources.yml`
+    unreachable by the create-only seeder**. Corollary when a worklist row is missing from
+    the file you expect: it may live in a SIBLING catalog the seeder also reads, and the
+    entry that matters is the one the seeding ORDER actually reaches — checking that turned
+    six "absent" proposals into four already-satisfied and one worth taking.
 
 ## Open queue (when maintainer says proceed)
 - **`PQC_AVAILABLE` ANSWERS "DOES IT IMPORT?", NOT "CAN IT SIGN?" — the pin is fixed, the CLASS
@@ -5916,6 +5952,22 @@ contingencies, and deliberate-omissions STILL go in the Open queue as prose
   formal (1)-vs-(2) ruling; English (11,263 terms) and French (881) as a GLOBAL-channel batch
   needing cross-language review; zh/ja/th (611) until the `[segmentation]` extra is installed
   and those articles are re-indexed; and the 64,910 `kind_overrides` proposals, untouched here.
+  **THE SOURCE-TAG HALF OF THE SAME EXPORT IS ALSO REVIEWED (PR 6, 2026-09-05; shipped.csv row
+  "catalog/source-tags"; maintainer ruled "go with your recommendation" on the question of what
+  to do with the proposed tags):** they are NOT merged. The funnel, measured: the sweep emitted
+  **422 proposal rows over 270 distinct domains** (921 tag mentions) — that is the "422" — the
+  canary gate dropped **47 domains**, leaving **223 domains / 591 tag mentions**, and a
+  ≥20-collected-article floor dropped **59 more**, leaving the **164-domain review worklist**
+  with **449 tag proposals, 381 of them new to the entry**. Of those, **49 entries / 75 tags**
+  were taken — a **20% acceptance rate**, with fourteen refusals named individually because each
+  is a WRONG tag rather than an unsupported one. The systematic defect and the mirror defect in
+  the review itself are the Lessons entry above. **STILL OPEN on this half:** the **59 domains
+  below the article floor** (too little evidence to judge a beat) and the **47 whose batch
+  failed the canary** (never eligible) — the first waits on collection, the second on a re-run
+  after PR3's canary re-specification, and neither on a decision. The seeder is create-only, so
+  these tag edits reach FRESH INSTALLS
+  only — an existing corpus keeps the tags its `Source` rows were created with, and a
+  retroactive apply would be its own reviewed slice.
 - **IMPORT PIPELINING + THE PER-BACKUP CHECKPOINT (maintainer asked 2026-08-08 for both;
   the MEASUREMENT shipped, the two structural changes did NOT — deliberately, and the
   reasons are findings rather than reluctance):** the queue runs `_drive()` as a strict
